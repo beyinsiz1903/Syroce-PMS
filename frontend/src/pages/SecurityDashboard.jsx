@@ -16,16 +16,13 @@ const SecurityDashboard = ({
   const {
     t
   } = useTranslation();
-  const token = localStorage.getItem('token');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const fetchData = useCallback(async () => {
     try {
       const res = await fetch(`/api/security/summary`, {
         credentials: "include",
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: {}
       });
       if (!res.ok) throw new Error();
       setData(await res.json());
@@ -35,7 +32,7 @@ const SecurityDashboard = ({
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [token]);
+  }, []);
   useEffect(() => {
     fetchData();
   }, [fetchData]);
@@ -44,9 +41,7 @@ const SecurityDashboard = ({
       const res = await fetch(`/api/auth/refresh-token`, {
         credentials: "include",
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: {}
       });
       if (!res.ok) throw new Error();
       const result = await res.json();

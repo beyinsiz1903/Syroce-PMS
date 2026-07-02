@@ -66,9 +66,7 @@ const HealthTrendTab = () => {
   const [weeklyTrend, setWeeklyTrend] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
-  const token = localStorage.getItem('token');
   const headers = {
-    Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json'
   };
   const fetchConnectors = useCallback(async () => {

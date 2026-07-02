@@ -7,33 +7,48 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
-} from '@/components/ui/select';
-import {
-  Ban, CheckCircle, Lock, Unlock, Loader2, AlertTriangle,
-  Calendar, RefreshCw, BedDouble, Globe, Clock, Trash2,
-  CalendarRange, Palmtree, Star, Snowflake, Sun
-} from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Ban, CheckCircle, Lock, Unlock, Loader2, AlertTriangle, Calendar, RefreshCw, BedDouble, Globe, Clock, Trash2, CalendarRange, Palmtree, Star, Snowflake, Sun } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-
 const API = "";
 
 // Category icons & colors
 const CATEGORY_STYLE = {
-  turkey: { icon: Star, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200', label: 'Turk Tatili' },
-  international: { icon: Globe, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', label: 'Uluslararasi' },
-  season: { icon: Sun, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', label: 'Sezon' },
+  turkey: {
+    icon: Star,
+    color: 'text-red-600',
+    bg: 'bg-red-50',
+    border: 'border-red-200',
+    label: 'Turk Tatili'
+  },
+  international: {
+    icon: Globe,
+    color: 'text-blue-600',
+    bg: 'bg-blue-50',
+    border: 'border-blue-200',
+    label: 'Uluslararasi'
+  },
+  season: {
+    icon: Sun,
+    color: 'text-amber-600',
+    bg: 'bg-amber-50',
+    border: 'border-amber-200',
+    label: 'Sezon'
+  }
 };
-
-export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parentLoading, apiPrefix = '/api/channel-manager/rate-manager' }) => {
-  const { t } = useTranslation();
-  const token = localStorage.getItem('token');
-  const headers = { Authorization: `Bearer ${token}` };
-
+export const StopSalePanel = ({
+  roomTypes,
+  ratePlans,
+  fetchGrid,
+  loading: parentLoading,
+  apiPrefix = '/api/channel-manager/rate-manager'
+}) => {
+  const {
+    t
+  } = useTranslation();
+  const headers = {};
   const today = new Date().toISOString().slice(0, 10);
   const nextMonth = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
-
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(nextMonth);
   const [selectedRoomTypes, setSelectedRoomTypes] = useState(new Set());
@@ -55,72 +70,87 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
   // Operator-level stop sale
   const [operatorStatus, setOperatorStatus] = useState({});
   const [operatorLoading, setOperatorLoading] = useState({});
-
-  const defaultOperators = [
-    { id: 'booking_com', name: 'Booking.com' },
-    { id: 'expedia', name: 'Expedia' },
-    { id: 'tatilsepeti', name: 'Tatilsepeti' },
-    { id: 'hotelbeds', name: 'Hotelbeds' },
-    { id: 'agoda', name: 'Agoda' },
-  ];
-
+  const defaultOperators = [{
+    id: 'booking_com',
+    name: 'Booking.com'
+  }, {
+    id: 'expedia',
+    name: 'Expedia'
+  }, {
+    id: 'tatilsepeti',
+    name: 'Tatilsepeti'
+  }, {
+    id: 'hotelbeds',
+    name: 'Hotelbeds'
+  }, {
+    id: 'agoda',
+    name: 'Agoda'
+  }];
   const loadActiveStopSales = useCallback(async () => {
     setLoadingActive(true);
     try {
-      const { data } = await axios.get(
-        `${API}${apiPrefix}/stop-sale-summary?start_date=${today}&end_date=${nextMonth}`,
-        { headers }
-      );
+      const {
+        data
+      } = await axios.get(`${API}${apiPrefix}/stop-sale-summary?start_date=${today}&end_date=${nextMonth}`, {
+        headers
+      });
       setActiveStopSales(data.stops || []);
     } catch {
       console.error('Stop sale durumu yüklenemedi');
     }
     setLoadingActive(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [today, nextMonth]);
-
   const loadOperatorStatus = useCallback(async () => {
     try {
-      const { data } = await axios.get(`/rates/stop-sale/status`, { headers });
+      const {
+        data
+      } = await axios.get(`/rates/stop-sale/status`, {
+        headers
+      });
       setOperatorStatus(data.operators || {});
     } catch {
       console.error('Operator stop-sale durumu yüklenemedi');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
-
   const loadHolidays = useCallback(async () => {
     setLoadingHolidays(true);
     try {
-      const { data } = await axios.get(`${API}${apiPrefix}/holidays`, { headers });
+      const {
+        data
+      } = await axios.get(`${API}${apiPrefix}/holidays`, {
+        headers
+      });
       setHolidays(data.holidays || []);
     } catch {
       console.error('Tatil verileri yüklenemedi');
     }
     setLoadingHolidays(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
-
   const loadSchedules = useCallback(async () => {
     setLoadingSchedules(true);
     try {
-      const { data } = await axios.get(`${API}${apiPrefix}/stop-sale-schedules`, { headers });
+      const {
+        data
+      } = await axios.get(`${API}${apiPrefix}/stop-sale-schedules`, {
+        headers
+      });
       setSchedules(data.schedules || []);
     } catch {
       console.error('Zamanlayicilar yüklenemedi');
     }
     setLoadingSchedules(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
-
   useEffect(() => {
     loadActiveStopSales();
     loadOperatorStatus();
     loadHolidays();
     loadSchedules();
   }, [loadActiveStopSales, loadOperatorStatus, loadHolidays, loadSchedules]);
-
-  const handleHolidaySelect = (key) => {
+  const handleHolidaySelect = key => {
     setSelectedHoliday(key);
     if (key === 'manual') {
       return;
@@ -132,15 +162,13 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       setScheduleName(h.name);
     }
   };
-
-  const toggleRoomType = (code) => {
+  const toggleRoomType = code => {
     setSelectedRoomTypes(prev => {
       const next = new Set(prev);
-      if (next.has(code)) next.delete(code); else next.add(code);
+      if (next.has(code)) next.delete(code);else next.add(code);
       return next;
     });
   };
-
   const selectAllRoomTypes = () => {
     if (selectedRoomTypes.size === roomTypes.length) {
       setSelectedRoomTypes(new Set());
@@ -148,8 +176,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       setSelectedRoomTypes(new Set(roomTypes.map(rt => rt.code)));
     }
   };
-
-  const applyStopSale = async (stopSell) => {
+  const applyStopSale = async stopSell => {
     if (selectedRoomTypes.size === 0) {
       toast.error('Lutfen en az bir oda tipi seçin');
       return;
@@ -158,27 +185,24 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       toast.error('Lutfen tarih araligi seçin');
       return;
     }
-
     setSaving(true);
     try {
       const perRoomValues = Array.from(selectedRoomTypes).map(rtCode => ({
         room_type_code: rtCode,
         rate_plan_codes: ratePlans.map(rp => rp.code),
-        stop_sell: stopSell,
+        stop_sell: stopSell
       }));
-
-      const { data } = await axios.post(
-        `${API}${apiPrefix}/bulk-grid-update`,
-        {
-          per_room_values: perRoomValues,
-          start_date: dateFrom,
-          end_date: dateTo,
-          selected_days: null,
-          update_fields: ['stop_sell'],
-        },
-        { headers }
-      );
-
+      const {
+        data
+      } = await axios.post(`${API}${apiPrefix}/bulk-grid-update`, {
+        per_room_values: perRoomValues,
+        start_date: dateFrom,
+        end_date: dateTo,
+        selected_days: null,
+        update_fields: ['stop_sell']
+      }, {
+        headers
+      });
       if (stopSell) {
         toast.success(`${data.saved} kayıt için satış durduruldu`);
       } else {
@@ -193,19 +217,26 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
           toast.success(`${succeeded.length} oda tipi kanal yoneticisine başarıyla gönderildi`);
         }
         if (data.queued_count > 0) {
-          toast.info(`${data.queued_count} push kuyruga eklendi — "Simdi Dene" ile gonderebilirsiniz`, { duration: 10000 });
+          toast.info(`${data.queued_count} push kuyruga eklendi — "Simdi Dene" ile gonderebilirsiniz`, {
+            duration: 10000
+          });
         } else if (data.rate_limit_hit) {
-          toast.warning('Kanal yoneticisi hiz siniri: Veriler yerel olarak kaydedildi.', { duration: 12000 });
+          toast.warning('Kanal yoneticisi hiz siniri: Veriler yerel olarak kaydedildi.', {
+            duration: 12000
+          });
         } else if (failed.length > 0) {
           failed.forEach(f => {
-            toast.error(`${f.room_type_code || 'Oda tipi'}: ${f.error || 'Bilinmeyen hata'}`, { duration: 8000 });
+            toast.error(`${f.room_type_code || 'Oda tipi'}: ${f.error || 'Bilinmeyen hata'}`, {
+              duration: 8000
+            });
           });
         }
       }
       if (data.provider_warning) {
-        toast.error(data.provider_warning, { duration: 8000 });
+        toast.error(data.provider_warning, {
+          duration: 8000
+        });
       }
-
       loadActiveStopSales();
       if (fetchGrid) setTimeout(() => fetchGrid(), 500);
     } catch (e) {
@@ -213,20 +244,24 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
     }
     setSaving(false);
   };
-
   const toggleOperatorStopSale = async (operatorId, operatorName) => {
-    setOperatorLoading(prev => ({ ...prev, [operatorId]: true }));
+    setOperatorLoading(prev => ({
+      ...prev,
+      [operatorId]: true
+    }));
     try {
       const currentStatus = operatorStatus[operatorId];
       const newStatus = !currentStatus;
-
       await axios.post(`/rates/stop-sale/toggle`, {
         operator_id: operatorId,
-        stop_sale: newStatus,
-      }, { headers });
-
-      setOperatorStatus(prev => ({ ...prev, [operatorId]: newStatus }));
-
+        stop_sale: newStatus
+      }, {
+        headers
+      });
+      setOperatorStatus(prev => ({
+        ...prev,
+        [operatorId]: newStatus
+      }));
       if (newStatus) {
         toast.success(`${operatorName} için stop-sale aktif edildi`);
       } else {
@@ -235,9 +270,11 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
     } catch {
       toast.error('Stop-sale durumu değiştirilemedi');
     }
-    setOperatorLoading(prev => ({ ...prev, [operatorId]: false }));
+    setOperatorLoading(prev => ({
+      ...prev,
+      [operatorId]: false
+    }));
   };
-
   const saveSchedule = async () => {
     if (selectedRoomTypes.size === 0) {
       toast.error('Lutfen en az bir oda tipi seçin');
@@ -248,7 +285,6 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       return;
     }
     const name = scheduleName.trim() || `Stop Sale ${dateFrom} - ${dateTo}`;
-
     setSavingSchedule(true);
     try {
       await axios.post(`${API}${apiPrefix}/stop-sale-schedules`, {
@@ -257,8 +293,10 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
         start_date: dateFrom,
         end_date: dateTo,
         room_type_codes: Array.from(selectedRoomTypes),
-        auto_apply: true,
-      }, { headers });
+        auto_apply: true
+      }, {
+        headers
+      });
       toast.success('Zamanlayici oluşturuldu ve stop sale uygulandi');
       loadSchedules();
       loadActiveStopSales();
@@ -269,13 +307,11 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
     }
     setSavingSchedule(false);
   };
-
   const deleteSchedule = async (scheduleId, removeStopSale) => {
     try {
-      await axios.delete(
-        `${API}${apiPrefix}/stop-sale-schedules/${scheduleId}?remove_stop_sale=${removeStopSale}`,
-        { headers }
-      );
+      await axios.delete(`${API}${apiPrefix}/stop-sale-schedules/${scheduleId}?remove_stop_sale=${removeStopSale}`, {
+        headers
+      });
       toast.success(removeStopSale ? 'Zamanlayici silindi ve stop sale kaldirildi' : 'Zamanlayici silindi');
       loadSchedules();
       if (removeStopSale) {
@@ -290,7 +326,10 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
   // Active stops pre-grouped
   const groupedStops = {};
   for (const s of activeStopSales) {
-    groupedStops[s.room_type_code] = { name: s.room_type_name, dates: new Set(s.dates) };
+    groupedStops[s.room_type_code] = {
+      name: s.room_type_name,
+      dates: new Set(s.dates)
+    };
   }
 
   // Group holidays by category
@@ -300,16 +339,16 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
     if (!holidaysByCategory[cat]) holidaysByCategory[cat] = [];
     holidaysByCategory[cat].push(h);
   }
-
   const formatDateRange = (start, end) => {
     const s = new Date(start + 'T00:00:00');
     const e = new Date(end + 'T00:00:00');
-    const opts = { day: 'numeric', month: 'short' };
+    const opts = {
+      day: 'numeric',
+      month: 'short'
+    };
     return `${s.toLocaleDateString('tr-TR', opts)} - ${e.toLocaleDateString('tr-TR', opts)}`;
   };
-
-  return (
-    <div className="space-y-6" data-testid="stop-sale-panel">
+  return <div className="space-y-6" data-testid="stop-sale-panel">
       {/* Holiday Quick Select + Date Range */}
       <Card className="border-indigo-200 bg-gradient-to-br from-indigo-50/50 to-white dark:bg-none dark:bg-card">
         <CardHeader className="pb-2">
@@ -323,100 +362,69 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Holiday Grid */}
-          {loadingHolidays ? (
-            <div className="flex items-center justify-center py-4">
+          {loadingHolidays ? <div className="flex items-center justify-center py-4">
               <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
-            </div>
-          ) : (
-            <div className="space-y-3">
+            </div> : <div className="space-y-3">
               {Object.entries(holidaysByCategory).map(([cat, items]) => {
-                const style = CATEGORY_STYLE[cat] || CATEGORY_STYLE.turkey;
-                const Icon = style.icon;
-                return (
-                  <div key={cat}>
+            const style = CATEGORY_STYLE[cat] || CATEGORY_STYLE.turkey;
+            const Icon = style.icon;
+            return <div key={cat}>
                     <div className="flex items-center gap-1.5 mb-1.5">
                       <Icon className={`w-3.5 h-3.5 ${style.color}`} />
                       <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{style.label}</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5" data-testid={`holiday-category-${cat}`}>
                       {items.map(h => {
-                        const isSelected = selectedHoliday === h.key;
-                        return (
-                          <button
-                            key={h.key}
-                            onClick={() => handleHolidaySelect(h.key)}
-                            className={`
+                  const isSelected = selectedHoliday === h.key;
+                  return <button key={h.key} onClick={() => handleHolidaySelect(h.key)} className={`
                               inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
                               transition-all duration-200 border cursor-pointer
-                              ${isSelected
-                                ? `${style.bg} ${style.border} ${style.color} ring-2 ring-offset-1 ring-indigo-300`
-                                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
-                              }
-                            `}
-                            data-testid={`holiday-btn-${h.key}`}
-                          >
+                              ${isSelected ? `${style.bg} ${style.border} ${style.color} ring-2 ring-offset-1 ring-indigo-300` : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'}
+                            `} data-testid={`holiday-btn-${h.key}`}>
                             <span>{h.name}</span>
                             <span className="text-[10px] opacity-70">
                               {formatDateRange(h.start_date, h.end_date)}
                             </span>
-                          </button>
-                        );
-                      })}
+                          </button>;
+                })}
                     </div>
-                  </div>
-                );
-              })}
+                  </div>;
+          })}
               {/* Manual option */}
-              <button
-                onClick={() => handleHolidaySelect('manual')}
-                className={`
+              <button onClick={() => handleHolidaySelect('manual')} className={`
                   inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
                   transition-all duration-200 border cursor-pointer
-                  ${selectedHoliday === 'manual'
-                    ? 'bg-gray-100 border-gray-400 text-gray-800 ring-2 ring-offset-1 ring-gray-300'
-                    : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                  }
-                `}
-                data-testid="holiday-btn-manual"
-              >
+                  ${selectedHoliday === 'manual' ? 'bg-gray-100 border-gray-400 text-gray-800 ring-2 ring-offset-1 ring-gray-300' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}
+                `} data-testid="holiday-btn-manual">
                 <CalendarRange className="w-3 h-3" />
                 {t('cm.pages_ratemanager_StopSalePanel.manuel_tarih_gir')}
               </button>
-            </div>
-          )}
+            </div>}
 
           {/* Date Fields (always editable) */}
           <div className="grid grid-cols-2 gap-3 pt-2 border-t border-gray-100">
             <div>
               <Label className="text-xs text-gray-500">Baslangic</Label>
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={e => { setDateFrom(e.target.value); setSelectedHoliday('manual'); }}
-                className="mt-1 h-9"
-                data-testid="stop-sale-date-from"
-              />
+              <Input type="date" value={dateFrom} onChange={e => {
+              setDateFrom(e.target.value);
+              setSelectedHoliday('manual');
+            }} className="mt-1 h-9" data-testid="stop-sale-date-from" />
             </div>
             <div>
               <Label className="text-xs text-gray-500">Bitis</Label>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={e => { setDateTo(e.target.value); setSelectedHoliday('manual'); }}
-                className="mt-1 h-9"
-                data-testid="stop-sale-date-to"
-              />
+              <Input type="date" value={dateTo} onChange={e => {
+              setDateTo(e.target.value);
+              setSelectedHoliday('manual');
+            }} className="mt-1 h-9" data-testid="stop-sale-date-to" />
             </div>
           </div>
 
-          {selectedHoliday && selectedHoliday !== 'manual' && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-indigo-700">
+          {selectedHoliday && selectedHoliday !== 'manual' && <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-indigo-700">
               <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
               <span>
                 <strong>{holidays.find(h => h.key === selectedHoliday)?.name}</strong> {t('cm.pages_ratemanager_StopSalePanel.tarihleri_secildi_tarihleri_manuel_olara')}
               </span>
-            </div>
-          )}
+            </div>}
         </CardContent>
       </Card>
 
@@ -434,32 +442,17 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            <button
-              onClick={selectAllRoomTypes}
-              className="text-xs text-blue-600 hover:underline mb-2"
-              data-testid="stop-sale-select-all"
-            >
+            <button onClick={selectAllRoomTypes} className="text-xs text-blue-600 hover:underline mb-2" data-testid="stop-sale-select-all">
               {selectedRoomTypes.size === roomTypes.length ? 'Tumunu kaldir' : 'Tumunu sec'}
             </button>
             <div className="space-y-1.5 max-h-[280px] overflow-y-auto">
-              {roomTypes.map(rt => (
-                <label
-                  key={rt.code}
-                  className="flex items-center gap-2 cursor-pointer text-sm py-1"
-                  data-testid={`stop-sale-room-${rt.code}`}
-                >
-                  <Checkbox
-                    checked={selectedRoomTypes.has(rt.code)}
-                    onCheckedChange={() => toggleRoomType(rt.code)}
-                  />
+              {roomTypes.map(rt => <label key={rt.code} className="flex items-center gap-2 cursor-pointer text-sm py-1" data-testid={`stop-sale-room-${rt.code}`}>
+                  <Checkbox checked={selectedRoomTypes.has(rt.code)} onCheckedChange={() => toggleRoomType(rt.code)} />
                   <span className={selectedRoomTypes.has(rt.code) ? 'text-gray-900 font-medium' : 'text-gray-600'}>
                     {rt.name}
                   </span>
-                </label>
-              ))}
-              {roomTypes.length === 0 && (
-                <p className="text-xs text-gray-400 py-4 text-center">{t('cm.pages_ratemanager_StopSalePanel.oda_tipi_bulunamadi')}</p>
-              )}
+                </label>)}
+              {roomTypes.length === 0 && <p className="text-xs text-gray-400 py-4 text-center">{t('cm.pages_ratemanager_StopSalePanel.oda_tipi_bulunamadi')}</p>}
             </div>
           </CardContent>
         </Card>
@@ -479,30 +472,18 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
             {/* Summary */}
             <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
               <span className="font-medium">{selectedRoomTypes.size}</span> oda tipi secili
-              {dateFrom && dateTo && (
-                <span className="text-gray-400 ml-1">
+              {dateFrom && dateTo && <span className="text-gray-400 ml-1">
                   | {formatDateRange(dateFrom, dateTo)}
-                </span>
-              )}
+                </span>}
             </div>
 
             {/* Action Buttons */}
             <div className="flex gap-3">
-              <Button
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white"
-                onClick={() => applyStopSale(true)}
-                disabled={saving || selectedRoomTypes.size === 0}
-                data-testid="apply-stop-sale-btn"
-              >
+              <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white" onClick={() => applyStopSale(true)} disabled={saving || selectedRoomTypes.size === 0} data-testid="apply-stop-sale-btn">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <Lock className="w-4 h-4 mr-1.5" />}
                 Satisi Durdur
               </Button>
-              <Button
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-                onClick={() => applyStopSale(false)}
-                disabled={saving || selectedRoomTypes.size === 0}
-                data-testid="remove-stop-sale-btn"
-              >
+              <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => applyStopSale(false)} disabled={saving || selectedRoomTypes.size === 0} data-testid="remove-stop-sale-btn">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <Unlock className="w-4 h-4 mr-1.5" />}
                 {t('cm.pages_ratemanager_StopSalePanel.satisi_ac')}
               </Button>
@@ -514,20 +495,8 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
                 <Clock className="w-3.5 h-3.5 text-indigo-500" />
                 <span className="text-xs font-semibold text-gray-700">{t('cm.pages_ratemanager_StopSalePanel.zamanlayici_olarak_kaydet')}</span>
               </div>
-              <Input
-                placeholder="Zamanlayici adi (opsiyonel)"
-                value={scheduleName}
-                onChange={e => setScheduleName(e.target.value)}
-                className="h-8 text-sm"
-                data-testid="schedule-name-input"
-              />
-              <Button
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
-                size="sm"
-                onClick={saveSchedule}
-                disabled={savingSchedule || selectedRoomTypes.size === 0}
-                data-testid="save-schedule-btn"
-              >
+              <Input placeholder="Zamanlayici adi (opsiyonel)" value={scheduleName} onChange={e => setScheduleName(e.target.value)} className="h-8 text-sm" data-testid="schedule-name-input" />
+              <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white" size="sm" onClick={saveSchedule} disabled={savingSchedule || selectedRoomTypes.size === 0} data-testid="save-schedule-btn">
                 {savingSchedule ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Clock className="w-3.5 h-3.5 mr-1.5" />}
                 Zamanlayici Olustur & Uygula
               </Button>
@@ -553,40 +522,15 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {defaultOperators.map(op => (
-              <div
-                key={op.id}
-                className={`flex items-center justify-between p-2.5 rounded-lg border transition-colors ${
-                  operatorStatus[op.id] ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200 hover:bg-gray-50'
-                }`}
-                data-testid={`operator-stop-${op.id}`}
-              >
+            {defaultOperators.map(op => <div key={op.id} className={`flex items-center justify-between p-2.5 rounded-lg border transition-colors ${operatorStatus[op.id] ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200 hover:bg-gray-50'}`} data-testid={`operator-stop-${op.id}`}>
                 <div className="flex items-center gap-2">
-                  {operatorStatus[op.id] ? (
-                    <Ban className="w-4 h-4 text-red-500" />
-                  ) : (
-                    <CheckCircle className="w-4 h-4 text-emerald-500" />
-                  )}
+                  {operatorStatus[op.id] ? <Ban className="w-4 h-4 text-red-500" /> : <CheckCircle className="w-4 h-4 text-emerald-500" />}
                   <span className="text-sm font-medium text-gray-800">{op.name}</span>
                 </div>
-                <Button
-                  size="sm"
-                  variant={operatorStatus[op.id] ? 'default' : 'destructive'}
-                  className={operatorStatus[op.id] ? 'bg-emerald-600 hover:bg-emerald-700 h-7 text-xs' : 'h-7 text-xs'}
-                  onClick={() => toggleOperatorStopSale(op.id, op.name)}
-                  disabled={operatorLoading[op.id]}
-                  data-testid={`operator-toggle-${op.id}`}
-                >
-                  {operatorLoading[op.id] ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : operatorStatus[op.id] ? (
-                    'Satisi Ac'
-                  ) : (
-                    'Durdur'
-                  )}
+                <Button size="sm" variant={operatorStatus[op.id] ? 'default' : 'destructive'} className={operatorStatus[op.id] ? 'bg-emerald-600 hover:bg-emerald-700 h-7 text-xs' : 'h-7 text-xs'} onClick={() => toggleOperatorStopSale(op.id, op.name)} disabled={operatorLoading[op.id]} data-testid={`operator-toggle-${op.id}`}>
+                  {operatorLoading[op.id] ? <Loader2 className="w-3 h-3 animate-spin" /> : operatorStatus[op.id] ? 'Satisi Ac' : 'Durdur'}
                 </Button>
-              </div>
-            ))}
+              </div>)}
           </CardContent>
         </Card>
       </div>
@@ -604,50 +548,28 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
                 Olusturulmus stop sale zamanlayicilari
               </CardDescription>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={loadSchedules}
-              disabled={loadingSchedules}
-              data-testid="refresh-schedules"
-            >
+            <Button variant="outline" size="sm" onClick={loadSchedules} disabled={loadingSchedules} data-testid="refresh-schedules">
               <RefreshCw className={`w-4 h-4 mr-1.5 ${loadingSchedules ? 'animate-spin' : ''}`} />
               {t('cm.pages_ratemanager_StopSalePanel.yenile')}
             </Button>
           </div>
         </CardHeader>
         <CardContent>
-          {loadingSchedules ? (
-            <div className="flex items-center justify-center py-6">
+          {loadingSchedules ? <div className="flex items-center justify-center py-6">
               <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
-            </div>
-          ) : schedules.length === 0 ? (
-            <div className="text-center py-6 text-gray-400">
+            </div> : schedules.length === 0 ? <div className="text-center py-6 text-gray-400">
               <Clock className="w-8 h-8 mx-auto mb-2 text-gray-300" />
               <p className="text-sm">{t('cm.pages_ratemanager_StopSalePanel.henuz_zamanlayici_yok')}</p>
               <p className="text-xs mt-1">{t('cm.pages_ratemanager_StopSalePanel.tatil_donemi_secip_zamanlayici_olusturun')}</p>
-            </div>
-          ) : (
-            <div className="space-y-2" data-testid="schedules-list">
+            </div> : <div className="space-y-2" data-testid="schedules-list">
               {schedules.map(s => {
-                const isPast = s.end_date < today;
-                return (
-                  <div
-                    key={s.id}
-                    className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
-                      isPast ? 'bg-gray-50 border-gray-200 opacity-60' : 'bg-indigo-50/50 border-indigo-200'
-                    }`}
-                    data-testid={`schedule-item-${s.id}`}
-                  >
+            const isPast = s.end_date < today;
+            return <div key={s.id} className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${isPast ? 'bg-gray-50 border-gray-200 opacity-60' : 'bg-indigo-50/50 border-indigo-200'}`} data-testid={`schedule-item-${s.id}`}>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-gray-800 truncate">{s.name}</span>
-                        {s.applied && (
-                          <Badge className="bg-green-100 text-green-700 border-0 text-[10px]">Uygulandi</Badge>
-                        )}
-                        {isPast && (
-                          <Badge variant="outline" className="text-[10px]">{t('cm.pages_ratemanager_StopSalePanel.gecmis')}</Badge>
-                        )}
+                        {s.applied && <Badge className="bg-green-100 text-green-700 border-0 text-[10px]">Uygulandi</Badge>}
+                        {isPast && <Badge variant="outline" className="text-[10px]">{t('cm.pages_ratemanager_StopSalePanel.gecmis')}</Badge>}
                       </div>
                       <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
                         <span className="flex items-center gap-1">
@@ -661,33 +583,17 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 ml-3">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-red-500 hover:text-red-700 hover:bg-red-50"
-                        onClick={() => deleteSchedule(s.id, true)}
-                        title={t('cm.pages_ratemanager_StopSalePanel.sil_ve_stop_sale_i_kaldir')}
-                        data-testid={`schedule-delete-restore-${s.id}`}
-                      >
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => deleteSchedule(s.id, true)} title={t('cm.pages_ratemanager_StopSalePanel.sil_ve_stop_sale_i_kaldir')} data-testid={`schedule-delete-restore-${s.id}`}>
                         <Unlock className="w-3.5 h-3.5 mr-1" />
                         <span className="text-xs">Kaldir</span>
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-gray-400 hover:text-gray-600"
-                        onClick={() => deleteSchedule(s.id, false)}
-                        title="Sadece zamanlayiciyi sil"
-                        data-testid={`schedule-delete-${s.id}`}
-                      >
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-gray-400 hover:text-gray-600" onClick={() => deleteSchedule(s.id, false)} title="Sadece zamanlayiciyi sil" data-testid={`schedule-delete-${s.id}`}>
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  </div>;
+          })}
+            </div>}
         </CardContent>
       </Card>
 
@@ -704,61 +610,45 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
                 {t('cm.pages_ratemanager_StopSalePanel.oda_bazinda_aktif_stop_sale_kayitlari')}
               </CardDescription>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={loadActiveStopSales}
-              disabled={loadingActive}
-              data-testid="refresh-stop-sales"
-            >
+            <Button variant="outline" size="sm" onClick={loadActiveStopSales} disabled={loadingActive} data-testid="refresh-stop-sales">
               <RefreshCw className={`w-4 h-4 mr-1.5 ${loadingActive ? 'animate-spin' : ''}`} />
               {t('cm.pages_ratemanager_StopSalePanel.yenile_aedf3')}
             </Button>
           </div>
         </CardHeader>
         <CardContent>
-          {loadingActive ? (
-            <div className="flex items-center justify-center py-8">
+          {loadingActive ? <div className="flex items-center justify-center py-8">
               <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-            </div>
-          ) : Object.keys(groupedStops).length === 0 ? (
-            <div className="text-center py-8 text-gray-400">
+            </div> : Object.keys(groupedStops).length === 0 ? <div className="text-center py-8 text-gray-400">
               <CheckCircle className="w-10 h-10 mx-auto mb-2 text-emerald-300" />
               <p className="text-sm font-medium">{t('cm.pages_ratemanager_StopSalePanel.aktif_stop_sale_yok')}</p>
               <p className="text-xs mt-1">{t('cm.pages_ratemanager_StopSalePanel.tum_odalar_satis_icin_acik')}</p>
-            </div>
-          ) : (
-            <div className="space-y-3" data-testid="active-stop-sales-list">
+            </div> : <div className="space-y-3" data-testid="active-stop-sales-list">
               {Object.entries(groupedStops).map(([code, info]) => {
-                const dateList = Array.from(info.dates).sort();
-                return (
-                  <div key={code} className="flex items-start gap-3 p-3 bg-red-50 border border-red-100 rounded-lg">
+            const dateList = Array.from(info.dates).sort();
+            return <div key={code} className="flex items-start gap-3 p-3 bg-red-50 border border-red-100 rounded-lg">
                     <Lock className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-sm text-gray-800">{info.name}</div>
                       <div className="flex flex-wrap gap-1 mt-1.5">
-                        {dateList.slice(0, 14).map(d => (
-                          <Badge key={d} variant="outline" className="text-[10px] bg-white border-red-200 text-red-600">
-                            {new Date(d + 'T00:00:00').toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}
-                          </Badge>
-                        ))}
-                        {dateList.length > 14 && (
-                          <Badge variant="outline" className="text-[10px] bg-white border-gray-200">
+                        {dateList.slice(0, 14).map(d => <Badge key={d} variant="outline" className="text-[10px] bg-white border-red-200 text-red-600">
+                            {new Date(d + 'T00:00:00').toLocaleDateString('tr-TR', {
+                      day: 'numeric',
+                      month: 'short'
+                    })}
+                          </Badge>)}
+                        {dateList.length > 14 && <Badge variant="outline" className="text-[10px] bg-white border-gray-200">
                             +{dateList.length - 14} gun daha
-                          </Badge>
-                        )}
+                          </Badge>}
                       </div>
                     </div>
                     <Badge className="bg-red-100 text-red-700 border-0 text-xs">
                       {dateList.length} gun
                     </Badge>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  </div>;
+          })}
+            </div>}
         </CardContent>
       </Card>
-    </div>
-  );
+    </div>;
 };

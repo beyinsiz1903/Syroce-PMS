@@ -8,10 +8,11 @@ function _joinUrl(baseUrl, path) {
   return `${b}${p}`;
 }
 
-async function _fetchJson(url, { method = "GET", token, body } = {}) {
+async function _fetchJson(url, { method = "GET", body } = {}) {
   const headers = {
     "Content-Type": "application/json",
   };
+  const token = localStorage.getItem('token');
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(url, {
@@ -48,25 +49,21 @@ async function _fetchJson(url, { method = "GET", token, body } = {}) {
  */
 export async function listPendingBookings({ baseUrl = DEFAULT_BASE_URL, token } = {}) {
   const url = _joinUrl(baseUrl, "/api/pms/bookings?status=pending");
-  return _fetchJson(url, { method: "GET", token });
+  return _fetchJson(url, { method: "GET" });
 }
 
-export async function approveBooking({ baseUrl = DEFAULT_BASE_URL, token, bookingId }) {
+export async function approveBooking({ baseUrl = DEFAULT_BASE_URL, bookingId }) {
   const url = _joinUrl(baseUrl, `/api/bookings/${encodeURIComponent(bookingId)}/approve`);
-  return _fetchJson(url, { method: "POST", token });
+  return _fetchJson(url, { method: "POST" });
 }
 
 export async function rejectBooking({
-  baseUrl = DEFAULT_BASE_URL,
-  token,
-  bookingId,
+  baseUrl = DEFAULT_BASE_URL, bookingId,
   reason_code,
   reason_note,
 }) {
   const url = _joinUrl(baseUrl, `/api/bookings/${encodeURIComponent(bookingId)}/reject`);
   return _fetchJson(url, {
-    method: "POST",
-    token,
-    body: { reason_code, reason_note },
+    method: "POST", body: { reason_code, reason_note },
   });
 }

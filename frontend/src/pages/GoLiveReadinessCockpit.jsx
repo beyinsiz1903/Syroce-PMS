@@ -127,9 +127,7 @@ const GoLiveReadinessCockpit = ({
   const [testingConnector, setTestingConnector] = useState(null);
   const [dryRunning, setDryRunning] = useState(false);
   const [dryRunResult, setDryRunResult] = useState(null);
-  const headers = {
-    Authorization: `Bearer ${localStorage.getItem('token')}`
-  };
+  const headers = {};
   const fetchAll = useCallback(async ({
     silent = false
   } = {}) => {

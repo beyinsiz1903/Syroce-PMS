@@ -17,6 +17,8 @@ const PickupPaceReport = () => {
       if (stored) return stored;
     } catch (e) {
       console.warn('Unable to read pickup_target_date from localStorage', e);
+    
+      toast.error('İşlem başarısız oldu');
     }
     return new Date().toISOString().slice(0, 10);
   });
@@ -30,6 +32,8 @@ const PickupPaceReport = () => {
       if (stored != null) return stored === 'true';
     } catch (e) {
       console.warn('Unable to read pickup_group_only from localStorage', e);
+    
+      toast.error('İşlem başarısız oldu');
     }
     return false;
   });
@@ -117,7 +121,9 @@ const PickupPaceReport = () => {
                     localStorage.setItem('pickup_group_only', String(value));
                   } catch (err) {
                     console.warn('Unable to persist pickup_group_only', err);
-                  }
+                  
+      toast.error('İşlem başarısız oldu');
+    }
                 }}
               />
               <span>Only group bookings</span>

@@ -23,10 +23,7 @@ export default function PlatformScalingDashboard({
   const [mlData, setMlData] = useState(null);
   const [compData, setCompData] = useState(null);
   const [notifications, setNotifications] = useState(null);
-  const token = localStorage.getItem('token');
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {

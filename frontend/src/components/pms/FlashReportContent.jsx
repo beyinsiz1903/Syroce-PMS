@@ -2,29 +2,27 @@ import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import {
-  TrendingUp, BedDouble, DollarSign,
-  LogIn, LogOut, AlertTriangle, RefreshCw, Printer,
-  Users, UserX, UserPlus, XCircle, Sparkles
-} from 'lucide-react';
-import {
-  ResponsiveContainer, PieChart, Pie, Cell, Tooltip
-} from 'recharts';
+import { TrendingUp, BedDouble, DollarSign, LogIn, LogOut, AlertTriangle, RefreshCw, Printer, Users, UserX, UserPlus, XCircle, Sparkles } from 'lucide-react';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { useCurrency } from '@/context/CurrencyContext';
 import { useTranslation } from 'react-i18next';
-
 const PIE_COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#6366f1'];
-
 const FlashReportContent = ({
   showDatePicker = false,
   rooms,
   bookings,
   arrivals,
   departures,
-  inhouse,
+  inhouse
 }) => {
-  const { t } = useTranslation();
-  const { format: fmtMoney, symbol: currencySymbol, code: currencyCode } = useCurrency();
+  const {
+    t
+  } = useTranslation();
+  const {
+    format: fmtMoney,
+    symbol: currencySymbol,
+    code: currencyCode
+  } = useCurrency();
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -32,18 +30,14 @@ const FlashReportContent = ({
   const [error, setError] = useState(null);
 
   // Props'lardan client-side fallback üretebilir miyiz? (PMSModule sekmesi → evet, standalone → hayır)
-  const hasFallbackData = Array.isArray(rooms) || Array.isArray(bookings)
-    || Array.isArray(arrivals) || Array.isArray(departures) || Array.isArray(inhouse);
-
+  const hasFallbackData = Array.isArray(rooms) || Array.isArray(bookings) || Array.isArray(arrivals) || Array.isArray(departures) || Array.isArray(inhouse);
   const loadFlashReport = useCallback(async () => {
     setLoading(true);
     setUsingFallback(false);
     setError(null);
     const effectiveDate = showDatePicker ? selectedDate : new Date().toISOString().split('T')[0];
     try {
-      const url = showDatePicker
-        ? `/reports/flash-report?date=${selectedDate}`
-        : '/reports/flash-report';
+      const url = showDatePicker ? `/reports/flash-report?date=${selectedDate}` : '/reports/flash-report';
       const res = await axios.get(url);
       if (res.data && res.data.occupancy) {
         setReportData(res.data);
@@ -60,17 +54,34 @@ const FlashReportContent = ({
       // PMS sekmesi: gerçek prop'lardan offline fallback
       const totalRooms = rooms?.length || 0;
       const occupiedRooms = rooms?.filter(r => r.status === 'occupied').length || 0;
-      const occRate = totalRooms > 0 ? (occupiedRooms / totalRooms * 100) : 0;
+      const occRate = totalRooms > 0 ? occupiedRooms / totalRooms * 100 : 0;
       const totalRevenue = bookings?.reduce((s, b) => s + (b.total_amount || 0), 0) || 0;
       const paidRevenue = bookings?.reduce((s, b) => s + (b.paid_amount || 0), 0) || 0;
       const adr = occupiedRooms > 0 ? totalRevenue / occupiedRooms : 0;
       const revpar = totalRooms > 0 ? totalRevenue / totalRooms : 0;
-
       setReportData({
         date: effectiveDate,
-        occupancy: { rate: occRate, occupied: occupiedRooms, total: totalRooms, available: totalRooms - occupiedRooms },
-        revenue: { total: totalRevenue, room: totalRevenue, fb: 0, spa: 0, minibar: 0, laundry: 0, other: 0, collected: paidRevenue, outstanding: totalRevenue - paidRevenue },
-        kpi: { adr, revpar },
+        occupancy: {
+          rate: occRate,
+          occupied: occupiedRooms,
+          total: totalRooms,
+          available: totalRooms - occupiedRooms
+        },
+        revenue: {
+          total: totalRevenue,
+          room: totalRevenue,
+          fb: 0,
+          spa: 0,
+          minibar: 0,
+          laundry: 0,
+          other: 0,
+          collected: paidRevenue,
+          outstanding: totalRevenue - paidRevenue
+        },
+        kpi: {
+          adr,
+          revpar
+        },
         operations: {
           arrivals: arrivals?.length || 0,
           departures: departures?.length || 0,
@@ -78,25 +89,36 @@ const FlashReportContent = ({
           no_shows: bookings?.filter(b => b.status === 'no_show').length || 0,
           walk_ins: bookings?.filter(b => b.channel === 'walk_in').length || 0,
           cancellations: bookings?.filter(b => b.status === 'cancelled').length || 0,
-          overstays: 0,
+          overstays: 0
         },
-        departments: [
-          { name: 'Oda Geliri', amount: totalRevenue },
-          { name: 'Yiyecek & İçecek', amount: 0 },
-          { name: 'Spa & Wellness', amount: 0 },
-          { name: 'Minibar', amount: 0 },
-          { name: 'Çamaşırhane', amount: 0 },
-          { name: 'Diğer', amount: 0 },
-        ],
+        departments: [{
+          name: 'Oda Geliri',
+          amount: totalRevenue
+        }, {
+          name: 'Yiyecek & İçecek',
+          amount: 0
+        }, {
+          name: 'Spa & Wellness',
+          amount: 0
+        }, {
+          name: 'Minibar',
+          amount: 0
+        }, {
+          name: 'Çamaşırhane',
+          amount: 0
+        }, {
+          name: 'Diğer',
+          amount: 0
+        }]
       });
       setUsingFallback(true);
     } finally {
       setLoading(false);
     }
   }, [showDatePicker, selectedDate, rooms, bookings, arrivals, departures, inhouse, hasFallbackData]);
-
-  useEffect(() => { loadFlashReport(); }, [loadFlashReport]);
-
+  useEffect(() => {
+    loadFlashReport();
+  }, [loadFlashReport]);
   const printReport = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow || !reportData) return;
@@ -142,18 +164,13 @@ const FlashReportContent = ({
     printWindow.document.close();
     printWindow.print();
   };
-
   if (loading && !reportData) {
-    return (
-      <div className="flex items-center justify-center py-12" data-testid="flash-loading">
+    return <div className="flex items-center justify-center py-12" data-testid="flash-loading">
         <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
-      </div>
-    );
+      </div>;
   }
-
   if (error && !reportData) {
-    return (
-      <Card className="border-red-200 bg-red-50" data-testid="flash-error">
+    return <Card className="border-red-200 bg-red-50" data-testid="flash-error">
         <CardContent className="p-6 text-center space-y-3">
           <AlertTriangle className="w-10 h-10 mx-auto text-red-500" />
           <div>
@@ -164,46 +181,30 @@ const FlashReportContent = ({
             <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Tekrar Dene
           </Button>
         </CardContent>
-      </Card>
-    );
+      </Card>;
   }
-
   if (!reportData) {
-    return (
-      <div className="text-center py-12 text-gray-500 text-sm" data-testid="flash-empty">
+    return <div className="text-center py-12 text-gray-500 text-sm" data-testid="flash-empty">
         {t('cm.components_pms_FlashReportContent.henuz_veri_yok')}
-      </div>
-    );
+      </div>;
   }
-
   const d = reportData;
   const totalRev = d.revenue?.total || 0;
   const trevpar = d.occupancy?.total > 0 ? totalRev / d.occupancy.total : 0;
-  const collectionPct = totalRev > 0 ? ((d.revenue?.collected || 0) / totalRev * 100) : 0;
+  const collectionPct = totalRev > 0 ? (d.revenue?.collected || 0) / totalRev * 100 : 0;
   const pieData = (d.departments || []).filter(dep => dep.amount > 0).map(dep => ({
-    name: dep.name, value: dep.amount
+    name: dep.name,
+    value: dep.amount
   }));
-
-  return (
-    <div className="space-y-4" data-testid="flash-report-content">
+  return <div className="space-y-4" data-testid="flash-report-content">
       {/* Toolbar: tarih + yazdır + yenile */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-gray-600">
           {t('cm.components_pms_FlashReportContent.tarih')} <span className="font-medium text-gray-900">{d.date}</span>
-          {usingFallback && (
-            <span className="ml-2 text-xs text-amber-600">{t('cm.components_pms_FlashReportContent.cevrimdisi_veri_anlik_degil')}</span>
-          )}
+          {usingFallback && <span className="ml-2 text-xs text-amber-600">{t('cm.components_pms_FlashReportContent.cevrimdisi_veri_anlik_degil')}</span>}
         </div>
         <div className="flex items-center gap-2">
-          {showDatePicker && (
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="px-3 py-1.5 border rounded-lg text-sm"
-              data-testid="flash-date-picker"
-            />
-          )}
+          {showDatePicker && <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="px-3 py-1.5 border rounded-lg text-sm" data-testid="flash-date-picker" />}
           <Button variant="outline" size="sm" onClick={loadFlashReport} disabled={loading} data-testid="flash-refresh">
             <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> {t('cm.components_pms_FlashReportContent.yenile')}
           </Button>
@@ -320,31 +321,27 @@ const FlashReportContent = ({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {pieData.length > 0 && (
-              <div className="h-40 mb-3">
+            {pieData.length > 0 && <div className="h-40 mb-3">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} innerRadius={30}>
-                      {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                      {pieData.map((_, i) => <Cell key={_.id || i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                     </Pie>
-                    <Tooltip formatter={(v) => fmtMoney(v)} />
+                    <Tooltip formatter={v => fmtMoney(v)} />
                   </PieChart>
                 </ResponsiveContainer>
-              </div>
-            )}
+              </div>}
             <div className="space-y-1.5">
               {(d.departments || []).map((dep, i) => {
-                const pct = totalRev > 0 ? ((dep.amount || 0) / totalRev * 100) : 0;
-                return (
-                  <div key={i} className="flex items-center justify-between text-sm">
+              const pct = totalRev > 0 ? (dep.amount || 0) / totalRev * 100 : 0;
+              return <div key={dep.id || i} className="flex items-center justify-between text-sm">
                     <span className="text-gray-700">{dep.name}</span>
                     <div className="flex items-center gap-3">
                       <span className="font-medium text-gray-900">{fmtMoney(dep.amount || 0)}</span>
                       <span className="text-xs text-gray-500 w-12 text-right">{pct.toFixed(1)}%</span>
                     </div>
-                  </div>
-                );
-              })}
+                  </div>;
+            })}
             </div>
           </CardContent>
         </Card>
@@ -374,10 +371,9 @@ const FlashReportContent = ({
                 <span className="font-medium">{collectionPct.toFixed(1)}%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
-                <div
-                  className="bg-emerald-500 h-2 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, collectionPct)}%` }}
-                />
+                <div className="bg-emerald-500 h-2 rounded-full transition-all duration-500" style={{
+                width: `${Math.min(100, collectionPct)}%`
+              }} />
               </div>
             </div>
           </CardContent>
@@ -385,8 +381,7 @@ const FlashReportContent = ({
       </div>
 
       {/* Dikkat gerektiren durumlar */}
-      {((d.operations?.no_shows || 0) > 0 || (d.operations?.cancellations || 0) > 0) && (
-        <Card className="border-amber-200 bg-amber-50" data-testid="flash-alerts">
+      {((d.operations?.no_shows || 0) > 0 || (d.operations?.cancellations || 0) > 0) && <Card className="border-amber-200 bg-amber-50" data-testid="flash-alerts">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-amber-800 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" /> Dikkat Gerektiren Durumlar
@@ -394,28 +389,21 @@ const FlashReportContent = ({
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-4 text-sm">
-              {(d.operations?.no_shows || 0) > 0 && (
-                <div className="flex items-center gap-2 text-amber-700">
+              {(d.operations?.no_shows || 0) > 0 && <div className="flex items-center gap-2 text-amber-700">
                   <XCircle className="w-4 h-4" />
                   <span className="font-semibold">{d.operations.no_shows} No-show</span>
-                </div>
-              )}
-              {(d.operations?.cancellations || 0) > 0 && (
-                <div className="flex items-center gap-2 text-amber-700">
+                </div>}
+              {(d.operations?.cancellations || 0) > 0 && <div className="flex items-center gap-2 text-amber-700">
                   <XCircle className="w-4 h-4" />
                   <span className="font-semibold">{d.operations.cancellations} {t('cm.components_pms_FlashReportContent.iptal_25174')}</span>
-                </div>
-              )}
+                </div>}
             </div>
           </CardContent>
-        </Card>
-      )}
+        </Card>}
 
       <div className="text-[11px] text-gray-400 text-right">
         Para birimi: {currencyCode} ({currencySymbol})
       </div>
-    </div>
-  );
+    </div>;
 };
-
 export default FlashReportContent;

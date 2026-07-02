@@ -196,10 +196,7 @@ export default function ProductionGoLiveDashboard({
   const [deploymentData, setDeploymentData] = useState(null);
   const [triggeringBackup, setTriggeringBackup] = useState(false);
   const [backupResult, setBackupResult] = useState(null);
-  const token = localStorage.getItem("token");
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const fetchData = useCallback(async () => {
     try {
       const res = await fetch(`/api/production-golive/summary`, {
@@ -217,7 +214,7 @@ export default function ProductionGoLiveDashboard({
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [token]);
+  }, []);
   useEffect(() => {
     fetchData();
     const i = setInterval(fetchData, 30000);
@@ -300,7 +297,7 @@ export default function ProductionGoLiveDashboard({
       console.error(e);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [token]);
+  }, []);
   const triggerBackup = async () => {
     setTriggeringBackup(true);
     try {

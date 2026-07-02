@@ -42,7 +42,7 @@ const PublicReviewPage = () => {
       if (active) setLoading(false);
     })();
     return () => { active = false; };
-  }, [token]);
+  }, []);
 
   const submit = async () => {
     if (!rating) return;

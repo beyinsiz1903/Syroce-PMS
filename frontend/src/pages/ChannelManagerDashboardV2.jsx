@@ -107,9 +107,7 @@ const ChannelManagerDashboardV2 = ({
   const [drilldown, setDrilldown] = useState(null);
   const [drilldownData, setDrilldownData] = useState(null);
   const [drilldownLoading, setDrilldownLoading] = useState(false);
-  const headers = {
-    Authorization: `Bearer ${localStorage.getItem('token')}`
-  };
+  const headers = {};
   const fetchDashboard = useCallback(async ({
     silent = false
   } = {}) => {

@@ -6,7 +6,6 @@ import { Slider } from './ui/slider';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { TrendingUp, DollarSign, Calendar, Target, Award } from 'lucide-react';
-
 const RevenueManagementAdvanced = () => {
   const [activeTab, setActiveTab] = useState('pricing'); // pricing, heatmap, compset
   const [pricingData, setPricingData] = useState(null);
@@ -16,18 +15,13 @@ const RevenueManagementAdvanced = () => {
   const [roomType, setRoomType] = useState('Standard');
   const [checkInDate, setCheckInDate] = useState(new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(false);
-
   const fetchPricingRecommendation = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `/api/rms/price-recommendation-slider?room_type=${roomType}&check_in_date=${checkInDate}`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
-
+      const response = await fetch(`/api/rms/price-recommendation-slider?room_type=${roomType}&check_in_date=${checkInDate}`, {
+        headers: {},
+        credentials: "include"
+      });
       if (response.ok) {
         const data = await response.json();
         setPricingData(data);
@@ -39,18 +33,13 @@ const RevenueManagementAdvanced = () => {
       setLoading(false);
     }
   };
-
   const fetchDemandHeatmap = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `/api/rms/demand-heatmap`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
-
+      const response = await fetch(`/api/rms/demand-heatmap`, {
+        headers: {},
+        credentials: "include"
+      });
       if (response.ok) {
         const data = await response.json();
         setHeatmapData(data.heatmap_data || []);
@@ -61,18 +50,13 @@ const RevenueManagementAdvanced = () => {
       setLoading(false);
     }
   };
-
   const fetchCompsetAnalysis = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `/api/rms/compset-analysis`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
-
+      const response = await fetch(`/api/rms/compset-analysis`, {
+        headers: {},
+        credentials: "include"
+      });
       if (response.ok) {
         const data = await response.json();
         setCompsetData(data);
@@ -83,7 +67,6 @@ const RevenueManagementAdvanced = () => {
       setLoading(false);
     }
   };
-
   useEffect(() => {
     if (activeTab === 'pricing') {
       fetchPricingRecommendation();
@@ -92,10 +75,9 @@ const RevenueManagementAdvanced = () => {
     } else if (activeTab === 'compset') {
       fetchCompsetAnalysis();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [activeTab]);
-
-  const getDemandColor = (level) => {
+  const getDemandColor = level => {
     const colors = {
       low: 'bg-green-200',
       medium: 'bg-yellow-200',
@@ -104,8 +86,7 @@ const RevenueManagementAdvanced = () => {
     };
     return colors[level] || 'bg-gray-200';
   };
-
-  const getDemandTextColor = (level) => {
+  const getDemandTextColor = level => {
     const colors = {
       low: 'text-green-800',
       medium: 'text-yellow-800',
@@ -114,40 +95,25 @@ const RevenueManagementAdvanced = () => {
     };
     return colors[level] || 'text-gray-800';
   };
-
-  return (
-    <div className="space-y-4">
+  return <div className="space-y-4">
       {/* Tab Navigation */}
       <div className="flex gap-2 border-b">
-        <Button
-          variant={activeTab === 'pricing' ? 'default' : 'ghost'}
-          onClick={() => setActiveTab('pricing')}
-          className="rounded-b-none"
-        >
+        <Button variant={activeTab === 'pricing' ? 'default' : 'ghost'} onClick={() => setActiveTab('pricing')} className="rounded-b-none">
           <DollarSign className="w-4 h-4 mr-2" />
           Price Optimizer
         </Button>
-        <Button
-          variant={activeTab === 'heatmap' ? 'default' : 'ghost'}
-          onClick={() => setActiveTab('heatmap')}
-          className="rounded-b-none"
-        >
+        <Button variant={activeTab === 'heatmap' ? 'default' : 'ghost'} onClick={() => setActiveTab('heatmap')} className="rounded-b-none">
           <Calendar className="w-4 h-4 mr-2" />
           Demand Heatmap
         </Button>
-        <Button
-          variant={activeTab === 'compset' ? 'default' : 'ghost'}
-          onClick={() => setActiveTab('compset')}
-          className="rounded-b-none"
-        >
+        <Button variant={activeTab === 'compset' ? 'default' : 'ghost'} onClick={() => setActiveTab('compset')} className="rounded-b-none">
           <Target className="w-4 h-4 mr-2" />
           CompSet Analysis
         </Button>
       </div>
 
       {/* Price Optimizer Tab */}
-      {activeTab === 'pricing' && (
-        <div className="space-y-4">
+      {activeTab === 'pricing' && <div className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Dynamic Pricing Recommendation</CardTitle>
@@ -157,27 +123,18 @@ const RevenueManagementAdvanced = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label>Room Type</Label>
-                    <Input
-                      value={roomType}
-                      onChange={(e) => setRoomType(e.target.value)}
-                      placeholder="e.g., Standard, Deluxe"
-                    />
+                    <Input value={roomType} onChange={e => setRoomType(e.target.value)} placeholder="e.g., Standard, Deluxe" />
                   </div>
                   <div>
                     <Label>Check-in Date</Label>
-                    <Input
-                      type="date"
-                      value={checkInDate}
-                      onChange={(e) => setCheckInDate(e.target.value)}
-                    />
+                    <Input type="date" value={checkInDate} onChange={e => setCheckInDate(e.target.value)} />
                   </div>
                 </div>
                 <Button onClick={fetchPricingRecommendation} disabled={loading}>
                   {loading ? 'Loading...' : 'Get Recommendation'}
                 </Button>
 
-                {pricingData && (
-                  <div className="space-y-6">
+                {pricingData && <div className="space-y-6">
                     {/* Pricing Slider */}
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
@@ -186,14 +143,7 @@ const RevenueManagementAdvanced = () => {
                           ${selectedPrice}
                         </div>
                       </div>
-                      <Slider
-                        value={[selectedPrice]}
-                        onValueChange={(value) => setSelectedPrice(value[0])}
-                        min={pricingData.pricing_recommendation?.min_price || 50}
-                        max={pricingData.pricing_recommendation?.max_price || 200}
-                        step={1}
-                        className="w-full"
-                      />
+                      <Slider value={[selectedPrice]} onValueChange={value => setSelectedPrice(value[0])} min={pricingData.pricing_recommendation?.min_price || 50} max={pricingData.pricing_recommendation?.max_price || 200} step={1} className="w-full" />
                       <div className="flex justify-between text-sm text-gray-600">
                         <span>Min: ${pricingData.pricing_recommendation?.min_price}</span>
                         <span className="font-semibold text-blue-600">
@@ -242,47 +192,33 @@ const RevenueManagementAdvanced = () => {
                         </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  </div>}
               </div>
             </CardContent>
           </Card>
-        </div>
-      )}
+        </div>}
 
       {/* Demand Heatmap Tab */}
-      {activeTab === 'heatmap' && (
-        <Card>
+      {activeTab === 'heatmap' && <Card>
           <CardHeader>
             <CardTitle>90-Day Demand Forecast Heatmap</CardTitle>
           </CardHeader>
           <CardContent>
-            {loading ? (
-              <div className="text-center py-8">Loading heatmap...</div>
-            ) : (
-              <div className="space-y-4">
+            {loading ? <div className="text-center py-8">Loading heatmap...</div> : <div className="space-y-4">
                 <div className="grid grid-cols-7 gap-2">
-                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
-                    <div key={day} className="text-center text-sm font-medium text-gray-600">
+                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <div key={day} className="text-center text-sm font-medium text-gray-600">
                       {day}
-                    </div>
-                  ))}
+                    </div>)}
                 </div>
                 <div className="grid grid-cols-7 gap-2">
-                  {heatmapData.slice(0, 84).map((day, idx) => (
-                    <div
-                      key={idx}
-                      className={`p-3 rounded-lg ${getDemandColor(day.demand_level)} text-center cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all`}
-                      title={`${day.date}: ${day.occupancy_pct}% occupancy (${day.bookings_count} bookings)`}
-                    >
+                  {heatmapData.slice(0, 84).map((day, idx) => <div key={idx} className={`p-3 rounded-lg ${getDemandColor(day.demand_level)} text-center cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all`} title={`${day.date}: ${day.occupancy_pct}% occupancy (${day.bookings_count} bookings)`}>
                       <div className="text-xs font-semibold">
                         {new Date(day.date).getDate()}
                       </div>
                       <div className={`text-xs ${getDemandTextColor(day.demand_level)}`}>
                         {day.occupancy_pct}%
                       </div>
-                    </div>
-                  ))}
+                    </div>)}
                 </div>
                 <div className="flex items-center justify-center gap-4 pt-4 border-t">
                   <div className="flex items-center gap-2">
@@ -302,21 +238,15 @@ const RevenueManagementAdvanced = () => {
                     <span className="text-sm">Very High (80%+)</span>
                   </div>
                 </div>
-              </div>
-            )}
+              </div>}
           </CardContent>
-        </Card>
-      )}
+        </Card>}
 
       {/* CompSet Analysis Tab */}
-      {activeTab === 'compset' && (
-        <div className="space-y-4">
-          {loading ? (
-            <Card>
+      {activeTab === 'compset' && <div className="space-y-4">
+          {loading ? <Card>
               <CardContent className="p-6 text-center">Loading competitor analysis...</CardContent>
-            </Card>
-          ) : compsetData && (
-            <>
+            </Card> : compsetData && <>
               <Card>
                 <CardHeader>
                   <CardTitle>Competitive Set Summary</CardTitle>
@@ -360,8 +290,7 @@ const RevenueManagementAdvanced = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {compsetData.most_wanted_features?.map((feature, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    {compsetData.most_wanted_features?.map((feature, idx) => <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
                             {idx + 1}
@@ -376,17 +305,12 @@ const RevenueManagementAdvanced = () => {
                             {feature.popularity_pct}%
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      </div>)}
                   </div>
                 </CardContent>
               </Card>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
+            </>}
+        </div>}
+    </div>;
 };
-
 export default RevenueManagementAdvanced;

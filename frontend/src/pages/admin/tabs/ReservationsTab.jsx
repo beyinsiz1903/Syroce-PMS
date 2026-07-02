@@ -2,35 +2,29 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Download, RefreshCw, Eye, CheckCircle2, XCircle, AlertTriangle,
-  Clock, Package, RotateCcw, ChevronDown, ChevronUp, Filter,
-  FileText, Send, Ban, Loader2, ArrowUpDown
-} from 'lucide-react';
+import { Download, RefreshCw, Eye, CheckCircle2, XCircle, AlertTriangle, Clock, Package, RotateCcw, ChevronDown, ChevronUp, Filter, FileText, Send, Ban, Loader2, ArrowUpDown } from 'lucide-react';
 import { API, MetricCard, SeverityBadge } from '../shared';
-
 const API_BASE = "";
-
-const fetchAPI = async (path) => {
-  const token = localStorage.getItem('token');
-  const res = await fetch(`${API_BASE}/api${API}${path}`, { credentials: "include",
-    headers: { Authorization: `Bearer ${token}` },
+const fetchAPI = async path => {
+  const res = await fetch(`${API_BASE}/api${API}${path}`, {
+    credentials: "include",
+    headers: {}
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 };
-
 const postAPI = async (path, body = {}) => {
-  const token = localStorage.getItem('token');
-  const res = await fetch(`${API_BASE}/api${API}${path}`, { credentials: "include",
+  const res = await fetch(`${API_BASE}/api${API}${path}`, {
+    credentials: "include",
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 };
-
 const STATUS_COLORS = {
   created: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
   modified: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
@@ -43,40 +37,35 @@ const STATUS_COLORS = {
   out_of_order: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30',
   dismissed: 'bg-slate-600/15 text-slate-500 border-slate-600/30',
   pending: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
-  acknowledged: 'bg-teal-500/15 text-teal-400 border-teal-500/30',
+  acknowledged: 'bg-teal-500/15 text-teal-400 border-teal-500/30'
 };
-
 const ACK_COLORS = {
   ack_pending: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
   ack_sent: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
   ack_failed: 'bg-red-500/15 text-red-400 border-red-500/30',
   ack_retrying: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
-  not_required: 'bg-slate-600/15 text-slate-500 border-slate-600/30',
+  not_required: 'bg-slate-600/15 text-slate-500 border-slate-600/30'
 };
-
-const StatusBadge = ({ status }) => (
-  <Badge data-testid={`status-${status}`} className={`${STATUS_COLORS[status] || STATUS_COLORS.pending} border text-[10px] px-1.5 py-0`}>
+const StatusBadge = ({
+  status
+}) => <Badge data-testid={`status-${status}`} className={`${STATUS_COLORS[status] || STATUS_COLORS.pending} border text-[10px] px-1.5 py-0`}>
     {status?.replace(/_/g, ' ')}
-  </Badge>
-);
-
-const AckBadge = ({ status }) => (
-  <Badge data-testid={`ack-${status}`} className={`${ACK_COLORS[status] || ACK_COLORS.not_required} border text-[10px] px-1.5 py-0`}>
+  </Badge>;
+const AckBadge = ({
+  status
+}) => <Badge data-testid={`ack-${status}`} className={`${ACK_COLORS[status] || ACK_COLORS.not_required} border text-[10px] px-1.5 py-0`}>
     {status?.replace(/_/g, ' ')}
-  </Badge>
-);
+  </Badge>;
 
 /* ─── Batch Summary Card ────────────────────────────────────── */
-const BatchCard = ({ batch, onExpand }) => {
+const BatchCard = ({
+  batch,
+  onExpand
+}) => {
   const total = batch.total_reservations || 0;
   const isCompleted = batch.status === 'completed';
   const clickable = typeof onExpand === 'function';
-  return (
-    <Card
-      data-testid={`batch-${batch.id?.slice(0,8)}`}
-      className={`bg-slate-800/40 border-slate-700/50 transition-colors ${clickable ? 'hover:border-slate-600 cursor-pointer' : ''}`}
-      onClick={clickable ? () => onExpand(batch.id) : undefined}
-    >
+  return <Card data-testid={`batch-${batch.id?.slice(0, 8)}`} className={`bg-slate-800/40 border-slate-700/50 transition-colors ${clickable ? 'hover:border-slate-600 cursor-pointer' : ''}`} onClick={clickable ? () => onExpand(batch.id) : undefined}>
       <CardContent className="p-3">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -95,16 +84,19 @@ const BatchCard = ({ batch, onExpand }) => {
           <StatPill label="Dup" value={batch.duplicate_count} color="text-amber-400" />
           <StatPill label="Fail" value={batch.failed_count} color="text-red-400" />
         </div>
-        {(batch.review_count > 0 || batch.conflict_count > 0 || batch.out_of_order_count > 0) && (
-          <div className="flex gap-2 mt-1.5">
+        {(batch.review_count > 0 || batch.conflict_count > 0 || batch.out_of_order_count > 0) && <div className="flex gap-2 mt-1.5">
             {batch.review_count > 0 && <span className="text-[10px] text-amber-400">Review: {batch.review_count}</span>}
             {batch.conflict_count > 0 && <span className="text-[10px] text-red-400">Conflict: {batch.conflict_count}</span>}
             {batch.out_of_order_count > 0 && <span className="text-[10px] text-indigo-400">OOO: {batch.out_of_order_count}</span>}
-          </div>
-        )}
+          </div>}
         <div className="flex items-center justify-between mt-1.5">
           <span className="text-[10px] text-slate-500">
-            {new Date(batch.started_at).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+            {new Date(batch.started_at).toLocaleString('tr-TR', {
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+          })}
           </span>
           <div className="flex gap-1">
             {batch.ack_sent_count > 0 && <span className="text-[10px] text-emerald-400">ACK: {batch.ack_sent_count}</span>}
@@ -112,25 +104,28 @@ const BatchCard = ({ batch, onExpand }) => {
           </div>
         </div>
       </CardContent>
-    </Card>
-  );
+    </Card>;
 };
-
-const StatPill = ({ label, value, color }) => (
-  <div className="text-center">
+const StatPill = ({
+  label,
+  value,
+  color
+}) => <div className="text-center">
     <span className={`block font-semibold ${color}`}>{value || 0}</span>
     <span className="text-slate-500">{label}</span>
-  </div>
-);
+  </div>;
 
 /* ─── Reservation Detail Dialog ─────────────────────────────── */
-const ReservationDetailDialog = ({ reservation, onClose, onReprocess, onDismiss }) => {
+const ReservationDetailDialog = ({
+  reservation,
+  onClose,
+  onReprocess,
+  onDismiss
+}) => {
   if (!reservation) return null;
   const r = reservation;
   const isReviewable = ['review', 'conflict', 'out_of_order'].includes(r.import_status);
-
-  return (
-    <div data-testid="reservation-detail-dialog" className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
+  return <div data-testid="reservation-detail-dialog" className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-slate-900 border border-slate-700 rounded-lg max-w-2xl w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="p-4 border-b border-slate-700 flex items-center justify-between">
           <div>
@@ -177,29 +172,23 @@ const ReservationDetailDialog = ({ reservation, onClose, onReprocess, onDismiss 
           </div>
 
           {/* Review Info */}
-          {(r.review_reason || r.conflict_reason) && (
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded p-2.5">
+          {(r.review_reason || r.conflict_reason) && <div className="bg-amber-500/10 border border-amber-500/20 rounded p-2.5">
               <p className="text-[10px] text-amber-400 font-medium mb-1">Review Info</p>
               {r.review_reason_code && <p className="text-[10px] text-slate-300">Code: <span className="text-amber-300">{r.review_reason_code}</span></p>}
               {r.review_reason && <p className="text-[10px] text-slate-300">{r.review_reason}</p>}
               {r.conflict_reason && <p className="text-[10px] text-red-300">{r.conflict_reason}</p>}
               {r.suggested_action && <p className="text-[10px] text-amber-300 mt-1">Suggested: {r.suggested_action}</p>}
-            </div>
-          )}
+            </div>}
 
           {/* Error Info */}
-          {r.error_message && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded p-2.5">
+          {r.error_message && <div className="bg-red-500/10 border border-red-500/20 rounded p-2.5">
               <p className="text-[10px] text-red-400">{r.error_message}</p>
-            </div>
-          )}
+            </div>}
 
           {/* ACK Info */}
-          {r.ack_failed_reason && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded p-2.5">
+          {r.ack_failed_reason && <div className="bg-red-500/10 border border-red-500/20 rounded p-2.5">
               <p className="text-[10px] text-red-400 font-medium">ACK Failed: {r.ack_failed_reason}</p>
-            </div>
-          )}
+            </div>}
 
           {/* Timestamps */}
           <div className="grid grid-cols-2 gap-3 text-slate-500">
@@ -210,46 +199,45 @@ const ReservationDetailDialog = ({ reservation, onClose, onReprocess, onDismiss 
           </div>
 
           {/* Actions */}
-          {isReviewable && (
-            <div className="flex gap-2 pt-2 border-t border-slate-700">
+          {isReviewable && <div className="flex gap-2 pt-2 border-t border-slate-700">
               <Button data-testid="reprocess-btn" size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs" onClick={() => onReprocess(r.id)}>
                 <RotateCcw className="w-3 h-3 mr-1" /> Reprocess
               </Button>
               <Button data-testid="dismiss-btn" size="sm" variant="outline" className="border-slate-600 text-slate-300 text-xs" onClick={() => onDismiss(r.id)}>
                 <Ban className="w-3 h-3 mr-1" /> Dismiss
               </Button>
-            </div>
-          )}
+            </div>}
         </div>
       </div>
-    </div>
-  );
+    </div>;
 };
-
-const Field = ({ label, value }) => (
-  <div>
+const Field = ({
+  label,
+  value
+}) => <div>
     <span className="text-slate-500 block">{label}</span>
     <span className="text-slate-200">{value || '-'}</span>
-  </div>
-);
+  </div>;
 
 /* ─── Audit Trail Timeline ──────────────────────────────────── */
-const AuditTimeline = ({ logs }) => {
+const AuditTimeline = ({
+  logs
+}) => {
   if (!logs?.length) return <p className="text-xs text-slate-500 text-center py-4">No audit logs yet</p>;
-  return (
-    <div data-testid="audit-timeline" className="space-y-1.5 max-h-80 overflow-y-auto">
-      {logs.slice(0, 50).map((log, i) => (
-        <div key={log.id || i} className="flex items-start gap-2 text-[10px]">
+  return <div data-testid="audit-timeline" className="space-y-1.5 max-h-80 overflow-y-auto">
+      {logs.slice(0, 50).map((log, i) => <div key={log.id || i} className="flex items-start gap-2 text-[10px]">
           <div className="w-1.5 h-1.5 rounded-full bg-slate-500 mt-1 shrink-0" />
           <div className="flex-1 min-w-0">
             <span className="text-slate-300 font-medium">{log.action?.replace(/_/g, ' ')}</span>
             {log.metadata?.external_id && <span className="text-slate-500 ml-1">[{log.metadata.external_id.slice(0, 8)}]</span>}
-            <span className="text-slate-600 ml-2">{new Date(log.created_at).toLocaleString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+            <span className="text-slate-600 ml-2">{new Date(log.created_at).toLocaleString('tr-TR', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          })}</span>
           </div>
-        </div>
-      ))}
-    </div>
-  );
+        </div>)}
+    </div>;
 };
 
 /* ─── Main Tab Component ────────────────────────────────────── */
@@ -264,17 +252,10 @@ const ReservationsTab = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [activeSection, setActiveSection] = useState('overview');
   const [actionLoading, setActionLoading] = useState(null);
-
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [statsData, resData, reviewData, batchData, auditData] = await Promise.all([
-        fetchAPI('/reservations/stats'),
-        fetchAPI(`/reservations/imported?limit=100${statusFilter ? `&status=${statusFilter}` : ''}`),
-        fetchAPI('/reservations/review-queue'),
-        fetchAPI('/reservations/batches'),
-        fetchAPI('/reservations/audit-trail?limit=50'),
-      ]);
+      const [statsData, resData, reviewData, batchData, auditData] = await Promise.all([fetchAPI('/reservations/stats'), fetchAPI(`/reservations/imported?limit=100${statusFilter ? `&status=${statusFilter}` : ''}`), fetchAPI('/reservations/review-queue'), fetchAPI('/reservations/batches'), fetchAPI('/reservations/audit-trail?limit=50')]);
       setStats(statsData);
       setReservations(resData.reservations || []);
       setReviewQueue(reviewData.queue || []);
@@ -286,10 +267,10 @@ const ReservationsTab = () => {
       setLoading(false);
     }
   }, [statusFilter]);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
-  const handleReprocess = async (reservationId) => {
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+  const handleReprocess = async reservationId => {
     setActionLoading(reservationId);
     try {
       await postAPI(`/reservations/review-queue/${reservationId}/reprocess`);
@@ -301,8 +282,7 @@ const ReservationsTab = () => {
       setSelectedRes(null);
     }
   };
-
-  const handleDismiss = async (reservationId) => {
+  const handleDismiss = async reservationId => {
     setActionLoading(reservationId);
     try {
       await postAPI(`/reservations/review-queue/${reservationId}/dismiss`);
@@ -314,11 +294,12 @@ const ReservationsTab = () => {
       setSelectedRes(null);
     }
   };
-
-  const handleRetryAcks = async (connectorId) => {
+  const handleRetryAcks = async connectorId => {
     setActionLoading('retry-acks');
     try {
-      await postAPI('/reservations/retry-acks', { connector_id: connectorId });
+      await postAPI('/reservations/retry-acks', {
+        connector_id: connectorId
+      });
       loadData();
     } catch (e) {
       console.error('Retry ACKs failed:', e);
@@ -326,8 +307,7 @@ const ReservationsTab = () => {
       setActionLoading(null);
     }
   };
-
-  const handleViewDetail = async (reservationId) => {
+  const handleViewDetail = async reservationId => {
     try {
       const detail = await fetchAPI(`/reservations/imported/${reservationId}`);
       setSelectedRes(detail);
@@ -335,30 +315,17 @@ const ReservationsTab = () => {
       console.error('Failed to load reservation detail:', e);
     }
   };
-
   if (loading) {
     return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>;
   }
-
   const byStatus = stats?.by_status || {};
   const byAck = stats?.by_ack_status || {};
-
-  return (
-    <div data-testid="reservations-tab" className="space-y-4">
+  return <div data-testid="reservations-tab" className="space-y-4">
       {/* Section Tabs */}
       <div className="flex gap-1 mb-1">
-        {['overview', 'reservations', 'review', 'batches', 'audit'].map(sec => (
-          <button
-            key={sec}
-            data-testid={`section-${sec}`}
-            onClick={() => setActiveSection(sec)}
-            className={`px-3 py-1.5 text-xs rounded-md transition-all ${
-              activeSection === sec ? 'bg-blue-600 text-white' : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800'
-            }`}
-          >
+        {['overview', 'reservations', 'review', 'batches', 'audit'].map(sec => <button key={sec} data-testid={`section-${sec}`} onClick={() => setActiveSection(sec)} className={`px-3 py-1.5 text-xs rounded-md transition-all ${activeSection === sec ? 'bg-blue-600 text-white' : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800'}`}>
             {sec.charAt(0).toUpperCase() + sec.slice(1)}
-          </button>
-        ))}
+          </button>)}
         <div className="flex-1" />
         <Button data-testid="refresh-reservations" size="sm" variant="ghost" onClick={loadData} className="text-slate-400 hover:text-white text-xs">
           <RefreshCw className="w-3 h-3 mr-1" /> Refresh
@@ -366,17 +333,13 @@ const ReservationsTab = () => {
       </div>
 
       {/* ─── OVERVIEW ─────────────────────────────────────────── */}
-      {activeSection === 'overview' && (
-        <div className="space-y-4">
+      {activeSection === 'overview' && <div className="space-y-4">
           {/* Metric Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <MetricCard title="Total Imports" value={stats?.total_reservations || 0} icon={Package} color="text-blue-400" />
-            <MetricCard title="Success Rate" value={`${stats?.success_rate || 0}%`} icon={CheckCircle2}
-              color={stats?.success_rate >= 80 ? 'text-emerald-400' : 'text-amber-400'} />
-            <MetricCard title="Review Queue" value={stats?.review_queue_count || 0} icon={AlertTriangle}
-              color={stats?.review_queue_count > 0 ? 'text-amber-400' : 'text-slate-400'} />
-            <MetricCard title="ACK Failed" value={stats?.ack_failed_count || 0} icon={XCircle}
-              color={stats?.ack_failed_count > 0 ? 'text-red-400' : 'text-slate-400'} />
+            <MetricCard title="Success Rate" value={`${stats?.success_rate || 0}%`} icon={CheckCircle2} color={stats?.success_rate >= 80 ? 'text-emerald-400' : 'text-amber-400'} />
+            <MetricCard title="Review Queue" value={stats?.review_queue_count || 0} icon={AlertTriangle} color={stats?.review_queue_count > 0 ? 'text-amber-400' : 'text-slate-400'} />
+            <MetricCard title="ACK Failed" value={stats?.ack_failed_count || 0} icon={XCircle} color={stats?.ack_failed_count > 0 ? 'text-red-400' : 'text-slate-400'} />
           </div>
 
           {/* Status Breakdown */}
@@ -385,12 +348,10 @@ const ReservationsTab = () => {
               <CardContent className="p-4">
                 <h3 className="text-xs font-medium text-slate-300 mb-3">Import Status Breakdown</h3>
                 <div className="space-y-1.5">
-                  {Object.entries(byStatus).length > 0 ? Object.entries(byStatus).sort((a, b) => b[1] - a[1]).map(([status, count]) => (
-                    <div key={status} className="flex items-center justify-between">
+                  {Object.entries(byStatus).length > 0 ? Object.entries(byStatus).sort((a, b) => b[1] - a[1]).map(([status, count]) => <div key={status} className="flex items-center justify-between">
                       <StatusBadge status={status} />
                       <span className="text-xs text-slate-300 font-mono">{count}</span>
-                    </div>
-                  )) : <p className="text-xs text-slate-500">No data yet</p>}
+                    </div>) : <p className="text-xs text-slate-500">No data yet</p>}
                 </div>
               </CardContent>
             </Card>
@@ -399,12 +360,10 @@ const ReservationsTab = () => {
               <CardContent className="p-4">
                 <h3 className="text-xs font-medium text-slate-300 mb-3">ACK Status Breakdown</h3>
                 <div className="space-y-1.5">
-                  {Object.entries(byAck).length > 0 ? Object.entries(byAck).sort((a, b) => b[1] - a[1]).map(([status, count]) => (
-                    <div key={status} className="flex items-center justify-between">
+                  {Object.entries(byAck).length > 0 ? Object.entries(byAck).sort((a, b) => b[1] - a[1]).map(([status, count]) => <div key={status} className="flex items-center justify-between">
                       <AckBadge status={status} />
                       <span className="text-xs text-slate-300 font-mono">{count}</span>
-                    </div>
-                  )) : <p className="text-xs text-slate-500">No data yet</p>}
+                    </div>) : <p className="text-xs text-slate-500">No data yet</p>}
                 </div>
               </CardContent>
             </Card>
@@ -415,32 +374,21 @@ const ReservationsTab = () => {
             <CardContent className="p-4">
               <h3 className="text-xs font-medium text-slate-300 mb-3">Recent Import Batches</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                {(stats?.recent_batches || []).map(b => (
-                  <BatchCard key={b.id} batch={b} onExpand={() => setActiveSection('batches')} />
-                ))}
-                {(!stats?.recent_batches?.length) && <p className="text-xs text-slate-500">No batches yet</p>}
+                {(stats?.recent_batches || []).map(b => <BatchCard key={b.id} batch={b} onExpand={() => setActiveSection('batches')} />)}
+                {!stats?.recent_batches?.length && <p className="text-xs text-slate-500">No batches yet</p>}
               </div>
             </CardContent>
           </Card>
-        </div>
-      )}
+        </div>}
 
       {/* ─── RESERVATIONS LIST ────────────────────────────────── */}
-      {activeSection === 'reservations' && (
-        <div className="space-y-3">
+      {activeSection === 'reservations' && <div className="space-y-3">
           {/* Filter Bar */}
           <div className="flex items-center gap-2">
             <Filter className="w-3.5 h-3.5 text-slate-400" />
-            <select
-              data-testid="status-filter"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-slate-800 border border-slate-700 text-xs text-slate-300 rounded px-2 py-1"
-            >
+            <select data-testid="status-filter" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="bg-slate-800 border border-slate-700 text-xs text-slate-300 rounded px-2 py-1">
               <option value="">All Statuses</option>
-              {['created', 'modified', 'cancelled', 'duplicate', 'conflict', 'review', 'failed', 'out_of_order', 'dismissed'].map(s => (
-                <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
-              ))}
+              {['created', 'modified', 'cancelled', 'duplicate', 'conflict', 'review', 'failed', 'out_of_order', 'dismissed'].map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
             </select>
             <span className="text-[10px] text-slate-500">{reservations.length} reservation(s)</span>
           </div>
@@ -461,8 +409,7 @@ const ReservationsTab = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {reservations.map(r => (
-                    <tr key={r.id} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                  {reservations.map(r => <tr key={r.id} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                       <td className="p-2.5">
                         <span className="text-slate-200 block">{r.guest_name || 'Unknown'}</span>
                         <span className="text-[10px] text-slate-500 font-mono">{r.external_reservation_id?.slice(0, 12)}</span>
@@ -473,52 +420,41 @@ const ReservationsTab = () => {
                       <td className="p-2.5 text-slate-400">{r.arrival_date} → {r.departure_date}</td>
                       <td className="p-2.5 text-slate-300">{r.total_amount} {r.currency}</td>
                       <td className="p-2.5 text-right">
-                        <button data-testid={`view-${r.id?.slice(0,8)}`} onClick={() => handleViewDetail(r.id)} className="text-blue-400 hover:text-blue-300 p-1">
+                        <button data-testid={`view-${r.id?.slice(0, 8)}`} onClick={() => handleViewDetail(r.id)} className="text-blue-400 hover:text-blue-300 p-1">
                           <Eye className="w-3.5 h-3.5" />
                         </button>
                       </td>
-                    </tr>
-                  ))}
-                  {reservations.length === 0 && (
-                    <tr><td colSpan={7} className="text-center py-8 text-slate-500">No reservations found</td></tr>
-                  )}
+                    </tr>)}
+                  {reservations.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-500">No reservations found</td></tr>}
                 </tbody>
               </table>
             </div>
           </Card>
-        </div>
-      )}
+        </div>}
 
       {/* ─── REVIEW QUEUE ─────────────────────────────────────── */}
-      {activeSection === 'review' && (
-        <div className="space-y-3">
+      {activeSection === 'review' && <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-medium text-slate-300">
               Manual Review Queue ({reviewQueue.length})
             </h3>
           </div>
 
-          {reviewQueue.length === 0 ? (
-            <Card className="bg-slate-800/40 border-slate-700/50">
+          {reviewQueue.length === 0 ? <Card className="bg-slate-800/40 border-slate-700/50">
               <CardContent className="py-8 text-center text-xs text-slate-500">
                 <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-400/50" />
                 No items pending review
               </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-2">
-              {reviewQueue.map(r => (
-                <Card key={r.id} data-testid={`review-${r.id?.slice(0,8)}`} className="bg-slate-800/40 border-slate-700/50">
+            </Card> : <div className="space-y-2">
+              {reviewQueue.map(r => <Card key={r.id} data-testid={`review-${r.id?.slice(0, 8)}`} className="bg-slate-800/40 border-slate-700/50">
                   <CardContent className="p-3">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1.5">
                           <StatusBadge status={r.import_status} />
-                          {r.review_reason_code && (
-                            <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 border text-[10px]">
+                          {r.review_reason_code && <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 border text-[10px]">
                               {r.review_reason_code.replace(/_/g, ' ')}
-                            </Badge>
-                          )}
+                            </Badge>}
                           {r.is_cancellation && <Badge className="bg-slate-500/15 text-slate-300 border text-[10px]">Cancellation</Badge>}
                         </div>
                         <p className="text-xs text-slate-200">{r.guest_name || 'Unknown Guest'}</p>
@@ -530,23 +466,10 @@ const ReservationsTab = () => {
                         {r.suggested_action && <p className="text-[10px] text-amber-300 mt-0.5">Suggested: {r.suggested_action}</p>}
                       </div>
                       <div className="flex gap-1.5 ml-3">
-                        <Button
-                          data-testid={`reprocess-review-${r.id?.slice(0,8)}`}
-                          size="sm"
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] h-7 px-2"
-                          onClick={() => handleReprocess(r.id)}
-                          disabled={actionLoading === r.id}
-                        >
+                        <Button data-testid={`reprocess-review-${r.id?.slice(0, 8)}`} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] h-7 px-2" onClick={() => handleReprocess(r.id)} disabled={actionLoading === r.id}>
                           {actionLoading === r.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <><RotateCcw className="w-3 h-3 mr-1" />Reprocess</>}
                         </Button>
-                        <Button
-                          data-testid={`dismiss-review-${r.id?.slice(0,8)}`}
-                          size="sm"
-                          variant="outline"
-                          className="border-slate-600 text-slate-300 text-[10px] h-7 px-2"
-                          onClick={() => handleDismiss(r.id)}
-                          disabled={actionLoading === r.id}
-                        >
+                        <Button data-testid={`dismiss-review-${r.id?.slice(0, 8)}`} size="sm" variant="outline" className="border-slate-600 text-slate-300 text-[10px] h-7 px-2" onClick={() => handleDismiss(r.id)} disabled={actionLoading === r.id}>
                           <Ban className="w-3 h-3 mr-1" />Dismiss
                         </Button>
                         <button onClick={() => handleViewDetail(r.id)} className="text-blue-400 hover:text-blue-300 p-1.5">
@@ -555,49 +478,29 @@ const ReservationsTab = () => {
                       </div>
                     </div>
                   </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+                </Card>)}
+            </div>}
+        </div>}
 
       {/* ─── BATCHES ──────────────────────────────────────────── */}
-      {activeSection === 'batches' && (
-        <div className="space-y-3">
+      {activeSection === 'batches' && <div className="space-y-3">
           <h3 className="text-xs font-medium text-slate-300">Import Batches ({batches.length})</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-            {batches.map(b => (
-              <BatchCard key={b.id} batch={b} />
-            ))}
-            {batches.length === 0 && (
-              <p className="text-xs text-slate-500 col-span-3 text-center py-8">No import batches yet</p>
-            )}
+            {batches.map(b => <BatchCard key={b.id} batch={b} />)}
+            {batches.length === 0 && <p className="text-xs text-slate-500 col-span-3 text-center py-8">No import batches yet</p>}
           </div>
-        </div>
-      )}
+        </div>}
 
       {/* ─── AUDIT TRAIL ──────────────────────────────────────── */}
-      {activeSection === 'audit' && (
-        <Card className="bg-slate-800/40 border-slate-700/50">
+      {activeSection === 'audit' && <Card className="bg-slate-800/40 border-slate-700/50">
           <CardContent className="p-4">
             <h3 className="text-xs font-medium text-slate-300 mb-3">Import Audit Trail</h3>
             <AuditTimeline logs={auditLogs} />
           </CardContent>
-        </Card>
-      )}
+        </Card>}
 
       {/* Reservation Detail Dialog */}
-      {selectedRes && (
-        <ReservationDetailDialog
-          reservation={selectedRes}
-          onClose={() => setSelectedRes(null)}
-          onReprocess={handleReprocess}
-          onDismiss={handleDismiss}
-        />
-      )}
-    </div>
-  );
+      {selectedRes && <ReservationDetailDialog reservation={selectedRes} onClose={() => setSelectedRes(null)} onReprocess={handleReprocess} onDismiss={handleDismiss} />}
+    </div>;
 };
-
 export default ReservationsTab;

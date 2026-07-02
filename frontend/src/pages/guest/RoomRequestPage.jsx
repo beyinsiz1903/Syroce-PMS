@@ -124,7 +124,7 @@ function GuestThread({ tenantId, roomId, token, t, lang, rtl, accent, alwaysShow
     } finally {
       if (mountedRef.current) setLoaded(true);
     }
-  }, [tenantId, roomId, token]);
+  }, [tenantId, roomId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -264,7 +264,7 @@ export default function RoomRequestPage() {
       }
     };
     load();
-  }, [tenantId, roomId, token]);
+  }, [tenantId, roomId]);
 
   const submit = async () => {
     if (!category || !description.trim()) return;
@@ -445,7 +445,7 @@ export default function RoomRequestPage() {
         <GuestThread
           tenantId={tenantId}
           roomId={roomId}
-          token={token}
+          token={localStorage.getItem('token')}
           t={t}
           lang={lang}
           rtl={rtl}

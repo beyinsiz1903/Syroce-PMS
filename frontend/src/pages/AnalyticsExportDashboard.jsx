@@ -6,7 +6,6 @@ import { Button } from '../components/ui/button';
 import { Download, FileText, BarChart3, Loader2, RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 const hdrs = () => ({
-  Authorization: `Bearer ${localStorage.getItem('token')}`,
   'Content-Type': 'application/json'
 });
 async function safeFetch(path, init) {
@@ -15,7 +14,8 @@ async function safeFetch(path, init) {
     headers: {
       ...hdrs(),
       ...(init?.headers || {})
-    }
+    },
+    credentials: "include"
   });
   const ctype = res.headers.get('content-type') || '';
   let body = null;

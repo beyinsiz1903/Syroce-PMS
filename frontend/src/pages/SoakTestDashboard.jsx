@@ -109,10 +109,7 @@ export default function SoakTestDashboard() {
   const [stopping, setStopping] = useState(false);
   const [duration, setDuration] = useState("15m");
   const [users, setUsers] = useState(20);
-  const token = localStorage.getItem("token");
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const fetchStatus = useCallback(async () => {
     try {
       const res = await axios.get(`/production/soak-test/status`, {

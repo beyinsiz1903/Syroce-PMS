@@ -29,10 +29,7 @@ export default function CentralPricingManager({
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const token = localStorage.getItem('token');
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {

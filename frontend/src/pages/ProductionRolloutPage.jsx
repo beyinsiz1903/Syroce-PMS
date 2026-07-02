@@ -112,9 +112,7 @@ export default function ProductionRolloutDashboard() {
     const t = localStorage.getItem("token");
     if (t) setToken(t);
   }, []);
-  const headers = useCallback(() => ({
-    Authorization: `Bearer ${token}`
-  }), [token]);
+  const headers = useCallback(() => ({}), []);
   const loadData = useCallback(async () => {
     if (!token) return;
     setLoading(true);
@@ -154,7 +152,7 @@ export default function ProductionRolloutDashboard() {
       console.error(e);
     }
     setLoading(false);
-  }, [token, headers]);
+  }, [headers]);
   useEffect(() => {
     loadData();
   }, [loadData]);

@@ -183,7 +183,7 @@ export default function FolioDetailView({
   const [tab, setTab] = useState("timeline");
   const [notFound, setNotFound] = useState(false);
   const [notFoundReason, setNotFoundReason] = useState(""); // 'invalid_format' | 'not_found' | 'forbidden'
-  const token = localStorage.getItem("token");
+
   const [showChargeForm, setShowChargeForm] = useState(false);
   const [chargeForm, setChargeForm] = useState({
     description: "",
@@ -212,9 +212,7 @@ export default function FolioDetailView({
       const {
         data: d
       } = await axios.get(`/pms-core/folio/detail/${id}`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: {}
       });
       setData(d);
     } catch (e) {
@@ -234,7 +232,7 @@ export default function FolioDetailView({
     } finally {
       setLoading(false);
     }
-  }, [token, t]);
+  }, [t]);
   useEffect(() => {
     const id = propFolioId || paramFolioId;
     if (id) fetchDetail(id);
@@ -458,9 +456,7 @@ export default function FolioDetailView({
         amount: parseFloat(chargeForm.amount) * (parseInt(chargeForm.quantity) || 1),
         quantity: parseInt(chargeForm.quantity) || 1
       }, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: {}
       });
       toast.success("Masraf eklendi");
       setShowChargeForm(false);

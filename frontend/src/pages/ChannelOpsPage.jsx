@@ -14,10 +14,7 @@ import { alertDialog, confirmDialog } from '@/lib/dialogs';
 import { Activity, AlertTriangle, CheckCircle2, Clock, RefreshCw, XCircle, Wifi, WifiOff, Zap, Send, RotateCcw, Eye, ArrowRight, Timer, Shield, TrendingUp, AlertCircle, Inbox, ChevronRight, Filter, Gauge, Target, BarChart3, Sparkles } from 'lucide-react';
 const API = "";
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('token');
-  return token ? {
-    Authorization: `Bearer ${token}`
-  } : {};
+  return {};
 };
 
 // ── Helper components ──────────────────────────────────────────────

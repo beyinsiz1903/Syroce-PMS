@@ -75,9 +75,7 @@ const MappingManager = ({
     external_entity_id: '',
     external_entity_name: ''
   });
-  const headers = {
-    Authorization: `Bearer ${localStorage.getItem('token')}`
-  };
+  const headers = {};
   const loadConnectors = useCallback(async () => {
     try {
       const res = await axios.get(`/channel-manager/v2/connectors`, {

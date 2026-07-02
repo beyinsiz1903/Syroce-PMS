@@ -100,9 +100,7 @@ export default function AuditTimelinePage({
   });
   const [entityTrail, setEntityTrail] = useState(null);
   const token = localStorage.getItem("token") || localStorage.getItem("access_token");
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const fetchTimeline = useCallback(async () => {
     setLoading(true);
     try {

@@ -20,10 +20,7 @@ export default function CentralOfficeDashboard({
   const [revenue, setRevenue] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(false);
-  const token = localStorage.getItem('token');
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {

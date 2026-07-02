@@ -3,34 +3,22 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { 
-  FileText, 
-  TrendingUp, 
-  TrendingDown, 
-  Calendar, 
-  DollarSign,
-  Clock,
-  CheckCircle,
-  AlertTriangle,
-  ChevronLeft,
-  ChevronRight
-} from 'lucide-react';
+import { FileText, TrendingUp, TrendingDown, Calendar, DollarSign, Clock, CheckCircle, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-
 const MaintenanceReports = () => {
-  const { t } = useTranslation();
+  const {
+    t
+  } = useTranslation();
   const [reportType, setReportType] = useState('weekly'); // weekly or monthly
   const [weeklyReport, setWeeklyReport] = useState(null);
   const [monthlyReport, setMonthlyReport] = useState(null);
   const [currentMonth, setCurrentMonth] = useState(new Date().toISOString().slice(0, 7));
   const [weekOffset, setWeekOffset] = useState(0);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     loadReports();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [reportType, currentMonth, weekOffset]);
-
   const loadReports = async () => {
     setLoading(true);
     try {
@@ -47,12 +35,10 @@ const MaintenanceReports = () => {
       setLoading(false);
     }
   };
-
-  const changeMonth = (direction) => {
+  const changeMonth = direction => {
     const [year, month] = currentMonth.split('-').map(Number);
     let newMonth = month + direction;
     let newYear = year;
-
     if (newMonth > 12) {
       newMonth = 1;
       newYear++;
@@ -60,27 +46,18 @@ const MaintenanceReports = () => {
       newMonth = 12;
       newYear--;
     }
-
     setCurrentMonth(`${newYear}-${newMonth.toString().padStart(2, '0')}`);
   };
-
-  const getMonthName = (monthStr) => {
-    const months = [
-      'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
-      'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
-    ];
+  const getMonthName = monthStr => {
+    const months = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
     const [year, month] = monthStr.split('-');
     return `${months[parseInt(month) - 1]} ${year}`;
   };
-
   if (loading) {
     return <div className="text-center py-4">{t('cm.components_MaintenanceReports.yukleniyor')}</div>;
   }
-
   const report = reportType === 'weekly' ? weeklyReport : monthlyReport;
-
-  return (
-    <div className="space-y-4">
+  return <div className="space-y-4">
       {/* Header with Type Selector */}
       <Card>
         <CardHeader>
@@ -93,43 +70,23 @@ const MaintenanceReports = () => {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-2 mb-4">
-            <Button
-              variant={reportType === 'weekly' ? 'default' : 'outline'}
-              onClick={() => setReportType('weekly')}
-              className="w-full"
-            >
+            <Button variant={reportType === 'weekly' ? 'default' : 'outline'} onClick={() => setReportType('weekly')} className="w-full">
               {t('cm.components_MaintenanceReports.haftalik')}
             </Button>
-            <Button
-              variant={reportType === 'monthly' ? 'default' : 'outline'}
-              onClick={() => setReportType('monthly')}
-              className="w-full"
-            >
+            <Button variant={reportType === 'monthly' ? 'default' : 'outline'} onClick={() => setReportType('monthly')} className="w-full">
               {t('cm.components_MaintenanceReports.aylik')}
             </Button>
           </div>
 
           {/* Period Navigator */}
           <div className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => reportType === 'weekly' ? setWeekOffset(weekOffset - 1) : changeMonth(-1)}
-            >
+            <Button size="sm" variant="ghost" onClick={() => reportType === 'weekly' ? setWeekOffset(weekOffset - 1) : changeMonth(-1)}>
               <ChevronLeft className="w-4 h-4" />
             </Button>
             <span className="font-medium text-sm">
-              {reportType === 'weekly' 
-                ? `Hafta ${report.period.week_number} (${report.period.start} - ${report.period.end})`
-                : getMonthName(currentMonth)
-              }
+              {reportType === 'weekly' ? `Hafta ${report.period.week_number} (${report.period.start} - ${report.period.end})` : getMonthName(currentMonth)}
             </span>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => reportType === 'weekly' ? setWeekOffset(weekOffset + 1) : changeMonth(1)}
-              disabled={reportType === 'weekly' && weekOffset >= 0}
-            >
+            <Button size="sm" variant="ghost" onClick={() => reportType === 'weekly' ? setWeekOffset(weekOffset + 1) : changeMonth(1)} disabled={reportType === 'weekly' && weekOffset >= 0}>
               <ChevronRight className="w-4 h-4" />
             </Button>
           </div>
@@ -185,8 +142,7 @@ const MaintenanceReports = () => {
               </span>
             </div>
 
-            {reportType === 'monthly' && (
-              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+            {reportType === 'monthly' && <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
                 <div className="flex items-center space-x-2">
                   <CheckCircle className="w-5 h-5 text-green-600" />
                   <span className="text-sm font-medium">{t('cm.components_MaintenanceReports.ort_cozum_suresi')}</span>
@@ -194,25 +150,21 @@ const MaintenanceReports = () => {
                 <span className="font-bold text-green-600">
                   {report.summary.avg_resolution_time} dk
                 </span>
-              </div>
-            )}
+              </div>}
 
-            {report.summary.emergency > 0 && (
-              <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+            {report.summary.emergency > 0 && <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
                 <div className="flex items-center space-x-2">
                   <AlertTriangle className="w-5 h-5 text-red-600" />
                   <span className="text-sm font-medium">{t('cm.components_MaintenanceReports.acil_gorevler')}</span>
                 </div>
                 <Badge className="bg-red-500">{report.summary.emergency}</Badge>
-              </div>
-            )}
+              </div>}
           </div>
         </CardContent>
       </Card>
 
       {/* Cost Breakdown (Monthly Only) */}
-      {reportType === 'monthly' && monthlyReport.costs && (
-        <Card>
+      {reportType === 'monthly' && monthlyReport.costs && <Card>
           <CardHeader>
             <CardTitle className="flex items-center text-base">
               <DollarSign className="w-5 h-5 mr-2" />
@@ -235,8 +187,7 @@ const MaintenanceReports = () => {
               </div>
             </div>
           </CardContent>
-        </Card>
-      )}
+        </Card>}
 
       {/* By Category */}
       <Card>
@@ -245,67 +196,54 @@ const MaintenanceReports = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {Object.entries(report.by_category).map(([category, data]) => (
-              <div key={category} className="p-2 bg-gray-50 rounded-lg">
+            {Object.entries(report.by_category).map(([category, data]) => <div key={category} className="p-2 bg-gray-50 rounded-lg">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-sm font-medium capitalize">{category}</span>
                   <span className="text-sm font-bold">{data.count} {t('cm.components_MaintenanceReports.gorev')}</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-blue-500 h-2 rounded-full"
-                    style={{ width: `${(data.completed / data.count) * 100}%` }}
-                  />
+                  <div className="bg-blue-500 h-2 rounded-full" style={{
+                width: `${data.completed / data.count * 100}%`
+              }} />
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
                   {data.completed} {t('cm.components_MaintenanceReports.tamamlandi')}
                   {reportType === 'monthly' && data.cost > 0 && ` • ₺${data.cost.toFixed(0)}`}
                 </div>
-              </div>
-            ))}
+              </div>)}
           </div>
         </CardContent>
       </Card>
 
       {/* Top Issues (Weekly) */}
-      {reportType === 'weekly' && weeklyReport.top_issues && weeklyReport.top_issues.length > 0 && (
-        <Card>
+      {reportType === 'weekly' && weeklyReport.top_issues && weeklyReport.top_issues.length > 0 && <Card>
           <CardHeader>
             <CardTitle className="text-base">{t('cm.components_MaintenanceReports.en_sik_sorunlar')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {weeklyReport.top_issues.map((item, index) => (
-                <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+              {weeklyReport.top_issues.map((item, index) => <div key={item.id || index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                   <span className="text-sm">{item.issue}</span>
                   <Badge variant="outline">{item.count}</Badge>
-                </div>
-              ))}
+                </div>)}
             </div>
           </CardContent>
-        </Card>
-      )}
+        </Card>}
 
       {/* Most Active Rooms (Monthly) */}
-      {reportType === 'monthly' && monthlyReport.most_active_rooms && monthlyReport.most_active_rooms.length > 0 && (
-        <Card>
+      {reportType === 'monthly' && monthlyReport.most_active_rooms && monthlyReport.most_active_rooms.length > 0 && <Card>
           <CardHeader>
             <CardTitle className="text-base">{t('cm.components_MaintenanceReports.en_aktif_odalar')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {monthlyReport.most_active_rooms.slice(0, 5).map((room, index) => (
-                <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+              {monthlyReport.most_active_rooms.slice(0, 5).map((room, index) => <div key={room.id || index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                   <span className="text-sm font-medium">{room.room}</span>
                   <Badge className="bg-amber-500">{room.tasks} {t('cm.components_MaintenanceReports.gorev_7e401')}</Badge>
-                </div>
-              ))}
+                </div>)}
             </div>
           </CardContent>
-        </Card>
-      )}
-    </div>
-  );
+        </Card>}
+    </div>;
 };
-
 export default MaintenanceReports;

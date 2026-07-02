@@ -4,7 +4,6 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Clock, User, TrendingUp, Award } from 'lucide-react';
-
 const HousekeepingMobileEnhancements = () => {
   const [roomAssignments, setRoomAssignments] = useState([]);
   const [statistics, setStatistics] = useState([]);
@@ -15,20 +14,15 @@ const HousekeepingMobileEnhancements = () => {
   useEffect(() => {
     fetchRoomAssignments();
     fetchCleaningStatistics();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [selectedStaff]);
-
   const fetchRoomAssignments = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const url = selectedStaff === 'all' 
-        ? `/api/housekeeping/mobile/room-assignments`
-        : `/api/housekeeping/mobile/room-assignments?staff_name=${selectedStaff}`;
-      
+      const url = selectedStaff === 'all' ? `/api/housekeeping/mobile/room-assignments` : `/api/housekeeping/mobile/room-assignments?staff_name=${selectedStaff}`;
       const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {},
+        credentials: "include"
       });
-
       if (response.ok) {
         const data = await response.json();
         setRoomAssignments(data.assignments || []);
@@ -37,17 +31,12 @@ const HousekeepingMobileEnhancements = () => {
       console.error('Error fetching room assignments:', error);
     }
   };
-
   const fetchCleaningStatistics = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `/api/housekeeping/cleaning-time-statistics`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
-
+      const response = await fetch(`/api/housekeeping/cleaning-time-statistics`, {
+        headers: {},
+        credentials: "include"
+      });
       if (response.ok) {
         const data = await response.json();
         setStatistics(data.statistics || []);
@@ -58,8 +47,7 @@ const HousekeepingMobileEnhancements = () => {
       setLoading(false);
     }
   };
-
-  const getStatusColor = (status) => {
+  const getStatusColor = status => {
     const colors = {
       pending: 'bg-yellow-100 text-yellow-800',
       in_progress: 'bg-blue-100 text-blue-800',
@@ -67,8 +55,7 @@ const HousekeepingMobileEnhancements = () => {
     };
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
-
-  const getPriorityColor = (priority) => {
+  const getPriorityColor = priority => {
     const colors = {
       urgent: 'bg-red-100 text-red-800',
       high: 'bg-amber-100 text-amber-800',
@@ -77,40 +64,26 @@ const HousekeepingMobileEnhancements = () => {
     };
     return colors[priority] || 'bg-gray-100 text-gray-800';
   };
-
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
+    return <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
+      </div>;
   }
-
-  return (
-    <div className="space-y-4">
+  return <div className="space-y-4">
       {/* Tab Navigation */}
       <div className="flex gap-2 border-b">
-        <Button
-          variant={activeTab === 'assignments' ? 'default' : 'ghost'}
-          onClick={() => setActiveTab('assignments')}
-          className="rounded-b-none"
-        >
+        <Button variant={activeTab === 'assignments' ? 'default' : 'ghost'} onClick={() => setActiveTab('assignments')} className="rounded-b-none">
           <User className="w-4 h-4 mr-2" />
           Room Assignments
         </Button>
-        <Button
-          variant={activeTab === 'statistics' ? 'default' : 'ghost'}
-          onClick={() => setActiveTab('statistics')}
-          className="rounded-b-none"
-        >
+        <Button variant={activeTab === 'statistics' ? 'default' : 'ghost'} onClick={() => setActiveTab('statistics')} className="rounded-b-none">
           <TrendingUp className="w-4 h-4 mr-2" />
           Cleaning Statistics
         </Button>
       </div>
 
       {/* Room Assignments Tab */}
-      {activeTab === 'assignments' && (
-        <div className="space-y-4">
+      {activeTab === 'assignments' && <div className="space-y-4">
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -123,21 +96,15 @@ const HousekeepingMobileEnhancements = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Staff</SelectItem>
-                      {Array.from(new Set(roomAssignments.map(a => a.assigned_to))).map(staff => (
-                        <SelectItem key={staff} value={staff}>{staff}</SelectItem>
-                      ))}
+                      {Array.from(new Set(roomAssignments.map(a => a.assigned_to))).map(staff => <SelectItem key={staff} value={staff}>{staff}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              {roomAssignments.length === 0 ? (
-                <div className="text-center text-gray-500 py-8">No active assignments</div>
-              ) : (
-                <div className="space-y-3">
-                  {roomAssignments.map((assignment, idx) => (
-                    <div key={idx} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+              {roomAssignments.length === 0 ? <div className="text-center text-gray-500 py-8">No active assignments</div> : <div className="space-y-3">
+                  {roomAssignments.map((assignment, idx) => <div key={idx} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
                       <div className="flex items-start justify-between">
                         <div className="space-y-2 flex-1">
                           <div className="flex items-center gap-3">
@@ -159,29 +126,23 @@ const HousekeepingMobileEnhancements = () => {
                             <div>Type: {assignment.task_type}</div>
                             <div>Room Type: {assignment.room_type}</div>
                           </div>
-                          {assignment.duration_minutes && (
-                            <div className="flex items-center gap-1 text-sm">
+                          {assignment.duration_minutes && <div className="flex items-center gap-1 text-sm">
                               <Clock className="w-4 h-4 text-blue-600" />
                               <span className="font-medium">
                                 {assignment.duration_minutes} minutes
                               </span>
                               <span className="text-gray-600">in progress</span>
-                            </div>
-                          )}
+                            </div>}
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    </div>)}
+                </div>}
             </CardContent>
           </Card>
-        </div>
-      )}
+        </div>}
 
       {/* Cleaning Statistics Tab */}
-      {activeTab === 'statistics' && (
-        <div className="space-y-4">
+      {activeTab === 'statistics' && <div className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -190,12 +151,8 @@ const HousekeepingMobileEnhancements = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {statistics.length === 0 ? (
-                <div className="text-center text-gray-500 py-8">No statistics available</div>
-              ) : (
-                <div className="space-y-4">
-                  {statistics.map((stat, idx) => (
-                    <Card key={idx} className="border-l-4 border-l-blue-500">
+              {statistics.length === 0 ? <div className="text-center text-gray-500 py-8">No statistics available</div> : <div className="space-y-4">
+                  {statistics.map((stat, idx) => <Card key={idx} className="border-l-4 border-l-blue-500">
                       <CardContent className="p-4">
                         <div className="space-y-3">
                           <div className="flex items-center justify-between">
@@ -224,12 +181,10 @@ const HousekeepingMobileEnhancements = () => {
                             </div>
                           </div>
 
-                          {stat.by_task_type && Object.keys(stat.by_task_type).length > 0 && (
-                            <div>
+                          {stat.by_task_type && Object.keys(stat.by_task_type).length > 0 && <div>
                               <div className="text-sm font-medium text-gray-700 mb-2">By Task Type:</div>
                               <div className="grid grid-cols-1 gap-2">
-                                {Object.entries(stat.by_task_type).map(([taskType, taskData]) => (
-                                  <div key={taskType} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                                {Object.entries(stat.by_task_type).map(([taskType, taskData]) => <div key={taskType} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                                     <span className="capitalize">{taskType}</span>
                                     <div className="flex items-center gap-3">
                                       <span className="text-sm text-gray-600">
@@ -239,23 +194,16 @@ const HousekeepingMobileEnhancements = () => {
                                         {taskData.avg_duration} min avg
                                       </span>
                                     </div>
-                                  </div>
-                                ))}
+                                  </div>)}
                               </div>
-                            </div>
-                          )}
+                            </div>}
                         </div>
                       </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
+                    </Card>)}
+                </div>}
             </CardContent>
           </Card>
-        </div>
-      )}
-    </div>
-  );
+        </div>}
+    </div>;
 };
-
 export default HousekeepingMobileEnhancements;

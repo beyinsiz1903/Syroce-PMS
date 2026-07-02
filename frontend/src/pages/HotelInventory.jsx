@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useTranslation } from 'react-i18next';
 import { confirmDialog } from '@/lib/dialogs';
+import VirtualizedGrid from '@/components/VirtualizedGrid';
 const EMPTY_ITEM = {
   name: '',
   sku: '',
@@ -587,78 +588,82 @@ const HotelInventory = ({
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {Object.entries(inventory.reduce((acc, item) => {
-                  if (!acc[item.category]) acc[item.category] = [];
-                  acc[item.category].push(item);
-                  return acc;
-                }, {})).map(([category, items]) => <div key={category} className="border rounded-lg p-4">
-                      <h3 className="font-semibold text-lg mb-3 flex items-center">
-                        <span className="mr-2">{getCategoryIcon(category)}</span>
-                        {category} ({items.length})
-                      </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {items.map(item => {
+                  <VirtualizedGrid
+                    items={inventory}
+                    renderCard={(item) => {
                       const status = getStockStatus(item.quantity, item.reorder_level);
-                      return <Card key={item.id} className="hover:shadow-md transition-shadow">
-                              <CardContent className="p-4">
-                                <div className="flex justify-between items-start mb-2">
-                                  <div>
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <p className="font-semibold">{item.name}</p>
-                                      {item.is_consumable === false && <Badge className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0">
-                                          Çok Kullanımlık
-                                        </Badge>}
-                                    </div>
-                                    <p className="text-sm text-gray-600">{item.sku}</p>
-                                  </div>
-                                  <Badge className={status.color}>{status.label}</Badge>
+                      return (
+                        <Card key={item.id} className="hover:shadow-md transition-shadow h-full">
+                          <CardContent className="p-4 flex flex-col h-full">
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <p className="font-semibold">{item.name}</p>
+                                  {item.is_consumable === false && (
+                                    <Badge className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0">
+                                      Çok Kullanımlık
+                                    </Badge>
+                                  )}
                                 </div>
-                                <div className="space-y-1 text-sm">
-                                  <div className="flex justify-between">
-                                    <span className="text-gray-600">Mevcut:</span>
-                                    <span className={`font-semibold ${status.textColor}`}>
-                                      {item.quantity} {item.unit}
-                                    </span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-gray-600">Min. Seviye:</span>
-                                    <span>{item.reorder_level} {item.unit}</span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-gray-600">Birim Fiyat:</span>
-                                    <span>₺{item.unit_cost.toFixed(2)}</span>
-                                  </div>
-                                  <div className="flex justify-between border-t pt-1 mt-1">
-                                    <span className="text-gray-600">Toplam Değer:</span>
-                                    <span className="font-semibold">₺{(item.quantity * item.unit_cost).toFixed(2)}</span>
-                                  </div>
-                                </div>
-                                <div className="flex gap-1 mt-3">
-                                  <Button size="sm" variant="outline" className="flex-1 text-xs px-2 border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => openMovement(item, 'out')} title="Stoktan düş (kullanım/tüketim)">
-                                    <ArrowDownCircle className="w-3.5 h-3.5 mr-1" /> Düş
-                                  </Button>
-                                  <Button size="sm" variant="outline" className="flex-1 text-xs px-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50" onClick={() => openMovement(item, 'in')} title="Stoğa ekle (manuel giriş)">
-                                    <ArrowUpCircle className="w-3.5 h-3.5 mr-1" /> Ekle
-                                  </Button>
-                                  <Button size="sm" variant="outline" className="text-xs px-2" onClick={() => openMovement(item, 'adjustment')} title="Sayım sonucu düzeltme">
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                  </Button>
-                                  <Button size="sm" variant="outline" className="text-xs px-2 border-sky-300 text-sky-700 hover:bg-sky-50" onClick={() => openTransfer(item)} title="Başka bir depoya/konuma transfer et">
-                                    <ArrowRightLeft className="w-3.5 h-3.5" />
-                                  </Button>
-                                  <Button size="sm" variant="outline" className={`text-xs px-2 ${item.is_consumable === false ? 'border-indigo-300 text-indigo-700' : 'border-gray-300'}`} onClick={() => toggleConsumable(item)} title={item.is_consumable === false ? 'Çok kullanımlık (stoktan düşmez) — değiştir' : 'Tek kullanımlık — değiştir'}>
-                                    {item.is_consumable === false ? <BedDouble className="w-3.5 h-3.5" /> : <Droplet className="w-3.5 h-3.5" />}
-                                  </Button>
-                                </div>
-                                {item.quantity <= item.reorder_level && <Button size="sm" className="w-full mt-2 bg-blue-600 hover:bg-blue-700" onClick={() => createPRForItem(item, Math.max(1, item.reorder_level * 2 - item.quantity))}>
-                                    <Plus className="w-3.5 h-3.5 mr-1" />
-                                    Talep Oluştur
-                                  </Button>}
-                              </CardContent>
-                            </Card>;
-                    })}
-                      </div>
-                    </div>)}
+                                <p className="text-sm text-gray-600">{item.sku}</p>
+                              </div>
+                              <Badge className={status.color}>{status.label}</Badge>
+                            </div>
+                            <div className="space-y-1 text-sm flex-1">
+                              <div className="flex justify-between">
+                                <span className="text-gray-600">Mevcut:</span>
+                                <span className={`font-semibold ${status.textColor}`}>
+                                  {item.quantity} {item.unit}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-600">Min. Seviye:</span>
+                                <span>{item.reorder_level} {item.unit}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-600">Birim Fiyat:</span>
+                                <span>₺{item.unit_cost.toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between border-t pt-1 mt-1">
+                                <span className="text-gray-600">Toplam Değer:</span>
+                                <span className="font-semibold">₺{(item.quantity * item.unit_cost).toFixed(2)}</span>
+                              </div>
+                            </div>
+                            <div className="flex gap-1 mt-3">
+                              <Button size="sm" variant="outline" className="flex-1 text-xs px-2 border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => openMovement(item, 'out')} title="Stoktan düş (kullanım/tüketim)">
+                                <ArrowDownCircle className="w-3.5 h-3.5 mr-1" /> Düş
+                              </Button>
+                              <Button size="sm" variant="outline" className="flex-1 text-xs px-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50" onClick={() => openMovement(item, 'in')} title="Stoğa ekle (manuel giriş)">
+                                <ArrowUpCircle className="w-3.5 h-3.5 mr-1" /> Ekle
+                              </Button>
+                              <Button size="sm" variant="outline" className="text-xs px-2" onClick={() => openMovement(item, 'adjustment')} title="Sayım sonucu düzeltme">
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button size="sm" variant="outline" className="text-xs px-2 border-sky-300 text-sky-700 hover:bg-sky-50" onClick={() => openTransfer(item)} title="Başka bir depoya/konuma transfer et">
+                                <ArrowRightLeft className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button size="sm" variant="outline" className={`text-xs px-2 ${item.is_consumable === false ? 'border-indigo-300 text-indigo-700' : 'border-gray-300'}`} onClick={() => toggleConsumable(item)} title={item.is_consumable === false ? 'Çok kullanımlık (stoktan düşmez) — değiştir' : 'Tek kullanımlık — değiştir'}>
+                                {item.is_consumable === false ? <BedDouble className="w-3.5 h-3.5" /> : <Droplet className="w-3.5 h-3.5" />}
+                              </Button>
+                            </div>
+                            {item.quantity <= item.reorder_level && (
+                              <Button size="sm" className="w-full mt-2 bg-blue-600 hover:bg-blue-700" onClick={() => createPRForItem(item, Math.max(1, item.reorder_level * 2 - item.quantity))}>
+                                <Plus className="w-3.5 h-3.5 mr-1" />
+                                Talep Oluştur
+                              </Button>
+                            )}
+                          </CardContent>
+                        </Card>
+                      );
+                    }}
+                    categoryHeader={(category, count) => (
+                      <h3 className="font-semibold text-lg flex items-center">
+                        <span className="mr-2">{getCategoryIcon(category)}</span>
+                        {category} ({count})
+                      </h3>
+                    )}
+                    itemHeight={270}
+                  />
                 </div>
               </CardContent>
             </Card>

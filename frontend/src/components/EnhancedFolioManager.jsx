@@ -2,50 +2,49 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import SplitFolioDialog from './SplitFolioDialog';
-
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 const API_URL = import.meta.env.VITE_BACKEND_URL || '';
-
-const EnhancedFolioManager = ({ bookingId }) => {
-  const { t } = useTranslation();
+const EnhancedFolioManager = ({
+  bookingId
+}) => {
+  const {
+    t
+  } = useTranslation();
   const [folio, setFolio] = useState(null);
   const [charges, setCharges] = useState([]);
   const [payments, setPayments] = useState([]);
   const [showChargeModal, setShowChargeModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showSplitModal, setShowSplitModal] = useState(false);
-
   useEffect(() => {
     if (bookingId) {
       fetchFolio();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [bookingId]);
-
   const fetchFolio = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(
-        `/folio/${bookingId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const response = await axios.get(`/folio/${bookingId}`, {
+        headers: {}
+      });
       setFolio(response.data.folio);
       setCharges(response.data.charges || []);
       setPayments(response.data.payments || []);
     } catch (error) {
       console.error('Error fetching folio:', error);
+    
+      toast.error('İşlem başarısız oldu');
     }
   };
-
-  const postCharge = async (chargeData) => {
+  const postCharge = async chargeData => {
     try {
-      const token = localStorage.getItem('token');
-      await axios.post(
-        `/folio/charge`,
-        { ...chargeData, folio_id: folio.id },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await axios.post(`/folio/charge`, {
+        ...chargeData,
+        folio_id: folio.id
+      }, {
+        headers: {}
+      });
       toast.success('Masraf başarıyla kaydedildi');
       setShowChargeModal(false);
       fetchFolio();
@@ -54,15 +53,14 @@ const EnhancedFolioManager = ({ bookingId }) => {
       toast.error('Masraf kaydedilemedi');
     }
   };
-
-  const postPayment = async (paymentData) => {
+  const postPayment = async paymentData => {
     try {
-      const token = localStorage.getItem('token');
-      await axios.post(
-        `/folio/payment`,
-        { ...paymentData, folio_id: folio.id },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await axios.post(`/folio/payment`, {
+        ...paymentData,
+        folio_id: folio.id
+      }, {
+        headers: {}
+      });
       toast.success('Ödeme başarıyla kaydedildi');
       setShowPaymentModal(false);
       fetchFolio();
@@ -71,17 +69,15 @@ const EnhancedFolioManager = ({ bookingId }) => {
       toast.error('Ödeme kaydedilemedi');
     }
   };
-
   const handleCheckout = async () => {
-    if (!await confirmDialog({ message: 'Bu misafirin çıkışını yapmak istediğinize emin misiniz?', variant: 'danger' })) return;
-    
+    if (!(await confirmDialog({
+      message: 'Bu misafirin çıkışını yapmak istediğinize emin misiniz?',
+      variant: 'danger'
+    }))) return;
     try {
-      const token = localStorage.getItem('token');
-      await axios.post(
-        `/bookings/${bookingId}/checkout`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await axios.post(`/bookings/${bookingId}/checkout`, {}, {
+        headers: {}
+      });
       toast.success('Misafir çıkışı başarıyla tamamlandı');
       fetchFolio();
     } catch (error) {
@@ -89,43 +85,25 @@ const EnhancedFolioManager = ({ bookingId }) => {
       toast.error('Çıkış yapılamadı');
     }
   };
-
   if (!folio) {
-    return (
-      <div className="p-6 bg-white">
+    return <div className="p-6 bg-white">
         <p>{t('cm.components_EnhancedFolioManager.folio_yukleniyor')}</p>
-      </div>
-    );
+      </div>;
   }
-
-  return (
-    <div className="p-6 bg-white">
+  return <div className="p-6 bg-white">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Folio - {folio.folio_number}</h1>
         <div className="flex flex-wrap gap-4">
-          <button
-            onClick={() => setShowChargeModal(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
+          <button onClick={() => setShowChargeModal(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             {t('cm.components_EnhancedFolioManager.masraf_ekle')}
           </button>
-          <button
-            onClick={() => setShowPaymentModal(true)}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-          >
+          <button onClick={() => setShowPaymentModal(true)} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
             {t('cm.components_EnhancedFolioManager.odeme_kaydet')}
           </button>
-          <button
-            onClick={() => setShowSplitModal(true)}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-            disabled={folio.status !== 'open'}
-          >
+          <button onClick={() => setShowSplitModal(true)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700" disabled={folio.status !== 'open'}>
             Split Folio
           </button>
-          <button
-            onClick={handleCheckout}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-          >
+          <button onClick={handleCheckout} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
             {t('cm.components_EnhancedFolioManager.cikis_yap')}
           </button>
         </div>
@@ -167,8 +145,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
               </tr>
             </thead>
             <tbody>
-              {charges.map((charge, idx) => (
-                <tr key={idx} className="border-b hover:bg-gray-50">
+              {charges.map((charge, idx) => <tr key={idx} className="border-b hover:bg-gray-50">
                   <td className="p-3">{charge.date}</td>
                   <td className="p-3">{charge.description}</td>
                   <td className="p-3">
@@ -177,8 +154,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
                     </span>
                   </td>
                   <td className="p-3 text-right font-semibold">${charge.total.toFixed(2)}</td>
-                </tr>
-              ))}
+                </tr>)}
             </tbody>
           </table>
         </div>
@@ -198,8 +174,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
               </tr>
             </thead>
             <tbody>
-              {payments.map((payment, idx) => (
-                <tr key={idx} className="border-b hover:bg-gray-50">
+              {payments.map((payment, idx) => <tr key={idx} className="border-b hover:bg-gray-50">
                   <td className="p-3">{payment.date}</td>
                   <td className="p-3">
                     <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-sm">
@@ -208,28 +183,26 @@ const EnhancedFolioManager = ({ bookingId }) => {
                   </td>
                   <td className="p-3">{payment.reference_number}</td>
                   <td className="p-3 text-right font-semibold text-green-600">${payment.amount.toFixed(2)}</td>
-                </tr>
-              ))}
+                </tr>)}
             </tbody>
           </table>
         </div>
       </div>
 
       {/* Charge Modal */}
-      {showChargeModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      {showChargeModal && <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-[500px]">
             <h3 className="text-xl font-bold mb-4">{t('cm.components_EnhancedFolioManager.masraf_ekle_f6944')}</h3>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              const formData = new FormData(e.target);
-              postCharge({
-                description: formData.get('description'),
-                charge_category: formData.get('category'),
-                quantity: parseInt(formData.get('quantity')),
-                unit_price: parseFloat(formData.get('unit_price'))
-              });
-            }}>
+            <form onSubmit={e => {
+          e.preventDefault();
+          const formData = new FormData(e.target);
+          postCharge({
+            description: formData.get('description'),
+            charge_category: formData.get('category'),
+            quantity: parseInt(formData.get('quantity')),
+            unit_price: parseFloat(formData.get('unit_price'))
+          });
+        }}>
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-2">Description</label>
                 <input type="text" name="description" required className="w-full px-4 py-2 border rounded-lg" />
@@ -262,23 +235,21 @@ const EnhancedFolioManager = ({ bookingId }) => {
               </div>
             </form>
           </div>
-        </div>
-      )}
+        </div>}
 
       {/* Payment Modal */}
-      {showPaymentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      {showPaymentModal && <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-[500px]">
             <h3 className="text-xl font-bold mb-4">{t('cm.components_EnhancedFolioManager.odeme_kaydet_c61db')}</h3>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              const formData = new FormData(e.target);
-              postPayment({
-                payment_method: formData.get('method'),
-                amount: parseFloat(formData.get('amount')),
-                reference_number: formData.get('reference')
-              });
-            }}>
+            <form onSubmit={e => {
+          e.preventDefault();
+          const formData = new FormData(e.target);
+          postPayment({
+            payment_method: formData.get('method'),
+            amount: parseFloat(formData.get('amount')),
+            reference_number: formData.get('reference')
+          });
+        }}>
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-2">Payment Method</label>
                 <select name="method" required className="w-full px-4 py-2 border rounded-lg">
@@ -303,26 +274,17 @@ const EnhancedFolioManager = ({ bookingId }) => {
               </div>
             </form>
           </div>
-        </div>
-      )}
+        </div>}
 
       {/* Split Folio Modal */}
-      {showSplitModal && folio && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      {showSplitModal && folio && <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="max-w-4xl w-full">
-            <SplitFolioDialog
-              folio={folio}
-              onClose={() => setShowSplitModal(false)}
-              onSuccess={() => {
-                setShowSplitModal(false);
-                fetchFolio();
-              }}
-            />
+            <SplitFolioDialog folio={folio} onClose={() => setShowSplitModal(false)} onSuccess={() => {
+          setShowSplitModal(false);
+          fetchFolio();
+        }} />
           </div>
-        </div>
-      )}
-    </div>
-  );
+        </div>}
+    </div>;
 };
-
 export default EnhancedFolioManager;

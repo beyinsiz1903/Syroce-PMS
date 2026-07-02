@@ -65,9 +65,7 @@ const MappingCompletenessTab = () => {
   const [selectedConnector, setSelectedConnector] = useState('');
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
-  const token = localStorage.getItem('token');
   const headers = {
-    Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json'
   };
   const fetchConnectors = useCallback(async () => {

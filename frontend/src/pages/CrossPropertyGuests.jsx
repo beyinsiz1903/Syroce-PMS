@@ -21,10 +21,7 @@ export default function CrossPropertyGuests({
   const [selectedGuest, setSelectedGuest] = useState(null);
   const [loyaltySummary, setLoyaltySummary] = useState(null);
   const [loading, setLoading] = useState(false);
-  const token = localStorage.getItem('token');
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const searchGuests = async () => {
     setLoading(true);
     try {

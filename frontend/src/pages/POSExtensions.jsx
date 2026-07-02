@@ -33,10 +33,11 @@ async function apiFetch(path, opts = {}) {
     "Content-Type": "application/json",
     ...(opts.headers || {})
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (token) headers.Authorization = `Bearer ${localStorage.getItem('token')}`;
   const res = await fetch(path, {
     ...opts,
-    headers
+    headers,
+    credentials: "include"
   });
   let body = null;
   try {

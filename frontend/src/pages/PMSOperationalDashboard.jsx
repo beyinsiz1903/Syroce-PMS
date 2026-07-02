@@ -274,11 +274,9 @@ function NightAuditPanel({
   const [businessDate, setBusinessDate] = useState("");
   useEffect(() => {
     axios.get(`/pms-core/night-audit/business-date`, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
+      headers: {}
     }).then(r => setBusinessDate(r.data.business_date)).catch(err => console.error('Business date load failed:', err));
-  }, [token]);
+  }, []);
   const runAudit = async () => {
     setLoading(true);
     try {
@@ -287,9 +285,7 @@ function NightAuditPanel({
       } = await axios.post(`/pms-core/night-audit/run`, {
         business_date: businessDate
       }, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: {}
       });
       setAuditResult(data);
       toast.success(t("pmsOperations.nightAuditCompleted"));
@@ -328,16 +324,14 @@ function MultiPropertyAuditPanel({
   const [board, setBoard] = useState(null);
   const [blockers, setBlockers] = useState(null);
   useEffect(() => {
-    const headers = {
-      Authorization: `Bearer ${token}`
-    };
+    const headers = {};
     axios.get(`/pms-core/multi-property/audit-board`, {
       headers
     }).then(r => setBoard(r.data)).catch(err => console.error('Audit board load failed:', err));
     axios.get(`/pms-core/multi-property/unresolved-blockers`, {
       headers
     }).then(r => setBlockers(r.data)).catch(err => console.error('Unresolved blockers load failed:', err));
-  }, [token]);
+  }, []);
   const statusColor = s => ({
     completed: "bg-emerald-100 text-emerald-700",
     running: "bg-blue-100 text-blue-700",
@@ -405,13 +399,11 @@ function AutoHousekeepingPanel({
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     axios.get(`/pms-core/housekeeping/assignment-suggestions`, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
+      headers: {}
     }).then(r => setSuggestions(r.data)).catch(e => {
       console.warn('[PMSOpsDashboard] housekeeping suggestions fetch failed:', e?.response?.status ?? e?.message);
     }).finally(() => setLoading(false));
-  }, [token]);
+  }, []);
   const priorityColor = p => ({
     critical: "bg-red-100 text-red-700 border-red-200",
     high: "bg-amber-100 text-amber-700 border-amber-200",
@@ -463,13 +455,11 @@ function AuditTrailPanel({
   const [trail, setTrail] = useState([]);
   useEffect(() => {
     axios.get(`/pms-core/audit-trail?limit=30`, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
+      headers: {}
     }).then(r => setTrail(r.data.trail || [])).catch(e => {
       console.warn('[PMSOpsDashboard] audit-trail fetch failed:', e?.response?.status ?? e?.message);
     });
-  }, [token]);
+  }, []);
   if (!trail.length) return <p className="text-sm text-gray-400 dark:text-slate-500 py-4">{t("pmsOperations.noAuditTrail")}</p>;
   return <div data-testid="audit-trail-panel" className="space-y-2 max-h-96 overflow-y-auto">
       {trail.map((e, i) => <div key={e.id || i} className="text-xs bg-gray-50 dark:bg-slate-800/50 p-2 rounded border border-gray-100 dark:border-slate-800 flex items-start gap-2">
@@ -500,16 +490,13 @@ export default function PMSOperationalDashboard({
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("overview");
   const [dateRange, setDateRange] = useState("7d");
-  const token = localStorage.getItem("token");
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       const {
         data: d
       } = await axios.get(`/pms-core/dashboard/operational`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: {}
       });
       setData(d);
     } catch {
@@ -517,7 +504,7 @@ export default function PMSOperationalDashboard({
     } finally {
       setLoading(false);
     }
-  }, [token, t]);
+  }, [t]);
   const fetchTrends = useCallback(async (range, customStart, customEnd) => {
     const today = new Date();
     let sd, ed;
@@ -538,13 +525,11 @@ export default function PMSOperationalDashboard({
       const {
         data: t
       } = await axios.get(`/pms-core/dashboard/trends?start_date=${sd}&end_date=${ed}`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: {}
       });
       setTrends(t);
     } catch {/* trends optional */}
-  }, [token]);
+  }, []);
   useEffect(() => {
     fetchData();
   }, [fetchData]);
@@ -561,9 +546,7 @@ export default function PMSOperationalDashboard({
         exception_id: id,
         resolution: "Resolved from dashboard"
       }, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: {}
       });
       toast.success(t("pmsOperations.exceptionResolved"));
       fetchData();
@@ -682,28 +665,28 @@ export default function PMSOperationalDashboard({
           <TabsContent value="night-audit">
             <Card className="bg-white dark:bg-card border-gray-200 dark:border-slate-700 shadow-sm">
               <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm text-blue-600">{t("pmsOperations.nightAuditControl")}</CardTitle></CardHeader>
-              <CardContent className="px-4 pb-4"><NightAuditPanel token={token} onRefresh={fetchData} t={t} /></CardContent>
+              <CardContent className="px-4 pb-4"><NightAuditPanel token={localStorage.getItem('token')} onRefresh={fetchData} t={t} /></CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="multi-property">
             <Card className="bg-white dark:bg-card border-gray-200 dark:border-slate-700 shadow-sm">
               <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm text-blue-600">{t("pmsOperations.multiPropertyAudit")}</CardTitle></CardHeader>
-              <CardContent className="px-4 pb-4"><MultiPropertyAuditPanel token={token} t={t} /></CardContent>
+              <CardContent className="px-4 pb-4"><MultiPropertyAuditPanel token={localStorage.getItem('token')} t={t} /></CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="housekeeping">
             <Card className="bg-white dark:bg-card border-gray-200 dark:border-slate-700 shadow-sm">
               <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm text-blue-600">{t("pmsOperations.autoHKAssignment")}</CardTitle></CardHeader>
-              <CardContent className="px-4 pb-4"><AutoHousekeepingPanel token={token} t={t} /></CardContent>
+              <CardContent className="px-4 pb-4"><AutoHousekeepingPanel token={localStorage.getItem('token')} t={t} /></CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="audit-trail">
             <Card className="bg-white dark:bg-card border-gray-200 dark:border-slate-700 shadow-sm">
               <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm text-gray-500 dark:text-slate-400">{t("pmsOperations.auditTrailRecent")}</CardTitle></CardHeader>
-              <CardContent className="px-4 pb-4"><AuditTrailPanel token={token} t={t} /></CardContent>
+              <CardContent className="px-4 pb-4"><AuditTrailPanel token={localStorage.getItem('token')} t={t} /></CardContent>
             </Card>
           </TabsContent>
         </Tabs>

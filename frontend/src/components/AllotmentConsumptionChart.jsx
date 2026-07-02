@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,16 +11,18 @@ import { useTranslation } from 'react-i18next';
  * Visualizes: Allocated vs Sold vs Remaining rooms per operator
  * Demo pitch: "Siz otelinizdeki allotment kaosunu tek tuşla yönetiyorsunuz"
  */
-const AllotmentConsumptionChart = ({ dateRange }) => {
-  const { t } = useTranslation();
+const AllotmentConsumptionChart = ({
+  dateRange
+}) => {
+  const {
+    t
+  } = useTranslation();
   const [allotments, setAllotments] = useState([]);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     loadAllotmentData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [dateRange]);
-
   const loadAllotmentData = async () => {
     setLoading(true);
     try {
@@ -30,47 +33,71 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
     } catch (error) {
       console.error('Failed to load allotment data:', error);
       // Demo data for presentation
-      setAllotments([
-        { operator: 'TUI', allocated: 10, sold: 7, remaining: 3, utilization: 70, status: 'good' },
-        { operator: 'HolidayCheck', allocated: 15, sold: 12, remaining: 3, utilization: 80, status: 'good' },
-        { operator: 'Expedia', allocated: 8, sold: 8, remaining: 0, utilization: 100, status: 'critical' },
-        { operator: 'Booking.com', allocated: 20, sold: 5, remaining: 15, utilization: 25, status: 'warning' }
-      ]);
+      setAllotments([{
+        operator: 'TUI',
+        allocated: 10,
+        sold: 7,
+        remaining: 3,
+        utilization: 70,
+        status: 'good'
+      }, {
+        operator: 'HolidayCheck',
+        allocated: 15,
+        sold: 12,
+        remaining: 3,
+        utilization: 80,
+        status: 'good'
+      }, {
+        operator: 'Expedia',
+        allocated: 8,
+        sold: 8,
+        remaining: 0,
+        utilization: 100,
+        status: 'critical'
+      }, {
+        operator: 'Booking.com',
+        allocated: 20,
+        sold: 5,
+        remaining: 15,
+        utilization: 25,
+        status: 'warning'
+      }]);
     } finally {
       setLoading(false);
     }
   };
-
-  const getStatusColor = (status) => {
+  const getStatusColor = status => {
     switch (status) {
-      case 'critical': return 'red';
-      case 'warning': return 'yellow';
-      case 'good': return 'green';
-      default: return 'gray';
+      case 'critical':
+        return 'red';
+      case 'warning':
+        return 'yellow';
+      case 'good':
+        return 'green';
+      default:
+        return 'gray';
     }
   };
-
-  const getStatusIcon = (status) => {
+  const getStatusIcon = status => {
     switch (status) {
-      case 'critical': return <AlertCircle className="w-4 h-4 text-red-600" />;
-      case 'warning': return <Clock className="w-4 h-4 text-yellow-600" />;
-      case 'good': return <CheckCircle className="w-4 h-4 text-green-600" />;
-      default: return null;
+      case 'critical':
+        return <AlertCircle className="w-4 h-4 text-red-600" />;
+      case 'warning':
+        return <Clock className="w-4 h-4 text-yellow-600" />;
+      case 'good':
+        return <CheckCircle className="w-4 h-4 text-green-600" />;
+      default:
+        return null;
     }
   };
-
   if (loading) {
-    return (
-      <Card>
+    return <Card>
         <CardContent className="py-12 text-center text-gray-400">
           Loading allotment data...
         </CardContent>
-      </Card>
-    );
+      </Card>;
   }
-
-  return (
-    <Card className="border-2 border-indigo-300">
+  return <Card className="border-2 border-indigo-300">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Package className="w-5 h-5 text-indigo-600" />
@@ -106,17 +133,7 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
 
           {/* Operator Breakdown */}
           <div className="space-y-3">
-            {allotments.map((allotment, index) => (
-              <div
-                key={index}
-                className={`p-4 rounded-lg border-2 transition-all ${
-                  allotment.status === 'critical'
-                    ? 'border-red-300 bg-red-50'
-                    : allotment.status === 'warning'
-                    ? 'border-yellow-300 bg-yellow-50'
-                    : 'border-green-300 bg-green-50'
-                }`}
-              >
+            {allotments.map((allotment, index) => <div key={allotment.id || index} className={`p-4 rounded-lg border-2 transition-all ${allotment.status === 'critical' ? 'border-red-300 bg-red-50' : allotment.status === 'warning' ? 'border-yellow-300 bg-yellow-50' : 'border-green-300 bg-green-50'}`}>
                 {/* Operator Header */}
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -124,9 +141,7 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
                     <span className="font-semibold text-gray-900">
                       {allotment.operator}
                     </span>
-                    <Badge
-                      className={`bg-${getStatusColor(allotment.status)}-500 text-xs`}
-                    >
+                    <Badge className={`bg-${getStatusColor(allotment.status)}-500 text-xs`}>
                       {allotment.utilization}% Doluluk
                     </Badge>
                   </div>
@@ -139,20 +154,16 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
                 <div className="mb-3">
                   <div className="w-full bg-gray-200 rounded-full h-8 relative overflow-hidden">
                     {/* Sold (Green) */}
-                    <div
-                      className="absolute left-0 h-full bg-green-500 flex items-center justify-center text-white text-xs font-semibold transition-all"
-                      style={{ width: `${(allotment.sold / allotment.allocated) * 100}%` }}
-                    >
+                    <div className="absolute left-0 h-full bg-green-500 flex items-center justify-center text-white text-xs font-semibold transition-all" style={{
+                  width: `${allotment.sold / allotment.allocated * 100}%`
+                }}>
                       {allotment.sold > 0 && `${allotment.sold} Satılan`}
                     </div>
                     {/* Remaining (Orange) */}
-                    <div
-                      className="absolute h-full bg-amber-300 flex items-center justify-center text-gray-700 text-xs font-semibold transition-all"
-                      style={{
-                        left: `${(allotment.sold / allotment.allocated) * 100}%`,
-                        width: `${(allotment.remaining / allotment.allocated) * 100}%`
-                      }}
-                    >
+                    <div className="absolute h-full bg-amber-300 flex items-center justify-center text-gray-700 text-xs font-semibold transition-all" style={{
+                  left: `${allotment.sold / allotment.allocated * 100}%`,
+                  width: `${allotment.remaining / allotment.allocated * 100}%`
+                }}>
                       {allotment.remaining > 0 && `${allotment.remaining} Kalan`}
                     </div>
                   </div>
@@ -176,24 +187,17 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
 
                 {/* Status Message */}
                 <div className="mt-2 text-xs text-center">
-                  {allotment.status === 'critical' && (
-                    <span className="text-red-700 font-semibold">
+                  {allotment.status === 'critical' && <span className="text-red-700 font-semibold">
                       Allotment doldu - Acil aksiyon gerekli!
-                    </span>
-                  )}
-                  {allotment.status === 'warning' && (
-                    <span className="text-yellow-700 font-semibold">
+                    </span>}
+                  {allotment.status === 'warning' && <span className="text-yellow-700 font-semibold">
                       {t('cm.components_AllotmentConsumptionChart.dusuk_stok_takibe_alin')}
-                    </span>
-                  )}
-                  {allotment.status === 'good' && (
-                    <span className="text-green-700 font-semibold">
+                    </span>}
+                  {allotment.status === 'good' && <span className="text-green-700 font-semibold">
                       {t('cm.components_AllotmentConsumptionChart.saglikli_seviyede')}
-                    </span>
-                  )}
+                    </span>}
                 </div>
-              </div>
-            ))}
+              </div>)}
           </div>
 
           {/* Demo Pitch Banner */}
@@ -212,8 +216,6 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
           </div>
         </div>
       </CardContent>
-    </Card>
-  );
+    </Card>;
 };
-
 export default AllotmentConsumptionChart;

@@ -27,9 +27,7 @@ function PIIStrictModeDashboard({
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
   const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {

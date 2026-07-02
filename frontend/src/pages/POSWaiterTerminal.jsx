@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { toast } from 'sonner';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -20,7 +21,9 @@ const STEPS = {
   ORDER: 'order'
 };
 const POSWaiterTerminal = () => {
-  const { t } = useTranslation();
+  const {
+    t
+  } = useTranslation();
   const navigate = useNavigate();
   const [step, setStep] = useState(STEPS.OUTLET);
   const [outlets, setOutlets] = useState([]);
@@ -47,7 +50,7 @@ const POSWaiterTerminal = () => {
       const list = Array.isArray(res.data) ? res.data : res.data.outlets || [];
       setOutlets(list.filter(o => o.status !== 'inactive'));
     } catch (err) {
-      console.error('Outlets yuklenemedi:', err);
+      console.error('Outlets yuklenemedi:', err); toast.error('Outlets yuklenemedi');
     }
   }, []);
   useEffect(() => {
@@ -58,7 +61,7 @@ const POSWaiterTerminal = () => {
       const res = await axios.get(`/pos/table-layout/${outletId}`);
       setTables(res.data.tables || []);
     } catch (err) {
-      console.error('Masalar yuklenemedi:', err);
+      console.error('Masalar yuklenemedi:', err); toast.error('Masalar yuklenemedi');
       setTables([]);
     }
   }, []);
@@ -72,7 +75,7 @@ const POSWaiterTerminal = () => {
       const list = Array.isArray(res.data) ? res.data : res.data.menu_items || [];
       setMenuItems(list);
     } catch (err) {
-      console.error('Menu yuklenemedi:', err);
+      console.error('Menu yuklenemedi:', err); toast.error('Menu yuklenemedi');
       setMenuItems([]);
     }
   }, []);
@@ -81,7 +84,7 @@ const POSWaiterTerminal = () => {
       const res = await axios.get('/frontdesk/inhouse');
       setInhouse(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
-      console.error('Konaklayan misafirler yuklenemedi:', err);
+      console.error('Konaklayan misafirler yuklenemedi:', err); toast.error('Misafirler yuklenemedi');
       setInhouse([]);
     }
   }, []);
@@ -211,12 +214,10 @@ const POSWaiterTerminal = () => {
         pendingKeyRef.current = globalThis.crypto?.randomUUID?.() || `pos-term-${Date.now()}-${Math.random()}`;
       }
       const signature = paymentMethod === 'room_charge' && hasSignatureRef.current ? canvasRef.current.toDataURL('image/png') : null;
-      const token = localStorage.getItem('token');
       const res = await fetch('/api/pos/create-order', {
         credentials: "include",
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({

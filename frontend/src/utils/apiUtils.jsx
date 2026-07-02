@@ -74,7 +74,7 @@ export const dashboardAPI = {
   getPMSDashboard: (token) => fetchWithCache(
     '/pms/dashboard',
     {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     },
     { enabled: true, ttl: 5 * 60 * 1000, key: 'pms_dashboard' }
   ),
@@ -85,7 +85,7 @@ export const dashboardAPI = {
   getRoomStatus: (token) => fetchWithCache(
     '/housekeeping/room-status',
     {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     },
     { enabled: true, ttl: 1 * 60 * 1000, key: 'room_status' } // 1 minute for real-time data
   ),
@@ -96,7 +96,7 @@ export const dashboardAPI = {
   getRoleBasedDashboard: (token) => fetchWithCache(
     '/dashboard/role-based',
     {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     },
     { enabled: true, ttl: 5 * 60 * 1000, key: 'role_dashboard' }
   ),
@@ -107,7 +107,7 @@ export const dashboardAPI = {
   getEmployeePerformance: (token, params = {}) => fetchWithCache(
     `/dashboard/employee-performance?${new URLSearchParams(params)}`,
     {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     },
     { enabled: true, ttl: 10 * 60 * 1000, key: `employee_performance_${JSON.stringify(params)}` }
   ),
@@ -118,7 +118,7 @@ export const dashboardAPI = {
   getGuestSatisfaction: (token, days = 30) => fetchWithCache(
     `/dashboard/guest-satisfaction-trends?days=${days}`,
     {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     },
     { enabled: true, ttl: 10 * 60 * 1000, key: `guest_satisfaction_${days}` }
   ),
@@ -129,7 +129,7 @@ export const dashboardAPI = {
   getFinanceDashboard: (token) => fetchWithCache(
     '/department/finance/dashboard',
     {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     },
     { enabled: true, ttl: 5 * 60 * 1000, key: 'finance_dashboard' }
   ),
@@ -140,7 +140,7 @@ export const dashboardAPI = {
   getFrontOfficeDashboard: (token) => fetchWithCache(
     '/department/front-office/dashboard',
     {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     },
     { enabled: true, ttl: 3 * 60 * 1000, key: 'front_office_dashboard' }
   ),
@@ -151,7 +151,7 @@ export const dashboardAPI = {
   getHousekeepingDashboard: (token) => fetchWithCache(
     '/department/housekeeping/dashboard',
     {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     },
     { enabled: true, ttl: 2 * 60 * 1000, key: 'housekeeping_dashboard' }
   ),
@@ -162,7 +162,7 @@ export const dashboardAPI = {
   getAccountingDashboard: (token) => fetchWithCache(
     '/accounting/dashboard',
     {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
     },
     { enabled: true, ttl: 10 * 60 * 1000, key: 'accounting_dashboard' }
   )

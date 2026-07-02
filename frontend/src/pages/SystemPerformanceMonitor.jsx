@@ -26,9 +26,7 @@ const SystemPerformanceMonitor = ({
   const loadData = useCallback(async () => {
     try {
       const token = localStorage.getItem('token') || localStorage.getItem('access_token');
-      const headers = {
-        Authorization: `Bearer ${token}`
-      };
+      const headers = {};
       const [perfRes, dbRes] = await Promise.all([axios.get(`/system/performance`, {
         headers
       }).catch(() => ({

@@ -3,54 +3,46 @@ import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Shield, Lock, FileText, Download, Eye, AlertTriangle } from 'lucide-react';
-
 const SecurityGDPRModule = () => {
   const [auditLogs, setAuditLogs] = useState([]);
   const [gdprRequests, setGdprRequests] = useState([]);
   const [certifications, setCertifications] = useState(null);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     fetchAuditLogs();
     fetchGDPRRequests();
     fetchCertifications();
   }, []);
-
   const fetchAuditLogs = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `/api/security/audit-logs?days=7`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
+      const response = await fetch(`/api/security/audit-logs?days=7`, {
+        headers: {},
+        credentials: "include"
+      });
       const data = await response.json();
       setAuditLogs(data.logs || []);
     } catch (error) {
       console.error('Error:', error);
     }
   };
-
   const fetchGDPRRequests = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `/api/gdpr/data-requests`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
+      const response = await fetch(`/api/gdpr/data-requests`, {
+        headers: {},
+        credentials: "include"
+      });
       const data = await response.json();
       setGdprRequests(data.requests || []);
     } catch (error) {
       console.error('Error:', error);
     }
   };
-
   const fetchCertifications = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `/api/compliance/certifications`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
+      const response = await fetch(`/api/compliance/certifications`, {
+        headers: {},
+        credentials: "include"
+      });
       const data = await response.json();
       setCertifications(data);
     } catch (error) {
@@ -59,9 +51,7 @@ const SecurityGDPRModule = () => {
       setLoading(false);
     }
   };
-
-  return (
-    <div className="p-6 space-y-6">
+  return <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
@@ -74,8 +64,7 @@ const SecurityGDPRModule = () => {
 
       {/* Certifications */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {certifications?.certifications?.map((cert, idx) => (
-          <Card key={idx}>
+        {certifications?.certifications?.map((cert, idx) => <Card key={idx}>
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <Shield className="w-8 h-8 text-blue-600" />
@@ -85,28 +74,21 @@ const SecurityGDPRModule = () => {
               </div>
               <h3 className="font-bold text-lg mb-2">{cert.name}</h3>
               <div className="space-y-1 text-sm">
-                {cert.issued_date && (
-                  <div className="flex justify-between">
+                {cert.issued_date && <div className="flex justify-between">
                     <span className="text-gray-600">Issued:</span>
                     <span>{cert.issued_date}</span>
-                  </div>
-                )}
-                {cert.expiry_date && (
-                  <div className="flex justify-between">
+                  </div>}
+                {cert.expiry_date && <div className="flex justify-between">
                     <span className="text-gray-600">Expires:</span>
                     <span>{cert.expiry_date}</span>
-                  </div>
-                )}
-                {cert.last_audit && (
-                  <div className="flex justify-between">
+                  </div>}
+                {cert.last_audit && <div className="flex justify-between">
                     <span className="text-gray-600">Last Audit:</span>
                     <span>{cert.last_audit}</span>
-                  </div>
-                )}
+                  </div>}
               </div>
             </CardContent>
-          </Card>
-        ))}
+          </Card>)}
       </div>
 
       {/* System Info */}
@@ -148,8 +130,7 @@ const SecurityGDPRModule = () => {
               </tr>
             </thead>
             <tbody>
-              {gdprRequests.map((req, idx) => (
-                <tr key={idx} className="border-b hover:bg-gray-50">
+              {gdprRequests.map((req, idx) => <tr key={idx} className="border-b hover:bg-gray-50">
                   <td className="p-3">{req.guest_email}</td>
                   <td className="p-3">
                     <Badge variant="outline">{req.request_type}</Badge>
@@ -161,8 +142,7 @@ const SecurityGDPRModule = () => {
                   </td>
                   <td className="p-3">{req.requested_at}</td>
                   <td className="p-3">{req.completed_at || 'Pending'}</td>
-                </tr>
-              ))}
+                </tr>)}
             </tbody>
           </table>
         </CardContent>
@@ -186,8 +166,7 @@ const SecurityGDPRModule = () => {
                 </tr>
               </thead>
               <tbody>
-                {auditLogs.slice(0, 30).map((log, idx) => (
-                  <tr key={idx} className="border-b hover:bg-gray-50 text-sm">
+                {auditLogs.slice(0, 30).map((log, idx) => <tr key={idx} className="border-b hover:bg-gray-50 text-sm">
                     <td className="p-2">{new Date(log.timestamp).toLocaleString()}</td>
                     <td className="p-2">{log.user}</td>
                     <td className="p-2">
@@ -197,15 +176,12 @@ const SecurityGDPRModule = () => {
                     <td className="p-2">
                       <Badge className="bg-green-500 text-xs">{log.status}</Badge>
                     </td>
-                  </tr>
-                ))}
+                  </tr>)}
               </tbody>
             </table>
           </div>
         </CardContent>
       </Card>
-    </div>
-  );
+    </div>;
 };
-
 export default SecurityGDPRModule;

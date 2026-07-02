@@ -200,10 +200,7 @@ const DataModelDashboard = ({
   const [activeTab, setActiveTab] = useState('ingest');
   const propertyId = tenant?.property_id || 'prop-001';
   const headers = useCallback(() => {
-    const token = localStorage.getItem('token');
-    return token ? {
-      Authorization: `Bearer ${token}`
-    } : {};
+    return {};
   }, []);
   const fetchAll = useCallback(async () => {
     setLoading(true);

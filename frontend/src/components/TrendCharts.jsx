@@ -4,31 +4,32 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Activity, Zap, Shield, Layers, RefreshCw, TrendingUp, TrendingDown, Minus } from 'lucide-react';
-
 const API = "";
-
-const MiniBarChart = ({ data, maxVal, color = '#22d3ee', height = 48 }) => {
+const MiniBarChart = ({
+  data,
+  maxVal,
+  color = '#22d3ee',
+  height = 48
+}) => {
   if (!data || data.length === 0) return <div className="text-xs text-gray-500 dark:text-slate-400">No data</div>;
   const max = maxVal || Math.max(...data, 1);
   const barW = Math.max(2, Math.min(8, Math.floor(200 / data.length)));
   const gap = 1;
-
-  return (
-    <div className="flex items-end gap-px" style={{ height }}>
-      {data.map((v, i) => (
-        <div key={i} style={{
-          width: barW,
-          height: Math.max(1, (v / max) * height),
-          backgroundColor: color,
-          opacity: 0.7 + (i / data.length) * 0.3,
-          borderRadius: '1px 1px 0 0',
-        }} />
-      ))}
-    </div>
-  );
+  return <div className="flex items-end gap-px" style={{
+    height
+  }}>
+      {data.map((v, i) => <div key={v.id || i} style={{
+      width: barW,
+      height: Math.max(1, v / max * height),
+      backgroundColor: color,
+      opacity: 0.7 + i / data.length * 0.3,
+      borderRadius: '1px 1px 0 0'
+    }} />)}
+    </div>;
 };
-
-const TrendIndicator = ({ data }) => {
+const TrendIndicator = ({
+  data
+}) => {
   if (!data || data.length < 2) return <Minus className="w-3 h-3 text-gray-500 dark:text-slate-400" />;
   const recent = data.slice(-5).reduce((a, b) => a + b, 0) / Math.min(5, data.length);
   const older = data.slice(0, 5).reduce((a, b) => a + b, 0) / Math.min(5, data.length);
@@ -36,33 +37,36 @@ const TrendIndicator = ({ data }) => {
   if (recent < older * 0.9) return <TrendingDown className="w-3 h-3 text-red-600" />;
   return <Minus className="w-3 h-3 text-gray-500 dark:text-slate-400" />;
 };
-
-export const TrendCharts = ({ headers }) => {
+export const TrendCharts = ({
+  headers
+}) => {
   const [trends, setTrends] = useState(null);
   const [loading, setLoading] = useState(false);
   const [hours, setHours] = useState(24);
-
   const fetchTrends = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get(`/channel-manager/monitoring/trends?hours=${hours}`, { headers: headers() });
+      const {
+        data
+      } = await axios.get(`/channel-manager/monitoring/trends?hours=${hours}`, {
+        headers: headers()
+      });
       setTrends(data);
-    } catch (e) { console.error('Trends fetch failed:', e); }
+    } catch (e) {
+      console.error('Trends fetch failed:', e);
+    }
     setLoading(false);
   }, [headers, hours]);
-
-  useEffect(() => { fetchTrends(); }, [fetchTrends]);
-
+  useEffect(() => {
+    fetchTrends();
+  }, [fetchTrends]);
   if (!trends) {
-    return (
-      <Card className="bg-white/60 border-gray-200 dark:bg-card/60 dark:border-slate-700">
+    return <Card className="bg-white/60 border-gray-200 dark:bg-card/60 dark:border-slate-700">
         <CardContent className="p-6 text-center text-gray-500 text-sm dark:text-slate-400">
           {loading ? 'Loading trend data...' : 'No trend data available yet. Metrics are collected every 60 seconds.'}
         </CardContent>
-      </Card>
-    );
+      </Card>;
   }
-
   const ingestEvents = trends.ingest?.map(d => d.events_1h) || [];
   const ingestFailed = trends.ingest?.map(d => d.failed) || [];
   const ingestDupes = trends.ingest?.map(d => d.duplicates) || [];
@@ -73,11 +77,8 @@ export const TrendCharts = ({ headers }) => {
   const reconCrit = trends.reconciliation?.map(d => d.critical) || [];
   const queueDepth = trends.queue?.map(d => d.depth) || [];
   const queueRetry = trends.queue?.map(d => d.retry_backlog) || [];
-
-  const latest = (arr) => arr.length > 0 ? arr[arr.length - 1] : 0;
-
-  return (
-    <Card data-testid="trend-charts-panel" className="bg-white/60 border-gray-200 dark:bg-card/60 dark:border-slate-700">
+  const latest = arr => arr.length > 0 ? arr[arr.length - 1] : 0;
+  return <Card data-testid="trend-charts-panel" className="bg-white/60 border-gray-200 dark:bg-card/60 dark:border-slate-700">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-medium text-gray-700 dark:text-slate-200 flex items-center gap-2">
@@ -87,13 +88,9 @@ export const TrendCharts = ({ headers }) => {
             </Badge>
           </CardTitle>
           <div className="flex items-center gap-2">
-            {[6, 12, 24, 48].map(h => (
-              <button key={h} data-testid={`trend-hours-${h}`}
-                onClick={() => setHours(h)}
-                className={`px-2 py-0.5 text-xs rounded ${hours === h ? 'bg-cyan-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}>
+            {[6, 12, 24, 48].map(h => <button key={h} data-testid={`trend-hours-${h}`} onClick={() => setHours(h)} className={`px-2 py-0.5 text-xs rounded ${hours === h ? 'bg-cyan-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}>
                 {h}h
-              </button>
-            ))}
+              </button>)}
             <Button variant="ghost" size="sm" onClick={fetchTrends} disabled={loading} className="text-gray-600 hover:text-gray-900 dark:text-slate-300 dark:hover:text-white h-7 px-2">
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             </Button>
@@ -225,6 +222,5 @@ export const TrendCharts = ({ headers }) => {
           </div>
         </div>
       </CardContent>
-    </Card>
-  );
+    </Card>;
 };

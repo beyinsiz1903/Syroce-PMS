@@ -6,16 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2, User, Search, UserCheck, UserPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-
 const BookingDialog = ({
   open,
   onClose,
@@ -38,9 +31,11 @@ const BookingDialog = ({
   updateMultiRoomChildrenAges,
   updateMultiRoomChildAge,
   isLite,
-  setOpenDialog,
+  setOpenDialog
 }) => {
-  const { t } = useTranslation();
+  const {
+    t
+  } = useTranslation();
   // Guest search state
   const [guestSearchQuery, setGuestSearchQuery] = useState('');
   const [guestSearchResults, setGuestSearchResults] = useState([]);
@@ -60,19 +55,19 @@ const BookingDialog = ({
   }, [open]);
 
   // Guest search with debounce
-  const handleGuestSearch = useCallback((query) => {
+  const handleGuestSearch = useCallback(query => {
     setGuestSearchQuery(query);
     setSelectedGuest(null);
-    setNewBooking(prev => ({ ...prev, guest_id: '' }));
-
+    setNewBooking(prev => ({
+      ...prev,
+      guest_id: ''
+    }));
     if (guestSearchTimerRef.current) clearTimeout(guestSearchTimerRef.current);
-
     if (query.trim().length < 2) {
       setGuestSearchResults([]);
       setShowGuestDropdown(false);
       return;
     }
-
     setGuestSearchLoading(true);
     guestSearchTimerRef.current = setTimeout(async () => {
       try {
@@ -88,12 +83,15 @@ const BookingDialog = ({
   }, [setNewBooking]);
 
   // Select an existing guest from search results
-  const handleSelectGuest = useCallback((guest) => {
+  const handleSelectGuest = useCallback(guest => {
     setSelectedGuest(guest);
     setGuestSearchQuery(guest.name);
     setShowGuestDropdown(false);
     setGuestSearchResults([]);
-    setNewBooking(prev => ({ ...prev, guest_id: guest.id }));
+    setNewBooking(prev => ({
+      ...prev,
+      guest_id: guest.id
+    }));
   }, [setNewBooking]);
 
   // Clear selected guest
@@ -102,11 +100,12 @@ const BookingDialog = ({
     setGuestSearchQuery('');
     setGuestSearchResults([]);
     setShowGuestDropdown(false);
-    setNewBooking(prev => ({ ...prev, guest_id: '' }));
+    setNewBooking(prev => ({
+      ...prev,
+      guest_id: ''
+    }));
   }, [setNewBooking]);
-
-  return (
-<Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+  return <Dialog open={open} onOpenChange={o => !o && onClose()}>
   <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
     <DialogHeader>
       <DialogTitle>{t('cm.components_pms_BookingDialog.yeni_rezervasyon_olustur')}</DialogTitle>
@@ -117,8 +116,7 @@ const BookingDialog = ({
       <div className="grid grid-cols-2 gap-4 items-end">
         <div>
           <Label>{t('cm.components_pms_BookingDialog.misafir')}</Label>
-          {selectedGuest ? (
-            <div className="mt-1 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-md p-2.5" data-testid="booking-dialog-selected-guest">
+          {selectedGuest ? <div className="mt-1 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-md p-2.5" data-testid="booking-dialog-selected-guest">
               <UserCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-blue-900 truncate">{selectedGuest.name}</p>
@@ -128,48 +126,21 @@ const BookingDialog = ({
                   {selectedGuest.total_stays > 0 && ` | ${selectedGuest.total_stays} konaklama`}
                 </p>
               </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0 text-blue-400 hover:text-blue-600 hover:bg-blue-100"
-                onClick={handleClearGuest}
-                data-testid="booking-dialog-clear-guest"
-              >
+              <Button type="button" variant="ghost" size="sm" className="h-6 w-6 p-0 text-blue-400 hover:text-blue-600 hover:bg-blue-100" onClick={handleClearGuest} data-testid="booking-dialog-clear-guest">
                 &times;
               </Button>
-            </div>
-          ) : (
-            <div className="relative mt-1">
+            </div> : <div className="relative mt-1">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <Input
-                  value={guestSearchQuery}
-                  onChange={(e) => handleGuestSearch(e.target.value)}
-                  onFocus={() => { if (guestSearchResults.length > 0) setShowGuestDropdown(true); }}
-                  placeholder={t('cm.components_pms_BookingDialog.misafir_ara_isim_e_posta_telefon')}
-                  className="pl-9"
-                  data-testid="booking-dialog-guest-search"
-                />
-                {guestSearchLoading && (
-                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                )}
+                <Input value={guestSearchQuery} onChange={e => handleGuestSearch(e.target.value)} onFocus={() => {
+                  if (guestSearchResults.length > 0) setShowGuestDropdown(true);
+                }} placeholder={t('cm.components_pms_BookingDialog.misafir_ara_isim_e_posta_telefon')} className="pl-9" data-testid="booking-dialog-guest-search" />
+                {guestSearchLoading && <span className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />}
               </div>
 
               {/* Search results dropdown */}
-              {showGuestDropdown && guestSearchResults.length > 0 && (
-                <div
-                  className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto"
-                  data-testid="booking-dialog-guest-dropdown"
-                >
-                  {guestSearchResults.map((g) => (
-                    <button
-                      key={g.id}
-                      type="button"
-                      className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-50 last:border-b-0 transition-colors"
-                      onClick={() => handleSelectGuest(g)}
-                      data-testid={`booking-dialog-guest-option-${g.id}`}
-                    >
+              {showGuestDropdown && guestSearchResults.length > 0 && <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto" data-testid="booking-dialog-guest-dropdown">
+                  {guestSearchResults.map(g => <button key={g.id} type="button" className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-50 last:border-b-0 transition-colors" onClick={() => handleSelectGuest(g)} data-testid={`booking-dialog-guest-option-${g.id}`}>
                       <div className="flex items-center gap-2">
                         <UserCheck className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
                         <div className="min-w-0">
@@ -183,31 +154,20 @@ const BookingDialog = ({
                           </p>
                         </div>
                       </div>
-                    </button>
-                  ))}
-                </div>
-              )}
+                    </button>)}
+                </div>}
 
               {/* No results hint */}
-              {guestSearchQuery.trim().length >= 2 && !guestSearchLoading && showGuestDropdown && guestSearchResults.length === 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg px-3 py-2">
+              {guestSearchQuery.trim().length >= 2 && !guestSearchLoading && showGuestDropdown && guestSearchResults.length === 0 && <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg px-3 py-2">
                   <div className="flex items-center gap-2 text-gray-500">
                     <UserPlus className="w-3.5 h-3.5" />
                     <span className="text-sm">{t('cm.components_pms_BookingDialog.sonuc_bulunamadi_yeni_misafir_kaydedin')}</span>
                   </div>
-                </div>
-              )}
-            </div>
-          )}
+                </div>}
+            </div>}
         </div>
         <div className="flex justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setOpenDialog('guest')}
-            data-testid="booking-dialog-register-guest"
-          >
+          <Button type="button" variant="outline" size="sm" onClick={() => setOpenDialog('guest')} data-testid="booking-dialog-register-guest">
             {t('cm.components_pms_BookingDialog.yeni_misafir_kaydet')}
           </Button>
         </div>
@@ -226,119 +186,75 @@ const BookingDialog = ({
         </div>
 
         <div className="space-y-3">
-          {multiRoomBooking.map((room, index) => (
-            <div key={index} className="border rounded-md bg-white p-3 space-y-3">
+          {multiRoomBooking.map((room, index) => <div key={room.id || index} className="border rounded-md bg-white p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium text-sm">Room #{index + 1}</div>
-                {multiRoomBooking.length > 1 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                    onClick={() => removeRoomFromMultiBooking(index)}
-                  >
+                {multiRoomBooking.length > 1 && <Button type="button" variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => removeRoomFromMultiBooking(index)}>
                     Remove
-                  </Button>
-                )}
+                  </Button>}
               </div>
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <Label className="text-xs">Room *</Label>
-                  <Select
-                    value={room.room_id}
-                    onValueChange={(v) => updateMultiRoomField(index, 'room_id', v)}
-                  >
+                  <Select value={room.room_id} onValueChange={v => updateMultiRoomField(index, 'room_id', v)}>
                     <SelectTrigger><SelectValue placeholder="Select room" /></SelectTrigger>
                     <SelectContent>
-                      {rooms.filter(r => r.status === 'available').map(r => (
-                        <SelectItem key={r.id} value={r.id}>
+                      {rooms.filter(r => r.status === 'available').map(r => <SelectItem key={r.id} value={r.id}>
                           Room {r.room_number} - {r.room_type}
-                        </SelectItem>
-                      ))}
+                        </SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
                   <Label className="text-xs">Adults</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={room.adults}
-                    onChange={(e) => updateMultiRoomField(index, 'adults', e.target.value)}
-                  />
+                  <Input type="number" min="1" value={room.adults} onChange={e => updateMultiRoomField(index, 'adults', e.target.value)} />
                 </div>
                 <div>
                   <Label className="text-xs">Children</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={room.children}
-                    onChange={(e) => updateMultiRoomChildrenAges(index, e.target.value)}
-                  />
+                  <Input type="number" min="0" value={room.children} onChange={e => updateMultiRoomChildrenAges(index, e.target.value)} />
                 </div>
               </div>
 
-              {room.children > 0 && (
-                <div>
+              {room.children > 0 && <div>
                   <Label className="text-xs">Children Ages</Label>
                   <div className="grid grid-cols-4 gap-2 mt-1">
-                    {Array.from({ length: room.children }).map((_, ageIndex) => (
-                      <Input
-                        key={ageIndex}
-                        type="number"
-                        min="0"
-                        max="17"
-                        placeholder={`Child ${ageIndex + 1}`}
-                        value={room.children_ages?.[ageIndex] ?? ''}
-                        onChange={(e) => updateMultiRoomChildAge(index, ageIndex, e.target.value)}
-                      />
-                    ))}
+                    {Array.from({
+                    length: room.children
+                  }).map((_, ageIndex) => <Input key={ageIndex} type="number" min="0" max="17" placeholder={`Child ${ageIndex + 1}`} value={room.children_ages?.[ageIndex] ?? ''} onChange={e => updateMultiRoomChildAge(index, ageIndex, e.target.value)} />)}
                   </div>
-                </div>
-              )}
+                </div>}
 
               <div className="grid grid-cols-2 gap-3 pt-2 border-t mt-2">
                 <div>
                   <Label className="text-xs">Rate Plan</Label>
-                  <Select
-                    value={room.rate_plan || ''}
-                    onValueChange={(v) => {
-                      // Set rate plan and suggest base rate from selected plan
-                      const selected = ratePlans.find(rp => rp.code === v || rp.id === v);
-                      updateMultiRoomField(index, 'rate_plan', v);
-                      if (selected && selected.base_price) {
-                        updateMultiRoomField(index, 'base_rate', selected.base_price);
-                        if (!room.total_amount || room.total_amount === 0) {
-                          updateMultiRoomField(index, 'total_amount', selected.base_price);
-                        }
+                  <Select value={room.rate_plan || ''} onValueChange={v => {
+                    // Set rate plan and suggest base rate from selected plan
+                    const selected = ratePlans.find(rp => rp.code === v || rp.id === v);
+                    updateMultiRoomField(index, 'rate_plan', v);
+                    if (selected && selected.base_price) {
+                      updateMultiRoomField(index, 'base_rate', selected.base_price);
+                      if (!room.total_amount || room.total_amount === 0) {
+                        updateMultiRoomField(index, 'total_amount', selected.base_price);
                       }
-                    }}
-                  >
+                    }
+                  }}>
                     <SelectTrigger><SelectValue placeholder="Select rate plan" /></SelectTrigger>
                     <SelectContent>
-                      {ratePlans.map(rp => (
-                        <SelectItem key={rp.id} value={rp.code || rp.id}>
+                      {ratePlans.map(rp => <SelectItem key={rp.id} value={rp.code || rp.id}>
                           {rp.name} ({rp.code}) - {rp.currency} {rp.base_price}
-                        </SelectItem>
-                      ))}
+                        </SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
                   <Label className="text-xs">Package</Label>
-                  <Select
-                    value={room.package_code || ''}
-                    onValueChange={(v) => updateMultiRoomField(index, 'package_code', v)}
-                  >
+                  <Select value={room.package_code || ''} onValueChange={v => updateMultiRoomField(index, 'package_code', v)}>
                     <SelectTrigger><SelectValue placeholder="No package" /></SelectTrigger>
                     <SelectContent>
-                      {packages.map(pkg => (
-                        <SelectItem key={pkg.id} value={pkg.code}>
+                      {packages.map(pkg => <SelectItem key={pkg.id} value={pkg.code}>
                           {pkg.name} ({pkg.code})
-                        </SelectItem>
-                      ))}
+                        </SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -347,25 +263,14 @@ const BookingDialog = ({
               <div className="grid grid-cols-2 gap-3 pt-2">
                 <div>
                   <Label className="text-xs">Base Rate</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={room.base_rate === 0 ? '' : room.base_rate}
-                    onChange={(e) => updateMultiRoomField(index, 'base_rate', e.target.value)}
-                  />
+                  <Input type="number" step="0.01" value={room.base_rate === 0 ? '' : room.base_rate} onChange={e => updateMultiRoomField(index, 'base_rate', e.target.value)} />
                 </div>
                 <div>
                   <Label className="text-xs">Total Amount *</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={room.total_amount === 0 ? '' : room.total_amount}
-                    onChange={(e) => updateMultiRoomField(index, 'total_amount', e.target.value)}
-                  />
+                  <Input type="number" step="0.01" value={room.total_amount === 0 ? '' : room.total_amount} onChange={e => updateMultiRoomField(index, 'total_amount', e.target.value)} />
                 </div>
               </div>
-            </div>
-          ))}
+            </div>)}
         </div>
       </div>
 
@@ -373,63 +278,48 @@ const BookingDialog = ({
       <div className="grid grid-cols-2 gap-4">
         <div>
           <Label>Check-in *</Label>
-          <Input type="date" value={newBooking.check_in} onChange={(e) => setNewBooking({...newBooking, check_in: e.target.value})} required />
+          <Input type="date" value={newBooking.check_in} onChange={e => setNewBooking({
+              ...newBooking,
+              check_in: e.target.value
+            })} required />
         </div>
         <div>
           <Label>Check-out *</Label>
-          <Input type="date" value={newBooking.check_out} onChange={(e) => setNewBooking({...newBooking, check_out: e.target.value})} required />
+          <Input type="date" value={newBooking.check_out} onChange={e => setNewBooking({
+              ...newBooking,
+              check_out: e.target.value
+            })} required />
         </div>
       </div>
 
       {/* Adults and Children for summary (kept for compatibility but hidden) */}
       <div className="hidden">
-        <Input 
-          type="number" 
-          min="1" 
-          value={newBooking.adults} 
-          onChange={(e) => {
+        <Input type="number" min="1" value={newBooking.adults} onChange={e => {
             const adults = parseInt(e.target.value) || 1;
-            setNewBooking({...newBooking, adults, guests_count: adults + newBooking.children});
-          }} 
-        />
-        <Input 
-          type="number" 
-          min="0" 
-          value={newBooking.children} 
-          onChange={(e) => handleChildrenChange(e.target.value)} 
-        />
+            setNewBooking({
+              ...newBooking,
+              adults,
+              guests_count: adults + newBooking.children
+            });
+          }} />
+        <Input type="number" min="0" value={newBooking.children} onChange={e => handleChildrenChange(e.target.value)} />
       </div>
 
       {/* Children Ages - Show only if children > 0 */}
-      {newBooking.children > 0 && (
-        <div>
+      {newBooking.children > 0 && <div>
           <Label>Children Ages</Label>
           <div className="grid grid-cols-4 gap-2 mt-2">
-            {Array.from({ length: newBooking.children }).map((_, index) => (
-              <Input
-                key={index}
-                type="number"
-                min="0"
-                max="17"
-                placeholder={`Child ${index + 1} age`}
-                value={newBooking.children_ages[index] || ''}
-                onChange={(e) => handleChildAgeChange(index, e.target.value)}
-              />
-            ))}
+            {Array.from({
+              length: newBooking.children
+            }).map((_, index) => <Input key={_.id || index} type="number" min="0" max="17" placeholder={`Child ${index + 1} age`} value={newBooking.children_ages[index] || ''} onChange={e => handleChildAgeChange(index, e.target.value)} />)}
           </div>
-        </div>
-      )}
+        </div>}
 
       {/* Company Selection */}
       <div>
         <div className="flex justify-between items-center mb-2">
           <Label>Company (Optional)</Label>
-          <Button 
-            type="button" 
-            variant="outline" 
-            size="sm" 
-            onClick={() => setOpenDialog('company')}
-          >
+          <Button type="button" variant="outline" size="sm" onClick={() => setOpenDialog('company')}>
             <Plus className="w-4 h-4 mr-1" />
             New Company
           </Button>
@@ -438,16 +328,13 @@ const BookingDialog = ({
           <SelectTrigger><SelectValue placeholder="Select company (optional)" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="none">None</SelectItem>
-            {companies.filter(c => c.status === 'active').map(c => (
-              <SelectItem key={c.id} value={c.id}>{c.name} - {c.corporate_code}</SelectItem>
-            ))}
+            {companies.filter(c => c.status === 'active').map(c => <SelectItem key={c.id} value={c.id}>{c.name} - {c.corporate_code}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
       {/* Contracted Rate */}
-      {newBooking.company_id && (
-        <div className="grid grid-cols-2 gap-4">
+      {newBooking.company_id && <div className="grid grid-cols-2 gap-4">
           <div>
             <Label>Contracted Rate</Label>
             <Select value={newBooking.contracted_rate} onValueChange={handleContractedRateSelect}>
@@ -466,7 +353,10 @@ const BookingDialog = ({
           </div>
           <div>
             <Label>Rate Type</Label>
-            <Select value={newBooking.rate_type} onValueChange={(v) => setNewBooking({...newBooking, rate_type: v})}>
+            <Select value={newBooking.rate_type} onValueChange={v => setNewBooking({
+              ...newBooking,
+              rate_type: v
+            })}>
               <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="bar">BAR / Rack Rate</SelectItem>
@@ -481,15 +371,16 @@ const BookingDialog = ({
               </SelectContent>
             </Select>
           </div>
-        </div>
-      )}
+        </div>}
 
       {/* Market Segment and Cancellation Policy */}
-      {newBooking.company_id && (
-        <div className="grid grid-cols-2 gap-4">
+      {newBooking.company_id && <div className="grid grid-cols-2 gap-4">
           <div>
             <Label>Market Segment</Label>
-            <Select value={newBooking.market_segment} onValueChange={(v) => setNewBooking({...newBooking, market_segment: v})}>
+            <Select value={newBooking.market_segment} onValueChange={v => setNewBooking({
+              ...newBooking,
+              market_segment: v
+            })}>
               <SelectTrigger><SelectValue placeholder="Select segment" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="corporate">Corporate</SelectItem>
@@ -507,7 +398,10 @@ const BookingDialog = ({
           </div>
           <div>
             <Label>Cancellation Policy</Label>
-            <Select value={newBooking.cancellation_policy} onValueChange={(v) => setNewBooking({...newBooking, cancellation_policy: v})}>
+            <Select value={newBooking.cancellation_policy} onValueChange={v => setNewBooking({
+              ...newBooking,
+              cancellation_policy: v
+            })}>
               <SelectTrigger><SelectValue placeholder="Select policy" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="same_day">Same Day (18:00)</SelectItem>
@@ -522,44 +416,38 @@ const BookingDialog = ({
               </SelectContent>
             </Select>
           </div>
-        </div>
-      )}
+        </div>}
 
       {/* Billing Information */}
-      {newBooking.company_id && (
-        <div className="space-y-4 border-t pt-4">
+      {newBooking.company_id && <div className="space-y-4 border-t pt-4">
           <h3 className="font-semibold">Billing Information</h3>
           <div>
             <Label>Billing Address</Label>
-            <Textarea 
-              value={newBooking.billing_address} 
-              onChange={(e) => setNewBooking({...newBooking, billing_address: e.target.value})}
-              rows={2}
-            />
+            <Textarea value={newBooking.billing_address} onChange={e => setNewBooking({
+              ...newBooking,
+              billing_address: e.target.value
+            })} rows={2} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Tax Number</Label>
-              <Input 
-                value={newBooking.billing_tax_number} 
-                onChange={(e) => setNewBooking({...newBooking, billing_tax_number: e.target.value})}
-
-
-              />
+              <Input value={newBooking.billing_tax_number} onChange={e => setNewBooking({
+                ...newBooking,
+                billing_tax_number: e.target.value
+              })} />
 
       {/* Multi-room section placeholder: future enhancement */}
 
             </div>
             <div>
               <Label>Contact Person</Label>
-              <Input 
-                value={newBooking.billing_contact_person} 
-                onChange={(e) => setNewBooking({...newBooking, billing_contact_person: e.target.value})}
-              />
+              <Input value={newBooking.billing_contact_person} onChange={e => setNewBooking({
+                ...newBooking,
+                billing_contact_person: e.target.value
+              })} />
             </div>
           </div>
-        </div>
-      )}
+        </div>}
 
       {/* Channel selection (rate details managed per-room above) */}
       <div className="grid grid-cols-3 gap-4 border-t pt-4">
@@ -568,7 +456,10 @@ const BookingDialog = ({
         </div>
         <div>
           <Label>Channel</Label>
-          <Select value={newBooking.channel} onValueChange={(v) => setNewBooking({...newBooking, channel: v})}>
+          <Select value={newBooking.channel} onValueChange={v => setNewBooking({
+              ...newBooking,
+              channel: v
+            })}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="direct">Direct</SelectItem>
@@ -582,25 +473,17 @@ const BookingDialog = ({
       </div>
 
       {/* Override Reason - Show if rate is different from base */}
-      {newBooking.base_rate > 0 && newBooking.base_rate !== newBooking.total_amount && (
-        <div className="bg-yellow-50 border border-yellow-200 p-4 rounded">
+      {newBooking.base_rate > 0 && newBooking.base_rate !== newBooking.total_amount && <div className="bg-yellow-50 border border-yellow-200 p-4 rounded">
           <Label className="text-yellow-800">Override Reason * (Required for rate change)</Label>
-          <Textarea 
-            value={newBooking.override_reason} 
-            onChange={(e) => setNewBooking({...newBooking, override_reason: e.target.value})}
-            placeholder="Explain why the rate is different from the base rate..."
-            className="mt-2"
-            required
-          />
-        </div>
-      )}
+          <Textarea value={newBooking.override_reason} onChange={e => setNewBooking({
+            ...newBooking,
+            override_reason: e.target.value
+          })} placeholder="Explain why the rate is different from the base rate..." className="mt-2" required />
+        </div>}
 
       <Button type="submit" className="w-full">Create Booking</Button>
     </form>
   </DialogContent>
-</Dialog>
-
-  );
+</Dialog>;
 };
-
 export default BookingDialog;

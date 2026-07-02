@@ -155,10 +155,7 @@ export default function RuntimeCockpitPage({
   const [wsConnected, setWsConnected] = useState(false);
   const [liveSnapshot, setLiveSnapshot] = useState(null);
   const socketRef = useRef(null);
-  const token = localStorage.getItem('token');
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
 
   // WebSocket connection for real-time cockpit streaming
   useEffect(() => {
@@ -220,7 +217,7 @@ export default function RuntimeCockpitPage({
       setRefreshing(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [token]);
+  }, []);
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);

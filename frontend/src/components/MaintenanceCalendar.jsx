@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +24,8 @@ const MaintenanceCalendar = () => {
       setCalendarItems(response.data.calendar || []);
     } catch (error) {
       console.error('Failed to load calendar:', error);
+    
+      toast.error('İşlem başarısız oldu');
     } finally {
       setLoading(false);
     }

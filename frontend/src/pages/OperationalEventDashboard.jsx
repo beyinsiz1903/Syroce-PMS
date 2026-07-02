@@ -42,10 +42,7 @@ export default function OperationalEventDashboard({
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('feed');
   const [filterPriority, setFilterPriority] = useState(null);
-  const token = localStorage.getItem('token');
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
 
   // `silent=true` arka plan refresh — full skeleton flash etmeyelim, sadece
   // ilk yüklemede `loading` göster. Aksi halde her 30 sn'de bir tüm UI

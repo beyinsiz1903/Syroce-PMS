@@ -66,9 +66,7 @@ export default function IncidentDashboardPage() {
   const [alertSummary, setAlertSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const token = localStorage.getItem("token") || localStorage.getItem("access_token");
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {

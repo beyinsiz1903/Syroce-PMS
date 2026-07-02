@@ -4,40 +4,34 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Printer, Download, X } from 'lucide-react';
 import { alertDialog } from '@/lib/dialogs';
-
-const PrintableFolio = ({ folioData, onClose }) => {
+const PrintableFolio = ({
+  folioData,
+  onClose
+}) => {
   const [guestData, setGuestData] = useState(null);
   const [roomData, setRoomData] = useState(null);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     if (folioData) {
       fetchAdditionalData();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [folioData]);
-
   const fetchAdditionalData = async () => {
     try {
-      const token = localStorage.getItem('token');
-      
       // Fetch guest info
-      const guestResponse = await fetch(
-        `/api/guests/${folioData.booking.guest_id}`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
+      const guestResponse = await fetch(`/api/guests/${folioData.booking.guest_id}`, {
+        headers: {},
+        credentials: "include"
+      });
       const guestData = await guestResponse.json();
       setGuestData(guestData.guest);
-      
+
       // Fetch room info
-      const roomsResponse = await fetch(
-        `/api/pms/rooms`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
+      const roomsResponse = await fetch(`/api/pms/rooms`, {
+        headers: {},
+        credentials: "include"
+      });
       const roomsData = await roomsResponse.json();
       const room = roomsData.rooms.find(r => r.id === folioData.booking.room_id);
       setRoomData(room);
@@ -47,17 +41,16 @@ const PrintableFolio = ({ folioData, onClose }) => {
       setLoading(false);
     }
   };
-
   const handlePrint = () => {
     window.print();
   };
-
   const handleDownloadPDF = () => {
     // For actual PDF generation, you would use a library like jsPDF or html2pdf
-    alertDialog({ message: 'PDF download functionality - integrate with PDF library like html2pdf.js' });
+    alertDialog({
+      message: 'PDF download functionality - integrate with PDF library like html2pdf.js'
+    });
   };
-
-  const formatDate = (date) => {
+  const formatDate = date => {
     if (!date) return 'N/A';
     try {
       return new Date(date).toLocaleDateString('en-US', {
@@ -69,8 +62,7 @@ const PrintableFolio = ({ folioData, onClose }) => {
       return date;
     }
   };
-
-  const formatDateTime = (date) => {
+  const formatDateTime = date => {
     if (!date) return 'N/A';
     try {
       return new Date(date).toLocaleString('en-US', {
@@ -84,10 +76,8 @@ const PrintableFolio = ({ folioData, onClose }) => {
       return date;
     }
   };
-
   if (loading) {
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    return <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <Card className="w-full max-w-4xl">
           <CardContent className="p-6">
             <div className="animate-pulse space-y-4">
@@ -96,17 +86,16 @@ const PrintableFolio = ({ folioData, onClose }) => {
             </div>
           </CardContent>
         </Card>
-      </div>
-    );
+      </div>;
   }
-
-  const { charges, payments } = folioData;
+  const {
+    charges,
+    payments
+  } = folioData;
   const totalCharges = charges.reduce((sum, c) => sum + (c.total || c.amount || 0), 0);
   const totalPayments = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
   const balance = totalCharges - totalPayments;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-auto">
+  return <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-auto">
       <Card className="w-full max-w-5xl max-h-[95vh] overflow-auto bg-white">
         <CardHeader className="border-b-2 print:border-black">
           <div className="flex justify-between items-start">
@@ -194,14 +183,14 @@ const PrintableFolio = ({ folioData, onClose }) => {
                   <span className="font-semibold">Number of Nights:</span>
                   <div>
                     {(() => {
-                      try {
-                        const checkin = new Date(folioData.booking.check_in);
-                        const checkout = new Date(folioData.booking.check_out);
-                        return Math.ceil((checkout - checkin) / (1000 * 60 * 60 * 24));
-                      } catch {
-                        return 'N/A';
-                      }
-                    })()}
+                    try {
+                      const checkin = new Date(folioData.booking.check_in);
+                      const checkout = new Date(folioData.booking.check_out);
+                      return Math.ceil((checkout - checkin) / (1000 * 60 * 60 * 24));
+                    } catch {
+                      return 'N/A';
+                    }
+                  })()}
                   </div>
                 </div>
                 <div>
@@ -227,13 +216,9 @@ const PrintableFolio = ({ folioData, onClose }) => {
                 </tr>
               </thead>
               <tbody>
-                {charges.length === 0 ? (
-                  <tr>
+                {charges.length === 0 ? <tr>
                     <td colSpan="6" className="text-center py-4 text-gray-500">No charges</td>
-                  </tr>
-                ) : (
-                  charges.map((charge, idx) => (
-                    <tr key={idx} className="border-b border-gray-200">
+                  </tr> : charges.map((charge, idx) => <tr key={idx} className="border-b border-gray-200">
                       <td className="py-2">
                         {charge.posted_at ? formatDateTime(charge.posted_at).split(',')[0] : 'N/A'}
                       </td>
@@ -246,9 +231,7 @@ const PrintableFolio = ({ folioData, onClose }) => {
                       <td className="py-2 text-right">{charge.quantity || 1}</td>
                       <td className="py-2 text-right">${(charge.unit_price || charge.amount || 0).toFixed(2)}</td>
                       <td className="py-2 text-right font-semibold">${(charge.total || charge.amount || 0).toFixed(2)}</td>
-                    </tr>
-                  ))
-                )}
+                    </tr>)}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-gray-400">
@@ -272,13 +255,9 @@ const PrintableFolio = ({ folioData, onClose }) => {
                 </tr>
               </thead>
               <tbody>
-                {payments.length === 0 ? (
-                  <tr>
+                {payments.length === 0 ? <tr>
                     <td colSpan="4" className="text-center py-4 text-gray-500">No payments</td>
-                  </tr>
-                ) : (
-                  payments.map((payment, idx) => (
-                    <tr key={idx} className="border-b border-gray-200">
+                  </tr> : payments.map((payment, idx) => <tr key={idx} className="border-b border-gray-200">
                       <td className="py-2">
                         {payment.posted_at ? formatDateTime(payment.posted_at).split(',')[0] : 'N/A'}
                       </td>
@@ -291,9 +270,7 @@ const PrintableFolio = ({ folioData, onClose }) => {
                       <td className="py-2 text-right font-semibold text-green-600">
                         ${payment.amount.toFixed(2)}
                       </td>
-                    </tr>
-                  ))
-                )}
+                    </tr>)}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-gray-400">
@@ -323,11 +300,9 @@ const PrintableFolio = ({ folioData, onClose }) => {
                     ${Math.abs(balance).toFixed(2)}
                   </span>
                 </div>
-                {balance <= 0 && (
-                  <div className="mt-2 p-2 bg-green-100 text-green-800 rounded text-center font-semibold">
+                {balance <= 0 && <div className="mt-2 p-2 bg-green-100 text-green-800 rounded text-center font-semibold">
                     PAID IN FULL
-                  </div>
-                )}
+                  </div>}
               </div>
 
               <div className="text-xs text-gray-600 space-y-2">
@@ -394,8 +369,6 @@ const PrintableFolio = ({ folioData, onClose }) => {
           }
         }
       `}</style>
-    </div>
-  );
+    </div>;
 };
-
 export default PrintableFolio;

@@ -60,6 +60,8 @@ const PushSubscriptionManager = () => {
     } catch (error) {
       console.error('Push status load failed', error);
       setStatus('error');
+    
+      toast.error('İşlem başarısız oldu');
     }
   }, [supportPush]);
 

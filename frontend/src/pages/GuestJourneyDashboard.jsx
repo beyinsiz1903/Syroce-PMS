@@ -39,10 +39,7 @@ export default function GuestJourneyDashboard({
   const [activeTab, setActiveTab] = useState('dashboard');
   const [statusFilter, setStatusFilter] = useState(null);
   const [typeFilter, setTypeFilter] = useState(null);
-  const token = localStorage.getItem('token');
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {

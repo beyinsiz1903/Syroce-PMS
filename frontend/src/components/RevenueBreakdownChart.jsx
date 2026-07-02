@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
@@ -20,6 +21,8 @@ const RevenueBreakdownChart = () => {
       setData(res.data);
     } catch (error) {
       console.error('Failed to load revenue breakdown:', error);
+    
+      toast.error('İşlem başarısız oldu');
     } finally {
       setLoading(false);
     }

@@ -134,8 +134,6 @@ const ReportBuilder = () => {
   const {
     t
   } = useTranslation();
-  const token = localStorage.getItem('token');
-
   // Config state
   const [dataSources, setDataSources] = useState({});
   const [maxLimit, setMaxLimit] = useState(5000);
@@ -171,9 +169,7 @@ const ReportBuilder = () => {
     const fetchConfig = async () => {
       try {
         const data = await fetchJsonWithRetry(`/api/reports/builder/config`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
+          headers: {}
         });
         setDataSources(data.data_sources || {});
         if (data.max_limit) setMaxLimit(data.max_limit);
@@ -186,13 +182,11 @@ const ReportBuilder = () => {
     fetchConfig();
     fetchTemplates();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, []);
   const fetchTemplates = async () => {
     try {
       const data = await fetchJsonWithRetry(`/api/reports/builder/templates`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: {}
       });
       setTemplates(data.templates || []);
       setTemplatesError(false);
@@ -262,7 +256,6 @@ const ReportBuilder = () => {
       const res = await fetchWithRetry(`/api/reports/builder/generate`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(buildConfig())
@@ -294,7 +287,6 @@ const ReportBuilder = () => {
       const res = await fetchWithRetry(`/api/reports/builder/export/${format}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(buildConfig())
@@ -327,7 +319,6 @@ const ReportBuilder = () => {
         credentials: "include",
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -376,9 +367,7 @@ const ReportBuilder = () => {
       const res = await fetch(`/api/reports/builder/templates/${id}`, {
         credentials: "include",
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: {}
       });
       if (!res.ok) {
         let detail = '';

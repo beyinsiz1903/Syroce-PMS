@@ -8,42 +8,67 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { User, History, Settings, Tag, Star, AlertTriangle, Calendar } from 'lucide-react';
 import CallButton from '@/components/contact-center/CallButton';
-
-const GuestProfileComplete = ({ guestId }) => {
+const GuestProfileComplete = ({
+  guestId
+}) => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editingPreferences, setEditingPreferences] = useState(false);
   const [preferences, setPreferences] = useState({});
   const [selectedTags, setSelectedTags] = useState([]);
-
-  const availableTags = [
-    { value: 'vip', label: 'VIP', color: 'bg-yellow-500', icon: Star },
-    { value: 'blacklist', label: 'Blacklist', color: 'bg-red-500', icon: AlertTriangle },
-    { value: 'honeymoon', label: 'Honeymoon', color: 'bg-pink-500', icon: Calendar },
-    { value: 'anniversary', label: 'Anniversary', color: 'bg-indigo-500', icon: Calendar },
-    { value: 'business_traveler', label: 'Business', color: 'bg-blue-500', icon: User },
-    { value: 'frequent_guest', label: 'Frequent', color: 'bg-green-500', icon: History },
-    { value: 'complainer', label: 'Complainer', color: 'bg-amber-500', icon: AlertTriangle },
-    { value: 'high_spender', label: 'High Spender', color: 'bg-indigo-500', icon: Star }
-  ];
-
+  const availableTags = [{
+    value: 'vip',
+    label: 'VIP',
+    color: 'bg-yellow-500',
+    icon: Star
+  }, {
+    value: 'blacklist',
+    label: 'Blacklist',
+    color: 'bg-red-500',
+    icon: AlertTriangle
+  }, {
+    value: 'honeymoon',
+    label: 'Honeymoon',
+    color: 'bg-pink-500',
+    icon: Calendar
+  }, {
+    value: 'anniversary',
+    label: 'Anniversary',
+    color: 'bg-indigo-500',
+    icon: Calendar
+  }, {
+    value: 'business_traveler',
+    label: 'Business',
+    color: 'bg-blue-500',
+    icon: User
+  }, {
+    value: 'frequent_guest',
+    label: 'Frequent',
+    color: 'bg-green-500',
+    icon: History
+  }, {
+    value: 'complainer',
+    label: 'Complainer',
+    color: 'bg-amber-500',
+    icon: AlertTriangle
+  }, {
+    value: 'high_spender',
+    label: 'High Spender',
+    color: 'bg-indigo-500',
+    icon: Star
+  }];
   useEffect(() => {
     if (guestId) {
       fetchGuestProfile();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [guestId]);
-
   const fetchGuestProfile = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `/api/guests/${guestId}/profile-complete`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
-
+      const response = await fetch(`/api/guests/${guestId}/profile-complete`, {
+        headers: {},
+        credentials: "include"
+      });
       if (response.ok) {
         const data = await response.json();
         setProfile(data);
@@ -56,22 +81,16 @@ const GuestProfileComplete = ({ guestId }) => {
       setLoading(false);
     }
   };
-
   const handleUpdatePreferences = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `/api/guests/${guestId}/preferences`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(preferences)
-        }
-      );
-
+      const response = await fetch(`/api/guests/${guestId}/preferences`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(preferences),
+        credentials: "include"
+      });
       if (response.ok) {
         setEditingPreferences(false);
         fetchGuestProfile();
@@ -80,22 +99,18 @@ const GuestProfileComplete = ({ guestId }) => {
       console.error('Error updating preferences:', error);
     }
   };
-
   const handleUpdateTags = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `/api/guests/${guestId}/tags`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ tags: selectedTags })
-        }
-      );
-
+      const response = await fetch(`/api/guests/${guestId}/tags`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          tags: selectedTags
+        }),
+        credentials: "include"
+      });
       if (response.ok) {
         fetchGuestProfile();
       }
@@ -103,27 +118,20 @@ const GuestProfileComplete = ({ guestId }) => {
       console.error('Error updating tags:', error);
     }
   };
-
-  const toggleTag = (tagValue) => {
+  const toggleTag = tagValue => {
     if (selectedTags.includes(tagValue)) {
       setSelectedTags(selectedTags.filter(t => t !== tagValue));
     } else {
       setSelectedTags([...selectedTags, tagValue]);
     }
   };
-
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
+    return <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
+      </div>;
   }
-
   if (!profile) return <div>Guest not found</div>;
-
-  return (
-    <div className="space-y-6">
+  return <div className="space-y-6">
       {/* Guest Header */}
       <Card>
         <CardContent className="p-6">
@@ -139,16 +147,12 @@ const GuestProfileComplete = ({ guestId }) => {
                 <span>Nationality: {profile.guest?.nationality || 'N/A'}</span>
               </div>
               <div className="flex items-center gap-2 mt-2">
-                {profile.vip_status && (
-                  <Badge className="bg-yellow-500">
+                {profile.vip_status && <Badge className="bg-yellow-500">
                     <Star className="w-3 h-3 mr-1" /> VIP
-                  </Badge>
-                )}
-                {profile.blacklist_status && (
-                  <Badge className="bg-red-500">
+                  </Badge>}
+                {profile.blacklist_status && <Badge className="bg-red-500">
                     <AlertTriangle className="w-3 h-3 mr-1" /> Blacklist
-                  </Badge>
-                )}
+                  </Badge>}
               </div>
             </div>
             <div className="text-right space-y-1">
@@ -183,10 +187,8 @@ const GuestProfileComplete = ({ guestId }) => {
               <CardTitle>Complete Stay History</CardTitle>
             </CardHeader>
             <CardContent>
-              {profile.stay_history && profile.stay_history.length > 0 ? (
-                <div className="space-y-3">
-                  {profile.stay_history.map((stay, idx) => (
-                    <div key={idx} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+              {profile.stay_history && profile.stay_history.length > 0 ? <div className="space-y-3">
+                  {profile.stay_history.map((stay, idx) => <div key={idx} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
                       <div className="flex items-start justify-between">
                         <div className="space-y-1">
                           <div className="flex items-center gap-3">
@@ -208,12 +210,8 @@ const GuestProfileComplete = ({ guestId }) => {
                           <div className="text-xs text-gray-600">Total</div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center text-gray-500 py-8">No stay history</div>
-              )}
+                    </div>)}
+                </div> : <div className="text-center text-gray-500 py-8">No stay history</div>}
             </CardContent>
           </Card>
         </TabsContent>
@@ -224,10 +222,7 @@ const GuestProfileComplete = ({ guestId }) => {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Guest Preferences</CardTitle>
-                <Button
-                  onClick={() => editingPreferences ? handleUpdatePreferences() : setEditingPreferences(true)}
-                  variant={editingPreferences ? 'default' : 'outline'}
-                >
+                <Button onClick={() => editingPreferences ? handleUpdatePreferences() : setEditingPreferences(true)} variant={editingPreferences ? 'default' : 'outline'}>
                   {editingPreferences ? 'Save' : 'Edit'}
                 </Button>
               </div>
@@ -236,11 +231,10 @@ const GuestProfileComplete = ({ guestId }) => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label>Pillow Type</Label>
-                  {editingPreferences ? (
-                    <Select
-                      value={preferences.pillow_type || ''}
-                      onValueChange={(value) => setPreferences({ ...preferences, pillow_type: value })}
-                    >
+                  {editingPreferences ? <Select value={preferences.pillow_type || ''} onValueChange={value => setPreferences({
+                  ...preferences,
+                  pillow_type: value
+                })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select pillow type" />
                       </SelectTrigger>
@@ -249,19 +243,15 @@ const GuestProfileComplete = ({ guestId }) => {
                         <SelectItem value="firm">Firm</SelectItem>
                         <SelectItem value="extra_firm">Extra Firm</SelectItem>
                       </SelectContent>
-                    </Select>
-                  ) : (
-                    <div className="p-2 bg-gray-50 rounded">{preferences.pillow_type || 'Not specified'}</div>
-                  )}
+                    </Select> : <div className="p-2 bg-gray-50 rounded">{preferences.pillow_type || 'Not specified'}</div>}
                 </div>
 
                 <div>
                   <Label>Floor Preference</Label>
-                  {editingPreferences ? (
-                    <Select
-                      value={preferences.floor_preference || ''}
-                      onValueChange={(value) => setPreferences({ ...preferences, floor_preference: value })}
-                    >
+                  {editingPreferences ? <Select value={preferences.floor_preference || ''} onValueChange={value => setPreferences({
+                  ...preferences,
+                  floor_preference: value
+                })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select floor preference" />
                       </SelectTrigger>
@@ -271,19 +261,15 @@ const GuestProfileComplete = ({ guestId }) => {
                         <SelectItem value="high">High Floors</SelectItem>
                         <SelectItem value="no_preference">No Preference</SelectItem>
                       </SelectContent>
-                    </Select>
-                  ) : (
-                    <div className="p-2 bg-gray-50 rounded">{preferences.floor_preference || 'Not specified'}</div>
-                  )}
+                    </Select> : <div className="p-2 bg-gray-50 rounded">{preferences.floor_preference || 'Not specified'}</div>}
                 </div>
 
                 <div>
                   <Label>Room Temperature</Label>
-                  {editingPreferences ? (
-                    <Select
-                      value={preferences.room_temperature || ''}
-                      onValueChange={(value) => setPreferences({ ...preferences, room_temperature: value })}
-                    >
+                  {editingPreferences ? <Select value={preferences.room_temperature || ''} onValueChange={value => setPreferences({
+                  ...preferences,
+                  room_temperature: value
+                })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select temperature" />
                       </SelectTrigger>
@@ -292,19 +278,15 @@ const GuestProfileComplete = ({ guestId }) => {
                         <SelectItem value="moderate">Moderate</SelectItem>
                         <SelectItem value="warm">Warm</SelectItem>
                       </SelectContent>
-                    </Select>
-                  ) : (
-                    <div className="p-2 bg-gray-50 rounded">{preferences.room_temperature || 'Not specified'}</div>
-                  )}
+                    </Select> : <div className="p-2 bg-gray-50 rounded">{preferences.room_temperature || 'Not specified'}</div>}
                 </div>
 
                 <div>
                   <Label>Smoking</Label>
-                  {editingPreferences ? (
-                    <Select
-                      value={preferences.smoking ? 'yes' : 'no'}
-                      onValueChange={(value) => setPreferences({ ...preferences, smoking: value === 'yes' })}
-                    >
+                  {editingPreferences ? <Select value={preferences.smoking ? 'yes' : 'no'} onValueChange={value => setPreferences({
+                  ...preferences,
+                  smoking: value === 'yes'
+                })}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -312,49 +294,31 @@ const GuestProfileComplete = ({ guestId }) => {
                         <SelectItem value="yes">Yes</SelectItem>
                         <SelectItem value="no">No</SelectItem>
                       </SelectContent>
-                    </Select>
-                  ) : (
-                    <div className="p-2 bg-gray-50 rounded">{preferences.smoking ? 'Yes' : 'No'}</div>
-                  )}
+                    </Select> : <div className="p-2 bg-gray-50 rounded">{preferences.smoking ? 'Yes' : 'No'}</div>}
                 </div>
 
                 <div className="md:col-span-2">
                   <Label>Special Needs</Label>
-                  {editingPreferences ? (
-                    <Input
-                      value={preferences.special_needs || ''}
-                      onChange={(e) => setPreferences({ ...preferences, special_needs: e.target.value })}
-                      placeholder="e.g., wheelchair accessible, extra towels"
-                    />
-                  ) : (
-                    <div className="p-2 bg-gray-50 rounded">{preferences.special_needs || 'Not specified'}</div>
-                  )}
+                  {editingPreferences ? <Input value={preferences.special_needs || ''} onChange={e => setPreferences({
+                  ...preferences,
+                  special_needs: e.target.value
+                })} placeholder="e.g., wheelchair accessible, extra towels" /> : <div className="p-2 bg-gray-50 rounded">{preferences.special_needs || 'Not specified'}</div>}
                 </div>
 
                 <div className="md:col-span-2">
                   <Label>Dietary Restrictions</Label>
-                  {editingPreferences ? (
-                    <Input
-                      value={preferences.dietary_restrictions || ''}
-                      onChange={(e) => setPreferences({ ...preferences, dietary_restrictions: e.target.value })}
-                      placeholder="e.g., vegetarian, gluten-free, halal"
-                    />
-                  ) : (
-                    <div className="p-2 bg-gray-50 rounded">{preferences.dietary_restrictions || 'Not specified'}</div>
-                  )}
+                  {editingPreferences ? <Input value={preferences.dietary_restrictions || ''} onChange={e => setPreferences({
+                  ...preferences,
+                  dietary_restrictions: e.target.value
+                })} placeholder="e.g., vegetarian, gluten-free, halal" /> : <div className="p-2 bg-gray-50 rounded">{preferences.dietary_restrictions || 'Not specified'}</div>}
                 </div>
 
                 <div className="md:col-span-2">
                   <Label>Newspaper Preference</Label>
-                  {editingPreferences ? (
-                    <Input
-                      value={preferences.newspaper_preference || ''}
-                      onChange={(e) => setPreferences({ ...preferences, newspaper_preference: e.target.value })}
-                      placeholder="e.g., Wall Street Journal, Financial Times"
-                    />
-                  ) : (
-                    <div className="p-2 bg-gray-50 rounded">{preferences.newspaper_preference || 'Not specified'}</div>
-                  )}
+                  {editingPreferences ? <Input value={preferences.newspaper_preference || ''} onChange={e => setPreferences({
+                  ...preferences,
+                  newspaper_preference: e.target.value
+                })} placeholder="e.g., Wall Street Journal, Financial Times" /> : <div className="p-2 bg-gray-50 rounded">{preferences.newspaper_preference || 'Not specified'}</div>}
                 </div>
               </div>
             </CardContent>
@@ -372,31 +336,19 @@ const GuestProfileComplete = ({ guestId }) => {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {availableTags.map((tag) => {
-                  const Icon = tag.icon;
-                  const isSelected = selectedTags.includes(tag.value);
-                  return (
-                    <button
-                      key={tag.value}
-                      onClick={() => toggleTag(tag.value)}
-                      className={`p-4 rounded-lg border-2 transition-all ${
-                        isSelected
-                          ? `${tag.color} text-white border-transparent`
-                          : 'bg-white border-gray-200 hover:border-gray-400'
-                      }`}
-                    >
+                {availableTags.map(tag => {
+                const Icon = tag.icon;
+                const isSelected = selectedTags.includes(tag.value);
+                return <button key={tag.value} onClick={() => toggleTag(tag.value)} className={`p-4 rounded-lg border-2 transition-all ${isSelected ? `${tag.color} text-white border-transparent` : 'bg-white border-gray-200 hover:border-gray-400'}`}>
                       <Icon className="w-6 h-6 mx-auto mb-2" />
                       <div className="text-sm font-medium">{tag.label}</div>
-                    </button>
-                  );
-                })}
+                    </button>;
+              })}
               </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
-    </div>
-  );
+    </div>;
 };
-
 export default GuestProfileComplete;

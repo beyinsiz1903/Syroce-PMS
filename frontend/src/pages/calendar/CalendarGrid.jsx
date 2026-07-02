@@ -314,7 +314,7 @@ const CalendarGrid = ({
                     const rowBg = hasOverdue ? 'bg-red-50/30' : hasToday ? 'bg-amber-50/30' : 'bg-blue-50/20';
                     const sidebarBg = hasOverdue ? 'bg-red-50/60' : hasToday ? 'bg-amber-50/60' : 'bg-blue-50/40';
                     return (
-                      <div className={`flex border-b border-dashed border-blue-200 ${rowBg}`}>
+                      <div className={`flex border-b border-dashed border-blue-200 ${rowBg}`} style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
                         <div className={`w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 ${sidebarBg}`} style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-1">
                             <div className={`w-2 h-2 ${dotColor} rounded-full ${hasOverdue || hasToday ? 'animate-pulse' : ''}`}></div>
@@ -416,7 +416,7 @@ const CalendarGrid = ({
                     const roomDotStatus = roomBlockedStatus ? 'blocked' : hasBookingToday ? 'occupied' : 'free';
                     const roomDotColor = roomDotStatus === 'blocked' ? 'bg-slate-400' : roomDotStatus === 'occupied' ? 'bg-red-500' : 'bg-green-500';
                     return (
-                      <div key={room.id} className="flex border-b border-gray-100 hover:bg-gray-50/50 transition-colors" data-testid="room-row">
+                      <div key={room.id} className="flex border-b border-gray-100 hover:bg-gray-50/50 transition-colors" data-testid="room-row" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
                         <div className="w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 bg-white flex items-center" style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-1">
                             <div

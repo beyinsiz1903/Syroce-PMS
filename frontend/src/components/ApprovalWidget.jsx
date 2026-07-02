@@ -36,6 +36,8 @@ const ApprovalWidget = ({ userRole }) => {
       setMyRequests(myResponse.data.approvals || []);
     } catch (error) {
       console.error('Failed to load approvals:', error);
+    
+      toast.error('İşlem başarısız oldu');
     } finally {
       setLoading(false);
     }

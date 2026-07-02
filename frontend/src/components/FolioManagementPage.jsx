@@ -8,7 +8,6 @@ import { Search, FileText, CreditCard, Plus, DollarSign, Receipt, Eye, Printer }
 import RegistrationCard from './RegistrationCard';
 import PrintableFolio from './PrintableFolio';
 import { alertDialog } from '@/lib/dialogs';
-
 const FolioManagementPage = () => {
   const [folios, setFolios] = useState([]);
   const [selectedFolio, setSelectedFolio] = useState(null);
@@ -21,59 +20,45 @@ const FolioManagementPage = () => {
   const [showRegistrationCard, setShowRegistrationCard] = useState(false);
   const [showPrintableFolio, setShowPrintableFolio] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState(null);
-
   useEffect(() => {
     fetchAllFolios();
   }, []);
-
   useEffect(() => {
     if (selectedFolio) {
       fetchFolioDetails(selectedFolio.id);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [selectedFolio]);
-
   const fetchAllFolios = async () => {
     try {
-      const token = localStorage.getItem('token');
-      
       // Fetch all bookings to get folios
-      const bookingsResponse = await fetch(
-        `/api/pms/bookings`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
+      const bookingsResponse = await fetch(`/api/pms/bookings`, {
+        headers: {},
+        credentials: "include"
+      });
       const bookingsData = await bookingsResponse.json();
-      
+
       // Filter checked-in and checked-out bookings
-      const activeBookings = (bookingsData?.bookings || []).filter(
-        b => ['checked_in', 'checked_out'].includes(b.status)
-      );
-      
+      const activeBookings = (bookingsData?.bookings || []).filter(b => ['checked_in', 'checked_out'].includes(b.status));
+
       // Create folio list
       const folioList = [];
       for (const booking of activeBookings.slice(0, 50)) {
         // Fetch guest info
         try {
-          const guestResponse = await fetch(
-            `/api/guests/${booking.guest_id}`,
-            {
-              headers: { 'Authorization': `Bearer ${token}` }
-            }
-          );
+          const guestResponse = await fetch(`/api/guests/${booking.guest_id}`, {
+            headers: {},
+            credentials: "include"
+          });
           const guestData = await guestResponse.json();
-          
+
           // Get room info
-          const roomsResponse = await fetch(
-            `/api/pms/rooms`,
-            {
-              headers: { 'Authorization': `Bearer ${token}` }
-            }
-          );
+          const roomsResponse = await fetch(`/api/pms/rooms`, {
+            headers: {},
+            credentials: "include"
+          });
           const roomsData = await roomsResponse.json();
           const room = roomsData.rooms.find(r => r.id === booking.room_id);
-          
           folioList.push({
             id: booking.id,
             folio_number: `F-${booking.id.slice(0, 8).toUpperCase()}`,
@@ -89,7 +74,6 @@ const FolioManagementPage = () => {
           console.error(`Error fetching details for booking ${booking.id}:`, error);
         }
       }
-      
       setFolios(folioList);
     } catch (error) {
       console.error('Error fetching folios:', error);
@@ -97,10 +81,10 @@ const FolioManagementPage = () => {
       setLoading(false);
     }
   };
-
-  const resolveFolioId = async (bookingId, token) => {
-    const res = await fetch(`/api/folio/booking/${bookingId}`, { credentials: "include",
-      headers: { 'Authorization': `Bearer ${token}` }
+  const resolveFolioId = async (bookingId) => {
+    const res = await fetch(`/api/folio/booking/${bookingId}`, {
+      credentials: "include",
+      headers: {}
     });
     if (res.ok) {
       const data = await res.json();
@@ -110,15 +94,13 @@ const FolioManagementPage = () => {
     }
     return null;
   };
-
-  const fetchFolioDetails = async (bookingId) => {
+  const fetchFolioDetails = async bookingId => {
     try {
-      const token = localStorage.getItem('token');
-      const folioId = await resolveFolioId(bookingId, token);
-
+      const folioId = await resolveFolioId(bookingId);
       if (folioId) {
-        const detailRes = await fetch(`/api/folio/${folioId}`, { credentials: "include",
-          headers: { 'Authorization': `Bearer ${token}` }
+        const detailRes = await fetch(`/api/folio/${folioId}`, {
+          credentials: "include",
+          headers: {}
         });
         if (detailRes.ok) {
           const folioData = await detailRes.json();
@@ -140,17 +122,14 @@ const FolioManagementPage = () => {
       setPayments([]);
     }
   };
-
-  const postCharge = async (chargeData) => {
+  const postCharge = async chargeData => {
     try {
-      const token = localStorage.getItem('token');
-      let folioId = await resolveFolioId(selectedFolio.id, token);
-
+      let folioId = await resolveFolioId(selectedFolio.id);
       if (!folioId) {
-        const createRes = await fetch(`/api/folio/create`, { credentials: "include",
+        const createRes = await fetch(`/api/folio/create`, {
+          credentials: "include",
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
             'Idempotency-Key': `folio-${selectedFolio.id}-${Date.now()}`
           },
@@ -163,72 +142,63 @@ const FolioManagementPage = () => {
         const newFolio = await createRes.json();
         folioId = newFolio.id || newFolio.folio_id;
       }
-
-      const chargeRes = await fetch(`/api/folio/${folioId}/charge`, { credentials: "include",
+      const chargeRes = await fetch(`/api/folio/${folioId}/charge`, {
+        credentials: "include",
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(chargeData)
       });
-
       if (!chargeRes.ok) {
         const err = await chargeRes.json().catch(() => ({}));
         throw new Error(err.detail || 'Charge failed');
       }
-
-      alertDialog({ message: 'Charge posted successfully' });
+      alertDialog({
+        message: 'Charge posted successfully'
+      });
       setShowChargeModal(false);
       fetchFolioDetails(selectedFolio.id);
     } catch (error) {
       console.error('Error posting charge:', error);
-      alertDialog({ message: 'Masraf kaydedilemedi: ' + error.message });
+      alertDialog({
+        message: 'Masraf kaydedilemedi: ' + error.message
+      });
     }
   };
-
-  const postPayment = async (paymentData) => {
+  const postPayment = async paymentData => {
     try {
-      const token = localStorage.getItem('token');
-      const folioId = await resolveFolioId(selectedFolio.id, token);
-
+      const folioId = await resolveFolioId(selectedFolio.id);
       if (!folioId) throw new Error('Folio not found');
-
-      const payRes = await fetch(`/api/folio/${folioId}/payment`, { credentials: "include",
+      const payRes = await fetch(`/api/folio/${folioId}/payment`, {
+        credentials: "include",
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(paymentData)
       });
-
       if (!payRes.ok) {
         const err = await payRes.json().catch(() => ({}));
         throw new Error(err.detail || 'Payment failed');
       }
-
-      alertDialog({ message: 'Payment posted successfully' });
+      alertDialog({
+        message: 'Payment posted successfully'
+      });
       setShowPaymentModal(false);
       fetchFolioDetails(selectedFolio.id);
     } catch (error) {
       console.error('Error posting payment:', error);
-      alertDialog({ message: 'Ödeme kaydedilemedi: ' + error.message });
+      alertDialog({
+        message: 'Ödeme kaydedilemedi: ' + error.message
+      });
     }
   };
-
-  const filteredFolios = folios.filter(f =>
-    f.guest_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    f.room_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    f.folio_number.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
+  const filteredFolios = folios.filter(f => f.guest_name.toLowerCase().includes(searchTerm.toLowerCase()) || f.room_number.toLowerCase().includes(searchTerm.toLowerCase()) || f.folio_number.toLowerCase().includes(searchTerm.toLowerCase()));
   const totalCharges = charges.reduce((sum, c) => sum + (c.total || 0), 0);
   const totalPayments = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
   const balance = totalCharges - totalPayments;
-
-  return (
-    <div className="p-6 space-y-6">
+  return <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Folio Management</h1>
@@ -247,30 +217,13 @@ const FolioManagementPage = () => {
             <div className="mt-4">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  placeholder="Search folios..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
+                <Input placeholder="Search folios..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10" />
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            {loading ? (
-              <div className="text-center py-8">Loading...</div>
-            ) : (
-              <div className="space-y-2 max-h-[600px] overflow-y-auto">
-                {filteredFolios.map((folio, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => setSelectedFolio(folio)}
-                    className={`p-3 border rounded-lg cursor-pointer transition-all ${
-                      selectedFolio?.id === folio.id
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-blue-300'
-                    }`}
-                  >
+            {loading ? <div className="text-center py-8">Loading...</div> : <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                {filteredFolios.map((folio, idx) => <div key={idx} onClick={() => setSelectedFolio(folio)} className={`p-3 border rounded-lg cursor-pointer transition-all ${selectedFolio?.id === folio.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'}`}>
                     <div className="flex items-start justify-between">
                       <div>
                         <div className="font-semibold">{folio.guest_name}</div>
@@ -283,10 +236,8 @@ const FolioManagementPage = () => {
                         {folio.status}
                       </Badge>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  </div>)}
+              </div>}
           </CardContent>
         </Card>
 
@@ -297,24 +248,15 @@ const FolioManagementPage = () => {
               <CardTitle>
                 {selectedFolio ? `Folio Details - ${selectedFolio.folio_number}` : 'Select a Folio'}
               </CardTitle>
-              {selectedFolio && (
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    onClick={() => {
-                      setSelectedBookingId(selectedFolio.id);
-                      setShowRegistrationCard(true);
-                    }}
-                    variant="outline"
-                    size="sm"
-                  >
+              {selectedFolio && <div className="flex flex-wrap gap-2">
+                  <Button onClick={() => {
+                setSelectedBookingId(selectedFolio.id);
+                setShowRegistrationCard(true);
+              }} variant="outline" size="sm">
                     <FileText className="w-4 h-4 mr-2" />
                     Registration Card
                   </Button>
-                  <Button
-                    onClick={() => setShowPrintableFolio(true)}
-                    variant="outline"
-                    size="sm"
-                  >
+                  <Button onClick={() => setShowPrintableFolio(true)} variant="outline" size="sm">
                     <Printer className="w-4 h-4 mr-2" />
                     Print Folio
                   </Button>
@@ -326,18 +268,14 @@ const FolioManagementPage = () => {
                     <CreditCard className="w-4 h-4 mr-2" />
                     Add Payment
                   </Button>
-                </div>
-              )}
+                </div>}
             </div>
           </CardHeader>
           <CardContent>
-            {!selectedFolio ? (
-              <div className="text-center py-16 text-gray-500">
+            {!selectedFolio ? <div className="text-center py-16 text-gray-500">
                 <Receipt className="w-16 h-16 mx-auto mb-4 text-gray-400" />
                 <p>Select a folio from the list to view details</p>
-              </div>
-            ) : (
-              <div className="space-y-6">
+              </div> : <div className="space-y-6">
                 {/* Summary Cards */}
                 <div className="grid grid-cols-3 gap-4">
                   <div className="bg-blue-50 p-4 rounded-lg">
@@ -374,15 +312,11 @@ const FolioManagementPage = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {charges.length === 0 ? (
-                          <tr>
+                        {charges.length === 0 ? <tr>
                             <td colSpan="4" className="p-6 text-center text-gray-500">
                               No charges posted
                             </td>
-                          </tr>
-                        ) : (
-                          charges.map((charge, idx) => (
-                            <tr key={idx} className="border-t">
+                          </tr> : charges.map((charge, idx) => <tr key={idx} className="border-t">
                               <td className="p-3 text-sm">
                                 {charge.posted_at ? new Date(charge.posted_at).toLocaleDateString() : 'N/A'}
                               </td>
@@ -393,9 +327,7 @@ const FolioManagementPage = () => {
                               <td className="p-3 text-right font-semibold">
                                 ${(charge.total || charge.amount || 0).toFixed(2)}
                               </td>
-                            </tr>
-                          ))
-                        )}
+                            </tr>)}
                       </tbody>
                     </table>
                   </div>
@@ -415,15 +347,11 @@ const FolioManagementPage = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {payments.length === 0 ? (
-                          <tr>
+                        {payments.length === 0 ? <tr>
                             <td colSpan="4" className="p-6 text-center text-gray-500">
                               No payments received
                             </td>
-                          </tr>
-                        ) : (
-                          payments.map((payment, idx) => (
-                            <tr key={idx} className="border-t">
+                          </tr> : payments.map((payment, idx) => <tr key={idx} className="border-t">
                               <td className="p-3 text-sm">
                                 {payment.posted_at ? new Date(payment.posted_at).toLocaleDateString() : 'N/A'}
                               </td>
@@ -436,37 +364,33 @@ const FolioManagementPage = () => {
                               <td className="p-3 text-right font-semibold text-green-600">
                                 ${payment.amount.toFixed(2)}
                               </td>
-                            </tr>
-                          ))
-                        )}
+                            </tr>)}
                       </tbody>
                     </table>
                   </div>
                 </div>
-              </div>
-            )}
+              </div>}
           </CardContent>
         </Card>
       </div>
 
       {/* Charge Modal */}
-      {showChargeModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      {showChargeModal && <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <Card className="w-full max-w-md">
             <CardHeader>
               <CardTitle>Post Charge</CardTitle>
             </CardHeader>
             <CardContent>
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                const formData = new FormData(e.target);
-                postCharge({
-                  description: formData.get('description'),
-                  charge_category: formData.get('category'),
-                  quantity: parseInt(formData.get('quantity')),
-                  amount: parseFloat(formData.get('unit_price'))
-                });
-              }}>
+              <form onSubmit={e => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            postCharge({
+              description: formData.get('description'),
+              charge_category: formData.get('category'),
+              quantity: parseInt(formData.get('quantity')),
+              amount: parseFloat(formData.get('unit_price'))
+            });
+          }}>
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium mb-2">Description</label>
@@ -509,27 +433,25 @@ const FolioManagementPage = () => {
               </form>
             </CardContent>
           </Card>
-        </div>
-      )}
+        </div>}
 
       {/* Payment Modal */}
-      {showPaymentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      {showPaymentModal && <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <Card className="w-full max-w-md">
             <CardHeader>
               <CardTitle>Post Payment</CardTitle>
             </CardHeader>
             <CardContent>
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                const formData = new FormData(e.target);
-                postPayment({
-                  method: formData.get('method'),
-                  payment_type: formData.get('payment_type'),
-                  amount: parseFloat(formData.get('amount')),
-                  reference: formData.get('reference') || null
-                });
-              }}>
+              <form onSubmit={e => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            postPayment({
+              method: formData.get('method'),
+              payment_type: formData.get('payment_type'),
+              amount: parseFloat(formData.get('amount')),
+              reference: formData.get('reference') || null
+            });
+          }}>
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium mb-2">Payment Method</label>
@@ -577,34 +499,21 @@ const FolioManagementPage = () => {
               </form>
             </CardContent>
           </Card>
-        </div>
-      )}
+        </div>}
 
       {/* Registration Card Modal */}
-      {showRegistrationCard && selectedBookingId && (
-        <RegistrationCard
-          bookingId={selectedBookingId}
-          onClose={() => {
-            setShowRegistrationCard(false);
-            setSelectedBookingId(null);
-          }}
-        />
-      )}
+      {showRegistrationCard && selectedBookingId && <RegistrationCard bookingId={selectedBookingId} onClose={() => {
+      setShowRegistrationCard(false);
+      setSelectedBookingId(null);
+    }} />}
 
       {/* Printable Folio Modal */}
-      {showPrintableFolio && selectedFolio && (
-        <PrintableFolio
-          folioData={{
-            folio_number: selectedFolio.folio_number,
-            booking: selectedFolio.booking,
-            charges: charges,
-            payments: payments
-          }}
-          onClose={() => setShowPrintableFolio(false)}
-        />
-      )}
-    </div>
-  );
+      {showPrintableFolio && selectedFolio && <PrintableFolio folioData={{
+      folio_number: selectedFolio.folio_number,
+      booking: selectedFolio.booking,
+      charges: charges,
+      payments: payments
+    }} onClose={() => setShowPrintableFolio(false)} />}
+    </div>;
 };
-
 export default FolioManagementPage;

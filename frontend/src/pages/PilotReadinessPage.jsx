@@ -21,15 +21,15 @@ function CheckItem({
     </div>;
 }
 export default function PilotReadinessPage() {
-  const { t } = useTranslation();
+  const {
+    t
+  } = useTranslation();
   const navigate = useNavigate();
   const [readiness, setReadiness] = useState(null);
   const [toggles, setToggles] = useState([]);
   const [loading, setLoading] = useState(true);
   const token = localStorage.getItem("token") || localStorage.getItem("access_token");
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {

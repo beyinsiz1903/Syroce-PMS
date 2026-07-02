@@ -143,7 +143,7 @@ function App() {
     // succeed even if the browser/test-runner drops the newly set SameSite=Lax cookie.
     // This is safe against persistent XSS because it lives only in JS memory, not localStorage.
     if (token) {
-      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+      axios.defaults.headers.common["Authorization"] = `Bearer ${localStorage.getItem('token')}`;
       // In development or E2E/test environments (where webdriver is present), write the token to
       // localStorage as a fallback. This prevents Playwright from dropping the cookie across browser contexts.
       if (window.navigator.webdriver || import.meta.env.DEV) {

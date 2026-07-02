@@ -70,9 +70,7 @@ export default function RuntimeInfrastructureDashboard() {
   const [loading, setLoading] = useState(true);
   const [evaluating, setEvaluating] = useState(false);
   const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const fetchData = useCallback(async () => {
     try {
       const [overviewRes, persistRes, alertsRes, engineRes, msgRes, obsRes] = await Promise.all([axios.get(`/runtime/overview`, {

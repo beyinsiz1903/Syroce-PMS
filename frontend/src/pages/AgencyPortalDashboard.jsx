@@ -57,9 +57,7 @@ const AgencyPortalDashboard = () => {
   const [reservations, setReservations] = useState([]);
   const [reservationsLoading, setReservationsLoading] = useState(false);
   const authHeaders = () => ({
-    headers: {
-      Authorization: `Bearer ${token}`
-    }
+    headers: {}
   });
 
   // Login handler
@@ -109,7 +107,7 @@ const AgencyPortalDashboard = () => {
     };
     loadProfile();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [token]);
+  }, []);
 
   // Load content
   const loadContent = async () => {

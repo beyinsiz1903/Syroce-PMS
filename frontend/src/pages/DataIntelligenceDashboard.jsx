@@ -7,13 +7,11 @@ import { Button } from '../components/ui/button';
 import { TrendingUp, TrendingDown, Brain, Users, Activity, Shield, AlertTriangle, Target, Zap, BarChart3, Clock, Star, ArrowUpRight, ArrowDownRight, Loader2, RefreshCw, ChevronRight } from 'lucide-react';
 const API = "";
 function useAuth() {
-  const token = localStorage.getItem('token');
   const headers = {
-    Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json'
   };
   return {
-    token,
+    token: localStorage.getItem('token') || null,
     headers
   };
 }

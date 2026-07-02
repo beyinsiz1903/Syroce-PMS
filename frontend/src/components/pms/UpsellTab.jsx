@@ -8,49 +8,69 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import {
-  TrendingUp, Search, CheckCircle, XCircle, RefreshCw, Sparkles,
-  ArrowUpRight, Clock, Car, LogIn, LogOut, BedDouble, BarChart3,
-  DollarSign, Target, Percent, Building2, Settings as SettingsIcon
-} from 'lucide-react';
+import { TrendingUp, Search, CheckCircle, XCircle, RefreshCw, Sparkles, ArrowUpRight, Clock, Car, LogIn, LogOut, BedDouble, BarChart3, DollarSign, Target, Percent, Building2, Settings as SettingsIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-
-const PRICE_FIELDS = [
-  { key: 'late_checkout', label: 'Geç Check-out', icon: LogOut },
-  { key: 'early_checkin', label: 'Erken Check-in', icon: LogIn },
-  { key: 'airport_transfer', label: 'Havalimanı Transfer', icon: Car },
-];
-
+const PRICE_FIELDS = [{
+  key: 'late_checkout',
+  label: 'Geç Check-out',
+  icon: LogOut
+}, {
+  key: 'early_checkin',
+  label: 'Erken Check-in',
+  icon: LogIn
+}, {
+  key: 'airport_transfer',
+  label: 'Havalimanı Transfer',
+  icon: Car
+}];
 const TYPE_LABELS = {
-  room_upgrade: { label: 'Oda Yukseltme', icon: ArrowUpRight, color: 'bg-blue-100 text-blue-800' },
-  early_checkin: { label: 'Erken Check-in', icon: LogIn, color: 'bg-green-100 text-green-800' },
-  late_checkout: { label: 'Gec Check-out', icon: LogOut, color: 'bg-indigo-100 text-indigo-800' },
-  airport_transfer: { label: 'Transfer', icon: Car, color: 'bg-amber-100 text-amber-800' },
+  room_upgrade: {
+    label: 'Oda Yukseltme',
+    icon: ArrowUpRight,
+    color: 'bg-blue-100 text-blue-800'
+  },
+  early_checkin: {
+    label: 'Erken Check-in',
+    icon: LogIn,
+    color: 'bg-green-100 text-green-800'
+  },
+  late_checkout: {
+    label: 'Gec Check-out',
+    icon: LogOut,
+    color: 'bg-indigo-100 text-indigo-800'
+  },
+  airport_transfer: {
+    label: 'Transfer',
+    icon: Car,
+    color: 'bg-amber-100 text-amber-800'
+  }
 };
-
 const INSIGHT_STYLES = {
   success: 'bg-emerald-50 border-emerald-200',
   warning: 'bg-amber-50 border-amber-200',
-  info: 'bg-blue-50 border-blue-200',
+  info: 'bg-blue-50 border-blue-200'
 };
 const INSIGHT_DOT = {
   success: 'bg-emerald-500',
   warning: 'bg-amber-500',
-  info: 'bg-blue-500',
+  info: 'bg-blue-500'
 };
 const INSIGHT_TITLE_COLOR = {
   success: 'text-emerald-800',
   warning: 'text-amber-800',
-  info: 'text-blue-800',
+  info: 'text-blue-800'
 };
 const INSIGHT_TEXT_COLOR = {
   success: 'text-emerald-700',
   warning: 'text-amber-700',
-  info: 'text-blue-700',
+  info: 'text-blue-700'
 };
-
-const UpsellTab = ({ bookings = [] }) => {
-  const { t } = useTranslation();
+const UpsellTab = ({
+  bookings = []
+}) => {
+  const {
+    t
+  } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [offers, setOffers] = useState([]);
@@ -60,13 +80,15 @@ const UpsellTab = ({ bookings = [] }) => {
   const [loading, setLoading] = useState(false);
   const [loadingAction, setLoadingAction] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
-
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [priceDefaults, setPriceDefaults] = useState({});
-  const [priceForm, setPriceForm] = useState({ late_checkout: '', early_checkin: '', airport_transfer: '' });
-
+  const [priceForm, setPriceForm] = useState({
+    late_checkout: '',
+    early_checkin: '',
+    airport_transfer: ''
+  });
   const openSettings = useCallback(async () => {
     setSettingsOpen(true);
     setSettingsLoading(true);
@@ -77,16 +99,17 @@ const UpsellTab = ({ bookings = [] }) => {
       setPriceForm({
         late_checkout: prices.late_checkout != null ? String(prices.late_checkout) : '',
         early_checkin: prices.early_checkin != null ? String(prices.early_checkin) : '',
-        airport_transfer: prices.airport_transfer != null ? String(prices.airport_transfer) : '',
+        airport_transfer: prices.airport_transfer != null ? String(prices.airport_transfer) : ''
       });
     } catch {
       toast.error('Fiyat ayarları yüklenemedi');
     }
     setSettingsLoading(false);
   }, []);
-
   const savePriceSettings = async () => {
-    const payload = { prices: {} };
+    const payload = {
+      prices: {}
+    };
     for (const f of PRICE_FIELDS) {
       const raw = priceForm[f.key];
       if (raw === '' || raw == null) continue;
@@ -111,7 +134,6 @@ const UpsellTab = ({ bookings = [] }) => {
     }
     setSettingsSaving(false);
   };
-
   const loadAllOffers = useCallback(async () => {
     try {
       const res = await axios.get('/ai/upsell/offers');
@@ -121,7 +143,6 @@ const UpsellTab = ({ bookings = [] }) => {
       toast.error('Teklif geçmişi yüklenemedi');
     }
   }, []);
-
   const loadInsights = useCallback(async () => {
     try {
       const res = await axios.get('/ai/upsell/revenue-insights');
@@ -130,27 +151,17 @@ const UpsellTab = ({ bookings = [] }) => {
       toast.error('Gelir analizi yüklenemedi');
     }
   }, []);
-
   useEffect(() => {
     loadAllOffers();
     loadInsights();
   }, [loadAllOffers, loadInsights]);
-
-  const activeBookings = bookings.filter(b =>
-    ['confirmed', 'guaranteed', 'checked_in'].includes(b.status)
-  );
-
+  const activeBookings = bookings.filter(b => ['confirmed', 'guaranteed', 'checked_in'].includes(b.status));
   const filteredBookings = activeBookings.filter(b => {
     const term = searchTerm.toLowerCase();
     if (!term) return true;
-    return (
-      (b.guest_name || '').toLowerCase().includes(term) ||
-      (b.id || '').toLowerCase().includes(term) ||
-      (b.room_number || '').toString().includes(term)
-    );
+    return (b.guest_name || '').toLowerCase().includes(term) || (b.id || '').toLowerCase().includes(term) || (b.room_number || '').toString().includes(term);
   });
-
-  const selectBooking = async (booking) => {
+  const selectBooking = async booking => {
     setSelectedBooking(booking);
     setLoading(true);
     try {
@@ -160,7 +171,9 @@ const UpsellTab = ({ bookings = [] }) => {
         setLoading(false);
         return;
       }
-      const res = await axios.post(`/ai/upsell/generate?booking_id=${booking.id}`, {}, { timeout: 10000 });
+      const res = await axios.post(`/ai/upsell/generate?booking_id=${booking.id}`, {}, {
+        timeout: 10000
+      });
       setOffers(res.data.offers || []);
       toast.success(`${res.data.total_offers} teklif uretildi`);
       loadAllOffers();
@@ -174,12 +187,13 @@ const UpsellTab = ({ bookings = [] }) => {
     }
     setLoading(false);
   };
-
   const regenerateOffers = async () => {
     if (!selectedBooking) return;
     setLoading(true);
     try {
-      const res = await axios.post(`/ai/upsell/generate?booking_id=${selectedBooking.id}`, {}, { timeout: 10000 });
+      const res = await axios.post(`/ai/upsell/generate?booking_id=${selectedBooking.id}`, {}, {
+        timeout: 10000
+      });
       setOffers(res.data.offers || []);
       toast.success(`${res.data.total_offers} yeni teklif uretildi`);
       loadAllOffers();
@@ -189,13 +203,15 @@ const UpsellTab = ({ bookings = [] }) => {
     }
     setLoading(false);
   };
-
   const handleOfferAction = async (offerId, action) => {
     setLoadingAction(offerId);
     try {
       await axios.put(`/ai/upsell/offers/${offerId}?action=${action}`);
       toast.success(action === 'accepted' ? 'Teklif kabul edildi ve folioya eklendi' : 'Teklif reddedildi');
-      setOffers(prev => prev.map(o => o.id === offerId ? { ...o, status: action } : o));
+      setOffers(prev => prev.map(o => o.id === offerId ? {
+        ...o,
+        status: action
+      } : o));
       loadAllOffers();
       loadInsights();
     } catch (err) {
@@ -203,23 +219,20 @@ const UpsellTab = ({ bookings = [] }) => {
     }
     setLoadingAction(null);
   };
-
-  const displayOffers = filterStatus === 'all'
-    ? allOffers
-    : allOffers.filter(o => o.status === filterStatus);
-
+  const displayOffers = filterStatus === 'all' ? allOffers : allOffers.filter(o => o.status === filterStatus);
   const kpis = revenueInsights?.kpis;
   const upsellSummary = revenueInsights?.upsell_summary;
-
-  return (
-    <div className="space-y-6">
+  return <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-semibold">Upsell & Gelir Optimizasyonu</h2>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={openSettings} data-testid="btn-upsell-settings">
             <SettingsIcon className="w-4 h-4 mr-2" /> {t('cm.components_pms_UpsellTab.fiyat_ayarlari')}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => { loadAllOffers(); loadInsights(); }}>
+          <Button variant="outline" size="sm" onClick={() => {
+          loadAllOffers();
+          loadInsights();
+        }}>
             <RefreshCw className="w-4 h-4 mr-2" /> {t('cm.components_pms_UpsellTab.yenile')}
           </Button>
         </div>
@@ -233,41 +246,26 @@ const UpsellTab = ({ bookings = [] }) => {
               {t('cm.components_pms_UpsellTab.sabit_ucretli_upsell_tekliflerinin_fiyat')}
             </DialogDescription>
           </DialogHeader>
-          {settingsLoading ? (
-            <div className="py-6 text-center text-sm text-gray-500">{t('cm.components_pms_UpsellTab.yukleniyor')}</div>
-          ) : (
-            <div className="space-y-4 py-2">
-              {PRICE_FIELDS.map((f) => {
-                const Icon = f.icon;
-                const def = priceDefaults[f.key];
-                return (
-                  <div key={f.key} className="space-y-1">
+          {settingsLoading ? <div className="py-6 text-center text-sm text-gray-500">{t('cm.components_pms_UpsellTab.yukleniyor')}</div> : <div className="space-y-4 py-2">
+              {PRICE_FIELDS.map(f => {
+            const Icon = f.icon;
+            const def = priceDefaults[f.key];
+            return <div key={f.key} className="space-y-1">
                     <Label htmlFor={`upsell-price-${f.key}`} className="flex items-center gap-2 text-sm">
                       <Icon className="w-4 h-4 text-gray-500" />
                       {f.label}
                     </Label>
                     <div className="flex items-center gap-2">
-                      <Input
-                        id={`upsell-price-${f.key}`}
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        inputMode="decimal"
-                        value={priceForm[f.key]}
-                        onChange={(e) => setPriceForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-                        placeholder={def != null ? `Varsayılan: ${def}` : ''}
-                        data-testid={`input-upsell-price-${f.key}`}
-                      />
+                      <Input id={`upsell-price-${f.key}`} type="number" min="0" step="0.01" inputMode="decimal" value={priceForm[f.key]} onChange={e => setPriceForm(prev => ({
+                  ...prev,
+                  [f.key]: e.target.value
+                }))} placeholder={def != null ? `Varsayılan: ${def}` : ''} data-testid={`input-upsell-price-${f.key}`} />
                       <span className="text-sm text-gray-500">TL</span>
                     </div>
-                    {def != null && (
-                      <p className="text-xs text-gray-400">{t('cm.components_pms_UpsellTab.sistem_varsayilani')} {def} TL</p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                    {def != null && <p className="text-xs text-gray-400">{t('cm.components_pms_UpsellTab.sistem_varsayilani')} {def} TL</p>}
+                  </div>;
+          })}
+            </div>}
           <DialogFooter>
             <Button variant="outline" onClick={() => setSettingsOpen(false)} disabled={settingsSaving}>
               {t('cm.components_pms_UpsellTab.vazgec')}
@@ -279,8 +277,7 @@ const UpsellTab = ({ bookings = [] }) => {
         </DialogContent>
       </Dialog>
 
-      {kpis && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {kpis && <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="border-l-4 border-l-blue-500">
             <CardContent className="pt-4 pb-3">
               <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
@@ -319,8 +316,7 @@ const UpsellTab = ({ bookings = [] }) => {
               </p>
             </CardContent>
           </Card>
-        </div>
-      )}
+        </div>}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-1">
@@ -331,24 +327,9 @@ const UpsellTab = ({ bookings = [] }) => {
             <CardDescription>{t('cm.components_pms_UpsellTab.upsell_teklifi_uretmek_icin_bir_rezervas')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Input
-              placeholder={t('cm.components_pms_UpsellTab.misafir_adi_oda_no_veya_rez_id')}
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="text-sm"
-            />
+            <Input placeholder={t('cm.components_pms_UpsellTab.misafir_adi_oda_no_veya_rez_id')} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="text-sm" />
             <div className="max-h-[400px] overflow-y-auto space-y-2">
-              {filteredBookings.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">{t('cm.components_pms_UpsellTab.aktif_rezervasyon_bulunamadi')}</p>
-              ) : (
-                filteredBookings.slice(0, 20).map(b => (
-                  <div
-                    key={b.id}
-                    onClick={() => selectBooking(b)}
-                    className={`border rounded-lg p-3 cursor-pointer transition-all hover:border-blue-400 hover:bg-blue-50/50 ${
-                      selectedBooking?.id === b.id ? 'border-blue-500 bg-blue-50' : ''
-                    }`}
-                  >
+              {filteredBookings.length === 0 ? <p className="text-sm text-gray-400 text-center py-4">{t('cm.components_pms_UpsellTab.aktif_rezervasyon_bulunamadi')}</p> : filteredBookings.slice(0, 20).map(b => <div key={b.id} onClick={() => selectBooking(b)} className={`border rounded-lg p-3 cursor-pointer transition-all hover:border-blue-400 hover:bg-blue-50/50 ${selectedBooking?.id === b.id ? 'border-blue-500 bg-blue-50' : ''}`}>
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="font-medium text-sm">{b.guest_name || 'Misafir'}</p>
@@ -363,9 +344,7 @@ const UpsellTab = ({ bookings = [] }) => {
                       <span>→</span>
                       <span>{b.check_out?.slice(0, 10)}</span>
                     </div>
-                  </div>
-                ))
-              )}
+                  </div>)}
             </div>
           </CardContent>
         </Card>
@@ -378,37 +357,30 @@ const UpsellTab = ({ bookings = [] }) => {
                   <Sparkles className="w-4 h-4 text-amber-500" /> Upsell Teklifleri
                 </CardTitle>
                 <CardDescription>
-                  {selectedBooking
-                    ? `${selectedBooking.guest_name} - Oda ${selectedBooking.room_number}`
-                    : 'Sol taraftan bir rezervasyon seçin'}
+                  {selectedBooking ? `${selectedBooking.guest_name} - Oda ${selectedBooking.room_number}` : 'Sol taraftan bir rezervasyon seçin'}
                 </CardDescription>
               </div>
-              {selectedBooking && (
-                <Button variant="outline" size="sm" onClick={regenerateOffers} disabled={loading} className="h-7 text-xs">
+              {selectedBooking && <Button variant="outline" size="sm" onClick={regenerateOffers} disabled={loading} className="h-7 text-xs">
                   <Sparkles className="w-3 h-3 mr-1" /> Yeniden Uret
-                </Button>
-              )}
+                </Button>}
               {loading && <RefreshCw className="w-4 h-4 animate-spin text-blue-500" />}
             </div>
           </CardHeader>
           <CardContent>
-            {!selectedBooking && offers.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">
+            {!selectedBooking && offers.length === 0 ? <div className="text-center py-12 text-gray-400">
                 <Sparkles className="w-12 h-12 mx-auto mb-3 opacity-30" />
                 <p className="font-medium">{t('cm.components_pms_UpsellTab.henuz_teklif_yok')}</p>
                 <p className="text-sm">Bir rezervasyon sectiginizde AI otomatik teklif uretecek</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
+              </div> : <div className="space-y-3">
                 {offers.map(offer => {
-                  const typeInfo = TYPE_LABELS[offer.type] || { label: offer.type, icon: TrendingUp, color: 'bg-gray-100 text-gray-800' };
-                  const TypeIcon = typeInfo.icon;
-                  const isPending = offer.status === 'pending';
-                  return (
-                    <div key={offer.id} className={`border rounded-lg p-4 transition-all ${
-                      offer.status === 'accepted' ? 'border-emerald-300 bg-emerald-50/30' :
-                      offer.status === 'rejected' ? 'border-red-200 bg-red-50/20 opacity-60' : ''
-                    }`}>
+              const typeInfo = TYPE_LABELS[offer.type] || {
+                label: offer.type,
+                icon: TrendingUp,
+                color: 'bg-gray-100 text-gray-800'
+              };
+              const TypeIcon = typeInfo.icon;
+              const isPending = offer.status === 'pending';
+              return <div key={offer.id} className={`border rounded-lg p-4 transition-all ${offer.status === 'accepted' ? 'border-emerald-300 bg-emerald-50/30' : offer.status === 'rejected' ? 'border-red-200 bg-red-50/20 opacity-60' : ''}`}>
                       <div className="flex justify-between items-start mb-2">
                         <div className="flex items-center gap-2">
                           <TypeIcon className="w-4 h-4 text-gray-600" />
@@ -430,41 +402,21 @@ const UpsellTab = ({ bookings = [] }) => {
                             <Clock className="w-3 h-3" /> {offer.valid_until?.slice(0, 10)}
                           </span>
                         </div>
-                        {isPending ? (
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-red-600 border-red-200 hover:bg-red-50 h-7 text-xs"
-                              disabled={loadingAction === offer.id}
-                              onClick={() => handleOfferAction(offer.id, 'rejected')}
-                            >
+                        {isPending ? <div className="flex gap-2">
+                            <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 h-7 text-xs" disabled={loadingAction === offer.id} onClick={() => handleOfferAction(offer.id, 'rejected')}>
                               <XCircle className="w-3 h-3 mr-1" /> {t('cm.components_pms_UpsellTab.reddet')}
                             </Button>
-                            <Button
-                              size="sm"
-                              className="bg-emerald-600 hover:bg-emerald-700 h-7 text-xs"
-                              disabled={loadingAction === offer.id}
-                              onClick={() => handleOfferAction(offer.id, 'accepted')}
-                            >
-                              {loadingAction === offer.id
-                                ? <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
-                                : <CheckCircle className="w-3 h-3 mr-1" />
-                              }
+                            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 h-7 text-xs" disabled={loadingAction === offer.id} onClick={() => handleOfferAction(offer.id, 'accepted')}>
+                              {loadingAction === offer.id ? <RefreshCw className="w-3 h-3 mr-1 animate-spin" /> : <CheckCircle className="w-3 h-3 mr-1" />}
                               Kabul Et
                             </Button>
-                          </div>
-                        ) : (
-                          <Badge variant={offer.status === 'accepted' ? 'default' : 'secondary'} className="text-xs">
+                          </div> : <Badge variant={offer.status === 'accepted' ? 'default' : 'secondary'} className="text-xs">
                             {offer.status === 'accepted' ? 'Kabul Edildi' : 'Reddedildi'}
-                          </Badge>
-                        )}
+                          </Badge>}
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    </div>;
+            })}
+              </div>}
           </CardContent>
         </Card>
       </div>
@@ -490,33 +442,26 @@ const UpsellTab = ({ bookings = [] }) => {
             </div>
           </CardHeader>
           <CardContent>
-            {displayOffers.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">{t('cm.components_pms_UpsellTab.henuz_teklif_gecmisi_yok')}</p>
-            ) : (
-              <div className="max-h-[350px] overflow-y-auto space-y-2">
+            {displayOffers.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">{t('cm.components_pms_UpsellTab.henuz_teklif_gecmisi_yok')}</p> : <div className="max-h-[350px] overflow-y-auto space-y-2">
                 {displayOffers.slice(0, 50).map(offer => {
-                  const typeInfo = TYPE_LABELS[offer.type] || { label: offer.type, color: 'bg-gray-100 text-gray-800' };
-                  return (
-                    <div key={offer.id} className="flex items-center justify-between border rounded-lg px-3 py-2">
+              const typeInfo = TYPE_LABELS[offer.type] || {
+                label: offer.type,
+                color: 'bg-gray-100 text-gray-800'
+              };
+              return <div key={offer.id} className="flex items-center justify-between border rounded-lg px-3 py-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <Badge className={`text-xs shrink-0 ${typeInfo.color}`}>{typeInfo.label}</Badge>
                         <span className="text-xs text-gray-500 truncate">{offer.booking_id?.slice(0, 8)}...</span>
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="text-sm font-medium">{offer.price?.toFixed(0)} TL</span>
-                        <Badge variant={
-                          offer.status === 'accepted' ? 'default' :
-                          offer.status === 'rejected' ? 'secondary' : 'outline'
-                        } className="text-xs">
-                          {offer.status === 'accepted' ? 'Kabul' :
-                           offer.status === 'rejected' ? 'Red' : 'Bekliyor'}
+                        <Badge variant={offer.status === 'accepted' ? 'default' : offer.status === 'rejected' ? 'secondary' : 'outline'} className="text-xs">
+                          {offer.status === 'accepted' ? 'Kabul' : offer.status === 'rejected' ? 'Red' : 'Bekliyor'}
                         </Badge>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    </div>;
+            })}
+              </div>}
           </CardContent>
         </Card>
 
@@ -528,12 +473,8 @@ const UpsellTab = ({ bookings = [] }) => {
             <CardDescription>Gercek verilere dayali oneriler</CardDescription>
           </CardHeader>
           <CardContent>
-            {!revenueInsights?.insights?.length ? (
-              <p className="text-sm text-gray-400 text-center py-6">{t('cm.components_pms_UpsellTab.analiz_icin_yeterli_veri_yok')}</p>
-            ) : (
-              <div className="space-y-3">
-                {revenueInsights.insights.map((insight, i) => (
-                  <div key={i} className={`border rounded-lg p-4 ${INSIGHT_STYLES[insight.type] || 'bg-gray-50 border-gray-200'}`}>
+            {!revenueInsights?.insights?.length ? <p className="text-sm text-gray-400 text-center py-6">{t('cm.components_pms_UpsellTab.analiz_icin_yeterli_veri_yok')}</p> : <div className="space-y-3">
+                {revenueInsights.insights.map((insight, i) => <div key={insight.id || i} className={`border rounded-lg p-4 ${INSIGHT_STYLES[insight.type] || 'bg-gray-50 border-gray-200'}`}>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <div className={`w-2 h-2 rounded-full ${INSIGHT_DOT[insight.type] || 'bg-gray-500'}`} />
@@ -541,22 +482,16 @@ const UpsellTab = ({ bookings = [] }) => {
                           {insight.title}
                         </span>
                       </div>
-                      {insight.metric && (
-                        <Badge variant="outline" className="text-xs font-bold">{insight.metric}</Badge>
-                      )}
+                      {insight.metric && <Badge variant="outline" className="text-xs font-bold">{insight.metric}</Badge>}
                     </div>
                     <p className={`text-sm ${INSIGHT_TEXT_COLOR[insight.type] || 'text-gray-700'}`}>
                       {insight.text}
                     </p>
-                  </div>
-                ))}
-              </div>
-            )}
+                  </div>)}
+              </div>}
           </CardContent>
         </Card>
       </div>
-    </div>
-  );
+    </div>;
 };
-
 export default UpsellTab;

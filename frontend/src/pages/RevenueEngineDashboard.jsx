@@ -26,10 +26,7 @@ export default function RevenueEngineDashboard({
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const navigate = useNavigate();
-  const token = localStorage.getItem('token');
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const wrap = content => embedded ? content : <>{content}</>;
   const fetchAll = useCallback(async () => {
     setLoading(true);

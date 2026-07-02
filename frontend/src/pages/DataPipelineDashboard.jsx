@@ -49,9 +49,7 @@ export default function DataPipelineDashboard() {
   const [loading, setLoading] = useState(true);
   const [executing, setExecuting] = useState(null);
   const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const fetchData = useCallback(async () => {
     try {
       const [healthRes, runsRes, predsRes] = await Promise.all([axios.get(`/data-pipeline/health`, {

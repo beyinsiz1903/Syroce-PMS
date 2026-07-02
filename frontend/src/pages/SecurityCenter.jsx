@@ -31,10 +31,7 @@ export default function SecurityCenter({
   const [ipCheck, setIpCheck] = useState(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const token = localStorage.getItem('token');
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const fetch2FAStatus = useCallback(async () => {
     try {
       const res = await axios.get(`/2fa/status`, {

@@ -24,9 +24,7 @@ export default function ObservabilityDashboard() {
   const [recentTraces, setRecentTraces] = useState([]);
   const [loading, setLoading] = useState(true);
   const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const fetchData = useCallback(async () => {
     try {
       const [metricsRes, traceRes, errorRes, healthRes, recentRes] = await Promise.all([axios.get(`/observability/metrics`, {

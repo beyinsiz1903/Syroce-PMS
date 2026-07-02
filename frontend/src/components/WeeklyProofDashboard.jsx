@@ -1,54 +1,54 @@
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
-import {
-  LineChart, Line, BarChart, Bar,
-  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
-} from "recharts";
-import {
-  TrendingUp, TrendingDown, Minus, Award, Shield, Clock,
-  ArrowUpRight, ArrowDownRight, BarChart3, RefreshCw,
-} from "lucide-react";
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
+import { TrendingUp, TrendingDown, Minus, Award, Shield, Clock, ArrowUpRight, ArrowDownRight, BarChart3, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
 import { useTranslation } from 'react-i18next';
-
 const CHART_COLORS = {
   sync: "#10b981",
   drift: "#f59e0b",
   mttr: "#3b82f6",
   sla: "#a855f7",
-  p95: "#ef4444",
+  p95: "#ef4444"
 };
-
-function CustomTooltip({ active, payload, label }) {
-  const { t } = useTranslation();
+function CustomTooltip({
+  active,
+  payload,
+  label
+}) {
+  const {
+    t
+  } = useTranslation();
   if (!active || !payload?.length) return null;
-  return (
-    <div className="bg-white border border-gray-300 rounded-lg px-3 py-2 shadow-xl">
+  return <div className="bg-white border border-gray-300 rounded-lg px-3 py-2 shadow-xl">
       <p className="text-[10px] text-gray-500 mb-1">{label}</p>
-      {payload.map((p, i) => (
-        <div key={i} className="flex items-center gap-2 text-xs">
-          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
+      {payload.map((p, i) => <div key={p.id || i} className="flex items-center gap-2 text-xs">
+          <div className="w-2 h-2 rounded-full" style={{
+        backgroundColor: p.color
+      }} />
           <span className="text-gray-600">{p.name}:</span>
           <span className="text-gray-900 font-mono font-medium">{p.value}</span>
-        </div>
-      ))}
-    </div>
-  );
+        </div>)}
+    </div>;
 }
-
-function ImprovementCard({ icon, label, delta, unit, invertGood, testId }) {
+function ImprovementCard({
+  icon,
+  label,
+  delta,
+  unit,
+  invertGood,
+  testId
+}) {
   const isPositive = invertGood ? delta < 0 : delta > 0;
   const isNegative = invertGood ? delta > 0 : delta < 0;
   const trendIcon = delta > 0 ? <ArrowUpRight className="h-4 w-4" /> : delta < 0 ? <ArrowDownRight className="h-4 w-4" /> : <Minus className="h-4 w-4" />;
   const trendColor = isPositive ? "text-emerald-600" : isNegative ? "text-red-600" : "text-gray-500";
   const borderColor = isPositive ? "border-emerald-500/20" : isNegative ? "border-red-500/20" : "border-gray-200";
   const sign = delta > 0 ? "+" : "";
-
-  return (
-    <div className={`bg-white/80 border ${borderColor} rounded-xl p-5 transition-all hover:border-gray-300`} data-testid={testId}>
+  return <div className={`bg-white/80 border ${borderColor} rounded-xl p-5 transition-all hover:border-gray-300`} data-testid={testId}>
       <div className="flex items-center gap-2 mb-3">
         <span className="text-gray-500">{icon}</span>
         <span className="text-xs text-gray-500 font-medium">{label}</span>
@@ -60,53 +60,48 @@ function ImprovementCard({ icon, label, delta, unit, invertGood, testId }) {
       <div className="text-[10px] text-gray-500 mt-1.5">
         {isPositive ? "Iyilesiyor" : isNegative ? "Kotulesme" : "Degisim yok"} (ilk hafta → son hafta)
       </div>
-    </div>
-  );
+    </div>;
 }
-
 export function WeeklyProof() {
-  const { t } = useTranslation();
+  const {
+    t
+  } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [weeks, setWeeks] = useState(8);
-
   const fetchData = useCallback(async (showToast = false) => {
     try {
       const res = await axios.get(`/ops/dashboard/channel-health/weekly-proof?weeks=${weeks}`);
       setData(res.data);
       if (showToast) toast.success("Haftalık veriler güncellendi");
     } catch (err) {
-      toast.error("Haftalık veri yüklenemedi", { description: err.message });
+      toast.error("Haftalık veri yüklenemedi", {
+        description: err.message
+      });
     } finally {
       setLoading(false);
     }
   }, [weeks]);
-
   useEffect(() => {
     setLoading(true);
     fetchData();
   }, [fetchData]);
-
   if (loading) {
-    return (
-      <div className="space-y-4" data-testid="weekly-proof-loading">
+    return <div className="space-y-4" data-testid="weekly-proof-loading">
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28 bg-gray-100" />)}
+          {Array.from({
+          length: 5
+        }).map((_, i) => <Skeleton key={_.id || i} className="h-28 bg-gray-100" />)}
         </div>
         <Skeleton className="h-64 bg-gray-100" />
-      </div>
-    );
+      </div>;
   }
-
   if (!data || !data.weeks?.length) {
-    return (
-      <div className="text-center py-16 text-gray-500" data-testid="weekly-proof-empty">
+    return <div className="text-center py-16 text-gray-500" data-testid="weekly-proof-empty">
         <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-30" />
         <p className="text-sm">{t('cm.components_WeeklyProofDashboard.haftalik_veri_bulunamadi')}</p>
-      </div>
-    );
+      </div>;
   }
-
   const imp = data.improvements || {};
   const chartData = data.weeks.map(w => ({
     week: w.week_label,
@@ -115,11 +110,9 @@ export function WeeklyProof() {
     "SLA %": w.sla_compliance,
     "Drift": w.drift_count,
     "MTTR (s)": w.mttr_hours,
-    "p95 (ms)": w.push_latency_p95,
+    "p95 (ms)": w.push_latency_p95
   }));
-
-  return (
-    <div className="space-y-6" data-testid="weekly-proof-dashboard">
+  return <div className="space-y-6" data-testid="weekly-proof-dashboard">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
@@ -130,30 +123,27 @@ export function WeeklyProof() {
         </div>
         <div className="flex items-center gap-2">
           <div className="flex bg-white border border-gray-200 rounded-lg p-0.5" data-testid="weeks-selector">
-            {[4, 8, 12].map(w => (
-              <button key={w} onClick={() => setWeeks(w)}
-                className={`px-3 py-1 text-xs rounded-md font-medium transition-colors ${weeks === w ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-700"}`}
-                data-testid={`weeks-${w}`}>
+            {[4, 8, 12].map(w => <button key={w} onClick={() => setWeeks(w)} className={`px-3 py-1 text-xs rounded-md font-medium transition-colors ${weeks === w ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-700"}`} data-testid={`weeks-${w}`}>
                 {w}h
-              </button>
-            ))}
+              </button>)}
           </div>
-          <Button variant="ghost" size="sm" className="h-7 text-xs text-gray-500" onClick={() => { setLoading(true); fetchData(true); }} data-testid="weekly-proof-refresh">
+          <Button variant="ghost" size="sm" className="h-7 text-xs text-gray-500" onClick={() => {
+          setLoading(true);
+          fetchData(true);
+        }} data-testid="weekly-proof-refresh">
             <RefreshCw className="h-3 w-3 mr-1" />{t('cm.components_WeeklyProofDashboard.yenile')}
           </Button>
         </div>
       </div>
 
       {/* Improvement cards */}
-      {Object.keys(imp).length > 0 && (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3" data-testid="improvement-cards">
+      {Object.keys(imp).length > 0 && <div className="grid grid-cols-2 lg:grid-cols-5 gap-3" data-testid="improvement-cards">
           <ImprovementCard icon={<TrendingUp className="h-4 w-4" />} label="Sync Basari" delta={imp.sync_success_delta ?? 0} unit="%" testId="imp-sync" />
           <ImprovementCard icon={<TrendingDown className="h-4 w-4" />} label={t('cm.components_WeeklyProofDashboard.drift_sayisi')} delta={imp.drift_delta ?? 0} unit="" invertGood testId="imp-drift" />
           <ImprovementCard icon={<Clock className="h-4 w-4" />} label="MTTR" delta={imp.mttr_delta ?? 0} unit="s" invertGood testId="imp-mttr" />
           <ImprovementCard icon={<Shield className="h-4 w-4" />} label="SLA Uyum" delta={imp.sla_delta ?? 0} unit="%" testId="imp-sla" />
           <ImprovementCard icon={<BarChart3 className="h-4 w-4" />} label="Push p95" delta={imp.push_p95_delta ?? 0} unit="ms" invertGood testId="imp-p95" />
-        </div>
-      )}
+        </div>}
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -165,14 +155,31 @@ export function WeeklyProof() {
           </CardHeader>
           <CardContent data-testid="chart-sync-sla-weekly">
             <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <LineChart data={chartData} margin={{
+              top: 5,
+              right: 10,
+              left: 0,
+              bottom: 5
+            }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                <XAxis dataKey="week" tick={{ fontSize: 10, fill: "#71717a" }} />
-                <YAxis tick={{ fontSize: 10, fill: "#71717a" }} domain={[0, 100]} tickFormatter={v => `${v}%`} />
+                <XAxis dataKey="week" tick={{
+                fontSize: 10,
+                fill: "#71717a"
+              }} />
+                <YAxis tick={{
+                fontSize: 10,
+                fill: "#71717a"
+              }} domain={[0, 100]} tickFormatter={v => `${v}%`} />
                 <Tooltip content={<CustomTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 10 }} />
-                <Line type="monotone" dataKey="Sync %" stroke={CHART_COLORS.sync} strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="SLA %" stroke={CHART_COLORS.sla} strokeWidth={2} dot={{ r: 3 }} />
+                <Legend wrapperStyle={{
+                fontSize: 10
+              }} />
+                <Line type="monotone" dataKey="Sync %" stroke={CHART_COLORS.sync} strokeWidth={2} dot={{
+                r: 3
+              }} />
+                <Line type="monotone" dataKey="SLA %" stroke={CHART_COLORS.sla} strokeWidth={2} dot={{
+                r: 3
+              }} />
               </LineChart>
             </ResponsiveContainer>
           </CardContent>
@@ -186,12 +193,25 @@ export function WeeklyProof() {
           </CardHeader>
           <CardContent data-testid="chart-drift-mttr-weekly">
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <BarChart data={chartData} margin={{
+              top: 5,
+              right: 10,
+              left: 0,
+              bottom: 5
+            }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                <XAxis dataKey="week" tick={{ fontSize: 10, fill: "#71717a" }} />
-                <YAxis tick={{ fontSize: 10, fill: "#71717a" }} />
+                <XAxis dataKey="week" tick={{
+                fontSize: 10,
+                fill: "#71717a"
+              }} />
+                <YAxis tick={{
+                fontSize: 10,
+                fill: "#71717a"
+              }} />
                 <Tooltip content={<CustomTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 10 }} />
+                <Legend wrapperStyle={{
+                fontSize: 10
+              }} />
                 <Bar dataKey="Drift" fill={CHART_COLORS.drift} radius={[3, 3, 0, 0]} />
                 <Bar dataKey="MTTR (s)" fill={CHART_COLORS.mttr} radius={[3, 3, 0, 0]} />
               </BarChart>
@@ -209,16 +229,26 @@ export function WeeklyProof() {
         </CardHeader>
         <CardContent data-testid="chart-p95-weekly">
           <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+            <BarChart data={chartData} margin={{
+            top: 5,
+            right: 10,
+            left: 0,
+            bottom: 5
+          }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-              <XAxis dataKey="week" tick={{ fontSize: 10, fill: "#71717a" }} />
-              <YAxis tick={{ fontSize: 10, fill: "#71717a" }} tickFormatter={v => `${v}ms`} />
+              <XAxis dataKey="week" tick={{
+              fontSize: 10,
+              fill: "#71717a"
+            }} />
+              <YAxis tick={{
+              fontSize: 10,
+              fill: "#71717a"
+            }} tickFormatter={v => `${v}ms`} />
               <Tooltip content={<CustomTooltip />} />
               <Bar dataKey="p95 (ms)" fill={CHART_COLORS.p95} radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>
-    </div>
-  );
+    </div>;
 }

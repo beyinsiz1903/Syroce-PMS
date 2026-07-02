@@ -56,7 +56,9 @@ function latestRejection(history) {
   return null;
 }
 const CorporateContractApprovals = () => {
-  const { t } = useTranslation();
+  const {
+    t
+  } = useTranslation();
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -73,12 +75,9 @@ const CorporateContractApprovals = () => {
     setLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem('token');
       const res = await fetch('/api/sales/corporate-contracts', {
         credentials: "include",
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: {}
       });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
@@ -99,17 +98,16 @@ const CorporateContractApprovals = () => {
   // a reason, so we surface its error detail verbatim rather than re-implementing
   // the rules client-side.
   const postTransition = async (contractId, toStatus, reason) => {
-    const token = localStorage.getItem('token');
     const res = await fetch(`/api/sales/corporate-contract/${contractId}/approval-transition`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         to_status: toStatus,
         reason: reason || null
-      })
+      }),
+      credentials: "include"
     });
     if (!res.ok) {
       let detail = `HTTP ${res.status}`;

@@ -38,7 +38,7 @@ axios.interceptors.request.use(
       // but kept briefly for migration. We no longer write it on login.
       const token = localStorage.getItem("token");
       if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+        config.headers.Authorization = `Bearer ${localStorage.getItem('token')}`;
       }
     } else {
       if (config.headers.Authorization) {

@@ -4,26 +4,22 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { TrendingUp, DollarSign, Target, BarChart3, PieChart, Award } from 'lucide-react';
-
 const ComprehensiveReportsModule = () => {
   const [menuEngineering, setMenuEngineering] = useState(null);
   const [campaigns, setCampaigns] = useState([]);
   const [compsetPrices, setCompsetPrices] = useState(null);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     fetchMenuEngineering();
     fetchCampaigns();
     fetchCompsetPrices();
   }, []);
-
   const fetchMenuEngineering = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `/api/pos/menu-engineering`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
+      const response = await fetch(`/api/pos/menu-engineering`, {
+        headers: {},
+        credentials: "include"
+      });
       const data = await response.json();
       setMenuEngineering(data);
     } catch (error) {
@@ -32,38 +28,33 @@ const ComprehensiveReportsModule = () => {
       setLoading(false);
     }
   };
-
   const fetchCampaigns = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `/api/marketing/campaigns`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
+      const response = await fetch(`/api/marketing/campaigns`, {
+        headers: {},
+        credentials: "include"
+      });
       const data = await response.json();
       setCampaigns(data.campaigns || []);
     } catch (error) {
       console.error('Error:', error);
     }
   };
-
   const fetchCompsetPrices = async () => {
     try {
-      const token = localStorage.getItem('token');
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
-      const response = await fetch(
-        `/api/rms/compset/real-time-prices?check_in_date=${tomorrow.toISOString().split('T')[0]}&room_type=Standard`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
+      const response = await fetch(`/api/rms/compset/real-time-prices?check_in_date=${tomorrow.toISOString().split('T')[0]}&room_type=Standard`, {
+        headers: {},
+        credentials: "include"
+      });
       const data = await response.json();
       setCompsetPrices(data);
     } catch (error) {
       console.error('Error:', error);
     }
   };
-
-  const getCategoryColor = (category) => {
+  const getCategoryColor = category => {
     const colors = {
       'Stars': 'bg-green-100 text-green-800',
       'Plowhorses': 'bg-yellow-100 text-yellow-800',
@@ -72,9 +63,7 @@ const ComprehensiveReportsModule = () => {
     };
     return colors[category] || 'bg-gray-100 text-gray-800';
   };
-
-  return (
-    <div className="p-6 space-y-6">
+  return <div className="p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold flex items-center gap-2">
           <BarChart3 className="w-8 h-8 text-blue-600" />
@@ -106,10 +95,7 @@ const ComprehensiveReportsModule = () => {
               <CardTitle>Menu Engineering Matrix</CardTitle>
             </CardHeader>
             <CardContent>
-              {loading ? (
-                <div className="text-center py-8">Loading...</div>
-              ) : (
-                <div>
+              {loading ? <div className="text-center py-8">Loading...</div> : <div>
                   <div className="grid grid-cols-4 gap-4 mb-6">
                     <Card className="bg-green-50">
                       <CardContent className="p-4 text-center">
@@ -150,8 +136,7 @@ const ComprehensiveReportsModule = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {menuEngineering?.menu_items?.map((item, idx) => (
-                          <tr key={idx} className="border-b hover:bg-gray-50">
+                        {menuEngineering?.menu_items?.map((item, idx) => <tr key={idx} className="border-b hover:bg-gray-50">
                             <td className="p-3 font-medium">{item.item_name}</td>
                             <td className="p-3">
                               <Badge className={getCategoryColor(item.category)}>
@@ -166,13 +151,11 @@ const ComprehensiveReportsModule = () => {
                               </span>
                             </td>
                             <td className="p-3 text-sm">{item.recommendation}</td>
-                          </tr>
-                        ))}
+                          </tr>)}
                       </tbody>
                     </table>
                   </div>
-                </div>
-              )}
+                </div>}
             </CardContent>
           </Card>
         </TabsContent>
@@ -185,8 +168,7 @@ const ComprehensiveReportsModule = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {campaigns.map((campaign, idx) => (
-                  <Card key={idx} className="border-l-4 border-l-blue-500">
+                {campaigns.map((campaign, idx) => <Card key={idx} className="border-l-4 border-l-blue-500">
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between">
                         <div className="space-y-2 flex-1">
@@ -221,8 +203,7 @@ const ComprehensiveReportsModule = () => {
                         </div>
                       </div>
                     </CardContent>
-                  </Card>
-                ))}
+                  </Card>)}
               </div>
             </CardContent>
           </Card>
@@ -240,8 +221,7 @@ const ComprehensiveReportsModule = () => {
               </div>
             </CardHeader>
             <CardContent>
-              {compsetPrices && (
-                <div className="space-y-6">
+              {compsetPrices && <div className="space-y-6">
                   <div className="grid grid-cols-3 gap-4">
                     <Card className="bg-blue-50">
                       <CardContent className="p-4">
@@ -279,8 +259,7 @@ const ComprehensiveReportsModule = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {compsetPrices.competitor_prices?.map((comp, idx) => (
-                        <tr key={idx} className="border-b hover:bg-gray-50">
+                      {compsetPrices.competitor_prices?.map((comp, idx) => <tr key={idx} className="border-b hover:bg-gray-50">
                           <td className="p-3 font-medium">{comp.competitor}</td>
                           <td className="p-3 text-right">
                             <span className={comp.price > compsetPrices.your_price ? 'text-red-600' : 'text-green-600'}>
@@ -292,18 +271,14 @@ const ComprehensiveReportsModule = () => {
                           </td>
                           <td className="p-3 text-sm">{comp.source}</td>
                           <td className="p-3 text-sm text-gray-600">{comp.last_updated}</td>
-                        </tr>
-                      ))}
+                        </tr>)}
                     </tbody>
                   </table>
-                </div>
-              )}
+                </div>}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
-    </div>
-  );
+    </div>;
 };
-
 export default ComprehensiveReportsModule;

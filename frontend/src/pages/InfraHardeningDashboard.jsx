@@ -1,10 +1,11 @@
 import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useCallback } from "react";
-
 const API = "";
 
 // Status badge component
-const StatusBadge = ({ status }) => {
+const StatusBadge = ({
+  status
+}) => {
   const colors = {
     healthy: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
     connected: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
@@ -16,39 +17,45 @@ const StatusBadge = ({ status }) => {
     disabled: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
     development: "bg-sky-500/15 text-sky-400 border-sky-500/30",
     single: "bg-sky-500/15 text-sky-400 border-sky-500/30",
-    simulated: "bg-violet-500/15 text-violet-400 border-violet-500/30",
+    simulated: "bg-violet-500/15 text-violet-400 border-violet-500/30"
   };
   const c = colors[status] || colors.disabled;
-  return (
-    <span data-testid={`status-badge-${status}`} className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${c}`}>
+  return <span data-testid={`status-badge-${status}`} className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${c}`}>
       {status}
-    </span>
-  );
+    </span>;
 };
 
 // Metric card
-const MetricCard = ({ label, value, sub, testId }) => (
-  <div data-testid={testId} className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg p-4">
+const MetricCard = ({
+  label,
+  value,
+  sub,
+  testId
+}) => <div data-testid={testId} className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg p-4">
     <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">{label}</div>
     <div className="text-2xl font-bold text-zinc-100">{value ?? "—"}</div>
     {sub && <div className="text-xs text-zinc-500 mt-1">{sub}</div>}
-  </div>
-);
+  </div>;
 
 // Section wrapper
-const Section = ({ title, status, children, testId }) => (
-  <div data-testid={testId} className="bg-zinc-900/80 border border-zinc-700/40 rounded-xl p-5 space-y-4">
+const Section = ({
+  title,
+  status,
+  children,
+  testId
+}) => <div data-testid={testId} className="bg-zinc-900/80 border border-zinc-700/40 rounded-xl p-5 space-y-4">
     <div className="flex items-center justify-between">
       <h3 className="text-base font-semibold text-zinc-200">{title}</h3>
       {status && <StatusBadge status={status} />}
     </div>
     {children}
-  </div>
-);
+  </div>;
 
 // Queue row
-const QueueRow = ({ name, data }) => (
-  <div data-testid={`queue-${name}`} className="flex items-center justify-between py-2 border-b border-zinc-800 last:border-0">
+const QueueRow = ({
+  name,
+  data
+}) => <div data-testid={`queue-${name}`} className="flex items-center justify-between py-2 border-b border-zinc-800 last:border-0">
     <div>
       <span className="text-sm font-medium text-zinc-300">{name}</span>
       <span className="text-xs text-zinc-500 ml-2">{data.description}</span>
@@ -59,22 +66,25 @@ const QueueRow = ({ name, data }) => (
       <span>Failed: <span className="text-red-400">{data.metrics?.failed || 0}</span></span>
       <span>Pending: <span className="text-amber-400">{data.pending || 0}</span></span>
     </div>
-  </div>
-);
-
-export default function InfraHardeningDashboard({ user, tenant, onLogout, embedded = false }) {
-  const { t } = useTranslation();
+  </div>;
+export default function InfraHardeningDashboard({
+  user,
+  tenant,
+  onLogout,
+  embedded = false
+}) {
+  const {
+    t
+  } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [backupTriggered, setBackupTriggered] = useState(false);
-
-  const token = localStorage.getItem("token");
-
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`/api/infra/summary`, { credentials: "include",
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await fetch(`/api/infra/summary`, {
+        credentials: "include",
+        headers: {}
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
@@ -85,49 +95,44 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout, embedd
     } finally {
       setLoading(false);
     }
-  }, [token]);
-
+  }, []);
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
   }, [fetchData]);
-
   const triggerBackup = async () => {
     try {
       setBackupTriggered(true);
-      await fetch(`/api/infra/backup/trigger`, { credentials: "include",
+      await fetch(`/api/infra/backup/trigger`, {
+        credentials: "include",
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {}
       });
-      setTimeout(() => { setBackupTriggered(false); fetchData(); }, 3000);
+      setTimeout(() => {
+        setBackupTriggered(false);
+        fetchData();
+      }, 3000);
     } catch {
       setBackupTriggered(false);
     }
   };
-
   if (loading) {
     if (embedded) return <div data-testid="infra-loading" className="flex items-center justify-center min-h-[40vh]"><div className="text-zinc-400 animate-pulse text-lg">Altyapi durumu yükleniyor...</div></div>;
-    return (
-      <>
+    return <>
         <div data-testid="infra-loading" className="flex items-center justify-center min-h-[60vh]">
           <div className="text-zinc-400 animate-pulse text-lg">Altyapi durumu yükleniyor...</div>
         </div>
-      </>
-    );
+      </>;
   }
-
   if (error) {
     if (embedded) return <div data-testid="infra-error" className="flex items-center justify-center min-h-[40vh]"><div className="text-red-400">Hata: {error}</div></div>;
-    return (
-      <>
+    return <>
         <div data-testid="infra-error" className="flex items-center justify-center min-h-[60vh]">
           <div className="text-red-400">Hata: {error}</div>
         </div>
-      </>
-    );
+      </>;
   }
-
   const redis = data?.redis_cluster || {};
   const workers = data?.worker_queues || {};
   const secrets = data?.secrets || {};
@@ -136,32 +141,22 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout, embedd
   const scaling = data?.scaling || {};
   const container = data?.container || {};
   const locks = data?.distributed_locks || {};
-
-  const dashboardContent = (
-    <div data-testid="infra-hardening-dashboard" className="space-y-6 p-4">
+  const dashboardContent = <div data-testid="infra-hardening-dashboard" className="space-y-6 p-4">
       {/* Header */}
-      {!embedded && (
-        <div className="flex items-center justify-between">
+      {!embedded && <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-zinc-100">{t("techDashboards.infraHardening")}</h1>
             <p className="text-sm text-zinc-500 mt-1">
               Production-grade SaaS altyapi durumu ve izleme
             </p>
           </div>
-          <button
-            data-testid="refresh-btn"
-            onClick={fetchData}
-            className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-300 hover:bg-zinc-700 transition"
-          >
+          <button data-testid="refresh-btn" onClick={fetchData} className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-300 hover:bg-zinc-700 transition">
             Yenile
           </button>
-        </div>
-      )}
-      {embedded && (
-        <div className="flex items-center justify-end">
+        </div>}
+      {embedded && <div className="flex items-center justify-end">
           <button data-testid="refresh-btn" onClick={fetchData} className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-300 hover:bg-zinc-700 transition">Yenile</button>
-        </div>
-      )}
+        </div>}
 
         {/* Top Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
@@ -196,9 +191,7 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout, embedd
               <MetricCard testId="locks-active" label="Active" value={locks.active_locks || 0} />
               <MetricCard testId="locks-contention" label="Contention" value={locks.contention_events || 0} />
             </div>
-            {locks.fallback_used > 0 && (
-              <div className="text-xs text-amber-400 mt-2">In-process fallback kullaniliyor ({locks.fallback_used} kez)</div>
-            )}
+            {locks.fallback_used > 0 && <div className="text-xs text-amber-400 mt-2">In-process fallback kullaniliyor ({locks.fallback_used} kez)</div>}
           </Section>
 
           {/* Worker Queues */}
@@ -210,9 +203,7 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout, embedd
               <MetricCard testId="workers-stuck" label="Stuck" value={workers.stuck_candidates || 0} />
             </div>
             <div className="space-y-0 border-t border-zinc-800 pt-2">
-              {workers.queue_details && Object.entries(workers.queue_details).map(([name, qd]) => (
-                <QueueRow key={name} name={name} data={qd} />
-              ))}
+              {workers.queue_details && Object.entries(workers.queue_details).map(([name, qd]) => <QueueRow key={name} name={name} data={qd} />)}
             </div>
           </Section>
 
@@ -243,12 +234,7 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout, embedd
                 RTO: <span className="text-zinc-300">{backup.rto_target}</span> | 
                 Retention: <span className="text-zinc-300">{backup.retention_days} gun</span>
               </div>
-              <button
-                data-testid="trigger-backup-btn"
-                onClick={triggerBackup}
-                disabled={backupTriggered}
-                className="px-3 py-1.5 bg-emerald-600/20 border border-emerald-600/40 text-emerald-400 rounded text-xs hover:bg-emerald-600/30 transition disabled:opacity-50"
-              >
+              <button data-testid="trigger-backup-btn" onClick={triggerBackup} disabled={backupTriggered} className="px-3 py-1.5 bg-emerald-600/20 border border-emerald-600/40 text-emerald-400 rounded text-xs hover:bg-emerald-600/30 transition disabled:opacity-50">
                 {backupTriggered ? "Baslatildi..." : "Backup Baslat"}
               </button>
             </div>
@@ -265,21 +251,15 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout, embedd
                 <span className="text-sm text-zinc-400">Sentry</span>
                 <StatusBadge status={obs.sentry?.active ? "active" : "disabled"} />
               </div>
-              {obs.otel?.active && (
-                <div className="text-xs text-zinc-500">
+              {obs.otel?.active && <div className="text-xs text-zinc-500">
                   Spans: {obs.otel.spans_created} created, Endpoint: {obs.otel.endpoint}
-                </div>
-              )}
-              {obs.sentry?.active && (
-                <div className="text-xs text-zinc-500">
+                </div>}
+              {obs.sentry?.active && <div className="text-xs text-zinc-500">
                   Events: {obs.sentry.events_sent}, Errors: {obs.sentry.errors_captured}
-                </div>
-              )}
-              {obs.cloud_metrics?.latency && Object.keys(obs.cloud_metrics.latency).length > 0 && (
-                <div className="text-xs text-zinc-500 mt-2">
+                </div>}
+              {obs.cloud_metrics?.latency && Object.keys(obs.cloud_metrics.latency).length > 0 && <div className="text-xs text-zinc-500 mt-2">
                   Latency metrics: {Object.keys(obs.cloud_metrics.latency).length} endpoints tracked
-                </div>
-              )}
+                </div>}
             </div>
           </Section>
         </div>
@@ -293,15 +273,11 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout, embedd
             <MetricCard testId="scaling-active" label="Active" value={scaling.active_instances || 1} />
             <MetricCard testId="scaling-stale" label="Stale" value={scaling.stale_instances || 0} />
           </div>
-          {scaling.stateless_check && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {Object.entries(scaling.stateless_check.checks || {}).map(([check, passed]) => (
-                <span key={check} className={`px-2 py-0.5 rounded text-xs ${passed ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+          {scaling.stateless_check && <div className="mt-3 flex flex-wrap gap-2">
+              {Object.entries(scaling.stateless_check.checks || {}).map(([check, passed]) => <span key={check} className={`px-2 py-0.5 rounded text-xs ${passed ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
                   {check.replace(/_/g, " ")}
-                </span>
-              ))}
-            </div>
-          )}
+                </span>)}
+            </div>}
         </Section>
 
         {/* Container Info — Full Width */}
@@ -312,28 +288,15 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout, embedd
             <MetricCard testId="container-python" label="Python" value={container.python_version || "—"} />
             <MetricCard testId="container-host" label="Hostname" value={container.hostname || "—"} />
           </div>
-          {container.environment_vars_present && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {Object.entries(container.environment_vars_present).map(([envVar, present]) => (
-                <span key={envVar} className={`px-2 py-0.5 rounded text-xs ${
-                  present === true || (typeof present === "string" && present !== "false" && present !== "env") 
-                    ? "bg-emerald-500/10 text-emerald-400" 
-                    : "bg-zinc-700/50 text-zinc-500"
-                }`}>
-                  {envVar}: {typeof present === "boolean" ? (present ? "set" : "—") : present}
-                </span>
-              ))}
-            </div>
-          )}
+          {container.environment_vars_present && <div className="mt-3 flex flex-wrap gap-2">
+              {Object.entries(container.environment_vars_present).map(([envVar, present]) => <span key={envVar} className={`px-2 py-0.5 rounded text-xs ${present === true || typeof present === "string" && present !== "false" && present !== "env" ? "bg-emerald-500/10 text-emerald-400" : "bg-zinc-700/50 text-zinc-500"}`}>
+                  {envVar}: {typeof present === "boolean" ? present ? "set" : "—" : present}
+                </span>)}
+            </div>}
         </Section>
-      </div>
-  );
-
+      </div>;
   if (embedded) return dashboardContent;
-
-  return (
-    <>
+  return <>
       {dashboardContent}
-    </>
-  );
+    </>;
 }

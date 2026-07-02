@@ -65,7 +65,7 @@ const vendorApi = axios.create({
 vendorApi.interceptors.request.use(config => {
   const token = localStorage.getItem(VENDOR_TOKEN_KEY);
   if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+    config.headers.Authorization = `Bearer ${localStorage.getItem('token')}`;
   } else if (config.headers) {
     delete config.headers.Authorization;
     delete config.headers.common?.Authorization;

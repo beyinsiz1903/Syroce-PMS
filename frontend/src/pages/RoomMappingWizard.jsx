@@ -108,9 +108,7 @@ const RoomMappingWizard = ({
   // Results
   const [saving, setSaving] = useState(false);
   const [results, setResults] = useState(null);
-  const headers = {
-    Authorization: `Bearer ${localStorage.getItem('token')}`
-  };
+  const headers = {};
 
   // Step 1: Load connectors
   useEffect(() => {

@@ -23,9 +23,7 @@ export default function EventBusDashboard() {
   const [replaySummary, setReplaySummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const fetchData = useCallback(async () => {
     try {
       const [statusRes, metricsRes, channelsRes, replayRes] = await Promise.all([axios.get(`/event-bus/status`, {

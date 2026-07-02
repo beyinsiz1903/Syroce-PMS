@@ -5,25 +5,23 @@ import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Moon, DoorClosed, AlertTriangle, Award, Clock, Star } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-
 const HousekeepingDetailedReports = () => {
-  const { t } = useTranslation();
+  const {
+    t
+  } = useTranslation();
   const [roomStatus, setRoomStatus] = useState(null);
   const [staffPerformance, setStaffPerformance] = useState([]);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     fetchRoomStatusReport();
     fetchStaffPerformance();
   }, []);
-
   const fetchRoomStatusReport = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `/api/housekeeping/room-status-report`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
+      const response = await fetch(`/api/housekeeping/room-status-report`, {
+        headers: {},
+        credentials: "include"
+      });
       const data = await response.json();
       setRoomStatus(data);
     } catch (error) {
@@ -32,23 +30,19 @@ const HousekeepingDetailedReports = () => {
       setLoading(false);
     }
   };
-
   const fetchStaffPerformance = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `/api/housekeeping/staff-performance-detailed`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
+      const response = await fetch(`/api/housekeeping/staff-performance-detailed`, {
+        headers: {},
+        credentials: "include"
+      });
       const data = await response.json();
       setStaffPerformance(data.staff_performance || []);
     } catch (error) {
       console.error('Error:', error);
     }
   };
-
-  return (
-    <div className="p-6 space-y-6">
+  return <div className="p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold">{t('hkReports.title')}</h1>
         <p className="text-gray-600">{t('hkReports.subtitle')}</p>
@@ -68,10 +62,7 @@ const HousekeepingDetailedReports = () => {
 
         {/* Room Status Tab */}
         <TabsContent value="status">
-          {loading ? (
-            <div className="text-center py-8">{t('common.loading')}</div>
-          ) : (
-            <div className="space-y-6">
+          {loading ? <div className="text-center py-8">{t('common.loading')}</div> : <div className="space-y-6">
               {/* Summary */}
               <Card>
                 <CardHeader>
@@ -116,10 +107,7 @@ const HousekeepingDetailedReports = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {roomStatus?.dnd_rooms?.length === 0 ? (
-                    <div className="text-center text-gray-500 py-4">{t('hkReports.noDndRooms')}</div>
-                  ) : (
-                    <table className="w-full">
+                  {roomStatus?.dnd_rooms?.length === 0 ? <div className="text-center text-gray-500 py-4">{t('hkReports.noDndRooms')}</div> : <table className="w-full">
                       <thead>
                         <tr className="border-b">
                           <th className="text-left p-3">{t('hkReports.room')}</th>
@@ -129,19 +117,16 @@ const HousekeepingDetailedReports = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {roomStatus?.dnd_rooms?.map((room, idx) => (
-                          <tr key={idx} className="border-b hover:bg-gray-50">
+                        {roomStatus?.dnd_rooms?.map((room, idx) => <tr key={idx} className="border-b hover:bg-gray-50">
                             <td className="p-3 font-bold">{room.room}</td>
                             <td className="p-3">{room.guest}</td>
                             <td className="p-3">{room.dnd_since}</td>
                             <td className="p-3">
                               <Badge variant="outline">{room.duration_hours} {t('hkReports.hours')}</Badge>
                             </td>
-                          </tr>
-                        ))}
+                          </tr>)}
                       </tbody>
-                    </table>
-                  )}
+                    </table>}
                 </CardContent>
               </Card>
 
@@ -151,10 +136,7 @@ const HousekeepingDetailedReports = () => {
                   <CardTitle>Sleep Out (SO)</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {roomStatus?.sleep_out?.length === 0 ? (
-                    <div className="text-center text-gray-500 py-4">{t('hkReports.noSleepOutRooms')}</div>
-                  ) : (
-                    <table className="w-full">
+                  {roomStatus?.sleep_out?.length === 0 ? <div className="text-center text-gray-500 py-4">{t('hkReports.noSleepOutRooms')}</div> : <table className="w-full">
                       <thead>
                         <tr className="border-b">
                           <th className="text-left p-3">{t('hkReports.room')}</th>
@@ -164,19 +146,16 @@ const HousekeepingDetailedReports = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {roomStatus?.sleep_out?.map((room, idx) => (
-                          <tr key={idx} className="border-b hover:bg-gray-50">
+                        {roomStatus?.sleep_out?.map((room, idx) => <tr key={idx} className="border-b hover:bg-gray-50">
                             <td className="p-3 font-bold">{room.room}</td>
                             <td className="p-3">{room.guest}</td>
                             <td className="p-3">{room.last_activity}</td>
                             <td className="p-3">
                               <Badge className="bg-yellow-500">{room.status}</Badge>
                             </td>
-                          </tr>
-                        ))}
+                          </tr>)}
                       </tbody>
-                    </table>
-                  )}
+                    </table>}
                 </CardContent>
               </Card>
 
@@ -189,10 +168,7 @@ const HousekeepingDetailedReports = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {roomStatus?.out_of_order?.length === 0 ? (
-                    <div className="text-center text-gray-500 py-4">{t('hkReports.noOooRooms')}</div>
-                  ) : (
-                    <table className="w-full">
+                  {roomStatus?.out_of_order?.length === 0 ? <div className="text-center text-gray-500 py-4">{t('hkReports.noOooRooms')}</div> : <table className="w-full">
                       <thead>
                         <tr className="border-b">
                           <th className="text-left p-3">{t('hkReports.room')}</th>
@@ -202,28 +178,23 @@ const HousekeepingDetailedReports = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {roomStatus?.out_of_order?.map((room, idx) => (
-                          <tr key={idx} className="border-b hover:bg-gray-50">
+                        {roomStatus?.out_of_order?.map((room, idx) => <tr key={idx} className="border-b hover:bg-gray-50">
                             <td className="p-3 font-bold">{room.room}</td>
                             <td className="p-3">{room.reason}</td>
                             <td className="p-3">{room.since}</td>
                             <td className="p-3">{room.expected_fix}</td>
-                          </tr>
-                        ))}
+                          </tr>)}
                       </tbody>
-                    </table>
-                  )}
+                    </table>}
                 </CardContent>
               </Card>
-            </div>
-          )}
+            </div>}
         </TabsContent>
 
         {/* Staff Performance Tab */}
         <TabsContent value="performance">
           <div className="space-y-4">
-            {staffPerformance.map((staff, idx) => (
-              <Card key={idx} className="border-l-4 border-l-blue-500">
+            {staffPerformance.map((staff, idx) => <Card key={idx} className="border-l-4 border-l-blue-500">
                 <CardContent className="p-6">
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
@@ -237,8 +208,7 @@ const HousekeepingDetailedReports = () => {
                     </div>
 
                     {/* Daily Stats */}
-                    {staff.daily_stats && (
-                    <div>
+                    {staff.daily_stats && <div>
                       <h4 className="font-semibold mb-2">{t('hkReports.todayPerformance')}</h4>
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                         <div className="bg-blue-50 p-3 rounded">
@@ -262,12 +232,10 @@ const HousekeepingDetailedReports = () => {
                           <div className="text-2xl font-bold text-yellow-600">{staff.daily_stats?.quality_score || 0}%</div>
                         </div>
                       </div>
-                    </div>
-                    )}
+                    </div>}
 
                     {/* Monthly Stats */}
-                    {staff.monthly_stats && (
-                    <div>
+                    {staff.monthly_stats && <div>
                       <h4 className="font-semibold mb-2">{t('hkReports.monthlyPerformance')}</h4>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                         <div>
@@ -283,53 +251,41 @@ const HousekeepingDetailedReports = () => {
                           <div className="font-semibold">{staff.monthly_stats?.attendance_rate || 0}%</div>
                         </div>
                       </div>
-                    </div>
-                    )}
+                    </div>}
 
                     {/* Certifications */}
                     <div>
                       <h4 className="font-semibold mb-2">{t('hkReports.certifications')}</h4>
                       <div className="flex gap-2 flex-wrap">
-                        {staff.certifications?.map((cert, i) => (
-                          <Badge key={i} variant="outline" className="bg-blue-50">
+                        {staff.certifications?.map((cert, i) => <Badge key={i} variant="outline" className="bg-blue-50">
                             {cert}
-                          </Badge>
-                        ))}
+                          </Badge>)}
                       </div>
                     </div>
 
                     {/* Recent Feedback */}
-                    {staff.recent_feedback && staff.recent_feedback.length > 0 && (
-                      <div>
+                    {staff.recent_feedback && staff.recent_feedback.length > 0 && <div>
                         <h4 className="font-semibold mb-2">{t('hkReports.recentFeedback')}</h4>
                         <div className="space-y-2">
-                          {staff.recent_feedback.map((feedback, i) => (
-                            <div key={i} className="bg-gray-50 p-3 rounded">
+                          {staff.recent_feedback.map((feedback, i) => <div key={feedback.id || i} className="bg-gray-50 p-3 rounded">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                   <div className="flex">
-                                    {[...Array(5)].map((_, j) => (
-                                      <Star key={j} className={`w-3.5 h-3.5 ${j < feedback.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`} />
-                                    ))}
+                                    {[...Array(5)].map((_, j) => <Star key={j} className={`w-3.5 h-3.5 ${j < feedback.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`} />)}
                                   </div>
                                   <span className="text-sm text-gray-600">{feedback.date}</span>
                                 </div>
                               </div>
                               <p className="text-sm mt-1">{feedback.comment}</p>
-                            </div>
-                          ))}
+                            </div>)}
                         </div>
-                      </div>
-                    )}
+                      </div>}
                   </div>
                 </CardContent>
-              </Card>
-            ))}
+              </Card>)}
           </div>
         </TabsContent>
       </Tabs>
-    </div>
-  );
+    </div>;
 };
-
 export default HousekeepingDetailedReports;

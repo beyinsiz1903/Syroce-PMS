@@ -1,53 +1,45 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { FileText, Printer, Download, User, Calendar, CreditCard, MapPin, Phone, Mail } from 'lucide-react';
 import { alertDialog } from '@/lib/dialogs';
-
-const RegistrationCard = ({ bookingId, onClose }) => {
+const RegistrationCard = ({
+  bookingId,
+  onClose
+}) => {
   const [cardData, setCardData] = useState(null);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     if (bookingId) {
       fetchRegistrationData();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [bookingId]);
-
   const fetchRegistrationData = async () => {
     try {
-      const token = localStorage.getItem('token');
-      
       // Fetch booking details
-      const bookingResponse = await fetch(
-        `/api/bookings/${bookingId}`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
+      const bookingResponse = await fetch(`/api/bookings/${bookingId}`, {
+        headers: {},
+        credentials: "include"
+      });
       const bookingData = await bookingResponse.json();
-      
+
       // Fetch guest details
-      const guestResponse = await fetch(
-        `/api/guests/${bookingData.booking.guest_id}`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
+      const guestResponse = await fetch(`/api/guests/${bookingData.booking.guest_id}`, {
+        headers: {},
+        credentials: "include"
+      });
       const guestData = await guestResponse.json();
-      
+
       // Fetch room details
-      const roomsResponse = await fetch(
-        `/api/pms/rooms`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
+      const roomsResponse = await fetch(`/api/pms/rooms`, {
+        headers: {},
+        credentials: "include"
+      });
       const roomsData = await roomsResponse.json();
       const room = roomsData.rooms.find(r => r.id === bookingData.booking.room_id);
-      
       setCardData({
         booking: bookingData.booking,
         guest: guestData.guest,
@@ -55,20 +47,21 @@ const RegistrationCard = ({ bookingId, onClose }) => {
       });
     } catch (error) {
       console.error('Error fetching registration data:', error);
+    
+      toast.error('İşlem başarısız oldu');
     } finally {
       setLoading(false);
     }
   };
-
   const handlePrint = () => {
     window.print();
   };
-
   const handleDownloadPDF = async () => {
-    alertDialog({ message: 'PDF download functionality - integrate with PDF library' });
+    alertDialog({
+      message: 'PDF download functionality - integrate with PDF library'
+    });
   };
-
-  const formatDate = (date) => {
+  const formatDate = date => {
     if (!date) return 'N/A';
     try {
       return new Date(date).toLocaleDateString('en-US', {
@@ -80,10 +73,8 @@ const RegistrationCard = ({ bookingId, onClose }) => {
       return date;
     }
   };
-
   if (loading) {
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    return <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <Card className="w-full max-w-4xl max-h-[90vh] overflow-auto">
           <CardContent className="p-6">
             <div className="animate-pulse space-y-4">
@@ -92,27 +83,24 @@ const RegistrationCard = ({ bookingId, onClose }) => {
             </div>
           </CardContent>
         </Card>
-      </div>
-    );
+      </div>;
   }
-
   if (!cardData) {
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    return <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <Card className="w-full max-w-4xl">
           <CardContent className="p-6">
             <p>Error loading registration card</p>
             <Button onClick={onClose} className="mt-4">Close</Button>
           </CardContent>
         </Card>
-      </div>
-    );
+      </div>;
   }
-
-  const { booking, guest, room } = cardData;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+  const {
+    booking,
+    guest,
+    room
+  } = cardData;
+  return <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <Card className="w-full max-w-4xl max-h-[90vh] overflow-auto bg-white">
         <CardHeader className="border-b print:border-black">
           <div className="flex justify-between items-start">
@@ -177,15 +165,13 @@ const RegistrationCard = ({ bookingId, onClose }) => {
                 </div>
               </div>
             </div>
-            {guest.address && (
-              <div className="mt-4 flex items-start gap-2">
+            {guest.address && <div className="mt-4 flex items-start gap-2">
                 <MapPin className="w-4 h-4 text-gray-600 mt-1" />
                 <div className="flex-1">
                   <label className="text-sm font-semibold text-gray-600">Address:</label>
                   <p className="text-lg">{guest.address}</p>
                 </div>
-              </div>
-            )}
+              </div>}
           </div>
 
           {/* Stay Information */}
@@ -207,15 +193,15 @@ const RegistrationCard = ({ bookingId, onClose }) => {
                 <label className="text-sm font-semibold text-gray-600">Number of Nights:</label>
                 <p className="text-lg">
                   {(() => {
-                    try {
-                      const checkin = new Date(booking.check_in);
-                      const checkout = new Date(booking.check_out);
-                      const nights = Math.ceil((checkout - checkin) / (1000 * 60 * 60 * 24));
-                      return nights;
-                    } catch {
-                      return 'N/A';
-                    }
-                  })()}
+                  try {
+                    const checkin = new Date(booking.check_in);
+                    const checkout = new Date(booking.check_out);
+                    const nights = Math.ceil((checkout - checkin) / (1000 * 60 * 60 * 24));
+                    return nights;
+                  } catch {
+                    return 'N/A';
+                  }
+                })()}
                 </p>
               </div>
               <div>
@@ -275,16 +261,14 @@ const RegistrationCard = ({ bookingId, onClose }) => {
           </div>
 
           {/* Special Requests */}
-          {booking.special_requests && (
-            <div>
+          {booking.special_requests && <div>
               <div className="mb-2 pb-2 border-b-2 border-gray-300">
                 <h2 className="text-xl font-bold">SPECIAL REQUESTS</h2>
               </div>
               <p className="text-lg p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded">
                 {booking.special_requests}
               </p>
-            </div>
-          )}
+            </div>}
 
           {/* Signatures */}
           <div className="mt-8 pt-6 border-t-2 border-gray-300">
@@ -317,8 +301,6 @@ const RegistrationCard = ({ bookingId, onClose }) => {
           </div>
         </CardContent>
       </Card>
-    </div>
-  );
+    </div>;
 };
-
 export default RegistrationCard;

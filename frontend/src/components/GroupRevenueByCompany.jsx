@@ -180,7 +180,9 @@ const GroupRevenueByCompany = () => {
                     localStorage.setItem('pickup_company_id', row.company_id);
                   } catch (e) {
                     console.warn('Unable to persist pickup drilldown context', e);
-                  }
+                  
+      toast.error('İşlem başarısız oldu');
+    }
                   window.open('/pms?tab=reports', '_blank');
                 }}
               >

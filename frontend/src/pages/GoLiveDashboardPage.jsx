@@ -89,9 +89,7 @@ export default function GoLiveDashboardPage() {
   const [runningScenario, setRunningScenario] = useState(null);
   const [runningDrill, setRunningDrill] = useState(null);
   const token = localStorage.getItem("token") || localStorage.getItem("access_token");
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
+  const headers = {};
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
