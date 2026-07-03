@@ -46,7 +46,7 @@ export function buildStaffWsUrl({ backendUrl = import.meta.env.VITE_BACKEND_URL,
 
 /* ─── stat card ─────────────────────────────────────────────────── */
 function StatCard({ label, value, color, testId }) {
-  const c = { amber: 'from-amber-50 to-orange-50 border-amber-200 text-amber-600', blue: 'from-blue-50 to-indigo-50 border-blue-200 text-blue-600', indigo: 'from-indigo-50 to-violet-50 border-indigo-200 text-indigo-600', green: 'from-emerald-50 to-green-50 border-emerald-200 text-emerald-600' }[color] || '';
+  const c = { amber: 'from-amber-50 to-amber-50 border-amber-200 text-amber-600', blue: 'from-blue-50 to-indigo-50 border-blue-200 text-blue-600', indigo: 'from-indigo-50 to-violet-50 border-indigo-200 text-indigo-600', green: 'from-emerald-50 to-green-50 border-emerald-200 text-emerald-600' }[color] || '';
   return (
     <div className={`rounded-2xl border bg-gradient-to-br ${c} p-5`}>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">{label}</p>

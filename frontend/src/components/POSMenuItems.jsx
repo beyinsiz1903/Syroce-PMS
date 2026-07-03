@@ -24,11 +24,11 @@ import { useTranslation } from 'react-i18next';
 const DEFAULT_CATEGORIES = ['Ana Yemek', 'Başlangıç', 'Tatlı', 'İçecek', 'Alkollü', 'Atıştırmalık'];
 
 const CATEGORY_COLORS = {
-  'Ana Yemek':    'bg-orange-50 border-orange-200 text-orange-700',
+  'Ana Yemek':    'bg-amber-50 border-amber-200 text-amber-700',
   'Başlangıç':   'bg-green-50  border-green-200  text-green-700',
   'Tatlı':        'bg-pink-50   border-pink-200   text-pink-700',
   'İçecek':      'bg-blue-50   border-blue-200   text-blue-700',
-  'Alkollü':     'bg-purple-50 border-purple-200 text-purple-700',
+  'Alkollü':     'bg-indigo-50 border-indigo-200 text-indigo-700',
   'Atıştırmalık':'bg-amber-50  border-amber-200  text-amber-700',
 };
 

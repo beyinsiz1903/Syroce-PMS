@@ -535,9 +535,9 @@ const StaffManagement = () => {
           <div className="text-[11px] text-slate-500 mt-1.5">yeni eklenen</div>
         </div>
 
-        <div className={`rounded-2xl border p-4 shadow-sm ${outstandingEquipTotal > 0 ? 'border-orange-100 bg-gradient-to-br from-orange-50 to-white' : 'border-slate-100 bg-gradient-to-br from-slate-50 to-white'}`}>
+        <div className={`rounded-2xl border p-4 shadow-sm ${outstandingEquipTotal > 0 ? 'border-amber-100 bg-gradient-to-br from-amber-50 to-white' : 'border-slate-100 bg-gradient-to-br from-slate-50 to-white'}`}>
           <div className="flex items-center gap-2 mb-2">
-            <div className={`p-1.5 rounded-md ${outstandingEquipTotal > 0 ? 'bg-orange-100 text-orange-700' : 'bg-slate-200 text-slate-600'}`}><Package className="w-4 h-4" /></div>
+            <div className={`p-1.5 rounded-md ${outstandingEquipTotal > 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'}`}><Package className="w-4 h-4" /></div>
             <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">{t("cm.pages_StaffManagement.a\xE7\u0131k_zimmet")}</div>
           </div>
           <div className="text-2xl font-bold text-slate-900 leading-none">{outstandingEquipTotal}</div>

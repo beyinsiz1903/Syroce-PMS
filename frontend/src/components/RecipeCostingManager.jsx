@@ -436,7 +436,7 @@ const RecipeCostingManager = () => {
                   <div className="flex items-center justify-between mb-1.5">
                     <p className="font-bold text-gray-900">{recipe.dish_name}</p>
                     <Badge variant="outline" className={`text-[10px] ${
-                      recipe.category === 'main' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                      recipe.category === 'main' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                       recipe.category === 'appetizer' ? 'bg-green-50 text-green-700 border-green-200' :
                       recipe.category === 'dessert' ? 'bg-pink-50 text-pink-700 border-pink-200' :
                       'bg-gray-100 text-gray-700 border-gray-200'
@@ -485,7 +485,7 @@ const RecipeCostingManager = () => {
                       ₺{selectedRecipe.total_cost?.toFixed(2)}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50 to-orange-50 p-4">
+                  <div className="rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50 to-amber-50 p-4">
                     <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide flex items-center gap-1.5"><DollarSign className="w-3.5 h-3.5"/> Satış Fiyatı</p>
                     <p className="text-3xl font-extrabold text-amber-700 mt-2">
                       ₺{selectedRecipe.selling_price?.toFixed(2)}
@@ -495,8 +495,8 @@ const RecipeCostingManager = () => {
                 
                 <div className="grid gap-4 md:grid-cols-2 bg-gray-50 rounded-xl p-4 border border-gray-100">
                   <div className="flex items-center gap-3 text-sm text-gray-700">
-                    <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
-                      <Flame className="w-4 h-4 text-orange-500" />
+                    <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                      <Flame className="w-4 h-4 text-amber-500" />
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 font-medium">Porsiyon</p>

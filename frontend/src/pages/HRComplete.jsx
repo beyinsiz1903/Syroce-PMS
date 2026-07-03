@@ -1965,7 +1965,7 @@ const HRComplete = () => {
                 <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
                   <CardTitle className="flex items-center justify-between">
                     <span className="flex items-center gap-2 text-base font-bold text-slate-800">
-                      <div className="p-1.5 rounded-md bg-purple-100 text-purple-700"><AlertCircle className="w-4 h-4" /></div>
+                      <div className="p-1.5 rounded-md bg-indigo-100 text-indigo-700"><AlertCircle className="w-4 h-4" /></div>
                       Vergi Oranlarını Güncelle <span className="text-xs font-normal text-slate-500 bg-slate-200/50 px-2 py-0.5 rounded-full">(Bordro Kesintileri)</span>
                     </span>
                     {taxRates.can_edit && (

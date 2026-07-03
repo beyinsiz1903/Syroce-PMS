@@ -130,7 +130,7 @@ function OrderCard({ order, onReady, onServed, onStart }) {
               {item.modifications?.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-1">
                   {item.modifications.map((mod, mi) => (
-                    <span key={mi} className="text-xs bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded-md border border-purple-500/30">
+                    <span key={mi} className="text-xs bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded-md border border-indigo-500/30">
                       {mod}
                     </span>
                   ))}
@@ -323,8 +323,8 @@ const KitchenDisplay = () => {
             </button>
             <div className="w-px h-8 bg-white/10" />
             <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-xl bg-orange-500/20 border border-orange-500/30 flex items-center justify-center">
-                <UtensilsCrossed className="w-5 h-5 text-orange-400" />
+              <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
+                <UtensilsCrossed className="w-5 h-5 text-amber-400" />
               </div>
               <div>
                 <h1 className="text-lg font-bold leading-tight">Mutfak Ekranı</h1>

@@ -1052,3 +1052,32 @@ code {
 
 /* focus:bg-slate-50  — focused input/row highlight */
 .dark .focus\:bg-slate-50:focus { background-color: #1e293b; }
+
+/* ── New Gaps Added ──────────────────────────────────────────────────────── */
+.dark .from-slate-50 { --tw-gradient-from: #1e293b; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgb(30 41 59 / 0)); }
+.dark .from-gray-50 { --tw-gradient-from: #1f2937; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgb(31 41 55 / 0)); }
+.dark .to-gray-50 { --tw-gradient-to: #1f2937; }
+.dark .bg-slate-200\/50 { background-color: rgb(51 65 85 / 0.5); }
+.dark .to-slate-50 { --tw-gradient-to: #1e293b; }
+.dark .group:hover .group-hover\:text-indigo-600 { color: #a5b4fc; }
+.dark .group:hover .group-hover\:text-indigo-700 { color: #c7d2fe; }
+.dark .group:hover .group-hover\:text-indigo-400 { color: #818cf8; }
+.dark .hover\:bg-sky-100\/50:hover { background-color: rgb(12 74 110 / 0.5); }
+.dark .border-sky-100\/50 { border-color: rgb(12 74 110 / 0.5); }
+.dark .text-rose-600\/80 { color: rgb(251 113 133 / 0.8); }
+.dark .text-blue-500\/60 { color: rgb(96 165 250 / 0.6); }
+.dark .to-indigo-100\/50 { --tw-gradient-to: rgb(49 46 129 / 0.5); }
+.dark .border-indigo-100\/60 { border-color: rgb(49 46 129 / 0.6); }
+.dark .text-indigo-600\/80 { color: rgb(165 180 252 / 0.8); }
+.dark .text-indigo-950 { color: #e0e7ff; }
+.dark .text-indigo-600\/70 { color: rgb(165 180 252 / 0.7); }
+.dark .to-amber-100\/50 { --tw-gradient-to: rgb(120 53 15 / 0.5); }
+.dark .to-sky-100\/50 { --tw-gradient-to: rgb(12 74 110 / 0.5); }
+.dark .border-blue-200\/60 { border-color: rgb(30 58 138 / 0.6); }
+.dark .to-teal-100\/50 { --tw-gradient-to: rgb(19 78 74 / 0.5); }
+.dark .border-emerald-200\/60 { border-color: rgb(6 78 59 / 0.6); }
+.dark .to-fuchsia-50 { --tw-gradient-to: #4a044e; }
+.dark .border-violet-100\/60 { border-color: rgb(76 29 149 / 0.6); }
+.dark .text-violet-600\/80 { color: rgb(196 181 253 / 0.8); }
+.dark .text-violet-950 { color: #ede9fe; }
+.dark .hover\:border-red-200:hover { border-color: #991b1b; }

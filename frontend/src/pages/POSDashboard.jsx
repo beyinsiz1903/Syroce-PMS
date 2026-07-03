@@ -22,10 +22,10 @@ const fmt = (n, digits = 0) =>
 /* ── stat card ── */
 function StatCard({ icon: Icon, label, value, sub, color = 'amber', loading, testId }) {
   const ring = {
-    amber:   'from-amber-50  to-orange-50  border-amber-200  text-amber-600',
+    amber:   'from-amber-50  to-amber-50  border-amber-200  text-amber-600',
     green:   'from-emerald-50 to-green-50  border-emerald-200 text-emerald-600',
     blue:    'from-blue-50   to-indigo-50  border-blue-200   text-blue-600',
-    purple:  'from-purple-50 to-violet-50  border-purple-200 text-purple-600',
+    purple:  'from-indigo-50 to-violet-50  border-indigo-200 text-indigo-600',
   }[color];
   return (
     <div className={`rounded-2xl border bg-gradient-to-br p-5 flex items-center gap-4 shadow-sm ${ring}`}>

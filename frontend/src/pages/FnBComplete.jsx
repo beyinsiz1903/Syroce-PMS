@@ -22,7 +22,7 @@ const TABS = [
 /* ─── link card (BEO / Kitchen) ─────────────────────────────────── */
 function LinkCard({ icon: Icon, title, description, buttonLabel, onClick, color = 'amber' }) {
   const c = {
-    amber:  { bg: 'from-amber-50  to-orange-50',  icon: 'bg-amber-100  text-amber-600',  btn: 'bg-amber-500 hover:bg-amber-600'  },
+    amber:  { bg: 'from-amber-50  to-amber-50',  icon: 'bg-amber-100  text-amber-600',  btn: 'bg-amber-500 hover:bg-amber-600'  },
     slate:  { bg: 'from-slate-50  to-gray-50',    icon: 'bg-slate-100  text-slate-600',  btn: 'bg-slate-700 hover:bg-slate-800'  },
   }[color] || {};
   return (

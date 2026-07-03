@@ -624,7 +624,7 @@ const MicePage = ({
           const totalValue = summary[k]?.total_value || 0;
           
           let theme = '';
-          if (k === 'tentative') theme = 'from-amber-50 to-orange-100/50 border-amber-200/60 text-amber-900 label-amber-600/80 icon-amber-500/10 val-amber-700';
+          if (k === 'tentative') theme = 'from-amber-50 to-amber-100/50 border-amber-200/60 text-amber-900 label-amber-600/80 icon-amber-500/10 val-amber-700';
           else if (k === 'definite') theme = 'from-blue-50 to-sky-100/50 border-blue-200/60 text-blue-900 label-blue-600/80 icon-blue-500/10 val-blue-700';
           else if (k === 'confirmed') theme = 'from-emerald-50 to-teal-100/50 border-emerald-200/60 text-emerald-900 label-emerald-600/80 icon-emerald-500/10 val-emerald-700';
           
