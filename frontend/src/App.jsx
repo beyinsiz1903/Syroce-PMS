@@ -14,7 +14,8 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Toaster } from "@/components/ui/sonner";
 import DialogHost from "@/components/DialogHost";
 import OfflineStatusBar from "@/components/OfflineStatusBar";
-
+import { SimulationProvider } from "@/context/SimulationContext";
+import SimulationOverlay from "@/components/SimulationOverlay";
 import {
   AuthPage, Dashboard, LandingPage, PrivacyPolicy, GuestPortal, getRouteConfigs,
 } from "@/routes/routeDefinitions";
@@ -312,7 +313,9 @@ function App() {
           <DialogHost />
           {isAuthenticated && <OfflineStatusBar />}
           <BrowserRouter>
-            <ErrorBoundary>
+            <SimulationProvider>
+              <SimulationOverlay />
+              <ErrorBoundary>
               <PlanRouteGuard tenant={tenant} user={user}>
                 <Suspense fallback={<LoadingFallback />}>
                 <Routes>
@@ -392,6 +395,7 @@ function App() {
                 </Suspense>
               </PlanRouteGuard>
             </ErrorBoundary>
+            </SimulationProvider>
           </BrowserRouter>
           {isAuthenticated && user && <InternalChatWidget user={user} />}
           {isAuthenticated && user && (

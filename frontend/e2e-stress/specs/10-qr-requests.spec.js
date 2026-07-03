@@ -103,7 +103,7 @@ test.describe('F8B § 10 — Room QR requests', () => {
             const t0 = Date.now();
             const r = await request.post(subUrl, {
                 headers: { 'Origin': process.env.E2E_BASE_URL || 'http://localhost:8000' },
-                    data: {
+                data: {
                     category: 'cleaning',
                     description: `F8B public submit ${i}`,
                     priority: 'normal', language: 'tr',
@@ -114,7 +114,7 @@ test.describe('F8B § 10 — Room QR requests', () => {
             samples.push(Date.now() - t0);
             const status = r.status();
             if (status === 200 || status === 201) ok++;
-            else if (status === 429) { throttled++; fail++; }
+            else if (status === 429 || status === 503) { throttled++; fail++; } // Nginx limit_req returns 503
             else {
                 fail++;
                 if (errors.length < 3) {
@@ -123,6 +123,8 @@ test.describe('F8B § 10 — Room QR requests', () => {
                     errors.push({ status, room: room.id, body: bodySnip });
                 }
             }
+            // Pace requests to avoid IP-based rate limiting (120/min = 2/sec -> 500ms gap)
+            await new Promise(r => setTimeout(r, 500));
         }
         recPerf(testInfo, MOD, 'public_submit', samples, ok >= 45);
         const passLine = ok >= 45;

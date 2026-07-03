@@ -50,6 +50,33 @@ axios.interceptors.request.use(
       config.headers["Cache-Control"] = "max-age=60";
     }
 
+    // --- SIMULATION INTERCEPTOR ---
+    // If we are in interactive training mode, intercept all POST/PUT/DELETE requests
+    // to prevent mutating real hotel data. Return a fake 200 OK and broadcast the action.
+    if (sessionStorage.getItem("simulation_active") && config.method !== "get") {
+       config.adapter = function (config) {
+         return new Promise((resolve) => {
+            // Dispatch event for SimulationContext to track progress
+            let parsedData = {};
+            try { if (config.data) parsedData = JSON.parse(config.data); } catch(e) { parsedData = config.data; }
+            window.dispatchEvent(new CustomEvent('simulation_action', { 
+               detail: { method: config.method, url: config.url, data: parsedData } 
+            }));
+            
+            // Resolve with fake success to keep the UI happy
+            resolve({ 
+              data: { message: "Simulated success", id: 9999, success: true }, 
+              status: 200, 
+              statusText: 'OK', 
+              headers: {}, 
+              config, 
+              request: {} 
+            });
+         });
+       };
+    }
+    // -------------------------------
+
     return config;
   },
   (error) => Promise.reject(error)

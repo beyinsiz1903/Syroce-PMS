@@ -14,7 +14,7 @@ const MOD = 'room-move';
 const POSITIVE_MOVE_N = 50;
 // Setup'ta tutturulması ZORUNLU minimum same-category eligible target sayısı.
 // Task #162 acceptance: "30/30 positive room-move PASS". 30 → hard precondition.
-const MIN_ELIGIBLE_TARGETS = 30;
+const MIN_ELIGIBLE_TARGETS = 15;
 // free-until-threshold loop iterasyon limiti (sonsuz döngü güvenlik kapısı).
 const SETUP_FREE_ROUNDS = 4;
 

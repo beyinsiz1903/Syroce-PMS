@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { GraduationCap, Plus, Pencil, Trash2, ArrowLeft, Loader2, BookOpen, FileText, Eye, EyeOff, Save, X, RotateCcw } from "lucide-react";
+import { GraduationCap, Plus, Pencil, Trash2, ArrowLeft, Loader2, BookOpen, FileText, Eye, EyeOff, Save, X, RotateCcw, PlayCircle } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -569,7 +569,32 @@ export default function AcademyManage({
                         <X className="w-4 h-4" />
                       </Button>
                     </div>
-                    <Textarea value={l.body_markdown} onChange={e => updateLesson(l.id, "body_markdown", e.target.value)} rows={4} placeholder={t("cm.pages_AcademyManage.ders_icerigi_markdown_destekli")} className="font-mono text-xs" />
+                    <div className="flex items-center justify-between mt-2 mb-1">
+                      <label className="text-xs font-semibold text-slate-700">Ders İçeriği</label>
+                      <div className="flex items-center gap-2">
+                        <Button type="button" size="sm" variant="secondary" className="h-6 text-[10px] px-2" onClick={() => {
+                          const url = window.prompt("YouTube Video Linki veya ID'sini girin:\nÖrn: https://youtube.com/watch?v=dQw4w9WgXcQ");
+                          if (!url) return;
+                          let id = url;
+                          const m = url.match(/(?:v=|youtu\.be\/|embed\/)([^&?]+)/);
+                          if (m) id = m[1];
+                          updateLesson(l.id, "body_markdown", (l.body_markdown || "") + `\n\n@[youtube](${id})\n`);
+                        }}>
+                          <PlayCircle className="w-3 h-3 mr-1" /> YouTube Ekle
+                        </Button>
+                        <Button type="button" size="sm" variant="secondary" className="h-6 text-[10px] px-2" onClick={() => {
+                          const url = window.prompt("Vimeo Video Linki veya ID'sini girin:");
+                          if (!url) return;
+                          let id = url;
+                          const m = url.match(/vimeo\.com\/(\d+)/);
+                          if (m) id = m[1];
+                          updateLesson(l.id, "body_markdown", (l.body_markdown || "") + `\n\n@[vimeo](${id})\n`);
+                        }}>
+                          <PlayCircle className="w-3 h-3 mr-1" /> Vimeo Ekle
+                        </Button>
+                      </div>
+                    </div>
+                    <Textarea value={l.body_markdown} onChange={e => updateLesson(l.id, "body_markdown", e.target.value)} rows={5} placeholder={t("cm.pages_AcademyManage.ders_icerigi_markdown_destekli")} className="font-mono text-xs border-slate-200" />
                   </Card>)}
               </div>
             </div>

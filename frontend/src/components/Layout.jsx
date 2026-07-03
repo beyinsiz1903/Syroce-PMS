@@ -33,6 +33,7 @@ import PushSubscriptionManager from '@/components/PushSubscriptionManager';
 import PMSDateBadge from '@/components/PMSDateBadge';
 import { NAV_ITEMS, NAV_GROUPS } from '@/config/navItems';
 import { UpgradeBanner } from '@/components/UpgradeBanner';
+import SimulationOverlay from '@/components/academy/SimulationOverlay';
 
 const ICON_BY_KEY = {
   dashboard: Home,
@@ -610,6 +611,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
       </main>
 
       <PMSDateBadge />
+      <SimulationOverlay />
     </div>
   );
 };

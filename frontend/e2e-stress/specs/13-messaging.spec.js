@@ -64,8 +64,8 @@ test.describe('F8B § 13 — Messaging dry-run', () => {
         };
 
         // CI #47 throttle: prod write rate-limit 120/min/token shared with
-        // 10-B(90) + 11-B(20) + 12-A(30). 700ms gap → ≤85/min ceiling.
-        const gap = () => new Promise((r) => setTimeout(r, 700));
+        // 10-B(90) + 11-B(20) + 12-A(30). 1000ms gap → ≤60/min ceiling.
+        const gap = () => new Promise((r) => setTimeout(r, 1000));
         for (let i = 0; i < 35; i++) { await send('email', i); await gap(); }
         for (let i = 0; i < 15; i++) { await send('sms', i); await gap(); }
         // WhatsApp is not wired up and returns 503 by doctrine

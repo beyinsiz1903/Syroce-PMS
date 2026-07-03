@@ -2,6 +2,8 @@
 
 > Taslak icerik — operator incelemesi gerekir.
 
+@[youtube](dQw4w9WgXcQ)
+
 Resepsiyon, otelin ilk izlenimini belirleyen noktadir. Misafir karsilamada standart:
 
 - Goz temasi kurun ve misafiri guler yuzle selamlayin.

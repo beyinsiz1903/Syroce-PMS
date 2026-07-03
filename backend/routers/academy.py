@@ -29,6 +29,9 @@ router = APIRouter(
 
 def _require_tenant(user: User) -> str:
     if not user.tenant_id:
+        from core.security import _is_super_admin
+        if _is_super_admin(user):
+            return "system_super_admin"
         raise HTTPException(status_code=403, detail="Otel hesabi gerekli")
     return user.tenant_id
 

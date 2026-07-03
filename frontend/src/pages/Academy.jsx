@@ -4,7 +4,7 @@ import DOMPurify from "dompurify";
 import axios from "axios";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { GraduationCap, BookOpen, Award, CheckCircle2, ArrowLeft, FileText, Loader2, Download, ClipboardList, Settings2, Lock, Building2, RefreshCw } from "lucide-react";
+import { GraduationCap, BookOpen, Award, CheckCircle2, ArrowLeft, FileText, Loader2, Download, ClipboardList, Settings2, Lock, Building2, RefreshCw, PlayCircle } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -40,13 +40,35 @@ function renderMarkdown(src) {
     __html: ""
   };
   const escape = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const inline = s => escape(s).replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 bg-gray-100 rounded text-xs font-mono">$1</code>').replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  const inline = s => escape(s)
+    .replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 bg-gray-100 rounded text-xs font-mono">$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="max-w-full h-auto rounded-md shadow-sm my-4 border border-gray-200" />');
+    
   const lines = src.replace(/\r\n/g, "\n").split("\n");
   const out = [];
   let i = 0;
   while (i < lines.length) {
     const ln = lines[i];
     let m;
+    
+    // YouTube Embed: @[youtube](VIDEO_ID)
+    m = ln.match(/^@\[youtube\]\(([^)]+)\)/);
+    if (m) {
+      out.push(`<div class="aspect-video w-full my-6 rounded-xl overflow-hidden shadow-md border border-slate-200 bg-black"><iframe class="w-full h-full" src="https://www.youtube.com/embed/${m[1]}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`);
+      i++;
+      continue;
+    }
+
+    // Vimeo Embed: @[vimeo](VIDEO_ID)
+    m = ln.match(/^@\[vimeo\]\(([^)]+)\)/);
+    if (m) {
+      out.push(`<div class="aspect-video w-full my-6 rounded-xl overflow-hidden shadow-md border border-slate-200 bg-black"><iframe class="w-full h-full" src="https://player.vimeo.com/video/${m[1]}" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe></div>`);
+      i++;
+      continue;
+    }
+
     m = ln.match(/^###\s+(.*)$/);
     if (m) {
       out.push(`<h3 class="text-base font-semibold mt-5 mb-2">${inline(m[1])}</h3>`);
@@ -55,13 +77,13 @@ function renderMarkdown(src) {
     }
     m = ln.match(/^##\s+(.*)$/);
     if (m) {
-      out.push(`<h2 class="text-lg font-bold mt-6 mb-2">${inline(m[1])}</h2>`);
+      out.push(`<h2 class="text-lg font-bold mt-6 mb-2 text-slate-800">${inline(m[1])}</h2>`);
       i++;
       continue;
     }
     m = ln.match(/^#\s+(.*)$/);
     if (m) {
-      out.push(`<h1 class="text-2xl font-bold mt-2 mb-3">${inline(m[1])}</h1>`);
+      out.push(`<h1 class="text-2xl font-bold mt-2 mb-4 text-slate-900 tracking-tight">${inline(m[1])}</h1>`);
       i++;
       continue;
     }
@@ -71,30 +93,30 @@ function renderMarkdown(src) {
         buf.push(lines[i].replace(/^>\s?/, ""));
         i++;
       }
-      out.push(`<blockquote class="border-l-4 border-amber-300 bg-amber-50 pl-3 py-2 my-3 text-sm text-amber-900">${inline(buf.join(" "))}</blockquote>`);
+      out.push(`<blockquote class="border-l-4 border-indigo-500 bg-indigo-50/50 pl-4 py-3 my-4 rounded-r-md text-sm text-indigo-900 italic">${inline(buf.join(" "))}</blockquote>`);
       continue;
     }
     if (/^---+\s*$/.test(ln)) {
-      out.push('<hr class="my-4 border-gray-200" />');
+      out.push('<hr class="my-6 border-slate-200" />');
       i++;
       continue;
     }
     if (/^\s*[-*]\s+/.test(ln)) {
       const items = [];
       while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
-        items.push(`<li class="ml-6 list-disc my-1">${inline(lines[i].replace(/^\s*[-*]\s+/, ""))}</li>`);
+        items.push(`<li class="ml-6 list-disc my-1.5 text-slate-700">${inline(lines[i].replace(/^\s*[-*]\s+/, ""))}</li>`);
         i++;
       }
-      out.push(`<ul class="my-2">${items.join("")}</ul>`);
+      out.push(`<ul class="my-3">${items.join("")}</ul>`);
       continue;
     }
     if (/^\s*\d+\.\s+/.test(ln)) {
       const items = [];
       while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
-        items.push(`<li class="ml-6 list-decimal my-1">${inline(lines[i].replace(/^\s*\d+\.\s+/, ""))}</li>`);
+        items.push(`<li class="ml-6 list-decimal my-1.5 text-slate-700">${inline(lines[i].replace(/^\s*\d+\.\s+/, ""))}</li>`);
         i++;
       }
-      out.push(`<ol class="my-2">${items.join("")}</ol>`);
+      out.push(`<ol class="my-3">${items.join("")}</ol>`);
       continue;
     }
     if (/^\|/.test(ln)) {
@@ -105,12 +127,15 @@ function renderMarkdown(src) {
       }
       const html = rows.map((r, idx) => {
         if (/^\|[\s:-]+\|/.test(r)) return "";
-        const cells = r.split("|").slice(1, -1).map(c => `<td class="border px-3 py-1.5 text-sm">${inline(c.trim())}</td>`).join("");
+        const cells = r.split("|").slice(1, -1).map(c => `<td class="border px-4 py-2 text-sm text-slate-700">${inline(c.trim())}</td>`).join("");
         const tag = idx === 0 ? "th" : "td";
         const replaced = cells.replace(/<td/g, `<${tag}`).replace(/<\/td>/g, `</${tag}>`);
+        if (idx === 0) {
+          return `<tr class="bg-slate-50 font-medium text-slate-900">${replaced}</tr>`;
+        }
         return `<tr>${replaced}</tr>`;
       }).join("");
-      out.push(`<table class="border-collapse border my-3"><tbody>${html}</tbody></table>`);
+      out.push(`<div class="overflow-x-auto my-4"><table class="w-full border-collapse border border-slate-200 text-left"><tbody>${html}</tbody></table></div>`);
       continue;
     }
     if (ln.trim() === "") {
@@ -118,20 +143,19 @@ function renderMarkdown(src) {
       continue;
     }
     const buf = [];
-    while (i < lines.length && lines[i].trim() !== "" && !/^[#`|>]|^\s*[-*\d]\s+|^---+/.test(lines[i])) {
+    while (i < lines.length && lines[i].trim() !== "" && !/^[#`|>]|^\s*[-*\d]\s+|^---+/.test(lines[i]) && !/^@\[(youtube|vimeo)\]/.test(lines[i])) {
       buf.push(lines[i]);
       i++;
     }
-    out.push(`<p class="my-2 leading-relaxed text-sm text-gray-800">${inline(buf.join(" "))}</p>`);
+    out.push(`<p class="my-3 leading-relaxed text-[15px] text-slate-700">${inline(buf.join(" "))}</p>`);
   }
-  // XSS guard: even though the markdown renderer above HTML-escapes raw input
-  // before interpolation, a final DOMPurify pass ensures any edge-cases
-  // (e.g. crafted attribute injection, mXSS via browser HTML parser) are blocked.
   return {
     __html: DOMPurify.sanitize(out.join("\n"), {
       USE_PROFILES: {
         html: true
-      }
+      },
+      ADD_TAGS: ['iframe', 'img'],
+      ADD_ATTR: ['allow', 'allowfullscreen', 'frameborder', 'src', 'alt', 'class']
     })
   };
 }
@@ -307,12 +331,17 @@ export default function Academy({
   };
   return <div className="p-4 md:p-6 max-w-5xl mx-auto">
       {view === "list" && <>
-          <PageHeader title={t("cm.pages_Academy.syroce_academy")} subtitle="Departmaniniza ozel egitimleri tamamlayin, sinava girin ve sertifika kazanin." actions={isManager || isAuthor ? <div className="flex items-center gap-2">
+          <PageHeader title={t("cm.pages_Academy.syroce_academy")} subtitle="Departmaniniza ozel egitimleri tamamlayin, sinava girin ve sertifika kazanin." actions={
+            <div className="flex items-center gap-2">
+                <Button variant="default" className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => navigate("/app/academy/simulator")}>
+                    <PlayCircle className="w-4 h-4 mr-2" /> İnteraktif Simülatör
+                </Button>
                 {isAuthor && <Button variant="outline" onClick={() => navigate("/app/academy-manage")}>
                     <Settings2 className="w-4 h-4 mr-2" />{t("cm.pages_Academy.akademi_yonetimi")}</Button>}
                 {isManager && <Button variant="outline" onClick={() => navigate("/app/academy-report")}>
                     <ClipboardList className="w-4 h-4 mr-2" />{t("cm.pages_Academy.yonetici_raporu")}</Button>}
-              </div> : null} />
+            </div>
+          } />
 
           {loadError ? renderLoadErrorState() : <>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
@@ -367,27 +396,58 @@ export default function Academy({
       {view === "course" && course && <>
           <PageHeader title={course.title} subtitle={course.summary} actions={<Button variant="outline" onClick={backToList}>
                 <ArrowLeft className="w-4 h-4 mr-2" />{t("cm.pages_Academy.geri")}</Button>} />
+          
+          {/* Corporate LMS Style Hero / Progress Bar */}
+          <Card className="mb-6 bg-gradient-to-r from-slate-900 to-slate-800 text-white overflow-hidden relative">
+            <div className="absolute right-0 top-0 opacity-10">
+               <GraduationCap className="w-48 h-48 -mr-10 -mt-10" />
+            </div>
+            <div className="p-6 relative z-10">
+              <div className="flex items-center gap-3 mb-2 opacity-80 text-sm">
+                <BookOpen className="w-4 h-4" />
+                <span>{course.lesson_count} Modül</span>
+                <span>•</span>
+                <span>Geçme Notu: {course.pass_threshold}</span>
+              </div>
+              <h2 className="text-2xl font-bold mb-4">Eğitim İlerlemeniz</h2>
+              <div className="w-full bg-slate-700/50 rounded-full h-3 mb-2 border border-slate-600/50">
+                <div className="bg-emerald-500 h-3 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, ((course.progress?.completed_lessons || []).length / (course.lesson_count || 1)) * 100)}%` }}></div>
+              </div>
+              <div className="text-sm font-medium opacity-90 text-right">
+                % {Math.round(((course.progress?.completed_lessons || []).length / (course.lesson_count || 1)) * 100)} Tamamlandı
+              </div>
+            </div>
+          </Card>
+
           {course.draft && <div className="mb-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">{t("cm.pages_Academy.bu_egitim_taslak_icerik_icerir")}</div>}
-          <div className="space-y-4">
-            {(course.lessons || []).map(lesson => {
+          
+          <div className="space-y-6">
+            {(course.lessons || []).map((lesson, idx) => {
           const done = (course.progress?.completed_lessons || []).includes(lesson.id);
-          return <Card key={lesson.id} className="p-4">
-                  <div className="flex items-center justify-between gap-3 mb-3">
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-5 h-5 text-slate-600" />
-                      <h3 className="font-semibold text-slate-900">{lesson.title}</h3>
+          const hasVideo = lesson.body_markdown?.includes("@[youtube]") || lesson.body_markdown?.includes("@[vimeo]");
+          return <Card key={lesson.id} className={`overflow-hidden transition-all duration-200 ${done ? 'border-emerald-200 bg-emerald-50/10' : 'border-slate-200 shadow-sm hover:shadow-md'}`}>
+                  <div className={`p-4 border-b ${done ? 'bg-emerald-50/50 border-emerald-100' : 'bg-slate-50 border-slate-100'} flex items-center justify-between gap-3`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`flex items-center justify-center w-8 h-8 rounded-full ${done ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-100 text-indigo-600'}`}>
+                        {hasVideo ? <PlayCircle className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-0.5 block">Modül {idx + 1}</span>
+                        <h3 className={`font-semibold ${done ? 'text-slate-700' : 'text-slate-900'}`}>{lesson.title}</h3>
+                      </div>
                     </div>
-                    {done ? <StatusBadge intent="success">{t("cm.pages_Academy.tamamlandi")}</StatusBadge> : <Button size="sm" variant="outline" onClick={() => completeLesson(lesson.id)}>{t("cm.pages_Academy.okudum")}</Button>}
+                    {done ? <StatusBadge intent="success">{t("cm.pages_Academy.tamamlandi")}</StatusBadge> : <Button size="sm" onClick={() => completeLesson(lesson.id)}>{t("cm.pages_Academy.okudum")}</Button>}
                   </div>
-                  <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={renderMarkdown(lesson.body_markdown)} />
+                  <div className="p-5 prose prose-slate max-w-none" dangerouslySetInnerHTML={renderMarkdown(lesson.body_markdown)} />
                 </Card>;
         })}
           </div>
-          <div className="mt-6 flex items-center justify-between">
-            <div className="text-sm text-slate-500">
-              {(course.progress?.completed_lessons || []).length} / {course.lesson_count}{t("cm.pages_Academy.ders_tamamlandi_gecme_notu")}{course.pass_threshold}
+          <div className="mt-8 flex items-center justify-between bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+            <div className="text-sm font-medium text-slate-600">
+              <span className="text-xl font-bold text-slate-900 mr-2">{(course.progress?.completed_lessons || []).length} / {course.lesson_count}</span>
+              Modül Tamamlandı
             </div>
-            <Button onClick={startExam} disabled={(course.progress?.completed_lessons || []).length < course.lesson_count}>{t("cm.pages_Academy.sinava_gir")}</Button>
+            <Button size="lg" className="px-8 font-semibold shadow-sm" onClick={startExam} disabled={(course.progress?.completed_lessons || []).length < course.lesson_count}>{t("cm.pages_Academy.sinava_gir")}</Button>
           </div>
         </>}
 
