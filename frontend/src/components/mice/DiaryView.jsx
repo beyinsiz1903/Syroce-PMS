@@ -57,6 +57,10 @@ const DiaryView = ({ spaceById, spaces }) => {
     axios.get('/mice/diary', { params: { date_from: monthRange.from, date_to: monthRange.to } })
       .then((r) => setItems(r.data.events || []))
       .catch((e) => {
+        if (e.response && e.response.status === 403) {
+          console.warn('Takvim görüntüleme yetkisi yok (403) - Sessizce yoksayılıyor.');
+          return;
+        }
         const msg = e.response ? `HTTP ${e.response.status}` : e.message;
         toast.error(`Takvim yüklenemedi: ${msg}`);
       });

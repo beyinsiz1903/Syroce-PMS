@@ -605,10 +605,66 @@ const MicePage = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <Stat label={t('cm.pages_MicePage.toplam_etkinlik')} value={events.length} />
-        {['tentative', 'definite', 'confirmed'].map(k => <Stat key={k} label={STATUS[k].label} value={`${summary[k]?.count || 0} • ₺${(summary[k]?.total_value || 0).toLocaleString('tr-TR')}`} cls={STATUS[k].cls.split(' ')[1].replace('text-', 'text-')} />)}
-        <Stat label={t('cm.pages_MicePage.toplam_pipeline')} value={`₺${totalPipeline.toLocaleString('tr-TR')}`} cls="text-emerald-600" />
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        {/* Toplam Etkinlik */}
+        <div className="rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100/50 p-5 shadow-sm border border-indigo-100/60 relative overflow-hidden group">
+          <div className="absolute -right-4 -top-4 w-24 h-24 bg-indigo-500/10 rounded-full blur-xl group-hover:scale-110 transition-transform duration-500"></div>
+          <div className="flex flex-col gap-1 relative z-10">
+            <span className="text-sm font-medium text-indigo-600/80 uppercase tracking-wider">{t('cm.pages_MicePage.toplam_etkinlik')}</span>
+            <div className="flex items-end gap-2 mt-1">
+              <span className="text-3xl font-bold text-indigo-950">{events.length}</span>
+              <span className="text-sm font-medium text-indigo-600/70 mb-1">etkinlik</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Status Cards (Tentative, Definite, Confirmed) */}
+        {['tentative', 'definite', 'confirmed'].map(k => {
+          const count = summary[k]?.count || 0;
+          const totalValue = summary[k]?.total_value || 0;
+          
+          let theme = '';
+          if (k === 'tentative') theme = 'from-amber-50 to-orange-100/50 border-amber-200/60 text-amber-900 label-amber-600/80 icon-amber-500/10 val-amber-700';
+          else if (k === 'definite') theme = 'from-blue-50 to-sky-100/50 border-blue-200/60 text-blue-900 label-blue-600/80 icon-blue-500/10 val-blue-700';
+          else if (k === 'confirmed') theme = 'from-emerald-50 to-teal-100/50 border-emerald-200/60 text-emerald-900 label-emerald-600/80 icon-emerald-500/10 val-emerald-700';
+          
+          const parts = theme.split(' ');
+          const bg = parts[0] + ' ' + parts[1];
+          const border = parts[2];
+          const text = parts[3];
+          const label = parts[4].replace('label-', 'text-');
+          const icon = parts[5].replace('icon-', 'bg-');
+          const valText = parts[6].replace('val-', 'text-');
+
+          return (
+            <div key={k} className={`rounded-xl bg-gradient-to-br ${bg} p-5 shadow-sm border ${border} relative overflow-hidden group`}>
+              <div className={`absolute -right-4 -top-4 w-24 h-24 ${icon} rounded-full blur-xl group-hover:scale-110 transition-transform duration-500`}></div>
+              <div className="flex flex-col gap-1 relative z-10">
+                <span className={`text-sm font-medium uppercase tracking-wider ${label}`}>{STATUS[k].label}</span>
+                <div className="flex flex-col mt-1">
+                  <div className="flex items-end gap-2">
+                    <span className={`text-2xl font-bold ${text}`}>{count}</span>
+                    <span className={`text-xs font-medium mb-1 ${label}`}>adet</span>
+                  </div>
+                  <span className={`text-lg font-semibold mt-1 ${valText} opacity-90`}>₺{totalValue.toLocaleString('tr-TR')}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Toplam Pipeline */}
+        <div className="rounded-xl bg-gradient-to-br from-violet-50 to-fuchsia-50 p-5 shadow-sm border border-violet-100/60 relative overflow-hidden group">
+          <div className="absolute -right-4 -top-4 w-24 h-24 bg-violet-500/10 rounded-full blur-xl group-hover:scale-110 transition-transform duration-500"></div>
+          <div className="flex flex-col gap-1 relative z-10">
+            <span className="text-sm font-medium text-violet-600/80 uppercase tracking-wider flex items-center gap-1">
+              <Sparkles className="w-3.5 h-3.5" /> {t('cm.pages_MicePage.toplam_pipeline')}
+            </span>
+            <div className="flex items-end gap-2 mt-1">
+              <span className="text-2xl md:text-3xl font-bold text-violet-950 tracking-tight">₺{totalPipeline.toLocaleString('tr-TR')}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
