@@ -1,11 +1,11 @@
-import React, { Suspense, lazy } from 'react';
+import React from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Loader2, Users, Activity } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranslation } from 'react-i18next';
 
-const HRComplete = lazy(() => import('@/pages/HRComplete'));
-const HRv2OpsDashboard = lazy(() => import('@/pages/HRv2OpsDashboard'));
+import HRComplete from '@/pages/HRComplete';
+import HRv2OpsDashboard from '@/pages/HRv2OpsDashboard';
 
 const VALID_TABS = ['suite', 'ops'];
 
@@ -31,18 +31,12 @@ export default function HRHub({ user, tenant, onLogout }) {
           </TabsTrigger>
         </TabsList>
 
-        <Suspense fallback={
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-slate-600" />
-          </div>
-        }>
           <TabsContent value="suite">
             {activeTab === 'suite' && <HRComplete tenant={tenant} user={user} />}
           </TabsContent>
           <TabsContent value="ops">
             {activeTab === 'ops' && <HRv2OpsDashboard tenant={tenant} />}
           </TabsContent>
-        </Suspense>
       </Tabs>
     </div>
   );
