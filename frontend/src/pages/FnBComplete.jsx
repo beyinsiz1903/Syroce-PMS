@@ -70,18 +70,11 @@ const FnBComplete = () => {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => navigate('/admin/pos')}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              <UtensilsCrossed className="w-4 h-4" />
-              {t('fnb.posRestaurant', 'POS Restoran')}
-            </button>
-            <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/pos')}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800 transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
-              {t('nav.dashboard', 'Kontrol Paneli')}
+              {t('fnb.backToPos', 'POS Paneli')}
             </button>
           </div>
         </div>
