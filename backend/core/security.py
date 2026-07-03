@@ -119,9 +119,9 @@ if not JWT_SECRET:
         raise RuntimeError(
             "JWT_SECRET environment variable is required in production (STRICT_JWT_SECRET=1 or ENV=production set). Without it, multi-worker deployments would have inconsistent token verification."
         )
-    JWT_SECRET = secrets.token_urlsafe(64)
+    JWT_SECRET = "dev-secret-do-not-use-in-production-1234567890"
     logger.warning(
-        "⚠️ JWT_SECRET unset; core/security using random per-process secret (DEV ONLY — tokens invalidate on restart, multi-worker inconsistent). For production set JWT_SECRET + STRICT_JWT_SECRET=1."
+        "⚠️ JWT_SECRET unset; core/security using a static dev secret (DEV ONLY). For production set JWT_SECRET + STRICT_JWT_SECRET=1."
     )
 JWT_ALGORITHM = "HS256"
 # v44 (Bug BJ): default lowered 168h → 24h. 7-day tokens are way too long for
