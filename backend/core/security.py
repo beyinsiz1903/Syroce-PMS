@@ -119,7 +119,8 @@ if not JWT_SECRET:
         raise RuntimeError(
             "JWT_SECRET environment variable is required in production (STRICT_JWT_SECRET=1 or ENV=production set). Without it, multi-worker deployments would have inconsistent token verification."
         )
-    JWT_SECRET = "dev-secret-do-not-use-in-production-1234567890"
+    import hashlib
+    JWT_SECRET = hashlib.sha256(b"syroce_local_dev_environment_static_key").hexdigest()
     logger.warning(
         "⚠️ JWT_SECRET unset; core/security using a static dev secret (DEV ONLY). For production set JWT_SECRET + STRICT_JWT_SECRET=1."
     )
