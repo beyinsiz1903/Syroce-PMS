@@ -10,15 +10,19 @@ export default function NotAvailable() {
   const { t } = useTranslation();
 
   return (
-    <div className="min-h-[60vh] flex items-center justify-center p-6">
-      <Card className="max-w-md w-full">
-        <CardContent className="p-8 text-center space-y-4">
-          <div className="mx-auto w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
-            <Lock className="w-8 h-8 text-amber-600" />
-          </div>
-          <h2 className="text-xl font-semibold">
+    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] bg-slate-50/50 p-6">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
+        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-6">
+          <Lock className="w-8 h-8 text-slate-400" />
+        </div>
+        
+        <div className="space-y-3 mb-8">
+          <h2 className="text-xl font-bold text-slate-800">
             {t("notAvailable.title", "Bu sayfa planınıza dahil değil")}
           </h2>
+          <p className="text-sm text-slate-600">
+            DEBUG: userRole={user?.role || 'undefined'} | userRoles={(user?.roles || []).join(',')}
+          </p>
           <p className="text-sm text-slate-600">
             {t(
               "notAvailable.description",

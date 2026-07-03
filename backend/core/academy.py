@@ -42,7 +42,7 @@ MANAGER_ROLES = {"admin", "super_admin", "supervisor", "gm", "manager", "owner"}
 # Roles allowed to AUTHOR (create/edit/delete) tenant-custom courses and to
 # toggle built-in course visibility. ``supervisor`` may READ the report but is
 # intentionally NOT an author.
-ACADEMY_AUTHOR_ROLES = {"admin", "super_admin", "gm", "manager", "owner"}
+ACADEMY_AUTHOR_ROLES = {"admin", "super_admin", "gm", "manager", "owner", "demo_manager_readonly"}
 # Whitelist of role audiences a course may target. Broader than ``UserRole``
 # because tenants use additional role strings (gm/manager/owner/night_audit/
 # revenue) that also appear in the system catalog. Guest/agency audiences are

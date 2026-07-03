@@ -74,8 +74,8 @@ export default function PlanRouteGuard({ tenant, user, children }) {
   if (!tenant) return children;
 
   // Super admin, admin, and demo users bypass all plan/module restrictions
-  const userRole = user?.role;
-  const userRoles = Array.isArray(user?.roles) ? user.roles : [];
+  const userRole = (user?.role || "").toLowerCase();
+  const userRoles = Array.isArray(user?.roles) ? user.roles.map(r => r.toLowerCase()) : [];
   if (
     userRole === "super_admin" || userRole === "admin" || userRole === "owner" || userRole === "demo_manager_readonly" ||
     userRoles.includes("super_admin") || userRoles.includes("admin") || userRoles.includes("owner") || userRoles.includes("demo_manager_readonly")
@@ -100,7 +100,7 @@ export default function PlanRouteGuard({ tenant, user, children }) {
   // PMS Lite plan restriction
   if (plan === "pms_lite") {
     if (!isAllowedForLite(location.pathname)) {
-      return <NotAvailable />;
+      return <NotAvailable user={user} />;
     }
   }
 
@@ -114,7 +114,7 @@ export default function PlanRouteGuard({ tenant, user, children }) {
   if (requiredModule) {
     const isEnabled = modules[requiredModule] === true;
     if (!isEnabled) {
-      return <NotAvailable />;
+      return <NotAvailable user={user} />;
     }
   }
 
