@@ -475,19 +475,20 @@ const StaffManagement = () => {
       toast.error(err.response?.data?.detail || 'İşlem yapılamadı');
     }
   };
-  const headerActions = <>
-      <Button variant="outline" size="sm" onClick={() => navigate('/hr')}>
+  const headerActions = <div className="flex flex-wrap gap-2 items-center">
+      <Button variant="outline" size="sm" onClick={() => navigate('/hr')} className="rounded-lg shadow-sm border-slate-200 hover:bg-slate-50 text-slate-600">
         <ExternalLink className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.i_k_paneli")}</Button>
-      <Button variant="outline" size="sm" onClick={() => navigate('/hr/shifts')}>
+      <Button variant="outline" size="sm" onClick={() => navigate('/hr/shifts')} className="rounded-lg shadow-sm border-slate-200 hover:bg-slate-50 text-slate-600">
         <Calendar className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.vardiya_plan\u0131")}</Button>
-      <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+      <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)} className="rounded-lg shadow-sm border-slate-200 hover:bg-slate-50 text-slate-600">
         <Building2 className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.departman_pozisyon")}</Button>
-      <Button variant="outline" size="sm" onClick={loadAll} disabled={refreshing}>
+      <Button variant="outline" size="sm" onClick={loadAll} disabled={refreshing} className="rounded-lg shadow-sm border-slate-200 hover:bg-slate-50 text-slate-600">
         <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />{t("cm.pages_StaffManagement.yenile")}</Button>
+      <div className="border-l border-slate-200 h-6 mx-1"></div>
       <UserProvisionDialog departments={departments} onCreated={loadAll} />
-      <Button variant="outline" size="sm" onClick={openCreate} data-testid="btn-add-staff">
+      <Button size="sm" onClick={openCreate} data-testid="btn-add-staff" className="rounded-lg shadow-sm bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white border-0">
         <UserPlus className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.yeni_personel_girissiz")}</Button>
-    </>;
+    </div>;
   // itemData for react-window SmStaffRow (navigate/handlers are stable across renders)
   const staffRowData = useMemo(() => ({
     filtered, equipmentByStaff, warningsByStaff, trainingsByStaff,
@@ -497,17 +498,64 @@ const StaffManagement = () => {
   return <div className="p-2">
       <PageHeader icon={Users} title={t("cm.pages_StaffManagement.personel_y\xF6netimi")} subtitle="Çalışanlar, departmanlar, pozisyonlar — tek noktadan yönet" actions={headerActions} />
 
-      <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6 mb-4">
-        <KpiCard intent="info" icon={Users} label={t("cm.pages_StaffManagement.aktif_personel")} value={staff.length} sub={departments.length ? `${departments.length} departman` : 'departman tanımı yok'} />
-        <KpiCard intent="success" icon={Clock} label={t("cm.pages_StaffManagement.bug\xFCnk\xFC_vardiya")} value={shifts.length} sub={shifts.length ? 'planlanmış' : 'Vardiya Planı\'ndan ekleyin'} />
-        <KpiCard intent="warning" icon={Calendar} label={t("cm.pages_StaffManagement.bekleyen_i_zin")} value={leaveCounts.pending || 0} sub="onay bekliyor" />
-        <KpiCard intent="info" icon={UserPlus} label={t("cm.pages_StaffManagement.son_30g_i_\u015Fe_al\u0131m")} value={newHires30d} sub="yeni eklenen" />
-        <KpiCard intent={outstandingEquipTotal > 0 ? 'warning' : 'neutral'} icon={Package} label={t("cm.pages_StaffManagement.a\xE7\u0131k_zimmet")} value={outstandingEquipTotal} sub="iade alınmamış" />
-        <KpiCard intent={expiringTrainTotal > 0 ? 'warning' : 'neutral'} icon={GraduationCap} label={t("cm.pages_StaffManagement.s\xFCresi_dolan_e\u011Fitim")} value={expiringTrainTotal} sub="önümüzdeki 60 gün" />
+      <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6 mb-6">
+        <div className="rounded-2xl border border-sky-100 bg-gradient-to-br from-sky-50 to-white p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="p-1.5 rounded-md bg-sky-100 text-sky-700"><Users className="w-4 h-4" /></div>
+            <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">{t("cm.pages_StaffManagement.aktif_personel")}</div>
+          </div>
+          <div className="text-2xl font-bold text-slate-900 leading-none">{staff.length}</div>
+          <div className="text-[11px] text-slate-500 mt-1.5">{departments.length ? `${departments.length} departman` : 'departman tanımı yok'}</div>
+        </div>
+
+        <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="p-1.5 rounded-md bg-emerald-100 text-emerald-700"><Clock className="w-4 h-4" /></div>
+            <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">{t("cm.pages_StaffManagement.bug\xFCnk\xFC_vardiya")}</div>
+          </div>
+          <div className="text-2xl font-bold text-slate-900 leading-none">{shifts.length}</div>
+          <div className="text-[11px] text-slate-500 mt-1.5">{shifts.length ? 'planlanmış' : 'Vardiya Planı\'ndan ekleyin'}</div>
+        </div>
+
+        <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="p-1.5 rounded-md bg-amber-100 text-amber-700"><Calendar className="w-4 h-4" /></div>
+            <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">{t("cm.pages_StaffManagement.bekleyen_i_zin")}</div>
+          </div>
+          <div className="text-2xl font-bold text-slate-900 leading-none">{leaveCounts.pending || 0}</div>
+          <div className="text-[11px] text-slate-500 mt-1.5">onay bekliyor</div>
+        </div>
+
+        <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="p-1.5 rounded-md bg-indigo-100 text-indigo-700"><UserPlus className="w-4 h-4" /></div>
+            <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">{t("cm.pages_StaffManagement.son_30g_i_\u015Fe_al\u0131m")}</div>
+          </div>
+          <div className="text-2xl font-bold text-slate-900 leading-none">{newHires30d}</div>
+          <div className="text-[11px] text-slate-500 mt-1.5">yeni eklenen</div>
+        </div>
+
+        <div className={`rounded-2xl border p-4 shadow-sm ${outstandingEquipTotal > 0 ? 'border-orange-100 bg-gradient-to-br from-orange-50 to-white' : 'border-slate-100 bg-gradient-to-br from-slate-50 to-white'}`}>
+          <div className="flex items-center gap-2 mb-2">
+            <div className={`p-1.5 rounded-md ${outstandingEquipTotal > 0 ? 'bg-orange-100 text-orange-700' : 'bg-slate-200 text-slate-600'}`}><Package className="w-4 h-4" /></div>
+            <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">{t("cm.pages_StaffManagement.a\xE7\u0131k_zimmet")}</div>
+          </div>
+          <div className="text-2xl font-bold text-slate-900 leading-none">{outstandingEquipTotal}</div>
+          <div className="text-[11px] text-slate-500 mt-1.5">iade alınmamış</div>
+        </div>
+
+        <div className={`rounded-2xl border p-4 shadow-sm ${expiringTrainTotal > 0 ? 'border-rose-100 bg-gradient-to-br from-rose-50 to-white' : 'border-slate-100 bg-gradient-to-br from-slate-50 to-white'}`}>
+          <div className="flex items-center gap-2 mb-2">
+            <div className={`p-1.5 rounded-md ${expiringTrainTotal > 0 ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-600'}`}><GraduationCap className="w-4 h-4" /></div>
+            <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">{t("cm.pages_StaffManagement.s\xFCresi_dolan_e\u011Fitim")}</div>
+          </div>
+          <div className="text-2xl font-bold text-slate-900 leading-none">{expiringTrainTotal}</div>
+          <div className="text-[11px] text-slate-500 mt-1.5">önümüzdeki 60 gün</div>
+        </div>
       </div>
 
       {/* v2 Foundation: source tabs (Personel / Sistem Kullanıcıları). */}
-      <div className="flex gap-1 mb-3 border-b border-slate-200">
+      <div className="flex gap-4 mb-4 border-b border-slate-200 px-2">
         {[{
         value: 'hr',
         label: 'Personel',
@@ -516,13 +564,13 @@ const StaffManagement = () => {
         value: 'users',
         label: 'Sistem Kullanıcıları',
         testId: 'tab-source-users'
-      }].map(tab => <button key={tab.value} type="button" data-testid={tab.testId} onClick={() => setSourceTab(tab.value)} className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${sourceTab === tab.value ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+      }].map(tab => <button key={tab.value} type="button" data-testid={tab.testId} onClick={() => setSourceTab(tab.value)} className={`pb-3 px-1 text-sm font-bold border-b-2 -mb-px transition-colors ${sourceTab === tab.value ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
             {tab.label}
           </button>)}
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+      <Card className="border-0 shadow-sm rounded-2xl bg-white overflow-hidden ring-1 ring-slate-200">
+        <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between bg-slate-50/30 pb-4">
           <CardTitle>
             {sourceTab === 'users' ? 'Sistem Kullanıcıları' : 'Personel Listesi'}
           </CardTitle>
@@ -578,34 +626,33 @@ const StaffManagement = () => {
             </div>
           </div>}
 
-        <CardContent className="p-0 pt-1">
+        <CardContent className="p-0">
           <div className="overflow-x-auto" ref={tableContainerRef}>
             {/* Sticky header — CSS grid mirrors SmStaffRow column template */}
             <div
               role="row"
-              className="grid text-left text-xs font-medium text-slate-500 border-b bg-white"
+              className="grid text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200 bg-slate-50"
               style={{ gridTemplateColumns: SM_GRID, minWidth: SM_MIN_W }}
             >
-              <div className="py-2 px-2">{t("cm.pages_StaffManagement.ad_soyad")}</div>
-              <div className="py-2 px-1">{t("cm.pages_StaffManagement.departman")}</div>
-              <div className="py-2 px-1">{t("cm.pages_StaffManagement.pozisyon")}</div>
-              <div className="py-2 px-1">{t("cm.pages_StaffManagement.i_leti\u015Fim")}</div>
-              <div className="py-2 px-1">{t("cm.pages_StaffManagement.i_\u015Fe_giri\u015F")}</div>
-              <div className="py-2 px-1">{t("cm.pages_StaffManagement.tip")}</div>
-              <div className="py-2 px-1">{t("cm.pages_StaffManagement.uyumluluk")}</div>
-              <div className="py-2 px-1">{t("cm.pages_StaffManagement.kaynak")}</div>
-              <div className="py-2 px-1 text-right">{t("cm.pages_StaffManagement.i_\u015Flem")}</div>
+              <div className="py-3 px-3">{t("cm.pages_StaffManagement.ad_soyad")}</div>
+              <div className="py-3 px-1">{t("cm.pages_StaffManagement.departman")}</div>
+              <div className="py-3 px-1">{t("cm.pages_StaffManagement.pozisyon")}</div>
+              <div className="py-3 px-1">{t("cm.pages_StaffManagement.i_leti\u015Fim")}</div>
+              <div className="py-3 px-1">{t("cm.pages_StaffManagement.i_\u015Fe_giri\u015F")}</div>
+              <div className="py-3 px-1">{t("cm.pages_StaffManagement.tip")}</div>
+              <div className="py-3 px-1">{t("cm.pages_StaffManagement.uyumluluk")}</div>
+              <div className="py-3 px-1">{t("cm.pages_StaffManagement.kaynak")}</div>
+              <div className="py-3 px-2 text-right">{t("cm.pages_StaffManagement.i_\u015Flem")}</div>
             </div>
             {filtered.length === 0 ? (
-              <div className="py-10 text-center" style={{ minWidth: SM_MIN_W }}>
-                <div className="space-y-2">
-                  <p className="text-slate-500">{staff.length === 0 ? 'Hen\u00fcz personel yok' : 'Arama sonucu yok'}</p>
-                  {staff.length === 0 && (
-                    <Button size="sm" onClick={openCreate}>
-                      <UserPlus className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.i_lk_personeli_ekle")}
-                    </Button>
-                  )}
+              <div className="py-16 text-center" style={{ minWidth: SM_MIN_W }}>
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-slate-100 text-slate-400 mb-4">
+                  <Users className="w-6 h-6" />
                 </div>
+                <h3 className="text-sm font-semibold text-slate-900 mb-1">{staff.length === 0 ? 'Henüz personel eklenmemiş' : 'Arama sonucu bulunamadı'}</h3>
+                <p className="text-xs text-slate-500 mb-6">{staff.length === 0 ? 'Personel yönetimini kullanmaya başlamak için ilk personeli ekleyin.' : 'Farklı arama kriterleri deneyin.'}</p>
+                {staff.length === 0 && <Button onClick={openCreate} data-testid="btn-add-staff" className="rounded-lg shadow-sm bg-slate-900 text-white hover:bg-slate-800">
+                    <UserPlus className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.i_lk_personeli_ekle")}</Button>}
               </div>
             ) : (
               <FixedSizeList
