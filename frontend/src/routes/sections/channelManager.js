@@ -3,6 +3,7 @@ import {
   MappingManager, RoomMappingWizard, HotelRunnerIntegration, ExelyIntegration,
   ARIPushDashboard, UnifiedRateManager, WireFailureDashboard, DataModelDashboard,
   LockdownDashboard, OperatorIncidentPanel, RuntimeCockpitPage, ControlPlane,
+  HRv2OpsDashboard,
 } from "./lazyPages";
 
 export function channelManagerRoutes({ p, pa }) {
@@ -20,7 +21,7 @@ export function channelManagerRoutes({ p, pa }) {
     { path: "/mapping-manager", ...p(MappingManager), wrapLayout: true, layoutModule: "channel-manager" },
     { path: "/room-mapping-wizard", ...p(RoomMappingWizard), wrapLayout: true },
     { path: "/hotelrunner", ...pa(HotelRunnerIntegration), wrapLayout: true },
-    { path: "/hrv2-ops", type: "redirect", to: "/hr?tab=ops" },
+    { path: "/hrv2-ops", ...pa(HRv2OpsDashboard), wrapLayout: true },
     { path: "/exely", ...pa(ExelyIntegration), wrapLayout: true },
     { path: "/ari-push", ...pa(ARIPushDashboard), wrapLayout: true },
     { path: "/rate-manager", ...pa(UnifiedRateManager) },
