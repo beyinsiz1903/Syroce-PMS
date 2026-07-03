@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Lock, ArrowLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-export default function NotAvailable() {
+export default function NotAvailable({ user }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
 
@@ -38,8 +38,8 @@ export default function NotAvailable() {
               {t("notAvailable.toDashboard", "Panele Git")}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }
