@@ -827,149 +827,206 @@ const HRComplete = () => {
     catch { return '—'; }
   };
 
-  const headerActions = (
-    <>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => navigate('/staff-management')}
-        data-testid="btn-staff-management"
-      >
-        <Users className="w-4 h-4 mr-1.5" />
-        {t('cm.pages_HRComplete.personel_yonetimi')}
-        <ExternalLink className="w-3 h-3 ml-1" />
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={loadAll}
-        disabled={refreshing}
-        data-testid="btn-refresh-hr"
-      >
-        <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
-        {t('cm.pages_HRComplete.yenile')}
-      </Button>
-    </>
-  );
-
   return (
-    <div className="p-2">
-      <PageHeader
-        icon={Users}
-        title={t('cm.pages_HRComplete.ik_yonetim_paketi')}
-        subtitle={t('cm.pages_HRComplete.devam_takibi_bordro_izin_performans_ve_i')}
-        actions={headerActions}
-      />
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+      {/* PROFESSIONAL HEADER */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-gradient-to-r from-teal-50 to-white rounded-2xl border border-teal-100 px-6 py-5 shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="p-3 rounded-2xl bg-teal-600 text-white shadow-lg shadow-teal-200">
+            <Users className="w-7 h-7" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{t('cm.pages_HRComplete.ik_yonetim_paketi')}</h1>
+            <p className="text-sm text-slate-500 mt-0.5">{t('cm.pages_HRComplete.devam_takibi_bordro_izin_performans_ve_i')}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            className="border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+            onClick={() => navigate('/staff-management')}
+            data-testid="btn-staff-management"
+          >
+            <Users className="w-4 h-4 mr-2" />
+            Personel Yönetimi
+            <ExternalLink className="w-3 h-3 ml-1.5 opacity-50" />
+          </Button>
+          <Button
+            variant="outline"
+            className="border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+            onClick={loadAll}
+            disabled={refreshing}
+            data-testid="btn-refresh-hr"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            Yenile
+          </Button>
+        </div>
+      </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6">
-          <TabsTrigger value="attendance" data-testid="tab-attendance">
+        <TabsList className="grid w-full grid-cols-6 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200">
+          <TabsTrigger value="attendance" data-testid="tab-attendance" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Clock className="w-4 h-4 mr-2" />Devam
           </TabsTrigger>
-          <TabsTrigger value="payroll" data-testid="tab-payroll">
+          <TabsTrigger value="payroll" data-testid="tab-payroll" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <DollarSign className="w-4 h-4 mr-2" />Bordro
           </TabsTrigger>
-          <TabsTrigger value="leave" data-testid="tab-leave">
-            <Calendar className="w-4 h-4 mr-2" />{t('cm.pages_HRComplete.izin')}
+          <TabsTrigger value="leave" data-testid="tab-leave" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
+            <Calendar className="w-4 h-4 mr-2" />İzin
           </TabsTrigger>
-          <TabsTrigger value="performance" data-testid="tab-performance">
+          <TabsTrigger value="performance" data-testid="tab-performance" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Briefcase className="w-4 h-4 mr-2" />Performans
           </TabsTrigger>
-          <TabsTrigger value="overtime" data-testid="tab-overtime">
+          <TabsTrigger value="overtime" data-testid="tab-overtime" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Timer className="w-4 h-4 mr-1.5" />
             Mesai Onayı
             {overtimeCounts.pending > 0 && (
               <span className="ml-1.5 px-1.5 rounded-full bg-amber-500 text-white text-[10px]">{overtimeCounts.pending}</span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="recruitment" data-testid="tab-recruitment">
+          <TabsTrigger value="recruitment" data-testid="tab-recruitment" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <ClipboardList className="w-4 h-4 mr-2" />Personel Talebi
           </TabsTrigger>
         </TabsList>
 
         {/* === ATTENDANCE === */}
         <TabsContent value="attendance" className="mt-4">
-          <div className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-5">
-              <KpiCard intent="info" icon={Users} label={t('cm.pages_HRComplete.toplam_calisan')}
-                value={attendanceMetrics.total_active_staff ?? attendanceMetrics.staff_count}
-                sub={`aktif personel${attendanceMetrics.staff_count ? ` • ${attendanceMetrics.staff_count} devam kayıtlı` : ''}`} />
-              <KpiCard intent="success" icon={Clock} label={t('cm.pages_HRComplete.toplam_saat')}
-                value={(attendanceMetrics.total_hours || 0).toFixed(1)}
-                sub="son 30 gün" />
-              <KpiCard intent="warning" icon={TrendingUp} label={t('cm.pages_HRComplete.ortalama_saat')}
-                value={(attendanceMetrics.avg_hours_per_active_staff || attendanceMetrics.avg_hours_per_staff || 0).toFixed(1)}
-                sub="personel başı (son 30 gün)" />
-              <KpiCard intent={outstandingEquipTotal > 0 ? 'warning' : 'neutral'} icon={Package}
-                label="Açık Zimmet" value={outstandingEquipTotal} sub="iade alınmamış" />
-              <KpiCard intent={expiringTrainTotal > 0 ? 'warning' : 'neutral'} icon={GraduationCap}
-                label="Süresi Dolan Eğitim" value={expiringTrainTotal} sub="önümüzdeki 60 gün" />
+          <div className="space-y-6 mt-6">
+            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
+              <div className="rounded-2xl border border-teal-100 bg-gradient-to-br from-teal-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-teal-100 text-teal-700"><Users className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Toplam Çalışan</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{attendanceMetrics.total_active_staff ?? attendanceMetrics.staff_count}</div>
+                <div className="text-[11px] text-slate-500 mt-1">aktif personel • {attendanceMetrics.staff_count} devam kayıtlı</div>
+              </div>
+              <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-emerald-100 text-emerald-700"><Clock className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Toplam Saat</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{(attendanceMetrics.total_hours || 0).toFixed(1)}</div>
+                <div className="text-[11px] text-slate-500 mt-1">son 30 gün</div>
+              </div>
+              <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-indigo-100 text-indigo-700"><TrendingUp className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Ortalama Saat</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{(attendanceMetrics.avg_hours_per_active_staff || attendanceMetrics.avg_hours_per_staff || 0).toFixed(1)}</div>
+                <div className="text-[11px] text-slate-500 mt-1">personel başı (son 30 gün)</div>
+              </div>
+              <div className={`rounded-2xl border p-5 shadow-sm ${outstandingEquipTotal > 0 ? 'border-amber-100 bg-gradient-to-br from-amber-50 to-white' : 'border-slate-100 bg-gradient-to-br from-slate-50 to-white'}`}>
+                <div className="flex items-center gap-3 mb-2">
+                  <div className={`p-2 rounded-lg ${outstandingEquipTotal > 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-700'}`}><Package className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Açık Zimmet</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{outstandingEquipTotal}</div>
+                <div className="text-[11px] text-slate-500 mt-1">iade alınmamış</div>
+              </div>
+              <div className={`rounded-2xl border p-5 shadow-sm ${expiringTrainTotal > 0 ? 'border-rose-100 bg-gradient-to-br from-rose-50 to-white' : 'border-slate-100 bg-gradient-to-br from-slate-50 to-white'}`}>
+                <div className="flex items-center gap-3 mb-2">
+                  <div className={`p-2 rounded-lg ${expiringTrainTotal > 0 ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-700'}`}><GraduationCap className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Süresi Dolan Eğitim</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{expiringTrainTotal}</div>
+                <div className="text-[11px] text-slate-500 mt-1">önümüzdeki 60 gün</div>
+              </div>
             </div>
 
-            <Card>
-              <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <CardTitle>{t('cm.pages_HRComplete.giris_cikis_kaydi')}</CardTitle>
-                <div className="flex flex-wrap gap-2 items-center">
-                  <Label className="text-xs">Personel</Label>
-                  <select
-                    value={selectedStaffId}
-                    onChange={(e) => setSelectedStaffId(e.target.value)}
-                    className="rounded-md border border-input px-3 py-1.5 text-sm min-w-[200px]"
-                    data-testid="select-staff"
-                  >
-                    {staffDropdown.length === 0 && <option value="">— Personel yok —</option>}
-                    {staffDropdown.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} {s.department ? `(${s.department})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <Button size="sm" onClick={clockIn} disabled={!selectedStaffId} data-testid="btn-clock-in">
-                    <Clock className="w-4 h-4 mr-1.5" />{t('cm.pages_HRComplete.giris_yap')}
+            <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden">
+              <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between bg-slate-50/50 border-b border-slate-100 pb-4">
+                <CardTitle className="text-lg font-bold text-slate-800">Giriş / Çıkış Kaydı</CardTitle>
+                <div className="flex flex-wrap gap-3 items-center bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+                  <div className="flex items-center gap-2 pl-2">
+                    <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Personel</Label>
+                    <select
+                      value={selectedStaffId}
+                      onChange={(e) => setSelectedStaffId(e.target.value)}
+                      className="rounded-lg border-0 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-teal-500 min-w-[200px]"
+                      data-testid="select-staff"
+                    >
+                      {staffDropdown.length === 0 && <option value="">— Personel yok —</option>}
+                      {staffDropdown.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} {s.department ? `(${s.department})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="h-6 w-px bg-slate-200 mx-1"></div>
+                  <Button size="sm" onClick={clockIn} disabled={!selectedStaffId} data-testid="btn-clock-in" className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm">
+                    <Clock className="w-4 h-4 mr-1.5" />Giriş Yap
                   </Button>
-                  <Button size="sm" variant="outline" onClick={clockOut} disabled={!selectedStaffId} data-testid="btn-clock-out">
-                    <Clock className="w-4 h-4 mr-1.5" />{t('cm.pages_HRComplete.cikis_yap')}
+                  <Button size="sm" variant="outline" onClick={clockOut} disabled={!selectedStaffId} data-testid="btn-clock-out" className="border-rose-200 text-rose-700 hover:bg-rose-50 rounded-lg shadow-sm">
+                    <Clock className="w-4 h-4 mr-1.5" />Çıkış Yap
                   </Button>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="p-0">
                 {staffDropdown.length === 0 && (
-                  <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                    {t('cm.pages_HRComplete.personel_listesi_bos_personel_eklemek_ic')}
-                    <Button variant="link" size="sm" className="px-1.5" onClick={() => navigate('/staff-management')}>
-                      {t('cm.pages_HRComplete.personel_yonetimi_28ee4')}
-                    </Button>
-                    {t('cm.pages_HRComplete.sayfasini_kullanin')}
+                  <div className="m-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
+                    <div>
+                      <p className="font-semibold mb-1">Personel listesi boş</p>
+                      <p>
+                        Personel eklemek için <button className="font-semibold underline hover:text-amber-900" onClick={() => navigate('/staff-management')}>Personel Yönetimi</button> sayfasını kullanın.
+                      </p>
+                    </div>
                   </div>
                 )}
-                <div className="rounded-md border bg-slate-50 p-3 text-xs text-slate-600">
-                  {t('cm.pages_HRComplete.izlenen_aralik')} {recordsRange.start || '—'} → {recordsRange.end || '—'}
+                <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 text-xs font-medium text-slate-500">
+                  <span className="uppercase tracking-wider">İzlenen Aralık:</span> {recordsRange.start || '—'} → {recordsRange.end || '—'}
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-left text-slate-500 border-b">
-                        <th className="py-2">Personel</th>
-                        <th>Departman</th>
-                        <th>{t('cm.pages_HRComplete.gun')}</th>
-                        <th>{t('cm.pages_HRComplete.giris')}</th>
-                        <th>{t('cm.pages_HRComplete.cikis')}</th>
-                        <th className="text-right">{t('cm.pages_HRComplete.saat')}</th>
+                      <tr className="text-left bg-white border-b border-slate-200">
+                        <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Personel</th>
+                        <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Departman</th>
+                        <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Gün</th>
+                        <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Giriş</th>
+                        <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Çıkış</th>
+                        <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Saat</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-slate-100">
                       {attendanceRecords.map((record) => (
-                        <tr key={record.id || record.clock_in} className="border-t border-slate-100">
-                          <td className="py-2 font-medium">{record.staff_name || record.staff_id}</td>
-                          <td className="capitalize text-slate-600">{record.department || '—'}</td>
-                          <td className="text-slate-600">{record.date}</td>
-                          <td>{fmtTime(record.clock_in)}</td>
-                          <td>{record.clock_out ? fmtTime(record.clock_out) : '—'}</td>
-                          <td className="text-right">{record.total_hours?.toFixed(2) ?? '—'}</td>
+                        <tr key={record.id || record.clock_in} className="hover:bg-slate-50/80 transition-colors bg-white">
+                          <td className="py-3 px-5 font-semibold text-slate-800">{record.staff_name || record.staff_id}</td>
+                          <td className="py-3 px-5 capitalize text-slate-600">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">{record.department || '—'}</span>
+                          </td>
+                          <td className="py-3 px-5 text-slate-600 font-medium">{record.date}</td>
+                          <td className="py-3 px-5">
+                            <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                              {fmtTime(record.clock_in)}
+                            </span>
+                          </td>
+                          <td className="py-3 px-5">
+                            {record.clock_out ? (
+                              <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-bold bg-rose-50 text-rose-700 border border-rose-100">
+                                {fmtTime(record.clock_out)}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-xs italic">Devam ediyor</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-5 text-right font-bold text-slate-700">{record.total_hours?.toFixed(2) ?? '—'}</td>
                         </tr>
                       ))}
                       {attendanceRecords.length === 0 && (
-                        <tr><td colSpan={6} className="py-6 text-center text-slate-500">{t('cm.pages_HRComplete.kayit_bulunamadi')}</td></tr>
+                        <tr>
+                          <td colSpan={6} className="py-12">
+                            <div className="flex flex-col items-center justify-center text-slate-400">
+                              <Clock className="w-10 h-10 mb-3 opacity-20" />
+                              <p className="font-medium text-slate-600">Kayıt bulunamadı</p>
+                              <p className="text-xs mt-1">Seçili tarih aralığında giriş-çıkış kaydı yok.</p>
+                            </div>
+                          </td>
+                        </tr>
                       )}
                     </tbody>
                   </table>
@@ -977,26 +1034,34 @@ const HRComplete = () => {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2"><Award className="w-4 h-4" />{t('cm.pages_HRComplete.en_yuksek_saat_top_3')}</CardTitle></CardHeader>
-              <CardContent className="space-y-2">
-                {topPerformers.map((s) => (
-                  <div key={s.staff_id} className="flex items-center justify-between rounded border border-slate-100 bg-white px-3 py-2 text-sm">
-                    <div>
-                      <p className="font-semibold text-slate-800">{s.staff_name}</p>
-                      <p className="text-xs text-slate-500 capitalize">{s.department}</p>
+            <Card className="rounded-2xl border-slate-200 shadow-sm">
+              <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-800">
+                  <Award className="w-5 h-5 text-amber-500" />En Yüksek Saat (Top 3)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-5">
+                <div className="grid gap-4 md:grid-cols-3">
+                  {topPerformers.map((s, idx) => (
+                    <div key={s.staff_id} className="relative flex items-center p-4 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                      <div className={`absolute top-0 left-0 w-1 h-full ${idx === 0 ? 'bg-amber-500' : idx === 1 ? 'bg-slate-400' : 'bg-amber-700'}`}></div>
+                      <div className="flex-1 pl-2">
+                        <p className="font-bold text-slate-900 truncate">{s.staff_name}</p>
+                        <p className="text-xs text-slate-500 capitalize mt-0.5">{s.department}</p>
+                      </div>
+                      <div className="text-right ml-3">
+                        <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Toplam</p>
+                        <p className="text-xl font-black text-slate-900">{s.total_hours?.toFixed(1)}<span className="text-xs font-medium text-slate-500 ml-0.5">sa</span></p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-slate-400">{t('cm.pages_HRComplete.toplam_saat_f69c5')}</p>
-                      <p className="text-lg font-bold text-slate-900">{s.total_hours?.toFixed(1)}</p>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
                 {topPerformers.length === 0 && (
-                  <div className="text-center py-6 space-y-2">
-                    <p className="text-sm text-slate-500">Yeterli devam verisi yok</p>
-                    <Button variant="outline" size="sm" onClick={() => navigate('/staff-management')}>
-                      <UserPlus className="w-4 h-4 mr-1.5" />{t('cm.pages_HRComplete.personel_ekle')}
+                  <div className="text-center py-8">
+                    <Award className="w-10 h-10 mx-auto text-slate-300 mb-3" />
+                    <p className="text-sm font-medium text-slate-600">Yeterli devam verisi yok</p>
+                    <Button variant="outline" size="sm" className="mt-3 rounded-lg" onClick={() => navigate('/staff-management')}>
+                      <UserPlus className="w-4 h-4 mr-1.5" />Personel Ekle
                     </Button>
                   </div>
                 )}
@@ -1007,99 +1072,109 @@ const HRComplete = () => {
 
         {/* === PAYROLL === */}
         <TabsContent value="payroll" className="mt-4">
-          <div className="space-y-4">
-            <Card>
-              <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-6 mt-6">
+            <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden">
+              <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between bg-slate-50/50 border-b border-slate-100 pb-4">
                 <div>
-                  <CardTitle className="flex items-center gap-2"><DollarSign className="w-4 h-4" />{t('cm.pages_HRComplete.bordro_islemleri')}</CardTitle>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {t('cm.pages_HRComplete.devam_kayitlarindan_otomatik_hesap_tr_is')}
+                  <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-800">
+                    <div className="p-1.5 rounded-md bg-teal-100 text-teal-700"><DollarSign className="w-5 h-5" /></div>
+                    Bordro İşlemleri
+                  </CardTitle>
+                  <p className="text-sm text-slate-500 mt-1.5 ml-9">
+                    Devam kayıtlarından otomatik hesap (TR İş K. uyumlu: %14 SGK + %1 İşsizlik + %15 Gelir + %0.759 Damga)
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Label className="text-xs">{t('cm.pages_HRComplete.ay')}</Label>
-                  <Input
-                    type="month"
-                    value={exportMonth}
-                    onChange={(e) => setExportMonth(e.target.value)}
-                    className="w-40"
-                    data-testid="input-payroll-month"
-                  />
-                  <Button variant="outline" size="sm" onClick={handlePayrollPreview} data-testid="btn-payroll-preview">
-                    <RefreshCw className="w-4 h-4 mr-1.5" />{t('cm.pages_HRComplete.onizle')}
+                <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+                  <div className="flex items-center gap-2 pl-2">
+                    <Label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Ay</Label>
+                    <Input
+                      type="month"
+                      value={exportMonth}
+                      onChange={(e) => setExportMonth(e.target.value)}
+                      className="w-40 h-9 rounded-lg border-slate-200 bg-slate-50 focus:ring-teal-500"
+                      data-testid="input-payroll-month"
+                    />
+                  </div>
+                  <div className="h-6 w-px bg-slate-200 mx-1"></div>
+                  <Button variant="outline" size="sm" onClick={handlePayrollPreview} className="rounded-lg shadow-sm" data-testid="btn-payroll-preview">
+                    <RefreshCw className="w-4 h-4 mr-1.5 text-slate-500" />Önizle
                   </Button>
-                  <Button size="sm" onClick={handlePayrollSaveDraft} disabled={savingDraft} data-testid="btn-payroll-save-draft" className="bg-slate-900 text-white hover:bg-slate-800">
+                  <Button size="sm" onClick={handlePayrollSaveDraft} disabled={savingDraft} data-testid="btn-payroll-save-draft" className="bg-slate-900 text-white hover:bg-slate-800 rounded-lg shadow-sm">
                     <FileText className="w-4 h-4 mr-1.5" />
                     {savingDraft ? 'Kaydediliyor...' : 'Taslak Kaydet'}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={handlePayrollExport} disabled={exporting} data-testid="btn-payroll-csv">
+                  <Button variant="outline" size="sm" onClick={handlePayrollExport} disabled={exporting} data-testid="btn-payroll-csv" className="rounded-lg shadow-sm text-sky-700 border-sky-200 hover:bg-sky-50">
                     <FileDown className="w-4 h-4 mr-1.5" />
                     {exporting ? 'İndiriliyor...' : 'CSV İndir'}
                   </Button>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Task #264: Dry-run + draft/locked/revisions akış rehberi */}
-                <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm">
-                  <div className="flex items-start gap-2">
-                    <Info className="w-4 h-4 mt-0.5 text-sky-600 shrink-0" />
-                    <div className="space-y-2">
-                      <p className="font-medium text-sky-900">Bordro yaşam döngüsü (önbordro / muhasebe ihracı)</p>
-                      <ol className="list-decimal pl-5 space-y-1 text-slate-700 text-xs">
-                        <li><strong>Önizle</strong>: Devam kayıtlarından dry-run hesap. Hiçbir muhasebe etkisi YOKTUR.</li>
-                        <li><strong>Taslak Kaydet</strong>: Bu ayın hesabı `payroll_runs` koleksiyonuna <em>draft</em> olarak kaydedilir; aynı gün tekrar bastığınızda mevcut taslak güncellenir.</li>
-                        <li><strong>Kilitle</strong>: Taslak satır bazında dondurulur (<em>locked</em>, immutable). Yalnızca HR Admin / Finance / Süper Admin.</li>
-                        <li><strong>Revizyon Aç</strong>: Kilitli bordro değişmez; yeni bir taslak ile düzeltme akışı başlar (audit zinciri korunur).</li>
-                        <li><strong>CSV / XLSX</strong>: Muhasebe ihracı; XLSX kalem (avans, prim, yemek, yol, kesinti, mesai) detayı içerir.</li>
-                      </ol>
-                      <p className="text-xs text-amber-700">
-                        <AlertCircle className="w-3 h-3 inline mr-1" />
+              <CardContent className="p-5 space-y-6">
+                
+                {/* Collapsible Guide */}
+                <details className="rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white shadow-sm overflow-hidden group">
+                  <summary className="px-5 py-3 cursor-pointer text-sm font-semibold text-sky-800 flex items-center gap-2 hover:bg-sky-100/50 transition-colors">
+                    <Info className="w-5 h-5 text-sky-600" />
+                    Bordro Yaşam Döngüsü Rehberi (Önbordro / Muhasebe İhracı)
+                  </summary>
+                  <div className="px-5 pb-5 pt-2 border-t border-sky-100/50">
+                    <ol className="list-decimal pl-5 space-y-2 text-slate-700 text-sm">
+                      <li><strong>Önizle</strong>: Devam kayıtlarından dry-run hesap. Hiçbir muhasebe etkisi YOKTUR.</li>
+                      <li><strong>Taslak Kaydet</strong>: Bu ayın hesabı <code>payroll_runs</code> veritabanına <em>draft</em> olarak kaydedilir; aynı gün tekrar bastığınızda mevcut taslak güncellenir.</li>
+                      <li><strong>Kilitle</strong>: Taslak satır bazında dondurulur (<em>locked</em>, immutable). Yalnızca HR Admin / Finance / Süper Admin.</li>
+                      <li><strong>Revizyon Aç</strong>: Kilitli bordro değişmez; yeni bir taslak ile düzeltme akışı başlar (audit zinciri korunur).</li>
+                      <li><strong>CSV / XLSX</strong>: Muhasebe ihracı; XLSX kalem (avans, prim, yemek, yol, kesinti, mesai) detayı içerir.</li>
+                    </ol>
+                    <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-100 text-xs text-amber-800 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                      <p>
                         {(() => {
                           const r = taxRates?.rates || { sgk_employee: 14, unemployment: 1, income_tax: 15, stamp_tax: 0.759 };
                           const fmt = (n) => Number(n).toLocaleString('tr-TR', { maximumFractionDigits: 3 });
-                          return `Kesintiler: %${fmt(r.sgk_employee)} SGK + %${fmt(r.unemployment)} işsizlik + %${fmt(r.income_tax)} gelir vergisi (matrah − SGK) + %${fmt(r.stamp_tax)} damga.`;
+                          return `Kesintiler: %${fmt(r.sgk_employee)} SGK + %${fmt(r.unemployment)} İşsizlik + %${fmt(r.income_tax)} Gelir Vergisi (matrah − SGK) + %${fmt(r.stamp_tax)} Damga.`;
                         })()}
                         {' '}Asgari ücret muafiyeti / AGİ / özel kesintiler için muhasebenizle doğrulayın.
                       </p>
                     </div>
                   </div>
-                </div>
+                </details>
 
                 {/* Runs listesi */}
                 {payrollRuns.length > 0 && (
-                  <div className="rounded-md border bg-white">
-                    <div className="px-3 py-2 border-b bg-slate-50 text-xs font-semibold text-slate-700">
-                      {exportMonth} ayı bordro çalışmaları ({payrollRuns.length})
+                  <div className="rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                    <div className="px-5 py-3 border-b bg-slate-50 text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-slate-400" />
+                      {exportMonth} Ayı Bordro Çalışmaları ({payrollRuns.length})
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="text-left text-slate-500 border-b text-xs">
-                            <th className="py-2 px-3">Durum</th>
-                            <th className="px-3">Run ID</th>
-                            <th className="px-3 text-right">Personel</th>
-                            <th className="px-3 text-right">Brüt</th>
-                            <th className="px-3 text-right">Net</th>
-                            <th className="px-3">Güncellendi</th>
-                            <th className="px-3 text-right">İşlem</th>
+                          <tr className="text-left bg-white border-b border-slate-200">
+                            <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Durum</th>
+                            <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Run ID</th>
+                            <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Personel</th>
+                            <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Brüt</th>
+                            <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Net</th>
+                            <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Güncellendi</th>
+                            <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">İşlem</th>
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-slate-100">
                           {payrollRuns.map((r) => (
-                            <tr key={r.id} className={`border-t border-slate-100 ${selectedRun?.id === r.id ? 'bg-slate-50' : ''}`}>
-                              <td className="py-2 px-3">
+                            <tr key={r.id} className={`hover:bg-slate-50 transition-colors ${selectedRun?.id === r.id ? 'bg-teal-50/50' : 'bg-white'}`}>
+                              <td className="py-3 px-5">
                                 <StatusBadge intent={r.status === 'locked' ? 'success' : 'warning'}>
                                   {r.status === 'locked' ? 'Kilitli' : 'Taslak'}
                                 </StatusBadge>
                               </td>
-                              <td className="px-3 font-mono text-xs text-slate-600">{r.id.slice(0, 8)}…</td>
-                              <td className="px-3 text-right">{r.summary?.staff_count ?? '—'}</td>
-                              <td className="px-3 text-right">{r.summary ? fmtCurrency(r.summary.total_gross) : '—'}</td>
-                              <td className="px-3 text-right">{r.summary ? fmtCurrency(r.summary.total_net) : '—'}</td>
-                              <td className="px-3 text-xs text-slate-500">{(r.updated_at || r.created_at || '').slice(0, 16).replace('T', ' ')}</td>
-                              <td className="px-3 text-right">
-                                <Button size="sm" variant="outline" onClick={() => loadRunDetail(r.id)} data-testid={`btn-run-detail-${r.id.slice(0, 8)}`}>
-                                  Aç
+                              <td className="py-3 px-5 font-mono text-xs text-slate-600">{r.id.slice(0, 8)}…</td>
+                              <td className="py-3 px-5 text-right font-medium">{r.summary?.staff_count ?? '—'}</td>
+                              <td className="py-3 px-5 text-right text-slate-600">{r.summary ? fmtCurrency(r.summary.total_gross) : '—'}</td>
+                              <td className="py-3 px-5 text-right font-bold text-slate-800">{r.summary ? fmtCurrency(r.summary.total_net) : '—'}</td>
+                              <td className="py-3 px-5 text-xs text-slate-500">{(r.updated_at || r.created_at || '').slice(0, 16).replace('T', ' ')}</td>
+                              <td className="py-3 px-5 text-right">
+                                <Button size="sm" variant="outline" className="rounded-lg text-teal-700 border-teal-200 hover:bg-teal-50" onClick={() => loadRunDetail(r.id)} data-testid={`btn-run-detail-${r.id.slice(0, 8)}`}>
+                                  Detay
                                 </Button>
                               </td>
                             </tr>
@@ -1112,18 +1187,18 @@ const HRComplete = () => {
 
                 {/* Seçili run detayı */}
                 {selectedRun && (
-                  <div className="rounded-md border bg-white">
-                    <div className="px-3 py-2 border-b bg-slate-50 flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-xs">
-                        <span className="font-semibold text-slate-700">Run </span>
-                        <span className="font-mono">{selectedRun.id.slice(0, 8)}…</span>
-                        <span className="ml-2">
+                  <div className="rounded-xl border border-teal-200 bg-white overflow-hidden shadow-sm">
+                    <div className="px-5 py-4 border-b bg-teal-50/50 flex flex-wrap items-center justify-between gap-4">
+                      <div className="text-sm">
+                        <span className="font-bold text-teal-900">Çalışma Detayı: </span>
+                        <span className="font-mono text-teal-700 bg-teal-100 px-2 py-0.5 rounded-md ml-1">{selectedRun.id.slice(0, 8)}…</span>
+                        <span className="ml-3">
                           <StatusBadge intent={selectedRun.status === 'locked' ? 'success' : 'warning'}>
                             {selectedRun.status === 'locked' ? 'Kilitli' : 'Taslak'}
                           </StatusBadge>
                         </span>
                         {selectedRun.parent_run_id && (
-                          <span className="ml-2 text-slate-500">
+                          <span className="ml-3 text-teal-600 text-xs">
                             (revizyon — üst: <span className="font-mono">{selectedRun.parent_run_id.slice(0, 8)}…</span>)
                           </span>
                         )}
@@ -1131,18 +1206,18 @@ const HRComplete = () => {
                       <div className="flex items-center gap-2">
                         {selectedRun.status === 'draft' && (
                           <Button size="sm" onClick={() => handlePayrollFinalize(selectedRun.id)} disabled={finalizing}
-                            className="bg-slate-900 text-white hover:bg-slate-800" data-testid="btn-payroll-finalize">
+                            className="bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg shadow-sm" data-testid="btn-payroll-finalize">
                             <CheckCircle2 className="w-4 h-4 mr-1.5" />
                             {finalizing ? 'Kilitleniyor...' : 'Kilitle'}
                           </Button>
                         )}
                         {selectedRun.status === 'locked' && (
-                          <Button size="sm" variant="outline" onClick={() => handleRevisionOpen(selectedRun.id)} disabled={revising} data-testid="btn-payroll-revision">
+                          <Button size="sm" variant="outline" onClick={() => handleRevisionOpen(selectedRun.id)} disabled={revising} data-testid="btn-payroll-revision" className="rounded-lg border-amber-200 text-amber-700 hover:bg-amber-50">
                             <RefreshCw className="w-4 h-4 mr-1.5" />
                             {revising ? 'Açılıyor...' : 'Revizyon Aç'}
                           </Button>
                         )}
-                        <Button size="sm" variant="outline" onClick={() => handleRunXlsx(selectedRun.id)} data-testid="btn-payroll-xlsx">
+                        <Button size="sm" variant="outline" onClick={() => handleRunXlsx(selectedRun.id)} data-testid="btn-payroll-xlsx" className="rounded-lg border-teal-200 text-teal-700 hover:bg-teal-50">
                           <FileDown className="w-4 h-4 mr-1.5" />XLSX İndir
                         </Button>
                       </div>
@@ -1150,48 +1225,59 @@ const HRComplete = () => {
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="text-left text-slate-500 border-b text-xs">
-                            <th className="py-2 px-3">Personel</th>
-                            <th className="px-3">Departman</th>
-                            <th className="px-3 text-right">Saat</th>
-                            <th className="px-3 text-right">Mesai</th>
-                            <th className="px-3 text-right">Brüt</th>
-                            <th className="px-3 text-right">Ek Kazanç</th>
-                            <th className="px-3 text-right">Ek Kesinti</th>
-                            <th className="px-3 text-right">Net</th>
+                          <tr className="text-left bg-white border-b border-slate-200">
+                            <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Personel</th>
+                            <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Departman</th>
+                            <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Saat</th>
+                            <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Mesai</th>
+                            <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Brüt</th>
+                            <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Ek Kazanç</th>
+                            <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Ek Kesinti</th>
+                            <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Net</th>
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-slate-100">
                           {(selectedRun.rows || []).map((row) => (
-                            <tr key={row.staff_id} className="border-t border-slate-100">
-                              <td className="py-2 px-3 font-medium">{row.staff_name}</td>
-                              <td className="px-3 capitalize text-slate-600">{row.department}</td>
-                              <td className="px-3 text-right">{Number(row.total_hours || 0).toFixed(1)}</td>
-                              <td className="px-3 text-right text-amber-700">{Number(row.overtime_hours || 0).toFixed(1)}</td>
-                              <td className="px-3 text-right">{fmtCurrency(row.gross_pay)}</td>
-                              <td className="px-3 text-right text-emerald-700">{fmtCurrency(row.extra_earnings || 0)}</td>
-                              <td className="px-3 text-right text-rose-700">{fmtCurrency(row.extra_deductions || 0)}</td>
-                              <td className="px-3 text-right font-semibold">{fmtCurrency(row.net_salary)}</td>
+                            <tr key={row.staff_id} className="hover:bg-slate-50 transition-colors bg-white">
+                              <td className="py-3 px-5 font-bold text-slate-800">{row.staff_name}</td>
+                              <td className="py-3 px-5 capitalize text-slate-600">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">{row.department}</span>
+                              </td>
+                              <td className="py-3 px-5 text-right font-medium">{Number(row.total_hours || 0).toFixed(1)}</td>
+                              <td className="py-3 px-5 text-right font-bold text-amber-600">{Number(row.overtime_hours || 0).toFixed(1)}</td>
+                              <td className="py-3 px-5 text-right text-slate-600">{fmtCurrency(row.gross_pay)}</td>
+                              <td className="py-3 px-5 text-right text-emerald-600">{fmtCurrency(row.extra_earnings || 0)}</td>
+                              <td className="py-3 px-5 text-right text-rose-600">{fmtCurrency(row.extra_deductions || 0)}</td>
+                              <td className="py-3 px-5 text-right font-black text-slate-900">{fmtCurrency(row.net_salary)}</td>
                             </tr>
                           ))}
                           {(!selectedRun.rows || selectedRun.rows.length === 0) && (
-                            <tr><td colSpan={8} className="py-6 text-center text-slate-500">Bu run'da satır yok</td></tr>
+                            <tr>
+                              <td colSpan={8} className="py-12">
+                                <div className="flex flex-col items-center justify-center text-slate-400">
+                                  <FileText className="w-10 h-10 mb-3 opacity-20" />
+                                  <p className="font-medium text-slate-600">Kayıt yok</p>
+                                </div>
+                              </td>
+                            </tr>
                           )}
                         </tbody>
                       </table>
                     </div>
                     {runRevisions.length > 0 && (
-                      <div className="border-t bg-slate-50 px-3 py-2 text-xs">
-                        <div className="font-semibold text-slate-700 mb-1">Revizyon geçmişi ({runRevisions.length})</div>
-                        <ul className="space-y-1">
+                      <div className="border-t border-slate-200 bg-slate-50 p-5">
+                        <div className="font-bold text-sm text-slate-700 mb-3 flex items-center gap-2">
+                          <RefreshCw className="w-4 h-4" /> Revizyon Geçmişi ({runRevisions.length})
+                        </div>
+                        <ul className="space-y-2">
                           {runRevisions.map((rev) => (
-                            <li key={rev.id} className="flex flex-wrap items-center gap-2 text-slate-600">
-                              <span className="text-slate-400">{(rev.created_at || '').slice(0, 16).replace('T', ' ')}</span>
-                              <span className="font-mono">{rev.new_run_id?.slice(0, 8)}…</span>
-                              <span>—</span>
-                              <span>{rev.reason}</span>
-                              <span className="text-slate-400">
-                                (brüt {fmtCurrency(rev.diff?.gross_before)} → {fmtCurrency(rev.diff?.gross_after)})
+                            <li key={rev.id} className="flex flex-wrap items-center gap-3 text-sm bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+                              <span className="text-slate-400 text-xs px-2 py-1 bg-slate-100 rounded-md">{(rev.created_at || '').slice(0, 16).replace('T', ' ')}</span>
+                              <span className="font-mono text-xs text-sky-700 bg-sky-50 px-2 py-1 rounded-md">{rev.new_run_id?.slice(0, 8)}…</span>
+                              <span className="text-slate-400">—</span>
+                              <span className="font-medium text-slate-700">{rev.reason}</span>
+                              <span className="text-slate-500 text-xs ml-auto">
+                                (brüt <span className="line-through opacity-70">{fmtCurrency(rev.diff?.gross_before)}</span> → <span className="font-bold text-emerald-600">{fmtCurrency(rev.diff?.gross_after)}</span>)
                               </span>
                             </li>
                           ))}
@@ -1202,51 +1288,81 @@ const HRComplete = () => {
                 )}
 
                 {payrollPreview ? (
-                  <>
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <KpiCard intent="info" icon={Users} label="Personel" value={payrollPreview.staff_count} />
-                      <KpiCard intent="success" icon={DollarSign} label={t('cm.pages_HRComplete.toplam_brut')}
-                        value={fmtCurrency(payrollPreview.total_gross_pay)} />
-                      <KpiCard intent="warning" icon={DollarSign} label={t('cm.pages_HRComplete.toplam_net')}
-                        value={fmtCurrency(payrollPreview.total_net_pay)} />
+                  <div className="space-y-6">
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="rounded-2xl border border-sky-100 bg-gradient-to-br from-sky-50 to-white p-5 shadow-sm">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="p-2 rounded-lg bg-sky-100 text-sky-700"><Users className="w-5 h-5" /></div>
+                          <div className="text-sm font-semibold text-slate-600">Personel</div>
+                        </div>
+                        <div className="text-3xl font-bold text-slate-900">{payrollPreview.staff_count}</div>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="p-2 rounded-lg bg-slate-100 text-slate-700"><DollarSign className="w-5 h-5" /></div>
+                          <div className="text-sm font-semibold text-slate-600">Toplam Brüt</div>
+                        </div>
+                        <div className="text-3xl font-bold text-slate-900">{fmtCurrency(payrollPreview.total_gross_pay)}</div>
+                      </div>
+                      <div className="rounded-2xl border border-teal-100 bg-gradient-to-br from-teal-50 to-white p-5 shadow-sm">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="p-2 rounded-lg bg-teal-100 text-teal-700"><DollarSign className="w-5 h-5" /></div>
+                          <div className="text-sm font-semibold text-slate-600">Toplam Net</div>
+                        </div>
+                        <div className="text-3xl font-bold text-slate-900">{fmtCurrency(payrollPreview.total_net_pay)}</div>
+                      </div>
                     </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-slate-500 border-b">
-                            <th className="py-2">Personel</th>
-                            <th>Departman</th>
-                            <th className="text-right">{t('cm.pages_HRComplete.saat_2460e')}</th>
-                            <th className="text-right">Mesai</th>
-                            <th className="text-right">{t('cm.pages_HRComplete.brut')}</th>
-                            <th className="text-right">{t('cm.pages_HRComplete.sgk_issiz')}</th>
-                            <th className="text-right">Vergi</th>
-                            <th className="text-right">Net</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {payrollPreview.payroll?.map((row) => (
-                            <tr key={row.staff_id} className="border-t border-slate-100">
-                              <td className="py-2 font-medium">{row.staff_name}</td>
-                              <td className="capitalize text-slate-600">{row.department}</td>
-                              <td className="text-right">{row.total_hours.toFixed(1)}</td>
-                              <td className="text-right text-amber-700">{row.overtime_hours.toFixed(1)}</td>
-                              <td className="text-right">{fmtCurrency(row.gross_pay)}</td>
-                              <td className="text-right text-slate-600">{fmtCurrency(row.sgk_employee + row.unemployment)}</td>
-                              <td className="text-right text-slate-600">{fmtCurrency(row.income_tax + row.stamp_tax)}</td>
-                              <td className="text-right font-semibold">{fmtCurrency(row.net_salary)}</td>
+                    
+                    <div className="rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left bg-slate-50 border-b border-slate-200">
+                              <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Personel</th>
+                              <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Departman</th>
+                              <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Saat</th>
+                              <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Mesai</th>
+                              <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Brüt</th>
+                              <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">SGK + İşsiz.</th>
+                              <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Vergi</th>
+                              <th className="py-3 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Net</th>
                             </tr>
-                          ))}
-                          {(!payrollPreview.payroll || payrollPreview.payroll.length === 0) && (
-                            <tr><td colSpan={8} className="py-6 text-center text-slate-500">{t('cm.pages_HRComplete.bu_ayda_devam_kaydi_yok')}</td></tr>
-                          )}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {payrollPreview.payroll?.map((row) => (
+                              <tr key={row.staff_id} className="hover:bg-slate-50 transition-colors bg-white">
+                                <td className="py-3 px-5 font-bold text-slate-800">{row.staff_name}</td>
+                                <td className="py-3 px-5 capitalize text-slate-600">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">{row.department}</span>
+                                </td>
+                                <td className="py-3 px-5 text-right font-medium">{row.total_hours.toFixed(1)}</td>
+                                <td className="py-3 px-5 text-right font-bold text-amber-600">{row.overtime_hours.toFixed(1)}</td>
+                                <td className="py-3 px-5 text-right text-slate-600">{fmtCurrency(row.gross_pay)}</td>
+                                <td className="py-3 px-5 text-right text-slate-500">{fmtCurrency(row.sgk_employee + row.unemployment)}</td>
+                                <td className="py-3 px-5 text-right text-rose-600/80">{fmtCurrency(row.income_tax + row.stamp_tax)}</td>
+                                <td className="py-3 px-5 text-right font-black text-slate-900">{fmtCurrency(row.net_salary)}</td>
+                              </tr>
+                            ))}
+                            {(!payrollPreview.payroll || payrollPreview.payroll.length === 0) && (
+                              <tr>
+                                <td colSpan={8} className="py-12">
+                                  <div className="flex flex-col items-center justify-center text-slate-400">
+                                    <FileText className="w-10 h-10 mb-3 opacity-20" />
+                                    <p className="font-medium text-slate-600">Bu ayda devam kaydı yok</p>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                  </>
+                  </div>
                 ) : (
-                  <div className="rounded-md border bg-slate-50 p-4 text-sm text-slate-600">
-                    {t('cm.pages_HRComplete.bordro_onizlemek_icin_ay_secin_ve')} <strong>{t('cm.pages_HRComplete.onizle_d9316')}</strong>{t('cm.pages_HRComplete.ye_basin_kalici_kayit_icin')} <strong>{t('cm.pages_HRComplete.bordroyu_kaydet')}</strong>{t('cm.pages_HRComplete.disa_aktarmak_icin')} <strong>{t('cm.pages_HRComplete.csv_indir')}</strong>.
+                  <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 p-12 text-center text-slate-500">
+                    <DollarSign className="w-12 h-12 mx-auto text-slate-300 mb-4" />
+                    <p className="text-base font-medium text-slate-700 mb-2">Bordro önizlemek için ay seçin ve <strong>Önizle</strong>'ye basın.</p>
+                    <p className="text-sm">Kalıcı kayıt için <strong>Taslak Kaydet</strong>'e basabilir veya doğrudan <strong>CSV İndir</strong> diyebilirsiniz.</p>
                   </div>
                 )}
               </CardContent>
@@ -1256,431 +1372,605 @@ const HRComplete = () => {
 
         {/* === LEAVE === */}
         <TabsContent value="leave" className="mt-4">
-          <div className="space-y-4">
+          <div className="space-y-6 mt-6">
             {/* Akış açıklaması */}
-            <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm flex items-start gap-2">
-              <Bell className="w-4 h-4 mt-0.5 text-sky-600 shrink-0" />
-              <div className="text-slate-700 text-xs space-y-1">
-                <p><strong>İzin akışı:</strong> Talep oluşturulduğunda HR yöneticilerine (admin/supervisor/finance rolleri) <strong>in-app bildirim</strong> düşer (bildirim zilinde görünür). Karar verildiğinde talep sahibine geri bildirim gider.</p>
-                <p>Yıllık izin hakkı varsayılan <strong>14 gün</strong> (İş K. m.53). Personel kartında ya da <code>POST /hr/leave-balance</code> ile özelleştirilebilir. Onaylı talepler bakiyeden düşülür.</p>
+            <div className="rounded-xl border border-sky-200 bg-gradient-to-r from-sky-50 to-white p-4 shadow-sm flex items-start gap-3">
+              <div className="p-2 bg-sky-100 rounded-lg text-sky-700 shrink-0">
+                <Bell className="w-5 h-5" />
+              </div>
+              <div className="text-slate-700 text-sm space-y-1 mt-0.5">
+                <p><strong>İzin Akışı:</strong> Talep oluşturulduğunda HR yöneticilerine (admin/supervisor/finance rolleri) in-app bildirim düşer. Karar verildiğinde talep sahibine geri bildirim gider.</p>
+                <p className="text-xs text-slate-500">Yıllık izin hakkı varsayılan <strong>14 gün</strong> (İş K. m.53). Personel kartında ya da <code>POST /hr/leave-balance</code> ile özelleştirilebilir. Onaylı talepler bakiyeden düşülür.</p>
               </div>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-3">
-              <KpiCard intent="warning" label={t('cm.pages_HRComplete.beklemede')} value={leaveCounts.pending} />
-              <KpiCard intent="success" label="Onaylanan" value={leaveCounts.approved} />
-              <KpiCard intent="danger" label="Reddedilen" value={leaveCounts.rejected} />
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-amber-100 text-amber-700"><Clock className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Beklemede</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{leaveCounts.pending}</div>
+                <div className="text-[11px] text-slate-500 mt-1">onay bekleyen talep</div>
+              </div>
+              <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-emerald-100 text-emerald-700"><CheckCircle2 className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Onaylanan</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{leaveCounts.approved}</div>
+                <div className="text-[11px] text-slate-500 mt-1">bu yıl içinde</div>
+              </div>
+              <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-rose-100 text-rose-700"><XCircle className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Reddedilen</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{leaveCounts.rejected}</div>
+                <div className="text-[11px] text-slate-500 mt-1">bu yıl içinde</div>
+              </div>
             </div>
 
-            {/* İzin Bakiyeleri */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="flex items-center gap-2"><Calendar className="w-4 h-4" />Personel İzin Bakiyesi ({new Date().getFullYear()})</CardTitle>
-                <Button size="sm" variant="outline" onClick={() => loadLeaveBalances(staffPage.items.map((s) => s.id))} disabled={balanceLoading}>
-                  <RefreshCw className={`w-3.5 h-3.5 mr-1 ${balanceLoading ? 'animate-spin' : ''}`} />Yenile
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-slate-500 border-b">
-                        <th className="py-2">Personel</th>
-                        <th className="text-right">Yıllık Hak</th>
-                        <th className="text-right">Devir</th>
-                        <th className="text-right">Kullanılan</th>
-                        <th className="text-right">Kalan</th>
-                        <th className="text-right">Hastalık (kalan/hak)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {staffPage.items.map((s) => {
-                        const b = leaveBalances[s.id];
-                        if (!b) return (
-                          <tr key={s.id} className="border-t border-slate-100">
-                            <td className="py-2">{s.name}</td>
-                            <td colSpan={5} className="text-slate-400 text-xs text-center">Yükleniyor...</td>
-                          </tr>
-                        );
-                        const remaining = b.annual?.remaining ?? 0;
-                        const intent = remaining <= 2 ? 'danger' : remaining <= 5 ? 'warning' : 'success';
-                        return (
-                          <tr key={s.id} className="border-t border-slate-100">
-                            <td className="py-2 font-medium">{s.name}</td>
-                            <td className="text-right">{b.annual?.entitlement}</td>
-                            <td className="text-right text-slate-500">{b.annual?.carry_over || 0}</td>
-                            <td className="text-right">{b.annual?.used}</td>
-                            <td className="text-right">
-                              <StatusBadge intent={intent}>{remaining} gün</StatusBadge>
-                            </td>
-                            <td className="text-right text-slate-600">{b.sick?.remaining}/{b.sick?.entitlement}</td>
-                          </tr>
-                        );
-                      })}
-                      {staffPage.items.length === 0 && (
-                        <tr><td colSpan={6} className="py-6 text-center text-slate-500">Personel yok</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                {!staffPage.loading && staffPage.total > 0 && (
-                  <PaginationBar
-                    page={staffPage.page}
-                    totalPages={staffPage.totalPages}
-                    total={staffPage.total}
-                    limit={staffPage.limit}
-                    onPageChange={staffPage.setPage}
-                    onLimitChange={staffPage.setLimit}
-                  />
-                )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2"><Plus className="w-4 h-4" />{t('cm.pages_HRComplete.yeni_izin_talebi')}</CardTitle></CardHeader>
-              <CardContent>
-                <form onSubmit={submitLeave} className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                  <div>
-                    <Label className="text-xs">Personel</Label>
-                    <select
-                      value={leaveForm.staff_id}
-                      onChange={(e) => setLeaveForm({ ...leaveForm, staff_id: e.target.value })}
-                      className="w-full rounded-md border border-input px-3 py-2 text-sm"
-                      data-testid="select-leave-staff"
-                    >
-                      <option value="">{t('cm.pages_HRComplete.secin')}</option>
-                      {staffDropdown.map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <Label className="text-xs">{t('cm.pages_HRComplete.izin_turu')}</Label>
-                    <select
-                      value={leaveForm.leave_type}
-                      onChange={(e) => setLeaveForm({ ...leaveForm, leave_type: e.target.value })}
-                      className="w-full rounded-md border border-input px-3 py-2 text-sm"
-                    >
-                      {Object.entries(LEAVE_TYPE_LABEL).map(([k, v]) => (
-                        <option key={k} value={k}>{v}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <Label className="text-xs">{t('cm.pages_HRComplete.baslangic')}</Label>
-                      <Input type="date" value={leaveForm.start_date}
-                        onChange={(e) => setLeaveForm({ ...leaveForm, start_date: e.target.value })} />
-                    </div>
-                    <div>
-                      <Label className="text-xs">{t('cm.pages_HRComplete.bitis')}</Label>
-                      <Input type="date" value={leaveForm.end_date}
-                        onChange={(e) => setLeaveForm({ ...leaveForm, end_date: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="md:col-span-2 lg:col-span-3">
-                    <Label className="text-xs">{t('cm.pages_HRComplete.aciklama')}</Label>
-                    <Textarea
-                      rows={2}
-                      value={leaveForm.reason}
-                      onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
-                      placeholder={t('cm.pages_HRComplete.istege_bagli')}
-                    />
-                  </div>
-                  <div className="md:col-span-2 lg:col-span-3 flex justify-end">
-                    <Button type="submit" disabled={creatingLeave} data-testid="btn-submit-leave">
-                      <Plus className="w-4 h-4 mr-1.5" />
-                      {creatingLeave ? 'Oluşturuluyor...' : 'Talep Oluştur'}
-                    </Button>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader><CardTitle>{t('cm.pages_HRComplete.izin_talepleri')}</CardTitle></CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-slate-500 border-b">
-                        <th className="py-2">Personel</th>
-                        <th>{t('cm.pages_HRComplete.tur')}</th>
-                        <th>{t('cm.pages_HRComplete.baslangic_677c8')}</th>
-                        <th>{t('cm.pages_HRComplete.bitis_7cd21')}</th>
-                        <th className="text-right">{t('cm.pages_HRComplete.gun_18b2f')}</th>
-                        <th>{t('cm.pages_HRComplete.durum')}</th>
-                        <th className="text-right">{t('cm.pages_HRComplete.islem')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {leavePage.loading ? (
-                        <SkeletonRow cols={7} rows={3} />
-                      ) : (
-                        <>
-                          {leavePage.items.map((item) => (
-                            <tr key={item.id} className="border-t border-slate-100">
-                              <td className="py-2 font-medium">{item.staff_name}</td>
-                          <td>{LEAVE_TYPE_LABEL[item.leave_type] || item.leave_type}</td>
-                          <td>{item.start_date}</td>
-                          <td>{item.end_date}</td>
-                          <td className="text-right">{item.total_days}</td>
-                          <td>
-                            <StatusBadge intent={STATUS_INTENT[item.status]}>{STATUS_LABEL[item.status] || item.status}</StatusBadge>
-                          </td>
-                          <td className="text-right">
-                            {item.status === 'pending' && (
-                              <div className="flex justify-end gap-1 flex-wrap">
-                                <Button size="sm" onClick={() => decideLeave(item.id, 'dept_approve')} data-testid={`btn-dept-approve-${item.id}`}>
-                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" />Dept Onay
-                                </Button>
-                                <Button size="sm" variant="outline" onClick={() => decideLeave(item.id, 'reject')} data-testid={`btn-reject-${item.id}`}>
-                                  <XCircle className="w-3.5 h-3.5 mr-1" />{t('cm.pages_HRComplete.reddet')}
-                                </Button>
-                              </div>
-                            )}
-                            {item.status === 'dept_approved' && (
-                              <div className="flex justify-end gap-1 flex-wrap">
-                                <Button size="sm" onClick={() => decideLeave(item.id, 'approve')} data-testid={`btn-hr-final-${item.id}`}>
-                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" />HR Final Onay
-                                </Button>
-                                <Button size="sm" variant="outline" onClick={() => decideLeave(item.id, 'reject')} data-testid={`btn-hr-reject-${item.id}`}>
-                                  <XCircle className="w-3.5 h-3.5 mr-1" />Reddet
-                                </Button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
+            <div className="grid lg:grid-cols-3 gap-6">
+              {/* İzin Talebi Formu (Sol Taraf) */}
+              <div className="lg:col-span-1">
+                <Card className="rounded-2xl border-slate-200 shadow-sm h-full">
+                  <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
+                    <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-800">
+                      <div className="p-1.5 rounded-md bg-teal-100 text-teal-700"><Plus className="w-5 h-5" /></div>
+                      Yeni İzin Talebi
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-5">
+                    <form onSubmit={submitLeave} className="space-y-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-slate-600">Personel</Label>
+                        <select
+                          value={leaveForm.staff_id}
+                          onChange={(e) => setLeaveForm({ ...leaveForm, staff_id: e.target.value })}
+                          className="w-full rounded-lg border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:ring-teal-500"
+                          data-testid="select-leave-staff"
+                        >
+                          <option value="">Seçiniz...</option>
+                          {staffDropdown.map((s) => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
                           ))}
-                          {leavePage.items.length === 0 && (
-                            <tr><td colSpan={7} className="py-6 text-center text-slate-500">{t('cm.pages_HRComplete.henuz_izin_talebi_yok')}</td></tr>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-slate-600">İzin Türü</Label>
+                        <select
+                          value={leaveForm.leave_type}
+                          onChange={(e) => setLeaveForm({ ...leaveForm, leave_type: e.target.value })}
+                          className="w-full rounded-lg border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:ring-teal-500"
+                        >
+                          {Object.entries(LEAVE_TYPE_LABEL).map(([k, v]) => (
+                            <option key={k} value={k}>{v}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-semibold text-slate-600">Başlangıç</Label>
+                          <Input type="date" value={leaveForm.start_date} className="rounded-lg border-slate-200 bg-slate-50"
+                            onChange={(e) => setLeaveForm({ ...leaveForm, start_date: e.target.value })} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-semibold text-slate-600">Bitiş</Label>
+                          <Input type="date" value={leaveForm.end_date} className="rounded-lg border-slate-200 bg-slate-50"
+                            onChange={(e) => setLeaveForm({ ...leaveForm, end_date: e.target.value })} />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-slate-600">Açıklama (Opsiyonel)</Label>
+                        <Textarea
+                          rows={3}
+                          value={leaveForm.reason}
+                          className="rounded-lg border-slate-200 bg-slate-50 resize-none"
+                          onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
+                          placeholder="Mazeret veya ek açıklama..."
+                        />
+                      </div>
+                      <Button type="submit" disabled={creatingLeave} data-testid="btn-submit-leave" className="w-full bg-teal-600 hover:bg-teal-700 text-white rounded-lg shadow-sm py-5 mt-2">
+                        {creatingLeave ? (
+                          <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Plus className="w-4 h-4 mr-2" />
+                        )}
+                        {creatingLeave ? 'Oluşturuluyor...' : 'Talep Oluştur'}
+                      </Button>
+                    </form>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Tablolar (Sağ Taraf) */}
+              <div className="lg:col-span-2 space-y-6">
+                
+                {/* Personel İzin Bakiyesi */}
+                <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden">
+                  <CardHeader className="flex flex-row items-center justify-between bg-slate-50/50 border-b border-slate-100 pb-3 pt-4">
+                    <CardTitle className="flex items-center gap-2 text-base font-bold text-slate-800">
+                      <Calendar className="w-4 h-4 text-slate-500" />Personel İzin Bakiyesi ({new Date().getFullYear()})
+                    </CardTitle>
+                    <Button size="sm" variant="outline" className="h-8 rounded-lg" onClick={() => loadLeaveBalances(staffPage.items.map((s) => s.id))} disabled={balanceLoading}>
+                      <RefreshCw className={`w-3.5 h-3.5 mr-1 text-slate-500 ${balanceLoading ? 'animate-spin' : ''}`} />Yenile
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left bg-white border-b border-slate-200">
+                            <th className="py-2.5 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Personel</th>
+                            <th className="py-2.5 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Hak Edilen</th>
+                            <th className="py-2.5 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Devreden</th>
+                            <th className="py-2.5 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Kullanılan</th>
+                            <th className="py-2.5 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Kalan (Yıllık)</th>
+                            <th className="py-2.5 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Hastalık (Kalan/Hak)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {staffPage.items.map((s) => {
+                            const b = leaveBalances[s.id];
+                            if (!b) return (
+                              <tr key={s.id} className="bg-white">
+                                <td className="py-3 px-4 font-medium">{s.name}</td>
+                                <td colSpan={5} className="py-3 px-4 text-slate-400 text-xs text-center animate-pulse">Yükleniyor...</td>
+                              </tr>
+                            );
+                            const remaining = b.annual?.remaining ?? 0;
+                            const entitlement = (b.annual?.entitlement || 0) + (b.annual?.carry_over || 0);
+                            const usagePct = entitlement > 0 ? (b.annual?.used / entitlement) * 100 : 0;
+                            
+                            let intent = 'success';
+                            if (remaining <= 2) intent = 'danger';
+                            else if (remaining <= 5) intent = 'warning';
+                            
+                            return (
+                              <tr key={s.id} className="hover:bg-slate-50 transition-colors bg-white">
+                                <td className="py-3 px-4 font-bold text-slate-800">{s.name}</td>
+                                <td className="py-3 px-4 text-right text-slate-600 font-medium">{b.annual?.entitlement}</td>
+                                <td className="py-3 px-4 text-right text-slate-500">{b.annual?.carry_over > 0 ? `+${b.annual?.carry_over}` : 0}</td>
+                                <td className="py-3 px-4 text-right">
+                                  <div className="flex flex-col items-end gap-1">
+                                    <span className="font-semibold text-slate-700">{b.annual?.used}</span>
+                                    <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                      <div className="h-full bg-amber-400 rounded-full" style={{ width: `${Math.min(100, usagePct)}%` }}></div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <StatusBadge intent={intent}>{remaining} gün</StatusBadge>
+                                </td>
+                                <td className="py-3 px-4 text-right text-slate-600 font-medium">
+                                  {b.sick?.remaining} <span className="text-slate-400 font-normal">/ {b.sick?.entitlement}</span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {staffPage.items.length === 0 && (
+                            <tr><td colSpan={6} className="py-8 text-center text-slate-400 italic">Personel yok</td></tr>
                           )}
-                        </>
-                      )}
-                    </tbody>
-                  </table>
-                {!leavePage.loading && leavePage.total > 0 && (
-                  <PaginationBar
-                    page={leavePage.page}
-                    totalPages={leavePage.totalPages}
-                    total={leavePage.total}
-                    limit={leavePage.limit}
-                    onPageChange={leavePage.setPage}
-                    onLimitChange={leavePage.setLimit}
-                  />
-                )}
-                </div>
-              </CardContent>
-            </Card>
+                        </tbody>
+                      </table>
+                    {!staffPage.loading && staffPage.total > 0 && (
+                      <div className="border-t border-slate-100 px-4 py-2">
+                        <PaginationBar
+                          page={staffPage.page}
+                          totalPages={staffPage.totalPages}
+                          total={staffPage.total}
+                          limit={staffPage.limit}
+                          onPageChange={staffPage.setPage}
+                          onLimitChange={staffPage.setLimit}
+                        />
+                      </div>
+                    )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* İzin Talepleri */}
+                <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden">
+                  <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-3 pt-4">
+                    <CardTitle className="text-base font-bold text-slate-800">İzin Talepleri</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left bg-white border-b border-slate-200">
+                            <th className="py-2.5 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Personel</th>
+                            <th className="py-2.5 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Tür</th>
+                            <th className="py-2.5 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Tarih Aralığı</th>
+                            <th className="py-2.5 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Gün</th>
+                            <th className="py-2.5 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Durum</th>
+                            <th className="py-2.5 px-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">İşlem</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {leavePage.loading ? (
+                            <tr><td colSpan={6} className="p-0"><SkeletonRow cols={6} rows={3} /></td></tr>
+                          ) : (
+                            <>
+                              {leavePage.items.map((item) => (
+                                <tr key={item.id} className="hover:bg-slate-50 transition-colors bg-white">
+                                  <td className="py-3 px-4 font-bold text-slate-800">{item.staff_name}</td>
+                                  <td className="py-3 px-4">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-700">
+                                      {LEAVE_TYPE_LABEL[item.leave_type] || item.leave_type}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-4 text-xs font-medium text-slate-600">
+                                    {item.start_date.slice(5)} <span className="text-slate-400 px-1">→</span> {item.end_date.slice(5)}
+                                  </td>
+                                  <td className="py-3 px-4 text-right font-bold text-slate-700">{item.total_days}</td>
+                                  <td className="py-3 px-4">
+                                    <StatusBadge intent={STATUS_INTENT[item.status]}>{STATUS_LABEL[item.status] || item.status}</StatusBadge>
+                                  </td>
+                                  <td className="py-3 px-4 text-right">
+                                    {item.status === 'pending' && (
+                                      <div className="flex justify-end gap-1.5 flex-wrap">
+                                        <Button size="sm" className="h-7 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] px-2 rounded-md" onClick={() => decideLeave(item.id, 'dept_approve')} data-testid={`btn-dept-approve-${item.id}`}>
+                                          <CheckCircle2 className="w-3.5 h-3.5 mr-1" />Departman Onayı
+                                        </Button>
+                                        <Button size="sm" variant="outline" className="h-7 text-rose-600 border-rose-200 hover:bg-rose-50 text-[11px] px-2 rounded-md" onClick={() => decideLeave(item.id, 'reject')} data-testid={`btn-reject-${item.id}`}>
+                                          <XCircle className="w-3.5 h-3.5 mr-1" />Reddet
+                                        </Button>
+                                      </div>
+                                    )}
+                                    {item.status === 'dept_approved' && (
+                                      <div className="flex justify-end gap-1.5 flex-wrap">
+                                        <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] px-2 rounded-md" onClick={() => decideLeave(item.id, 'approve')} data-testid={`btn-hr-final-${item.id}`}>
+                                          <CheckCircle2 className="w-3.5 h-3.5 mr-1" />İK Final Onayı
+                                        </Button>
+                                        <Button size="sm" variant="outline" className="h-7 text-rose-600 border-rose-200 hover:bg-rose-50 text-[11px] px-2 rounded-md" onClick={() => decideLeave(item.id, 'reject')} data-testid={`btn-hr-reject-${item.id}`}>
+                                          <XCircle className="w-3.5 h-3.5 mr-1" />Reddet
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                              {leavePage.items.length === 0 && (
+                                <tr>
+                                  <td colSpan={6} className="py-10">
+                                    <div className="flex flex-col items-center justify-center text-slate-400">
+                                      <Calendar className="w-8 h-8 mb-3 opacity-20" />
+                                      <p className="font-medium text-slate-600">İzin talebi yok</p>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </>
+                          )}
+                        </tbody>
+                      </table>
+                    {!leavePage.loading && leavePage.total > 0 && (
+                      <div className="border-t border-slate-100 px-4 py-2">
+                        <PaginationBar
+                          page={leavePage.page}
+                          totalPages={leavePage.totalPages}
+                          total={leavePage.total}
+                          limit={leavePage.limit}
+                          onPageChange={leavePage.setPage}
+                          onLimitChange={leavePage.setLimit}
+                        />
+                      </div>
+                    )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
           </div>
         </TabsContent>
 
         {/* === PERFORMANCE === */}
         <TabsContent value="performance" className="mt-4">
-          <div className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-2">
-              <KpiCard intent="info" icon={Award} label={t('cm.pages_HRComplete.toplam_degerlendirme')} value={performancePage.total || 0} />
-              <KpiCard intent="success" icon={TrendingUp} label="Ortalama Puan" value={(perfAvg || 0).toFixed(2)} sub="0–10 ölçek" />
+          <div className="space-y-6 mt-6">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-indigo-100 text-indigo-700"><Briefcase className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Toplam Değerlendirme</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{performancePage.total || 0}</div>
+              </div>
+              <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-emerald-100 text-emerald-700"><Star className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Ortalama Puan</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{(perfAvg || 0).toFixed(2)} <span className="text-lg text-slate-400 font-medium">/ 10.0</span></div>
+              </div>
+              <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-amber-100 text-amber-700"><Award className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Yüksek Performans (8+)</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{perfMetrics?.high_performers || 0}</div>
+                <div className="text-[11px] text-slate-500 mt-1">personel</div>
+              </div>
+              <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-rose-100 text-rose-700"><AlertCircle className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Gelişim Bekleyen ({"<"}5)</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{perfMetrics?.low_performers || 0}</div>
+                <div className="text-[11px] text-slate-500 mt-1">personel</div>
+              </div>
             </div>
 
-            <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2"><Plus className="w-4 h-4" />{t('cm.pages_HRComplete.yeni_degerlendirme')}</CardTitle></CardHeader>
-              <CardContent>
-                <form onSubmit={submitPerformance} className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                  <div>
-                    <Label className="text-xs">Personel</Label>
-                    <select
-                      value={perfForm.staff_id}
-                      onChange={(e) => setPerfForm({ ...perfForm, staff_id: e.target.value })}
-                      className="w-full rounded-md border border-input px-3 py-2 text-sm"
-                    >
-                      <option value="">{t('cm.pages_HRComplete.secin_4f7bd')}</option>
-                      {staffDropdown.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <Label className="text-xs">Şablon (opsiyonel)</Label>
-                    <select
-                      value={perfForm.template_id}
-                      onChange={(e) => onTemplateChange(e.target.value)}
-                      className="w-full rounded-md border border-input px-3 py-2 text-sm"
-                    >
-                      <option value="">— Şablon yok —</option>
-                      {perfTemplates.map((tpl) => (
-                        <option key={tpl.id} value={tpl.id}>{tpl.name} ({tpl.competencies?.length || 0} yetkinlik)</option>
-                      ))}
-                    </select>
-                  </div>
-                  {perfForm.template_id && Object.keys(perfForm.competency_scores || {}).length > 0 && (
-                    <div className="md:col-span-2 lg:col-span-3 rounded border border-slate-200 bg-slate-50 p-3">
-                      <div className="text-xs font-semibold text-slate-700 mb-2">Yetkinlik Puanları (0–10)</div>
-                      <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-                        {Object.entries(perfForm.competency_scores).map(([name, score]) => (
-                          <div key={name}>
-                            <Label className="text-xs">{name}</Label>
-                            <Input type="number" min="0" max="10" step="0.1" value={score}
-                              onChange={(e) => setCompetencyScore(name, e.target.value)} />
-                          </div>
-                        ))}
+            <div className="grid lg:grid-cols-3 gap-6">
+              {/* Değerlendirme Formu */}
+              <div className="lg:col-span-1">
+                <Card className="rounded-2xl border-slate-200 shadow-sm h-full">
+                  <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
+                    <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-800">
+                      <div className="p-1.5 rounded-md bg-teal-100 text-teal-700"><Star className="w-5 h-5" /></div>
+                      Yeni Değerlendirme
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-5">
+                    <form onSubmit={submitPerformance} className="space-y-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-slate-600">Personel</Label>
+                        <select
+                          value={perfForm.staff_id}
+                          onChange={(e) => setPerfForm({ ...perfForm, staff_id: e.target.value })}
+                          className="w-full rounded-lg border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:ring-teal-500"
+                        >
+                          <option value="">Seçiniz...</option>
+                          {staffDropdown.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
                       </div>
-                    </div>
-                  )}
-                  <div>
-                    <Label className="text-xs">{t('cm.pages_HRComplete.donem')}</Label>
-                    <Input value={perfForm.period} onChange={(e) => setPerfForm({ ...perfForm, period: e.target.value })} placeholder="2026 Q1" />
-                  </div>
-                  <div>
-                    <Label className="text-xs">Genel Puan (0–10)</Label>
-                    <Input type="number" min="0" max="10" step="0.1"
-                      value={perfForm.overall_score}
-                      onChange={(e) => setPerfForm({ ...perfForm, overall_score: e.target.value })} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">{t('cm.pages_HRComplete.guclu_yonler')}</Label>
-                    <Textarea rows={2} value={perfForm.strengths}
-                      onChange={(e) => setPerfForm({ ...perfForm, strengths: e.target.value })} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">{t('cm.pages_HRComplete.gelisim_alanlari')}</Label>
-                    <Textarea rows={2} value={perfForm.improvement_areas}
-                      onChange={(e) => setPerfForm({ ...perfForm, improvement_areas: e.target.value })} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">Hedefler</Label>
-                    <Textarea rows={2} value={perfForm.goals}
-                      onChange={(e) => setPerfForm({ ...perfForm, goals: e.target.value })} />
-                  </div>
-                  <div className="md:col-span-2 lg:col-span-3 flex justify-end">
-                    <Button type="submit" disabled={creatingPerf}>
-                      <Plus className="w-4 h-4 mr-1.5" />
-                      {creatingPerf ? 'Kaydediliyor...' : 'Değerlendirme Kaydet'}
-                    </Button>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader><CardTitle>{t('cm.pages_HRComplete.gecmis_degerlendirmeler')}</CardTitle></CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-slate-500 border-b">
-                        <th className="py-2">Personel</th>
-                        <th>{t('cm.pages_HRComplete.donem_625f5')}</th>
-                        <th>{t('cm.pages_HRComplete.tarih')}</th>
-                        <th className="text-right">Puan</th>
-                        <th>{t('cm.pages_HRComplete.ozet')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {performancePage.loading ? (
-                        <SkeletonRow cols={5} rows={3} />
-                      ) : (
-                        <>
-                          {performancePage.items.map((item) => (
-                            <tr key={item.id} className="border-t border-slate-100 align-top">
-                              <td className="py-2 font-medium">{item.staff_name}</td>
-                          <td>{item.period || '—'}</td>
-                          <td>{(item.reviewed_at || '').slice(0, 10)}</td>
-                          <td className="text-right font-semibold">{item.overall_score}</td>
-                          <td className="text-slate-600 max-w-md truncate">{item.strengths || item.goals || '—'}</td>
-                        </tr>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-slate-600">Şablon (opsiyonel)</Label>
+                        <select
+                          value={perfForm.template_id}
+                          onChange={(e) => onTemplateChange(e.target.value)}
+                          className="w-full rounded-lg border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:ring-teal-500"
+                        >
+                          <option value="">— Şablon yok —</option>
+                          {perfTemplates.map((tpl) => (
+                            <option key={tpl.id} value={tpl.id}>{tpl.name} ({tpl.competencies?.length || 0} yetkinlik)</option>
                           ))}
-                          {performancePage.items.length === 0 && (
-                            <tr><td colSpan={5} className="py-6 text-center text-slate-500">{t('cm.pages_HRComplete.henuz_degerlendirme_yok')}</td></tr>
-                          )}
-                        </>
+                        </select>
+                      </div>
+                      {perfForm.template_id && Object.keys(perfForm.competency_scores || {}).length > 0 && (
+                        <div className="rounded-xl border border-sky-100 bg-sky-50/50 p-4 space-y-3">
+                          <div className="text-xs font-bold text-sky-800 flex items-center gap-1.5 uppercase tracking-wider">
+                            <ListChecks className="w-4 h-4" />Yetkinlik Puanları (0–10)
+                          </div>
+                          <div className="grid gap-3 md:grid-cols-2">
+                            {Object.entries(perfForm.competency_scores).map(([name, score]) => (
+                              <div key={name} className="space-y-1">
+                                <Label className="text-[11px] font-semibold text-slate-600 leading-tight">{name}</Label>
+                                <Input type="number" min="0" max="10" step="0.1" value={score}
+                                  className="h-8 text-sm rounded-lg border-slate-200"
+                                  onChange={(e) => setCompetencyScore(name, e.target.value)} />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
-                    </tbody>
-                  </table>
-                {!performancePage.loading && performancePage.total > 0 && (
-                  <PaginationBar
-                    page={performancePage.page}
-                    totalPages={performancePage.totalPages}
-                    total={performancePage.total}
-                    limit={performancePage.limit}
-                    onPageChange={performancePage.setPage}
-                    onLimitChange={performancePage.setLimit}
-                  />
-                )}
-                </div>
-              </CardContent>
-            </Card>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-semibold text-slate-600">Dönem</Label>
+                          <Input value={perfForm.period} onChange={(e) => setPerfForm({ ...perfForm, period: e.target.value })} placeholder="2026 Q1" className="rounded-lg border-slate-200 bg-slate-50" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-semibold text-slate-600">Genel Puan (0–10)</Label>
+                          <Input type="number" min="0" max="10" step="0.1"
+                            value={perfForm.overall_score}
+                            className="rounded-lg border-slate-200 bg-slate-50 font-bold"
+                            onChange={(e) => setPerfForm({ ...perfForm, overall_score: e.target.value })} />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-slate-600">Güçlü Yönler</Label>
+                        <Textarea rows={2} value={perfForm.strengths} className="rounded-lg border-slate-200 bg-slate-50 resize-none text-sm"
+                          onChange={(e) => setPerfForm({ ...perfForm, strengths: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-slate-600">Gelişim Alanları</Label>
+                        <Textarea rows={2} value={perfForm.improvement_areas} className="rounded-lg border-slate-200 bg-slate-50 resize-none text-sm"
+                          onChange={(e) => setPerfForm({ ...perfForm, improvement_areas: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-slate-600">Hedefler</Label>
+                        <Textarea rows={2} value={perfForm.goals} className="rounded-lg border-slate-200 bg-slate-50 resize-none text-sm"
+                          onChange={(e) => setPerfForm({ ...perfForm, goals: e.target.value })} />
+                      </div>
+                      <Button type="submit" disabled={creatingPerf} className="w-full bg-teal-600 hover:bg-teal-700 text-white rounded-lg shadow-sm py-5 mt-2">
+                        {creatingPerf ? (
+                          <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Plus className="w-4 h-4 mr-2" />
+                        )}
+                        {creatingPerf ? 'Kaydediliyor...' : 'Değerlendirme Kaydet'}
+                      </Button>
+                    </form>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Geçmiş Değerlendirmeler */}
+              <div className="lg:col-span-2">
+                <Card className="rounded-2xl border-slate-200 shadow-sm h-full overflow-hidden flex flex-col">
+                  <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-3 pt-4">
+                    <CardTitle className="text-base font-bold text-slate-800 flex items-center gap-2">
+                      <ListChecks className="w-4 h-4 text-slate-500" />Değerlendirme Geçmişi
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0 flex-1 flex flex-col">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left bg-white border-b border-slate-200">
+                            <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Tarih</th>
+                            <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Personel</th>
+                            <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Dönem</th>
+                            <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Puan</th>
+                            <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Özet</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {performancePage.loading ? (
+                            <tr><td colSpan={5} className="p-0"><SkeletonRow cols={5} rows={5} /></td></tr>
+                          ) : (
+                            <>
+                              {performancePage.items.map((item) => (
+                                <tr key={item.id} className="hover:bg-slate-50 transition-colors bg-white">
+                                  <td className="py-3 px-5 text-xs text-slate-500">{(item.reviewed_at || '').slice(0, 10)}</td>
+                                  <td className="py-3 px-5 font-bold text-slate-800">{item.staff_name}</td>
+                                  <td className="py-3 px-5">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-700">
+                                      {item.period || '—'}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-5 text-right">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <Star className={`w-3.5 h-3.5 ${item.overall_score >= 8 ? 'text-amber-500 fill-amber-500' : item.overall_score >= 5 ? 'text-emerald-500 fill-emerald-500' : 'text-rose-500 fill-rose-500'}`} />
+                                      <span className="font-bold text-slate-700">{Number(item.overall_score).toFixed(1)}</span>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-5">
+                                    <div className="max-w-[200px] lg:max-w-xs text-xs text-slate-600 line-clamp-2" title={item.strengths || item.goals || '—'}>
+                                      {item.strengths || item.goals || '—'}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                              {performancePage.items.length === 0 && (
+                                <tr>
+                                  <td colSpan={5} className="py-12">
+                                    <div className="flex flex-col items-center justify-center text-slate-400">
+                                      <Briefcase className="w-10 h-10 mb-3 opacity-20" />
+                                      <p className="font-medium text-slate-600">Değerlendirme bulunamadı</p>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    {!performancePage.loading && performancePage.total > 0 && (
+                      <div className="mt-auto border-t border-slate-100 px-5 py-3 bg-slate-50/50">
+                        <PaginationBar
+                          page={performancePage.page}
+                          totalPages={performancePage.totalPages}
+                          total={performancePage.total}
+                          limit={performancePage.limit}
+                          onPageChange={performancePage.setPage}
+                          onLimitChange={performancePage.setLimit}
+                        />
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
           </div>
         </TabsContent>
 
         {/* === MESAİ ONAYI === */}
         <TabsContent value="overtime" className="mt-4">
-          <div className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-3">
-              <KpiCard intent="warning" icon={Timer} label="Bekleyen Talep" value={overtimeCounts.pending || 0}
-                sub="onay bekliyor" />
-              <KpiCard intent="success" icon={CheckCircle2} label="Onaylanan" value={overtimeCounts.approved || 0}
-                sub="bu yıl" />
-              <KpiCard intent="danger" icon={XCircle} label="Reddedilen" value={overtimeCounts.rejected || 0} />
+          <div className="space-y-6 mt-6">
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-amber-100 text-amber-700"><Timer className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Bekleyen Talep</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{overtimeCounts.pending || 0}</div>
+                <div className="text-[11px] text-slate-500 mt-1">onay bekliyor</div>
+              </div>
+              <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-emerald-100 text-emerald-700"><CheckCircle2 className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Onaylanan</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{overtimeCounts.approved || 0}</div>
+                <div className="text-[11px] text-slate-500 mt-1">bu yıl</div>
+              </div>
+              <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-rose-100 text-rose-700"><XCircle className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Reddedilen</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{overtimeCounts.rejected || 0}</div>
+              </div>
             </div>
 
             {severanceCap && (
-              <Card className="border-slate-200">
-                <CardHeader className="pb-3">
+              <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden">
+                <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
                   <CardTitle className="flex items-center justify-between">
-                    <span className="flex items-center gap-2 text-base">
-                      <Timer className="w-4 h-4" />Kıdem Tazminatı Tavanı (Tenant Ayarı)
+                    <span className="flex items-center gap-2 text-base font-bold text-slate-800">
+                      <div className="p-1.5 rounded-md bg-sky-100 text-sky-700"><Timer className="w-4 h-4" /></div>
+                      Kıdem Tazminatı Tavanı <span className="text-xs font-normal text-slate-500 bg-slate-200/50 px-2 py-0.5 rounded-full">(Tenant Ayarı)</span>
                     </span>
-                    <Button size="sm" variant="outline" onClick={updateSeveranceCap} disabled={savingSeverance}>
+                    <Button size="sm" variant="outline" onClick={updateSeveranceCap} disabled={savingSeverance} className="rounded-lg">
+                      {savingSeverance ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : null}
                       {savingSeverance ? 'Kaydediliyor…' : 'Tavanı Güncelle'}
                     </Button>
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="grid gap-3 md:grid-cols-3 text-sm">
-                    <div className="rounded border border-slate-200 p-3">
-                      <div className="text-xs text-slate-500">Günlük Brüt Tavan</div>
-                      <div className="text-lg font-semibold mt-1">
+                <CardContent className="p-5">
+                  <div className="grid gap-4 md:grid-cols-3 text-sm">
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm relative overflow-hidden">
+                      <div className="text-xs font-semibold text-slate-500">Günlük Brüt Tavan</div>
+                      <div className="text-2xl font-bold text-slate-900 mt-2">
                         ₺{Number(severanceCap.daily_cap || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                       </div>
                       {severanceCap.is_default && (
-                        <div className="text-[11px] text-amber-600 mt-1">Default değer kullanılıyor</div>
+                        <div className="absolute top-0 right-0 bg-amber-100 text-amber-700 text-[9px] font-bold px-2 py-0.5 rounded-bl-lg">VARSAYILAN</div>
                       )}
                     </div>
-                    <div className="rounded border border-slate-200 p-3">
-                      <div className="text-xs text-slate-500">30 Günlük Tavan (yaklaşık)</div>
-                      <div className="text-lg font-semibold mt-1">
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="text-xs font-semibold text-slate-500">30 Günlük Tavan (yaklaşık)</div>
+                      <div className="text-2xl font-bold text-slate-900 mt-2">
                         ₺{Number(severanceCap.monthly_cap_estimate || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                       </div>
                     </div>
-                    <div className="rounded border border-slate-200 p-3">
-                      <div className="text-xs text-slate-500">Son Güncelleme</div>
-                      <div className="text-sm mt-1">
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col justify-center">
+                      <div className="text-xs font-semibold text-slate-500">Son Güncelleme</div>
+                      <div className="text-sm font-medium text-slate-700 mt-1 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                         {severanceCap.updated_at ? severanceCap.updated_at.slice(0, 10) : 'Hiç güncellenmemiş'}
                       </div>
                     </div>
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-3">
-                    {severanceCap.note}
+                  <div className="text-xs text-slate-500 mt-4 bg-slate-50 p-3 rounded-lg border border-slate-100 flex items-start gap-2">
+                    <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                    <p>{severanceCap.note}</p>
                   </div>
                 </CardContent>
               </Card>
             )}
 
             {taxRates && (
-              <Card className="border-slate-200">
-                <CardHeader className="pb-3">
+              <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden">
+                <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
                   <CardTitle className="flex items-center justify-between">
-                    <span className="flex items-center gap-2 text-base">
-                      <AlertCircle className="w-4 h-4" />Vergi Oranlarını Güncelle (Bordro Kesintileri)
+                    <span className="flex items-center gap-2 text-base font-bold text-slate-800">
+                      <div className="p-1.5 rounded-md bg-purple-100 text-purple-700"><AlertCircle className="w-4 h-4" /></div>
+                      Vergi Oranlarını Güncelle <span className="text-xs font-normal text-slate-500 bg-slate-200/50 px-2 py-0.5 rounded-full">(Bordro Kesintileri)</span>
                     </span>
                     {taxRates.can_edit && (
-                      <Button size="sm" variant="outline" onClick={updateTaxRates} disabled={savingTaxRates}>
+                      <Button size="sm" variant="outline" onClick={updateTaxRates} disabled={savingTaxRates} className="rounded-lg">
+                        {savingTaxRates ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : null}
                         {savingTaxRates ? 'Kaydediliyor…' : 'Oranları Kaydet'}
                       </Button>
                     )}
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="grid gap-3 md:grid-cols-4 text-sm">
+                <CardContent className="p-5">
+                  <div className="grid gap-4 md:grid-cols-4 text-sm">
                     {[
                       { key: 'sgk_employee', label: 'SGK İşçi Payı' },
                       { key: 'unemployment', label: 'İşsizlik Sigortası' },
@@ -1690,39 +1980,41 @@ const HRComplete = () => {
                       const isCustom = taxRatesForm
                         && Number(taxRatesForm[key]) !== Number(taxRates.defaults?.[key]);
                       return (
-                        <div key={key} className="rounded border border-slate-200 p-3">
-                          <div className="text-xs text-slate-500">{label}</div>
-                          <div className="flex items-center gap-1 mt-1">
+                        <div key={key} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm relative overflow-hidden transition-all focus-within:ring-2 focus-within:ring-teal-500 focus-within:border-teal-500">
+                          <div className="text-xs font-semibold text-slate-600 mb-2">{label}</div>
+                          <div className="flex items-center gap-2">
                             <Input
                               type="number"
                               step="0.001"
                               min="0"
                               max="100"
-                              className="h-9"
+                              className="h-9 font-bold text-lg bg-slate-50 border-slate-200 rounded-lg text-slate-800 focus:bg-white"
                               value={taxRatesForm ? (taxRatesForm[key] ?? '') : ''}
                               disabled={!taxRates.can_edit}
                               onChange={(e) => setTaxRatesForm((f) => ({ ...(f || {}), [key]: e.target.value }))}
                             />
-                            <span className="text-slate-500">%</span>
+                            <span className="text-slate-400 font-bold">%</span>
                           </div>
-                          <div className="text-[11px] mt-1">
-                            {isCustom ? (
-                              <span className="text-sky-600">
-                                Tenant'a özel (varsayılan %{Number(taxRates.defaults?.[key]).toLocaleString('tr-TR', { maximumFractionDigits: 3 })})
-                              </span>
-                            ) : (
-                              <span className="text-amber-600">Varsayılan değer</span>
-                            )}
-                          </div>
+                          {isCustom ? (
+                            <div className="absolute top-0 right-0 bg-sky-100 text-sky-700 text-[9px] font-bold px-2 py-0.5 rounded-bl-lg">ÖZEL</div>
+                          ) : (
+                            <div className="absolute top-0 right-0 bg-slate-100 text-slate-500 text-[9px] font-bold px-2 py-0.5 rounded-bl-lg">VARSAYILAN</div>
+                          )}
+                          {isCustom && (
+                            <div className="text-[10px] mt-2 text-sky-600 font-medium">
+                              Varsayılan: %{Number(taxRates.defaults?.[key]).toLocaleString('tr-TR', { maximumFractionDigits: 3 })}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
-                  <div className="flex flex-wrap items-center justify-between gap-2 mt-3">
-                    <div className="text-[11px] text-slate-500">
-                      {taxRates.note}
+                  <div className="flex flex-wrap items-center justify-between gap-4 mt-5 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <div className="text-xs text-slate-500 flex items-start gap-2">
+                      <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                      <p>{taxRates.note}</p>
                     </div>
-                    <div className="text-[11px] text-slate-500">
+                    <div className="text-xs font-medium text-slate-500 bg-white px-3 py-1.5 rounded-md border border-slate-200 shadow-sm">
                       Son güncelleme: {taxRates.updated_at ? taxRates.updated_at.slice(0, 10) : 'Hiç güncellenmemiş'}
                     </div>
                   </div>
@@ -1730,35 +2022,39 @@ const HRComplete = () => {
               </Card>
             )}
 
-            <Card>
-              <CardHeader>
+            <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden flex flex-col">
+              <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-3 pt-4">
                 <CardTitle className="flex items-center justify-between">
-                  <span className="flex items-center gap-2"><Timer className="w-4 h-4" />Mesai Talepleri</span>
-                  <span className="text-xs text-slate-500 font-normal">İş K. m.41/3 — yıllık 270 saat üst sınırı otomatik kontrol edilir</span>
+                  <span className="flex items-center gap-2 text-base font-bold text-slate-800">
+                    <Timer className="w-4 h-4 text-slate-500" />Mesai Talepleri
+                  </span>
+                  <span className="text-xs text-slate-500 font-normal bg-white border border-slate-200 px-2 py-1 rounded-md shadow-sm">
+                    İş K. m.41/3 — yıllık 270 saat üst sınırı otomatik kontrol edilir
+                  </span>
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-0 flex-1 flex flex-col">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-left text-slate-500 border-b">
-                        <th className="py-2">Personel</th>
-                        <th>Tarih</th>
-                        <th className="text-right">Saat</th>
-                        <th>Sebep</th>
-                        <th>Durum</th>
-                        <th>İstek</th>
-                        <th></th>
+                      <tr className="text-left bg-white border-b border-slate-200">
+                        <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Personel</th>
+                        <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Tarih</th>
+                        <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">Saat</th>
+                        <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Sebep</th>
+                        <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Durum</th>
+                        <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">İstek</th>
+                        <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">İşlem</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-slate-100">
                       {overtimeItems.map((req) => (
-                        <tr key={req.id} className="border-t border-slate-100 align-top">
-                          <td className="py-2 font-medium">{req.staff_name}</td>
-                          <td>{req.work_date}</td>
-                          <td className="text-right">{req.hours}h</td>
-                          <td className="text-slate-600 text-xs max-w-xs">{req.reason}</td>
-                          <td>
+                        <tr key={req.id} className="hover:bg-slate-50 transition-colors bg-white">
+                          <td className="py-3 px-5 font-bold text-slate-800">{req.staff_name}</td>
+                          <td className="py-3 px-5 text-slate-600">{req.work_date}</td>
+                          <td className="py-3 px-5 text-right font-bold text-slate-700">{req.hours}h</td>
+                          <td className="py-3 px-5 text-slate-600 text-xs max-w-xs">{req.reason}</td>
+                          <td className="py-3 px-5">
                             <StatusBadge intent={STATUS_INTENT[req.status] || 'neutral'}>
                               {STATUS_LABEL[req.status] || req.status}
                             </StatusBadge>
@@ -1768,25 +2064,25 @@ const HRComplete = () => {
                               </div>
                             )}
                           </td>
-                          <td className="text-xs text-slate-500">{(req.requested_at || '').slice(0, 10)}</td>
-                          <td className="text-right">
+                          <td className="py-3 px-5 text-xs text-slate-500">{(req.requested_at || '').slice(0, 10)}</td>
+                          <td className="py-3 px-5 text-right">
                             {req.status === 'pending' && (
-                              <div className="flex justify-end gap-1 flex-wrap">
-                                <Button size="sm" onClick={() => decideOvertime(req, 'dept_approve')} data-testid={`ot-dept-${req.id}`}>
+                              <div className="flex justify-end gap-2 flex-wrap">
+                                <Button size="sm" onClick={() => decideOvertime(req, 'dept_approve')} data-testid={`ot-dept-${req.id}`} className="bg-teal-600 hover:bg-teal-700 text-white shadow-sm">
                                   <Check className="w-3.5 h-3.5 mr-1" />Dept Onay
                                 </Button>
-                                <Button size="sm" variant="outline" onClick={() => decideOvertime(req, 'reject')} data-testid={`ot-reject-${req.id}`}>
-                                  <X className="w-3.5 h-3.5 mr-1 text-rose-600" />Reddet
+                                <Button size="sm" variant="outline" onClick={() => decideOvertime(req, 'reject')} data-testid={`ot-reject-${req.id}`} className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200">
+                                  <X className="w-3.5 h-3.5 mr-1" />Reddet
                                 </Button>
                               </div>
                             )}
                             {req.status === 'dept_approved' && (
-                              <div className="flex justify-end gap-1 flex-wrap">
-                                <Button size="sm" onClick={() => decideOvertime(req, 'approve')} data-testid={`ot-hr-final-${req.id}`}>
-                                  <Check className="w-3.5 h-3.5 mr-1" />HR Final (Bordro)
+                              <div className="flex justify-end gap-2 flex-wrap">
+                                <Button size="sm" onClick={() => decideOvertime(req, 'approve')} data-testid={`ot-hr-final-${req.id}`} className="bg-teal-600 hover:bg-teal-700 text-white shadow-sm">
+                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" />HR Final (Bordro)
                                 </Button>
-                                <Button size="sm" variant="outline" onClick={() => decideOvertime(req, 'reject')} data-testid={`ot-hr-reject-${req.id}`}>
-                                  <X className="w-3.5 h-3.5 mr-1 text-rose-600" />Reddet
+                                <Button size="sm" variant="outline" onClick={() => decideOvertime(req, 'reject')} data-testid={`ot-hr-reject-${req.id}`} className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200">
+                                  <X className="w-3.5 h-3.5 mr-1" />Reddet
                                 </Button>
                               </div>
                             )}
@@ -1808,71 +2104,99 @@ const HRComplete = () => {
 
         {/* === PERSONEL TALEBİ (eski "İşe Alım") === */}
         <TabsContent value="recruitment" className="mt-4">
-          <div className="space-y-4">
+          <div className="space-y-6 mt-6">
             {/* Akış açıklaması */}
-            <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm flex items-start gap-2">
-              <Info className="w-4 h-4 mt-0.5 text-sky-600 shrink-0" />
-              <div className="text-slate-700 text-xs space-y-1">
+            <div className="rounded-xl border border-sky-100 bg-gradient-to-r from-sky-50 to-white p-4 shadow-sm flex items-start gap-3">
+              <div className="p-2 bg-sky-100 text-sky-600 rounded-lg shrink-0 mt-0.5"><Info className="w-5 h-5" /></div>
+              <div className="text-slate-700 text-sm space-y-1.5 leading-relaxed">
                 <p><strong>Bu modül dış yayınlama (LinkedIn/Kariyer.net) yapmaz.</strong> Departman müdürü personel ihtiyacını bildirir, HR yöneticisi onaylar, onaylı pozisyonlara aday eklenip süreç (görüşme/teklif/işe alım) takip edilir.</p>
                 <p>Talep oluşturulduğunda HR yöneticilerine bildirim gider. Karar (onay/red) talep sahibine bildirim olarak döner.</p>
               </div>
             </div>
 
             {/* KPI özet */}
-            <div className="grid gap-3 md:grid-cols-4">
-              <KpiCard intent="warning" label="Onay Bekleyen Talep"
-                value={jobItems.filter((j) => j.status === 'pending_approval').length} />
-              <KpiCard intent="success" label="Açık Pozisyon"
-                value={jobItems.filter((j) => j.status === 'active').length} />
-              <KpiCard intent="info" label="Toplam İhtiyaç (kişi)"
-                value={jobItems.filter((j) => ['pending_approval', 'active'].includes(j.status))
-                  .reduce((sum, j) => sum + (j.headcount_needed || 1), 0)} />
-              <KpiCard intent="neutral" label="Toplam Aday"
-                value={jobItems.reduce((sum, j) => sum + (j.applicants_count || 0), 0)} />
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-amber-100 text-amber-700"><Timer className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Onay Bekleyen</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{jobItems.filter((j) => j.status === 'pending_approval').length}</div>
+                <div className="text-[11px] text-slate-500 mt-1">talep</div>
+              </div>
+              <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-emerald-100 text-emerald-700"><CheckCircle2 className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Açık Pozisyon</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{jobItems.filter((j) => j.status === 'active').length}</div>
+                <div className="text-[11px] text-slate-500 mt-1">aktif</div>
+              </div>
+              <div className="rounded-2xl border border-sky-100 bg-gradient-to-br from-sky-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-sky-100 text-sky-700"><Users className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Toplam İhtiyaç</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">
+                  {jobItems.filter((j) => ['pending_approval', 'active'].includes(j.status)).reduce((sum, j) => sum + (j.headcount_needed || 1), 0)}
+                </div>
+                <div className="text-[11px] text-slate-500 mt-1">kişi</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-lg bg-slate-200 text-slate-700"><UserPlus className="w-5 h-5" /></div>
+                  <div className="text-sm font-semibold text-slate-600">Toplam Aday</div>
+                </div>
+                <div className="text-3xl font-bold text-slate-900">{jobItems.reduce((sum, j) => sum + (j.applicants_count || 0), 0)}</div>
+                <div className="text-[11px] text-slate-500 mt-1">aday</div>
+              </div>
             </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2"><Plus className="w-4 h-4" />Yeni Personel Talebi</CardTitle>
-                <p className="text-xs text-slate-500 mt-1">
+            <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden">
+              <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-800">
+                  <div className="p-1.5 rounded-md bg-teal-100 text-teal-700"><Plus className="w-5 h-5" /></div>
+                  Yeni Personel Talebi
+                </CardTitle>
+                <p className="text-xs font-medium text-slate-500 mt-1 pl-9">
                   Departman müdürü olarak doldurun. Onay sonrası aday eklemeye açılır.
                 </p>
               </CardHeader>
-              <CardContent>
-                <form onSubmit={submitJob} className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                  <div>
-                    <Label className="text-xs">Pozisyon *</Label>
-                    <Input required value={jobForm.title}
+              <CardContent className="p-5">
+                <form onSubmit={submitJob} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-600">Pozisyon <span className="text-rose-500">*</span></Label>
+                    <Input required value={jobForm.title} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
                       onChange={(e) => setJobForm({ ...jobForm, title: e.target.value })}
-                      placeholder="Resepsiyonist" />
+                      placeholder="Örn: Resepsiyonist" />
                   </div>
-                  <div>
-                    <Label className="text-xs">Departman *</Label>
-                    <Input required value={jobForm.department}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-600">Departman <span className="text-rose-500">*</span></Label>
+                    <Input required value={jobForm.department} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
                       onChange={(e) => setJobForm({ ...jobForm, department: e.target.value })}
-                      placeholder="front_desk" />
+                      placeholder="Örn: front_desk" />
                   </div>
-                  <div>
-                    <Label className="text-xs">İhtiyaç Sayısı (kişi)</Label>
-                    <Input type="number" min="1" max="50" value={jobForm.headcount_needed}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-600">İhtiyaç Sayısı (Kişi)</Label>
+                    <Input type="number" min="1" max="50" value={jobForm.headcount_needed} className="rounded-lg border-slate-200 bg-slate-50 font-bold text-sm focus:bg-white"
                       onChange={(e) => setJobForm({ ...jobForm, headcount_needed: parseInt(e.target.value) || 1 })} />
                   </div>
-                  <div>
-                    <Label className="text-xs">Aciliyet</Label>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-600">Aciliyet</Label>
                     <select value={jobForm.urgency}
                       onChange={(e) => setJobForm({ ...jobForm, urgency: e.target.value })}
-                      className="w-full rounded-md border border-input px-3 py-2 text-sm">
+                      className="w-full rounded-lg border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:bg-white focus:ring-teal-500">
                       <option value="low">Düşük</option>
                       <option value="normal">Normal</option>
                       <option value="high">Yüksek</option>
                       <option value="critical">Kritik</option>
                     </select>
                   </div>
-                  <div>
-                    <Label className="text-xs">Çalışma Şekli</Label>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-600">Çalışma Şekli</Label>
                     <select value={jobForm.employment_type}
                       onChange={(e) => setJobForm({ ...jobForm, employment_type: e.target.value })}
-                      className="w-full rounded-md border border-input px-3 py-2 text-sm">
+                      className="w-full rounded-lg border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:bg-white focus:ring-teal-500">
                       <option value="full_time">Tam Zamanlı</option>
                       <option value="part_time">Yarı Zamanlı</option>
                       <option value="seasonal">Sezonluk</option>
@@ -1880,37 +2204,37 @@ const HRComplete = () => {
                       <option value="intern">Stajyer</option>
                     </select>
                   </div>
-                  <div>
-                    <Label className="text-xs">İhtiyaç Tarihi</Label>
-                    <Input type="date" value={jobForm.needed_by}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-600">İhtiyaç Tarihi</Label>
+                    <Input type="date" value={jobForm.needed_by} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
                       onChange={(e) => setJobForm({ ...jobForm, needed_by: e.target.value })} />
                   </div>
-                  <div>
-                    <Label className="text-xs">Ücret Aralığı (öneri)</Label>
-                    <Input value={jobForm.salary_range}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-600">Ücret Aralığı (Öneri)</Label>
+                    <Input value={jobForm.salary_range} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
                       onChange={(e) => setJobForm({ ...jobForm, salary_range: e.target.value })}
                       placeholder="22.000 – 30.000 TL" />
                   </div>
-                  <div>
-                    <Label className="text-xs">Lokasyon</Label>
-                    <Input value={jobForm.location}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-600">Lokasyon</Label>
+                    <Input value={jobForm.location} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
                       onChange={(e) => setJobForm({ ...jobForm, location: e.target.value })} />
                   </div>
-                  <div className="md:col-span-2 lg:col-span-3">
-                    <Label className="text-xs">Gerekçe (HR'a not)</Label>
-                    <Textarea rows={2} value={jobForm.justification}
+                  <div className="md:col-span-2 lg:col-span-3 space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-600">Gerekçe (HR'a not)</Label>
+                    <Textarea rows={2} value={jobForm.justification} className="rounded-lg border-slate-200 bg-slate-50 text-sm resize-none focus:bg-white"
                       onChange={(e) => setJobForm({ ...jobForm, justification: e.target.value })}
                       placeholder="Örn: yaz sezonu için ek personel; mevcut kadronun yetersizliği vb." />
                   </div>
-                  <div className="md:col-span-2 lg:col-span-3">
-                    <Label className="text-xs">Pozisyon Açıklaması</Label>
-                    <Textarea rows={3} value={jobForm.description}
+                  <div className="md:col-span-2 lg:col-span-3 space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-600">Pozisyon Açıklaması</Label>
+                    <Textarea rows={3} value={jobForm.description} className="rounded-lg border-slate-200 bg-slate-50 text-sm resize-none focus:bg-white"
                       onChange={(e) => setJobForm({ ...jobForm, description: e.target.value })}
                       placeholder="Sorumluluklar, beklentiler, gerekli niteliklere dair detaylar" />
                   </div>
-                  <div className="md:col-span-2 lg:col-span-3 flex justify-end">
-                    <Button type="submit" disabled={creatingJob}>
-                      <Send className="w-4 h-4 mr-1.5" />
+                  <div className="md:col-span-2 lg:col-span-3 flex justify-end mt-2">
+                    <Button type="submit" disabled={creatingJob} className="bg-teal-600 hover:bg-teal-700 text-white rounded-lg shadow-sm py-5 px-6">
+                      {creatingJob ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
                       {creatingJob ? 'Gönderiliyor...' : 'Talep Oluştur (HR\'a Gönder)'}
                     </Button>
                   </div>
@@ -1918,77 +2242,81 @@ const HRComplete = () => {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader><CardTitle>Talepler & Açık Pozisyonlar</CardTitle></CardHeader>
-              <CardContent>
+            <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden flex flex-col">
+              <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-3 pt-4">
+                <CardTitle className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <ListChecks className="w-4 h-4 text-slate-500" />Talepler & Açık Pozisyonlar
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0 flex-1 flex flex-col">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-left text-slate-500 border-b">
-                        <th className="py-2">Pozisyon</th>
-                        <th>Departman</th>
-                        <th className="text-right">İhtiyaç</th>
-                        <th>Aciliyet</th>
-                        <th>İhtiyaç Tarihi</th>
-                        <th>Talep Eden</th>
-                        <th>Durum</th>
-                        <th className="text-right">Aday</th>
-                        <th className="text-right">İşlem</th>
+                      <tr className="text-left bg-white border-b border-slate-200">
+                        <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Pozisyon</th>
+                        <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Departman</th>
+                        <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-center">İhtiyaç</th>
+                        <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Aciliyet</th>
+                        <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">İhtiyaç Tarihi</th>
+                        <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Talep Eden</th>
+                        <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Durum</th>
+                        <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-center">Aday</th>
+                        <th className="py-2.5 px-5 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">İşlem</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-slate-100">
                       {jobItems.map((job) => (
-                        <tr key={job.id} className="border-t border-slate-100 align-top">
-                          <td className="py-2">
-                            <div className="font-medium">{job.title}</div>
+                        <tr key={job.id} className="hover:bg-slate-50 transition-colors bg-white">
+                          <td className="py-3 px-5">
+                            <div className="font-bold text-slate-800">{job.title}</div>
                             {job.justification && (
-                              <div className="text-xs text-slate-400 max-w-xs truncate" title={job.justification}>
+                              <div className="text-xs text-slate-500 max-w-xs truncate" title={job.justification}>
                                 {job.justification}
                               </div>
                             )}
                           </td>
-                          <td className="capitalize text-slate-600">{job.department}</td>
-                          <td className="text-right">{job.headcount_needed || 1}</td>
-                          <td>
+                          <td className="py-3 px-5 capitalize text-slate-600 font-medium">{job.department}</td>
+                          <td className="py-3 px-5 text-center font-bold text-slate-700">{job.headcount_needed || 1}</td>
+                          <td className="py-3 px-5">
                             {job.urgency === 'critical' && <StatusBadge intent="danger">Kritik</StatusBadge>}
                             {job.urgency === 'high' && <StatusBadge intent="warning">Yüksek</StatusBadge>}
-                            {job.urgency === 'normal' && <span className="text-xs text-slate-500">Normal</span>}
-                            {job.urgency === 'low' && <span className="text-xs text-slate-400">Düşük</span>}
+                            {job.urgency === 'normal' && <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-600">Normal</span>}
+                            {job.urgency === 'low' && <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-500">Düşük</span>}
                           </td>
-                          <td className="text-slate-600 text-xs">{job.needed_by || '—'}</td>
-                          <td className="text-slate-600 text-xs">{job.created_by_name || '—'}</td>
-                          <td>
+                          <td className="py-3 px-5 text-slate-600 text-xs">{job.needed_by || '—'}</td>
+                          <td className="py-3 px-5 text-slate-600 text-xs">{job.created_by_name || '—'}</td>
+                          <td className="py-3 px-5">
                             {job.status === 'pending_approval' && <StatusBadge intent="warning">Onay Bekliyor</StatusBadge>}
                             {job.status === 'active' && <StatusBadge intent="success">Açık</StatusBadge>}
                             {job.status === 'rejected' && <StatusBadge intent="danger">Reddedildi</StatusBadge>}
                             {job.status === 'closed' && <StatusBadge intent="neutral">Kapalı</StatusBadge>}
                           </td>
-                          <td className="text-right">
+                          <td className="py-3 px-5 text-center">
                             <button type="button" onClick={() => openApplicants(job)}
-                              className="text-sky-600 hover:underline" disabled={job.status === 'pending_approval'}>
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-sky-50 text-sky-600 font-bold hover:bg-sky-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={job.status === 'pending_approval'}>
                               {job.applicants_count || 0}
                             </button>
                           </td>
-                          <td className="text-right">
-                            <div className="flex justify-end gap-1">
+                          <td className="py-3 px-5 text-right">
+                            <div className="flex justify-end gap-2 flex-wrap">
                               {job.status === 'pending_approval' && (
                                 <>
-                                  <Button size="sm" variant="outline" onClick={() => decideJob(job.id, 'approve')}
-                                    title="HR yöneticisi olarak onayla">
+                                  <Button size="sm" onClick={() => decideJob(job.id, 'approve')} title="HR yöneticisi olarak onayla" className="bg-teal-600 hover:bg-teal-700 text-white shadow-sm">
                                     <ThumbsUp className="w-3.5 h-3.5 mr-1" />Onayla
                                   </Button>
-                                  <Button size="sm" variant="outline" onClick={() => decideJob(job.id, 'reject')}>
+                                  <Button size="sm" variant="outline" onClick={() => decideJob(job.id, 'reject')} className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200">
                                     <ThumbsDown className="w-3.5 h-3.5 mr-1" />Reddet
                                   </Button>
                                 </>
                               )}
                               {job.status === 'active' && (
                                 <>
-                                  <Button size="sm" variant="outline" onClick={() => openApplicants(job)}>
-                                    <UserPlus className="w-3.5 h-3.5 mr-1" />Aday
+                                  <Button size="sm" variant="outline" onClick={() => openApplicants(job)} className="border-sky-200 text-sky-700 hover:bg-sky-50">
+                                    <UserPlus className="w-3.5 h-3.5 mr-1" />Aday İşlemleri
                                   </Button>
-                                  <Button size="sm" variant="outline" onClick={() => closeJob(job.id)}>
-                                    <XCircle className="w-3.5 h-3.5" />
+                                  <Button size="sm" variant="outline" onClick={() => closeJob(job.id)} title="Pozisyonu Kapat" className="text-slate-500 hover:text-slate-700 hover:bg-slate-50">
+                                    <XCircle className="w-4 h-4" />
                                   </Button>
                                 </>
                               )}
@@ -1997,9 +2325,14 @@ const HRComplete = () => {
                         </tr>
                       ))}
                       {jobItems.length === 0 && (
-                        <tr><td colSpan={9} className="py-10 text-center text-slate-500">
-                          Henüz talep yok. Yukarıdaki formdan ilk personel talebini oluşturun.
-                        </td></tr>
+                        <tr>
+                          <td colSpan={9} className="py-12">
+                            <div className="flex flex-col items-center justify-center text-slate-400">
+                              <Briefcase className="w-10 h-10 mb-3 opacity-20" />
+                              <p className="font-medium text-slate-600">Henüz talep yok. Yukarıdaki formdan ilk personel talebini oluşturun.</p>
+                            </div>
+                          </td>
+                        </tr>
                       )}
                     </tbody>
                   </table>
@@ -2010,75 +2343,84 @@ const HRComplete = () => {
 
           {/* Adaylar Modal */}
           <Dialog open={applicantsDialog.open} onOpenChange={(o) => !o && setApplicantsDialog({ open: false, job: null, list: [], counts: {} })}>
-            <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0 rounded-2xl">
+              <div className="bg-slate-50/80 border-b border-slate-100 p-6 flex flex-col gap-3">
+                <DialogTitle className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-sky-100 text-sky-700"><Users className="w-5 h-5" /></div>
                   Adaylar — {applicantsDialog.job?.title}
-                  <span className="text-xs text-slate-500 ml-2 font-normal">
-                    ({applicantsDialog.job?.department})
+                  <span className="text-sm text-slate-500 font-medium ml-2 px-2 py-0.5 bg-white rounded-md border border-slate-200">
+                    {applicantsDialog.job?.department}
                   </span>
                 </DialogTitle>
-              </DialogHeader>
-
-              {/* Aday durum sayaçları */}
-              <div className="flex flex-wrap gap-2 text-xs">
-                {Object.entries(applicantsDialog.counts || {}).map(([k, v]) => (
-                  <span key={k} className="rounded-full bg-slate-100 px-2 py-0.5">
-                    {k}: <strong>{v}</strong>
-                  </span>
-                ))}
+                
+                {/* Aday durum sayaçları */}
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(applicantsDialog.counts || {}).map(([k, v]) => (
+                    <div key={k} className="flex items-center gap-2 rounded-lg bg-white border border-slate-200 px-3 py-1.5 shadow-sm">
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{k}</span>
+                      <span className="text-sm font-bold text-slate-800 bg-slate-100 px-2 rounded-md">{String(v)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              {/* Yeni aday formu */}
-              <form onSubmit={submitApplicant} className="grid gap-2 md:grid-cols-2 border-t pt-3 mt-2">
-                <div className="md:col-span-2 text-sm font-medium flex items-center gap-2">
-                  <UserPlus className="w-4 h-4" />Yeni Aday Ekle
+              <div className="p-6 space-y-6">
+                {/* Yeni aday formu */}
+                <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                  <div className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-4">
+                    <div className="p-1 rounded-md bg-teal-100 text-teal-700"><UserPlus className="w-4 h-4" /></div>
+                    Yeni Aday Ekle
+                  </div>
+                  <form onSubmit={submitApplicant} className="grid gap-3 md:grid-cols-2">
+                    <Input placeholder="Ad Soyad *" value={applicantForm.name} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
+                      onChange={(e) => setApplicantForm({ ...applicantForm, name: e.target.value })} />
+                    <Input placeholder="E-posta" type="email" value={applicantForm.email} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
+                      onChange={(e) => setApplicantForm({ ...applicantForm, email: e.target.value })} />
+                    <Input placeholder="Telefon" value={applicantForm.phone} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
+                      onChange={(e) => setApplicantForm({ ...applicantForm, phone: e.target.value })} />
+                    <Input placeholder="CV URL (opsiyonel)" value={applicantForm.cv_url} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
+                      onChange={(e) => setApplicantForm({ ...applicantForm, cv_url: e.target.value })} />
+                    <div className="md:col-span-2">
+                      <Textarea rows={2} placeholder="Notlar (deneyim, görüşme izlenimi, vb.)" className="rounded-lg border-slate-200 bg-slate-50 text-sm resize-none focus:bg-white"
+                        value={applicantForm.notes}
+                        onChange={(e) => setApplicantForm({ ...applicantForm, notes: e.target.value })} />
+                    </div>
+                    <div className="md:col-span-2 flex justify-end mt-1">
+                      <Button type="submit" disabled={savingApplicant} className="bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-6">
+                        {savingApplicant ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+                        {savingApplicant ? 'Ekleniyor...' : 'Adayı Kaydet'}
+                      </Button>
+                    </div>
+                  </form>
                 </div>
-                <Input placeholder="Ad Soyad *" value={applicantForm.name}
-                  onChange={(e) => setApplicantForm({ ...applicantForm, name: e.target.value })} />
-                <Input placeholder="E-posta" type="email" value={applicantForm.email}
-                  onChange={(e) => setApplicantForm({ ...applicantForm, email: e.target.value })} />
-                <Input placeholder="Telefon" value={applicantForm.phone}
-                  onChange={(e) => setApplicantForm({ ...applicantForm, phone: e.target.value })} />
-                <Input placeholder="CV URL (opsiyonel)" value={applicantForm.cv_url}
-                  onChange={(e) => setApplicantForm({ ...applicantForm, cv_url: e.target.value })} />
-                <div className="md:col-span-2">
-                  <Textarea rows={2} placeholder="Notlar (deneyim, görüşme izlenimi, vb.)"
-                    value={applicantForm.notes}
-                    onChange={(e) => setApplicantForm({ ...applicantForm, notes: e.target.value })} />
-                </div>
-                <div className="md:col-span-2 flex justify-end">
-                  <Button type="submit" size="sm" disabled={savingApplicant}>
-                    <Plus className="w-3.5 h-3.5 mr-1" />
-                    {savingApplicant ? 'Ekleniyor...' : 'Adayı Kaydet'}
-                  </Button>
-                </div>
-              </form>
 
-              {/* Aday listesi */}
-              <div className="border-t pt-3">
-                <div className="text-sm font-medium mb-2">Aday Listesi ({applicantsDialog.list.length})</div>
-                <div className="space-y-2">
-                  {applicantsDialog.list.map((a) => (
-                    <div key={a.id} className="rounded border border-slate-200 p-3">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="font-medium">{a.name}</div>
-                          <div className="text-xs text-slate-500">
-                            {a.email || '—'} • {a.phone || '—'}
+                {/* Aday listesi */}
+                <div>
+                  <div className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+                    <ListChecks className="w-4 h-4 text-slate-500" /> Aday Listesi 
+                    <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-xs">{applicantsDialog.list.length}</span>
+                  </div>
+                  <div className="space-y-3">
+                    {applicantsDialog.list.map((a) => (
+                      <div key={a.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300 transition-colors flex flex-col md:flex-row md:items-start justify-between gap-4">
+                        <div className="space-y-2 flex-1">
+                          <div className="font-bold text-slate-800 text-base">{a.name}</div>
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 font-medium">
+                            {a.email && <div className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-slate-400" /> {a.email}</div>}
+                            {a.phone && <div className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-slate-400" /> {a.phone}</div>}
                           </div>
-                          {a.notes && <div className="text-xs text-slate-600 mt-1">{a.notes}</div>}
+                          {a.notes && <div className="text-sm text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100 mt-2">{a.notes}</div>}
                           {a.cv_url && (
                             <a href={a.cv_url} target="_blank" rel="noreferrer"
-                              className="text-xs text-sky-600 hover:underline">
-                              <ExternalLink className="w-3 h-3 inline mr-0.5" />CV
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-600 hover:text-sky-700 hover:bg-sky-50 px-2 py-1 rounded-md transition-colors mt-2">
+                              <ExternalLink className="w-3.5 h-3.5" /> CV Görüntüle
                             </a>
                           )}
                         </div>
-                        <div className="flex flex-col items-end gap-1">
+                        <div className="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-3 w-full md:w-auto shrink-0 border-t md:border-t-0 pt-3 md:pt-0">
                           <select value={a.status || 'new'}
                             onChange={(e) => setApplicantStatus(a.id, e.target.value)}
-                            className="text-xs rounded border border-input px-2 py-1">
+                            className="text-sm font-semibold rounded-lg border-slate-200 bg-slate-50 px-3 py-1.5 focus:ring-teal-500 focus:bg-white w-full md:w-auto">
                             <option value="new">Yeni</option>
                             <option value="screening">Eleme</option>
                             <option value="interview">Görüşme</option>
@@ -2086,21 +2428,25 @@ const HRComplete = () => {
                             <option value="hired">İşe Alındı</option>
                             <option value="rejected">Reddedildi</option>
                           </select>
-                          <span className="text-[10px] text-slate-400">
+                          <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
                             {(a.created_at || '').slice(0, 10)}
                           </span>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                  {applicantsDialog.list.length === 0 && (
-                    <p className="text-center text-sm text-slate-500 py-6">Henüz aday yok</p>
-                  )}
+                    ))}
+                    {applicantsDialog.list.length === 0 && (
+                      <div className="py-12 rounded-xl border border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-slate-400">
+                        <Users className="w-10 h-10 mb-3 opacity-20" />
+                        <p className="font-medium text-slate-600">Henüz aday yok</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setApplicantsDialog({ open: false, job: null, list: [], counts: {} })}>
+              <DialogFooter className="p-6 border-t border-slate-100 bg-slate-50/50">
+                <Button variant="outline" onClick={() => setApplicantsDialog({ open: false, job: null, list: [], counts: {} })} className="rounded-lg">
                   Kapat
                 </Button>
               </DialogFooter>
