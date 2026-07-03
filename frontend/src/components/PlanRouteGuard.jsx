@@ -73,12 +73,12 @@ export default function PlanRouteGuard({ tenant, user, children }) {
 
   if (!tenant) return children;
 
-  // Super admin and admin bypass all plan/module restrictions
+  // Super admin, admin, and demo users bypass all plan/module restrictions
   const userRole = user?.role;
   const userRoles = Array.isArray(user?.roles) ? user.roles : [];
   if (
-    userRole === "super_admin" || userRole === "admin" || userRole === "owner" ||
-    userRoles.includes("super_admin") || userRoles.includes("admin") || userRoles.includes("owner")
+    userRole === "super_admin" || userRole === "admin" || userRole === "owner" || userRole === "demo_manager_readonly" ||
+    userRoles.includes("super_admin") || userRoles.includes("admin") || userRoles.includes("owner") || userRoles.includes("demo_manager_readonly")
   ) {
     return children;
   }
