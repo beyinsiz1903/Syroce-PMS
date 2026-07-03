@@ -7,7 +7,7 @@ import {
   Users, FileSpreadsheet, RefreshCw, Plus, CheckCircle2, XCircle,
   TrendingUp, ExternalLink, FileDown, Award, Info, AlertCircle,
   Bell, FileText, ClipboardList, Send, ThumbsUp, ThumbsDown,
-  Timer, Check, X, Package, GraduationCap,
+  Timer, Check, X, Package, GraduationCap, Star, ListChecks, Mail, Phone,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { promptDialog, confirmDialog } from '@/lib/dialogs';
