@@ -442,7 +442,7 @@ def require_module(module_name: str):
         # Super admin: bypass module-flag check and tenant requirement.
         if _is_super_admin(current_user):
             return
-            
+
         # Tenant context is mandatory for normal users: downstream handlers
         # rely on current_user.tenant_id and may otherwise read/write unscoped.
         if not current_user.tenant_id:

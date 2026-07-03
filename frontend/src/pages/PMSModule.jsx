@@ -673,10 +673,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     setNewBooking({ ...newBooking, children_ages: newAges });
   };
 
-  const handleCreateBooking = async (e) => {
-    e.preventDefault();
+  const handleCreateBooking = async (e, inlineGuestName) => {
+    e?.preventDefault();
     if (newBooking.base_rate > 0 && newBooking.base_rate !== newBooking.total_amount && !newBooking.override_reason) { toast.error('Please provide a reason for rate override'); return; }
-    if (!newBooking.guest_id) { toast.error('Please select guest'); return; }
+    if (!newBooking.guest_id && !inlineGuestName) { toast.error('Please select guest or type a guest name'); return; }
     if (!newBooking.check_in || !newBooking.check_out) { toast.error('Please select check-in and check-out dates'); return; }
     await loadRateData(newBooking.channel, newBooking.company_id, newBooking.check_in);
     if (!multiRoomBooking || multiRoomBooking.length === 0) { toast.error('Please add at least one room'); return; }
@@ -686,10 +686,16 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         room_id: room.room_id, adults: room.adults, children: room.children, children_ages: room.children_ages || [],
         total_amount: room.total_amount, base_rate: room.base_rate, rate_plan: room.rate_plan || newBooking.rate_type || 'Standard', package_code: room.package_code || null
       }));
-      await axios.post('/pms/bookings/multi-room', {
-        guest_id: newBooking.guest_id, arrival_date: newBooking.check_in, departure_date: newBooking.check_out,
+      const payload = {
+        arrival_date: newBooking.check_in, departure_date: newBooking.check_out,
         rooms: roomsPayload, company_id: newBooking.company_id || null, channel: newBooking.channel || 'direct'
-      });
+      };
+      if (newBooking.guest_id) {
+        payload.guest_id = newBooking.guest_id;
+      } else {
+        payload.guest = { name: inlineGuestName, phone: '' };
+      }
+      await axios.post('/pms/bookings/multi-room', payload);
       toast.success('Booking created successfully'); setOpenDialog(null); loadData(); setSelectedCompany(null);
       setNewBooking({ guest_id: '', room_id: '', check_in: '', check_out: '', adults: 1, children: 0, children_ages: [], guests_count: 1, total_amount: 0, base_rate: 0, channel: 'direct', company_id: '', contracted_rate: '', rate_type: '', market_segment: '', cancellation_policy: '', billing_address: '', billing_tax_number: '', billing_contact_person: '', override_reason: '' });
       setMultiRoomBooking([{ room_id: '', adults: 1, children: 0, children_ages: [], total_amount: 0, base_rate: 0, rate_plan: '', package_code: null }]);

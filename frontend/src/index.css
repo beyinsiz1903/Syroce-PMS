@@ -824,6 +824,7 @@ code {
 .dark .bg-green-50\/30 { background-color: rgb(5 46 22 / 0.3); }
 .dark .bg-green-50\/40 { background-color: rgb(5 46 22 / 0.4); }
 .dark .bg-green-50\/50 { background-color: rgb(5 46 22 / 0.5); }
+.dark .bg-emerald-50\/10 { background-color: rgb(2 44 34 / 0.1); }
 .dark .bg-emerald-50\/30 { background-color: rgb(2 44 34 / 0.3); }
 .dark .bg-emerald-50\/40 { background-color: rgb(2 44 34 / 0.4); }
 .dark .bg-emerald-50\/50 { background-color: rgb(2 44 34 / 0.5); }

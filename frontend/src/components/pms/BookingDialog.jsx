@@ -111,7 +111,7 @@ const BookingDialog = ({
       <DialogTitle>{t('cm.components_pms_BookingDialog.yeni_rezervasyon_olustur')}</DialogTitle>
       <DialogDescription>{t('cm.components_pms_BookingDialog.rezervasyon_bilgilerini_asagiya_girin')}</DialogDescription>
     </DialogHeader>
-    <form onSubmit={handleCreateBooking} className="space-y-6">
+    <form onSubmit={(e) => handleCreateBooking(e, selectedGuest ? null : guestSearchQuery)} className="space-y-6">
       {/* Guest search */}
       <div className="grid grid-cols-2 gap-4 items-end">
         <div>

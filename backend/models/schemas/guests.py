@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class GuestCreate(BaseModel):
     name: str
     email: str = ""
-    phone: str
+    phone: str = ""
     id_number: str = ""
     nationality: str | None = None
     address: str | None = None
