@@ -283,11 +283,7 @@ const StaffManagement = () => {
     if (!q) return rows;
     return rows.filter(s => (s.name || '').toLowerCase().includes(q) || (s.email || '').toLowerCase().includes(q) || (s.department || '').toLowerCase().includes(q) || (s.position || '').toLowerCase().includes(q));
   }, [staff, search, filterPosition]);
-  // itemData for react-window SmStaffRow (navigate/handlers are stable across renders)
-  const staffRowData = useMemo(() => ({
-    filtered, equipmentByStaff, warningsByStaff, trainingsByStaff,
-    navigate, openEdit, offboardStaff, t,
-  }), [filtered, equipmentByStaff, warningsByStaff, trainingsByStaff, navigate, openEdit, offboardStaff, t]);
+
   const activeFilterCount = (filterDept ? 1 : 0) + (filterPosition ? 1 : 0) + (filterEmpType ? 1 : 0) + (filterHireFrom ? 1 : 0) + (filterHireTo ? 1 : 0);
   const resetFilters = () => {
     setFilterDept('');
@@ -492,6 +488,12 @@ const StaffManagement = () => {
       <Button variant="outline" size="sm" onClick={openCreate} data-testid="btn-add-staff">
         <UserPlus className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.yeni_personel_girissiz")}</Button>
     </>;
+  // itemData for react-window SmStaffRow (navigate/handlers are stable across renders)
+  const staffRowData = useMemo(() => ({
+    filtered, equipmentByStaff, warningsByStaff, trainingsByStaff,
+    navigate, openEdit, offboardStaff, t,
+  }), [filtered, equipmentByStaff, warningsByStaff, trainingsByStaff, navigate, openEdit, offboardStaff, t]);
+
   return <div className="p-2">
       <PageHeader icon={Users} title={t("cm.pages_StaffManagement.personel_y\xF6netimi")} subtitle="Çalışanlar, departmanlar, pozisyonlar — tek noktadan yönet" actions={headerActions} />
 
