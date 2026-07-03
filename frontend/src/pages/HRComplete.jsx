@@ -93,6 +93,13 @@ const HRComplete = () => {
   const staffPage = useHRPagination('/hr/staff', {}, { enabled: activeTab === 'leave' || activeTab === 'performance' || activeTab === 'attendance' || activeTab === 'payroll' });
   const leavePage = useHRPagination('/hr/leave-requests', {}, { enabled: activeTab === 'leave' });
   const performancePage = useHRPagination('/hr/performance', {}, { enabled: activeTab === 'performance' });
+  const perfMetrics = useMemo(() => {
+    if (!performancePage?.items) return { high_performers: 0, low_performers: 0 };
+    return {
+      high_performers: performancePage.items.filter(i => parseFloat(i.overall_score) >= 8.0).length,
+      low_performers: performancePage.items.filter(i => parseFloat(i.overall_score) < 5.0).length,
+    };
+  }, [performancePage.items]);
 
   // Leave Dropdown & Form
   const [leaveCounts, setLeaveCounts] = useState({ pending: 0, approved: 0, rejected: 0 });
