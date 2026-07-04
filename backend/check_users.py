@@ -2,6 +2,7 @@ import asyncio
 
 from pymongo import MongoClient
 
+
 async def main():
     client = MongoClient("mongodb://localhost:27017")
     db = client["syroce_platform"]
