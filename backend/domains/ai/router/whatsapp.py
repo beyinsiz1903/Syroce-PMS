@@ -48,12 +48,13 @@ async def whatsapp_oauth_exchange(
     current_user: User = Depends(get_current_user)
 ):
     import os
-    import httpx
     import secrets
-    
+
+    import httpx
+
     app_id = os.getenv("FACEBOOK_APP_ID")
     app_secret = os.getenv("FACEBOOK_APP_SECRET")
-    
+
     if not app_id or not app_secret:
         # Dev/Mock fallback
         mock_verify = "mock_verify_token_" + secrets.token_hex(8)
@@ -66,7 +67,7 @@ async def whatsapp_oauth_exchange(
                 {"id": mock_phone, "display_phone_number": "+90 555 123 4567", "verified_name": "Mock Hotel"}
             ]
         }
-        
+
     async with httpx.AsyncClient() as client:
         response = await client.get(
             "https://graph.facebook.com/v19.0/oauth/access_token",
@@ -80,11 +81,11 @@ async def whatsapp_oauth_exchange(
         if response.status_code != 200:
             logger.error(f"Failed to exchange FB token: {response.text}")
             raise HTTPException(status_code=400, detail="Failed to authenticate with Facebook")
-            
+
         data = response.json()
         long_lived_token = data.get("access_token")
         verify_token = "syroce_wh_" + secrets.token_urlsafe(16)
-        
+
         # Now query for phone numbers:
         phone_numbers = []
         try:
@@ -95,7 +96,7 @@ async def whatsapp_oauth_exchange(
             )
             biz_data = biz_res.json()
             businesses = biz_data.get("data", [])
-            
+
             for biz in businesses:
                 biz_id = biz["id"]
                 # 2. Get WABAs for business
@@ -105,7 +106,7 @@ async def whatsapp_oauth_exchange(
                 )
                 waba_data = waba_res.json()
                 wabas = waba_data.get("data", [])
-                
+
                 for waba in wabas:
                     waba_id = waba["id"]
                     # 3. Get Phone Numbers for WABA
