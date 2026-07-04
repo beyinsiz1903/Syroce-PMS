@@ -209,9 +209,6 @@ async def ai_chat(
 
         ai_svc = get_ai_service()
 
-        if not ai_svc.llm_enabled:
-            raise RuntimeError("LLM backend not available")
-
         # Gather hotel context
         tenant = await db.tenants.find_one({"id": current_user.tenant_id})
         hotel_name = tenant.get("property_name", "Otel") if tenant else "Otel"
@@ -618,6 +615,11 @@ async def ai_chat(
         return {"response": response_text}
     except Exception as exc:
         logger.info(f"AI chat error: {exc}")
+        
+        # Fallback to raw data context if we gathered it before the error (e.g. LLM disabled)
+        if 'data_context' in locals() and data_context:
+            return {"response": f"⚠️ **AI Servisi Kapalı / API Hatası:** Sadece ham veritabanı sonuçları listeleniyor.\n{data_context}"}
+
         # Fallback to keyword-based responses with accurate app navigation info
         msg_lower = user_message.lower()
         if any(w in msg_lower for w in ["merhaba", "selam", "hey"]):
