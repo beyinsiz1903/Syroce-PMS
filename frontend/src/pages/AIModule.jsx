@@ -142,7 +142,7 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
       id: 'ai-knowledge-base',
       title: 'AI Bilgi Bankası',
       icon: BookOpen,
-      color: 'from-indigo-500 to-purple-500',
+      color: 'from-indigo-500 to-indigo-600',
       iconColor: 'text-indigo-600'
     }
   ];

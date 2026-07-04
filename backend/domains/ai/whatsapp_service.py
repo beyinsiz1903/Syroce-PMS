@@ -3,9 +3,10 @@ WhatsApp Business AI Concierge Service
 Handles Meta Webhook validation, parsing incoming messages, and generating AI responses.
 """
 import logging
-import httpx
 from datetime import UTC, datetime
 from typing import Any
+
+import httpx
 
 from core.database import db
 from domains.ai.service import get_ai_service
@@ -49,7 +50,7 @@ class WhatsAppConciergeService:
             message = messages[0]
             phone = message.get("from")
             text_body = message.get("text", {}).get("body", "")
-            
+
             guest_name = "Guest"
             if contacts:
                 guest_name = contacts[0].get("profile", {}).get("name", "Guest")
@@ -82,7 +83,7 @@ class WhatsAppConciergeService:
                 # Send reply via WhatsApp API
                 await self._send_whatsapp_message(tenant_id, phone, ai_reply)
                 return {"status": "success", "reply": ai_reply}
-            
+
             return {"status": "failed", "reason": "No AI reply generated"}
 
         except Exception as e:
@@ -104,12 +105,12 @@ class WhatsAppConciergeService:
                 if doc.get("ai_response"):
                     chat_history.append({"role": "assistant", "content": doc["ai_response"]})
 
-            system_message = f"""You are a professional, polite, and helpful AI concierge for a hotel. 
+            system_message = f"""You are a professional, polite, and helpful AI concierge for a hotel.
 You are chatting with a guest named {guest_name} on WhatsApp.
 Provide concise, friendly answers. If you don't know the answer, politely inform them that you'll forward the request to the human reception."""
-            
+
             chat = self.ai_service._create_chat(system_message=system_message, session_id=f"wa_{phone}")
-            
+
             response = await chat.send_message(message, history=chat_history)
             return response
         except Exception:

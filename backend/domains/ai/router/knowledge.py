@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from core.security import get_current_user
-from models.schemas import User
-from domains.ai.knowledge_base import get_knowledge_base
 import logging
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+
+from core.security import get_current_user
+from domains.ai.knowledge_base import get_knowledge_base
+from models.schemas import User
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +33,10 @@ async def upload_document(
         kb = get_knowledge_base()
         if not kb.enabled:
             raise HTTPException(status_code=503, detail="Knowledge Base (ChromaDB) is not enabled.")
-            
+
         content = ""
         doc_type = "unknown"
-        
+
         if file.filename.endswith(".pdf"):
             import pypdf
             pdf = pypdf.PdfReader(file.file)
@@ -48,13 +50,13 @@ async def upload_document(
             doc_type = "text"
         else:
             raise HTTPException(status_code=400, detail="Only PDF and Text files are supported.")
-            
+
         if not content.strip():
             raise HTTPException(status_code=400, detail="File is empty or text could not be extracted.")
-            
+
         chunks_added = await kb.add_document(content=content, source_name=file.filename, doc_type=doc_type)
         return {"message": "Document processed successfully", "chunks_added": chunks_added, "source": file.filename}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -68,7 +70,7 @@ async def delete_document(source_name: str, current_user: User = Depends(get_cur
         kb = get_knowledge_base()
         if not kb.enabled:
             raise HTTPException(status_code=503, detail="Knowledge Base (ChromaDB) is not enabled.")
-            
+
         success = await kb.delete_document(source_name)
         if success:
             return {"message": f"Document {source_name} deleted successfully"}
