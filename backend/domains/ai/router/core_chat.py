@@ -486,6 +486,51 @@ async def ai_chat(
                     lines.append(f"- {name} | {g.get('loyalty_tier', '-')} | {g.get('total_stays', 0)} konaklama | {g.get('total_spend', 0):.0f} TL")
                 data_context = f"\n\n## MİSAFİR LİSTESİ ({len(all_guests)} toplam):\n" + "\n".join(lines)
 
+        # ── HOUSEKEEPING / MAINTENANCE INTENT ──
+        elif any(w in msg_lower for w in ["oda", "temiz", "kirli", "arıza", "bozuk", "bakım", "klima"]):
+            # Get rooms status
+            rooms_list = []
+            for r in rooms:
+                rooms_list.append(f"- Oda {r.get('room_number', '?')} | Tip: {r.get('type', '?')} | Durum: {r.get('status', '?')} | Temizlik: {r.get('housekeeping_status', '?')}")
+            
+            # Get maintenance tasks
+            tasks = await db.maintenance_tasks.find({"tenant_id": current_user.tenant_id}).to_list(20)
+            tasks_list = []
+            for t in tasks:
+                tasks_list.append(f"- Oda {t.get('room_number', '?')}: {t.get('title', '?')} | Durum: {t.get('status', '?')} | Aciliyet: {t.get('severity', '?')}")
+            
+            data_context = (
+                "\n\n## ODALAR VE TEMİZLİK DURUMU:\n" + ("\n".join(rooms_list) if rooms_list else "Oda bulunamadı.") +
+                "\n\n## ARIZA VE BAKIM KAYITLARI:\n" + ("\n".join(tasks_list) if tasks_list else "Aktif arıza kaydı yok.")
+            )
+
+        # ── STAFF / HR INTENT ──
+        elif any(w in msg_lower for w in ["personel", "kim", "çalışan", "nöbet", "vardiya", "resepsiyon"]):
+            users = await db.users.find({"tenant_id": current_user.tenant_id}).to_list(50)
+            staff_list = []
+            for u in users:
+                staff_list.append(f"- {u.get('full_name', u.get('email', '?'))} | Rol: {u.get('role', '?')} | Departman: {u.get('department', '?')}")
+            
+            data_context = "\n\n## PERSONEL LİSTESİ:\n" + ("\n".join(staff_list) if staff_list else "Personel bulunamadı.")
+
+        # ── FINANCIAL INTENT ──
+        elif any(w in msg_lower for w in ["ciro", "gelir", "para", "finans", "toplam", "adr", "revpar"]):
+            invoices = await db.invoices.find({"tenant_id": current_user.tenant_id}).to_list(100)
+            total_revenue = sum(inv.get("total_amount", 0) for inv in invoices if inv.get("status") == "paid")
+            pending_revenue = sum(inv.get("total_amount", 0) for inv in invoices if inv.get("status") != "paid")
+            
+            # compute ADR
+            checked_in_bookings = [b for b in all_bookings if b.get("status") == "checked_in"]
+            total_daily_rate = sum(b.get("rate_per_night", 0) for b in checked_in_bookings)
+            adr = total_daily_rate / len(checked_in_bookings) if checked_in_bookings else 0
+            
+            data_context = (
+                f"\n\n## FİNANSAL ÖZET:\n"
+                f"- Toplam Ödenmiş Fatura Geliri: {total_revenue:,.2f} TL\n"
+                f"- Bekleyen Ödemeler: {pending_revenue:,.2f} TL\n"
+                f"- Güncel ADR (Ort. Günlük Fiyat): {adr:,.2f} TL\n"
+            )
+
         if not ai_svc.llm_enabled:
             raise HTTPException(status_code=503, detail="AI servisi şu anda kullanılamıyor")
 
@@ -552,7 +597,14 @@ async def ai_chat(
             "- 'Nerede?' türü sorularda, modülün tam konumunu ve nasıl erişileceğini açıkça belirt.\n"
             "- AI modülleri AI Hub (AI Modülleri) sayfası içindeki AI Modüller sekmesinde yer alır.\n"
             "- Gelişmiş Raporlar üst menüde ayrı bir buton olarak bulunur.\n"
-            "- Abonelik planına göre bazı modüller görünmeyebilir.\n"
+            "- Abonelik planına göre bazı modüller görünmeyebilir.\n\n"
+            "## OTEL SABİT POLİTİKALARI (KURALLAR):\n"
+            "- Kahvaltı Saatleri: Hafta içi 07:00-10:00, Hafta sonu 07:00-11:00 (Ana Restoran)\n"
+            "- Check-in saati: 14:00, Check-out saati: 12:00\n"
+            "- Evcil Hayvan Politikası: Sadece küçük ırk evcil hayvanlar (max 10kg) günlük 500 TL ek ücretle kabul edilir.\n"
+            "- İptal Politikası: Giriş tarihinden 48 saat öncesine kadar ücretsiz iptal edilebilir. Sonrası için ilk gece ücreti kesilir.\n"
+            "- Spa & Wellness: Spa kullanımı konaklayan misafirler için ücretsizdir, ancak masaj hizmetleri ekstra ücrete tabidir ve randevu gereklidir.\n"
+            "- Havuz Saatleri: Açık havuz 08:00-20:00, Kapalı havuz 07:00-22:00 arası hizmet vermektedir.\n"
         )
 
         # Append data context to the user message so LLM can use real data
