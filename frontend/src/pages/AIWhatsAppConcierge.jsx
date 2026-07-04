@@ -27,6 +27,25 @@ const AIWhatsAppConcierge = () => {
 
   useEffect(() => {
     loadConversations();
+    
+    // Load Facebook SDK
+    window.fbAsyncInit = function() {
+      window.FB.init({
+        appId            : import.meta.env.VITE_FACEBOOK_APP_ID || '1234567890',
+        autoLogAppEvents : true,
+        xfbml            : true,
+        version          : 'v19.0'
+      });
+    };
+
+    if (!document.getElementById('facebook-jssdk')) {
+      const script = document.createElement('script');
+      script.id = 'facebook-jssdk';
+      script.src = "https://connect.facebook.net/en_US/sdk.js";
+      script.async = true;
+      script.defer = true;
+      document.body.appendChild(script);
+    }
   }, []);
 
   const loadConversations = async () => {
@@ -58,6 +77,41 @@ const AIWhatsAppConcierge = () => {
       loadConfig();
     }
   }, [configOpen]);
+
+  const handleFacebookLogin = () => {
+    if (!window.FB) {
+      toast.error('Facebook SDK yüklenemedi. Reklam engelleyicinizi kapatmayı deneyin.');
+      return;
+    }
+    
+    window.FB.login((response) => {
+      if (response.authResponse) {
+        exchangeOAuthToken(response.authResponse.accessToken);
+      } else {
+        toast.error('Facebook bağlantısı iptal edildi veya başarısız oldu.');
+      }
+    }, {
+      scope: 'whatsapp_business_management,whatsapp_business_messaging',
+      return_scopes: true
+    });
+  };
+
+  const exchangeOAuthToken = async (accessToken) => {
+    setConfigLoading(true);
+    try {
+      const res = await api.post('/whatsapp/oauth', {
+        access_token: accessToken,
+        phone_number_id: config.phone_number_id || 'mock_phone_id'
+      });
+      toast.success(res.data.message || 'WhatsApp başarıyla bağlandı!');
+      setConfigOpen(false);
+      loadConfig();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Bağlantı sırasında hata oluştu');
+    } finally {
+      setConfigLoading(false);
+    }
+  };
 
   const saveConfig = async () => {
     setConfigLoading(true);
@@ -144,38 +198,68 @@ const AIWhatsAppConcierge = () => {
               <DialogHeader>
                 <DialogTitle>WhatsApp Entegrasyon Ayarları</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Phone Number ID</label>
-                  <Input 
-                    value={config.phone_number_id}
-                    onChange={(e) => setConfig({ ...config, phone_number_id: e.target.value })}
-                    placeholder="Örn: 1059384729384"
-                  />
+              <div className="space-y-6 py-4">
+                <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+                  <div className="w-16 h-16 bg-[#1877F2]/10 rounded-full flex items-center justify-center mb-4">
+                    <svg className="w-8 h-8 text-[#1877F2]" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.469h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.469h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Meta ile Hızlı Kurulum</h3>
+                  <p className="text-sm text-gray-500 text-center mb-6">
+                    Mevcut Facebook veya Instagram işletme hesabınızla giriş yaparak WhatsApp Business API'yi tek tıkla bağlayın.
+                  </p>
+                  <Button 
+                    onClick={handleFacebookLogin} 
+                    className="w-full bg-[#1877F2] hover:bg-[#166FE5] text-white h-12 text-base font-medium"
+                    disabled={configLoading}
+                  >
+                    {configLoading ? 'Bağlanıyor...' : 'Facebook ile Bağlan'}
+                  </Button>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Access Token</label>
-                  <Input 
-                    value={config.access_token}
-                    onChange={(e) => setConfig({ ...config, access_token: e.target.value })}
-                    placeholder="EAAL..."
-                    type="password"
-                  />
+
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-gray-200" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white px-2 text-gray-500">veya manuel kurulum (Geliştirici)</span>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Verify Token</label>
-                  <Input 
-                    value={config.verify_token}
-                    onChange={(e) => setConfig({ ...config, verify_token: e.target.value })}
-                    placeholder="Örn: my_custom_verify_token"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Webhook doğrulamasında kullanılacak kendi belirlediğiniz şifre.</p>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Phone Number ID</label>
+                    <Input 
+                      value={config.phone_number_id}
+                      onChange={(e) => setConfig({ ...config, phone_number_id: e.target.value })}
+                      placeholder="Örn: 1059384729384"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Access Token</label>
+                    <Input 
+                      value={config.access_token}
+                      onChange={(e) => setConfig({ ...config, access_token: e.target.value })}
+                      placeholder="EAAL..."
+                      type="password"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Verify Token</label>
+                    <Input 
+                      value={config.verify_token}
+                      onChange={(e) => setConfig({ ...config, verify_token: e.target.value })}
+                      placeholder="Örn: my_custom_verify_token"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Webhook doğrulamasında kullanılacak kendi belirlediğiniz şifre.</p>
+                  </div>
                 </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setConfigOpen(false)}>İptal</Button>
                 <Button onClick={saveConfig} disabled={configLoading}>
-                  {configLoading ? 'Kaydediliyor...' : 'Kaydet'}
+                  {configLoading ? 'Kaydediliyor...' : 'Manuel Ayarları Kaydet'}
                 </Button>
               </DialogFooter>
             </DialogContent>

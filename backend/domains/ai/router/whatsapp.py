@@ -38,6 +38,67 @@ async def save_whatsapp_config(
     )
     return {"message": "WhatsApp configuration saved successfully"}
 
+class WhatsAppOAuthRequest(BaseModel):
+    access_token: str
+    phone_number_id: str = None
+
+@router.post("/oauth")
+async def whatsapp_oauth_exchange(
+    payload: WhatsAppOAuthRequest,
+    current_user: User = Depends(get_current_user)
+):
+    import os
+    import httpx
+    import secrets
+    
+    app_id = os.getenv("FACEBOOK_APP_ID")
+    app_secret = os.getenv("FACEBOOK_APP_SECRET")
+    
+    if not app_id or not app_secret:
+        # Dev/Mock fallback
+        await db.tenants.update_one(
+            {"id": current_user.tenant_id},
+            {"$set": {
+                "whatsapp_config": {
+                    "access_token": payload.access_token,
+                    "phone_number_id": payload.phone_number_id or "mock_phone_id",
+                    "verify_token": "mock_verify_token_" + secrets.token_hex(8)
+                }
+            }}
+        )
+        return {"message": "Mock OAuth successful, missing FACEBOOK_APP_ID in env"}
+        
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            "https://graph.facebook.com/v19.0/oauth/access_token",
+            params={
+                "grant_type": "fb_exchange_token",
+                "client_id": app_id,
+                "client_secret": app_secret,
+                "fb_exchange_token": payload.access_token
+            }
+        )
+        if response.status_code != 200:
+            logger.error(f"Failed to exchange FB token: {response.text}")
+            raise HTTPException(status_code=400, detail="Failed to authenticate with Facebook")
+            
+        data = response.json()
+        long_lived_token = data.get("access_token")
+        verify_token = "syroce_wh_" + secrets.token_urlsafe(16)
+        
+        await db.tenants.update_one(
+            {"id": current_user.tenant_id},
+            {"$set": {
+                "whatsapp_config": {
+                    "access_token": long_lived_token,
+                    "phone_number_id": payload.phone_number_id or "pending",
+                    "verify_token": verify_token
+                }
+            }}
+        )
+        
+        return {"message": "WhatsApp Embedded Signup successful", "verify_token": verify_token}
+
 @router.get("/{tenant_id}/webhook")
 async def verify_webhook(
     tenant_id: str,
