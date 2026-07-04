@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Query, HTTPException, Request, Depends
-from fastapi.responses import PlainTextResponse
-from core.security import get_current_user
-from models.schemas import User
-from core.database import db
-from pydantic import BaseModel
-from domains.ai.whatsapp_service import get_whatsapp_concierge
 import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel
+
+from core.database import db
+from core.security import get_current_user
+from domains.ai.whatsapp_service import get_whatsapp_concierge
+from models.schemas import User
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +55,7 @@ async def verify_webhook(
     config = await concierge.get_tenant_config(tenant_id)
     if not config:
         raise HTTPException(status_code=404, detail="Tenant WhatsApp config not found")
-        
+
     expected_token = config.get("verify_token")
     if not expected_token:
         raise HTTPException(status_code=500, detail="WhatsApp verify token not configured for tenant")
@@ -61,7 +63,7 @@ async def verify_webhook(
     challenge = concierge.verify_webhook(hub_verify_token, hub_challenge, expected_token)
     if challenge:
         return PlainTextResponse(content=challenge)
-        
+
     raise HTTPException(status_code=403, detail="Invalid verify token")
 
 
@@ -71,6 +73,6 @@ async def receive_message(tenant_id: str, payload: dict, request: Request):
     Receive incoming messages from Meta WhatsApp webhook.
     """
     concierge = get_whatsapp_concierge()
-    
+
     result = await concierge.process_incoming_message(tenant_id, payload)
     return result

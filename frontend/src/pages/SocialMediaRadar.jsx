@@ -553,7 +553,7 @@ const SocialMediaRadar = () => {
                     <Unlink className="w-4 h-4 mr-2" /> Bağlantıyı Kes
                   </Button>
                 ) : (
-                  <Button className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white" onClick={() => handleConnect('instagram')} disabled={connectingProvider}>
+                  <Button className="bg-gradient-to-r from-indigo-500 to-pink-500 hover:from-indigo-600 hover:to-pink-600 text-white" onClick={() => handleConnect('instagram')} disabled={connectingProvider}>
                     {connectingProvider === 'instagram' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4 mr-2" />} Bağlan
                   </Button>
                 )}
@@ -627,7 +627,7 @@ const SocialMediaRadar = () => {
       </div>
 
       {!anyConnected && activeTab !== 'settings' ? (
-        <Card className="shadow-sm border-indigo-100 overflow-hidden bg-gradient-to-br from-indigo-50/50 to-purple-50/30 mt-8">
+        <Card className="shadow-sm border-indigo-100 overflow-hidden bg-gradient-to-br from-indigo-50/50 to-indigo-50/30 mt-8">
           <CardContent className="flex flex-col items-center justify-center text-center p-16 space-y-4">
             <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mb-2 shadow-sm">
               <Shield className="w-10 h-10 text-indigo-600" />

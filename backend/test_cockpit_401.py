@@ -1,8 +1,11 @@
 import asyncio
+
 import httpx
-from server import app
-from core.security import create_token
+
 from core.database import _raw_db
+from core.security import create_token
+from server import app
+
 
 async def run_test():
     # Find a user directly via motor
@@ -10,10 +13,10 @@ async def run_test():
     if not user:
         print("No users found in db.")
         return
-    
+
     print(f"Testing with user: {user.get('email')}, tenant_id: {user.get('tenant_id')}")
     token = create_token(user["id"], user.get("tenant_id"))
-    
+
     async with httpx.AsyncClient(app=app, base_url="http://test") as client:
         response = await client.get(
             "/api/lockdown/runtime/cockpit",

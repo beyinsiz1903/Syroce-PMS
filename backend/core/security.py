@@ -19,7 +19,6 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from core._pwd import BcryptContext
-from core.database import db
 from models.enums import UserRole
 
 # ---------------------------------------------------------------------------

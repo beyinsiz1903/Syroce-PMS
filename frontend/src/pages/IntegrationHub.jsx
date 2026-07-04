@@ -533,7 +533,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                   </p>
                   <Button 
                     className={`w-full text-white shadow-sm transition-all ${
-                      newConnector.provider === 'instagram' ? 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600' :
+                      newConnector.provider === 'instagram' ? 'bg-gradient-to-r from-indigo-500 to-pink-500 hover:from-indigo-600 hover:to-pink-600' :
                       newConnector.provider === 'facebook' ? 'bg-blue-600 hover:bg-blue-700' :
                       'bg-slate-900 hover:bg-black'
                     }`}

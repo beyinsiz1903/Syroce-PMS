@@ -1085,3 +1085,16 @@ code {
 .dark .border-indigo-100\/50 { border-color: rgb(49 46 129 / 0.5); }
 .dark .text-amber-900\/80 { color: rgb(254 243 199 / 0.8); }
 .dark .text-blue-800\/80 { color: rgb(191 219 254 / 0.8); }
+
+/* Additive dark theme coverage from theme-guard */
+.dark .data-\[state\=active\]\:text-slate-900[data-state=active] { color: #f8fafc; }
+.dark .hover\:border-slate-200:hover { border-color: #334155; }
+.dark .text-amber-600\/80 { color: rgba(253, 186, 116, 0.8); }
+.dark .text-red-600\/80 { color: rgba(252, 165, 165, 0.8); }
+.dark .text-emerald-600\/50 { color: rgba(110, 231, 183, 0.5); }
+.dark .bg-indigo-50\/80 { background-color: rgba(30, 27, 75, 0.8); }
+.dark .hover\:border-pink-200:hover { border-color: #9d174d; }
+.dark .from-indigo-50\/50 { --tw-gradient-from: rgba(30, 27, 75, 0.5) var(--tw-gradient-from-position); }
+.dark .to-indigo-50\/30 { --tw-gradient-to: rgba(30, 27, 75, 0.3) var(--tw-gradient-to-position); }
+.dark .border-indigo-200\/50 { border-color: rgba(49, 46, 129, 0.5); }
+.dark .bg-slate-100\/60 { background-color: rgba(15, 23, 42, 0.6); }
