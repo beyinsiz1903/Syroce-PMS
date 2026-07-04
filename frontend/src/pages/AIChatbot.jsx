@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +13,15 @@ const AIChatbot = () => {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, loading]);
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -28,7 +37,9 @@ const AIChatbot = () => {
       const botMessage = { sender: 'bot', message: response.data.response, timestamp: new Date() };
       setMessages(prev => [...prev, botMessage]);
     } catch (error) {
-      console.error('Chat hatası');
+      console.error('Chat hatası', error);
+      const errorMessage = { sender: 'bot', message: 'Üzgünüm, sunucuyla bağlantı kurulamadı veya AI servisi kapalı. Lütfen API ayarlarınızı kontrol edin.', timestamp: new Date(), isError: true };
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
       setLoading(false);
     }
@@ -71,12 +82,28 @@ const AIChatbot = () => {
             ) : (
               messages.map((msg, idx) => (
                 <div key={idx} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[70%] p-3 rounded-lg ${msg.sender === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>
+                  <div className={`max-w-[80%] p-3 rounded-xl whitespace-pre-wrap ${
+                    msg.sender === 'user' 
+                      ? 'bg-blue-600 text-white rounded-br-none shadow-sm' 
+                      : msg.isError 
+                        ? 'bg-red-50 text-red-600 border border-red-200 rounded-bl-none'
+                        : 'bg-slate-100 text-slate-800 rounded-bl-none shadow-sm'
+                  }`}>
                     {msg.message}
                   </div>
                 </div>
               ))
             )}
+            {loading && (
+              <div className="flex justify-start">
+                <div className="max-w-[70%] p-3 rounded-xl bg-slate-100 text-slate-500 rounded-bl-none shadow-sm flex items-center gap-1.5">
+                  <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                  <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                  <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
           </div>
           
           <form onSubmit={handleSendMessage} className="flex gap-2">
