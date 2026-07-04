@@ -228,6 +228,19 @@ function GuestThread({ tenantId, roomId, token, t, lang, rtl, accent, alwaysShow
   );
 }
 
+const DEPT_LABELS = {
+  tr: { rooms: "Kat Hizmetleri", technical: "Teknik Servis", fnb: "Restoran / Oda Servisi", laundry: "Çamaşırhane", transportation: "Ulaşım", spa: "SPA", other: "Resepsiyon / Diğer", minibar: "Minibar" },
+  en: { rooms: "Housekeeping", technical: "Maintenance", fnb: "Dining & Room Service", laundry: "Laundry", transportation: "Transportation", spa: "SPA", other: "Reception / Other", minibar: "Minibar" },
+  de: { rooms: "Zimmerreinigung", technical: "Wartung", fnb: "Restaurant", laundry: "Wäscherei", transportation: "Transport", spa: "SPA", other: "Rezeption / Andere", minibar: "Minibar" },
+  ru: { rooms: "Уборка", technical: "Ремонт", fnb: "Ресторан", laundry: "Прачечная", transportation: "Транспорт", spa: "СПА", other: "Ресепшн / Другое", minibar: "Минибар" },
+  ar: { rooms: "خدمة الغرف", technical: "صيانة", fnb: "مطعم", laundry: "غسيل", transportation: "نقل", spa: "سبا", other: "استقبال / أخرى", minibar: "ميني بار" },
+};
+
+const DEPT_ICONS = {
+  rooms: Sparkles, technical: Wrench, fnb: Utensils, laundry: Shirt,
+  transportation: Car, spa: Heart, other: Bell, minibar: Beer
+};
+
 export default function RoomRequestPage() {
   const { tenantId, roomId } = useParams();
   const [params] = useSearchParams();
@@ -243,6 +256,7 @@ export default function RoomRequestPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [meta, setMeta] = useState(null);
+  const [selectedDept, setSelectedDept] = useState(null);
   const [category, setCategory] = useState(null);
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("normal");
@@ -267,11 +281,15 @@ export default function RoomRequestPage() {
   }, [tenantId, roomId]);
 
   const submit = async () => {
-    if (!category || !description.trim()) return;
+    if (!category || submitting) return;
     setSubmitting(true);
     try {
+      const selectedCat = meta.categories.find(c => c.id === category);
+      const catLabel = selectedCat?.labels[lang] || selectedCat?.labels.en || category;
+      const finalDesc = description.trim() || catLabel;
+
       await axios.post(`/public/room-qr/${tenantId}/${roomId}/submit`, {
-        category, description, priority, language: lang,
+        category, description: finalDesc, priority, language: lang,
         guest_name: name.trim() || undefined,
         guest_phone: phone.trim() || undefined,
       }, { params: { t: token } });
@@ -284,11 +302,11 @@ export default function RoomRequestPage() {
   };
 
   const resetForNew = () => {
-    setDone(false); setCategory(null); setDescription(""); setPriority("normal");
+    setDone(false); setSelectedDept(null); setCategory(null); setDescription(""); setPriority("normal");
   };
 
   const goHome = () => {
-    setDone(false); setCategory(null); setDescription(""); setPriority("normal");
+    setDone(false); setSelectedDept(null); setCategory(null); setDescription(""); setPriority("normal");
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -315,6 +333,7 @@ export default function RoomRequestPage() {
   }
 
   const accent = meta?.primary_color || "#0ea5e9";
+  const departments = [...new Set(meta.categories.map(c => c.department))];
 
   return (
     <div dir={rtl ? "rtl" : "ltr"} className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-200 dark:bg-none dark:bg-background pb-24">
@@ -366,26 +385,54 @@ export default function RoomRequestPage() {
               </div>
             </CardContent>
           </Card>
-        ) : !category ? (
+        ) : !selectedDept ? (
           <Card className="shadow-xl">
             <CardHeader>
               <CardTitle>{t.pick}</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-3">
-              {meta.categories.map((c) => {
+            <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {departments.map((dept) => {
+                const Icon = DEPT_ICONS[dept] || MessageSquare;
+                const deptLabels = DEPT_LABELS[lang] || DEPT_LABELS.tr;
+                const label = deptLabels[dept] || dept;
+                return (
+                  <button
+                    key={dept}
+                    onClick={() => setSelectedDept(dept)}
+                    className="flex flex-col items-center gap-3 p-4 rounded-xl border-2 border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition-all active:scale-95"
+                  >
+                    <div className="w-14 h-14 rounded-full flex items-center justify-center"
+                         style={{ background: `${accent}15`, color: accent }}>
+                      <Icon className="w-7 h-7" />
+                    </div>
+                    <span className="text-sm font-semibold text-center text-slate-800">{label}</span>
+                  </button>
+                );
+              })}
+            </CardContent>
+          </Card>
+        ) : !category ? (
+          <Card className="shadow-xl">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 border-b">
+              <CardTitle className="text-lg">
+                {(DEPT_LABELS[lang] || DEPT_LABELS.tr)[selectedDept] || selectedDept}
+              </CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedDept(null)}>{t.back}</Button>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-3 pt-4">
+              {meta.categories.filter(c => c.department === selectedDept).map((c) => {
                 const Icon = ICONS[c.icon] || MessageSquare;
                 const label = c.labels[lang] || c.labels.en || c.id;
                 return (
                   <button
                     key={c.id}
                     onClick={() => { setCategory(c.id); setPriority(c.default_priority || "normal"); }}
-                    className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition-all active:scale-95"
+                    className="flex flex-col items-center gap-2 p-3 rounded-xl border-2 border-slate-100 hover:border-slate-300 hover:bg-slate-50 transition-all active:scale-95"
                   >
-                    <div className="w-12 h-12 rounded-full flex items-center justify-center"
-                         style={{ background: `${accent}15`, color: accent }}>
-                      <Icon className="w-6 h-6" />
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-600">
+                      <Icon className="w-5 h-5" />
                     </div>
-                    <span className="text-sm font-medium text-center">{label}</span>
+                    <span className="text-sm font-medium text-center text-slate-700">{label}</span>
                   </button>
                 );
               })}
@@ -401,10 +448,10 @@ export default function RoomRequestPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label>{t.describe}</Label>
+                <Label>{t.describe} <span className="text-xs text-gray-400 font-normal">(Opsiyonel)</span></Label>
                 <Textarea
                   value={description} onChange={(e) => setDescription(e.target.value)}
-                  placeholder={t.placeholder} rows={4} className="mt-1"
+                  placeholder={t.placeholder} rows={3} className="mt-1"
                 />
               </div>
               <div>
@@ -431,7 +478,7 @@ export default function RoomRequestPage() {
               </div>
               <Button
                 onClick={submit}
-                disabled={!description.trim() || submitting}
+                disabled={submitting}
                 className="w-full text-white"
                 style={{ background: accent }}
               >

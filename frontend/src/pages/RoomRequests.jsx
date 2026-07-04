@@ -103,6 +103,32 @@ function RequestCard({
       </div>
     </button>;
 }
+const QUICK_REPLIES = {
+  technical: [
+    { label: "Teknik servis ilgileniyor", status: "in_progress" },
+    { label: "Onarıldı", status: "completed" },
+    { label: "Parça bekleniyor", status: "in_progress" }
+  ],
+  rooms: [
+    { label: "Kat görevlisi yönlendirildi", status: "in_progress" },
+    { label: "Temizlik tamamlandı", status: "completed" },
+    { label: "Eksikler odaya bırakıldı", status: "completed" }
+  ],
+  fnb: [
+    { label: "Siparişiniz hazırlanıyor", status: "in_progress" },
+    { label: "Odaya gönderildi", status: "completed" }
+  ],
+  laundry: [
+    { label: "Çamaşırlarınız alındı", status: "in_progress" },
+    { label: "Teslim edildi", status: "completed" }
+  ],
+  general: [
+    { label: "İlgili personel yönlendirildi", status: "in_progress" },
+    { label: "Talebiniz çözüldü", status: "completed" },
+    { label: "İletildi / Bilgi verildi", status: "completed" }
+  ]
+};
+
 export default function RoomRequests({
   user,
   tenant,
@@ -289,8 +315,21 @@ export default function RoomRequests({
                   </div>
                 </div>
 
-                <div>
-                  <Textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Not ekle (opsiyonel)..." rows={2} />
+                <div className="space-y-2 border-t pt-4 mt-4">
+                  <div className="text-xs font-semibold text-slate-600">Misafire Yanıt İlet & Durum Güncelle</div>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {(QUICK_REPLIES[selected.department] || QUICK_REPLIES.general).map(r => (
+                      <Badge
+                        key={r.label}
+                        variant="secondary"
+                        className="cursor-pointer hover:bg-blue-100 hover:text-blue-700 bg-slate-100 text-slate-700 border border-slate-200"
+                        onClick={() => updateStatus(selected.id, { status: r.status }, r.label)}
+                      >
+                        {r.label} ({r.status === 'completed' ? 'Tamamla' : 'İşleme Al'})
+                      </Badge>
+                    ))}
+                  </div>
+                  <Textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Veya özel bir not yazın (misafire iletilir)..." rows={2} />
                 </div>
 
                 <div className="flex flex-wrap gap-2">

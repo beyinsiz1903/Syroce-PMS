@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Home, MessageCircle, Send, Bot, CheckCircle, Clock, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const AIWhatsAppConcierge = () => {
   const { t } = useTranslation();
@@ -19,6 +20,8 @@ const AIWhatsAppConcierge = () => {
   const [loading, setLoading] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
+  const [phoneSelectionData, setPhoneSelectionData] = useState(null);
+  const [selectedPhoneId, setSelectedPhoneId] = useState('');
   const [config, setConfig] = useState({
     phone_number_id: '',
     access_token: '',
@@ -101,13 +104,43 @@ const AIWhatsAppConcierge = () => {
     try {
       const res = await api.post('/whatsapp/oauth', {
         access_token: accessToken,
-        phone_number_id: config.phone_number_id || 'mock_phone_id'
+        phone_number_id: config.phone_number_id || 'pending'
       });
-      toast.success(res.data.message || 'WhatsApp başarıyla bağlandı!');
-      setConfigOpen(false);
-      loadConfig();
+      
+      const { access_token, verify_token, phone_numbers } = res.data;
+      
+      if (!phone_numbers || phone_numbers.length === 0) {
+        toast.error('WhatsApp numarası bulunamadı. Lütfen Meta işletme hesabınızı kontrol edin.');
+        return;
+      }
+      
+      if (phone_numbers.length === 1) {
+        finalizeConfig(access_token, verify_token, phone_numbers[0].id);
+      } else {
+        setPhoneSelectionData({ access_token, verify_token, numbers: phone_numbers });
+        setSelectedPhoneId(phone_numbers[0].id);
+      }
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Bağlantı sırasında hata oluştu');
+    } finally {
+      setConfigLoading(false);
+    }
+  };
+
+  const finalizeConfig = async (accessToken, verifyToken, phoneId) => {
+    setConfigLoading(true);
+    try {
+      await api.post('/whatsapp/config', {
+        access_token: accessToken,
+        verify_token: verifyToken,
+        phone_number_id: phoneId
+      });
+      toast.success('WhatsApp başarıyla bağlandı!');
+      setConfigOpen(false);
+      setPhoneSelectionData(null);
+      loadConfig();
+    } catch (error) {
+      toast.error('Ayarlar kaydedilirken hata oluştu');
     } finally {
       setConfigLoading(false);
     }
@@ -198,70 +231,110 @@ const AIWhatsAppConcierge = () => {
               <DialogHeader>
                 <DialogTitle>WhatsApp Entegrasyon Ayarları</DialogTitle>
               </DialogHeader>
-              <div className="space-y-6 py-4">
-                <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
-                  <div className="w-16 h-16 bg-[#1877F2]/10 rounded-full flex items-center justify-center mb-4">
-                    <svg className="w-8 h-8 text-[#1877F2]" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.469h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.469h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                    </svg>
+              {phoneSelectionData ? (
+                <div className="space-y-6 py-4">
+                  <div className="flex flex-col items-center text-center mb-4">
+                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-4">
+                      <CheckCircle className="w-6 h-6 text-green-600" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">Hesaplar Bulundu</h3>
+                    <p className="text-sm text-gray-500">Facebook hesabınıza bağlı birden fazla WhatsApp numarası bulundu. Lütfen kullanmak istediğinizi seçin.</p>
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Meta ile Hızlı Kurulum</h3>
-                  <p className="text-sm text-gray-500 text-center mb-6">
-                    Mevcut Facebook veya Instagram işletme hesabınızla giriş yaparak WhatsApp Business API'yi tek tıkla bağlayın.
-                  </p>
-                  <Button 
-                    onClick={handleFacebookLogin} 
-                    className="w-full bg-[#1877F2] hover:bg-[#166FE5] text-white h-12 text-base font-medium"
-                    disabled={configLoading}
-                  >
-                    {configLoading ? 'Bağlanıyor...' : 'Facebook ile Bağlan'}
-                  </Button>
+                  
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">WhatsApp Numarası Seçin</label>
+                    <Select value={selectedPhoneId} onValueChange={setSelectedPhoneId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Bir numara seçin" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {phoneSelectionData.numbers.map((pn) => (
+                          <SelectItem key={pn.id} value={pn.id}>
+                            {pn.verified_name ? `${pn.verified_name} (${pn.display_phone_number})` : pn.display_phone_number}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <DialogFooter className="mt-6">
+                    <Button variant="outline" onClick={() => setPhoneSelectionData(null)}>Geri Dön</Button>
+                    <Button 
+                      onClick={() => finalizeConfig(phoneSelectionData.access_token, phoneSelectionData.verify_token, selectedPhoneId)} 
+                      disabled={configLoading}
+                    >
+                      {configLoading ? 'Kaydediliyor...' : 'Seçimi Tamamla'}
+                    </Button>
+                  </DialogFooter>
                 </div>
+              ) : (
+                <>
+                  <div className="space-y-6 py-4">
+                    <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+                      <div className="w-16 h-16 bg-[#1877F2]/10 rounded-full flex items-center justify-center mb-4">
+                        <svg className="w-8 h-8 text-[#1877F2]" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.469h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.469h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                        </svg>
+                      </div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Meta ile Hızlı Kurulum</h3>
+                      <p className="text-sm text-gray-500 text-center mb-6">
+                        Mevcut Facebook veya Instagram işletme hesabınızla giriş yaparak WhatsApp Business API'yi tek tıkla bağlayın.
+                      </p>
+                      <Button 
+                        onClick={handleFacebookLogin} 
+                        className="w-full bg-[#1877F2] hover:bg-[#166FE5] text-white h-12 text-base font-medium"
+                        disabled={configLoading}
+                      >
+                        {configLoading ? 'Bağlanıyor...' : 'Facebook ile Bağlan'}
+                      </Button>
+                    </div>
 
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t border-gray-200" />
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-white px-2 text-gray-500">veya manuel kurulum (Geliştirici)</span>
-                  </div>
-                </div>
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t border-gray-200" />
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-white px-2 text-gray-500">veya manuel kurulum (Geliştirici)</span>
+                      </div>
+                    </div>
 
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Phone Number ID</label>
-                    <Input 
-                      value={config.phone_number_id}
-                      onChange={(e) => setConfig({ ...config, phone_number_id: e.target.value })}
-                      placeholder="Örn: 1059384729384"
-                    />
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Phone Number ID</label>
+                        <Input 
+                          value={config.phone_number_id}
+                          onChange={(e) => setConfig({ ...config, phone_number_id: e.target.value })}
+                          placeholder="Örn: 1059384729384"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Access Token</label>
+                        <Input 
+                          value={config.access_token}
+                          onChange={(e) => setConfig({ ...config, access_token: e.target.value })}
+                          placeholder="EAAL..."
+                          type="password"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Verify Token</label>
+                        <Input 
+                          value={config.verify_token}
+                          onChange={(e) => setConfig({ ...config, verify_token: e.target.value })}
+                          placeholder="Örn: my_custom_verify_token"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Webhook doğrulamasında kullanılacak kendi belirlediğiniz şifre.</p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Access Token</label>
-                    <Input 
-                      value={config.access_token}
-                      onChange={(e) => setConfig({ ...config, access_token: e.target.value })}
-                      placeholder="EAAL..."
-                      type="password"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Verify Token</label>
-                    <Input 
-                      value={config.verify_token}
-                      onChange={(e) => setConfig({ ...config, verify_token: e.target.value })}
-                      placeholder="Örn: my_custom_verify_token"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Webhook doğrulamasında kullanılacak kendi belirlediğiniz şifre.</p>
-                  </div>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setConfigOpen(false)}>İptal</Button>
-                <Button onClick={saveConfig} disabled={configLoading}>
-                  {configLoading ? 'Kaydediliyor...' : 'Manuel Ayarları Kaydet'}
-                </Button>
-              </DialogFooter>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setConfigOpen(false)}>İptal</Button>
+                    <Button onClick={saveConfig} disabled={configLoading}>
+                      {configLoading ? 'Kaydediliyor...' : 'Manuel Ayarları Kaydet'}
+                    </Button>
+                  </DialogFooter>
+                </>
+              )}
             </DialogContent>
           </Dialog>
         </div>
