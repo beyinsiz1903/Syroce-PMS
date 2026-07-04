@@ -7,78 +7,71 @@ import AIRMSDashboard from '../components/AIRMSDashboard';
 import LoyaltyAutoTierManager from '../components/LoyaltyAutoTierManager';
 import FolioManagementPage from '../components/FolioManagementPage';
 import { useTranslation } from 'react-i18next';
+import { Sparkles, Calendar, Users, ClipboardCheck, Wrench, TrendingUp, Crown, CreditCard } from 'lucide-react';
 
 const AIEnhancedPMS = () => {
   const { t } = useTranslation();
   const [activeModule, setActiveModule] = useState('reservation');
 
   const modules = [
-    { id: 'reservation', name: t('aiEnhancedPms.reservationCalendar'), component: EnhancedReservationCalendar },
-    { id: 'frontdesk', name: t('aiEnhancedPms.frontDesk'), component: EnhancedFrontDesk },
-    { id: 'folio', name: t('aiEnhancedPms.folioRegistration'), component: FolioManagementPage },
-    { id: 'housekeeping', name: t('aiEnhancedPms.aiHousekeeping'), component: AIHousekeepingBoard },
-    { id: 'maintenance', name: t('aiEnhancedPms.predictiveMaintenance'), component: PredictiveMaintenanceDashboard },
-    { id: 'rms', name: t('aiEnhancedPms.aiRevenueManagement'), component: AIRMSDashboard },
-    { id: 'loyalty', name: t('aiEnhancedPms.aiLoyalty'), component: LoyaltyAutoTierManager }
+    { id: 'reservation', name: t('aiEnhancedPms.reservationCalendar'), component: EnhancedReservationCalendar, icon: Calendar },
+    { id: 'frontdesk', name: t('aiEnhancedPms.frontDesk'), component: EnhancedFrontDesk, icon: Users },
+    { id: 'folio', name: t('aiEnhancedPms.folioRegistration'), component: FolioManagementPage, icon: CreditCard },
+    { id: 'housekeeping', name: t('aiEnhancedPms.aiHousekeeping'), component: AIHousekeepingBoard, icon: ClipboardCheck },
+    { id: 'maintenance', name: t('aiEnhancedPms.predictiveMaintenance'), component: PredictiveMaintenanceDashboard, icon: Wrench },
+    { id: 'rms', name: t('aiEnhancedPms.aiRevenueManagement'), component: AIRMSDashboard, icon: TrendingUp },
+    { id: 'loyalty', name: t('aiEnhancedPms.aiLoyalty'), component: LoyaltyAutoTierManager, icon: Crown }
   ];
 
   const ActiveComponent = modules.find(m => m.id === activeModule)?.component || EnhancedReservationCalendar;
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white p-6 shadow-lg">
-        <h1 className="text-4xl font-bold mb-2">{t('aiEnhancedPms.title')}</h1>
-        <p className="text-lg opacity-90">{t('aiEnhancedPms.subtitle')}</p>
+    <div className="flex flex-col h-full bg-white">
+      {/* Header Area */}
+      <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-indigo-500" />
+            {t('aiEnhancedPms.title')}
+          </h2>
+          <p className="text-sm text-slate-500 mt-1">{t('aiEnhancedPms.subtitle')}</p>
+        </div>
+        <div className="flex items-center gap-4 text-xs font-medium text-slate-500">
+          <div className="flex items-center gap-1.5 bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-full border border-indigo-100">
+            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+            AI Aktif
+          </div>
+        </div>
       </div>
 
-      {/* Navigation */}
-      <div className="bg-white shadow-md p-4 overflow-x-auto">
-        <div className="flex gap-2 min-w-max">
-          {modules.map(module => (
-            <button
-              key={module.id}
-              data-testid={`ai-pms-tab-${module.id}`}
-              onClick={() => setActiveModule(module.id)}
-              className={`px-6 py-3 rounded-lg font-medium transition-all whitespace-nowrap ${
-                activeModule === module.id
-                  ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg scale-105'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {module.name}
-            </button>
-          ))}
+      {/* Navigation Tabs */}
+      <div className="px-8 pt-4 border-b border-slate-200">
+        <div className="flex gap-6 overflow-x-auto no-scrollbar">
+          {modules.map(module => {
+            const isActive = activeModule === module.id;
+            return (
+              <button
+                key={module.id}
+                data-testid={`ai-pms-tab-${module.id}`}
+                onClick={() => setActiveModule(module.id)}
+                className={`flex items-center gap-2 pb-3 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
+                  isActive
+                    ? 'border-indigo-600 text-indigo-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+                }`}
+              >
+                <module.icon className={`w-4 h-4 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`} />
+                {module.name}
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="container mx-auto p-6">
-        <div className="bg-white rounded-lg shadow-lg">
+      <div className="flex-1 overflow-y-auto p-8 bg-slate-50/30">
+        <div className="max-w-7xl mx-auto">
           <ActiveComponent />
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div className="bg-gray-800 text-white p-6 mt-8">
-        <div className="container mx-auto">
-          <div className="flex justify-between items-center">
-            <div>
-              <h3 className="font-bold text-lg mb-2">{t('aiEnhancedPms.aiFeaturesActive')}</h3>
-              <ul className="text-sm space-y-1 opacity-80">
-                <li>{t('aiEnhancedPms.aiPricingEngine')}</li>
-                <li>{t('aiEnhancedPms.guestPersona')}</li>
-                <li>{t('aiEnhancedPms.predMaintenance')}</li>
-                <li>{t('aiEnhancedPms.aiHousekeepingScheduler')}</li>
-                <li>{t('aiEnhancedPms.autoTierLoyalty')}</li>
-              </ul>
-            </div>
-            <div className="text-right">
-              <p className="text-2xl font-bold">{t('aiEnhancedPms.apiEndpoints')}</p>
-              <p className="text-sm opacity-80">{t('aiEnhancedPms.featureCategories')}</p>
-              <p className="text-sm opacity-80">{t('aiEnhancedPms.aiModules')}</p>
-            </div>
-          </div>
         </div>
       </div>
     </div>

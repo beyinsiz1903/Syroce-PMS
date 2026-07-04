@@ -28,7 +28,7 @@ export function hotelFeaturesAiRoutes({ p, pm }) {
     { path: "/kitchen-display", ...p(KitchenDisplay) },
 
     // ── AI Module-gated ────────────────────────────────
-    { path: "/ai-chatbot", ...pm(AIChatbot, "ai_chatbot"), wrapLayout: true, layoutModule: "ai" },
+    { path: "/ai-chatbot", type: "redirect", to: "/app/ai?module=ai-chatbot" },
     { path: "/dynamic-pricing", ...pm(DynamicPricing, "ai_pricing") },
     { path: "/ai-whatsapp-concierge", ...pm(AIWhatsAppConcierge, "ai_whatsapp") },
     { path: "/predictive-analytics", ...pm(PredictiveAnalytics, "ai_predictive") },

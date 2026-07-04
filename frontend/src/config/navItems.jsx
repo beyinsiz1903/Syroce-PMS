@@ -778,10 +778,10 @@ export const NAV_ITEMS = [
   {
     key: "ai_zeka",
     label: "AI & Zeka",
-    path: "/app/ai-zeka",
-    moduleKey: "ai",
+    path: "/app/ai",
     tier: "enterprise",
-    group: "enterprise",
+    group: "advanced",
+    moduleKey: "ai",
     navGroup: "advanced",
   },
   {

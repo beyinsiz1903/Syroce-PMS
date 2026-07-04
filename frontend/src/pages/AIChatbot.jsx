@@ -65,22 +65,6 @@ const AIChatbot = () => {
             <p className="text-gray-600">{t('aiChatbot.subtitle')}</p>
           </div>
         </div>
-        
-        {/* Hızlı Geçiş Alanları */}
-        <div className="flex flex-wrap gap-2 mt-6">
-          <Button variant="outline" onClick={() => navigate('/app/ai')} className="flex items-center gap-2 border-dashed border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700">
-            <Brain className="w-4 h-4" /> AI Hub (Genel Bakış)
-          </Button>
-          <Button variant="default" className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700">
-            <Bot className="w-4 h-4" /> AI Chatbot
-          </Button>
-          <Button variant="outline" onClick={() => navigate('/dynamic-pricing')} className="flex items-center gap-2 border-dashed border-amber-200 hover:bg-amber-50 hover:text-amber-700">
-            <DollarSign className="w-4 h-4" /> Dinamik Fiyatlandırma
-          </Button>
-          <Button variant="outline" onClick={() => navigate('/predictive-analytics')} className="flex items-center gap-2 border-dashed border-purple-200 hover:bg-purple-50 hover:text-purple-700">
-            <BarChart3 className="w-4 h-4" /> Gelecek Tahminleri
-          </Button>
-        </div>
       </div>
       
       <Card className="h-[600px] flex flex-col shadow-lg border-t-4 border-t-blue-500">
