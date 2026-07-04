@@ -366,6 +366,7 @@ async def get_current_user(
         # security tradeoffs (30 s grace after logout / password change).
         user_doc = _user_doc_cache_get(user_id)
         if user_doc is None:
+            from core.tenant_db import get_system_db
             sys_db = get_system_db()
             user_doc = await sys_db.users.find_one({"$or": [{"id": user_id}, {"user_id": user_id}]}, {"_id": 0})
             if user_doc:

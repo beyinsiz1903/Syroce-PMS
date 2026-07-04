@@ -58,6 +58,7 @@ def demo_auth_token():
     resp = requests.post(
         f"{BASE_URL}/api/auth/login",
         json={"email": "demo@hotel.com", "password": "demo123"},
+        headers={"Origin": BASE_URL},
     )
     if resp.status_code != 200:
         pytest.skip("Authentication failed for demo@hotel.com")
