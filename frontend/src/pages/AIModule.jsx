@@ -111,7 +111,7 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
       id: 'dynamic-pricing',
       title: 'Dynamic Pricing',
       icon: DollarSign,
-      color: 'from-amber-500 to-orange-500',
+      color: 'from-amber-500 to-amber-500',
       iconColor: 'text-amber-600'
     },
     {

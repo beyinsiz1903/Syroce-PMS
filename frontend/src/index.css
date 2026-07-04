@@ -1082,3 +1082,6 @@ code {
 .dark .text-violet-600\/80 { color: rgb(196 181 253 / 0.8); }
 .dark .text-violet-950 { color: #ede9fe; }
 .dark .hover\:border-red-200:hover { border-color: #991b1b; }
+.dark .border-indigo-100\/50 { border-color: rgb(49 46 129 / 0.5); }
+.dark .text-amber-900\/80 { color: rgb(254 243 199 / 0.8); }
+.dark .text-blue-800\/80 { color: rgb(191 219 254 / 0.8); }

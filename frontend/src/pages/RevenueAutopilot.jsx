@@ -3,7 +3,7 @@ import axios from 'axios';
 import MaybeLayout from '@/components/MaybeLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Zap, Play, CheckCircle2, AlertCircle, Settings, Shield, Clock, RotateCw, Cpu, Check, FileText } from 'lucide-react';
+import { Zap, Play, CheckCircle2, AlertCircle, Settings, Shield, Clock, RotateCw, Cpu, Check, FileText, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import AITabs from '@/components/AITabs';
 

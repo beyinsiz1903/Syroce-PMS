@@ -192,7 +192,7 @@ async def ai_chat(
     """AI-powered hotel assistant chatbot with real data access"""
     user_message = message_data.get("message", "").strip()
     raw_history = message_data.get("history", [])
-    
+
     # Format history for OpenAI
     history = []
     for msg in raw_history[-10:]: # Keep last 10 to avoid token limits
@@ -489,13 +489,13 @@ async def ai_chat(
             rooms_list = []
             for r in rooms:
                 rooms_list.append(f"- Oda {r.get('room_number', '?')} | Tip: {r.get('type', '?')} | Durum: {r.get('status', '?')} | Temizlik: {r.get('housekeeping_status', '?')}")
-            
+
             # Get maintenance tasks
             tasks = await db.maintenance_tasks.find({"tenant_id": current_user.tenant_id}).to_list(20)
             tasks_list = []
             for t in tasks:
                 tasks_list.append(f"- Oda {t.get('room_number', '?')}: {t.get('title', '?')} | Durum: {t.get('status', '?')} | Aciliyet: {t.get('severity', '?')}")
-            
+
             data_context = (
                 "\n\n## ODALAR VE TEMİZLİK DURUMU:\n" + ("\n".join(rooms_list) if rooms_list else "Oda bulunamadı.") +
                 "\n\n## ARIZA VE BAKIM KAYITLARI:\n" + ("\n".join(tasks_list) if tasks_list else "Aktif arıza kaydı yok.")
@@ -507,7 +507,7 @@ async def ai_chat(
             staff_list = []
             for u in users:
                 staff_list.append(f"- {u.get('full_name', u.get('email', '?'))} | Rol: {u.get('role', '?')} | Departman: {u.get('department', '?')}")
-            
+
             data_context = "\n\n## PERSONEL LİSTESİ:\n" + ("\n".join(staff_list) if staff_list else "Personel bulunamadı.")
 
         # ── FINANCIAL INTENT ──
@@ -515,12 +515,12 @@ async def ai_chat(
             invoices = await db.invoices.find({"tenant_id": current_user.tenant_id}).to_list(100)
             total_revenue = sum(inv.get("total_amount", 0) for inv in invoices if inv.get("status") == "paid")
             pending_revenue = sum(inv.get("total_amount", 0) for inv in invoices if inv.get("status") != "paid")
-            
+
             # compute ADR
             checked_in_bookings = [b for b in all_bookings if b.get("status") == "checked_in"]
             total_daily_rate = sum(b.get("rate_per_night", 0) for b in checked_in_bookings)
             adr = total_daily_rate / len(checked_in_bookings) if checked_in_bookings else 0
-            
+
             data_context = (
                 f"\n\n## FİNANSAL ÖZET:\n"
                 f"- Toplam Ödenmiş Fatura Geliri: {total_revenue:,.2f} TL\n"
@@ -615,7 +615,7 @@ async def ai_chat(
         return {"response": response_text}
     except Exception as exc:
         logger.info(f"AI chat error: {exc}")
-        
+
         # Fallback to raw data context if we gathered it before the error (e.g. LLM disabled)
         if 'data_context' in locals() and data_context:
             return {"response": f"⚠️ **AI Servisi Kapalı / API Hatası:** Sadece ham veritabanı sonuçları listeleniyor.\n{data_context}"}
