@@ -832,7 +832,8 @@ async def update_request(
 
     now = datetime.now(UTC)
     update: dict = {"updated_at": now}
-    history_entry = {"at": now, "by": getattr(current_user, "email", None) or "staff"}
+    staff_name = getattr(current_user, "name", None) or getattr(current_user, "email", None) or "staff"
+    history_entry = {"at": now, "by": staff_name}
 
     if payload.status is not None:
         if payload.status not in VALID_STATUSES:
@@ -856,13 +857,29 @@ async def update_request(
     if payload.note:
         history_entry["note"] = payload.note
 
-    if len(update) == 1:  # sadece updated_at
+    if len(update) == 1 and not payload.note:  # sadece updated_at ve note yoksa
         raise HTTPException(status_code=400, detail="Güncellenecek alan yok")
 
     await raw_db[COLL].update_one(
         {"_id": request_id, "tenant_id": tenant_id},
         {"$set": update, "$push": {"status_history": history_entry}},
     )
+
+    if payload.note:
+        try:
+            from domains.guest.messaging import guest_requests as _gr
+            await _gr.add_guest_message(
+                tenant_id=tenant_id,
+                room_id=doc["room_id"],
+                room_number=doc.get("room_number"),
+                sender_type="staff",
+                body=payload.note,
+                booking_id=doc.get("booking_id"),
+                sender_name=staff_name,
+            )
+            await _gr.emit_guest_requests_ping(tenant_id, doc["room_id"])
+        except Exception as e:
+            logger.warning(f"[room_qr] Error sending note to guest thread: {e}")
 
     try:
         from core.ws_rooms import tenant_broadcast_room

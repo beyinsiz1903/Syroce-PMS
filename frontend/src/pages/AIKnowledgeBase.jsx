@@ -22,7 +22,11 @@ const AIKnowledgeBase = () => {
       setDocuments(res.data.documents || []);
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.detail || "Dökümanlar yüklenirken bir hata oluştu. ChromaDB aktif olmayabilir.");
+      if (err.response?.status === 503) {
+        setError("AI Bilgi Bankası (ChromaDB) şu anda aktif değil veya sunucuya bağlanılamıyor.");
+      } else {
+        setError(err.response?.data?.detail || "Dökümanlar yüklenirken bir hata oluştu.");
+      }
     } finally {
       setLoading(false);
     }
@@ -52,7 +56,11 @@ const AIKnowledgeBase = () => {
       e.target.value = ''; // Reset input
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.detail || "Yükleme sırasında hata oluştu.");
+      if (err.response?.status === 503) {
+        setError("AI Bilgi Bankası (ChromaDB) şu anda aktif değil veya sunucuya bağlanılamıyor.");
+      } else {
+        setError(err.response?.data?.detail || "Yükleme sırasında hata oluştu.");
+      }
     } finally {
       setUploading(false);
     }
