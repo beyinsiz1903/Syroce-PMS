@@ -1,4 +1,5 @@
 import asyncio
+
 from motor.motor_asyncio import AsyncIOMotorClient
 
 async def main():
@@ -6,7 +7,7 @@ async def main():
     db = client.syroce_db # Check the DB name from your env
     collections = await db.list_collection_names()
     print("Collections:", collections)
-    
+
     for coll in ['maintenance_tasks', 'users', 'invoices', 'rooms']:
         if coll in collections:
             count = await db[coll].count_documents({})
