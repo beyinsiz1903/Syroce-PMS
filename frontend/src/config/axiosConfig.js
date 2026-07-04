@@ -112,45 +112,69 @@ function _hardLogout() {
 //   { token: string }  — başarılı, retry yapılır
 //   { transient: true } — 5xx/ağ; oturum SİLİNMEZ, istek reddedilir
 //   { invalid: true }  — 401/400; refresh token gerçekten ölmüş, hard logout
-async function _attemptRefresh() {
+async function _attemptRefresh(retryCount = 0) {
   const refreshToken = localStorage.getItem("refresh_token");
-  if (!_refreshInFlight) {
-    _refreshInFlight = axios
-      .post(
+  
+  if (_refreshInFlight) {
+    return _refreshInFlight;
+  }
+
+  _refreshInFlight = (async () => {
+    try {
+      const r = await axios.post(
         "/auth/refresh-token",
         refreshToken ? { refresh_token: refreshToken } : {},
         { _skipAuthRetry: true },
-      )
-      .then((r) => {
-        const newAccess = r?.data?.access_token;
-        const newRefresh = r?.data?.refresh_token;
-        if (!newAccess) return { invalid: true };
+      );
+      
+      const newAccess = r?.data?.access_token;
+      const newRefresh = r?.data?.refresh_token;
+      if (!newAccess) return { invalid: true };
 
-        // Always update the in-memory axios default so subsequent requests
-        // are authenticated even in cookie-less environments (Safari ITP).
-        axios.defaults.headers.common["Authorization"] = `Bearer ${newAccess}`;
-        localStorage.setItem("token_ts", String(Date.now()));
+      axios.defaults.headers.common["Authorization"] = `Bearer ${newAccess}`;
+      localStorage.setItem("token_ts", String(Date.now()));
 
-        // Rotate the stored refresh_token if the backend issued a new one.
-        if (newRefresh) localStorage.setItem("refresh_token", newRefresh);
+      if (newRefresh) localStorage.setItem("refresh_token", newRefresh);
 
-        // In development or E2E tests, also persist the access_token.
-        if (window.navigator.webdriver || import.meta.env.DEV) {
-          localStorage.setItem("token", newAccess);
+      if (window.navigator.webdriver || import.meta.env.DEV) {
+        localStorage.setItem("token", newAccess);
+      }
+
+      return { token: newAccess };
+    } catch (err) {
+      const status = err?.response?.status;
+      
+      // FIX: Cross-tab race condition.
+      // If Tab 1 refreshes the token, it updates localStorage.
+      // If Tab 2 sends a concurrent refresh with the old token, backend returns 401 (Replay rejected).
+      // Tab 2 should check if the refresh token in localStorage has changed, and if so, retry with the new one.
+      if (status === 401) {
+        const currentRefresh = localStorage.getItem("refresh_token");
+        if (currentRefresh && currentRefresh !== refreshToken && retryCount < 2) {
+          console.warn("Refresh token was rotated by another tab. Retrying refresh...");
+          // We must clear _refreshInFlight so the recursive call can execute a new request
+          _refreshInFlight = null;
+          return _attemptRefresh(retryCount + 1);
         }
+      }
+      
+      if (!status || status >= 500) return { transient: true };
+      return { invalid: true };
+    } finally {
+      // Only clear if the current in-flight promise is still this execution's promise.
+      // (If a retry was triggered, _refreshInFlight would have been re-assigned or set to null).
+      // Actually, setting it to null is safe because once the request is done, we don't need it cached.
+      // The only edge case is if the retry's promise is assigned to _refreshInFlight, we shouldn't nullify it here.
+      // So we will just let the top-level execution handle nullifying.
+    }
+  })();
 
-        return { token: newAccess };
-      })
-      .catch((err) => {
-        const status = err?.response?.status;
-        if (!status || status >= 500) return { transient: true };
-        return { invalid: true };
-      })
-      .finally(() => {
-        _refreshInFlight = null;
-      });
+  try {
+    const result = await _refreshInFlight;
+    return result;
+  } finally {
+    _refreshInFlight = null;
   }
-  return _refreshInFlight;
 }
 
 // Response interceptor — 401 handling + Pydantic error normalization
