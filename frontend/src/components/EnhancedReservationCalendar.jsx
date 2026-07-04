@@ -73,19 +73,19 @@ const EnhancedReservationCalendar = () => {
       toast.error('Fiyat geçersiz kılınamadı');
     }
   };
-  return <div className="p-6 bg-white">
-      <div className="flex justify-between items-center mb-6">
+  return <div className="p-6 bg-white overflow-hidden">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold">Reservation Calendar</h1>
-        <div className="flex gap-4">
-          <button onClick={fetchAIPricing} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2">
+        <div className="flex flex-wrap gap-4 w-full lg:w-auto">
+          <button onClick={fetchAIPricing} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2 whitespace-nowrap">
             AI Price Suggestions
           </button>
-          <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="px-4 py-2 border rounded-lg" />
+          <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="px-4 py-2 border rounded-lg flex-1 min-w-[150px]" />
         </div>
       </div>
 
       {/* ADR Summary */}
-      {adrData && <div className="grid grid-cols-4 gap-4 mb-6">
+      {adrData && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div className="bg-blue-50 p-4 rounded-lg">
             <div className="text-sm text-gray-600">Overall ADR</div>
             <div className="text-2xl font-bold text-blue-600">${adrData.overall_adr}</div>
@@ -109,17 +109,17 @@ const EnhancedReservationCalendar = () => {
         <div className="bg-gray-100 p-4 font-semibold border-b">
           Availability Grid - {rooms.length} Rooms
         </div>
-        <div className="max-h-[600px] overflow-y-auto">
+        <div className="max-h-[600px] overflow-y-auto overflow-x-hidden">
           {rooms.map(room => <div key={room.id} className="border-b p-4 hover:bg-gray-50">
-              <div className="flex justify-between items-center">
-                <div>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold">{room.room_number}</span>
-                  <span className="ml-4 text-gray-600">{room.room_type}</span>
-                  <span className={`ml-4 px-2 py-1 rounded text-sm ${room.status === 'available' ? 'bg-green-100 text-green-800' : room.status === 'occupied' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
+                  <span className="text-gray-600">{room.room_type}</span>
+                  <span className={`px-2 py-1 rounded text-sm ${room.status === 'available' ? 'bg-green-100 text-green-800' : room.status === 'occupied' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
                     {room.status}
                   </span>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button onClick={() => {
                 setSelectedBooking(room);
                 setShowRateOverride(true);

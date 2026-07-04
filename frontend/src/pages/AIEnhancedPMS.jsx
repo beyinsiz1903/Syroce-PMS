@@ -26,7 +26,7 @@ const AIEnhancedPMS = () => {
   const ActiveComponent = modules.find(m => m.id === activeModule)?.component || EnhancedReservationCalendar;
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full w-full bg-white overflow-hidden">
       {/* Header Area */}
       <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
         <div>

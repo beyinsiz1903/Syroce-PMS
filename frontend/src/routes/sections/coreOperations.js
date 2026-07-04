@@ -1,7 +1,7 @@
 import {
   Dashboard, ProfilePage, PCIComplianceDashboard, XchangePage, MicePage,
   ProcurementPage, InventoryProcurementGuide, MailingPage, ModuleStorePage,
-  AfsadakatLauncher, OnboardingWizard, AIEnhancedPMS, AIModule, PMSModule,
+  AfsadakatLauncher, OnboardingWizard, AIEnhancedPMS, AIModule, AIZekaPage, PMSModule,
   PMSOperationalDashboard, FolioDetailView, HousekeepingStatusPage,
   ShiftHandoverPage, EarlyLatePricingSettings, EodReportPage, WalkinPage,
   RoomMapPage, WakeUpCallsPage, LostFoundPage, MinibarPage, TransferParkingPage, GuestJourney,
@@ -26,7 +26,7 @@ export function coreOperationsRoutes({ p, pa, pm, modules }) {
     { path: "/app/onboarding", ...p(OnboardingWizard), wrapLayout: true, layoutModule: "onboarding" },
     { path: "/dashboard-simple", ...p(Dashboard, { modules }), wrapLayout: true, layoutModule: "dashboard" },
     { path: "/ai-pms", ...p(AIEnhancedPMS) },
-    { path: "/app/ai", ...p(AIModule), wrapLayout: true, layoutModule: "ai" },
+    { path: "/app/ai", ...p(AIZekaPage), wrapLayout: true, layoutModule: "ai" },
     { path: "/pms", type: "memory", targetPath: "/pms", ...p(PMSModule) },
     { path: "/app/pms", type: "memory", targetPath: "/app/pms", ...p(PMSModule) },
     { path: "/pms-operations", ...p(PMSOperationalDashboard), wrapLayout: true, layoutModule: "pms_operations" },
