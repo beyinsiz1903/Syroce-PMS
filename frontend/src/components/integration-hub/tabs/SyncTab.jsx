@@ -127,10 +127,10 @@ export default function SyncTab(props) {
                   </CardHeader>
                   <CardContent className="space-y-2">
                     {manualReviewQueue.map((j) => (
-                      <div key={j.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 border border-rose-800/30">
+                      <div key={j.id} className="flex items-center justify-between p-3 rounded-lg bg-white shadow-sm border border-rose-800/30">
                         <div className="flex items-center gap-3">
                           <div className="flex flex-col">
-                            <span className="text-sm text-white font-medium">{j.sync_type} ({j.direction})</span>
+                            <span className="text-sm text-slate-900 font-medium">{j.sync_type} ({j.direction})</span>
                             <span className="text-xs text-slate-500">{j.id?.slice(0, 8)} &middot; {j.last_error?.slice(0, 60)}</span>
                           </div>
                         </div>
@@ -139,11 +139,11 @@ export default function SyncTab(props) {
                             onClick={() => handleRetryJob(j.id)} data-testid={`retry-job-${j.id?.slice(0, 8)}`}>
                             <RotateCcw className="w-3 h-3 mr-1" /> Retry
                           </Button>
-                          <Button size="sm" variant="outline" className="text-xs h-7 border-slate-700 text-slate-400"
+                          <Button size="sm" variant="outline" className="text-xs h-7 border-slate-200 text-slate-500"
                             onClick={() => handleDismissJob(j.id)} data-testid={`dismiss-job-${j.id?.slice(0, 8)}`}>
                             Dismiss
                           </Button>
-                          <Button size="sm" variant="ghost" className="text-xs h-7 text-slate-400"
+                          <Button size="sm" variant="ghost" className="text-xs h-7 text-slate-500"
                             onClick={() => handleViewJobDetail(j.id)}>
                             <Eye className="w-3 h-3" />
                           </Button>
@@ -155,32 +155,32 @@ export default function SyncTab(props) {
               )}
 
               {/* Sync History */}
-              <Card className="bg-slate-900/50 border-slate-800">
+              <Card className="bg-white shadow-sm border-slate-200">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base text-white">Sync History</CardTitle>
+                  <CardTitle className="text-base text-slate-900">Sync History</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {syncJobs.length > 0 ? (
                     <div className="space-y-2">
                       {syncJobs.map((j) => (
                         <div key={j.id}
-                          className="flex items-center justify-between p-3 rounded-lg bg-slate-800/30 border border-slate-800 hover:border-slate-700 transition-colors cursor-pointer"
+                          className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-200 hover:border-slate-200 transition-colors cursor-pointer"
                           onClick={() => handleViewJobDetail(j.id)}
                           data-testid={`sync-job-row-${j.id?.slice(0, 8)}`}
                         >
                           <div className="flex items-center gap-3">
                             <div className="flex flex-col">
                               <div className="flex items-center gap-2">
-                                <span className="text-sm text-white font-medium">{j.sync_type} ({j.direction})</span>
+                                <span className="text-sm text-slate-900 font-medium">{j.sync_type} ({j.direction})</span>
                                 {j.change_types?.length > 0 && (
                                   <div className="flex gap-1">
                                     {j.change_types.slice(0, 3).map((ct) => (
-                                      <Badge key={ct} variant="outline" className="text-[10px] border-slate-700 text-slate-500 py-0">
+                                      <Badge key={ct} variant="outline" className="text-[10px] border-slate-200 text-slate-500 py-0">
                                         {ct.replace('_changed', '').replace('_', ' ')}
                                       </Badge>
                                     ))}
                                     {j.change_types.length > 3 && (
-                                      <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-500 py-0">+{j.change_types.length - 3}</Badge>
+                                      <Badge variant="outline" className="text-[10px] border-slate-200 text-slate-500 py-0">+{j.change_types.length - 3}</Badge>
                                     )}
                                   </div>
                                 )}
@@ -210,12 +210,12 @@ export default function SyncTab(props) {
                             {j.total_changes_detected > 0 && (
                               <div className="text-right">
                                 <span className="text-[10px] text-slate-500 block">delta</span>
-                                <span className="text-xs text-slate-400">{j.total_changes_after_coalescing || j.total_changes_detected}/{j.total_changes_detected}</span>
+                                <span className="text-xs text-slate-500">{j.total_changes_after_coalescing || j.total_changes_detected}/{j.total_changes_detected}</span>
                               </div>
                             )}
                             <div className="text-right">
                               <span className="text-[10px] text-slate-500 block">events</span>
-                              <span className="text-xs text-slate-400">{j.completed_events || 0}/{j.total_events || 0}</span>
+                              <span className="text-xs text-slate-500">{j.completed_events || 0}/{j.total_events || 0}</span>
                             </div>
                             <StatusBadge status={j.status} />
                             <ChevronRight className="w-4 h-4 text-slate-600" />

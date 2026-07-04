@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '@/api/axios';
 import MaybeLayout from '@/components/MaybeLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -20,7 +20,7 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
 
   const loadPredictions = useCallback(async () => {
     try {
-      const response = await axios.get(`/predictions/no-shows?target_date=${selectedDate}`);
+      const response = await api.get(`/predictions/no-shows?target_date=${selectedDate}`);
       setNoShowPredictions(response.data.predictions || []);
     } catch (error) {
       console.error('Predictions yüklenemedi');
@@ -29,7 +29,7 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
 
   const loadDemandForecast = useCallback(async () => {
     try {
-      const response = await axios.get('/predictions/demand-forecast?days=30');
+      const response = await api.get('/predictions/demand-forecast?days=30');
       setDemandForecast(response.data.daily_forecast || []);
     } catch (error) {
       console.error('Demand forecast yüklenemedi');
@@ -56,7 +56,7 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
 
   return (
     <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="ai_revenue_autopilot">
-      <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-6">
+      <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
         
         <AITabs />
 
@@ -99,53 +99,61 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
         </div>
 
         {/* Summary Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="shadow-sm border-slate-200">
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="p-3 bg-red-50 text-red-600 rounded-lg shrink-0">
-                <AlertTriangle className="w-5 h-5" />
-              </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card className="shadow-sm border-slate-200 bg-white/80 backdrop-blur-sm hover:shadow-md transition-all">
+            <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold text-slate-800">{noShowPredictions.filter(p => p.risk_level === 'high').length}</p>
-                <p className="text-xs font-medium text-slate-500">Yüksek Risk No-show</p>
+                <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1">Yüksek Risk No-show</p>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-2xl font-bold text-slate-800">{noShowPredictions.filter(p => p.risk_level === 'high').length}</p>
+                </div>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-red-50 text-red-500 flex items-center justify-center ring-4 ring-white shadow-sm">
+                <AlertTriangle className="w-4 h-4" />
               </div>
             </CardContent>
           </Card>
           
-          <Card className="shadow-sm border-slate-200">
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="p-3 bg-amber-50 text-amber-600 rounded-lg shrink-0">
-                <Target className="w-5 h-5" />
-              </div>
+          <Card className="shadow-sm border-slate-200 bg-white/80 backdrop-blur-sm hover:shadow-md transition-all">
+            <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold text-slate-800">{noShowPredictions.length}</p>
-                <p className="text-xs font-medium text-slate-500">Toplam Riskli Kayıt</p>
+                <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1">Riskli Kayıtlar</p>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-2xl font-bold text-slate-800">{noShowPredictions.length}</p>
+                </div>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center ring-4 ring-white shadow-sm">
+                <Target className="w-4 h-4" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm border-slate-200">
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="p-3 bg-blue-50 text-blue-600 rounded-lg shrink-0">
-                <TrendingUp className="w-5 h-5" />
-              </div>
+          <Card className="shadow-sm border-slate-200 bg-white/80 backdrop-blur-sm hover:shadow-md transition-all">
+            <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold text-slate-800">
-                  {demandForecast.filter(f => ['high', 'very_high'].includes(f.demand_level)).length}
-                </p>
-                <p className="text-xs font-medium text-slate-500">Yüksek Talep Günleri</p>
+                <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1">Yüksek Talep Günleri</p>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-2xl font-bold text-slate-800">
+                    {demandForecast.filter(f => ['high', 'very_high'].includes(f.demand_level)).length}
+                  </p>
+                </div>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center ring-4 ring-white shadow-sm">
+                <TrendingUp className="w-4 h-4" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm border-slate-200">
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg shrink-0">
-                <Activity className="w-5 h-5" />
-              </div>
+          <Card className="shadow-sm border-slate-200 bg-white/80 backdrop-blur-sm hover:shadow-md transition-all">
+            <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold text-slate-800">30</p>
-                <p className="text-xs font-medium text-slate-500">Günlük Projeksiyon</p>
+                <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1">Günlük Projeksiyon</p>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-2xl font-bold text-slate-800">30</p>
+                </div>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center ring-4 ring-white shadow-sm">
+                <Activity className="w-4 h-4" />
               </div>
             </CardContent>
           </Card>
@@ -222,33 +230,53 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
                 <div className="py-20 text-center text-slate-400 text-sm">Talep grafiği yükleniyor...</div>
               ) : (
                 <>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
-                    {demandForecast.slice(0, 14).map((forecast, idx) => (
-                      <div 
-                        key={idx} 
-                        className={`p-3 rounded-lg flex flex-col items-center justify-center border shadow-sm ${
-                          forecast.demand_level === 'very_high' ? 'bg-red-50/50 border-red-100' :
-                          forecast.demand_level === 'high' ? 'bg-amber-50/50 border-amber-100' :
-                          forecast.demand_level === 'medium' ? 'bg-blue-50/50 border-blue-100' :
-                          'bg-slate-50/50 border-slate-200'
-                        }`}
-                      >
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                          {forecast.day_of_week.substring(0, 3)}
-                        </p>
-                        <p className={`text-lg font-bold leading-none ${
-                          forecast.demand_level === 'very_high' ? 'text-red-700' :
-                          forecast.demand_level === 'high' ? 'text-amber-700' :
-                          forecast.demand_level === 'medium' ? 'text-blue-700' :
-                          'text-slate-700'
-                        }`}>
-                          {forecast.occupancy_forecast}%
-                        </p>
-                        <div className="mt-2.5 w-full bg-white rounded border border-slate-100 py-1 text-center">
-                          <p className="text-xs font-semibold text-slate-700">€{forecast.recommended_price}</p>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                    <table className="w-full text-sm text-left">
+                      <thead className="text-xs text-slate-500 bg-slate-50 sticky top-0 uppercase z-10 border-b border-slate-200">
+                        <tr>
+                          <th className="px-4 py-3 font-medium rounded-tl-lg">Tarih</th>
+                          <th className="px-4 py-3 font-medium">Doluluk Tahmini</th>
+                          <th className="px-4 py-3 font-medium">Risk / Talep</th>
+                          <th className="px-4 py-3 font-medium text-right rounded-tr-lg">Önerilen Fiyat</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {demandForecast.slice(0, 14).map((forecast, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
+                            <td className="px-4 py-3 font-medium text-slate-700">
+                              {forecast.target_date} <span className="text-slate-400 font-normal ml-1">({forecast.day_of_week.substring(0, 3)})</span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-16 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                                  <div 
+                                    className={`h-1.5 rounded-full ${
+                                      forecast.occupancy_forecast > 80 ? 'bg-indigo-500' : 
+                                      forecast.occupancy_forecast > 50 ? 'bg-blue-400' : 'bg-slate-300'
+                                    }`} 
+                                    style={{ width: `${forecast.occupancy_forecast}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs font-semibold text-slate-600">%{forecast.occupancy_forecast}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${
+                                forecast.demand_level === 'very_high' ? 'bg-red-50 text-red-600 border border-red-100' :
+                                forecast.demand_level === 'high' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                                forecast.demand_level === 'medium' ? 'bg-blue-50 text-blue-600 border border-blue-100' :
+                                'bg-slate-100 text-slate-500 border border-slate-200'
+                              }`}>
+                                {forecast.demand_level.replace('_', ' ')}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <span className="font-semibold text-slate-800">€{forecast.recommended_price}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                   
                   <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-lg flex items-start gap-3">

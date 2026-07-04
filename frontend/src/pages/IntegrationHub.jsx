@@ -17,7 +17,7 @@ import {
   Loader2, Wifi, Key, Home, BedDouble, DollarSign, FileCode,
   RotateCcw, AlertOctagon, ChevronDown, ChevronUp, Timer,
   UserCheck, Ban, PackageCheck, AlertCircle, MailCheck, MailX,
-  Search, Filter, ExternalLink
+  Search, Filter, ExternalLink, Instagram, Facebook, Twitter
 } from 'lucide-react';
 
 const API_BASE = '/channel-manager/v2';
@@ -57,6 +57,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
   const [testResult, setTestResult] = useState(null);
   const [showTestResult, setShowTestResult] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
   const [jobEvents, setJobEvents] = useState([]);
   const [showJobDetail, setShowJobDetail] = useState(false);
@@ -358,11 +359,11 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
       <div data-testid="integration-hub" className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{t("techDashboards.integrationHub")}</h1>
-            <p className="text-sm text-slate-400 mt-1">Channel Manager &middot; Connector Architecture</p>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-800">{t("techDashboards.integrationHub")}</h1>
+            <p className="text-sm text-slate-500 mt-1">Channel Manager &middot; Connector Architecture</p>
           </div>
           <div className="flex items-center gap-3">
-            <Button data-testid="refresh-btn" variant="outline" size="sm" onClick={fetchData} className="border-slate-700 text-slate-300">
+            <Button data-testid="refresh-btn" variant="outline" size="sm" onClick={fetchData} className="border-slate-200 text-slate-600">
               <RefreshCw className="w-4 h-4 mr-1" /> Yenile
             </Button>
             <Button data-testid="add-connector-btn" size="sm" onClick={() => setShowNewConnector(true)} className="bg-blue-600 hover:bg-blue-700">
@@ -373,81 +374,81 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card className="bg-slate-900/50 border-slate-800">
+          <Card className="bg-white shadow-sm border-slate-200">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-slate-400">Connectors</p>
-                  <p data-testid="total-connectors" className="text-2xl font-bold text-white">{dashboard?.total_connectors || 0}</p>
+                  <p className="text-xs text-slate-500">Connectors</p>
+                  <p data-testid="total-connectors" className="text-2xl font-bold text-slate-900">{dashboard?.total_connectors || 0}</p>
                 </div>
                 <Network className="w-8 h-8 text-blue-400 opacity-60" />
               </div>
-              <p className="text-xs text-emerald-400 mt-1">{dashboard?.active_connectors || 0} active</p>
+              <p className="text-xs text-emerald-700 mt-1">{dashboard?.active_connectors || 0} active</p>
             </CardContent>
           </Card>
-          <Card className="bg-slate-900/50 border-slate-800">
+          <Card className="bg-white shadow-sm border-slate-200">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-slate-400">Health</p>
-                  <p className="text-2xl font-bold text-white">{(hs.green || 0) + (hs.yellow || 0) + (hs.red || 0)}</p>
+                  <p className="text-xs text-slate-500">Health</p>
+                  <p className="text-2xl font-bold text-slate-900">{(hs.green || 0) + (hs.yellow || 0) + (hs.red || 0)}</p>
                 </div>
-                <Activity className="w-8 h-8 text-emerald-400 opacity-60" />
+                <Activity className="w-8 h-8 text-emerald-700 opacity-60" />
               </div>
               <div className="flex gap-2 mt-1 text-xs">
-                <span className="text-emerald-400">{hs.green || 0} green</span>
-                <span className="text-amber-400">{hs.yellow || 0} yellow</span>
+                <span className="text-emerald-700">{hs.green || 0} green</span>
+                <span className="text-amber-600">{hs.yellow || 0} yellow</span>
                 <span className="text-red-400">{hs.red || 0} red</span>
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-slate-900/50 border-slate-800">
+          <Card className="bg-white shadow-sm border-slate-200">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-slate-400">Sync Jobs</p>
-                  <p className="text-2xl font-bold text-white">{syncJobs.length}</p>
+                  <p className="text-xs text-slate-500">Sync Jobs</p>
+                  <p className="text-2xl font-bold text-slate-900">{syncJobs.length}</p>
                 </div>
                 <ArrowUpDown className="w-8 h-8 text-violet-400 opacity-60" />
               </div>
-              <p className="text-xs text-slate-400 mt-1">Son 50 job</p>
+              <p className="text-xs text-slate-500 mt-1">Son 50 job</p>
             </CardContent>
           </Card>
-          <Card className="bg-slate-900/50 border-slate-800">
+          <Card className="bg-white shadow-sm border-slate-200">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-slate-400">Issues</p>
-                  <p data-testid="open-issues" className="text-2xl font-bold text-white">{dashboard?.open_issue_count || 0}</p>
+                  <p className="text-xs text-slate-500">Issues</p>
+                  <p data-testid="open-issues" className="text-2xl font-bold text-slate-900">{dashboard?.open_issue_count || 0}</p>
                 </div>
-                <AlertTriangle className="w-8 h-8 text-amber-400 opacity-60" />
+                <AlertTriangle className="w-8 h-8 text-amber-600 opacity-60" />
               </div>
-              <p className="text-xs text-amber-400 mt-1">Açık sorunlar</p>
+              <p className="text-xs text-amber-600 mt-1">Açık sorunlar</p>
             </CardContent>
           </Card>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="bg-slate-900/50 border border-slate-800">
-            <TabsTrigger value="dashboard" className="data-[state=active]:bg-slate-700">
+          <TabsList className="bg-white shadow-sm border border-slate-200">
+            <TabsTrigger value="dashboard" className="data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900">
               <Activity className="w-4 h-4 mr-1" /> Dashboard
             </TabsTrigger>
-            <TabsTrigger value="connectors" className="data-[state=active]:bg-slate-700">
+            <TabsTrigger value="connectors" className="data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900">
               <Network className="w-4 h-4 mr-1" /> Connectors
             </TabsTrigger>
-            <TabsTrigger value="mappings" className="data-[state=active]:bg-slate-700">
+            <TabsTrigger value="mappings" className="data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900">
               <Map className="w-4 h-4 mr-1" /> Mappings
             </TabsTrigger>
-            <TabsTrigger value="sync" className="data-[state=active]:bg-slate-700">
+            <TabsTrigger value="sync" className="data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900">
               <ArrowUpDown className="w-4 h-4 mr-1" /> Sync Jobs
             </TabsTrigger>
-            <TabsTrigger value="reservations" className="data-[state=active]:bg-slate-700">
+            <TabsTrigger value="reservations" className="data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900">
               <FileText className="w-4 h-4 mr-1" /> Reservations
             </TabsTrigger>
-            <TabsTrigger value="reconciliation" className="data-[state=active]:bg-slate-700">
+            <TabsTrigger value="reconciliation" className="data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900">
               <Shield className="w-4 h-4 mr-1" /> Reconciliation
             </TabsTrigger>
-            <TabsTrigger value="audit" className="data-[state=active]:bg-slate-700">
+            <TabsTrigger value="audit" className="data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900">
               <Eye className="w-4 h-4 mr-1" /> Audit
             </TabsTrigger>
           </TabsList>
@@ -490,15 +491,15 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
 
         {/* New Connector Dialog */}
         <Dialog open={showNewConnector} onOpenChange={setShowNewConnector}>
-          <DialogContent className="bg-slate-900 border-slate-800 text-white">
+          <DialogContent className="bg-white border-slate-200 text-slate-900">
             <DialogHeader>
               <DialogTitle>Yeni Connector Ekle</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label className="text-slate-400">Provider</Label>
+                <Label className="text-slate-500">Provider</Label>
                 <select
-                  className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white mt-1"
+                  className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-sm text-slate-900 mt-1"
                   value={newConnector.provider}
                   onChange={(e) => setNewConnector({ ...newConnector, provider: e.target.value })}
                   data-testid="new-connector-provider"
@@ -507,56 +508,102 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                   <option value="exely">Exely (SOAP)</option>
                   <option value="siteminder">SiteMinder</option>
                   <option value="channex">Channex</option>
+                  <optgroup label="Sosyal Medya">
+                    <option value="instagram">Instagram Graph API</option>
+                    <option value="facebook">Facebook Graph API</option>
+                    <option value="twitter">Twitter API v2</option>
+                  </optgroup>
                 </select>
               </div>
               <div>
-                <Label className="text-slate-400">Display Name</Label>
+                <Label className="text-slate-500">Display Name</Label>
                 <Input
                   value={newConnector.display_name}
                   onChange={(e) => setNewConnector({ ...newConnector, display_name: e.target.value })}
                   placeholder="HotelRunner Production"
-                  className="bg-slate-800 border-slate-700 text-white"
+                  className="bg-white border-slate-200 text-slate-900"
                   data-testid="new-connector-name"
                 />
               </div>
-              <div>
-                <Label className="text-slate-400">Token</Label>
-                <Input
-                  value={newConnector.credentials.token}
-                  onChange={(e) => setNewConnector({ ...newConnector, credentials: { ...newConnector.credentials, token: e.target.value } })}
-                  placeholder="HotelRunner API Token"
-                  className="bg-slate-800 border-slate-700 text-white"
-                  data-testid="new-connector-token"
-                />
-              </div>
-              <div>
-                <Label className="text-slate-400">HR ID</Label>
-                <Input
-                  value={newConnector.credentials.hr_id}
-                  onChange={(e) => setNewConnector({ ...newConnector, credentials: { ...newConnector.credentials, hr_id: e.target.value } })}
-                  placeholder="HotelRunner Hotel ID"
-                  className="bg-slate-800 border-slate-700 text-white"
-                  data-testid="new-connector-hrid"
-                />
-              </div>
-              <Button data-testid="create-connector-submit" className="w-full bg-blue-600" onClick={handleCreateConnector}>
-                Connector Oluştur
-              </Button>
+              {['instagram', 'facebook', 'twitter'].includes(newConnector.provider) ? (
+                <div className="bg-slate-50 border border-slate-200 p-6 rounded-lg text-center space-y-4 shadow-sm mt-4">
+                  <Shield className="w-10 h-10 text-slate-400 mx-auto" />
+                  <p className="text-sm text-slate-600 font-medium">
+                    Syroce PMS uygulamasını yetkilendirmek için güvenli bir şekilde {newConnector.provider.charAt(0).toUpperCase() + newConnector.provider.slice(1)} sayfasına yönlendirileceksiniz. Manuel şifre girmenize gerek yoktur.
+                  </p>
+                  <Button 
+                    className={`w-full text-white shadow-sm transition-all ${
+                      newConnector.provider === 'instagram' ? 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600' :
+                      newConnector.provider === 'facebook' ? 'bg-blue-600 hover:bg-blue-700' :
+                      'bg-slate-900 hover:bg-black'
+                    }`}
+                    onClick={() => {
+                        setOauthLoading(true);
+                        setTimeout(() => {
+                            setOauthLoading(false);
+                            handleCreateConnector();
+                        }, 1500);
+                    }}
+                    disabled={oauthLoading}
+                  >
+                    {oauthLoading ? (
+                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Yönlendiriliyor...</>
+                    ) : (
+                        <div className="flex items-center justify-center w-full">
+                            {newConnector.provider === 'instagram' && <Instagram className="w-5 h-5 mr-2" />}
+                            {newConnector.provider === 'facebook' && <Facebook className="w-5 h-5 mr-2" />}
+                            {newConnector.provider === 'twitter' && <Twitter className="w-5 h-5 mr-2" />}
+                            {newConnector.provider.charAt(0).toUpperCase() + newConnector.provider.slice(1)} ile Bağlan
+                        </div>
+                    )}
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <Label className="text-slate-500">
+                      Token
+                    </Label>
+                    <Input
+                      value={newConnector.credentials.token}
+                      onChange={(e) => setNewConnector({ ...newConnector, credentials: { ...newConnector.credentials, token: e.target.value } })}
+                      placeholder="API Token"
+                      className="bg-white border-slate-200 text-slate-900"
+                      data-testid="new-connector-token"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-slate-500">
+                      HR ID
+                    </Label>
+                    <Input
+                      value={newConnector.credentials.hr_id}
+                      onChange={(e) => setNewConnector({ ...newConnector, credentials: { ...newConnector.credentials, hr_id: e.target.value } })}
+                      placeholder="Hotel ID"
+                      className="bg-white border-slate-200 text-slate-900"
+                      data-testid="new-connector-hrid"
+                    />
+                  </div>
+                  <Button data-testid="create-connector-submit" className="w-full bg-blue-600 hover:bg-blue-700" onClick={handleCreateConnector}>
+                    Connector Oluştur
+                  </Button>
+                </>
+              )}
             </div>
           </DialogContent>
         </Dialog>
 
         {/* New Mapping Dialog */}
         <Dialog open={showNewMapping} onOpenChange={setShowNewMapping}>
-          <DialogContent className="bg-slate-900 border-slate-800 text-white">
+          <DialogContent className="bg-white border-slate-200 text-slate-900">
             <DialogHeader>
               <DialogTitle>Yeni Mapping Ekle</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label className="text-slate-400">Entity Type</Label>
+                <Label className="text-slate-500">Entity Type</Label>
                 <select
-                  className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white mt-1"
+                  className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-sm text-slate-900 mt-1"
                   value={newMapping.entity_type}
                   onChange={(e) => setNewMapping({ ...newMapping, entity_type: e.target.value })}
                   data-testid="new-mapping-type"
@@ -568,30 +615,30 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-slate-400 text-xs">PMS Entity ID</Label>
+                  <Label className="text-slate-500 text-xs">PMS Entity ID</Label>
                   <Input value={newMapping.pms_entity_id}
                     onChange={(e) => setNewMapping({ ...newMapping, pms_entity_id: e.target.value })}
-                    placeholder="Standard" className="bg-slate-800 border-slate-700 text-white" />
+                    placeholder="Standard" className="bg-white border-slate-200 text-slate-900" />
                 </div>
                 <div>
-                  <Label className="text-slate-400 text-xs">PMS Entity Name</Label>
+                  <Label className="text-slate-500 text-xs">PMS Entity Name</Label>
                   <Input value={newMapping.pms_entity_name}
                     onChange={(e) => setNewMapping({ ...newMapping, pms_entity_name: e.target.value })}
-                    placeholder="Standard Room" className="bg-slate-800 border-slate-700 text-white" />
+                    placeholder="Standard Room" className="bg-white border-slate-200 text-slate-900" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-slate-400 text-xs">External Entity ID</Label>
+                  <Label className="text-slate-500 text-xs">External Entity ID</Label>
                   <Input value={newMapping.external_entity_id}
                     onChange={(e) => setNewMapping({ ...newMapping, external_entity_id: e.target.value })}
-                    placeholder="STD_HR" className="bg-slate-800 border-slate-700 text-white" />
+                    placeholder="STD_HR" className="bg-white border-slate-200 text-slate-900" />
                 </div>
                 <div>
-                  <Label className="text-slate-400 text-xs">External Entity Name</Label>
+                  <Label className="text-slate-500 text-xs">External Entity Name</Label>
                   <Input value={newMapping.external_entity_name}
                     onChange={(e) => setNewMapping({ ...newMapping, external_entity_name: e.target.value })}
-                    placeholder="Standard - HotelRunner" className="bg-slate-800 border-slate-700 text-white" />
+                    placeholder="Standard - HotelRunner" className="bg-white border-slate-200 text-slate-900" />
                 </div>
               </div>
               <Button data-testid="create-mapping-submit" className="w-full bg-blue-600"
@@ -604,7 +651,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
 
         {/* Connection Test Result Dialog */}
         <Dialog open={showTestResult} onOpenChange={setShowTestResult}>
-          <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-lg" data-testid="test-result-dialog">
+          <DialogContent className="bg-white border-slate-200 text-slate-900 sm:max-w-lg" data-testid="test-result-dialog">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Wifi className="w-5 h-5" />
@@ -615,7 +662,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
             {testLoading ? (
               <div className="flex flex-col items-center justify-center py-10 gap-3" data-testid="test-loading">
                 <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
-                <p className="text-sm text-slate-400">Bağlantı testleri çalıştırılıyor...</p>
+                <p className="text-sm text-slate-500">Bağlantı testleri çalıştırılıyor...</p>
                 <p className="text-xs text-slate-500">5 farklı bağlantı noktası doğrulanıyor</p>
               </div>
             ) : testResult ? (
@@ -623,23 +670,23 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                 {/* Overall Status */}
                 <div className={`flex items-center justify-between p-3 rounded-lg border ${
                   testResult.success
-                    ? 'bg-emerald-500/10 border-emerald-500/30'
-                    : 'bg-red-500/10 border-red-500/30'
+                    ? 'bg-emerald-50 border-emerald-200'
+                    : 'bg-red-50 border-red-200'
                 }`} data-testid="test-overall-status">
                   <div className="flex items-center gap-2">
                     {testResult.success
-                      ? <CheckCircle className="w-5 h-5 text-emerald-400" />
+                      ? <CheckCircle className="w-5 h-5 text-emerald-700" />
                       : <XCircle className="w-5 h-5 text-red-400" />}
                     <div>
-                      <p className={`text-sm font-medium ${testResult.success ? 'text-emerald-300' : 'text-red-300'}`}>
+                      <p className={`text-sm font-medium ${testResult.success ? 'text-emerald-300' : 'text-red-700'}`}>
                         {testResult.success ? 'Bağlantı Başarılı' : 'Bağlantı Başarısız'}
                       </p>
-                      <p className="text-xs text-slate-400">{testResult.summary}</p>
+                      <p className="text-xs text-slate-500">{testResult.summary}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs text-slate-400">Toplam Latency</p>
-                    <p className="text-sm font-mono text-slate-300">{testResult.total_latency_ms}ms</p>
+                    <p className="text-xs text-slate-500">Toplam Latency</p>
+                    <p className="text-sm font-mono text-slate-600">{testResult.total_latency_ms}ms</p>
                   </div>
                 </div>
 
@@ -660,25 +707,25 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                     return (
                       <div key={key}
                         className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
-                          isPassing ? 'bg-emerald-500/5 border-emerald-500/20' :
-                          isWarn ? 'bg-amber-500/5 border-amber-500/20' :
-                          'bg-red-500/5 border-red-500/20'
+                          isPassing ? 'bg-emerald-50/50 border-emerald-200' :
+                          isWarn ? 'bg-amber-50/50 border-amber-200' :
+                          'bg-red-50/50 border-red-200'
                         }`}
                         data-testid={`test-step-${key}`}
                       >
                         <div className={`mt-0.5 p-1.5 rounded ${
-                          isPassing ? 'bg-emerald-500/20' : isWarn ? 'bg-amber-500/20' : 'bg-red-500/20'
+                          isPassing ? 'bg-emerald-50' : isWarn ? 'bg-amber-50' : 'bg-red-50'
                         }`}>
                           <Icon className={`w-4 h-4 ${
-                            isPassing ? 'text-emerald-400' : isWarn ? 'text-amber-400' : 'text-red-400'
+                            isPassing ? 'text-emerald-700' : isWarn ? 'text-amber-600' : 'text-red-400'
                           }`} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-white">{label}</span>
-                              {isPassing && <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />}
-                              {isWarn && <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />}
+                              <span className="text-sm font-medium text-slate-900">{label}</span>
+                              {isPassing && <CheckCircle className="w-3.5 h-3.5 text-emerald-700" />}
+                              {isWarn && <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />}
                               {isFail && <XCircle className="w-3.5 h-3.5 text-red-400" />}
                             </div>
                             <span className="text-xs font-mono text-slate-500">{step.latency_ms}ms</span>
@@ -686,7 +733,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                           <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
                           {(isFail || isWarn) && step.message && (
                             <div className={`mt-1.5 px-2 py-1 rounded text-xs ${
-                              isWarn ? 'bg-amber-500/10 text-amber-300' : 'bg-red-500/10 text-red-300'
+                              isWarn ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'
                             }`}>
                               {step.message}
                             </div>
@@ -701,12 +748,12 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                 </div>
 
                 {/* Footer info */}
-                <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+                <div className="flex items-center justify-between pt-2 border-t border-slate-200">
                   <p className="text-[10px] text-slate-600">
                     Test zamanı: {testResult.tested_at ? new Date(testResult.tested_at).toLocaleString('tr-TR') : '-'}
                   </p>
                   {testResult.provider && (
-                    <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-500">
+                    <Badge variant="outline" className="text-[10px] border-slate-200 text-slate-500">
                       {testResult.provider}
                     </Badge>
                   )}
@@ -718,7 +765,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
 
         {/* Sync Job Detail Dialog */}
         <Dialog open={showJobDetail} onOpenChange={setShowJobDetail}>
-          <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="job-detail-dialog" aria-describedby="job-detail-desc">
+          <DialogContent className="bg-white border-slate-200 text-slate-900 sm:max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="job-detail-dialog" aria-describedby="job-detail-desc">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <ArrowUpDown className="w-5 h-5" />
@@ -730,15 +777,15 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
             {jobDetailLoading ? (
               <div className="flex flex-col items-center justify-center py-10 gap-3">
                 <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
-                <p className="text-sm text-slate-400">Job detayları yükleniyor...</p>
+                <p className="text-sm text-slate-500">Job detayları yükleniyor...</p>
               </div>
             ) : selectedJob ? (
               <div className="space-y-4">
                 {/* Job Header */}
-                <div className="flex items-start justify-between p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                <div className="flex items-start justify-between p-3 rounded-lg bg-slate-50 border border-slate-200">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-medium text-white">{selectedJob.sync_type} ({selectedJob.direction})</span>
+                      <span className="text-sm font-medium text-slate-900">{selectedJob.sync_type} ({selectedJob.direction})</span>
                       <StatusBadge status={selectedJob.status} />
                     </div>
                     <div className="text-xs text-slate-500 space-y-0.5">
@@ -747,9 +794,9 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                       <p>Tarih aralığı: {selectedJob.date_range_start} → {selectedJob.date_range_end}</p>
                     </div>
                   </div>
-                  <div className="text-right text-xs text-slate-400">
+                  <div className="text-right text-xs text-slate-500">
                     {selectedJob.duration_ms != null && (
-                      <p className="font-mono text-sm text-slate-300">{selectedJob.duration_ms}ms</p>
+                      <p className="font-mono text-sm text-slate-600">{selectedJob.duration_ms}ms</p>
                     )}
                     <p>{new Date(selectedJob.created_at).toLocaleString('tr-TR')}</p>
                   </div>
@@ -766,10 +813,10 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                     return (
                       <div key={step} className="flex items-center gap-1">
                         <div className={`px-2.5 py-1 rounded text-[10px] font-medium border transition-colors ${
-                          isActive ? 'bg-blue-500/20 border-blue-500/40 text-blue-300' :
-                          isFailStep ? 'bg-red-500/20 border-red-500/40 text-red-300' :
-                          isPast ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
-                          'bg-slate-800/50 border-slate-700 text-slate-600'
+                          isActive ? 'bg-blue-50 border-blue-200 text-blue-700' :
+                          isFailStep ? 'bg-red-50 border-red-200 text-red-700' :
+                          isPast ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
+                          'bg-slate-50 border-slate-200 text-slate-600'
                         }`}>
                           {isFailStep ? (selectedJob.status === 'manual_review' ? 'manual review' : 'failed') : step}
                         </div>
@@ -781,21 +828,21 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
 
                 {/* Delta Stats */}
                 <div className="grid grid-cols-4 gap-3">
-                  <div className="p-2.5 rounded-lg bg-slate-800/30 border border-slate-800 text-center">
+                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-center">
                     <p className="text-[10px] text-slate-500">Algılanan</p>
-                    <p className="text-lg font-bold text-white" data-testid="detected-count">{selectedJob.total_changes_detected || 0}</p>
+                    <p className="text-lg font-bold text-slate-900" data-testid="detected-count">{selectedJob.total_changes_detected || 0}</p>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-slate-800/30 border border-slate-800 text-center">
+                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-center">
                     <p className="text-[10px] text-slate-500">Birleştirilen</p>
-                    <p className="text-lg font-bold text-white" data-testid="coalesced-count">{selectedJob.total_changes_after_coalescing || 0}</p>
+                    <p className="text-lg font-bold text-slate-900" data-testid="coalesced-count">{selectedJob.total_changes_after_coalescing || 0}</p>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
-                    <p className="text-[10px] text-emerald-400">Başarılı</p>
+                  <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-center">
+                    <p className="text-[10px] text-emerald-700">Başarılı</p>
                     <p className="text-lg font-bold text-emerald-300" data-testid="completed-count">{selectedJob.completed_events || 0}</p>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-center">
+                  <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-center">
                     <p className="text-[10px] text-red-400">Başarısız</p>
-                    <p className="text-lg font-bold text-red-300" data-testid="failed-count">{selectedJob.failed_events || 0}</p>
+                    <p className="text-lg font-bold text-red-700" data-testid="failed-count">{selectedJob.failed_events || 0}</p>
                   </div>
                 </div>
 
@@ -805,7 +852,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                     <p className="text-xs text-slate-500 mb-1.5">Değişiklik Türleri</p>
                     <div className="flex flex-wrap gap-1.5">
                       {selectedJob.change_types.map((ct) => (
-                        <Badge key={ct} variant="outline" className="text-xs border-slate-700 text-slate-400">
+                        <Badge key={ct} variant="outline" className="text-xs border-slate-200 text-slate-500">
                           {ct.replace('_changed', '').replace(/_/g, ' ')}
                         </Badge>
                       ))}
@@ -815,9 +862,9 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
 
                 {/* Error Display */}
                 {selectedJob.last_error && (
-                  <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200">
                     <p className="text-xs text-red-400 font-medium mb-1">Son Hata</p>
-                    <p className="text-xs text-red-300 font-mono">{selectedJob.last_error}</p>
+                    <p className="text-xs text-red-700 font-mono">{selectedJob.last_error}</p>
                   </div>
                 )}
 
@@ -829,7 +876,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                       <RotateCcw className="w-3 h-3 mr-1" /> Yeniden Dene
                     </Button>
                     {selectedJob.status === 'manual_review' && (
-                      <Button size="sm" variant="outline" className="text-xs border-slate-700 text-slate-400"
+                      <Button size="sm" variant="outline" className="text-xs border-slate-200 text-slate-500"
                         onClick={() => handleDismissJob(selectedJob.id)} data-testid="detail-dismiss-btn">
                         Dismiss
                       </Button>
@@ -843,14 +890,14 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                     <p className="text-xs text-slate-500 mb-2">Sync Events ({jobEvents.length})</p>
                     <div className="space-y-1.5 max-h-60 overflow-y-auto">
                       {jobEvents.map((evt) => (
-                        <div key={evt.id} className="flex items-center justify-between p-2.5 rounded bg-slate-800/20 border border-slate-800/50" data-testid={`event-row-${evt.id?.slice(0, 8)}`}>
+                        <div key={evt.id} className="flex items-center justify-between p-2.5 rounded bg-slate-50 border border-slate-100" data-testid={`event-row-${evt.id?.slice(0, 8)}`}>
                           <div className="flex items-center gap-2 min-w-0">
                             <StatusBadge status={evt.status} />
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
-                                <span className="text-xs text-white font-medium">{evt.sync_type}</span>
+                                <span className="text-xs text-slate-900 font-medium">{evt.sync_type}</span>
                                 {evt.change_type && (
-                                  <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-500 py-0">
+                                  <Badge variant="outline" className="text-[10px] border-slate-200 text-slate-500 py-0">
                                     {evt.change_type.replace('_changed', '').replace(/_/g, ' ')}
                                   </Badge>
                                 )}
@@ -869,7 +916,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                               <span className="text-xs font-mono text-slate-500">{evt.latency_ms}ms</span>
                             )}
                             {evt.retry_count > 0 && (
-                              <span className="text-[10px] text-amber-400">retry:{evt.retry_count}</span>
+                              <span className="text-[10px] text-amber-600">retry:{evt.retry_count}</span>
                             )}
                           </div>
                         </div>
@@ -879,7 +926,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                 )}
 
                 {/* Timestamps */}
-                <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+                <div className="flex items-center justify-between pt-2 border-t border-slate-200">
                   <div className="flex gap-4 text-[10px] text-slate-600">
                     {selectedJob.started_at && <span>Start: {new Date(selectedJob.started_at).toLocaleTimeString('tr-TR')}</span>}
                     {selectedJob.batched_at && <span>Batch: {new Date(selectedJob.batched_at).toLocaleTimeString('tr-TR')}</span>}
@@ -894,7 +941,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
 
         {/* Reservation Detail Dialog */}
         <Dialog open={showReservationDetail} onOpenChange={setShowReservationDetail}>
-          <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-lg max-h-[85vh] overflow-y-auto" data-testid="reservation-detail-dialog" aria-describedby="res-detail-desc">
+          <DialogContent className="bg-white border-slate-200 text-slate-900 sm:max-w-lg max-h-[85vh] overflow-y-auto" data-testid="reservation-detail-dialog" aria-describedby="res-detail-desc">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <FileText className="w-5 h-5" />
@@ -906,7 +953,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
             {selectedReservation ? (
               <div className="space-y-4">
                 {/* Status Header */}
-                <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-200">
                   <div className="flex items-center gap-2">
                     <StatusBadge status={selectedReservation.import_status} />
                     <AckBadge ackStatus={selectedReservation.ack_status} />
@@ -918,79 +965,79 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
 
                 {/* Guest & Stay Info */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                     <p className="text-[10px] text-slate-500 mb-1">Misafir</p>
-                    <p className="text-sm text-white font-medium">{selectedReservation.guest_name || '-'}</p>
-                    {selectedReservation.guest_email && <p className="text-xs text-slate-400">{selectedReservation.guest_email}</p>}
-                    {selectedReservation.guest_phone && <p className="text-xs text-slate-400">{selectedReservation.guest_phone}</p>}
+                    <p className="text-sm text-slate-900 font-medium">{selectedReservation.guest_name || '-'}</p>
+                    {selectedReservation.guest_email && <p className="text-xs text-slate-500">{selectedReservation.guest_email}</p>}
+                    {selectedReservation.guest_phone && <p className="text-xs text-slate-500">{selectedReservation.guest_phone}</p>}
                   </div>
-                  <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                     <p className="text-[10px] text-slate-500 mb-1">Konaklama</p>
-                    <p className="text-sm text-white">{selectedReservation.arrival_date} → {selectedReservation.departure_date}</p>
-                    <p className="text-xs text-slate-400">{selectedReservation.adult_count} yetişkin, {selectedReservation.child_count} çocuk</p>
+                    <p className="text-sm text-slate-900">{selectedReservation.arrival_date} → {selectedReservation.departure_date}</p>
+                    <p className="text-xs text-slate-500">{selectedReservation.adult_count} yetişkin, {selectedReservation.child_count} çocuk</p>
                   </div>
                 </div>
 
                 {/* Booking & Payment */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                     <p className="text-[10px] text-slate-500 mb-1">Referans</p>
-                    <p className="text-xs text-white font-mono">{selectedReservation.external_confirmation_number || selectedReservation.external_reservation_id?.slice(0, 16)}</p>
+                    <p className="text-xs text-slate-900 font-mono">{selectedReservation.external_confirmation_number || selectedReservation.external_reservation_id?.slice(0, 16)}</p>
                     <p className="text-xs text-slate-500 mt-0.5">{selectedReservation.channel_name}</p>
                     {selectedReservation.pms_booking_id && (
-                      <p className="text-[10px] text-emerald-400 mt-1">PMS: {selectedReservation.pms_booking_id.slice(0, 12)}</p>
+                      <p className="text-[10px] text-emerald-700 mt-1">PMS: {selectedReservation.pms_booking_id.slice(0, 12)}</p>
                     )}
                   </div>
-                  <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                     <p className="text-[10px] text-slate-500 mb-1">Ödeme</p>
-                    <p className="text-lg font-bold text-white">{selectedReservation.total_amount?.toLocaleString('tr-TR')} {selectedReservation.currency}</p>
-                    {selectedReservation.payment_type && <p className="text-xs text-slate-400">{selectedReservation.payment_type}</p>}
+                    <p className="text-lg font-bold text-slate-900">{selectedReservation.total_amount?.toLocaleString('tr-TR')} {selectedReservation.currency}</p>
+                    {selectedReservation.payment_type && <p className="text-xs text-slate-500">{selectedReservation.payment_type}</p>}
                   </div>
                 </div>
 
                 {/* Mapping Info */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                     <p className="text-[10px] text-slate-500 mb-1">Oda Tipi</p>
-                    <p className="text-xs text-white">{selectedReservation.room_type_external_id}</p>
+                    <p className="text-xs text-slate-900">{selectedReservation.room_type_external_id}</p>
                     {selectedReservation.room_type_mapped_id ? (
-                      <p className="text-[10px] text-emerald-400">→ {selectedReservation.room_type_mapped_id}</p>
+                      <p className="text-[10px] text-emerald-700">→ {selectedReservation.room_type_mapped_id}</p>
                     ) : (
-                      <p className="text-[10px] text-amber-400">Mapping yok</p>
+                      <p className="text-[10px] text-amber-600">Mapping yok</p>
                     )}
                   </div>
-                  <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                     <p className="text-[10px] text-slate-500 mb-1">Fiyat Planı</p>
-                    <p className="text-xs text-white">{selectedReservation.rate_plan_external_id || '-'}</p>
+                    <p className="text-xs text-slate-900">{selectedReservation.rate_plan_external_id || '-'}</p>
                     {selectedReservation.rate_plan_mapped_id && (
-                      <p className="text-[10px] text-emerald-400">→ {selectedReservation.rate_plan_mapped_id}</p>
+                      <p className="text-[10px] text-emerald-700">→ {selectedReservation.rate_plan_mapped_id}</p>
                     )}
                   </div>
                 </div>
 
                 {/* Fingerprint */}
                 {selectedReservation.payload_fingerprint && (
-                  <div className="px-3 py-2 rounded bg-slate-800/20 border border-slate-800">
+                  <div className="px-3 py-2 rounded bg-slate-50 border border-slate-200">
                     <span className="text-[10px] text-slate-500">Fingerprint: </span>
-                    <span className="text-[10px] font-mono text-slate-400">{selectedReservation.payload_fingerprint}</span>
+                    <span className="text-[10px] font-mono text-slate-500">{selectedReservation.payload_fingerprint}</span>
                   </div>
                 )}
 
                 {/* Review Info */}
                 {selectedReservation.review_reason && (
-                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                  <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
                     <div className="flex items-center gap-2 mb-1">
-                      <AlertTriangle className="w-3 h-3 text-amber-400" />
-                      <p className="text-xs text-amber-400 font-medium">İnceleme Sebebi</p>
+                      <AlertTriangle className="w-3 h-3 text-amber-600" />
+                      <p className="text-xs text-amber-600 font-medium">İnceleme Sebebi</p>
                       {selectedReservation.review_reason_code && (
-                        <Badge variant="outline" className="text-[10px] border-amber-700/50 text-amber-400 py-0">
+                        <Badge variant="outline" className="text-[10px] border-amber-700/50 text-amber-600 py-0">
                           {selectedReservation.review_reason_code.replace(/_/g, ' ')}
                         </Badge>
                       )}
                     </div>
-                    <p className="text-xs text-amber-300">{selectedReservation.review_reason}</p>
+                    <p className="text-xs text-amber-700">{selectedReservation.review_reason}</p>
                     {selectedReservation.suggested_action && (
-                      <p className="text-[10px] text-amber-400/70 mt-1">Önerilen: {selectedReservation.suggested_action}</p>
+                      <p className="text-[10px] text-amber-600/70 mt-1">Önerilen: {selectedReservation.suggested_action}</p>
                     )}
                   </div>
                 )}
@@ -1005,20 +1052,20 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
 
                 {/* Error */}
                 {selectedReservation.error_message && (
-                  <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200">
                     <p className="text-xs text-red-400 font-medium mb-1">Hata</p>
-                    <p className="text-xs text-red-300 font-mono">{selectedReservation.error_message}</p>
+                    <p className="text-xs text-red-700 font-mono">{selectedReservation.error_message}</p>
                   </div>
                 )}
 
                 {/* Actions for review items */}
                 {['review', 'conflict', 'out_of_order'].includes(selectedReservation.import_status) && (
-                  <div className="flex gap-2 pt-2 border-t border-slate-800">
+                  <div className="flex gap-2 pt-2 border-t border-slate-200">
                     <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-xs"
                       onClick={() => handleReprocessReview(selectedReservation.id)} data-testid="detail-reprocess-btn">
                       <RotateCcw className="w-3 h-3 mr-1" /> Reprocess
                     </Button>
-                    <Button size="sm" variant="outline" className="text-xs border-slate-700 text-slate-400"
+                    <Button size="sm" variant="outline" className="text-xs border-slate-200 text-slate-500"
                       onClick={() => handleDismissReview(selectedReservation.id)} data-testid="detail-dismiss-res-btn">
                       Dismiss
                     </Button>
@@ -1026,7 +1073,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                 )}
 
                 {/* Timestamps */}
-                <div className="flex flex-wrap gap-3 pt-2 border-t border-slate-800 text-[10px] text-slate-600">
+                <div className="flex flex-wrap gap-3 pt-2 border-t border-slate-200 text-[10px] text-slate-600">
                   <span>Oluşturulma: {new Date(selectedReservation.created_at).toLocaleString('tr-TR')}</span>
                   {selectedReservation.reviewed_at && <span>İncelendi: {new Date(selectedReservation.reviewed_at).toLocaleString('tr-TR')}</span>}
                   {selectedReservation.reprocessed_at && <span>Reprocess: {new Date(selectedReservation.reprocessed_at).toLocaleString('tr-TR')}</span>}
@@ -1039,7 +1086,7 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
 
         {/* Batch Detail Dialog */}
         <Dialog open={showBatchDetail} onOpenChange={setShowBatchDetail}>
-          <DialogContent className="bg-slate-900 border-slate-800 text-white sm:max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="batch-detail-dialog" aria-describedby="batch-detail-desc">
+          <DialogContent className="bg-white border-slate-200 text-slate-900 sm:max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="batch-detail-dialog" aria-describedby="batch-detail-desc">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <PackageCheck className="w-5 h-5" />
@@ -1051,15 +1098,15 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
             {batchDetailLoading ? (
               <div className="flex flex-col items-center justify-center py-10 gap-3">
                 <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
-                <p className="text-sm text-slate-400">Batch detayları yükleniyor...</p>
+                <p className="text-sm text-slate-500">Batch detayları yükleniyor...</p>
               </div>
             ) : selectedBatch ? (
               <div className="space-y-4">
                 {/* Batch Header */}
-                <div className="flex items-start justify-between p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                <div className="flex items-start justify-between p-3 rounded-lg bg-slate-50 border border-slate-200">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-medium text-white font-mono">{selectedBatch.id?.slice(0, 12)}</span>
+                      <span className="text-sm font-medium text-slate-900 font-mono">{selectedBatch.id?.slice(0, 12)}</span>
                       <StatusBadge status={selectedBatch.status} />
                     </div>
                     <div className="text-xs text-slate-500">
@@ -1067,42 +1114,42 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                       {selectedBatch.pull_from && <p>Tarih aralığı: {selectedBatch.pull_from} → {selectedBatch.pull_to || '...'}</p>}
                     </div>
                   </div>
-                  <div className="text-right text-xs text-slate-400">
-                    {selectedBatch.duration_ms != null && <p className="font-mono text-sm text-slate-300">{selectedBatch.duration_ms}ms</p>}
+                  <div className="text-right text-xs text-slate-500">
+                    {selectedBatch.duration_ms != null && <p className="font-mono text-sm text-slate-600">{selectedBatch.duration_ms}ms</p>}
                     <p>{new Date(selectedBatch.started_at).toLocaleString('tr-TR')}</p>
                   </div>
                 </div>
 
                 {/* Summary Stats */}
                 <div className="grid grid-cols-4 gap-2">
-                  <div className="p-2 rounded-lg bg-slate-800/30 border border-slate-800 text-center">
+                  <div className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-center">
                     <p className="text-[10px] text-slate-500">Toplam</p>
-                    <p className="text-lg font-bold text-white">{selectedBatch.total_reservations || 0}</p>
+                    <p className="text-lg font-bold text-slate-900">{selectedBatch.total_reservations || 0}</p>
                   </div>
-                  <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
-                    <p className="text-[10px] text-emerald-400">Yeni</p>
+                  <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-center">
+                    <p className="text-[10px] text-emerald-700">Yeni</p>
                     <p className="text-lg font-bold text-emerald-300">{selectedBatch.new_count || 0}</p>
                   </div>
                   <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-center">
                     <p className="text-[10px] text-cyan-400">Değişiklik</p>
                     <p className="text-lg font-bold text-cyan-300">{selectedBatch.modified_count || 0}</p>
                   </div>
-                  <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-center">
+                  <div className="p-2 rounded-lg bg-red-50 border border-red-200 text-center">
                     <p className="text-[10px] text-red-400">İptal</p>
-                    <p className="text-lg font-bold text-red-300">{selectedBatch.cancelled_count || 0}</p>
+                    <p className="text-lg font-bold text-red-700">{selectedBatch.cancelled_count || 0}</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-5 gap-2">
                   {selectedBatch.duplicate_count > 0 && (
-                    <div className="p-2 rounded bg-slate-800/30 border border-slate-800 text-center">
+                    <div className="p-2 rounded bg-slate-50 border border-slate-200 text-center">
                       <p className="text-[10px] text-slate-500">Duplikat</p>
-                      <p className="text-sm font-bold text-slate-400">{selectedBatch.duplicate_count}</p>
+                      <p className="text-sm font-bold text-slate-500">{selectedBatch.duplicate_count}</p>
                     </div>
                   )}
                   {selectedBatch.duplicate_cancel_count > 0 && (
-                    <div className="p-2 rounded bg-slate-800/30 border border-slate-800 text-center">
+                    <div className="p-2 rounded bg-slate-50 border border-slate-200 text-center">
                       <p className="text-[10px] text-slate-500">Dup.İptal</p>
-                      <p className="text-sm font-bold text-slate-400">{selectedBatch.duplicate_cancel_count}</p>
+                      <p className="text-sm font-bold text-slate-500">{selectedBatch.duplicate_cancel_count}</p>
                     </div>
                   )}
                   {selectedBatch.conflict_count > 0 && (
@@ -1112,30 +1159,30 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                     </div>
                   )}
                   {selectedBatch.review_count > 0 && (
-                    <div className="p-2 rounded bg-amber-500/10 border border-amber-500/20 text-center">
-                      <p className="text-[10px] text-amber-400">İnceleme</p>
-                      <p className="text-sm font-bold text-amber-300">{selectedBatch.review_count}</p>
+                    <div className="p-2 rounded bg-amber-50 border border-amber-200 text-center">
+                      <p className="text-[10px] text-amber-600">İnceleme</p>
+                      <p className="text-sm font-bold text-amber-700">{selectedBatch.review_count}</p>
                     </div>
                   )}
                   {selectedBatch.out_of_order_count > 0 && (
-                    <div className="p-2 rounded bg-amber-500/10 border border-amber-500/20 text-center">
-                      <p className="text-[10px] text-amber-400">OOO</p>
-                      <p className="text-sm font-bold text-amber-300">{selectedBatch.out_of_order_count}</p>
+                    <div className="p-2 rounded bg-amber-50 border border-amber-200 text-center">
+                      <p className="text-[10px] text-amber-600">OOO</p>
+                      <p className="text-sm font-bold text-amber-700">{selectedBatch.out_of_order_count}</p>
                     </div>
                   )}
                   {selectedBatch.failed_count > 0 && (
-                    <div className="p-2 rounded bg-red-500/10 border border-red-500/20 text-center">
+                    <div className="p-2 rounded bg-red-50 border border-red-200 text-center">
                       <p className="text-[10px] text-red-400">Başarısız</p>
-                      <p className="text-sm font-bold text-red-300">{selectedBatch.failed_count}</p>
+                      <p className="text-sm font-bold text-red-700">{selectedBatch.failed_count}</p>
                     </div>
                   )}
                 </div>
 
                 {/* ACK Summary */}
                 {(selectedBatch.ack_sent_count > 0 || selectedBatch.ack_failed_count > 0) && (
-                  <div className="flex items-center gap-3 px-3 py-2 rounded bg-slate-800/20 border border-slate-800">
-                    <MailCheck className="w-4 h-4 text-emerald-400" />
-                    <span className="text-xs text-slate-400">ACK Gönderildi: {selectedBatch.ack_sent_count || 0}</span>
+                  <div className="flex items-center gap-3 px-3 py-2 rounded bg-slate-50 border border-slate-200">
+                    <MailCheck className="w-4 h-4 text-emerald-700" />
+                    <span className="text-xs text-slate-500">ACK Gönderildi: {selectedBatch.ack_sent_count || 0}</span>
                     {selectedBatch.ack_failed_count > 0 && (
                       <>
                         <MailX className="w-4 h-4 text-red-400" />
@@ -1152,13 +1199,13 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
                     <div className="space-y-1.5 max-h-60 overflow-y-auto">
                       {batchReservations.map((r) => (
                         <div key={r.id}
-                          className="flex items-center justify-between p-2.5 rounded bg-slate-800/20 border border-slate-800/50 cursor-pointer hover:border-slate-700"
+                          className="flex items-center justify-between p-2.5 rounded bg-slate-50 border border-slate-100 cursor-pointer hover:border-slate-200"
                           onClick={() => { setShowBatchDetail(false); handleViewReservationDetail(r.id); }}
                           data-testid={`batch-res-${r.id?.slice(0, 8)}`}
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <StatusBadge status={r.import_status} />
-                            <span className="text-xs text-white">{r.guest_name || '-'}</span>
+                            <span className="text-xs text-slate-900">{r.guest_name || '-'}</span>
                             <span className="text-[10px] text-slate-500 font-mono">{r.external_confirmation_number || r.external_reservation_id?.slice(0, 8)}</span>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">

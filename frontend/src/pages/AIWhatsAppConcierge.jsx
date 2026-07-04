@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Home, MessageCircle, Send, Bot, CheckCircle, Clock } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { Home, MessageCircle, Send, Bot, CheckCircle, Clock, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 
@@ -16,6 +17,13 @@ const AIWhatsAppConcierge = () => {
   const [testMessage, setTestMessage] = useState('');
   const [testPhone, setTestPhone] = useState('+90 555 123 45 67');
   const [loading, setLoading] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [configLoading, setConfigLoading] = useState(false);
+  const [config, setConfig] = useState({
+    phone_number_id: '',
+    access_token: '',
+    verify_token: ''
+  });
 
   useEffect(() => {
     loadConversations();
@@ -27,6 +35,40 @@ const AIWhatsAppConcierge = () => {
       setConversations(response.data.conversations || []);
     } catch (error) {
       console.error('Conversations yüklenemedi');
+    }
+  };
+
+  const loadConfig = async () => {
+    try {
+      const response = await api.get('/whatsapp/config');
+      if (response.data.config) {
+        setConfig({
+          phone_number_id: response.data.config.phone_number_id || '',
+          access_token: response.data.config.access_token || '',
+          verify_token: response.data.config.verify_token || ''
+        });
+      }
+    } catch (error) {
+      console.error('Config yüklenemedi', error);
+    }
+  };
+
+  useEffect(() => {
+    if (configOpen) {
+      loadConfig();
+    }
+  }, [configOpen]);
+
+  const saveConfig = async () => {
+    setConfigLoading(true);
+    try {
+      await api.post('/whatsapp/config', config);
+      toast.success('Ayarlar başarıyla kaydedildi');
+      setConfigOpen(false);
+    } catch (error) {
+      toast.error('Ayarlar kaydedilirken hata oluştu');
+    } finally {
+      setConfigLoading(false);
     }
   };
 
@@ -87,9 +129,58 @@ const AIWhatsAppConcierge = () => {
             </p>
           </div>
         </div>
-        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 px-3 py-1 text-sm rounded-full">
-          Modül Aktif
-        </Badge>
+        <div className="flex items-center gap-3">
+          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 px-3 py-1 text-sm rounded-full">
+            Modül Aktif
+          </Badge>
+          <Dialog open={configOpen} onOpenChange={setConfigOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Settings className="w-4 h-4" />
+                Entegrasyon Ayarları
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>WhatsApp Entegrasyon Ayarları</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Phone Number ID</label>
+                  <Input 
+                    value={config.phone_number_id}
+                    onChange={(e) => setConfig({ ...config, phone_number_id: e.target.value })}
+                    placeholder="Örn: 1059384729384"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Access Token</label>
+                  <Input 
+                    value={config.access_token}
+                    onChange={(e) => setConfig({ ...config, access_token: e.target.value })}
+                    placeholder="EAAL..."
+                    type="password"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Verify Token</label>
+                  <Input 
+                    value={config.verify_token}
+                    onChange={(e) => setConfig({ ...config, verify_token: e.target.value })}
+                    placeholder="Örn: my_custom_verify_token"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Webhook doğrulamasında kullanılacak kendi belirlediğiniz şifre.</p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setConfigOpen(false)}>İptal</Button>
+                <Button onClick={saveConfig} disabled={configLoading}>
+                  {configLoading ? 'Kaydediliyor...' : 'Kaydet'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Feature Highlights */}

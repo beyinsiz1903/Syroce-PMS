@@ -115,20 +115,20 @@ export default function ConnectorsTab(props) {
     <>
             <div className="space-y-3">
               {connectors.map((c) => (
-                <Card key={c.connector_id} className="bg-slate-900/50 border-slate-800">
+                <Card key={c.connector_id} className="bg-white shadow-sm border-slate-200">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className={`w-2 h-2 rounded-full ${c.status === 'active' ? 'bg-emerald-400' : c.status === 'paused' ? 'bg-amber-400' : 'bg-slate-500'}`} />
                         <div>
-                          <p className="font-medium text-white">{c.display_name || c.provider}</p>
+                          <p className="font-medium text-slate-900">{c.display_name || c.provider}</p>
                           <p className="text-xs text-slate-500">{c.provider} &middot; {c.connector_id?.slice(0, 8)}</p>
                         </div>
                         <StatusBadge status={c.status} />
                         <HealthBadge health={c.health} />
                       </div>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline" className="text-xs h-7 border-slate-700"
+                        <Button size="sm" variant="outline" className="text-xs h-7 border-slate-200"
                           onClick={() => handleTestConnection(c.connector_id)} data-testid={`test-conn-${c.connector_id}`}>
                           Test
                         </Button>
@@ -139,7 +139,7 @@ export default function ConnectorsTab(props) {
                           </Button>
                         )}
                         {c.status === 'active' && (
-                          <Button size="sm" variant="outline" className="text-xs h-7 border-amber-700 text-amber-400"
+                          <Button size="sm" variant="outline" className="text-xs h-7 border-amber-700 text-amber-600"
                             onClick={() => handlePause(c.connector_id)}>
                             Pause
                           </Button>
