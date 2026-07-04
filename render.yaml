@@ -45,6 +45,8 @@ envVarGroups:
         value: standalone
       - key: SECRETS_PROVIDER
         value: env
+      - key: JWT_EXPIRATION_MINUTES
+        value: "60"
       # --- Asagidakileri replit.md'deki tam listeye gore sync:false ekleyin ---
       # RESEND_API_KEY, SENTRY_DSN, QUICKID_SERVICE_KEY, QUICKID_URL,
       # ROOM_QR_SECRET, PUBLIC_APP_URL, HOTELRUNNER_WEBHOOK_SECRET,

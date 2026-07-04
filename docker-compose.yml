@@ -16,6 +16,7 @@ x-backend-env: &backend-env
   BACKUP_CRON: "0 2 * * *"
   INSTANCE_ID: dev-1
   CORS_ORIGINS: http://localhost:3000
+  JWT_EXPIRATION_MINUTES: "60"
 
 services:
   # ── MongoDB ──

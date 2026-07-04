@@ -16,6 +16,7 @@ x-backend-env: &backend-env
   BACKUP_CRON: "0 2 * * *"
   JWT_SECRET: ${JWT_SECRET}
   CORS_ORIGINS: ${CORS_ORIGINS}
+  JWT_EXPIRATION_MINUTES: "60"
 
 x-logging: &default-logging
   driver: json-file
