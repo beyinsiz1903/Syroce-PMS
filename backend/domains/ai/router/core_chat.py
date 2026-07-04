@@ -191,6 +191,16 @@ async def ai_chat(
 ):
     """AI-powered hotel assistant chatbot with real data access"""
     user_message = message_data.get("message", "").strip()
+    raw_history = message_data.get("history", [])
+    
+    # Format history for OpenAI
+    history = []
+    for msg in raw_history[-10:]: # Keep last 10 to avoid token limits
+        role = "assistant" if msg.get("sender") == "bot" else "user"
+        content = msg.get("message", "")
+        if content and not msg.get("isError"):
+            history.append({"role": role, "content": content})
+
     if not user_message:
         return {"response": "Lütfen bir mesaj yazın."}
 
@@ -551,7 +561,7 @@ async def ai_chat(
             enriched_message = user_message + data_context
 
         chat = ai_svc._create_chat(system_message=system_msg)
-        response_text = await chat.send_message(enriched_message)
+        response_text = await chat.send_message(enriched_message, history=history)
 
         return {"response": response_text}
     except Exception as exc:

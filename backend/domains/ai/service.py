@@ -64,13 +64,15 @@ class _SimpleLlmChat:
         self.system_message = system_message
         self.model = model
 
-    async def send_message(self, content: str) -> str:
+    async def send_message(self, content: str, history: list = None) -> str:
+        messages = [{"role": "system", "content": self.system_message}]
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": content})
+
         response = await self.client.chat.completions.create(
             model=self.model,
-            messages=[
-                {"role": "system", "content": self.system_message},
-                {"role": "user", "content": content},
-            ],
+            messages=messages,
             max_tokens=1024,
             temperature=0.7,
         )

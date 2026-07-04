@@ -33,7 +33,10 @@ const AIChatbot = () => {
     setLoading(true);
 
     try {
-      const response = await axios.post('/ai/chat', { message: inputMessage });
+      const response = await axios.post('/ai/chat', { 
+        message: inputMessage,
+        history: messages 
+      });
       const botMessage = { sender: 'bot', message: response.data.response, timestamp: new Date() };
       setMessages(prev => [...prev, botMessage]);
     } catch (error) {
