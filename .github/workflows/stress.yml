@@ -119,7 +119,7 @@ jobs:
                   STRESS_SKIP_TEARDOWN: 'true'
               run: |
                   cd frontend
-                  yarn playwright test --config=playwright.stress.config.js specs/00-gates.spec.js specs/01-bulk-seed-500.spec.js
+                  yarn playwright test --config=playwright.stress.config.js e2e-stress/specs/00-gates.spec.js e2e-stress/specs/01-bulk-seed-500.spec.js
 
             - name: Upload Auth State
               uses: actions/upload-artifact@v5
@@ -141,19 +141,19 @@ jobs:
                 include:
                     - shard: B
                       name: "Front Office Core"
-                      spec_pattern: "specs/02-*.spec.js specs/03-*.spec.js specs/04-*.spec.js specs/05-*.spec.js specs/06-*.spec.js specs/09-*.spec.js specs/95-*.spec.js specs/99-*.spec.js specs/99B-*.spec.js"
+                      spec_pattern: "e2e-stress/specs/02-*.spec.js e2e-stress/specs/03-*.spec.js e2e-stress/specs/04-*.spec.js e2e-stress/specs/05-*.spec.js e2e-stress/specs/06-*.spec.js e2e-stress/specs/09-*.spec.js e2e-stress/specs/95-*.spec.js e2e-stress/specs/99-*.spec.js e2e-stress/specs/99B-*.spec.js"
                       report_tag: "shard_b_front_office"
                     - shard: C
                       name: "Operations & Service"
-                      spec_pattern: "specs/08-*.spec.js specs/08B-*.spec.js specs/10-*.spec.js specs/11-*.spec.js specs/12-*.spec.js specs/13-*.spec.js specs/98-maintenance-workorder-lifecycle.spec.js specs/98-messaging-template-lifecycle.spec.js"
+                      spec_pattern: "e2e-stress/specs/08-*.spec.js e2e-stress/specs/08B-*.spec.js e2e-stress/specs/10-*.spec.js e2e-stress/specs/11-*.spec.js e2e-stress/specs/12-*.spec.js e2e-stress/specs/13-*.spec.js e2e-stress/specs/98-maintenance-workorder-lifecycle.spec.js e2e-stress/specs/98-messaging-template-lifecycle.spec.js"
                       report_tag: "shard_c_operations"
                     - shard: D
                       name: "MICE & Sales & HR & Finance"
-                      spec_pattern: "specs/14-*.spec.js specs/15-*.spec.js specs/16-*.spec.js specs/17-*.spec.js specs/18-*.spec.js specs/19-*.spec.js specs/20-*.spec.js specs/21-*.spec.js specs/22-*.spec.js specs/23-*.spec.js specs/24-*.spec.js specs/25-*.spec.js specs/26-*.spec.js specs/27-*.spec.js specs/28-*.spec.js specs/29-*.spec.js specs/32-*.spec.js specs/33-*.spec.js specs/33B-*.spec.js specs/34-*.spec.js specs/35-*.spec.js specs/35B-*.spec.js specs/37-*.spec.js specs/38-*.spec.js specs/38B-*.spec.js specs/39-*.spec.js specs/39B-*.spec.js specs/70-*.spec.js specs/71-*.spec.js specs/72-*.spec.js specs/98-mobile-cashier-surface.spec.js specs/98-payment-pos-reconciliation-dryrun.spec.js specs/98-pos-deep-lifecycle.spec.js specs/98-pos-kds-inventory.spec.js specs/98-efatura-earsiv-dryrun.spec.js specs/98-konaklama-vergisi-dryrun.spec.js specs/98-fnb-beo-generator.spec.js specs/98-golf-operational.spec.js specs/98-rms-revenue-deep.spec.js specs/98-sales-basic-lifecycle.spec.js specs/98-spa-wellness-operational.spec.js"
+                      spec_pattern: "e2e-stress/specs/14-*.spec.js e2e-stress/specs/15-*.spec.js e2e-stress/specs/16-*.spec.js e2e-stress/specs/17-*.spec.js e2e-stress/specs/18-*.spec.js e2e-stress/specs/19-*.spec.js e2e-stress/specs/20-*.spec.js e2e-stress/specs/21-*.spec.js e2e-stress/specs/22-*.spec.js e2e-stress/specs/23-*.spec.js e2e-stress/specs/24-*.spec.js e2e-stress/specs/25-*.spec.js e2e-stress/specs/26-*.spec.js e2e-stress/specs/27-*.spec.js e2e-stress/specs/28-*.spec.js e2e-stress/specs/29-*.spec.js e2e-stress/specs/32-*.spec.js e2e-stress/specs/33-*.spec.js e2e-stress/specs/33B-*.spec.js e2e-stress/specs/34-*.spec.js e2e-stress/specs/35-*.spec.js e2e-stress/specs/35B-*.spec.js e2e-stress/specs/37-*.spec.js e2e-stress/specs/38-*.spec.js e2e-stress/specs/38B-*.spec.js e2e-stress/specs/39-*.spec.js e2e-stress/specs/39B-*.spec.js e2e-stress/specs/70-*.spec.js e2e-stress/specs/71-*.spec.js e2e-stress/specs/72-*.spec.js e2e-stress/specs/98-mobile-cashier-surface.spec.js e2e-stress/specs/98-payment-pos-reconciliation-dryrun.spec.js e2e-stress/specs/98-pos-deep-lifecycle.spec.js e2e-stress/specs/98-pos-kds-inventory.spec.js e2e-stress/specs/98-efatura-earsiv-dryrun.spec.js e2e-stress/specs/98-konaklama-vergisi-dryrun.spec.js e2e-stress/specs/98-fnb-beo-generator.spec.js e2e-stress/specs/98-golf-operational.spec.js e2e-stress/specs/98-rms-revenue-deep.spec.js e2e-stress/specs/98-sales-basic-lifecycle.spec.js e2e-stress/specs/98-spa-wellness-operational.spec.js"
                       report_tag: "shard_d_mice_hr_finance"
                     - shard: E
                       name: "Security & Integrations"
-                      spec_pattern: "specs/30-*.spec.js specs/31-*.spec.js specs/36-*.spec.js specs/40-*.spec.js specs/41-*.spec.js specs/41B-*.spec.js specs/42-*.spec.js specs/43-*.spec.js specs/44-*.spec.js specs/45-*.spec.js specs/50-*.spec.js specs/51-*.spec.js specs/52-*.spec.js specs/52B-*.spec.js specs/60-*.spec.js specs/61-*.spec.js specs/62-*.spec.js specs/63-*.spec.js specs/64-*.spec.js specs/65-*.spec.js specs/66-*.spec.js specs/96-*.spec.js specs/97-*.spec.js specs/98-auth-token-lifecycle.spec.js specs/98-vcc-pci-compliance.spec.js specs/98B-websocket-tenant-isolation.spec.js specs/98C-twofa-totp-lifecycle.spec.js specs/98D-peer-login-throttle.spec.js"
+                      spec_pattern: "e2e-stress/specs/30-*.spec.js e2e-stress/specs/31-*.spec.js e2e-stress/specs/36-*.spec.js e2e-stress/specs/40-*.spec.js e2e-stress/specs/41-*.spec.js e2e-stress/specs/41B-*.spec.js e2e-stress/specs/42-*.spec.js e2e-stress/specs/43-*.spec.js e2e-stress/specs/44-*.spec.js e2e-stress/specs/45-*.spec.js e2e-stress/specs/50-*.spec.js e2e-stress/specs/51-*.spec.js e2e-stress/specs/52-*.spec.js e2e-stress/specs/52B-*.spec.js e2e-stress/specs/60-*.spec.js e2e-stress/specs/61-*.spec.js e2e-stress/specs/62-*.spec.js e2e-stress/specs/63-*.spec.js e2e-stress/specs/64-*.spec.js e2e-stress/specs/65-*.spec.js e2e-stress/specs/66-*.spec.js e2e-stress/specs/96-*.spec.js e2e-stress/specs/97-*.spec.js e2e-stress/specs/98-auth-token-lifecycle.spec.js e2e-stress/specs/98-vcc-pci-compliance.spec.js e2e-stress/specs/98B-websocket-tenant-isolation.spec.js e2e-stress/specs/98C-twofa-totp-lifecycle.spec.js e2e-stress/specs/98D-peer-login-throttle.spec.js"
                       report_tag: "shard_e_security_integrations"
         env:
             STRESS_SKIP_SETUP: 'true'
@@ -294,4 +294,4 @@ jobs:
                   STRESS_SKIP_TEARDOWN: 'false'
               run: |
                   cd frontend
-                  yarn playwright test --config=playwright.stress.config.js specs/00-gates.spec.js
+                  yarn playwright test --config=playwright.stress.config.js e2e-stress/specs/00-gates.spec.js
