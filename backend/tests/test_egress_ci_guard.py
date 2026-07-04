@@ -22,6 +22,8 @@ from pathlib import Path
 # Files allowed to use raw ``httpx.AsyncClient`` directly. Each entry MUST
 # include a one-line justification — the trust-boundary classification.
 ALLOWED_RAW_HTTPX = {
+    # Server constant for Meta Graph API (WhatsApp Embedded Signup)
+    "backend/domains/ai/router/whatsapp.py",
     # Operator env QUICKID_URL — internal sister service URL
     "backend/routers/quick_id_proxy.py",
     # Server constants for HotelRunner partner endpoints
