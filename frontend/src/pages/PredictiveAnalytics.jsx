@@ -4,9 +4,11 @@ import axios from 'axios';
 import MaybeLayout from '@/components/MaybeLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { AlertTriangle, TrendingUp, Target, CheckCircle, Lightbulb, Activity, ChevronRight } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { AlertTriangle, TrendingUp, Target, CheckCircle, Lightbulb, Activity, ChevronRight, HelpCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import AITabs from '@/components/AITabs';
 
 const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
   const { t } = useTranslation();
@@ -56,15 +58,34 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
     <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="ai_revenue_autopilot">
       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-6">
         
+        <AITabs />
+
         {/* Header Section */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-lg">
               <Activity className="w-5 h-5" />
             </div>
-            <div>
-              <h1 className="text-xl font-semibold text-slate-900">Tahmine Dayalı Analiz</h1>
-              <p className="text-sm text-slate-500">Yapay zeka destekli no-show riskleri ve talep öngörüleri</p>
+            <div className="flex items-center gap-2">
+              <div>
+                <h1 className="text-xl font-semibold text-slate-900">Tahmine Dayalı Analiz</h1>
+                <p className="text-sm text-slate-500">Yapay zeka destekli no-show riskleri ve talep öngörüleri</p>
+              </div>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button className="text-slate-400 hover:text-indigo-600 transition-colors cursor-help">
+                      <HelpCircle className="w-5 h-5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs bg-slate-900 text-slate-50 border-none p-3 shadow-xl">
+                    <p className="text-sm font-semibold mb-1 text-indigo-300">Bu Sayfa Nasıl Çalışır?</p>
+                    <p className="text-xs leading-relaxed text-slate-300">
+                      Bu modül, veritabanınızdaki <strong>gerçek onaylı rezervasyonları</strong> tarayarak risk (OTA, ödeme tipi vb.) hesabı yapar. <br/><br/>Ayrıca 30 günlük geçmiş verilerinizi ve pazarı analiz ederek <strong>Talep Tahmini</strong> oluşturur. Önerilen fiyatları kanallara göndermek için üstteki butonlarla diğer yapay zeka modüllerine geçiş yapabilirsiniz.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
           </div>
           <div className="flex items-center gap-3">

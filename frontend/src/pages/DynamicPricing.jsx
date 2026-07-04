@@ -9,6 +9,7 @@ import { TrendingUp, TrendingDown, Target, Info, BarChart3, ChevronRight, Save }
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
+import AITabs from '@/components/AITabs';
 
 const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
   const { t } = useTranslation();
@@ -59,6 +60,8 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
     <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="ai_revenue_autopilot">
       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-6">
         
+        <AITabs />
+
         {/* Header */}
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg">

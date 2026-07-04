@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Zap, Play, CheckCircle2, AlertCircle, Settings, Shield, Clock, RotateCw, Cpu, Check, FileText } from 'lucide-react';
 import { toast } from 'sonner';
+import AITabs from '@/components/AITabs';
 
 const RevenueAutopilot = ({ user, tenant, onLogout, embedded }) => {
   const [autopilotMode, setAutopilotMode] = useState('supervised');
@@ -59,6 +60,8 @@ const RevenueAutopilot = ({ user, tenant, onLogout, embedded }) => {
     <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="ai_revenue_autopilot">
       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-6">
         
+        <AITabs />
+
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
