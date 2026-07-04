@@ -38,7 +38,7 @@ def event_loop():
 async def auth_headers():
     """Get authentication token."""
     async with httpx.AsyncClient(base_url=API_URL, timeout=30) as client:
-        resp = await client.post("/api/auth/login", json=AUTH_CREDS)
+        resp = await client.post("/api/auth/login", json=AUTH_CREDS, headers={"Origin": API_URL})
         assert resp.status_code == 200, f"Login failed: {resp.text}"
         data = resp.json()
         token = data.get("access_token") or data.get("token")

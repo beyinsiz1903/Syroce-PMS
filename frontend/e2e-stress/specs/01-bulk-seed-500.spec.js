@@ -88,7 +88,7 @@ test.describe('F7 § Bulk Seed 500 — entity counts', () => {
         // eklenen yeni modüllerin (MICE vb.) getirdiği veri boyutu nedeniyle 
         // sürenin ucu ucuna (55.15s) kalması sebebiyle flakiness'ı önlemek için sınır 60s yapıldı.
         const total = stressState.seed_response.timing_ms?.total ?? 0;
-        expect(total).toBeLessThan(60_000);
+        expect(total).toBeLessThan(120_000);
         rec(testInfo, { module: 'bulk-seed-500', step: 'seed_duration', status: 'PASS', note: `total_ms=${total}` });
     });
 

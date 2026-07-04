@@ -15,6 +15,7 @@ from .ml_training import router as _ml_training_r
 from .ops import router as _ops_r
 from .predictions import router as _predictions_r
 from .pricing_reputation import router as _pricing_reputation_r
+from .whatsapp import router as _whatsapp_r
 
 router = APIRouter()
 router.include_router(_core_chat_r)
@@ -27,3 +28,4 @@ router.include_router(_ops_r)
 router.include_router(_feedback_r)
 router.include_router(_ml_training_r)
 router.include_router(_knowledge_r)
+router.include_router(_whatsapp_r)

@@ -37,16 +37,8 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   
-  // Use URL parameter 'module' if present, otherwise default to 'overview'
-  const initialModule = searchParams.get('module') || 'overview';
-  const [activeItem, setActiveItem] = useState(initialModule);
-  
-  // Update URL when activeItem changes
-  useEffect(() => {
-    if (activeItem !== (searchParams.get('module') || 'overview')) {
-      setSearchParams({ module: activeItem }, { replace: true });
-    }
-  }, [activeItem, setSearchParams, searchParams]);
+  // Use URL parameter 'module' as the single source of truth
+  const activeItem = searchParams.get('module') || 'overview';
   
   // States for overview widgets
   const [briefing, setBriefing] = useState(null);
@@ -311,7 +303,7 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
               return (
                 <button
                   key={feature.id}
-                  onClick={() => setActiveItem(feature.id)}
+                  onClick={() => setSearchParams({ module: feature.id })}
                   className={`flex-shrink-0 md:w-full flex items-center gap-3 px-3 md:px-4 py-2 md:py-3.5 rounded-xl transition-all duration-200 group ${
                     isActive 
                       ? 'bg-indigo-50 text-indigo-700 shadow-sm border border-indigo-100/50' 

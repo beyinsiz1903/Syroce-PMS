@@ -105,19 +105,29 @@ test.describe('F8U § 98 — Auth Token Lifecycle', () => {
         prefix = stressState.data_prefix;
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
 
-        const email = process.env.E2E_STRESS_ADMIN_EMAIL;
-        const password = process.env.E2E_STRESS_ADMIN_PASSWORD;
-        if (!email || !password) {
+        const testEmail = `auth-test-${Date.now()}@syroce.com`;
+        const testPassword = 'AuthTestPass123!';
+        
+        // Create a temporary user to avoid cross-shard token invalidation 
+        // when the logout test bumps tokens_invalid_before.
+        const createStaff = await request.post('/api/hotel/team', {
+            data: { email: testEmail, name: 'Auth Test User', role: 'front_desk', password: testPassword },
+            headers: { Authorization: `Bearer ${stressTokens.stress_token}` }
+        });
+        
+        if (!createStaff.ok()) {
             moduleBlocked = true;
-            blockedReason = 'no_stress_admin_credentials_in_env';
-            recFinding(testInfo, 'P2', MOD, 'E2E_STRESS_ADMIN_EMAIL/PASSWORD env yok',
-                'Fresh login yapılamıyor; A-G skipped, H pilot_drift + external_calls bağımsız çalışır.');
+            blockedReason = `temp_user_creation_failed_${createStaff.status()}`;
+            recFinding(testInfo, 'P2', MOD, 'Temp user creation failed',
+                `status=${createStaff.status()} — A-G skipped.`);
             rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
                 note: `module_blocked=true reason=${blockedReason}` });
-            // Module-block: env-config eksik (legit), explicit skip — silent-return YASAK.
-            test.skip(true, 'E2E_STRESS_ADMIN_EMAIL/PASSWORD env missing');
+            test.skip(true, 'Temporary user creation failed');
             return;
         }
+
+        const email = testEmail;
+        const password = testPassword;
 
         const login = await freshLogin(request, email, password);
         if (!login.ok) {

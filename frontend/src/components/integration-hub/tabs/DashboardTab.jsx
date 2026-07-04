@@ -104,11 +104,11 @@ export default function DashboardTab(props) {
   } = props;
   return <>
             <div className="grid md:grid-cols-2 gap-4">
-              {connectors.map(c => <Card key={c.connector_id} className="bg-slate-900/50 border-slate-800">
+              {connectors.map(c => <Card key={c.connector_id} className="bg-white shadow-sm border-slate-200">
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <CardTitle className="text-base text-white">{c.display_name || c.provider}</CardTitle>
+                        <CardTitle className="text-base text-slate-900">{c.display_name || c.provider}</CardTitle>
                         <StatusBadge status={c.status} />
                       </div>
                       <HealthBadge health={c.health} />
@@ -118,29 +118,29 @@ export default function DashboardTab(props) {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="pt-0 space-y-2">
-                    {c.reasons?.length > 0 && <div className="text-xs text-amber-400/80 space-y-0.5">
+                    {c.reasons?.length > 0 && <div className="text-xs text-amber-600/80 space-y-0.5">
                         {c.reasons.map((r, i) => <p key={r.id || i}>&#9888; {r}</p>)}
                       </div>}
                     <div className="flex gap-2 flex-wrap">
-                      <Button size="sm" variant="outline" className="text-xs h-7 border-slate-700" onClick={() => handleSyncInventory(c.connector_id)} data-testid={`sync-inv-${c.connector_id}`}>
+                      <Button size="sm" variant="outline" className="text-xs h-7 border-slate-200" onClick={() => handleSyncInventory(c.connector_id)} data-testid={`sync-inv-${c.connector_id}`}>
                         <ArrowUpDown className="w-3 h-3 mr-1" /> Push Inventory
                       </Button>
-                      <Button size="sm" variant="outline" className="text-xs h-7 border-slate-700" onClick={() => handleSyncRates(c.connector_id)}>
+                      <Button size="sm" variant="outline" className="text-xs h-7 border-slate-200" onClick={() => handleSyncRates(c.connector_id)}>
                         <Zap className="w-3 h-3 mr-1" /> Push Rates
                       </Button>
-                      <Button size="sm" variant="outline" className="text-xs h-7 border-slate-700" onClick={() => handlePullReservations(c.connector_id)}>
+                      <Button size="sm" variant="outline" className="text-xs h-7 border-slate-200" onClick={() => handlePullReservations(c.connector_id)}>
                         <Download className="w-3 h-3 mr-1" /> Pull Reservations
                       </Button>
-                      <Button size="sm" variant="outline" className="text-xs h-7 border-slate-700" onClick={() => handleRunReconciliation(c.connector_id)}>
+                      <Button size="sm" variant="outline" className="text-xs h-7 border-slate-200" onClick={() => handleRunReconciliation(c.connector_id)}>
                         <Shield className="w-3 h-3 mr-1" /> Reconcile
                       </Button>
                     </div>
                   </CardContent>
                 </Card>)}
-              {connectors.length === 0 && !loading && <Card className="bg-slate-900/50 border-slate-800 col-span-2">
+              {connectors.length === 0 && !loading && <Card className="bg-white shadow-sm border-slate-200 col-span-2">
                   <CardContent className="p-12 text-center">
                     <Network className="w-12 h-12 mx-auto text-slate-600 mb-3" />
-                    <p className="text-slate-400 text-sm">{t('cm.components_integrationhub_tabs_DashboardTab.henuz_connector_tanimlanmamis')}</p>
+                    <p className="text-slate-500 text-sm">{t('cm.components_integrationhub_tabs_DashboardTab.henuz_connector_tanimlanmamis')}</p>
                     <Button size="sm" onClick={() => setShowNewConnector(true)} className="mt-3 bg-blue-600">
                       <Plus className="w-4 h-4 mr-1" /> {t('cm.components_integrationhub_tabs_DashboardTab.ilk_connector_i_ekle')}
                     </Button>

@@ -144,11 +144,11 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
                   <CardContent className="p-6">
                     <div className="flex flex-col md:flex-row items-center justify-between gap-8 mb-8">
                       <div className="text-center md:text-left">
-                        <p className="text-sm font-medium text-slate-500 mb-1">Önerilen Fiyat</p>
-                        <p className="text-5xl font-bold text-slate-900 tracking-tight">
+                        <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Önerilen Fiyat</p>
+                        <p className="text-2xl font-bold text-slate-800 tracking-tight">
                           €{recommendation.recommended_price}
                         </p>
-                        <div className="flex items-center gap-4 mt-4 text-sm">
+                        <div className="flex items-center justify-center md:justify-start gap-4 mt-3 text-xs">
                           <div>
                             <span className="text-slate-400">Taban: </span>
                             <span className="font-medium text-slate-700">€{recommendation.min_price}</span>
@@ -180,13 +180,15 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
                       </div>
                     </div>
 
-                    <Button 
-                      className="w-full h-11 text-sm bg-blue-600 hover:bg-blue-700 text-white" 
-                      onClick={handleUpdateRate}
-                    >
-                      <Save className="w-4 h-4 mr-2" />
-                      Fiyatı Onayla ve Kaydet
-                    </Button>
+                    <div className="mt-2 pt-6 border-t border-slate-100 flex justify-end">
+                      <Button 
+                        className="h-8 px-4 text-xs bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm shadow-indigo-200 transition-all rounded-lg font-medium" 
+                        onClick={handleUpdateRate}
+                      >
+                        <Save className="w-3.5 h-3.5 mr-2 opacity-80" />
+                        Fiyatı Onayla ve Kaydet
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               )}

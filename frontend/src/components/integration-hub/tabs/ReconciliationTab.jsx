@@ -113,25 +113,25 @@ export default function ReconciliationTab(props) {
   } = props;
   return (
     <>
-            <Card className="bg-slate-900/50 border-slate-800">
+            <Card className="bg-white shadow-sm border-slate-200">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base text-white">Reconciliation Issues</CardTitle>
+                <CardTitle className="text-base text-slate-900">Reconciliation Issues</CardTitle>
               </CardHeader>
               <CardContent>
                 {issues.length > 0 ? (
                   <div className="space-y-2">
                     {issues.map((issue) => (
-                      <div key={issue.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-800/30 border border-slate-800">
+                      <div key={issue.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-200">
                         <div>
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs border-slate-700">{issue.issue_type}</Badge>
-                            <Badge className={`text-xs ${issue.severity === 'critical' ? 'bg-red-500/15 text-red-400' : issue.severity === 'high' ? 'bg-amber-500/15 text-amber-400' : 'bg-slate-500/15 text-slate-400'} border`}>
+                            <Badge variant="outline" className="text-xs border-slate-200">{issue.issue_type}</Badge>
+                            <Badge className={`text-xs ${issue.severity === 'critical' ? 'bg-red-500/15 text-red-600' : issue.severity === 'high' ? 'bg-amber-500/15 text-amber-600' : 'bg-slate-500/15 text-slate-500'} border`}>
                               {issue.severity}
                             </Badge>
                           </div>
-                          <p className="text-sm text-slate-300 mt-1">{issue.description}</p>
+                          <p className="text-sm text-slate-600 mt-1">{issue.description}</p>
                         </div>
-                        <Button size="sm" variant="outline" className="text-xs h-7 border-emerald-700 text-emerald-400"
+                        <Button size="sm" variant="outline" className="text-xs h-7 border-emerald-700 text-emerald-700"
                           onClick={() => handleResolveIssue(issue.id)}>
                           Resolve
                         </Button>
@@ -140,7 +140,7 @@ export default function ReconciliationTab(props) {
                   </div>
                 ) : (
                   <div className="text-center py-8">
-                    <CheckCircle className="w-10 h-10 mx-auto text-emerald-500/50 mb-2" />
+                    <CheckCircle className="w-10 h-10 mx-auto text-emerald-600/50 mb-2" />
                     <p className="text-slate-500 text-sm">{t('cm.components_integrationhub_tabs_ReconciliationTab.acik_reconciliation_sorunu_yok')}</p>
                   </div>
                 )}

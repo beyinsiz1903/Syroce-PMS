@@ -49,7 +49,7 @@ def event_loop():
 @pytest.fixture(scope="module")
 async def auth_headers():
     async with httpx.AsyncClient(base_url=API_URL) as client:
-        resp = await client.post("/api/auth/login", json=AUTH_CREDS)
+        resp = await client.post("/api/auth/login", json=AUTH_CREDS, headers={"Origin": API_URL})
         token = resp.json().get("token") or resp.json().get("access_token")
         return {"Authorization": f"Bearer {token}"}
 

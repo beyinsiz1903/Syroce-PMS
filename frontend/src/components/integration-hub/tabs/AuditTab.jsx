@@ -113,18 +113,18 @@ export default function AuditTab(props) {
   } = props;
   return (
     <>
-            <Card className="bg-slate-900/50 border-slate-800">
+            <Card className="bg-white shadow-sm border-slate-200">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base text-white">Integration Audit Log</CardTitle>
+                <CardTitle className="text-base text-slate-900">Integration Audit Log</CardTitle>
               </CardHeader>
               <CardContent>
                 {auditLogs.length > 0 ? (
                   <div className="space-y-1.5">
                     {auditLogs.map((log) => (
-                      <div key={log.id} className="flex items-center gap-3 px-3 py-2 rounded bg-slate-800/20 text-xs">
+                      <div key={log.id} className="flex items-center gap-3 px-3 py-2 rounded bg-slate-50 text-xs">
                         <span className="text-slate-500 w-40 shrink-0">{new Date(log.created_at).toLocaleString('tr-TR')}</span>
-                        <Badge variant="outline" className="text-xs border-slate-700 shrink-0">{log.action}</Badge>
-                        <span className="text-slate-400 truncate">{log.entity_type} {log.entity_id?.slice(0, 8)}</span>
+                        <Badge variant="outline" className="text-xs border-slate-200 shrink-0">{log.action}</Badge>
+                        <span className="text-slate-500 truncate">{log.entity_type} {log.entity_id?.slice(0, 8)}</span>
                         <span className="text-slate-600 ml-auto">{log.actor_type}</span>
                       </div>
                     ))}

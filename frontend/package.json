@@ -88,7 +88,7 @@
     "test:e2e:business:list": "playwright test --config=playwright.business.config.js --list",
     "test:e2e:stress": "playwright test --config=playwright.stress.config.js",
     "test:e2e:stress:list": "playwright test --config=playwright.stress.config.js --list",
-    "test:e2e:stress:gates": "playwright test --config=playwright.stress.config.js specs/00-gates.spec.js",
+    "test:e2e:stress:gates": "playwright test --config=playwright.stress.config.js e2e-stress/specs/00-gates.spec.js",
     "knip": "knip",
     "knip:fix": "knip --fix --allow-remove-files",
     "lint": "eslint src/",
