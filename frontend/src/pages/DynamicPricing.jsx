@@ -5,7 +5,7 @@ import MaybeLayout from '@/components/MaybeLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { TrendingUp, TrendingDown, Target, Home, Zap, Info, BarChart3, ChevronRight, Save } from 'lucide-react';
+import { TrendingUp, TrendingDown, Target, Info, BarChart3, ChevronRight, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -43,7 +43,7 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
       });
       const data = resp?.data || {};
       if (data.success === false) {
-        toast.error(data.message || 'Fiyat uygulanamadi. Lutfen alanlari kontrol edin.');
+        toast.error(data.message || 'Fiyat uygulanamadı. Lütfen alanları kontrol edin.');
       } else if (data.pushed) {
         toast.success(`Fiyat güncellendi: €${recommendation.recommended_price} kanallara gönderildi.`);
       } else {
@@ -51,35 +51,33 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
       }
       loadRecommendation();
     } catch (error) {
-      toast.error('Fiyat uygulanamadi. Lutfen tekrar deneyin veya kanal yapilandirmasini kontrol edin.');
+      toast.error('Fiyat uygulanamadı. Lütfen tekrar deneyin veya kanal yapılandırmasını kontrol edin.');
     }
   };
 
   return (
     <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="ai_revenue_autopilot">
-      <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
+      <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-6">
         
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg shadow-blue-200">
-              <BarChart3 className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight text-slate-900">{t('aiModule.dynamicPricing')}</h1>
-              <p className="text-slate-500 mt-1">{t('aiModule.dynamicPricingDesc')}</p>
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg">
+            <BarChart3 className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold text-slate-900">{t('aiModule.dynamicPricing', 'Dinamik Fiyatlandırma')}</h1>
+            <p className="text-sm text-slate-500">{t('aiModule.dynamicPricingDesc', 'Yapay zeka ve kurallar motoru destekli fiyat optimizasyonu')}</p>
           </div>
         </div>
 
         {/* Filters */}
-        <Card className="border-none shadow-md overflow-visible relative z-20">
-          <CardContent className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-700 block">{t('pms.roomType')}</label>
+        <Card className="shadow-sm border-slate-200">
+          <CardContent className="p-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-600">{t('pms.roomType', 'Oda Tipi')}</label>
                 <Select value={roomType} onValueChange={setRoomType}>
-                  <SelectTrigger className="w-full bg-slate-50 border-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all rounded-xl h-12">
+                  <SelectTrigger className="w-full bg-white border-slate-200 h-10">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -89,13 +87,13 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-700 block">{t('common.date')}</label>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-600">{t('common.date', 'Tarih')}</label>
                 <input
                   type="date"
                   value={targetDate}
                   onChange={(e) => setTargetDate(e.target.value)}
-                  className="w-full px-4 h-12 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                  className="w-full px-3 h-10 bg-white border border-slate-200 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm transition-all"
                 />
               </div>
             </div>
@@ -103,115 +101,131 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
         </Card>
 
         {loading ? (
-          <div className="h-64 flex flex-col items-center justify-center text-slate-400 space-y-4">
-            <div className="animate-spin w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full"></div>
-            <p className="font-medium animate-pulse">Optimum fiyat hesaplanıyor...</p>
+          <div className="py-12 flex flex-col items-center justify-center text-slate-400 space-y-3">
+            <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+            <p className="text-sm font-medium">Hesaplanıyor...</p>
           </div>
         ) : recommendation && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
             {/* Left Column - Main Pricing */}
-            <div className="lg:col-span-7 space-y-8">
+            <div className="lg:col-span-2 space-y-6">
               {(recommendation.data_available === false || recommendation.recommended_price == null) ? (
-                <Card className="border-none shadow-md overflow-hidden relative">
-                  <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-amber-400 z-10"></div>
-                  <div className="absolute inset-0 bg-gradient-to-br from-amber-50 to-transparent z-0"></div>
-                  <CardHeader className="relative z-10">
-                    <CardTitle className="flex items-center gap-2 text-amber-800">
-                      <Info className="w-6 h-6 text-amber-500" />
+                <Card className="shadow-sm border-amber-200 bg-amber-50/30">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2 text-amber-800">
+                      <Info className="w-5 h-5 text-amber-600" />
                       Yetersiz Veri
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="relative z-10">
-                    <p className="text-amber-800/80 leading-relaxed">
+                  <CardContent>
+                    <p className="text-sm text-amber-900/80 leading-relaxed">
                       Bu oda tipi ve tarih için gerçek veriye dayalı fiyat önerisi üretilemedi. 
                       Oda taban fiyatları yapılandırıldığında öneri otomatik oluşur. 
-                      Ayrıntı için aşağıdaki "Uygulanan Kurallar" bölümüne bakın.
+                      Ayrıntı için aşağıdaki "Devreye Giren Kurallar" bölümüne bakın.
                     </p>
                   </CardContent>
                 </Card>
               ) : (
-                <Card className="border-none shadow-xl shadow-indigo-200/50 overflow-hidden relative">
-                  <div className="absolute inset-0 bg-gradient-to-br from-indigo-500 via-indigo-600 to-blue-700 opacity-5 pointer-events-none z-0"></div>
-                  <CardContent className="p-8 relative z-10 flex flex-col h-full justify-between">
-                    <div className="flex justify-between items-start mb-8">
-                      <div>
-                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                          <Target className="w-6 h-6 text-indigo-600" />
-                          Yapay Zeka Fiyat Önerisi
-                        </h2>
-                        <p className="text-sm text-slate-500 mt-1">Gelişmiş kural motoru tarafından optimize edildi</p>
-                      </div>
-                      <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 px-3 py-1 text-xs uppercase tracking-wider font-bold">
-                        Optimum
-                      </Badge>
+                <Card className="shadow-sm border-blue-100 overflow-hidden">
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-4 border-b border-blue-100 flex justify-between items-center">
+                    <div className="flex items-center gap-2 text-blue-900 font-medium">
+                      <Target className="w-5 h-5 text-blue-600" />
+                      Fiyat Önerisi
                     </div>
-
-                    <div className="text-center mb-10">
-                      <p className="text-7xl font-black text-transparent bg-clip-text bg-gradient-to-br from-indigo-600 to-blue-600 py-2">
-                        €{recommendation.recommended_price}
-                      </p>
-                      
-                      <div className="flex items-center justify-center gap-10 mt-6 pt-6 border-t border-slate-100">
-                        <div className="text-center">
-                          <p className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-1">Taban Limit</p>
-                          <p className="text-2xl font-bold text-slate-700">€{recommendation.min_price}</p>
-                        </div>
-                        <div className="w-px h-12 bg-slate-200"></div>
-                        <div className="text-center">
-                          <p className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-1">Tavan Limit</p>
-                          <p className="text-2xl font-bold text-slate-700">€{recommendation.max_price}</p>
+                    <Badge variant="outline" className="bg-white text-blue-700 border-blue-200">
+                      Optimize Edildi
+                    </Badge>
+                  </div>
+                  
+                  <CardContent className="p-6">
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-8 mb-8">
+                      <div className="text-center md:text-left">
+                        <p className="text-sm font-medium text-slate-500 mb-1">Önerilen Fiyat</p>
+                        <p className="text-5xl font-bold text-slate-900 tracking-tight">
+                          €{recommendation.recommended_price}
+                        </p>
+                        <div className="flex items-center gap-4 mt-4 text-sm">
+                          <div>
+                            <span className="text-slate-400">Taban: </span>
+                            <span className="font-medium text-slate-700">€{recommendation.min_price}</span>
+                          </div>
+                          <div className="w-px h-4 bg-slate-200"></div>
+                          <div>
+                            <span className="text-slate-400">Tavan: </span>
+                            <span className="font-medium text-slate-700">€{recommendation.max_price}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="grid grid-cols-2 gap-4 mb-8">
-                      <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
-                        <p className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">{t('rms.minPrice')}</p>
-                        <p className="text-3xl font-black text-slate-800">€{recommendation.current_price}</p>
-                      </div>
-                      <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
-                        <p className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">{t('common.status')}</p>
-                        <div className={`flex items-center justify-center gap-2 ${
-                          recommendation.price_change_pct > 0 ? 'text-emerald-500 bg-emerald-50' : 'text-red-500 bg-red-50'
-                        } px-4 py-2 rounded-xl`}>
-                          {recommendation.price_change_pct > 0 ? <TrendingUp className="w-6 h-6" /> : <TrendingDown className="w-6 h-6" />}
-                          <span className="text-3xl font-black">{recommendation.price_change_pct}%</span>
+                      <div className="flex gap-4 w-full md:w-auto">
+                        <div className="flex-1 md:w-28 bg-slate-50 p-4 rounded-lg border border-slate-100 text-center">
+                          <p className="text-xs font-medium text-slate-500 mb-1">Mevcut</p>
+                          <p className="text-xl font-semibold text-slate-800">€{recommendation.current_price}</p>
+                        </div>
+                        <div className={`flex-1 md:w-28 p-4 rounded-lg border text-center ${
+                          recommendation.price_change_pct > 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'
+                        }`}>
+                          <p className="text-xs font-medium text-slate-500 mb-1">Fark</p>
+                          <div className={`flex items-center justify-center gap-1 font-semibold ${
+                            recommendation.price_change_pct > 0 ? 'text-emerald-600' : 'text-red-600'
+                          }`}>
+                            {recommendation.price_change_pct > 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                            <span className="text-xl">{recommendation.price_change_pct}%</span>
+                          </div>
                         </div>
                       </div>
                     </div>
 
                     <Button 
-                      className="w-full h-14 text-lg font-bold shadow-lg shadow-indigo-300 hover:shadow-xl hover:shadow-indigo-400 transition-all bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 rounded-xl group" 
+                      className="w-full h-11 text-sm bg-blue-600 hover:bg-blue-700 text-white" 
                       onClick={handleUpdateRate}
                     >
-                      <Save className="w-5 h-5 mr-2 group-hover:scale-110 transition-transform" />
+                      <Save className="w-4 h-4 mr-2" />
                       Fiyatı Onayla ve Kaydet
                     </Button>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Applied Rules */}
+              {recommendation.applied_rules && recommendation.applied_rules.length > 0 && (
+                <Card className="shadow-sm border-slate-200">
+                  <CardHeader className="pb-3 border-b border-slate-100 bg-slate-50/50">
+                    <CardTitle className="text-sm font-semibold text-slate-800">Devreye Giren Kurallar</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-4">
+                    <ul className="space-y-2">
+                      {recommendation.applied_rules.map((rule, idx) => (
+                        <li key={idx} className="flex items-start gap-2 text-sm text-slate-600">
+                          <ChevronRight className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                          <span>{rule}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </CardContent>
                 </Card>
               )}
             </div>
 
             {/* Right Column - Context Data */}
-            <div className="lg:col-span-5 space-y-6">
+            <div className="lg:col-span-1 space-y-6">
               
               {/* Demand Factors */}
               {recommendation.demand_factors && (
-                <Card className="border-none shadow-md overflow-hidden relative">
-                  <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-500 z-10"></div>
-                  <CardHeader className="bg-slate-50/50 pb-4 border-b border-slate-100 pl-8">
-                    <CardTitle className="text-lg font-bold text-slate-800">Talep Analizi</CardTitle>
+                <Card className="shadow-sm border-slate-200">
+                  <CardHeader className="pb-3 border-b border-slate-100">
+                    <CardTitle className="text-sm font-semibold text-slate-800">Talep Analizi</CardTitle>
                   </CardHeader>
-                  <CardContent className="p-6 pl-8">
-                    <div className="grid grid-cols-2 gap-6">
-                      <div>
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Beklenen Doluluk</p>
-                        <p className="text-3xl font-black text-slate-800">{recommendation.demand_factors.occupancy_forecast}%</p>
+                  <CardContent className="p-4">
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                        <span className="text-sm text-slate-500">Beklenen Doluluk</span>
+                        <span className="text-lg font-semibold text-slate-800">{recommendation.demand_factors.occupancy_forecast}%</span>
                       </div>
-                      <div>
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Talep Seviyesi</p>
-                        <Badge variant="secondary" className={`text-sm px-3 py-1 font-bold uppercase ${
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-slate-500">Talep Seviyesi</span>
+                        <Badge variant="secondary" className={`text-xs px-2 py-0.5 font-medium uppercase ${
                           recommendation.demand_level === 'very_high' ? 'bg-red-100 text-red-700' :
                           recommendation.demand_level === 'high' ? 'bg-amber-100 text-amber-700' :
                           recommendation.demand_level === 'medium' ? 'bg-blue-100 text-blue-700' :
@@ -226,60 +240,37 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
               )}
 
               {/* Competitor Data */}
-              <Card className="border-none shadow-md overflow-hidden relative">
-                <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-purple-500 z-10"></div>
-                <CardHeader className="bg-slate-50/50 pb-4 border-b border-slate-100 pl-8">
-                  <CardTitle className="text-lg font-bold text-slate-800">Rakip Analizi</CardTitle>
+              <Card className="shadow-sm border-slate-200">
+                <CardHeader className="pb-3 border-b border-slate-100">
+                  <CardTitle className="text-sm font-semibold text-slate-800">Rakip Analizi</CardTitle>
                 </CardHeader>
-                <CardContent className="p-6 pl-8">
+                <CardContent className="p-4">
                   {recommendation.competitor_data && recommendation.competitor_data.available ? (
-                    <div className="space-y-4">
+                    <div className="space-y-3">
                       {Object.entries(recommendation.competitor_data.competitors).map(([name, price]) => (
-                        <div key={name} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl shadow-sm hover:border-slate-300 transition-colors">
-                          <span className="font-semibold text-slate-700 flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-slate-300"></div>
+                        <div key={name} className="flex items-center justify-between">
+                          <span className="text-sm text-slate-600 flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
                             {name}
                           </span>
-                          <span className="text-xl font-bold text-slate-900">€{price}</span>
+                          <span className="text-sm font-medium text-slate-900">€{price}</span>
                         </div>
                       ))}
-                      <div className="flex items-center justify-between p-4 mt-2 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-100 rounded-xl shadow-inner">
-                        <span className="font-black text-purple-900">Pazar Ortalaması</span>
-                        <span className="text-2xl font-black text-purple-700">€{recommendation.competitor_data.average}</span>
+                      <div className="flex items-center justify-between pt-3 mt-1 border-t border-slate-100">
+                        <span className="text-sm font-semibold text-slate-700">Pazar Ortalaması</span>
+                        <span className="text-base font-bold text-slate-900">€{recommendation.competitor_data.average}</span>
                       </div>
                     </div>
                   ) : (
-                    <div className="py-6 flex flex-col items-center justify-center text-slate-400">
-                      <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3">
-                        <Info className="w-6 h-6 text-slate-300" />
-                      </div>
-                      <p className="text-sm font-medium">Bu bölge/oda için rakip verisi bulunamadı.</p>
+                    <div className="py-4 flex flex-col items-center text-center text-slate-400">
+                      <Info className="w-5 h-5 mb-2 text-slate-300" />
+                      <p className="text-xs">Rakip verisi bulunamadı.</p>
                     </div>
                   )}
                 </CardContent>
               </Card>
 
-              {/* Applied Rules */}
-              {recommendation.applied_rules && recommendation.applied_rules.length > 0 && (
-                <Card className="border-none shadow-md overflow-hidden relative">
-                  <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-emerald-500 z-10"></div>
-                  <CardHeader className="bg-slate-50/50 pb-4 border-b border-slate-100 pl-8">
-                    <CardTitle className="text-lg font-bold text-slate-800">Devreye Giren Kurallar</CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-6 pl-8">
-                    <ul className="space-y-3">
-                      {recommendation.applied_rules.map((rule, idx) => (
-                        <li key={idx} className="flex items-start gap-3">
-                          <ChevronRight className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                          <span className="text-sm font-medium text-slate-700 leading-relaxed">{rule}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              )}
             </div>
-            
           </div>
         )}
       </div>
