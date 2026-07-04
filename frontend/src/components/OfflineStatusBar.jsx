@@ -38,7 +38,7 @@ const OfflineStatusBar = () => {
 
   return (
     <div
-      className="fixed top-0 left-0 right-0 z-[60] flex flex-col"
+      className="relative z-[60] flex flex-col w-full"
       data-testid="offline-status-bar"
     >
       {!online && (

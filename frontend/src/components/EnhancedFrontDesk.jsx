@@ -148,10 +148,10 @@ const EnhancedFrontDesk = () => {
       toast.error(msg || t('frontDeskEnhanced.toasts.checkinFailed'));
     }
   };
-  return <div className="p-6 bg-white">
-      <div className="flex justify-between items-center mb-6">
+  return <div className="p-6 bg-white overflow-hidden">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold">{t('frontDeskEnhanced.title')}</h1>
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-4">
           <button onClick={() => setShowPassportScan(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2">
             {t('frontDeskEnhanced.scanPassport')}
           </button>
@@ -214,8 +214,8 @@ const EnhancedFrontDesk = () => {
         })}</h2>
         <div className="space-y-4">
           {arrivals.map(booking => <div key={booking.id} data-testid={`fd-arrival-${booking.id}`} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
+              <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-4 mb-2">
                     <h3 className="text-lg font-semibold">{booking.guest_name || t('frontDeskEnhanced.guest')}</h3>
                     <span className={`px-3 py-1 rounded-full text-sm ${booking.status === 'confirmed' ? 'bg-yellow-100 text-yellow-800' : booking.status === 'checked_in' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>

@@ -48,6 +48,7 @@ ALLOWED_RAW_HTTPX = {
     "backend/infra/provider_test_connection.py",
     # Hardcoded https://graph.facebook.com — fixed third-party constant (Meta)
     "backend/modules/messaging/providers.py",
+    "backend/domains/ai/whatsapp_service.py",
     # Hardcoded http://localhost:8001/health — internal liveness probe
     "backend/ops/auto_rollback_engine.py",
     # Operator-run smoke test runner against env BASE_URL

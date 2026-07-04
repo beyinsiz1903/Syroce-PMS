@@ -604,6 +604,21 @@ async def ai_chat(
             "- Havuz Saatleri: Açık havuz 08:00-20:00, Kapalı havuz 07:00-22:00 arası hizmet vermektedir.\n"
         )
 
+        # ── KNOWLEDGE BASE SEARCH ──
+        try:
+            from domains.ai.knowledge_base import get_knowledge_base
+            kb = get_knowledge_base()
+            if kb.enabled:
+                kb_results = await kb.search(user_message, top_k=3)
+                if kb_results:
+                    kb_context = "\n\n## BİLGİ BANKASI / DOKÜMANLAR (Knowledge Base):\n"
+                    for i, match in enumerate(kb_results):
+                        kb_context += f"--- Kaynak: {match['metadata'].get('source', 'Bilinmeyen')} ---\n"
+                        kb_context += f"{match['content']}\n\n"
+                    data_context += kb_context
+        except Exception as e:
+            logger.error(f"Error searching knowledge base: {e}")
+
         # Append data context to the user message so LLM can use real data
         enriched_message = user_message
         if data_context:

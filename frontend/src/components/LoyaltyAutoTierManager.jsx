@@ -47,10 +47,10 @@ const LoyaltyAutoTierManager = () => {
       console.error('Error fetching guest insights:', error);
     }
   };
-  return <div className="p-6 bg-white">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">AI Loyalty & Guest Intelligence</h1>
-        <div className="flex gap-4">
+  return <div className="p-6 bg-white overflow-hidden">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
+        <h1 className="text-3xl font-bold">AI Loyalty Auto-Tier</h1>
+        <div className="flex flex-wrap gap-4">
           <button onClick={fetchGuestInsights} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             Refresh Insights
           </button>

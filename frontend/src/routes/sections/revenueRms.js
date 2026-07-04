@@ -11,7 +11,7 @@ export function revenueRmsRoutes({ p }) {
     { path: "/displacement-analysis", type: "redirect", to: "/app/rms" },
     { path: "/app/displacement-analysis", type: "redirect", to: "/app/rms" },
     { path: "/app/gelir-yonetimi", type: "redirect", to: "/app/rms" },
-    { path: "/app/ai-zeka", type: "redirect", to: "/ai-chatbot" },
+    { path: "/app/ai-zeka", type: "redirect", to: "/app/ai" },
     { path: "/app/analitik", type: "redirect", to: "/app/raporlar" },
 
     // ── Revenue & Analytics (Legacy routes — backward compat) ──

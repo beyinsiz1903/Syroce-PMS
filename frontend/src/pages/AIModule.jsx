@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { 
   Bot, MessageCircle, Send, Brain, TrendingUp, Sparkles, BarChart3, Users, 
-  Zap, Clock, Star, Hotel, ChefHat, Wrench, DollarSign, Globe, Loader2, ArrowLeft, ChevronRight, Menu
+  Zap, Clock, Star, Hotel, ChefHat, Wrench, DollarSign, Globe, Loader2, ArrowLeft, ChevronRight, Menu, BookOpen
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import LocalErrorBoundary from '@/components/LocalErrorBoundary';
 
 // Lazy load AI module components
 const AIEnhancedPMS = lazy(() => import('@/pages/AIEnhancedPMS'));
@@ -18,6 +19,7 @@ const DynamicPricing = lazy(() => import('@/pages/DynamicPricing'));
 const PredictiveAnalytics = lazy(() => import('@/pages/PredictiveAnalytics'));
 const RevenueAutopilot = lazy(() => import('@/pages/RevenueAutopilot'));
 const SocialMediaRadar = lazy(() => import('@/pages/SocialMediaRadar'));
+const AIKnowledgeBase = lazy(() => import('@/pages/AIKnowledgeBase'));
 
 const MODULE_COMPONENTS = {
   'ai-pms': AIEnhancedPMS,
@@ -26,7 +28,8 @@ const MODULE_COMPONENTS = {
   'dynamic-pricing': DynamicPricing,
   'predictive-analytics': PredictiveAnalytics,
   'revenue-autopilot': RevenueAutopilot,
-  'social-media-radar': SocialMediaRadar
+  'social-media-radar': SocialMediaRadar,
+  'ai-knowledge-base': AIKnowledgeBase
 };
 
 const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
@@ -134,6 +137,13 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
       icon: Globe,
       color: 'from-sky-500 to-blue-500',
       iconColor: 'text-sky-600'
+    },
+    {
+      id: 'ai-knowledge-base',
+      title: 'AI Bilgi Bankası',
+      icon: BookOpen,
+      color: 'from-indigo-500 to-indigo-600',
+      iconColor: 'text-indigo-600'
     }
   ];
 
@@ -269,12 +279,12 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
         <Suspense fallback={
           <div className="flex flex-col items-center justify-center h-[400px]">
             <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-4" />
-            <span className="text-slate-500 font-medium">Modül yükleniyor...</span>
+            <p className="text-gray-500 font-medium tracking-wide">Yapay zeka asistanı yükleniyor...</p>
           </div>
         }>
-          <div className="absolute inset-0 overflow-y-auto">
+          <LocalErrorBoundary>
             <ModuleComponent user={user} tenant={tenant} onLogout={onLogout} />
-          </div>
+          </LocalErrorBoundary>
         </Suspense>
       </div>
     );
@@ -282,35 +292,35 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
 
   return (
     <div className={`h-full flex flex-col bg-slate-50 ${embedded ? '' : ''}`}>
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Left Sidebar */}
-        <div className="w-72 bg-white border-r border-slate-200 flex flex-col shadow-sm z-10 flex-shrink-0">
-          <div className="p-6 pb-4 border-b border-slate-100">
+        <div className="w-full md:w-72 bg-white border-b md:border-b-0 md:border-r border-slate-200 flex flex-col shadow-sm z-10 flex-shrink-0">
+          <div className="p-4 md:p-6 pb-4 border-b border-slate-100 flex items-center justify-between md:block">
             <h1 className="text-2xl font-extrabold flex items-center gap-3 text-slate-800 tracking-tight">
               <div className="p-2.5 bg-gradient-to-br from-indigo-600 to-blue-600 rounded-xl text-white shadow-md">
                 <Sparkles className="w-5 h-5" />
               </div>
               AI Hub
             </h1>
-            <p className="text-sm text-slate-500 mt-2 font-medium">Akıllı Yönetim Merkezi</p>
+            <p className="hidden md:block text-sm text-slate-500 mt-2 font-medium">Akıllı Yönetim Merkezi</p>
           </div>
           
-          <div className="flex-1 overflow-y-auto p-4 space-y-1">
+          <div className="flex flex-row md:flex-col overflow-x-auto md:overflow-y-auto p-2 md:p-4 md:space-y-1 space-x-2 md:space-x-0 no-scrollbar">
             {aiFeatures.map(feature => {
               const isActive = activeItem === feature.id;
               return (
                 <button
                   key={feature.id}
                   onClick={() => setActiveItem(feature.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 group ${
+                  className={`flex-shrink-0 md:w-full flex items-center gap-3 px-3 md:px-4 py-2 md:py-3.5 rounded-xl transition-all duration-200 group ${
                     isActive 
                       ? 'bg-indigo-50 text-indigo-700 shadow-sm border border-indigo-100/50' 
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
                   }`}
                 >
-                  <feature.icon className={`w-5 h-5 transition-colors ${isActive ? feature.iconColor : 'text-slate-400 group-hover:text-slate-600'}`} />
-                  <span className={`text-sm font-semibold tracking-wide ${isActive ? '' : 'font-medium'}`}>{feature.title}</span>
-                  {isActive && <ChevronRight className="w-4 h-4 ml-auto text-indigo-400" />}
+                  <feature.icon className={`w-4 h-4 md:w-5 md:h-5 transition-colors ${isActive ? feature.iconColor : 'text-slate-400 group-hover:text-slate-600'}`} />
+                  <span className={`text-xs md:text-sm font-semibold tracking-wide whitespace-nowrap ${isActive ? '' : 'font-medium'}`}>{feature.title}</span>
+                  {isActive && <ChevronRight className="hidden md:block w-4 h-4 ml-auto text-indigo-400" />}
                 </button>
               );
             })}
@@ -318,8 +328,8 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
         </div>
 
         {/* Main Content Area */}
-        <div className="flex-1 flex flex-col h-full bg-slate-50">
-          <div className="p-6 md:p-8 w-full h-full flex flex-col relative">
+        <div className="flex-1 flex flex-col h-full bg-slate-50 min-w-0">
+          <div className="p-4 md:p-6 w-full h-full flex flex-col relative">
             {renderContent()}
           </div>
         </div>

@@ -74,9 +74,9 @@ const PredictiveMaintenanceDashboard = () => {
       setLoading(false);
     }
   };
-  return <div className="p-6 bg-white">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Predictive Maintenance</h1>
+  return <div className="p-6 bg-white overflow-hidden">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
+        <h1 className="text-3xl font-bold">Öngörücü Bakım Merkezi</h1>
         <button onClick={runAnalysis} disabled={loading} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
           {loading ? 'Analyzing...' : 'Run AI Analysis'}
         </button>
