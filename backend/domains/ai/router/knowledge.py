@@ -19,6 +19,8 @@ async def list_documents(current_user: User = Depends(get_current_user)):
             raise HTTPException(status_code=503, detail="Knowledge Base (ChromaDB) is not enabled.")
         docs = await kb.get_documents()
         return {"documents": docs}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error listing KB documents: {e}")
         raise HTTPException(status_code=500, detail="Failed to list documents")
@@ -76,6 +78,8 @@ async def delete_document(source_name: str, current_user: User = Depends(get_cur
             return {"message": f"Document {source_name} deleted successfully"}
         else:
             raise HTTPException(status_code=500, detail="Failed to delete document")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error deleting KB document: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete document")
