@@ -48,7 +48,7 @@ export default function BankReconciliationModule() {
   const fetchTransactions = async () => {
     try {
       setLoading(true);
-      const res = await axios.get('/api/finance/banking/transactions');
+      const res = await axios.get('/banking/transactions');
       setTransactions(res.data);
     } catch (err) {
       console.error('Banka hareketleri alınamadı', err);
@@ -60,7 +60,7 @@ export default function BankReconciliationModule() {
   const handleSyncBank = async () => {
     try {
       setLoading(true);
-      const res = await axios.post('/api/finance/banking/sync');
+      const res = await axios.post('/banking/sync');
       if (res.data.status === 'success') {
         fetchTransactions();
       }
@@ -76,7 +76,7 @@ export default function BankReconciliationModule() {
     
     try {
       setReconciling(true);
-      await axios.post('/api/finance/banking/reconcile', {
+      await axios.post('/banking/reconcile', {
         transaction_id: selectedTxn.id,
         invoice_id: selectedInvoice.id,
         invoice_number: selectedInvoice.number,

@@ -60,7 +60,7 @@ export default function FnBCostingModule() {
     try {
       setLoading(true);
       // In a real app we would pass dates
-      const res = await axios.get('/api/fnb-cost/variance?start=2026-07-01&end=2026-07-05');
+      const res = await axios.get('/fnb-cost/variance?start=2026-07-01&end=2026-07-05');
       // If backend returns data with actual_cost, use it. Otherwise keep mock.
       if (res.data && res.data.totals && res.data.totals.actual_cost > 0) {
         setVariance({
@@ -86,7 +86,7 @@ export default function FnBCostingModule() {
   const handlePostToGL = async () => {
     try {
       setPosting(true);
-      const res = await axios.post('/api/fnb-cost/post-to-gl?start=2026-07-01&end=2026-07-05');
+      const res = await axios.post('/fnb-cost/post-to-gl?start=2026-07-01&end=2026-07-05');
       setAlertMsg({ type: 'success', text: res.data.message || 'Maliyetler başarıyla muhasebeleştirildi.' });
       setPostDialog(false);
     } catch (err) {

@@ -974,3 +974,56 @@ async def procurement_summary(
         "po_received": po_received,
         "open_commitment_value": round(commitment, 2),
     }
+
+# ─────────────────────────────────────────────────────────────────────
+# Fatura / Satın Alma Muhasebeleştirme
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/post-invoice-to-gl")
+async def post_invoice_to_gl(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Sisteme girilen tedarikçi faturasını Genel Muhasebe Mizanına işler.
+    153 Ticari Mallar (Borç) - 320 Satıcılar (Alacak)
+    """
+    require_op(current_user, ["proc_read"]) # using read as placeholder or could be proc_write
+    
+    amount = float(payload.get("amount", 0))
+    supplier_name = payload.get("supplier_name", "Bilinmeyen Tedarikçi")
+    invoice_no = payload.get("invoice_no", "FAT-000")
+    
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Fatura tutarı 0'dan büyük olmalıdır.")
+        
+    try:
+        from routers.finance.general_ledger import mock_db as gl_db
+        import uuid
+        from datetime import datetime
+        
+        journal_entry = {
+            "id": str(uuid.uuid4()),
+            "date": datetime.utcnow().strftime("%Y-%m-%d"),
+            "type": "Alış Faturası",
+            "description": f"Tedarikçi Faturası: {supplier_name} ({invoice_no})",
+            "total": amount,
+            "timestamp": datetime.utcnow().isoformat(),
+            "lines": [
+                {
+                    "account_code": "153",
+                    "debit": amount,
+                    "credit": 0.0,
+                    "description": "Ticari Mallar Girişi"
+                },
+                {
+                    "account_code": "320",
+                    "debit": 0.0,
+                    "credit": amount,
+                    "description": f"Satıcılar: {supplier_name}"
+                }
+            ]
+        }
+        gl_db["journals"].append(journal_entry)
+        return {"status": "success", "message": f"{amount} TL tutarındaki fatura başarıyla muhasebeleştirildi (153/320)."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

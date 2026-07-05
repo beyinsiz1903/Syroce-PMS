@@ -444,6 +444,21 @@ const ProcurementPage = ({
     }
   };
 
+  const handlePostToGL = async (po) => {
+    try {
+      await axios.post('/procurement/post-invoice-to-gl', {
+        amount: po.grand_total,
+        supplier_name: po.supplier_name,
+        invoice_no: `INV-${po.po_no}`
+      });
+      toast.success(`${po.grand_total} TL Fatura Başarıyla Muhasebeleştirildi (153/320).`);
+      refresh();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Muhasebeleştirme başarısız.");
+    }
+  };
+
+
   // ── GRN ops ────────────────────────────────────────────
   const openGrnForm = po => {
     setGrnForm({
@@ -1276,6 +1291,9 @@ const ProcurementPage = ({
             openGrnForm(selectedPo);
           }}>
                 <FileCheck2 className="w-4 h-4 mr-1" /> {t('procurement.poDetail.receiveGoods')}
+              </Button>}
+            {selectedPo.status === 'received' && <Button color="success" onClick={() => handlePostToGL(selectedPo)}>
+                <FileCheck2 className="w-4 h-4 mr-1" /> Faturayı Muhasebeleştir
               </Button>}
             <Button variant="ghost" onClick={() => setHistory({
             type: 'proc_po',
