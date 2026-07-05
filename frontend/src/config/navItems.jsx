@@ -391,6 +391,15 @@ export const NAV_ITEMS = [
     navGroup: "backoffice",
   },
   {
+    key: "fnb_costing",
+    label: "F&B Maliyetleri",
+    path: "/app/fnb-costing",
+    moduleKey: "invoices",
+    tier: "professional",
+    group: "professional",
+    navGroup: "backoffice",
+  },
+  {
     key: "konaklama_vergisi",
     label: "Konaklama Vergisi",
     path: "/app/konaklama-vergisi",

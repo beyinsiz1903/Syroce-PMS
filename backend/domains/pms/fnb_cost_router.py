@@ -341,3 +341,57 @@ async def yield_variance(
             "unmatched_item_names": sorted(unmatched_names)[:50],
         },
     }
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Maliyet Yansıtma (Cost to GL)
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/post-to-gl")
+async def post_fnb_cost_to_gl(
+    start: str = Query(..., description="ISO başlangıç (gte)"),
+    end: str = Query(..., description="ISO bitiş (lte)"),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Belirli bir tarih aralığındaki toplam 'Satılan Malın Maliyetini' (Teorik veya Fiili)
+    hesaplayarak Genel Muhasebeye (740 Borç / 150 Alacak) Yevmiye Fişi (Mahsup) atar.
+    """
+    _require_role(current_user, _READ_ROLES)
+    # Re-use the variance logic to get total cost
+    v = await yield_variance(start, end, None, current_user)
+    total_cost = v["totals"]["actual_cost"] if v["totals"]["actual_cost"] > 0 else v["totals"]["theoretical_cost"]
+    
+    if total_cost <= 0:
+        return {"status": "error", "message": "Yansıtılacak bir maliyet bulunamadı."}
+        
+    try:
+        from routers.finance.general_ledger import mock_db as gl_db
+        import uuid
+        from datetime import datetime
+        
+        journal_entry = {
+            "id": str(uuid.uuid4()),
+            "date": datetime.utcnow().strftime("%Y-%m-%d"),
+            "type": "Mahsup",
+            "description": f"F&B Maliyet Yansıtma ({start} - {end})",
+            "total": total_cost,
+            "timestamp": datetime.utcnow().isoformat(),
+            "lines": [
+                {
+                    "account_code": "740",
+                    "debit": total_cost,
+                    "credit": 0.0,
+                    "description": "Hizmet Üretim Maliyeti (F&B)"
+                },
+                {
+                    "account_code": "150",
+                    "debit": 0.0,
+                    "credit": total_cost,
+                    "description": "İlk Madde ve Malzeme Çıkışı"
+                }
+            ]
+        }
+        gl_db["journals"].append(journal_entry)
+        return {"status": "success", "message": f"{total_cost} TL tutarında maliyet başarıyla yansıtıldı ve Mahsup fişi kesildi."}
+    except Exception as e:
+        return {"status": "error", "message": f"Muhasebe entegrasyon hatası: {str(e)}"}
