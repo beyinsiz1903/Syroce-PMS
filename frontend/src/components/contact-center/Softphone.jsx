@@ -13,7 +13,7 @@
  *    kadar gösterilir, kalıcılaştırılmaz.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Phone, PhoneIncoming, PhoneOutgoing, Mic, MicOff, Keypad, Grid, MessageCircle, PhoneForwarded } from "lucide-react";
+import { Phone, PhoneIncoming, PhoneOutgoing, Mic, MicOff, Grid, MessageCircle, PhoneForwarded } from "lucide-react";
 import axios from "axios";
 import CallHistory from "./CallHistory";
 
