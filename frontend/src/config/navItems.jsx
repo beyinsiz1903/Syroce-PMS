@@ -382,6 +382,15 @@ export const NAV_ITEMS = [
     navGroup: "backoffice",
   },
   {
+    key: "bank_reconciliation",
+    label: "Banka Mutabakatı",
+    path: "/app/bank-reconciliation",
+    moduleKey: "invoices",
+    tier: "professional",
+    group: "professional",
+    navGroup: "backoffice",
+  },
+  {
     key: "konaklama_vergisi",
     label: "Konaklama Vergisi",
     path: "/app/konaklama-vergisi",

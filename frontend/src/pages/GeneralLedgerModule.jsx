@@ -30,21 +30,21 @@ const GeneralLedgerModule = () => {
 
   const fetchAccounts = async () => {
     try {
-      const res = await axios.get('/finance/gl/accounts');
+      const res = await axios.get('/gl/accounts');
       setAccounts(res.data);
     } catch (e) { console.error(e); }
   };
 
   const fetchJournals = async () => {
     try {
-      const res = await axios.get('/finance/gl/journals');
+      const res = await axios.get('/gl/journals');
       setJournals(res.data);
     } catch (e) { console.error(e); }
   };
 
   const fetchTrialBalance = async () => {
     try {
-      const res = await axios.get('/finance/gl/trial-balance');
+      const res = await axios.get('/gl/trial-balance');
       setTrialBalance(res.data);
     } catch (e) { console.error(e); }
   };
@@ -93,7 +93,7 @@ const GeneralLedgerModule = () => {
     }
 
     try {
-      await axios.post('/finance/gl/journals', newJournal);
+      await axios.post('/gl/journals', newJournal);
       toast.success('Yevmiye fişi başarıyla kaydedildi.');
       setNewJournal({
         date: new Date().toISOString().split('T')[0],
