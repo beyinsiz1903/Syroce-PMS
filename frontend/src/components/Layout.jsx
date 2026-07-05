@@ -357,7 +357,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm shrink-0">
         <div className="px-3 py-1.5">
-          <div className="flex items-center h-10">
+          <div className="flex items-center min-h-[44px]">
             {/* Logo area - fixed width */}
             <div
               className="flex items-center gap-2 shrink-0 cursor-pointer mr-3"
@@ -373,7 +373,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
             </div>
 
             {/* Desktop Navigation - scrollable */}
-            <nav ref={navRef} className="hidden md:flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent' }}>
+            <nav ref={navRef} className="hidden md:flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto pb-1.5 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-gray-400" style={{ scrollbarWidth: 'auto', scrollbarColor: '#94a3b8 transparent' }}>
               {/* Dashboard */}
               {standaloneItems.filter((item) => item.key === 'dashboard').map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
