@@ -38,7 +38,7 @@ const ALL_TABS = [
 ];
 
 export default function RevenueHub({ user, tenant, onLogout }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const requested = searchParams.get('tab');

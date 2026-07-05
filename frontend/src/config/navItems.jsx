@@ -871,7 +871,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "messaging_dashboard",
-    label: "Mesajlasma",
+    label: "Mesajlaşma Merkezi",
     path: "/messaging-dashboard",
     moduleKey: "pms",
     tier: "enterprise",

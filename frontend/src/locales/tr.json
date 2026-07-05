@@ -329,7 +329,9 @@
     "module_store": "Modül Pazarı",
     "pci_compliance": "PCI-DSS Uyum",
     "xchange": "Xchange (SXI)",
-    "afsadakat": "Sadakat & Inbox"
+    "afsadakat": "Sadakat & Inbox",
+    "revenue_hub": "Gelir Merkezi",
+    "mailing": "E-posta Pazarlama"
   },
   "auth": {
     "signIn": "Hesabınıza giriş yapın veya yeni bir hesap oluşturun",

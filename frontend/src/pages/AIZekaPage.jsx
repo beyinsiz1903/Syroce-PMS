@@ -8,7 +8,7 @@ const AIModule = lazy(() => import('@/pages/AIModule'));
 const DataIntelligenceDashboard = lazy(() => import('@/pages/DataIntelligenceDashboard'));
 
 function TabLoading() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   return (
     <div className="flex items-center justify-center h-64">
       <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -18,7 +18,7 @@ function TabLoading() {
 }
 
 export default function AIZekaPage({ user, tenant, onLogout }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [tab, setTab] = useState('ai-hub');
 
   return (

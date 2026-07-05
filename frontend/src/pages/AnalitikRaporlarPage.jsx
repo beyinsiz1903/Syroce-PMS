@@ -14,7 +14,7 @@ const VALID_TABS = ['revenue-ml', 'rapor-export', 'ml-scheduler'];
 const DEFAULT_TAB = 'rapor-export';
 
 function TabLoading() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   return (
     <div className="flex items-center justify-center h-64">
       <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
@@ -24,7 +24,7 @@ function TabLoading() {
 }
 
 export default function AnalitikRaporlarPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const initial = VALID_TABS.includes(searchParams.get('tab')) ? searchParams.get('tab') : DEFAULT_TAB;
   const [tab, setTab] = useState(initial);

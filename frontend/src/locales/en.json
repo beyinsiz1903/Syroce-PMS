@@ -281,7 +281,9 @@
     "module_store": "Module Store",
     "pci_compliance": "PCI-DSS Compliance",
     "xchange": "Xchange (SXI)",
-    "afsadakat": "Loyalty & Inbox"
+    "afsadakat": "Loyalty & Inbox",
+    "revenue_hub": "Revenue Center",
+    "mailing": "Email Marketing"
   },
   "auth": {
     "signIn": "Sign in to your account or create a new one",
