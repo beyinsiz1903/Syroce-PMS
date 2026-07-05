@@ -215,7 +215,7 @@ function WSBridgePanel({
   const errors = detail.publish_errors ?? 0;
   const threshold = detail.publish_error_threshold ?? 10;
   const errorsClass = errors >= threshold ? "text-rose-700" : errors > 0 ? "text-amber-700" : "text-slate-900";
-  const lastErrAt = detail.last_publish_error_at ? new Date(detail.last_publish_error_at).toLocaleString(i18n.language) : null;
+  const lastErrAt = detail.last_publish_error_at ? new Date(detail.last_publish_error_at).toLocaleString(i18n?.language || 'tr-TR') : null;
   const mode = detail.single_instance_mode ? "Tek sunucu (Redis pasif)" : detail.active ? "Aktif (Redis pub/sub)" : "Pasif";
   const history = detail.metrics_history || {};
   const points = Array.isArray(history.points) ? history.points : [];
@@ -943,7 +943,7 @@ export default function SystemHealthDashboard({
           activeForLabel = hours > 0 ? `${hours}sa ${mins}dk` : `${mins}dk`;
         }
       }
-      const sinceLabel = since ? new Date(since).toLocaleString(i18n.language) : null;
+      const sinceLabel = since ? new Date(since).toLocaleString(i18n?.language || 'tr-TR') : null;
       const topTenants = Array.isArray(rnlSummary.top_tenants) ? rnlSummary.top_tenants.slice(0, 2) : [];
       const topTenantsLabel = topTenants.length ? topTenants.map(tt => `${tt.name || tt.tenant_id}: ${tt.manual_required_count}`).join(" · ") : null;
       return <a data-testid="rnl-duplicates-widget" href="/app/admin-control-panel#rnl-duplicates" className="block p-3 rounded-lg border bg-rose-50 border-rose-200 hover:bg-rose-100/70 transition-colors">

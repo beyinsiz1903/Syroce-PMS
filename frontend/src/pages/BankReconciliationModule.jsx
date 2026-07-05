@@ -1,24 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Box,
-  Typography,
-  Card,
-  CardContent,
-  Grid,
-  Button,
-  List,
-  ListItem,
-  ListItemText,
-  Divider,
-  Chip,
-  CircularProgress,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Alert,
-} from '@mui/material';
-import { Sync as SyncIcon, AccountBalance as BankIcon, Receipt as InvoiceIcon, CheckCircle as CheckIcon } from '@mui/icons-material';
+import { RefreshCw, Landmark, FileText, CheckCircle, AlertCircle } from 'lucide-react';
 import axios from 'axios';
 
 // Varsayılan açık faturalar (Cari hesaplar) - Mock data
@@ -61,7 +42,7 @@ export default function BankReconciliationModule() {
     try {
       setLoading(true);
       const res = await axios.post('/banking/sync');
-      if (res.data.status === 'success') {
+      if (res.data?.status === 'success') {
         fetchTransactions();
       }
     } catch (err) {
@@ -101,192 +82,189 @@ export default function BankReconciliationModule() {
   };
 
   return (
-    <Box sx={{ p: 3, maxWidth: 1400, margin: '0 auto' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" fontWeight="bold">
-          Açık Bankacılık & Mutabakat
-        </Typography>
-        <Button 
-          variant="contained" 
-          startIcon={<SyncIcon />} 
+    <div className="p-6 max-w-7xl mx-auto">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Açık Bankacılık & Mutabakat</h1>
+        <button 
           onClick={handleSyncBank}
           disabled={loading}
-          sx={{ borderRadius: 2, textTransform: 'none' }}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
         >
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Bankadan Çek (Simülasyon)
-        </Button>
-      </Box>
+        </button>
+      </div>
 
       {alertMsg && (
-        <Alert severity={alertMsg.type} sx={{ mb: 3 }} onClose={() => setAlertMsg(null)}>
-          {alertMsg.text}
-        </Alert>
+        <div className={`p-4 mb-6 rounded-md flex items-center justify-between ${alertMsg.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+          <div className="flex items-center gap-2">
+            {alertMsg.type === 'error' ? <AlertCircle className="w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
+            <span>{alertMsg.text}</span>
+          </div>
+          <button onClick={() => setAlertMsg(null)} className="text-gray-500 hover:text-gray-700">✕</button>
+        </div>
       )}
 
       {/* Reconcile Action Bar */}
       {(selectedTxn || selectedInvoice) && (
-        <Card sx={{ mb: 3, bgcolor: '#e3f2fd', border: '1px solid #90caf9' }}>
-          <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Box sx={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-              <Typography variant="body1">
-                <strong>Seçili Banka İşlemi:</strong> {selectedTxn ? `${selectedTxn.amount} ₺ (${selectedTxn.sender_name})` : 'Bekleniyor...'}
-              </Typography>
-              <Typography variant="h6" color="text.secondary">↔</Typography>
-              <Typography variant="body1">
-                <strong>Seçili Fatura/Cari:</strong> {selectedInvoice ? `${selectedInvoice.number} - ${selectedInvoice.amount} ₺` : 'Bekleniyor...'}
-              </Typography>
-            </Box>
-            
-            <Button 
-              variant="contained" 
-              color="success" 
-              disabled={!selectedTxn || !selectedInvoice}
-              onClick={() => setConfirmDialog(true)}
-              startIcon={<CheckIcon />}
-            >
-              Eşleştir (Reconcile)
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex flex-col md:flex-row md:items-center gap-4 text-sm">
+            <div>
+              <strong className="text-gray-700">Seçili Banka İşlemi:</strong><br />
+              {selectedTxn ? `${selectedTxn.amount.toLocaleString('tr-TR')} ₺ (${selectedTxn.sender_name})` : <span className="text-gray-500">Bekleniyor...</span>}
+            </div>
+            <div className="hidden md:block text-2xl text-blue-300">↔</div>
+            <div>
+              <strong className="text-gray-700">Seçili Fatura/Cari:</strong><br />
+              {selectedInvoice ? `${selectedInvoice.number} - ${selectedInvoice.amount.toLocaleString('tr-TR')} ₺` : <span className="text-gray-500">Bekleniyor...</span>}
+            </div>
+          </div>
+          
+          <button 
+            onClick={() => setConfirmDialog(true)}
+            disabled={!selectedTxn || !selectedInvoice}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 whitespace-nowrap"
+          >
+            <CheckCircle className="w-4 h-4" />
+            Eşleştir (Reconcile)
+          </button>
+        </div>
       )}
 
-      <Grid container spacing={4}>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Sol Taraf: Banka Hareketleri */}
-        <Grid item xs={12} md={6}>
-          <Card sx={{ height: '100%', borderRadius: 3, boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-            <Box sx={{ p: 2, borderBottom: '1px solid #eee', display: 'flex', alignItems: 'center', gap: 1 }}>
-              <BankIcon color="primary" />
-              <Typography variant="h6" fontWeight="bold">Banka Hesap Hareketleri</Typography>
-            </Box>
-            <CardContent sx={{ p: 0 }}>
-              {loading ? (
-                <Box sx={{ p: 4, textAlign: 'center' }}><CircularProgress /></Box>
-              ) : (
-                <List sx={{ p: 0 }}>
-                  {transactions.map((txn, index) => (
-                    <React.Fragment key={txn.id}>
-                      <ListItem 
-                        button 
-                        onClick={() => txn.status === 'unmatched' && setSelectedTxn(txn)}
-                        selected={selectedTxn?.id === txn.id}
-                        disabled={txn.status === 'matched'}
-                        sx={{ 
-                          p: 2, 
-                          transition: '0.2s',
-                          '&.Mui-selected': { bgcolor: 'primary.light', '&:hover': { bgcolor: 'primary.light' } },
-                          opacity: txn.status === 'matched' ? 0.6 : 1
-                        }}
-                      >
-                        <ListItemText 
-                          primary={
-                            <Box display="flex" justifyContent="space-between">
-                              <Typography variant="subtitle1" fontWeight="bold">{txn.sender_name}</Typography>
-                              <Typography variant="subtitle1" fontWeight="bold" color="success.main">+{txn.amount.toLocaleString('tr-TR')} ₺</Typography>
-                            </Box>
-                          }
-                          secondary={
-                            <Box display="flex" flexDirection="column" gap={0.5} mt={0.5}>
-                              <Typography variant="body2" color="text.secondary">{txn.description}</Typography>
-                              <Box display="flex" justifyContent="space-between" alignItems="center">
-                                <Typography variant="caption" color="text.disabled">{txn.date} | IBAN: {txn.sender_iban}</Typography>
-                                {txn.status === 'matched' ? (
-                                  <Chip size="small" label={`Eşleşti: ${txn.matched_with}`} color="success" variant="outlined" />
-                                ) : (
-                                  <Chip size="small" label="Eşleşme Bekliyor" color="warning" />
-                                )}
-                              </Box>
-                            </Box>
-                          }
-                        />
-                      </ListItem>
-                      {index < transactions.length - 1 && <Divider />}
-                    </React.Fragment>
-                  ))}
-                  {transactions.length === 0 && (
-                    <Typography variant="body2" sx={{ p: 3, textAlign: 'center', color: 'text.secondary' }}>
-                      Banka hareketi bulunmuyor.
-                    </Typography>
-                  )}
-                </List>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
+        <div className="bg-white border rounded-lg shadow-sm flex flex-col">
+          <div className="p-4 border-b flex items-center gap-2 bg-gray-50 rounded-t-lg">
+            <Landmark className="w-5 h-5 text-blue-600" />
+            <h2 className="text-lg font-bold text-gray-800">Banka Hesap Hareketleri</h2>
+          </div>
+          <div className="flex-1 overflow-auto p-0">
+            {loading ? (
+              <div className="p-8 flex justify-center">
+                <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
+              </div>
+            ) : (
+              <ul className="divide-y">
+                {transactions.map((txn) => {
+                  const isMatched = txn.status === 'matched';
+                  const isSelected = selectedTxn?.id === txn.id;
+                  return (
+                    <li 
+                      key={txn.id}
+                      onClick={() => !isMatched && setSelectedTxn(txn)}
+                      className={`p-4 cursor-pointer transition-colors ${
+                        isMatched ? 'opacity-60 bg-gray-50 cursor-not-allowed' : 
+                        isSelected ? 'bg-blue-50 border-l-4 border-blue-500' : 'hover:bg-gray-50 border-l-4 border-transparent'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="font-bold text-gray-900">{txn.sender_name}</span>
+                        <span className="font-bold text-green-600">+{txn.amount.toLocaleString('tr-TR')} ₺</span>
+                      </div>
+                      <div className="text-sm text-gray-600 mb-2">{txn.description}</div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-gray-400">{txn.date} | IBAN: {txn.sender_iban}</span>
+                        {isMatched ? (
+                          <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-[10px] font-medium border border-green-200">
+                            Eşleşti: {txn.matched_with}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded text-[10px] font-medium">
+                            Eşleşme Bekliyor
+                          </span>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+                {transactions.length === 0 && (
+                  <div className="p-8 text-center text-gray-500">Banka hareketi bulunmuyor.</div>
+                )}
+              </ul>
+            )}
+          </div>
+        </div>
 
         {/* Sağ Taraf: PMS Faturalar / Cari */}
-        <Grid item xs={12} md={6}>
-          <Card sx={{ height: '100%', borderRadius: 3, boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-            <Box sx={{ p: 2, borderBottom: '1px solid #eee', display: 'flex', alignItems: 'center', gap: 1 }}>
-              <InvoiceIcon color="secondary" />
-              <Typography variant="h6" fontWeight="bold">Açık Faturalar & Cari (PMS)</Typography>
-            </Box>
-            <CardContent sx={{ p: 0 }}>
-              <List sx={{ p: 0 }}>
-                {invoices.map((inv, index) => (
-                  <React.Fragment key={inv.id}>
-                    <ListItem 
-                      button 
-                      onClick={() => setSelectedInvoice(inv)}
-                      selected={selectedInvoice?.id === inv.id}
-                      sx={{ 
-                        p: 2,
-                        transition: '0.2s',
-                        '&.Mui-selected': { bgcolor: 'secondary.light', '&:hover': { bgcolor: 'secondary.light' } }
-                      }}
-                    >
-                      <ListItemText 
-                        primary={
-                          <Box display="flex" justifyContent="space-between">
-                            <Typography variant="subtitle1" fontWeight="bold">{inv.clientName}</Typography>
-                            <Typography variant="subtitle1" fontWeight="bold" color="error.main">{inv.amount.toLocaleString('tr-TR')} ₺</Typography>
-                          </Box>
-                        }
-                        secondary={
-                          <Box display="flex" justifyContent="space-between" mt={0.5}>
-                            <Typography variant="body2" color="text.secondary">Belge No: {inv.number}</Typography>
-                            <Chip size="small" label="Açık Cari" color="error" variant="outlined" />
-                          </Box>
-                        }
-                      />
-                    </ListItem>
-                    {index < invoices.length - 1 && <Divider />}
-                  </React.Fragment>
-                ))}
-                {invoices.length === 0 && (
-                  <Typography variant="body2" sx={{ p: 3, textAlign: 'center', color: 'text.secondary' }}>
-                    Açık fatura kalmadı.
-                  </Typography>
-                )}
-              </List>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+        <div className="bg-white border rounded-lg shadow-sm flex flex-col">
+          <div className="p-4 border-b flex items-center gap-2 bg-gray-50 rounded-t-lg">
+            <FileText className="w-5 h-5 text-purple-600" />
+            <h2 className="text-lg font-bold text-gray-800">Açık Faturalar & Cari (PMS)</h2>
+          </div>
+          <div className="flex-1 overflow-auto p-0">
+            <ul className="divide-y">
+              {invoices.map((inv) => {
+                const isSelected = selectedInvoice?.id === inv.id;
+                return (
+                  <li 
+                    key={inv.id}
+                    onClick={() => setSelectedInvoice(inv)}
+                    className={`p-4 cursor-pointer transition-colors ${
+                      isSelected ? 'bg-purple-50 border-l-4 border-purple-500' : 'hover:bg-gray-50 border-l-4 border-transparent'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="font-bold text-gray-900">{inv.clientName}</span>
+                      <span className="font-bold text-red-600">{inv.amount.toLocaleString('tr-TR')} ₺</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs mt-2">
+                      <span className="text-gray-600">Belge No: {inv.number}</span>
+                      <span className="px-2 py-1 bg-red-50 text-red-700 rounded text-[10px] font-medium border border-red-200">
+                        Açık Cari
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+              {invoices.length === 0 && (
+                <div className="p-8 text-center text-gray-500">Açık fatura kalmadı.</div>
+              )}
+            </ul>
+          </div>
+        </div>
+      </div>
 
       {/* Confirmation Dialog */}
-      <Dialog open={confirmDialog} onClose={() => !reconciling && setConfirmDialog(false)}>
-        <DialogTitle>Mutabakat Onayı</DialogTitle>
-        <DialogContent>
-          <Typography variant="body1" mb={2}>
-            Aşağıdaki eşleştirmeyi onaylıyor musunuz? Onayladıktan sonra sistem otomatik olarak tahsilat yevmiye fişini (102 / 120) kesecektir.
-          </Typography>
-          <Box sx={{ bgcolor: '#f5f5f5', p: 2, borderRadius: 1 }}>
-            <Typography variant="body2"><strong>Gelen Para:</strong> {selectedTxn?.amount} ₺ ({selectedTxn?.sender_name})</Typography>
-            <Typography variant="body2"><strong>Fatura Borcu:</strong> {selectedInvoice?.amount} ₺ ({selectedInvoice?.number})</Typography>
-          </Box>
-          {selectedTxn?.amount !== selectedInvoice?.amount && (
-            <Alert severity="warning" sx={{ mt: 2 }}>
-              Dikkat: Gelen tutar ile fatura tutarı eşleşmiyor! Kalan bakiye cari hesaba işlenecektir (Kısmi tahsilat).
-            </Alert>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirmDialog(false)} disabled={reconciling}>İptal</Button>
-          <Button onClick={handleReconcile} variant="contained" color="success" disabled={reconciling}>
-            {reconciling ? <CircularProgress size={24} /> : 'Onayla ve Fiş Kes'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Box>
+      {confirmDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-lg overflow-hidden">
+            <div className="p-4 border-b">
+              <h3 className="text-lg font-bold">Mutabakat Onayı</h3>
+            </div>
+            <div className="p-4">
+              <p className="mb-4 text-sm text-gray-700">
+                Aşağıdaki eşleştirmeyi onaylıyor musunuz? Onayladıktan sonra sistem otomatik olarak tahsilat yevmiye fişini (102 / 120) kesecektir.
+              </p>
+              <div className="bg-gray-50 p-3 rounded-md mb-4 text-sm">
+                <div className="mb-1"><strong>Gelen Para:</strong> {selectedTxn?.amount?.toLocaleString('tr-TR')} ₺ ({selectedTxn?.sender_name})</div>
+                <div><strong>Fatura Borcu:</strong> {selectedInvoice?.amount?.toLocaleString('tr-TR')} ₺ ({selectedInvoice?.number})</div>
+              </div>
+              {selectedTxn?.amount !== selectedInvoice?.amount && (
+                <div className="bg-orange-50 border border-orange-200 text-orange-800 p-3 rounded text-sm flex gap-2">
+                  <AlertCircle className="w-5 h-5 shrink-0" />
+                  <p>Dikkat: Gelen tutar ile fatura tutarı eşleşmiyor! Kalan bakiye cari hesaba işlenecektir (Kısmi tahsilat).</p>
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t flex justify-end gap-2 bg-gray-50">
+              <button 
+                onClick={() => setConfirmDialog(false)} 
+                disabled={reconciling}
+                className="px-4 py-2 bg-white border rounded hover:bg-gray-100 disabled:opacity-50"
+              >
+                İptal
+              </button>
+              <button 
+                onClick={handleReconcile} 
+                disabled={reconciling}
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {reconciling ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Onayla ve Fiş Kes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
