@@ -288,10 +288,11 @@ async def send_whatsapp_during_call(
         raise HTTPException(status_code=503, detail="WhatsApp sağlayıcısı bulunamadı.")
     
     # Provider üzerinden doğrudan şablon gönderimi (Geçmişe/Conversation'a bağlamak Opsiyonel)
-    res = await provider.send_message(
+    res = await provider.send_whatsapp(
+        db=db,
         tenant_id=current_user.tenant_id,
-        to_phone=payload.phone,
-        message_type="template",
+        recipient=payload.phone,
+        in_session=False,
         template_name=payload.template_name,
         language_code=payload.language_code,
     )
