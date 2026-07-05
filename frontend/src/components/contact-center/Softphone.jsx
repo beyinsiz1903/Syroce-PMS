@@ -253,11 +253,69 @@ export default function Softphone({ user }) {
     }
   }, [dialNumber]);
 
-  // Tek-tıkla arama: misafir/rezervasyon ekranlarındaki "Ara" düğmeleri global
-  // ``syroce:softphone-dial`` event'i yayar. Numarayı doldur, paneli aç; hazırsa
-  // hemen ara, değilse kullanıcıyı aktivasyona yönlendir.
+  // Browser Notifications & Ringtones
   useEffect(() => {
-    if (!isStaff) return undefined;
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (status === "incoming" && "Notification" in window && Notification.permission === "granted") {
+      const notif = new Notification("Gelen Çağrı", {
+        body: `Arayan: ${incomingFrom}`,
+        icon: "/favicon.ico",
+        requireInteraction: true
+      });
+      return () => notif.close();
+    }
+  }, [status, incomingFrom]);
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    if (status !== "incoming" && status !== "on_call") return;
+    
+    const handleKeyDown = (e) => {
+      // Don't trigger if user is typing in an input field
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+
+      switch(e.key.toLowerCase()) {
+        case 'enter':
+          if (status === "incoming") {
+            e.preventDefault();
+            callRef.current?.accept?.();
+            setStatus("on_call");
+          }
+          break;
+        case 'escape':
+          e.preventDefault();
+          if (status === "incoming") callRef.current?.reject?.();
+          else if (status === "on_call") callRef.current?.disconnect?.();
+          setStatus("idle");
+          setCallDuration(0);
+          break;
+        case 'm':
+          if (status === "on_call") {
+            e.preventDefault();
+            toggleMute();
+          }
+          break;
+        case 't':
+          if (status === "on_call") {
+            e.preventDefault();
+            setShowTransfer(prev => !prev);
+            setShowDialpad(false);
+          }
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [status, toggleMute]);
+
+  useEffect(() => {
+    if (!isStaff) return;
     const onDial = (e) => {
       const number = (e?.detail?.number || "").trim();
       if (!number) return;
@@ -332,7 +390,7 @@ export default function Softphone({ user }) {
     if (!callRef.current) return;
     setSendingWhatsapp(true);
     try {
-      const phone = callRef.current.parameters.From || callRef.current.parameters.To || incomingFrom || outboundTo;
+      const phone = callRef.current.parameters.From || callRef.current.parameters.To || incomingFrom || dialNumber;
       if (!phone) throw new Error("No phone number to send message to.");
       
       await axios.post(`/api/contact-center/voice/live/${callRef.current.parameters.CallSid}/whatsapp`, {
@@ -508,35 +566,58 @@ export default function Softphone({ user }) {
                       <PhoneForwarded className="h-4 w-4" />
                       Aktar
                     </button>
-                    <button
-                      type="button"
-                      disabled={sendingWhatsapp}
-                      onClick={() => sendWhatsAppTemplate("welcome_location")}
-                      className={`flex flex-1 items-center justify-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium transition-colors bg-white text-emerald-700 hover:bg-emerald-50 ${sendingWhatsapp ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      title="Lokasyon ve Karşılama WhatsApp mesajı gönder"
-                    >
-                      <MessageCircle className="h-4 w-4" />
-                      {sendingWhatsapp ? 'Gönderiliyor...' : 'WhatsApp Gönder'}
-                    </button>
+                    <div className="flex w-full gap-2 mt-2">
+                      <select
+                        className="flex-1 rounded-md border-gray-300 text-sm py-1.5 focus:border-emerald-500 focus:ring-emerald-500"
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            sendWhatsAppTemplate(e.target.value);
+                            e.target.value = ""; // reset after send
+                          }
+                        }}
+                        disabled={sendingWhatsapp}
+                      >
+                        <option value="">WhatsApp Gönder...</option>
+                        <option value="welcome_location">Lokasyon & Karşılama</option>
+                        <option value="reservation_confirmation">Rezervasyon Onayı</option>
+                        <option value="satisfaction_survey">Memnuniyet Anketi</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
                 {showTransfer && (
                   <div className="p-3 bg-amber-50 rounded-md border border-amber-100 flex flex-col gap-2">
-                    <label className="text-xs font-medium text-amber-800">Hedef Numara veya Ajan (örn: client:agent_2)</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={transferTarget}
+                    <label className="text-xs font-medium text-amber-800">Aktarılacak Hedef</label>
+                    <div className="flex flex-col gap-2">
+                      <select 
+                        className="w-full rounded-md border-gray-300 text-sm py-1.5 focus:border-amber-500 focus:ring-amber-500"
                         onChange={(e) => setTransferTarget(e.target.value)}
-                        className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 sm:text-sm px-3 py-2"
-                        placeholder="+90555..."
-                      />
+                        value={transferTarget.startsWith("client:") ? transferTarget : "custom"}
+                      >
+                        <option value="">-- Hedef Seçin --</option>
+                        <option value="client:reception">Resepsiyon</option>
+                        <option value="client:restaurant">Restoran</option>
+                        <option value="client:spa">Spa & Wellness</option>
+                        <option value="client:concierge">Concierge</option>
+                        <option value="custom">Diğer Numara (Dış Hat)...</option>
+                      </select>
+                      
+                      {(!transferTarget.startsWith("client:") || transferTarget === "custom") && (
+                        <input
+                          type="text"
+                          value={transferTarget === "custom" ? "" : transferTarget}
+                          onChange={(e) => setTransferTarget(e.target.value)}
+                          className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 sm:text-sm px-3 py-2"
+                          placeholder="+90555... veya dahili"
+                        />
+                      )}
+                      
                       <button
                         onClick={transferCall}
-                        disabled={transferring || !transferTarget.trim()}
-                        className="bg-amber-600 text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-amber-700 disabled:opacity-50"
+                        disabled={transferring || !transferTarget || transferTarget === "custom"}
+                        className="w-full bg-amber-600 text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-amber-700 disabled:opacity-50 mt-1"
                       >
-                        {transferring ? 'Aktarılıyor...' : 'Aktar'}
+                        {transferring ? 'Aktarılıyor...' : 'Çağrıyı Aktar'}
                       </button>
                     </div>
                   </div>
