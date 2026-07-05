@@ -2589,16 +2589,17 @@ async def post_beo_to_folio(
     amount = float(payload.get("amount", 0))
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Etkinlik tutarı 0'dan büyük olmalıdır.")
-        
+
     try:
-        from routers.finance.general_ledger import mock_db as gl_db
         import uuid
         from datetime import datetime
-        
+
+        from routers.finance.general_ledger import mock_db as gl_db
+
         # Etkinlik bilgilerini al
         event_doc = await db.mice_events.find_one({"_id": event_id})
         event_name = event_doc.get("name", "Bilinmeyen Etkinlik") if event_doc else "Bilinmeyen Etkinlik"
-        
+
         journal_entry = {
             "id": str(uuid.uuid4()),
             "date": datetime.utcnow().strftime("%Y-%m-%d"),

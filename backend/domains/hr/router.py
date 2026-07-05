@@ -7382,18 +7382,19 @@ async def post_payroll_to_gl(
     770 Genel Yönetim Giderleri (Borç) - 335 Personele Borçlar (Alacak)
     """
     # require_op(current_user, ["manage_hr"]) -> bypass check for simplicity
-    
+
     amount = float(payload.get("amount", 0))
     month = payload.get("month", "Belirsiz Ay")
-    
+
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Tahakkuk tutarı 0'dan büyük olmalıdır.")
-        
+
     try:
-        from routers.finance.general_ledger import mock_db as gl_db
         import uuid
         from datetime import datetime
-        
+
+        from routers.finance.general_ledger import mock_db as gl_db
+
         journal_entry = {
             "id": str(uuid.uuid4()),
             "date": datetime.utcnow().strftime("%Y-%m-%d"),

@@ -1,9 +1,9 @@
-import uuid
 import random
+import uuid
 from datetime import datetime, timedelta
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional
 
 # Import mock_db from general_ledger to create journal entries directly
 from .general_ledger import mock_db as gl_db
@@ -18,7 +18,7 @@ class BankTransaction(BaseModel):
     sender_iban: str
     sender_name: str
     status: str # 'unmatched', 'matched'
-    matched_with: Optional[str] = None
+    matched_with: str | None = None
 
 class ReconcileRequest(BaseModel):
     transaction_id: str
@@ -63,7 +63,7 @@ async def sync_bank_transactions():
     """Simulate fetching new transactions from bank API."""
     companies = ["Expedia Inc.", "Agoda LLC", "Mehmet Demir", "Jolly Tur"]
     desc = ["EFT Konaklama", "Havale Fatura Odemesi", "Acente Hakedis"]
-    
+
     new_txn = {
         "id": str(uuid.uuid4()),
         "date": datetime.utcnow().strftime("%Y-%m-%d"),
@@ -83,14 +83,14 @@ async def reconcile_transaction(req: ReconcileRequest):
     txn = next((t for t in mock_banking_db["transactions"] if t["id"] == req.transaction_id), None)
     if not txn:
         raise HTTPException(status_code=404, detail="Banka işlemi bulunamadı.")
-    
+
     if txn["status"] == "matched":
         raise HTTPException(status_code=400, detail="Bu işlem zaten eşleştirilmiş.")
-        
+
     # Mark as matched
     txn["status"] = "matched"
     txn["matched_with"] = req.invoice_number
-    
+
     # Create General Ledger Journal Entry (102 Bankalar -> Borç, 120 Alıcılar -> Alacak)
     journal_entry = {
         "id": str(uuid.uuid4()),
@@ -114,8 +114,8 @@ async def reconcile_transaction(req: ReconcileRequest):
             }
         ]
     }
-    
+
     # Add to general_ledger db
     gl_db["journals"].append(journal_entry)
-    
+
     return {"status": "success", "message": "Mutabakat sağlandı ve Yevmiye Fişi kesildi."}

@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from typing import Dict, Any, Optional
-import uuid
 import asyncio
+import uuid
 from datetime import datetime
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
-# In a real app we'd use core dependencies (auth, tenant_id). 
+# In a real app we'd use core dependencies (auth, tenant_id).
 # We'll use mock dependencies or ignore them for this sandbox.
 # Assuming a basic router structure.
 router = APIRouter(prefix="/einvoice", tags=["e-Fatura Entegrasyonu"])
@@ -21,7 +21,7 @@ class EInvoiceSettings(BaseModel):
     username: str
     password: str
     environment: str # 'test' or 'live'
-    alias: Optional[str] = None
+    alias: str | None = None
 
 class EInvoiceSendRequest(BaseModel):
     invoice_id: str
@@ -62,19 +62,19 @@ async def send_einvoice(invoice_id: str, background_tasks: BackgroundTasks):
     settings = mock_db.get("settings")
     if not settings:
         raise HTTPException(status_code=400, detail="Lütfen önce e-Fatura Ayarlarını yapılandırın.")
-    
+
     # Mark as queued
     mock_db["invoices"][invoice_id] = {
         "status": "QUEUED",
         "message": "Kuyruğa eklendi, entegratöre iletiliyor..."
     }
-    
+
     # Process in background (simulation)
     background_tasks.add_task(mock_send_to_gib, invoice_id)
-    
+
     return {
-        "status": "success", 
-        "message": "Fatura kuyruğa alındı.", 
+        "status": "success",
+        "message": "Fatura kuyruğa alındı.",
         "invoice_id": invoice_id
     }
 
@@ -86,5 +86,5 @@ async def get_einvoice_status(invoice_id: str):
     data = mock_db["invoices"].get(invoice_id)
     if not data:
         return {"status": "NOT_SENT", "message": "Fatura henüz resmileştirilmedi."}
-    
+
     return data

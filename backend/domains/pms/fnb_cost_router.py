@@ -360,15 +360,16 @@ async def post_fnb_cost_to_gl(
     # Re-use the variance logic to get total cost
     v = await yield_variance(start, end, None, current_user)
     total_cost = v["totals"]["actual_cost"] if v["totals"]["actual_cost"] > 0 else v["totals"]["theoretical_cost"]
-    
+
     if total_cost <= 0:
         return {"status": "error", "message": "Yansıtılacak bir maliyet bulunamadı."}
-        
+
     try:
-        from routers.finance.general_ledger import mock_db as gl_db
         import uuid
         from datetime import datetime
-        
+
+        from routers.finance.general_ledger import mock_db as gl_db
+
         journal_entry = {
             "id": str(uuid.uuid4()),
             "date": datetime.utcnow().strftime("%Y-%m-%d"),
