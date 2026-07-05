@@ -83,9 +83,7 @@ const EMPTY_FORM = {
   date_range: "auto"
 };
 export default function ReportScheduler() {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [schedules, setSchedules] = useState([]);
   const [history, setHistory] = useState([]);
   const [reportTypes, setReportTypes] = useState([]);
@@ -394,7 +392,7 @@ export default function ReportScheduler() {
                             </span>}
                         </div>
                         {s.next_run && <div className="text-xs text-slate-600 mt-1">
-                            {t('cm.pages_ReportScheduler.sonraki_gonderim')} {new Date(s.next_run).toLocaleString("tr-TR")}
+                            {t('cm.pages_ReportScheduler.sonraki_gonderim')} {new Date(s.next_run).toLocaleString(i18n.language)}
                           </div>}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
@@ -480,7 +478,7 @@ export default function ReportScheduler() {
                           <TableCell className="font-medium max-w-[160px] truncate">{h.schedule_name}</TableCell>
                           <TableCell className="text-sm">{h.report_label || getReportLabel(h.report_type)}</TableCell>
                           <TableCell className="text-sm text-slate-500 whitespace-nowrap">
-                            {h.sent_at ? new Date(h.sent_at).toLocaleString("tr-TR") : "-"}
+                            {h.sent_at ? new Date(h.sent_at).toLocaleString(i18n.language) : "-"}
                           </TableCell>
                           <TableCell>
                             <StatusBadge intent={st.intent} icon={st.icon}>{st.label}</StatusBadge>
@@ -640,7 +638,7 @@ export default function ReportScheduler() {
                 <span className="text-slate-500">Rapor:</span>
                 <span>{detailEntry.report_label || detailEntry.report_type}</span>
                 <span className="text-slate-500">{t('cm.pages_ReportScheduler.tarih_197b8')}</span>
-                <span>{detailEntry.sent_at ? new Date(detailEntry.sent_at).toLocaleString("tr-TR") : "-"}</span>
+                <span>{detailEntry.sent_at ? new Date(detailEntry.sent_at).toLocaleString(i18n.language) : "-"}</span>
                 <span className="text-slate-500">{t('cm.pages_ReportScheduler.durum_6d192')}</span>
                 <span>
                   {STATUS_INTENT[detailEntry.status] && <StatusBadge intent={STATUS_INTENT[detailEntry.status].intent} icon={STATUS_INTENT[detailEntry.status].icon}>

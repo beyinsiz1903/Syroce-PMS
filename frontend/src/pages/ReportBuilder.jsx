@@ -131,9 +131,7 @@ const formatCurrency = v => new Intl.NumberFormat('tr-TR', {
   minimumFractionDigits: 0
 }).format(v || 0);
 const ReportBuilder = () => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   // Config state
   const [dataSources, setDataSources] = useState({});
   const [maxLimit, setMaxLimit] = useState(5000);
@@ -661,7 +659,7 @@ const ReportBuilder = () => {
             {Object.keys(summary).length > 0 && <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                 {Object.entries(summary).map(([col, stats]) => {
             const colType = sourceColumns[col]?.type;
-            const fmt = colType === 'currency' ? formatCurrency : v => v?.toLocaleString('tr-TR');
+            const fmt = colType === 'currency' ? formatCurrency : v => v?.toLocaleString(i18n.language);
             return <div key={col} className="p-3 bg-white border border-slate-200 rounded-lg border-l-4 border-l-sky-500" data-testid={`summary-${col}`}>
                       <p className="text-xs text-gray-500 font-medium">{columnLabels[col] || col}</p>
                       <p className="text-lg font-bold text-gray-900 mt-0.5">{fmt(stats.sum)}</p>

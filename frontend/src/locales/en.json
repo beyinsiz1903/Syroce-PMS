@@ -283,7 +283,9 @@
     "xchange": "Xchange (SXI)",
     "afsadakat": "Loyalty & Inbox",
     "revenue_hub": "Revenue Center",
-    "mailing": "Email Marketing"
+    "mailing": "Email Marketing",
+    "mevzuat_raporlari": "Regulatory Reports",
+    "report_scheduler": "Report Scheduler"
   },
   "auth": {
     "signIn": "Sign in to your account or create a new one",

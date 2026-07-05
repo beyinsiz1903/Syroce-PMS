@@ -331,7 +331,9 @@
     "xchange": "Xchange (SXI)",
     "afsadakat": "Sadakat & Inbox",
     "revenue_hub": "Gelir Merkezi",
-    "mailing": "E-posta Pazarlama"
+    "mailing": "E-posta Pazarlama",
+    "mevzuat_raporlari": "Mevzuat Raporları",
+    "report_scheduler": "Rapor Zamanlayıcı"
   },
   "auth": {
     "signIn": "Hesabınıza giriş yapın veya yeni bir hesap oluşturun",

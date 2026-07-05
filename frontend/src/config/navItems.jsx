@@ -420,7 +420,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "mevzuat_raporlari",
-    label: "Mevzuat Raporlari",
+    label: "Mevzuat Raporları",
     path: "/app/mevzuat-raporlari",
     moduleKey: "basic_reporting",
     tier: "professional",
@@ -541,7 +541,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "report_scheduler",
-    label: "Rapor Zamanlayici",
+    label: "Rapor Zamanlayıcı",
     path: "/report-scheduler",
     moduleKey: "basic_reporting",
     tier: "professional",
@@ -737,7 +737,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "report_builder",
-    label: "Rapor Olusturucu",
+    label: "Rapor Oluşturucu",
     path: "/app/rapor-olusturucu",
     moduleKey: "reports",
     tier: "professional",
