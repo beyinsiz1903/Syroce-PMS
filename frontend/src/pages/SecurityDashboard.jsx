@@ -13,9 +13,7 @@ const SecurityDashboard = ({
   onLogout,
   embedded = false
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const fetchData = useCallback(async () => {
@@ -91,7 +89,7 @@ const SecurityDashboard = ({
                 {o.failed_logins_24h > 10 ? t('securityDashboard.securityWarning') : t('securityDashboard.systemSecure')}
               </p>
               <p className="text-xs text-gray-500">
-                Son güncelleme: {new Date(data?.timestamp).toLocaleString('tr-TR')}
+                Son güncelleme: {new Date(data?.timestamp).toLocaleString(i18n.language)}
               </p>
             </div>
           </CardContent>
@@ -255,7 +253,7 @@ const SecurityDashboard = ({
                   const isAlert = evt.action === 'login_failed';
                   return <tr key={evt.id || i} className={`border-b hover:bg-gray-50 ${isAlert ? 'bg-red-50/30' : ''}`}>
                           <td className="py-2 px-3 text-xs text-gray-500 whitespace-nowrap">
-                            {new Date(evt.timestamp).toLocaleString('tr-TR', {
+                            {new Date(evt.timestamp).toLocaleString(i18n.language, {
                         day: '2-digit',
                         month: '2-digit',
                         hour: '2-digit',
