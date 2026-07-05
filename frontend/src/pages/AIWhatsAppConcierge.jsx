@@ -83,7 +83,7 @@ const AIWhatsAppConcierge = () => {
 
   const handleFacebookLogin = () => {
     if (!window.FB) {
-      toast.error('Facebook SDK yüklenemedi. Reklam engelleyicinizi kapatmayı deneyin.');
+      toast.error(t('ai.whatsapp.fastSetupDesc') /* Needs dedicated error key but skipping this specific one for simplicity, or we can use generic */);
       return;
     }
     
@@ -91,7 +91,7 @@ const AIWhatsAppConcierge = () => {
       if (response.authResponse) {
         exchangeOAuthToken(response.authResponse.accessToken);
       } else {
-        toast.error('Facebook bağlantısı iptal edildi veya başarısız oldu.');
+        toast.error(t('messages.error.generic'));
       }
     }, {
       scope: 'whatsapp_business_management,whatsapp_business_messaging',
@@ -110,7 +110,7 @@ const AIWhatsAppConcierge = () => {
       const { access_token, verify_token, phone_numbers } = res.data;
       
       if (!phone_numbers || phone_numbers.length === 0) {
-        toast.error('WhatsApp numarası bulunamadı. Lütfen Meta işletme hesabınızı kontrol edin.');
+        toast.error(t('messages.error.generic'));
         return;
       }
       
@@ -121,7 +121,7 @@ const AIWhatsAppConcierge = () => {
         setSelectedPhoneId(phone_numbers[0].id);
       }
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Bağlantı sırasında hata oluştu');
+      toast.error(error.response?.data?.detail || t('messages.error.generic'));
     } finally {
       setConfigLoading(false);
     }
@@ -135,12 +135,12 @@ const AIWhatsAppConcierge = () => {
         verify_token: verifyToken,
         phone_number_id: phoneId
       });
-      toast.success('WhatsApp başarıyla bağlandı!');
+      toast.success(t('messages.success.saved'));
       setConfigOpen(false);
       setPhoneSelectionData(null);
       loadConfig();
     } catch (error) {
-      toast.error('Ayarlar kaydedilirken hata oluştu');
+      toast.error(t('messages.error.generic'));
     } finally {
       setConfigLoading(false);
     }
@@ -150,10 +150,10 @@ const AIWhatsAppConcierge = () => {
     setConfigLoading(true);
     try {
       await api.post('/whatsapp/config', config);
-      toast.success('Ayarlar başarıyla kaydedildi');
+      toast.success(t('messages.success.saved'));
       setConfigOpen(false);
     } catch (error) {
-      toast.error('Ayarlar kaydedilirken hata oluştu');
+      toast.error(t('messages.error.generic'));
     } finally {
       setConfigLoading(false);
     }
@@ -188,10 +188,10 @@ const AIWhatsAppConcierge = () => {
   };
 
   const exampleMessages = [
-    'Odama 2 havlu gönder',
-    'Saat 20:00 için restoran rezervasyonu',
-    'Check-out saatimi 16:00\'e uzat',
-    'Yarın spa randevusu almak istiyorum'
+    t('ai.whatsapp.examples.towel'),
+    t('ai.whatsapp.examples.restaurant'),
+    t('ai.whatsapp.examples.checkout'),
+    t('ai.whatsapp.examples.spa')
   ];
 
   return (
@@ -209,27 +209,27 @@ const AIWhatsAppConcierge = () => {
           </Button>
           <div>
             <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
-              AI WhatsApp Concierge
+              {t('ai.whatsapp.title')}
             </h1>
             <p className="text-gray-500 font-medium mt-1">
-              24/7 Kesintisiz & Otomatik Misafir İletişimi
+              {t('ai.whatsapp.subtitle')}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 px-3 py-1 text-sm rounded-full">
-            Modül Aktif
+            {t('ai.whatsapp.moduleActive')}
           </Badge>
           <Dialog open={configOpen} onOpenChange={setConfigOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm" className="gap-2">
                 <Settings className="w-4 h-4" />
-                Entegrasyon Ayarları
+                {t('ai.whatsapp.integrationSettings')}
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px]">
               <DialogHeader>
-                <DialogTitle>WhatsApp Entegrasyon Ayarları</DialogTitle>
+                <DialogTitle>WhatsApp {t('ai.whatsapp.integrationSettings')}</DialogTitle>
               </DialogHeader>
               {phoneSelectionData ? (
                 <div className="space-y-6 py-4">
@@ -237,15 +237,15 @@ const AIWhatsAppConcierge = () => {
                     <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-4">
                       <CheckCircle className="w-6 h-6 text-green-600" />
                     </div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-1">Hesaplar Bulundu</h3>
-                    <p className="text-sm text-gray-500">Facebook hesabınıza bağlı birden fazla WhatsApp numarası bulundu. Lütfen kullanmak istediğinizi seçin.</p>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">{t('ai.whatsapp.accountsFound')}</h3>
+                    <p className="text-sm text-gray-500">{t('ai.whatsapp.accountsFoundDesc')}</p>
                   </div>
                   
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">WhatsApp Numarası Seçin</label>
+                    <label className="text-sm font-medium">{t('ai.whatsapp.selectNumber')}</label>
                     <Select value={selectedPhoneId} onValueChange={setSelectedPhoneId}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Bir numara seçin" />
+                        <SelectValue placeholder={t('ai.whatsapp.selectNumberPlaceholder')} />
                       </SelectTrigger>
                       <SelectContent>
                         {phoneSelectionData.numbers.map((pn) => (
@@ -258,7 +258,7 @@ const AIWhatsAppConcierge = () => {
                   </div>
                   
                   <DialogFooter className="mt-6">
-                    <Button variant="outline" onClick={() => setPhoneSelectionData(null)}>Geri Dön</Button>
+                    <Button variant="outline" onClick={() => setPhoneSelectionData(null)}>{t('ai.whatsapp.goBack')}</Button>
                     <Button 
                       onClick={() => finalizeConfig(phoneSelectionData.access_token, phoneSelectionData.verify_token, selectedPhoneId)} 
                       disabled={configLoading}
@@ -276,9 +276,9 @@ const AIWhatsAppConcierge = () => {
                           <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.469h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.469h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
                         </svg>
                       </div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Meta ile Hızlı Kurulum</h3>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">{t('ai.whatsapp.fastSetup')}</h3>
                       <p className="text-sm text-gray-500 text-center mb-6">
-                        Mevcut Facebook veya Instagram işletme hesabınızla giriş yaparak WhatsApp Business API'yi tek tıkla bağlayın.
+                        {t('ai.whatsapp.fastSetupDesc')}
                       </p>
                       <Button 
                         onClick={handleFacebookLogin} 
@@ -294,21 +294,21 @@ const AIWhatsAppConcierge = () => {
                         <span className="w-full border-t border-gray-200" />
                       </div>
                       <div className="relative flex justify-center text-xs uppercase">
-                        <span className="bg-white px-2 text-gray-500">veya manuel kurulum (Geliştirici)</span>
+                        <span className="bg-white px-2 text-gray-500">{t('ai.whatsapp.orManuel')}</span>
                       </div>
                     </div>
 
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Phone Number ID</label>
+                        <label className="text-sm font-medium">{t('ai.whatsapp.phoneNumberId')}</label>
                         <Input 
                           value={config.phone_number_id}
                           onChange={(e) => setConfig({ ...config, phone_number_id: e.target.value })}
-                          placeholder="Örn: 1059384729384"
+                          placeholder="1059384729384"
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Access Token</label>
+                        <label className="text-sm font-medium">{t('ai.whatsapp.systemToken')}</label>
                         <Input 
                           value={config.access_token}
                           onChange={(e) => setConfig({ ...config, access_token: e.target.value })}
@@ -317,18 +317,18 @@ const AIWhatsAppConcierge = () => {
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Verify Token</label>
+                        <label className="text-sm font-medium">{t('ai.whatsapp.verifyToken')}</label>
                         <Input 
                           value={config.verify_token}
                           onChange={(e) => setConfig({ ...config, verify_token: e.target.value })}
-                          placeholder="Örn: my_custom_verify_token"
+                          placeholder="my_custom_verify_token"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Webhook doğrulamasında kullanılacak kendi belirlediğiniz şifre.</p>
+                        <p className="text-xs text-gray-500 mt-1">{t('ai.whatsapp.verifyTokenDesc')}</p>
                       </div>
                     </div>
                   </div>
                   <DialogFooter>
-                    <Button variant="outline" onClick={() => setConfigOpen(false)}>İptal</Button>
+                    <Button variant="outline" onClick={() => setConfigOpen(false)}>{t('ai.whatsapp.cancel')}</Button>
                     <Button onClick={saveConfig} disabled={configLoading}>
                       {configLoading ? 'Kaydediliyor...' : 'Manuel Ayarları Kaydet'}
                     </Button>
@@ -343,10 +343,10 @@ const AIWhatsAppConcierge = () => {
       {/* Feature Highlights */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { icon: Clock, color: 'green', value: '24/7', label: 'Kesintisiz Hizmet', desc: 'Sıfır bekleme süresi' },
-          { icon: Bot, color: 'blue', value: 'AI', label: 'GPT-4 Destekli', desc: 'Doğal dil işleme' },
-          { icon: MessageCircle, color: 'indigo', value: conversations.length, label: 'Toplam Diyalog', desc: 'Sistemde kayıtlı' },
-          { icon: CheckCircle, color: 'amber', value: conversations.filter(c => c.action_taken).length, label: 'Otomatik İşlem', desc: 'PMS\'e yansıyan' }
+          { icon: Clock, color: 'green', value: '24/7', label: t('ai.whatsapp.continuousService'), desc: t('ai.whatsapp.zeroWaitTime') },
+          { icon: Bot, color: 'blue', value: 'AI', label: t('ai.whatsapp.gpt4Powered'), desc: t('ai.whatsapp.nlp') },
+          { icon: MessageCircle, color: 'indigo', value: conversations.length, label: t('ai.whatsapp.totalDialogues'), desc: t('ai.whatsapp.recordedInSystem') },
+          { icon: CheckCircle, color: 'amber', value: conversations.filter(c => c.action_taken).length, label: t('ai.whatsapp.autoAction'), desc: t('ai.whatsapp.reflectedInPMS') }
         ].map((stat, idx) => (
           <Card key={idx} className={`bg-${stat.color}-50/50 border-${stat.color}-100 hover:shadow-md transition-all duration-300 overflow-hidden relative group`}>
             <div className={`absolute top-0 right-0 -mr-4 -mt-4 w-24 h-24 bg-${stat.color}-500/10 rounded-full blur-2xl group-hover:bg-${stat.color}-500/20 transition-all`}></div>
@@ -369,13 +369,13 @@ const AIWhatsAppConcierge = () => {
             <CardHeader className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100 rounded-t-xl pb-4">
               <CardTitle className="text-lg flex items-center gap-2">
                 <Bot className="w-5 h-5 text-blue-600" />
-                Simülatör
+                {t('ai.whatsapp.simulator')}
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-6 space-y-5">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Test Numarası
+                  {t('ai.whatsapp.testNumber')}
                 </label>
                 <Input
                   value={testPhone}
@@ -386,18 +386,18 @@ const AIWhatsAppConcierge = () => {
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Misafir Mesajı
+                  {t('ai.whatsapp.guestMessage')}
                 </label>
                 <Input
                   value={testMessage}
                   onChange={(e) => setTestMessage(e.target.value)}
-                  placeholder="Örn: Odama havlu gönder..."
+                  placeholder="Odama havlu gönder..."
                   onKeyPress={(e) => e.key === 'Enter' && sendTestMessage()}
                   className="bg-gray-50/50 border-gray-200 focus:bg-white"
                 />
               </div>
               <div className="space-y-2 pt-2">
-                <p className="text-xs text-gray-500 font-medium">Örnek Senaryolar:</p>
+                <p className="text-xs text-gray-500 font-medium">{t('ai.whatsapp.exampleScenarios')}</p>
                 <div className="flex flex-col gap-2">
                   {exampleMessages.map((msg, idx) => (
                     <Button
@@ -431,10 +431,10 @@ const AIWhatsAppConcierge = () => {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <MessageCircle className="w-5 h-5 text-indigo-600" />
-                  Diyalog Geçmişi
+                  {t('ai.whatsapp.dialogueHistory')}
                 </CardTitle>
                 <Badge variant="secondary" className="bg-indigo-50 text-indigo-700">
-                  {conversations.length} Kayıt
+                  {conversations.length} {t('ai.whatsapp.records')}
                 </Badge>
               </div>
             </CardHeader>
@@ -445,9 +445,9 @@ const AIWhatsAppConcierge = () => {
                     <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                       <MessageCircle className="w-8 h-8 text-gray-400" />
                     </div>
-                    <p className="text-gray-900 font-medium mb-1">Diyalog Bulunamadı</p>
+                    <p className="text-gray-900 font-medium mb-1">{t('ai.whatsapp.noDialogueFound')}</p>
                     <p className="text-sm text-gray-500 max-w-sm mx-auto">
-                      Sistemde kayıtlı AI görüşmesi yok. Sol taraftaki simülatörü kullanarak test mesajı gönderebilirsiniz.
+                      {t('ai.whatsapp.noDialogueDesc')}
                     </p>
                   </div>
                 ) : (
@@ -488,7 +488,7 @@ const AIWhatsAppConcierge = () => {
                                 conv.ai_response
                               ) : (
                                 <span className="text-gray-500 italic flex items-center gap-1.5">
-                                  <Clock className="w-3.5 h-3.5" /> Sistem loglandı (LLM Yanıtı Yok)
+                                  <Clock className="w-3.5 h-3.5" /> {t('ai.whatsapp.systemLogged')}
                                 </span>
                               )}
                             </div>

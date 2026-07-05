@@ -78,9 +78,9 @@ const SocialMediaRadar = () => {
   const [newRule, setNewRule] = useState({ name: '', keywords: '', reply: '' });
 
   const [automationRules, setAutomationRules] = useState([
-    { id: 1, name: 'Wi-Fi Şifresi', keywords: ['wifi', 'internet', 'şifre', 'bağlan'], reply: 'Değerli misafirimiz, geçerli Wi-Fi ağımız "Syroce Guest", şifremiz ise "Syroce2026"dır.', active: true },
-    { id: 2, name: 'Check-in / Check-out', keywords: ['check-in', 'giriş saati', 'çıkış saati', 'erken giriş'], reply: 'Giriş (check-in) saatimiz 14:00, çıkış (check-out) saatimiz 12:00\'dir.', active: true },
-    { id: 3, name: 'Kahvaltı Saatleri', keywords: ['kahvaltı', 'sabah', 'yemek'], reply: 'Kahvaltımız her sabah 07:00 - 10:30 arasında servis edilmektedir.', active: false },
+    { id: 1, name: t('ai.radar.wifiPassword'), keywords: ['wifi', 'internet', 'şifre', 'bağlan'], reply: 'Değerli misafirimiz, geçerli Wi-Fi ağımız "Syroce Guest", şifremiz ise "Syroce2026"dır.', active: true },
+    { id: 2, name: t('ai.radar.checkinCheckout'), keywords: ['check-in', 'giriş saati', 'çıkış saati', 'erken giriş'], reply: t('ai.radar.replyCheckin'), active: true },
+    { id: 3, name: t('ai.radar.breakfastHours'), keywords: ['kahvaltı', 'sabah', 'yemek'], reply: t('ai.radar.replyBreakfast'), active: false },
   ]);
 
 
@@ -100,7 +100,7 @@ const SocialMediaRadar = () => {
       { id: 3, platform: 'twitter', username: 'business_traveler', sentiment: 'neutral', text: 'Good location, but the wifi was a bit slow in the lobby.', engagement: 15, posted_at: new Date(Date.now() - 7200000).toISOString() }
     ]);
     setAlerts([
-      { description: 'Birden fazla platformda Wi-Fi şikayeti', recommended_action: 'Teknik ekibi bilgilendirin' }
+      { description: t('ai.radar.alertWifi'), recommended_action: t('ai.radar.alertWifiAction') }
     ]);
   };
 
@@ -147,7 +147,7 @@ const SocialMediaRadar = () => {
       setIsSendingReply(false);
       setReplyingTo(null);
       setReplyText('');
-      toast.success('Cevabınız ilgili platform üzerinden misafire iletildi!');
+      toast.success(t('ai.radar.replySent'));
     }, 1200);
   };
 
@@ -159,12 +159,12 @@ const SocialMediaRadar = () => {
       [selectedChat.id]: [...(prev[selectedChat.id] || []), newMsg]
     }));
     setChatMessage('');
-    toast.success('Mesaj iletildi');
+    toast.success(t('messages.success.saved'));
   };
 
   const generateAIResponse = (contextMessage, setterFunction) => {
     setIsAiGenerating(true);
-    setterFunction("AI yanıt oluşturuyor...");
+    setterFunction(t('ai.radar.aiGenerating'));
     
     setTimeout(() => {
       let aiResponse = "";
@@ -188,7 +188,7 @@ const SocialMediaRadar = () => {
 
   const handleSaveRule = () => {
     if (!newRule.name || !newRule.keywords || !newRule.reply) {
-      toast.error('Lütfen tüm alanları doldurun.');
+      toast.error(t('messages.error.fillAllFields'));
       return;
     }
     const keywordArray = newRule.keywords.split(',').map(k => k.trim()).filter(k => k);
@@ -202,7 +202,7 @@ const SocialMediaRadar = () => {
     setAutomationRules([ruleObj, ...automationRules]);
     setIsAddRuleModalOpen(false);
     setNewRule({ name: '', keywords: '', reply: '' });
-    toast.success('Yeni kural başarıyla eklendi ve aktif edildi!');
+    toast.success(t('messages.success.saved'));
   };
 
   const toggleChatStatus = () => {
@@ -213,9 +213,9 @@ const SocialMediaRadar = () => {
     setSelectedChat(updatedChat);
     
     if (newStatus === 'resolved') {
-      toast.success('Mesaj arşive kaldırıldı ve kapatıldı olarak işaretlendi.');
+      toast.success(t('ai.radar.chatResolved'));
     } else {
-      toast.success('Mesaj yeniden açıldı.');
+      toast.success(t('ai.radar.chatReopened'));
     }
   };
 
@@ -237,7 +237,7 @@ const SocialMediaRadar = () => {
                   <p className="font-semibold text-slate-800">{alert.description}</p>
                   <div className="mt-3 flex items-start gap-2 bg-red-50/50 p-3 rounded-lg text-sm text-red-800">
                     <TrendingUp className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span><strong>Önerilen Aksiyon:</strong> {alert.recommended_action}</span>
+                    <span><strong>{t('ai.radar.recommendedAction')}:</strong> {alert.recommended_action}</span>
                   </div>
                 </div>
               ))}
@@ -273,7 +273,7 @@ const SocialMediaRadar = () => {
                 <MessageCircle className="w-6 h-6 text-amber-600" />
               </div>
               <p className="text-3xl font-bold text-slate-800 tracking-tight">{sentiment.neutral}</p>
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mt-1">Nötr</p>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mt-1">{t('ai.radar.neutral')}</p>
             </CardContent>
           </Card>
           <Card className="shadow-sm border-slate-200 hover:shadow-md transition-shadow group">
