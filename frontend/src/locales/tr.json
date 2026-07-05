@@ -2173,7 +2173,13 @@
     "reports": "Raporlar",
     "advanced": "Gelişmiş",
     "infrastructure": "Altyapı",
-    "admin": "Yönetim"
+    "admin": "Yönetim",
+    "frontdesk": "Ön Büro & Rez.",
+    "sales": "Satış & Gelir",
+    "guest": "Misafir & CRM",
+    "fb": "Restoran & F&B",
+    "backoffice": "Arka Ofis",
+    "system": "Kanallar & Sistem"
   },
   "commandCenter": {
     "loadingStatus": "Operasyonel durum yükleniyor...",

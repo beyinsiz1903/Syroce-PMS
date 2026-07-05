@@ -2125,7 +2125,13 @@
     "reports": "Reports",
     "advanced": "Advanced",
     "infrastructure": "Infrastructure",
-    "admin": "Administration"
+    "admin": "Administration",
+    "frontdesk": "Front Desk & Res.",
+    "sales": "Sales & Revenue",
+    "guest": "Guest & CRM",
+    "fb": "F&B",
+    "backoffice": "Back Office",
+    "system": "Channels & System"
   },
   "commandCenter": {
     "loadingStatus": "Loading operational status...",

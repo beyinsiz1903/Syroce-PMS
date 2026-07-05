@@ -23,7 +23,7 @@ import {
   Layers, BarChart3, Bot, Building2, Zap, Crown, Shield, Users, ClipboardCheck,
   ChevronDown, Server, CalendarCheck, X,
   BrainCircuit, MessageSquare, Clock, Rocket, Download
-} from 'lucide-react';
+, Utensils, Briefcase, ConciergeBell} from 'lucide-react';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import LanguageSelector from '@/components/LanguageSelector';
 import NotificationBell from '@/components/NotificationBell';
@@ -85,14 +85,14 @@ const ICON_BY_KEY = {
 };
 
 const GROUP_ICONS = {
-  operations: Hotel,
-  reservations: CalendarCheck,
-  finance: DollarSign,
-  channels: Layers,
+  frontdesk: ConciergeBell,
+  sales: TrendingUp,
+  guest: Users,
+  operations: Building2,
+  fb: Utensils,
+  backoffice: Briefcase,
   reports: BarChart3,
-  advanced: Zap,
-  infrastructure: Server,
-  admin: Shield,
+  system: SettingsIcon,
 };
 
 const TIER_CONFIG = {
@@ -285,12 +285,12 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                   data-testid={`nav-group-${groupDef.id}-button`}
                 >
                   <GroupIcon className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden 2xl:inline font-medium">{label}</span>
+                  <span className="hidden lg:inline font-medium">{label}</span>
                   <ChevronDown className={`w-2.5 h-2.5 shrink-0 ${active ? 'text-white/70' : 'text-gray-400'}`} />
                 </Button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="2xl:hidden">
+            <TooltipContent side="bottom" className="lg:hidden">
               <p>{label}</p>
             </TooltipContent>
           </Tooltip>
@@ -395,10 +395,10 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                           data-testid={`nav-${item.key}-button`}
                         >
                           <Icon className="w-3.5 h-3.5 shrink-0" />
-                          <span className="hidden 2xl:inline font-medium">{t(`navKeys.${item.key}`, item.label)}</span>
+                          <span className="hidden lg:inline font-medium">{t(`navKeys.${item.key}`, item.label)}</span>
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent side="bottom" className="2xl:hidden">
+                      <TooltipContent side="bottom" className="lg:hidden">
                         <p>{t(`navKeys.${item.key}`, item.label)}</p>
                       </TooltipContent>
                     </Tooltip>
