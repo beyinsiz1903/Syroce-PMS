@@ -272,7 +272,16 @@
     "system_health": "System Health",
     "pii_strict_mode": "PII Strict Mode",
     "governance": "Governance",
-    "displacement_analysis": "Displacement Analysis"
+    "displacement_analysis": "Displacement Analysis",
+    "hr_hub": "HR",
+    "early_late_pricing": "Early/Late Pricing",
+    "help_center": "Help Center",
+    "academy": "Academy",
+    "onboarding_wizard": "Setup Wizard",
+    "module_store": "Module Store",
+    "pci_compliance": "PCI-DSS Compliance",
+    "xchange": "Xchange (SXI)",
+    "afsadakat": "Loyalty & Inbox"
   },
   "auth": {
     "signIn": "Sign in to your account or create a new one",

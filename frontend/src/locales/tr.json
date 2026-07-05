@@ -320,7 +320,16 @@
     "system_health": "System Health",
     "pii_strict_mode": "PII Strict Mode",
     "governance": "Governance",
-    "displacement_analysis": "Displacement Analizi"
+    "displacement_analysis": "Displacement Analizi",
+    "hr_hub": "İK",
+    "early_late_pricing": "Erken/Geç Çıkış Fiyat",
+    "help_center": "Yardım Merkezi",
+    "academy": "Akademi",
+    "onboarding_wizard": "Kurulum Sihirbazı",
+    "module_store": "Modül Pazarı",
+    "pci_compliance": "PCI-DSS Uyum",
+    "xchange": "Xchange (SXI)",
+    "afsadakat": "Sadakat & Inbox"
   },
   "auth": {
     "signIn": "Hesabınıza giriş yapın veya yeni bir hesap oluşturun",

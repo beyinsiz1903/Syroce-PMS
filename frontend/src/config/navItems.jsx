@@ -429,7 +429,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "help_center",
-    label: "Yardim Merkezi",
+    label: "Yardım Merkezi",
     path: "/app/help",
     tier: "starter",
     group: "starter",
