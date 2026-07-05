@@ -112,7 +112,7 @@ function renderMarkdown(src) {
 }
 
 export default function HelpCenter({ user, tenant, onLogout }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [index, setIndex] = useState(null);
   const [activeSlug, setActiveSlug] = useState(null);
   const [article, setArticle] = useState(null);

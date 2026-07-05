@@ -971,9 +971,7 @@ const DashboardLite = ({
   stats
 }) => {
   const navigate = useNavigate();
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   return <>
       <div className="p-4 md:p-6 space-y-4">
         <PmsLiteOnboarding tenant={tenant} />

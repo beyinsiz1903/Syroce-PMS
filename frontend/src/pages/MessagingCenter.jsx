@@ -26,7 +26,7 @@ import { useTranslation } from 'react-i18next';
 import { alertDialog } from '@/lib/dialogs';
 
 const MessagingCenter = ({ user, tenant, onLogout }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [selectedChannel, setSelectedChannel] = useState('email');
   const [selectedTemplate, setSelectedTemplate] = useState('');

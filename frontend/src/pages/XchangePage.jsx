@@ -95,10 +95,10 @@ const STATUS_META = {
   }
 };
 const TR_TZ = 'Europe/Istanbul';
-const fmtTimestamp = iso => {
+const fmtTimestamp = (iso, lang = 'tr-TR') => {
   if (!iso) return '—';
   try {
-    return new Date(iso).toLocaleString('tr-TR', {
+    return new Date(iso).toLocaleString(lang, {
       timeZone: TR_TZ,
       year: 'numeric',
       month: '2-digit',
@@ -126,9 +126,7 @@ const looksPrivate = url => {
   }
 };
 export default function XchangePage() {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [partners, setPartners] = useState([]);
   const [configs, setConfigs] = useState([]);
   const [deliveries, setDeliveries] = useState([]);

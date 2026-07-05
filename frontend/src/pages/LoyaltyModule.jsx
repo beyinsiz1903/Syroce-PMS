@@ -15,9 +15,7 @@ const LoyaltyModule = ({
   tenant,
   onLogout
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [programs, setPrograms] = useState([]);
   const [guests, setGuests] = useState([]);
   const [loading, setLoading] = useState(true);
