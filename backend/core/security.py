@@ -173,7 +173,19 @@ JWT_EXPIRATION_HOURS = max(1, round(JWT_EXPIRATION_MINUTES / 60))
 # 15-minute access-token lifetime from the user's session lifetime.
 REFRESH_TOKEN_EXPIRATION_DAYS = max(1, int(os.environ.get("REFRESH_TOKEN_EXPIRATION_DAYS", "30")))
 
-security = HTTPBearer(auto_error=False)
+class CookieHTTPBearer(HTTPBearer):
+    async def __call__(self, request: Request) -> HTTPAuthorizationCredentials | None:
+        res = await super().__call__(request)
+        if res:
+            return res
+        token = request.cookies.get("access_token")
+        if token:
+            return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        if self.auto_error:
+            raise HTTPException(status_code=403, detail="Not authenticated")
+        return None
+
+security = CookieHTTPBearer(auto_error=False)
 
 # v44 — Token revocation (logout + refresh rotation).
 # Tokens issued post-v44 carry a `jti` claim; on logout/rotation we insert that
