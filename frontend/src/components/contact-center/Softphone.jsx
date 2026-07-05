@@ -13,6 +13,7 @@
  *    kadar gösterilir, kalıcılaştırılmaz.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Phone, PhoneIncoming, PhoneOutgoing, Mic, MicOff, Grid, MessageCircle, PhoneForwarded } from "lucide-react";
 import axios from "axios";
 import CallHistory from "./CallHistory";
 
@@ -73,11 +74,28 @@ export default function Softphone({ user }) {
   const [detail, setDetail] = useState("");
   const [incomingFrom, setIncomingFrom] = useState("");
   const [dialNumber, setDialNumber] = useState("");
+  const [isMuted, setIsMuted] = useState(false);
+  const [callDuration, setCallDuration] = useState(0);
+  const [showDialpad, setShowDialpad] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [transferTarget, setTransferTarget] = useState("");
+  const [transferring, setTransferring] = useState(false);
+  const [sendingWhatsapp, setSendingWhatsapp] = useState(false);
   const deviceRef = useRef(null);
   const callRef = useRef(null);
 
   const role = user?.role || (user?.roles && user.roles[0]);
   const isStaff = role && role !== "guest";
+
+  useEffect(() => {
+    let timer;
+    if (status === "on_call") {
+      timer = setInterval(() => setCallDuration((prev) => prev + 1), 1000);
+    } else {
+      setCallDuration(0);
+    }
+    return () => clearInterval(timer);
+  }, [status]);
 
   const teardown = useCallback(() => {
     try {
@@ -148,6 +166,11 @@ export default function Softphone({ user }) {
         setDetail("Cihaz hatası: " + (e?.code || "bilinmiyor"));
       });
       device.on("incoming", (call) => {
+        if (callRef.current) {
+          // Already on a call, silently reject incoming
+          try { call.reject(); } catch { /* noop */ }
+          return;
+        }
         callRef.current = call;
         setIncomingFrom(call?.parameters?.From || "");
         setStatus("incoming");
@@ -156,11 +179,13 @@ export default function Softphone({ user }) {
         call.on("disconnect", () => {
           callRef.current = null;
           setIncomingFrom("");
+          setIsMuted(false);
           setStatus(deviceRef.current ? "ready" : "idle");
         });
         call.on("cancel", () => {
           callRef.current = null;
           setIncomingFrom("");
+          setIsMuted(false);
           setStatus(deviceRef.current ? "ready" : "idle");
         });
       });
@@ -193,15 +218,32 @@ export default function Softphone({ user }) {
       setStatus("on_call");
       setDetail("");
       call.on("disconnect", () => {
+        setStatus("idle");
+        setCallDuration(0);
+        setIsMuted(false);
+        setShowDialpad(false);
+        setShowTransfer(false);
         callRef.current = null;
-        setStatus(deviceRef.current ? "ready" : "idle");
       });
       call.on("cancel", () => {
+        setStatus("idle");
+        setCallDuration(0);
+        setIsMuted(false);
+        setShowDialpad(false);
+        setShowTransfer(false);
         callRef.current = null;
-        setStatus(deviceRef.current ? "ready" : "idle");
+      });
+      call.on("reject", () => {
+        setStatus("idle");
+        setCallDuration(0);
+        setIsMuted(false);
+        setShowDialpad(false);
+        setShowTransfer(false);
+        callRef.current = null;
       });
       call.on("error", () => {
         callRef.current = null;
+        setIsMuted(false);
         setStatus(deviceRef.current ? "ready" : "idle");
         setDetail("Çağrı sırasında hata oluştu.");
       });
@@ -211,11 +253,69 @@ export default function Softphone({ user }) {
     }
   }, [dialNumber]);
 
-  // Tek-tıkla arama: misafir/rezervasyon ekranlarındaki "Ara" düğmeleri global
-  // ``syroce:softphone-dial`` event'i yayar. Numarayı doldur, paneli aç; hazırsa
-  // hemen ara, değilse kullanıcıyı aktivasyona yönlendir.
+  // Browser Notifications & Ringtones
   useEffect(() => {
-    if (!isStaff) return undefined;
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (status === "incoming" && "Notification" in window && Notification.permission === "granted") {
+      const notif = new Notification("Gelen Çağrı", {
+        body: `Arayan: ${incomingFrom}`,
+        icon: "/favicon.ico",
+        requireInteraction: true
+      });
+      return () => notif.close();
+    }
+  }, [status, incomingFrom]);
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    if (status !== "incoming" && status !== "on_call") return;
+    
+    const handleKeyDown = (e) => {
+      // Don't trigger if user is typing in an input field
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+
+      switch(e.key.toLowerCase()) {
+        case 'enter':
+          if (status === "incoming") {
+            e.preventDefault();
+            callRef.current?.accept?.();
+            setStatus("on_call");
+          }
+          break;
+        case 'escape':
+          e.preventDefault();
+          if (status === "incoming") callRef.current?.reject?.();
+          else if (status === "on_call") callRef.current?.disconnect?.();
+          setStatus("idle");
+          setCallDuration(0);
+          break;
+        case 'm':
+          if (status === "on_call") {
+            e.preventDefault();
+            toggleMute();
+          }
+          break;
+        case 't':
+          if (status === "on_call") {
+            e.preventDefault();
+            setShowTransfer(prev => !prev);
+            setShowDialpad(false);
+          }
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [status, toggleMute]);
+
+  useEffect(() => {
+    if (!isStaff) return;
     const onDial = (e) => {
       const number = (e?.detail?.number || "").trim();
       if (!number) return;
@@ -244,34 +344,84 @@ export default function Softphone({ user }) {
   }, []);
 
   const rejectCall = useCallback(() => {
-    try {
-      callRef.current?.reject?.();
-    } catch {
-      /* noop */
-    }
-    callRef.current = null;
-    setIncomingFrom("");
-    setStatus(deviceRef.current ? "ready" : "idle");
+    if (callRef.current) callRef.current.reject();
+    setStatus("idle");
+    setCallDuration(0);
+    setIsMuted(false);
+    setShowDialpad(false);
+    setShowTransfer(false);
   }, []);
 
-  const hangUp = useCallback(() => {
-    try {
-      callRef.current?.disconnect?.();
-    } catch {
-      /* noop */
-    }
-    callRef.current = null;
-    setStatus(deviceRef.current ? "ready" : "idle");
+  const endCall = useCallback(() => {
+    if (callRef.current) callRef.current.disconnect();
+    setStatus("idle");
+    setCallDuration(0);
+    setIsMuted(false);
+    setShowDialpad(false);
+    setShowTransfer(false);
   }, []);
+
+  const toggleMute = useCallback(() => {
+    if (callRef.current) {
+      const currentMuted = callRef.current.isMuted();
+      callRef.current.mute(!currentMuted);
+      setIsMuted(!currentMuted);
+    }
+  }, []);
+
+  const transferCall = async () => {
+    if (!transferTarget.trim() || !callRef.current) return;
+    setTransferring(true);
+    try {
+      await axios.post(`/api/contact-center/voice/live/${callRef.current.parameters.CallSid}/transfer`, {
+        target: transferTarget.trim()
+      });
+      setShowTransfer(false);
+      setTransferTarget("");
+    } catch (err) {
+      console.error("Transfer failed", err);
+      alert("Aktarma başarısız oldu.");
+    } finally {
+      setTransferring(false);
+    }
+  };
+
+  const sendWhatsAppTemplate = async (templateName) => {
+    if (!callRef.current) return;
+    setSendingWhatsapp(true);
+    try {
+      const phone = callRef.current.parameters.From || callRef.current.parameters.To || incomingFrom || dialNumber;
+      if (!phone) throw new Error("No phone number to send message to.");
+      
+      await axios.post(`/api/contact-center/voice/live/${callRef.current.parameters.CallSid}/whatsapp`, {
+        phone: phone,
+        template_name: templateName,
+        language_code: "tr"
+      });
+      alert("WhatsApp mesajı başarıyla gönderildi.");
+    } catch (err) {
+      console.error("WhatsApp error", err);
+      alert("WhatsApp mesajı gönderilemedi.");
+    } finally {
+      setSendingWhatsapp(false);
+    }
+  };
 
   const deactivate = useCallback(() => {
     teardown();
     setStatus("idle");
     setDetail("");
     setIncomingFrom("");
+    setIsMuted(false);
   }, [teardown]);
 
   if (!isStaff) return null;
+
+  const formatTimer = (sec) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
 
   return (
     <div className="fixed bottom-4 left-4 z-50">
@@ -363,13 +513,139 @@ export default function Softphone({ user }) {
                 </div>
               </div>
             ) : status === "on_call" ? (
-              <button
-                type="button"
-                onClick={hangUp}
-                className="w-full rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
-              >
-                Görüşmeyi sonlandır
-              </button>
+              <div className="space-y-4">
+                <div className="flex flex-col items-center justify-center p-4 bg-gray-50 rounded-lg border border-gray-100">
+                  <div className="text-sm text-gray-500 mb-1">Görüşme Süresi</div>
+                  <div className="text-3xl font-mono font-medium text-gray-800 tracking-wider">
+                    {formatTimer(callDuration)}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={toggleMute}
+                      className={`flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                        isMuted
+                          ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+                          : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                      }`}
+                    >
+                      {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                      {isMuted ? "Sesi Aç" : "Sustur"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowDialpad(!showDialpad);
+                        setShowTransfer(false);
+                      }}
+                      className={`flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                        showDialpad
+                          ? "border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                          : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                      }`}
+                    >
+                      <Grid className="h-4 w-4" />
+                      Tuş Takımı
+                    </button>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowTransfer(!showTransfer);
+                        setShowDialpad(false);
+                      }}
+                      className={`flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                        showTransfer
+                          ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                          : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                      }`}
+                    >
+                      <PhoneForwarded className="h-4 w-4" />
+                      Aktar
+                    </button>
+                    <div className="flex w-full gap-2 mt-2">
+                      <select
+                        className="flex-1 rounded-md border-gray-300 text-sm py-1.5 focus:border-emerald-500 focus:ring-emerald-500"
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            sendWhatsAppTemplate(e.target.value);
+                            e.target.value = ""; // reset after send
+                          }
+                        }}
+                        disabled={sendingWhatsapp}
+                      >
+                        <option value="">WhatsApp Gönder...</option>
+                        <option value="welcome_location">Lokasyon & Karşılama</option>
+                        <option value="reservation_confirmation">Rezervasyon Onayı</option>
+                        <option value="satisfaction_survey">Memnuniyet Anketi</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                {showTransfer && (
+                  <div className="p-3 bg-amber-50 rounded-md border border-amber-100 flex flex-col gap-2">
+                    <label className="text-xs font-medium text-amber-800">Aktarılacak Hedef</label>
+                    <div className="flex flex-col gap-2">
+                      <select 
+                        className="w-full rounded-md border-gray-300 text-sm py-1.5 focus:border-amber-500 focus:ring-amber-500"
+                        onChange={(e) => setTransferTarget(e.target.value)}
+                        value={transferTarget.startsWith("client:") ? transferTarget : "custom"}
+                      >
+                        <option value="">-- Hedef Seçin --</option>
+                        <option value="client:reception">Resepsiyon</option>
+                        <option value="client:restaurant">Restoran</option>
+                        <option value="client:spa">Spa & Wellness</option>
+                        <option value="client:concierge">Concierge</option>
+                        <option value="custom">Diğer Numara (Dış Hat)...</option>
+                      </select>
+                      
+                      {(!transferTarget.startsWith("client:") || transferTarget === "custom") && (
+                        <input
+                          type="text"
+                          value={transferTarget === "custom" ? "" : transferTarget}
+                          onChange={(e) => setTransferTarget(e.target.value)}
+                          className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 sm:text-sm px-3 py-2"
+                          placeholder="+90555... veya dahili"
+                        />
+                      )}
+                      
+                      <button
+                        onClick={transferCall}
+                        disabled={transferring || !transferTarget || transferTarget === "custom"}
+                        className="w-full bg-amber-600 text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-amber-700 disabled:opacity-50 mt-1"
+                      >
+                        {transferring ? 'Aktarılıyor...' : 'Çağrıyı Aktar'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {showDialpad && (
+                  <div className="grid grid-cols-3 gap-2 p-2 bg-gray-50 rounded-md border border-gray-100">
+                    {['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'].map((digit) => (
+                      <button
+                        key={digit}
+                        type="button"
+                        onClick={() => {
+                          if (callRef.current) callRef.current.sendDigits(digit);
+                        }}
+                        className="flex items-center justify-center h-10 bg-white border border-gray-200 rounded-md shadow-sm text-lg font-medium text-gray-700 hover:bg-gray-50 active:bg-gray-100"
+                      >
+                        {digit}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={endCall}
+                  className="w-full rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+                >
+                  Görüşmeyi sonlandır
+                </button>
+              </div>
             ) : status === "ready" ? (
               <div className="space-y-2">
                 <label className="block text-xs font-medium text-gray-600">
@@ -397,9 +673,10 @@ export default function Softphone({ user }) {
                 <button
                   type="button"
                   onClick={deactivate}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="w-full flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-amber-50 text-amber-700 px-3 py-2 text-sm font-medium hover:bg-amber-100 transition-colors"
                 >
-                  Devre dışı bırak
+                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                  Molaya Çık (Çevrimdışı)
                 </button>
               </div>
             ) : status === "activating" ? (
@@ -414,9 +691,10 @@ export default function Softphone({ user }) {
               <button
                 type="button"
                 onClick={activate}
-                className="w-full rounded-md bg-black px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
+                className="w-full flex items-center justify-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 transition-colors"
               >
-                Aktifleştir
+                <span className="w-2 h-2 rounded-full bg-white"></span>
+                Müsait (Çevrimiçi Ol)
               </button>
             )}
           </div>

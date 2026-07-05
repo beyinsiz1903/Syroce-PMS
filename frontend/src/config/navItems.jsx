@@ -140,6 +140,15 @@ export const NAV_ITEMS = [
     navGroup: "system",
   },
   {
+    key: "contact_center_dashboard",
+    label: "Çağrı Merkezi",
+    path: "/admin/contact-center",
+    tier: "basic",
+    group: "core",
+    navGroup: "system",
+    requireSuperAdmin: true,
+  },
+  {
     // Task #282: numara -> otel/ajan eşleme yönetimi (operatör ekranı).
     key: "voice_number_mapping",
     label: "Ses Numaraları",
@@ -397,7 +406,7 @@ export const NAV_ITEMS = [
     moduleKey: "invoices",
     tier: "professional",
     group: "professional",
-    navGroup: "backoffice",
+    navGroup: "fb",
   },
   {
     key: "konaklama_vergisi",
@@ -840,6 +849,15 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "system",
+  },
+  {
+    key: "pos_dashboard",
+    label: "Satış Noktası (POS)",
+    path: "/pos",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "core",
+    navGroup: "fb",
   },
   {
     key: "mice",

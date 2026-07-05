@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
-import { PhoneIncoming, PhoneOutgoing, RefreshCw } from "lucide-react";
+import { PhoneIncoming, PhoneOutgoing, RefreshCw, Play, FileEdit, Check, X } from "lucide-react";
 
 const STATUS_LABEL = {
   ringing: "Çalıyor",
@@ -71,6 +71,10 @@ export default function CallHistory() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("all");
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [noteValue, setNoteValue] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+  const [playingId, setPlayingId] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -99,6 +103,21 @@ export default function CallHistory() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const saveNote = async (callId) => {
+    setSavingNote(true);
+    try {
+      await axios.patch(`/contact-center/calls/${callId}`, { notes: noteValue });
+      setItems((prev) =>
+        prev.map((c) => (c.id === callId ? { ...c, notes: noteValue } : c))
+      );
+      setEditingNoteId(null);
+    } catch (err) {
+      console.error("Not kaydedilemedi", err);
+    } finally {
+      setSavingNote(false);
+    }
+  };
 
   const visible =
     filter === "all" ? items : items.filter((c) => c.direction === filter);
@@ -152,23 +171,103 @@ export default function CallHistory() {
       {visible.length > 0 ? (
         <ul className="max-h-72 divide-y divide-gray-100 overflow-y-auto">
           {visible.map((call) => (
-            <li key={call.id} className="flex items-start gap-2 py-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <DirectionBadge direction={call.direction} />
-                  <span className="truncate text-sm text-gray-900">
-                    {call.caller_phone_masked || "Bilinmeyen numara"}
-                  </span>
+            <li key={call.id} className="flex flex-col gap-1 py-3">
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <DirectionBadge direction={call.direction} />
+                    <span className="truncate text-sm font-medium text-gray-900">
+                      {call.caller_name ? (
+                        <div className="flex flex-col">
+                          <span>{call.caller_name}</span>
+                          <span className="text-xs text-gray-500 font-normal">{call.caller_phone_masked}</span>
+                        </div>
+                      ) : (
+                        call.caller_phone_masked || "Bilinmeyen numara"
+                      )}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-2 text-[11px] text-gray-500">
+                    <span>{STATUS_LABEL[call.status] || call.status || "—"}</span>
+                    <span aria-hidden="true">·</span>
+                    <span>{formatDateTime(call.started_at)}</span>
+                  </div>
                 </div>
-                <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-500">
-                  <span>{STATUS_LABEL[call.status] || call.status || "—"}</span>
-                  <span aria-hidden="true">·</span>
-                  <span>{formatDateTime(call.started_at)}</span>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <span className="text-[11px] tabular-nums font-medium text-gray-700">
+                    {formatDuration(call.duration_seconds)}
+                  </span>
+                  <div className="flex gap-1">
+                    {call.has_recording && (
+                      <button
+                        onClick={() => setPlayingId(playingId === call.id ? null : call.id)}
+                        className={`rounded p-1 text-gray-500 hover:bg-gray-100 ${playingId === call.id ? "bg-indigo-50 text-indigo-600" : ""}`}
+                        title="Kaydı Dinle"
+                      >
+                        <Play className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setEditingNoteId(call.id);
+                        setNoteValue(call.notes || "");
+                      }}
+                      className="rounded p-1 text-gray-500 hover:bg-gray-100"
+                      title="Not Ekle/Düzenle"
+                    >
+                      <FileEdit className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
-              <span className="shrink-0 pt-0.5 text-[11px] tabular-nums text-gray-500">
-                {formatDuration(call.duration_seconds)}
-              </span>
+
+              {playingId === call.id && (
+                <div className="mt-2 w-full rounded-md bg-gray-50 p-2">
+                  <audio
+                    controls
+                    autoPlay
+                    className="h-8 w-full"
+                    src={`/api/contact-center/calls/${call.id}/recording`}
+                  />
+                </div>
+              )}
+
+              {editingNoteId === call.id ? (
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={noteValue}
+                    onChange={(e) => setNoteValue(e.target.value)}
+                    placeholder="Görüşme notu..."
+                    className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveNote(call.id);
+                      if (e.key === "Escape") setEditingNoteId(null);
+                    }}
+                  />
+                  <button
+                    onClick={() => saveNote(call.id)}
+                    disabled={savingNote}
+                    className="rounded bg-indigo-600 p-1 text-white hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setEditingNoteId(null)}
+                    disabled={savingNote}
+                    className="rounded bg-gray-200 p-1 text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                call.notes && (
+                  <div className="mt-1 text-[11px] text-gray-600 italic bg-amber-50 p-1.5 rounded border border-amber-100/50">
+                    Not: {call.notes}
+                  </div>
+                )
+              )}
             </li>
           ))}
         </ul>

@@ -109,6 +109,7 @@ export const HousekeepingDashboard = lazy(() => import("@/pages/HousekeepingDash
 export const POSDashboard = lazy(() => import("@/pages/POSDashboard"));
 export const POSWaiterTerminal = lazy(() => import("@/pages/POSWaiterTerminal"));
 export const POSExtensions = lazy(() => import("@/pages/POSExtensions"));
+export const ContactCenterDashboard = lazy(() => import("@/pages/ContactCenterDashboard"));
 
 // Admin
 export const AdminTenants = lazy(() => import("@/pages/AdminTenants"));

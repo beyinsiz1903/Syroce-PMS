@@ -238,6 +238,118 @@ async def list_calls(
     return {"count": len(items), "items": items}
 
 
+class CallTransfer(BaseModel):
+    target: str
+
+@router.post("/contact-center/voice/live/{call_sid}/transfer")
+async def transfer_live_call(
+    call_sid: str,
+    payload: CallTransfer,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    """Aktif bir çağrıyı başka bir hedefe yönlendirir (Twilio REST API)."""
+    cfg = get_twilio_voice_config()
+    if not cfg.can_validate_signatures:
+        raise HTTPException(status_code=503, detail="Twilio yapılandırılmadı.")
+    try:
+        from twilio.rest import Client
+        client = Client(cfg.account_sid, cfg.auth_token)
+        if payload.target.startswith("client:"):
+            client_id = payload.target.replace("client:", "")
+            twiml = f"<Response><Dial><Client>{client_id}</Client></Dial></Response>"
+        else:
+            twiml = f'<Response><Dial>{payload.target}</Dial></Response>'
+
+        client.calls(call_sid).update(twiml=twiml)
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"[CC-VOICE] Aktarma başarısız: {e}")
+        raise HTTPException(status_code=500, detail="Çağrı aktarılamadı.")
+
+class CallWhatsApp(BaseModel):
+    phone: str
+    template_name: str
+    language_code: str = "tr"
+
+@router.post("/contact-center/voice/live/{call_sid}/whatsapp")
+async def send_whatsapp_during_call(
+    call_sid: str,
+    payload: CallWhatsApp,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    """Çağrı esnasında müşteriye tek tıkla şablon gönderir (Cross-Channel)."""
+    from domains.contact_center.provider import get_communication_provider
+    provider = get_communication_provider("whatsapp")
+    if not provider:
+        raise HTTPException(status_code=503, detail="WhatsApp sağlayıcısı bulunamadı.")
+
+    # Provider üzerinden doğrudan şablon gönderimi (Geçmişe/Conversation'a bağlamak Opsiyonel)
+    res = await provider.send_whatsapp(
+        db=db,
+        tenant_id=current_user.tenant_id,
+        recipient=payload.phone,
+        in_session=False,
+        template_name=payload.template_name,
+        language_code=payload.language_code,
+    )
+    if not res.get("success"):
+        raise HTTPException(status_code=502, detail="WhatsApp gönderimi başarısız.")
+    return {"status": "ok"}
+
+class CallUpdate(BaseModel):
+    notes: str | None = None
+    disposition: str | None = None
+
+@router.patch("/contact-center/calls/{call_id}")
+async def update_call(
+    call_id: str,
+    payload: CallUpdate,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+):
+    """Çağrı kaydına not veya disposition ekler."""
+    doc = await db.contact_center_calls.find_one({"id": call_id, "tenant_id": current_user.tenant_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Çağrı bulunamadı")
+
+    updates = {}
+    if payload.notes is not None:
+        updates["notes"] = payload.notes
+    if payload.disposition is not None:
+        updates["disposition"] = payload.disposition
+
+    if not updates:
+        return {"status": "ok"}
+
+    await db.contact_center_calls.update_one({"id": call_id}, {"$set": updates})
+    return {"status": "ok"}
+
+
+@router.get("/contact-center/calls/{call_id}/recording")
+async def get_call_recording(
+    call_id: str,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+):
+    """Şifreli çağrı kaydını (at-read) çözer ve ses dosyası olarak döner."""
+    doc = await db.contact_center_calls.find_one({"id": call_id, "tenant_id": current_user.tenant_id})
+    if not doc or not doc.get("recording_ref"):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı")
+
+    from domains.contact_center.recording_storage import load_recording_bytes
+
+    audio_bytes = load_recording_bytes(doc["recording_ref"], tenant_id=current_user.tenant_id, call_id=call_id)
+    if not audio_bytes:
+        raise HTTPException(status_code=404, detail="Kayıt dosyası okunamadı veya şifre çözme hatası")
+
+    # Twilio mp3/wav kaydeder, biz varsayılan olarak audio/mpeg veya wav dönebiliriz.
+    return Response(content=audio_bytes, media_type="audio/mpeg")
+
+
 # ── Numara → otel/ajan eşleme yönetimi (operatör admin ekranı) ─────────
 #
 # ``contact_center_voice_numbers`` gelen çağrının doğru kiracıya yönlenmesini
