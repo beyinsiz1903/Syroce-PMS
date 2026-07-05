@@ -68,7 +68,7 @@ const fetchJsonWithRetry = async (path, params, signal) => {
 };
 
 export default function B2BAnalyticsDashboard({ user, tenant }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   // Tur 21 #5: tenant currency override (multi-currency tenant'lar icin).
   const tenantCurrency = (tenant?.currency || tenant?.default_currency || 'TRY').toUpperCase();
   const fmtMoney = useCallback((v) => formatTenantCurrency(v ?? 0, tenantCurrency, { decimals: 0 }), [tenantCurrency]);

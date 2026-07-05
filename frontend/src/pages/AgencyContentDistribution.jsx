@@ -20,7 +20,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 const AgencyContentDistribution = ({ user }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [content, setContent] = useState(null);
   const [agencies, setAgencies] = useState([]);
   const [selectedAgencies, setSelectedAgencies] = useState([]);

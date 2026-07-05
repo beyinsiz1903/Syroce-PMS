@@ -180,6 +180,7 @@ const PriorityBadge = ({
 const TimeAgo = ({
   timestamp
 }) => {
+  const { t, i18n } = useTranslation();
   if (!timestamp) return <span className="text-xs text-gray-400">—</span>;
   // Backend genelde UTC ISO doner ('+00:00' veya 'Z'). Eger timezone yoksa
   // (eski naive ISO), UTC varsayalim — aksi halde tarayici yerel TZ olarak
@@ -199,7 +200,7 @@ const TimeAgo = ({
   const diffDay = Math.floor(diffMs / 86400000);
   let text;
   if (diffMin < 1) text = 'az önce';else if (diffMin < 60) text = `${diffMin} dk önce`;else if (diffHour < 24) text = `${diffHour} sa önce`;else text = `${diffDay} gün önce`;
-  return <span className="text-xs text-gray-500" title={then.toLocaleString('tr-TR')}>{text}</span>;
+  return <span className="text-xs text-gray-500" title={then.toLocaleString(i18n.language)}>{text}</span>;
 };
 
 // ── Prioritized Incident Card ──────────────────────────────────────
@@ -344,9 +345,7 @@ const ChannelOpsPage = ({
   onLogout,
   embedded = false
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);

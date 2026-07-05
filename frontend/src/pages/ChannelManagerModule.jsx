@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 
 const ChannelManagerModule = ({ user, tenant, onLogout }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [activeTab, setActiveTab] = useState('connections');
   
   // Connections state

@@ -13,7 +13,7 @@ const ALL_TABS = ['connections', 'dashboard', 'conflicts', 'ops'];
 const SUPER_ADMIN_ONLY_TABS = new Set(['ops']);
 
 export default function ChannelHub({ user, tenant, onLogout }) { // eslint-disable-line no-unused-vars
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const isSuperAdmin = user?.role === 'super_admin'

@@ -12,7 +12,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 const WireFailureDashboard = ({ user }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [summary, setSummary] = useState(null);
   const [failures, setFailures] = useState([]);
   const [trend, setTrend] = useState([]);
@@ -310,7 +310,7 @@ const WireFailureDashboard = ({ user }) => {
                       </div>
                       <div className="text-right flex-shrink-0 ml-4">
                         <p className="text-xs text-slate-500">
-                          {f.timestamp ? new Date(f.timestamp).toLocaleString('tr-TR') : '-'}
+                          {f.timestamp ? new Date(f.timestamp).toLocaleString(i18n.language) : '-'}
                         </p>
                         {f.resolved && (
                           <Badge className="bg-emerald-100 text-emerald-700 text-[10px] mt-1">{t('cm.pages_WireFailureDashboard.cozuldu')}</Badge>

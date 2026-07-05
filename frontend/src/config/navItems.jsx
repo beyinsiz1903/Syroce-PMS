@@ -460,7 +460,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "go_live_readiness",
-    label: "Go-Live Hazirlik",
+    label: "Go-Live Hazırlık",
     path: "/go-live-readiness",
     moduleKey: "channel_manager",
     tier: "professional",
@@ -496,7 +496,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "travel_agent_arap",
-    label: "Acenta AR/AP",
+    label: "Acente AR/AP",
     path: "/travel-agent-arap",
     moduleKey: "channel_manager",
     tier: "basic",

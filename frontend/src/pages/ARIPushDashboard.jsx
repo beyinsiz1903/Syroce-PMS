@@ -61,9 +61,7 @@ const FIELD_LABEL = {
 const StatusPill = ({
   status
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const m = STATUS_LABEL[status];
   if (!m) return <StatusBadge intent="neutral">{status || '-'}</StatusBadge>;
   return <StatusBadge intent={m.intent}>{m.tr}</StatusBadge>;
@@ -75,9 +73,7 @@ const ARIPushDashboard = ({
   user,
   tenant
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [activeTab, setActiveTab] = useState('queue');
   const [loading, setLoading] = useState(false);
   const [refreshingTab, setRefreshingTab] = useState(false);
@@ -481,7 +477,7 @@ const ARIPushDashboard = ({
                         <td className="py-2.5 px-4 text-slate-600 text-xs">{cs.date_from} → {cs.date_to}</td>
                         <td className="py-2.5 px-4"><StatusPill status={cs.status} /></td>
                         <td className="py-2.5 px-4 text-slate-600 text-xs">{cs.outbound_attempt_count}</td>
-                        <td className="py-2.5 px-4 text-slate-500 text-xs">{cs.updated_at ? new Date(cs.updated_at).toLocaleString('tr-TR') : '-'}</td>
+                        <td className="py-2.5 px-4 text-slate-500 text-xs">{cs.updated_at ? new Date(cs.updated_at).toLocaleString(i18n.language) : '-'}</td>
                       </tr>)}
                   </tbody>
                 </table>
@@ -518,7 +514,7 @@ const ARIPushDashboard = ({
                         </td>
                         <td className="py-2.5 px-4 text-slate-600 text-xs">{log.status_code || '-'}</td>
                         <td className="py-2.5 px-4 text-slate-600 text-xs">{log.duration_ms}ms</td>
-                        <td className="py-2.5 px-4 text-slate-500 text-xs">{log.pushed_at ? new Date(log.pushed_at).toLocaleString('tr-TR') : '-'}</td>
+                        <td className="py-2.5 px-4 text-slate-500 text-xs">{log.pushed_at ? new Date(log.pushed_at).toLocaleString(i18n.language) : '-'}</td>
                       </tr>)}
                   </tbody>
                 </table>
@@ -568,7 +564,7 @@ const ARIPushDashboard = ({
                         </td>
                         <td className="py-2.5 px-4 text-slate-500 font-mono text-xs">{ds.pms_hash?.slice(0, 8) || '-'}</td>
                         <td className="py-2.5 px-4 text-slate-500 font-mono text-xs">{ds.provider_hash?.slice(0, 8) || '-'}</td>
-                        <td className="py-2.5 px-4 text-slate-500 text-xs">{ds.last_checked_at ? new Date(ds.last_checked_at).toLocaleString('tr-TR') : '-'}</td>
+                        <td className="py-2.5 px-4 text-slate-500 text-xs">{ds.last_checked_at ? new Date(ds.last_checked_at).toLocaleString(i18n.language) : '-'}</td>
                       </tr>)}
                   </tbody>
                 </table>
@@ -603,7 +599,7 @@ const ARIPushDashboard = ({
                         <td className="py-2.5 px-4 text-slate-700 font-mono text-xs">{ev.room_type_code}{ev.rate_plan_code ? `/${ev.rate_plan_code}` : ''}</td>
                         <td className="py-2.5 px-4 text-slate-600 text-xs">{ev.date_from} → {ev.date_to}</td>
                         <td className="py-2.5 px-4 text-slate-500 text-xs font-mono max-w-[240px] truncate">{JSON.stringify(ev.payload)}</td>
-                        <td className="py-2.5 px-4 text-slate-500 text-xs">{ev.created_at ? new Date(ev.created_at).toLocaleString('tr-TR') : '-'}</td>
+                        <td className="py-2.5 px-4 text-slate-500 text-xs">{ev.created_at ? new Date(ev.created_at).toLocaleString(i18n.language) : '-'}</td>
                       </tr>)}
                   </tbody>
                 </table>

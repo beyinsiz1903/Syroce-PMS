@@ -333,7 +333,13 @@
     "revenue_hub": "Gelir Merkezi",
     "mailing": "E-posta Pazarlama",
     "mevzuat_raporlari": "Mevzuat Raporları",
-    "report_scheduler": "Rapor Zamanlayıcı"
+    "report_scheduler": "Rapor Zamanlayıcı",
+    "channels_hub": "Kanallar Hub",
+    "cm_dashboard": "CM Dashboard",
+    "go_live_readiness": "Go-Live Hazırlık",
+    "travel_agent_arap": "Acente AR/AP",
+    "incoming_agency_contracts": "Gelen Acente Talepleri",
+    "b2b_analytics": "B2B Analitik"
   },
   "auth": {
     "signIn": "Hesabınıza giriş yapın veya yeni bir hesap oluşturun",

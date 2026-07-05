@@ -13,9 +13,7 @@ const POLL_MS = 30000;
 const StatusDot = ({
   status
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const colors = {
     healthy: 'bg-emerald-500',
     degraded: 'bg-amber-500',
@@ -40,9 +38,7 @@ export default function LockdownDashboard({
   user,
   tenant
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -437,7 +433,7 @@ export default function LockdownDashboard({
         </Card>}
 
       <p className="text-[11px] text-slate-500 text-right">
-        {t('cm.pages_LockdownDashboard.son_guncelleme')} {lastUpdated ? lastUpdated.toLocaleString('tr-TR') : '-'}
+        {t('cm.pages_LockdownDashboard.son_guncelleme')} {lastUpdated ? lastUpdated.toLocaleString(i18n.language) : '-'}
         {autoRefresh && <span className="ml-2 text-slate-400">• 30s'de bir otomatik yenilenir</span>}
       </p>
     </div>;
