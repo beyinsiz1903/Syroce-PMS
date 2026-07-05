@@ -82,6 +82,7 @@ const ICON_BY_KEY = {
   report_builder: FileText,
   displacement_analysis: TrendingUp,
   api_docs: FileText,
+  pos_dashboard: ShoppingCart,
 };
 
 const GROUP_ICONS = {

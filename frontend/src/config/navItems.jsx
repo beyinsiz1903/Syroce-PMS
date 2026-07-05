@@ -397,7 +397,7 @@ export const NAV_ITEMS = [
     moduleKey: "invoices",
     tier: "professional",
     group: "professional",
-    navGroup: "backoffice",
+    navGroup: "fb",
   },
   {
     key: "konaklama_vergisi",
@@ -840,6 +840,15 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "system",
+  },
+  {
+    key: "pos_dashboard",
+    label: "Satış Noktası (POS)",
+    path: "/pos",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "core",
+    navGroup: "fb",
   },
   {
     key: "mice",
