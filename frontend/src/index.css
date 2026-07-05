@@ -1106,3 +1106,5 @@ code {
 .dark .to-indigo-50\/30 { --tw-gradient-to: rgba(30, 27, 75, 0.3) var(--tw-gradient-to-position); }
 .dark .border-indigo-200\/50 { border-color: rgba(49, 46, 129, 0.5); }
 .dark .bg-slate-100\/60 { background-color: rgba(15, 23, 42, 0.6); }
+.dark .border-amber-100\/50 { border-color: rgba(69, 26, 3, 0.5); }
+.dark .active\:bg-gray-100:active { background-color: #1f2937; }
