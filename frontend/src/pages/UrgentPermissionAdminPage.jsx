@@ -45,8 +45,8 @@ const ROLE_BADGE = {
   sales:       "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
 };
 
-function roleLabel(role) {
-  return ROLE_LABELS[role] || role || "—";
+function roleLabel(role, t) {
+  return t(`cm.pages_UrgentPermissionAdminPage.role_${role}`, { defaultValue: role || '—' });
 }
 
 // Defensive guard: backend her ne kadar decrypt etmek zorunda olsa da
@@ -59,7 +59,7 @@ function safePii(value) {
 }
 
 function MetricNumber({ label, value, tone = "default" }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const toneCls = {
     default: "text-slate-900",
     good: "text-emerald-700",
@@ -76,7 +76,7 @@ function MetricNumber({ label, value, tone = "default" }) {
 }
 
 export default function UrgentPermissionAdminPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { toast } = useToast();
   const [users, setUsers] = useState([]);
   const [grantable, setGrantable] = useState(["send_urgent_message"]);
@@ -249,7 +249,7 @@ export default function UrgentPermissionAdminPage() {
                     onClick={loadMetrics}
                   >
                     <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-                    Tekrar dene
+                    {t('cm.pages_UrgentPermissionAdminPage.retry')}
                   </Button>
                 </div>
               ) : (metrics.totals?.attempted || 0) === 0 ? (
@@ -263,7 +263,7 @@ export default function UrgentPermissionAdminPage() {
                       {t('cm.pages_UrgentPermissionAdminPage.bugun')}
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                      <MetricNumber label="Denenen" value={metrics.today?.attempted || 0} tone="info" />
+                      <MetricNumber label={t('cm.pages_UrgentPermissionAdminPage.attempted')} value={metrics.today?.attempted || 0} tone="info" />
                       <MetricNumber label={t('cm.pages_UrgentPermissionAdminPage.gonderilen')} value={metrics.today?.sent || 0} tone="good" />
                       <MetricNumber label={t('cm.pages_UrgentPermissionAdminPage.basarisiz')} value={metrics.today?.failed || 0} tone="bad" />
                       <MetricNumber label={t('cm.pages_UrgentPermissionAdminPage.anlik_temizlenen')} value={metrics.today?.pruned || 0} tone="muted" />
@@ -274,7 +274,7 @@ export default function UrgentPermissionAdminPage() {
                       Son {metrics.range_days} {t('cm.pages_UrgentPermissionAdminPage.gun')}
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                      <MetricNumber label="Denenen" value={metrics.totals?.attempted || 0} tone="info" />
+                      <MetricNumber label={t('cm.pages_UrgentPermissionAdminPage.attempted')} value={metrics.totals?.attempted || 0} tone="info" />
                       <MetricNumber label={t('cm.pages_UrgentPermissionAdminPage.gonderilen_8963f')} value={metrics.totals?.sent || 0} tone="good" />
                       <MetricNumber label={t('cm.pages_UrgentPermissionAdminPage.basarisiz_3260d')} value={metrics.totals?.failed || 0} tone="bad" />
                       <MetricNumber label={t('cm.pages_UrgentPermissionAdminPage.anlik_temizlenen_cbf39')} value={metrics.totals?.pruned || 0} tone="muted" />
@@ -349,7 +349,7 @@ export default function UrgentPermissionAdminPage() {
                             <span
                               className={`shrink-0 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${roleCls}`}
                             >
-                              {roleLabel(u.role)}
+                              {roleLabel(u.role, t)}
                             </span>
                           </div>
                           {secondary && (
@@ -384,7 +384,7 @@ export default function UrgentPermissionAdminPage() {
 
           {grantable.length > 1 && (
             <div className="text-xs text-slate-500">
-              Atanabilir izinler: {grantable.join(", ")}
+              {t('cm.pages_UrgentPermissionAdminPage.assignable_permissions')} {grantable.join(", ")}
             </div>
           )}
         </div>

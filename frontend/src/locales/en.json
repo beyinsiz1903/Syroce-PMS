@@ -6825,7 +6825,15 @@
       "silme_gerekcesi_zorunlu": "Silme gerekçesi (zorunlu)",
       "orn_yanlis_yukleme_kvkk_silme_talebi_202": "örn. yanlış yükleme, KVKK silme talebi #2026-...",
       "vazgec": "Vazgeç",
-      "sil": "Sil"
+      "sil": "Sil",
+      "back": "Back",
+      "apply": "Apply",
+      "all": "All",
+      "bulk_delete": "Bulk Delete",
+      "within_duration": "within duration",
+      "expired": "expired",
+      "days_left": "days left",
+      "days": "days"
     },
     "pages_IdPhotoViewReportPage": {
       "yenile": "Yenile",
@@ -6848,7 +6856,11 @@
       "onceki": "Önceki",
       "personel_siralamasi": "Personel sıralaması",
       "booking_siralamasi": "Booking sıralaması",
-      "saat_dagilimi_utc": "Saat dağılımı (UTC)"
+      "saat_dagilimi_utc": "Saat dağılımı (UTC)",
+      "back": "Back",
+      "export_csv": "Export CSV",
+      "apply": "Apply",
+      "no_data": "No data"
     },
     "pages_IntegrationCredentials": {
       "entegrasyon_anahtarlari": "Entegrasyon Anahtarları",
@@ -7637,7 +7649,11 @@
       "onceki": "Önceki",
       "geri_alan_siralamasi": "Geri alan sıralaması",
       "oncelige_gore": "Önceliğe göre",
-      "saat_dagilimi_utc": "Saat dağılımı (UTC)"
+      "saat_dagilimi_utc": "Saat dağılımı (UTC)",
+      "back": "Back",
+      "export_csv": "Export CSV",
+      "no_data": "No data",
+      "message": "message"
     },
     "pages_ReportScheduler": {
       "yukleniyor": "Yükleniyor...",
@@ -8410,7 +8426,12 @@
       "secili_filtrelerle_eslesen_acil_mesaj_ka": "Seçili filtrelerle eşleşen acil mesaj kaydı yok.",
       "gonderen_siralamasi": "Gönderen sıralaması",
       "alici_departmanlar": "Alıcı departmanlar",
-      "saat_dagilimi_utc": "Saat dağılımı (UTC)"
+      "saat_dagilimi_utc": "Saat dağılımı (UTC)",
+      "back": "Back",
+      "apply": "Apply",
+      "no_data": "No data",
+      "urgent_messages": "Urgent Messages",
+      "message": "message"
     },
     "pages_UrgentPermissionAdminPage": {
       "acil_mesaj_izni_yonetimi": "Acil Mesaj İzni Yönetimi",
@@ -8436,7 +8457,19 @@
       "yukleniyor_4deb0": "Yükleniyor...",
       "kayit_bulunamadi": "Kayıt bulunamadı.",
       "izinli": "İzinli",
-      "izin_ver": "İzin Ver"
+      "izin_ver": "İzin Ver",
+      "retry": "Retry",
+      "attempted": "Attempted",
+      "assignable_permissions": "Assignable permissions:",
+      "role_super_admin": "Super Admin",
+      "role_admin": "Admin",
+      "role_manager": "Manager",
+      "role_supervisor": "Supervisor",
+      "role_front_desk": "Front Desk",
+      "role_housekeeping": "Housekeeping",
+      "role_finance": "Finance",
+      "role_revenue": "Revenue",
+      "role_sales": "Sales"
     },
     "pages_VendorPortal": {
       "ana_sayfaya_don": "Ana sayfaya dön",
