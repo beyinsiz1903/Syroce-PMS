@@ -31,9 +31,7 @@ export default function OperationalEventDashboard({
   tenant,
   onLogout
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [liveFeed, setLiveFeed] = useState(null);
   const [stats, setStats] = useState(null);
   const [unread, setUnread] = useState(null);

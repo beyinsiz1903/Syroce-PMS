@@ -49,7 +49,7 @@ const CATEGORY_CONFIG = {
 };
 
 const LostFoundPage = ({ user, tenant, onLogout }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [items, setItems] = useState([]);
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(true);

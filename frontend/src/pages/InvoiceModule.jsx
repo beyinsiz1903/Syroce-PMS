@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 const InvoiceModule = ({ user, tenant, onLogout }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { amount: fmtMoney } = useCurrency();
   const [fatal, setFatal] = useState(null);
   const [invoices, setInvoices] = useState([]);

@@ -18,9 +18,7 @@ function KpiCard({
   icon: Icon,
   onClick
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const tone = {
     slate: 'border-slate-200 bg-white',
     amber: 'border-amber-300 bg-amber-50/60',
@@ -66,9 +64,7 @@ function OpenFoliosDialog({
   onClose,
   businessDate
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [folios, setFolios] = useState([]);
   const [total, setTotal] = useState(0);
@@ -163,9 +159,7 @@ function FolioTable({
   rows,
   highlight = false
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   return <div className="border border-slate-200 rounded-md overflow-hidden">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-slate-600 text-xs">
@@ -185,7 +179,7 @@ function FolioTable({
               <td className="px-3 py-2 text-slate-600">{fmtDate(f.check_in)}</td>
               <td className="px-3 py-2 text-slate-600">{fmtDate(f.check_out)}</td>
               <td className="px-3 py-2 text-right font-semibold text-slate-900">
-                {(f.balance ?? 0).toLocaleString('tr-TR')} ₺
+                {(f.balance ?? 0).toLocaleString(i18n.language)} ₺
               </td>
               <td className="px-3 py-2 text-xs text-slate-400 font-mono">
                 #{(f.id || '').slice(0, 8)}
@@ -201,9 +195,7 @@ function ProgressKpi({
   expected,
   accent = 'sky'
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const pct = expected > 0 ? Math.min(100, Math.round(actual / expected * 100)) : 0;
   const barColor = pct >= 100 ? 'bg-emerald-500' : pct >= 70 ? 'bg-sky-500' : 'bg-amber-500';
   return <div className="border border-slate-200 bg-white rounded-lg p-3">
@@ -225,9 +217,7 @@ export default function EodReportPage({
   tenant,
   onLogout
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [businessDate, setBusinessDate] = useState(today());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -358,7 +348,7 @@ export default function EodReportPage({
             {/* Finansal blok — büyük */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <KpiCard label="Doluluk" value={`${data.occupancy_rate}%`} sub={`${data.occupied} / ${data.rooms_total} oda dolu`} accent="sky" icon={TrendingUp} />
-              <KpiCard label={t('cm.pages_EodReportPage.toplam_gelir')} value={`${(data.revenue_total || 0).toLocaleString('tr-TR')} ₺`} sub={`Ödeme ${(data.payments_total || 0).toLocaleString('tr-TR')} ₺ · Ekstra ${(data.extras_total || 0).toLocaleString('tr-TR')} ₺`} accent="emerald" icon={DollarSign} />
+              <KpiCard label={t('cm.pages_EodReportPage.toplam_gelir')} value={`${(data.revenue_total || 0).toLocaleString(i18n.language)} ₺`} sub={`Ödeme ${(data.payments_total || 0).toLocaleString(i18n.language)} ₺ · Ekstra ${(data.extras_total || 0).toLocaleString(i18n.language)} ₺`} accent="emerald" icon={DollarSign} />
             </div>
 
             {/* Operasyonel blok — yatay küçük */}

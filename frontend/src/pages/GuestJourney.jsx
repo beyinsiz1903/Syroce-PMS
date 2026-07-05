@@ -39,7 +39,7 @@ const fmtDate = (iso) => {
 };
 
 const GuestJourney = ({ user, tenant, onLogout }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [npsData, setNpsData] = useState(null);
   const [recent, setRecent]   = useState([]);

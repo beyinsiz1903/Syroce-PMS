@@ -50,7 +50,7 @@ const STATUS_INTENT = {
 };
 
 function DeclStatusBadge({ status }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const s = STATUS_INTENT[status] || { intent: 'default', label: status || '-' };
   return <StatusBadge intent={s.intent}>{s.label}</StatusBadge>;
 }
@@ -75,7 +75,7 @@ function downloadCSV(rows, filename) {
 }
 
 export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [tab, setTab] = useState("config");
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(false);

@@ -281,7 +281,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "wake_up_calls",
-    label: "Uyandırma Cagrisi",
+    label: "Uyandırma Çağrısı",
     path: "/wake-up-calls",
     moduleKey: "pms",
     tier: "basic",
@@ -290,7 +290,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "lost_found",
-    label: "Kayip Esya",
+    label: "Kayıp Eşya",
     path: "/lost-found",
     moduleKey: "pms",
     tier: "basic",
@@ -299,7 +299,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "guest_journey",
-    label: "Guest Journey",
+    label: "Misafir Yolculuğu",
     path: "/guest-journey",
     moduleKey: "pms",
     tier: "professional",
@@ -317,7 +317,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "service_recovery",
-    label: "Sikayet Yönetimi",
+    label: "Şikayet Yönetimi",
     path: "/service-recovery",
     moduleKey: "pms",
     tier: "basic",

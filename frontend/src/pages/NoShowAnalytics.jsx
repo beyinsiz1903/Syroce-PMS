@@ -35,7 +35,7 @@ const WEEKDAY_SHORT = ['Pzt', 'Sal', 'Car', 'Per', 'Cum', 'Cmt', 'Paz'];
 
 /* ─── Data quality banner ──────────────────────────────── */
 const DataQualityBanner = ({ dq }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   if (!dq) return null;
   const colors = { low: 'bg-red-50 border-red-200 text-red-700', medium: 'bg-amber-50 border-amber-200 text-amber-700', high: 'bg-emerald-50 border-emerald-200 text-emerald-700' };
   return (
@@ -50,7 +50,7 @@ const DataQualityBanner = ({ dq }) => {
    TAB 1: Channel Loss (FULL)
    ───────────────────────────────────────────────────────── */
 const ChannelLossTab = ({ period }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -76,7 +76,7 @@ const ChannelLossTab = ({ period }) => {
         <Card className="border-l-4 border-l-red-500" data-testid="ch-total-loss">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.toplam_kayip')}</p>
-            <p className="text-2xl font-bold text-red-600 mt-1">{data.total_loss?.toLocaleString('tr-TR')} TL</p>
+            <p className="text-2xl font-bold text-red-600 mt-1">{data.total_loss?.toLocaleString(i18n.language)} TL</p>
             <p className="text-xs text-gray-400 mt-1">{data.total_no_shows} no-show</p>
           </CardContent>
         </Card>
@@ -84,7 +84,7 @@ const ChannelLossTab = ({ period }) => {
           <CardContent className="pt-4 pb-3">
             <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.en_kotu_kanal')}</p>
             <p className="text-2xl font-bold text-gray-900 mt-1 capitalize">{data.top3_worst?.[0]?.channel || '-'}</p>
-            <p className="text-xs text-gray-400 mt-1">{data.top3_worst?.[0]?.total_loss?.toLocaleString('tr-TR')} {t('cm.pages_NoShowAnalytics.tl_kayip')}</p>
+            <p className="text-xs text-gray-400 mt-1">{data.top3_worst?.[0]?.total_loss?.toLocaleString(i18n.language)} {t('cm.pages_NoShowAnalytics.tl_kayip')}</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-blue-500" data-testid="ch-channels-count">
@@ -117,8 +117,8 @@ const ChannelLossTab = ({ period }) => {
                   <p className={`text-lg font-bold capitalize ${clr.text}`}>{ch.channel}</p>
                   <div className="mt-2 space-y-1 text-xs text-gray-600">
                     <div className="flex justify-between"><span>No-show</span><span className="font-semibold">{ch.no_show_count}</span></div>
-                    <div className="flex justify-between"><span>{t('cm.pages_NoShowAnalytics.toplam_kayip_e38cc')}</span><span className="font-semibold text-red-600">-{ch.total_loss?.toLocaleString('tr-TR')} TL</span></div>
-                    <div className="flex justify-between"><span>{t('cm.pages_NoShowAnalytics.ort_kayip')}</span><span className="font-semibold">{ch.avg_loss?.toLocaleString('tr-TR')} TL</span></div>
+                    <div className="flex justify-between"><span>{t('cm.pages_NoShowAnalytics.toplam_kayip_e38cc')}</span><span className="font-semibold text-red-600">-{ch.total_loss?.toLocaleString(i18n.language)} TL</span></div>
+                    <div className="flex justify-between"><span>{t('cm.pages_NoShowAnalytics.ort_kayip')}</span><span className="font-semibold">{ch.avg_loss?.toLocaleString(i18n.language)} TL</span></div>
                   </div>
                 </div>
               );
@@ -155,8 +155,8 @@ const ChannelLossTab = ({ period }) => {
                       </div>
                     </td>
                     <td className="py-2.5 pr-3 text-right font-semibold">{ch.no_show_count}</td>
-                    <td className="py-2.5 pr-3 text-right text-red-600 font-semibold">-{ch.total_loss?.toLocaleString('tr-TR')} TL</td>
-                    <td className="py-2.5 pr-3 text-right">{ch.avg_loss?.toLocaleString('tr-TR')} TL</td>
+                    <td className="py-2.5 pr-3 text-right text-red-600 font-semibold">-{ch.total_loss?.toLocaleString(i18n.language)} TL</td>
+                    <td className="py-2.5 pr-3 text-right">{ch.avg_loss?.toLocaleString(i18n.language)} TL</td>
                     <td className="py-2.5 pr-3 text-right">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ch.no_show_rate > 10 ? 'bg-red-100 text-red-700' : ch.no_show_rate > 5 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
                         {ch.no_show_rate}%
@@ -226,7 +226,7 @@ const ChannelLossTab = ({ period }) => {
    TAB 2: Overbooking Heatmap (FULL)
    ───────────────────────────────────────────────────────── */
 const OverbookingHeatmapTab = ({ period }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -269,7 +269,7 @@ const OverbookingHeatmapTab = ({ period }) => {
         <Card className="border-l-4 border-l-amber-500" data-testid="ob-loss">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.overbooking_kaybi')}</p>
-            <p className="text-2xl font-bold text-amber-600 mt-1">{data.total_loss?.toLocaleString('tr-TR')} TL</p>
+            <p className="text-2xl font-bold text-amber-600 mt-1">{data.total_loss?.toLocaleString(i18n.language)} TL</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-blue-500" data-testid="ob-peak-day">
@@ -303,7 +303,7 @@ const OverbookingHeatmapTab = ({ period }) => {
                     <div className="absolute -top-12 left-1/2 -translate-x-1/2 hidden group-hover:block bg-gray-800 text-white text-[10px] px-2 py-1.5 rounded whitespace-nowrap z-20">
                       <div>{d.date}</div>
                       <div>OB: {d.overbooking_count} {t('cm.pages_NoShowAnalytics.toplam_ns')} {d.total_noshow}</div>
-                      <div>Kayip: {d.loss?.toLocaleString('tr-TR')} TL</div>
+                      <div>Kayip: {d.loss?.toLocaleString(i18n.language)} TL</div>
                     </div>
                   </div>
                 ))}
@@ -343,7 +343,7 @@ const OverbookingHeatmapTab = ({ period }) => {
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-medium text-gray-800">{d.date}</p>
-                    <p className="text-xs text-gray-500">{d.total_noshow} toplam no-show | {d.loss?.toLocaleString('tr-TR')} {t('cm.pages_NoShowAnalytics.tl_kayip_72ee7')}</p>
+                    <p className="text-xs text-gray-500">{d.total_noshow} toplam no-show | {d.loss?.toLocaleString(i18n.language)} {t('cm.pages_NoShowAnalytics.tl_kayip_72ee7')}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-bold text-red-600">{d.overbooking_count}</p>
@@ -421,7 +421,7 @@ const OverbookingHeatmapTab = ({ period }) => {
    TAB 3: Rule Engine (LIGHT)
    ───────────────────────────────────────────────────────── */
 const RuleEngineTab = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [rules, setRules] = useState([]);
   const [history, setHistory] = useState([]);
   const [alerts, setAlerts] = useState([]);
@@ -659,7 +659,7 @@ const RuleEngineTab = () => {
    TAB 4: Prediction (BASIC)
    ───────────────────────────────────────────────────────── */
 const PredictionTab = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [daysAhead, setDaysAhead] = useState('7');
@@ -715,7 +715,7 @@ const PredictionTab = () => {
         <Card className="border-l-4 border-l-indigo-500" data-testid="pred-potential-loss">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.potansiyel_kayip')}</p>
-            <p className="text-2xl font-bold text-indigo-600 mt-1">{data.summary?.potential_loss?.toLocaleString('tr-TR') || 0} TL</p>
+            <p className="text-2xl font-bold text-indigo-600 mt-1">{data.summary?.potential_loss?.toLocaleString(i18n.language) || 0} TL</p>
           </CardContent>
         </Card>
       </div>
@@ -757,7 +757,7 @@ const PredictionTab = () => {
                         <td className="py-2.5 pr-3 capitalize text-gray-600">{p.channel}</td>
                         <td className="py-2.5 pr-3 text-gray-600">{p.check_in}</td>
                         <td className="py-2.5 pr-3 text-gray-600">{p.room_type}</td>
-                        <td className="py-2.5 pr-3 text-right font-medium">{p.total_amount?.toLocaleString('tr-TR')} TL</td>
+                        <td className="py-2.5 pr-3 text-right font-medium">{p.total_amount?.toLocaleString(i18n.language)} TL</td>
                         <td className="py-2.5 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <div className="w-12 h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -845,7 +845,7 @@ const TABS = [
 ];
 
 const NoShowAnalytics = ({ user, tenant, onLogout, embedded = false }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [activeTab, setActiveTab] = useState('channel');
   const [period, setPeriod] = useState('30');
 

@@ -30,7 +30,7 @@ const PO_STATUS_CLS = {
   cancelled: 'bg-red-100 text-red-800',
   closed: 'bg-slate-200 text-slate-700'
 };
-const tl = n => `${Number(n || 0).toLocaleString('tr-TR', {
+const tl = (n, locale='tr-TR') => `${Number(n || 0).toLocaleString(locale, {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
 })} ₺`;
@@ -53,9 +53,7 @@ const ProcurementPage = ({
   tenant,
   onLogout
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
   const [tab, setTab] = useState('summary');
@@ -1265,7 +1263,7 @@ const ProcurementPage = ({
             <h3 className="font-semibold text-sm mt-4 mb-1">{t('procurement.poDetail.grnNotes')}</h3>
             <ul className="text-xs space-y-1">
               {selectedPo.grns.map(g => <li key={g.id} className="border-b py-1 flex justify-between">
-                  <span>{g.grn_no} — {new Date(g.received_at).toLocaleString('tr-TR')}</span>
+                  <span>{g.grn_no} — {new Date(g.received_at).toLocaleString(i18n.language)}</span>
                   <span>{t('procurement.poDetail.grnSummary', {
                   count: g.lines?.length || 0,
                   user: g.received_by

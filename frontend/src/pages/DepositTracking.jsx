@@ -18,9 +18,7 @@ export default function DepositTracking({
   tenant,
   onLogout
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [deposits, setDeposits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -234,8 +232,8 @@ export default function DepositTracking({
             </>} />
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <KpiCard icon={ArrowDownCircle} label={t('cm.pages_DepositTracking.aktif_depozitolar')} value={`${totalAll.toLocaleString('tr-TR')} TL`} sub={`${deposits.filter(d => d.status === 'received').length} kayıt`} intent="success" />
-          <KpiCard icon={ArrowUpCircle} label={t('cm.pages_DepositTracking.iade_edilen')} value={`${totalRefunded.toLocaleString('tr-TR')} TL`} sub={`${deposits.filter(d => d.status === 'refunded').length} iade`} intent="warning" />
+          <KpiCard icon={ArrowDownCircle} label={t('cm.pages_DepositTracking.aktif_depozitolar')} value={`${totalAll.toLocaleString(i18n.language)} TL`} sub={`${deposits.filter(d => d.status === 'received').length} kayıt`} intent="success" />
+          <KpiCard icon={ArrowUpCircle} label={t('cm.pages_DepositTracking.iade_edilen')} value={`${totalRefunded.toLocaleString(i18n.language)} TL`} sub={`${deposits.filter(d => d.status === 'refunded').length} iade`} intent="warning" />
           <KpiCard icon={Receipt} label={t('cm.pages_DepositTracking.toplam_islem')} value={deposits.length} sub="depozito kaydı" intent="info" />
         </div>
 
@@ -288,7 +286,7 @@ export default function DepositTracking({
                         {d.method === 'cash' ? 'Nakit' : d.method === 'card' ? 'Kart' : d.method === 'bank_transfer' ? 'Havale' : d.method || '-'}
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-right font-bold text-gray-800">{(d.amount || 0).toLocaleString('tr-TR')} TL</td>
+                    <td className="py-3 px-4 text-right font-bold text-gray-800">{(d.amount || 0).toLocaleString(i18n.language)} TL</td>
                     <td className="py-3 px-4">
                       <Badge className={`text-xs ${d.status === 'refunded' ? 'bg-red-100 text-red-700' : d.status === 'partially_refunded' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                         {d.status === 'refunded' ? 'İade Edildi' : d.status === 'partially_refunded' ? 'Kısmi İade' : 'Aktif'}
@@ -353,7 +351,7 @@ export default function DepositTracking({
                 <div>
                   <div className="font-medium text-blue-800">{selectedBooking.guest_name || 'Misafir'}</div>
                   <div className="text-xs text-blue-600">
-                    {t('cm.pages_DepositTracking.oda_99a58')} {selectedBooking.room_number || '-'} {t('cm.pages_DepositTracking.tutar_48fcf')} {(selectedBooking.total_amount || 0).toLocaleString('tr-TR')} TL
+                    {t('cm.pages_DepositTracking.oda_99a58')} {selectedBooking.room_number || '-'} {t('cm.pages_DepositTracking.tutar_48fcf')} {(selectedBooking.total_amount || 0).toLocaleString(i18n.language)} TL
                   </div>
                 </div>
                 <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setSelectedBooking(null)}>
@@ -411,7 +409,7 @@ export default function DepositTracking({
           <DialogHeader>
             <DialogTitle>{t('cm.pages_DepositTracking.depozito_iadesi')}</DialogTitle>
             <DialogDescription>
-              {refundTarget && `${refundTarget.guest_name || 'Misafir'} - ${(refundTarget.amount || 0).toLocaleString('tr-TR')} TL depozito`}
+              {refundTarget && `${refundTarget.guest_name || 'Misafir'} - ${(refundTarget.amount || 0).toLocaleString(i18n.language)} TL depozito`}
             </DialogDescription>
           </DialogHeader>
 
@@ -423,7 +421,7 @@ export default function DepositTracking({
               amount: e.target.value
             }))} className="mt-1" data-testid="refund-amount-input" />
               {refundTarget && <p className="text-xs text-gray-500 mt-1">
-                  Maks: {((refundTarget.amount || 0) - (refundTarget.refunded_amount || 0)).toLocaleString('tr-TR')} TL
+                  Maks: {((refundTarget.amount || 0) - (refundTarget.refunded_amount || 0)).toLocaleString(i18n.language)} TL
                 </p>}
             </div>
 

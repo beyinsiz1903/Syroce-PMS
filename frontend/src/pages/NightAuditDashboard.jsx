@@ -31,7 +31,7 @@ import ReconciliationTab from '@/components/night-audit/tabs/ReconciliationTab';
 import IntegrityTab from '@/components/night-audit/tabs/IntegrityTab';
 import ReportTab from '@/components/night-audit/tabs/ReportTab';
 const NightAuditDashboard = ({ user, tenant, onLogout }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [businessDate, setBusinessDate] = useState(null);
   const [previousDate, setPreviousDate] = useState(null);
   const [history, setHistory] = useState([]);

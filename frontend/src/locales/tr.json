@@ -339,7 +339,21 @@
     "go_live_readiness": "Go-Live Hazırlık",
     "travel_agent_arap": "Acente AR/AP",
     "incoming_agency_contracts": "Gelen Acente Talepleri",
-    "b2b_analytics": "B2B Analitik"
+    "b2b_analytics": "B2B Analitik",
+    "konaklama_vergisi": "Konaklama Vergisi",
+    "group_reservations": "Grup Rezervasyonları",
+    "departure_list": "Bugünün Çıkışları",
+    "no_show_today": "Bekleyen / No-Show Adayları",
+    "supplies_market": "Tedarik Pazarı",
+    "procurement": "Satınalma",
+    "stock_rehber": "Stok Rehberi",
+    "shift_handover": "Vardiya Devri",
+    "eod_report": "Gün Sonu Raporu",
+    "walkin": "Walk-in Check-in",
+    "room_map": "Oda Haritası",
+    "service_recovery": "Şikayet Yönetimi",
+    "mice": "MICE & Banquet",
+    "room_qr_requests": "Oda QR Talepleri"
   },
   "auth": {
     "signIn": "Hesabınıza giriş yapın veya yeni bir hesap oluşturun",

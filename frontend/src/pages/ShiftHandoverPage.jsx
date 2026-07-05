@@ -28,7 +28,7 @@ const PRIORITIES = [
 const today = () => new Date().toISOString().slice(0, 10);
 
 export default function ShiftHandoverPage({ user, tenant, onLogout }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('open');
@@ -221,9 +221,9 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
                       </div>
                       <div className="text-sm text-slate-800 whitespace-pre-wrap">{it.note}</div>
                       <div className="text-[11px] text-slate-500 mt-2">
-                        {it.from_user_name} · {new Date(it.created_at).toLocaleString('tr-TR')}
+                        {it.from_user_name} · {new Date(it.created_at).toLocaleString(i18n.language)}
                         {it.acknowledged && it.acknowledged_by_name && (
-                          <> · Onay: {it.acknowledged_by_name} ({new Date(it.acknowledged_at).toLocaleString('tr-TR')})</>
+                          <> · Onay: {it.acknowledged_by_name} ({new Date(it.acknowledged_at).toLocaleString(i18n.language)})</>
                         )}
                       </div>
                     </div>
