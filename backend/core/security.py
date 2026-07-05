@@ -139,7 +139,7 @@ JWT_ALGORITHM = "HS256"
 # value so existing deployments that pinned 24h aren't surprised at upgrade.
 _V3_DEFAULT_ACCESS_MINUTES = 15
 if os.environ.get("TESTING") == "1":
-    _V3_DEFAULT_ACCESS_MINUTES = 60
+    _V3_DEFAULT_ACCESS_MINUTES = 120
 
 
 def _resolve_jwt_lifetime_minutes() -> int:
