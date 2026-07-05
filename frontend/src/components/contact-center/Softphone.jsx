@@ -13,6 +13,7 @@
  *    kadar gösterilir, kalıcılaştırılmaz.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Phone, PhoneIncoming, PhoneOutgoing, Mic, MicOff, Keypad, Grid } from "lucide-react";
 import axios from "axios";
 import CallHistory from "./CallHistory";
 
@@ -73,11 +74,24 @@ export default function Softphone({ user }) {
   const [detail, setDetail] = useState("");
   const [incomingFrom, setIncomingFrom] = useState("");
   const [dialNumber, setDialNumber] = useState("");
+  const [isMuted, setIsMuted] = useState(false);
+  const [callDuration, setCallDuration] = useState(0);
+  const [showDialpad, setShowDialpad] = useState(false);
   const deviceRef = useRef(null);
   const callRef = useRef(null);
 
   const role = user?.role || (user?.roles && user.roles[0]);
   const isStaff = role && role !== "guest";
+
+  useEffect(() => {
+    let timer;
+    if (status === "on_call") {
+      timer = setInterval(() => setCallDuration((prev) => prev + 1), 1000);
+    } else {
+      setCallDuration(0);
+    }
+    return () => clearInterval(timer);
+  }, [status]);
 
   const teardown = useCallback(() => {
     try {
@@ -148,6 +162,11 @@ export default function Softphone({ user }) {
         setDetail("Cihaz hatası: " + (e?.code || "bilinmiyor"));
       });
       device.on("incoming", (call) => {
+        if (callRef.current) {
+          // Already on a call, silently reject incoming
+          try { call.reject(); } catch { /* noop */ }
+          return;
+        }
         callRef.current = call;
         setIncomingFrom(call?.parameters?.From || "");
         setStatus("incoming");
@@ -156,11 +175,13 @@ export default function Softphone({ user }) {
         call.on("disconnect", () => {
           callRef.current = null;
           setIncomingFrom("");
+          setIsMuted(false);
           setStatus(deviceRef.current ? "ready" : "idle");
         });
         call.on("cancel", () => {
           callRef.current = null;
           setIncomingFrom("");
+          setIsMuted(false);
           setStatus(deviceRef.current ? "ready" : "idle");
         });
       });
@@ -194,14 +215,17 @@ export default function Softphone({ user }) {
       setDetail("");
       call.on("disconnect", () => {
         callRef.current = null;
+        setIsMuted(false);
         setStatus(deviceRef.current ? "ready" : "idle");
       });
       call.on("cancel", () => {
         callRef.current = null;
+        setIsMuted(false);
         setStatus(deviceRef.current ? "ready" : "idle");
       });
       call.on("error", () => {
         callRef.current = null;
+        setIsMuted(false);
         setStatus(deviceRef.current ? "ready" : "idle");
         setDetail("Çağrı sırasında hata oluştu.");
       });
@@ -244,34 +268,51 @@ export default function Softphone({ user }) {
   }, []);
 
   const rejectCall = useCallback(() => {
-    try {
-      callRef.current?.reject?.();
-    } catch {
-      /* noop */
-    }
-    callRef.current = null;
-    setIncomingFrom("");
-    setStatus(deviceRef.current ? "ready" : "idle");
-  }, []);
+        try {
+          callRef.current?.reject?.();
+        } catch {
+          /* noop */
+        }
+        callRef.current = null;
+        setIncomingFrom("");
+        setIsMuted(false);
+        setStatus(deviceRef.current ? "ready" : "idle");
+      }, []);
 
-  const hangUp = useCallback(() => {
-    try {
-      callRef.current?.disconnect?.();
-    } catch {
-      /* noop */
-    }
-    callRef.current = null;
-    setStatus(deviceRef.current ? "ready" : "idle");
-  }, []);
+      const hangUp = useCallback(() => {
+        try {
+          callRef.current?.disconnect?.();
+        } catch {
+          /* noop */
+        }
+        callRef.current = null;
+        setIsMuted(false);
+        setStatus(deviceRef.current ? "ready" : "idle");
+      }, []);
+
+      const toggleMute = useCallback(() => {
+        if (callRef.current) {
+          const currentMuted = callRef.current.isMuted();
+          callRef.current.mute(!currentMuted);
+          setIsMuted(!currentMuted);
+        }
+      }, []);
 
   const deactivate = useCallback(() => {
     teardown();
     setStatus("idle");
     setDetail("");
     setIncomingFrom("");
+    setIsMuted(false);
   }, [teardown]);
 
   if (!isStaff) return null;
+
+  const formatTimer = (sec) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
 
   return (
     <div className="fixed bottom-4 left-4 z-50">
@@ -363,13 +404,64 @@ export default function Softphone({ user }) {
                 </div>
               </div>
             ) : status === "on_call" ? (
-              <button
-                type="button"
-                onClick={hangUp}
-                className="w-full rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
-              >
-                Görüşmeyi sonlandır
-              </button>
+              <div className="space-y-4">
+                <div className="flex flex-col items-center justify-center p-4 bg-gray-50 rounded-lg border border-gray-100">
+                  <div className="text-sm text-gray-500 mb-1">Görüşme Süresi</div>
+                  <div className="text-3xl font-mono font-medium text-gray-800 tracking-wider">
+                    {formatTimer(callDuration)}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <button
+                    type="button"
+                    onClick={toggleMute}
+                    className={`flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                      isMuted
+                        ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+                        : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                    }`}
+                  >
+                    {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                    {isMuted ? "Sesi Aç" : "Sustur"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowDialpad(!showDialpad)}
+                    className={`flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                      showDialpad
+                        ? "border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                        : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                    }`}
+                  >
+                    <Grid className="h-4 w-4" />
+                    Tuş Takımı
+                  </button>
+                </div>
+                {showDialpad && (
+                  <div className="grid grid-cols-3 gap-2 p-2 bg-gray-50 rounded-md border border-gray-100">
+                    {['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'].map((digit) => (
+                      <button
+                        key={digit}
+                        type="button"
+                        onClick={() => {
+                          if (callRef.current) callRef.current.sendDigits(digit);
+                        }}
+                        className="flex items-center justify-center h-10 bg-white border border-gray-200 rounded-md shadow-sm text-lg font-medium text-gray-700 hover:bg-gray-50 active:bg-gray-100"
+                      >
+                        {digit}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={hangUp}
+                  className="w-full rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+                >
+                  Görüşmeyi sonlandır
+                </button>
+              </div>
             ) : status === "ready" ? (
               <div className="space-y-2">
                 <label className="block text-xs font-medium text-gray-600">
@@ -397,9 +489,10 @@ export default function Softphone({ user }) {
                 <button
                   type="button"
                   onClick={deactivate}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="w-full flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-amber-50 text-amber-700 px-3 py-2 text-sm font-medium hover:bg-amber-100 transition-colors"
                 >
-                  Devre dışı bırak
+                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                  Molaya Çık (Çevrimdışı)
                 </button>
               </div>
             ) : status === "activating" ? (
@@ -414,9 +507,10 @@ export default function Softphone({ user }) {
               <button
                 type="button"
                 onClick={activate}
-                className="w-full rounded-md bg-black px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
+                className="w-full flex items-center justify-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 transition-colors"
               >
-                Aktifleştir
+                <span className="w-2 h-2 rounded-full bg-white"></span>
+                Müsait (Çevrimiçi Ol)
               </button>
             )}
           </div>

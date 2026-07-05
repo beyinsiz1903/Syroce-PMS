@@ -238,6 +238,56 @@ async def list_calls(
     return {"count": len(items), "items": items}
 
 
+class CallUpdate(BaseModel):
+    notes: str | None = None
+    disposition: str | None = None
+
+@router.patch("/contact-center/calls/{call_id}")
+async def update_call(
+    call_id: str,
+    payload: CallUpdate,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+):
+    """Çağrı kaydına not veya disposition ekler."""
+    doc = await db.contact_center_calls.find_one({"id": call_id, "tenant_id": current_user.tenant_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Çağrı bulunamadı")
+
+    updates = {}
+    if payload.notes is not None:
+        updates["notes"] = payload.notes
+    if payload.disposition is not None:
+        updates["disposition"] = payload.disposition
+
+    if not updates:
+        return {"status": "ok"}
+
+    await db.contact_center_calls.update_one({"id": call_id}, {"$set": updates})
+    return {"status": "ok"}
+
+
+@router.get("/contact-center/calls/{call_id}/recording")
+async def get_call_recording(
+    call_id: str,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+):
+    """Şifreli çağrı kaydını (at-read) çözer ve ses dosyası olarak döner."""
+    doc = await db.contact_center_calls.find_one({"id": call_id, "tenant_id": current_user.tenant_id})
+    if not doc or not doc.get("recording_ref"):
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı")
+
+    from domains.contact_center.recording_storage import load_recording_bytes
+    
+    audio_bytes = load_recording_bytes(doc["recording_ref"], tenant_id=current_user.tenant_id, call_id=call_id)
+    if not audio_bytes:
+        raise HTTPException(status_code=404, detail="Kayıt dosyası okunamadı veya şifre çözme hatası")
+
+    # Twilio mp3/wav kaydeder, biz varsayılan olarak audio/mpeg veya wav dönebiliriz.
+    return Response(content=audio_bytes, media_type="audio/mpeg")
+
+
 # ── Numara → otel/ajan eşleme yönetimi (operatör admin ekranı) ─────────
 #
 # ``contact_center_voice_numbers`` gelen çağrının doğru kiracıya yönlenmesini

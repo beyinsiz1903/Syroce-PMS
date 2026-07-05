@@ -77,6 +77,7 @@ CALL_DTO_KEYS = frozenset(
         "caller_phone",
         "duration_seconds",
         "disposition",
+        "notes",
         "has_recording",
         "started_at",
         "answered_at",
@@ -105,6 +106,7 @@ def call_to_dto(doc: dict, svc, *, reveal_phone: bool = False) -> dict:
         "caller_phone": phone if reveal_phone else None,
         "duration_seconds": doc.get("duration_seconds", 0),
         "disposition": doc.get("disposition"),
+        "notes": doc.get("notes"),
         # recording_ref nesne-deposu anahtarıdır → ASLA sızdırılmaz; yalnızca varlık.
         "has_recording": bool(doc.get("recording_ref")),
         "started_at": doc.get("started_at"),

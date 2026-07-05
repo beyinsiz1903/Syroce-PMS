@@ -140,6 +140,15 @@ export const NAV_ITEMS = [
     navGroup: "system",
   },
   {
+    key: "contact_center_dashboard",
+    label: "Çağrı Merkezi",
+    path: "/admin/contact-center",
+    tier: "basic",
+    group: "core",
+    navGroup: "system",
+    requireSuperAdmin: true,
+  },
+  {
     // Task #282: numara -> otel/ajan eşleme yönetimi (operatör ekranı).
     key: "voice_number_mapping",
     label: "Ses Numaraları",

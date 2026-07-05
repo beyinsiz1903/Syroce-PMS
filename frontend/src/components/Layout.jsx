@@ -18,7 +18,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
-  Home, Hotel, FileText, TrendingUp, ShoppingCart,
+  Home, Hotel, FileText, TrendingUp, ShoppingCart, Headset,
   User, LogOut, Menu, Calendar, DollarSign, Settings as SettingsIcon,
   Layers, BarChart3, Bot, Building2, Zap, Crown, Shield, Users, ClipboardCheck,
   ChevronDown, Server, CalendarCheck, X,
@@ -83,6 +83,7 @@ const ICON_BY_KEY = {
   displacement_analysis: TrendingUp,
   api_docs: FileText,
   pos_dashboard: ShoppingCart,
+  contact_center_dashboard: Headset,
 };
 
 const GROUP_ICONS = {
