@@ -271,48 +271,7 @@ export default function Softphone({ user }) {
     }
   }, [status, incomingFrom]);
 
-  // Keyboard Shortcuts
-  useEffect(() => {
-    if (status !== "incoming" && status !== "on_call") return;
-    
-    const handleKeyDown = (e) => {
-      // Don't trigger if user is typing in an input field
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
 
-      switch(e.key.toLowerCase()) {
-        case 'enter':
-          if (status === "incoming") {
-            e.preventDefault();
-            callRef.current?.accept?.();
-            setStatus("on_call");
-          }
-          break;
-        case 'escape':
-          e.preventDefault();
-          if (status === "incoming") callRef.current?.reject?.();
-          else if (status === "on_call") callRef.current?.disconnect?.();
-          setStatus("idle");
-          setCallDuration(0);
-          break;
-        case 'm':
-          if (status === "on_call") {
-            e.preventDefault();
-            toggleMute();
-          }
-          break;
-        case 't':
-          if (status === "on_call") {
-            e.preventDefault();
-            setShowTransfer(prev => !prev);
-            setShowDialpad(false);
-          }
-          break;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [status, toggleMute]);
 
   useEffect(() => {
     if (!isStaff) return;
@@ -368,6 +327,49 @@ export default function Softphone({ user }) {
       setIsMuted(!currentMuted);
     }
   }, []);
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    if (status !== "incoming" && status !== "on_call") return;
+    
+    const handleKeyDown = (e) => {
+      // Don't trigger if user is typing in an input field
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+
+      switch(e.key.toLowerCase()) {
+        case 'enter':
+          if (status === "incoming") {
+            e.preventDefault();
+            callRef.current?.accept?.();
+            setStatus("on_call");
+          }
+          break;
+        case 'escape':
+          e.preventDefault();
+          if (status === "incoming") callRef.current?.reject?.();
+          else if (status === "on_call") callRef.current?.disconnect?.();
+          setStatus("idle");
+          setCallDuration(0);
+          break;
+        case 'm':
+          if (status === "on_call") {
+            e.preventDefault();
+            toggleMute();
+          }
+          break;
+        case 't':
+          if (status === "on_call") {
+            e.preventDefault();
+            setShowTransfer(prev => !prev);
+            setShowDialpad(false);
+          }
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [status, toggleMute]);
 
   const transferCall = async () => {
     if (!transferTarget.trim() || !callRef.current) return;
