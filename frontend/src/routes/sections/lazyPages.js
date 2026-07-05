@@ -16,6 +16,7 @@ export const GuestPortal = lazy(() => import("@/pages/GuestPortal"));
 // Core modules
 export const PMSModule = lazy(() => import("@/pages/PMSModule"));
 export const InvoiceModule = lazy(() => import("@/pages/InvoiceModule"));
+export const GeneralLedgerModule = lazy(() => import("@/pages/GeneralLedgerModule"));
 export const RMSModule = lazy(() => import("@/pages/RMSModule"));
 export const ChannelManagerModule = lazy(() => import("@/pages/ChannelManagerModule"));
 export const ChannelManagerDashboardV2 = lazy(() => import("@/pages/ChannelManagerDashboardV2"));

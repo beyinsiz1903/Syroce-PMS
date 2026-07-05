@@ -7,6 +7,7 @@ from . import (
     cashiering,
     dashboards,
     folio,
+    general_ledger,
     integrations,
     invoices,
     konaklama_vergisi,
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/api", tags=["finance"])
 for _sub in (
     integrations,
     folio,
+    general_ledger,
     invoices,
     accounting,
     mobile,

@@ -373,6 +373,15 @@ export const NAV_ITEMS = [
     navGroup: "backoffice",
   },
   {
+    key: "general_ledger",
+    label: "Genel Muhasebe",
+    path: "/app/general-ledger",
+    moduleKey: "invoices",
+    tier: "professional",
+    group: "professional",
+    navGroup: "backoffice",
+  },
+  {
     key: "konaklama_vergisi",
     label: "Konaklama Vergisi",
     path: "/app/konaklama-vergisi",
