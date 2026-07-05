@@ -271,6 +271,10 @@ code {
     border-color: hsl(var(--border));
 }
 
+.dark .border-amber-100\/50 {
+    border-color: rgb(120 53 15 / 0.5);
+}
+
 /* --- divide-* (kardes ayraci kenarliklari) -> border --- */
 .dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
 .dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]),
@@ -300,6 +304,10 @@ code {
 .dark .hover\:bg-zinc-100:hover,
 .dark .hover\:bg-zinc-200:hover,
 .dark .hover\:bg-gray-300:hover {
+    background-color: hsl(var(--accent));
+}
+
+.dark .active\:bg-gray-100:active {
     background-color: hsl(var(--accent));
 }
 

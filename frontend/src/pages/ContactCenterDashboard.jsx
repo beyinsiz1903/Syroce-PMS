@@ -175,7 +175,7 @@ export default function ContactCenterDashboard() {
           title={t('contactCenter.totalDuration', 'Toplam Görüşme (Bugün)')}
           value={totalDuration}
           icon={Clock}
-          colorClass="bg-purple-100 text-purple-600"
+          colorClass="bg-indigo-100 text-indigo-600"
         />
       </div>
 

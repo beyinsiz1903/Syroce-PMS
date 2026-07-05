@@ -261,7 +261,7 @@ async def transfer_live_call(
             twiml = f"<Response><Dial><Client>{client_id}</Client></Dial></Response>"
         else:
             twiml = f'<Response><Dial>{payload.target}</Dial></Response>'
-        
+
         client.calls(call_sid).update(twiml=twiml)
         return {"status": "ok"}
     except Exception as e:
@@ -286,7 +286,7 @@ async def send_whatsapp_during_call(
     provider = get_communication_provider("whatsapp")
     if not provider:
         raise HTTPException(status_code=503, detail="WhatsApp sağlayıcısı bulunamadı.")
-    
+
     # Provider üzerinden doğrudan şablon gönderimi (Geçmişe/Conversation'a bağlamak Opsiyonel)
     res = await provider.send_whatsapp(
         db=db,
@@ -341,7 +341,7 @@ async def get_call_recording(
         raise HTTPException(status_code=404, detail="Kayıt bulunamadı")
 
     from domains.contact_center.recording_storage import load_recording_bytes
-    
+
     audio_bytes = load_recording_bytes(doc["recording_ref"], tenant_id=current_user.tenant_id, call_id=call_id)
     if not audio_bytes:
         raise HTTPException(status_code=404, detail="Kayıt dosyası okunamadı veya şifre çözme hatası")

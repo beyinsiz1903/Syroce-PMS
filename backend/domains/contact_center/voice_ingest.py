@@ -97,7 +97,7 @@ async def _record_call(
             "answered_at": None,
             "ended_at": None,
         }
-        
+
         # CRM Lookup: Arayan numarayı Guests tablosunda bul ve adını kaydet
         if phone:
             try:
