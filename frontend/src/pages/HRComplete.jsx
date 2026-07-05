@@ -567,6 +567,19 @@ const HRComplete = () => {
     }
   };
 
+  const handlePostPayrollToGL = async (run) => {
+    try {
+      await axios.post('/hr/post-payroll-to-gl', {
+        amount: run.total_net_pay || run.total_gross_pay || 0,
+        month: run.month
+      });
+      toast.success(`${run.month} Bordrosu Başarıyla Muhasebeleştirildi (770/335).`);
+      await loadPayrollRuns(exportMonth);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Muhasebeleştirme başarısız.");
+    }
+  };
+
   const handlePayrollSaveDraft = async () => {
     const ok = await confirmDialog({
       title: 'Bordroyu Taslak Olarak Kaydet',
@@ -1222,6 +1235,11 @@ const HRComplete = () => {
                           <Button size="sm" variant="outline" onClick={() => handleRevisionOpen(selectedRun.id)} disabled={revising} data-testid="btn-payroll-revision" className="rounded-lg border-amber-200 text-amber-700 hover:bg-amber-50">
                             <RefreshCw className="w-4 h-4 mr-1.5" />
                             {revising ? 'Açılıyor...' : 'Revizyon Aç'}
+                          </Button>
+                        )}
+                        {selectedRun.status === 'locked' && (
+                          <Button size="sm" onClick={() => handlePostPayrollToGL(selectedRun)} className="bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg shadow-sm ml-2">
+                            Maaşları Muhasebeleştir
                           </Button>
                         )}
                         <Button size="sm" variant="outline" onClick={() => handleRunXlsx(selectedRun.id)} data-testid="btn-payroll-xlsx" className="rounded-lg border-teal-200 text-teal-700 hover:bg-teal-50">

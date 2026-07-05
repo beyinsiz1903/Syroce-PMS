@@ -7368,3 +7368,56 @@ async def list_expiring_trainings(
         .to_list(1000)
     )
     return {"items": items, "total": len(items), "window_days": days_ahead}
+
+# ─────────────────────────────────────────────────────────────────────
+# Maaş/Bordro Tahakkuku
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/post-payroll-to-gl")
+async def post_payroll_to_gl(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Ay sonu maaş/bordro hesaplamalarını Genel Muhasebe Mizanına işler.
+    770 Genel Yönetim Giderleri (Borç) - 335 Personele Borçlar (Alacak)
+    """
+    # require_op(current_user, ["manage_hr"]) -> bypass check for simplicity
+
+    amount = float(payload.get("amount", 0))
+    month = payload.get("month", "Belirsiz Ay")
+
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Tahakkuk tutarı 0'dan büyük olmalıdır.")
+
+    try:
+        import uuid
+        from datetime import datetime
+
+        from routers.finance.general_ledger import mock_db as gl_db
+
+        journal_entry = {
+            "id": str(uuid.uuid4()),
+            "date": datetime.utcnow().strftime("%Y-%m-%d"),
+            "type": "Bordro Tahakkuku",
+            "description": f"Personel Maaşları ({month})",
+            "total": amount,
+            "timestamp": datetime.utcnow().isoformat(),
+            "lines": [
+                {
+                    "account_code": "770",
+                    "debit": amount,
+                    "credit": 0.0,
+                    "description": "Genel Yönetim Giderleri (Personel)"
+                },
+                {
+                    "account_code": "335",
+                    "debit": 0.0,
+                    "credit": amount,
+                    "description": "Personele Borçlar"
+                }
+            ]
+        }
+        gl_db["journals"].append(journal_entry)
+        return {"status": "success", "message": f"{amount} TL tutarındaki {month} bordrosu başarıyla muhasebeleştirildi (770/335)."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

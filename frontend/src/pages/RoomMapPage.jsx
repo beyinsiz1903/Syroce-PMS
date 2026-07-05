@@ -34,7 +34,7 @@ function statusMeta(status, occupied) {
 }
 
 function RoomCell({ room, onDrop }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [over, setOver] = useState(false);
   const occupied = !!room.booking;
   const meta = statusMeta(room.status, occupied);
@@ -105,7 +105,7 @@ function UnassignedItem({ b }) {
 }
 
 export default function RoomMapPage({ user, tenant, onLogout }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [date, setDate] = useState(today());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);

@@ -66,9 +66,7 @@ function RuleEditor({
   setRules,
   onDelete
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   return <Card className="p-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-semibold flex items-center gap-2 text-slate-900">
@@ -160,9 +158,7 @@ function RuleEditor({
     </Card>;
 }
 export default function EarlyLatePricingSettings() {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [cfg, setCfg] = useState(null);
   const [meta, setMeta] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -249,7 +245,7 @@ export default function EarlyLatePricingSettings() {
           </div>} />
 
       {meta && <div className="text-xs text-slate-500">
-          {meta.is_default ? 'Varsayılan kurallar gösteriliyor (henüz kaydedilmemiş).' : <>{t('cm.pages_EarlyLatePricingSettings.son_guncelleme')} {meta.updated_at ? new Date(meta.updated_at).toLocaleString('tr-TR') : '—'} {meta.updated_by_name ? `· ${meta.updated_by_name}` : ''}</>}
+          {meta.is_default ? 'Varsayılan kurallar gösteriliyor (henüz kaydedilmemiş).' : <>{t('cm.pages_EarlyLatePricingSettings.son_guncelleme')} {meta.updated_at ? new Date(meta.updated_at).toLocaleString(i18n.language) : '—'} {meta.updated_by_name ? `· ${meta.updated_by_name}` : ''}</>}
         </div>}
 
       {issues.length > 0 && <Card className="p-3 border-amber-200 bg-amber-50">

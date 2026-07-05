@@ -16,7 +16,7 @@ const STEPS = [
 ];
 
 function Stepper({ step }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   return (
     <div className="flex items-center gap-2 md:gap-4">
       {STEPS.map((s, i) => {
@@ -45,7 +45,7 @@ function Stepper({ step }) {
 }
 
 function RoomGroup({ type, rooms, selectedId, onSelect, nights, defaultOpen }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -81,14 +81,14 @@ function RoomGroup({ type, rooms, selectedId, onSelect, nights, defaultOpen }) {
                 <div className="text-[11px] text-slate-500">{r.room_type || '-'}</div>
                 {rate > 0 ? (
                   <div className="text-sm mt-1.5 text-slate-700">
-                    <span className="font-semibold text-slate-900">{rate.toLocaleString('tr-TR')} ₺</span>
+                    <span className="font-semibold text-slate-900">{rate.toLocaleString(i18n.language)} ₺</span>
                     <span className="text-xs text-slate-500"> / gece</span>
                   </div>
                 ) : (
                   <div className="text-[11px] text-amber-700 mt-1.5">{t('cm.pages_WalkinPage.fiyat_sonraki_adimda_girilecek')}</div>
                 )}
                 {sel && nights > 1 && rate > 0 && (
-                  <div className="text-[11px] text-slate-500 mt-0.5">{t('cm.pages_WalkinPage.toplam')} {(rate * nights).toLocaleString('tr-TR')} ₺</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">{t('cm.pages_WalkinPage.toplam')} {(rate * nights).toLocaleString(i18n.language)} ₺</div>
                 )}
               </button>
             );
@@ -100,7 +100,7 @@ function RoomGroup({ type, rooms, selectedId, onSelect, nights, defaultOpen }) {
 }
 
 export default function WalkinPage({ user, tenant, onLogout }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const nav = useNavigate();
   const [step, setStep] = useState(1);
   const [done, setDone] = useState(false);
@@ -173,7 +173,7 @@ export default function WalkinPage({ user, tenant, onLogout }) {
     if (form.guest_name) parts.push(form.guest_name);
     if (selectedRoom) parts.push(`Oda ${selectedRoom.room_number}`);
     if (selectedRoom) parts.push(`${nights} gece`);
-    if (form.total_amount > 0) parts.push(`${form.total_amount.toLocaleString('tr-TR')} ₺`);
+    if (form.total_amount > 0) parts.push(`${form.total_amount.toLocaleString(i18n.language)} ₺`);
     return parts.join(' · ') || 'Henüz seçim yok';
   })();
 
@@ -313,7 +313,7 @@ export default function WalkinPage({ user, tenant, onLogout }) {
                     <div className="mt-1 text-amber-800">
                       {form.guest_name} {t('cm.pages_WalkinPage.oda_062cb')} {selectedRoom.room_number} ({selectedRoom.room_type || '-'}) · {nights} gece · {form.adults}+{form.children} {t('cm.pages_WalkinPage.kisi')}
                     </div>
-                    <div className="mt-1 font-semibold text-amber-900">{t('cm.pages_WalkinPage.toplam_68af4')} {form.total_amount.toLocaleString('tr-TR')} ₺</div>
+                    <div className="mt-1 font-semibold text-amber-900">{t('cm.pages_WalkinPage.toplam_68af4')} {form.total_amount.toLocaleString(i18n.language)} ₺</div>
                   </div>
                 )}
               </Card>
@@ -335,7 +335,7 @@ export default function WalkinPage({ user, tenant, onLogout }) {
               ) : (
                 <Button onClick={submit} disabled={submitting} className="bg-amber-600 hover:bg-amber-700 text-white" data-testid="walkin-submit">
                   {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
-                  Check-in Tamamla {form.total_amount > 0 && `(${form.total_amount.toLocaleString('tr-TR')} ₺)`}
+                  Check-in Tamamla {form.total_amount > 0 && `(${form.total_amount.toLocaleString(i18n.language)} ₺)`}
                 </Button>
               )}
             </div>

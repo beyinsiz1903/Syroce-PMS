@@ -54,7 +54,7 @@ const emptyCreate = () => ({
 });
 
 export default function BlockManagementPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { toast } = useToast();
   const [blocks, setBlocks] = useState([]);
   const [alerts, setAlerts] = useState([]);

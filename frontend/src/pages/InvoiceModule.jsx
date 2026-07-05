@@ -6,6 +6,8 @@ import { useTranslation } from 'react-i18next';
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatAmount } from '@/lib/currency';
 import { ExpenseDialog, SupplierDialog, BankAccountDialog, InventoryDialog } from '@/components/invoice/AccountingDialogs';
+import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
+import InvoiceTemplate from '@/components/invoice/InvoiceTemplate';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -16,7 +18,7 @@ import {
 } from 'lucide-react';
 
 const InvoiceModule = ({ user, tenant, onLogout }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { amount: fmtMoney } = useCurrency();
   const [fatal, setFatal] = useState(null);
   const [invoices, setInvoices] = useState([]);
@@ -29,6 +31,8 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
   const [reports, setReports] = useState({ profitLoss: null, vat: null, balanceSheet: null });
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(null);
+  const [viewingInvoice, setViewingInvoice] = useState(null);
+  const [printDialogOpen, setPrintDialogOpen] = useState(false);
 
   const loadedRef = useRef({ expenses: false, suppliers: false, banks: false, inventory: false });
   const inFlightRef = useRef({});

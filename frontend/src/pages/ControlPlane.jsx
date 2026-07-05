@@ -18,9 +18,7 @@ import { useTranslation } from 'react-i18next';
 
 // ─── Reservation Lookup ──────────────────────────────────────────
 function ReservationLookup() {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [query, setQuery] = useState("");
   const [traceResult, setTraceResult] = useState(null);
   const [rawPayload, setRawPayload] = useState(null);
@@ -268,9 +266,7 @@ function TraceTimeline({
 function GapWarnings({
   warnings
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   return <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-3" data-testid="gap-warnings">
       <div className="flex items-center gap-2 mb-2">
         <AlertTriangle className="h-4 w-4 text-yellow-500" />
@@ -319,9 +315,7 @@ function RawPayloadViewer({
 
 // ─── System Health ───────────────────────────────────────────────
 function SystemHealth() {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const fetchDashboard = useCallback(async () => {
@@ -417,9 +411,7 @@ function MetricCard({
 
 // ─── Live Feed ───────────────────────────────────────────────────
 function LiveFeed() {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [events, setEvents] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -516,9 +508,7 @@ export default function ControlPlane({
   tenant,
   onLogout
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   return <>
       <div className="min-h-screen bg-white text-gray-900" data-testid="control-plane-page">
         <div className="max-w-6xl mx-auto px-4 py-6">

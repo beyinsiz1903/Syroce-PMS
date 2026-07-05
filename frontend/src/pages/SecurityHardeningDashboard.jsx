@@ -84,7 +84,7 @@ export default function SecurityHardeningDashboard({
   embedded = false
 }) {
   // i18n hook reserved for future migration; explicit Turkish copy used today.
-  useTranslation();
+  const { t, i18n } = useTranslation();
   const [mainTab, setMainTab] = useState("security");
   const [secTab, setSecTab] = useState("isolation");
   // Track which lazy tabs the user has visited so we can keep them mounted

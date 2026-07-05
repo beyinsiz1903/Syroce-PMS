@@ -84,7 +84,7 @@ const RESPONSE_LABELS = {
 const METHOD_LABELS = { phone: 'Telefon', system: 'Sistem', both: 'Her İkisi' };
 
 const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [calls, setCalls] = useState([]);
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(true);

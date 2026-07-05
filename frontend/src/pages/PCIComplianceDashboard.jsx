@@ -38,17 +38,13 @@ const STATUS_META = {
 const ControlStatus = ({
   status
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const meta = STATUS_META[status] || STATUS_META.not_applicable;
   const Icon = meta.icon;
   return <StatusBadge intent={meta.intent} icon={Icon}>{meta.label}</StatusBadge>;
 };
 export default function PCIComplianceDashboard() {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(null);

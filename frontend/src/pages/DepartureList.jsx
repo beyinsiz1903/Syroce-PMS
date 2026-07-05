@@ -36,7 +36,7 @@ const PRIMARY_LABEL = (b) =>
   b.room_number ? `Oda ${b.room_number}` : (b.confirmation_number || (b.id || '').substring(0, 8).toUpperCase());
 
 const DepartureList = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [date, setDate] = useState(() => localISODate(new Date()));
   const [departures, setDepartures] = useState([]);
   const [loading, setLoading] = useState(false);

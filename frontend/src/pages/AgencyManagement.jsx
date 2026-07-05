@@ -21,7 +21,7 @@ import { useTranslation } from 'react-i18next';
 const PAGE_SIZE = 20;
 
 const AgencyManagement = ({ user, tenant, onLogout }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [agencies, setAgencies] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);

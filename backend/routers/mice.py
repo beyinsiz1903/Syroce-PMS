@@ -2573,3 +2573,56 @@ async def sign_public_beo(payload: SignatureSubmitIn):
     )
 
     return {"success": True}
+
+# ─────────────────────────────────────────────────────────────────────
+# MICE / BEO -> Folio İşleme
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/events/{event_id}/post-to-folio")
+async def post_beo_to_folio(
+    event_id: str,
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Etkinlik toplam tutarını (BEO) Şirket veya Müşteri Folyosuna işler.
+    """
+    amount = float(payload.get("amount", 0))
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Etkinlik tutarı 0'dan büyük olmalıdır.")
+
+    try:
+        import uuid
+        from datetime import datetime
+
+        from routers.finance.general_ledger import mock_db as gl_db
+
+        # Etkinlik bilgilerini al
+        event_doc = await db.mice_events.find_one({"_id": event_id})
+        event_name = event_doc.get("name", "Bilinmeyen Etkinlik") if event_doc else "Bilinmeyen Etkinlik"
+
+        journal_entry = {
+            "id": str(uuid.uuid4()),
+            "date": datetime.utcnow().strftime("%Y-%m-%d"),
+            "type": "Etkinlik Geliri",
+            "description": f"BEO Şirket Folyosuna İşlendi: {event_name}",
+            "total": amount,
+            "timestamp": datetime.utcnow().isoformat(),
+            "lines": [
+                {
+                    "account_code": "120",
+                    "debit": amount,
+                    "credit": 0.0,
+                    "description": "Alıcılar (Şirket/Folyo)"
+                },
+                {
+                    "account_code": "600",
+                    "debit": 0.0,
+                    "credit": amount,
+                    "description": "Yurtiçi Satışlar (Ziyafet/Etkinlik Geliri)"
+                }
+            ]
+        }
+        gl_db["journals"].append(journal_entry)
+        return {"status": "success", "message": f"{amount} TL tutarındaki etkinlik faturası şirket folyosuna işlendi (120/600)."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

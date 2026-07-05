@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 const API_URL = import.meta.env.VITE_BACKEND_URL || '';
 const AIRMSDashboard = () => {
+  const { t } = useTranslation();
   const [competitorRates, setCompetitorRates] = useState([]);
   const [competitorMsg, setCompetitorMsg] = useState(null);
   const [demandForecast, setDemandForecast] = useState([]);
@@ -26,11 +28,11 @@ const AIRMSDashboard = () => {
         headers: {}
       });
       setCompetitorRates(response.data.competitor_rates || []);
-      setCompetitorMsg(response.data.data_available === false ? response.data.message || 'Rakip fiyat veri kaynağı yapılandırılmamış' : null);
+      setCompetitorMsg(response.data.data_available === false ? response.data.message || t('ai.rms.competitorSourceNotConfigured') : null);
     } catch (error) {
       console.error('Error scraping competitor rates:', error);
       setCompetitorRates([]);
-      setCompetitorMsg(error.response?.data?.detail || error.response?.data?.message || 'Rakip fiyat veri kaynağı yapılandırılmamış');
+      setCompetitorMsg(error.response?.data?.detail || error.response?.data?.message || t('ai.rms.competitorSourceNotConfigured'));
     } finally {
       setLoading(false);
     }
@@ -50,7 +52,7 @@ const AIRMSDashboard = () => {
       console.error('Error calculating elasticity:', error);
       setElasticity({
         data_available: false,
-        message: error.response?.data?.detail || error.response?.data?.message || 'Fiyat esnekliği hesaplanamadı'
+        message: error.response?.data?.detail || error.response?.data?.message || t('ai.rms.elasticityNotCalculated')
       });
     } finally {
       setLoading(false);
@@ -81,22 +83,22 @@ const AIRMSDashboard = () => {
         headers: {}
       });
       if (response.data.data_available === false || response.data.success === false) {
-        toast.error(response.data.message || 'Fiyatlar yayınlanamadı: yeterli gerçek veri yok');
+        toast.error(response.data.message || t('ai.rms.publishErrorNoData'));
       } else if (response.data.dry_run) {
-        toast.success(`${(response.data.published_rates || []).length} tarife hesaplandı (deneme/dry-run, yayınlanmadı)`);
+        toast.success(t('ai.rms.dryRunPublish', { count: (response.data.published_rates || []).length }));
       } else {
-        toast.success(`${response.data.rates_published} fiyat yayınlandı • Ort. fiyat: $${response.data.avg_rate}`);
+        toast.success(t('ai.rms.publishSuccess', { count: response.data.rates_published, avg: response.data.avg_rate }));
       }
     } catch (error) {
       console.error('Error publishing rates:', error);
-      toast.error(error.response?.data?.detail || error.response?.data?.message || 'Fiyatlar yayınlanamadı');
+      toast.error(error.response?.data?.detail || error.response?.data?.message || t('ai.rms.publishError'));
     } finally {
       setLoading(false);
     }
   };
   return <div className="p-6 bg-white overflow-hidden">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
-        <h1 className="text-3xl font-bold">AI RMS Hub</h1>
+        <h1 className="text-3xl font-bold">{t('ai.rms.title')}</h1>
         <button onClick={autoPublishRates} disabled={loading} className="px-6 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50 font-semibold text-base inline-flex items-center gap-2">
           {loading ? 'Yayınlanıyor…' : 'Tarifeleri Otomatik Yayınla'}
         </button>
@@ -104,14 +106,14 @@ const AIRMSDashboard = () => {
 
       {/* Market Compression */}
       {marketCompression && marketCompression.data_available === false && <div className="mb-6">
-          <h2 className="text-xl font-semibold mb-4">Market Compression Analysis</h2>
+          <h2 className="text-xl font-semibold mb-4">{t('ai.rms.marketCompression')}</h2>
           <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded mb-4">
             <p className="text-sm text-amber-900">
-              {marketCompression.message || 'Pazar verisi yapılandırılmamış'}
+              {marketCompression.message || t('ai.rms.marketDataNotConfigured')}
             </p>
           </div>
           {marketCompression.events && marketCompression.events.length > 0 && <div className="bg-white border rounded-lg p-4">
-              <p className="font-semibold mb-2">Şehir Etkinlikleri</p>
+              <p className="font-semibold mb-2">{t('ai.rms.cityEvents')}</p>
               <ul className="list-disc list-inside space-y-1">
                 {marketCompression.events.map((ev, idx) => <li key={idx} className="text-sm">
                     {ev.name}{ev.impact ? ` (${ev.impact})` : ''}
@@ -120,21 +122,21 @@ const AIRMSDashboard = () => {
             </div>}
         </div>}
       {marketCompression && marketCompression.data_available !== false && <div className="mb-6">
-          <h2 className="text-xl font-semibold mb-4">Market Compression Analysis</h2>
+          <h2 className="text-xl font-semibold mb-4">{t('ai.rms.marketCompression')}</h2>
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div className={`p-4 rounded-lg ${marketCompression.compression_score > 70 ? 'bg-red-50 border-red-200' : marketCompression.compression_score > 40 ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200'} border-2`}>
-              <div className="text-sm text-gray-600">Compression Score</div>
+              <div className="text-sm text-gray-600">{t('ai.rms.compressionScore')}</div>
               <div className={`text-3xl font-bold ${marketCompression.compression_score > 70 ? 'text-red-600' : marketCompression.compression_score > 40 ? 'text-yellow-600' : 'text-green-600'}`}>
                 {marketCompression.compression_score}
               </div>
               <div className="text-sm font-medium mt-1">{marketCompression.compression_level}</div>
             </div>
             <div className="bg-blue-50 p-4 rounded-lg border-2 border-blue-200">
-              <div className="text-sm text-gray-600">City Occupancy</div>
+              <div className="text-sm text-gray-600">{t('ai.rms.cityOccupancy')}</div>
               <div className="text-3xl font-bold text-blue-600">{marketCompression.city_occupancy_estimate}</div>
             </div>
             <div className="bg-indigo-50 p-4 rounded-lg border-2 border-indigo-200">
-              <div className="text-sm text-gray-600">Pricing Opportunity</div>
+              <div className="text-sm text-gray-600">{t('ai.rms.pricingOpportunity')}</div>
               <div className="text-3xl font-bold text-indigo-600">{marketCompression.pricing_opportunity_pct}%</div>
             </div>
           </div>
@@ -158,15 +160,15 @@ const AIRMSDashboard = () => {
 
       {/* Competitor Rates */}
       {competitorRates.length > 0 && <div className="mb-6">
-          <h2 className="text-xl font-semibold mb-4">Competitor Rate Intelligence</h2>
+          <h2 className="text-xl font-semibold mb-4">{t('ai.rms.competitorRateIntelligence')}</h2>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-gray-100">
-                  <th className="p-3 text-left">Competitor</th>
-                  <th className="p-3 text-left">Room Type</th>
-                  <th className="p-3 text-left">Rate</th>
-                  <th className="p-3 text-left">Source</th>
+                  <th className="p-3 text-left">{t('ai.rms.competitor')}</th>
+                  <th className="p-3 text-left">{t('ai.rms.roomType')}</th>
+                  <th className="p-3 text-left">{t('ai.rms.rate')}</th>
+                  <th className="p-3 text-left">{t('ai.rms.source')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -190,29 +192,29 @@ const AIRMSDashboard = () => {
       {/* Price Elasticity */}
       {elasticity && elasticity.data_available === false && <div className="mb-6 bg-amber-50 border-l-4 border-amber-500 p-4 rounded">
           <p className="text-sm text-amber-900">
-            {elasticity.message || 'Fiyat esnekliği için yeterli veri yok'}
+            {elasticity.message || t('ai.rms.notEnoughDataForElasticity')}
           </p>
         </div>}
       {elasticity && elasticity.data_available !== false && <div className="mb-6">
-          <h2 className="text-xl font-semibold mb-4">Price Elasticity Analysis</h2>
+          <h2 className="text-xl font-semibold mb-4">{t('ai.rms.priceElasticity')}</h2>
           <div className="bg-white border rounded-lg p-6">
             <div className="grid grid-cols-2 gap-6 mb-4">
               <div>
-                <div className="text-sm text-gray-600 mb-1">Elasticity Coefficient</div>
+                <div className="text-sm text-gray-600 mb-1">{t('ai.rms.elasticityCoefficient')}</div>
                 <div className="text-3xl font-bold text-blue-600">{elasticity.elasticity_coefficient}</div>
                 <div className="text-sm text-gray-600 mt-1">{elasticity.interpretation}</div>
                 {typeof elasticity.fit_r2 === 'number' && <div className="text-xs text-gray-500 mt-1">
-                    Uyum (R²): {elasticity.fit_r2} • {elasticity.bookings_analyzed} rezervasyon
+                    {t('ai.rms.fitR2')}: {elasticity.fit_r2} • {elasticity.bookings_analyzed} {t('ai.rms.bookings')}
                   </div>}
               </div>
               <div>
-                <div className="text-sm text-gray-600 mb-1">Optimal Price Point</div>
+                <div className="text-sm text-gray-600 mb-1">{t('ai.rms.optimalPrice')}</div>
                 <div className="text-3xl font-bold text-green-600">${elasticity.optimal_price_point}</div>
                 <div className="text-sm text-green-600 mt-1">+{elasticity.expected_revenue_lift} revenue lift</div>
               </div>
             </div>
             <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded">
-              <p className="font-semibold mb-2">Recommendations:</p>
+              <p className="font-semibold mb-2">{t('ai.rms.recommendations')}</p>
               <ul className="list-disc list-inside space-y-1">
                 {(elasticity.recommendations || []).map((rec, idx) => <li key={idx} className="text-sm">{rec}</li>)}
               </ul>

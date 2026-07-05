@@ -88,6 +88,7 @@ const IncidentRow = ({
   expanded,
   onToggle
 }) => {
+  const { t, i18n } = useTranslation();
   const sev = SEVERITY_CONFIG[incident.severity] || SEVERITY_CONFIG.medium;
   const stat = STATUS_CONFIG[incident.status] || STATUS_CONFIG.open;
   const isOpen = incident.status === 'open' || incident.status === 'investigating';
@@ -113,7 +114,7 @@ const IncidentRow = ({
             {incident.room_type_code && <span>Oda: {incident.room_type_code}</span>}
             {incident.created_at && <span className="flex items-center gap-1">
                 <Clock className="w-3 h-3" />
-                {new Date(incident.created_at).toLocaleString('tr-TR')}
+                {new Date(incident.created_at).toLocaleString(i18n.language)}
               </span>}
           </div>
         </div>
@@ -175,9 +176,7 @@ export default function OperatorIncidentPanel({
   tenant,
   onLogout
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [summary, setSummary] = useState(null);

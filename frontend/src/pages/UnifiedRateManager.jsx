@@ -21,9 +21,7 @@ const UnifiedRateManager = ({
   onLogout,
   embedded = false
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeView, setActiveView] = useState('bulk');
@@ -529,7 +527,7 @@ const UnifiedRateManager = ({
     } = meta;
     const providerLabel = 'Kanal';
     const failBit = b.state !== 'closed' ? ` · ${b.failure_count}/${b.failure_threshold} hata` : '';
-    return <div key={b.provider} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium ${meta.cls}`} title={b.last_failure ? `Son hata: ${new Date(b.last_failure).toLocaleString('tr-TR')}` : 'Henüz hata yok'}>
+    return <div key={b.provider} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium ${meta.cls}`} title={b.last_failure ? `Son hata: ${new Date(b.last_failure).toLocaleString(i18n.language)}` : 'Henüz hata yok'}>
         <Icon className="w-3.5 h-3.5" />
         <span>{providerLabel}: {meta.label}{failBit}</span>
       </div>;
@@ -751,9 +749,7 @@ const AgencyOverrideEditor = ({
   onDelete,
   currencySymbol
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [overrideType, setOverrideType] = useState('multiplier');
   const [value, setValue] = useState(agency.has_custom_rates ? '' : '0.90');
   const [roomType, setRoomType] = useState('*');

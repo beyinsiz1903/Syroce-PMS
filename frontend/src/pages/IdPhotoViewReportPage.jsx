@@ -34,17 +34,17 @@ function emptySummary() {
   return { by_actor: [], by_booking: [], by_hour_of_day: [] };
 }
 
-function formatTs(ts) {
+function formatTs(ts, lang = 'tr-TR') {
   if (!ts) return "—";
   try {
-    return new Date(ts).toLocaleString("tr-TR");
+    return new Date(ts).toLocaleString(lang);
   } catch {
     return ts;
   }
 }
 
 function HourBar({ hour, count, max }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const pct = max > 0 ? Math.round((count / max) * 100) : 0;
   return (
     <div
@@ -64,7 +64,7 @@ function HourBar({ hour, count, max }) {
 }
 
 export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   // `filters` kullanıcının yazmakta olduğu draft, `appliedFilters`
   // ise sunucuya gönderilen son haldir. Her tuş basımında sorgu
@@ -214,7 +214,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
               onClick={() => navigate(-1)}
               className="text-gray-600"
             >
-              <ArrowLeft className="w-4 h-4 mr-1" /> Geri
+              <ArrowLeft className="w-4 h-4 mr-1" /> {t('cm.pages_IdPhotoViewReportPage.back')}
             </Button>
             <div className="flex items-center gap-2">
               <Button
@@ -229,7 +229,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                 ) : (
                   <Download className="w-3 h-3 mr-1" />
                 )}
-                CSV indir
+                {t('cm.pages_IdPhotoViewReportPage.export_csv')}
               </Button>
               <Button
                 data-testid="refresh-btn"
@@ -340,7 +340,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                     onClick={handleApply}
                     className="w-full h-8 text-xs"
                   >
-                    Uygula
+                    {t('cm.pages_IdPhotoViewReportPage.apply')}
                   </Button>
                 </div>
               </div>
@@ -487,7 +487,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                                 <div className="flex items-center gap-2 flex-wrap text-xs">
                                   <span className="text-gray-500 flex items-center gap-1">
                                     <Clock className="w-3 h-3" />
-                                    {formatTs(ev.timestamp)}
+                                    {formatTs(ev.timestamp, i18n.language)}
                                   </span>
                                   <span className="font-semibold text-gray-900 flex items-center gap-1">
                                     <UserIcon className="w-3 h-3" />
@@ -591,7 +591,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                 </CardHeader>
                 <CardContent>
                   {summary.by_actor.length === 0 ? (
-                    <p className="text-xs text-gray-500">Veri yok</p>
+                    <p className="text-xs text-gray-500">{t('cm.pages_IdPhotoViewReportPage.no_data')}</p>
                   ) : (
                     summary.by_actor.map((a) => (
                       <div
@@ -619,7 +619,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                 </CardHeader>
                 <CardContent>
                   {summary.by_booking.length === 0 ? (
-                    <p className="text-xs text-gray-500">Veri yok</p>
+                    <p className="text-xs text-gray-500">{t('cm.pages_IdPhotoViewReportPage.no_data')}</p>
                   ) : (
                     summary.by_booking.map((b) => (
                       <div

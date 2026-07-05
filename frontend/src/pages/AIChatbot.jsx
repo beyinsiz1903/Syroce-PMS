@@ -41,7 +41,7 @@ const AIChatbot = () => {
       setMessages(prev => [...prev, botMessage]);
     } catch (error) {
       console.error('Chat hatası', error);
-      const errorMessage = { sender: 'bot', message: 'Üzgünüm, sunucuyla bağlantı kurulamadı veya AI servisi kapalı. Lütfen API ayarlarınızı kontrol edin.', timestamp: new Date(), isError: true };
+      const errorMessage = { sender: 'bot', message: t('messages.error.network'), timestamp: new Date(), isError: true };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setLoading(false);

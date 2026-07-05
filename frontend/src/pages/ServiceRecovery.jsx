@@ -1,3 +1,4 @@
+import i18n from '@/i18n';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -156,9 +157,7 @@ const formatDate = iso => {
 const SlaBadge = ({
   complaint
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   if (!complaint?.age_hours && complaint?.age_hours !== 0) return null;
   if (complaint.status === 'resolved') return null;
   const overdue = complaint.is_overdue;
@@ -175,9 +174,7 @@ const ServiceRecovery = ({
   tenant,
   onLogout
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [complaints, setComplaints] = useState([]);
   const [stats, setStats] = useState({});
@@ -346,7 +343,7 @@ const ServiceRecovery = ({
       toast.success('Şikayet çözüldü, misafire bilgilendirme e-postası gönderildi');
       const folio = res?.data?.folio;
       if (folio?.folio_adjusted) {
-        toast.success(`Misafirin folyosuna ${Number(folio.amount_credited).toLocaleString('tr-TR')} TL kredi işlendi (yeni bakiye: ${Number(folio.new_balance).toLocaleString('tr-TR')} TL)`, {
+        toast.success(`Misafirin folyosuna ${Number(folio.amount_credited).toLocaleString(i18n.language)} TL kredi işlendi (yeni bakiye: ${Number(folio.new_balance).toLocaleString(i18n.language)} TL)`, {
           duration: 6000
         });
       } else if (folio?.reason && payload.compensation_offered && payload.compensation_amount > 0) {
@@ -1104,7 +1101,7 @@ const ServiceRecovery = ({
               {!compensationReport ? <p className="text-sm text-gray-500 text-center py-6">{t('cm.pages_ServiceRecovery.yukleniyor_4deb0')}</p> : compensationReport.breakdown.length === 0 ? <p className="text-sm text-gray-500 text-center py-6">{t('cm.pages_ServiceRecovery.henuz_verilmis_tazminat_yok')}</p> : <>
                   <div className="bg-blue-50 p-3 rounded text-center">
                     <p className="text-xs text-blue-600">{t('cm.pages_ServiceRecovery.toplam_tazminat')}</p>
-                    <p className="text-2xl font-bold text-blue-900">{compensationReport.totals.amount.toLocaleString('tr-TR')} TL</p>
+                    <p className="text-2xl font-bold text-blue-900">{compensationReport.totals.amount.toLocaleString(i18n.language)} TL</p>
                     <p className="text-xs text-blue-500">{compensationReport.totals.count} {t('cm.pages_ServiceRecovery.sikayetten')}</p>
                   </div>
                   <div className="space-y-2">
@@ -1113,7 +1110,7 @@ const ServiceRecovery = ({
                           <p className="text-sm font-medium">{b.label}</p>
                           <p className="text-xs text-gray-500">{b.count} adet</p>
                         </div>
-                        <p className="text-sm font-bold">{(b.total_amount || 0).toLocaleString('tr-TR')} TL</p>
+                        <p className="text-sm font-bold">{(b.total_amount || 0).toLocaleString(i18n.language)} TL</p>
                       </div>)}
                   </div>
                 </>}

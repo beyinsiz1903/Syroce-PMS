@@ -1,4 +1,5 @@
 import { t } from "i18next";
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -12,6 +13,7 @@ function AlertCard({
   onAck,
   onResolve
 }) {
+  const { t, i18n } = useTranslation();
   const sevMap = {
     critical: {
       bg: "bg-red-950/40 border-red-900/50",
@@ -45,7 +47,7 @@ function AlertCard({
             <p className="text-xs text-zinc-400 mt-0.5">{alert.category}{t("cm.pages_IncidentDashboardPage._blast")}{alert.blast_radius}</p>
             <p className="text-xs text-zinc-500 mt-1">{alert.runbook}</p>
             <div className="flex gap-2 mt-1 text-[10px] text-zinc-600">
-              <span><Clock className="w-3 h-3 inline mr-0.5" />{new Date(alert.fired_at).toLocaleString("tr-TR")}</span>
+              <span><Clock className="w-3 h-3 inline mr-0.5" />{new Date(alert.fired_at).toLocaleString(i18n.language)}</span>
               {alert.mtta && <span>{t("cm.pages_IncidentDashboardPage.mtta")}{alert.mtta}s</span>}
               {alert.mttr && <span>{t("cm.pages_IncidentDashboardPage.mttr")}{alert.mttr}s</span>}
             </div>
@@ -58,7 +60,8 @@ function AlertCard({
       </div>
     </div>;
 }
-export default function IncidentDashboardPage() {
+export default function IncidentDashboardPage({ user, tenant, onLogout, embedded }) {
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [alerts, setAlerts] = useState([]);
   const [incidents, setIncidents] = useState([]);
@@ -215,7 +218,7 @@ export default function IncidentDashboardPage() {
                       <Badge variant="outline" className={`text-[10px] ${inc.severity === "P1" ? "text-red-400 border-red-500/40" : inc.severity === "P2" ? "text-amber-400 border-amber-500/40" : "text-amber-400 border-amber-500/40"}`}>{inc.severity}</Badge>
                     </div>
                     <p className="text-xs text-zinc-500 mt-1">{inc.affected_service} | {inc.status}</p>
-                    <p className="text-[10px] text-zinc-600 mt-0.5">{new Date(inc.created_at).toLocaleString("tr-TR")}</p>
+                    <p className="text-[10px] text-zinc-600 mt-0.5">{new Date(inc.created_at).toLocaleString(i18n.language)}</p>
                   </div>)}
             </CardContent>
           </Card>

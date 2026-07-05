@@ -180,9 +180,7 @@ export default function ProductionGoLiveDashboard({
   tenant,
   onLogout
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

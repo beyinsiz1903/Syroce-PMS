@@ -1,4 +1,4 @@
-import { t } from "i18next";
+import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -23,7 +23,8 @@ function SeverityBadge({
 }
 function DiffView({
   before,
-  after
+  after,
+  t
 }) {
   if (!before && !after) return null;
   return <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
@@ -40,9 +41,11 @@ function DiffView({
 function TimelineEvent({
   event,
   expanded,
-  onToggle
+  onToggle,
+  t,
+  i18n
 }) {
-  const time = event.timestamp ? new Date(event.timestamp).toLocaleString("tr-TR") : "—";
+  const time = event.timestamp ? new Date(event.timestamp).toLocaleString(i18n.language) : "—";
   return <div data-testid={`timeline-event-${event.id || event.operation_name}`} className="border-l-2 border-gray-200 pl-4 pb-4 relative">
       <div className="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-gray-400" />
       <div className="flex items-start justify-between">
@@ -72,7 +75,7 @@ function TimelineEvent({
             {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           </Button>}
       </div>
-      {expanded && <DiffView before={event.before_snapshot} after={event.after_snapshot} />}
+      {expanded && <DiffView before={event.before_snapshot} after={event.after_snapshot} t={t} />}
     </div>;
 }
 export default function AuditTimelinePage({
@@ -80,6 +83,7 @@ export default function AuditTimelinePage({
   tenant,
   onLogout
 }) {
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [events, setEvents] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -223,15 +227,15 @@ export default function AuditTimelinePage({
                   <Input data-testid="filter-actor" placeholder={t("cm.pages_AuditTimelinePage.actor")} value={filters.actor} onChange={e => setFilters(p => ({
                     ...p,
                     actor: e.target.value
-                  }))} className="text-xs h-7 w-32" />
+                  }))} className="text-xs h-7 w-32 md:w-auto" />
                   <Input data-testid="filter-ip" placeholder={t("cm.pages_AuditTimelinePage.ip_adresi")} value={filters.ip_address} onChange={e => setFilters(p => ({
                     ...p,
                     ip_address: e.target.value
-                  }))} className="text-xs h-7 w-32" />
+                  }))} className="text-xs h-7 w-32 md:w-auto" />
                   <Input data-testid="filter-device" placeholder={t("cm.pages_AuditTimelinePage.cihaz_taray\u0131c\u0131")} value={filters.user_agent} onChange={e => setFilters(p => ({
                     ...p,
                     user_agent: e.target.value
-                  }))} className="text-xs h-7 w-40" />
+                  }))} className="text-xs h-7 w-40 md:w-auto" />
                 </div>
               </CardContent>
             </Card>
@@ -246,7 +250,7 @@ export default function AuditTimelinePage({
               <CardContent className="space-y-1">
                 {loading ? <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-                  </div> : events.length === 0 ? <div className="text-center py-8 text-gray-500 text-sm">{t("cm.pages_AuditTimelinePage.no_audit_events_found")}</div> : events.map((ev, idx) => <TimelineEvent key={ev.id || idx} event={ev} expanded={expandedIds.has(ev.id || idx)} onToggle={() => toggleExpand(ev.id || idx)} />)}
+                  </div> : events.length === 0 ? <div className="text-center py-8 text-gray-500 text-sm">{t("cm.pages_AuditTimelinePage.no_audit_events_found")}</div> : events.map((ev, idx) => <TimelineEvent key={ev.id || idx} event={ev} expanded={expandedIds.has(ev.id || idx)} onToggle={() => toggleExpand(ev.id || idx)} t={t} i18n={i18n} />)}
               </CardContent>
             </Card>
           </div>
@@ -281,7 +285,7 @@ export default function AuditTimelinePage({
                     <p className="text-xs text-gray-600">{entityTrail.entity_type}: {entityTrail.entity_id} ({entityTrail.count || 0}{t("cm.pages_AuditTimelinePage.events")}</p>
                     {(entityTrail.trail || []).map((t, i) => <div key={t.id || i} className="bg-gray-50 border border-gray-200 rounded p-2 text-xs">
                         <p className="text-gray-800">{t.operation_name || t.action}</p>
-                        <p className="text-gray-500">{t.timestamp ? new Date(t.timestamp).toLocaleString("tr-TR") : "—"}</p>
+                        <p className="text-gray-500">{t.timestamp ? new Date(t.timestamp).toLocaleString(i18n.language) : "—"}</p>
                       </div>)}
                   </div>}
               </CardContent>

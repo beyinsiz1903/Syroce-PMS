@@ -134,9 +134,7 @@ export default function RoomRequests({
   tenant,
   onLogout
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [department, setDepartment] = useState(ALL_DEPTS);
@@ -280,7 +278,7 @@ export default function RoomRequests({
                 <DialogDescription className="flex items-center gap-2 text-xs">
                   <Building className="w-3 h-3" /> {DEPT_LABEL[selected.department] || selected.department}
                   <span className="mx-1">•</span>
-                  <Clock className="w-3 h-3" /> {new Date(selected.created_at).toLocaleString("tr-TR")}
+                  <Clock className="w-3 h-3" /> {new Date(selected.created_at).toLocaleString(i18n.language)}
                 </DialogDescription>
               </DialogHeader>
 
@@ -304,7 +302,7 @@ export default function RoomRequests({
                   <div className="space-y-1 text-xs">
                     {(selected.status_history || []).map((h, i) => <div key={h.id || i} className="flex items-start gap-2 text-gray-600">
                         <span className="font-mono text-[10px] text-gray-400">
-                          {new Date(h.at).toLocaleString("tr-TR")}
+                          {new Date(h.at).toLocaleString(i18n.language)}
                         </span>
                         <span className="flex-1">
                           <strong>{h.by}</strong>

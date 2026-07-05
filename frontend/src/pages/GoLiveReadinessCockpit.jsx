@@ -15,9 +15,7 @@ const ChecklistItem = ({
   actionLabel,
   icon: Icon
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const statusConfig = {
     pass: {
       color: 'bg-emerald-100 text-emerald-700 border-emerald-200',
@@ -67,9 +65,7 @@ const ScoreBar = ({
   score,
   weight
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const getColor = s => {
     if (s >= 80) return 'bg-emerald-500';
     if (s >= 50) return 'bg-amber-500';
@@ -114,9 +110,7 @@ const GoLiveReadinessCockpit = ({
   tenant,
   onLogout
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const isSuperAdmin = user?.role === 'super_admin' || Array.isArray(user?.roles) && user.roles.includes('super_admin');
   const [loading, setLoading] = useState(true);

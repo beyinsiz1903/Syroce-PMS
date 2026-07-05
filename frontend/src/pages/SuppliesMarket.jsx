@@ -41,7 +41,7 @@ const fmt = (n) =>
   new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" }).format(Number(n || 0));
 
 export default function SuppliesMarket({ user, tenant, onLogout }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [tab, setTab] = useState("catalog");
   const [categories, setCategories] = useState([]);
   const [activeCategory, setActiveCategory] = useState("");
@@ -642,7 +642,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                       <div>
                         <div className="font-semibold">{o.order_no}</div>
                         <div className="text-xs text-gray-500">
-                          {o.vendor_name} · {new Date(o.created_at).toLocaleString("tr-TR")}
+                          {o.vendor_name} · {new Date(o.created_at).toLocaleString(i18n.language)}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">

@@ -27,17 +27,17 @@ function emptySummary() {
   return { by_sender: [], by_recipient_department: [], by_hour_of_day: [] };
 }
 
-function formatTs(ts) {
+function formatTs(ts, lang = 'tr-TR') {
   if (!ts) return "—";
   try {
-    return new Date(ts).toLocaleString("tr-TR");
+    return new Date(ts).toLocaleString(lang);
   } catch {
     return ts;
   }
 }
 
 function HourBar({ hour, count, max }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const pct = max > 0 ? Math.round((count / max) * 100) : 0;
   return (
     <div
@@ -57,7 +57,7 @@ function HourBar({ hour, count, max }) {
 }
 
 export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [filters, setFilters] = useState({
     start_date: "",
@@ -150,7 +150,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
               onClick={() => navigate(-1)}
               className="text-gray-600"
             >
-              <ArrowLeft className="w-4 h-4 mr-1" /> Geri
+              <ArrowLeft className="w-4 h-4 mr-1" /> {t('cm.pages_UrgentMessageReportPage.back')}
             </Button>
             <Button
               data-testid="refresh-btn"
@@ -244,7 +244,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
                     onClick={loadReport}
                     className="w-full h-8 text-xs"
                   >
-                    Uygula
+                    {t('cm.pages_UrgentMessageReportPage.apply')}
                   </Button>
                 </div>
               </div>
@@ -287,7 +287,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
                 </p>
                 {peakHour && (
                   <p className="text-[11px] text-gray-500">
-                    {peakHour.count} mesaj
+                    {peakHour.count} {t('cm.pages_UrgentMessageReportPage.message')}
                   </p>
                 )}
               </CardContent>
@@ -304,7 +304,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
                 {topSender && (
                   <p className="text-[11px] text-gray-500">
                     {topSender.sender_department || "—"} · {topSender.count}{" "}
-                    mesaj
+                    {t('cm.pages_UrgentMessageReportPage.message')}
                   </p>
                 )}
               </CardContent>
@@ -320,7 +320,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
                 </p>
                 {topDept && (
                   <p className="text-[11px] text-gray-500">
-                    {topDept.count} mesaj
+                    {topDept.count} {t('cm.pages_UrgentMessageReportPage.message')}
                   </p>
                 )}
               </CardContent>
@@ -334,7 +334,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm text-gray-700 flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-amber-600" />
-                    Acil Mesajlar
+                    {t('cm.pages_UrgentMessageReportPage.urgent_messages')}
                     <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 rounded px-1.5 py-0.5">
                       {events.length} {t('cm.pages_UrgentMessageReportPage.kayit')}
                     </span>
@@ -378,7 +378,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
                                 <div className="flex items-center gap-2 flex-wrap text-xs">
                                   <span className="text-gray-500 flex items-center gap-1">
                                     <Clock className="w-3 h-3" />
-                                    {formatTs(ev.timestamp)}
+                                    {formatTs(ev.timestamp, i18n.language)}
                                   </span>
                                   <span className="font-semibold text-gray-900 flex items-center gap-1">
                                     <UserIcon className="w-3 h-3" />
@@ -433,7 +433,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
                 </CardHeader>
                 <CardContent>
                   {summary.by_sender.length === 0 ? (
-                    <p className="text-xs text-gray-500">Veri yok</p>
+                    <p className="text-xs text-gray-500">{t('cm.pages_UrgentMessageReportPage.no_data')}</p>
                   ) : (
                     summary.by_sender.map((s) => (
                       <div
@@ -468,7 +468,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
                 </CardHeader>
                 <CardContent>
                   {summary.by_recipient_department.length === 0 ? (
-                    <p className="text-xs text-gray-500">Veri yok</p>
+                    <p className="text-xs text-gray-500">{t('cm.pages_UrgentMessageReportPage.no_data')}</p>
                   ) : (
                     summary.by_recipient_department.map((d) => (
                       <div

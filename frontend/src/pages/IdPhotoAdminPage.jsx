@@ -38,9 +38,9 @@ const EMPTY_FILTERS = {
   uploaded_before: "",
 };
 
-function fmtTs(ts) {
+function fmtTs(ts, lang = 'tr-TR') {
   if (!ts) return "—";
-  try { return new Date(ts).toLocaleString("tr-TR"); } catch { return ts; }
+  try { return new Date(ts).toLocaleString(lang); } catch { return ts; }
 }
 
 function fmtBytes(n) {
@@ -51,22 +51,22 @@ function fmtBytes(n) {
 }
 
 function ExpiryBadge({ expiresAt }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   if (!expiresAt) return <span className="text-gray-400">—</span>;
   let cls = "bg-emerald-50 text-emerald-700 border-emerald-200";
-  let label = "süre içinde";
+  let label = t("cm.pages_IdPhotoAdminPage.within_duration");
   try {
     const exp = new Date(expiresAt).getTime();
     const now = Date.now();
     const days = Math.floor((exp - now) / (1000 * 60 * 60 * 24));
     if (days < 0) {
       cls = "bg-rose-50 text-rose-700 border-rose-200";
-      label = "süresi dolmuş";
+      label = t("cm.pages_IdPhotoAdminPage.expired");
     } else if (days < 7) {
       cls = "bg-amber-50 text-amber-700 border-amber-200";
-      label = `${days} gün kaldı`;
+      label = `${days} ${t("cm.pages_IdPhotoAdminPage.days_left")}`;
     } else {
-      label = `${days} gün`;
+      label = `${days} ${t("cm.pages_IdPhotoAdminPage.days")}`;
     }
   } catch {
     /* keep defaults */
@@ -81,7 +81,7 @@ function ExpiryBadge({ expiresAt }) {
 }
 
 export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
@@ -379,7 +379,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
               onClick={() => navigate(-1)}
               className="text-gray-600"
             >
-              <ArrowLeft className="w-4 h-4 mr-1" /> Geri
+              <ArrowLeft className="w-4 h-4 mr-1" /> {t('cm.pages_IdPhotoAdminPage.back')}
             </Button>
             <Button
               data-testid="refresh-btn"

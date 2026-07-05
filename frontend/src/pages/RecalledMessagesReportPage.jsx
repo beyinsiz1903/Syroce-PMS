@@ -45,10 +45,10 @@ function emptySummary() {
   return { by_sender: [], by_priority: [], by_hour_of_day: [] };
 }
 
-function formatTs(ts) {
+function formatTs(ts, lang = 'tr-TR') {
   if (!ts) return "—";
   try {
-    return new Date(ts).toLocaleString("tr-TR");
+    return new Date(ts).toLocaleString(lang);
   } catch {
     return ts;
   }
@@ -76,7 +76,7 @@ function downloadCsv(filename, rows) {
 }
 
 function HourBar({ hour, count, max }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const pct = max > 0 ? Math.round((count / max) * 100) : 0;
   return (
     <div
@@ -93,11 +93,12 @@ function HourBar({ hour, count, max }) {
 }
 
 function DetailGrid({ data }) {
+  const { t } = useTranslation();
   const entries = Object.entries(data || {}).filter(
     ([, v]) => v !== null && v !== undefined && v !== "",
   );
   if (entries.length === 0) {
-    return <p className="text-[11px] text-slate-500 italic">Veri yok</p>;
+    return <p className="text-[11px] text-slate-500 italic">{t('cm.pages_RecalledMessagesReportPage.no_data')}</p>;
   }
   return (
     <dl className="grid grid-cols-1 gap-y-1 text-[11px]">
@@ -114,7 +115,7 @@ function DetailGrid({ data }) {
 }
 
 export default function RecalledMessagesReportPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
 
   // Draft (UI) vs applied (effective) filters: prevents per-keystroke fetches.
@@ -602,7 +603,7 @@ export default function RecalledMessagesReportPage() {
                             <div className="flex items-center gap-2 flex-wrap text-xs">
                               <span className="text-slate-500 flex items-center gap-1">
                                 <Clock className="w-3 h-3" />
-                                {formatTs(ev.timestamp)}
+                                {formatTs(ev.timestamp, i18n.language)}
                               </span>
                               <span className="font-semibold text-slate-900 flex items-center gap-1">
                                 <UserIcon className="w-3 h-3" />
@@ -663,7 +664,7 @@ export default function RecalledMessagesReportPage() {
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                               <div>
                                 <p className="text-[11px] text-slate-500 mb-1 font-semibold uppercase tracking-wide">
-                                  Orijinal mesaj
+                                  Orijinal {t('cm.pages_RecalledMessagesReportPage.message')}
                                 </p>
                                 <DetailGrid data={before} />
                               </div>
@@ -729,7 +730,7 @@ export default function RecalledMessagesReportPage() {
             </CardHeader>
             <CardContent>
               {summary.by_sender.length === 0 ? (
-                <p className="text-xs text-slate-500">Veri yok</p>
+                <p className="text-xs text-slate-500">{t('cm.pages_RecalledMessagesReportPage.no_data')}</p>
               ) : (
                 summary.by_sender.map((s) => (
                   <div
@@ -764,7 +765,7 @@ export default function RecalledMessagesReportPage() {
             </CardHeader>
             <CardContent>
               {summary.by_priority.length === 0 ? (
-                <p className="text-xs text-slate-500">Veri yok</p>
+                <p className="text-xs text-slate-500">{t('cm.pages_RecalledMessagesReportPage.no_data')}</p>
               ) : (
                 summary.by_priority.map((p) => (
                   <div

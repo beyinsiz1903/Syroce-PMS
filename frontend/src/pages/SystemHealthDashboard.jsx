@@ -49,9 +49,7 @@ const STATUS_META = {
 function HealthBadge({
   status
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const m = STATUS_META[(status || "").toLowerCase()] || STATUS_META.unknown;
   return <StatusBadge intent={m.intent}>{m.label}</StatusBadge>;
 }
@@ -108,9 +106,7 @@ function PanelCard({
   testId,
   permissionGated
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   return <Card data-testid={testId} className="bg-white border-slate-200">
       <CardHeader className="pb-3 flex flex-row items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -183,9 +179,7 @@ function ErrorSparkline({
   points,
   testId
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const series = Array.isArray(points) ? points : [];
   if (series.length < 2) {
     return <div data-testid={`${testId}-empty`} className="text-[11px] text-slate-400 italic">
@@ -214,16 +208,14 @@ function WSBridgePanel({
   wsBridge,
   testIdPrefix = "ws-bridge"
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   if (!wsBridge) return null;
   const detail = wsBridge.detail || {};
   const status = wsBridge.status || "unknown";
   const errors = detail.publish_errors ?? 0;
   const threshold = detail.publish_error_threshold ?? 10;
   const errorsClass = errors >= threshold ? "text-rose-700" : errors > 0 ? "text-amber-700" : "text-slate-900";
-  const lastErrAt = detail.last_publish_error_at ? new Date(detail.last_publish_error_at).toLocaleString("tr-TR") : null;
+  const lastErrAt = detail.last_publish_error_at ? new Date(detail.last_publish_error_at).toLocaleString(i18n?.language || 'tr-TR') : null;
   const mode = detail.single_instance_mode ? "Tek sunucu (Redis pasif)" : detail.active ? "Aktif (Redis pub/sub)" : "Pasif";
   const history = detail.metrics_history || {};
   const points = Array.isArray(history.points) ? history.points : [];
@@ -273,9 +265,7 @@ function RoomServiceLivePanel({
   roomService,
   testIdPrefix = "room-service"
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   if (!roomService) return null;
   const detail = roomService.detail || {};
   const status = roomService.status || "healthy";
@@ -312,9 +302,7 @@ function GMPropertyView({
   cmStatus,
   alerts
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const alertCount = alerts?.count || 0;
   const criticalAlerts = alerts?.critical || 0;
   const driftActive = cmStatus?.drift?.active_drifts || 0;
@@ -351,9 +339,7 @@ function GMPropertyView({
 
 /* ── Admin Tenant Panel ─────────────────────────────────── */
 function AdminTenantView(props) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const {
     cmStatus,
     queueHealth,
@@ -462,9 +448,7 @@ function AdminTenantView(props) {
 
 /* ── Superadmin Global Panel ─────────────────────────────── */
 function SuperadminGlobalView(props) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const {
     cmStatus,
     queueHealth,
@@ -622,9 +606,7 @@ function DashboardSkeleton() {
 export default function SystemHealthDashboard({
   user
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [cmStatus, setCmStatus] = useState(null);
@@ -961,7 +943,7 @@ export default function SystemHealthDashboard({
           activeForLabel = hours > 0 ? `${hours}sa ${mins}dk` : `${mins}dk`;
         }
       }
-      const sinceLabel = since ? new Date(since).toLocaleString("tr-TR") : null;
+      const sinceLabel = since ? new Date(since).toLocaleString(i18n?.language || 'tr-TR') : null;
       const topTenants = Array.isArray(rnlSummary.top_tenants) ? rnlSummary.top_tenants.slice(0, 2) : [];
       const topTenantsLabel = topTenants.length ? topTenants.map(tt => `${tt.name || tt.tenant_id}: ${tt.manual_required_count}`).join(" · ") : null;
       return <a data-testid="rnl-duplicates-widget" href="/app/admin-control-panel#rnl-duplicates" className="block p-3 rounded-lg border bg-rose-50 border-rose-200 hover:bg-rose-100/70 transition-colors">

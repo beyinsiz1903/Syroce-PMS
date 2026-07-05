@@ -72,9 +72,7 @@ const AgeBucket = ({
 const EventRow = ({
   event
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const style = SEVERITY_STYLE[event.severity] || SEVERITY_STYLE.info;
   const time = event.timestamp ? new Date(event.timestamp).toLocaleTimeString('tr-TR', {
     hour: '2-digit',
@@ -140,9 +138,7 @@ export default function RuntimeCockpitPage({
   tenant,
   onLogout
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [cockpit, setCockpit] = useState(null);

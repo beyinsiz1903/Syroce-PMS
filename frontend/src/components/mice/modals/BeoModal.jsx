@@ -79,6 +79,17 @@ const BeoModal = ({
   onClose
 }) => {
   const [sending, setSending] = useState(false);
+  const postToFolio = async () => {
+    try {
+      await axios.post(`/mice/events/${beoData.event.id}/post-to-folio`, { 
+        amount: beoData.event.totals?.grand_total || 0 
+      });
+      // In a real app we might use toast from somewhere, we assume it's available or we can just alert if not imported. Wait, toast is used above.
+      toast.success('BEO tutarı başarıyla Şirket Folyosuna işlendi.');
+    } catch(err) {
+      toast.error(err?.response?.data?.detail || 'Folyoya işlenemedi.');
+    }
+  };
   return <Modal title={`BEO — ${beoData.event.name}`} onClose={onClose} wide>
     <div className="space-y-3 text-sm">
       <Card><CardContent className="p-3 grid grid-cols-2 gap-2 text-xs">
@@ -195,6 +206,9 @@ const BeoModal = ({
       </CardContent></Card>
 
       <div className="text-right flex justify-end gap-2">
+        <Button variant="outline" className="text-indigo-600 border-indigo-200 hover:bg-indigo-50" onClick={postToFolio}>
+          Folyoya İşle
+        </Button>
         <Button variant="outline" onClick={() => downloadBeoPdf(beoData.event.id, beoData.event.name)}>
           <Download className="w-4 h-4 mr-1" /> PDF İndir
         </Button>

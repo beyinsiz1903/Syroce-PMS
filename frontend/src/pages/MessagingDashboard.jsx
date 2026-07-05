@@ -94,7 +94,7 @@ const CATEGORY_LABELS = {
 
 // ── Health → 3-state badge (Bug #7) ─────────────────────────────────────
 function ConnectionBadge({ provider }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   if (!provider) {
     return <StatusBadge intent="neutral" icon={AlertTriangle}>{t('cm.pages_MessagingDashboard.yapilandirilmamis')}</StatusBadge>;
   }
@@ -108,7 +108,7 @@ function ConnectionBadge({ provider }) {
 // Settings Tab
 // ════════════════════════════════════════════════
 function SettingsTab({ onChanged }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -358,7 +358,7 @@ function SettingsTab({ onChanged }) {
 // Templates Tab
 // ════════════════════════════════════════════════
 function TemplatesTab() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterChannel, setFilterChannel] = useState('all');
@@ -560,7 +560,7 @@ function TemplatesTab() {
 // Send Message Tab
 // ════════════════════════════════════════════════
 function SendTab() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [templates, setTemplates] = useState([]);
   const [sending, setSending] = useState(false);
   const [form, setForm] = useState({
@@ -734,7 +734,7 @@ function SendTab() {
 // Delivery Logs Tab
 // ════════════════════════════════════════════════
 function DeliveryLogsTab() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
@@ -805,7 +805,7 @@ function DeliveryLogsTab() {
                       {CATEGORY_LABELS[l.use_case] || l.use_case || l.channel}
                       {l.subject && ` · ${l.subject}`}
                       {' · '}
-                      {new Date(l.created_at).toLocaleString('tr-TR')}
+                      {new Date(l.created_at).toLocaleString(i18n.language)}
                     </p>
                   </div>
                   <StatusBadge intent={STATUS_INTENT[l.status] || 'neutral'}>
@@ -830,7 +830,7 @@ function DeliveryLogsTab() {
 // Metrics Tab
 // ════════════════════════════════════════════════
 function MetricsTab() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -919,7 +919,7 @@ const TRIGGER_INTENT = {
 };
 
 function AutomationTab() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [rules, setRules] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1147,7 +1147,7 @@ function AutomationTab() {
 // Scheduler Card (inside Automation Tab)
 // ════════════════════════════════════════════════
 function SchedulerCard() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -1249,7 +1249,7 @@ function SchedulerCard() {
         )}
         {status?.last_run_at && (
           <p className="text-[10px] text-slate-500 mt-2">
-            Son tarama: {new Date(status.last_run_at).toLocaleString('tr-TR')}
+            Son tarama: {new Date(status.last_run_at).toLocaleString(i18n.language)}
             {status.interval_hours && ` · Her ${status.interval_hours} saatte bir`}
           </p>
         )}
@@ -1262,7 +1262,7 @@ function SchedulerCard() {
 // WhatsApp HSM Template Tab (Bug #13)
 // ════════════════════════════════════════════════
 function WhatsAppTemplateTab() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [recipient, setRecipient] = useState('');
   const [templateName, setTemplateName] = useState('');
   const [languageCode, setLanguageCode] = useState('tr');
@@ -1360,7 +1360,7 @@ function WhatsAppTemplateTab() {
 // Activity Tab
 // ════════════════════════════════════════════════
 function ActivityTab() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -1454,7 +1454,7 @@ function ActivityTab() {
 // Main Dashboard
 // ════════════════════════════════════════════════
 export default function MessagingDashboard() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [refreshKey, setRefreshKey] = useState(0);
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 

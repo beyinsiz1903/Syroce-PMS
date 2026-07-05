@@ -46,9 +46,7 @@ export default function EncryptionManagementPage({
   tenant,
   onLogout
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
   const [dashboard, setDashboard] = useState(null);
@@ -595,7 +593,7 @@ export default function EncryptionManagementPage({
                             <span className="text-gray-600">{entry.key_id}</span> — {entry.action}
                           </p>
                           <p className="text-xs text-gray-600">
-                            {entry.actor} • {new Date(entry.timestamp).toLocaleString('tr-TR')}
+                            {entry.actor} • {new Date(entry.timestamp).toLocaleString(i18n.language)}
                           </p>
                         </div>
                       </div>)}
@@ -621,7 +619,7 @@ export default function EncryptionManagementPage({
                             <span className="text-gray-600">{entry.job_id}</span> — {entry.action}
                           </p>
                           <p className="text-xs text-gray-600">
-                            {entry.actor} • {new Date(entry.timestamp).toLocaleString('tr-TR')}
+                            {entry.actor} • {new Date(entry.timestamp).toLocaleString(i18n.language)}
                           </p>
                         </div>
                       </div>)}

@@ -152,7 +152,7 @@ export default function ProductionRolloutDashboard() {
       console.error(e);
     }
     setLoading(false);
-  }, [headers]);
+  }, [headers, token]);
   useEffect(() => {
     loadData();
   }, [loadData]);

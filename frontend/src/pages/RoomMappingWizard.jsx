@@ -12,9 +12,7 @@ const ScoreBar = ({
   value,
   color
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   if (value === null || value === undefined) return null;
   return <div className="flex items-center gap-2 text-xs">
       <span className="w-20 text-slate-500 shrink-0">{label}</span>
@@ -32,9 +30,7 @@ const ConfidenceBadge = ({
   breakdown,
   warnings
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   if (status === 'unmatched') {
     return <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200" data-testid="confidence-unmatched">Eslestirilmedi</Badge>;
@@ -87,9 +83,7 @@ const RoomMappingWizard = ({
   tenant,
   onLogout
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [step, setStep] = useState(0);
   const [connectors, setConnectors] = useState([]);
   const [selectedConnectorId, setSelectedConnectorId] = useState('');
@@ -490,7 +484,7 @@ const RoomMappingWizard = ({
                                 <span className="font-medium text-sm truncate">{sel.pms_entity_name}</span>
                                 {sel.pms_room_count > 0 && <Badge variant="outline" className="text-xs">{sel.pms_room_count} oda</Badge>}
                                 {sel.pms_capacity > 0 && <span className="text-[10px] text-slate-400">K:{sel.pms_capacity}</span>}
-                                {sel.pms_base_price > 0 && <span className="text-[10px] text-slate-400">{sel.pms_base_price.toLocaleString('tr-TR')}₺</span>}
+                                {sel.pms_base_price > 0 && <span className="text-[10px] text-slate-400">{sel.pms_base_price.toLocaleString(i18n.language)}₺</span>}
                               </div>
                             </div>
                             <ArrowLeftRight className="w-4 h-4 text-slate-400 shrink-0" />

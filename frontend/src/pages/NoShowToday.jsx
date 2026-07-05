@@ -65,7 +65,7 @@ const PRIMARY_LABEL = (b) =>
   b.confirmation_number || (b.id || '').substring(0, 8).toUpperCase();
 
 const NoShowToday = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [date, setDate] = useState(() => localISODate(new Date()));
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);

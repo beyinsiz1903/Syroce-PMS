@@ -34,9 +34,7 @@ const MicePage = ({
   tenant,
   onLogout
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [events, setEvents] = useState([]);
   const [summary, setSummary] = useState({});
   // tab badge counts come from /mice/events response; survives lazy-loaded
@@ -646,7 +644,7 @@ const MicePage = ({
                     <span className={`text-2xl font-bold ${text}`}>{count}</span>
                     <span className={`text-xs font-medium mb-1 ${label}`}>adet</span>
                   </div>
-                  <span className={`text-lg font-semibold mt-1 ${valText} opacity-90`}>₺{totalValue.toLocaleString('tr-TR')}</span>
+                  <span className={`text-lg font-semibold mt-1 ${valText} opacity-90`}>₺{totalValue.toLocaleString(i18n.language)}</span>
                 </div>
               </div>
             </div>
@@ -661,7 +659,7 @@ const MicePage = ({
               <Sparkles className="w-3.5 h-3.5" /> {t('cm.pages_MicePage.toplam_pipeline')}
             </span>
             <div className="flex items-end gap-2 mt-1">
-              <span className="text-2xl md:text-3xl font-bold text-violet-950 tracking-tight">₺{totalPipeline.toLocaleString('tr-TR')}</span>
+              <span className="text-2xl md:text-3xl font-bold text-violet-950 tracking-tight">₺{totalPipeline.toLocaleString(i18n.language)}</span>
             </div>
           </div>
         </div>
@@ -714,7 +712,7 @@ const MicePage = ({
                             {spaceById[sb.space_id]?.name || '?'} • {sb.setup_style}
                           </div>)}
                       </td>
-                      <td className="p-2 font-semibold">₺{(ev.totals?.grand_total || 0).toLocaleString('tr-TR')}</td>
+                      <td className="p-2 font-semibold">₺{(ev.totals?.grand_total || 0).toLocaleString(i18n.language)}</td>
                       <td className="p-2">
                         <Badge className={`${st.cls} border-0`}>{st.label}</Badge>
                         {ev.lost_reason && <div className="text-xs text-red-600 mt-1 max-w-[160px]" title={ev.lost_reason}>↳ {ev.lost_reason.slice(0, 30)}…</div>}
@@ -779,8 +777,8 @@ const MicePage = ({
                       </div>)}
                   </div>
                   <div className="text-sm">
-                    <span className="text-gray-500">Saatlik:</span> ₺{s.hourly_rate.toLocaleString('tr-TR')} •{' '}
-                    <span className="text-gray-500">{t('cm.pages_MicePage.gunluk')}</span> ₺{s.daily_rate.toLocaleString('tr-TR')}
+                    <span className="text-gray-500">Saatlik:</span> ₺{s.hourly_rate.toLocaleString(i18n.language)} •{' '}
+                    <span className="text-gray-500">{t('cm.pages_MicePage.gunluk')}</span> ₺{s.daily_rate.toLocaleString(i18n.language)}
                   </div>
                 </CardContent>
               </Card>)}
@@ -821,8 +819,8 @@ const MicePage = ({
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {m.price_per_person > 0 ? <div className="text-xl font-bold">₺{m.price_per_person.toLocaleString('tr-TR')}
-                      <span className="text-xs text-gray-500"> {t('cm.pages_MicePage.kisi')}</span></div> : <div className="text-xl font-bold">₺{m.flat_price.toLocaleString('tr-TR')}
+                  {m.price_per_person > 0 ? <div className="text-xl font-bold">₺{m.price_per_person.toLocaleString(i18n.language)}
+                      <span className="text-xs text-gray-500"> {t('cm.pages_MicePage.kisi')}</span></div> : <div className="text-xl font-bold">₺{m.flat_price.toLocaleString(i18n.language)}
                       <span className="text-xs text-gray-500"> sabit</span></div>}
                   {m.description && <div className="text-xs text-gray-600 mt-1">{m.description}</div>}
                   {m.courses?.length > 0 && <div className="text-xs text-gray-600 mt-2">

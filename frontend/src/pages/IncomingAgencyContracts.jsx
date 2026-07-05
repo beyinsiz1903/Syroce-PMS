@@ -168,7 +168,7 @@ const ContractCard = ({ contract, onApprove, onReject, onTerminate }) => {
 };
 
 const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
-  const { t: _t } = useTranslation();
+  const { t: _t, i18n } = useTranslation();
   const [tab, setTab] = useState('pending');
   const [loading, setLoading] = useState(false);
   const [contracts, setContracts] = useState([]);

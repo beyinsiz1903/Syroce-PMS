@@ -57,7 +57,7 @@ const confidenceClass = (c) => {
 };
 
 function Sparkline({ data = [], color = "#6366f1", height = 40 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   if (!data || data.length < 2) {
     return <div className="text-xs text-slate-400 italic">Veri yok</div>;
   }
@@ -93,7 +93,7 @@ function Sparkline({ data = [], color = "#6366f1", height = 40 }) {
 }
 
 export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [summary, setSummary] = useState(null);
   const [trends, setTrends] = useState(null);
   const [engineStatus, setEngineStatus] = useState(null);
@@ -429,7 +429,7 @@ export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
                       {ev.event_type?.replace("predictive.warning.", "") || "event"}
                     </Badge>
                     <span className="text-slate-500">
-                      {ev.created_at ? new Date(ev.created_at).toLocaleString("tr-TR") : ""}
+                      {ev.created_at ? new Date(ev.created_at).toLocaleString(i18n.language) : ""}
                     </span>
                   </div>
                   {ev.message && <div className="text-slate-700 mt-1">{ev.message}</div>}

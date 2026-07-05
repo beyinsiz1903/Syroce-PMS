@@ -33,9 +33,7 @@ function ProductCard({
   onLaunch,
   buying
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const Icon = ICONS[product.icon] || Package;
   const ownedSub = owned.find(s => s.product_key === product.key);
   const hasTrial = !!product.trial_days;
@@ -67,7 +65,7 @@ function ProductCard({
         <div className="mt-auto pt-3 border-t flex items-end justify-between">
           <div>
             <div className="text-2xl font-bold text-slate-900">
-              {product.price_try.toLocaleString("tr-TR")} ₺
+              {product.price_try.toLocaleString(i18n.language)} ₺
             </div>
             <div className="text-xs text-slate-500">
               {product.billing_type === "subscription" ? `${product.duration_days} günlük abonelik` : "Tek seferlik"}
@@ -100,9 +98,7 @@ export default function ModuleStorePage({
   tenant,
   onLogout
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [subs, setSubs] = useState([]);

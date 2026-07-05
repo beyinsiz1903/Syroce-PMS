@@ -1,3 +1,4 @@
+import i18n from '@/i18n';
 import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { FixedSizeList } from 'react-window';
 import { useNavigate } from 'react-router-dom';
@@ -59,10 +60,9 @@ const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }
   const { sorted, rooms, bookings, onBookingClick, onNoShow, onAssign, t } = data;
   const booking = sorted[index];
   if (!booking) return null;
-  const checkIn = booking.check_in
-    ? new Date(booking.check_in).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) : '-';
-  const checkOut = booking.check_out
-    ? new Date(booking.check_out).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) : '-';
+  const fmtDate = d => new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
+  const checkIn = booking.check_in ? fmtDate(booking.check_in) : '-';
+  const checkOut = booking.check_out ? fmtDate(booking.check_out) : '-';
   const urgency = getUnassignedUrgency(booking);
   const borderColor = UA_BORDER[urgency.level] || 'border-l-blue-400';
   const badgeColor = UA_BADGE[urgency.level] || 'bg-blue-100 text-blue-700';
@@ -109,7 +109,7 @@ const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }
             <span>{checkOut}</span>
           </div>
           {booking.total_amount > 0 && (
-            <span className="font-medium text-gray-700">{booking.total_amount.toLocaleString('tr-TR')} TL</span>
+            <span className="font-medium text-gray-700">{booking.total_amount.toLocaleString(i18n.language)} TL</span>
           )}
         </div>
         <div className="mt-3 flex items-center gap-2">
@@ -156,7 +156,7 @@ const addDaysToDateStr = (dStr, n) => {
 };
 
 const ReservationCalendar = ({ user, tenant, onLogout }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
 
   // Core state

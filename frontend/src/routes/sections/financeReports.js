@@ -1,5 +1,5 @@
 import {
-  InvoiceModule, NightAuditDashboard, NightAuditLogs, PendingAR,
+  InvoiceModule, GeneralLedgerModule, BankReconciliationModule, FnBCostingModule, NightAuditDashboard, NightAuditLogs, PendingAR,
   CityLedgerAccounts, EFaturaModule, Settings, BasicReports, ReportBuilder,
   OfficialGuestList, CorporateContractsDashboard, CorporateContractApprovals,
 } from "./lazyPages";
@@ -9,6 +9,9 @@ export function financeReportsRoutes({ p }) {
     // ── Finance ────────────────────────────────────────
     { path: "/invoices", ...p(InvoiceModule), wrapLayout: true, layoutModule: "invoices" },
     { path: "/app/invoices", ...p(InvoiceModule), wrapLayout: true, layoutModule: "invoices" },
+    { path: "/app/general-ledger", ...p(GeneralLedgerModule), wrapLayout: true, layoutModule: "invoices" },
+    { path: "/app/bank-reconciliation", ...p(BankReconciliationModule), wrapLayout: true, layoutModule: "invoices" },
+    { path: "/app/fnb-costing", ...p(FnBCostingModule), wrapLayout: true, layoutModule: "invoices" },
     { path: "/night-audit", ...p(NightAuditDashboard), wrapLayout: true, layoutModule: "night_audit" },
     { path: "/night-audit/logs", ...p(NightAuditLogs), wrapLayout: true, layoutModule: "reports" },
     { path: "/pending-ar", ...p(PendingAR), wrapLayout: true, layoutModule: "pending-ar" },

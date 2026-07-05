@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Merge, Users, DollarSign, FileText, Check, AlertTriangle, RefreshCw, ArrowRight, Lock, Search, ChevronDown, ChevronRight, CreditCard, Banknote, TrendingUp, Layers, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 const API = "";
-const fmtTL = v => (v || 0).toLocaleString('tr-TR', {
+const fmtTL = (v, locale = 'tr-TR') => (v || 0).toLocaleString(locale, {
   minimumFractionDigits: 2
 });
 
@@ -41,9 +41,7 @@ const BookingFolioDetail = ({
   groupId,
   bookingId
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -118,9 +116,7 @@ const GroupFolioPage = ({
   tenant,
   onLogout
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState(null);

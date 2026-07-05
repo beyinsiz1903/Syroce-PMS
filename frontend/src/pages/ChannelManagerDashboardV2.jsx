@@ -11,9 +11,7 @@ import { useTranslation } from 'react-i18next';
 const StatusBadge = ({
   status
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const map = {
     active: {
       cls: 'bg-emerald-100 text-emerald-800',
@@ -45,9 +43,7 @@ const StatusBadge = ({
 const ProviderBadge = ({
   provider
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const colors = {
     hotelrunner: 'bg-blue-100 text-blue-700',
     exely: 'bg-indigo-100 text-indigo-700',
@@ -78,9 +74,7 @@ const KpiCard = ({
 const TimeAgo = ({
   ts
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   if (!ts) return <span className="text-slate-400">—</span>;
   const diff = Date.now() - new Date(ts).getTime();
   const mins = Math.floor(diff / 60000);
@@ -97,9 +91,7 @@ const ChannelManagerDashboardV2 = ({
   onLogout,
   embedded = false
 }) => {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const isSuperAdmin = user?.role === 'super_admin' || Array.isArray(user?.roles) && user.roles.includes('super_admin');
   const [data, setData] = useState(null);

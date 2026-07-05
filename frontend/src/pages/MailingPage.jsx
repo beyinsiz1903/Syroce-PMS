@@ -19,7 +19,7 @@ import { useTranslation } from 'react-i18next';
 const API = '/mailing';
 
 export default function MailingPage({ user, tenant, onLogout }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [credits, setCredits] = useState(null);
   const [templates, setTemplates] = useState([]);
   const [recipients, setRecipients] = useState([]);
@@ -78,21 +78,21 @@ export default function MailingPage({ user, tenant, onLogout }) {
           <KpiCard
             icon={Wallet}
             label="Kalan Kredi"
-            value={credits.balance.toLocaleString('tr-TR')}
+            value={credits.balance.toLocaleString(i18n.language)}
             sub={credits.balance < 50 ? 'Düşük bakiye — yükleme önerilir' : 'Kullanıma hazır'}
             intent={credits.balance < 50 ? 'warning' : 'info'}
           />
           <KpiCard
             icon={Send}
             label={t('cm.pages_MailingPage.bugun_gonderilen')}
-            value={(credits.sent_today ?? 0).toLocaleString('tr-TR')}
+            value={(credits.sent_today ?? 0).toLocaleString(i18n.language)}
             sub="Son 24 saat"
             intent="default"
           />
           <KpiCard
             icon={BarChart3}
             label={t('cm.pages_MailingPage.toplam_gonderim')}
-            value={(credits.lifetime_used ?? 0).toLocaleString('tr-TR')}
+            value={(credits.lifetime_used ?? 0).toLocaleString(i18n.language)}
             sub="Hesabın açıldığı günden bu yana"
             intent="success"
           />
@@ -135,7 +135,7 @@ export default function MailingPage({ user, tenant, onLogout }) {
 
 // ── Campaign Tab ──────────────────────────────────────────────
 function CampaignTab({ templates, recipients, credits, onSent }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [name, setName] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [subject, setSubject] = useState('');
@@ -348,7 +348,7 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
 
 // ── Automations Tab ──────────────────────────────────────────
 function AutomationsTab({ automations, templates, onChanged }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const noTemplates = templates.length === 0;
 
@@ -436,7 +436,7 @@ function AutomationsTab({ automations, templates, onChanged }) {
                 </div>
                 {a.last_run_at && (
                   <p className="text-xs text-muted-foreground mt-2">
-                    {t('cm.pages_MailingPage.son_calisma')} {new Date(a.last_run_at).toLocaleString('tr-TR')} • {a.last_sent_count} {t('cm.pages_MailingPage.gonderim')}
+                    {t('cm.pages_MailingPage.son_calisma')} {new Date(a.last_run_at).toLocaleString(i18n.language)} • {a.last_sent_count} {t('cm.pages_MailingPage.gonderim')}
                   </p>
                 )}
               </div>
@@ -456,7 +456,7 @@ function AutomationsTab({ automations, templates, onChanged }) {
 
 // ── Templates Tab ──────────────────────────────────────────────
 function TemplatesTab({ templates, onChanged }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [editing, setEditing] = useState(null);
   const empty = { name: '', subject: '', html: '', description: '' };
 
@@ -524,7 +524,7 @@ function TemplatesTab({ templates, onChanged }) {
 }
 
 function TemplateEditor({ initial, onSave, onCancel }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [d, setD] = useState(initial);
   return (
     <Card>
@@ -558,7 +558,7 @@ function TemplateEditor({ initial, onSave, onCancel }) {
 
 // ── History Tab ──────────────────────────────────────────────
 function HistoryTab({ campaigns, loading }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [stats, setStats] = useState(null);
   useEffect(() => {
     axios.get(`${API}/stats`).then(r => setStats(r.data)).catch((e) => {
@@ -604,7 +604,7 @@ function HistoryTab({ campaigns, loading }) {
                 <div>
                   <div className="font-medium">{c.name} {c.is_test && <Badge variant="outline" className="ml-2">Test</Badge>}</div>
                   <div className="text-xs text-muted-foreground">
-                    {new Date(c.created_at).toLocaleString('tr-TR')} • {c.subject}
+                    {new Date(c.created_at).toLocaleString(i18n.language)} • {c.subject}
                   </div>
                 </div>
                 <div className="text-right">
@@ -633,7 +633,7 @@ function StatBox({ label, value, sub, color = "text-foreground" }) {
 
 // ── Credits Tab ──────────────────────────────────────────────
 function CreditsTab({ credits }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   if (!credits) return null;
 
@@ -643,21 +643,21 @@ function CreditsTab({ credits }) {
         <KpiCard
           icon={Wallet}
           label="Kalan Kredi"
-          value={(credits.balance ?? 0).toLocaleString('tr-TR')}
+          value={(credits.balance ?? 0).toLocaleString(i18n.language)}
           sub="Hesabınızda kullanılabilir"
           intent="info"
         />
         <KpiCard
           icon={Send}
           label={t('cm.pages_MailingPage.toplam_gonderilen')}
-          value={(credits.lifetime_used ?? 0).toLocaleString('tr-TR')}
+          value={(credits.lifetime_used ?? 0).toLocaleString(i18n.language)}
           sub="Hesabın açıldığı günden bu yana"
           intent="default"
         />
         <KpiCard
           icon={Gift}
           label="Hediye Kredi"
-          value={(credits.free_granted ?? 0).toLocaleString('tr-TR')}
+          value={(credits.free_granted ?? 0).toLocaleString(i18n.language)}
           sub="Karşılama paketi"
           intent="success"
         />

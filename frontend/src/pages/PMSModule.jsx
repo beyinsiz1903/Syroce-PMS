@@ -84,7 +84,7 @@ import { useSetupStatus } from '@/hooks/useSetupStatus';
 import LiteSetupBanner from '@/components/LiteSetupBanner';
 
 const PMSModule = ({ user, tenant, onLogout }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const plan =
     tenant?.subscription_plan ||
     tenant?.plan ||

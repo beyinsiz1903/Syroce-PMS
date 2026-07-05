@@ -24,7 +24,7 @@ const fmt = (v) => {
 };
 
 const TravelAgentARAP = ({ user, tenant, onLogout }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [activeTab, setActiveTab] = useState('overview');
 
   const [summary, setSummary] = useState(null);

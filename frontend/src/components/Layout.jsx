@@ -23,7 +23,7 @@ import {
   Layers, BarChart3, Bot, Building2, Zap, Crown, Shield, Users, ClipboardCheck,
   ChevronDown, Server, CalendarCheck, X,
   BrainCircuit, MessageSquare, Clock, Rocket, Download
-} from 'lucide-react';
+, Utensils, Briefcase, ConciergeBell} from 'lucide-react';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import LanguageSelector from '@/components/LanguageSelector';
 import NotificationBell from '@/components/NotificationBell';
@@ -85,14 +85,14 @@ const ICON_BY_KEY = {
 };
 
 const GROUP_ICONS = {
-  operations: Hotel,
-  reservations: CalendarCheck,
-  finance: DollarSign,
-  channels: Layers,
+  frontdesk: ConciergeBell,
+  sales: TrendingUp,
+  guest: Users,
+  operations: Building2,
+  fb: Utensils,
+  backoffice: Briefcase,
   reports: BarChart3,
-  advanced: Zap,
-  infrastructure: Server,
-  admin: Shield,
+  system: SettingsIcon,
 };
 
 const TIER_CONFIG = {
@@ -285,12 +285,12 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                   data-testid={`nav-group-${groupDef.id}-button`}
                 >
                   <GroupIcon className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden 2xl:inline font-medium">{label}</span>
+                  <span className="hidden lg:inline font-medium">{label}</span>
                   <ChevronDown className={`w-2.5 h-2.5 shrink-0 ${active ? 'text-white/70' : 'text-gray-400'}`} />
                 </Button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="2xl:hidden">
+            <TooltipContent side="bottom" className="lg:hidden">
               <p>{label}</p>
             </TooltipContent>
           </Tooltip>
@@ -357,7 +357,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm shrink-0">
         <div className="px-3 py-1.5">
-          <div className="flex items-center h-10">
+          <div className="flex items-center min-h-[44px]">
             {/* Logo area - fixed width */}
             <div
               className="flex items-center gap-2 shrink-0 cursor-pointer mr-3"
@@ -373,7 +373,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
             </div>
 
             {/* Desktop Navigation - scrollable */}
-            <nav ref={navRef} className="hidden md:flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent' }}>
+            <nav ref={navRef} className="hidden md:flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto pb-1.5 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-gray-400" style={{ scrollbarWidth: 'auto', scrollbarColor: '#94a3b8 transparent' }}>
               {/* Dashboard */}
               {standaloneItems.filter((item) => item.key === 'dashboard').map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
@@ -395,10 +395,10 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                           data-testid={`nav-${item.key}-button`}
                         >
                           <Icon className="w-3.5 h-3.5 shrink-0" />
-                          <span className="hidden 2xl:inline font-medium">{t(`navKeys.${item.key}`, item.label)}</span>
+                          <span className="hidden lg:inline font-medium">{t(`navKeys.${item.key}`, item.label)}</span>
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent side="bottom" className="2xl:hidden">
+                      <TooltipContent side="bottom" className="lg:hidden">
                         <p>{t(`navKeys.${item.key}`, item.label)}</p>
                       </TooltipContent>
                     </Tooltip>

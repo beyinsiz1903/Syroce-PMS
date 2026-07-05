@@ -19,9 +19,7 @@ export default function ChannelConnections({
   onLogout,
   embedded = false
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
@@ -587,9 +585,7 @@ function ProviderCard({
   credentialFields,
   extraInfo
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const connected = data?.connected;
   const mappings = data?.room_mappings_count || 0;
   const colorMap = {

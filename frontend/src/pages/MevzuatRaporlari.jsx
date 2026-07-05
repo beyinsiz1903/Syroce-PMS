@@ -46,9 +46,7 @@ function RefreshButton({
   loading,
   label = "Yenile"
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   return <Button variant="outline" size="sm" onClick={onClick} disabled={loading}>
       {loading ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1.5" />}
       {label}
@@ -58,9 +56,7 @@ export default function MevzuatRaporlari({
   user,
   tenant
 }) {
-  const {
-    t
-  } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [tab, setTab] = useState("tuik");
   const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "super_admin";

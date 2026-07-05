@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next';
 import EmptyState from '@/components/EmptyState';
 
 const GroupReservations = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [groups, setGroups] = useState([]);
   const [blocks, setBlocks] = useState([]);
   const [showDialog, setShowDialog] = useState(false);

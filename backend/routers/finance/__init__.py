@@ -7,10 +7,12 @@ from . import (
     cashiering,
     dashboards,
     folio,
+    general_ledger,
     integrations,
     invoices,
     konaklama_vergisi,
     mobile,
+    open_banking,
 )
 
 router = APIRouter(prefix="/api", tags=["finance"])
@@ -18,12 +20,14 @@ router = APIRouter(prefix="/api", tags=["finance"])
 for _sub in (
     integrations,
     folio,
+    general_ledger,
     invoices,
     accounting,
     mobile,
     dashboards,
     cashiering,
     konaklama_vergisi,
+    open_banking,
 ):
     router.include_router(_sub.router)
 
