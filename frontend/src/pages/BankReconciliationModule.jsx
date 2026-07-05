@@ -169,7 +169,7 @@ export default function BankReconciliationModule() {
                             Eşleşti: {txn.matched_with}
                           </span>
                         ) : (
-                          <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded text-[10px] font-medium">
+                          <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded text-[10px] font-medium">
                             Eşleşme Bekliyor
                           </span>
                         )}
@@ -188,7 +188,7 @@ export default function BankReconciliationModule() {
         {/* Sağ Taraf: PMS Faturalar / Cari */}
         <div className="bg-white border rounded-lg shadow-sm flex flex-col">
           <div className="p-4 border-b flex items-center gap-2 bg-gray-50 rounded-t-lg">
-            <FileText className="w-5 h-5 text-purple-600" />
+            <FileText className="w-5 h-5 text-indigo-600" />
             <h2 className="text-lg font-bold text-gray-800">Açık Faturalar & Cari (PMS)</h2>
           </div>
           <div className="flex-1 overflow-auto p-0">
@@ -200,7 +200,7 @@ export default function BankReconciliationModule() {
                     key={inv.id}
                     onClick={() => setSelectedInvoice(inv)}
                     className={`p-4 cursor-pointer transition-colors ${
-                      isSelected ? 'bg-purple-50 border-l-4 border-purple-500' : 'hover:bg-gray-50 border-l-4 border-transparent'
+                      isSelected ? 'bg-indigo-50 border-l-4 border-indigo-500' : 'hover:bg-gray-50 border-l-4 border-transparent'
                     }`}
                   >
                     <div className="flex justify-between items-start mb-1">
@@ -240,7 +240,7 @@ export default function BankReconciliationModule() {
                 <div><strong>Fatura Borcu:</strong> {selectedInvoice?.amount?.toLocaleString('tr-TR')} ₺ ({selectedInvoice?.number})</div>
               </div>
               {selectedTxn?.amount !== selectedInvoice?.amount && (
-                <div className="bg-orange-50 border border-orange-200 text-orange-800 p-3 rounded text-sm flex gap-2">
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded text-sm flex gap-2">
                   <AlertCircle className="w-5 h-5 shrink-0" />
                   <p>Dikkat: Gelen tutar ile fatura tutarı eşleşmiyor! Kalan bakiye cari hesaba işlenecektir (Kısmi tahsilat).</p>
                 </div>

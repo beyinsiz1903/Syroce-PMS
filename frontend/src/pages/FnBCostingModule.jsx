@@ -150,7 +150,7 @@ export default function FnBCostingModule() {
               <h2 className="text-lg font-bold text-gray-800">Kalem Bazlı Maliyet Sapmaları</h2>
               <button 
                 onClick={() => setPostDialog(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm font-medium"
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm font-medium"
               >
                 <Wallet className="w-4 h-4" />
                 Satılan Malın Maliyetini (SMM) Muhasebeleştir
@@ -236,7 +236,7 @@ export default function FnBCostingModule() {
                 <strong> {variance.actual_cost?.toLocaleString('tr-TR')} ₺</strong>.
                 Bu tutarı Genel Muhasebe sistemine (Satılan Malın Maliyeti / 740 & 150) aktarmak istiyor musunuz?
               </p>
-              <div className="bg-purple-50 border border-purple-200 text-purple-800 p-3 rounded text-sm flex gap-2">
+              <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 p-3 rounded text-sm flex gap-2">
                 <AlertCircle className="w-5 h-5 shrink-0" />
                 <p>Not: Stok değerlemesi "Gerçekleşen Sayım" baz alınarak fişe işlenecektir.</p>
               </div>
@@ -252,7 +252,7 @@ export default function FnBCostingModule() {
               <button 
                 onClick={handlePostCost} 
                 disabled={posting}
-                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
+                className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
               >
                 {posting ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Muhasebeye Gönder'}
               </button>
