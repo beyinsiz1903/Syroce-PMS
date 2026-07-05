@@ -281,8 +281,17 @@ export default function ContactCenterDashboard() {
                           {isInbound ? t('contactCenter.inbound', 'Gelen') : t('contactCenter.outbound', 'Giden')}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
-                        {call.caller_phone_masked || t('contactCenter.unknownNumber', "Bilinmeyen Numara")}
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-900">
+                        {call.caller_name ? (
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-sm">{call.caller_name}</span>
+                            <span className="text-xs text-gray-500">{call.caller_phone_masked}</span>
+                          </div>
+                        ) : (
+                          <span className="font-medium text-sm">
+                            {call.caller_phone_masked || t('contactCenter.unknownNumber', "Bilinmeyen Numara")}
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${

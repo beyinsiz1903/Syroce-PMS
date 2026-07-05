@@ -238,6 +238,67 @@ async def list_calls(
     return {"count": len(items), "items": items}
 
 
+class CallTransfer(BaseModel):
+    target: str
+
+@router.post("/contact-center/voice/live/{call_sid}/transfer")
+async def transfer_live_call(
+    call_sid: str,
+    payload: CallTransfer,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    """Aktif bir çağrıyı başka bir hedefe yönlendirir (Twilio REST API)."""
+    cfg = get_twilio_voice_config()
+    if not cfg.can_validate_signatures:
+        raise HTTPException(status_code=503, detail="Twilio yapılandırılmadı.")
+    try:
+        from twilio.rest import Client
+        client = Client(cfg.account_sid, cfg.auth_token)
+        if payload.target.startswith("client:"):
+            client_id = payload.target.replace("client:", "")
+            twiml = f"<Response><Dial><Client>{client_id}</Client></Dial></Response>"
+        else:
+            twiml = f'<Response><Dial>{payload.target}</Dial></Response>'
+        
+        client.calls(call_sid).update(twiml=twiml)
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"[CC-VOICE] Aktarma başarısız: {e}")
+        raise HTTPException(status_code=500, detail="Çağrı aktarılamadı.")
+
+class CallWhatsApp(BaseModel):
+    phone: str
+    template_name: str
+    language_code: str = "tr"
+
+@router.post("/contact-center/voice/live/{call_sid}/whatsapp")
+async def send_whatsapp_during_call(
+    call_sid: str,
+    payload: CallWhatsApp,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    """Çağrı esnasında müşteriye tek tıkla şablon gönderir (Cross-Channel)."""
+    from domains.contact_center.provider import get_communication_provider
+    provider = get_communication_provider("whatsapp")
+    if not provider:
+        raise HTTPException(status_code=503, detail="WhatsApp sağlayıcısı bulunamadı.")
+    
+    # Provider üzerinden doğrudan şablon gönderimi (Geçmişe/Conversation'a bağlamak Opsiyonel)
+    res = await provider.send_message(
+        tenant_id=current_user.tenant_id,
+        to_phone=payload.phone,
+        message_type="template",
+        template_name=payload.template_name,
+        language_code=payload.language_code,
+    )
+    if not res.get("success"):
+        raise HTTPException(status_code=502, detail="WhatsApp gönderimi başarısız.")
+    return {"status": "ok"}
+
 class CallUpdate(BaseModel):
     notes: str | None = None
     disposition: str | None = None

@@ -97,6 +97,20 @@ async def _record_call(
             "answered_at": None,
             "ended_at": None,
         }
+        
+        # CRM Lookup: Arayan numarayı Guests tablosunda bul ve adını kaydet
+        if phone:
+            try:
+                from security.encrypted_lookup import build_guest_pii_query, decrypt_guest_doc
+                guest_doc = await db.guests.find_one({"tenant_id": tenant_id, **build_guest_pii_query("phone", phone)})
+                if guest_doc:
+                    guest_doc = decrypt_guest_doc(guest_doc)
+                    name = guest_doc.get("name") or f"{guest_doc.get('first_name', '')} {guest_doc.get('last_name', '')}".strip()
+                    if name:
+                        set_on_insert["caller_name_enc"] = svc.encrypt_value(name)
+            except Exception as e:
+                logger.debug("[CC-VOICE] CRM misafir araması başarısız: %s", e)
+
         try:
             doc = await db[_COLLECTION].find_one_and_update(
                 {"tenant_id": tenant_id, "provider_call_sid": provider_call_sid},

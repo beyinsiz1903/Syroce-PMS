@@ -177,7 +177,14 @@ export default function CallHistory() {
                   <div className="flex items-center gap-2">
                     <DirectionBadge direction={call.direction} />
                     <span className="truncate text-sm font-medium text-gray-900">
-                      {call.caller_phone_masked || "Bilinmeyen numara"}
+                      {call.caller_name ? (
+                        <div className="flex flex-col">
+                          <span>{call.caller_name}</span>
+                          <span className="text-xs text-gray-500 font-normal">{call.caller_phone_masked}</span>
+                        </div>
+                      ) : (
+                        call.caller_phone_masked || "Bilinmeyen numara"
+                      )}
                     </span>
                   </div>
                   <div className="mt-1 flex items-center gap-2 text-[11px] text-gray-500">
