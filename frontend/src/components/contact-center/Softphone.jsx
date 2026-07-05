@@ -20,7 +20,7 @@ import CallHistory from "./CallHistory";
 import { SOFTPHONE_DIAL_EVENT } from "@/lib/softphone";
 
 const TWILIO_VOICE_SDK_URL =
-  "https://sdk.twilio.com/js/voice/releases/2.12.3/twilio.min.js";
+  "https://unpkg.com/@twilio/voice-sdk@2.11.2/dist/twilio.min.js";
 
 let _sdkPromise = null;
 
