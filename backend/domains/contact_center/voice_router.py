@@ -602,8 +602,8 @@ async def voice_debug_config():
     return {
         "has_account_sid": bool(cfg.account_sid),
         "has_auth_token": bool(cfg.auth_token),
-        "has_api_key": bool(cfg.api_key),
-        "has_api_secret": bool(cfg.api_secret),
+        "has_api_key": bool(cfg.api_key_sid),
+        "has_api_secret": bool(cfg.api_key_secret),
         "has_twiml_app_sid": bool(cfg.twiml_app_sid),
         "bypass_signature": os.getenv("BYPASS_TWILIO_SIGNATURE"),
         "testing": os.getenv("TESTING"),
