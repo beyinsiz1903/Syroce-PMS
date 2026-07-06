@@ -1067,6 +1067,8 @@ def test_parse_client_identity_cases():
     assert _parse_client_identity("client:tenant_demo_user__user_123") == ("tenant_demo_user", "user_123")
     
     # 6. Malformed input
+    assert _parse_client_identity("client:t1__u1__extra") == (None, None)
+    assert _parse_client_identity("client:t1:u1:extra") == (None, None)
     assert _parse_client_identity("client:noseparator") == (None, None)
     assert _parse_client_identity("client:no-separator") == (None, None)
     assert _parse_client_identity("client:") == (None, None)

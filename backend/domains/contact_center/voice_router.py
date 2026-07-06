@@ -623,6 +623,9 @@ def _parse_client_identity(value: str) -> tuple[str | None, str | None]:
     if raw.startswith("client:"):
         raw = raw[len("client:") :]
 
+    if raw.count("__") > 1 or raw.count(":") > 1:
+        return None, None
+
     # 1. Geleneksel iki noktalı format
     if ":" in raw:
         parts = raw.split(":", 1)
