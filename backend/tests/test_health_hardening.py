@@ -1,13 +1,11 @@
-import os
-import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
-from server import app
+from core.secrets.config import reset_config_cache
 from core.security import get_current_user
-from models.schemas import User
 from models.enums import UserRole
-from core.secrets.config import get_secrets_config, reset_config_cache
+from models.schemas import User
+from server import app
 
 # Instantiate client globally to match test_uploads_auth.py and prevent loop mismatch errors
 client = TestClient(app)
@@ -41,7 +39,7 @@ def test_debug_config_returns_404_in_production(monkeypatch):
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("SECRETS_PROVIDER", "env")
     reset_config_cache()
-    
+
     async def mock_super_admin():
         return User(
             id="admin_id",
@@ -50,9 +48,9 @@ def test_debug_config_returns_404_in_production(monkeypatch):
             name="Super Admin",
             role=UserRole.SUPER_ADMIN,
         )
-    
+
     app.dependency_overrides[get_current_user] = mock_super_admin
-    
+
     try:
         response = client.get("/api/voice/debug-config")
         assert response.status_code == 404
@@ -65,7 +63,7 @@ def test_debug_config_returns_403_for_non_super_admin(monkeypatch):
     # Emulate development env
     monkeypatch.setenv("APP_ENV", "development")
     reset_config_cache()
-    
+
     async def mock_regular_user():
         return User(
             id="user_id",
@@ -74,9 +72,9 @@ def test_debug_config_returns_403_for_non_super_admin(monkeypatch):
             name="Regular User",
             role=UserRole.ADMIN,
         )
-    
+
     app.dependency_overrides[get_current_user] = mock_regular_user
-    
+
     try:
         response = client.get("/api/voice/debug-config")
         assert response.status_code == 403
@@ -89,7 +87,7 @@ def test_debug_config_returns_config_for_super_admin_in_dev(monkeypatch):
     # Emulate development env
     monkeypatch.setenv("APP_ENV", "development")
     reset_config_cache()
-    
+
     async def mock_super_admin():
         return User(
             id="admin_id",
@@ -98,9 +96,9 @@ def test_debug_config_returns_config_for_super_admin_in_dev(monkeypatch):
             name="Super Admin",
             role=UserRole.SUPER_ADMIN,
         )
-    
+
     app.dependency_overrides[get_current_user] = mock_super_admin
-    
+
     try:
         response = client.get("/api/voice/debug-config")
         assert response.status_code == 200

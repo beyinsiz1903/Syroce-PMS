@@ -26,8 +26,8 @@ from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 
 from core.database import db
-from core.security import _is_super_admin, get_current_user
 from core.secrets.config import get_secrets_config
+from core.security import _is_super_admin, get_current_user
 from domains.contact_center.read_models import call_to_dto
 from domains.contact_center.voice_config import (
     get_recording_storage_config,
@@ -244,6 +244,7 @@ async def list_calls(
 class CallTransfer(BaseModel):
     target: str
 
+
 @router.post("/contact-center/voice/live/{call_sid}/transfer")
 async def transfer_live_call(
     call_sid: str,
@@ -258,12 +259,13 @@ async def transfer_live_call(
         raise HTTPException(status_code=503, detail="Twilio yapılandırılmadı.")
     try:
         from twilio.rest import Client
+
         client = Client(cfg.account_sid, cfg.auth_token)
         if payload.target.startswith("client:"):
             client_id = payload.target.replace("client:", "")
             twiml = f"<Response><Dial><Client>{client_id}</Client></Dial></Response>"
         else:
-            twiml = f'<Response><Dial>{payload.target}</Dial></Response>'
+            twiml = f"<Response><Dial>{payload.target}</Dial></Response>"
 
         client.calls(call_sid).update(twiml=twiml)
         return {"status": "ok"}
@@ -271,10 +273,12 @@ async def transfer_live_call(
         logger.error(f"[CC-VOICE] Aktarma başarısız: {e}")
         raise HTTPException(status_code=500, detail="Çağrı aktarılamadı.")
 
+
 class CallWhatsApp(BaseModel):
     phone: str
     template_name: str
     language_code: str = "tr"
+
 
 @router.post("/contact-center/voice/live/{call_sid}/whatsapp")
 async def send_whatsapp_during_call(
@@ -286,6 +290,7 @@ async def send_whatsapp_during_call(
 ):
     """Çağrı esnasında müşteriye tek tıkla şablon gönderir (Cross-Channel)."""
     from domains.contact_center.provider import get_communication_provider
+
     provider = get_communication_provider("whatsapp")
     if not provider:
         raise HTTPException(status_code=503, detail="WhatsApp sağlayıcısı bulunamadı.")
@@ -303,9 +308,11 @@ async def send_whatsapp_during_call(
         raise HTTPException(status_code=502, detail="WhatsApp gönderimi başarısız.")
     return {"status": "ok"}
 
+
 class CallUpdate(BaseModel):
     notes: str | None = None
     disposition: str | None = None
+
 
 @router.patch("/contact-center/calls/{call_id}")
 async def update_call(
@@ -668,6 +675,7 @@ async def voice_debug_config(current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Forbidden")
     try:
         from core.security import JWT_EXPIRATION_MINUTES as resolved_jwt_min
+
         cfg = get_twilio_voice_config()
         return {
             "has_account_sid": bool(cfg.account_sid),
@@ -684,6 +692,7 @@ async def voice_debug_config(current_user: User = Depends(get_current_user)):
         }
     except Exception as e:
         import traceback
+
         return {
             "status": "error",
             "message": str(e),
@@ -780,10 +789,7 @@ async def voice_outbound(request: Request):
     tenant_default_mapping_found = False
 
     if not tenant_id:
-        logger.warning(
-            f"[CC-VOICE-DIAG] Outbound failed: tenant_resolved=False "
-            f"agent_identity_present={agent_identity_present}"
-        )
+        logger.warning(f"[CC-VOICE-DIAG] Outbound failed: tenant_resolved=False agent_identity_present={agent_identity_present}")
         return Response(
             content=provider.say_fallback("Çağrı başlatılamadı."),
             media_type=_XML,
