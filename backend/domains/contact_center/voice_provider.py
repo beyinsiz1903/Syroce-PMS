@@ -206,7 +206,7 @@ class TwilioVoiceProvider:
                 https_url = "https://" + url[7:]
                 if validator.validate(https_url, params, signature):
                     return True
-            
+
             logger.warning(f"[CC-VOICE] imza doğrulama hatası. URL: {url}, Params: {params}")
             return False
         except Exception as e:
