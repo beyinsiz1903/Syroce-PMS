@@ -205,16 +205,13 @@ class TwilioVoiceProvider:
         # Credentials & Mismatch logs (safe logging)
         incoming_acc_sid = params.get("AccountSid", "none")
         acc_sid_match = (cfg.account_sid == incoming_acc_sid) if incoming_acc_sid != "none" else True
-        import hashlib
-        token_hash = hashlib.sha256(cfg.auth_token.encode("utf-8")).hexdigest()[:8] if cfg.auth_token else "none"
 
         logger.info(
             f"[CC-VOICE-SIGNATURE] Credential check: "
             f"config_account_sid_last6={cfg.account_sid[-6:] if cfg.account_sid else 'none'} "
             f"incoming_account_sid={incoming_acc_sid} "
             f"account_sid_match={acc_sid_match} "
-            f"auth_token_set={bool(cfg.auth_token)} "
-            f"auth_token_hash_prefix={token_hash}"
+            f"auth_token_set={bool(cfg.auth_token)}"
         )
 
         # Request & Proxy logs
