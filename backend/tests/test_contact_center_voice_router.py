@@ -461,7 +461,7 @@ def test_signed_url_preserves_tenant_id_query(fake_db, monkeypatch):
     monkeypatch.setenv("PUBLIC_APP_URL", "https://pms.example.com")
     captured: dict = {}
 
-    def _capture(self, *, url, params, signature):
+    def _capture(self, *, url, params, signature, request=None, **kwargs):
         captured["url"] = url
         captured["params"] = params
         return True

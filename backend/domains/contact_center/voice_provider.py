@@ -183,7 +183,14 @@ class TwilioVoiceProvider:
 
     # ── Webhook imza doğrulama ─────────────────────────────────────────
 
-    def validate_signature(self, *, url: str, params: dict[str, Any], signature: str) -> bool:
+    def validate_signature(
+        self,
+        *,
+        url: str,
+        params: dict[str, Any],
+        signature: str,
+        request: Any | None = None,
+    ) -> bool:
         """Gelen Twilio webhook imzasını doğrular (fail-closed).
 
         Yapılandırma/SDK yoksa ya da imza yoksa ``False`` döner — doğrulanmamış
@@ -194,6 +201,46 @@ class TwilioVoiceProvider:
             return True
 
         cfg = self.config
+
+        # Credentials & Mismatch logs (safe logging)
+        incoming_acc_sid = params.get("AccountSid", "none")
+        acc_sid_match = (cfg.account_sid == incoming_acc_sid) if incoming_acc_sid != "none" else True
+        import hashlib
+        token_hash = hashlib.sha256(cfg.auth_token.encode("utf-8")).hexdigest()[:8] if cfg.auth_token else "none"
+
+        logger.info(
+            f"[CC-VOICE-SIGNATURE] Credential check: "
+            f"config_account_sid_last6={cfg.account_sid[-6:] if cfg.account_sid else 'none'} "
+            f"incoming_account_sid={incoming_acc_sid} "
+            f"account_sid_match={acc_sid_match} "
+            f"auth_token_set={bool(cfg.auth_token)} "
+            f"auth_token_hash_prefix={token_hash}"
+        )
+
+        # Request & Proxy logs
+        x_proto = ""
+        x_host = ""
+        req_scheme = ""
+        req_host = ""
+        req_path = ""
+        if request is not None:
+            x_proto = request.headers.get("x-forwarded-proto", "")
+            x_host = request.headers.get("x-forwarded-host", "")
+            req_scheme = request.url.scheme
+            req_host = request.url.hostname
+            req_path = request.url.path
+
+        logger.info(
+            f"[CC-VOICE-SIGNATURE] Request validation details: "
+            f"scheme={req_scheme} "
+            f"hostname={req_host} "
+            f"path={req_path} "
+            f"X-Forwarded-Proto={x_proto} "
+            f"X-Forwarded-Host={x_host} "
+            f"validation_url={url} "
+            f"signature_present={bool(signature)}"
+        )
+
         if not cfg.can_validate_signatures:
             logger.warning("[CC-VOICE] imza doğrulanamadı çünkü TWILIO_AUTH_TOKEN tanımlı değil.")
             return False
@@ -205,19 +252,22 @@ class TwilioVoiceProvider:
         except ImportError:
             logger.warning("[CC-VOICE] twilio SDK kurulu değil — imza doğrulanamıyor (fail-closed)")
             return False
+
+        validation_result = False
         try:
             validator = RequestValidator(cfg.auth_token)
             if validator.validate(url, params, signature):
-                return True
-            # Fallback: reverse proxy (DigitalOcean App Platform) often strips X-Forwarded-Proto,
-            # causing the URL to be http:// while Twilio signed https://. Try forcing https://
-            if url.startswith("http://"):
+                validation_result = True
+            elif url.startswith("http://"):
                 https_url = "https://" + url[7:]
                 if validator.validate(https_url, params, signature):
-                    return True
+                    validation_result = True
+                    url = https_url
 
-            logger.warning(f"[CC-VOICE] imza doğrulama hatası. URL: {url}, Params: {params}")
-            return False
+            logger.info(
+                f"[CC-VOICE-SIGNATURE] Validation result: {validation_result} for URL: {url}"
+            )
+            return validation_result
         except Exception as e:
             # İmza doğrulama hiçbir koşulda raise etmemeli → fail-closed reddet.
             logger.warning(f"[CC-VOICE] imza doğrulama exception (fail-closed reddedildi): {e}")

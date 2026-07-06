@@ -63,8 +63,16 @@ def _public_url(request: Request) -> str:
     query = request.url.query
     suffix = f"?{query}" if query else ""
     if base:
+        if not base.startswith("http://") and not base.startswith("https://"):
+            base = f"https://{base}"
         return f"{base}{request.url.path}{suffix}"
-    return str(request.url)
+
+    # DigitalOcean/Nginx reverse proxy headers
+    proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip() or request.url.scheme
+    host = request.headers.get("x-forwarded-host", "").split(",")[0].strip() or request.headers.get("host", "").split(",")[0].strip() or request.url.netloc
+
+    return f"{proto}://{host}{request.url.path}{suffix}"
+
 
 
 def _callback_urls(tenant_id: str | None = None) -> tuple[str | None, str | None]:
@@ -770,6 +778,7 @@ async def voice_outbound(request: Request):
         url=_public_url(request),
         params=params,
         signature=request.headers.get("X-Twilio-Signature", ""),
+        request=request,
     ):
         return Response(
             content=provider.say_fallback("Çağrı doğrulanamadı."),
@@ -885,6 +894,7 @@ async def voice_status(request: Request):
         url=_public_url(request),
         params=params,
         signature=request.headers.get("X-Twilio-Signature", ""),
+        request=request,
     ):
         return Response(status_code=403)
 
@@ -921,6 +931,7 @@ async def voice_recording(request: Request):
         url=_public_url(request),
         params=params,
         signature=request.headers.get("X-Twilio-Signature", ""),
+        request=request,
     ):
         return Response(status_code=403)
 
