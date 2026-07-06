@@ -134,9 +134,9 @@ async def health_check_simple():
     """
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "service": "hotel_pms",
-        "commit": "ed87344ac"
+        "commit": os.getenv("COMMIT_SHA", "unknown"),
     }
 
 

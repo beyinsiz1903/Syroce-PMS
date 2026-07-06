@@ -27,6 +27,7 @@ from pymongo.errors import DuplicateKeyError
 
 from core.database import db
 from core.security import _is_super_admin, get_current_user
+from core.secrets.config import get_secrets_config
 from domains.contact_center.read_models import call_to_dto
 from domains.contact_center.voice_config import (
     get_recording_storage_config,
@@ -659,8 +660,12 @@ def _parse_client_identity(value: str) -> tuple[str | None, str | None]:
 
 
 @public_router.get("/debug-config")
-async def voice_debug_config():
+async def voice_debug_config(current_user: User = Depends(get_current_user)):
     """Non-sensitive status of Twilio configuration and environment variables."""
+    if get_secrets_config().is_production:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if not _is_super_admin(current_user):
+        raise HTTPException(status_code=403, detail="Forbidden")
     try:
         from core.security import JWT_EXPIRATION_MINUTES as resolved_jwt_min
         cfg = get_twilio_voice_config()
