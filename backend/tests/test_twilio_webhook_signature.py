@@ -110,3 +110,56 @@ def test_outbound_and_status_webhook_both_validate_correctly(monkeypatch):
     status_params = {"CallSid": "CA123", "CallStatus": "completed"}
     status_signature = calculate_signature(token, status_url, status_params)
     assert provider.validate_signature(url=status_url, params=status_params, signature=status_signature) is True
+
+def test_public_app_url_priority_over_forwarded_headers(monkeypatch):
+    monkeypatch.setenv("PUBLIC_APP_URL", "https://pms.syroce.com")
+    headers = {
+        "x-forwarded-proto": "http",
+        "x-forwarded-host": "attacker.com",
+    }
+    req = _make_mock_request("http://localhost:8001/api/voice/outbound", headers)
+    reconstructed = _public_url(req)
+    assert reconstructed == "https://pms.syroce.com/api/voice/outbound"
+
+def test_raw_query_encoding_and_order_preserved():
+    headers = {
+        "x-forwarded-proto": "https",
+        "x-forwarded-host": "pms.syroce.com",
+    }
+    req = _make_mock_request("http://localhost:8001/api/voice/status?b=2&a=1&c=%20space", headers)
+    reconstructed = _public_url(req)
+    assert reconstructed == "https://pms.syroce.com/api/voice/status?b=2&a=1&c=%20space"
+
+def test_repeated_query_parameters_preserved():
+    headers = {
+        "x-forwarded-proto": "https",
+        "x-forwarded-host": "pms.syroce.com",
+    }
+    req = _make_mock_request("http://localhost:8001/api/voice/status?foo=bar&foo=baz", headers)
+    reconstructed = _public_url(req)
+    assert reconstructed == "https://pms.syroce.com/api/voice/status?foo=bar&foo=baz"
+
+def test_missing_public_app_url_in_production_explicitly_fails_safe(monkeypatch):
+    monkeypatch.setenv("ENV", "production")
+    monkeypatch.delenv("PUBLIC_APP_URL", raising=False)
+    req = _make_mock_request("http://localhost:8001/api/voice/outbound", {})
+    reconstructed = _public_url(req)
+    assert "missing-public-app-url-in-production" in reconstructed
+
+def test_no_secret_derived_value_appears_in_logs(monkeypatch, caplog):
+    import logging
+    token = "test_auth_token_123456"
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", token)
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC_MOCK_ACCOUNT_SID_FOR_TESTS")
+    
+    provider = TwilioVoiceProvider()
+    
+    url = "https://pms.syroce.com/api/voice/outbound"
+    params = {"CallSid": "CA123"}
+    
+    with caplog.at_level(logging.INFO):
+        provider.validate_signature(url=url, params=params, signature="invalid")
+        
+    log_text = caplog.text
+    assert "auth_token_hash_prefix" not in log_text
+    assert token[:6] not in log_text

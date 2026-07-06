@@ -60,18 +60,40 @@ def _public_url(request: Request) -> str:
     imzalı ``tenant_id``) imza doğrulaması için KORUNMALI.
     """
     base = os.getenv("PUBLIC_APP_URL", "").strip().rstrip("/")
-    query = request.url.query
+    query = request.scope.get("query_string", b"").decode("utf-8")
     suffix = f"?{query}" if query else ""
+
+    # Ham path'i koru
+    path = request.scope.get("raw_path", request.url.path.encode("utf-8")).decode("utf-8")
+    if not path.startswith("/"):
+        path = request.url.path
+
+    is_prod = (
+        os.getenv("ENV", "").lower() == "production"
+        or os.getenv("ENVIRONMENT", "").lower() == "production"
+        or os.getenv("APP_ENV", "").lower() == "production"
+    )
+
     if base:
         if not base.startswith("http://") and not base.startswith("https://"):
             base = f"https://{base}"
-        return f"{base}{request.url.path}{suffix}"
+        return f"{base}{path}{suffix}"
 
-    # DigitalOcean/Nginx reverse proxy headers
-    proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip() or request.url.scheme
-    host = request.headers.get("x-forwarded-host", "").split(",")[0].strip() or request.headers.get("host", "").split(",")[0].strip() or request.url.netloc
+    # Fallback to headers
+    proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host", "").split(",")[0].strip() or request.headers.get("host", "").split(",")[0].strip()
 
-    return f"{proto}://{host}{request.url.path}{suffix}"
+    if proto and host:
+        return f"{proto}://{host}{path}{suffix}"
+
+    if is_prod:
+        logger.error("[CC-VOICE] PRODUCTION ORTAMINDA PUBLIC_APP_URL VE PROXY BASLIKLARI EKSİK! İmza doğrulaması başarısız olacak.")
+        return f"https://missing-public-app-url-in-production{path}{suffix}"
+
+    # Non-production fallback (development/test)
+    fallback_proto = proto or request.url.scheme
+    fallback_host = host or request.url.netloc
+    return f"{fallback_proto}://{fallback_host}{path}{suffix}"
 
 
 
