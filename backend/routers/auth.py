@@ -498,13 +498,13 @@ async def login(data: UserLogin, request: Request, response: Response):
             # stale entries). If the cached entry was populated BEFORE the
             # current `tokens_invalid_before`, evict + fall through so bcrypt
             # is re-evaluated against the new password.
-            cached_at = int(cached.get("cached_at") or 0)
+            cached_at = float(cached.get("cached_at") or 0)
             if cached_uid:
                 u = await db.users.find_one(
-                    {"id": cached_uid},
-                    {"_id": 0, "two_factor_enabled": 1, "tokens_invalid_before": 1},
+                     {"id": cached_uid},
+                     {"_id": 0, "two_factor_enabled": 1, "tokens_invalid_before": 1},
                 )
-                _watermark = int((u or {}).get("tokens_invalid_before") or 0)
+                _watermark = float((u or {}).get("tokens_invalid_before") or 0)
                 if u and u.get("two_factor_enabled"):
                     _login_cache.set(cache_key, None, ttl=1)  # evict
                     # fall through to full login path → challenge flow
@@ -660,15 +660,15 @@ async def login(data: UserLogin, request: Request, response: Response):
         # challenge tokens that were minted before a password change
         # (tokens_invalid_before watermark). Without iat the verify path
         # would mint a fresh access_token from a stale credential.
-        _now_dt = datetime.now(UTC)
+        _now_ts = datetime.now(UTC).timestamp()
         challenge = _jwt.encode(
             {
                 "user_id": user.id,
                 "tenant_id": user.tenant_id,
                 "purpose": "2fa_challenge",
                 "jti": challenge_jti,
-                "iat": int(_now_dt.timestamp()),
-                "exp": _now_dt + timedelta(minutes=5),
+                "iat": _now_ts,
+                "exp": _now_ts + 5 * 60,
             },
             JWT_SECRET,
             algorithm=JWT_ALGORITHM,
@@ -828,7 +828,20 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request, response: R
     invalid_before = user_doc.get("tokens_invalid_before")
     if invalid_before:
         ch_iat = decoded.get("iat")
-        if not ch_iat or int(ch_iat) < int(invalid_before) - 10:
+        if not ch_iat:
+            f_iat = 0.0
+            f_ib = 1.0
+        else:
+            try:
+                import math
+                f_iat = float(ch_iat)
+                f_ib = float(invalid_before)
+                if math.isnan(f_iat) or math.isinf(f_iat) or math.isnan(f_ib) or math.isinf(f_ib):
+                    raise ValueError("Invalid timestamp")
+            except (TypeError, ValueError):
+                f_iat = 0.0
+                f_ib = 1.0
+        if f_iat < f_ib:
             await db.audit_logs.insert_one(
                 {
                     "id": str(__import__("uuid").uuid4()),
@@ -1101,7 +1114,7 @@ async def change_password(
     # v46 (Bug CC): set tokens_invalid_before watermark so all existing JWTs
     # for this user (incl. the one used to make this request) are rejected
     # by get_current_user — OWASP ASVS V3.3.1 mass-revoke on credential change.
-    invalid_before_ts = int(datetime.now(UTC).timestamp()) + 1
+    invalid_before_ts = datetime.now(UTC).timestamp()
     await db.users.update_one(
         {"id": current_user.id},
         {
@@ -1179,7 +1192,23 @@ def _enforce_refresh_invariants(user_doc: dict, payload: dict, *, kind: str) -> 
     invalid_before = user_doc.get("tokens_invalid_before")
     if invalid_before:
         iat = payload.get("iat")
-        if not iat or int(iat) < int(invalid_before) - 10:
+        if not iat:
+            raise HTTPException(
+                status_code=401,
+                detail="Şifre değişti - lütfen yeniden giriş yapın",
+            )
+        try:
+            import math
+            f_iat = float(iat)
+            f_ib = float(invalid_before)
+            if math.isnan(f_iat) or math.isinf(f_iat) or math.isnan(f_ib) or math.isinf(f_ib):
+                raise ValueError("Invalid timestamp")
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=401,
+                detail="Şifre değişti - lütfen yeniden giriş yapın",
+            )
+        if f_iat < f_ib:
             raise HTTPException(
                 status_code=401,
                 detail="Şifre değişti - lütfen yeniden giriş yapın",
@@ -1414,7 +1443,7 @@ async def logout(
     # above (503 on failure) so the client never sees a 2xx that doesn't
     # actually invalidate the session.
     try:
-        invalid_before_ts = int(datetime.now(UTC).timestamp()) + 1
+        invalid_before_ts = datetime.now(UTC).timestamp()
         await db.users.update_one(
             {"id": current_user.id},
             {"$set": {"tokens_invalid_before": invalid_before_ts}},
@@ -1942,7 +1971,7 @@ async def reset_password_by_token(payload: dict, request: Request):
 
     new_hash = hash_password(new_password)
     # v46 (Bug CC): mass-revoke parallel sessions on password reset.
-    invalid_before_ts = int(datetime.now(UTC).timestamp()) + 1
+    invalid_before_ts = datetime.now(UTC).timestamp()
     await db.users.update_one(
         build_user_email_query(email),
         {
@@ -2046,7 +2075,7 @@ async def reset_password(data: ResetPasswordRequest, request: Request):
     # Şifreyi güncelle
     new_hashed_password = hash_password(data.new_password)
     # v46 (Bug CC): mass-revoke parallel sessions on password reset (code path).
-    invalid_before_ts = int(datetime.now(UTC).timestamp()) + 1
+    invalid_before_ts = datetime.now(UTC).timestamp()
     await db.users.update_one(
         build_user_email_query(data.email),
         {

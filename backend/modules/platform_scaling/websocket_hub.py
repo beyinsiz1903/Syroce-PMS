@@ -184,11 +184,22 @@ class WebSocketHub:
             if not user_doc:
                 return None
 
-            # Parity #2: mass-revoke on password change watermark
             invalid_before = user_doc.get("tokens_invalid_before")
             if invalid_before:
                 iat = payload.get("iat")
-                if not iat or int(iat) < int(invalid_before) - 10:
+                if not iat:
+                    logger.warning(f"WS auth: token missing watermark user={user_id}")
+                    return None
+                try:
+                    import math
+                    f_iat = float(iat)
+                    f_ib = float(invalid_before)
+                    if math.isnan(f_iat) or math.isinf(f_iat) or math.isnan(f_ib) or math.isinf(f_ib):
+                        raise ValueError("Invalid timestamp")
+                except (TypeError, ValueError):
+                    logger.warning(f"WS auth: invalid watermark type user={user_id}")
+                    return None
+                if f_iat < f_ib:
                     logger.warning(f"WS auth: token before password-change watermark user={user_id}")
                     return None
 

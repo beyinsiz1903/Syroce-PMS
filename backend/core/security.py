@@ -279,13 +279,13 @@ def verify_password(password: str, hashed: str) -> bool:
 
 
 def create_token(user_id: str, tenant_id: str | None = None) -> str:
-    now = datetime.now(UTC)
+    now_ts = datetime.now(UTC).timestamp()
     payload = {
         "user_id": user_id,
         "tenant_id": tenant_id,
-        "iat": now,
+        "iat": now_ts,
         "jti": secrets.token_urlsafe(16),  # v44: revocable token id
-        "exp": now + timedelta(minutes=JWT_EXPIRATION_MINUTES),
+        "exp": now_ts + JWT_EXPIRATION_MINUTES * 60,
         # V3: explicit token type so refresh tokens (which decode under the
         # same JWT_SECRET) can't be silently used as access tokens.
         "type": "access",
@@ -305,17 +305,17 @@ def create_refresh_token(user_id: str, tenant_id: str | None = None) -> tuple[st
     (NOT the Authorization header) so an attacker who steals an Authorization
     bearer in transit cannot use it to keep the session alive indefinitely.
     """
-    now = datetime.now(UTC)
-    exp = now + timedelta(days=REFRESH_TOKEN_EXPIRATION_DAYS)
+    now_ts = datetime.now(UTC).timestamp()
+    exp_ts = now_ts + REFRESH_TOKEN_EXPIRATION_DAYS * 24 * 3600
     payload = {
         "user_id": user_id,
         "tenant_id": tenant_id,
-        "iat": now,
+        "iat": now_ts,
         "jti": secrets.token_urlsafe(24),
-        "exp": exp,
+        "exp": exp_ts,
         "type": "refresh",
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM), int(exp.timestamp())
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM), int(exp_ts)
 
 
 async def get_current_user(
@@ -395,8 +395,23 @@ async def get_current_user(
         invalid_before = user_doc.get("tokens_invalid_before")
         if invalid_before:
             iat = payload.get("iat")
-            # Allow a 10-second leeway to prevent race conditions during immediate logout/login or clock drift
-            if not iat or int(iat) < int(invalid_before) - 10:
+            if not iat:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Şifre değişti - lütfen yeniden giriş yapın",
+                )
+            try:
+                import math
+                f_iat = float(iat)
+                f_ib = float(invalid_before)
+                if math.isnan(f_iat) or math.isinf(f_iat) or math.isnan(f_ib) or math.isinf(f_ib):
+                    raise ValueError("Invalid timestamp")
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Şifre değişti - lütfen yeniden giriş yapın",
+                )
+            if f_iat < f_ib:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Şifre değişti - lütfen yeniden giriş yapın",
