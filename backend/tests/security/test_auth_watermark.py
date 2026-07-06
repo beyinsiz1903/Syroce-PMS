@@ -1,19 +1,21 @@
-import pytest
-import jwt
 import time
-from datetime import datetime, UTC
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
+
+import jwt
+import pytest
 from fastapi import HTTPException
-from core.security import get_current_user, create_token, JWT_SECRET, JWT_ALGORITHM
+
+from core.security import JWT_ALGORITHM, JWT_SECRET, create_token, get_current_user
+
 
 @pytest.mark.asyncio
 async def test_auth_watermark_lifecycle():
     user_id = "user123"
     tenant_id = "tenantABC"
-    
+
     # Mock system db
     mock_db = AsyncMock()
-    
+
     # 1. Old token valid before logout
     user_doc = {
         "id": user_id,
@@ -25,11 +27,11 @@ async def test_auth_watermark_lifecycle():
         "tokens_invalid_before": None
     }
     mock_db.users.find_one = AsyncMock(return_value=user_doc)
-    
+
     token = create_token(user_id, tenant_id)
     credentials = AsyncMock()
     credentials.credentials = token
-    
+
     with patch("core.security.is_jti_revoked", new=AsyncMock(return_value=False)), \
          patch("security.encrypted_lookup.decrypt_user_doc", side_effect=lambda x: x), \
          patch("core.tenant_db.get_system_db", return_value=mock_db):
@@ -38,7 +40,7 @@ async def test_auth_watermark_lifecycle():
 
     # 2. Same token rejected on the first request after logout (no global grace window!)
     now = time.time()
-    
+
     # Token generated before logout (iat = now - 0.05)
     payload_before = {
         "user_id": user_id,
@@ -49,11 +51,11 @@ async def test_auth_watermark_lifecycle():
         "type": "access",
     }
     token_before = jwt.encode(payload_before, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    
+
     # Logout occurs at `now`, setting watermark to exactly `now` (no extra padding or leeway!)
     user_doc["tokens_invalid_before"] = now
     mock_db.users.find_one = AsyncMock(return_value=user_doc)
-    
+
     credentials.credentials = token_before
     with patch("core.security.is_jti_revoked", new=AsyncMock(return_value=False)), \
          patch("security.encrypted_lookup.decrypt_user_doc", side_effect=lambda x: x), \
@@ -76,7 +78,7 @@ async def test_auth_watermark_lifecycle():
     }
     token_new = jwt.encode(payload_new, JWT_SECRET, algorithm=JWT_ALGORITHM)
     credentials.credentials = token_new
-    
+
     with patch("core.security.is_jti_revoked", new=AsyncMock(return_value=False)), \
          patch("security.encrypted_lookup.decrypt_user_doc", side_effect=lambda x: x), \
          patch("core.tenant_db.get_system_db", return_value=mock_db), \
@@ -89,7 +91,7 @@ async def test_auth_watermark_lifecycle():
     # Password reset occurs at `now + 10`
     user_doc["tokens_invalid_before"] = now + 10
     mock_db.users.find_one = AsyncMock(return_value=user_doc)
-    
+
     # Token issued before password reset (now + 0.05) must be rejected immediately on first request
     credentials.credentials = token_new
     with patch("core.security.is_jti_revoked", new=AsyncMock(return_value=False)), \
@@ -104,7 +106,7 @@ async def test_auth_watermark_lifecycle():
     # Force logout occurs at `now + 20`
     user_doc["tokens_invalid_before"] = now + 20
     mock_db.users.find_one = AsyncMock(return_value=user_doc)
-    
+
     credentials.credentials = token_new
     with patch("core.security.is_jti_revoked", new=AsyncMock(return_value=False)), \
          patch("security.encrypted_lookup.decrypt_user_doc", side_effect=lambda x: x), \
