@@ -229,4 +229,145 @@ describe("Softphone frontend user gesture flow", () => {
     expect(mockDevice).toHaveBeenCalled();
     expect(mockRegister).toHaveBeenCalled();
   });
+  it("handles Device.connect returning Promise<Call> and registers listeners only on resolved Call", async () => {
+    const mockOn = vi.fn();
+    const mockDisconnect = vi.fn();
+    const mockCall = {
+      on: mockOn,
+      disconnect: mockDisconnect
+    };
+    mockConnect.mockResolvedValue(mockCall);
+
+    render(<Softphone user={{ role: "admin" }} />);
+    
+    fireEvent.click(screen.getByRole("button", { name: "Softphone" }));
+    const onlineBtn = await screen.findByRole("button", { name: /Müsait/ });
+    fireEvent.click(onlineBtn);
+
+    await screen.findByText("Telefon");
+    const dialInput = screen.getByPlaceholderText("+90 5XX XXX XX XX");
+    fireEvent.change(dialInput, { target: { value: "+905555555555" } });
+    const callBtn = screen.getByRole("button", { name: "Ara" });
+    fireEvent.click(callBtn);
+
+    await waitFor(() => {
+      expect(mockOn).toHaveBeenCalledWith("disconnect", expect.any(Function));
+    });
+  });
+
+  it("displays Turkish error on connect rejection", async () => {
+    mockConnect.mockRejectedValue(new Error("Bağlantı koptu"));
+
+    render(<Softphone user={{ role: "admin" }} />);
+    
+    fireEvent.click(screen.getByRole("button", { name: "Softphone" }));
+    const onlineBtn = await screen.findByRole("button", { name: /Müsait/ });
+    fireEvent.click(onlineBtn);
+
+    await screen.findByText("Telefon");
+    const dialInput = screen.getByPlaceholderText("+90 5XX XXX XX XX");
+    fireEvent.change(dialInput, { target: { value: "+905555555555" } });
+    const callBtn = screen.getByRole("button", { name: "Ara" });
+    fireEvent.click(callBtn);
+
+    const errorMsg = await screen.findByText(/Giden çağrı başlatılamadı: Bağlantı koptu/);
+    expect(errorMsg).toBeInTheDocument();
+  });
+
+  it("clears call ref on disconnect", async () => {
+    let disconnectCb;
+    const mockCall = {
+      on: vi.fn((event, cb) => {
+        if (event === "disconnect") {
+          disconnectCb = cb;
+        }
+      }),
+      disconnect: vi.fn()
+    };
+    mockConnect.mockResolvedValue(mockCall);
+
+    render(<Softphone user={{ role: "admin" }} />);
+    
+    fireEvent.click(screen.getByRole("button", { name: "Softphone" }));
+    const onlineBtn = await screen.findByRole("button", { name: /Müsait/ });
+    fireEvent.click(onlineBtn);
+
+    await screen.findByText("Telefon");
+    const dialInput = screen.getByPlaceholderText("+90 5XX XXX XX XX");
+    fireEvent.change(dialInput, { target: { value: "+905555555555" } });
+    const callBtn = screen.getByRole("button", { name: "Ara" });
+    fireEvent.click(callBtn);
+
+    await waitFor(() => {
+      expect(disconnectCb).toBeDefined();
+    });
+
+    disconnectCb();
+
+    await screen.findByText("Telefon");
+  });
+
+  it("does not start repeated calls if clicked during connecting status", async () => {
+    let resolvePromise;
+    const delayPromise = new Promise((resolve) => {
+      resolvePromise = resolve;
+    });
+    mockConnect.mockReturnValue(delayPromise);
+
+    render(<Softphone user={{ role: "admin" }} />);
+    
+    fireEvent.click(screen.getByRole("button", { name: "Softphone" }));
+    const onlineBtn = await screen.findByRole("button", { name: /Müsait/ });
+    fireEvent.click(onlineBtn);
+
+    await screen.findByText("Telefon");
+    const dialInput = screen.getByPlaceholderText("+90 5XX XXX XX XX");
+    fireEvent.change(dialInput, { target: { value: "+905555555555" } });
+    const callBtn = screen.getByRole("button", { name: "Ara" });
+    
+    fireEvent.click(callBtn);
+    expect(mockConnect).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(callBtn);
+    expect(mockConnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("disconnects the resolved call immediately if user clicked İptal Et before resolution", async () => {
+    let resolveCall;
+    const mockCall = {
+      disconnect: vi.fn(),
+      on: vi.fn()
+    };
+    const pendingPromise = new Promise((resolve) => {
+      resolveCall = resolve;
+    });
+    mockConnect.mockReturnValue(pendingPromise);
+
+    render(<Softphone user={{ role: "admin" }} />);
+    
+    fireEvent.click(screen.getByRole("button", { name: "Softphone" }));
+    const onlineBtn = await screen.findByRole("button", { name: /Müsait/ });
+    fireEvent.click(onlineBtn);
+
+    await screen.findByText("Telefon");
+    const dialInput = screen.getByPlaceholderText("+90 5XX XXX XX XX");
+    fireEvent.change(dialInput, { target: { value: "+905555555555" } });
+    const callBtn = screen.getByRole("button", { name: "Ara" });
+    fireEvent.click(callBtn);
+
+    // User clicks "İptal Et" immediately while connecting
+    const cancelBtn = screen.getByRole("button", { name: "İptal Et" });
+    fireEvent.click(cancelBtn);
+
+    // Confirm UI returns to ready (shows "Ara" button again)
+    await screen.findByRole("button", { name: "Ara" });
+
+    // Now resolve the promise with mockCall
+    resolveCall(mockCall);
+
+    // Confirm call.disconnect() is invoked immediately on resolution
+    await waitFor(() => {
+      expect(mockCall.disconnect).toHaveBeenCalled();
+    });
+  });
 });

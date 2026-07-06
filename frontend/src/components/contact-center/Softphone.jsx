@@ -99,6 +99,7 @@ export default function Softphone({ user }) {
   const [isSdkReady, setIsSdkReady] = useState(false);
   const deviceRef = useRef(null);
   const callRef = useRef(null);
+  const connectCancelledRef = useRef(false);
 
   const role = user?.role || (user?.roles && user.roles[0]);
   const isStaff = role && role !== "guest";
@@ -168,6 +169,7 @@ export default function Softphone({ user }) {
   }, [status]);
 
   const teardown = useCallback(() => {
+    connectCancelledRef.current = true;
     try {
       callRef.current?.disconnect?.();
     } catch {
@@ -285,6 +287,11 @@ export default function Softphone({ user }) {
       setDetail("Önce softphone'u aktifleştirin.");
       return;
     }
+    // Prevent repeated call clicks while connect is pending or active
+    if (status === "connecting" || status === "on_call") {
+      return;
+    }
+    
     // onClick event objesi de ilk argüman olarak gelebilir → yalnız string
     // override'ı dikkate al, aksi halde input state'ini kullan.
     const target = (typeof override === "string" ? override : dialNumber || "").trim();
@@ -292,44 +299,68 @@ export default function Softphone({ user }) {
       setDetail("Aranacak numarayı girin.");
       return;
     }
+
+    setStatus("connecting");
+    setDetail("");
+    connectCancelledRef.current = false;
+
     try {
       // Twilio buradaki params'ı TwiML App voiceUrl'ine (/api/voice/outbound)
       // POST eder; kiracı sunucu tarafında client kimliğinden türetilir.
-      const call = device.connect({ params: { To: target } });
-      callRef.current = call;
-      setStatus("on_call");
-      setDetail("");
-      call.on("disconnect", () => {
-        setStatus("idle");
-        setCallDuration(0);
-        setIsMuted(false);
-        setShowDialpad(false);
-        setShowTransfer(false);
-        callRef.current = null;
-      });
-      call.on("cancel", () => {
-        setStatus("idle");
-        setCallDuration(0);
-        setIsMuted(false);
-        setShowDialpad(false);
-        setShowTransfer(false);
-        callRef.current = null;
-      });
-      call.on("reject", () => {
-        setStatus("idle");
-        setCallDuration(0);
-        setIsMuted(false);
-        setShowDialpad(false);
-        setShowTransfer(false);
-        callRef.current = null;
-      });
-      call.on("error", (e) => {
-        callRef.current = null;
-        setIsMuted(false);
-        setStatus(deviceRef.current ? "ready" : "idle");
-        setDetail("Çağrı hatası: " + (e?.message || e?.name || "bilinmiyor"));
-      });
+      const callPromise = device.connect({ params: { To: target } });
+      
+      callPromise
+        .then((call) => {
+          if (connectCancelledRef.current) {
+            try { call.disconnect(); } catch { /* noop */ }
+            callRef.current = null;
+            setStatus(deviceRef.current ? "ready" : "idle");
+            return;
+          }
+          callRef.current = call;
+          setStatus("on_call");
+          setDetail("");
+
+          call.on("disconnect", () => {
+            setStatus(deviceRef.current ? "ready" : "idle");
+            setCallDuration(0);
+            setIsMuted(false);
+            setShowDialpad(false);
+            setShowTransfer(false);
+            callRef.current = null;
+          });
+          call.on("cancel", () => {
+            setStatus(deviceRef.current ? "ready" : "idle");
+            setCallDuration(0);
+            setIsMuted(false);
+            setShowDialpad(false);
+            setShowTransfer(false);
+            callRef.current = null;
+          });
+          call.on("reject", () => {
+            setStatus(deviceRef.current ? "ready" : "idle");
+            setCallDuration(0);
+            setIsMuted(false);
+            setShowDialpad(false);
+            setShowTransfer(false);
+            callRef.current = null;
+          });
+          call.on("error", (e) => {
+            console.error("[CC-VOICE] Call error:", e);
+            callRef.current = null;
+            setIsMuted(false);
+            setStatus(deviceRef.current ? "ready" : "idle");
+            setDetail("Çağrı hatası: " + (e?.message || e?.name || "bilinmiyor"));
+          });
+        })
+        .catch((err) => {
+          console.error("[CC-VOICE] Call connect promise failed:", err);
+          callRef.current = null;
+          setStatus(deviceRef.current ? "ready" : "idle");
+          setDetail("Giden çağrı başlatılamadı: " + (err.message || err.name || "bilinmiyor"));
+        });
     } catch (err) {
+      console.error("[CC-VOICE] Device.connect failed synchronously:", err);
       setStatus(deviceRef.current ? "ready" : "idle");
       if (err.name === "NotAllowedError") {
         setDetail("Tarayıcı engeli: Ses çalmak veya arama başlatmak için bir kullanıcı hareketi gerekiyor.");
@@ -337,7 +368,7 @@ export default function Softphone({ user }) {
         setDetail("Giden çağrı başlatılamadı: " + (err.message || err.name));
       }
     }
-  }, [dialNumber]);
+  }, [dialNumber, status]);
 
   // Browser Notifications & Ringtones
   useEffect(() => {
@@ -389,8 +420,15 @@ export default function Softphone({ user }) {
   }, []);
 
   const rejectCall = useCallback(() => {
-    if (callRef.current) callRef.current.reject();
-    setStatus("idle");
+    if (callRef.current) {
+      try {
+        callRef.current.reject();
+      } catch (err) {
+        console.warn("Reject failed", err);
+      }
+    }
+    callRef.current = null;
+    setStatus(deviceRef.current ? "ready" : "idle");
     setCallDuration(0);
     setIsMuted(false);
     setShowDialpad(false);
@@ -398,13 +436,25 @@ export default function Softphone({ user }) {
   }, []);
 
   const endCall = useCallback(() => {
-    if (callRef.current) callRef.current.disconnect();
-    setStatus("idle");
+    if (status === "connecting" && !callRef.current) {
+      connectCancelledRef.current = true;
+      setStatus(deviceRef.current ? "ready" : "idle");
+      return;
+    }
+    if (callRef.current) {
+      try {
+        callRef.current.disconnect();
+      } catch (err) {
+        console.warn("Disconnect failed", err);
+      }
+    }
+    callRef.current = null;
+    setStatus(deviceRef.current ? "ready" : "idle");
     setCallDuration(0);
     setIsMuted(false);
     setShowDialpad(false);
     setShowTransfer(false);
-  }, []);
+  }, [status]);
 
   const toggleMute = useCallback(() => {
     if (callRef.current) {
@@ -739,7 +789,7 @@ export default function Softphone({ user }) {
                   Görüşmeyi sonlandır
                 </button>
               </div>
-            ) : status === "ready" ? (
+            ) : (status === "ready" || status === "connecting") ? (
               <div className="space-y-2">
                 <label className="block text-xs font-medium text-gray-600">
                   Aranacak numara
@@ -750,27 +800,38 @@ export default function Softphone({ user }) {
                   value={dialNumber}
                   onChange={(e) => setDialNumber(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") startCall();
+                    if (e.key === "Enter" && status !== "connecting") startCall();
                   }}
+                  disabled={status === "connecting"}
                   placeholder="+90 5XX XXX XX XX"
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-gray-500 focus:outline-none disabled:bg-gray-50 disabled:text-gray-400"
                 />
                 <button
                   type="button"
                   onClick={startCall}
-                  disabled={!dialNumber.trim()}
+                  disabled={!dialNumber.trim() || status === "connecting"}
                   className="w-full rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
                 >
-                  Ara
+                  {status === "connecting" ? "Bağlanıyor..." : "Ara"}
                 </button>
-                <button
-                  type="button"
-                  onClick={deactivate}
-                  className="w-full flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-amber-50 text-amber-700 px-3 py-2 text-sm font-medium hover:bg-amber-100 transition-colors"
-                >
-                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                  Molaya Çık (Çevrimdışı)
-                </button>
+                {status === "connecting" ? (
+                  <button
+                    type="button"
+                    onClick={endCall}
+                    className="w-full rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+                  >
+                    İptal Et
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={deactivate}
+                    className="w-full flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-amber-50 text-amber-700 px-3 py-2 text-sm font-medium hover:bg-amber-100 transition-colors"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                    Molaya Çık (Çevrimdışı)
+                  </button>
+                )}
               </div>
             ) : status === "activating" ? (
               <button

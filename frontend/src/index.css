@@ -202,7 +202,8 @@ code {
 }
 
 /* --- disabled: notr yuzeyler -> secondary (base variant ile ayni token) --- */
-.dark .disabled\:bg-gray-200:disabled {
+.dark .disabled\:bg-gray-200:disabled,
+.dark .disabled\:bg-gray-50:disabled {
     background-color: hsl(var(--secondary));
 }
 
@@ -251,7 +252,8 @@ code {
 }
 
 /* --- disabled: soluk metin -> muted-foreground (base variant ile ayni token) --- */
-.dark .disabled\:text-gray-500:disabled {
+.dark .disabled\:text-gray-500:disabled,
+.dark .disabled\:text-gray-400:disabled {
     color: hsl(var(--muted-foreground));
 }
 
