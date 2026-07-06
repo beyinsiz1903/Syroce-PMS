@@ -197,8 +197,19 @@ class TwilioVoiceProvider:
             logger.warning("[CC-VOICE] twilio SDK kurulu değil — imza doğrulanamıyor (fail-closed)")
             return False
         try:
-            return bool(RequestValidator(cfg.auth_token).validate(url, params, signature))
-        except Exception:
+            validator = RequestValidator(cfg.auth_token)
+            if validator.validate(url, params, signature):
+                return True
+            # Fallback: reverse proxy (DigitalOcean App Platform) often strips X-Forwarded-Proto,
+            # causing the URL to be http:// while Twilio signed https://. Try forcing https://
+            if url.startswith("http://"):
+                https_url = "https://" + url[7:]
+                if validator.validate(https_url, params, signature):
+                    return True
+            
+            logger.warning(f"[CC-VOICE] imza doğrulama hatası. URL: {url}, Params: {params}")
+            return False
+        except Exception as e:
             # İmza doğrulama hiçbir koşulda raise etmemeli → fail-closed reddet.
-            logger.warning("[CC-VOICE] imza doğrulama hatası (fail-closed reddedildi)")
+            logger.warning(f"[CC-VOICE] imza doğrulama exception (fail-closed reddedildi): {e}")
             return False
