@@ -184,11 +184,10 @@ class WebSocketHub:
             if not user_doc:
                 return None
 
-            # Parity #2: mass-revoke on password change watermark
             invalid_before = user_doc.get("tokens_invalid_before")
             if invalid_before:
                 iat = payload.get("iat")
-                if not iat or int(iat) < int(invalid_before) - 2:
+                if not iat or float(iat) < float(invalid_before):
                     logger.warning(f"WS auth: token before password-change watermark user={user_id}")
                     return None
 

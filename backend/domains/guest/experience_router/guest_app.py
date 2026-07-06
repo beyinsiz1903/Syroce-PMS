@@ -797,11 +797,10 @@ async def _authenticate_ws_token(token: str | None) -> dict | None:
         )
         return None
 
-    # Mass-revocation watermark (token iat must be >= tokens_invalid_before).
     invalid_before = user_doc.get("tokens_invalid_before")
     if invalid_before:
         iat = payload.get("iat")
-        if not iat or int(iat) < int(invalid_before) - 2:
+        if not iat or float(iat) < float(invalid_before):
             return None
 
     return {
