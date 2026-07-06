@@ -137,7 +137,7 @@ JWT_ALGORITHM = "HS256"
 #   * `JWT_EXPIRATION_HOURS` (legacy, fractional hours)
 # Setting `JWT_EXPIRATION_HOURS` explicitly continues to honour the old
 # value so existing deployments that pinned 24h aren't surprised at upgrade.
-_V3_DEFAULT_ACCESS_MINUTES = 15
+_V3_DEFAULT_ACCESS_MINUTES = 120
 if os.environ.get("TESTING") == "1":
     _V3_DEFAULT_ACCESS_MINUTES = 120
 
