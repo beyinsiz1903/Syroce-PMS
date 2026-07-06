@@ -623,6 +623,39 @@ async def voice_debug_config():
         }
 
 
+@public_router.get("/debug-db")
+async def voice_debug_db():
+    """Temporary diagnostic endpoint to check voice configurations directly in production."""
+    try:
+        from core.tenant_db import get_system_db
+        sys_db = get_system_db()
+
+        numbers = []
+        async for doc in sys_db.contact_center_voice_numbers.find({}):
+            doc.pop("_id", None)
+            numbers.append(doc)
+
+        configs = []
+        async for doc in sys_db.contact_center_voice_configs.find({}):
+            doc.pop("_id", None)
+            configs.append(doc)
+
+        user_count = await sys_db.users.count_documents({})
+
+        return {
+            "numbers": numbers,
+            "configs": configs,
+            "user_count": user_count,
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "message": str(e),
+            "traceback": traceback.format_exc(),
+        }
+
+
 @public_router.post("/inbound")
 async def voice_inbound(request: Request):
     """Gelen çağrı: imza doğrula → kiracı eşle → çağrı kaydı → TwiML.
@@ -703,8 +736,19 @@ async def voice_outbound(request: Request):
     call_sid = params.get("CallSid", "")
     to_number = params.get("To", "")
     # Kiracı YALNIZCA sunucu-basılı client kimliğinden gelir (istemci geçemez).
-    tenant_id = _parse_client_identity(params.get("From", "") or params.get("Caller", ""))
+    from_val = params.get("From", "") or params.get("Caller", "")
+    tenant_id = _parse_client_identity(from_val)
+
+    # Safe temporary diagnostics logging (PII-free)
+    logger.info(
+        f"[CC-VOICE-DIAG] Outbound CallSid: {call_sid}, "
+        f"From identity raw: {from_val}, "
+        f"To last 4: {to_number[-4:] if to_number else 'None'}, "
+        f"Resolved tenant_id: {tenant_id}"
+    )
+
     if not tenant_id:
+        logger.warning(f"[CC-VOICE-DIAG] Outbound failed: Tenant ID could not be resolved from From: {from_val}")
         return Response(
             content=provider.say_fallback("Çağrı başlatılamadı."),
             media_type=_XML,
@@ -713,7 +757,18 @@ async def voice_outbound(request: Request):
     number_cfg = await _resolve_number_for_tenant(tenant_id)
     caller_id = (number_cfg or {}).get("to_number")
     sanitized = provider.sanitize_dial_number(to_number)
+
+    logger.info(
+        f"[CC-VOICE-DIAG] Number lookup: caller_id={caller_id}, "
+        f"sanitized_to={sanitized[-4:] if sanitized else 'None'}, "
+        f"mapping_found={bool(number_cfg)}"
+    )
+
     if not caller_id or not sanitized:
+        logger.warning(
+            f"[CC-VOICE-DIAG] Outbound failed: caller_id exists={bool(caller_id)}, "
+            f"sanitized number exists={bool(sanitized)}"
+        )
         return Response(
             content=provider.say_fallback("Çağrı başlatılamadı. Lütfen numarayı kontrol edin."),
             media_type=_XML,
