@@ -914,6 +914,9 @@ export default function SystemHealthDashboard({
               </StatusBadge>
             </span>
             {updatedLabel && <span className="text-[11px] text-slate-600">{t('cm.pages_SystemHealthDashboard.guncelleme')} {updatedLabel}</span>}
+            <span className="text-[10px] font-mono text-slate-600 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded" data-testid="frontend-commit-sha">
+              FE Commit: {import.meta.env.VITE_COMMIT_SHA || "unknown"}
+            </span>
             <Button data-testid="refresh-all-btn" variant="outline" size="sm" onClick={handleRefresh} disabled={loading || refreshing}>
               <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? "animate-spin" : ""}`} />
               {t('cm.pages_SystemHealthDashboard.yenile')}

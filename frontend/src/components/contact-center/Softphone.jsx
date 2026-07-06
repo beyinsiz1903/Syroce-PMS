@@ -57,6 +57,20 @@ function loadTwilioVoiceSdk() {
   return _sdkPromise;
 }
 
+function getJwtExpiration(token) {
+  try {
+    if (!token) return null;
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(
+      atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"))
+    );
+    return payload.exp ? payload.exp * 1000 : null; // in milliseconds
+  } catch {
+    return null;
+  }
+}
+
 const STATUS_LABEL = {
   idle: "Kapalı",
   activating: "Etkinleştiriliyor...",
@@ -81,11 +95,68 @@ export default function Softphone({ user }) {
   const [transferTarget, setTransferTarget] = useState("");
   const [transferring, setTransferring] = useState(false);
   const [sendingWhatsapp, setSendingWhatsapp] = useState(false);
+  const [token, setToken] = useState(null);
+  const [isSdkReady, setIsSdkReady] = useState(false);
   const deviceRef = useRef(null);
   const callRef = useRef(null);
+  const connectCancelledRef = useRef(false);
 
   const role = user?.role || (user?.roles && user.roles[0]);
   const isStaff = role && role !== "guest";
+
+  const fetchToken = useCallback(() => {
+    axios.post("/contact-center/voice/token")
+      .then((res) => {
+        if (res.data?.token) {
+          setToken(res.data.token);
+        }
+      })
+      .catch((err) => {
+        console.warn("[CC-VOICE] Fetching voice token failed:", err);
+      });
+  }, []);
+
+  // Pre-load SDK on mount
+  useEffect(() => {
+    if (!isStaff) return;
+    loadTwilioVoiceSdk()
+      .then(() => {
+        setIsSdkReady(true);
+      })
+      .catch((err) => {
+        console.warn("[CC-VOICE] Twilio SDK preloading failed:", err);
+      });
+  }, [isStaff]);
+
+  // Keep token fresh in background + visibility checks + sleep protection (only when drawer is open)
+  useEffect(() => {
+    if (!isStaff || !open) return;
+
+    const checkAndRefresh = () => {
+      const exp = getJwtExpiration(token);
+      const isStale = !token || (exp ? Date.now() >= exp - 5 * 60 * 1000 : true);
+      if (isStale) {
+        fetchToken();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        checkAndRefresh();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    checkAndRefresh();
+
+    // Check every 1 minute to detect sleep/timer-throttling recovery
+    const checkInterval = setInterval(checkAndRefresh, 60 * 1000);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      clearInterval(checkInterval);
+    };
+  }, [isStaff, fetchToken, token, open]);
 
   useEffect(() => {
     let timer;
@@ -98,6 +169,7 @@ export default function Softphone({ user }) {
   }, [status]);
 
   const teardown = useCallback(() => {
+    connectCancelledRef.current = true;
     try {
       callRef.current?.disconnect?.();
     } catch {
@@ -114,58 +186,53 @@ export default function Softphone({ user }) {
 
   useEffect(() => () => teardown(), [teardown]);
 
-  const activate = useCallback(async () => {
+  const activate = useCallback(() => {
+    // If SDK is not ready or token is stale/missing, do not proceed (prevents async network yields under user gesture)
+    const exp = getJwtExpiration(token);
+    const isTokenReady = token && (exp ? Date.now() < exp - 5 * 60 * 1000 : false);
+    const Twilio = window.Twilio;
+    if (!Twilio?.Device || !isTokenReady) {
+      setStatus("error");
+      setDetail("Bağlantı hazırlanamadı. Lütfen bekleyin veya sayfayı yenileyin.");
+      if (!isTokenReady) fetchToken();
+      return;
+    }
+
     setStatus("activating");
     setDetail("");
-    // 1) Mikrofon izni ve AudioContext aktivasyonu — yalnızca açık kullanıcı eylemiyle.
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // İzin alındı; canlı track'leri hemen serbest bırak (SDK kendi açar).
-      stream.getTracks().forEach((t) => t.stop());
 
-      // Safari AudioContext uyandırma/başlatma akışı
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (AudioContextClass) {
+    // 1) AudioContext aktivasyonu — doğrudan tıklama anında SİNKRON olarak başlatılır (Safari autoplay kilidini kaldırır).
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+      try {
         const audioCtx = new AudioContextClass();
         if (audioCtx.state === "suspended") {
-          await audioCtx.resume();
+          audioCtx.resume().catch((err) => {
+            console.warn("[CC-VOICE] Synchronous AudioContext resume rejected:", err);
+          });
         }
+      } catch (err) {
+        console.warn("[CC-VOICE] AudioContext creation failed:", err);
       }
-    } catch (err) {
-      setStatus("error");
-      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-        setDetail("Mikrofon izni reddedildi. Sesli çağrı için tarayıcı ayarlarından mikrofon izni vermeniz gerekir.");
-      } else {
-        setDetail("Mikrofon erişim hatası: " + (err.message || err.name));
-      }
-      return;
     }
 
-    // 2) Kısa-ömürlü AccessToken — fail-closed.
-    let token;
-    try {
-      const res = await axios.post("/contact-center/voice/token");
-      token = res.data?.token;
-      if (!token) throw new Error("no_token");
-    } catch (err) {
-      if (err?.response?.status === 503) {
-        setStatus("not_configured");
-        setDetail(
-          "Sesli arama altyapısı henüz yapılandırılmadı. Yönetici Twilio ayarlarını tamamlayınca aktifleşir.",
-        );
-      } else if (err?.response?.status === 403) {
+    // 2) Mikrofon izni — asenkron istek (kullanıcıya sorar, cihaz kaydını engellemez)
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then((stream) => {
+        stream.getTracks().forEach((t) => t.stop());
+      })
+      .catch((err) => {
+        console.warn("[CC-VOICE] Microphone permission handling:", err);
         setStatus("error");
-        setDetail("Bu işlem için yetkiniz yok.");
-      } else {
-        setStatus("error");
-        setDetail("Token alınamadı. Daha sonra tekrar deneyin.");
-      }
-      return;
-    }
+        if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+          setDetail("Mikrofon izni reddedildi. Sesli çağrı için tarayıcı ayarlarından mikrofon izni vermeniz gerekir.");
+        } else {
+          setDetail("Mikrofon erişim hatası: " + (err.message || err.name));
+        }
+      });
 
-    // 3) SDK + Device — yalnızca şimdi yüklenir.
+    // 3) Cihaz kurulumu ve Kayıt — senkron call-stack içinde
     try {
-      const Twilio = await loadTwilioVoiceSdk();
       teardown();
       const device = new Twilio.Device(token, { closeProtection: true });
       deviceRef.current = device;
@@ -180,7 +247,6 @@ export default function Softphone({ user }) {
       });
       device.on("incoming", (call) => {
         if (callRef.current) {
-          // Already on a call, silently reject incoming
           try { call.reject(); } catch { /* noop */ }
           return;
         }
@@ -203,19 +269,29 @@ export default function Softphone({ user }) {
         });
       });
 
-      await device.register();
-    } catch {
+      device.register().catch((err) => {
+        console.error("[CC-VOICE] Twilio device registration error:", err);
+        setStatus("error");
+        setDetail("Cihaz kaydı yapılamadı.");
+      });
+    } catch (err) {
+      console.error("[CC-VOICE] Twilio device initialization error:", err);
       setStatus("error");
-      setDetail("Sesli arama bileşeni yüklenemedi.");
+      setDetail("Sesli arama cihazı başlatılamadı.");
     }
-  }, [teardown]);
+  }, [teardown, token, fetchToken]);
 
-  const startCall = useCallback(async (override) => {
+  const startCall = useCallback((override) => {
     const device = deviceRef.current;
     if (!device) {
       setDetail("Önce softphone'u aktifleştirin.");
       return;
     }
+    // Prevent repeated call clicks while connect is pending or active
+    if (status === "connecting" || status === "on_call") {
+      return;
+    }
+    
     // onClick event objesi de ilk argüman olarak gelebilir → yalnız string
     // override'ı dikkate al, aksi halde input state'ini kullan.
     const target = (typeof override === "string" ? override : dialNumber || "").trim();
@@ -223,44 +299,68 @@ export default function Softphone({ user }) {
       setDetail("Aranacak numarayı girin.");
       return;
     }
+
+    setStatus("connecting");
+    setDetail("");
+    connectCancelledRef.current = false;
+
     try {
       // Twilio buradaki params'ı TwiML App voiceUrl'ine (/api/voice/outbound)
       // POST eder; kiracı sunucu tarafında client kimliğinden türetilir.
-      const call = await device.connect({ params: { To: target } });
-      callRef.current = call;
-      setStatus("on_call");
-      setDetail("");
-      call.on("disconnect", () => {
-        setStatus("idle");
-        setCallDuration(0);
-        setIsMuted(false);
-        setShowDialpad(false);
-        setShowTransfer(false);
-        callRef.current = null;
-      });
-      call.on("cancel", () => {
-        setStatus("idle");
-        setCallDuration(0);
-        setIsMuted(false);
-        setShowDialpad(false);
-        setShowTransfer(false);
-        callRef.current = null;
-      });
-      call.on("reject", () => {
-        setStatus("idle");
-        setCallDuration(0);
-        setIsMuted(false);
-        setShowDialpad(false);
-        setShowTransfer(false);
-        callRef.current = null;
-      });
-      call.on("error", () => {
-        callRef.current = null;
-        setIsMuted(false);
-        setStatus(deviceRef.current ? "ready" : "idle");
-        setDetail("Çağrı sırasında hata oluştu.");
-      });
+      const callPromise = device.connect({ params: { To: target } });
+      
+      callPromise
+        .then((call) => {
+          if (connectCancelledRef.current) {
+            try { call.disconnect(); } catch { /* noop */ }
+            callRef.current = null;
+            setStatus(deviceRef.current ? "ready" : "idle");
+            return;
+          }
+          callRef.current = call;
+          setStatus("on_call");
+          setDetail("");
+
+          call.on("disconnect", () => {
+            setStatus(deviceRef.current ? "ready" : "idle");
+            setCallDuration(0);
+            setIsMuted(false);
+            setShowDialpad(false);
+            setShowTransfer(false);
+            callRef.current = null;
+          });
+          call.on("cancel", () => {
+            setStatus(deviceRef.current ? "ready" : "idle");
+            setCallDuration(0);
+            setIsMuted(false);
+            setShowDialpad(false);
+            setShowTransfer(false);
+            callRef.current = null;
+          });
+          call.on("reject", () => {
+            setStatus(deviceRef.current ? "ready" : "idle");
+            setCallDuration(0);
+            setIsMuted(false);
+            setShowDialpad(false);
+            setShowTransfer(false);
+            callRef.current = null;
+          });
+          call.on("error", (e) => {
+            console.error("[CC-VOICE] Call error:", e);
+            callRef.current = null;
+            setIsMuted(false);
+            setStatus(deviceRef.current ? "ready" : "idle");
+            setDetail("Çağrı hatası: " + (e?.message || e?.name || "bilinmiyor"));
+          });
+        })
+        .catch((err) => {
+          console.error("[CC-VOICE] Call connect promise failed:", err);
+          callRef.current = null;
+          setStatus(deviceRef.current ? "ready" : "idle");
+          setDetail("Giden çağrı başlatılamadı: " + (err.message || err.name || "bilinmiyor"));
+        });
     } catch (err) {
+      console.error("[CC-VOICE] Device.connect failed synchronously:", err);
       setStatus(deviceRef.current ? "ready" : "idle");
       if (err.name === "NotAllowedError") {
         setDetail("Tarayıcı engeli: Ses çalmak veya arama başlatmak için bir kullanıcı hareketi gerekiyor.");
@@ -268,7 +368,7 @@ export default function Softphone({ user }) {
         setDetail("Giden çağrı başlatılamadı: " + (err.message || err.name));
       }
     }
-  }, [dialNumber]);
+  }, [dialNumber, status]);
 
   // Browser Notifications & Ringtones
   useEffect(() => {
@@ -320,8 +420,15 @@ export default function Softphone({ user }) {
   }, []);
 
   const rejectCall = useCallback(() => {
-    if (callRef.current) callRef.current.reject();
-    setStatus("idle");
+    if (callRef.current) {
+      try {
+        callRef.current.reject();
+      } catch (err) {
+        console.warn("Reject failed", err);
+      }
+    }
+    callRef.current = null;
+    setStatus(deviceRef.current ? "ready" : "idle");
     setCallDuration(0);
     setIsMuted(false);
     setShowDialpad(false);
@@ -329,13 +436,25 @@ export default function Softphone({ user }) {
   }, []);
 
   const endCall = useCallback(() => {
-    if (callRef.current) callRef.current.disconnect();
-    setStatus("idle");
+    if (status === "connecting" && !callRef.current) {
+      connectCancelledRef.current = true;
+      setStatus(deviceRef.current ? "ready" : "idle");
+      return;
+    }
+    if (callRef.current) {
+      try {
+        callRef.current.disconnect();
+      } catch (err) {
+        console.warn("Disconnect failed", err);
+      }
+    }
+    callRef.current = null;
+    setStatus(deviceRef.current ? "ready" : "idle");
     setCallDuration(0);
     setIsMuted(false);
     setShowDialpad(false);
     setShowTransfer(false);
-  }, []);
+  }, [status]);
 
   const toggleMute = useCallback(() => {
     if (callRef.current) {
@@ -436,6 +555,10 @@ export default function Softphone({ user }) {
 
   if (!isStaff) return null;
 
+  const exp = getJwtExpiration(token);
+  const isTokenReady = !!(token && exp && Date.now() < exp - 5 * 60 * 1000);
+  const isReadyToActivate = isSdkReady && isTokenReady;
+
   const formatTimer = (sec) => {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
@@ -460,6 +583,7 @@ export default function Softphone({ user }) {
                 }`}
               />
               <span className="text-sm font-medium text-gray-900">Softphone</span>
+              <span className="text-[9px] font-mono text-gray-400">({import.meta.env.VITE_COMMIT_SHA?.slice(0, 7) || "unknown"})</span>
               <span className="text-xs text-gray-500">
                 {STATUS_LABEL[status] || status}
               </span>
@@ -665,7 +789,7 @@ export default function Softphone({ user }) {
                   Görüşmeyi sonlandır
                 </button>
               </div>
-            ) : status === "ready" ? (
+            ) : (status === "ready" || status === "connecting") ? (
               <div className="space-y-2">
                 <label className="block text-xs font-medium text-gray-600">
                   Aranacak numara
@@ -676,27 +800,38 @@ export default function Softphone({ user }) {
                   value={dialNumber}
                   onChange={(e) => setDialNumber(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") startCall();
+                    if (e.key === "Enter" && status !== "connecting") startCall();
                   }}
+                  disabled={status === "connecting"}
                   placeholder="+90 5XX XXX XX XX"
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-gray-500 focus:outline-none disabled:bg-gray-50 disabled:text-gray-400"
                 />
                 <button
                   type="button"
                   onClick={startCall}
-                  disabled={!dialNumber.trim()}
+                  disabled={!dialNumber.trim() || status === "connecting"}
                   className="w-full rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
                 >
-                  Ara
+                  {status === "connecting" ? "Bağlanıyor..." : "Ara"}
                 </button>
-                <button
-                  type="button"
-                  onClick={deactivate}
-                  className="w-full flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-amber-50 text-amber-700 px-3 py-2 text-sm font-medium hover:bg-amber-100 transition-colors"
-                >
-                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                  Molaya Çık (Çevrimdışı)
-                </button>
+                {status === "connecting" ? (
+                  <button
+                    type="button"
+                    onClick={endCall}
+                    className="w-full rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+                  >
+                    İptal Et
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={deactivate}
+                    className="w-full flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-amber-50 text-amber-700 px-3 py-2 text-sm font-medium hover:bg-amber-100 transition-colors"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                    Molaya Çık (Çevrimdışı)
+                  </button>
+                )}
               </div>
             ) : status === "activating" ? (
               <button
@@ -710,10 +845,15 @@ export default function Softphone({ user }) {
               <button
                 type="button"
                 onClick={activate}
-                className="w-full flex items-center justify-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 transition-colors"
+                disabled={!isReadyToActivate}
+                className={`w-full flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  isReadyToActivate 
+                    ? "bg-emerald-600 text-white hover:bg-emerald-700" 
+                    : "bg-gray-200 text-gray-500 cursor-not-allowed"
+                }`}
               >
-                <span className="w-2 h-2 rounded-full bg-white"></span>
-                Müsait (Çevrimiçi Ol)
+                <span className={`w-2 h-2 rounded-full ${isReadyToActivate ? "bg-white" : "bg-gray-400"}`}></span>
+                {isReadyToActivate ? "Müsait (Çevrimiçi Ol)" : "Telefon hazırlanıyor..."}
               </button>
             )}
           </div>
