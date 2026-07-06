@@ -117,14 +117,27 @@ export default function Softphone({ user }) {
   const activate = useCallback(async () => {
     setStatus("activating");
     setDetail("");
-    // 1) Mikrofon izni — yalnızca açık kullanıcı eylemiyle.
+    // 1) Mikrofon izni ve AudioContext aktivasyonu — yalnızca açık kullanıcı eylemiyle.
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       // İzin alındı; canlı track'leri hemen serbest bırak (SDK kendi açar).
       stream.getTracks().forEach((t) => t.stop());
-    } catch {
+
+      // Safari AudioContext uyandırma/başlatma akışı
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) {
+        const audioCtx = new AudioContextClass();
+        if (audioCtx.state === "suspended") {
+          await audioCtx.resume();
+        }
+      }
+    } catch (err) {
       setStatus("error");
-      setDetail("Mikrofon izni reddedildi. Sesli çağrı için izin gerekir.");
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        setDetail("Mikrofon izni reddedildi. Sesli çağrı için tarayıcı ayarlarından mikrofon izni vermeniz gerekir.");
+      } else {
+        setDetail("Mikrofon erişim hatası: " + (err.message || err.name));
+      }
       return;
     }
 
@@ -247,9 +260,13 @@ export default function Softphone({ user }) {
         setStatus(deviceRef.current ? "ready" : "idle");
         setDetail("Çağrı sırasında hata oluştu.");
       });
-    } catch {
+    } catch (err) {
       setStatus(deviceRef.current ? "ready" : "idle");
-      setDetail("Giden çağrı başlatılamadı.");
+      if (err.name === "NotAllowedError") {
+        setDetail("Tarayıcı engeli: Ses çalmak veya arama başlatmak için bir kullanıcı hareketi gerekiyor.");
+      } else {
+        setDetail("Giden çağrı başlatılamadı: " + (err.message || err.name));
+      }
     }
   }, [dialNumber]);
 
@@ -281,7 +298,7 @@ export default function Softphone({ user }) {
       setDialNumber(number);
       setOpen(true);
       if (status === "ready") {
-        startCall(number);
+        setDetail("Numara hazır. Arama başlatmak için 'Ara' butonuna tıklayın.");
       } else if (status === "on_call" || status === "incoming") {
         setDetail("Görüşme sürüyor; numara hazır, görüşme bitince arayabilirsiniz.");
       } else {
@@ -290,7 +307,7 @@ export default function Softphone({ user }) {
     };
     window.addEventListener("syroce:softphone-dial", onDial);
     return () => window.removeEventListener("syroce:softphone-dial", onDial);
-  }, [isStaff, status, startCall]);
+  }, [isStaff, status]);
 
   const acceptCall = useCallback(() => {
     try {
