@@ -146,16 +146,16 @@ def _resolve_jwt_lifetime_minutes() -> int:
     raw_minutes = os.environ.get("JWT_EXPIRATION_MINUTES")
     if raw_minutes:
         try:
-            return max(1, int(raw_minutes))
+            return max(120, int(raw_minutes))
         except (TypeError, ValueError):
             pass
     raw_hours = os.environ.get("JWT_EXPIRATION_HOURS")
     if raw_hours is not None:
         try:
-            return max(1, int(round(float(raw_hours) * 60)))
+            return max(120, int(round(float(raw_hours) * 60)))
         except (TypeError, ValueError):
             pass
-    return _V3_DEFAULT_ACCESS_MINUTES
+    return max(120, _V3_DEFAULT_ACCESS_MINUTES)
 
 
 JWT_EXPIRATION_MINUTES = _resolve_jwt_lifetime_minutes()
