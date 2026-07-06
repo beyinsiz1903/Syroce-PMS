@@ -660,15 +660,15 @@ async def login(data: UserLogin, request: Request, response: Response):
         # challenge tokens that were minted before a password change
         # (tokens_invalid_before watermark). Without iat the verify path
         # would mint a fresh access_token from a stale credential.
-        _now_dt = datetime.now(UTC)
+        _now_ts = datetime.now(UTC).timestamp()
         challenge = _jwt.encode(
             {
                 "user_id": user.id,
                 "tenant_id": user.tenant_id,
                 "purpose": "2fa_challenge",
                 "jti": challenge_jti,
-                "iat": int(_now_dt.timestamp()),
-                "exp": _now_dt + timedelta(minutes=5),
+                "iat": _now_ts,
+                "exp": _now_ts + 5 * 60,
             },
             JWT_SECRET,
             algorithm=JWT_ALGORITHM,
@@ -828,7 +828,20 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request, response: R
     invalid_before = user_doc.get("tokens_invalid_before")
     if invalid_before:
         ch_iat = decoded.get("iat")
-        if not ch_iat or float(ch_iat) < float(invalid_before):
+        if not ch_iat:
+            f_iat = 0.0
+            f_ib = 1.0
+        else:
+            try:
+                import math
+                f_iat = float(ch_iat)
+                f_ib = float(invalid_before)
+                if math.isnan(f_iat) or math.isinf(f_iat) or math.isnan(f_ib) or math.isinf(f_ib):
+                    raise ValueError("Invalid timestamp")
+            except (TypeError, ValueError):
+                f_iat = 0.0
+                f_ib = 1.0
+        if f_iat < f_ib:
             await db.audit_logs.insert_one(
                 {
                     "id": str(__import__("uuid").uuid4()),
@@ -1179,7 +1192,23 @@ def _enforce_refresh_invariants(user_doc: dict, payload: dict, *, kind: str) -> 
     invalid_before = user_doc.get("tokens_invalid_before")
     if invalid_before:
         iat = payload.get("iat")
-        if not iat or float(iat) < float(invalid_before):
+        if not iat:
+            raise HTTPException(
+                status_code=401,
+                detail="Şifre değişti - lütfen yeniden giriş yapın",
+            )
+        try:
+            import math
+            f_iat = float(iat)
+            f_ib = float(invalid_before)
+            if math.isnan(f_iat) or math.isinf(f_iat) or math.isnan(f_ib) or math.isinf(f_ib):
+                raise ValueError("Invalid timestamp")
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=401,
+                detail="Şifre değişti - lütfen yeniden giriş yapın",
+            )
+        if f_iat < f_ib:
             raise HTTPException(
                 status_code=401,
                 detail="Şifre değişti - lütfen yeniden giriş yapın",

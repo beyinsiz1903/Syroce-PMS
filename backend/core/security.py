@@ -395,8 +395,23 @@ async def get_current_user(
         invalid_before = user_doc.get("tokens_invalid_before")
         if invalid_before:
             iat = payload.get("iat")
-            # Compare floats directly with no leeway to guarantee immediate revocation
-            if not iat or float(iat) < float(invalid_before):
+            if not iat:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Şifre değişti - lütfen yeniden giriş yapın",
+                )
+            try:
+                import math
+                f_iat = float(iat)
+                f_ib = float(invalid_before)
+                if math.isnan(f_iat) or math.isinf(f_iat) or math.isnan(f_ib) or math.isinf(f_ib):
+                    raise ValueError("Invalid timestamp")
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Şifre değişti - lütfen yeniden giriş yapın",
+                )
+            if f_iat < f_ib:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Şifre değişti - lütfen yeniden giriş yapın",

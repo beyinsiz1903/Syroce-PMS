@@ -113,3 +113,23 @@ async def test_auth_watermark_lifecycle():
         with pytest.raises(HTTPException) as exc:
             await get_current_user(credentials=credentials)
         assert exc.value.status_code == 401
+
+    # 6. Malformed iat tests (missing, null, bad string, NaN, Infinity)
+    bad_payloads = [
+        {"user_id": user_id, "tenant_id": tenant_id, "jti": "jti1", "exp": now + 3600},  # missing iat
+        {"user_id": user_id, "tenant_id": tenant_id, "iat": None, "jti": "jti2", "exp": now + 3600},  # None iat
+        {"user_id": user_id, "tenant_id": tenant_id, "iat": "invalid_str", "jti": "jti3", "exp": now + 3600},  # bad string
+        {"user_id": user_id, "tenant_id": tenant_id, "iat": float("nan"), "jti": "jti4", "exp": now + 3600},  # NaN iat
+        {"user_id": user_id, "tenant_id": tenant_id, "iat": float("inf"), "jti": "jti5", "exp": now + 3600},  # Inf iat
+    ]
+
+    for bp in bad_payloads:
+        bad_token = jwt.encode(bp, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        credentials.credentials = bad_token
+        with patch("core.security.is_jti_revoked", new=AsyncMock(return_value=False)), \
+             patch("security.encrypted_lookup.decrypt_user_doc", side_effect=lambda x: x), \
+             patch("core.tenant_db.get_system_db", return_value=mock_db), \
+             patch("core.security._user_doc_cache_get", return_value=None):
+            with pytest.raises(HTTPException) as exc:
+                await get_current_user(credentials=credentials)
+            assert exc.value.status_code == 401
