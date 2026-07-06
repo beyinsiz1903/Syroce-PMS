@@ -26,7 +26,7 @@ export function securityAdminRoutes({ p, pa }) {
     { path: "/admin/tenants", ...pa(AdminTenants), wrapLayout: true, layoutModule: "admin-tenants" },
     { path: "/admin/vendors", ...pa(AdminVendors), wrapLayout: true, layoutModule: "admin_vendors" },
     { path: "/admin/quick-id", ...pa(QuickIdSettings), wrapLayout: true, layoutModule: "quick_id_settings" },
-    { path: "/admin/voice-numbers", ...pa(VoiceNumberMapping), wrapLayout: true, layoutModule: "voice-number-mapping" },
+    { path: "/admin/voice-numbers", ...p(VoiceNumberMapping), wrapLayout: true, layoutModule: "voice-number-mapping" },
     { path: "/admin/contact-center", ...pa(ContactCenterDashboard), wrapLayout: true, layoutModule: "contact-center" },
     { path: "/admin/room-qr-codes", ...pa(RoomQrCodes), wrapLayout: true, layoutModule: "room_qr_codes" },
     { path: "/app/room-requests", ...p(RoomRequests), wrapLayout: true, layoutModule: "room_qr_requests" },
