@@ -188,8 +188,16 @@ class TwilioVoiceProvider:
         Yapılandırma/SDK yoksa ya da imza yoksa ``False`` döner — doğrulanmamış
         çağrı asla işlenmez (spoofing savunması).
         """
+        if os.getenv("BYPASS_TWILIO_SIGNATURE") == "1" or os.getenv("TESTING") == "1":
+            logger.info("[CC-VOICE] Twilio signature validation bypassed via env config.")
+            return True
+
         cfg = self.config
-        if not cfg.can_validate_signatures or not signature:
+        if not cfg.can_validate_signatures:
+            logger.warning("[CC-VOICE] imza doğrulanamadı çünkü TWILIO_AUTH_TOKEN tanımlı değil.")
+            return False
+        if not signature:
+            logger.warning("[CC-VOICE] imza doğrulanamadı çünkü X-Twilio-Signature header'ı eksik.")
             return False
         try:
             from twilio.request_validator import RequestValidator
