@@ -50,9 +50,17 @@ async def csrf_guard_middleware(request: Request, call_next):
     if auth_header.lower().startswith("bearer "):
         return await call_next(request)
 
-    # Bypass CSRF check for public voice/telephony endpoints (Twilio webhooks use signature auth)
-    path = request.url.path
-    if path.startswith("/api/voice/") or path.startswith("/api/telephony/"):
+    # Bypass CSRF check ONLY for Twilio's public voice webhook endpoints.
+    # These endpoints use Twilio's X-Twilio-Signature cryptographic validation.
+    # Cookie-based authenticated endpoints (like /api/contact-center/voice/token)
+    # must remain protected under CSRF.
+    TWILIO_PUBLIC_WEBHOOKS = {
+        "/api/voice/inbound",
+        "/api/voice/outbound",
+        "/api/voice/status",
+        "/api/voice/recording",
+    }
+    if request.url.path in TWILIO_PUBLIC_WEBHOOKS:
         return await call_next(request)
 
 
