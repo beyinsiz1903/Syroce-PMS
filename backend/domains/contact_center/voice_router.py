@@ -703,8 +703,19 @@ async def voice_outbound(request: Request):
     call_sid = params.get("CallSid", "")
     to_number = params.get("To", "")
     # Kiracı YALNIZCA sunucu-basılı client kimliğinden gelir (istemci geçemez).
-    tenant_id = _parse_client_identity(params.get("From", "") or params.get("Caller", ""))
+    from_val = params.get("From", "") or params.get("Caller", "")
+    tenant_id = _parse_client_identity(from_val)
+
+    # Safe temporary diagnostics logging (PII-free)
+    logger.info(
+        f"[CC-VOICE-DIAG] CallSid={call_sid} "
+        f"identity_present={bool(from_val)} "
+        f"tenant_resolved={bool(tenant_id)} "
+        f"to_last4={to_number[-4:] if to_number else 'None'}"
+    )
+
     if not tenant_id:
+        logger.warning("[CC-VOICE-DIAG] Outbound failed: tenant_resolved=false")
         return Response(
             content=provider.say_fallback("Çağrı başlatılamadı."),
             media_type=_XML,
@@ -713,7 +724,19 @@ async def voice_outbound(request: Request):
     number_cfg = await _resolve_number_for_tenant(tenant_id)
     caller_id = (number_cfg or {}).get("to_number")
     sanitized = provider.sanitize_dial_number(to_number)
+
+    logger.info(
+        f"[CC-VOICE-DIAG] Number lookup: mapping_found={bool(number_cfg)} "
+        f"caller_id_present={bool(caller_id)} "
+        f"to_last4={sanitized[-4:] if sanitized else 'None'}"
+    )
+
     if not caller_id or not sanitized:
+        logger.warning(
+            f"[CC-VOICE-DIAG] Outbound failed: mapping_found={bool(number_cfg)} "
+            f"caller_id_present={bool(caller_id)} "
+            f"sanitized_present={bool(sanitized)}"
+        )
         return Response(
             content=provider.say_fallback("Çağrı başlatılamadı. Lütfen numarayı kontrol edin."),
             media_type=_XML,
