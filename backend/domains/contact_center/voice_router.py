@@ -598,17 +598,25 @@ def _parse_client_identity(value: str) -> str | None:
 @public_router.get("/debug-config")
 async def voice_debug_config():
     """Non-sensitive status of Twilio configuration and environment variables."""
-    cfg = get_twilio_voice_config()
-    return {
-        "has_account_sid": bool(cfg.account_sid),
-        "has_auth_token": bool(cfg.auth_token),
-        "has_api_key": bool(cfg.api_key_sid),
-        "has_api_secret": bool(cfg.api_key_secret),
-        "has_twiml_app_sid": bool(cfg.twiml_app_sid),
-        "bypass_signature": os.getenv("BYPASS_TWILIO_SIGNATURE"),
-        "testing": os.getenv("TESTING"),
-        "public_app_url": os.getenv("PUBLIC_APP_URL"),
-    }
+    try:
+        cfg = get_twilio_voice_config()
+        return {
+            "has_account_sid": bool(cfg.account_sid),
+            "has_auth_token": bool(cfg.auth_token),
+            "has_api_key": bool(cfg.api_key_sid),
+            "has_api_secret": bool(cfg.api_key_secret),
+            "has_twiml_app_sid": bool(cfg.twiml_app_sid),
+            "bypass_signature": os.getenv("BYPASS_TWILIO_SIGNATURE"),
+            "testing": os.getenv("TESTING"),
+            "public_app_url": os.getenv("PUBLIC_APP_URL"),
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "message": str(e),
+            "traceback": traceback.format_exc(),
+        }
 
 
 @public_router.post("/inbound")
