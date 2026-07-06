@@ -801,7 +801,7 @@ async def _authenticate_ws_token(token: str | None) -> dict | None:
     invalid_before = user_doc.get("tokens_invalid_before")
     if invalid_before:
         iat = payload.get("iat")
-        if not iat or int(iat) < int(invalid_before):
+        if not iat or int(iat) < int(invalid_before) - 10:
             return None
 
     return {

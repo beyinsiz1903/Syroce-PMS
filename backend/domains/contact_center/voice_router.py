@@ -141,7 +141,9 @@ async def issue_voice_token(
     kiracının ajanına yönlenebilir. Twilio yapılandırılmadıysa fail-closed
     ``not_configured`` döner (sahte token YOK). Token ASLA loglanmaz.
     """
-    identity = f"{current_user.tenant_id}:{current_user.id}"
+    tenant_part = current_user.tenant_id.replace("-", "_")
+    user_part = current_user.id.replace("-", "_")
+    identity = f"{tenant_part}__{user_part}"
     provider = TwilioVoiceProvider()
     result = provider.generate_access_token(identity=identity)
     if not result.get("success"):
@@ -393,20 +395,19 @@ def _normalize_number(raw: str | None) -> str:
 
 
 def _validate_agent_identity(agent_identity: str | None, tenant_id: str) -> str | None:
-    """Ajan kimliği opsiyonel; varsa kiracı-kapsamlı olmalı (``<tenant_id>:...``).
-
-    Token kimliği formatı ``<tenant_id>:<user_id>`` ile birebir uyumlu — başka
-    kiracının ajanına çağrı yönlendirmeyi engeller.
-    """
+    """Ajan kimliği opsiyonel; varsa kiracı-kapsamlı olmalı (``<tenant_id>:...`` veya ``<tenant_id_with_underscores>_...``)."""
     if agent_identity is None:
         return None
     ai = agent_identity.strip()
     if not ai:
         return None
-    if not ai.startswith(f"{tenant_id}:"):
+    tenant_part = tenant_id.replace("-", "_")
+    is_legacy = ai.startswith(f"{tenant_id}:")
+    is_safe = ai.startswith(f"{tenant_part}_")
+    if not is_legacy and not is_safe:
         raise HTTPException(
             status_code=422,
-            detail="Ajan kimliği ilgili otel kapsamında olmalı (<tenant_id>:<kullanıcı>)",
+            detail="Ajan kimliği ilgili otel kapsamında olmalı (<tenant_id>_<kullanıcı>)",
         )
     return ai
 
@@ -566,33 +567,95 @@ async def _resolve_tenant_for_number(to_number: str) -> dict | None:
     return await db.contact_center_voice_numbers.find_one({"to_number": to_number}, {"_id": 0})
 
 
-async def _resolve_number_for_tenant(tenant_id: str) -> dict | None:
+async def _resolve_number_for_tenant(tenant_id: str, user_id: str | None = None) -> dict | None:
     """Kiracının giden çağrı caller ID (Twilio numarası) eşlemesini döner.
 
-    Giden çağrıda caller ID istemciden ALINMAZ — kiracının operatörce seedlenmiş
-    ``contact_center_voice_numbers`` satırından (``to_number``) türetilir. Yoksa None
-    (fail-closed: numara olmadan giden çağrı başlatılmaz).
+    Öncelikle ajana özel aktif eşlemeyi arar. Bulunamazsa otelin varsayılan (ajan kimliği boş)
+    aktif eşlemesine fallback yapar. is_active=False olanlar dikkate alınmaz.
     """
     if not tenant_id:
         return None
-    return await db.contact_center_voice_numbers.find_one({"tenant_id": tenant_id}, {"_id": 0})
+
+    if user_id:
+        legacy_agent_identity = f"{tenant_id}:{user_id}"
+        safe_agent_identity = f"{tenant_id.replace('-', '_')}__{user_id.replace('-', '_')}"
+        fallback_agent_identity = f"{tenant_id.replace('-', '_')}_{user_id.replace('-', '_')}"
+        mapping = await db.contact_center_voice_numbers.find_one(
+            {
+                "tenant_id": tenant_id,
+                "agent_identity": {"$in": [legacy_agent_identity, safe_agent_identity, fallback_agent_identity]},
+                "is_active": {"$ne": False},
+            },
+            {"_id": 0},
+        )
+        if mapping:
+            return mapping
+
+    # Varsayılan otel yönlendirmesine fallback (agent_identity boş, null veya yok)
+    return await db.contact_center_voice_numbers.find_one(
+        {
+            "tenant_id": tenant_id,
+            "$or": [
+                {"agent_identity": {"$in": ["", None]}},
+                {"agent_identity": {"$exists": False}},
+            ],
+            "is_active": {"$ne": False},
+        },
+        {"_id": 0},
+    )
 
 
-def _parse_client_identity(value: str) -> str | None:
-    """Twilio ``From``/``Caller`` (``client:<tenant_id>:<user_id>``) → tenant_id.
+def _reconstruct_uuid(s: str) -> str:
+    if len(s) == 36 and s[8] == "_" and s[13] == "_" and s[18] == "_" and s[23] == "_":
+        return f"{s[:8]}-{s[9:13]}-{s[14:18]}-{s[19:23]}-{s[24:]}"
+    return s
 
-    Kimlik access token'da SUNUCU tarafından basıldığı ve Twilio isteği imzaladığı
-    için buradan türetilen ``tenant_id`` GÜVENİLİRDİR (istemci sahteleyemez). Beklenen
-    biçim dışındaysa None (fail-closed).
+
+def _parse_client_identity(value: str) -> tuple[str | None, str | None]:
+    """Twilio ``From``/``Caller`` → (tenant_id, user_id).
+
+    Hem geleneksel iki nokta formatını (client:tenant_id:user_id) hem de safe alt çizgi
+    formatını (client:tenant_id_user_id, hyphens replaced with underscores) destekler.
     """
     if not value:
-        return None
+        return None, None
     raw = value.strip()
     if raw.startswith("client:"):
         raw = raw[len("client:") :]
-    parts = raw.split(":", 1)
-    tenant_id = parts[0].strip() if parts else ""
-    return tenant_id or None
+
+    if raw.count("__") > 1 or raw.count(":") > 1:
+        return None, None
+
+    # 1. Geleneksel iki noktalı format
+    if ":" in raw:
+        parts = raw.split(":", 1)
+        tenant_id = parts[0].strip() if parts else None
+        user_id = parts[1].strip() if len(parts) > 1 else None
+        return tenant_id or None, user_id or None
+
+    # 2. Çift alt çizgili format (en güvenli, sıfır çakışma)
+    if "__" in raw:
+        parts = raw.split("__", 1)
+        tenant_id = _reconstruct_uuid(parts[0].strip())
+        user_id = _reconstruct_uuid(parts[1].strip())
+        return tenant_id or None, user_id or None
+
+    # 3. Güvenli tek alt çizgili format (kullanıcı kimliği son 36 karakterdir ve UUID formatındadır)
+    if len(raw) >= 37:
+        user_part = raw[-36:]
+        sep = raw[-37]
+        if sep == "_" and user_part[8] == "_" and user_part[13] == "_" and user_part[18] == "_" and user_part[23] == "_":
+            tenant_part = raw[:-37]
+            tenant_id = _reconstruct_uuid(tenant_part)
+            user_id = _reconstruct_uuid(user_part)
+            return tenant_id or None, user_id or None
+
+    # 4. Genel tek alt çizgili format (test ortamları veya UUID olmayan basit kimlikler için)
+    if "_" in raw:
+        parts = raw.rsplit("_", 1)
+        return parts[0].strip() or None, parts[1].strip() or None
+
+    return None, None
 
 
 @public_router.get("/debug-config")
@@ -704,37 +767,76 @@ async def voice_outbound(request: Request):
     to_number = params.get("To", "")
     # Kiracı YALNIZCA sunucu-basılı client kimliğinden gelir (istemci geçemez).
     from_val = params.get("From", "") or params.get("Caller", "")
-    tenant_id = _parse_client_identity(from_val)
+    tenant_id, user_id = _parse_client_identity(from_val)
 
-    # Safe temporary diagnostics logging (PII-free)
-    logger.info(
-        f"[CC-VOICE-DIAG] CallSid={call_sid} "
-        f"identity_present={bool(from_val)} "
-        f"tenant_resolved={bool(tenant_id)} "
-        f"to_last4={to_number[-4:] if to_number else 'None'}"
-    )
+    tenant_resolved = bool(tenant_id)
+    agent_identity_present = bool(user_id)
+    agent_mapping_found = False
+    tenant_default_mapping_found = False
 
     if not tenant_id:
-        logger.warning("[CC-VOICE-DIAG] Outbound failed: tenant_resolved=false")
+        logger.warning(
+            f"[CC-VOICE-DIAG] Outbound failed: tenant_resolved=False "
+            f"agent_identity_present={agent_identity_present}"
+        )
         return Response(
             content=provider.say_fallback("Çağrı başlatılamadı."),
             media_type=_XML,
         )
 
-    number_cfg = await _resolve_number_for_tenant(tenant_id)
+    # Önce ajana özel aktif eşlemeyi arayalım, yoksa varsayılana fallback yapalım
+    number_cfg = None
+    if user_id:
+        legacy_agent_identity = f"{tenant_id}:{user_id}"
+        safe_agent_identity = f"{tenant_id.replace('-', '_')}__{user_id.replace('-', '_')}"
+        fallback_agent_identity = f"{tenant_id.replace('-', '_')}_{user_id.replace('-', '_')}"
+        number_cfg = await db.contact_center_voice_numbers.find_one(
+            {
+                "tenant_id": tenant_id,
+                "agent_identity": {"$in": [legacy_agent_identity, safe_agent_identity, fallback_agent_identity]},
+                "is_active": {"$ne": False},
+            },
+            {"_id": 0},
+        )
+        if number_cfg:
+            agent_mapping_found = True
+
+    if not number_cfg:
+        number_cfg = await db.contact_center_voice_numbers.find_one(
+            {
+                "tenant_id": tenant_id,
+                "$or": [
+                    {"agent_identity": {"$in": ["", None]}},
+                    {"agent_identity": {"$exists": False}},
+                ],
+                "is_active": {"$ne": False},
+            },
+            {"_id": 0},
+        )
+        if number_cfg:
+            tenant_default_mapping_found = True
+
     caller_id = (number_cfg or {}).get("to_number")
     sanitized = provider.sanitize_dial_number(to_number)
 
     logger.info(
-        f"[CC-VOICE-DIAG] Number lookup: mapping_found={bool(number_cfg)} "
-        f"caller_id_present={bool(caller_id)} "
-        f"to_last4={sanitized[-4:] if sanitized else 'None'}"
+        f"[CC-VOICE-DIAG] Outbound attempt: "
+        f"CallSid={call_sid} "
+        f"tenant_resolved={tenant_resolved} "
+        f"agent_identity_present={agent_identity_present} "
+        f"agent_mapping_found={agent_mapping_found} "
+        f"tenant_default_mapping_found={tenant_default_mapping_found} "
+        f"selected_caller_id_last4={caller_id[-4:] if (caller_id and len(caller_id) >= 4) else 'None'}"
     )
 
     if not caller_id or not sanitized:
         logger.warning(
-            f"[CC-VOICE-DIAG] Outbound failed: mapping_found={bool(number_cfg)} "
-            f"caller_id_present={bool(caller_id)} "
+            f"[CC-VOICE-DIAG] Outbound failed: "
+            f"tenant_resolved={tenant_resolved} "
+            f"agent_identity_present={agent_identity_present} "
+            f"agent_mapping_found={agent_mapping_found} "
+            f"tenant_default_mapping_found={tenant_default_mapping_found} "
+            f"selected_caller_id_present={bool(caller_id)} "
             f"sanitized_present={bool(sanitized)}"
         )
         return Response(

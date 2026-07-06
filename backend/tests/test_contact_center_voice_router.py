@@ -53,7 +53,25 @@ class _FakeColl:
 
     @staticmethod
     def _match(doc, flt):
-        return all(doc.get(k) == v for k, v in flt.items())
+        def _match_val(val, cond):
+            if isinstance(cond, dict):
+                if "$in" in cond:
+                    return val in cond["$in"]
+                if "$ne" in cond:
+                    return val != cond["$ne"]
+                if "$exists" in cond:
+                    exists = cond["$exists"]
+                    return (val is not None) if exists else (val is None)
+            return val == cond
+
+        for k, v in flt.items():
+            if k == "$or":
+                if not any(_FakeColl._match(doc, sub) for sub in v):
+                    return False
+            else:
+                if not _match_val(doc.get(k), v):
+                    return False
+        return True
 
     @staticmethod
     def _clean(doc):
@@ -773,7 +791,10 @@ def ent_client(monkeypatch):
             "subscription_tier": "basic",
         }
         user_doc = {"role": "super_admin"} if super_admin else {"role": "front_desk"}
-        monkeypatch.setattr(_entitlement, "db", _EntFakeDB(tenant_doc, user_doc))
+        fake_ent_db = _EntFakeDB(tenant_doc, user_doc)
+        monkeypatch.setattr(_entitlement, "db", fake_ent_db)
+        from core import tenant_db
+        monkeypatch.setattr(tenant_db, "get_system_db", lambda: fake_ent_db)
 
         async def _noop_usage(*a, **k):
             return None
@@ -904,3 +925,152 @@ def test_readiness_super_admin_returns_only_booleans_no_secret_leak(monkeypatch)
     assert body["twilio"]["can_validate_signatures"] is True
     assert body["public_app_url_set"] is True
     assert body["recording_storage"]["is_configured"] is True
+
+
+def test_outbound_agent_specific_mapping_priority(fake_db, sig_ok):
+    # Both default mapping and agent-specific mapping exist
+    fake_db.contact_center_voice_numbers.docs.append(
+        {"tenant_id": "t1", "to_number": "+11111111111", "agent_identity": None}
+    )
+    fake_db.contact_center_voice_numbers.docs.append(
+        {"tenant_id": "t1", "to_number": "+22222222222", "agent_identity": "t1:u1"}
+    )
+    req = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": _SID},
+        signature="good",
+    )
+    resp = asyncio.run(voice_router.voice_outbound(req))
+    xml = resp.body.decode()
+    # Should use the agent-specific mapping
+    assert 'callerId="+22222222222"' in xml
+
+
+def test_outbound_agent_mapping_absent_tenant_default_used(fake_db, sig_ok):
+    # Only default mapping exists
+    fake_db.contact_center_voice_numbers.docs.append(
+        {"tenant_id": "t1", "to_number": "+11111111111", "agent_identity": None}
+    )
+    req = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": _SID},
+        signature="good",
+    )
+    resp = asyncio.run(voice_router.voice_outbound(req))
+    xml = resp.body.decode()
+    # Should fall back to the default mapping
+    assert 'callerId="+11111111111"' in xml
+
+
+def test_outbound_no_mapping_exists_fails_closed(fake_db, sig_ok):
+    # No mapping exists
+    req = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": _SID},
+        signature="good",
+    )
+    resp = asyncio.run(voice_router.voice_outbound(req))
+    xml = resp.body.decode()
+    assert "<Dial" not in xml and "<Say" in xml
+
+
+def test_outbound_inactive_mapping_ignored(fake_db, sig_ok):
+    # Inactive agent mapping and active default mapping
+    fake_db.contact_center_voice_numbers.docs.append(
+        {"tenant_id": "t1", "to_number": "+11111111111", "agent_identity": None, "is_active": True}
+    )
+    fake_db.contact_center_voice_numbers.docs.append(
+        {"tenant_id": "t1", "to_number": "+22222222222", "agent_identity": "t1:u1", "is_active": False}
+    )
+    req = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": _SID},
+        signature="good",
+    )
+    resp = asyncio.run(voice_router.voice_outbound(req))
+    xml = resp.body.decode()
+    # Should use the default mapping because agent mapping is inactive
+    assert 'callerId="+11111111111"' in xml
+
+
+def test_outbound_cross_tenant_mapping_rejected(fake_db, sig_ok):
+    # Mapping for another tenant
+    fake_db.contact_center_voice_numbers.docs.append(
+        {"tenant_id": "other_tenant", "to_number": "+11111111111", "agent_identity": None}
+    )
+    req = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": _SID},
+        signature="good",
+    )
+    resp = asyncio.run(voice_router.voice_outbound(req))
+    xml = resp.body.decode()
+    # Should fail because t1 has no mappings
+    assert "<Dial" not in xml and "<Say" in xml
+
+
+def test_outbound_safe_identity_format_parsing(fake_db, sig_ok):
+    # Test safe format with double underscores: tenantId__userId
+    fake_db.contact_center_voice_numbers.docs.append(
+        {"tenant_id": "t1", "to_number": "+22222222222", "agent_identity": "t1__u1"}
+    )
+    req = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1__u1", "To": _TARGET, "CallSid": _SID},
+        signature="good",
+    )
+    resp = asyncio.run(voice_router.voice_outbound(req))
+    xml = resp.body.decode()
+    assert 'callerId="+22222222222"' in xml
+
+
+def test_outbound_inactive_default_ignored(fake_db, sig_ok):
+    # Default mapping exists but is inactive, no agent mapping exists
+    fake_db.contact_center_voice_numbers.docs.append(
+        {"tenant_id": "t1", "to_number": "+11111111111", "agent_identity": None, "is_active": False}
+    )
+    req = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1__u1", "To": _TARGET, "CallSid": _SID},
+        signature="good",
+    )
+    resp = asyncio.run(voice_router.voice_outbound(req))
+    xml = resp.body.decode()
+    # Should fail closed with controlled TwiML failure since the default mapping is inactive
+    assert "<Dial" not in xml and "<Say" in xml
+
+
+def test_parse_client_identity_cases():
+    from domains.contact_center.voice_router import _parse_client_identity
+    
+    # 1. Legacy colon format
+    assert _parse_client_identity("client:t1:u1") == ("t1", "u1")
+    assert _parse_client_identity("t1:u1") == ("t1", "u1")
+    
+    # 2. Safe double-underscore format
+    assert _parse_client_identity("client:t1__u1") == ("t1", "u1")
+    assert _parse_client_identity("t1__u1") == ("t1", "u1")
+    
+    # 3. Safe single-underscore format (fallback)
+    assert _parse_client_identity("client:t1_u1") == ("t1", "u1")
+    assert _parse_client_identity("t1_u1") == ("t1", "u1")
+    
+    # 4. UUID tenant and user values (with hyphens recovered)
+    t_uuid = "bb306859-9748-430f-b24a-5a0d0ea29309"
+    u_uuid = "088e9171-59d6-4ff5-9065-e9d89cedb886"
+    t_safe = t_uuid.replace("-", "_")
+    u_safe = u_uuid.replace("-", "_")
+    assert _parse_client_identity(f"client:{t_safe}__{u_safe}") == (t_uuid, u_uuid)
+    assert _parse_client_identity(f"client:{t_safe}_{u_safe}") == (t_uuid, u_uuid)
+    
+    # 5. Values containing underscores (double-underscore solves ambiguity)
+    assert _parse_client_identity("client:tenant_demo_user__user_123") == ("tenant_demo_user", "user_123")
+    
+    # 6. Malformed input
+    assert _parse_client_identity("client:t1__u1__extra") == (None, None)
+    assert _parse_client_identity("client:t1:u1:extra") == (None, None)
+    assert _parse_client_identity("client:noseparator") == (None, None)
+    assert _parse_client_identity("client:no-separator") == (None, None)
+    assert _parse_client_identity("client:") == (None, None)
+    assert _parse_client_identity("") == (None, None)
+    assert _parse_client_identity(None) == (None, None)
