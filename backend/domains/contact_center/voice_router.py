@@ -599,6 +599,7 @@ def _parse_client_identity(value: str) -> str | None:
 async def voice_debug_config():
     """Non-sensitive status of Twilio configuration and environment variables."""
     try:
+        from core.security import JWT_EXPIRATION_MINUTES as resolved_jwt_min
         cfg = get_twilio_voice_config()
         return {
             "has_account_sid": bool(cfg.account_sid),
@@ -609,6 +610,9 @@ async def voice_debug_config():
             "bypass_signature": os.getenv("BYPASS_TWILIO_SIGNATURE"),
             "testing": os.getenv("TESTING"),
             "public_app_url": os.getenv("PUBLIC_APP_URL"),
+            "env_jwt_minutes": os.getenv("JWT_EXPIRATION_MINUTES"),
+            "env_jwt_hours": os.getenv("JWT_EXPIRATION_HOURS"),
+            "resolved_jwt_expiration_minutes": resolved_jwt_min,
         }
     except Exception as e:
         import traceback
