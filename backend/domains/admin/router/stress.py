@@ -159,6 +159,13 @@ STRESS_CLEANUP_INDEXED_COLLECTIONS = (
     "service_complaints",
     "messages",
     "notifications",
+    # Proactively index remaining heavy collections to avoid delete timeouts
+    "pos_orders",
+    "pos_transactions",
+    "spa_appointments",
+    "mice_events",
+    "mice_opportunities",
+    "staff_members",
 )
 STRESS_CLEANUP_INDEX_NAME = "ix_stress_cleanup_prefix"
 
