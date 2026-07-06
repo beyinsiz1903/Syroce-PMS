@@ -17,6 +17,7 @@ Doktrin: telefon/medya/sır gibi PII ASLA loglanmaz; yalnızca PII'siz durum ala
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 from xml.sax.saxutils import escape, quoteattr
 
@@ -188,7 +189,7 @@ class TwilioVoiceProvider:
         Yapılandırma/SDK yoksa ya da imza yoksa ``False`` döner — doğrulanmamış
         çağrı asla işlenmez (spoofing savunması).
         """
-        if os.getenv("BYPASS_TWILIO_SIGNATURE") == "1" or os.getenv("TESTING") == "1":
+        if os.getenv("BYPASS_TWILIO_SIGNATURE") == "1":
             logger.info("[CC-VOICE] Twilio signature validation bypassed via env config.")
             return True
 
