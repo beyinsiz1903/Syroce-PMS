@@ -229,7 +229,6 @@ describe("Softphone frontend user gesture flow", () => {
     expect(mockDevice).toHaveBeenCalled();
     expect(mockRegister).toHaveBeenCalled();
   });
-
   it("handles Device.connect returning Promise<Call> and registers listeners only on resolved Call", async () => {
     const mockOn = vi.fn();
     const mockDisconnect = vi.fn();
