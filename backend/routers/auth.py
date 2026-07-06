@@ -828,7 +828,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request, response: R
     invalid_before = user_doc.get("tokens_invalid_before")
     if invalid_before:
         ch_iat = decoded.get("iat")
-        if not ch_iat or int(ch_iat) < int(invalid_before):
+        if not ch_iat or int(ch_iat) < int(invalid_before) - 2:
             await db.audit_logs.insert_one(
                 {
                     "id": str(__import__("uuid").uuid4()),
@@ -1179,7 +1179,7 @@ def _enforce_refresh_invariants(user_doc: dict, payload: dict, *, kind: str) -> 
     invalid_before = user_doc.get("tokens_invalid_before")
     if invalid_before:
         iat = payload.get("iat")
-        if not iat or int(iat) < int(invalid_before):
+        if not iat or int(iat) < int(invalid_before) - 2:
             raise HTTPException(
                 status_code=401,
                 detail="Şifre değişti - lütfen yeniden giriş yapın",

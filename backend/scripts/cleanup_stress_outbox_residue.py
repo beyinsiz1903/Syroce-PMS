@@ -103,6 +103,7 @@ RECON_COLL = "channel_reconciliation_cases"
 # (``domains/admin/router/stress.py``) can never drift apart. PENDING rows of
 # any OTHER type are NOT swept — don't mask a real stuck-delivery condition.
 from core.outbox_residue import (  # noqa: E402
+    DEAD_PENDING_EVENT_TYPES,
     outbox_age_cutoff_match,
     stress_outbox_residue_query,
 )

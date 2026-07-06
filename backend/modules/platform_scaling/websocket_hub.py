@@ -188,7 +188,7 @@ class WebSocketHub:
             invalid_before = user_doc.get("tokens_invalid_before")
             if invalid_before:
                 iat = payload.get("iat")
-                if not iat or int(iat) < int(invalid_before):
+                if not iat or int(iat) < int(invalid_before) - 2:
                     logger.warning(f"WS auth: token before password-change watermark user={user_id}")
                     return None
 

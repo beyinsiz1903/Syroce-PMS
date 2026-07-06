@@ -395,7 +395,8 @@ async def get_current_user(
         invalid_before = user_doc.get("tokens_invalid_before")
         if invalid_before:
             iat = payload.get("iat")
-            if not iat or int(iat) < int(invalid_before):
+            # Allow a 2-second leeway to prevent race conditions during immediate logout/login or clock drift
+            if not iat or int(iat) < int(invalid_before) - 2:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Şifre değişti - lütfen yeniden giriş yapın",
