@@ -22,6 +22,9 @@ describe("Softphone frontend user gesture flow", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.clear();
+    }
     
     // Mock getUserMedia
     mockGetUserMedia = vi.fn().mockResolvedValue({
@@ -137,7 +140,9 @@ describe("Softphone frontend user gesture flow", () => {
     fireEvent.click(callBtn);
 
     // Connect should be called directly
-    expect(mockConnect).toHaveBeenCalledWith({ params: { To: "+905555555555" } });
+    expect(mockConnect).toHaveBeenCalledWith(expect.objectContaining({
+      params: expect.objectContaining({ To: "+905555555555" })
+    }));
   });
 
   it("displays a clear Turkish error if microphone permission is rejected", async () => {
@@ -434,7 +439,7 @@ describe("Softphone frontend user gesture flow", () => {
     );
 
     await waitFor(() => {
-      expect(alertSpy).toHaveBeenCalledWith("WhatsApp mesajı başarıyla gönderildi.");
+      expect(alertSpy).toHaveBeenCalledWith("Mesaj gönderim kuyruğuna alındı.");
     });
   });
 

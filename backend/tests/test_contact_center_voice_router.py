@@ -115,6 +115,7 @@ class _FakeDB:
     def __init__(self):
         self.contact_center_calls = _FakeColl()
         self.contact_center_voice_numbers = _FakeColl()
+        self.messaging_delivery_logs = _FakeColl()
 
     def __getitem__(self, name):
         return getattr(self, name)
@@ -1074,3 +1075,51 @@ def test_parse_client_identity_cases():
     assert _parse_client_identity("client:") == (None, None)
     assert _parse_client_identity("") == (None, None)
     assert _parse_client_identity(None) == (None, None)
+
+
+def test_outbound_call_attempt_idempotency(fake_db, sig_ok):
+    fake_db.contact_center_voice_numbers.docs.append(
+        {"tenant_id": "t1", "to_number": _CALLER_ID}
+    )
+    
+    req1 = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": "CA1", "call_attempt_id": "attempt_1"},
+        signature="good",
+    )
+    resp1 = asyncio.run(voice_router.voice_outbound(req1))
+    assert resp1.status_code == 200
+    
+    assert len(fake_db.contact_center_calls.docs) == 1
+    call_doc = fake_db.contact_center_calls.docs[0]
+    assert call_doc["call_attempt_id"] == "attempt_1"
+    
+    req2 = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": "CA2", "call_attempt_id": "attempt_1"},
+        signature="good",
+    )
+    resp2 = asyncio.run(voice_router.voice_outbound(req2))
+    assert resp2.status_code == 200
+    
+    assert len(fake_db.contact_center_calls.docs) == 1
+
+
+def test_whatsapp_status_callback_valid_signature(fake_db, sig_ok):
+    from modules.messaging.models import DeliveryStatus
+    fake_db.messaging_delivery_logs.docs.append({
+        "tenant_id": "t1",
+        "provider_message_id": "SM123",
+        "status": DeliveryStatus.QUEUED.value
+    })
+    
+    req = _make_request(
+        "/api/voice/whatsapp/status",
+        {"MessageSid": "SM123", "MessageStatus": "delivered", "ErrorCode": ""},
+        signature="good"
+    )
+    resp = asyncio.run(voice_router.whatsapp_status(req))
+    assert resp.status_code == 204
+    
+    log = fake_db.messaging_delivery_logs.docs[0]
+    assert log["status"] == DeliveryStatus.DELIVERED.value

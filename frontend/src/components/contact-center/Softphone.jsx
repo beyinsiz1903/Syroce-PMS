@@ -103,6 +103,16 @@ export default function Softphone({ user }) {
   const callRef = useRef(null);
   const audioContextRef = useRef(null);
   const connectCancelledRef = useRef(false);
+  const deviceConnectCountRef = useRef(0);
+  const isConnectingCallRef = useRef(false);
+
+  const generateUuid = () => {
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+      const r = (Math.random() * 16) | 0;
+      const v = c === "x" ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  };
 
   const role = user?.role || (user?.roles && user.roles[0]);
   const isStaff = role && role !== "guest";
@@ -129,6 +139,25 @@ export default function Softphone({ user }) {
       .catch((err) => {
         console.warn("[CC-VOICE] Twilio SDK preloading failed:", err);
       });
+
+    if (navigator.permissions && typeof navigator.permissions.query === "function") {
+      navigator.permissions.query({ name: "microphone" })
+        .then((result) => {
+          if (result.state === "granted") {
+            sessionStorage.setItem("microphone_permission_granted", "true");
+          }
+          result.onchange = () => {
+            if (result.state === "granted") {
+              sessionStorage.setItem("microphone_permission_granted", "true");
+            } else {
+              sessionStorage.removeItem("microphone_permission_granted");
+            }
+          };
+        })
+        .catch((err) => {
+          console.warn("[CC-VOICE] Background mic permission query failed:", err);
+        });
+    }
   }, [isStaff]);
 
   // Keep token fresh in background + visibility checks + sleep protection (only when drawer is open)
@@ -171,11 +200,9 @@ export default function Softphone({ user }) {
     return () => clearInterval(timer);
   }, [status]);
 
-  const resetCallState = useCallback(({ preserveDevice = true } = {}) => {
-    try {
-      callRef.current?.disconnect?.();
-    } catch { /* noop */ }
+  const clearCallState = useCallback(({ preserveDevice = true } = {}) => {
     callRef.current = null;
+    isConnectingCallRef.current = false;
 
     if (!preserveDevice) {
       try {
@@ -198,10 +225,12 @@ export default function Softphone({ user }) {
     setStatus(deviceRef.current ? "ready" : "idle");
   }, []);
 
+  const resetCallState = clearCallState;
+
   const teardown = useCallback(() => {
     connectCancelledRef.current = true;
-    resetCallState({ preserveDevice: false });
-  }, [resetCallState]);
+    clearCallState({ preserveDevice: false });
+  }, [clearCallState]);
 
   useEffect(() => () => teardown(), [teardown]);
 
@@ -222,6 +251,8 @@ export default function Softphone({ user }) {
   }, []);
 
   const activate = useCallback(() => {
+    teardown();
+
     const exp = getJwtExpiration(token);
     const isTokenReady = token && (exp ? Date.now() < exp - 5 * 60 * 1000 : false);
     const Twilio = window.Twilio;
@@ -254,23 +285,26 @@ export default function Softphone({ user }) {
       }
     }
 
-    navigator.mediaDevices.getUserMedia({ audio: true })
-      .then((stream) => {
-        stream.getTracks().forEach((t) => t.stop());
-      })
-      .catch((err) => {
-        console.warn("[CC-VOICE] Microphone permission handling:", err);
-        setStatus("error");
-        if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-          setDetail("Mikrofon izni reddedildi. Sesli çağrı için tarayıcı ayarlarından mikrofon izni vermeniz gerekir.");
-        } else {
-          setDetail("Mikrofon erişim hatası: " + (err.message || err.name));
-        }
-        resetCallState({ preserveDevice: false });
-      });
+    const alreadyGranted = sessionStorage.getItem("microphone_permission_granted") === "true";
+    if (!alreadyGranted) {
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then((stream) => {
+          stream.getTracks().forEach((t) => t.stop());
+          sessionStorage.setItem("microphone_permission_granted", "true");
+        })
+        .catch((err) => {
+          console.warn("[CC-VOICE] Microphone permission handling:", err);
+          setStatus("error");
+          if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+            setDetail("Mikrofon izni reddedildi. Sesli çağrı için tarayıcı ayarlarından mikrofon izni vermeniz gerekir.");
+          } else {
+            setDetail("Mikrofon erişim hatası: " + (err.message || err.name));
+          }
+          clearCallState({ preserveDevice: false });
+        });
+    }
 
     try {
-      teardown();
       const device = new Twilio.Device(token, { closeProtection: true });
       deviceRef.current = device;
 
@@ -298,10 +332,16 @@ export default function Softphone({ user }) {
         }
 
         call.on("disconnect", () => {
-          resetCallState();
+          console.log(`[CC-VOICE] Call disconnect event. SIDs: parent=${call?.parameters?.CallSid}`);
+          clearCallState();
         });
         call.on("cancel", () => {
-          resetCallState();
+          console.log(`[CC-VOICE] Call cancel event. SIDs: parent=${call?.parameters?.CallSid}`);
+          clearCallState();
+        });
+        call.on("reject", () => {
+          console.log(`[CC-VOICE] Call reject event. SIDs: parent=${call?.parameters?.CallSid}`);
+          clearCallState();
         });
       });
 
@@ -315,7 +355,7 @@ export default function Softphone({ user }) {
       setStatus("error");
       setDetail("Sesli arama cihazı başlatılamadı.");
     }
-  }, [teardown, token, fetchToken, resetCallState, fetchGuestInfo]);
+  }, [teardown, token, fetchToken, clearCallState, fetchGuestInfo]);
 
   const startCall = useCallback((override) => {
     const device = deviceRef.current;
@@ -323,7 +363,7 @@ export default function Softphone({ user }) {
       setDetail("Önce softphone'u aktifleştirin.");
       return;
     }
-    if (status === "connecting" || status === "on_call") {
+    if (status === "connecting" || status === "on_call" || isConnectingCallRef.current) {
       return;
     }
     
@@ -333,15 +373,26 @@ export default function Softphone({ user }) {
       return;
     }
 
+    isConnectingCallRef.current = true;
     setStatus("connecting");
     setDetail("");
     connectCancelledRef.current = false;
 
     try {
-      const callPromise = device.connect({ params: { To: target } });
+      const attemptId = generateUuid();
+      deviceConnectCountRef.current += 1;
+      console.log(`[CC-VOICE] [Ara Click] Attempt: ${attemptId}, Connect invocation count: ${deviceConnectCountRef.current}`);
+
+      const callPromise = device.connect({ 
+        params: { 
+          To: target,
+          call_attempt_id: attemptId
+        } 
+      });
       
       callPromise
         .then((call) => {
+          isConnectingCallRef.current = false;
           if (connectCancelledRef.current) {
             try { call.disconnect(); } catch { /* noop */ }
             callRef.current = null;
@@ -355,32 +406,38 @@ export default function Softphone({ user }) {
           }
 
           call.on("accept", () => {
+            console.log(`[CC-VOICE] Call accept event. Attempt ID: ${attemptId}, CallSid: ${call?.parameters?.CallSid}`);
             setStatus("on_call");
             setDetail("");
           });
 
           call.on("disconnect", () => {
-            resetCallState();
+            console.log(`[CC-VOICE] Call disconnect event. Attempt ID: ${attemptId}, CallSid: ${call?.parameters?.CallSid}`);
+            clearCallState();
           });
           call.on("cancel", () => {
-            resetCallState();
+            console.log(`[CC-VOICE] Call cancel event. Attempt ID: ${attemptId}, CallSid: ${call?.parameters?.CallSid}`);
+            clearCallState();
           });
           call.on("reject", () => {
-            resetCallState();
+            console.log(`[CC-VOICE] Call reject event. Attempt ID: ${attemptId}, CallSid: ${call?.parameters?.CallSid}`);
+            clearCallState();
           });
           call.on("error", (e) => {
-            console.error("[CC-VOICE] Call error:", e);
-            resetCallState();
+            console.error(`[CC-VOICE] Call error event: ${e?.message || e?.name || "unknown"}. Attempt ID: ${attemptId}, CallSid: ${call?.parameters?.CallSid}`);
+            clearCallState();
             setDetail("Çağrı hatası: " + (e?.message || e?.name || "bilinmiyor"));
           });
         })
         .catch((err) => {
+          isConnectingCallRef.current = false;
           console.error("[CC-VOICE] Call connect promise failed:", err);
           callRef.current = null;
           setStatus(deviceRef.current ? "ready" : "idle");
           setDetail("Giden çağrı başlatılamadı: " + (err.message || err.name || "bilinmiyor"));
         });
     } catch (err) {
+      isConnectingCallRef.current = false;
       console.error("[CC-VOICE] Device.connect failed synchronously:", err);
       setStatus(deviceRef.current ? "ready" : "idle");
       if (err.name === "NotAllowedError") {
@@ -389,7 +446,7 @@ export default function Softphone({ user }) {
         setDetail("Giden çağrı başlatılamadı: " + (err.message || err.name));
       }
     }
-  }, [dialNumber, status, fetchGuestInfo, resetCallState]);
+  }, [dialNumber, status, fetchGuestInfo, clearCallState]);
 
   // Browser Notifications & Ringtones
   useEffect(() => {
@@ -435,17 +492,27 @@ export default function Softphone({ user }) {
   }, []);
 
   const rejectCall = useCallback(() => {
-    resetCallState();
-  }, [resetCallState]);
+    try {
+      callRef.current?.reject?.();
+    } catch (e) {
+      console.warn("[CC-VOICE] Error rejecting call:", e);
+    }
+    clearCallState();
+  }, [clearCallState]);
 
   const endCall = useCallback(() => {
     if (status === "connecting" && !callRef.current) {
       connectCancelledRef.current = true;
-      setStatus(deviceRef.current ? "ready" : "idle");
+      clearCallState();
       return;
     }
-    resetCallState();
-  }, [status, resetCallState]);
+    try {
+      callRef.current?.disconnect?.();
+    } catch (e) {
+      console.warn("[CC-VOICE] Error disconnecting call:", e);
+    }
+    clearCallState();
+  }, [status, clearCallState]);
 
   const toggleMute = useCallback(() => {
     if (callRef.current) {
@@ -521,12 +588,16 @@ export default function Softphone({ user }) {
       const phone = callRef.current.parameters.From || callRef.current.parameters.To || incomingFrom || dialNumber;
       if (!phone) throw new Error("No phone number to send message to.");
       
-      await axios.post(`/contact-center/voice/live/${callRef.current.parameters.CallSid}/whatsapp`, {
+      const response = await axios.post(`/contact-center/voice/live/${callRef.current.parameters.CallSid}/whatsapp`, {
         phone: phone,
         template_name: templateName,
         language_code: "tr"
       });
-      alert("WhatsApp mesajı başarıyla gönderildi.");
+      if (response.data?.status === "simulated") {
+        alert("Test modu: Mesaj gerçek WhatsApp’a gönderilmedi.");
+      } else {
+        alert("Mesaj gönderim kuyruğuna alındı.");
+      }
     } catch (err) {
       console.error("WhatsApp error", err);
       const status = err.response?.status;
@@ -553,8 +624,11 @@ export default function Softphone({ user }) {
   };
 
   const deactivate = useCallback(() => {
-    resetCallState({ preserveDevice: false });
-  }, [resetCallState]);
+    try {
+      callRef.current?.disconnect?.();
+    } catch { /* noop */ }
+    clearCallState({ preserveDevice: false });
+  }, [clearCallState]);
 
   if (!isStaff) return null;
 

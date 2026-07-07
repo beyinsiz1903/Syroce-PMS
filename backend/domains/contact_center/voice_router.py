@@ -1314,12 +1314,31 @@ async def voice_outbound(request: Request):
             media_type=_XML,
         )
 
+    call_attempt_id = form.get("call_attempt_id", "")
+    if tenant_id and user_id and call_attempt_id:
+        existing = await db.contact_center_calls.find_one({
+            "tenant_id": tenant_id,
+            "agent_id": user_id,
+            "call_attempt_id": call_attempt_id
+        })
+        if existing:
+            logger.info(f"[CC-VOICE-DIAG] Outbound duplicate attempt ignored: call_attempt_id={call_attempt_id}")
+            rec_cb, status_cb = _callback_urls(tenant_id)
+            twiml = provider.build_outbound_twiml(
+                to_number=sanitized,
+                caller_id=caller_id,
+                recording_status_callback=rec_cb,
+                dial_status_callback=status_cb,
+            )
+            return Response(content=twiml, media_type=_XML)
+
     await record_outbound_call(
         db,
         tenant_id=tenant_id,
         provider_call_sid=call_sid,
         to_phone=sanitized,
         agent_id=user_id,
+        call_attempt_id=call_attempt_id,
     )
 
     rec_cb, status_cb = _callback_urls(tenant_id)
@@ -1413,4 +1432,56 @@ async def voice_recording(request: Request):
                 recording_url=recording_url,
                 duration_seconds=duration,
             )
+    return Response(status_code=204)
+
+
+@public_router.post("/whatsapp/status")
+async def whatsapp_status(request: Request):
+    """Twilio WhatsApp status callback endpoint.
+
+    Saves and updates delivery logs for WhatsApp messages.
+    """
+    form = await request.form()
+    provider = TwilioVoiceProvider()
+    if not provider.validate_signature(
+        url=_public_url(request),
+        params=form,
+        signature=request.headers.get("X-Twilio-Signature", ""),
+        request=request,
+    ):
+        return Response(status_code=403)
+
+    message_sid = form.get("MessageSid")
+    message_status = form.get("MessageStatus")  # queued, sent, delivered, read, failed, undelivered
+    error_code = form.get("ErrorCode")
+
+    logger.info(f"[CC-WHATSAPP] Received Twilio status callback: MessageSid={message_sid}, status={message_status}")
+
+    if message_sid and message_status:
+        from modules.messaging.models import DeliveryStatus
+        status_map = {
+            "queued": DeliveryStatus.QUEUED.value,
+            "sending": DeliveryStatus.SENDING.value,
+            "sent": DeliveryStatus.SENT.value,
+            "delivered": DeliveryStatus.DELIVERED.value,
+            "read": DeliveryStatus.DELIVERED.value,
+            "failed": DeliveryStatus.FAILED.value,
+            "undelivered": DeliveryStatus.FAILED.value
+        }
+        mapped_status = status_map.get(message_status.lower(), DeliveryStatus.QUEUED.value)
+
+        update_fields = {
+            "status": mapped_status,
+            "updated_at": datetime.now(UTC).isoformat()
+        }
+        if message_status.lower() in ("delivered", "read"):
+            update_fields["delivered_at"] = datetime.now(UTC).isoformat()
+        if error_code:
+            update_fields["error_message"] = f"Twilio Error {error_code}"
+
+        await db.messaging_delivery_logs.update_one(
+            {"provider_message_id": message_sid},
+            {"$set": update_fields}
+        )
+
     return Response(status_code=204)

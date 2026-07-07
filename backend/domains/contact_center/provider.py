@@ -177,9 +177,24 @@ class WhatsAppCloudProvider(CommunicationProvider):
         from modules.messaging.providers import PROVIDER_MAP
         from modules.messaging.service import _decrypt_provider_creds
 
-        creds = _decrypt_provider_creds(cfg.get("credentials_encrypted", {}) or {}, "whatsapp")
+        import os
+        twilio_sid = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
+        twilio_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
+        twilio_from = os.getenv("TWILIO_WHATSAPP_FROM", "").strip()
+
         mode = self._resolve_mode(cfg)
-        wap = PROVIDER_MAP.get("whatsapp")
+
+        if twilio_sid and twilio_token and twilio_from:
+            wap = PROVIDER_MAP.get("twilio_whatsapp")
+            creds = {
+                "account_sid": twilio_sid,
+                "auth_token": twilio_token,
+                "from_number": twilio_from
+            }
+        else:
+            wap = PROVIDER_MAP.get("whatsapp")
+            creds = _decrypt_provider_creds(cfg.get("credentials_encrypted", {}) or {}, "whatsapp")
+
         if wap is None:
             return {
                 "success": False,
@@ -207,6 +222,33 @@ class WhatsAppCloudProvider(CommunicationProvider):
                 mode,
             )
         result.setdefault("provider", self.provider_name)
+
+        # Create and persist a delivery log entry
+        if db is not None:
+            try:
+                from modules.messaging.models import new_delivery_log
+                from modules.messaging.recipient_crypto import seal_delivery_log
+                
+                log_doc = new_delivery_log(
+                    tenant_id=tenant_id,
+                    property_id=None,
+                    channel="whatsapp",
+                    provider_type=wap.provider_type,
+                    recipient=recipient,
+                    template_id=template_name,
+                    subject=None,
+                    body=body or f"Template: {template_name}",
+                )
+                log_doc["provider_message_id"] = result.get("provider_message_id")
+                log_doc["status"] = result.get("status") or ("sent" if result.get("success") else "failed")
+                if result.get("delivered"):
+                    from datetime import UTC, datetime
+                    log_doc["delivered_at"] = datetime.now(UTC).isoformat()
+                    
+                await db.messaging_delivery_logs.insert_one(seal_delivery_log(log_doc))
+            except Exception as e:
+                logger.warning(f"[CC-WHATSAPP] Failed to write messaging delivery log: {e}")
+
         return result
 
     async def check_health(self, *, db=None, tenant_id=None) -> dict[str, Any]:

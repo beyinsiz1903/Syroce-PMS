@@ -5,6 +5,7 @@ Supports sandbox/test/live modes.
 """
 
 import logging
+import os
 import smtplib
 import time
 from datetime import UTC, datetime
@@ -307,10 +308,128 @@ class WhatsAppProvider(BaseProvider):
             return {"status": "unhealthy", "error": str(e)[:200], "checked_at": datetime.now(UTC).isoformat()}
 
 
+class TwilioWhatsAppProvider(BaseProvider):
+    provider_type = "twilio_whatsapp"
+
+    async def send(
+        self,
+        recipient: str,
+        body: str,
+        subject: str | None = None,
+        credentials: dict = None,
+        mode: str = ProviderMode.LIVE,
+    ) -> dict[str, Any]:
+        creds = credentials or {}
+        account_sid = creds.get("account_sid") or os.getenv("TWILIO_ACCOUNT_SID", "").strip()
+        auth_token = creds.get("auth_token") or os.getenv("TWILIO_AUTH_TOKEN", "").strip()
+        from_number = creds.get("from_number") or os.getenv("TWILIO_WHATSAPP_FROM", "").strip()
+
+        if mode == ProviderMode.TEST or mode == ProviderMode.SANDBOX:
+            return {
+                "success": True,
+                "provider_message_id": f"sandbox_wa_{int(time.time())}",
+                "status": "simulated",
+                "delivered": False,
+                "note": "Test modu: Mesaj gerçek WhatsApp’a gönderilmedi."
+            }
+
+        if not account_sid or not auth_token or not from_number:
+            return {
+                "success": False,
+                "error": "Twilio WhatsApp credentials missing.",
+                "provider_message_id": None,
+                "error_class": "authentication_error",
+            }
+
+        sender = from_number
+        if not sender.startswith("whatsapp:"):
+            sender = f"whatsapp:{sender}"
+
+        to_formatted = recipient
+        if not to_formatted.startswith("whatsapp:"):
+            to_formatted = f"whatsapp:{to_formatted}"
+
+        start = time.time()
+        try:
+            from twilio.rest import Client
+            client = Client(account_sid, auth_token)
+
+            base = os.getenv("PUBLIC_APP_URL", "").strip().rstrip("/")
+            status_callback_url = f"{base}/api/voice/whatsapp/status" if base else None
+
+            kwargs = {
+                "body": body,
+                "from_": sender,
+                "to": to_formatted
+            }
+            if status_callback_url:
+                kwargs["status_callback"] = status_callback_url
+
+            msg = client.messages.create(**kwargs)
+            latency_ms = round((time.time() - start) * 1000, 2)
+            return {
+                "success": True,
+                "provider_message_id": msg.sid,
+                "status": "queued",
+                "error": None,
+                "latency_ms": latency_ms
+            }
+        except Exception as e:
+            logger.exception("Twilio WhatsApp send error")
+            err_str = str(e)[:300]
+            return {
+                "success": False,
+                "error": err_str,
+                "provider_message_id": None,
+                "error_class": self.classify_error(err_str),
+                "latency_ms": round((time.time() - start) * 1000, 2)
+            }
+
+    async def send_template(
+        self,
+        recipient: str,
+        template_name: str,
+        language_code: str = "tr",
+        components: list | None = None,
+        credentials: dict | None = None,
+        mode: str = ProviderMode.LIVE,
+    ) -> dict[str, Any]:
+        template_bodies = {
+            "hello_world": "Hello World",
+            "reservation_confirmation": "Rezervasyonunuz onaylanmıştır.",
+            "checkin_welcome": "Otelimize hoş geldiniz!",
+            "checkout_thank_you": "Bizi tercih ettiğiniz için teşekkür ederiz."
+        }
+        body = template_bodies.get(template_name, f"Template: {template_name}")
+        return await self.send(
+            recipient=recipient,
+            body=body,
+            credentials=credentials,
+            mode=mode
+        )
+
+    async def check_health(self, credentials: dict, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
+        if mode in (ProviderMode.TEST, ProviderMode.SANDBOX):
+            return {"status": "healthy", "mode": mode, "checked_at": datetime.now(UTC).isoformat()}
+        creds = credentials or {}
+        account_sid = creds.get("account_sid") or os.getenv("TWILIO_ACCOUNT_SID", "").strip()
+        auth_token = creds.get("auth_token") or os.getenv("TWILIO_AUTH_TOKEN", "").strip()
+        if not account_sid or not auth_token:
+            return {"status": "unhealthy", "error": "Twilio API bilgileri eksik", "checked_at": datetime.now(UTC).isoformat()}
+        try:
+            from twilio.rest import Client
+            client = Client(account_sid, auth_token)
+            client.api.v2010.accounts(account_sid).fetch()
+            return {"status": "healthy", "checked_at": datetime.now(UTC).isoformat()}
+        except Exception as e:
+            return {"status": "unhealthy", "error": str(e)[:200], "checked_at": datetime.now(UTC).isoformat()}
+
+
 # ── Provider registry ──
 PROVIDER_MAP = {
     ProviderType.SMTP_EMAIL.value: SMTPEmailProvider(),
     ProviderType.WHATSAPP.value: WhatsAppProvider(),
+    "twilio_whatsapp": TwilioWhatsAppProvider(),
 }
 
 # Channel -> preferred provider type

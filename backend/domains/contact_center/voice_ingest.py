@@ -66,6 +66,7 @@ async def _record_call(
     agent_id: str | None = None,
     conversation_id: str | None = None,
     parent_call_sid: str | None = None,
+    call_attempt_id: str | None = None,
 ) -> str | None:
     """Gelen/giden çağrıyı idempotent biçimde kaydeder; çağrı ``id``'sini döner.
 
@@ -77,6 +78,16 @@ async def _record_call(
         logger.warning("[CC-VOICE] kayıt: tenant/call-sid eksik; atlanıyor")
         return None
     try:
+        # Check call_attempt_id idempotency first
+        if tenant_id and agent_id and call_attempt_id:
+            existing = await db[_COLLECTION].find_one({
+                "tenant_id": tenant_id,
+                "agent_id": agent_id,
+                "call_attempt_id": call_attempt_id
+            })
+            if existing:
+                return existing["id"]
+
         svc = _svc()
         caller_id_hash, caller_id_enc = build_caller_crypto(svc, phone or "")
         now = datetime.now(UTC)
@@ -92,6 +103,7 @@ async def _record_call(
             "caller_id_hash": caller_id_hash,
             "caller_id_enc": caller_id_enc,
             "agent_id": agent_id,
+            "call_attempt_id": call_attempt_id,
             "recording_ref": None,
             "duration_seconds": 0,
             "disposition": None,
@@ -160,6 +172,7 @@ async def record_outbound_call(
     agent_id: str | None = None,
     conversation_id: str | None = None,
     parent_call_sid: str | None = None,
+    call_attempt_id: str | None = None,
 ) -> str | None:
     """Giden (click-to-dial) çağrıyı idempotent kaydeder (hedef numarası hash+enc).
 
@@ -175,6 +188,7 @@ async def record_outbound_call(
         agent_id=agent_id,
         conversation_id=conversation_id,
         parent_call_sid=parent_call_sid,
+        call_attempt_id=call_attempt_id,
     )
 
 
