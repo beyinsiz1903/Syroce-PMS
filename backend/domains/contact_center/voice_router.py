@@ -360,13 +360,39 @@ async def get_analytics_summary(
     cursor = db.contact_center_calls.find(query)
     calls = await cursor.to_list(length=10000)
 
-    total_calls = len(calls)
-    inbound_calls = sum(1 for c in calls if c.get("direction") == "inbound")
-    outbound_calls = sum(1 for c in calls if c.get("direction") == "outbound")
+    # Deduplicate parent/child legs to count related legs as one business call
+    business_calls = {}
+    for c in calls:
+        parent_sid = c.get("parent_call_sid") or c.get("provider_call_sid")
+        if not parent_sid:
+            continue
+        if parent_sid not in business_calls:
+            business_calls[parent_sid] = []
+        business_calls[parent_sid].append(c)
+
+    deduped_calls = []
+    for parent_sid, legs in business_calls.items():
+        representative = None
+        for leg in legs:
+            if leg.get("status") in {"answered", "completed"}:
+                representative = leg
+                break
+        if not representative:
+            for leg in legs:
+                if leg.get("provider_call_sid") == parent_sid:
+                    representative = leg
+                    break
+        if not representative:
+            representative = legs[0]
+        deduped_calls.append(representative)
+
+    total_calls = len(deduped_calls)
+    inbound_calls = sum(1 for c in deduped_calls if c.get("direction") == "inbound")
+    outbound_calls = sum(1 for c in deduped_calls if c.get("direction") == "outbound")
     
-    answered_calls = sum(1 for c in calls if c.get("status") in {"answered", "completed"})
-    missed_calls = sum(1 for c in calls if c.get("status") == "missed")
-    failed_calls = sum(1 for c in calls if c.get("status") == "failed")
+    answered_calls = sum(1 for c in deduped_calls if c.get("status") in {"answered", "completed"})
+    missed_calls = sum(1 for c in deduped_calls if c.get("status") == "missed")
+    failed_calls = sum(1 for c in deduped_calls if c.get("status") == "failed")
 
     # SLA and Durations
     total_duration = 0
@@ -374,7 +400,7 @@ async def get_analytics_summary(
     sla_met_count = 0
     answered_with_wait = 0
 
-    for c in calls:
+    for c in deduped_calls:
         dur = c.get("duration_seconds") or 0
         if not dur and c.get("answered_at") and c.get("ended_at"):
             dur = int((c["ended_at"] - c["answered_at"]).total_seconds())
@@ -384,7 +410,6 @@ async def get_analytics_summary(
             wait = (c["answered_at"] - c["started_at"]).total_seconds()
             total_wait_time += max(0.0, wait)
             answered_with_wait += 1
-            # Twilio SLA check: answered within 20s
             if wait <= 20.0:
                 sla_met_count += 1
 
@@ -448,16 +473,33 @@ async def get_call_guest_360(
     if not phone:
         return {"matched": False, "detail": "Arama numarası çözülemedi"}
 
-    # Search for guest in guests collection
+    # Search for guests in guests collection
     from security.encrypted_lookup import build_guest_pii_query, decrypt_guest_doc
-    guest_doc = await db.guests.find_one({
+    guests_cursor = db.guests.find({
         "tenant_id": current_user.tenant_id,
         **build_guest_pii_query("phone", phone)
     })
+    guests_list = await guests_cursor.to_list(length=10)
 
-    if not guest_doc:
+    if not guests_list:
         return {"matched": False, "phone": phone}
 
+    if len(guests_list) > 1:
+        possible_matches = []
+        for g in guests_list:
+            g_dec = decrypt_guest_doc(g)
+            possible_matches.append({
+                "id": g_dec.get("id"),
+                "name": g_dec.get("name") or f"{g_dec.get('first_name', '')} {g_dec.get('last_name', '')}".strip(),
+                "vip_level": "Masked (Multiple Matches)"
+            })
+        return {
+            "matched": True,
+            "multiple": True,
+            "possible_matches": possible_matches
+        }
+
+    guest_doc = guests_list[0]
     guest_doc = decrypt_guest_doc(guest_doc)
     guest_id = guest_doc.get("id")
 
@@ -1115,6 +1157,7 @@ async def voice_inbound(request: Request):
         tenant_id=tenant_id,
         provider_call_sid=call_sid,
         from_phone=from_phone,
+        parent_call_sid=form.get("ParentCallSid"),
     )
     if call_id:
         await _notify_incoming_call(tenant_id, call_id)
@@ -1280,6 +1323,7 @@ async def voice_status(request: Request):
             provider_call_sid=call_sid,
             twilio_status=form.get("CallStatus") or form.get("DialCallStatus") or "",
             duration_seconds=duration_i,
+            parent_call_sid=form.get("ParentCallSid"),
         )
     return Response(status_code=204)
 

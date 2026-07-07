@@ -53,6 +53,7 @@ def mock_db(monkeypatch):
 
     mock_guests = MagicMock()
     mock_guests.find_one = AsyncMock()
+    mock_guests.find = MagicMock()
 
     mock_bookings = MagicMock()
     mock_bookings.find = MagicMock()
@@ -259,7 +260,10 @@ def test_guest_360_no_match(mock_db, monkeypatch):
         "tenant_id": "t1",
         "caller_id_enc": "enc_phone"
     }
-    mock_db.guests.find_one.return_value = None
+    
+    mock_guests_cursor = MagicMock()
+    mock_guests_cursor.to_list = AsyncMock(return_value=[])
+    mock_db.guests.find.return_value = mock_guests_cursor
     
     mock_svc = MagicMock()
     mock_svc.decrypt_value.return_value = "+905555555555"
@@ -283,12 +287,12 @@ def test_guest_360_one_match(mock_db, monkeypatch):
         "caller_id_enc": "enc_phone",
         "caller_id_hash": "hash_phone"
     }
-    mock_db.guests.find_one.return_value = {
-        "id": "g1",
-        "name": "Jane Doe",
-        "vip_level": "VIP 1",
-        "phone": "+905555555555"
-    }
+    
+    mock_guests_cursor = MagicMock()
+    mock_guests_cursor.to_list = AsyncMock(return_value=[
+        {"id": "g1", "name": "Jane Doe", "vip_level": "VIP 1", "phone": "+905555555555"}
+    ])
+    mock_db.guests.find.return_value = mock_guests_cursor
     
     mock_svc = MagicMock()
     mock_svc.decrypt_value.return_value = "+905555555555"
@@ -319,3 +323,75 @@ def test_guest_360_one_match(mock_db, monkeypatch):
     assert data["name"] == "Jane Doe"
     assert data["vip_level"] == "VIP 1"
     assert data["room_number"] == "101"
+
+
+def test_guest_360_multiple_matches(mock_db, monkeypatch):
+    mock_db.contact_center_calls.find_one.return_value = {
+        "id": "c1",
+        "tenant_id": "t1",
+        "caller_id_enc": "enc_phone",
+        "caller_id_hash": "hash_phone"
+    }
+    
+    mock_guests_cursor = MagicMock()
+    mock_guests_cursor.to_list = AsyncMock(return_value=[
+        {"id": "g1", "name": "Jane Doe", "vip_level": "VIP 1"},
+        {"id": "g2", "name": "John Doe", "vip_level": "VIP 2"}
+    ])
+    mock_db.guests.find.return_value = mock_guests_cursor
+    
+    mock_svc = MagicMock()
+    mock_svc.decrypt_value.return_value = "+905555555555"
+    import domains.contact_center.voice_router as vr
+    vr.get_field_encryption_service = MagicMock(return_value=mock_svc)
+    
+    monkeypatch.setattr(
+        "security.encrypted_lookup.decrypt_guest_doc",
+        lambda d: d
+    )
+    
+    response = client.get("/api/contact-center/calls/c1/guest-360")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["matched"] is True
+    assert data["multiple"] is True
+    assert len(data["possible_matches"]) == 2
+    assert data["possible_matches"][0]["name"] == "Jane Doe"
+    assert data["possible_matches"][0]["vip_level"] == "Masked (Multiple Matches)"
+
+
+def test_analytics_parent_child_dedup(mock_db):
+    mock_cursor = MagicMock()
+    mock_cursor.to_list = AsyncMock(return_value=[
+        {
+            "id": "call1_parent",
+            "provider_call_sid": "CA_PARENT",
+            "parent_call_sid": None,
+            "tenant_id": "t1",
+            "direction": "inbound",
+            "status": "completed",
+            "duration_seconds": 30,
+            "started_at": datetime(2026, 7, 7, 10, 0, 0),
+            "answered_at": datetime(2026, 7, 7, 10, 0, 5)
+        },
+        {
+            "id": "call1_child",
+            "provider_call_sid": "CA_CHILD",
+            "parent_call_sid": "CA_PARENT",
+            "tenant_id": "t1",
+            "direction": "inbound",
+            "status": "completed",
+            "duration_seconds": 15,
+            "started_at": datetime(2026, 7, 7, 10, 0, 10),
+            "answered_at": datetime(2026, 7, 7, 10, 0, 15)
+        }
+    ])
+    mock_db.contact_center_calls.find.return_value = mock_cursor
+    
+    mock_db.tenant_settings.find_one = AsyncMock(return_value={"timezone": "Europe/Istanbul"})
+    
+    response = client.get("/api/contact-center/analytics/summary")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["summary"]["total_calls"] == 1
+    assert data["summary"]["answered_calls"] == 1
