@@ -460,8 +460,22 @@ async def get_call_guest_360(
     """Verilen çağrıya ait arayan numara ile PMS misafir veri tabanını eşleştirip Guest 360 detaylarını döndürür."""
     doc = await db.contact_center_calls.find_one({
         "tenant_id": current_user.tenant_id,
-        "$or": [{"id": call_id}, {"provider_call_sid": call_id}]
+        "caller_id_enc": {"$exists": True, "$ne": None},
+        "$or": [
+            {"id": call_id},
+            {"provider_call_sid": call_id},
+            {"parent_call_sid": call_id}
+        ]
     })
+    if not doc:
+        doc = await db.contact_center_calls.find_one({
+            "tenant_id": current_user.tenant_id,
+            "$or": [
+                {"id": call_id},
+                {"provider_call_sid": call_id},
+                {"parent_call_sid": call_id}
+            ]
+        })
     if not doc:
         raise HTTPException(status_code=404, detail="Çağrı bulunamadı")
 
@@ -595,9 +609,22 @@ async def transfer_live_call(
     # Verify call SID ownership and active status
     call = await db.contact_center_calls.find_one({
         "tenant_id": current_user.tenant_id,
-        "provider_call_sid": call_sid,
+        "caller_id_enc": {"$exists": True, "$ne": None},
+        "$or": [
+            {"provider_call_sid": call_sid},
+            {"parent_call_sid": call_sid}
+        ],
         "status": {"$in": [CallStatus.RINGING.value, CallStatus.ANSWERED.value]},
     })
+    if not call:
+        call = await db.contact_center_calls.find_one({
+            "tenant_id": current_user.tenant_id,
+            "$or": [
+                {"provider_call_sid": call_sid},
+                {"parent_call_sid": call_sid}
+            ],
+            "status": {"$in": [CallStatus.RINGING.value, CallStatus.ANSWERED.value]},
+        })
     if not call:
         raise HTTPException(status_code=404, detail="Aktif çağrı bulunamadı.")
 
@@ -655,8 +682,20 @@ async def send_whatsapp_during_call(
     # Verify call SID ownership and active status
     call = await db.contact_center_calls.find_one({
         "tenant_id": current_user.tenant_id,
-        "provider_call_sid": call_sid,
+        "caller_id_enc": {"$exists": True, "$ne": None},
+        "$or": [
+            {"provider_call_sid": call_sid},
+            {"parent_call_sid": call_sid}
+        ]
     })
+    if not call:
+        call = await db.contact_center_calls.find_one({
+            "tenant_id": current_user.tenant_id,
+            "$or": [
+                {"provider_call_sid": call_sid},
+                {"parent_call_sid": call_sid}
+            ]
+        })
     if not call:
         raise HTTPException(status_code=404, detail="Çağrı bulunamadı.")
 
