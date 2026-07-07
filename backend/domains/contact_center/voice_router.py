@@ -389,7 +389,7 @@ async def get_analytics_summary(
     total_calls = len(deduped_calls)
     inbound_calls = sum(1 for c in deduped_calls if c.get("direction") == "inbound")
     outbound_calls = sum(1 for c in deduped_calls if c.get("direction") == "outbound")
-    
+
     answered_calls = sum(1 for c in deduped_calls if c.get("status") in {"answered", "completed"})
     missed_calls = sum(1 for c in deduped_calls if c.get("status") == "missed")
     failed_calls = sum(1 for c in deduped_calls if c.get("status") == "failed")
@@ -512,7 +512,7 @@ async def get_call_guest_360(
 
     active_booking = None
     total_reservations = len(bookings)
-    
+
     for b in bookings:
         if b.get("status") in {"checked_in", "confirmed"}:
             if not active_booking or b.get("status") == "checked_in":
