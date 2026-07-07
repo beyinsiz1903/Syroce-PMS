@@ -1157,6 +1157,86 @@ def test_outbound_call_attempt_idempotency_concurrent(fake_db, sig_ok):
     assert hangup_count == 1
 
 
+def test_outbound_call_sid_idempotency(fake_db, sig_ok):
+    fake_db.contact_center_voice_numbers.docs.append(
+        {"tenant_id": "t1", "to_number": _CALLER_ID}
+    )
+
+    req1 = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": "CA_parent_idempotency"},
+        signature="good",
+    )
+    resp1 = asyncio.run(voice_router.voice_outbound(req1))
+    assert resp1.status_code == 200
+    assert b"<Dial" in resp1.body
+
+    assert len(fake_db.contact_center_calls.docs) == 1
+    call_doc = fake_db.contact_center_calls.docs[0]
+    assert call_doc["provider_call_sid"] == "CA_parent_idempotency"
+
+    req2 = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": "CA_parent_idempotency"},
+        signature="good",
+    )
+    resp2 = asyncio.run(voice_router.voice_outbound(req2))
+    assert resp2.status_code == 200
+    assert b"<Hangup" in resp2.body
+    assert b"<Dial" not in resp2.body
+
+    assert len(fake_db.contact_center_calls.docs) == 1
+
+
+def test_outbound_call_sid_idempotency_concurrent(fake_db, sig_ok):
+    fake_db.contact_center_voice_numbers.docs.append(
+        {"tenant_id": "t1", "to_number": _CALLER_ID}
+    )
+
+    original_find_one = fake_db.contact_center_calls.find_one
+    original_find_one_and_update = fake_db.contact_center_calls.find_one_and_update
+
+    call_count = 0
+    async def mock_find_one(flt, proj=None):
+        if "provider_call_sid" in flt or "$or" in flt:
+            return None
+        return await original_find_one(flt, proj)
+
+    async def mock_find_one_and_update(flt, update, upsert=False, return_document=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count > 1:
+            raise DuplicateKeyError("dup")
+        return await original_find_one_and_update(flt, update, upsert, return_document)
+
+    fake_db.contact_center_calls.find_one = mock_find_one
+    fake_db.contact_center_calls.find_one_and_update = mock_find_one_and_update
+
+    req1 = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": "CA_concurrent_parent"},
+        signature="good",
+    )
+    req2 = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": "CA_concurrent_parent"},
+        signature="good",
+    )
+
+    resp1 = asyncio.run(voice_router.voice_outbound(req1))
+    resp2 = asyncio.run(voice_router.voice_outbound(req2))
+
+    assert resp1.status_code == 200
+    assert resp2.status_code == 200
+
+    bodies = [resp1.body, resp2.body]
+    dial_count = sum(1 for b in bodies if b"<Dial" in b)
+    hangup_count = sum(1 for b in bodies if b"<Hangup" in b)
+
+    assert dial_count == 1
+    assert hangup_count == 1
+
+
 
 def test_whatsapp_status_callback_valid_signature(fake_db, sig_ok):
     from modules.messaging.models import DeliveryStatus

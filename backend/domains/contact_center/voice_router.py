@@ -1315,15 +1315,22 @@ async def voice_outbound(request: Request):
         )
 
     call_attempt_id = form.get("call_attempt_id", "")
-    if tenant_id and user_id and call_attempt_id:
-        existing = await db.contact_center_calls.find_one({
-            "tenant_id": tenant_id,
-            "agent_id": user_id,
-            "call_attempt_id": call_attempt_id
-        })
+    if tenant_id and (call_attempt_id or call_sid):
+        query = {"tenant_id": tenant_id, "$or": []}
+        if call_attempt_id and user_id:
+            query["$or"].append({
+                "agent_id": user_id,
+                "call_attempt_id": call_attempt_id
+            })
+        if call_sid:
+            query["$or"].append({
+                "provider_call_sid": call_sid
+            })
+
+        existing = await db.contact_center_calls.find_one(query)
         if existing:
             logger.info(f"[CC-VOICE-OUTBOUND-LOG] call_attempt_id={call_attempt_id} parent_call_sid={call_sid} response_action=hangup duplicate_detected=true")
-            logger.info(f"[CC-VOICE-DIAG] Outbound duplicate attempt ignored: call_attempt_id={call_attempt_id}")
+            logger.info(f"[CC-VOICE-DIAG] Outbound duplicate attempt ignored (idempotency match): call_attempt_id={call_attempt_id} parent_call_sid={call_sid}")
             return Response(content="<Response><Hangup/></Response>", media_type=_XML)
 
     try:
