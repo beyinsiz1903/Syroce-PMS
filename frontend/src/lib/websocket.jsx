@@ -155,6 +155,11 @@ class WebSocketManager {
       this.emit('guest_requests:updated', data);
     });
 
+    // Contact center incoming calls
+    this.socket.on('contact_center:incoming_call', (data) => {
+      this.emit('contact_center:incoming_call', data);
+    });
+
     this.socket.on('pong', () => {});
   }
 
