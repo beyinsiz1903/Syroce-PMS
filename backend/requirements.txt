@@ -40,7 +40,7 @@ pywebpush>=2.3.0
 qrcode==7.4.2
 redis==5.0.1
 reportlab==4.4.10
-weasyprint==66.0  # PDF export renderer; system deps (cairo, pango, gdk-pixbuf) in digitalocean.nix
+weasyprint==69.0  # PDF export renderer; system deps (cairo, pango, gdk-pixbuf) in digitalocean.nix
 requests==2.33.0
 idna==3.15  # CVE-2026-45409 fix (transitive via requests); 3.11 vulnerable to DoS via valid_contexto pre length-check
 resend==2.29.0

@@ -151,7 +151,6 @@ def test_no_secret_derived_value_appears_in_logs(monkeypatch, caplog):
     token = "test_auth_token_123456"
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", token)
     monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC_MOCK_ACCOUNT_SID_FOR_TESTS")
-
     provider = TwilioVoiceProvider()
 
     url = "https://pms.syroce.com/api/voice/outbound"
@@ -220,4 +219,3 @@ def test_validate_form_data_with_duplicate_keys(monkeypatch):
     expected_sig = base64.b64encode(mac.digest()).decode("utf-8")
 
     assert provider.validate_signature(url=url, params=form_data, signature=expected_sig) is True
-
