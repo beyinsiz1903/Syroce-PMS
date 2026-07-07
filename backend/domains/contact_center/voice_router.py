@@ -243,23 +243,60 @@ async def voice_readiness(current_user: User = Depends(get_current_user)):
 
 @router.get("/contact-center/calls")
 async def list_calls(
+    page: int = 1,
     limit: int = 50,
     reveal_phone: bool = False,
+    agent_id: str | None = None,
+    direction: str | None = None,
+    status: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    search: str | None = None,
     current_user: User = Depends(get_current_user),
     _mod=Depends(require_module("contact_center")),
 ):
-    """Kiracıya ait sesli çağrı kayıtlarını listeler (allowlist DTO).
-
-    Gerçek veriden okur; kayıt yoksa boş liste (fake data YOK). Telefon varsayılan
-    maskelidir; ``reveal_phone=true`` tam numarayı yalnızca ``MANAGE_CONTACT_CENTER``
-    için açar. recording_ref ASLA dönmez (yalnızca ``has_recording``).
-    """
+    """Kiracıya ait sesli çağrı kayıtlarını listeler (allowlist DTO) ve filtreleme/arama desteği sunar."""
     from domains.contact_center.router import _can_reveal_phone
 
     safe_limit = max(1, min(int(limit or 50), 200))
-    cursor = db.contact_center_calls.find({"tenant_id": current_user.tenant_id}).sort("started_at", -1).limit(safe_limit)
-    docs = await cursor.to_list(length=safe_limit)
+    safe_page = max(1, int(page or 1))
+    skip = (safe_page - 1) * safe_limit
+
+    query = {"tenant_id": current_user.tenant_id}
+
+    if agent_id:
+        query["agent_id"] = agent_id
+    if direction:
+        query["direction"] = direction
+    if status:
+        query["status"] = status
+
+    if date_from or date_to:
+        started_filter = {}
+        if date_from:
+            try:
+                started_filter["$gte"] = datetime.fromisoformat(date_from.replace("Z", "+00:00")).astimezone(UTC)
+            except ValueError:
+                raise HTTPException(400, "Geçersiz date_from formatı. ISO formatı gereklidir.")
+        if date_to:
+            try:
+                started_filter["$lte"] = datetime.fromisoformat(date_to.replace("Z", "+00:00")).astimezone(UTC)
+            except ValueError:
+                raise HTTPException(400, "Geçersiz date_to formatı. ISO formatı gereklidir.")
+        query["started_at"] = started_filter
+
     svc = get_field_encryption_service()
+    if search:
+        search_stripped = search.strip()
+        if search_stripped:
+            search_hash = svc.compute_search_hash(search_stripped)
+            query["caller_id_hash"] = search_hash
+
+    total_count = await db.contact_center_calls.count_documents(query)
+
+    cursor = db.contact_center_calls.find(query).sort("started_at", -1).skip(skip).limit(safe_limit)
+    docs = await cursor.to_list(length=safe_limit)
+
     reveal = bool(reveal_phone) and _can_reveal_phone(current_user)
     if reveal_phone:
         logger.info(
@@ -268,7 +305,277 @@ async def list_calls(
             "acildi" if reveal else "reddedildi",
         )
     items = [call_to_dto(d, svc, reveal_phone=reveal) for d in docs]
-    return {"count": len(items), "items": items}
+    return {
+        "count": len(items),
+        "total": total_count,
+        "page": safe_page,
+        "limit": safe_limit,
+        "items": items,
+    }
+
+
+@router.get("/contact-center/analytics/summary")
+async def get_analytics_summary(
+    date_from: str | None = None,
+    date_to: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+):
+    """Çağrı merkezi performans özet istatistiklerini ve saatlik hacim grafiğini hesaplar."""
+    # Resolve hotel/tenant timezone
+    tz_doc = await db.tenant_settings.find_one({"tenant_id": current_user.tenant_id}, {"_id": 0, "timezone": 1}) or {}
+    tz_name = tz_doc.get("timezone") or "Europe/Istanbul"
+    import zoneinfo
+    try:
+        tz = zoneinfo.ZoneInfo(tz_name)
+    except Exception:
+        tz = zoneinfo.ZoneInfo("Europe/Istanbul")
+
+    now_tz = datetime.now(tz)
+    # Start of today (local time)
+    today_start = datetime(now_tz.year, now_tz.month, now_tz.day, tzinfo=tz)
+    # End of today
+    from datetime import timedelta
+    today_end = today_start + timedelta(days=1)
+
+    query = {"tenant_id": current_user.tenant_id}
+
+    if date_from or date_to:
+        started_filter = {}
+        if date_from:
+            try:
+                started_filter["$gte"] = datetime.fromisoformat(date_from.replace("Z", "+00:00")).astimezone(UTC)
+            except ValueError:
+                raise HTTPException(400, "Geçersiz date_from formatı. ISO formatı gereklidir.")
+        if date_to:
+            try:
+                started_filter["$lte"] = datetime.fromisoformat(date_to.replace("Z", "+00:00")).astimezone(UTC)
+            except ValueError:
+                raise HTTPException(400, "Geçersiz date_to formatı. ISO formatı gereklidir.")
+        query["started_at"] = started_filter
+    else:
+        # Default: today in local hotel timezone (converted to UTC for querying database)
+        query["started_at"] = {"$gte": today_start.astimezone(UTC), "$lt": today_end.astimezone(UTC)}
+
+    cursor = db.contact_center_calls.find(query)
+    calls = await cursor.to_list(length=10000)
+
+    # Deduplicate parent/child legs to count related legs as one business call
+    business_calls = {}
+    for c in calls:
+        parent_sid = c.get("parent_call_sid") or c.get("provider_call_sid")
+        if not parent_sid:
+            continue
+        if parent_sid not in business_calls:
+            business_calls[parent_sid] = []
+        business_calls[parent_sid].append(c)
+
+    deduped_calls = []
+    for parent_sid, legs in business_calls.items():
+        representative = None
+        for leg in legs:
+            if leg.get("status") in {"answered", "completed"}:
+                representative = leg
+                break
+        if not representative:
+            for leg in legs:
+                if leg.get("provider_call_sid") == parent_sid:
+                    representative = leg
+                    break
+        if not representative:
+            representative = legs[0]
+        deduped_calls.append(representative)
+
+    total_calls = len(deduped_calls)
+    inbound_calls = sum(1 for c in deduped_calls if c.get("direction") == "inbound")
+    outbound_calls = sum(1 for c in deduped_calls if c.get("direction") == "outbound")
+
+    answered_calls = sum(1 for c in deduped_calls if c.get("status") in {"answered", "completed"})
+    missed_calls = sum(1 for c in deduped_calls if c.get("status") == "missed")
+    failed_calls = sum(1 for c in deduped_calls if c.get("status") == "failed")
+
+    # SLA and Durations
+    total_duration = 0
+    total_wait_time = 0
+    sla_met_count = 0
+    answered_with_wait = 0
+
+    for c in deduped_calls:
+        dur = c.get("duration_seconds") or 0
+        if not dur and c.get("answered_at") and c.get("ended_at"):
+            dur = int((c["ended_at"] - c["answered_at"]).total_seconds())
+        total_duration += max(0, dur)
+
+        if c.get("answered_at") and c.get("started_at"):
+            wait = (c["answered_at"] - c["started_at"]).total_seconds()
+            total_wait_time += max(0.0, wait)
+            answered_with_wait += 1
+            if wait <= 20.0:
+                sla_met_count += 1
+
+    avg_duration = int(total_duration / answered_calls) if answered_calls > 0 else 0
+    avg_wait = round(total_wait_time / answered_with_wait, 1) if answered_with_wait > 0 else 0.0
+    sla_rate = round((sla_met_count / answered_with_wait) * 100, 1) if answered_with_wait > 0 else 100.0
+    abandon_rate = round((missed_calls / inbound_calls) * 100, 1) if (inbound_calls > 0) else 0.0
+
+    # Group hourly for local timezone chart
+    hourly_stats = {i: {"total": 0, "answered": 0, "missed": 0} for i in range(24)}
+    for c in calls:
+        if c.get("started_at"):
+            started_local = c["started_at"].astimezone(tz)
+            hour = started_local.hour
+            if hour in hourly_stats:
+                hourly_stats[hour]["total"] += 1
+                if c.get("status") in {"answered", "completed"}:
+                    hourly_stats[hour]["answered"] += 1
+                elif c.get("status") == "missed":
+                    hourly_stats[hour]["missed"] += 1
+
+    chart_data = [{"hour": f"{h:02d}:00", **hourly_stats[h]} for h in range(24)]
+
+    return {
+        "summary": {
+            "total_calls": total_calls,
+            "inbound_calls": inbound_calls,
+            "outbound_calls": outbound_calls,
+            "answered_calls": answered_calls,
+            "missed_calls": missed_calls,
+            "failed_calls": failed_calls,
+            "avg_duration_seconds": avg_duration,
+            "avg_wait_seconds": avg_wait,
+            "sla_rate": sla_rate,
+            "abandon_rate": abandon_rate,
+        },
+        "chart": chart_data,
+        "timezone": tz_name,
+    }
+
+
+@router.get("/contact-center/calls/{call_id}/guest-360")
+async def get_call_guest_360(
+    call_id: str,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+):
+    """Verilen çağrıya ait arayan numara ile PMS misafir veri tabanını eşleştirip Guest 360 detaylarını döndürür."""
+    doc = await db.contact_center_calls.find_one({
+        "tenant_id": current_user.tenant_id,
+        "$or": [{"id": call_id}, {"provider_call_sid": call_id}]
+    })
+    if not doc:
+        raise HTTPException(status_code=404, detail="Çağrı bulunamadı")
+
+    if not doc.get("caller_id_enc"):
+        return {"matched": False, "detail": "Arama numarası bulunamadı"}
+
+    svc = get_field_encryption_service()
+    phone = svc.decrypt_value(doc["caller_id_enc"])
+    if not phone:
+        return {"matched": False, "detail": "Arama numarası çözülemedi"}
+
+    # Search for guests in guests collection
+    from security.encrypted_lookup import build_guest_pii_query, decrypt_guest_doc
+    guests_cursor = db.guests.find({
+        "tenant_id": current_user.tenant_id,
+        **build_guest_pii_query("phone", phone)
+    })
+    guests_list = await guests_cursor.to_list(length=10)
+
+    if not guests_list:
+        return {"matched": False, "phone": phone}
+
+    if len(guests_list) > 1:
+        possible_matches = []
+        for g in guests_list:
+            g_dec = decrypt_guest_doc(g)
+            possible_matches.append({
+                "id": g_dec.get("id"),
+                "name": g_dec.get("name") or f"{g_dec.get('first_name', '')} {g_dec.get('last_name', '')}".strip(),
+                "vip_level": "Masked (Multiple Matches)"
+            })
+        return {
+            "matched": True,
+            "multiple": True,
+            "possible_matches": possible_matches
+        }
+
+    guest_doc = guests_list[0]
+    guest_doc = decrypt_guest_doc(guest_doc)
+    guest_id = guest_doc.get("id")
+
+    # Find reservation history and counts
+    reservations_cursor = db.bookings.find({
+        "tenant_id": current_user.tenant_id,
+        "guest_id": guest_id
+    })
+    bookings = await reservations_cursor.to_list(length=100)
+
+    active_booking = None
+    total_reservations = len(bookings)
+
+    for b in bookings:
+        if b.get("status") in {"checked_in", "confirmed"}:
+            if not active_booking or b.get("status") == "checked_in":
+                active_booking = b
+
+    guest_name = guest_doc.get("name") or f"{guest_doc.get('first_name', '')} {guest_doc.get('last_name', '')}".strip()
+
+    room_number = "Oda Atanmadı"
+    check_out = None
+    open_requests_count = 0
+    booking_status = None
+
+    if active_booking:
+        booking_status = active_booking.get("status")
+        room_number = active_booking.get("room_number") or active_booking.get("room_id") or "Oda Atanmadı"
+        check_out = active_booking.get("check_out")
+        if isinstance(check_out, datetime):
+            check_out = check_out.isoformat()
+
+        # Count open guest requests
+        open_requests_count = await db.guest_requests.count_documents({
+            "tenant_id": current_user.tenant_id,
+            "booking_id": active_booking.get("id"),
+            "status": {"$in": ["open", "assigned", "in_progress"]}
+        })
+
+    # Recent call history of this guest phone number (last 3 calls)
+    recent_calls_cursor = db.contact_center_calls.find({
+        "tenant_id": current_user.tenant_id,
+        "caller_id_hash": doc.get("caller_id_hash")
+    }).sort("started_at", -1).limit(4)
+
+    recent_docs = await recent_calls_cursor.to_list(length=4)
+    recent_calls = []
+    for r in recent_docs:
+        if r.get("provider_call_sid") == doc.get("provider_call_sid"):
+            continue
+        recent_calls.append({
+            "id": r.get("id"),
+            "started_at": r.get("started_at").isoformat() if isinstance(r.get("started_at"), datetime) else None,
+            "status": r.get("status"),
+            "direction": r.get("direction"),
+            "duration_seconds": r.get("duration_seconds") or 0,
+            "disposition": r.get("disposition"),
+            "notes": r.get("notes")
+        })
+
+    return {
+        "matched": True,
+        "guest_id": guest_id,
+        "name": guest_name,
+        "vip_level": guest_doc.get("vip_level") or guest_doc.get("vip_tier") or "Normal",
+        "vip_tags": guest_doc.get("vip_tags") or [],
+        "language": guest_doc.get("language") or guest_doc.get("language_code") or "tr",
+        "phone": phone,
+        "email": guest_doc.get("email"),
+        "room_number": room_number,
+        "booking_status": booking_status,
+        "check_out": check_out,
+        "total_reservations": total_reservations,
+        "open_requests_count": open_requests_count,
+        "recent_calls": recent_calls[:3]
+    }
 
 
 class CallTransfer(BaseModel):
@@ -284,18 +591,44 @@ async def transfer_live_call(
     _perm=Depends(require_op("manage_contact_center")),
 ):
     """Aktif bir çağrıyı başka bir hedefe yönlendirir (Twilio REST API)."""
+    from models.enums import CallStatus
+    # Verify call SID ownership and active status
+    call = await db.contact_center_calls.find_one({
+        "tenant_id": current_user.tenant_id,
+        "provider_call_sid": call_sid,
+        "status": {"$in": [CallStatus.RINGING.value, CallStatus.ANSWERED.value]},
+    })
+    if not call:
+        raise HTTPException(status_code=404, detail="Aktif çağrı bulunamadı.")
+
+    # Target format validation: E.164 or agent identity format
+    target = payload.target.strip()
+    is_valid = False
+    if target.startswith("client:"):
+        client_id = target[7:]
+        is_valid = bool(re.match(r"^[a-zA-Z0-9_]+__[a-zA-Z0-9_]+$", client_id))
+    else:
+        is_valid = bool(re.match(r"^\+?[1-9]\d{1,14}$", target))
+
+    if not is_valid:
+        raise HTTPException(status_code=400, detail="Geçersiz aktarım hedefi.")
+
     cfg = get_twilio_voice_config()
     if not cfg.can_validate_signatures:
         raise HTTPException(status_code=503, detail="Twilio yapılandırılmadı.")
     try:
         from twilio.rest import Client
+        from twilio.twiml.voice_response import VoiceResponse
 
         client = Client(cfg.account_sid, cfg.auth_token)
-        if payload.target.startswith("client:"):
-            client_id = payload.target.replace("client:", "")
-            twiml = f"<Response><Dial><Client>{client_id}</Client></Dial></Response>"
+
+        response = VoiceResponse()
+        dial = response.dial()
+        if target.startswith("client:"):
+            dial.client(target[7:])
         else:
-            twiml = f"<Response><Dial>{payload.target}</Dial></Response>"
+            dial.number(target)
+        twiml = str(response)
 
         client.calls(call_sid).update(twiml=twiml)
         return {"status": "ok"}
@@ -305,7 +638,7 @@ async def transfer_live_call(
 
 
 class CallWhatsApp(BaseModel):
-    phone: str
+    phone: str | None = None
     template_name: str
     language_code: str = "tr"
 
@@ -319,23 +652,61 @@ async def send_whatsapp_during_call(
     _perm=Depends(require_op("manage_contact_center")),
 ):
     """Çağrı esnasında müşteriye tek tıkla şablon gönderir (Cross-Channel)."""
+    # Verify call SID ownership and active status
+    call = await db.contact_center_calls.find_one({
+        "tenant_id": current_user.tenant_id,
+        "provider_call_sid": call_sid,
+    })
+    if not call:
+        raise HTTPException(status_code=404, detail="Çağrı bulunamadı.")
+
+    # Resolve recipient phone number securely on the server
+    svc = get_field_encryption_service()
+    recipient = svc.decrypt_value(call["caller_id_enc"]) if call.get("caller_id_enc") else None
+    if not recipient:
+        raise HTTPException(status_code=400, detail="Arayan numarası çözülemedi.")
+
+    # Allowlist validation
+    ALLOWED_TEMPLATES = {
+        "hello_world",
+        "reservation_confirmation",
+        "checkin_welcome",
+        "checkout_thank_you"
+    }
+    if payload.template_name not in ALLOWED_TEMPLATES:
+        raise HTTPException(status_code=400, detail="Geçersiz şablon ismi.")
+
     from domains.contact_center.provider import get_communication_provider
 
     provider = get_communication_provider("whatsapp")
     if not provider:
         raise HTTPException(status_code=503, detail="WhatsApp sağlayıcısı bulunamadı.")
 
-    # Provider üzerinden doğrudan şablon gönderimi (Geçmişe/Conversation'a bağlamak Opsiyonel)
     res = await provider.send_whatsapp(
         db=db,
         tenant_id=current_user.tenant_id,
-        recipient=payload.phone,
+        recipient=recipient,
         in_session=False,
         template_name=payload.template_name,
         language_code=payload.language_code,
     )
     if not res.get("success"):
         raise HTTPException(status_code=502, detail="WhatsApp gönderimi başarısız.")
+
+    # Write audit log entry
+    from shared_kernel.audit_helper import audit_log
+    await audit_log(
+        actor_id=current_user.id,
+        tenant_id=current_user.tenant_id,
+        entity_type="contact_center_call",
+        entity_id=call_sid,
+        action="send_whatsapp",
+        metadata={
+            "template_name": payload.template_name,
+            "language_code": payload.language_code,
+        }
+    )
+
     return {"status": "ok"}
 
 
@@ -379,6 +750,24 @@ async def get_call_recording(
     doc = await db.contact_center_calls.find_one({"id": call_id, "tenant_id": current_user.tenant_id})
     if not doc or not doc.get("recording_ref"):
         raise HTTPException(status_code=404, detail="Kayıt bulunamadı")
+
+    # Access control: supervisor/admin override OR call ownership check
+    from core.security import _is_super_admin
+    from models.enums import UserRole
+    from modules.pms_core.role_permission_service import RolePermissionService
+
+    granted = getattr(current_user, "granted_permissions", None)
+    has_perm = (
+        _is_super_admin(current_user)
+        or current_user.role in {UserRole.ADMIN, UserRole.SUPERVISOR}
+        or current_user.role in {UserRole.ADMIN.value, UserRole.SUPERVISOR.value}
+        or RolePermissionService().check_permission(current_user.role, "listen_call_recordings", granted)
+    )
+
+    if not has_perm:
+        is_owner = doc.get("agent_id") == current_user.id
+        if not is_owner:
+            raise HTTPException(status_code=403, detail="Bu çağrı kaydını dinleme yetkiniz yok.")
 
     from domains.contact_center.recording_storage import load_recording_bytes
 
@@ -768,6 +1157,7 @@ async def voice_inbound(request: Request):
         tenant_id=tenant_id,
         provider_call_sid=call_sid,
         from_phone=from_phone,
+        parent_call_sid=form.get("ParentCallSid"),
     )
     if call_id:
         await _notify_incoming_call(tenant_id, call_id)
@@ -890,6 +1280,7 @@ async def voice_outbound(request: Request):
         tenant_id=tenant_id,
         provider_call_sid=call_sid,
         to_phone=sanitized,
+        agent_id=user_id,
     )
 
     rec_cb, status_cb = _callback_urls(tenant_id)
@@ -932,6 +1323,7 @@ async def voice_status(request: Request):
             provider_call_sid=call_sid,
             twilio_status=form.get("CallStatus") or form.get("DialCallStatus") or "",
             duration_seconds=duration_i,
+            parent_call_sid=form.get("ParentCallSid"),
         )
     return Response(status_code=204)
 

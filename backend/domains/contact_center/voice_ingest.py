@@ -65,6 +65,7 @@ async def _record_call(
     direction: str,
     agent_id: str | None = None,
     conversation_id: str | None = None,
+    parent_call_sid: str | None = None,
 ) -> str | None:
     """Gelen/giden çağrıyı idempotent biçimde kaydeder; çağrı ``id``'sini döner.
 
@@ -83,6 +84,7 @@ async def _record_call(
             "id": str(uuid4()),
             "tenant_id": tenant_id,
             "provider_call_sid": provider_call_sid,
+            "parent_call_sid": parent_call_sid,
             "conversation_id": conversation_id,
             "channel": _CHANNEL,
             "direction": direction,
@@ -134,6 +136,7 @@ async def record_inbound_call(
     from_phone: str,
     agent_id: str | None = None,
     conversation_id: str | None = None,
+    parent_call_sid: str | None = None,
 ) -> str | None:
     """Gelen çağrıyı idempotent biçimde kaydeder (arayan numarası hash+enc)."""
     return await _record_call(
@@ -144,6 +147,7 @@ async def record_inbound_call(
         direction=MessageDirection.INBOUND.value,
         agent_id=agent_id,
         conversation_id=conversation_id,
+        parent_call_sid=parent_call_sid,
     )
 
 
@@ -155,6 +159,7 @@ async def record_outbound_call(
     to_phone: str,
     agent_id: str | None = None,
     conversation_id: str | None = None,
+    parent_call_sid: str | None = None,
 ) -> str | None:
     """Giden (click-to-dial) çağrıyı idempotent kaydeder (hedef numarası hash+enc).
 
@@ -169,6 +174,7 @@ async def record_outbound_call(
         direction=MessageDirection.OUTBOUND.value,
         agent_id=agent_id,
         conversation_id=conversation_id,
+        parent_call_sid=parent_call_sid,
     )
 
 
@@ -179,6 +185,7 @@ async def update_call_status(
     provider_call_sid: str,
     twilio_status: str,
     duration_seconds: int | None = None,
+    parent_call_sid: str | None = None,
 ) -> bool:
     """Twilio status callback'ini iç duruma yansıtır (idempotent).
 
@@ -193,6 +200,8 @@ async def update_call_status(
         return False
     now = datetime.now(UTC)
     set_fields: dict = {"status": mapped.value, "updated_at": now}
+    if parent_call_sid:
+        set_fields["parent_call_sid"] = parent_call_sid
     if mapped == CallStatus.ANSWERED:
         set_fields["answered_at"] = now
     if mapped in _TERMINAL:
