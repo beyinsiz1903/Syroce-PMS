@@ -114,6 +114,23 @@ test.describe.serial('F8AF revenue_management deep stress', () => {
                 rec(testInfo, { module: MOD, step: 'force_advisory_mode',
                     status: forceAdvisory.status === 200 ? 'PASS' : 'REVIEW',
                     note: `http=${forceAdvisory.status} body=${JSON.stringify(forceAdvisory.body).slice(0, 120)}` });
+
+                // Create rate plans for the room types used in the test to satisfy autopilot price updates.
+                const testRoomTypes = [`${stressPrefix}_Standard`, `${stressPrefix}_Approve`, `${stressPrefix}_Reject`];
+                for (const rt of testRoomTypes) {
+                    const rpPayload = {
+                        name: `${rt} Rate Plan`,
+                        code: 'BAR',
+                        base_price: 100.0,
+                        room_type: rt
+                    };
+                    const rpRes = await callTimed(request, 'post', '/api/rates/rate-plans', rpPayload, sToken);
+                    if (rpRes.status === 200 || rpRes.status === 201) {
+                        rec(testInfo, { module: MOD, step: `create_rate_plan_${rt}`, status: 'PASS', note: `http=${rpRes.status}` });
+                    } else {
+                        rec(testInfo, { module: MOD, step: `create_rate_plan_${rt}`, status: 'REVIEW', note: `http=${rpRes.status} body=${JSON.stringify(rpRes.body)}` });
+                    }
+                }
             }
 
             // Forbidden literal source-scan guard (defense-in-depth): spec source
@@ -349,6 +366,7 @@ test.describe.serial('F8AF revenue_management deep stress', () => {
                 commission_pct: 5.0,
             };
             const analyze = await callTimed(request, 'post', '/api/displacement/analyze', req, sToken);
+            expect(analyze.status, `displacement/analyze status is 0 (transport failure: ${analyze.error || "unknown"})`).not.toBe(0);
             if (analyze.status === 403 || analyze.status === 404) {
                 rec(testInfo, { module: MOD, step: 'displacement_analyze', status: 'SKIP',
                     note: `http=${analyze.status}` });
@@ -369,6 +387,7 @@ test.describe.serial('F8AF revenue_management deep stress', () => {
                 ],
             };
             const comp = await callTimed(request, 'post', '/api/displacement/compare', compReq, sToken);
+            expect(comp.status, `displacement/compare status is 0 (transport failure: ${comp.error || "unknown"})`).not.toBe(0);
             if (comp.status >= 200 && comp.status < 300) {
                 rec(testInfo, { module: MOD, step: 'displacement_compare', status: 'PASS',
                     note: `http=${comp.status}` });
@@ -381,6 +400,7 @@ test.describe.serial('F8AF revenue_management deep stress', () => {
             }
 
             const save = await callTimed(request, 'post', '/api/displacement/save', req, sToken);
+            expect(save.status, `displacement/save status is 0 (transport failure: ${save.error || "unknown"})`).not.toBe(0);
             if (save.status >= 200 && save.status < 300) {
                 rec(testInfo, { module: MOD, step: 'displacement_save', status: 'PASS',
                     note: `http=${save.status} id=${save.body?.id || save.body?.analysis_id || 'n/a'}` });

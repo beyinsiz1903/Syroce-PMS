@@ -418,12 +418,8 @@ test.describe('F9C § 98 — F&B BEO Generator Lifecycle', () => {
             { timeout: 10_000, headers: { 'Idempotency-Key': idemKey('F_status') } },
         );
         expect(r.status, `F_status 5xx status=${r.status}`).toBeLessThan(500);
-        if (r.status !== 200) {
-            recFinding(testInfo, 'P2', MOD, `F_status non-200 status=${r.status}`,
-                `body=${JSON.stringify(r.body || {}).slice(0, 200)}`);
-            rec(testInfo, { module: MOD, step: 'F_status', status: 'REVIEW', http: r.status });
-            return;
-        }
+        expect(r.status, `F_status non-2xx status=${r.status}`).toBeGreaterThanOrEqual(200);
+        expect(r.status, `F_status non-2xx status=${r.status}`).toBeLessThan(300);
         expect(r.body?.status, 'F_status response status yok').toBe('tentative');
         rec(testInfo, { module: MOD, step: 'F_status', status: 'PASS', http: r.status });
     });
@@ -460,6 +456,17 @@ test.describe('F9C § 98 — F&B BEO Generator Lifecycle', () => {
             rec(testInfo, { module: MOD, step: 'P_fnb_send', status: 'SKIP', note: reason });
             test.skip(true, reason);
         }
+        const evId = createdEventIds[0];
+
+        // Re-fetch the event and assert status === tentative before sending
+        const detail = await callTimed(
+            request, 'get', `/api/mice/events/${evId}`, null,
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        expect(detail.status, `Re-fetch event status=${detail.status}`).toBeGreaterThanOrEqual(200);
+        expect(detail.status, `Re-fetch event status=${detail.status}`).toBeLessThan(300);
+        expect(detail.body?.status, `Re-fetched event status must be tentative, got ${detail.body?.status}`).toBe('tentative');
+
         if (!attachedMenuId) {
             // No F&B line attachable (catalog had no menu) → the send must
             // graceful-reject 422; assert that contract instead of fabricating
@@ -475,7 +482,6 @@ test.describe('F9C § 98 — F&B BEO Generator Lifecycle', () => {
                 note: 'no menu in catalog → 422 graceful reject (lifecycle hard-assert skipped)' });
             return;
         }
-        const evId = createdEventIds[0];
         const r = await callTimed(
             request, 'post', `/api/mice/events/${evId}/fnb-order/send`,
             { target: 'kitchen', note: `${SUB_PREFIX} production order` },
