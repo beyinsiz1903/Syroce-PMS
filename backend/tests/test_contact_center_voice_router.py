@@ -1043,19 +1043,19 @@ def test_outbound_inactive_default_ignored(fake_db, sig_ok):
 
 def test_parse_client_identity_cases():
     from domains.contact_center.voice_router import _parse_client_identity
-    
+
     # 1. Legacy colon format
     assert _parse_client_identity("client:t1:u1") == ("t1", "u1")
     assert _parse_client_identity("t1:u1") == ("t1", "u1")
-    
+
     # 2. Safe double-underscore format
     assert _parse_client_identity("client:t1__u1") == ("t1", "u1")
     assert _parse_client_identity("t1__u1") == ("t1", "u1")
-    
+
     # 3. Safe single-underscore format (fallback)
     assert _parse_client_identity("client:t1_u1") == ("t1", "u1")
     assert _parse_client_identity("t1_u1") == ("t1", "u1")
-    
+
     # 4. UUID tenant and user values (with hyphens recovered)
     t_uuid = "bb306859-9748-430f-b24a-5a0d0ea29309"
     u_uuid = "088e9171-59d6-4ff5-9065-e9d89cedb886"
@@ -1063,10 +1063,10 @@ def test_parse_client_identity_cases():
     u_safe = u_uuid.replace("-", "_")
     assert _parse_client_identity(f"client:{t_safe}__{u_safe}") == (t_uuid, u_uuid)
     assert _parse_client_identity(f"client:{t_safe}_{u_safe}") == (t_uuid, u_uuid)
-    
+
     # 5. Values containing underscores (double-underscore solves ambiguity)
     assert _parse_client_identity("client:tenant_demo_user__user_123") == ("tenant_demo_user", "user_123")
-    
+
     # 6. Malformed input
     assert _parse_client_identity("client:t1__u1__extra") == (None, None)
     assert _parse_client_identity("client:t1:u1:extra") == (None, None)
@@ -1081,7 +1081,7 @@ def test_outbound_call_attempt_idempotency(fake_db, sig_ok):
     fake_db.contact_center_voice_numbers.docs.append(
         {"tenant_id": "t1", "to_number": _CALLER_ID}
     )
-    
+
     req1 = _make_request(
         "/api/voice/outbound",
         {"From": "client:t1:u1", "To": _TARGET, "CallSid": "CA1", "call_attempt_id": "attempt_1"},
@@ -1090,11 +1090,11 @@ def test_outbound_call_attempt_idempotency(fake_db, sig_ok):
     resp1 = asyncio.run(voice_router.voice_outbound(req1))
     assert resp1.status_code == 200
     assert b"<Dial" in resp1.body
-    
+
     assert len(fake_db.contact_center_calls.docs) == 1
     call_doc = fake_db.contact_center_calls.docs[0]
     assert call_doc["call_attempt_id"] == "attempt_1"
-    
+
     req2 = _make_request(
         "/api/voice/outbound",
         {"From": "client:t1:u1", "To": _TARGET, "CallSid": "CA2", "call_attempt_id": "attempt_1"},
@@ -1104,7 +1104,7 @@ def test_outbound_call_attempt_idempotency(fake_db, sig_ok):
     assert resp2.status_code == 200
     assert b"<Hangup" in resp2.body
     assert b"<Dial" not in resp2.body
-    
+
     assert len(fake_db.contact_center_calls.docs) == 1
 
 
@@ -1112,7 +1112,7 @@ def test_outbound_call_attempt_idempotency_concurrent(fake_db, sig_ok):
     fake_db.contact_center_voice_numbers.docs.append(
         {"tenant_id": "t1", "to_number": _CALLER_ID}
     )
-    
+
     original_find_one = fake_db.contact_center_calls.find_one
     original_find_one_and_update = fake_db.contact_center_calls.find_one_and_update
 
@@ -1165,7 +1165,7 @@ def test_whatsapp_status_callback_valid_signature(fake_db, sig_ok):
         "provider_message_id": "SM123",
         "status": DeliveryStatus.QUEUED.value
     })
-    
+
     req = _make_request(
         "/api/voice/whatsapp/status",
         {"MessageSid": "SM123", "MessageStatus": "delivered", "ErrorCode": ""},
@@ -1173,14 +1173,15 @@ def test_whatsapp_status_callback_valid_signature(fake_db, sig_ok):
     )
     resp = asyncio.run(voice_router.whatsapp_status(req))
     assert resp.status_code == 204
-    
+
     log = fake_db.messaging_delivery_logs.docs[0]
     assert log["status"] == DeliveryStatus.DELIVERED.value
 
 
 def test_twilio_whatsapp_sandbox_sends_real_api_call(monkeypatch):
-    from modules.messaging.providers import PROVIDER_MAP, ProviderMode
     from unittest.mock import MagicMock
+
+    from modules.messaging.providers import PROVIDER_MAP, ProviderMode
 
     mock_messages = MagicMock()
     mock_msg_instance = MagicMock()

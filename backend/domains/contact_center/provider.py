@@ -192,10 +192,10 @@ class WhatsAppCloudProvider(CommunicationProvider):
                     "detail": "WhatsApp sağlayıcısı bu kiracı için yapılandırılmadı.",
                 }
 
+        import os
+
         from modules.messaging.providers import PROVIDER_MAP
         from modules.messaging.service import _decrypt_provider_creds
-
-        import os
         twilio_sid = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
         twilio_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
         twilio_from = os.getenv("TWILIO_WHATSAPP_FROM", "").strip()
@@ -246,7 +246,7 @@ class WhatsAppCloudProvider(CommunicationProvider):
             try:
                 from modules.messaging.models import new_delivery_log
                 from modules.messaging.recipient_crypto import seal_delivery_log
-                
+
                 log_doc = new_delivery_log(
                     tenant_id=tenant_id,
                     property_id=None,
@@ -262,7 +262,7 @@ class WhatsAppCloudProvider(CommunicationProvider):
                 if result.get("delivered"):
                     from datetime import UTC, datetime
                     log_doc["delivered_at"] = datetime.now(UTC).isoformat()
-                    
+
                 await db.messaging_delivery_logs.insert_one(seal_delivery_log(log_doc))
             except Exception as e:
                 logger.warning(f"[CC-WHATSAPP] Failed to write messaging delivery log: {e}")
