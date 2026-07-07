@@ -19,8 +19,7 @@ import CallHistory from "./CallHistory";
 
 import { SOFTPHONE_DIAL_EVENT } from "@/lib/softphone";
 
-const TWILIO_VOICE_SDK_URL =
-  "https://unpkg.com/@twilio/voice-sdk@2.11.2/dist/twilio.min.js";
+const TWILIO_VOICE_SDK_URL = "/js/twilio.min.js";
 
 let _sdkPromise = null;
 
@@ -81,6 +80,7 @@ const STATUS_LABEL = {
   error: "Hata",
 };
 
+
 export default function Softphone({ user }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState("dialer");
@@ -97,8 +97,11 @@ export default function Softphone({ user }) {
   const [sendingWhatsapp, setSendingWhatsapp] = useState(false);
   const [token, setToken] = useState(null);
   const [isSdkReady, setIsSdkReady] = useState(false);
+  const [guestInfo, setGuestInfo] = useState(null);
+
   const deviceRef = useRef(null);
   const callRef = useRef(null);
+  const audioContextRef = useRef(null);
   const connectCancelledRef = useRef(false);
 
   const role = user?.role || (user?.roles && user.roles[0]);
@@ -168,26 +171,57 @@ export default function Softphone({ user }) {
     return () => clearInterval(timer);
   }, [status]);
 
-  const teardown = useCallback(() => {
-    connectCancelledRef.current = true;
+  const resetCallState = useCallback(({ preserveDevice = true } = {}) => {
     try {
       callRef.current?.disconnect?.();
-    } catch {
-      /* noop */
-    }
+    } catch { /* noop */ }
     callRef.current = null;
-    try {
-      deviceRef.current?.destroy?.();
-    } catch {
-      /* noop */
+
+    if (!preserveDevice) {
+      try {
+        deviceRef.current?.destroy?.();
+      } catch { /* noop */ }
+      deviceRef.current = null;
+
+      try {
+        audioContextRef.current?.close?.();
+      } catch { /* noop */ }
+      audioContextRef.current = null;
     }
-    deviceRef.current = null;
+
+    setCallDuration(0);
+    setIsMuted(false);
+    setShowDialpad(false);
+    setShowTransfer(false);
+    setIncomingFrom("");
+    setGuestInfo(null);
+    setStatus(deviceRef.current ? "ready" : "idle");
   }, []);
+
+  const teardown = useCallback(() => {
+    connectCancelledRef.current = true;
+    resetCallState({ preserveDevice: false });
+  }, [resetCallState]);
 
   useEffect(() => () => teardown(), [teardown]);
 
+  const fetchGuestInfo = useCallback((callSid) => {
+    if (!callSid) return;
+    axios.get(`/api/contact-center/calls/${callSid}/guest-360`)
+      .then((res) => {
+        if (res.data && res.data.matched) {
+          setGuestInfo(res.data);
+        } else {
+          setGuestInfo(null);
+        }
+      })
+      .catch((err) => {
+        console.warn("[CC-VOICE] Fetching Guest 360 failed:", err);
+        setGuestInfo(null);
+      });
+  }, []);
+
   const activate = useCallback(() => {
-    // If SDK is not ready or token is stale/missing, do not proceed (prevents async network yields under user gesture)
     const exp = getJwtExpiration(token);
     const isTokenReady = token && (exp ? Date.now() < exp - 5 * 60 * 1000 : false);
     const Twilio = window.Twilio;
@@ -201,11 +235,15 @@ export default function Softphone({ user }) {
     setStatus("activating");
     setDetail("");
 
-    // 1) AudioContext aktivasyonu — doğrudan tıklama anında SİNKRON olarak başlatılır (Safari autoplay kilidini kaldırır).
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (AudioContextClass) {
       try {
         const audioCtx = new AudioContextClass();
+        audioContextRef.current = audioCtx;
         if (audioCtx.state === "suspended") {
           audioCtx.resume().catch((err) => {
             console.warn("[CC-VOICE] Synchronous AudioContext resume rejected:", err);
@@ -216,7 +254,6 @@ export default function Softphone({ user }) {
       }
     }
 
-    // 2) Mikrofon izni — asenkron istek (kullanıcıya sorar, cihaz kaydını engellemez)
     navigator.mediaDevices.getUserMedia({ audio: true })
       .then((stream) => {
         stream.getTracks().forEach((t) => t.stop());
@@ -229,9 +266,9 @@ export default function Softphone({ user }) {
         } else {
           setDetail("Mikrofon erişim hatası: " + (err.message || err.name));
         }
+        resetCallState({ preserveDevice: false });
       });
 
-    // 3) Cihaz kurulumu ve Kayıt — senkron call-stack içinde
     try {
       teardown();
       const device = new Twilio.Device(token, { closeProtection: true });
@@ -255,17 +292,16 @@ export default function Softphone({ user }) {
         setStatus("incoming");
         setView("dialer");
         setOpen(true);
+
+        if (call?.parameters?.CallSid) {
+          fetchGuestInfo(call.parameters.CallSid);
+        }
+
         call.on("disconnect", () => {
-          callRef.current = null;
-          setIncomingFrom("");
-          setIsMuted(false);
-          setStatus(deviceRef.current ? "ready" : "idle");
+          resetCallState();
         });
         call.on("cancel", () => {
-          callRef.current = null;
-          setIncomingFrom("");
-          setIsMuted(false);
-          setStatus(deviceRef.current ? "ready" : "idle");
+          resetCallState();
         });
       });
 
@@ -279,7 +315,7 @@ export default function Softphone({ user }) {
       setStatus("error");
       setDetail("Sesli arama cihazı başlatılamadı.");
     }
-  }, [teardown, token, fetchToken]);
+  }, [teardown, token, fetchToken, resetCallState, fetchGuestInfo]);
 
   const startCall = useCallback((override) => {
     const device = deviceRef.current;
@@ -287,13 +323,10 @@ export default function Softphone({ user }) {
       setDetail("Önce softphone'u aktifleştirin.");
       return;
     }
-    // Prevent repeated call clicks while connect is pending or active
     if (status === "connecting" || status === "on_call") {
       return;
     }
     
-    // onClick event objesi de ilk argüman olarak gelebilir → yalnız string
-    // override'ı dikkate al, aksi halde input state'ini kullan.
     const target = (typeof override === "string" ? override : dialNumber || "").trim();
     if (!target) {
       setDetail("Aranacak numarayı girin.");
@@ -305,8 +338,6 @@ export default function Softphone({ user }) {
     connectCancelledRef.current = false;
 
     try {
-      // Twilio buradaki params'ı TwiML App voiceUrl'ine (/api/voice/outbound)
-      // POST eder; kiracı sunucu tarafında client kimliğinden türetilir.
       const callPromise = device.connect({ params: { To: target } });
       
       callPromise
@@ -318,38 +349,28 @@ export default function Softphone({ user }) {
             return;
           }
           callRef.current = call;
-          setStatus("on_call");
-          setDetail("");
+
+          if (call?.parameters?.CallSid) {
+            fetchGuestInfo(call.parameters.CallSid);
+          }
+
+          call.on("accept", () => {
+            setStatus("on_call");
+            setDetail("");
+          });
 
           call.on("disconnect", () => {
-            setStatus(deviceRef.current ? "ready" : "idle");
-            setCallDuration(0);
-            setIsMuted(false);
-            setShowDialpad(false);
-            setShowTransfer(false);
-            callRef.current = null;
+            resetCallState();
           });
           call.on("cancel", () => {
-            setStatus(deviceRef.current ? "ready" : "idle");
-            setCallDuration(0);
-            setIsMuted(false);
-            setShowDialpad(false);
-            setShowTransfer(false);
-            callRef.current = null;
+            resetCallState();
           });
           call.on("reject", () => {
-            setStatus(deviceRef.current ? "ready" : "idle");
-            setCallDuration(0);
-            setIsMuted(false);
-            setShowDialpad(false);
-            setShowTransfer(false);
-            callRef.current = null;
+            resetCallState();
           });
           call.on("error", (e) => {
             console.error("[CC-VOICE] Call error:", e);
-            callRef.current = null;
-            setIsMuted(false);
-            setStatus(deviceRef.current ? "ready" : "idle");
+            resetCallState();
             setDetail("Çağrı hatası: " + (e?.message || e?.name || "bilinmiyor"));
           });
         })
@@ -368,15 +389,9 @@ export default function Softphone({ user }) {
         setDetail("Giden çağrı başlatılamadı: " + (err.message || err.name));
       }
     }
-  }, [dialNumber, status]);
+  }, [dialNumber, status, fetchGuestInfo, resetCallState]);
 
   // Browser Notifications & Ringtones
-  useEffect(() => {
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
-    }
-  }, []);
-
   useEffect(() => {
     if (status === "incoming" && "Notification" in window && Notification.permission === "granted") {
       const notif = new Notification("Gelen Çağrı", {
@@ -420,20 +435,8 @@ export default function Softphone({ user }) {
   }, []);
 
   const rejectCall = useCallback(() => {
-    if (callRef.current) {
-      try {
-        callRef.current.reject();
-      } catch (err) {
-        console.warn("Reject failed", err);
-      }
-    }
-    callRef.current = null;
-    setStatus(deviceRef.current ? "ready" : "idle");
-    setCallDuration(0);
-    setIsMuted(false);
-    setShowDialpad(false);
-    setShowTransfer(false);
-  }, []);
+    resetCallState();
+  }, [resetCallState]);
 
   const endCall = useCallback(() => {
     if (status === "connecting" && !callRef.current) {
@@ -441,20 +444,8 @@ export default function Softphone({ user }) {
       setStatus(deviceRef.current ? "ready" : "idle");
       return;
     }
-    if (callRef.current) {
-      try {
-        callRef.current.disconnect();
-      } catch (err) {
-        console.warn("Disconnect failed", err);
-      }
-    }
-    callRef.current = null;
-    setStatus(deviceRef.current ? "ready" : "idle");
-    setCallDuration(0);
-    setIsMuted(false);
-    setShowDialpad(false);
-    setShowTransfer(false);
-  }, [status]);
+    resetCallState();
+  }, [status, resetCallState]);
 
   const toggleMute = useCallback(() => {
     if (callRef.current) {
@@ -469,7 +460,6 @@ export default function Softphone({ user }) {
     if (status !== "incoming" && status !== "on_call") return;
     
     const handleKeyDown = (e) => {
-      // Don't trigger if user is typing in an input field
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
 
       switch(e.key.toLowerCase()) {
@@ -546,12 +536,8 @@ export default function Softphone({ user }) {
   };
 
   const deactivate = useCallback(() => {
-    teardown();
-    setStatus("idle");
-    setDetail("");
-    setIncomingFrom("");
-    setIsMuted(false);
-  }, [teardown]);
+    resetCallState({ preserveDevice: false });
+  }, [resetCallState]);
 
   if (!isStaff) return null;
 
@@ -721,9 +707,10 @@ export default function Softphone({ user }) {
                         disabled={sendingWhatsapp}
                       >
                         <option value="">WhatsApp Gönder...</option>
-                        <option value="welcome_location">Lokasyon & Karşılama</option>
+                        <option value="hello_world">Demo Mesajı (Hello World)</option>
                         <option value="reservation_confirmation">Rezervasyon Onayı</option>
-                        <option value="satisfaction_survey">Memnuniyet Anketi</option>
+                        <option value="checkin_welcome">Giriş Hoşgeldiniz Mesajı</option>
+                        <option value="checkout_thank_you">Çıkış Teşekkür Mesajı</option>
                       </select>
                     </div>
                   </div>
@@ -882,6 +869,77 @@ export default function Softphone({ user }) {
             <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24 11.36 11.36 0 0 0 3.57.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1.02l-2.2 2.2z" />
           </svg>
         </button>
+      )}
+
+      {/* Guest 360 Sidebar */}
+      {open && guestInfo && (
+        <div className="w-80 rounded-lg border border-gray-200 bg-white shadow-xl flex flex-col max-h-[500px] overflow-y-auto">
+          <div className="border-b border-gray-100 px-4 py-3 bg-gray-50 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-gray-900">Misafir 360 Profil</span>
+              {guestInfo.vip_level && guestInfo.vip_level !== "Normal" && (
+                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+                  {guestInfo.vip_level}
+                </span>
+              )}
+            </div>
+          </div>
+          
+          <div className="p-4 space-y-4 text-xs">
+            <div className="space-y-1">
+              <div className="text-sm font-medium text-gray-800">{guestInfo.name}</div>
+              <div className="text-gray-500">{guestInfo.phone}</div>
+              {guestInfo.email && <div className="text-gray-500">{guestInfo.email}</div>}
+            </div>
+
+            <hr className="border-gray-100" />
+
+            <div className="grid grid-cols-2 gap-3 bg-indigo-50/50 p-2.5 rounded-md">
+              <div>
+                <span className="text-[10px] text-gray-400 block uppercase font-medium">Oda</span>
+                <span className="font-semibold text-gray-800">{guestInfo.room_number || "Oda Atanmadı"}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-gray-400 block uppercase font-medium">Dil</span>
+                <span className="font-semibold text-gray-800 uppercase">{guestInfo.language || "TR"}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-gray-400 block uppercase font-medium">Açık Talepler</span>
+                <span className="font-semibold text-gray-800">{guestInfo.open_requests_count || 0}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-gray-400 block uppercase font-medium">Toplam Rezervasyon</span>
+                <span className="font-semibold text-gray-800">{guestInfo.total_reservations || 0}</span>
+              </div>
+            </div>
+
+            {guestInfo.check_out && (
+              <div className="text-gray-600 bg-gray-50 p-2 rounded">
+                <strong>Çıkış Tarihi:</strong> {new Date(guestInfo.check_out).toLocaleDateString("tr-TR")}
+              </div>
+            )}
+
+            {guestInfo.recent_calls && guestInfo.recent_calls.length > 0 && (
+              <div className="space-y-2">
+                <div className="font-medium text-gray-700">Son Görüşmeler</div>
+                <div className="space-y-2">
+                  {guestInfo.recent_calls.map((c) => (
+                    <div key={c.id} className="border-l-2 border-indigo-200 pl-2 py-0.5 space-y-0.5">
+                      <div className="flex justify-between text-[10px] text-gray-400">
+                        <span>{new Date(c.started_at).toLocaleDateString("tr-TR")}</span>
+                        <span className="capitalize">{c.direction === "inbound" ? "Gelen" : "Giden"}</span>
+                      </div>
+                      {c.notes && <div className="text-gray-700 italic">"{c.notes}"</div>}
+                      <div className="text-[10px] text-gray-500">
+                        Durum: <span className="font-medium">{c.status}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
