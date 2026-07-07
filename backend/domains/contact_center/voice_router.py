@@ -746,7 +746,7 @@ async def send_whatsapp_during_call(
         }
     )
 
-    return {"status": "ok"}
+    return {"status": "ok", "provider_message_id": res.get("provider_message_id")}
 
 
 class CallUpdate(BaseModel):
