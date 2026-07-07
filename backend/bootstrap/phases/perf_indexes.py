@@ -408,6 +408,36 @@ async def ensure_performance_indexes():
             {"unique": True, "partialFilterExpression": {"agency_external_active": {"$type": "string"}}},
         ),
     ]
+    # ── Migration Cleanup for contact_center_calls ──
+    try:
+        # 1. Unset empty/invalid call_attempt_id values so they don't enter the unique partial filter
+        await _raw_db["contact_center_calls"].update_many(
+            {"call_attempt_id": ""},
+            {"$unset": {"call_attempt_id": ""}}
+        )
+
+        # 2. Find and remove duplicate (tenant_id, agent_id, call_attempt_id) combinations
+        pipeline = [
+            {"$match": {"call_attempt_id": {"$type": "string"}}},
+            {"$group": {
+                "_id": {
+                    "tenant_id": "$tenant_id",
+                    "agent_id": "$agent_id",
+                    "call_attempt_id": "$call_attempt_id"
+                },
+                "count": {"$sum": 1},
+                "ids": {"$push": "$_id"}
+            }},
+            {"$match": {"count": {"$gt": 1}}}
+        ]
+        async for group in _raw_db["contact_center_calls"].aggregate(pipeline):
+            # Keep the first document, delete the rest
+            ids_to_delete = group["ids"][1:]
+            logger.warning(f"Removing duplicate call documents in migration: {ids_to_delete}")
+            await _raw_db["contact_center_calls"].delete_many({"_id": {"$in": ids_to_delete}})
+    except Exception as e:
+        logger.warning(f"Failed to run contact_center_calls migration cleanup: {e}")
+
     for coll_name, keys, name, kwargs in indexes:
         try:
             await _raw_db[coll_name].create_index(keys, name=name, background=True, **kwargs)
@@ -416,3 +446,14 @@ async def ensure_performance_indexes():
                 pass
             else:
                 logger.warning(f"Index {name} on {coll_name} failed: {e}")
+
+    # ── Startup Assertion: verify unique index exists ──
+    try:
+        indexes_in_db = await _raw_db["contact_center_calls"].index_information()
+        if "ux_cc_calls_attempt_id" not in indexes_in_db:
+            raise AssertionError("Startup failed: Unique index 'ux_cc_calls_attempt_id' on 'contact_center_calls' is missing!")
+    except AssertionError:
+        raise
+    except Exception as e:
+        logger.warning(f"Failed to verify index existence: {e}")
+

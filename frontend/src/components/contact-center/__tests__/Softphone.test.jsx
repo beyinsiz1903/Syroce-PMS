@@ -18,7 +18,10 @@ describe("Softphone frontend user gesture flow", () => {
   let mockDevice;
   let mockConnect;
   let mockRegister;
+  let mockUnregister;
+  let mockDestroy;
   let registeredCallback;
+  let unregisteredCallback;
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -64,17 +67,27 @@ describe("Softphone frontend user gesture flow", () => {
       }
       return Promise.resolve();
     });
+    mockUnregister = vi.fn().mockImplementation(() => {
+      if (unregisteredCallback) {
+        unregisteredCallback();
+      }
+      return Promise.resolve();
+    });
+    mockDestroy = vi.fn();
     
     // Use standard function definition so that it works as a constructor with "new"
     mockDevice = vi.fn().mockImplementation(function(token, options) {
       this.on = vi.fn((event, cb) => {
         if (event === "registered") {
           registeredCallback = cb;
+        } else if (event === "unregistered") {
+          unregisteredCallback = cb;
         }
       });
       this.register = mockRegister;
+      this.unregister = mockUnregister;
       this.connect = mockConnect;
-      this.destroy = vi.fn();
+      this.destroy = mockDestroy;
     });
 
     window.Twilio = {
@@ -527,4 +540,43 @@ describe("Softphone frontend user gesture flow", () => {
       expect(alertSpy).toHaveBeenLastCalledWith("Sınır aşıldı.");
     });
   });
+
+  it("enforces persistent device lifecycle across Ready -> Break -> Ready transitions", async () => {
+    render(<Softphone user={{ role: "admin" }} />);
+    
+    // 1. Open the drawer
+    fireEvent.click(screen.getByRole("button", { name: "Softphone" }));
+
+    // 2. Click "Müsait (Çevrimiçi Ol)" to activate first time
+    const onlineBtn = await screen.findByRole("button", { name: /Müsait/ });
+    fireEvent.click(onlineBtn);
+
+    // Wait for registration
+    await waitFor(() => {
+      expect(mockGetUserMedia).toHaveBeenCalledTimes(1);
+      expect(mockDevice).toHaveBeenCalledTimes(1);
+      expect(mockRegister).toHaveBeenCalledTimes(1);
+    });
+
+    // 3. Go to Break (Molaya Çık)
+    const breakBtn = await screen.findByRole("button", { name: /Molaya Çık/ });
+    fireEvent.click(breakBtn);
+
+    // Verify unregister is called, but destroy is NOT called
+    expect(mockUnregister).toHaveBeenCalledTimes(1);
+    expect(mockDestroy).not.toHaveBeenCalled();
+
+    // 4. Click Müsait again to go back to Ready
+    const onlineBtn2 = await screen.findByRole("button", { name: /Müsait/ });
+    fireEvent.click(onlineBtn2);
+
+    // Verify:
+    // - getUserMedia is NOT called again (still called 1 time total)
+    // - Device constructor is NOT called again (still called 1 time total)
+    // - register is called again (2 times total)
+    expect(mockGetUserMedia).toHaveBeenCalledTimes(1);
+    expect(mockDevice).toHaveBeenCalledTimes(1);
+    expect(mockRegister).toHaveBeenCalledTimes(2);
+  });
 });
+

@@ -1322,6 +1322,7 @@ async def voice_outbound(request: Request):
             "call_attempt_id": call_attempt_id
         })
         if existing:
+            logger.info(f"[CC-VOICE-OUTBOUND-LOG] call_attempt_id={call_attempt_id} parent_call_sid={call_sid} response_action=hangup duplicate_detected=true")
             logger.info(f"[CC-VOICE-DIAG] Outbound duplicate attempt ignored: call_attempt_id={call_attempt_id}")
             return Response(content="<Response><Hangup/></Response>", media_type=_XML)
 
@@ -1335,9 +1336,11 @@ async def voice_outbound(request: Request):
             call_attempt_id=call_attempt_id,
         )
     except DuplicateKeyError:
+        logger.info(f"[CC-VOICE-OUTBOUND-LOG] call_attempt_id={call_attempt_id} parent_call_sid={call_sid} response_action=hangup duplicate_detected=true")
         logger.info(f"[CC-VOICE-DIAG] Outbound duplicate attempt caught (race condition): call_attempt_id={call_attempt_id}")
         return Response(content="<Response><Hangup/></Response>", media_type=_XML)
 
+    logger.info(f"[CC-VOICE-OUTBOUND-LOG] call_attempt_id={call_attempt_id} parent_call_sid={call_sid} response_action=dial duplicate_detected=false")
     rec_cb, status_cb = _callback_urls(tenant_id)
     twiml = provider.build_outbound_twiml(
         to_number=sanitized,

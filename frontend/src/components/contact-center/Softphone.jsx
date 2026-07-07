@@ -222,7 +222,10 @@ export default function Softphone({ user }) {
     setShowTransfer(false);
     setIncomingFrom("");
     setGuestInfo(null);
-    setStatus(deviceRef.current ? "ready" : "idle");
+    setStatus((prev) => {
+      if (prev === "idle" || prev === "activating") return "idle";
+      return deviceRef.current ? "ready" : "idle";
+    });
   }, []);
 
   const resetCallState = clearCallState;
@@ -251,7 +254,15 @@ export default function Softphone({ user }) {
   }, []);
 
   const activate = useCallback(() => {
-    teardown();
+    if (deviceRef.current) {
+      setStatus("activating");
+      deviceRef.current.register().catch((err) => {
+        console.error("[CC-VOICE] Twilio device registration error:", err);
+        setStatus("error");
+        setDetail("Cihaz kaydı yapılamadı.");
+      });
+      return;
+    }
 
     const exp = getJwtExpiration(token);
     const isTokenReady = token && (exp ? Date.now() < exp - 5 * 60 * 1000 : false);
@@ -271,7 +282,7 @@ export default function Softphone({ user }) {
     }
 
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (AudioContextClass) {
+    if (AudioContextClass && !audioContextRef.current) {
       try {
         const audioCtx = new AudioContextClass();
         audioContextRef.current = audioCtx;
@@ -312,6 +323,10 @@ export default function Softphone({ user }) {
         setStatus("ready");
         setDetail("");
       });
+      device.on("unregistered", () => {
+        setStatus("idle");
+        setDetail("");
+      });
       device.on("error", (e) => {
         setStatus("error");
         setDetail("Cihaz hatası: " + (e?.code || "bilinmiyor"));
@@ -333,15 +348,15 @@ export default function Softphone({ user }) {
 
         call.on("disconnect", () => {
           console.log(`[CC-VOICE] Call disconnect event. SIDs: parent=${call?.parameters?.CallSid}`);
-          clearCallState();
+          clearCallState({ preserveDevice: true });
         });
         call.on("cancel", () => {
           console.log(`[CC-VOICE] Call cancel event. SIDs: parent=${call?.parameters?.CallSid}`);
-          clearCallState();
+          clearCallState({ preserveDevice: true });
         });
         call.on("reject", () => {
           console.log(`[CC-VOICE] Call reject event. SIDs: parent=${call?.parameters?.CallSid}`);
-          clearCallState();
+          clearCallState({ preserveDevice: true });
         });
       });
 
@@ -355,7 +370,7 @@ export default function Softphone({ user }) {
       setStatus("error");
       setDetail("Sesli arama cihazı başlatılamadı.");
     }
-  }, [teardown, token, fetchToken, clearCallState, fetchGuestInfo]);
+  }, [token, fetchToken, clearCallState, fetchGuestInfo]);
 
   const startCall = useCallback((override) => {
     const device = deviceRef.current;
@@ -627,7 +642,14 @@ export default function Softphone({ user }) {
     try {
       callRef.current?.disconnect?.();
     } catch { /* noop */ }
-    clearCallState({ preserveDevice: false });
+    if (deviceRef.current) {
+      try {
+        deviceRef.current.unregister();
+      } catch (e) {
+        console.warn("[CC-VOICE] Error unregistering device:", e);
+      }
+    }
+    clearCallState({ preserveDevice: true });
   }, [clearCallState]);
 
   if (!isStaff) return null;
