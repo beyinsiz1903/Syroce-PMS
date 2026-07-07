@@ -1089,6 +1089,7 @@ def test_outbound_call_attempt_idempotency(fake_db, sig_ok):
     )
     resp1 = asyncio.run(voice_router.voice_outbound(req1))
     assert resp1.status_code == 200
+    assert b"<Dial" in resp1.body
     
     assert len(fake_db.contact_center_calls.docs) == 1
     call_doc = fake_db.contact_center_calls.docs[0]
@@ -1101,8 +1102,60 @@ def test_outbound_call_attempt_idempotency(fake_db, sig_ok):
     )
     resp2 = asyncio.run(voice_router.voice_outbound(req2))
     assert resp2.status_code == 200
+    assert b"<Hangup" in resp2.body
+    assert b"<Dial" not in resp2.body
     
     assert len(fake_db.contact_center_calls.docs) == 1
+
+
+def test_outbound_call_attempt_idempotency_concurrent(fake_db, sig_ok):
+    fake_db.contact_center_voice_numbers.docs.append(
+        {"tenant_id": "t1", "to_number": _CALLER_ID}
+    )
+    
+    original_find_one = fake_db.contact_center_calls.find_one
+    original_find_one_and_update = fake_db.contact_center_calls.find_one_and_update
+
+    call_count = 0
+    async def mock_find_one(flt, proj=None):
+        if "call_attempt_id" in flt:
+            return None
+        return await original_find_one(flt, proj)
+
+    async def mock_find_one_and_update(flt, update, upsert=False, return_document=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count > 1:
+            raise DuplicateKeyError("dup")
+        return await original_find_one_and_update(flt, update, upsert, return_document)
+
+    fake_db.contact_center_calls.find_one = mock_find_one
+    fake_db.contact_center_calls.find_one_and_update = mock_find_one_and_update
+
+    req1 = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": "CA1", "call_attempt_id": "attempt_concurrent"},
+        signature="good",
+    )
+    req2 = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": "CA2", "call_attempt_id": "attempt_concurrent"},
+        signature="good",
+    )
+
+    resp1 = asyncio.run(voice_router.voice_outbound(req1))
+    resp2 = asyncio.run(voice_router.voice_outbound(req2))
+
+    assert resp1.status_code == 200
+    assert resp2.status_code == 200
+
+    bodies = [resp1.body, resp2.body]
+    dial_count = sum(1 for b in bodies if b"<Dial" in b)
+    hangup_count = sum(1 for b in bodies if b"<Hangup" in b)
+
+    assert dial_count == 1
+    assert hangup_count == 1
+
 
 
 def test_whatsapp_status_callback_valid_signature(fake_db, sig_ok):
@@ -1123,3 +1176,46 @@ def test_whatsapp_status_callback_valid_signature(fake_db, sig_ok):
     
     log = fake_db.messaging_delivery_logs.docs[0]
     assert log["status"] == DeliveryStatus.DELIVERED.value
+
+
+def test_twilio_whatsapp_sandbox_sends_real_api_call(monkeypatch):
+    from modules.messaging.providers import PROVIDER_MAP, ProviderMode
+    from unittest.mock import MagicMock
+
+    mock_messages = MagicMock()
+    mock_msg_instance = MagicMock()
+    mock_msg_instance.sid = "SMfake_sandbox_sid_123"
+    mock_messages.create.return_value = mock_msg_instance
+
+    class MockClient:
+        def __init__(self, account_sid, auth_token):
+            self.messages = mock_messages
+
+    import twilio.rest
+    monkeypatch.setattr(twilio.rest, "Client", MockClient)
+
+    twilio_provider = PROVIDER_MAP.get("twilio_whatsapp")
+
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACtest_sid")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "test_token")
+    monkeypatch.setenv("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")
+    monkeypatch.setenv("PUBLIC_APP_URL", "https://pms.syroce.com")
+
+    res = asyncio.run(twilio_provider.send(
+        recipient="+905555555555",
+        body="Hello World",
+        mode=ProviderMode.SANDBOX
+    ))
+
+    mock_messages.create.assert_called_once_with(
+        body="Hello World",
+        from_="whatsapp:+14155238886",
+        to="whatsapp:+905555555555",
+        status_callback="https://pms.syroce.com/api/voice/whatsapp/status"
+    )
+
+    assert res["success"] is True
+    assert res["status"] == "queued"
+    assert res["provider_message_id"].startswith("SM")
+    assert res["provider_message_id"] == "SMfake_sandbox_sid_123"
+

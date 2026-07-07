@@ -324,7 +324,7 @@ class TwilioWhatsAppProvider(BaseProvider):
         auth_token = creds.get("auth_token") or os.getenv("TWILIO_AUTH_TOKEN", "").strip()
         from_number = creds.get("from_number") or os.getenv("TWILIO_WHATSAPP_FROM", "").strip()
 
-        if mode == ProviderMode.TEST or mode == ProviderMode.SANDBOX:
+        if mode == ProviderMode.TEST:
             return {
                 "success": True,
                 "provider_message_id": f"sandbox_wa_{int(time.time())}",
@@ -332,6 +332,9 @@ class TwilioWhatsAppProvider(BaseProvider):
                 "delivered": False,
                 "note": "Test modu: Mesaj gerçek WhatsApp’a gönderilmedi."
             }
+
+        if mode == ProviderMode.SANDBOX:
+            from_number = "whatsapp:+14155238886"
 
         if not account_sid or not auth_token or not from_number:
             return {

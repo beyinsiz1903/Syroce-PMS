@@ -167,12 +167,30 @@ class WhatsAppCloudProvider(CommunicationProvider):
         """
         cfg = await self._load_config(db, tenant_id)
         if not cfg:
-            return {
-                "success": False,
-                "provider": self.provider_name,
-                "status": "not_configured",
-                "detail": "WhatsApp sağlayıcısı bu kiracı için yapılandırılmadı.",
-            }
+            import os
+            twilio_sid = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
+            twilio_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
+            twilio_from = os.getenv("TWILIO_WHATSAPP_FROM", "").strip()
+            if twilio_sid and twilio_token and twilio_from:
+                mode_val = "live"
+                if twilio_from == "whatsapp:+14155238886" or os.getenv("TWILIO_WHATSAPP_MODE", "").strip().lower() == "sandbox":
+                    mode_val = "sandbox"
+                elif os.getenv("TWILIO_WHATSAPP_MODE", "").strip().lower() == "test":
+                    mode_val = "test"
+                cfg = {
+                    "tenant_id": tenant_id,
+                    "provider_type": "twilio_whatsapp",
+                    "enabled": True,
+                    "is_sandbox": (mode_val == "sandbox"),
+                    "mode": mode_val,
+                }
+            else:
+                return {
+                    "success": False,
+                    "provider": self.provider_name,
+                    "status": "not_configured",
+                    "detail": "WhatsApp sağlayıcısı bu kiracı için yapılandırılmadı.",
+                }
 
         from modules.messaging.providers import PROVIDER_MAP
         from modules.messaging.service import _decrypt_provider_creds

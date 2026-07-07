@@ -86,7 +86,7 @@ async def _record_call(
                 "call_attempt_id": call_attempt_id
             })
             if existing:
-                return existing["id"]
+                raise DuplicateKeyError(f"Duplicate call attempt: {call_attempt_id}")
 
         svc = _svc()
         caller_id_hash, caller_id_enc = build_caller_crypto(svc, phone or "")
@@ -132,9 +132,11 @@ async def _record_call(
                 upsert=True,
                 return_document=ReturnDocument.AFTER,
             )
-        except DuplicateKeyError:
-            doc = await db[_COLLECTION].find_one({"tenant_id": tenant_id, "provider_call_sid": provider_call_sid})
+        except DuplicateKeyError as de:
+            raise de
         return (doc or {}).get("id") or set_on_insert["id"]
+    except DuplicateKeyError as de:
+        raise de
     except Exception:
         logger.exception("[CC-VOICE] çağrı kaydı başarısız (bastırıldı, PII'siz)")
         return None

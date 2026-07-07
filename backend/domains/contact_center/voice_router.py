@@ -1323,23 +1323,20 @@ async def voice_outbound(request: Request):
         })
         if existing:
             logger.info(f"[CC-VOICE-DIAG] Outbound duplicate attempt ignored: call_attempt_id={call_attempt_id}")
-            rec_cb, status_cb = _callback_urls(tenant_id)
-            twiml = provider.build_outbound_twiml(
-                to_number=sanitized,
-                caller_id=caller_id,
-                recording_status_callback=rec_cb,
-                dial_status_callback=status_cb,
-            )
-            return Response(content=twiml, media_type=_XML)
+            return Response(content="<Response><Hangup/></Response>", media_type=_XML)
 
-    await record_outbound_call(
-        db,
-        tenant_id=tenant_id,
-        provider_call_sid=call_sid,
-        to_phone=sanitized,
-        agent_id=user_id,
-        call_attempt_id=call_attempt_id,
-    )
+    try:
+        await record_outbound_call(
+            db,
+            tenant_id=tenant_id,
+            provider_call_sid=call_sid,
+            to_phone=sanitized,
+            agent_id=user_id,
+            call_attempt_id=call_attempt_id,
+        )
+    except DuplicateKeyError:
+        logger.info(f"[CC-VOICE-DIAG] Outbound duplicate attempt caught (race condition): call_attempt_id={call_attempt_id}")
+        return Response(content="<Response><Hangup/></Response>", media_type=_XML)
 
     rec_cb, status_cb = _callback_urls(tenant_id)
     twiml = provider.build_outbound_twiml(
