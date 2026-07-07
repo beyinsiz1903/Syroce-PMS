@@ -187,7 +187,7 @@ class TwilioVoiceProvider:
         self,
         *,
         url: str,
-        params: dict[str, Any],
+        params: Any,
         signature: str,
         request: Any | None = None,
     ) -> bool:
@@ -202,8 +202,21 @@ class TwilioVoiceProvider:
 
         cfg = self.config
 
+        # Safe metadata logging of incoming form keys and counts (no values, no signatures)
+        try:
+            param_keys = list(params.keys()) if hasattr(params, "keys") else list(params)
+        except Exception:
+            param_keys = []
+
+        logger.info(
+            f"[CC-VOICE-SIGNATURE] Incoming form metadata: "
+            f"key_count={len(param_keys)} "
+            f"keys={param_keys} "
+            f"is_multidict={hasattr(params, 'getlist')}"
+        )
+
         # Credentials & Mismatch logs (safe logging)
-        incoming_acc_sid = params.get("AccountSid", "none")
+        incoming_acc_sid = params.get("AccountSid", "none") if hasattr(params, "get") else "none"
         acc_sid_match = (cfg.account_sid == incoming_acc_sid) if incoming_acc_sid != "none" else True
 
         logger.info(

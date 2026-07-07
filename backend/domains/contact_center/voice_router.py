@@ -738,12 +738,12 @@ async def voice_inbound(request: Request):
     fallback. PII (numara) ASLA loglanmaz.
     """
     form = await request.form()
-    params = {k: str(v) for k, v in form.items()}
     provider = TwilioVoiceProvider()
     if not provider.validate_signature(
         url=_public_url(request),
-        params=params,
+        params=form,
         signature=request.headers.get("X-Twilio-Signature", ""),
+        request=request,
     ):
         return Response(
             content=provider.say_fallback("Çağrı doğrulanamadı."),
@@ -751,9 +751,9 @@ async def voice_inbound(request: Request):
             status_code=403,
         )
 
-    call_sid = params.get("CallSid", "")
-    from_phone = params.get("From", "")
-    to_number = params.get("To", "")
+    call_sid = form.get("CallSid", "")
+    from_phone = form.get("From", "")
+    to_number = form.get("To", "")
     cfg = await _resolve_tenant_for_number(to_number)
     if not cfg or not cfg.get("tenant_id"):
         return Response(
@@ -794,11 +794,10 @@ async def voice_outbound(request: Request):
     fallback (giden çağrı başlatılmaz). PII (hedef numara) ASLA loglanmaz.
     """
     form = await request.form()
-    params = {k: str(v) for k, v in form.items()}
     provider = TwilioVoiceProvider()
     if not provider.validate_signature(
         url=_public_url(request),
-        params=params,
+        params=form,
         signature=request.headers.get("X-Twilio-Signature", ""),
         request=request,
     ):
@@ -808,10 +807,10 @@ async def voice_outbound(request: Request):
             status_code=403,
         )
 
-    call_sid = params.get("CallSid", "")
-    to_number = params.get("To", "")
+    call_sid = form.get("CallSid", "")
+    to_number = form.get("To", "")
     # Kiracı YALNIZCA sunucu-basılı client kimliğinden gelir (istemci geçemez).
-    from_val = params.get("From", "") or params.get("Caller", "")
+    from_val = form.get("From", "") or form.get("Caller", "")
     tenant_id, user_id = _parse_client_identity(from_val)
 
     tenant_resolved = bool(tenant_id)
@@ -910,20 +909,19 @@ async def voice_status(request: Request):
     Her zaman boş 204 döner (Twilio için yeterli). PII loglanmaz.
     """
     form = await request.form()
-    params = {k: str(v) for k, v in form.items()}
     provider = TwilioVoiceProvider()
     if not provider.validate_signature(
         url=_public_url(request),
-        params=params,
+        params=form,
         signature=request.headers.get("X-Twilio-Signature", ""),
         request=request,
     ):
         return Response(status_code=403)
 
-    call_sid = params.get("CallSid", "")
-    tenant_id = await _resolve_tenant_id(request, params.get("To", ""))
+    call_sid = form.get("CallSid", "")
+    tenant_id = await _resolve_tenant_id(request, form.get("To", ""))
     if tenant_id and call_sid:
-        duration = params.get("CallDuration") or params.get("DialCallDuration")
+        duration = form.get("CallDuration") or form.get("DialCallDuration")
         try:
             duration_i = int(duration) if duration else None
         except (TypeError, ValueError):
@@ -932,7 +930,7 @@ async def voice_status(request: Request):
             db,
             tenant_id=tenant_id,
             provider_call_sid=call_sid,
-            twilio_status=params.get("CallStatus") or params.get("DialCallStatus") or "",
+            twilio_status=form.get("CallStatus") or form.get("DialCallStatus") or "",
             duration_seconds=duration_i,
         )
     return Response(status_code=204)
@@ -947,22 +945,21 @@ async def voice_recording(request: Request):
     (kayıt saklanmaz). İmzalı URL ASLA persist edilmez/loglanmaz.
     """
     form = await request.form()
-    params = {k: str(v) for k, v in form.items()}
     provider = TwilioVoiceProvider()
     if not provider.validate_signature(
         url=_public_url(request),
-        params=params,
+        params=form,
         signature=request.headers.get("X-Twilio-Signature", ""),
         request=request,
     ):
         return Response(status_code=403)
 
-    tenant_id = await _resolve_tenant_id(request, params.get("To", ""))
-    call_sid = params.get("CallSid", "")
-    recording_url = params.get("RecordingUrl", "")
+    tenant_id = await _resolve_tenant_id(request, form.get("To", ""))
+    call_sid = form.get("CallSid", "")
+    recording_url = form.get("RecordingUrl", "")
     if tenant_id and call_sid and recording_url:
         try:
-            duration = int(params.get("RecordingDuration") or 0)
+            duration = int(form.get("RecordingDuration") or 0)
         except (TypeError, ValueError):
             duration = 0
         enqueued = False
