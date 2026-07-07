@@ -207,6 +207,7 @@ async def ensure_performance_indexes():
         #     yarışında upsert ÇİFT çağrı üretemez (kaybeden DuplicateKeyError alır,
         #     mevcut çağrıyı okur). Race-free garanti için unique.
         ("contact_center_calls", [("tenant_id", 1), ("provider_call_sid", 1)], "ux_cc_calls_provider_sid", {"unique": True, "partialFilterExpression": {"provider_call_sid": {"$type": "string"}}}),
+        ("contact_center_calls", [("tenant_id", 1), ("agent_id", 1), ("call_attempt_id", 1)], "ux_cc_calls_attempt_id", {"unique": True, "partialFilterExpression": {"call_attempt_id": {"$type": "string"}}}),
         #   - contact_center_calls (tenant_id, started_at desc): çağrı listesi ucu
         #     başlangıca göre azalan sıralar.
         ("contact_center_calls", [("tenant_id", 1), ("started_at", -1)], "idx_cc_calls_tenant_started", {}),

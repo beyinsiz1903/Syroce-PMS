@@ -115,6 +115,7 @@ class _FakeDB:
     def __init__(self):
         self.contact_center_calls = _FakeColl()
         self.contact_center_voice_numbers = _FakeColl()
+        self.messaging_delivery_logs = _FakeColl()
 
     def __getitem__(self, name):
         return getattr(self, name)
@@ -1042,19 +1043,19 @@ def test_outbound_inactive_default_ignored(fake_db, sig_ok):
 
 def test_parse_client_identity_cases():
     from domains.contact_center.voice_router import _parse_client_identity
-    
+
     # 1. Legacy colon format
     assert _parse_client_identity("client:t1:u1") == ("t1", "u1")
     assert _parse_client_identity("t1:u1") == ("t1", "u1")
-    
+
     # 2. Safe double-underscore format
     assert _parse_client_identity("client:t1__u1") == ("t1", "u1")
     assert _parse_client_identity("t1__u1") == ("t1", "u1")
-    
+
     # 3. Safe single-underscore format (fallback)
     assert _parse_client_identity("client:t1_u1") == ("t1", "u1")
     assert _parse_client_identity("t1_u1") == ("t1", "u1")
-    
+
     # 4. UUID tenant and user values (with hyphens recovered)
     t_uuid = "bb306859-9748-430f-b24a-5a0d0ea29309"
     u_uuid = "088e9171-59d6-4ff5-9065-e9d89cedb886"
@@ -1062,10 +1063,10 @@ def test_parse_client_identity_cases():
     u_safe = u_uuid.replace("-", "_")
     assert _parse_client_identity(f"client:{t_safe}__{u_safe}") == (t_uuid, u_uuid)
     assert _parse_client_identity(f"client:{t_safe}_{u_safe}") == (t_uuid, u_uuid)
-    
+
     # 5. Values containing underscores (double-underscore solves ambiguity)
     assert _parse_client_identity("client:tenant_demo_user__user_123") == ("tenant_demo_user", "user_123")
-    
+
     # 6. Malformed input
     assert _parse_client_identity("client:t1__u1__extra") == (None, None)
     assert _parse_client_identity("client:t1:u1:extra") == (None, None)
@@ -1074,3 +1075,148 @@ def test_parse_client_identity_cases():
     assert _parse_client_identity("client:") == (None, None)
     assert _parse_client_identity("") == (None, None)
     assert _parse_client_identity(None) == (None, None)
+
+
+def test_outbound_call_attempt_idempotency(fake_db, sig_ok):
+    fake_db.contact_center_voice_numbers.docs.append(
+        {"tenant_id": "t1", "to_number": _CALLER_ID}
+    )
+
+    req1 = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": "CA1", "call_attempt_id": "attempt_1"},
+        signature="good",
+    )
+    resp1 = asyncio.run(voice_router.voice_outbound(req1))
+    assert resp1.status_code == 200
+    assert b"<Dial" in resp1.body
+
+    assert len(fake_db.contact_center_calls.docs) == 1
+    call_doc = fake_db.contact_center_calls.docs[0]
+    assert call_doc["call_attempt_id"] == "attempt_1"
+
+    req2 = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": "CA2", "call_attempt_id": "attempt_1"},
+        signature="good",
+    )
+    resp2 = asyncio.run(voice_router.voice_outbound(req2))
+    assert resp2.status_code == 200
+    assert b"<Hangup" in resp2.body
+    assert b"<Dial" not in resp2.body
+
+    assert len(fake_db.contact_center_calls.docs) == 1
+
+
+def test_outbound_call_attempt_idempotency_concurrent(fake_db, sig_ok):
+    fake_db.contact_center_voice_numbers.docs.append(
+        {"tenant_id": "t1", "to_number": _CALLER_ID}
+    )
+
+    original_find_one = fake_db.contact_center_calls.find_one
+    original_find_one_and_update = fake_db.contact_center_calls.find_one_and_update
+
+    call_count = 0
+    async def mock_find_one(flt, proj=None):
+        if "call_attempt_id" in flt:
+            return None
+        return await original_find_one(flt, proj)
+
+    async def mock_find_one_and_update(flt, update, upsert=False, return_document=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count > 1:
+            raise DuplicateKeyError("dup")
+        return await original_find_one_and_update(flt, update, upsert, return_document)
+
+    fake_db.contact_center_calls.find_one = mock_find_one
+    fake_db.contact_center_calls.find_one_and_update = mock_find_one_and_update
+
+    req1 = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": "CA1", "call_attempt_id": "attempt_concurrent"},
+        signature="good",
+    )
+    req2 = _make_request(
+        "/api/voice/outbound",
+        {"From": "client:t1:u1", "To": _TARGET, "CallSid": "CA2", "call_attempt_id": "attempt_concurrent"},
+        signature="good",
+    )
+
+    resp1 = asyncio.run(voice_router.voice_outbound(req1))
+    resp2 = asyncio.run(voice_router.voice_outbound(req2))
+
+    assert resp1.status_code == 200
+    assert resp2.status_code == 200
+
+    bodies = [resp1.body, resp2.body]
+    dial_count = sum(1 for b in bodies if b"<Dial" in b)
+    hangup_count = sum(1 for b in bodies if b"<Hangup" in b)
+
+    assert dial_count == 1
+    assert hangup_count == 1
+
+
+
+def test_whatsapp_status_callback_valid_signature(fake_db, sig_ok):
+    from modules.messaging.models import DeliveryStatus
+    fake_db.messaging_delivery_logs.docs.append({
+        "tenant_id": "t1",
+        "provider_message_id": "SM123",
+        "status": DeliveryStatus.QUEUED.value
+    })
+
+    req = _make_request(
+        "/api/voice/whatsapp/status",
+        {"MessageSid": "SM123", "MessageStatus": "delivered", "ErrorCode": ""},
+        signature="good"
+    )
+    resp = asyncio.run(voice_router.whatsapp_status(req))
+    assert resp.status_code == 204
+
+    log = fake_db.messaging_delivery_logs.docs[0]
+    assert log["status"] == DeliveryStatus.DELIVERED.value
+
+
+def test_twilio_whatsapp_sandbox_sends_real_api_call(monkeypatch):
+    from unittest.mock import MagicMock
+
+    from modules.messaging.providers import PROVIDER_MAP, ProviderMode
+
+    mock_messages = MagicMock()
+    mock_msg_instance = MagicMock()
+    mock_msg_instance.sid = "SMfake_sandbox_sid_123"
+    mock_messages.create.return_value = mock_msg_instance
+
+    class MockClient:
+        def __init__(self, account_sid, auth_token):
+            self.messages = mock_messages
+
+    import twilio.rest
+    monkeypatch.setattr(twilio.rest, "Client", MockClient)
+
+    twilio_provider = PROVIDER_MAP.get("twilio_whatsapp")
+
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACtest_sid")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "test_token")
+    monkeypatch.setenv("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")
+    monkeypatch.setenv("PUBLIC_APP_URL", "https://pms.syroce.com")
+
+    res = asyncio.run(twilio_provider.send(
+        recipient="+905555555555",
+        body="Hello World",
+        mode=ProviderMode.SANDBOX
+    ))
+
+    mock_messages.create.assert_called_once_with(
+        body="Hello World",
+        from_="whatsapp:+14155238886",
+        to="whatsapp:+905555555555",
+        status_callback="https://pms.syroce.com/api/voice/whatsapp/status"
+    )
+
+    assert res["success"] is True
+    assert res["status"] == "queued"
+    assert res["provider_message_id"].startswith("SM")
+    assert res["provider_message_id"] == "SMfake_sandbox_sid_123"
+
