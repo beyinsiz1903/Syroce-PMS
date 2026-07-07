@@ -14,7 +14,20 @@ function loadJson(p) {
 
 export const test = base.extend({
     stressState: async ({}, use) => { await use(loadJson(STATE_FILE)); },
-    stressTokens: async ({}, use) => { await use(loadJson(TOKEN_FILE)); },
+    stressTokens: async ({}, use) => {
+        const tokens = loadJson(TOKEN_FILE);
+        const tag = process.env.STRESS_REPORT_TAG || '';
+        let shardKey = null;
+        if (tag.includes('shard_b')) shardKey = 'stress_admin_b';
+        else if (tag.includes('shard_c')) shardKey = 'stress_admin_c';
+        else if (tag.includes('shard_d')) shardKey = 'stress_admin_d';
+        else if (tag.includes('shard_e')) shardKey = 'stress_admin_e';
+
+        if (shardKey && tokens.role_tokens?.[shardKey]) {
+            tokens.stress_token = tokens.role_tokens[shardKey];
+        }
+        await use(tokens);
+    },
     // Task #160 — rol-spesifik authenticated principal token'ları tek noktada.
     // globalSetup tarafından TOKEN_FILE.role_tokens'a yazılır; eksik dosya/anahtar
     // güvenli default (null) ile karşılanır. Değerler null OLABİLİR (fail-soft
@@ -31,9 +44,15 @@ export const test = base.extend({
         try {
             roles = loadJson(TOKEN_FILE)?.role_tokens || {};
         } catch { roles = {}; }
+        const tag = process.env.STRESS_REPORT_TAG || '';
+        let activeAdminToken = roles.stress_admin ?? null;
+        if (tag.includes('shard_b') && roles.stress_admin_b) activeAdminToken = roles.stress_admin_b;
+        else if (tag.includes('shard_c') && roles.stress_admin_c) activeAdminToken = roles.stress_admin_c;
+        else if (tag.includes('shard_d') && roles.stress_admin_d) activeAdminToken = roles.stress_admin_d;
+        else if (tag.includes('shard_e') && roles.stress_admin_e) activeAdminToken = roles.stress_admin_e;
         await use({
             super_admin: roles.super_admin ?? null,
-            stress_admin: roles.stress_admin ?? null,
+            stress_admin: activeAdminToken,
             staff_lowtrust: roles.staff_lowtrust ?? null,
             staff_housekeeping: roles.staff_housekeeping ?? null,
             agency_admin: roles.agency_admin ?? null,

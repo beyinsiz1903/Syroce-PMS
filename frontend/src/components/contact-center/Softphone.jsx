@@ -207,7 +207,7 @@ export default function Softphone({ user }) {
 
   const fetchGuestInfo = useCallback((callSid) => {
     if (!callSid) return;
-    axios.get(`/api/contact-center/calls/${callSid}/guest-360`)
+    axios.get(`/contact-center/calls/${callSid}/guest-360`)
       .then((res) => {
         if (res.data && res.data.matched) {
           setGuestInfo(res.data);
@@ -501,7 +501,7 @@ export default function Softphone({ user }) {
     if (!transferTarget.trim() || !callRef.current) return;
     setTransferring(true);
     try {
-      await axios.post(`/api/contact-center/voice/live/${callRef.current.parameters.CallSid}/transfer`, {
+      await axios.post(`/contact-center/voice/live/${callRef.current.parameters.CallSid}/transfer`, {
         target: transferTarget.trim()
       });
       setShowTransfer(false);
@@ -521,7 +521,7 @@ export default function Softphone({ user }) {
       const phone = callRef.current.parameters.From || callRef.current.parameters.To || incomingFrom || dialNumber;
       if (!phone) throw new Error("No phone number to send message to.");
       
-      await axios.post(`/api/contact-center/voice/live/${callRef.current.parameters.CallSid}/whatsapp`, {
+      await axios.post(`/contact-center/voice/live/${callRef.current.parameters.CallSid}/whatsapp`, {
         phone: phone,
         template_name: templateName,
         language_code: "tr"
@@ -529,7 +529,20 @@ export default function Softphone({ user }) {
       alert("WhatsApp mesajı başarıyla gönderildi.");
     } catch (err) {
       console.error("WhatsApp error", err);
-      alert("WhatsApp mesajı gönderilemedi.");
+      const status = err.response?.status;
+      let errorMsg = "WhatsApp mesajı gönderilemedi.";
+      if (status === 404) {
+        errorMsg = "WhatsApp gönderim adresi bulunamadı.";
+      } else if (status === 503) {
+        errorMsg = "WhatsApp servisi yapılandırılmamış.";
+      } else if (status === 502) {
+        errorMsg = "WhatsApp sağlayıcısı mesajı gönderemedi.";
+      } else if (err.response?.data?.detail) {
+        errorMsg = err.response.data.detail;
+      } else if (err.message) {
+        errorMsg = err.message;
+      }
+      alert(errorMsg);
     } finally {
       setSendingWhatsapp(false);
     }

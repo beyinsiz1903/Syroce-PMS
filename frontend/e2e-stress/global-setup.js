@@ -96,6 +96,25 @@ async function provisionHousekeepingStaff(api, stressAdminToken) {
     return out;
 }
 
+async function provisionShardAdmin(api, stressAdminToken, shardLetter) {
+    const email = `stress_admin_${shardLetter.toLowerCase()}@syrocedemo.com`;
+    const password = ROLE_PASSWORD;
+    const name = `Stress Admin Shard ${shardLetter}`;
+    const out = { role: 'admin', email, token: null, created: false };
+    const createResp = await api.post('/api/hotel/team', {
+        headers: { Authorization: `Bearer ${stressAdminToken}` },
+        data: { email, name, role: 'admin', password },
+        failOnStatusCode: false, timeout: 60_000,
+    }).catch(() => null);
+    const createStatus = createResp?.status?.() ?? 0;
+    out.created = createStatus >= 200 && createStatus < 300;
+    out.create_status = createStatus;
+    const { token, status } = await tryLogin(api, email, password);
+    out.token = token;
+    out.login_status = status;
+    return out;
+}
+
 // Task #166 — Spa add-on entitlement provisioning for the stress tenant.
 // Spec 98 (spa-wellness-operational) hits /api/spa/* which is entitlement-gated
 // by the `spa` add-on module (default OFF; core/entitlement.py ROUTE_MODULE_MAP).
@@ -137,11 +156,38 @@ async function ensureSpaEntitlement(api, pilotToken, stressTid, stressToken) {
         out.list_status = listResp?.status?.() ?? 0;
     }
 
-    out.already_on = currentModules.spa === true;
+    const requiredModules = {
+        pms: true,
+        reports: true,
+        invoices: true,
+        ai: true,
+        channel_manager: true,
+        rms: true,
+        housekeeping: true,
+        reservation_calendar: true,
+        loyalty: true,
+        marketplace: true,
+        maintenance: true,
+        night_audit: true,
+        folio_management: true,
+        cost_management: true,
+        sales_crm: true,
+        group_sales: true,
+        gm_dashboards: true,
+        mobile_housekeeping: true,
+        rate_management: true,
+        basic_reporting: true,
+        revenue_management: true,
+        advanced_analytics: true,
+        spa: true,
+        mice: true
+    };
+    const hasAll = Object.keys(requiredModules).every((m) => currentModules[m] === true);
+    out.already_on = hasAll;
 
-    // 2) Grant `spa` (merge — PATCH overwrites the entire modules map).
+    // 2) Grant all required modules (merge — PATCH overwrites the entire modules map).
     if (!out.already_on) {
-        const merged = { ...currentModules, spa: true };
+        const merged = { ...currentModules, ...requiredModules };
         const patchResp = await api.patch(`/api/admin/tenants/${stressTid}/modules`, {
             headers: { Authorization: `Bearer ${pilotToken}` },
             data: { modules: merged },
@@ -151,10 +197,9 @@ async function ensureSpaEntitlement(api, pilotToken, stressTid, stressToken) {
         out.patched = out.patch_status >= 200 && out.patch_status < 300;
         if (!out.patched) {
             throw new Error(
-                `[stress-setup] NO-GO: failed to enable \`spa\` add-on for stress tenant ` +
+                `[stress-setup] NO-GO: failed to enable required modules for stress tenant ` +
                 `(PATCH /api/admin/tenants/${stressTid}/modules → ${out.patch_status}). ` +
-                `Spec 98 would silently SKIP. ` +
-                `Manual fix: cd backend && STRESS_ENABLE_MODULES=spa python -m scripts.enable_mice_for_stress`,
+                `Manual fix: cd backend && STRESS_ENABLE_MODULES=pms,spa,mice,reports,invoices python -m scripts.enable_mice_for_stress`,
             );
         }
     }
@@ -600,6 +645,19 @@ export default async function globalSetup() {
         console.log(`[stress-setup] ⚠️ rol provisioning hatası (fail-soft): ${String(e?.message || e).slice(0, 160)}`);
     }
 
+    // Provision unique admin users/tokens for each shard (B, C, D, E) to ensure isolation.
+    let shardAdmins = { B: null, C: null, D: null, E: null };
+    try {
+        const b = await provisionShardAdmin(api, stressToken, 'B');
+        const c = await provisionShardAdmin(api, stressToken, 'C');
+        const d = await provisionShardAdmin(api, stressToken, 'D');
+        const e = await provisionShardAdmin(api, stressToken, 'E');
+        shardAdmins = { B: b, C: c, D: d, E: e };
+        console.log(`[stress-setup] Shard admins provisioned: B=${!!b.token}, C=${!!c.token}, D=${!!d.token}, E=${!!e.token}`);
+    } catch (err) {
+        console.log(`[stress-setup] ⚠️ Shard admin provisioning failed (fail-soft): ${String(err?.message || err).slice(0, 160)}`);
+    }
+
     // 7d) Seed yeterlilik doğrulaması — Task #160. Seed gerçek backend endpoint
     // üzerinden booking/folio/charge/payment/rooms/staff üretti; eşikleri
     // burada gözle (staff pool >= 5, rooms ve booking present). Fail-soft:
@@ -629,6 +687,10 @@ export default async function globalSetup() {
         role_tokens: {
             super_admin: pilotToken,          // pilot super_admin (admin/stress + cross-tenant baseline)
             stress_admin: stressToken,        // stress tenant admin (mutasyonların çoğu bununla)
+            stress_admin_b: shardAdmins.B?.token || null,
+            stress_admin_c: shardAdmins.C?.token || null,
+            stress_admin_d: shardAdmins.D?.token || null,
+            stress_admin_e: shardAdmins.E?.token || null,
             staff_lowtrust: roleProvisioning.staff_lowtrust?.token || null,
             staff_housekeeping: roleProvisioning.staff_housekeeping?.token || null,  // Task #213 — non-view_guest_list role (PII-mask assert)
             agency_admin: roleProvisioning.agency_admin?.token || null,

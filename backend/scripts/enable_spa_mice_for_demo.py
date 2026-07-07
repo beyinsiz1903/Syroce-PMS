@@ -25,7 +25,8 @@ async def main() -> int:
         return 1
 
     client = AsyncIOMotorClient(mongo)
-    db = client["syroce-pms"]
+    db_name = os.environ.get("DB_NAME", "syroce-pms")
+    db = client[db_name]
 
     tenant = await db.tenants.find_one({"id": DEMO_TENANT_ID}, {"_id": 0, "name": 1, "modules": 1})
     if not tenant:
