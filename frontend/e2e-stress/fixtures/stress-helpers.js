@@ -207,8 +207,12 @@ async function _doCallOnce(request, method, path, body, token, timeoutMs, extraH
         timeout: timeoutMs,
     };
     if (hasBody) reqOpts.data = body;
+    let lastError = null;
     const r = await request[method](path, reqOpts)
-        .catch((e) => ({ status: () => 0, ok: () => false, _err: e?.message }));
+        .catch((e) => {
+            lastError = e;
+            return { status: () => 0, ok: () => false, _err: e?.message };
+        });
     const ms = Date.now() - t0;
     const status = r.status?.() ?? 0;
     let bodyJson = null;
@@ -221,7 +225,12 @@ async function _doCallOnce(request, method, path, body, token, timeoutMs, extraH
             if (!Number.isNaN(ra) && ra > 0) retryAfter = ra;
         } catch { /* ignore */ }
     }
-    return { status, ms, body: bodyJson, ok: status >= 200 && status < 300, retryAfter };
+    const result = { status, ms, body: bodyJson, ok: status >= 200 && status < 300, retryAfter };
+    if (status === 0) {
+        result.error = lastError?.message || r._err || "Unknown transport failure";
+        result.cause = lastError;
+    }
+    return result;
 }
 
 export async function callTimed(request, method, path, body, token, opts = {}) {
@@ -250,7 +259,28 @@ export async function callTimed(request, method, path, body, token, opts = {}) {
     // `attempts` counts total HTTP attempts (1 = first try succeeded).
     let attempts = 1;
     let throttled = false;
+    const tStart = Date.now();
     let last = await _doCallOnce(request, method, path, body, token, timeoutMs, extraHeaders);
+
+    // One bounded retry is allowed only for proven transient network errors
+    if (last.status === 0) {
+        const errStr = String(last.error || "");
+        const isTransient = errStr.includes("ECONNRESET") || 
+                            errStr.includes("ETIMEDOUT") || 
+                            errStr.includes("EPIPE") ||
+                            errStr.includes("connection reset") ||
+                            errStr.includes("timeout") ||
+                            errStr.includes("Socket closed");
+        if (isTransient) {
+            attempts++;
+            const firstCall = { ...last };
+            await new Promise((res) => setTimeout(res, 1000));
+            last = await _doCallOnce(request, method, path, body, token, timeoutMs, extraHeaders);
+            last.first_attempt = firstCall;
+        }
+    }
+    last.ms = Date.now() - tStart;
+
     if (noBackoff || last.status !== 429) return { ...last, throttled, attempts };
     throttled = true;
 
