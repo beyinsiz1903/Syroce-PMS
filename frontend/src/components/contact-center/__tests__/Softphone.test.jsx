@@ -487,11 +487,18 @@ describe("Softphone frontend user gesture flow", () => {
 
     const select = screen.getByRole("combobox");
 
-    // Case 1: 404
+    // Case 1a: 404 generic
     whatsappRejectValue = { response: { status: 404 } };
     fireEvent.change(select, { target: { value: "hello_world" } });
     await waitFor(() => {
       expect(alertSpy).toHaveBeenLastCalledWith("WhatsApp gönderim adresi bulunamadı.");
+    });
+
+    // Case 1b: 404 call not found detail
+    whatsappRejectValue = { response: { status: 404, data: { detail: "Çağrı bulunamadı." } } };
+    fireEvent.change(select, { target: { value: "hello_world" } });
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenLastCalledWith("Aktif çağrı kaydı bulunamadı.");
     });
 
     // Case 2: 503

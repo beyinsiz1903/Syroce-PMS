@@ -532,7 +532,11 @@ export default function Softphone({ user }) {
       const status = err.response?.status;
       let errorMsg = "WhatsApp mesajı gönderilemedi.";
       if (status === 404) {
-        errorMsg = "WhatsApp gönderim adresi bulunamadı.";
+        if (err.response?.data?.detail === "Çağrı bulunamadı.") {
+          errorMsg = "Aktif çağrı kaydı bulunamadı.";
+        } else {
+          errorMsg = "WhatsApp gönderim adresi bulunamadı.";
+        }
       } else if (status === 503) {
         errorMsg = "WhatsApp servisi yapılandırılmamış.";
       } else if (status === 502) {
