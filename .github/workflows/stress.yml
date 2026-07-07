@@ -295,3 +295,12 @@ jobs:
               run: |
                   cd frontend
                   yarn playwright test --config=playwright.stress.config.js e2e-stress/specs/00-gates.spec.js
+
+            - name: Upload Teardown Log
+              if: always()
+              uses: actions/upload-artifact@v5
+              with:
+                  name: stress-teardown-log
+                  path: frontend/e2e-stress/.auth/teardown.json
+                  retention-days: 14
+                  if-no-files-found: ignore

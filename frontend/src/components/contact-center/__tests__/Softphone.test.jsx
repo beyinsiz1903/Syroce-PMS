@@ -48,6 +48,7 @@ describe("Softphone frontend user gesture flow", () => {
 
     // Mock axios with fresh token
     axios.post.mockResolvedValue({ data: { token: makeMockJwt(3600) } });
+    axios.get.mockResolvedValue({ data: { matched: false } });
 
     // Mock Twilio.Device
     mockConnect = vi.fn().mockResolvedValue({
@@ -368,6 +369,150 @@ describe("Softphone frontend user gesture flow", () => {
     // Confirm call.disconnect() is invoked immediately on resolution
     await waitFor(() => {
       expect(mockCall.disconnect).toHaveBeenCalled();
+    });
+  });
+
+  it("sends a WhatsApp message with the correct endpoint URL and payload", async () => {
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    axios.post.mockImplementation((url) => {
+      if (url.includes("token")) {
+        return Promise.resolve({ data: { token: makeMockJwt(3600) } });
+      }
+      return Promise.resolve({ data: { success: true } });
+    });
+
+    let acceptCallback;
+    const mockCall = {
+      parameters: {
+        CallSid: "CA12345",
+        From: "+905555555555"
+      },
+      on: vi.fn((event, cb) => {
+        if (event === "accept") {
+          acceptCallback = cb;
+        }
+      }),
+      disconnect: vi.fn()
+    };
+    mockConnect.mockResolvedValue(mockCall);
+
+    render(<Softphone user={{ role: "admin" }} />);
+    
+    // Connect the call
+    fireEvent.click(screen.getByRole("button", { name: "Softphone" }));
+    const onlineBtn = await screen.findByRole("button", { name: /Müsait/ });
+    fireEvent.click(onlineBtn);
+
+    await screen.findByText("Telefon");
+    const dialInput = screen.getByPlaceholderText("+90 5XX XXX XX XX");
+    fireEvent.change(dialInput, { target: { value: "+905555555555" } });
+    const callBtn = screen.getByRole("button", { name: "Ara" });
+    fireEvent.click(callBtn);
+
+    // Call has been initiated. Wait for connect promise to resolve and register listeners.
+    await waitFor(() => {
+      expect(acceptCallback).toBeDefined();
+    });
+    // Accept the call
+    acceptCallback();
+
+    // Now call should be connected
+    await waitFor(() => {
+      expect(screen.getByRole("combobox")).toBeInTheDocument();
+    });
+
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: "hello_world" } });
+
+    expect(axios.post).toHaveBeenLastCalledWith(
+      "/contact-center/voice/live/CA12345/whatsapp",
+      {
+        phone: "+905555555555",
+        template_name: "hello_world",
+        language_code: "tr"
+      }
+    );
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith("WhatsApp mesajı başarıyla gönderildi.");
+    });
+  });
+
+  it("displays proper error message on WhatsApp send failures", async () => {
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    
+    let whatsappRejectValue;
+    axios.post.mockImplementation((url) => {
+      if (url.includes("token")) {
+        return Promise.resolve({ data: { token: makeMockJwt(3600) } });
+      }
+      return Promise.reject(whatsappRejectValue);
+    });
+
+    let acceptCallback;
+    const mockCall = {
+      parameters: {
+        CallSid: "CA12345",
+        From: "+905555555555"
+      },
+      on: vi.fn((event, cb) => {
+        if (event === "accept") {
+          acceptCallback = cb;
+        }
+      }),
+      disconnect: vi.fn()
+    };
+    mockConnect.mockResolvedValue(mockCall);
+
+    render(<Softphone user={{ role: "admin" }} />);
+    
+    fireEvent.click(screen.getByRole("button", { name: "Softphone" }));
+    const onlineBtn = await screen.findByRole("button", { name: /Müsait/ });
+    fireEvent.click(onlineBtn);
+
+    await screen.findByText("Telefon");
+    const dialInput = screen.getByPlaceholderText("+90 5XX XXX XX XX");
+    fireEvent.change(dialInput, { target: { value: "+905555555555" } });
+    const callBtn = screen.getByRole("button", { name: "Ara" });
+    fireEvent.click(callBtn);
+
+    await waitFor(() => {
+      expect(acceptCallback).toBeDefined();
+    });
+    acceptCallback();
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox")).toBeInTheDocument();
+    });
+
+    const select = screen.getByRole("combobox");
+
+    // Case 1: 404
+    whatsappRejectValue = { response: { status: 404 } };
+    fireEvent.change(select, { target: { value: "hello_world" } });
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenLastCalledWith("WhatsApp gönderim adresi bulunamadı.");
+    });
+
+    // Case 2: 503
+    whatsappRejectValue = { response: { status: 503 } };
+    fireEvent.change(select, { target: { value: "hello_world" } });
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenLastCalledWith("WhatsApp servisi yapılandırılmamış.");
+    });
+
+    // Case 3: 502
+    whatsappRejectValue = { response: { status: 502 } };
+    fireEvent.change(select, { target: { value: "hello_world" } });
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenLastCalledWith("WhatsApp sağlayıcısı mesajı gönderemedi.");
+    });
+
+    // Case 4: custom backend detail
+    whatsappRejectValue = { response: { status: 400, data: { detail: "Sınır aşıldı." } } };
+    fireEvent.change(select, { target: { value: "hello_world" } });
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenLastCalledWith("Sınır aşıldı.");
     });
   });
 });
