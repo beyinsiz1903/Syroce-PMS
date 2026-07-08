@@ -69,7 +69,7 @@ export default function SustainabilityReport() {
 
   const getTypeIcon = (type) => {
     if (type.includes("electricity")) return <Zap className="w-5 h-5 text-yellow-500" />;
-    if (type.includes("gas")) return <Droplet className="w-5 h-5 text-orange-500" />;
+    if (type.includes("gas")) return <Droplet className="w-5 h-5 text-amber-500" />;
     if (type.includes("water")) return <Droplet className="w-5 h-5 text-blue-500" />;
     return <Trash2 className="w-5 h-5 text-gray-500" />;
   };
@@ -109,7 +109,7 @@ export default function SustainabilityReport() {
             <Card className="bg-slate-50">
               <CardContent className="p-6 text-center">
                 <p className="text-sm font-medium text-slate-500">Toplam Scope 1</p>
-                <h3 className="text-3xl font-bold text-orange-600">{report.total_scope_1.toLocaleString()}</h3>
+                <h3 className="text-3xl font-bold text-amber-600">{report.total_scope_1.toLocaleString()}</h3>
                 <p className="text-xs text-slate-500">kgCO2e</p>
               </CardContent>
             </Card>
