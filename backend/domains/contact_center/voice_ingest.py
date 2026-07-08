@@ -243,7 +243,7 @@ async def update_call_status(
                         from_phone = svc.decrypt_value(call_doc["caller_id_enc"])
                     except Exception:
                         pass
-                
+
                 if from_phone:
                     await db.contact_center_callbacks.update_one(
                         {"tenant_id": tenant_id, "phone": from_phone},
