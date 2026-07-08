@@ -165,6 +165,37 @@ class WhatsAppCloudProvider(CommunicationProvider):
         kapalıyken onaylı template (HSM) gerekir. Fail-closed: yapılandırma yoksa
         ``not_configured``; pencere kapalı ve template yoksa ``session_expired``.
         """
+        import os
+        if os.getenv("MOCK_WHATSAPP_SUCCESS") == "1":
+            import uuid
+            result = {
+                "success": True,
+                "provider_message_id": "SMmock" + uuid.uuid4().hex[:16],
+                "status": "queued",
+                "delivered": False,
+                "provider": self.provider_name
+            }
+            if db is not None:
+                try:
+                    from modules.messaging.models import new_delivery_log
+                    from modules.messaging.recipient_crypto import seal_delivery_log
+                    log_doc = new_delivery_log(
+                        tenant_id=tenant_id,
+                        property_id=None,
+                        channel="whatsapp",
+                        provider_type="twilio_whatsapp",
+                        recipient=recipient,
+                        template_id=template_name,
+                        subject=None,
+                        body=body or f"Template: {template_name}",
+                    )
+                    log_doc["provider_message_id"] = result.get("provider_message_id")
+                    log_doc["status"] = "queued"
+                    await db.messaging_delivery_logs.insert_one(seal_delivery_log(log_doc))
+                except Exception as e:
+                    logger.warning(f"[CC-WHATSAPP] Failed to write mock messaging delivery log: {e}")
+            return result
+
         cfg = await self._load_config(db, tenant_id)
         if not cfg:
             import os

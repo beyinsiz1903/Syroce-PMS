@@ -412,6 +412,7 @@ async def get_current_user(
                     detail="Şifre değişti - lütfen yeniden giriş yapın",
                 )
             if f_iat < f_ib:
+                logger.warning(f"JWT_REVOKED: user_id={user_id} token_iat={f_iat} < tokens_invalid_before={f_ib}")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Şifre değişti - lütfen yeniden giriş yapın",
