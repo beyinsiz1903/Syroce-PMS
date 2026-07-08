@@ -158,6 +158,11 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
         count = await page.evaluate(() => window.__getUserMediaCallCount);
         expect(count).toBe(1);
 
+        const lsKeys = await page.evaluate(() => JSON.stringify(localStorage));
+        const cookiesList = await page.context().cookies();
+        console.log('E2E_DEBUG: localStorage content:', lsKeys);
+        console.log('E2E_DEBUG: cookies content:', JSON.stringify(cookiesList.map(c => ({ name: c.name, secure: c.secure }))));
+
         // Extract the fresh sessionToken from localStorage (or cookies as backup) to use for subsequent API tests
         const tokenVal = await page.evaluate(() => localStorage.getItem('token') || localStorage.getItem('access_token'));
         if (tokenVal) {
