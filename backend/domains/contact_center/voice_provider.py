@@ -121,7 +121,7 @@ class TwilioVoiceProvider:
             dial_attrs.append('method="POST"')
         dial_attr_str = " ".join(dial_attrs)
         client = escape(agent_identity)
-        return f'<?xml version="1.0" encoding="UTF-8"?><Response><Dial {dial_attr_str}><Client>{client}</Client></Dial></Response>'
+        return f'<?xml version="1.0" encoding="UTF-8"?><Response><Say language="tr-TR">Bu görüşme kalite standartları gereği kaydedilmektedir.</Say><Dial {dial_attr_str}><Client>{client}</Client></Dial></Response>'
 
     # ── Giden çağrı (click-to-dial) TwiML ──────────────────────────────
 
@@ -208,12 +208,7 @@ class TwilioVoiceProvider:
         except Exception:
             param_keys = []
 
-        logger.info(
-            f"[CC-VOICE-SIGNATURE] Incoming form metadata: "
-            f"key_count={len(param_keys)} "
-            f"keys={param_keys} "
-            f"is_multidict={hasattr(params, 'getlist')}"
-        )
+        logger.info(f"[CC-VOICE-SIGNATURE] Incoming form metadata: key_count={len(param_keys)} keys={param_keys} is_multidict={hasattr(params, 'getlist')}")
 
         # Credentials & Mismatch logs (safe logging)
         incoming_acc_sid = params.get("AccountSid", "none") if hasattr(params, "get") else "none"
@@ -274,9 +269,7 @@ class TwilioVoiceProvider:
                     validation_result = True
                     url = https_url
 
-            logger.info(
-                f"[CC-VOICE-SIGNATURE] Validation result: {validation_result} for URL: {url}"
-            )
+            logger.info(f"[CC-VOICE-SIGNATURE] Validation result: {validation_result} for URL: {url}")
             return validation_result
         except Exception as e:
             # İmza doğrulama hiçbir koşulda raise etmemeli → fail-closed reddet.

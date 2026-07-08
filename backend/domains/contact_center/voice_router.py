@@ -79,11 +79,7 @@ def _public_url(request: Request) -> str:
     if not path.startswith("/"):
         path = request.url.path
 
-    is_prod = (
-        os.getenv("ENV", "").lower() == "production"
-        or os.getenv("ENVIRONMENT", "").lower() == "production"
-        or os.getenv("APP_ENV", "").lower() == "production"
-    )
+    is_prod = os.getenv("ENV", "").lower() == "production" or os.getenv("ENVIRONMENT", "").lower() == "production" or os.getenv("APP_ENV", "").lower() == "production"
 
     if base:
         if not base.startswith("http://") and not base.startswith("https://"):
@@ -105,7 +101,6 @@ def _public_url(request: Request) -> str:
     fallback_proto = proto or request.url.scheme
     fallback_host = host or request.url.netloc
     return f"{fallback_proto}://{fallback_host}{path}{suffix}"
-
 
 
 def _callback_urls(tenant_id: str | None = None) -> tuple[str | None, str | None]:
@@ -338,6 +333,7 @@ async def get_analytics_summary(
         tz_doc = await db.tenant_settings.find_one({"tenant_id": current_user.tenant_id}, {"_id": 0, "timezone": 1}) or {}
     tz_name = tz_doc.get("timezone") or "Europe/Istanbul"
     import zoneinfo
+
     try:
         tz = zoneinfo.ZoneInfo(tz_name)
     except Exception:
@@ -348,6 +344,7 @@ async def get_analytics_summary(
     today_start = datetime(now_tz.year, now_tz.month, now_tz.day, tzinfo=tz)
     # End of today
     from datetime import timedelta
+
     today_end = today_start + timedelta(days=1)
 
     query = {"tenant_id": current_user.tenant_id}
@@ -469,19 +466,14 @@ async def get_call_guest_360(
     current_user: User = Depends(get_current_user),
     _mod=Depends(require_module("contact_center")),
 ):
-    call_doc = await db.contact_center_calls.find_one({
-        "id": call_id,
-        "tenant_id": current_user.tenant_id
-    })
+    call_doc = await db.contact_center_calls.find_one({"id": call_id, "tenant_id": current_user.tenant_id})
     if not call_doc:
-        call_doc = await db.contact_center_calls.find_one({
-            "provider_call_sid": call_id,
-            "tenant_id": current_user.tenant_id
-        })
+        call_doc = await db.contact_center_calls.find_one({"provider_call_sid": call_id, "tenant_id": current_user.tenant_id})
     if not call_doc:
         raise HTTPException(status_code=404, detail="Çağrı bulunamadı.")
 
     svc = get_field_encryption_service()
+
     def _dec(service, enc_val):
         if not enc_val:
             return None
@@ -492,17 +484,11 @@ async def get_call_guest_360(
 
     phone = _dec(svc, call_doc.get("caller_id_enc"))
     if not phone:
-        return {
-            "guest": None,
-            "bookings": [],
-            "call_history_count": 0
-        }
+        return {"guest": None, "bookings": [], "call_history_count": 0}
 
     from security.encrypted_lookup import build_guest_pii_query, decrypt_guest_doc
-    cursor = db.guests.find({
-        "tenant_id": current_user.tenant_id,
-        **build_guest_pii_query("phone", phone)
-    })
+
+    cursor = db.guests.find({"tenant_id": current_user.tenant_id, **build_guest_pii_query("phone", phone)})
     guest_docs = await cursor.to_list(length=10)
 
     guest_info = None
@@ -526,35 +512,32 @@ async def get_call_guest_360(
                 "phone": phone,
             }
 
-            bookings_cursor = db.bookings.find({
-                "tenant_id": current_user.tenant_id,
-                "guest_id": guest_doc["id"]
-            }).sort("check_in", -1)
+            bookings_cursor = db.bookings.find({"tenant_id": current_user.tenant_id, "guest_id": guest_doc["id"]}).sort("check_in", -1)
             bookings = await bookings_cursor.to_list(length=10)
             for b in bookings:
-                bookings_info.append({
-                    "id": b.get("id"),
-                    "status": b.get("status"),
-                    "check_in": b.get("check_in"),
-                    "check_out": b.get("check_out"),
-                    "room_id": b.get("room_id"),
-                    "total_price": b.get("total_price"),
-                })
+                bookings_info.append(
+                    {
+                        "id": b.get("id"),
+                        "status": b.get("status"),
+                        "check_in": b.get("check_in"),
+                        "check_out": b.get("check_out"),
+                        "room_id": b.get("room_id"),
+                        "total_price": b.get("total_price"),
+                    }
+                )
 
-    call_history_count = await db.contact_center_calls.count_documents({
-        "tenant_id": current_user.tenant_id,
-        "caller_id_hash": call_doc.get("caller_id_hash")
-    })
+    call_history_count = await db.contact_center_calls.count_documents({"tenant_id": current_user.tenant_id, "caller_id_hash": call_doc.get("caller_id_hash")})
 
     return {
-        "guest": guest_info or {
+        "guest": guest_info
+        or {
             "name": "Bilinmeyen Misafir",
             "vip": False,
             "phone": phone,
             "email": None,
         },
         "bookings": bookings_info,
-        "call_history_count": call_history_count
+        "call_history_count": call_history_count,
     }
 
 
@@ -572,25 +555,24 @@ async def transfer_live_call(
 ):
     """Aktif bir çağrıyı başka bir hedefe yönlendirir (Twilio REST API)."""
     from models.enums import CallStatus
+
     # Verify call SID ownership and active status
-    call = await db.contact_center_calls.find_one({
-        "tenant_id": current_user.tenant_id,
-        "caller_id_enc": {"$exists": True, "$ne": None},
-        "$or": [
-            {"provider_call_sid": call_sid},
-            {"parent_call_sid": call_sid}
-        ],
-        "status": {"$in": [CallStatus.RINGING.value, CallStatus.ANSWERED.value]},
-    })
-    if not call:
-        call = await db.contact_center_calls.find_one({
+    call = await db.contact_center_calls.find_one(
+        {
             "tenant_id": current_user.tenant_id,
-            "$or": [
-                {"provider_call_sid": call_sid},
-                {"parent_call_sid": call_sid}
-            ],
+            "caller_id_enc": {"$exists": True, "$ne": None},
+            "$or": [{"provider_call_sid": call_sid}, {"parent_call_sid": call_sid}],
             "status": {"$in": [CallStatus.RINGING.value, CallStatus.ANSWERED.value]},
-        })
+        }
+    )
+    if not call:
+        call = await db.contact_center_calls.find_one(
+            {
+                "tenant_id": current_user.tenant_id,
+                "$or": [{"provider_call_sid": call_sid}, {"parent_call_sid": call_sid}],
+                "status": {"$in": [CallStatus.RINGING.value, CallStatus.ANSWERED.value]},
+            }
+        )
     if not call:
         raise HTTPException(status_code=404, detail="Aktif çağrı bulunamadı.")
 
@@ -646,22 +628,11 @@ async def send_whatsapp_during_call(
 ):
     """Çağrı esnasında müşteriye tek tıkla şablon gönderir (Cross-Channel)."""
     # Verify call SID ownership and active status
-    call = await db.contact_center_calls.find_one({
-        "tenant_id": current_user.tenant_id,
-        "caller_id_enc": {"$exists": True, "$ne": None},
-        "$or": [
-            {"provider_call_sid": call_sid},
-            {"parent_call_sid": call_sid}
-        ]
-    })
+    call = await db.contact_center_calls.find_one(
+        {"tenant_id": current_user.tenant_id, "caller_id_enc": {"$exists": True, "$ne": None}, "$or": [{"provider_call_sid": call_sid}, {"parent_call_sid": call_sid}]}
+    )
     if not call:
-        call = await db.contact_center_calls.find_one({
-            "tenant_id": current_user.tenant_id,
-            "$or": [
-                {"provider_call_sid": call_sid},
-                {"parent_call_sid": call_sid}
-            ]
-        })
+        call = await db.contact_center_calls.find_one({"tenant_id": current_user.tenant_id, "$or": [{"provider_call_sid": call_sid}, {"parent_call_sid": call_sid}]})
     if not call:
         raise HTTPException(status_code=404, detail="Çağrı bulunamadı.")
 
@@ -672,12 +643,7 @@ async def send_whatsapp_during_call(
         raise HTTPException(status_code=400, detail="Arayan numarası çözülemedi.")
 
     # Allowlist validation
-    ALLOWED_TEMPLATES = {
-        "hello_world",
-        "reservation_confirmation",
-        "checkin_welcome",
-        "checkout_thank_you"
-    }
+    ALLOWED_TEMPLATES = {"hello_world", "reservation_confirmation", "checkin_welcome", "checkout_thank_you"}
     if payload.template_name not in ALLOWED_TEMPLATES:
         raise HTTPException(status_code=400, detail="Geçersiz şablon ismi.")
 
@@ -700,6 +666,7 @@ async def send_whatsapp_during_call(
 
     # Write audit log entry
     from shared_kernel.audit_helper import audit_log
+
     await audit_log(
         actor_id=current_user.id,
         tenant_id=current_user.tenant_id,
@@ -709,7 +676,7 @@ async def send_whatsapp_during_call(
         metadata={
             "template_name": payload.template_name,
             "language_code": payload.language_code,
-        }
+        },
     )
 
     return {"status": "ok", "provider_message_id": res.get("provider_message_id")}
@@ -752,8 +719,13 @@ async def get_call_recording(
     _mod=Depends(require_module("contact_center")),
 ):
     """Şifreli çağrı kaydını (at-read) çözer ve ses dosyası olarak döner."""
+    from shared_kernel.audit_helper import audit_log
+
     doc = await db.contact_center_calls.find_one({"id": call_id, "tenant_id": current_user.tenant_id})
     if not doc or not doc.get("recording_ref"):
+        await audit_log(
+            actor_id=current_user.id, tenant_id=current_user.tenant_id, entity_type="contact_center_call", entity_id=call_id, action="recording_access_failed", metadata={"reason": "not_found"}
+        )
         raise HTTPException(status_code=404, detail="Kayıt bulunamadı")
 
     # Access control: supervisor/admin override OR call ownership check
@@ -772,13 +744,33 @@ async def get_call_recording(
     if not has_perm:
         is_owner = doc.get("agent_id") == current_user.id
         if not is_owner:
+            await audit_log(
+                actor_id=current_user.id, tenant_id=current_user.tenant_id, entity_type="contact_center_call", entity_id=call_id, action="recording_access_failed", metadata={"reason": "forbidden"}
+            )
             raise HTTPException(status_code=403, detail="Bu çağrı kaydını dinleme yetkiniz yok.")
 
     from domains.contact_center.recording_storage import load_recording_bytes
 
     audio_bytes = load_recording_bytes(doc["recording_ref"], tenant_id=current_user.tenant_id, call_id=call_id)
     if not audio_bytes:
+        await audit_log(
+            actor_id=current_user.id,
+            tenant_id=current_user.tenant_id,
+            entity_type="contact_center_call",
+            entity_id=call_id,
+            action="recording_access_failed",
+            metadata={"reason": "read_or_decryption_error"},
+        )
         raise HTTPException(status_code=404, detail="Kayıt dosyası okunamadı veya şifre çözme hatası")
+
+    await audit_log(
+        actor_id=current_user.id,
+        tenant_id=current_user.tenant_id,
+        entity_type="contact_center_call",
+        entity_id=call_id,
+        action="recording_access_success",
+        metadata={"recording_ref": doc["recording_ref"]},
+    )
 
     # Twilio mp3/wav kaydeder, biz varsayılan olarak audio/mpeg veya wav dönebiliriz.
     return Response(content=audio_bytes, media_type="audio/mpeg")
@@ -1124,9 +1116,6 @@ async def voice_debug_config(current_user: User = Depends(get_current_user)):
         }
 
 
-
-
-
 @public_router.post("/outbound")
 async def voice_outbound(request: Request):
     """Giden çağrı (click-to-dial): TwiML App voiceUrl.
@@ -1235,14 +1224,9 @@ async def voice_outbound(request: Request):
     if tenant_id and (call_attempt_id or call_sid):
         query = {"tenant_id": tenant_id, "$or": []}
         if call_attempt_id and user_id:
-            query["$or"].append({
-                "agent_id": user_id,
-                "call_attempt_id": call_attempt_id
-            })
+            query["$or"].append({"agent_id": user_id, "call_attempt_id": call_attempt_id})
         if call_sid:
-            query["$or"].append({
-                "provider_call_sid": call_sid
-            })
+            query["$or"].append({"provider_call_sid": call_sid})
 
         existing = await db.contact_center_calls.find_one(query)
         if existing:
@@ -1383,6 +1367,7 @@ async def whatsapp_status(request: Request):
 
     if message_sid and message_status:
         from modules.messaging.models import DeliveryStatus
+
         status_map = {
             "queued": DeliveryStatus.QUEUED.value,
             "sending": DeliveryStatus.SENDING.value,
@@ -1390,28 +1375,23 @@ async def whatsapp_status(request: Request):
             "delivered": DeliveryStatus.DELIVERED.value,
             "read": DeliveryStatus.DELIVERED.value,
             "failed": DeliveryStatus.FAILED.value,
-            "undelivered": DeliveryStatus.FAILED.value
+            "undelivered": DeliveryStatus.FAILED.value,
         }
         mapped_status = status_map.get(message_status.lower(), DeliveryStatus.QUEUED.value)
 
-        update_fields = {
-            "status": mapped_status,
-            "updated_at": datetime.now(UTC).isoformat()
-        }
+        update_fields = {"status": mapped_status, "updated_at": datetime.now(UTC).isoformat()}
         if message_status.lower() in ("delivered", "read"):
             update_fields["delivered_at"] = datetime.now(UTC).isoformat()
         if error_code:
             update_fields["error_message"] = f"Twilio Error {error_code}"
 
-        await db.messaging_delivery_logs.update_one(
-            {"provider_message_id": message_sid},
-            {"$set": update_fields}
-        )
+        await db.messaging_delivery_logs.update_one({"provider_message_id": message_sid}, {"$set": update_fields})
 
     return Response(status_code=204)
 
 
 # ── Contact Center Phase 2 - IVR, Queues, Agent States, Guest 360 ──
+
 
 class QueueConfigCreate(BaseModel):
     name: str
@@ -1473,10 +1453,7 @@ async def create_queue(
     _mod=Depends(require_module("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
-    existing = await db.contact_center_queues.find_one({
-        "tenant_id": current_user.tenant_id,
-        "extension": payload.extension
-    })
+    existing = await db.contact_center_queues.find_one({"tenant_id": current_user.tenant_id, "extension": payload.extension})
     if existing:
         raise HTTPException(status_code=409, detail="Bu dahili numara zaten kullanılıyor.")
 
@@ -1549,20 +1526,14 @@ async def update_queue(
         return doc
 
     if "extension" in payload_dict and payload_dict["extension"] != doc["extension"]:
-        existing = await db.contact_center_queues.find_one({
-            "tenant_id": current_user.tenant_id,
-            "extension": payload_dict["extension"]
-        })
+        existing = await db.contact_center_queues.find_one({"tenant_id": current_user.tenant_id, "extension": payload_dict["extension"]})
         if existing:
             raise HTTPException(status_code=409, detail="Bu dahili numara zaten kullanılıyor.")
 
     update_fields = dict(payload_dict)
     update_fields["updated_at"] = datetime.now(UTC)
 
-    await db.contact_center_queues.update_one(
-        {"id": queue_id, "tenant_id": current_user.tenant_id},
-        {"$set": update_fields}
-    )
+    await db.contact_center_queues.update_one({"id": queue_id, "tenant_id": current_user.tenant_id}, {"$set": update_fields})
 
     updated_doc = await db.contact_center_queues.find_one({"id": queue_id, "tenant_id": current_user.tenant_id})
     updated_doc.pop("_id", None)
@@ -1584,34 +1555,20 @@ async def delete_queue(
 
 async def set_agent_presence_state(tenant_id: str, agent_id: str, state_name: str) -> dict:
     now = datetime.now(UTC)
-    last_active = await db.contact_center_agent_states.find_one({
-        "tenant_id": tenant_id,
-        "agent_id": agent_id,
-        "ended_at": None
-    })
+    last_active = await db.contact_center_agent_states.find_one({"tenant_id": tenant_id, "agent_id": agent_id, "ended_at": None})
     if last_active:
         if last_active["state"] == state_name:
             return last_active
         duration = _safe_seconds_between(now, last_active.get("started_at"))
-        await db.contact_center_agent_states.update_one(
-            {"id": last_active["id"]},
-            {"$set": {"ended_at": now, "duration_seconds": duration}}
-        )
+        await db.contact_center_agent_states.update_one({"id": last_active["id"]}, {"$set": {"ended_at": now, "duration_seconds": duration}})
 
-    doc = {
-        "id": str(uuid4()),
-        "tenant_id": tenant_id,
-        "agent_id": agent_id,
-        "state": state_name,
-        "duration_seconds": 0,
-        "started_at": now,
-        "ended_at": None
-    }
+    doc = {"id": str(uuid4()), "tenant_id": tenant_id, "agent_id": agent_id, "state": state_name, "duration_seconds": 0, "started_at": now, "ended_at": None}
     await db.contact_center_agent_states.insert_one(doc)
 
     try:
         from core.ws_rooms import tenant_broadcast_room
         from websocket_server import sio
+
         await sio.emit(
             "contact_center:agent_state_update",
             {
@@ -1628,11 +1585,7 @@ async def set_agent_presence_state(tenant_id: str, agent_id: str, state_name: st
 
 async def _delayed_wrap_up_expiration(tenant_id: str, agent_id: str) -> None:
     await asyncio.sleep(15)
-    doc = await db.contact_center_agent_states.find_one({
-        "tenant_id": tenant_id,
-        "agent_id": agent_id,
-        "ended_at": None
-    })
+    doc = await db.contact_center_agent_states.find_one({"tenant_id": tenant_id, "agent_id": agent_id, "ended_at": None})
     if doc and doc.get("state") == "wrap_up":
         await set_agent_presence_state(tenant_id, agent_id, "ready")
 
@@ -1654,21 +1607,13 @@ async def get_my_state(
     current_user: User = Depends(get_current_user),
     _mod=Depends(require_module("contact_center")),
 ):
-    state_doc = await db.contact_center_agent_states.find_one({
-        "tenant_id": current_user.tenant_id,
-        "agent_id": current_user.id,
-        "ended_at": None
-    })
+    state_doc = await db.contact_center_agent_states.find_one({"tenant_id": current_user.tenant_id, "agent_id": current_user.id, "ended_at": None})
     if not state_doc:
         return {"state": "offline", "duration_seconds": 0, "started_at": None}
 
     now = datetime.now(UTC)
     duration = int((now - state_doc["started_at"]).total_seconds())
-    return {
-        "state": state_doc["state"],
-        "duration_seconds": duration,
-        "started_at": state_doc["started_at"]
-    }
+    return {"state": state_doc["state"], "duration_seconds": duration, "started_at": state_doc["started_at"]}
 
 
 @router.get("/contact-center/agents/states")
@@ -1679,21 +1624,9 @@ async def list_agents_states(
 ):
     pipeline = [
         {"$match": {"tenant_id": current_user.tenant_id, "ended_at": None}},
-        {"$lookup": {
-            "from": "users",
-            "localField": "agent_id",
-            "foreignField": "id",
-            "as": "user_info"
-        }},
+        {"$lookup": {"from": "users", "localField": "agent_id", "foreignField": "id", "as": "user_info"}},
         {"$unwind": "$user_info"},
-        {"$project": {
-            "_id": 0,
-            "agent_id": 1,
-            "state": 1,
-            "started_at": 1,
-            "agent_name": "$user_info.name",
-            "agent_username": "$user_info.username"
-        }}
+        {"$project": {"_id": 0, "agent_id": 1, "state": 1, "started_at": 1, "agent_name": "$user_info.name", "agent_username": "$user_info.username"}},
     ]
     cursor = db.contact_center_agent_states.aggregate(pipeline)
     items = await cursor.to_list(length=100)
@@ -1701,9 +1634,6 @@ async def list_agents_states(
     for item in items:
         item["duration_seconds"] = _safe_seconds_between(now, item.get("started_at"))
     return {"agents": items}
-
-
-
 
 
 @public_router.post("/inbound")
@@ -1757,6 +1687,7 @@ async def voice_inbound(request: Request):
         tz_doc = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "timezone": 1}) or {}
     tz_name = tz_doc.get("timezone") or "Europe/Istanbul"
     import zoneinfo
+
     try:
         tz = zoneinfo.ZoneInfo(tz_name)
     except Exception:
@@ -1767,6 +1698,7 @@ async def voice_inbound(request: Request):
     current_day = now.isoweekday()
 
     import holidays
+
     tr_holidays = holidays.Turkey(years=[now.year])
     is_holiday = now.date() in tr_holidays
 
@@ -1799,25 +1731,25 @@ async def voice_inbound(request: Request):
         queues = await cursor.to_list(length=10)
 
     if not queues:
-        twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Say language="tr-TR">Müşteri temsilcisine bağlanıyorsunuz.</Say><Enqueue>OperatorQueue</Enqueue></Response>'
+        twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Say language="tr-TR">Müşteri temsilcisine bağlanıyorsunuz. Bu görüşme kalite standartları gereği kaydedilmektedir.</Say><Enqueue>OperatorQueue</Enqueue></Response>'
         return Response(content=twiml, media_type=_XML)
 
     menu_parts = []
     for q in queues:
         menu_parts.append(f"{q['name']} için lütfen {q['extension']}'i tuşlayınız.")
 
-    menu_text = "Hoş geldiniz. " + " ".join(menu_parts)
+    menu_text = "Hoş geldiniz. Bu görüşme kalite standartları gereği kaydedilmektedir. " + " ".join(menu_parts)
     gather_url = f"/api/voice/inbound/gather?tenant_id={tenant_id}"
 
     twiml = (
         f'<?xml version="1.0" encoding="UTF-8"?>'
-        f'<Response>'
+        f"<Response>"
         f'<Gather action="{gather_url}" numDigits="1" timeout="5" language="tr-TR">'
         f'<Say language="tr-TR">{menu_text}</Say>'
-        f'</Gather>'
+        f"</Gather>"
         f'<Say language="tr-TR">Herhangi bir tuşlama yapmadınız. Tekrar dinlemek için bekleyiniz.</Say>'
-        f'<Redirect>/api/voice/inbound?tenant_id={tenant_id}</Redirect>'
-        f'</Response>'
+        f"<Redirect>/api/voice/inbound?tenant_id={tenant_id}</Redirect>"
+        f"</Response>"
     )
     return Response(content=twiml, media_type=_XML)
 
@@ -1841,19 +1773,10 @@ async def voice_inbound_gather(request: Request):
     if not tenant_id:
         return Response(content=provider.say_fallback("Hata: Geçersiz istek."), media_type=_XML)
 
-    queue = await db.contact_center_queues.find_one({
-        "tenant_id": tenant_id,
-        "extension": digits
-    })
+    queue = await db.contact_center_queues.find_one({"tenant_id": tenant_id, "extension": digits})
 
     if not queue:
-        twiml = (
-            f'<?xml version="1.0" encoding="UTF-8"?>'
-            f'<Response>'
-            f'<Say language="tr-TR">Geçersiz bir tuşlama yaptınız.</Say>'
-            f'<Redirect>/api/voice/inbound?tenant_id={tenant_id}</Redirect>'
-            f'</Response>'
-        )
+        twiml = f'<?xml version="1.0" encoding="UTF-8"?><Response><Say language="tr-TR">Geçersiz bir tuşlama yaptınız.</Say><Redirect>/api/voice/inbound?tenant_id={tenant_id}</Redirect></Response>'
         return Response(content=twiml, media_type=_XML)
 
     call_sid = form.get("CallSid") or ""
@@ -1865,14 +1788,12 @@ async def voice_inbound_gather(request: Request):
         provider_call_sid=call_sid,
         from_phone=from_phone,
     )
-    await db.contact_center_calls.update_one(
-        {"provider_call_sid": call_sid, "tenant_id": tenant_id},
-        {"$set": {"queue_id": queue["id"]}}
-    )
+    await db.contact_center_calls.update_one({"provider_call_sid": call_sid, "tenant_id": tenant_id}, {"$set": {"queue_id": queue["id"]}})
 
     try:
         from core.ws_rooms import tenant_broadcast_room
         from websocket_server import sio
+
         await sio.emit(
             "contact_center:incoming_call",
             {
@@ -1886,12 +1807,7 @@ async def voice_inbound_gather(request: Request):
         logger.warning(f"Failed to emit socket event for incoming call: {e}")
 
     route_url = f"/api/voice/inbound/route-queue?tenant_id={tenant_id}&queue_id={queue['id']}"
-    twiml = (
-        f'<?xml version="1.0" encoding="UTF-8"?>'
-        f'<Response>'
-        f'<Redirect>{route_url}</Redirect>'
-        f'</Response>'
-    )
+    twiml = f'<?xml version="1.0" encoding="UTF-8"?><Response><Redirect>{route_url}</Redirect></Response>'
     return Response(content=twiml, media_type=_XML)
 
 
@@ -1939,12 +1855,7 @@ async def voice_route_queue(request: Request):
     dialed_agents = call_doc.get("dialed_agents") or [] if call_doc else []
 
     # 4. Find all ready agents for this tenant (ended_at is None, state is "ready")
-    cursor = db.contact_center_agent_states.find({
-        "tenant_id": tenant_id,
-        "state": "ready",
-        "ended_at": None,
-        "agent_id": {"$nin": dialed_agents}
-    }).sort("started_at", 1)  # Longest idle first
+    cursor = db.contact_center_agent_states.find({"tenant_id": tenant_id, "state": "ready", "ended_at": None, "agent_id": {"$nin": dialed_agents}}).sort("started_at", 1)  # Longest idle first
     ready_states = await cursor.to_list(length=10)
 
     if ready_states:
@@ -1953,34 +1864,31 @@ async def voice_route_queue(request: Request):
         selected_agent_id = selected_state["agent_id"]
 
         # Append to dialed_agents in DB
-        await db.contact_center_calls.update_one(
-            {"provider_call_sid": call_sid, "tenant_id": tenant_id},
-            {"$addToSet": {"dialed_agents": selected_agent_id}, "$set": {"agent_id": selected_agent_id}}
-        )
+        await db.contact_center_calls.update_one({"provider_call_sid": call_sid, "tenant_id": tenant_id}, {"$addToSet": {"dialed_agents": selected_agent_id}, "$set": {"agent_id": selected_agent_id}})
 
         dial_action_url = f"/api/voice/inbound/dial-action?tenant_id={tenant_id}&queue_id={queue_id}&agent_id={selected_agent_id}"
         agent_callback_url = f"/api/voice/agent-status-callback?tenant_id={tenant_id}&agent_id={selected_agent_id}"
 
         twiml = (
             f'<?xml version="1.0" encoding="UTF-8"?>'
-            f'<Response>'
+            f"<Response>"
             f'<Dial action="{dial_action_url}" timeout="15">'
             f'<Client statusCallbackEvent="initiated ringing answered completed" statusCallback="{agent_callback_url}">'
-            f'client:{tenant_id}:{selected_agent_id}'
-            f'</Client>'
-            f'</Dial>'
-            f'</Response>'
+            f"client:{tenant_id}:{selected_agent_id}"
+            f"</Client>"
+            f"</Dial>"
+            f"</Response>"
         )
         return Response(content=twiml, media_type=_XML)
 
     # 5. No agent available -> Play wait music and retry
     twiml = (
         f'<?xml version="1.0" encoding="UTF-8"?>'
-        f'<Response>'
+        f"<Response>"
         f'<Say language="tr-TR">Lütfen bekleyiniz, tüm temsilcilerimiz şu anda meşguldür.</Say>'
-        f'<Play>http://demo.twilio.com/docs/classic.mp3</Play>'
-        f'<Redirect>/api/voice/inbound/route-queue?tenant_id={tenant_id}&amp;queue_id={queue_id}</Redirect>'
-        f'</Response>'
+        f"<Play>http://demo.twilio.com/docs/classic.mp3</Play>"
+        f"<Redirect>/api/voice/inbound/route-queue?tenant_id={tenant_id}&amp;queue_id={queue_id}</Redirect>"
+        f"</Response>"
     )
     return Response(content=twiml, media_type=_XML)
 
@@ -2009,12 +1917,7 @@ async def voice_dial_action(request: Request):
 
     # If not completed (e.g. no-answer, busy, failed), route to the next agent
     route_url = f"/api/voice/inbound/route-queue?tenant_id={tenant_id}&queue_id={queue_id}"
-    twiml = (
-        f'<?xml version="1.0" encoding="UTF-8"?>'
-        f'<Response>'
-        f'<Redirect>{route_url}</Redirect>'
-        f'</Response>'
-    )
+    twiml = f'<?xml version="1.0" encoding="UTF-8"?><Response><Redirect>{route_url}</Redirect></Response>'
     return Response(content=twiml, media_type=_XML)
 
 
@@ -2050,16 +1953,12 @@ async def voice_agent_status_callback(request: Request):
 @public_router.post("/queue/wait-music")
 async def voice_queue_wait_music(request: Request):
     """Kuyrukta bekleyen kullanıcı için bekleme müziği ve anons TwiML'i."""
-    twiml = (
-        f'<?xml version="1.0" encoding="UTF-8"?>'
-        f'<Response>'
-        f'<Play>http://demo.twilio.com/docs/classic.mp3</Play>'
-        f'</Response>'
-    )
+    twiml = f'<?xml version="1.0" encoding="UTF-8"?><Response><Play>http://demo.twilio.com/docs/classic.mp3</Play></Response>'
     return Response(content=twiml, media_type=_XML)
 
 
 # ── Supervisor Dashboard & Operations Endpoints ──
+
 
 class SupervisorActionPayload(BaseModel):
     action: str  # force_state, transfer_call, move_queue
@@ -2098,10 +1997,7 @@ async def get_supervisor_dashboard(
     today_start = datetime(now.year, now.month, now.day, tzinfo=UTC)
 
     # 1. Active calls (ringing, answered)
-    cursor_active = db.contact_center_calls.find({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["ringing", "answered"]}
-    })
+    cursor_active = db.contact_center_calls.find({"tenant_id": tenant_id, "status": {"$in": ["ringing", "answered"]}})
     active_calls = await cursor_active.to_list(length=100)
     for c in active_calls:
         c.pop("_id", None)
@@ -2121,10 +2017,7 @@ async def get_supervisor_dashboard(
                 longest_wait = int(wait)
 
     # 4. Agent counts by state
-    cursor_states = db.contact_center_agent_states.find({
-        "tenant_id": tenant_id,
-        "ended_at": None
-    })
+    cursor_states = db.contact_center_agent_states.find({"tenant_id": tenant_id, "ended_at": None})
     states = await cursor_states.to_list(length=200)
     counts = {"ready": 0, "on_call": 0, "wrap_up": 0, "break": 0, "offline": 0}
     for s in states:
@@ -2141,10 +2034,7 @@ async def get_supervisor_dashboard(
             counts["offline"] += 1
 
     # 5. Average answer time today
-    cursor_answered_today = db.contact_center_calls.find({
-        "tenant_id": tenant_id,
-        "answered_at": {"$gte": today_start}
-    })
+    cursor_answered_today = db.contact_center_calls.find({"tenant_id": tenant_id, "answered_at": {"$gte": today_start}})
     answered_today = await cursor_answered_today.to_list(length=1000)
     answer_times = []
     for c in answered_today:
@@ -2153,15 +2043,8 @@ async def get_supervisor_dashboard(
     avg_answer_time = sum(answer_times) / len(answer_times) if answer_times else 0
 
     # 6. Abandoned call rate today
-    total_calls_today = await db.contact_center_calls.count_documents({
-        "tenant_id": tenant_id,
-        "started_at": {"$gte": today_start}
-    })
-    abandoned_calls_today = await db.contact_center_calls.count_documents({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["missed", "failed"]},
-        "started_at": {"$gte": today_start}
-    })
+    total_calls_today = await db.contact_center_calls.count_documents({"tenant_id": tenant_id, "started_at": {"$gte": today_start}})
+    abandoned_calls_today = await db.contact_center_calls.count_documents({"tenant_id": tenant_id, "status": {"$in": ["missed", "failed"]}, "started_at": {"$gte": today_start}})
     abandoned_rate = abandoned_calls_today / total_calls_today if total_calls_today > 0 else 0
 
     # 7. SLA metrics per queue
@@ -2190,14 +2073,7 @@ async def get_supervisor_dashboard(
         elif pct < target:
             status_color = "yellow"
 
-        queue_slas.append({
-            "queue_id": q_id,
-            "name": q["name"],
-            "sla_threshold_seconds": threshold,
-            "sla_target_percentage": target,
-            "actual_percentage": pct,
-            "status": status_color
-        })
+        queue_slas.append({"queue_id": q_id, "name": q["name"], "sla_threshold_seconds": threshold, "sla_target_percentage": target, "actual_percentage": pct, "status": status_color})
 
     return {
         "active_calls_count": len(active_calls),
@@ -2206,7 +2082,7 @@ async def get_supervisor_dashboard(
         "average_answer_time_seconds": avg_answer_time,
         "abandoned_rate": abandoned_rate,
         "agent_states": counts,
-        "queue_slas": queue_slas
+        "queue_slas": queue_slas,
     }
 
 
@@ -2229,64 +2105,43 @@ async def get_supervisor_agents(
     res = []
     for a in agents:
         # Get active state
-        state_doc = await db.contact_center_agent_states.find_one({
-            "tenant_id": tenant_id,
-            "agent_id": a["id"],
-            "ended_at": None
-        })
+        state_doc = await db.contact_center_agent_states.find_one({"tenant_id": tenant_id, "agent_id": a["id"], "ended_at": None})
         state = state_doc["state"] if state_doc else "offline"
         state_duration = int((now - state_doc["started_at"]).total_seconds()) if state_doc else 0
 
         # Calculate active call duration
         call_duration = 0
         if state == "on_call":
-            active_call = await db.contact_center_calls.find_one({
-                "tenant_id": tenant_id,
-                "agent_id": a["id"],
-                "status": "answered"
-            })
+            active_call = await db.contact_center_calls.find_one({"tenant_id": tenant_id, "agent_id": a["id"], "status": "answered"})
             if active_call and active_call.get("answered_at"):
                 call_duration = int((now - active_call["answered_at"]).total_seconds())
 
         # Calls answered & missed today
-        answered_today = await db.contact_center_calls.count_documents({
-            "tenant_id": tenant_id,
-            "agent_id": a["id"],
-            "status": "completed",
-            "answered_at": {"$gte": today_start}
-        })
+        answered_today = await db.contact_center_calls.count_documents({"tenant_id": tenant_id, "agent_id": a["id"], "status": "completed", "answered_at": {"$gte": today_start}})
 
         # Missed checks: agent was in dialed_agents list but didn't answer
-        missed_today = await db.contact_center_calls.count_documents({
-            "tenant_id": tenant_id,
-            "dialed_agents": a["id"],
-            "agent_id": {"$ne": a["id"]},
-            "started_at": {"$gte": today_start}
-        })
+        missed_today = await db.contact_center_calls.count_documents({"tenant_id": tenant_id, "dialed_agents": a["id"], "agent_id": {"$ne": a["id"]}, "started_at": {"$gte": today_start}})
 
         # Average handle time today
-        cursor_calls = db.contact_center_calls.find({
-            "tenant_id": tenant_id,
-            "agent_id": a["id"],
-            "status": "completed",
-            "answered_at": {"$gte": today_start}
-        })
+        cursor_calls = db.contact_center_calls.find({"tenant_id": tenant_id, "agent_id": a["id"], "status": "completed", "answered_at": {"$gte": today_start}})
         calls = await cursor_calls.to_list(length=1000)
         durations = [c.get("duration_seconds") or 0 for c in calls]
         avg_handle_time = sum(durations) / len(durations) if durations else 0
 
-        res.append({
-            "agent_id": a["id"],
-            "name": a.get("name") or a.get("username"),
-            "username": a.get("username"),
-            "state": state,
-            "state_duration_seconds": state_duration,
-            "active_call_duration_seconds": call_duration,
-            "assigned_queues": ["Rezervasyon", "Resepsiyon"],  # Default/mock queues
-            "answered_today": answered_today,
-            "missed_today": missed_today,
-            "average_handle_time_seconds": avg_handle_time
-        })
+        res.append(
+            {
+                "agent_id": a["id"],
+                "name": a.get("name") or a.get("username"),
+                "username": a.get("username"),
+                "state": state,
+                "state_duration_seconds": state_duration,
+                "active_call_duration_seconds": call_duration,
+                "assigned_queues": ["Rezervasyon", "Resepsiyon"],  # Default/mock queues
+                "answered_today": answered_today,
+                "missed_today": missed_today,
+                "average_handle_time_seconds": avg_handle_time,
+            }
+        )
 
     return {"agents": res}
 
@@ -2309,13 +2164,14 @@ async def post_supervisor_action(
         await set_agent_presence_state(tenant_id, payload.agent_id, payload.target_state)
         # Log audit log
         from shared_kernel.audit_helper import audit_log
+
         await audit_log(
             actor_id=current_user.id,
             tenant_id=tenant_id,
             entity_type="contact_center_agent",
             entity_id=payload.agent_id,
             action="supervisor_force_state",
-            metadata={"target_state": payload.target_state}
+            metadata={"target_state": payload.target_state},
         )
         return {"success": True, "detail": f"Ajan {payload.agent_id} durumu {payload.target_state} olarak güncellendi."}
 
@@ -2329,36 +2185,25 @@ async def post_supervisor_action(
         if payload.target_queue_id:
             update_fields["queue_id"] = payload.target_queue_id
 
-        await db.contact_center_calls.update_one(
-            {"provider_call_sid": payload.call_sid, "tenant_id": tenant_id},
-            {"$set": update_fields}
-        )
+        await db.contact_center_calls.update_one({"provider_call_sid": payload.call_sid, "tenant_id": tenant_id}, {"$set": update_fields})
         from shared_kernel.audit_helper import audit_log
-        await audit_log(
-            actor_id=current_user.id,
-            tenant_id=tenant_id,
-            entity_type="contact_center_call",
-            entity_id=payload.call_sid,
-            action="supervisor_transfer_call",
-            metadata=update_fields
-        )
+
+        await audit_log(actor_id=current_user.id, tenant_id=tenant_id, entity_type="contact_center_call", entity_id=payload.call_sid, action="supervisor_transfer_call", metadata=update_fields)
         return {"success": True, "detail": "Çağrı aktarma işlemi tamamlandı."}
 
     elif payload.action == "move_queue":
         if not payload.call_sid or not payload.target_queue_id:
             raise HTTPException(status_code=400, detail="Eksik çağrı veya kuyruk bilgisi.")
-        await db.contact_center_calls.update_one(
-            {"provider_call_sid": payload.call_sid, "tenant_id": tenant_id},
-            {"$set": {"queue_id": payload.target_queue_id}}
-        )
+        await db.contact_center_calls.update_one({"provider_call_sid": payload.call_sid, "tenant_id": tenant_id}, {"$set": {"queue_id": payload.target_queue_id}})
         from shared_kernel.audit_helper import audit_log
+
         await audit_log(
             actor_id=current_user.id,
             tenant_id=tenant_id,
             entity_type="contact_center_call",
             entity_id=payload.call_sid,
             action="supervisor_move_queue",
-            metadata={"target_queue_id": payload.target_queue_id}
+            metadata={"target_queue_id": payload.target_queue_id},
         )
         return {"success": True, "detail": "Kuyruk taşıma işlemi tamamlandı."}
 
@@ -2376,22 +2221,18 @@ async def post_supervisor_intervene(
 
     # Audit log the intervention action
     from shared_kernel.audit_helper import audit_log
+
     await audit_log(
         actor_id=current_user.id,
         tenant_id=current_user.tenant_id,
         entity_type="contact_center_call",
         entity_id=payload.call_sid,
         action=f"supervisor_{payload.action}",
-        metadata={"supervisor_agent_id": current_user.id}
+        metadata={"supervisor_agent_id": current_user.id},
     )
 
     # Return intervention details for simulation/TwiML
-    return {
-        "success": True,
-        "action": payload.action,
-        "call_sid": payload.call_sid,
-        "supervisor_client_id": f"client:{current_user.tenant_id}:{current_user.id}"
-    }
+    return {"success": True, "action": payload.action, "call_sid": payload.call_sid, "supervisor_client_id": f"client:{current_user.tenant_id}:{current_user.id}"}
 
 
 @router.post("/agents/disposition")
@@ -2418,7 +2259,7 @@ async def post_agent_disposition(
         "callback_at": payload.callback_at,
         "linked_reservation_id": payload.linked_reservation_id,
         "linked_complaint_id": payload.linked_complaint_id,
-        "created_at": datetime.now(UTC)
+        "created_at": datetime.now(UTC),
     }
     await db.contact_center_dispositions.insert_one(doc)
 
@@ -2433,10 +2274,7 @@ async def get_callbacks(
     current_user: User = Depends(get_current_user),
     _mod=Depends(require_module("contact_center")),
 ):
-    cursor = db.contact_center_callbacks.find({
-        "tenant_id": current_user.tenant_id,
-        "status": "pending"
-    }).sort("abandoned_at", -1)
+    cursor = db.contact_center_callbacks.find({"tenant_id": current_user.tenant_id, "status": "pending"}).sort("abandoned_at", -1)
     docs = await cursor.to_list(length=100)
     for d in docs:
         d.pop("_id", None)
@@ -2451,12 +2289,7 @@ async def post_callback_assign(
     _mod=Depends(require_module("contact_center")),
 ):
     res = await db.contact_center_callbacks.update_one(
-        {"id": callback_id, "tenant_id": current_user.tenant_id, "status": "pending"},
-        {"$set": {
-            "status": "assigned",
-            "assigned_agent_id": current_user.id,
-            "assigned_at": datetime.now(UTC)
-        }}
+        {"id": callback_id, "tenant_id": current_user.tenant_id, "status": "pending"}, {"$set": {"status": "assigned", "assigned_agent_id": current_user.id, "assigned_at": datetime.now(UTC)}}
     )
     if not getattr(res, "matched_count", 0):
         raise HTTPException(status_code=404, detail="Geri arama kaydı bulunamadı veya atanmış durumda.")
@@ -2470,14 +2303,7 @@ async def post_callback_complete(
     current_user: User = Depends(get_current_user),
     _mod=Depends(require_module("contact_center")),
 ):
-    res = await db.contact_center_callbacks.update_one(
-        {"id": callback_id, "tenant_id": current_user.tenant_id},
-        {"$set": {
-            "status": "completed",
-            "resolved_at": datetime.now(UTC),
-            "result": result
-        }}
-    )
+    res = await db.contact_center_callbacks.update_one({"id": callback_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "completed", "resolved_at": datetime.now(UTC), "result": result}})
     if not getattr(res, "matched_count", 0):
         raise HTTPException(status_code=404, detail="Geri arama kaydı bulunamadı.")
     return {"success": True, "detail": "Geri arama kaydı tamamlandı."}
