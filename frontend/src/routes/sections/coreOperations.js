@@ -7,6 +7,7 @@ import {
   RoomMapPage, WakeUpCallsPage, LostFoundPage, MinibarPage, TransferParkingPage, GuestJourney,
   OperationalEventDashboard, MigrationObservabilityPage, IntegrationHub,
   AdminControlPanel, HousekeepingDashboard, POSDashboard, POSWaiterTerminal, POSExtensions, FeaturesShowcase,
+  SustainabilityReport,
 } from "./lazyPages";
 
 export function coreOperationsRoutes({ p, pa, pm, modules }) {
@@ -48,6 +49,7 @@ export function coreOperationsRoutes({ p, pa, pm, modules }) {
     { path: "/guest-journey", ...p(GuestJourney), wrapLayout: true },
     { path: "/operational-events", ...p(OperationalEventDashboard), wrapLayout: true, layoutModule: "pms_operations" },
     { path: "/app/migration-observability", ...p(MigrationObservabilityPage), wrapLayout: true, layoutModule: "reports" },
+    { path: "/app/sustainability", ...p(SustainabilityReport), wrapLayout: true, layoutModule: "reports" },
     { path: "/app/integration-hub", ...pa(IntegrationHub), wrapLayout: true, layoutModule: "integration-hub" },
     { path: "/app/admin-control-panel", ...pa(AdminControlPanel), wrapLayout: true, layoutModule: "admin_control_panel" },
 

@@ -234,6 +234,14 @@ export const NAV_ITEMS = [
     navGroup: "reports",
   },
   {
+    key: "sustainability_report",
+    label: "Sürdürülebilirlik Raporu",
+    path: "/app/sustainability",
+    tier: "basic",
+    group: "operations",
+    navGroup: "reports",
+  },
+  {
     key: "walkin",
     label: "Walk-in Check-in",
     path: "/walkin",

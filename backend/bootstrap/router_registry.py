@@ -95,6 +95,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.xchange", "router", ["xchange"], None, None),
     ("domains.spa.router", "router", ["spa"], None, None),
     ("domains.golf.router", "router", ["golf"], None, None),
+    ("routers.sustainability", "router", ["sustainability"], None, None),
     ("routers.mice", "router", ["mice"], None, None),
     ("routers.sales_catering", "router", ["sales-catering"], None, None),
     ("routers.banquet_competitor", "router", ["banquet-competitor"], None, None),
