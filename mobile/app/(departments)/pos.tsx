@@ -42,6 +42,8 @@ import {
   checkSplit,
   transferTable,
   updateOrderStatus,
+  listReservations,
+  updateReservationStatus,
   type ActiveOrder,
   type BeoSummary,
   type MenuItem,
@@ -49,6 +51,7 @@ import {
   type OrderStatus,
   type PaymentMethod,
   type TableSlot,
+  type Reservation,
 } from '../../src/api/posFnb';
 import { listFolios, type FolioListItem } from '../../src/api/folio';
 import { ApiError } from '../../src/api/client';
@@ -69,7 +72,7 @@ function isNetworkError(e: unknown): boolean {
   return e instanceof ApiError && e.status === 0;
 }
 
-type Tab = 'tables' | 'order' | 'kitchen' | 'folio' | 'reports';
+type Tab = 'tables' | 'order' | 'kitchen' | 'folio' | 'reports' | 'reservations';
 type CartLine = { item_id: string; quantity: number };
 
 function statusLabel(s?: string): string {
@@ -247,9 +250,22 @@ export default function PosScreen() {
   });
   const beoDetailQ = useQuery({
     queryKey: ['pos-beo', selectedBeoId],
-    queryFn: () => getBeo(selectedBeoId as string),
-    enabled: posAccess && !!selectedBeoId,
+    queryFn: () => getBeo(selectedBeoId!),
+    enabled: !!selectedBeoId,
   });
+
+  const reservationsQ = useQuery({
+    queryKey: ['pos-reservations', activeOutlet],
+    queryFn: () => listReservations({ outlet_id: activeOutlet }),
+    enabled: posAccess && tab === 'reservations' && !!activeOutlet,
+  });
+
+  // Calculate table stats when layouts load (for the summary Kpis).
+  const tableStats = useMemo(() => {
+    const m = new Map<string, MenuItem>();
+    for (const it of menuItems) m.set(it.id, it);
+    return m;
+  }, [menuItems]);
 
   const menuItems = menuQ.data || [];
   const menuById = useMemo(() => {
@@ -1768,6 +1784,39 @@ export default function PosScreen() {
     );
   };
 
+  const renderReservationsTab = () => {
+    const data = reservationsQ.data || [];
+    const showList = !reservationsQ.isLoading && !reservationsQ.error && data.length > 0;
+    return (
+      <View>
+        <SectionTitle title={tr.departments.pos.tabs?.reservations || 'Rezervasyonlar'} />
+        <Muted>Aktif masa rezervasyonları</Muted>
+        <View style={{ height: spacing.sm }} />
+        {!showList ? (
+          <DepartmentListState
+            loading={reservationsQ.isLoading}
+            error={reservationsQ.error}
+            isEmpty={data.length === 0}
+            emptyText="Rezervasyon bulunamadı."
+          />
+        ) : (
+          <ListGroup>
+            {data.map((r, idx) => (
+              <ListRow
+                key={r.id}
+                icon="calendar-outline"
+                label={`${r.guest_name} - ${r.pax} Pax`}
+                sublabel={`${r.res_date} ${r.res_time} | Masa: ${r.table_id}`}
+                last={idx === data.length - 1}
+                right={<Badge label={statusLabel(r.status)} tone={statusTone(r.status)} />}
+              />
+            ))}
+          </ListGroup>
+        )}
+      </View>
+    );
+  };
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
@@ -1849,6 +1898,12 @@ export default function PosScreen() {
           label={tr.departments.pos.tabs.reports}
           onPress={() => setTab('reports')}
         />
+        <Chip
+          active={tab === 'reservations'}
+          icon="calendar-outline"
+          label={tr.departments.pos.tabs?.reservations || 'Rezervasyon'}
+          onPress={() => setTab('reservations')}
+        />
       </ScrollView>
 
       {tab === 'tables' ? renderTablesTab() : null}
@@ -1856,6 +1911,7 @@ export default function PosScreen() {
       {tab === 'kitchen' ? renderKitchenTab() : null}
       {tab === 'folio' ? renderFolioTab() : null}
       {tab === 'reports' ? renderReportsTab() : null}
+      {tab === 'reservations' ? renderReservationsTab() : null}
 
       {/* Active-order detail + actions sheet. */}
       <ActionSheet

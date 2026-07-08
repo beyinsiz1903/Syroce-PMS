@@ -384,3 +384,44 @@ export function outletLabel(o: Outlet): string {
 export function menuItemLabel(m: MenuItem): string {
   return m.item_name || m.name || '—';
 }
+
+export type Reservation = {
+  id: string;
+  outlet_id: string;
+  table_id: string;
+  guest_name: string;
+  pax: number;
+  res_date: string;
+  res_time: string;
+  notes?: string;
+  status: string;
+};
+
+export async function listReservations(params?: {
+  outlet_id?: string;
+  res_date?: string;
+}): Promise<Reservation[]> {
+  const res = await api.get<Reservation[]>('/api/pos/reservations', params);
+  return res ?? [];
+}
+
+export async function createReservation(body: {
+  outlet_id: string;
+  table_id: string;
+  guest_name: string;
+  pax: number;
+  res_date: string;
+  res_time: string;
+  notes?: string;
+}): Promise<Reservation> {
+  return api.post('/api/pos/reservations', body);
+}
+
+export async function updateReservationStatus(
+  reservation_id: string,
+  status: string,
+): Promise<Reservation> {
+  return api.put(`/api/pos/reservations/${encodeURIComponent(reservation_id)}/status`, {
+    status,
+  });
+}
