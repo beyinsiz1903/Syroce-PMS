@@ -12,6 +12,11 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
     let testTenant;
 
     test.beforeAll(async ({ playwright }) => {
+        const freshPath = path.resolve('./e2e/.auth/fresh_token.json');
+        if (fs.existsSync(freshPath)) {
+            try { fs.unlinkSync(freshPath); } catch {}
+        }
+
         // Build a fake JWT that expires 1 hour from now so the UI considers it fresh
         const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString('base64');
         
@@ -176,10 +181,26 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
                 const payloadJson = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
                 testTenant = payloadJson.tenant_id;
             }
+            try {
+                fs.writeFileSync(path.resolve('./e2e/.auth/fresh_token.json'), JSON.stringify({ sessionToken, testTenant }));
+            } catch (err) {
+                console.error('Failed to write fresh token file:', err);
+            }
         }
     });
 
     test('2. Idempotency ve Webhook Akışı: Tek Dial Child, WhatsApp queued/sent/delivered ve Çağrı Geçmişi', async ({ playwright }) => {
+        const freshPath = path.resolve('./e2e/.auth/fresh_token.json');
+        if (fs.existsSync(freshPath)) {
+            try {
+                const data = JSON.parse(fs.readFileSync(freshPath, 'utf8'));
+                sessionToken = data.sessionToken;
+                testTenant = data.testTenant;
+            } catch (err) {
+                console.error('Failed to read fresh token file:', err);
+            }
+        }
+
         expect(sessionToken).toBeTruthy();
         expect(testTenant).toBeTruthy();
 
