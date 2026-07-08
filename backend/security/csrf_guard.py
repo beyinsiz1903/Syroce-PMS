@@ -63,6 +63,10 @@ async def csrf_guard_middleware(request: Request, call_next):
     if request.url.path in TWILIO_PUBLIC_WEBHOOKS:
         return await call_next(request)
 
+    # Bypass CSRF check for HotelRunner Webhooks (signature verified inside route)
+    if request.url.path.startswith("/api/channel-manager/hotelrunner/"):
+        return await call_next(request)
+
 
 
     origin = request.headers.get("Origin")
