@@ -158,11 +158,19 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
         count = await page.evaluate(() => window.__getUserMediaCallCount);
         expect(count).toBe(1);
 
-        // Extract the fresh sessionToken from the browser cookies to use for subsequent API tests
-        const cookies = await page.context().cookies();
-        const accessCookie = cookies.find(c => c.name === 'access_token');
-        if (accessCookie) {
-            sessionToken = accessCookie.value;
+        // Extract the fresh sessionToken from localStorage (or cookies as backup) to use for subsequent API tests
+        const tokenVal = await page.evaluate(() => localStorage.getItem('token') || localStorage.getItem('access_token'));
+        if (tokenVal) {
+            sessionToken = tokenVal;
+        } else {
+            const cookies = await page.context().cookies();
+            const accessCookie = cookies.find(c => c.name === 'access_token');
+            if (accessCookie) {
+                sessionToken = accessCookie.value;
+            }
+        }
+
+        if (sessionToken) {
             const parts = sessionToken.split('.');
             if (parts.length === 3) {
                 const payloadJson = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
@@ -171,9 +179,17 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
         }
     });
 
-    test('2. Idempotency ve Webhook Akışı: Tek Dial Child, WhatsApp queued/sent/delivered ve Çağrı Geçmişi', async ({ request }) => {
+    test('2. Idempotency ve Webhook Akışı: Tek Dial Child, WhatsApp queued/sent/delivered ve Çağrı Geçmişi', async ({ playwright }) => {
         expect(sessionToken).toBeTruthy();
         expect(testTenant).toBeTruthy();
+
+        const request = await playwright.request.newContext({
+            baseURL: process.env.E2E_BASE_URL || 'http://localhost:3000',
+            extraHTTPHeaders: {
+                'Origin': 'http://localhost:3000',
+                'Authorization': `Bearer ${sessionToken}`
+            }
+        });
 
         const headers = {
             'Origin': 'http://localhost:3000',
