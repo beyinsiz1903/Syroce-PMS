@@ -166,6 +166,7 @@ jobs:
               env:
                   BYPASS_TWILIO_SIGNATURE: "1"
                   DISABLE_AUTH_THROTTLE: "true"
+                  MOCK_WHATSAPP_SUCCESS: "1"
                   E2E_ALLOW_DESTRUCTIVE_STRESS: "true"
               run: |
                   cd backend
