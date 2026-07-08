@@ -407,6 +407,47 @@ class FrontDeskService:
             "guest_id": guest_id,
         }
 
+    async def walk_in_batch(self, tenant_id: str, requests: list[dict], user_id: str, user_name: str) -> dict:
+        """
+        Process multiple walk-ins concurrently (partial success).
+        """
+        import asyncio
+
+        results = {}
+        
+        async def process_single(req):
+            try:
+                res = await self.walk_in(
+                    tenant_id=tenant_id,
+                    guest_data=req.get("guest_data", {}),
+                    room_id=req["room_id"],
+                    nights=req["nights"],
+                    rate=req["rate"],
+                    user_id=user_id,
+                    user_name=user_name,
+                )
+                return req["room_id"], res
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).exception("Batch walk-in failed for room %s", req["room_id"])
+                return req["room_id"], {"success": False, "error": str(e)}
+
+        tasks = [process_single(req) for req in requests]
+        batch_results = await asyncio.gather(*tasks)
+
+        success_count = 0
+        for room_id, res in batch_results:
+            results[room_id] = res
+            if res.get("success"):
+                success_count += 1
+
+        return {
+            "success": success_count > 0,
+            "success_count": success_count,
+            "total_count": len(requests),
+            "results": results
+        }
+
     # ── EARLY CHECK-IN / LATE CHECKOUT ──
 
     async def request_early_checkin(self, tenant_id: str, booking_id: str, requested_time: str, user_id: str) -> dict:
