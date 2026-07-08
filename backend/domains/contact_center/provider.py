@@ -166,19 +166,16 @@ class WhatsAppCloudProvider(CommunicationProvider):
         ``not_configured``; pencere kapalı ve template yoksa ``session_expired``.
         """
         import os
+
         if os.getenv("MOCK_WHATSAPP_SUCCESS") == "1":
             import uuid
-            result = {
-                "success": True,
-                "provider_message_id": "SMmock" + uuid.uuid4().hex[:16],
-                "status": "queued",
-                "delivered": False,
-                "provider": self.provider_name
-            }
+
+            result = {"success": True, "provider_message_id": "SMmock" + uuid.uuid4().hex[:16], "status": "queued", "delivered": False, "provider": self.provider_name}
             if db is not None:
                 try:
                     from modules.messaging.models import new_delivery_log
                     from modules.messaging.recipient_crypto import seal_delivery_log
+
                     log_doc = new_delivery_log(
                         tenant_id=tenant_id,
                         property_id=None,
@@ -199,6 +196,7 @@ class WhatsAppCloudProvider(CommunicationProvider):
         cfg = await self._load_config(db, tenant_id)
         if not cfg:
             import os
+
             twilio_sid = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
             twilio_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
             twilio_from = os.getenv("TWILIO_WHATSAPP_FROM", "").strip()
@@ -227,6 +225,7 @@ class WhatsAppCloudProvider(CommunicationProvider):
 
         from modules.messaging.providers import PROVIDER_MAP
         from modules.messaging.service import _decrypt_provider_creds
+
         twilio_sid = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
         twilio_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
         twilio_from = os.getenv("TWILIO_WHATSAPP_FROM", "").strip()
@@ -235,11 +234,7 @@ class WhatsAppCloudProvider(CommunicationProvider):
 
         if twilio_sid and twilio_token and twilio_from:
             wap = PROVIDER_MAP.get("twilio_whatsapp")
-            creds = {
-                "account_sid": twilio_sid,
-                "auth_token": twilio_token,
-                "from_number": twilio_from
-            }
+            creds = {"account_sid": twilio_sid, "auth_token": twilio_token, "from_number": twilio_from}
         else:
             wap = PROVIDER_MAP.get("whatsapp")
             creds = _decrypt_provider_creds(cfg.get("credentials_encrypted", {}) or {}, "whatsapp")
@@ -292,6 +287,7 @@ class WhatsAppCloudProvider(CommunicationProvider):
                 log_doc["status"] = result.get("status") or ("sent" if result.get("success") else "failed")
                 if result.get("delivered"):
                     from datetime import UTC, datetime
+
                     log_doc["delivered_at"] = datetime.now(UTC).isoformat()
 
                 await db.messaging_delivery_logs.insert_one(seal_delivery_log(log_doc))

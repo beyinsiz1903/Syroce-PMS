@@ -35,6 +35,8 @@ def _safe_seconds_between(dt1: datetime | None, dt2: datetime | None) -> int:
     elif dt1.tzinfo is None and dt2.tzinfo is not None:
         dt2 = dt2.replace(tzinfo=None)
     return int((dt1 - dt2).total_seconds())
+
+
 _CHANNEL = ContactCenterChannel.VOICE.value
 
 # Twilio CallStatus → iç CallStatus eşlemesi (bilinmeyen = değişiklik yapma).
@@ -90,11 +92,7 @@ async def _record_call(
     try:
         # Check call_attempt_id idempotency first
         if tenant_id and agent_id and call_attempt_id:
-            existing = await db[_COLLECTION].find_one({
-                "tenant_id": tenant_id,
-                "agent_id": agent_id,
-                "call_attempt_id": call_attempt_id
-            })
+            existing = await db[_COLLECTION].find_one({"tenant_id": tenant_id, "agent_id": agent_id, "call_attempt_id": call_attempt_id})
             if existing:
                 raise DuplicateKeyError(f"Duplicate call attempt: {call_attempt_id}")
 
@@ -126,6 +124,7 @@ async def _record_call(
         if phone:
             try:
                 from security.encrypted_lookup import build_guest_pii_query, decrypt_guest_doc
+
                 guest_doc = await db.guests.find_one({"tenant_id": tenant_id, **build_guest_pii_query("phone", phone)})
                 if guest_doc:
                     guest_doc = decrypt_guest_doc(guest_doc)
@@ -236,6 +235,7 @@ async def update_call_status(
             call_doc = await db[_COLLECTION].find_one({"tenant_id": tenant_id, "provider_call_sid": provider_call_sid})
             if call_doc and not call_doc.get("answered_at") and call_doc.get("direction") == MessageDirection.INBOUND.value:
                 from security.field_encryption import get_field_encryption_service
+
                 svc = get_field_encryption_service()
                 from_phone = None
                 if call_doc.get("caller_id_enc"):
@@ -247,17 +247,19 @@ async def update_call_status(
                 if from_phone:
                     await db.contact_center_callbacks.update_one(
                         {"tenant_id": tenant_id, "phone": from_phone},
-                        {"$set": {
-                            "id": str(uuid4()),
-                            "tenant_id": tenant_id,
-                            "phone": from_phone,
-                            "caller_id_enc": call_doc.get("caller_id_enc"),
-                            "abandoned_at": now,
-                            "wait_duration_seconds": _safe_seconds_between(now, call_doc.get("started_at")),
-                            "priority": "high" if call_doc.get("vip") else "medium",
-                            "status": "pending"
-                        }},
-                        upsert=True
+                        {
+                            "$set": {
+                                "id": str(uuid4()),
+                                "tenant_id": tenant_id,
+                                "phone": from_phone,
+                                "caller_id_enc": call_doc.get("caller_id_enc"),
+                                "abandoned_at": now,
+                                "wait_duration_seconds": _safe_seconds_between(now, call_doc.get("started_at")),
+                                "priority": "high" if call_doc.get("vip") else "medium",
+                                "status": "pending",
+                            }
+                        },
+                        upsert=True,
                     )
         except Exception as e:
             logger.warning(f"[CC-VOICE] Failed to create callback ticket: {e}")

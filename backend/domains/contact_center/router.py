@@ -270,9 +270,37 @@ async def send_conversation_message(
     await db.contact_center_messages.insert_one(msg_doc)
 
     if success:
+        # Calculate SLA metrics
+        conv_created = conv.get("created_at")
+        if conv_created and conv_created.tzinfo is None:
+            conv_created = conv_created.replace(tzinfo=UTC)
+
+        first_resp = conv.get("first_response_time_seconds")
+        if first_resp is None and conv_created:
+            first_resp = (now - conv_created).total_seconds()
+
+        # Retrieve all messages to calculate average response time
+        cursor = db.contact_center_messages.find({"conversation_id": conversation_id, "tenant_id": tenant_id}).sort("created_at", 1)
+        all_msgs = await cursor.to_list(length=1000)
+
+        response_times = []
+        last_inbound_time = None
+        for m in all_msgs:
+            m_created = m["created_at"]
+            if m_created.tzinfo is None:
+                m_created = m_created.replace(tzinfo=UTC)
+            if m.get("direction") == MessageDirection.INBOUND.value:
+                last_inbound_time = m_created
+            elif m.get("direction") == MessageDirection.OUTBOUND.value and last_inbound_time:
+                delta = (m_created - last_inbound_time).total_seconds()
+                response_times.append(delta)
+                last_inbound_time = None
+
+        avg_resp = sum(response_times) / len(response_times) if response_times else None
+
         await db.contact_center_conversations.update_one(
             {"id": conversation_id, "tenant_id": tenant_id},
-            {"$set": {"last_message_at": now, "updated_at": now}},
+            {"$set": {"last_message_at": now, "updated_at": now, "unread_count": 0, "first_response_time_seconds": first_resp, "average_response_time_seconds": avg_resp, "sla_breached": False}},
         )
         return {
             "success": True,
@@ -286,3 +314,81 @@ async def send_conversation_message(
         status_code=502,
         detail=error_detail or "WhatsApp gönderimi başarısız",
     )
+
+
+class AssignConversationPayload(BaseModel):
+    agent_id: str | None = None
+
+
+class LinkConversationPayload(BaseModel):
+    guest_id: str | None = None
+    booking_id: str | None = None
+
+
+@router.post("/contact-center/conversations/{conversation_id}/read")
+async def read_conversation(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+):
+    """Mark a conversation as read by resetting unread_count to 0."""
+    res = await db.contact_center_conversations.update_one({"id": conversation_id, "tenant_id": current_user.tenant_id}, {"$set": {"unread_count": 0, "updated_at": datetime.now(UTC)}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Konuşma bulunamadı")
+    return {"success": True}
+
+
+@router.post("/contact-center/conversations/{conversation_id}/assign")
+async def assign_conversation(
+    conversation_id: str,
+    payload: AssignConversationPayload,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    """Assign or unassign a conversation to an agent."""
+    res = await db.contact_center_conversations.update_one(
+        {"id": conversation_id, "tenant_id": current_user.tenant_id}, {"$set": {"assigned_agent_id": payload.agent_id, "updated_at": datetime.now(UTC)}}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Konuşma bulunamadı")
+    return {"success": True}
+
+
+@router.post("/contact-center/conversations/{conversation_id}/close")
+async def close_conversation(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    """Close the conversation."""
+    res = await db.contact_center_conversations.update_one({"id": conversation_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "closed", "updated_at": datetime.now(UTC)}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Konuşma bulunamadı")
+    return {"success": True}
+
+
+@router.post("/contact-center/conversations/{conversation_id}/link")
+async def link_conversation(
+    conversation_id: str,
+    payload: LinkConversationPayload,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    """Link the conversation to a guest and/or booking (reservation)."""
+    res = await db.contact_center_conversations.update_one(
+        {"id": conversation_id, "tenant_id": current_user.tenant_id}, {"$set": {"guest_id": payload.guest_id, "booking_id": payload.booking_id, "updated_at": datetime.now(UTC)}}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Konuşma bulunamadı")
+    return {"success": True}
+
+
+# Include subrouters
+from domains.contact_center.quality_router import router as quality_router
+from domains.contact_center.reports_router import router as reports_router
+
+router.include_router(quality_router)
+router.include_router(reports_router)

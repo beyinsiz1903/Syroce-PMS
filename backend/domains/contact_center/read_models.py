@@ -7,6 +7,8 @@ yeniden persist edilmez. Ciphertext / blind-index / Mongo ``_id`` ASLA dönmez.
 
 from __future__ import annotations
 
+from datetime import UTC
+
 
 def mask_phone(phone: str | None) -> str | None:
     """Telefonu maskeler: ülke ön eki (varsa) + son 4 hane, ortası gizli."""
@@ -46,6 +48,9 @@ CONVERSATION_DTO_KEYS = frozenset(
         "last_message_at",
         "created_at",
         "updated_at",
+        "first_response_time_seconds",
+        "average_response_time_seconds",
+        "sla_breached",
     }
 )
 
@@ -122,6 +127,15 @@ def conversation_to_dto(doc: dict, svc, *, reveal_phone: bool = False) -> dict:
     doc = doc or {}
     name = _dec(svc, doc.get("caller_display_name_enc"))
     phone = _dec(svc, doc.get("caller_id_enc"))
+    threshold = doc.get("sla_threshold_seconds") or 1800
+    sla_breached = doc.get("sla_breached", False)
+    if doc.get("status") == "open" and doc.get("last_message_at") and doc.get("unread_count", 0) > 0:
+        last_msg_at = doc.get("last_message_at")
+        if last_msg_at.tzinfo is None:
+            last_msg_at = last_msg_at.replace(tzinfo=UTC)
+        if (datetime.now(UTC) - last_msg_at).total_seconds() > threshold:
+            sla_breached = True
+
     return {
         "id": doc.get("id"),
         "channel": doc.get("channel"),
@@ -137,6 +151,9 @@ def conversation_to_dto(doc: dict, svc, *, reveal_phone: bool = False) -> dict:
         "last_message_at": doc.get("last_message_at"),
         "created_at": doc.get("created_at"),
         "updated_at": doc.get("updated_at"),
+        "first_response_time_seconds": doc.get("first_response_time_seconds"),
+        "average_response_time_seconds": doc.get("average_response_time_seconds"),
+        "sla_breached": sla_breached,
     }
 
 
