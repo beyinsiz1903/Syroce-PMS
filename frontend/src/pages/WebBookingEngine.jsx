@@ -15,21 +15,21 @@ const FEATURED_ROOMS = [
     id: "rt_std_01",
     name: "Standart Oda",
     description: "Şehir manzaralı konforlu standart oda. Modern tasarımı ve rahat yatağı ile günün yorgunluğunu atın.",
-    image_url: "https://images.unsplash.com/photo-1611892440504-42a792e24d32?auto=format&fit=crop&w=800&q=80",
+    image_url: "/wbe/standard_room.jpg",
     features: ["Ücretsiz Wi-Fi", "Klima", "Mini Bar", "2 Kişilik"],
   },
   {
     id: "rt_dlx_02",
     name: "Deluxe Oda",
     description: "Geniş yaşam alanı ve eşsiz deniz manzarası. Özel balkonunuzda kahvenizi yudumlarken lüksün tadını çıkarın.",
-    image_url: "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=800&q=80",
+    image_url: "/wbe/deluxe_room.jpg",
     features: ["Deniz Manzarası", "Kral Yatak", "Jakuzi", "3 Kişilik"],
   },
   {
     id: "rt_fam_03",
     name: "Aile Süiti",
     description: "Çocuklu aileler için tasarlanmış geniş süit. İki yatak odası ve ferah oturma alanıyla ev konforu sunar.",
-    image_url: "https://images.unsplash.com/photo-1566665797739-1674de7a421a?auto=format&fit=crop&w=800&q=80",
+    image_url: "/wbe/family_suite.jpg",
     features: ["İki Yatak Odası", "Mutfak Nişi", "2 Banyo", "5 Kişilik"],
   },
 ];
@@ -107,7 +107,7 @@ export default function WebBookingEngine() {
   if (bookingResult) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4" style={{
-        backgroundImage: "url('https://images.unsplash.com/photo-1542314831-c6a4d14d2311?auto=format&fit=crop&w=2000&q=80')",
+        backgroundImage: "url('/landing/hero-hotel-1280.webp')",
         backgroundSize: "cover",
         backgroundPosition: "center",
       }}>
@@ -159,7 +159,7 @@ export default function WebBookingEngine() {
       <div className="relative h-[60vh] min-h-[500px] flex items-center justify-center">
         <div 
           className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: "url('https://images.unsplash.com/photo-1542314831-c6a4d14d2311?auto=format&fit=crop&w=2000&q=80')" }}
+          style={{ backgroundImage: "url('/landing/hero-hotel-1280.webp')" }}
         />
         <div className="absolute inset-0 bg-black/50" />
         <div className="relative z-10 text-center text-white px-4">
