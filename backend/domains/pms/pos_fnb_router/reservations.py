@@ -3,8 +3,8 @@ reservations.py
 
 Restaurant table management and reservation endpoints.
 """
-from datetime import UTC, datetime
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -40,7 +40,7 @@ async def get_reservations(
         query["outlet_id"] = outlet_id
     if res_date:
         query["res_date"] = res_date
-        
+
     reservations = await db.pos_table_reservations.find(query, {"_id": 0}).sort("res_time", 1).to_list(100)
     return reservations
 
@@ -52,7 +52,7 @@ async def create_reservation(
     _perm=Depends(require_module_v92("pos"))
 ):
     """Create a new table reservation."""
-    
+
     # Conflict check (Double-booking defense)
     conflict = await db.pos_table_reservations.find_one({
         "tenant_id": current_user.tenant_id,
@@ -62,10 +62,10 @@ async def create_reservation(
         "res_time": req.res_time,
         "status": {"$in": ["confirmed", "seated"]}
     })
-    
+
     if conflict:
         raise HTTPException(status_code=400, detail="Masa bu saatte zaten dolu.")
-        
+
     doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
@@ -80,9 +80,9 @@ async def create_reservation(
         "created_at": datetime.now(UTC).isoformat(),
         "created_by": current_user.id
     }
-    
+
     await db.pos_table_reservations.insert_one(doc)
-    
+
     doc.pop("_id", None)
     return doc
 
@@ -97,15 +97,15 @@ async def update_reservation_status(
     valid_statuses = ["confirmed", "seated", "completed", "cancelled"]
     if status not in valid_statuses:
         raise HTTPException(status_code=400, detail="Geçersiz rezervasyon durumu")
-        
+
     updated = await db.pos_table_reservations.find_one_and_update(
         {"tenant_id": current_user.tenant_id, "id": reservation_id},
         {"$set": {"status": status, "updated_at": datetime.now(UTC).isoformat()}},
         return_document=True
     )
-    
+
     if not updated:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
-        
+
     updated.pop("_id", None)
     return updated
