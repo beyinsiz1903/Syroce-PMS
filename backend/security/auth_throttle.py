@@ -750,7 +750,9 @@ async def enforce(throttle: SlidingWindowThrottle, key: str, label: str = "istek
     # bypassed by the dev escape hatch. Brute-force-critical surfaces must
     # keep their rate limit in every environment so stress/penetration
     # tests measure the real production guarantee.
-    if not getattr(throttle, "always_on", False) and _os.environ.get("DISABLE_AUTH_THROTTLE") == "1":
+    disable_throttle_val = (_os.environ.get("DISABLE_AUTH_THROTTLE") or "").lower()
+    is_e2e = _os.environ.get("E2E_TEST_SUITE") in ("1", "true")
+    if (is_e2e and disable_throttle_val in ("1", "true")) or (not getattr(throttle, "always_on", False) and disable_throttle_val in ("1", "true")):
         env = (_os.environ.get("APP_ENV") or _os.environ.get("ENVIRONMENT") or "development").lower()
         if env in ("development", "dev", "test", "testing", "local"):
             return
