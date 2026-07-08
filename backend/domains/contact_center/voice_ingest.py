@@ -25,6 +25,16 @@ from models.enums import CallStatus, ContactCenterChannel, MessageDirection
 logger = logging.getLogger(__name__)
 
 _COLLECTION = "contact_center_calls"
+
+
+def _safe_seconds_between(dt1: datetime | None, dt2: datetime | None) -> int:
+    if not dt1 or not dt2:
+        return 0
+    if dt1.tzinfo is not None and dt2.tzinfo is None:
+        dt1 = dt1.replace(tzinfo=None)
+    elif dt1.tzinfo is None and dt2.tzinfo is not None:
+        dt2 = dt2.replace(tzinfo=None)
+    return int((dt1 - dt2).total_seconds())
 _CHANNEL = ContactCenterChannel.VOICE.value
 
 # Twilio CallStatus → iç CallStatus eşlemesi (bilinmeyen = değişiklik yapma).
@@ -65,6 +75,8 @@ async def _record_call(
     direction: str,
     agent_id: str | None = None,
     conversation_id: str | None = None,
+    parent_call_sid: str | None = None,
+    call_attempt_id: str | None = None,
 ) -> str | None:
     """Gelen/giden çağrıyı idempotent biçimde kaydeder; çağrı ``id``'sini döner.
 
@@ -76,6 +88,16 @@ async def _record_call(
         logger.warning("[CC-VOICE] kayıt: tenant/call-sid eksik; atlanıyor")
         return None
     try:
+        # Check call_attempt_id idempotency first
+        if tenant_id and agent_id and call_attempt_id:
+            existing = await db[_COLLECTION].find_one({
+                "tenant_id": tenant_id,
+                "agent_id": agent_id,
+                "call_attempt_id": call_attempt_id
+            })
+            if existing:
+                raise DuplicateKeyError(f"Duplicate call attempt: {call_attempt_id}")
+
         svc = _svc()
         caller_id_hash, caller_id_enc = build_caller_crypto(svc, phone or "")
         now = datetime.now(UTC)
@@ -83,6 +105,7 @@ async def _record_call(
             "id": str(uuid4()),
             "tenant_id": tenant_id,
             "provider_call_sid": provider_call_sid,
+            "parent_call_sid": parent_call_sid,
             "conversation_id": conversation_id,
             "channel": _CHANNEL,
             "direction": direction,
@@ -90,6 +113,7 @@ async def _record_call(
             "caller_id_hash": caller_id_hash,
             "caller_id_enc": caller_id_enc,
             "agent_id": agent_id,
+            "call_attempt_id": call_attempt_id,
             "recording_ref": None,
             "duration_seconds": 0,
             "disposition": None,
@@ -118,9 +142,11 @@ async def _record_call(
                 upsert=True,
                 return_document=ReturnDocument.AFTER,
             )
-        except DuplicateKeyError:
-            doc = await db[_COLLECTION].find_one({"tenant_id": tenant_id, "provider_call_sid": provider_call_sid})
+        except DuplicateKeyError as de:
+            raise de
         return (doc or {}).get("id") or set_on_insert["id"]
+    except DuplicateKeyError as de:
+        raise de
     except Exception:
         logger.exception("[CC-VOICE] çağrı kaydı başarısız (bastırıldı, PII'siz)")
         return None
@@ -134,6 +160,7 @@ async def record_inbound_call(
     from_phone: str,
     agent_id: str | None = None,
     conversation_id: str | None = None,
+    parent_call_sid: str | None = None,
 ) -> str | None:
     """Gelen çağrıyı idempotent biçimde kaydeder (arayan numarası hash+enc)."""
     return await _record_call(
@@ -144,6 +171,7 @@ async def record_inbound_call(
         direction=MessageDirection.INBOUND.value,
         agent_id=agent_id,
         conversation_id=conversation_id,
+        parent_call_sid=parent_call_sid,
     )
 
 
@@ -155,6 +183,8 @@ async def record_outbound_call(
     to_phone: str,
     agent_id: str | None = None,
     conversation_id: str | None = None,
+    parent_call_sid: str | None = None,
+    call_attempt_id: str | None = None,
 ) -> str | None:
     """Giden (click-to-dial) çağrıyı idempotent kaydeder (hedef numarası hash+enc).
 
@@ -169,6 +199,8 @@ async def record_outbound_call(
         direction=MessageDirection.OUTBOUND.value,
         agent_id=agent_id,
         conversation_id=conversation_id,
+        parent_call_sid=parent_call_sid,
+        call_attempt_id=call_attempt_id,
     )
 
 
@@ -179,6 +211,7 @@ async def update_call_status(
     provider_call_sid: str,
     twilio_status: str,
     duration_seconds: int | None = None,
+    parent_call_sid: str | None = None,
 ) -> bool:
     """Twilio status callback'ini iç duruma yansıtır (idempotent).
 
@@ -193,10 +226,41 @@ async def update_call_status(
         return False
     now = datetime.now(UTC)
     set_fields: dict = {"status": mapped.value, "updated_at": now}
+    if parent_call_sid:
+        set_fields["parent_call_sid"] = parent_call_sid
     if mapped == CallStatus.ANSWERED:
         set_fields["answered_at"] = now
     if mapped in _TERMINAL:
         set_fields["ended_at"] = now
+        try:
+            call_doc = await db[_COLLECTION].find_one({"tenant_id": tenant_id, "provider_call_sid": provider_call_sid})
+            if call_doc and not call_doc.get("answered_at") and call_doc.get("direction") == MessageDirection.INBOUND.value:
+                from security.field_encryption import get_field_encryption_service
+                svc = get_field_encryption_service()
+                from_phone = None
+                if call_doc.get("caller_id_enc"):
+                    try:
+                        from_phone = svc.decrypt_value(call_doc["caller_id_enc"])
+                    except Exception:
+                        pass
+
+                if from_phone:
+                    await db.contact_center_callbacks.update_one(
+                        {"tenant_id": tenant_id, "phone": from_phone},
+                        {"$set": {
+                            "id": str(uuid4()),
+                            "tenant_id": tenant_id,
+                            "phone": from_phone,
+                            "caller_id_enc": call_doc.get("caller_id_enc"),
+                            "abandoned_at": now,
+                            "wait_duration_seconds": _safe_seconds_between(now, call_doc.get("started_at")),
+                            "priority": "high" if call_doc.get("vip") else "medium",
+                            "status": "pending"
+                        }},
+                        upsert=True
+                    )
+        except Exception as e:
+            logger.warning(f"[CC-VOICE] Failed to create callback ticket: {e}")
     if duration_seconds is not None and duration_seconds >= 0:
         set_fields["duration_seconds"] = int(duration_seconds)
     try:

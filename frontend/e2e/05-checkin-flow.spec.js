@@ -41,6 +41,9 @@ test('Logout butonu çalışır', async ({ page }) => {
         await page.waitForURL((url) => /\/(auth|login|$)/i.test(url.pathname), {
             timeout: 15_000,
         });
+        // Wait 1.5s to ensure the tokens_invalid_before (+1s) window passes
+        // before subsequent tests attempt login.
+        await page.waitForTimeout(1500);
     } else {
         test.skip(true, 'Logout butonu bulunamadı');
     }

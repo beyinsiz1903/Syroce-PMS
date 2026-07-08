@@ -60,6 +60,12 @@ async def check_mongodb(db) -> dict[str, Any]:
         # Get server status
         server_status = await db.command("serverStatus")
 
+        # Verify required unique index exists
+        indexes = await db["contact_center_calls"].index_information()
+        if "ux_cc_calls_attempt_id" not in indexes:
+            logger.error("MongoDB health check failed: Required unique index 'ux_cc_calls_attempt_id' is missing!")
+            return {"status": "unhealthy", "error": "Required index 'ux_cc_calls_attempt_id' is missing"}
+
         response_time = (datetime.utcnow() - start_time).total_seconds() * 1000
 
         return {
@@ -134,9 +140,9 @@ async def health_check_simple():
     """
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "service": "hotel_pms",
-        "commit": "ed87344ac"
+        "commit": os.getenv("COMMIT_SHA", "unknown"),
     }
 
 

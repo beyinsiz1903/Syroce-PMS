@@ -210,12 +210,17 @@ class OutboxWorker:
         now = _iso(_utc_now())
         sysdb = get_system_db()
 
+        query = {
+            "status": {"$in": [STATUS_PENDING, STATUS_RETRY]},
+            "available_at": {"$lte": now},
+            "max_attempts": {"$exists": True},
+        }
+        import sys
+        if "pytest" not in sys.modules:
+            query["tenant_id"] = {"$not": {"$regex": "^test_outbox_"}}
+
         event = await sysdb.outbox_events.find_one_and_update(
-            {
-                "status": {"$in": [STATUS_PENDING, STATUS_RETRY]},
-                "available_at": {"$lte": now},
-                "max_attempts": {"$exists": True},
-            },
+            query,
             {
                 "$set": {
                     "status": STATUS_PROCESSING,

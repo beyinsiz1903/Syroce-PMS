@@ -64,6 +64,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /install /usr/local
 COPY . .
 
+ARG COMMIT_SHA=unknown
+ENV COMMIT_SHA=${COMMIT_SHA}
+
 RUN chown -R appuser:appuser /app
 
 USER appuser

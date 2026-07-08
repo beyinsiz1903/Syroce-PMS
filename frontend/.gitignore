@@ -29,3 +29,5 @@ yarn-error.log*
 # Playwright auto-generated reports (regenerated each run)
 playwright-business-report/
 test-results-business/
+playwright-report/
+test-results/

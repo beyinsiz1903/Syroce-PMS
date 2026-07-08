@@ -63,7 +63,8 @@ async def main() -> int:
     modules = _parse_modules(os.environ.get("STRESS_ENABLE_MODULES"))
 
     client = AsyncIOMotorClient(mongo)
-    db = client["syroce-pms"]
+    db_name = os.environ.get("DB_NAME", "syroce-pms")
+    db = client[db_name]
 
     tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "name": 1, "modules": 1})
     if not tenant:

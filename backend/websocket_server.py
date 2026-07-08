@@ -100,6 +100,18 @@ def is_user_online(tenant_id: str, user_id: str) -> bool:
     return bucket.get(user_id, 0) > 0
 
 
+async def _delayed_offline_check(tenant_id: str, user_id: str) -> None:
+    """Checks presence after a grace period. If still offline, marks agent as offline in the DB."""
+    await asyncio.sleep(5)
+    if not is_user_online(tenant_id, user_id):
+        try:
+            from domains.contact_center.voice_router import set_agent_presence_state
+            await set_agent_presence_state(tenant_id, user_id, "offline")
+            logger.info(f"[CC-VOICE] Agent {user_id} automatically set to offline after disconnect grace period")
+        except Exception as e:
+            logger.warning(f"[CC-VOICE] Failed to transition agent {user_id} to offline: {e}")
+
+
 # Create Socket.IO server
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*", logger=True, engineio_logger=True)
 
@@ -278,6 +290,8 @@ async def disconnect(sid):
         # immediately after disconnect reflects the right state even
         # if the adapter teardown is still in flight.
         await _record_user_disconnect(identity["tenant_id"], identity["user_id"])
+        if not is_user_online(identity["tenant_id"], identity["user_id"]):
+            asyncio.create_task(_delayed_offline_check(identity["tenant_id"], identity["user_id"]))
         rooms = _internal_chat_rooms(identity["tenant_id"], identity["user_id"], identity.get("department"))
         # Mirror the connect-time PMS auto-join so the refcount the
         # adapter keeps for the tenant PMS room balances out (see #43).

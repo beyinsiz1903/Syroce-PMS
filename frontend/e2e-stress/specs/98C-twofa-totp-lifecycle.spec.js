@@ -121,6 +121,9 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
     let prefix = null;
     let moduleBlocked = false;
     let blockedReason = null;
+    let tempUserToken = null;
+    let testEmail = null;
+    let testPassword = null;
     let secret = null;          // plaintext TOTP secret returned by /setup
     let backupCodes = null;     // plaintext backup codes returned by /setup/confirm
     let twofaEnabled = false;   // tracked so afterAll can cleanly disable
@@ -142,8 +145,9 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
         const tokenFile = path.join(process.cwd(), 'e2e-stress', '.auth', 'stress-token.json');
         let tokens = null;
         try { tokens = JSON.parse(fs.readFileSync(tokenFile, 'utf-8')); } catch { /* ignore */ }
-        const password = process.env.E2E_STRESS_ADMIN_PASSWORD;
-        if (!tokens?.stress_token || !password || !secret) {
+        const password = testPassword || process.env.E2E_STRESS_ADMIN_PASSWORD;
+        const activeToken = tempUserToken || tokens?.stress_token;
+        if (!activeToken || !password || !secret) {
             // Best-effort: log to stderr; cleanup failure is logged but doesn't FAIL afterAll.
             // eslint-disable-next-line no-console
             console.error('[F8AG] afterAll cleanup skipped — missing token/password/secret.');
@@ -163,7 +167,7 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
                 if (code === usedConfirmCode || usedTotpCodes.has(code)) continue;
                 const r = await ctx.post('/api/2fa/disable', {
                     data: { password, code },
-                    headers: { Authorization: `Bearer ${tokens.stress_token}`, 'Content-Type': 'application/json' },
+                    headers: { Authorization: `Bearer ${activeToken}`, 'Content-Type': 'application/json' },
                     failOnStatusCode: false, timeout: 30_000,
                 }).catch(() => null);
                 if (r && r.ok()) { twofaEnabled = false; break; }
@@ -177,7 +181,7 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
                 for (let i = backupCodes.length - 1; i >= 0 && twofaEnabled; i--) {
                     const r = await ctx.post('/api/2fa/disable', {
                         data: { password, code: backupCodes[i] },
-                        headers: { Authorization: `Bearer ${tokens.stress_token}`, 'Content-Type': 'application/json' },
+                        headers: { Authorization: `Bearer ${activeToken}`, 'Content-Type': 'application/json' },
                         failOnStatusCode: false, timeout: 30_000,
                     }).catch(() => null);
                     if (r && r.ok()) { twofaEnabled = false; break; }
@@ -197,21 +201,45 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
         prefix = stressState.data_prefix;
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
 
-        const email = process.env.E2E_STRESS_ADMIN_EMAIL;
-        const password = process.env.E2E_STRESS_ADMIN_PASSWORD;
-        if (!email || !password) {
+        testEmail = `2fa-test-${Date.now()}@syroce.com`;
+        testPassword = 'AuthTestPass123!';
+
+        // Create a temporary user to avoid changing the shared admin's 2FA settings.
+        const createStaff = await request.post('/api/hotel/team', {
+            data: { email: testEmail, name: '2FA Test User', role: 'admin', password: testPassword },
+            headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
+            failOnStatusCode: false, timeout: 60_000,
+        });
+
+        if (!createStaff.ok()) {
             moduleBlocked = true;
-            blockedReason = 'no_stress_admin_credentials_in_env';
-            recFinding(testInfo, 'P2', MOD, 'E2E_STRESS_ADMIN_EMAIL/PASSWORD env yok',
-                '2FA lifecycle test edilemiyor; A-G skipped, H invariants bağımsız.');
+            blockedReason = `temp_user_creation_failed_${createStaff.status()}`;
+            recFinding(testInfo, 'P2', MOD, 'Temp user creation failed',
+                `status=${createStaff.status()} — A-G skipped.`);
             rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
                 note: `module_blocked=true reason=${blockedReason}` });
-            test.skip(true, 'E2E_STRESS_ADMIN_EMAIL/PASSWORD env missing');
+            test.skip(true, 'Temporary user creation failed');
             return;
         }
 
+        const login = await freshLogin(request, testEmail, testPassword);
+        if (!login.ok) {
+            moduleBlocked = true;
+            blockedReason = `login_non2xx_status_${login.status}`;
+            recFinding(testInfo, 'P2', MOD, 'Fresh login non-2xx',
+                `status=${login.status} — A-G skipped.`);
+            rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
+                note: `module_blocked=true reason=${blockedReason}` });
+            test.skip(true, 'Temporary user login failed');
+            return;
+        }
+        tempUserToken = login.body.access_token;
+
+        const email = testEmail;
+        const password = testPassword;
+
         // Module probe.
-        const probe = await callTimed(request, 'get', '/api/2fa/status', undefined, stressTokens.stress_token);
+        const probe = await callTimed(request, 'get', '/api/2fa/status', undefined, tempUserToken);
         if (probe.status === 403 || probe.status === 404 || probe.status === 0) {
             moduleBlocked = true;
             blockedReason = `status_probe_${probe.status}`;
@@ -260,7 +288,7 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
             test.skip(true, 'module blocked');
             return;
         }
-        const r = await callTimed(request, 'post', '/api/2fa/setup', {}, stressTokens.stress_token);
+        const r = await callTimed(request, 'post', '/api/2fa/setup', {}, tempUserToken);
         const okShape = r.ok && r.body && typeof r.body.secret === 'string' && r.body.secret.length >= 16
             && typeof r.body.otpauth_uri === 'string' && r.body.otpauth_uri.startsWith('otpauth://')
             && typeof r.body.qr_code === 'string' && r.body.qr_code.startsWith('data:image/');
@@ -276,7 +304,7 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
         }
         secret = r.body.secret;
         // status snapshot — pending_setup true beklenir, enabled false.
-        const after = await callTimed(request, 'get', '/api/2fa/status', undefined, stressTokens.stress_token);
+        const after = await callTimed(request, 'get', '/api/2fa/status', undefined, tempUserToken);
         const pendingOk = after.ok && after.body?.enabled === false && after.body?.pending_setup === true;
         if (!pendingOk) {
             recFinding(testInfo, 'P1', MOD, '/api/2fa/setup sonrası status pending_setup=true değil',
@@ -293,7 +321,7 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
             return;
         }
         // Wrong code rejection.
-        const bad = await callTimed(request, 'post', '/api/2fa/setup/confirm', { code: '000000' }, stressTokens.stress_token);
+        const bad = await callTimed(request, 'post', '/api/2fa/setup/confirm', { code: '000000' }, tempUserToken);
         const badRejected = bad.status === 400 || bad.status === 401;
         rec(testInfo, { module: MOD, step: 'confirm_wrong_code',
             status: badRejected ? 'PASS' : 'FAIL',
@@ -307,7 +335,7 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
         // Correct code → enrollment success.
         const code = currentTotp(secret);
         usedConfirmCode = code;
-        const ok = await callTimed(request, 'post', '/api/2fa/setup/confirm', { code }, stressTokens.stress_token);
+        const ok = await callTimed(request, 'post', '/api/2fa/setup/confirm', { code }, tempUserToken);
         const enrolled = ok.ok && ok.body?.enabled === true && Array.isArray(ok.body?.backup_codes) && ok.body.backup_codes.length >= 8;
         rec(testInfo, { module: MOD, step: 'confirm_correct_code',
             status: enrolled ? 'PASS' : 'FAIL',
@@ -560,7 +588,7 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
             return;
         }
         // Wrong code rejection.
-        const bad = await callTimed(request, 'post', '/api/2fa/regenerate-backup-codes', { code: '000000' }, stressTokens.stress_token);
+        const bad = await callTimed(request, 'post', '/api/2fa/regenerate-backup-codes', { code: '000000' }, tempUserToken);
         const badRejected = bad.status === 401 || bad.status === 400;
         rec(testInfo, { module: MOD, step: 'regen_wrong_code',
             status: badRejected ? 'PASS' : 'FAIL',
@@ -585,7 +613,7 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
             waitGuard += 1;
         }
         usedTotpCodes.add(code);
-        const ok = await callTimed(request, 'post', '/api/2fa/regenerate-backup-codes', { code }, stressTokens.stress_token);
+        const ok = await callTimed(request, 'post', '/api/2fa/regenerate-backup-codes', { code }, tempUserToken);
         const regenOk = ok.ok && Array.isArray(ok.body?.backup_codes) && ok.body.backup_codes.length >= 8;
         rec(testInfo, { module: MOD, step: 'regen_correct_code',
             status: regenOk ? 'PASS' : 'FAIL',
@@ -599,7 +627,7 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
             backupCodes = ok.body.backup_codes;
         }
         // Same-window TOTP replay: replay the SAME code immediately → must be rejected.
-        const replay = await callTimed(request, 'post', '/api/2fa/regenerate-backup-codes', { code }, stressTokens.stress_token);
+        const replay = await callTimed(request, 'post', '/api/2fa/regenerate-backup-codes', { code }, tempUserToken);
         const replayRejected = !replay.ok;
         rec(testInfo, { module: MOD, step: 'regen_same_window_replay',
             status: replayRejected ? 'PASS' : 'FAIL',
@@ -621,7 +649,7 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
             return;
         }
         // Policy is a public-shape read; ensure stress bearer can fetch it.
-        const pol = await callTimed(request, 'get', '/api/2fa/policy', undefined, stressTokens.stress_token);
+        const pol = await callTimed(request, 'get', '/api/2fa/policy', undefined, tempUserToken);
         rec(testInfo, { module: MOD, step: 'policy_get',
             status: pol.ok ? 'PASS' : 'REVIEW',
             endpoint: 'GET /api/2fa/policy', http: pol.status,
@@ -655,7 +683,7 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
         //
         // Doğrulama: pilot çağrılarından SONRA stress user'ın status'u
         // değişmemiş olmalı (enabled=true, backup_count >= regen sonrası).
-        const stressStatusBefore = await callTimed(request, 'get', '/api/2fa/status', undefined, stressTokens.stress_token);
+        const stressStatusBefore = await callTimed(request, 'get', '/api/2fa/status', undefined, tempUserToken);
         const enabledBefore = stressStatusBefore.body?.enabled;
         const backupBefore = stressStatusBefore.body?.backup_codes_remaining;
 
@@ -668,7 +696,7 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
         const pilotRegen = await callTimed(request, 'post', '/api/2fa/regenerate-backup-codes',
             { code: '000000' }, stressTokens.pilot_token);
 
-        const stressStatusAfter = await callTimed(request, 'get', '/api/2fa/status', undefined, stressTokens.stress_token);
+        const stressStatusAfter = await callTimed(request, 'get', '/api/2fa/status', undefined, tempUserToken);
         const enabledAfter = stressStatusAfter.body?.enabled;
         const backupAfter = stressStatusAfter.body?.backup_codes_remaining;
         const stressUnchanged = enabledBefore === enabledAfter && backupBefore === backupAfter;
@@ -705,7 +733,7 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
             await new Promise((res) => setTimeout(res, Math.max(0, (next - now) * 1000) + 1500));
             const code = currentTotp(secret);
             const r = await callTimed(request, 'post', '/api/2fa/disable',
-                { password, code }, stressTokens.stress_token);
+                { password, code }, tempUserToken);
             if (r.ok) {
                 twofaEnabled = false;
                 rec(testInfo, { module: MOD, step: 'disable_cleanup',

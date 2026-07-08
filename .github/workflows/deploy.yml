@@ -50,6 +50,8 @@ jobs:
         with:
           context: ./backend
           push: true
+          build-args: |
+            COMMIT_SHA=${{ github.sha }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:latest
@@ -63,6 +65,7 @@ jobs:
           push: true
           build-args: |
             VITE_BACKEND_URL=${{ secrets.VITE_BACKEND_URL }}
+            VITE_COMMIT_SHA=${{ github.sha }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:latest

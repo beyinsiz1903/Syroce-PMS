@@ -207,12 +207,18 @@ async def ensure_performance_indexes():
         #     yarışında upsert ÇİFT çağrı üretemez (kaybeden DuplicateKeyError alır,
         #     mevcut çağrıyı okur). Race-free garanti için unique.
         ("contact_center_calls", [("tenant_id", 1), ("provider_call_sid", 1)], "ux_cc_calls_provider_sid", {"unique": True, "partialFilterExpression": {"provider_call_sid": {"$type": "string"}}}),
+        ("contact_center_calls", [("tenant_id", 1), ("agent_id", 1), ("call_attempt_id", 1)], "ux_cc_calls_attempt_id", {"unique": True, "partialFilterExpression": {"call_attempt_id": {"$type": "string"}}}),
         #   - contact_center_calls (tenant_id, started_at desc): çağrı listesi ucu
         #     başlangıca göre azalan sıralar.
         ("contact_center_calls", [("tenant_id", 1), ("started_at", -1)], "idx_cc_calls_tenant_started", {}),
         #   - contact_center_voice_numbers (to_number): public inbound webhook'ta
         #     çağrılan numaradan kiracıyı sunucu-tarafı eşler (istemci tenant geçemez).
         ("contact_center_voice_numbers", [("to_number", 1)], "ux_cc_voice_number", {"unique": True}),
+        ("contact_center_queues", [("tenant_id", 1), ("id", 1)], "tenant_id_1_id_1", {}),
+        ("contact_center_agent_states", [("tenant_id", 1), ("agent_id", 1), ("started_at", -1)], "idx_agent_states_query", {}),
+        # Phase 3 — Dispositions & Callbacks
+        ("contact_center_dispositions", [("tenant_id", 1), ("call_id", 1)], "ux_cc_dispositions_call_id", {"unique": True}),
+        ("contact_center_callbacks", [("tenant_id", 1), ("status", 1), ("priority", -1)], "idx_cc_callbacks_query", {}),
         # Task #647 — Legacy messaging recipient PII at-rest sealing.
         #   - messaging_consents (tenant_id, recipient_hash, channel):
         #     consent opt-out enforcement now looks the recipient up by its HMAC
@@ -407,6 +413,36 @@ async def ensure_performance_indexes():
             {"unique": True, "partialFilterExpression": {"agency_external_active": {"$type": "string"}}},
         ),
     ]
+    # ── Migration Cleanup for contact_center_calls ──
+    try:
+        # 1. Unset empty/invalid call_attempt_id values so they don't enter the unique partial filter
+        await _raw_db["contact_center_calls"].update_many(
+            {"call_attempt_id": ""},
+            {"$unset": {"call_attempt_id": ""}}
+        )
+
+        # 2. Find and remove duplicate (tenant_id, agent_id, call_attempt_id) combinations
+        pipeline = [
+            {"$match": {"call_attempt_id": {"$type": "string"}}},
+            {"$group": {
+                "_id": {
+                    "tenant_id": "$tenant_id",
+                    "agent_id": "$agent_id",
+                    "call_attempt_id": "$call_attempt_id"
+                },
+                "count": {"$sum": 1},
+                "ids": {"$push": "$_id"}
+            }},
+            {"$match": {"count": {"$gt": 1}}}
+        ]
+        async for group in _raw_db["contact_center_calls"].aggregate(pipeline):
+            # Keep the first document, delete the rest
+            ids_to_delete = group["ids"][1:]
+            logger.warning(f"Removing duplicate call documents in migration: {ids_to_delete}")
+            await _raw_db["contact_center_calls"].delete_many({"_id": {"$in": ids_to_delete}})
+    except Exception as e:
+        logger.warning(f"Failed to run contact_center_calls migration cleanup: {e}")
+
     for coll_name, keys, name, kwargs in indexes:
         try:
             await _raw_db[coll_name].create_index(keys, name=name, background=True, **kwargs)
@@ -415,3 +451,14 @@ async def ensure_performance_indexes():
                 pass
             else:
                 logger.warning(f"Index {name} on {coll_name} failed: {e}")
+
+    # ── Startup Assertion: verify unique index exists ──
+    try:
+        indexes_in_db = await _raw_db["contact_center_calls"].index_information()
+        if "ux_cc_calls_attempt_id" not in indexes_in_db:
+            raise AssertionError("Startup failed: Unique index 'ux_cc_calls_attempt_id' on 'contact_center_calls' is missing!")
+    except AssertionError:
+        raise
+    except Exception as e:
+        logger.warning(f"Failed to verify index existence: {e}")
+
