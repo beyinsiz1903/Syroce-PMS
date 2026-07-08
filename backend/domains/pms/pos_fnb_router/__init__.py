@@ -17,3 +17,9 @@ router.include_router(_marketplace_r)
 router.include_router(_pos_core_r)
 router.include_router(_fnb_reports_r)
 router.include_router(_pos_mobile_r)
+from .guest_menu import router as _guest_menu_r
+
+router.include_router(_guest_menu_r)
+from .reservations import router as _reservations_r
+
+router.include_router(_reservations_r)
