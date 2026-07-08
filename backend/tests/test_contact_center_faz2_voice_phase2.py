@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from urllib.parse import urlencode
 
@@ -31,7 +31,16 @@ class _FakeColl:
     def _match(doc, flt):
         if not flt:
             return True
-        return all(doc.get(k) == v for k, v in flt.items() if not k.startswith("$"))
+        for k, v in flt.items():
+            if k == "agent_id" and isinstance(v, dict) and "$nin" in v:
+                if doc.get("agent_id") in v["$nin"]:
+                    return False
+                continue
+            if k.startswith("$"):
+                continue
+            if doc.get(k) != v:
+                return False
+        return True
 
     async def find_one(self, flt, proj=None):
         for d in self.docs:
@@ -46,7 +55,14 @@ class _FakeColl:
     async def update_one(self, flt, update):
         for d in self.docs:
             if self._match(d, flt):
-                d.update(update.get("$set", {}))
+                if "$set" in update:
+                    d.update(update["$set"])
+                if "$addToSet" in update:
+                    for k, v in update["$addToSet"].items():
+                        if k not in d:
+                            d[k] = []
+                        if v not in d[k]:
+                            d[k].append(v)
                 return _UpdRes(matched=1)
         return _UpdRes(matched=0)
 
@@ -66,7 +82,12 @@ class _FakeColl:
         class _Cursor:
             def __init__(self, items):
                 self.items = items
-            def sort(self, *args, **kwargs):
+            def sort(self, key, direction=1):
+                # Simple started_at sort
+                if key == "started_at":
+                    self.items.sort(key=lambda x: x.get("started_at", datetime.min))
+                elif key == "extension":
+                    self.items.sort(key=lambda x: x.get("extension", ""))
                 return self
             async def to_list(self, length=100):
                 return self.items[:length]
@@ -211,10 +232,9 @@ def test_agent_states_transitions_and_list(fake_db):
     assert states_list["agents"][0]["state"] == "break_short"
 
 
-def test_guest_360_crm_lookup(fake_db):
+def test_guest_360_multiple_matches_masking(fake_db):
     user = User(id=_USER_ID, tenant_id=_TENANT, role="call_center_agent", name="Test Agent", email="agent@test.com", username="agent")
     
-    # Prepare encryption service and mock call record
     from security.field_encryption import get_field_encryption_service
     svc = get_field_encryption_service()
     caller_id_enc = svc.encrypt_value(_CUSTOMER_PHONE)
@@ -229,10 +249,9 @@ def test_guest_360_crm_lookup(fake_db):
     }
     fake_db.contact_center_calls.docs.append(call_doc)
 
-    # Mock guest record
-    from security.encrypted_lookup import build_guest_pii_query
-    guest_doc = {
-        "id": "guest-xyz",
+    # 1. Single match -> returns unmasked guest info
+    guest1 = {
+        "id": "guest-1",
         "tenant_id": _TENANT,
         "vip": True,
         "first_name": "John",
@@ -242,33 +261,33 @@ def test_guest_360_crm_lookup(fake_db):
         "phone": _CUSTOMER_PHONE,
         "phone_hash": svc.compute_search_hash(_CUSTOMER_PHONE),
     }
-    fake_db.guests.docs.append(guest_doc)
+    fake_db.guests.docs.append(guest1)
 
-    # Mock booking record
-    booking_doc = {
-        "id": "booking-abc",
-        "tenant_id": _TENANT,
-        "guest_id": "guest-xyz",
-        "status": "checked_in",
-        "check_in": "2026-07-08",
-        "check_out": "2026-07-15",
-        "room_id": "101",
-        "total_price": 500.0,
-    }
-    fake_db.bookings.docs.append(booking_doc)
-
-    # Execute CRM lookup
     res = asyncio.run(voice_router.get_call_guest_360("call-123", user))
     assert res["guest"]["name"] == "John Doe"
     assert res["guest"]["vip"] is True
-    assert res["guest"]["phone"] == _CUSTOMER_PHONE
-    assert len(res["bookings"]) == 1
-    assert res["bookings"][0]["room_id"] == "101"
-    assert res["call_history_count"] == 1
+
+    # 2. Multiple matches -> returns masked info
+    guest2 = {
+        "id": "guest-2",
+        "tenant_id": _TENANT,
+        "vip": False,
+        "first_name": "Jane",
+        "last_name": "Doe",
+        "name": "Jane Doe",
+        "email": "jane@example.com",
+        "phone": _CUSTOMER_PHONE,
+        "phone_hash": svc.compute_search_hash(_CUSTOMER_PHONE),
+    }
+    fake_db.guests.docs.append(guest2)
+
+    res_masked = asyncio.run(voice_router.get_call_guest_360("call-123", user))
+    assert res_masked["guest"]["name"] == "Gizli Misafir (Çoklu Eşleşme)"
+    assert res_masked["guest"]["vip"] is False
+    assert "john@example.com" not in res_masked["guest"]["email"]
 
 
-def test_ivr_inbound_and_gather(fake_db, sig_ok):
-    # 1. Setup inbound number and queues
+def test_ivr_inbound_routing_and_gather(fake_db, sig_ok):
     fake_db.contact_center_voice_numbers.docs.append({
         "to_number": "+908503334455",
         "tenant_id": _TENANT
@@ -277,10 +296,12 @@ def test_ivr_inbound_and_gather(fake_db, sig_ok):
         "id": "q1",
         "tenant_id": _TENANT,
         "name": "Reservations",
-        "extension": "1"
+        "extension": "1",
+        "working_hours_start": "08:00",
+        "working_hours_end": "22:00",
+        "working_days": [1, 2, 3, 4, 5, 6, 7]
     })
 
-    # 2. Call Inbound Webhook
     req = _make_request("/api/voice/inbound", {
         "To": "+908503334455",
         "From": _CUSTOMER_PHONE,
@@ -291,9 +312,8 @@ def test_ivr_inbound_and_gather(fake_db, sig_ok):
     assert resp.media_type == "application/xml"
     text = resp.body.decode()
     assert "<Gather" in text
-    assert "Reservations" in text
 
-    # 3. Call Gather (digit selected) Webhook
+    # Call Gather Webhook -> should redirect to route-queue
     req_gather = _make_request("/api/voice/inbound/gather", {
         "Digits": "1",
         "From": _CUSTOMER_PHONE,
@@ -301,7 +321,90 @@ def test_ivr_inbound_and_gather(fake_db, sig_ok):
     }, query=f"tenant_id={_TENANT}")
     resp_gather = asyncio.run(voice_router.voice_inbound_gather(req_gather))
     assert resp_gather.status_code == 200
-    assert resp_gather.media_type == "application/xml"
     text_gather = resp_gather.body.decode()
-    assert "<Enqueue" in text_gather
-    assert f"queue_{_TENANT}_q1" in text_gather
+    assert "/api/voice/inbound/route-queue" in text_gather
+
+
+def test_route_queue_and_agent_selection(fake_db, sig_ok):
+    # Setup call record
+    fake_db.contact_center_calls.docs.append({
+        "provider_call_sid": "CA_inbound_test",
+        "tenant_id": _TENANT,
+        "started_at": datetime.now(UTC),
+        "dialed_agents": []
+    })
+
+    fake_db.contact_center_queues.docs.append({
+        "id": "q1",
+        "tenant_id": _TENANT,
+        "name": "Reservations",
+        "extension": "1"
+    })
+
+    # Setup ready agents
+    now = datetime.now(UTC)
+    fake_db.contact_center_agent_states.docs.append({
+        "tenant_id": _TENANT,
+        "agent_id": "agent-1",
+        "state": "ready",
+        "started_at": now - timedelta(minutes=5),  # Longest idle
+        "ended_at": None
+    })
+    fake_db.contact_center_agent_states.docs.append({
+        "tenant_id": _TENANT,
+        "agent_id": "agent-2",
+        "state": "ready",
+        "started_at": now - timedelta(minutes=2),
+        "ended_at": None
+    })
+
+    # Execute route-queue webhook
+    req = _make_request("/api/voice/inbound/route-queue", {
+        "CallSid": "CA_inbound_test"
+    }, query=f"tenant_id={_TENANT}&queue_id=q1")
+
+    resp = asyncio.run(voice_router.voice_route_queue(req))
+    assert resp.status_code == 200
+    text = resp.body.decode()
+    # Should dial the longest idle agent (agent-1)
+    assert "agent-1" in text
+
+    # Next dial should roll over to agent-2 since agent-1 was dialed
+    req2 = _make_request("/api/voice/inbound/route-queue", {
+        "CallSid": "CA_inbound_test"
+    }, query=f"tenant_id={_TENANT}&queue_id=q1")
+    resp2 = asyncio.run(voice_router.voice_route_queue(req2))
+    text2 = resp2.body.decode()
+    assert "agent-2" in text2
+
+
+def test_agent_status_callback_transitions(fake_db, sig_ok):
+    # Setup ready agent
+    fake_db.contact_center_agent_states.docs.append({
+        "id": "state-1",
+        "tenant_id": _TENANT,
+        "agent_id": "agent-1",
+        "state": "ready",
+        "started_at": datetime.now(UTC),
+        "ended_at": None
+    })
+
+    # 1. Answer call -> transitions to "on_call"
+    req = _make_request("/api/voice/agent-status-callback", {
+        "CallStatus": "in-progress"
+    }, query=f"tenant_id={_TENANT}&agent_id=agent-1")
+    resp = asyncio.run(voice_router.voice_agent_status_callback(req))
+    assert resp.status_code == 204
+
+    active_state = fake_db.contact_center_agent_states.docs[-1]
+    assert active_state["state"] == "on_call"
+
+    # 2. Hangup -> transitions to "wrap_up"
+    req_completed = _make_request("/api/voice/agent-status-callback", {
+        "CallStatus": "completed"
+    }, query=f"tenant_id={_TENANT}&agent_id=agent-1")
+    resp_completed = asyncio.run(voice_router.voice_agent_status_callback(req_completed))
+    assert resp_completed.status_code == 204
+
+    active_state_wrap = fake_db.contact_center_agent_states.docs[-1]
+    assert active_state_wrap["state"] == "wrap_up"

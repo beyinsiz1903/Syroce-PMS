@@ -15,6 +15,7 @@ fail-closed ``not_configured`` döner; sahte token/yeşil YOK.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -22,7 +23,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from pymongo.errors import DuplicateKeyError
 
 from core.database import db
@@ -1492,3 +1493,691 @@ async def whatsapp_status(request: Request):
         )
 
     return Response(status_code=204)
+
+
+# ── Contact Center Phase 2 - IVR, Queues, Agent States, Guest 360 ──
+
+class QueueConfigCreate(BaseModel):
+    name: str
+    extension: str
+    priority: int = 1
+    queue_timeout_seconds: int = 300
+    max_wait_limit: int = 10
+    waiting_music_url: str | None = None
+    fallback_target: str | None = None
+    working_hours_start: str | None = None  # e.g. "08:00"
+    working_hours_end: str | None = None  # e.g. "18:00"
+    working_days: list[int] | None = None  # e.g. [1, 2, 3, 4, 5]
+    holiday_redirect_phone: str | None = None
+
+
+class QueueConfigUpdate(BaseModel):
+    name: str | None = None
+    extension: str | None = None
+    priority: int | None = None
+    queue_timeout_seconds: int | None = None
+    max_wait_limit: int | None = None
+    waiting_music_url: str | None = None
+    fallback_target: str | None = None
+    working_hours_start: str | None = None
+    working_hours_end: str | None = None
+    working_days: list[int] | None = None
+    holiday_redirect_phone: str | None = None
+
+
+class AgentStateUpdate(BaseModel):
+    state: str
+
+    @field_validator("state")
+    @classmethod
+    def validate_state(cls, v):
+        allowed = {"ready", "break_short", "break_meal", "meeting", "training", "wrap_up", "offline"}
+        if v not in allowed:
+            raise ValueError(f"State must be one of {allowed}")
+        return v
+
+
+def _dec(svc, val: str | None) -> str | None:
+    if not val:
+        return None
+    try:
+        return svc.decrypt_value(val)
+    except Exception:
+        return "[şifreli veri]"
+
+
+@router.post("/contact-center/queues", status_code=201)
+async def create_queue(
+    payload: QueueConfigCreate,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    existing = await db.contact_center_queues.find_one({
+        "tenant_id": current_user.tenant_id,
+        "extension": payload.extension
+    })
+    if existing:
+        raise HTTPException(status_code=409, detail="Bu dahili numara zaten kullanılıyor.")
+
+    doc = {
+        "id": str(uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "name": payload.name,
+        "extension": payload.extension,
+        "priority": payload.priority,
+        "queue_timeout_seconds": payload.queue_timeout_seconds,
+        "max_wait_limit": payload.max_wait_limit,
+        "waiting_music_url": payload.waiting_music_url,
+        "fallback_target": payload.fallback_target,
+        "working_hours_start": payload.working_hours_start,
+        "working_hours_end": payload.working_hours_end,
+        "working_days": payload.working_days,
+        "holiday_redirect_phone": payload.holiday_redirect_phone,
+        "created_at": datetime.now(UTC),
+        "updated_at": datetime.now(UTC),
+    }
+    await db.contact_center_queues.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@router.get("/contact-center/queues")
+async def list_queues(
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    cursor = db.contact_center_queues.find({"tenant_id": current_user.tenant_id})
+    docs = await cursor.to_list(length=100)
+    for d in docs:
+        d.pop("_id", None)
+    return {"queues": docs}
+
+
+@router.get("/contact-center/queues/{queue_id}")
+async def get_queue(
+    queue_id: str,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    doc = await db.contact_center_queues.find_one({"id": queue_id, "tenant_id": current_user.tenant_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Kuyruk bulunamadı.")
+    doc.pop("_id", None)
+    return doc
+
+
+@router.put("/contact-center/queues/{queue_id}")
+async def update_queue(
+    queue_id: str,
+    payload: QueueConfigUpdate,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    doc = await db.contact_center_queues.find_one({"id": queue_id, "tenant_id": current_user.tenant_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Kuyruk bulunamadı.")
+
+    payload_dict = payload.model_dump(exclude_unset=True)
+    if not payload_dict:
+        doc.pop("_id", None)
+        return doc
+
+    if "extension" in payload_dict and payload_dict["extension"] != doc["extension"]:
+        existing = await db.contact_center_queues.find_one({
+            "tenant_id": current_user.tenant_id,
+            "extension": payload_dict["extension"]
+        })
+        if existing:
+            raise HTTPException(status_code=409, detail="Bu dahili numara zaten kullanılıyor.")
+
+    update_fields = {k: v for k, v in payload_dict.items()}
+    update_fields["updated_at"] = datetime.now(UTC)
+
+    await db.contact_center_queues.update_one(
+        {"id": queue_id, "tenant_id": current_user.tenant_id},
+        {"$set": update_fields}
+    )
+
+    updated_doc = await db.contact_center_queues.find_one({"id": queue_id, "tenant_id": current_user.tenant_id})
+    updated_doc.pop("_id", None)
+    return updated_doc
+
+
+@router.delete("/contact-center/queues/{queue_id}", status_code=204)
+async def delete_queue(
+    queue_id: str,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    res = await db.contact_center_queues.delete_one({"id": queue_id, "tenant_id": current_user.tenant_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Kuyruk bulunamadı.")
+    return Response(status_code=204)
+
+
+async def set_agent_presence_state(tenant_id: str, agent_id: str, state_name: str) -> dict:
+    now = datetime.now(UTC)
+    last_active = await db.contact_center_agent_states.find_one({
+        "tenant_id": tenant_id,
+        "agent_id": agent_id,
+        "ended_at": None
+    })
+    if last_active:
+        if last_active["state"] == state_name:
+            return last_active
+        duration = int((now - last_active["started_at"]).total_seconds())
+        await db.contact_center_agent_states.update_one(
+            {"id": last_active["id"]},
+            {"$set": {"ended_at": now, "duration_seconds": duration}}
+        )
+
+    doc = {
+        "id": str(uuid4()),
+        "tenant_id": tenant_id,
+        "agent_id": agent_id,
+        "state": state_name,
+        "duration_seconds": 0,
+        "started_at": now,
+        "ended_at": None
+    }
+    await db.contact_center_agent_states.insert_one(doc)
+
+    try:
+        from core.ws_rooms import tenant_broadcast_room
+        from websocket_server import sio
+        await sio.emit(
+            "contact_center:agent_state_update",
+            {
+                "agent_id": agent_id,
+                "state": state_name,
+            },
+            room=tenant_broadcast_room(tenant_id),
+        )
+    except Exception:
+        pass
+
+    return doc
+
+
+async def _delayed_wrap_up_expiration(tenant_id: str, agent_id: str) -> None:
+    await asyncio.sleep(15)
+    doc = await db.contact_center_agent_states.find_one({
+        "tenant_id": tenant_id,
+        "agent_id": agent_id,
+        "ended_at": None
+    })
+    if doc and doc.get("state") == "wrap_up":
+        await set_agent_presence_state(tenant_id, agent_id, "ready")
+
+
+@router.post("/contact-center/agents/states")
+async def update_agent_state(
+    payload: AgentStateUpdate,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+):
+    doc = await set_agent_presence_state(current_user.tenant_id, current_user.id, payload.state)
+    res = dict(doc)
+    res.pop("_id", None)
+    return res
+
+
+@router.get("/contact-center/agents/my-state")
+async def get_my_state(
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+):
+    state_doc = await db.contact_center_agent_states.find_one({
+        "tenant_id": current_user.tenant_id,
+        "agent_id": current_user.id,
+        "ended_at": None
+    })
+    if not state_doc:
+        return {"state": "offline", "duration_seconds": 0, "started_at": None}
+
+    now = datetime.now(UTC)
+    duration = int((now - state_doc["started_at"]).total_seconds())
+    return {
+        "state": state_doc["state"],
+        "duration_seconds": duration,
+        "started_at": state_doc["started_at"]
+    }
+
+
+@router.get("/contact-center/agents/states")
+async def list_agents_states(
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    pipeline = [
+        {"$match": {"tenant_id": current_user.tenant_id, "ended_at": None}},
+        {"$lookup": {
+            "from": "users",
+            "localField": "agent_id",
+            "foreignField": "id",
+            "as": "user_info"
+        }},
+        {"$unwind": "$user_info"},
+        {"$project": {
+            "_id": 0,
+            "agent_id": 1,
+            "state": 1,
+            "started_at": 1,
+            "agent_name": "$user_info.name",
+            "agent_username": "$user_info.username"
+        }}
+    ]
+    cursor = db.contact_center_agent_states.aggregate(pipeline)
+    items = await cursor.to_list(length=100)
+    now = datetime.now(UTC)
+    for item in items:
+        item["duration_seconds"] = int((now - item["started_at"]).total_seconds())
+    return {"agents": items}
+
+
+@router.get("/contact-center/calls/{call_id}/guest-360")
+async def get_call_guest_360(
+    call_id: str,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+):
+    call_doc = await db.contact_center_calls.find_one({
+        "id": call_id,
+        "tenant_id": current_user.tenant_id
+    })
+    if not call_doc:
+        call_doc = await db.contact_center_calls.find_one({
+            "provider_call_sid": call_id,
+            "tenant_id": current_user.tenant_id
+        })
+    if not call_doc:
+        raise HTTPException(status_code=404, detail="Çağrı bulunamadı.")
+
+    svc = get_field_encryption_service()
+    phone = _dec(svc, call_doc.get("caller_id_enc"))
+    if not phone:
+        return {
+            "guest": None,
+            "bookings": [],
+            "call_history_count": 0
+        }
+
+    from security.encrypted_lookup import build_guest_pii_query, decrypt_guest_doc
+    cursor = db.guests.find({
+        "tenant_id": current_user.tenant_id,
+        **build_guest_pii_query("phone", phone)
+    })
+    guest_docs = await cursor.to_list(length=10)
+
+    guest_info = None
+    bookings_info = []
+    if guest_docs:
+        if len(guest_docs) > 1:
+            guest_info = {
+                "id": "masked",
+                "name": "Gizli Misafir (Çoklu Eşleşme)",
+                "vip": False,
+                "email": "masked@masked.com",
+                "phone": phone[:3] + "*****" + phone[-4:] if len(phone) >= 7 else "*****",
+            }
+        else:
+            guest_doc = decrypt_guest_doc(guest_docs[0])
+            guest_info = {
+                "id": guest_doc.get("id"),
+                "name": guest_doc.get("name") or f"{guest_doc.get('first_name', '')} {guest_doc.get('last_name', '')}".strip(),
+                "vip": guest_doc.get("vip", False),
+                "email": guest_doc.get("email"),
+                "phone": phone,
+            }
+
+            bookings_cursor = db.bookings.find({
+                "tenant_id": current_user.tenant_id,
+                "guest_id": guest_doc["id"]
+            }).sort("check_in", -1)
+            bookings = await bookings_cursor.to_list(length=10)
+            for b in bookings:
+                bookings_info.append({
+                    "id": b.get("id"),
+                    "status": b.get("status"),
+                    "check_in": b.get("check_in"),
+                    "check_out": b.get("check_out"),
+                    "room_id": b.get("room_id"),
+                    "total_price": b.get("total_price"),
+                })
+
+    call_history_count = await db.contact_center_calls.count_documents({
+        "tenant_id": current_user.tenant_id,
+        "caller_id_hash": call_doc.get("caller_id_hash")
+    })
+
+    return {
+        "guest": guest_info or {
+            "name": "Bilinmeyen Misafir",
+            "vip": False,
+            "phone": phone,
+            "email": None,
+        },
+        "bookings": bookings_info,
+        "call_history_count": call_history_count
+    }
+
+
+@public_router.post("/inbound")
+async def voice_inbound(request: Request):
+    """Twilio incoming call webhook: Gelen çağrıyı karşılar ve IVR menüsünü sunar."""
+    form = await request.form()
+    provider = TwilioVoiceProvider()
+    if not provider.validate_signature(
+        url=_public_url(request),
+        params=form,
+        signature=request.headers.get("X-Twilio-Signature", ""),
+        request=request,
+    ):
+        return Response(status_code=403)
+
+    to_num = form.get("To") or ""
+    tenant_id = await _resolve_tenant_id(request, to_num)
+    if not tenant_id:
+        return Response(content=provider.say_fallback("Hata: Otel bulunamadı."), media_type=_XML)
+
+    tz_doc = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "timezone": 1}) or {}
+    tz_name = tz_doc.get("timezone") or "Europe/Istanbul"
+    import zoneinfo
+    try:
+        tz = zoneinfo.ZoneInfo(tz_name)
+    except Exception:
+        tz = zoneinfo.ZoneInfo("Europe/Istanbul")
+
+    now = datetime.now(tz)
+    current_time_str = now.strftime("%H:%M")
+    current_day = now.isoweekday()
+
+    import holidays
+    tr_holidays = holidays.Turkey(years=[now.year])
+    is_holiday = now.date() in tr_holidays
+
+    first_queue = await db.contact_center_queues.find_one({"tenant_id": tenant_id})
+    if first_queue:
+        wh_start = first_queue.get("working_hours_start")
+        wh_end = first_queue.get("working_hours_end")
+        wh_days = first_queue.get("working_days")
+
+        is_working_day = current_day in wh_days if wh_days else True
+        is_working_hour = True
+        if wh_start and wh_end:
+            is_working_hour = wh_start <= current_time_str <= wh_end
+
+        if not is_working_day or not is_working_hour or is_holiday:
+            redirect_phone = first_queue.get("holiday_redirect_phone")
+            if redirect_phone:
+                twiml = f'<?xml version="1.0" encoding="UTF-8"?><Response><Say language="tr-TR">Çalışma saatleri dışındayız veya resmi tatildir. Nöbetçi hattımıza aktarılıyorsunuz.</Say><Dial>{redirect_phone}</Dial></Response>'
+                return Response(content=twiml, media_type=_XML)
+            else:
+                twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Say language="tr-TR">Çalışma saatleri dışındayız veya resmi tatildir. Lütfen mesai saatleri içinde tekrar arayınız.</Say><Hangup/></Response>'
+                return Response(content=twiml, media_type=_XML)
+
+    cursor = db.contact_center_queues.find({"tenant_id": tenant_id}).sort("extension", 1)
+    queues = await cursor.to_list(length=10)
+
+    if not queues:
+        twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Say language="tr-TR">Müşteri temsilcisine bağlanıyorsunuz.</Say><Enqueue>OperatorQueue</Enqueue></Response>'
+        return Response(content=twiml, media_type=_XML)
+
+    menu_parts = []
+    for q in queues:
+        menu_parts.append(f"{q['name']} için lütfen {q['extension']}'i tuşlayınız.")
+
+    menu_text = "Hoş geldiniz. " + " ".join(menu_parts)
+    gather_url = f"/api/voice/inbound/gather?tenant_id={tenant_id}"
+
+    twiml = (
+        f'<?xml version="1.0" encoding="UTF-8"?>'
+        f'<Response>'
+        f'<Gather action="{gather_url}" numDigits="1" timeout="5" language="tr-TR">'
+        f'<Say language="tr-TR">{menu_text}</Say>'
+        f'</Gather>'
+        f'<Say language="tr-TR">Herhangi bir tuşlama yapmadınız. Tekrar dinlemek için bekleyiniz.</Say>'
+        f'<Redirect>/api/voice/inbound?tenant_id={tenant_id}</Redirect>'
+        f'</Response>'
+    )
+    return Response(content=twiml, media_type=_XML)
+
+
+@public_router.post("/inbound/gather")
+async def voice_inbound_gather(request: Request):
+    """IVR tuşlamasını alır ve kuyruğa aktarır."""
+    form = await request.form()
+    provider = TwilioVoiceProvider()
+    if not provider.validate_signature(
+        url=_public_url(request),
+        params=form,
+        signature=request.headers.get("X-Twilio-Signature", ""),
+        request=request,
+    ):
+        return Response(status_code=403)
+
+    tenant_id = request.query_params.get("tenant_id")
+    digits = form.get("Digits") or ""
+
+    if not tenant_id:
+        return Response(content=provider.say_fallback("Hata: Geçersiz istek."), media_type=_XML)
+
+    queue = await db.contact_center_queues.find_one({
+        "tenant_id": tenant_id,
+        "extension": digits
+    })
+
+    if not queue:
+        twiml = (
+            f'<?xml version="1.0" encoding="UTF-8"?>'
+            f'<Response>'
+            f'<Say language="tr-TR">Geçersiz bir tuşlama yaptınız.</Say>'
+            f'<Redirect>/api/voice/inbound?tenant_id={tenant_id}</Redirect>'
+            f'</Response>'
+        )
+        return Response(content=twiml, media_type=_XML)
+
+    call_sid = form.get("CallSid") or ""
+    from_phone = form.get("From") or ""
+
+    await record_inbound_call(
+        db,
+        tenant_id=tenant_id,
+        provider_call_sid=call_sid,
+        from_phone=from_phone,
+    )
+
+    try:
+        from core.ws_rooms import tenant_broadcast_room
+        from websocket_server import sio
+        await sio.emit(
+            "contact_center:incoming_call",
+            {
+                "tenant_id": tenant_id,
+                "call_id": call_sid,
+                "from": from_phone,
+            },
+            room=tenant_broadcast_room(tenant_id),
+        )
+    except Exception as e:
+        logger.warning(f"Failed to emit socket event for incoming call: {e}")
+
+    route_url = f"/api/voice/inbound/route-queue?tenant_id={tenant_id}&queue_id={queue['id']}"
+    twiml = (
+        f'<?xml version="1.0" encoding="UTF-8"?>'
+        f'<Response>'
+        f'<Redirect>{route_url}</Redirect>'
+        f'</Response>'
+    )
+    return Response(content=twiml, media_type=_XML)
+
+
+@public_router.post("/inbound/route-queue")
+async def voice_route_queue(request: Request):
+    """Sıradaki uygun ajanı (en uzun süredir ready olan) seçer ve arar."""
+    form = await request.form()
+    provider = TwilioVoiceProvider()
+    if not provider.validate_signature(
+        url=_public_url(request),
+        params=form,
+        signature=request.headers.get("X-Twilio-Signature", ""),
+        request=request,
+    ):
+        return Response(status_code=403)
+
+    tenant_id = request.query_params.get("tenant_id")
+    queue_id = request.query_params.get("queue_id")
+    call_sid = form.get("CallSid") or ""
+
+    if not tenant_id or not queue_id:
+        return Response(content=provider.say_fallback("Hata: Geçersiz kuyruk parametreleri."), media_type=_XML)
+
+    # 1. Fetch queue configuration
+    queue = await db.contact_center_queues.find_one({"id": queue_id, "tenant_id": tenant_id})
+    if not queue:
+        return Response(content=provider.say_fallback("Hata: Kuyruk bulunamadı."), media_type=_XML)
+
+    # 2. Check maximum wait timeout
+    call_doc = await db.contact_center_calls.find_one({"provider_call_sid": call_sid, "tenant_id": tenant_id})
+    if call_doc and call_doc.get("started_at"):
+        from datetime import datetime, UTC
+        elapsed = (datetime.now(UTC) - call_doc["started_at"]).total_seconds()
+        timeout_limit = queue.get("queue_timeout_seconds") or 300
+        if elapsed >= timeout_limit:
+            # Trigger fallback routing
+            redirect_phone = queue.get("holiday_redirect_phone")
+            if redirect_phone:
+                twiml = f'<?xml version="1.0" encoding="UTF-8"?><Response><Say language="tr-TR">Temsilcilerimize şu anda ulaşılamıyor. Nöbetçi hattımıza aktarılıyorsunuz.</Say><Dial>{redirect_phone}</Dial></Response>'
+                return Response(content=twiml, media_type=_XML)
+            else:
+                twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Say language="tr-TR">Üzgünüz, tüm müşteri temsilcilerimiz şu anda meşgul. Lütfen daha sonra tekrar arayınız.</Say><Hangup/></Response>'
+                return Response(content=twiml, media_type=_XML)
+
+    # 3. Find dialed agents for this call session to avoid routing loop
+    dialed_agents = call_doc.get("dialed_agents") or [] if call_doc else []
+
+    # 4. Find all ready agents for this tenant (ended_at is None, state is "ready")
+    cursor = db.contact_center_agent_states.find({
+        "tenant_id": tenant_id,
+        "state": "ready",
+        "ended_at": None,
+        "agent_id": {"$nin": dialed_agents}
+    }).sort("started_at", 1)  # Longest idle first
+    ready_states = await cursor.to_list(length=10)
+
+    if ready_states:
+        # Select the longest idle agent
+        selected_state = ready_states[0]
+        selected_agent_id = selected_state["agent_id"]
+
+        # Append to dialed_agents in DB
+        await db.contact_center_calls.update_one(
+            {"provider_call_sid": call_sid, "tenant_id": tenant_id},
+            {"$addToSet": {"dialed_agents": selected_agent_id}, "$set": {"agent_id": selected_agent_id}}
+        )
+
+        dial_action_url = f"/api/voice/inbound/dial-action?tenant_id={tenant_id}&queue_id={queue_id}&agent_id={selected_agent_id}"
+        agent_callback_url = f"/api/voice/agent-status-callback?tenant_id={tenant_id}&agent_id={selected_agent_id}"
+
+        twiml = (
+            f'<?xml version="1.0" encoding="UTF-8"?>'
+            f'<Response>'
+            f'<Dial action="{dial_action_url}" timeout="15">'
+            f'<Client statusCallbackEvent="initiated ringing answered completed" statusCallback="{agent_callback_url}">'
+            f'client:{tenant_id}:{selected_agent_id}'
+            f'</Client>'
+            f'</Dial>'
+            f'</Response>'
+        )
+        return Response(content=twiml, media_type=_XML)
+
+    # 5. No agent available -> Play wait music and retry
+    twiml = (
+        f'<?xml version="1.0" encoding="UTF-8"?>'
+        f'<Response>'
+        f'<Say language="tr-TR">Lütfen bekleyiniz, tüm temsilcilerimiz şu anda meşguldür.</Say>'
+        f'<Play>http://demo.twilio.com/docs/classic.mp3</Play>'
+        f'<Redirect>/api/voice/inbound/route-queue?tenant_id={tenant_id}&amp;queue_id={queue_id}</Redirect>'
+        f'</Response>'
+    )
+    return Response(content=twiml, media_type=_XML)
+
+
+@public_router.post("/inbound/dial-action")
+async def voice_dial_action(request: Request):
+    """Ajan araması sonlandığında çalışır. Cevapsızsa sıradakine yönlendirir."""
+    form = await request.form()
+    provider = TwilioVoiceProvider()
+    if not provider.validate_signature(
+        url=_public_url(request),
+        params=form,
+        signature=request.headers.get("X-Twilio-Signature", ""),
+        request=request,
+    ):
+        return Response(status_code=403)
+
+    tenant_id = request.query_params.get("tenant_id")
+    queue_id = request.query_params.get("queue_id")
+    dial_status = form.get("DialCallStatus") or ""
+
+    if dial_status == "completed":
+        # The call was successfully answered and has completed (hung up)
+        twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>'
+        return Response(content=twiml, media_type=_XML)
+
+    # If not completed (e.g. no-answer, busy, failed), route to the next agent
+    route_url = f"/api/voice/inbound/route-queue?tenant_id={tenant_id}&queue_id={queue_id}"
+    twiml = (
+        f'<?xml version="1.0" encoding="UTF-8"?>'
+        f'<Response>'
+        f'<Redirect>{route_url}</Redirect>'
+        f'</Response>'
+    )
+    return Response(content=twiml, media_type=_XML)
+
+
+@public_router.post("/agent-status-callback")
+async def voice_agent_status_callback(request: Request):
+    """Twilio agent client leg status callback'i. Ajan durum geçişlerini yapar."""
+    form = await request.form()
+    provider = TwilioVoiceProvider()
+    if not provider.validate_signature(
+        url=_public_url(request),
+        params=form,
+        signature=request.headers.get("X-Twilio-Signature", ""),
+        request=request,
+    ):
+        return Response(status_code=403)
+
+    tenant_id = request.query_params.get("tenant_id")
+    agent_id = request.query_params.get("agent_id")
+    call_status = form.get("CallStatus") or ""
+
+    if tenant_id and agent_id:
+        if call_status == "in-progress":
+            # Call answered -> agent goes to "on_call"
+            await set_agent_presence_state(tenant_id, agent_id, "on_call")
+        elif call_status == "completed":
+            # Call ended -> agent goes to "wrap_up" and triggers delayed expiration back to ready
+            await set_agent_presence_state(tenant_id, agent_id, "wrap_up")
+            asyncio.create_task(_delayed_wrap_up_expiration(tenant_id, agent_id))
+
+    return Response(status_code=204)
+
+
+@public_router.post("/queue/wait-music")
+async def voice_queue_wait_music(request: Request):
+    """Kuyrukta bekleyen kullanıcı için bekleme müziği ve anons TwiML'i."""
+    twiml = (
+        f'<?xml version="1.0" encoding="UTF-8"?>'
+        f'<Response>'
+        f'<Play>http://demo.twilio.com/docs/classic.mp3</Play>'
+        f'</Response>'
+    )
+    return Response(content=twiml, media_type=_XML)

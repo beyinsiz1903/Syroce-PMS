@@ -273,11 +273,26 @@ export default function Softphone({ user }) {
       deactivate();
       return;
     }
+    if (newState === "ready") {
+      if (deviceRef.current) {
+        try {
+          deviceRef.current.register();
+        } catch (e) {
+          console.warn("[CC-VOICE] Error registering device:", e);
+        }
+      }
+    } else if (newState.startsWith("break_")) {
+      if (deviceRef.current) {
+        try {
+          deviceRef.current.unregister();
+        } catch (e) {
+          console.warn("[CC-VOICE] Error unregistering device:", e);
+        }
+      }
+    }
+    setAgentState(newState);
+    setAgentStateDuration(0);
     axios.post("/contact-center/agents/states", { state: newState })
-      .then((res) => {
-        setAgentState(newState);
-        setAgentStateDuration(0);
-      })
       .catch((err) => {
         console.warn("[CC-VOICE] Updating agent state failed:", err);
       });
@@ -382,7 +397,9 @@ export default function Softphone({ user }) {
       device.on("registered", () => {
         setStatus("ready");
         setDetail("");
-        updateAgentState("ready");
+        setAgentState("ready");
+        setAgentStateDuration(0);
+        axios.post("/contact-center/agents/states", { state: "ready" }).catch(() => {});
       });
       device.on("unregistered", () => {
         setStatus("idle");
@@ -963,7 +980,7 @@ export default function Softphone({ user }) {
                   Görüşmeyi sonlandır
                 </button>
               </div>
-            ) : (status === "ready" || status === "connecting") ? (
+            ) : (status === "ready" || status === "connecting" || (status === "idle" && agentState !== "offline")) ? (
               <div className="space-y-2">
                 <label className="block text-xs font-medium text-gray-600">
                   Aranacak numara

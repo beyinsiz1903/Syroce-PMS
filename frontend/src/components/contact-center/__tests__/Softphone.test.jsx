@@ -558,17 +558,21 @@ describe("Softphone frontend user gesture flow", () => {
       expect(mockRegister).toHaveBeenCalledTimes(1);
     });
 
-    // 3. Go to Break (Molaya Çık)
-    const breakBtn = await screen.findByRole("button", { name: /Molaya Çık/ });
-    fireEvent.click(breakBtn);
+    // 3. Go to Break by changing presence dropdown
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: "break_short" } });
+
+    await waitFor(() => {
+      expect(select.value).toBe("break_short");
+    });
 
     // Verify unregister is called, but destroy is NOT called
     expect(mockUnregister).toHaveBeenCalledTimes(1);
     expect(mockDestroy).not.toHaveBeenCalled();
 
-    // 4. Click Müsait again to go back to Ready
-    const onlineBtn2 = await screen.findByRole("button", { name: /Müsait/ });
-    fireEvent.click(onlineBtn2);
+    // 4. Go back to Ready by changing presence dropdown again
+    const selectReady = screen.getByRole("combobox");
+    fireEvent.change(selectReady, { target: { value: "ready" } });
 
     // Verify:
     // - getUserMedia is NOT called again (still called 1 time total)
