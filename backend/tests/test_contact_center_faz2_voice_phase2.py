@@ -89,6 +89,9 @@ class _FakeColl:
                 elif key == "extension":
                     self.items.sort(key=lambda x: x.get("extension", ""))
                 return self
+            def limit(self, count):
+                self.items = self.items[:count]
+                return self
             async def to_list(self, length=100):
                 return self.items[:length]
         return _Cursor(matched)

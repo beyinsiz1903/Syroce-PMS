@@ -17,6 +17,7 @@ import { Phone, PhoneIncoming, PhoneOutgoing, Mic, MicOff, Grid, MessageCircle, 
 import axios from "axios";
 import { websocket } from "@/lib/websocket";
 import CallHistory from "./CallHistory";
+import CallbackQueue from "./CallbackQueue";
 import { SOFTPHONE_DIAL_EVENT } from "@/lib/softphone";
 
 const TWILIO_VOICE_SDK_URL = "/js/twilio.min.js";
@@ -100,6 +101,14 @@ export default function Softphone({ user }) {
   const [guestInfo, setGuestInfo] = useState(null);
   const [agentState, setAgentState] = useState("offline");
   const [agentStateDuration, setAgentStateDuration] = useState(0);
+  const [lastCallSid, setLastCallSid] = useState("");
+  const [dispositionReason, setDispositionReason] = useState("reservation");
+  const [dispositionOutcome, setDispositionOutcome] = useState("completed");
+  const [dispositionNotes, setDispositionNotes] = useState("");
+  const [dispositionTags, setDispositionTags] = useState("");
+  const [dispositionCallbackTime, setDispositionCallbackTime] = useState("");
+  const [dispositionReservationId, setDispositionReservationId] = useState("");
+  const [dispositionComplaintId, setDispositionComplaintId] = useState("");
 
   const deviceRef = useRef(null);
   const callRef = useRef(null);
@@ -426,6 +435,7 @@ export default function Softphone({ user }) {
 
         call.on("disconnect", () => {
           console.log(`[CC-VOICE] Call disconnect event. SIDs: parent=${call?.parameters?.CallSid}`);
+          if (call?.parameters?.CallSid) setLastCallSid(call.parameters.CallSid);
           clearCallState({ preserveDevice: true });
         });
         call.on("cancel", () => {
@@ -506,6 +516,7 @@ export default function Softphone({ user }) {
 
           call.on("disconnect", () => {
             console.log(`[CC-VOICE] Call disconnect event. Attempt ID: ${attemptId}, CallSid: ${call?.parameters?.CallSid}`);
+            if (call?.parameters?.CallSid) setLastCallSid(call.parameters.CallSid);
             clearCallState();
           });
           call.on("cancel", () => {
@@ -758,7 +769,7 @@ export default function Softphone({ user }) {
   return (
     <div className="fixed bottom-4 left-4 z-50 flex gap-4 items-end">
       {open ? (
-        <div className="w-72 rounded-lg border border-gray-200 bg-white shadow-xl">
+        <div className="relative w-72 rounded-lg border border-gray-200 bg-white shadow-xl">
           <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
             <div className="flex items-center gap-2">
               <span
@@ -811,11 +822,34 @@ export default function Softphone({ user }) {
             >
               Geçmiş
             </button>
+            <button
+              type="button"
+              onClick={() => setView("callbacks")}
+              className={`flex-1 px-4 py-2 text-xs font-medium ${
+                view === "callbacks"
+                  ? "border-b-2 border-gray-900 text-gray-900"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Geri Arama
+            </button>
           </div>
 
           {view === "history" ? (
             <div className="px-4 py-4">
               <CallHistory />
+            </div>
+          ) : view === "callbacks" ? (
+            <div className="px-4 py-4">
+              <CallbackQueue onDial={async (num, cbId) => {
+                setDialNumber(num);
+                setView("dialer");
+                try {
+                  await axios.post(`/contact-center/callbacks/${cbId}/assign`);
+                } catch (e) {
+                  console.error(e);
+                }
+              }} />
             </div>
           ) : (
           <div className="space-y-3 px-4 py-4">
@@ -1063,6 +1097,133 @@ export default function Softphone({ user }) {
               </button>
             )}
           </div>
+          )}
+          {/* Call Disposition Overlay */}
+          {agentState === "wrap_up" && (
+            <div className="absolute inset-0 bg-white/95 z-50 flex flex-col p-4 overflow-y-auto text-xs">
+              <div className="border-b border-gray-100 pb-2 mb-3">
+                <h3 className="font-semibold text-gray-900 text-sm">Çağrı Değerlendirme Formu</h3>
+                <p className="text-[10px] text-gray-500">Müsait durumuna geçebilmek için lütfen formu doldurun.</p>
+              </div>
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  await axios.post("/contact-center/agents/disposition", {
+                    call_id: lastCallSid || "CA_mock_dispo_sid",
+                    disposition: dispositionReason,
+                    notes: dispositionNotes,
+                    tags: dispositionTags.split(",").map(t => t.trim()).filter(Boolean),
+                    callback_at: dispositionOutcome === "callback_requested" && dispositionCallbackTime ? new Date(dispositionCallbackTime).toISOString() : null,
+                    linked_reservation_id: dispositionReservationId || null,
+                    linked_complaint_id: dispositionComplaintId || null,
+                  });
+                  // Reset states
+                  setDispositionNotes("");
+                  setDispositionTags("");
+                  setDispositionCallbackTime("");
+                  setDispositionReservationId("");
+                  setDispositionComplaintId("");
+                  setAgentState("ready");
+                  setAgentStateDuration(0);
+                } catch (err) {
+                  console.error(err);
+                }
+              }} className="space-y-3 flex-1 flex flex-col justify-between">
+                <div className="space-y-2.5">
+                  <div>
+                    <label className="block text-[10px] font-semibold uppercase text-gray-400 mb-1">Arama Nedeni</label>
+                    <select
+                      value={dispositionReason}
+                      onChange={(e) => setDispositionReason(e.target.value)}
+                      className="w-full rounded-md border-gray-300 text-xs py-1.5 focus:border-emerald-500 focus:ring-emerald-500"
+                    >
+                      <option value="reservation">Rezervasyon Sorgusu</option>
+                      <option value="complaint">Şikayet & Destek</option>
+                      <option value="info">Bilgi Talebi</option>
+                      <option value="other">Diğer</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-semibold uppercase text-gray-400 mb-1">Görüşme Sonucu</label>
+                    <select
+                      value={dispositionOutcome}
+                      onChange={(e) => setDispositionOutcome(e.target.value)}
+                      className="w-full rounded-md border-gray-300 text-xs py-1.5 focus:border-emerald-500 focus:ring-emerald-500"
+                    >
+                      <option value="completed">Çözüldü / Tamamlandı</option>
+                      <option value="callback_requested">Geri Arama İstendi</option>
+                      <option value="no_answer">Ulaşılamadı</option>
+                    </select>
+                  </div>
+
+                  {dispositionOutcome === "callback_requested" && (
+                    <div>
+                      <label className="block text-[10px] font-semibold uppercase text-gray-400 mb-1">Geri Arama Zamanı</label>
+                      <input
+                        type="datetime-local"
+                        value={dispositionCallbackTime}
+                        onChange={(e) => setDispositionCallbackTime(e.target.value)}
+                        required
+                        className="w-full rounded-md border-gray-300 text-xs py-1 focus:border-emerald-500 focus:ring-emerald-500"
+                      />
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-semibold uppercase text-gray-400 mb-1">Rezervasyon ID</label>
+                      <input
+                        type="text"
+                        value={dispositionReservationId}
+                        onChange={(e) => setDispositionReservationId(e.target.value)}
+                        placeholder="Opsiyonel"
+                        className="w-full rounded-md border-gray-300 text-xs py-1 focus:border-emerald-500 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold uppercase text-gray-400 mb-1">Şikayet ID</label>
+                      <input
+                        type="text"
+                        value={dispositionComplaintId}
+                        onChange={(e) => setDispositionComplaintId(e.target.value)}
+                        placeholder="Opsiyonel"
+                        className="w-full rounded-md border-gray-300 text-xs py-1 focus:border-emerald-500 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-semibold uppercase text-gray-400 mb-1">Notlar</label>
+                    <textarea
+                      value={dispositionNotes}
+                      onChange={(e) => setDispositionNotes(e.target.value)}
+                      placeholder="Görüşme detayları..."
+                      rows={2}
+                      className="w-full rounded-md border-gray-300 text-xs py-1 focus:border-emerald-500 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-semibold uppercase text-gray-400 mb-1">Etiketler (Virgülle Ayırın)</label>
+                    <input
+                      type="text"
+                      value={dispositionTags}
+                      onChange={(e) => setDispositionTags(e.target.value)}
+                      placeholder="örn: vip, satış, şikayet"
+                      className="w-full rounded-md border-gray-300 text-xs py-1 focus:border-emerald-500 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 rounded-md transition-colors mt-3"
+                >
+                  Kaydet ve Müsait Ol
+                </button>
+              </form>
+            </div>
           )}
         </div>
       ) : (

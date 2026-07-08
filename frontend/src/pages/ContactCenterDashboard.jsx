@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, RefreshCw, AlertCircle, PhoneCall, Headset, Play } from 'lucide-react';
+import { 
+  Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, RefreshCw, 
+  AlertCircle, PhoneCall, Headset, Play, Users, Radio, Volume2, 
+  CheckCircle2, Zap, ShieldAlert, Sparkles 
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
@@ -25,6 +29,13 @@ function formatDuration(seconds) {
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${m} dk ${String(s).padStart(2, "0")} sn`;
+}
+
+function formatDurationShort(seconds) {
+  const total = Number(seconds) || 0;
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 function formatDateTime(value) {
@@ -56,18 +67,33 @@ const STATUS_LABEL = {
   failed: "Başarısız",
 };
 
+const AGENT_STATE_LABELS = {
+  ready: "Müsait",
+  wrap_up: "Wrap-up",
+  break_short: "Kısa Mola",
+  break_meal: "Yemek Molası",
+  meeting: "Toplantı",
+  training: "Eğitim",
+  offline: "Çevrimdışı",
+};
+
 export default function ContactCenterDashboard() {
   const { t } = useTranslation();
+  const [tab, setTab] = useState("history"); // "history" or "supervisor"
   const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [playingId, setPlayingId] = useState(null);
 
+  // Supervisor states
+  const [supervisorStats, setSupervisorStats] = useState(null);
+  const [supervisorAgents, setSupervisorAgents] = useState([]);
+  const [activeIntervention, setActiveIntervention] = useState(null);
+
   const fetchCalls = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Get up to 200 calls to calculate accurate daily stats locally
       const res = await axios.get("/contact-center/calls", { params: { limit: 200 } });
       setCalls(Array.isArray(res.data?.items) ? res.data.items : []);
     } catch (err) {
@@ -83,9 +109,31 @@ export default function ContactCenterDashboard() {
     }
   };
 
+  const fetchSupervisorData = async () => {
+    try {
+      const [statsRes, agentsRes] = await Promise.all([
+        axios.get("/contact-center/supervisor/dashboard"),
+        axios.get("/contact-center/supervisor/agents")
+      ]);
+      setSupervisorStats(statsRes.data);
+      setSupervisorAgents(agentsRes.data.agents || []);
+    } catch (err) {
+      console.error("Failed to fetch supervisor data:", err);
+    }
+  };
+
   useEffect(() => {
     fetchCalls();
   }, []);
+
+  useEffect(() => {
+    let interval;
+    if (tab === "supervisor") {
+      fetchSupervisorData();
+      interval = setInterval(fetchSupervisorData, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [tab]);
 
   // Compute Daily Stats
   const todayCalls = calls.filter(c => isToday(c.started_at));
@@ -108,39 +156,82 @@ export default function ContactCenterDashboard() {
   const hourlyData = hourlyCounts.map((count, i) => ({
     hour: `${String(i).padStart(2, '0')}:00`,
     Çağrı: count,
-  })).filter(d => d.Çağrı > 0 || (parseInt(d.hour) >= 8 && parseInt(d.hour) <= 20)); // Show active hours or hours with calls
+  })).filter(d => d.Çağrı > 0 || (parseInt(d.hour) >= 8 && parseInt(d.hour) <= 20));
 
   // Pie Data
   const pieData = [
     { name: t('contactCenter.inbound', 'Gelen'), value: inboundToday },
     { name: t('contactCenter.outbound', 'Giden'), value: outboundToday },
   ].filter(d => d.value > 0);
-  const PIE_COLORS = ['#10b981', '#6366f1']; // Emerald for Inbound, Indigo for Outbound
+  const PIE_COLORS = ['#10b981', '#6366f1'];
 
-  // Recent 10 calls for the table
+  // Recent 10 calls
   const recentCalls = calls.slice(0, 10);
+
+  // Supervisor Actions Handlers
+  const handleForceState = async (agentId, newState) => {
+    try {
+      await axios.post("/contact-center/supervisor/actions", {
+        action: "force_state",
+        agent_id: agentId,
+        target_state: newState
+      });
+      fetchSupervisorData();
+    } catch (err) {
+      alert("Durum güncellenirken hata oluştu.");
+    }
+  };
+
+  const handleIntervene = async (action, callSid) => {
+    try {
+      await axios.post("/contact-center/supervisor/intervene", {
+        action,
+        call_sid: callSid
+      });
+      setActiveIntervention({ action, callSid });
+      alert(`Görüşmeye '${action}' moduyla başarıyla bağlanıldı.`);
+    } catch (err) {
+      alert("Müdahale başlatılamadı.");
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-8 bg-gray-50/30 min-h-screen">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      {/* Header & Tabs Toggle */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gray-200 pb-5">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <Headset className="w-7 h-7 text-indigo-600" />
-            {t('contactCenter.dashboard', 'Çağrı Merkezi Paneli')}
+            {t('contactCenter.dashboard', 'Çağrı Merkezi')}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {t('contactCenter.dashboardSubtitle', 'Günlük çağrı istatistikleri ve anlık görüşme geçmişi.')}
+            Müşteri ilişkileri ses altyapısı ve canlı operasyon yönetimi.
           </p>
         </div>
-        <button
-          onClick={fetchCalls}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          {loading ? t('common.refreshing', 'Yenileniyor...') : t('common.refresh', 'Yenile')}
-        </button>
+
+        <div className="flex bg-gray-100 p-1 rounded-lg">
+          <button
+            onClick={() => setTab("history")}
+            className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+              tab === "history" 
+                ? "bg-white text-gray-900 shadow-sm" 
+                : "text-gray-500 hover:text-gray-900"
+            }`}
+          >
+            Çağrı Raporları
+          </button>
+          <button
+            onClick={() => setTab("supervisor")}
+            className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+              tab === "supervisor" 
+                ? "bg-white text-gray-900 shadow-sm" 
+                : "text-gray-500 hover:text-gray-900"
+            }`}
+          >
+            <Radio className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
+            Supervisor Canlı Ekranı
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -150,200 +241,401 @@ export default function ContactCenterDashboard() {
         </div>
       )}
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard
-          title={t('contactCenter.totalToday', 'Bugün Toplam Çağrı')}
-          value={totalToday}
-          icon={PhoneCall}
-          colorClass="bg-blue-100 text-blue-600"
-        />
-        <StatCard
-          title={t('contactCenter.inboundToday', 'Gelen Çağrılar')}
-          value={inboundToday}
-          icon={PhoneIncoming}
-          colorClass="bg-emerald-100 text-emerald-600"
-        />
-        <StatCard
-          title={t('contactCenter.missedToday', 'Cevapsız Çağrılar')}
-          value={missedToday}
-          icon={PhoneMissed}
-          colorClass="bg-rose-100 text-rose-600"
-          subtitle={t('contactCenter.missedSubtitle', 'Gelen çağrılar baz alınmıştır')}
-        />
-        <StatCard
-          title={t('contactCenter.totalDuration', 'Toplam Görüşme (Bugün)')}
-          value={totalDuration}
-          icon={Clock}
-          colorClass="bg-indigo-100 text-indigo-600"
-        />
-      </div>
-
-      {/* Charts */}
-      {calls.length > 0 && !loading && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 lg:col-span-2">
-            <h3 className="text-sm font-semibold text-gray-800 mb-4">{t('contactCenter.hourlyChart', 'Saatlik Çağrı Yoğunluğu (Bugün)')}</h3>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={hourlyData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                  <XAxis dataKey="hour" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
-                  <RechartsTooltip 
-                    cursor={{ fill: '#f3f4f6' }}
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  />
-                  <Bar dataKey="Çağrı" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={32} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-            <h3 className="text-sm font-semibold text-gray-800 mb-4">{t('contactCenter.directionChart', 'Çağrı Yönü Dağılımı (Bugün)')}</h3>
-            <div className="h-64 flex items-center justify-center">
-              {pieData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip 
-                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="text-sm text-gray-400">Veri yok</div>
-              )}
-            </div>
-            {pieData.length > 0 && (
-              <div className="flex justify-center gap-4 mt-2">
-                {pieData.map((entry, index) => (
-                  <div key={entry.name} className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}></div>
-                    <span className="text-xs text-gray-600 font-medium">{entry.name} ({entry.value})</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+      {activeIntervention && (
+        <div className="p-3 bg-indigo-50 border border-indigo-100 text-indigo-800 rounded-lg flex items-center justify-between text-xs">
+          <span className="flex items-center gap-2">
+            <Radio className="w-4 h-4 text-indigo-600 animate-pulse" />
+            Görüşmeyi dinleme modunuz aktif: <strong>{activeIntervention.action.toUpperCase()}</strong> (Çağrı: {activeIntervention.callSid})
+          </span>
+          <button 
+            onClick={() => setActiveIntervention(null)}
+            className="px-2 py-1 bg-white hover:bg-gray-50 rounded border border-indigo-200 text-indigo-700 font-semibold"
+          >
+            Müdahaleyi Bitir
+          </button>
         </div>
       )}
 
-      {/* Recent Calls Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-          <h2 className="text-lg font-semibold text-gray-900">{t('contactCenter.recentCalls', 'Son Çağrılar')}</h2>
-        </div>
-        
-        {loading && calls.length === 0 ? (
-          <div className="p-12 flex justify-center">
-            <RefreshCw className="w-8 h-8 text-gray-300 animate-spin" />
+      {tab === "history" ? (
+        <>
+          {/* Stats Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <StatCard
+              title={t('contactCenter.totalToday', 'Bugün Toplam Çağrı')}
+              value={totalToday}
+              icon={PhoneCall}
+              colorClass="bg-blue-100 text-blue-600"
+            />
+            <StatCard
+              title={t('contactCenter.inboundToday', 'Gelen Çağrılar')}
+              value={inboundToday}
+              icon={PhoneIncoming}
+              colorClass="bg-emerald-100 text-emerald-600"
+            />
+            <StatCard
+              title={t('contactCenter.missedToday', 'Cevapsız Çağrılar')}
+              value={missedToday}
+              icon={PhoneMissed}
+              colorClass="bg-rose-100 text-rose-600"
+              subtitle={t('contactCenter.missedSubtitle', 'Gelen çağrılar baz alınmıştır')}
+            />
+            <StatCard
+              title={t('contactCenter.totalDuration', 'Toplam Görüşme (Bugün)')}
+              value={totalDuration}
+              icon={Clock}
+              colorClass="bg-indigo-100 text-indigo-600"
+            />
           </div>
-        ) : calls.length === 0 ? (
-          <div className="p-12 text-center text-gray-500">
-            <Phone className="w-12 h-12 mx-auto mb-3 text-gray-200" />
-            <p>{t('contactCenter.noCalls', 'Henüz çağrı kaydı bulunmamaktadır.')}</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50/50 border-b border-gray-100">
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('contactCenter.direction', 'Yön')}</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('contactCenter.phone', 'Telefon')}</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('contactCenter.status', 'Durum')}</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('contactCenter.date', 'Tarih')}</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('contactCenter.duration', 'Süre')}</th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Detay / Kayıt</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {recentCalls.map(call => {
-                  const isInbound = call.direction === 'inbound';
-                  return (
-                    <tr key={call.id} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${
-                          isInbound ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
-                        }`}>
-                          {isInbound ? <PhoneIncoming className="w-3 h-3" /> : <PhoneOutgoing className="w-3 h-3" />}
-                          {isInbound ? t('contactCenter.inbound', 'Gelen') : t('contactCenter.outbound', 'Giden')}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-gray-900">
-                        {call.caller_name ? (
-                          <div className="flex flex-col">
-                            <span className="font-semibold text-sm">{call.caller_name}</span>
-                            <span className="text-xs text-gray-500">{call.caller_phone_masked}</span>
-                          </div>
-                        ) : (
-                          <span className="font-medium text-sm">
-                            {call.caller_phone_masked || t('contactCenter.unknownNumber', "Bilinmeyen Numara")}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                          call.status === 'completed' || call.status === 'answered' ? 'text-emerald-700 bg-emerald-50' :
-                          call.status === 'missed' ? 'text-rose-700 bg-rose-50' :
-                          call.status === 'ringing' ? 'text-amber-700 bg-amber-50' : 'text-gray-700 bg-gray-50'
-                        }`}>
-                          {STATUS_LABEL[call.status] || call.status || "—"}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {formatDateTime(call.started_at)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {formatDuration(call.duration_seconds)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex flex-col items-end gap-2">
-                          <div className="flex gap-2 items-center">
-                            {call.notes && (
-                              <span className="text-[11px] text-gray-500 italic max-w-[150px] truncate" title={call.notes}>
-                                Not: {call.notes}
+
+          {/* Charts */}
+          {calls.length > 0 && !loading && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 lg:col-span-2">
+                <h3 className="text-sm font-semibold text-gray-800 mb-4">{t('contactCenter.hourlyChart', 'Saatlik Çağrı Yoğunluğu (Bugün)')}</h3>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={hourlyData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                      <XAxis dataKey="hour" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} dy={10} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
+                      <RechartsTooltip 
+                        cursor={{ fill: '#f3f4f6' }}
+                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      />
+                      <Bar dataKey="Çağrı" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={32} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <h3 className="text-sm font-semibold text-gray-800 mb-4">{t('contactCenter.directionChart', 'Çağrı Yönü Dağılımı (Bugün)')}</h3>
+                <div className="h-64 flex items-center justify-center">
+                  {pieData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={pieData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={80}
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          {pieData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip 
+                          contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="text-sm text-gray-400">Veri yok</div>
+                  )}
+                </div>
+                {pieData.length > 0 && (
+                  <div className="flex justify-center gap-4 mt-2">
+                    {pieData.map((entry, index) => (
+                      <div key={entry.name} className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}></div>
+                        <span className="text-xs text-gray-600 font-medium">{entry.name} ({entry.value})</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Recent Calls Table */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <h2 className="text-lg font-semibold text-gray-900">{t('contactCenter.recentCalls', 'Son Çağrılar')}</h2>
+            </div>
+            
+            {loading && calls.length === 0 ? (
+              <div className="p-12 flex justify-center">
+                <RefreshCw className="w-8 h-8 text-gray-300 animate-spin" />
+              </div>
+            ) : calls.length === 0 ? (
+              <div className="p-12 text-center text-gray-500">
+                <Phone className="w-12 h-12 mx-auto mb-3 text-gray-200" />
+                <p>{t('contactCenter.noCalls', 'Henüz çağrı kaydı bulunmamaktadır.')}</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50/50 border-b border-gray-100">
+                      <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('contactCenter.direction', 'Yön')}</th>
+                      <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('contactCenter.phone', 'Telefon')}</th>
+                      <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('contactCenter.status', 'Durum')}</th>
+                      <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('contactCenter.date', 'Tarih')}</th>
+                      <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('contactCenter.duration', 'Süre')}</th>
+                      <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Detay / Kayıt</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {recentCalls.map(call => {
+                      const isInbound = call.direction === 'inbound';
+                      return (
+                        <tr key={call.id} className="hover:bg-gray-50/50 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${
+                              isInbound ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+                            }`}>
+                              {isInbound ? <PhoneIncoming className="w-3 h-3" /> : <PhoneOutgoing className="w-3 h-3" />}
+                              {isInbound ? t('contactCenter.inbound', 'Gelen') : t('contactCenter.outbound', 'Giden')}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-gray-900">
+                            {call.caller_name ? (
+                              <div className="flex flex-col">
+                                <span className="font-semibold text-sm">{call.caller_name}</span>
+                                <span className="text-xs text-gray-500">{call.caller_phone_masked}</span>
+                              </div>
+                            ) : (
+                              <span className="font-medium text-sm">
+                                {call.caller_phone_masked || t('contactCenter.unknownNumber', "Bilinmeyen Numara")}
                               </span>
                             )}
-                            {call.has_recording && (
-                              <button
-                                onClick={() => setPlayingId(playingId === call.id ? null : call.id)}
-                                className={`p-1.5 rounded-full hover:bg-gray-100 ${playingId === call.id ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400'}`}
-                                title="Kaydı Dinle"
-                              >
-                                <Play className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                          {playingId === call.id && (
-                            <audio 
-                              controls 
-                              autoPlay 
-                              className="h-8 w-48"
-                              src={`/api/contact-center/calls/${call.id}/recording`}
-                            />
-                          )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                              call.status === 'completed' || call.status === 'answered' ? 'text-emerald-700 bg-emerald-50' :
+                              call.status === 'missed' ? 'text-rose-700 bg-rose-50' :
+                              call.status === 'ringing' ? 'text-amber-700 bg-amber-50' : 'text-gray-700 bg-gray-50'
+                            }`}>
+                              {STATUS_LABEL[call.status] || call.status || "—"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {formatDateTime(call.started_at)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {formatDuration(call.duration_seconds)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <div className="flex flex-col items-end gap-2">
+                              <div className="flex gap-2 items-center">
+                                {call.notes && (
+                                  <span className="text-[11px] text-gray-500 italic max-w-[150px] truncate" title={call.notes}>
+                                    Not: {call.notes}
+                                  </span>
+                                )}
+                                {call.has_recording && (
+                                  <button
+                                    onClick={() => setPlayingId(playingId === call.id ? null : call.id)}
+                                    className={`p-1.5 rounded-full hover:bg-gray-100 ${playingId === call.id ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400'}`}
+                                    title="Kaydı Dinle"
+                                  >
+                                    <Play className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                              {playingId === call.id && (
+                                <audio 
+                                  controls 
+                                  autoPlay 
+                                  className="h-8 w-48"
+                                  src={`/api/contact-center/calls/${call.id}/recording`}
+                                />
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        /* SUPERVISOR LIVE PANEL */
+        <div className="space-y-8">
+          {/* Live Metrics Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-gray-100 flex items-center gap-3">
+              <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                <PhoneCall className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Aktif Çağrı</p>
+                <h4 className="text-xl font-bold text-gray-800">{supervisorStats?.active_calls_count ?? 0}</h4>
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-gray-100 flex items-center gap-3">
+              <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
+                <Users className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Kuyrukta Bekleyen</p>
+                <h4 className="text-xl font-bold text-gray-800">{supervisorStats?.queued_callers_count ?? 0}</h4>
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-gray-100 flex items-center gap-3">
+              <div className="p-2 bg-red-50 text-red-600 rounded-lg">
+                <Clock className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">En Uzun Bekleme</p>
+                <h4 className="text-xl font-bold text-gray-800">{supervisorStats ? `${supervisorStats.longest_wait_seconds} sn` : "0 sn"}</h4>
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-gray-100 flex items-center gap-3">
+              <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Ort. Cevaplama</p>
+                <h4 className="text-xl font-bold text-gray-800">{supervisorStats ? `${Math.round(supervisorStats.average_answer_time_seconds)} sn` : "0 sn"}</h4>
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-gray-100 flex items-center gap-3">
+              <div className="p-2 bg-rose-50 text-rose-600 rounded-lg">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Kaçan Çağrı</p>
+                <h4 className="text-xl font-bold text-gray-800">{supervisorStats ? `%${Math.round(supervisorStats.abandoned_rate * 100)}` : "%0"}</h4>
+              </div>
+            </div>
+          </div>
+
+          {/* Live Queue SLA Compliance Grid */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              Kuyruk SLA Durumları
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {supervisorStats?.queue_slas?.map((q) => (
+                <div key={q.queue_id} className="bg-white p-4 rounded-xl border border-gray-100 flex justify-between items-center shadow-sm">
+                  <div className="space-y-1">
+                    <h5 className="font-bold text-sm text-gray-800">{q.name}</h5>
+                    <p className="text-[10px] text-gray-400">Hedef: %{q.sla_target_percentage} ({q.sla_threshold_seconds}sn içinde)</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="text-lg font-extrabold text-gray-900">%{Math.round(q.actual_percentage)}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ${
+                      q.status === 'green' ? 'bg-emerald-100 text-emerald-800' :
+                      q.status === 'yellow' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                      {q.status === 'green' ? 'Hedefte' : q.status === 'yellow' ? 'Riskli' : 'İhlal'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Live Agent Operational Roster */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+              <h3 className="font-bold text-gray-800 text-base">Canlı Operasyon Kadrosu (Ajanlar)</h3>
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Müsait: {supervisorStats?.agent_states?.ready ?? 0}
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 ml-2"></span> Görüşmede: {supervisorStats?.agent_states?.on_call ?? 0}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50/20 border-b border-gray-100 text-[11px] font-semibold text-gray-500 uppercase">
+                    <th className="px-6 py-3">Temsilci Adı</th>
+                    <th className="px-6 py-3">Durumu</th>
+                    <th className="px-6 py-3">Durum Süresi</th>
+                    <th className="px-6 py-3">Çağrı Süresi</th>
+                    <th className="px-6 py-3">Bugün Cevaplanan</th>
+                    <th className="px-6 py-3">Bugün Kaçırılan</th>
+                    <th className="px-6 py-3">Ort. Görüşme</th>
+                    <th className="px-6 py-3 text-right">Yönetim & Müdahale</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 text-xs">
+                  {supervisorAgents.map((agent) => (
+                    <tr key={agent.agent_id} className="hover:bg-gray-50/50 transition-colors">
+                      <td className="px-6 py-4 font-semibold text-gray-800">{agent.name}</td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-medium ${
+                          agent.state === 'ready' ? 'bg-emerald-100 text-emerald-800' :
+                          agent.state === 'on_call' ? 'bg-amber-100 text-amber-800' :
+                          agent.state === 'wrap_up' ? 'bg-blue-100 text-blue-800' :
+                          agent.state === 'offline' ? 'bg-gray-100 text-gray-800' : 'bg-orange-100 text-orange-800'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            agent.state === 'ready' ? 'bg-emerald-500' :
+                            agent.state === 'on_call' ? 'bg-amber-500' :
+                            agent.state === 'wrap_up' ? 'bg-blue-500' :
+                            agent.state === 'offline' ? 'bg-gray-400' : 'bg-orange-500'
+                          }`}></span>
+                          {AGENT_STATE_LABELS[agent.state] || agent.state}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 font-mono text-gray-600">{formatDurationShort(agent.state_duration_seconds)}</td>
+                      <td className="px-6 py-4 font-mono text-gray-600">
+                        {agent.state === 'on_call' ? formatDurationShort(agent.active_call_duration_seconds) : '—'}
+                      </td>
+                      <td className="px-6 py-4 font-semibold text-emerald-600">{agent.answered_today}</td>
+                      <td className="px-6 py-4 font-semibold text-red-500">{agent.missed_today}</td>
+                      <td className="px-6 py-4 text-gray-500">{Math.round(agent.average_handle_time_seconds)} sn</td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex gap-1.5 justify-end items-center">
+                          {/* Live Listen Actions */}
+                          <button
+                            onClick={() => handleIntervene("listen", "CA_live_demo_sid")}
+                            disabled={agent.state !== 'on_call'}
+                            className="p-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-50 disabled:hover:bg-gray-100 rounded-md"
+                            title="Dinle (Listen)"
+                          >
+                            <Volume2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleIntervene("whisper", "CA_live_demo_sid")}
+                            disabled={agent.state !== 'on_call'}
+                            className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-50 rounded-md"
+                            title="Fısılda (Whisper)"
+                          >
+                            <Headset className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleIntervene("barge", "CA_live_demo_sid")}
+                            disabled={agent.state !== 'on_call'}
+                            className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 disabled:opacity-50 disabled:hover:bg-emerald-50 rounded-md"
+                            title="Katıl (Barge)"
+                          >
+                            <Radio className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* State Force Actions */}
+                          <select
+                            onChange={(e) => handleForceState(agent.agent_id, e.target.value)}
+                            value=""
+                            className="text-[10px] rounded border-gray-300 py-1"
+                          >
+                            <option value="">Durum Değiştir...</option>
+                            <option value="ready">Müsait Yap</option>
+                            <option value="break_short">Kısa Mola Yap</option>
+                            <option value="offline">Offline Yap</option>
+                          </select>
                         </div>
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

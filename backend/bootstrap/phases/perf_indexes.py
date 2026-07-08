@@ -216,6 +216,9 @@ async def ensure_performance_indexes():
         ("contact_center_voice_numbers", [("to_number", 1)], "ux_cc_voice_number", {"unique": True}),
         ("contact_center_queues", [("tenant_id", 1), ("id", 1)], "tenant_id_1_id_1", {}),
         ("contact_center_agent_states", [("tenant_id", 1), ("agent_id", 1), ("started_at", -1)], "idx_agent_states_query", {}),
+        # Phase 3 — Dispositions & Callbacks
+        ("contact_center_dispositions", [("tenant_id", 1), ("call_id", 1)], "ux_cc_dispositions_call_id", {"unique": True}),
+        ("contact_center_callbacks", [("tenant_id", 1), ("status", 1), ("priority", -1)], "idx_cc_callbacks_query", {}),
         # Task #647 — Legacy messaging recipient PII at-rest sealing.
         #   - messaging_consents (tenant_id, recipient_hash, channel):
         #     consent opt-out enforcement now looks the recipient up by its HMAC

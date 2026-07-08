@@ -222,6 +222,25 @@ async def update_call_status(
         set_fields["answered_at"] = now
     if mapped in _TERMINAL:
         set_fields["ended_at"] = now
+        try:
+            call_doc = await db[_COLLECTION].find_one({"tenant_id": tenant_id, "provider_call_sid": provider_call_sid})
+            if call_doc and not call_doc.get("answered_at") and call_doc.get("direction") == MessageDirection.INBOUND.value:
+                await db.contact_center_callbacks.update_one(
+                    {"tenant_id": tenant_id, "phone": call_doc.get("from_phone")},
+                    {"$set": {
+                        "id": str(uuid4()),
+                        "tenant_id": tenant_id,
+                        "phone": call_doc.get("from_phone"),
+                        "caller_id_enc": call_doc.get("caller_id_enc"),
+                        "abandoned_at": now,
+                        "wait_duration_seconds": int((now - call_doc["started_at"]).total_seconds()) if call_doc.get("started_at") else 0,
+                        "priority": "high" if call_doc.get("vip") else "medium",
+                        "status": "pending"
+                    }},
+                    upsert=True
+                )
+        except Exception as e:
+            logger.warning(f"[CC-VOICE] Failed to create callback ticket: {e}")
     if duration_seconds is not None and duration_seconds >= 0:
         set_fields["duration_seconds"] = int(duration_seconds)
     try:
