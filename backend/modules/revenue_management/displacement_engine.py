@@ -50,23 +50,31 @@ class DisplacementEngine:
 
     async def _get_historical_adr(self, tenant_id: str, days_back: int = 90) -> float:
         cutoff = (date.today() - timedelta(days=days_back)).isoformat()
-        charges = await db.folio_charges.find(
+        pipeline = [
             {
-                "tenant_id": tenant_id,
-                "category": "room",
-                "voided": {"$ne": True},
-                "created_at": {"$gte": cutoff},
+                "$match": {
+                    "tenant_id": tenant_id,
+                    "charge_category": "room",
+                    "voided": {"$ne": True},
+                    "date": {"$gte": cutoff},
+                }
             },
-            {"_id": 0, "amount": 1},
-        ).to_list(5000)
-        if not charges:
+            {
+                "$group": {
+                    "_id": None,
+                    "avg_amount": {"$avg": "$amount"},
+                    "count": {"$sum": 1}
+                }
+            }
+        ]
+        results = await db.folio_charges.aggregate(pipeline).to_list(1)
+        if not results or results[0].get("count", 0) == 0:
             plans = await db.rate_plans.find(
                 {"tenant_id": tenant_id, "is_active": True},
                 {"_id": 0, "base_price": 1},
             ).to_list(10)
             return plans[0].get("base_price", 150) if plans else 150.0
-        total = sum(c.get("amount", 0) for c in charges)
-        return round(total / len(charges), 2)
+        return round(results[0].get("avg_amount", 0), 2)
 
     async def _get_adr_by_dow(self, tenant_id: str, days_back: int = 90) -> dict[int, float]:
         cutoff = (date.today() - timedelta(days=days_back)).isoformat()
@@ -74,16 +82,16 @@ class DisplacementEngine:
             {
                 "$match": {
                     "tenant_id": tenant_id,
-                    "category": "room",
+                    "charge_category": "room",
                     "voided": {"$ne": True},
-                    "created_at": {"$gte": cutoff},
+                    "date": {"$gte": cutoff},
                 }
             },
             {
                 "$addFields": {
                     "parsed_date": {
                         "$dateFromString": {
-                            "dateString": {"$substr": ["$created_at", 0, 10]},
+                            "dateString": {"$substr": ["$date", 0, 10]},
                             "format": "%Y-%m-%d",
                             "onError": None,
                         }
