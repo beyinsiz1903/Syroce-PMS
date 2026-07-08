@@ -44,6 +44,9 @@ import {
   updateOrderStatus,
   listReservations,
   updateReservationStatus,
+  listSpaReservations,
+  updateSpaReservationStatus,
+  chargeSpaReservation,
   type ActiveOrder,
   type BeoSummary,
   type MenuItem,
@@ -52,6 +55,7 @@ import {
   type PaymentMethod,
   type TableSlot,
   type Reservation,
+  type SpaReservation,
 } from '../../src/api/posFnb';
 import { listFolios, type FolioListItem } from '../../src/api/folio';
 import { ApiError } from '../../src/api/client';
@@ -72,7 +76,7 @@ function isNetworkError(e: unknown): boolean {
   return e instanceof ApiError && e.status === 0;
 }
 
-type Tab = 'tables' | 'order' | 'kitchen' | 'folio' | 'reports' | 'reservations';
+type Tab = 'tables' | 'order' | 'kitchen' | 'folio' | 'reports' | 'reservations' | 'spa_gym';
 type CartLine = { item_id: string; quantity: number };
 
 function statusLabel(s?: string): string {
@@ -211,6 +215,9 @@ export default function PosScreen() {
   // BEO read state — the tapped event opens a read-only summary sheet.
   const [selectedBeoId, setSelectedBeoId] = useState<string | null>(null);
 
+  // SPA reservation state
+  const [selectedSpaReservation, setSelectedSpaReservation] = useState<SpaReservation | null>(null);
+
   const outletsQ = useQuery({
     queryKey: ['pos-outlets'],
     queryFn: listOutlets,
@@ -258,6 +265,12 @@ export default function PosScreen() {
     queryKey: ['pos-reservations', activeOutlet],
     queryFn: () => listReservations({ outlet_id: activeOutlet }),
     enabled: posAccess && tab === 'reservations' && !!activeOutlet,
+  });
+
+  const spaReservationsQ = useQuery({
+    queryKey: ['pos-spa-reservations'],
+    queryFn: () => listSpaReservations(),
+    enabled: posAccess && tab === 'spa_gym',
   });
 
   // Calculate table stats when layouts load (for the summary Kpis).
@@ -1817,6 +1830,40 @@ export default function PosScreen() {
     );
   };
 
+  const renderSpaGymTab = () => {
+    const data = spaReservationsQ.data || [];
+    const showList = !spaReservationsQ.isLoading && !spaReservationsQ.error && data.length > 0;
+    return (
+      <View>
+        <SectionTitle title="SPA & Spor Salonu" />
+        <Muted>SPA Randevuları ve Kaynak Planlama</Muted>
+        <View style={{ height: spacing.sm }} />
+        {!showList ? (
+          <DepartmentListState
+            loading={spaReservationsQ.isLoading}
+            error={spaReservationsQ.error}
+            isEmpty={data.length === 0}
+            emptyText="SPA rezervasyonu bulunamadı."
+          />
+        ) : (
+          <ListGroup>
+            {data.map((r, idx) => (
+              <ListRow
+                key={r.id}
+                icon="leaf-outline"
+                label={r.guest_name}
+                sublabel={`${r.res_date} ${r.res_time} | Süre: ${r.duration_minutes} dk`}
+                last={idx === data.length - 1}
+                right={<Badge label={statusLabel(r.status)} tone={statusTone(r.status)} />}
+                onPress={() => setSelectedSpaReservation(r)}
+              />
+            ))}
+          </ListGroup>
+        )}
+      </View>
+    );
+  };
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
@@ -1904,6 +1951,12 @@ export default function PosScreen() {
           label={tr.departments.pos.tabs?.reservations || 'Rezervasyon'}
           onPress={() => setTab('reservations')}
         />
+        <Chip
+          active={tab === 'spa_gym'}
+          icon="leaf-outline"
+          label="SPA & Spor"
+          onPress={() => setTab('spa_gym')}
+        />
       </ScrollView>
 
       {tab === 'tables' ? renderTablesTab() : null}
@@ -1912,6 +1965,7 @@ export default function PosScreen() {
       {tab === 'folio' ? renderFolioTab() : null}
       {tab === 'reports' ? renderReportsTab() : null}
       {tab === 'reservations' ? renderReservationsTab() : null}
+      {tab === 'spa_gym' ? renderSpaGymTab() : null}
 
       {/* Active-order detail + actions sheet. */}
       <ActionSheet
@@ -1952,6 +2006,72 @@ export default function PosScreen() {
         ) : beoDetailQ.data ? (
           renderBeoDetail(beoDetailQ.data)
         ) : null}
+      </ActionSheet>
+
+      {/* SPA Reservation Action Sheet */}
+      <ActionSheet
+        visible={!!selectedSpaReservation}
+        onClose={() => setSelectedSpaReservation(null)}
+        title={selectedSpaReservation ? `SPA: ${selectedSpaReservation.guest_name}` : 'SPA Randevusu'}
+      >
+        {selectedSpaReservation && (
+          <View style={{ gap: spacing.md, padding: spacing.sm }}>
+            <DetailRow label="Tarih" value={`${selectedSpaReservation.res_date} ${selectedSpaReservation.res_time}`} />
+            <DetailRow label="Süre" value={`${selectedSpaReservation.duration_minutes} dk`} />
+            <DetailRow label="Durum" value={statusLabel(selectedSpaReservation.status)} />
+            <DetailRow label="Ücretlendirildi mi?" value={selectedSpaReservation.charged ? 'Evet' : 'Hayır'} />
+
+            {selectedSpaReservation.status !== 'completed' && selectedSpaReservation.status !== 'cancelled' && selectedSpaReservation.status !== 'no_show' && (
+              <SegmentedActions
+                actions={[
+                  {
+                    icon: 'close-circle-outline',
+                    label: 'İptal',
+                    tone: 'danger',
+                    onPress: async () => {
+                      try {
+                        await updateSpaReservationStatus(selectedSpaReservation.id, 'cancelled');
+                        spaReservationsQ.refetch();
+                        setSelectedSpaReservation(null);
+                      } catch (e) {
+                        Alert.alert('Hata', errorMessage(e));
+                      }
+                    }
+                  },
+                  {
+                    icon: 'alert-circle-outline',
+                    label: 'No-Show',
+                    tone: 'warning',
+                    onPress: async () => {
+                      try {
+                        await updateSpaReservationStatus(selectedSpaReservation.id, 'no_show');
+                        spaReservationsQ.refetch();
+                        setSelectedSpaReservation(null);
+                      } catch (e) {
+                        Alert.alert('Hata', errorMessage(e));
+                      }
+                    }
+                  },
+                  {
+                    icon: 'card-outline',
+                    label: 'Folyoya Aktar',
+                    tone: 'success',
+                    onPress: async () => {
+                      try {
+                        await chargeSpaReservation(selectedSpaReservation.id);
+                        spaReservationsQ.refetch();
+                        setSelectedSpaReservation(null);
+                        Alert.alert('Başarılı', 'Ücret folyoya yansıtıldı.');
+                      } catch (e) {
+                        Alert.alert('Hata', errorMessage(e));
+                      }
+                    }
+                  }
+                ]}
+              />
+            )}
+          </View>
+        )}
       </ActionSheet>
     </ScrollView>
   );
