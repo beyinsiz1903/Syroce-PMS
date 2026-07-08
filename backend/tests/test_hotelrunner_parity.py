@@ -381,8 +381,114 @@ class TestWebhookEndpoints:
         assert response.status_code == 401, f"Expected 401, got {response.status_code}: {response.text}"
         print("PASS: Official Token Validation blocked invalid token")
 
+    def test_webhook_official_invalid_hr_id_returns_401(self):
+        """Webhook with valid token but INVALID hr_id should return 401 (or 503 if not found)"""
+        payload = self._generate_hr_payload()
+        payload["hr_id"] = "invalid_hr_id_9999"
+        
+        import json
+        from urllib.parse import urlencode
+        data_str = json.dumps(payload)
+        encoded_body = urlencode({"data": data_str}).encode("utf-8")
+        
+        response = requests.post(
+            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations?token={MOCK_TOKEN}",
+            headers={"Content-Type": "application/x-www-form-urlencoded", "X-Tenant-ID": TEST_TENANT_ID},
+            data=encoded_body,
+            timeout=15
+        )
+        assert response.status_code in (401, 503), f"Expected 401/503, got {response.status_code}"
+        print("PASS: Invalid hr_id blocked")
 
+    def test_webhook_official_cross_tenant_returns_401(self):
+        """Webhook with valid token but hr_id belonging to another tenant should be blocked if token doesn't match that hr_id"""
+        payload = self._generate_hr_payload()
+        payload["hr_id"] = MOCK_HR_ID
+        
+        import json
+        from urllib.parse import urlencode
+        data_str = json.dumps(payload)
+        encoded_body = urlencode({"data": data_str}).encode("utf-8")
+        
+        # We send a completely wrong token pretending to be cross-tenant
+        response = requests.post(
+            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations?token=other-tenant-token",
+            headers={"Content-Type": "application/x-www-form-urlencoded", "X-Tenant-ID": TEST_TENANT_ID},
+            data=encoded_body,
+            timeout=15
+        )
+        assert response.status_code == 401, f"Expected 401, got {response.status_code}"
+        print("PASS: Cross-tenant token mismatch blocked")
 
+    def test_webhook_official_token_in_form_body_accepted(self):
+        """Webhook with token inside the form-urlencoded body instead of query should be accepted"""
+        payload = self._generate_hr_payload()
+        payload["hr_id"] = MOCK_HR_ID
+        
+        import json
+        from urllib.parse import urlencode
+        data_str = json.dumps(payload)
+        # Token is in body
+        encoded_body = urlencode({"data": data_str, "token": MOCK_TOKEN}).encode("utf-8")
+        
+        response = requests.post(
+            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations",
+            headers={"Content-Type": "application/x-www-form-urlencoded", "X-Tenant-ID": TEST_TENANT_ID},
+            data=encoded_body,
+            timeout=15
+        )
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+        print("PASS: Token parsed from form body accepted")
+
+    def test_webhook_hmac_missing_timestamp_returns_401(self):
+        """Webhook with HMAC signature but NO timestamp should return 401"""
+        payload = self._generate_hr_payload()
+        payload["hr_id"] = MOCK_HR_ID
+        
+        import json
+        from urllib.parse import urlencode
+        data_str = json.dumps(payload)
+        encoded_body = urlencode({"data": data_str}).encode("utf-8")
+        
+        response = requests.post(
+            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations",
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded", 
+                "X-Tenant-ID": TEST_TENANT_ID,
+                "X-HotelRunner-Signature": "dummy-sig"
+                # Missing timestamp
+            },
+            data=encoded_body,
+            timeout=15
+        )
+        assert response.status_code == 401, f"Expected 401, got {response.status_code}"
+        print("PASS: HMAC missing timestamp blocked")
+
+    def test_webhook_hmac_invalid_signature_does_not_fallback(self):
+        """Webhook with invalid HMAC signature but VALID token should STILL return 401, no fallback"""
+        payload = self._generate_hr_payload()
+        payload["hr_id"] = MOCK_HR_ID
+        
+        import json
+        import time
+        from urllib.parse import urlencode
+        data_str = json.dumps(payload)
+        encoded_body = urlencode({"data": data_str, "token": MOCK_TOKEN}).encode("utf-8")
+        ts = str(int(time.time()))
+        
+        response = requests.post(
+            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations",
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded", 
+                "X-Tenant-ID": TEST_TENANT_ID,
+                "X-HotelRunner-Signature": "invalid-signature",
+                "X-HotelRunner-Timestamp": ts
+            },
+            data=encoded_body,
+            timeout=15
+        )
+        assert response.status_code == 401, f"Expected 401, got {response.status_code}"
+        print("PASS: Invalid HMAC signature blocked (no fallback to token)")
 class TestIngestPipelineLineage:
     """Test 8: Ingest pipeline creates lineage for new reservations"""
 

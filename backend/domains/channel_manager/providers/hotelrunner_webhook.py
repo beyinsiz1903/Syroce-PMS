@@ -70,26 +70,48 @@ def _log_webhook_reject(reason: str, source_ip: str, tenant_hint: str, hr_id_hin
 
 def _extract_signature_hints(request: Request, raw: bytes) -> tuple[str, str]:
     """Pull the (untrusted) tenant / hr_id hints used only to LOCATE the
-    candidate connection — never to authorize. Defensive against partial
-    request shims (tests) and malformed bodies."""
+    candidate connection — never to authorize."""
     tenant_hint = ""
     hr_id_hint = ""
-    try:
-        tenant_hint = request.headers.get("X-Tenant-ID") or ""
-    except Exception:
-        tenant_hint = ""
+    
     qp = getattr(request, "query_params", None)
-    if not tenant_hint and qp is not None:
-        try:
-            tenant_hint = qp.get("tenant_id") or ""
-        except Exception:
-            tenant_hint = ""
+    if qp is not None:
+        tenant_hint = qp.get("tenant_id") or ""
+        hr_id_hint = qp.get("hr_id") or qp.get("hotel_id") or qp.get("property_id") or ""
+
     try:
-        body = json.loads(raw or b"{}")
+        if not tenant_hint:
+            tenant_hint = request.headers.get("X-Tenant-ID") or ""
+    except Exception:
+        pass
+
+    import json
+    try:
+        body = {}
+        content_type = request.headers.get("content-type", "")
+        # Try to parse form-urlencoded payload for hints (P1 Fix)
+        if "application/x-www-form-urlencoded" in content_type:
+            try:
+                # We can't await request.form() inside a sync func
+                # Fortunately, Starlette caches request.form() but we can't await it here.
+                # So we fallback to decoding raw manually for hints if needed.
+                from urllib.parse import parse_qsl
+                form_data = dict(parse_qsl(raw.decode("utf-8")))
+                if not hr_id_hint:
+                    hr_id_hint = form_data.get("hr_id") or ""
+                data_str = form_data.get("data")
+                if data_str:
+                    body = json.loads(data_str)
+            except Exception:
+                pass
+        else:
+            body = json.loads(raw or b"{}")
+            
         if isinstance(body, dict):
             if not tenant_hint:
                 tenant_hint = body.get("tenant_id") or ""
-            hr_id_hint = body.get("hr_id") or body.get("hotel_id") or body.get("property_id") or ""
+            if not hr_id_hint:
+                hr_id_hint = body.get("hr_id") or body.get("hotel_id") or body.get("property_id") or ""
     except Exception:
         pass
     return str(tenant_hint), str(hr_id_hint)
@@ -175,18 +197,14 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     # ── MODE 1: HMAC Signature (Syroce Internal/Mock) ──
     if sig_header:
         global_secret = _os.environ.get("HOTELRUNNER_WEBHOOK_SECRET")
-        escape = _os.environ.get("ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK") == "1"
-
         per_property_secret = await _load_webhook_secret(conn) if conn else None
         active_secret = per_property_secret or global_secret
 
         if not active_secret:
-            if escape:
-                _bind_verified_tenant(request, conn)
-                return
+            # P0 Fix: Removed ALLOW_UNSIGNED escape hatch entirely. Fail-closed if no secret.
             raise HTTPException(
                 status_code=503,
-                detail="Webhook signing not configured (set HOTELRUNNER_WEBHOOK_SECRET)",
+                detail="Webhook signing not configured",
             )
 
         ts_header = (request.headers.get("X-HotelRunner-Timestamp") or request.headers.get("X-Timestamp") or "").strip()
@@ -215,10 +233,14 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     # ── MODE 2: Official Callback Validation (Token + hr_id + callback_secret) ──
     
     # 1. Callback Secret Validation
+    # Prefer connection-specific callback secret, fallback to global
     global_callback_secret = _os.environ.get("HOTELRUNNER_CALLBACK_SECRET")
-    if global_callback_secret:
+    connection_callback_secret = conn.get("callback_secret") if conn else None
+    
+    expected_secret = connection_callback_secret or global_callback_secret
+    if expected_secret:
         path_secret = request.path_params.get("secret")
-        if path_secret != global_callback_secret:
+        if not path_secret or not _hmac.compare_digest(str(path_secret), str(expected_secret)):
             _log_webhook_reject("invalid_callback_secret", source_ip, tenant_hint, hr_id_hint)
             raise HTTPException(status_code=401, detail="Invalid callback secret")
 
@@ -226,9 +248,15 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     token = request.query_params.get("token")
     if not token:
         try:
-            body = json.loads(raw or b"{}")
-            if isinstance(body, dict):
-                token = body.get("token")
+            content_type = request.headers.get("content-type", "")
+            if "application/x-www-form-urlencoded" in content_type:
+                form = await request.form()
+                token = form.get("token")
+            else:
+                import json
+                body = json.loads(raw or b"{}")
+                if isinstance(body, dict):
+                    token = body.get("token")
         except Exception:
             pass
 
@@ -250,11 +278,16 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     except Exception as e:
         logger.error(f"[WEBHOOK] Failed to load secrets for token validation: {e}")
 
-    # Fallback to connection doc for legacy records without secrets manager entry
     if not real_token and "token" in conn:
-        real_token = conn.get("token")
+        if _os.environ.get("APP_ENV") in ("test", "development"):
+            real_token = conn.get("token")
+            logger.warning("[WEBHOOK] Security Warning: Falling back to plaintext DB token in test/dev mode.")
 
-    if not real_token or str(real_token) != str(token):
+    if not real_token:
+        # P1 Fix: Raise 503 instead of falling back to plaintext DB token in production
+        raise HTTPException(status_code=503, detail="HotelRunner credentials not configured")
+
+    if not _hmac.compare_digest(str(real_token), str(token)):
         _log_webhook_reject("invalid_token", source_ip, tenant_hint, hr_id_hint)
         raise HTTPException(status_code=401, detail="Invalid HotelRunner token")
 

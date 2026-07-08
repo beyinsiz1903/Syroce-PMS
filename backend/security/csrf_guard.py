@@ -64,13 +64,13 @@ async def csrf_guard_middleware(request: Request, call_next):
         return await call_next(request)
 
     # Bypass CSRF check for HotelRunner Webhooks (signature verified inside route)
-    HR_WEBHOOK_PATHS = {
+    HR_WEBHOOK_PREFIXES = (
         "/api/channel-manager/hotelrunner/callback",
         "/api/channel-manager/hotelrunner/webhooks/reservations",
         "/api/channel-manager/hotelrunner/webhooks/modifications",
         "/api/channel-manager/hotelrunner/webhooks/cancellations",
-    }
-    if request.url.path in HR_WEBHOOK_PATHS:
+    )
+    if request.url.path.startswith(HR_WEBHOOK_PREFIXES):
         return await call_next(request)
 
 
