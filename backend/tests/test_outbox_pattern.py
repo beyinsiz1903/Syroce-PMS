@@ -34,6 +34,13 @@ TEST_TENANT = f"test_outbox_{uuid.uuid4().hex[:8]}"
 TEST_PROPERTY = f"prop_{uuid.uuid4().hex[:8]}"
 
 
+@pytest.fixture(autouse=True)
+def isolate_tenant():
+    global TEST_TENANT, TEST_PROPERTY
+    TEST_TENANT = f"test_outbox_{uuid.uuid4().hex[:8]}"
+    TEST_PROPERTY = f"prop_{uuid.uuid4().hex[:8]}"
+
+
 async def _get_db():
     """Create a fresh Motor client for testing."""
     import os

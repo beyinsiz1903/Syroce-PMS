@@ -52,6 +52,16 @@ public_router = APIRouter(prefix="/api/voice", tags=["contact-center-voice-webho
 _XML = "application/xml"
 
 
+def _safe_seconds_between(dt1: datetime | None, dt2: datetime | None) -> int:
+    if not dt1 or not dt2:
+        return 0
+    if dt1.tzinfo is not None and dt2.tzinfo is None:
+        dt1 = dt1.replace(tzinfo=None)
+    elif dt1.tzinfo is None and dt2.tzinfo is not None:
+        dt2 = dt2.replace(tzinfo=None)
+    return int((dt1 - dt2).total_seconds())
+
+
 def _public_url(request: Request) -> str:
     """Twilio imzasının doğrulanacağı dış URL'i kurar (proxy-güvenli).
 
@@ -323,8 +333,9 @@ async def get_analytics_summary(
     _mod=Depends(require_module("contact_center")),
 ):
     """Çağrı merkezi performans özet istatistiklerini ve saatlik hacim grafiğini hesaplar."""
-    # Resolve hotel/tenant timezone
-    tz_doc = await db.tenant_settings.find_one({"tenant_id": current_user.tenant_id}, {"_id": 0, "timezone": 1}) or {}
+    tz_doc = {}
+    if hasattr(db, "tenant_settings"):
+        tz_doc = await db.tenant_settings.find_one({"tenant_id": current_user.tenant_id}, {"_id": 0, "timezone": 1}) or {}
     tz_name = tz_doc.get("timezone") or "Europe/Istanbul"
     import zoneinfo
     try:
@@ -1581,7 +1592,7 @@ async def set_agent_presence_state(tenant_id: str, agent_id: str, state_name: st
     if last_active:
         if last_active["state"] == state_name:
             return last_active
-        duration = int((now - last_active["started_at"]).total_seconds())
+        duration = _safe_seconds_between(now, last_active.get("started_at"))
         await db.contact_center_agent_states.update_one(
             {"id": last_active["id"]},
             {"$set": {"ended_at": now, "duration_seconds": duration}}
@@ -1688,7 +1699,7 @@ async def list_agents_states(
     items = await cursor.to_list(length=100)
     now = datetime.now(UTC)
     for item in items:
-        item["duration_seconds"] = int((now - item["started_at"]).total_seconds())
+        item["duration_seconds"] = _safe_seconds_between(now, item.get("started_at"))
     return {"agents": items}
 
 
@@ -1706,14 +1717,44 @@ async def voice_inbound(request: Request):
         signature=request.headers.get("X-Twilio-Signature", ""),
         request=request,
     ):
-        return Response(status_code=403)
+        return Response(
+            content=provider.say_fallback("Çağrı doğrulanamadı."),
+            media_type=_XML,
+            status_code=403,
+        )
 
     to_num = form.get("To") or ""
     tenant_id = await _resolve_tenant_id(request, to_num)
     if not tenant_id:
         return Response(content=provider.say_fallback("Hata: Otel bulunamadı."), media_type=_XML)
 
-    tz_doc = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "timezone": 1}) or {}
+    # If number is configured for a specific agent direct extension, bypass IVR queue routing
+    cfg = await _resolve_tenant_for_number(to_num)
+    agent_identity = cfg.get("agent_identity") if cfg else None
+    if agent_identity:
+        call_sid = form.get("CallSid", "")
+        from_phone = form.get("From", "")
+        call_id = await record_inbound_call(
+            db,
+            tenant_id=tenant_id,
+            provider_call_sid=call_sid,
+            from_phone=from_phone,
+            parent_call_sid=form.get("ParentCallSid"),
+        )
+        if call_id:
+            await _notify_incoming_call(tenant_id, call_id)
+
+        rec_cb, status_cb = _callback_urls(tenant_id)
+        twiml = provider.build_inbound_twiml(
+            agent_identity=agent_identity,
+            recording_status_callback=rec_cb,
+            dial_status_callback=status_cb,
+        )
+        return Response(content=twiml, media_type=_XML)
+
+    tz_doc = {}
+    if hasattr(db, "tenant_settings"):
+        tz_doc = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "timezone": 1}) or {}
     tz_name = tz_doc.get("timezone") or "Europe/Istanbul"
     import zoneinfo
     try:
@@ -1729,7 +1770,10 @@ async def voice_inbound(request: Request):
     tr_holidays = holidays.Turkey(years=[now.year])
     is_holiday = now.date() in tr_holidays
 
-    first_queue = await db.contact_center_queues.find_one({"tenant_id": tenant_id})
+    first_queue = None
+    if hasattr(db, "contact_center_queues"):
+        first_queue = await db.contact_center_queues.find_one({"tenant_id": tenant_id})
+
     if first_queue:
         wh_start = first_queue.get("working_hours_start")
         wh_end = first_queue.get("working_hours_end")
@@ -1749,8 +1793,10 @@ async def voice_inbound(request: Request):
                 twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Say language="tr-TR">Çalışma saatleri dışındayız veya resmi tatildir. Lütfen mesai saatleri içinde tekrar arayınız.</Say><Hangup/></Response>'
                 return Response(content=twiml, media_type=_XML)
 
-    cursor = db.contact_center_queues.find({"tenant_id": tenant_id}).sort("extension", 1)
-    queues = await cursor.to_list(length=10)
+    queues = []
+    if hasattr(db, "contact_center_queues"):
+        cursor = db.contact_center_queues.find({"tenant_id": tenant_id}).sort("extension", 1)
+        queues = await cursor.to_list(length=10)
 
     if not queues:
         twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Say language="tr-TR">Müşteri temsilcisine bağlanıyorsunuz.</Say><Enqueue>OperatorQueue</Enqueue></Response>'
@@ -2070,7 +2116,7 @@ async def get_supervisor_dashboard(
     for q_call in queued_callers:
         if q_call.get("started_at"):
             started = datetime.fromisoformat(q_call["started_at"])
-            wait = (now - started).total_seconds()
+            wait = _safe_seconds_between(now, started)
             if wait > longest_wait:
                 longest_wait = int(wait)
 
@@ -2103,7 +2149,7 @@ async def get_supervisor_dashboard(
     answer_times = []
     for c in answered_today:
         if c.get("answered_at") and c.get("started_at"):
-            answer_times.append((c["answered_at"] - c["started_at"]).total_seconds())
+            answer_times.append(_safe_seconds_between(c.get("answered_at"), c.get("started_at")))
     avg_answer_time = sum(answer_times) / len(answer_times) if answer_times else 0
 
     # 6. Abandoned call rate today
@@ -2133,7 +2179,7 @@ async def get_supervisor_dashboard(
         met_q = 0
         for c in q_calls:
             if c.get("answered_at") and c.get("started_at"):
-                duration = (c["answered_at"] - c["started_at"]).total_seconds()
+                duration = _safe_seconds_between(c.get("answered_at"), c.get("started_at"))
                 if duration <= threshold:
                     met_q += 1
 
@@ -2355,6 +2401,11 @@ async def post_agent_disposition(
     _mod=Depends(require_module("contact_center")),
 ):
     tenant_id = current_user.tenant_id
+
+    if not payload.disposition or not payload.disposition.strip():
+        raise HTTPException(status_code=400, detail="Değerlendirme nedeni (disposition) zorunludur.")
+    if not payload.notes or not payload.notes.strip():
+        raise HTTPException(status_code=400, detail="Değerlendirme notları zorunludur.")
 
     doc = {
         "id": str(uuid4()),

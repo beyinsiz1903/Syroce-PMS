@@ -185,7 +185,11 @@ while ((sm = selRe.exec(css)) !== null) {
   s = s.trim();
   s = s.replace(/\[data-state=active\]$/, "");
   s = s.replace(/::placeholder$/, "");
-  s = s.replace(/:hover$|:disabled$|:focus$|:checked$|:active$/, "");
+  let prev;
+  do {
+    prev = s;
+    s = s.replace(/:hover$|:disabled$|:focus$|:checked$|:active$/, "");
+  } while (s !== prev);
   s = s.trim().replace(/^\./, "");
   s = s.replace(/\\/g, "");
   if (s) covered.add(s);

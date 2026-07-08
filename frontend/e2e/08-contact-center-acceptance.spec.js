@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { STORAGE_STATE } from './fixtures/auth.js';
+import { loginAsDemo, STORAGE_STATE, PASSWORD } from './fixtures/auth.js';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,15 +11,11 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
     let sessionToken;
     let testTenant;
 
-    test.beforeAll(() => {
+    test.beforeAll(async ({ playwright }) => {
         // Build a fake JWT that expires 1 hour from now so the UI considers it fresh
         const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString('base64');
-        const payload = Buffer.from(JSON.stringify({
-            exp: Math.floor(Date.now() / 1000) + 3600
-        })).toString('base64');
-        mockJwtToken = `${header}.${payload}.signature`;
-
-        // Read the actual active user session token from state.json
+        
+        // Read the actual active user session token from state.json first as backup
         const statePath = path.resolve(STORAGE_STATE);
         if (fs.existsSync(statePath)) {
             const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
@@ -33,11 +29,17 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
                 }
             }
         }
-        
-        // Fallback if state.json is empty or not found
+
         if (!testTenant) {
             testTenant = 'bb306859-9748-430f-b24a-5a0d0ea29309';
         }
+
+        const payload = Buffer.from(JSON.stringify({
+            iat: Math.floor(Date.now() / 1000),
+            exp: Math.floor(Date.now() / 1000) + 3600,
+            tenant_id: testTenant
+        })).toString('base64');
+        mockJwtToken = `${header}.${payload}.signature`;
     });
 
     test.beforeEach(async ({ page }) => {
@@ -109,9 +111,15 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
 
     test('1. Müsait -> Mola -> Müsait geçişinde mikrofon tekrar sorulmuyor', async ({ page }) => {
         await page.goto('/');
-        
-        // Wait for page load
         await page.waitForLoadState('networkidle');
+        
+        // If not logged in (e.g. state.json was invalidated by a previous logout), app-shell won't be visible
+        const appShell = page.locator('[data-testid="app-shell"]');
+        if (!(await appShell.isVisible())) {
+            await loginAsDemo(page);
+            await page.goto('/');
+            await page.waitForLoadState('networkidle');
+        }
 
         // Click Softphone trigger button to open it
         const softphoneTrigger = page.locator('button[aria-label="Softphone"], button[title="Softphone"]').first();
@@ -128,25 +136,38 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
         // First transition: Click "Müsait (Çevrimiçi Ol)"
         await activateBtn.click();
 
-        // The status should change to "Ready" / button changes to "Molaya Çık"
-        const deactivateBtn = page.getByRole('button', { name: /Molaya Çık/i });
-        await expect(deactivateBtn).toBeVisible();
+        // The status select should be visible and value should be "ready"
+        const statusSelect = page.locator('select').first();
+        await expect(statusSelect).toBeVisible();
+        await expect(statusSelect).toHaveValue('ready');
 
         // Get getUserMedia call count (should be 1 because we cleared permission)
         let count = await page.evaluate(() => window.__getUserMediaCallCount);
         expect(count).toBe(1);
 
-        // Second transition: Go to break (deactivate)
-        await deactivateBtn.click();
-        await expect(activateBtn).toBeVisible();
+        // Second transition: Go to break (select break_short)
+        await statusSelect.selectOption('break_short');
+        await expect(statusSelect).toHaveValue('break_short');
 
-        // Third transition: Go back online
-        await activateBtn.click();
-        await expect(deactivateBtn).toBeVisible();
+        // Third transition: Go back online (select ready)
+        await statusSelect.selectOption('ready');
+        await expect(statusSelect).toHaveValue('ready');
 
         // Verify getUserMedia call count is STILL 1 (cached via sessionStorage)
         count = await page.evaluate(() => window.__getUserMediaCallCount);
         expect(count).toBe(1);
+
+        // Extract the fresh sessionToken from the browser cookies to use for subsequent API tests
+        const cookies = await page.context().cookies();
+        const accessCookie = cookies.find(c => c.name === 'access_token');
+        if (accessCookie) {
+            sessionToken = accessCookie.value;
+            const parts = sessionToken.split('.');
+            if (parts.length === 3) {
+                const payloadJson = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+                testTenant = payloadJson.tenant_id;
+            }
+        }
     });
 
     test('2. Idempotency ve Webhook Akışı: Tek Dial Child, WhatsApp queued/sent/delivered ve Çağrı Geçmişi', async ({ request }) => {

@@ -569,13 +569,13 @@ export default function ContactCenterDashboard() {
                           agent.state === 'ready' ? 'bg-emerald-100 text-emerald-800' :
                           agent.state === 'on_call' ? 'bg-amber-100 text-amber-800' :
                           agent.state === 'wrap_up' ? 'bg-blue-100 text-blue-800' :
-                          agent.state === 'offline' ? 'bg-gray-100 text-gray-800' : 'bg-orange-100 text-orange-800'
+                          agent.state === 'offline' ? 'bg-gray-100 text-gray-800' : 'bg-amber-100 text-amber-800'
                         }`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${
                             agent.state === 'ready' ? 'bg-emerald-500' :
                             agent.state === 'on_call' ? 'bg-amber-500' :
                             agent.state === 'wrap_up' ? 'bg-blue-500' :
-                            agent.state === 'offline' ? 'bg-gray-400' : 'bg-orange-500'
+                            agent.state === 'offline' ? 'bg-gray-400' : 'bg-amber-500'
                           }`}></span>
                           {AGENT_STATE_LABELS[agent.state] || agent.state}
                         </span>
