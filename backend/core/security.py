@@ -415,7 +415,7 @@ async def get_current_user(
                 logger.warning(f"JWT_REVOKED: user_id={user_id} token_iat={f_iat} < tokens_invalid_before={f_ib}")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Şifre değişti - lütfen yeniden giriş yapın",
+                    detail=f"Şifre değişti - lütfen yeniden giriş yapın (token_iat={f_iat}, watermark={f_ib})",
                 )
 
         # v105 Bug DAA (architect P1): defense-in-depth tenant consistency check.
