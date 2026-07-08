@@ -180,11 +180,24 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
             if (parts.length === 3) {
                 const payloadJson = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
                 testTenant = payloadJson.tenant_id;
+                console.log('E2E_DEBUG: sessionToken payload iat:', payloadJson.iat, 'exp:', payloadJson.exp, 'tenant_id:', payloadJson.tenant_id, 'user_id:', payloadJson.user_id);
+            } else {
+                console.log('E2E_DEBUG: sessionToken is not a standard JWT token:', sessionToken);
             }
+        } else {
+            console.log('E2E_DEBUG: sessionToken is empty!');
         }
     });
 
     test('2. Idempotency ve Webhook Akışı: Tek Dial Child, WhatsApp queued/sent/delivered ve Çağrı Geçmişi', async ({ playwright }) => {
+        console.log('E2E_DEBUG: sessionToken at start of Test 2 is:', sessionToken ? 'NOT_EMPTY' : 'EMPTY');
+        if (sessionToken) {
+            const parts = sessionToken.split('.');
+            if (parts.length === 3) {
+                const payloadJson = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+                console.log('E2E_DEBUG: sessionToken payload in Test 2 iat:', payloadJson.iat, 'exp:', payloadJson.exp, 'tenant_id:', payloadJson.tenant_id, 'user_id:', payloadJson.user_id);
+            }
+        }
         expect(sessionToken).toBeTruthy();
         expect(testTenant).toBeTruthy();
 
