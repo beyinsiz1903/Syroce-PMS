@@ -414,7 +414,7 @@ class FrontDeskService:
         import asyncio
 
         results = {}
-        
+
         async def process_single(req):
             try:
                 res = await self.walk_in(
