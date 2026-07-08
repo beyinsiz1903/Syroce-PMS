@@ -201,6 +201,13 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
             }
         }
 
+        if (sessionToken) {
+            const parts = sessionToken.split('.');
+            if (parts.length === 3) {
+                const payloadJson = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+                console.log('E2E_DEBUG: sessionToken payload in Test 2 iat:', payloadJson.iat, 'exp:', payloadJson.exp, 'tenant_id:', payloadJson.tenant_id, 'user_id:', payloadJson.user_id);
+            }
+        }
         expect(sessionToken).toBeTruthy();
         expect(testTenant).toBeTruthy();
 
