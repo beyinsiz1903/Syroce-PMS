@@ -321,6 +321,22 @@ async def _resolve_tenant_from_callback(body: dict, request: Request) -> str:
     return ""
 
 
+async def _parse_payload(request: Request) -> dict:
+    """Parse JSON from either direct body or x-www-form-urlencoded 'data' field."""
+    try:
+        content_type = request.headers.get("content-type", "")
+        if "application/x-www-form-urlencoded" in content_type:
+            form = await request.form()
+            data_str = form.get("data")
+            if not data_str:
+                raise ValueError("Missing 'data' field in form")
+            return json.loads(data_str)
+        return await request.json()
+    except Exception as e:
+        logger.error(f"[WEBHOOK] Payload parsing failed: {e}")
+        raise HTTPException(status_code=400, detail="Invalid payload format")
+
+
 # ── UNIFIED CALLBACK — Single endpoint for HotelRunner "Dönüş adresi" ──
 
 
@@ -346,7 +362,7 @@ async def unified_callback(
     helper applied here for parity (fail-closed without the env secret).
     """
     try:
-        body = await request.json()
+        body = await _parse_payload(request)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
@@ -402,7 +418,7 @@ async def webhook_reservations(
     Persists as raw_channel_event and processes via unified ingest pipeline.
     """
     try:
-        body = await request.json()
+        body = await _parse_payload(request)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
@@ -440,7 +456,7 @@ async def webhook_modifications(
 ):
     """Webhook for reservation modifications -> unified ingest pipeline."""
     try:
-        body = await request.json()
+        body = await _parse_payload(request)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
@@ -473,7 +489,7 @@ async def webhook_cancellations(
 ):
     """Webhook for reservation cancellations -> unified ingest pipeline."""
     try:
-        body = await request.json()
+        body = await _parse_payload(request)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 

@@ -284,7 +284,7 @@ class TestHotelRunnerPullRateLimit:
         ) is True
 
     def test_non_429_pull_failure_passes_through(self):
-        """A real PULL failure (auth / parse / 5xx) must still page."""
+        """A real unrecoverable PULL failure (auth) must still page."""
         msg = (
             "[PULL] Failed for tenant 5bad4a34 page 1: "
             "Invalid credentials (401) [corr]"

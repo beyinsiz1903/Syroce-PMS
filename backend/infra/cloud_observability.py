@@ -291,26 +291,26 @@ def _is_graphql_field_validation_error(event: dict) -> bool:
         return False
 
 
-# ── HotelRunner PULL rate-limit (429) noise ────────────────────────
-# Counter for filtered HotelRunner PULL 429 events. Exposed via
+# ── HotelRunner PULL expected noise ────────────────────────
+# Counter for filtered HotelRunner PULL recoverable events. Exposed via
 # ``get_sentry_filter_stats()`` so ops can confirm the noise is gone.
 _HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT = 0
 
 # The sync engine logs an ERROR for every PULL page that fails. When that
-# failure is an EXTERNAL HotelRunner 429 (the provider throttling OUR poller),
-# the client layer has ALREADY exhausted its retries (manual=3 / scheduled=2)
+# failure is an EXTERNAL HotelRunner 429 (rate limit) or a transient network
+# error (timeout/5xx), the client layer has ALREADY exhausted its retries 
 # and the scheduler backs off — the per-attempt ERROR is expected operational
 # backpressure, not a server fault. The real "sync is behind" signal is the
-# separate channel-manager backlog alert, so this per-page 429 ERROR is pure
-# Sentry noise. We anchor on the FULL log template AND the 429 signature in
-# sequence (``re.search`` tolerates a logger prefix) so a genuine non-429 PULL
-# failure (auth / parse / 5xx) still pages. We never lower the source log level
+# separate channel-manager backlog alert, so this per-page ERROR is pure
+# Sentry noise. We anchor on the FULL log template AND the recoverable signatures
+# in sequence (``re.search`` tolerates a logger prefix) so a genuine unrecoverable
+# PULL failure (auth / parse) still pages. We never lower the source log level
 # — the ERROR stays visible in the workflow console.
-_HOTELRUNNER_PULL_RATE_LIMIT_RE = re.compile(r"\[PULL\] Failed for tenant .+ page \d+:.*Rate limit exceeded \(429\)")
+_HOTELRUNNER_PULL_RECOVERABLE_RE = re.compile(r"\[PULL\] Failed for tenant .+ page \d+:.*(?:Rate limit exceeded|timeout|Server error|Temporary provider error)", re.IGNORECASE)
 
 
 def _is_hotelrunner_pull_rate_limited(event: dict) -> bool:
-    """Drop predicate for the EXPECTED HotelRunner PULL 429 backpressure log."""
+    """Drop predicate for the EXPECTED HotelRunner PULL backpressure/transient log."""
     try:
         le = event.get("logentry") or {}
         ev_msg = event.get("message")
@@ -323,7 +323,7 @@ def _is_hotelrunner_pull_rate_limited(event: dict) -> bool:
         for val in exc.get("values") or []:
             if isinstance(val, dict):
                 candidates.append(val.get("value"))
-        return any(isinstance(c, str) and _HOTELRUNNER_PULL_RATE_LIMIT_RE.search(c) for c in candidates)
+        return any(isinstance(c, str) and _HOTELRUNNER_PULL_RECOVERABLE_RE.search(c) for c in candidates)
     except Exception:
         return False
 
