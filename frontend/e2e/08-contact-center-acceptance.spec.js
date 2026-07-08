@@ -213,6 +213,7 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
 
         const request = await playwright.request.newContext({
             baseURL: process.env.E2E_BASE_URL || 'http://localhost:3000',
+            storageState: { cookies: [], origins: [] },
             extraHTTPHeaders: {
                 'Origin': 'http://localhost:3000',
                 'Authorization': `Bearer ${sessionToken}`
