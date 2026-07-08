@@ -110,16 +110,17 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
     });
 
     test('1. Müsait -> Mola -> Müsait geçişinde mikrofon tekrar sorulmuyor', async ({ page }) => {
+        // Force complete clean slate (cookies, localStorage, and sessionStorage)
+        await page.goto('/auth');
+        await page.evaluate(() => {
+            localStorage.clear();
+            sessionStorage.clear();
+        });
+        await page.context().clearCookies();
+        await page.reload();
+        await loginAsDemo(page);
         await page.goto('/');
         await page.waitForLoadState('networkidle');
-        
-        // If not logged in (e.g. state.json was invalidated by a previous logout), app-shell won't be visible
-        const appShell = page.locator('[data-testid="app-shell"]');
-        if (!(await appShell.isVisible())) {
-            await loginAsDemo(page);
-            await page.goto('/');
-            await page.waitForLoadState('networkidle');
-        }
 
         // Click Softphone trigger button to open it
         const softphoneTrigger = page.locator('button[aria-label="Softphone"], button[title="Softphone"]').first();
