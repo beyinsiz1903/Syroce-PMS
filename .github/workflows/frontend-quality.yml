@@ -163,6 +163,10 @@ jobs:
             - name: Seed demo user
               run: cd backend && python create_demo_users.py || python scripts/create_test_user.py
             - name: Start backend
+              env:
+                  BYPASS_TWILIO_SIGNATURE: "1"
+                  DISABLE_AUTH_THROTTLE: "true"
+                  E2E_ALLOW_DESTRUCTIVE_STRESS: "true"
               run: |
                   cd backend
                   uvicorn server:app --host 0.0.0.0 --port 8000 &
