@@ -26,6 +26,8 @@ export const MappingManager = lazy(() => import("@/pages/MappingManager"));
 export const ReservationLineage = lazy(() => import("@/pages/ReservationLineage"));
 export const ReservationCalendar = lazy(() => import("@/pages/ReservationCalendar"));
 export const SustainabilityReport = lazy(() => import("@/pages/SustainabilityReport"));
+export const WebBookingEngine = lazy(() => import("@/pages/WebBookingEngine"));
+export const WBESettings = lazy(() => import("@/pages/WBESettings"));
 export const Settings = lazy(() => import("@/pages/settings"));
 export const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 export const PCIComplianceDashboard = lazy(() => import("@/pages/PCIComplianceDashboard"));

@@ -161,6 +161,14 @@ export const NAV_ITEMS = [
 
   // ──── OPERATIONS GROUP ─────────────────────────────
   {
+    key: "wbe_settings",
+    label: "Web Rezervasyon (WBE)",
+    path: "/app/wbe-settings",
+    tier: "basic",
+    group: "core",
+    navGroup: "system",
+  },
+  {
     key: "reservation_calendar",
     label: "Takvim",
     path: "/app/reservation-calendar",

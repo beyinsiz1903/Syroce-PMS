@@ -1,7 +1,7 @@
 import {
   LandingPage, RoomRequestPage, PublicReviewPage, PrivacyPolicy,
   PmsLiteLanding, AgencyPortalDashboard, B2BApiDocs, SimpleAdminPanel,
-  ResetPasswordPage, PreCheckinPage, CertificateVerifyPage,
+  ResetPasswordPage, PreCheckinPage, CertificateVerifyPage, WebBookingEngine,
 } from "./lazyPages";
 
 export function publicRoutes({ pa }) {
@@ -22,5 +22,6 @@ export function publicRoutes({ pa }) {
     { path: "/precheckin/:token", type: "public", component: PreCheckinPage },
     { path: "/sertifika-dogrula", type: "public", component: CertificateVerifyPage },
     { path: "/sertifika-dogrula/:code", type: "public", component: CertificateVerifyPage },
+    { path: "/wbe/:tenantId", type: "public", component: WebBookingEngine },
   ];
 }
