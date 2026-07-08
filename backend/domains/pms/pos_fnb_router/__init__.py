@@ -23,3 +23,6 @@ router.include_router(_guest_menu_r)
 from .reservations import router as _reservations_r
 
 router.include_router(_reservations_r)
+from .spa_gym import router as _spa_gym_r
+
+router.include_router(_spa_gym_r)

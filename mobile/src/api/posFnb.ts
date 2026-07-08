@@ -425,3 +425,69 @@ export async function updateReservationStatus(
     status,
   });
 }
+
+// --- SPA & Gym ---
+
+export type SpaResource = {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+};
+
+export type SpaMembership = {
+  id: string;
+  guest_name: string;
+  membership_type: string;
+  start_date: string;
+  end_date: string;
+  price: number;
+  status: string;
+};
+
+export type SpaReservation = {
+  id: string;
+  guest_name: string;
+  service_item_id: string;
+  therapist_id?: string;
+  cabin_id?: string;
+  res_date: string;
+  res_time: string;
+  duration_minutes: number;
+  notes?: string;
+  status: string;
+  charged?: boolean;
+};
+
+export async function listSpaResources(params?: { resource_type?: string }): Promise<SpaResource[]> {
+  const res = await api.get<SpaResource[]>('/api/pos/spa/resources', params);
+  return res ?? [];
+}
+
+export async function listSpaMemberships(params?: { status?: string }): Promise<SpaMembership[]> {
+  const res = await api.get<SpaMembership[]>('/api/pos/spa/memberships', params);
+  return res ?? [];
+}
+
+export async function listSpaReservations(params?: { res_date?: string }): Promise<SpaReservation[]> {
+  const res = await api.get<SpaReservation[]>('/api/pos/spa/reservations', params);
+  return res ?? [];
+}
+
+export async function updateSpaReservationStatus(
+  reservation_id: string,
+  status: string,
+): Promise<SpaReservation> {
+  return api.put(`/api/pos/spa/reservations/${encodeURIComponent(reservation_id)}/status`, {
+    status,
+  });
+}
+
+export async function chargeSpaReservation(
+  reservation_id: string,
+  folio_id?: string,
+): Promise<{ success: boolean; message: string; folio_id?: string }> {
+  return api.post(`/api/pos/spa/reservations/${encodeURIComponent(reservation_id)}/charge`, {
+    folio_id,
+  });
+}
