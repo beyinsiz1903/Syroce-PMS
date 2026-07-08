@@ -109,19 +109,10 @@ pwd_context = BcryptContext()
 
 # JWT Configuration
 JWT_SECRET = os.environ.get("JWT_SECRET")
-if not JWT_SECRET:
-    # v107 (Bug DAG, architect P0 follow-up): tutarlılık için 5 fail-open noktasının
-    # SONUNCUSU. Önceki davranış: random fallback + INFO log → multi-worker prod'da
-    # her worker farklı secret → cross-worker token reject + INFO seviyesi log
-    # gözden kaçar. Şimdi 5 yer hepsi aynı opt-in pattern.
-    if os.environ.get("STRICT_JWT_SECRET") == "1" or os.environ.get("ENV", "").lower() == "production":
-        raise RuntimeError(
-            "JWT_SECRET environment variable is required in production (STRICT_JWT_SECRET=1 or ENV=production set). Without it, multi-worker deployments would have inconsistent token verification."
-        )
-    import hashlib
-    JWT_SECRET = hashlib.sha256(b"syroce_local_dev_environment_static_key").hexdigest()
-    logger.warning(
-        "⚠️ JWT_SECRET unset; core/security using a static dev secret (DEV ONLY). For production set JWT_SECRET + STRICT_JWT_SECRET=1."
+
+if not JWT_SECRET or len(JWT_SECRET) < 32:
+    raise RuntimeError(
+        "JWT_SECRET must be configured and contain at least 32 characters."
     )
 JWT_ALGORITHM = "HS256"
 # v44 (Bug BJ): default lowered 168h → 24h. 7-day tokens are way too long for

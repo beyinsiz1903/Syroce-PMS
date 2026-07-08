@@ -144,10 +144,10 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
             note: `hk_cleaned ok=${cleanedOk}/${targetRoomIds.length} fail=${cleanedFail} (≥25 = turnover pre-cond ok)` });
         const target = targetRoomIds.map((id) => rooms.find((r) => r.id === id) || { id });
         const samples = []; let ok = 0, fail = 0; const failModes = {};
-        for (let i = 0; i < target.length; i++) {
-            const room = target[i];
+        
+        const requestsPayload = target.map((room, i) => {
             const ts = Date.now();
-            const r = await callTimed(request, 'post', '/api/pms-core/walk-in', {
+            return {
                 room_id: room.id,
                 nights: 1,
                 rate: 1000,
@@ -156,10 +156,37 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
                 guest_email: `f8a-walkin-${ts}-${i}@e2e-stress.example.com`,
                 guest_id_number: `E2EWI${ts}${i}`,
                 adults: 1,
-            }, stressTokens.stress_token);
-            samples.push(r.ms);
-            if (r.ok) ok++;
-            else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
+            };
+        });
+
+        const startedAt = Date.now();
+        const r = await callTimed(request, 'post', '/api/pms-core/walk-in/batch', {
+            requests: requestsPayload
+        }, stressTokens.stress_token);
+        
+        const elapsedMs = Date.now() - startedAt;
+        console.log({
+            endpoint: '/api/pms-core/walk-in/batch',
+            status: r.status,
+            elapsedMs: elapsedMs,
+        });
+        samples.push(r.ms);
+        
+        if (r.ok && r.data && (r.data.success || r.data.success_count > 0)) {
+            ok = r.data.success_count || 0;
+            fail = (r.data.total_count || target.length) - ok;
+            // Record inner failures if present
+            if (r.data.results) {
+                Object.values(r.data.results).forEach(res => {
+                    if (!res.success) {
+                        const k = `err_${res.error ? res.error.substring(0,20) : 'unknown'}`;
+                        failModes[k] = (failModes[k] || 0) + 1;
+                    }
+                });
+            }
+        } else {
+            fail = target.length;
+            const k = `s${r.status}`; failModes[k] = target.length;
         }
         rec(testInfo, { module: MOD, step: 'same_day_walkin', status: usingTurnover && ok >= 25 ? 'PASS' : 'REVIEW',
             endpoint: '/api/pms-core/walk-in',

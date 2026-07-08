@@ -86,6 +86,8 @@ class WalkInRequest(BaseModel):
     guest_id_number: str = ""
     adults: int = 1
 
+class WalkInBatchRequest(BaseModel):
+    requests: list[WalkInRequest]
 
 class CancellationRequest(BaseModel):
     booking_id: str
@@ -361,6 +363,38 @@ async def api_walk_in(req: WalkInRequest, http_request: Request, current_user: U
         raise HTTPException(status_code=400, detail=result)
     await guard.complete(result)
     return result
+
+
+@router.post("/walk-in/batch", tags=["front-desk"])
+async def api_walk_in_batch(req: WalkInBatchRequest, current_user: User = Depends(get_current_user)):
+    """Create a batch of walk-in reservations concurrently."""
+    perm_svc.enforce_permission(current_user.role, "walk_in")
+    requests_data = []
+    for r in req.requests:
+        guest_data = {
+            "name": r.guest_name,
+            "phone": r.guest_phone,
+            "email": r.guest_email or f"walkin-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}@hotel.local",
+            "id_number": r.guest_id_number,
+            "adults": r.adults,
+        }
+        requests_data.append({
+            "room_id": r.room_id,
+            "nights": r.nights,
+            "rate": r.rate,
+            "guest_data": guest_data
+        })
+
+    from fastapi.responses import JSONResponse
+    res = await front_desk.walk_in_batch(
+        tenant_id=current_user.tenant_id,
+        requests=requests_data,
+        user_id=current_user.id,
+        user_name=current_user.name,
+    )
+    if not res.get("success") and res.get("success_count") == 0:
+        return JSONResponse(status_code=400, content=res)
+    return res
 
 
 @router.post("/cancel", tags=["reservation"])
