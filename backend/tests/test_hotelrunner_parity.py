@@ -341,6 +341,47 @@ class TestWebhookEndpoints:
         assert "Timestamp out of tolerance" in response.text
         print("PASS: Stale timestamp blocked")
 
+    # ── Official Mode (Token Validation) Tests ──────────────────────────────
+
+    def test_webhook_official_validation_accepted(self):
+        """Webhook without HMAC but WITH valid token and hr_id should be accepted"""
+        payload = self._generate_hr_payload()
+        payload["hr_id"] = MOCK_HR_ID  # Use valid mock hr_id
+        
+        import json
+        from urllib.parse import urlencode
+        data_str = json.dumps(payload)
+        encoded_body = urlencode({"data": data_str}).encode("utf-8")
+        
+        response = requests.post(
+            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations?token={MOCK_TOKEN}",
+            headers={"Content-Type": "application/x-www-form-urlencoded", "X-Tenant-ID": TEST_TENANT_ID},
+            data=encoded_body,
+            timeout=15
+        )
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+        print("PASS: Official Token Validation accepted")
+
+    def test_webhook_official_invalid_token_returns_401(self):
+        """Webhook without HMAC and INVALID token should return 401"""
+        payload = self._generate_hr_payload()
+        payload["hr_id"] = MOCK_HR_ID
+        
+        import json
+        from urllib.parse import urlencode
+        data_str = json.dumps(payload)
+        encoded_body = urlencode({"data": data_str}).encode("utf-8")
+        
+        response = requests.post(
+            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations?token=wrong-token",
+            headers={"Content-Type": "application/x-www-form-urlencoded", "X-Tenant-ID": TEST_TENANT_ID},
+            data=encoded_body,
+            timeout=15
+        )
+        assert response.status_code == 401, f"Expected 401, got {response.status_code}: {response.text}"
+        print("PASS: Official Token Validation blocked invalid token")
+
+
 
 class TestIngestPipelineLineage:
     """Test 8: Ingest pipeline creates lineage for new reservations"""

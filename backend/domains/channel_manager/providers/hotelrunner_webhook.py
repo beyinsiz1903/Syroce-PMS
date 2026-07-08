@@ -151,66 +151,113 @@ def _verified_tenant(request: Request) -> str:
     return getattr(state, "hr_webhook_tenant_id", "") or ""
 
 
-# ── v106 Bug DAC (architect adversarial #6): inbound webhook signature
-# verification. Mirrors the Resend hardening pattern. Without this an
-# attacker who knew (or guessed) any tenant_id could forge create / modify /
-# cancel reservation events at will (revenue corruption, fake bookings,
-# channel-manager state poisoning). Fail-closed if secret is unset; explicit
-# dev escape hatch via ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK=1.
-#
-# Task #397 upgrade: per-property secret + cryptographic tenant binding.
-async def _verify_hotelrunner_signature(request: Request) -> None:
+# ── v106 & Webhook Validation Refactor ───────────────────────────────
+# Official HotelRunner documentation does not specify HMAC signature headers.
+# Therefore, we support dual-mode validation:
+# 1. Syroce Signed Webhook Mode (HMAC): Used internally and for secure mock tests.
+#    Enabled if `X-HotelRunner-Signature` is present.
+# 2. Official HotelRunner Callback Mode: Verifies `hr_id` and `token` against the DB,
+#    and validates the `{secret}` path parameter if HOTELRUNNER_CALLBACK_SECRET is set.
+
+async def _verify_hotelrunner_callback(request: Request) -> None:
     import hashlib as _hashlib
     import hmac as _hmac
     import os as _os
     import time as _time
 
-    global_secret = _os.environ.get("HOTELRUNNER_WEBHOOK_SECRET")
-    escape = _os.environ.get("ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK") == "1"
-
+    sig_header = (request.headers.get("X-HotelRunner-Signature") or request.headers.get("X-Signature") or "").strip()
     source_ip = _source_ip(request)
     raw = await request.body()
     tenant_hint, hr_id_hint = _extract_signature_hints(request, raw)
 
-    # Resolve the target connection from the hint and load its per-property
-    # secret. Per-property wins; global is the backward-compat fallback only
-    # when no per-property secret exists.
     conn = await _lookup_signing_connection(tenant_hint, hr_id_hint)
-    per_property_secret = await _load_webhook_secret(conn) if conn else None
-    active_secret = per_property_secret or global_secret
 
-    if not active_secret:
-        if escape:
-            _bind_verified_tenant(request, conn)
-            return
-        raise HTTPException(
-            status_code=503,
-            detail="Webhook signing not configured (set HOTELRUNNER_WEBHOOK_SECRET)",
-        )
+    # ── MODE 1: HMAC Signature (Syroce Internal/Mock) ──
+    if sig_header:
+        global_secret = _os.environ.get("HOTELRUNNER_WEBHOOK_SECRET")
+        escape = _os.environ.get("ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK") == "1"
 
-    sig_header = (request.headers.get("X-HotelRunner-Signature") or request.headers.get("X-Signature") or "").strip()
-    ts_header = (request.headers.get("X-HotelRunner-Timestamp") or request.headers.get("X-Timestamp") or "").strip()
-    if not (sig_header and ts_header):
-        _log_webhook_reject("missing_headers", source_ip, tenant_hint, hr_id_hint)
-        raise HTTPException(status_code=401, detail="Missing signature headers")
+        per_property_secret = await _load_webhook_secret(conn) if conn else None
+        active_secret = per_property_secret or global_secret
+
+        if not active_secret:
+            if escape:
+                _bind_verified_tenant(request, conn)
+                return
+            raise HTTPException(
+                status_code=503,
+                detail="Webhook signing not configured (set HOTELRUNNER_WEBHOOK_SECRET)",
+            )
+
+        ts_header = (request.headers.get("X-HotelRunner-Timestamp") or request.headers.get("X-Timestamp") or "").strip()
+        if not ts_header:
+            _log_webhook_reject("missing_headers", source_ip, tenant_hint, hr_id_hint)
+            raise HTTPException(status_code=401, detail="Missing signature headers")
+        try:
+            out_of_tolerance = abs(int(_time.time()) - int(ts_header)) > 300
+        except (ValueError, TypeError):
+            _log_webhook_reject("invalid_timestamp", source_ip, tenant_hint, hr_id_hint)
+            raise HTTPException(status_code=401, detail="Invalid timestamp")
+        if out_of_tolerance:
+            _log_webhook_reject("stale_timestamp", source_ip, tenant_hint, hr_id_hint)
+            raise HTTPException(status_code=401, detail="Timestamp out of tolerance")
+
+        signed_payload = f"{ts_header}.".encode() + raw
+        expected = _hmac.new(active_secret.encode(), signed_payload, _hashlib.sha256).hexdigest()
+        provided = sig_header.split("=", 1)[1] if "=" in sig_header else sig_header
+        if not _hmac.compare_digest(expected, provided.lower()):
+            _log_webhook_reject("invalid_signature", source_ip, tenant_hint, hr_id_hint)
+            raise HTTPException(status_code=401, detail="Invalid signature")
+
+        _bind_verified_tenant(request, conn)
+        return
+
+    # ── MODE 2: Official Callback Validation (Token + hr_id + callback_secret) ──
+    
+    # 1. Callback Secret Validation
+    global_callback_secret = _os.environ.get("HOTELRUNNER_CALLBACK_SECRET")
+    if global_callback_secret:
+        path_secret = request.path_params.get("secret")
+        if path_secret != global_callback_secret:
+            _log_webhook_reject("invalid_callback_secret", source_ip, tenant_hint, hr_id_hint)
+            raise HTTPException(status_code=401, detail="Invalid callback secret")
+
+    # 2. Token & HR_ID Extraction
+    token = request.query_params.get("token")
+    if not token:
+        try:
+            body = json.loads(raw or b"{}")
+            if isinstance(body, dict):
+                token = body.get("token")
+        except Exception:
+            pass
+
+    if not token or not hr_id_hint:
+        _log_webhook_reject("missing_official_credentials", source_ip, tenant_hint, hr_id_hint)
+        raise HTTPException(status_code=401, detail="Missing hr_id or token for official validation")
+
+    if not conn:
+        _log_webhook_reject("unknown_connection", source_ip, tenant_hint, hr_id_hint)
+        raise HTTPException(status_code=401, detail="Connection not found")
+
+    # 3. Token Verification against SecretsManager
+    real_token = None
     try:
-        out_of_tolerance = abs(int(_time.time()) - int(ts_header)) > 300
-    except (ValueError, TypeError):
-        _log_webhook_reject("invalid_timestamp", source_ip, tenant_hint, hr_id_hint)
-        raise HTTPException(status_code=401, detail="Invalid timestamp")
-    if out_of_tolerance:
-        _log_webhook_reject("stale_timestamp", source_ip, tenant_hint, hr_id_hint)
-        raise HTTPException(status_code=401, detail="Timestamp out of tolerance")
+        sm = get_secrets_manager()
+        creds = await sm.get_provider_credentials(conn.get("tenant_id"), "hotelrunner", str(conn.get("hr_id")))
+        if creds:
+            real_token = creds.get("token")
+    except Exception as e:
+        logger.error(f"[WEBHOOK] Failed to load secrets for token validation: {e}")
 
-    signed_payload = f"{ts_header}.".encode() + raw
-    expected = _hmac.new(active_secret.encode(), signed_payload, _hashlib.sha256).hexdigest()
-    provided = sig_header.split("=", 1)[1] if "=" in sig_header else sig_header
-    if not _hmac.compare_digest(expected, provided.lower()):
-        _log_webhook_reject("invalid_signature", source_ip, tenant_hint, hr_id_hint)
-        raise HTTPException(status_code=401, detail="Invalid signature")
+    # Fallback to connection doc for legacy records without secrets manager entry
+    if not real_token and "token" in conn:
+        real_token = conn.get("token")
 
-    # Signature verified — bind the processed tenant to the connection that
-    # owns the secret (cryptographic tenant binding).
+    if not real_token or str(real_token) != str(token):
+        _log_webhook_reject("invalid_token", source_ip, tenant_hint, hr_id_hint)
+        raise HTTPException(status_code=401, detail="Invalid HotelRunner token")
+
     _bind_verified_tenant(request, conn)
 
 
@@ -341,10 +388,11 @@ async def _parse_payload(request: Request) -> dict:
 
 
 @router.post("/callback")
+@router.post("/callback/{secret}")
 async def unified_callback(
     request: Request,
     background_tasks: BackgroundTasks,
-    _sig: None = Depends(_verify_hotelrunner_signature),
+    _sig: None = Depends(_verify_hotelrunner_callback),
 ):
     """
     Unified callback endpoint for HotelRunner webhook notifications.
@@ -408,10 +456,11 @@ async def unified_callback(
 
 
 @router.post("/webhooks/reservations")
+@router.post("/webhooks/reservations/{secret}")
 async def webhook_reservations(
     request: Request,
     background_tasks: BackgroundTasks,
-    _sig: None = Depends(_verify_hotelrunner_signature),
+    _sig: None = Depends(_verify_hotelrunner_callback),
 ):
     """
     Webhook endpoint for new reservations from HotelRunner.
@@ -449,10 +498,11 @@ async def webhook_reservations(
 
 
 @router.post("/webhooks/modifications")
+@router.post("/webhooks/modifications/{secret}")
 async def webhook_modifications(
     request: Request,
     background_tasks: BackgroundTasks,
-    _sig: None = Depends(_verify_hotelrunner_signature),
+    _sig: None = Depends(_verify_hotelrunner_callback),
 ):
     """Webhook for reservation modifications -> unified ingest pipeline."""
     try:
@@ -482,10 +532,11 @@ async def webhook_modifications(
 
 
 @router.post("/webhooks/cancellations")
+@router.post("/webhooks/cancellations/{secret}")
 async def webhook_cancellations(
     request: Request,
     background_tasks: BackgroundTasks,
-    _sig: None = Depends(_verify_hotelrunner_signature),
+    _sig: None = Depends(_verify_hotelrunner_callback),
 ):
     """Webhook for reservation cancellations -> unified ingest pipeline."""
     try:

@@ -69,9 +69,8 @@ async def csrf_guard_middleware(request: Request, call_next):
         "/api/channel-manager/hotelrunner/webhooks/reservations",
         "/api/channel-manager/hotelrunner/webhooks/modifications",
         "/api/channel-manager/hotelrunner/webhooks/cancellations",
-        "/api/channel-manager/hotelrunner/sync/reservations/replay", # replay webhook
     }
-    if request.url.path in HR_WEBHOOK_PATHS or request.url.path.startswith("/api/channel-manager/hotelrunner/sync/reservations/replay/"):
+    if request.url.path in HR_WEBHOOK_PATHS:
         return await call_next(request)
 
 
