@@ -15,6 +15,8 @@ class GuestCreate(BaseModel):
     nationality: str | None = None
     address: str | None = None
     vip_status: bool = False
+    kvkk_consent: bool = False
+    scanned_via_quick_id: bool = False
 
 
 class Guest(BaseModel):
@@ -44,3 +46,5 @@ class Guest(BaseModel):
     last_visit_date: str | None = None  # "YYYY-MM-DD" — son ziyaret
     blacklisted: bool = False  # Kara liste (madde 7)
     blacklist_reason: str | None = None  # Sebep (ödeme, hasar, kavga)
+    kvkk_consent: bool = False
+    scanned_via_quick_id: bool = False

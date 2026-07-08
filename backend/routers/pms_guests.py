@@ -107,6 +107,21 @@ async def create_guest(
 
         apply_collection_normalized_fields(guest_dict_to_store, collection="guests")
         await db.guests.insert_one(guest_dict_to_store)
+
+        if guest.scanned_via_quick_id:
+            from datetime import UTC, datetime
+            await db.audit_logs.insert_one({
+                "tenant_id": current_user.tenant_id,
+                "actor_id": current_user.id,
+                "action": "guest_created_via_quickid",
+                "target_id": guest.id,
+                "details": {
+                    "guest_name": guest.name,
+                    "kvkk_consent": guest.kvkk_consent
+                },
+                "created_at": datetime.now(UTC)
+            })
+
         if lock_id:
             # Persist ONLY the guest id + tenant in the idempotency cache to
             # avoid leaking PII outside the encrypted `guests` collection.
