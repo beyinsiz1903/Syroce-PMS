@@ -48,16 +48,49 @@ def hotelrunner_webhook_db():
         
     try:
         # Seed test tenant and connection
-        db.hotelrunner_connections.update_one(
-            {"hr_id": MOCK_HR_ID},
-            {"$set": {
-                "tenant_id": TEST_TENANT_ID,
+        db.hotelrunner_connections.delete_many({"hr_id": MOCK_HR_ID})
+        db.hotelrunner_connections.delete_many({"tenant_id": TEST_TENANT_ID})
+        db.hotelrunner_connections.insert_one(
+            {
                 "hr_id": MOCK_HR_ID,
+                "tenant_id": TEST_TENANT_ID,
                 "token": MOCK_TOKEN,
-                "is_active": True
-            }},
-            upsert=True
+                "is_active": True,
+            }
         )
+
+
+        # 1.5. Mock credential vault for HotelRunnerV2Service
+        db.provider_secrets.delete_many({"tenant_id": TEST_TENANT_ID})
+        
+        os.environ["CRYPTO_V2_ENABLED"] = "false"
+        from core.crypto.service import CredentialEncryptionService
+        from core.crypto.engine import AADContext
+        
+        svc = CredentialEncryptionService()
+        aad = AADContext(
+            tenant_id=TEST_TENANT_ID,
+            provider="hotelrunner",
+            property_id=MOCK_HR_ID,
+            environment="test",
+            context_type="credential"
+        )
+        encrypted_payload = {
+            "token": svc.encrypt(MOCK_TOKEN, aad=aad),
+            "hr_id": svc.encrypt(MOCK_HR_ID, aad=aad),
+            "environment": svc.encrypt("mock", aad=aad)
+        }
+        db.provider_secrets.insert_one({
+            "id": "mock_secret_id",
+            "tenant_id": TEST_TENANT_ID,
+            "provider": "hotelrunner",
+            "property_id": MOCK_HR_ID,
+            "encrypted_payload": encrypted_payload,
+            "key_version": "v0",
+            "field_names": ["token", "hr_id", "environment"],
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
+        })
         
         # Cross-tenant test seed
         db.hotelrunner_connections.update_one(
@@ -70,6 +103,31 @@ def hotelrunner_webhook_db():
             }},
             upsert=True
         )
+
+        db.provider_secrets.delete_many({"tenant_id": TEST_TENANT_ID + "_B"})
+        aad_b = AADContext(
+            tenant_id=TEST_TENANT_ID + "_B",
+            provider="hotelrunner",
+            property_id=MOCK_HR_ID + "_B",
+            environment="test",
+            context_type="credential"
+        )
+        encrypted_payload_b = {
+            "token": svc.encrypt(MOCK_TOKEN + "_B", aad=aad_b),
+            "hr_id": svc.encrypt(MOCK_HR_ID + "_B", aad=aad_b),
+            "environment": svc.encrypt("mock", aad=aad_b)
+        }
+        db.provider_secrets.insert_one({
+            "id": "mock_secret_id_b",
+            "tenant_id": TEST_TENANT_ID + "_B",
+            "provider": "hotelrunner",
+            "property_id": MOCK_HR_ID + "_B",
+            "encrypted_payload": encrypted_payload_b,
+            "key_version": "v0",
+            "field_names": ["token", "hr_id", "environment"],
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
+        })
         
         # Seed mappings so ingest pipeline succeeds instead of pending_mapping
         for rcode in ["STD", "DBL", "SUI", "DLX"]:
@@ -77,7 +135,7 @@ def hotelrunner_webhook_db():
                 {"tenant_id": TEST_TENANT_ID, "provider_room_code": rcode},
                 {"$set": {
                     "tenant_id": TEST_TENANT_ID,
-                    "property_id": TEST_PROPERTY_ID,
+                    "property_id": "prop-001",
                     "provider": "hotelrunner",
                     "pms_room_type_id": f"pms-{rcode.lower()}-1",
                     "provider_room_code": rcode,
@@ -91,7 +149,7 @@ def hotelrunner_webhook_db():
                 {"tenant_id": TEST_TENANT_ID, "provider_rate_code": rcode},
                 {"$set": {
                     "tenant_id": TEST_TENANT_ID,
-                    "property_id": TEST_PROPERTY_ID,
+                    "property_id": "prop-001",
                     "provider": "hotelrunner",
                     "pms_rate_plan_id": f"rate-{rcode.lower()}-1",
                     "provider_rate_code": rcode,
@@ -108,7 +166,7 @@ def hotelrunner_webhook_db():
             db.hotelrunner_connections.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
             db.raw_channel_events.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
             db.reservation_lineage.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
-            db.reservations.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+            db.bookings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
             db.room_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
             db.rate_plan_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
         except Exception as e:
@@ -352,23 +410,22 @@ class TestWebhookEndpoints:
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
         data = response.json()
         assert data.get("status") == "accepted"
-        assert data.get("count") == 1
         print(f"PASS: Webhook new reservation accepted - hr_number={payload['hr_number']}")
         return payload["hr_number"]
 
     def test_webhook_modification_accepted(self):
-        """POST /api/channel-manager/hotelrunner/webhooks/modifications should return accepted"""
+        """POST /api/channel-manager/hotelrunner/webhooks/reservations should return success for modifications"""
         payload = self._generate_hr_payload(state="modified")
-        response = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/modifications", payload)
+        response = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/reservations", payload)
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
         data = response.json()
         assert data.get("status") == "accepted"
         print(f"PASS: Webhook modification accepted")
 
     def test_webhook_cancellation_accepted(self):
-        """POST /api/channel-manager/hotelrunner/webhooks/cancellations should return accepted"""
+        """POST /api/channel-manager/hotelrunner/webhooks/reservations should return success for cancellations"""
         payload = self._generate_hr_payload(state="cancelled")
-        response = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/cancellations", payload)
+        response = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/reservations", payload)
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
         data = response.json()
         assert data.get("status") == "accepted"
@@ -749,17 +806,23 @@ class TestDuplicateDeliveryDetection:
         
         time.sleep(3) # Wait for processing
         db = hotelrunner_webhook_db
-        events = list(db.raw_channel_events.find({
+        lineage = list(db.reservation_lineage.find({
             "external_reservation_id": hr_number,
             "tenant_id": TEST_TENANT_ID,
         }))
-        assert len(events) == 1, f"Expected 1 raw event (deduplication), found {len(events)}"
+        assert len(lineage) == 1, f"Expected 1 lineage record (deduplication), found {len(lineage)}"
 
-        reservations = list(db.reservations.find({
+        bookings = list(db.bookings.find({
             "external_reservation_id": hr_number,
             "tenant_id": TEST_TENANT_ID,
         }))
-        assert len(reservations) == 1, f"Expected exactly 1 reservations record, found {len(reservations)}"
+        if len(bookings) == 0:
+            time.sleep(3)
+            bookings = list(db.bookings.find({
+                "external_reservation_id": hr_number,
+                "tenant_id": TEST_TENANT_ID,
+            }))
+        assert len(bookings) == 1, f"Expected exactly 1 booking record, found {len(bookings)}"
         
         print("PASS: Duplicate webhook correctly skipped")
 

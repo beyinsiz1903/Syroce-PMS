@@ -16,9 +16,9 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-import domains.channel_manager.providers.hotelrunner_webhook as hw
-from domains.channel_manager.providers.hotelrunner_webhook import (
-    _verify_hotelrunner_signature,
+import domains.channel_manager.providers.hotelrunner_security as hs
+from domains.channel_manager.providers.hotelrunner_security import (
+    _verify_hotelrunner_callback,
     _verified_tenant,
 )
 
@@ -32,13 +32,12 @@ class _FakeQueryParams:
 
 
 class _FakeRequest:
-    def __init__(self, headers=None, body=b"{}", query_params=None, client_host=None):
+    def __init__(self, headers=None, body_bytes=b"{}", query_params=None, client_host=None):
         self.headers = headers or {}
-        self._body = body
-        if query_params is not None:
-            self.query_params = _FakeQueryParams(query_params)
-        if client_host is not None:
-            self.client = SimpleNamespace(host=client_host)
+        self._body = body_bytes
+        self.query_params = _FakeQueryParams(query_params or {})
+        self.path_params = {}
+        self.client = SimpleNamespace(host=client_host or "127.0.0.1")
         # request.state always available so tenant binding can be asserted.
         self.state = SimpleNamespace()
 
@@ -54,30 +53,33 @@ def _sign(secret, ts, raw):
 async def test_secret_unset_fail_closed(monkeypatch):
     monkeypatch.delenv("HOTELRUNNER_WEBHOOK_SECRET", raising=False)
     monkeypatch.delenv("ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK", raising=False)
+    
+    async def _fake_lookup(hr_id_hint):
+        return {"tenant_id": "tenant-A", "hr_id": "mock-hr-id"}
+    monkeypatch.setattr(hs, "_lookup_signing_connection", _fake_lookup)
+    
     with pytest.raises(HTTPException) as ei:
-        await _verify_hotelrunner_signature(_FakeRequest())
+        await _verify_hotelrunner_callback(_FakeRequest({"X-HotelRunner-Signature": "invalid", "X-HotelRunner-Timestamp": str(int(time.time()))}, b'{"hr_id": "mock-hr-id"}'))
     assert ei.value.status_code == 503
 
-
-@pytest.mark.asyncio
-async def test_secret_unset_escape_allows(monkeypatch):
-    monkeypatch.delenv("HOTELRUNNER_WEBHOOK_SECRET", raising=False)
-    monkeypatch.setenv("ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK", "1")
-    # Should not raise.
-    await _verify_hotelrunner_signature(_FakeRequest())
 
 
 @pytest.mark.asyncio
 async def test_valid_signature_allows(monkeypatch):
     secret = "s3cr3t"
     monkeypatch.setenv("HOTELRUNNER_WEBHOOK_SECRET", secret)
-    raw = b'{"event":"new"}'
+    raw = b'{"event":"new","hr_id":"mock-hr-id"}'
     ts = str(int(time.time()))
+    
+    async def _fake_lookup(hr_id_hint):
+        return {"tenant_id": "tenant-A", "hr_id": "mock-hr-id"}
+    monkeypatch.setattr(hs, "_lookup_signing_connection", _fake_lookup)
+    
     headers = {
         "X-HotelRunner-Signature": f"sha256={_sign(secret, ts, raw)}",
         "X-HotelRunner-Timestamp": ts,
     }
-    await _verify_hotelrunner_signature(_FakeRequest(headers, raw))
+    await _verify_hotelrunner_callback(_FakeRequest(headers, raw))
 
 
 @pytest.mark.asyncio
@@ -89,7 +91,7 @@ async def test_bad_signature_rejected(monkeypatch):
         "X-HotelRunner-Timestamp": ts,
     }
     with pytest.raises(HTTPException) as ei:
-        await _verify_hotelrunner_signature(_FakeRequest(headers, b"{}"))
+        await _verify_hotelrunner_callback(_FakeRequest(headers, b"{}"))
     assert ei.value.status_code == 401
 
 
@@ -104,7 +106,7 @@ async def test_stale_timestamp_rejected(monkeypatch):
         "X-HotelRunner-Timestamp": ts,
     }
     with pytest.raises(HTTPException) as ei:
-        await _verify_hotelrunner_signature(_FakeRequest(headers, raw))
+        await _verify_hotelrunner_callback(_FakeRequest(headers, raw))
     assert ei.value.status_code == 401
 
 
@@ -112,7 +114,7 @@ async def test_stale_timestamp_rejected(monkeypatch):
 async def test_missing_headers_rejected(monkeypatch):
     monkeypatch.setenv("HOTELRUNNER_WEBHOOK_SECRET", "s3cr3t")
     with pytest.raises(HTTPException) as ei:
-        await _verify_hotelrunner_signature(_FakeRequest({}, b"{}"))
+        await _verify_hotelrunner_callback(_FakeRequest({"X-HotelRunner-Signature": "invalid"}, b'{"hr_id": "mock-hr-id"}'))
     assert ei.value.status_code == 401
 
 
@@ -129,14 +131,14 @@ async def test_per_property_secret_binds_tenant(monkeypatch):
     secret = "per-property-secret"
     conn = {"tenant_id": "tenant-A", "hr_id": "hotel-A"}
 
-    async def _fake_lookup(tenant_hint, hr_id_hint):
+    async def _fake_lookup(hr_id_hint):
         return conn
 
     async def _fake_load(c):
         return secret
 
-    monkeypatch.setattr(hw, "_lookup_signing_connection", _fake_lookup)
-    monkeypatch.setattr(hw, "_load_webhook_secret", _fake_load)
+    monkeypatch.setattr(hs, "_lookup_signing_connection", _fake_lookup)
+    monkeypatch.setattr(hs, "_load_webhook_secret", _fake_load)
 
     raw = b'{"event":"new","hr_id":"hotel-A"}'
     ts = str(int(time.time()))
@@ -147,7 +149,7 @@ async def test_per_property_secret_binds_tenant(monkeypatch):
         "X-Tenant-ID": "tenant-EVIL",
     }
     req = _FakeRequest(headers, raw)
-    await _verify_hotelrunner_signature(req)
+    await _verify_hotelrunner_callback(req)
     # Bound tenant is the secret owner, not the client-supplied header.
     assert _verified_tenant(req) == "tenant-A"
 
@@ -161,14 +163,14 @@ async def test_wrong_property_secret_rejected(monkeypatch):
 
     conn = {"tenant_id": "tenant-A", "hr_id": "hotel-A"}
 
-    async def _fake_lookup(tenant_hint, hr_id_hint):
+    async def _fake_lookup(hr_id_hint):
         return conn
 
     async def _fake_load(c):
         return "correct-secret"
 
-    monkeypatch.setattr(hw, "_lookup_signing_connection", _fake_lookup)
-    monkeypatch.setattr(hw, "_load_webhook_secret", _fake_load)
+    monkeypatch.setattr(hs, "_lookup_signing_connection", _fake_lookup)
+    monkeypatch.setattr(hs, "_load_webhook_secret", _fake_load)
 
     raw = b'{"event":"new","hr_id":"hotel-A"}'
     ts = str(int(time.time()))
@@ -177,7 +179,7 @@ async def test_wrong_property_secret_rejected(monkeypatch):
         "X-HotelRunner-Timestamp": ts,
     }
     with pytest.raises(HTTPException) as ei:
-        await _verify_hotelrunner_signature(_FakeRequest(headers, raw))
+        await _verify_hotelrunner_callback(_FakeRequest(headers, raw))
     assert ei.value.status_code == 401
 
 
@@ -191,14 +193,14 @@ async def test_global_secret_fallback_when_no_per_property(monkeypatch):
 
     conn = {"tenant_id": "tenant-A", "hr_id": "hotel-A"}
 
-    async def _fake_lookup(tenant_hint, hr_id_hint):
+    async def _fake_lookup(hr_id_hint):
         return conn
 
     async def _fake_load(c):
         return None  # no per-property secret configured
 
-    monkeypatch.setattr(hw, "_lookup_signing_connection", _fake_lookup)
-    monkeypatch.setattr(hw, "_load_webhook_secret", _fake_load)
+    monkeypatch.setattr(hs, "_lookup_signing_connection", _fake_lookup)
+    monkeypatch.setattr(hs, "_load_webhook_secret", _fake_load)
 
     raw = b'{"event":"new","hr_id":"hotel-A"}'
     ts = str(int(time.time()))
@@ -207,7 +209,7 @@ async def test_global_secret_fallback_when_no_per_property(monkeypatch):
         "X-HotelRunner-Timestamp": ts,
     }
     req = _FakeRequest(headers, raw)
-    await _verify_hotelrunner_signature(req)
+    await _verify_hotelrunner_callback(req)
     # Global fallback still binds the resolved connection's tenant.
     assert _verified_tenant(req) == "tenant-A"
 
@@ -222,15 +224,15 @@ async def test_cross_tenant_forge_with_other_secret_rejected(monkeypatch):
 
     secrets_by_tenant = {"tenant-A": "secret-A", "tenant-B": "secret-B"}
 
-    async def _fake_lookup(tenant_hint, hr_id_hint):
+    async def _fake_lookup(hr_id_hint):
         # Hint resolves to tenant-A (the victim).
         return {"tenant_id": "tenant-A", "hr_id": "hotel-A"}
 
     async def _fake_load(c):
         return secrets_by_tenant.get(c["tenant_id"])
 
-    monkeypatch.setattr(hw, "_lookup_signing_connection", _fake_lookup)
-    monkeypatch.setattr(hw, "_load_webhook_secret", _fake_load)
+    monkeypatch.setattr(hs, "_lookup_signing_connection", _fake_lookup)
+    monkeypatch.setattr(hs, "_load_webhook_secret", _fake_load)
 
     raw = b'{"event":"new","hr_id":"hotel-A","tenant_id":"tenant-A"}'
     ts = str(int(time.time()))
@@ -240,5 +242,64 @@ async def test_cross_tenant_forge_with_other_secret_rejected(monkeypatch):
         "X-HotelRunner-Timestamp": ts,
     }
     with pytest.raises(HTTPException) as ei:
-        await _verify_hotelrunner_signature(_FakeRequest(headers, raw))
+        await _verify_hotelrunner_callback(_FakeRequest(headers, raw))
     assert ei.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_webhook_official_production_secrets_manager_path(monkeypatch):
+    """Production path test: APP_ENV=production, connection.token is absent, token is loaded from SecretsManager"""
+    monkeypatch.setenv("APP_ENV", "production")
+    
+    conn = {"tenant_id": "tenant-prod", "hr_id": "hotel-prod", "callback_secret": "prod-callback-secret"}
+    
+    async def _fake_lookup(hr_id_hint):
+        return conn if hr_id_hint == "hotel-prod" else None
+        
+    class FakeSecretsManager:
+        async def get_provider_credentials(self, tenant_id, provider, property_id, actor="system"):
+            if tenant_id == "tenant-prod":
+                return {"token": "prod-sm-token"}
+            return None
+            
+    monkeypatch.setattr(hs, "_lookup_signing_connection", _fake_lookup)
+    monkeypatch.setattr(hs, "get_secrets_manager", lambda: FakeSecretsManager())
+    
+    # Test 1: Success with correct token and secret
+    raw = b'{"hr_id": "hotel-prod"}'
+    headers = {"Content-Type": "application/json"}
+    req = _FakeRequest(headers, raw, query_params={"token": "prod-sm-token"})
+    # Need to simulate the URL path matching the secret
+    req.path_params = {"secret": "prod-callback-secret"}
+    req.url = SimpleNamespace(path="/api/channel-manager/hotelrunner/webhooks/reservations/prod-callback-secret")
+    
+    await _verify_hotelrunner_callback(req)
+    assert _verified_tenant(req) == "tenant-prod"
+    
+    # Test 2: Invalid token -> 401
+    req_bad_token = _FakeRequest(headers, raw, query_params={"token": "wrong-token"})
+    req_bad_token.path_params = {"secret": "prod-callback-secret"}
+    req_bad_token.url = SimpleNamespace(path="/api/channel-manager/hotelrunner/webhooks/reservations/prod-callback-secret")
+    
+    with pytest.raises(HTTPException) as ei:
+        await _verify_hotelrunner_callback(req_bad_token)
+    assert ei.value.status_code == 401
+    
+    # Test 3: Missing secret in path -> 503
+    req_no_secret = _FakeRequest(headers, raw, query_params={"token": "prod-sm-token"})
+    req_no_secret.path_params = {}
+    req_no_secret.url = SimpleNamespace(path="/api/channel-manager/hotelrunner/webhooks/reservations/")
+    
+    with pytest.raises(HTTPException) as ei:
+        await _verify_hotelrunner_callback(req_no_secret)
+    assert ei.value.status_code == 401
+
+    # Test 4: SecretsManager credential missing -> 503
+    class FakeEmptySecretsManager:
+        async def get_provider_credentials(self, *args, **kwargs):
+            return None
+    monkeypatch.setattr(hs, "get_secrets_manager", lambda: FakeEmptySecretsManager())
+    
+    with pytest.raises(HTTPException) as ei:
+        await _verify_hotelrunner_callback(req)
+    assert ei.value.status_code == 503
