@@ -17,14 +17,16 @@ async def seed_channels(db, ctx):
 
     hr_token = os.environ.get("SEED_HOTELRUNNER_TOKEN", "")
     hr_id = os.environ.get("SEED_HOTELRUNNER_HR_ID", "")
-    hr_is_active = bool(hr_token and hr_id)
-    hr_status = "active" if hr_is_active else "inactive"
+    # Seed never creates active connections to avoid dangling credential refs
+    hr_is_active = False
+    hr_status = "inactive"
     
     ex_user = os.environ.get("SEED_EXELY_USERNAME", "")
     ex_pass = os.environ.get("SEED_EXELY_PASSWORD", "")
     ex_hotel = os.environ.get("SEED_EXELY_HOTEL_CODE", "")
-    ex_is_active = bool(ex_user and ex_pass and ex_hotel)
-    ex_status = "active" if ex_is_active else "inactive"
+    # Seed never creates active connections to avoid dangling credential refs
+    ex_is_active = False
+    ex_status = "inactive"
 
     hr_sync_enabled = hr_is_active
     ex_sync_enabled = ex_is_active
@@ -39,7 +41,7 @@ async def seed_channels(db, ctx):
         "tenant_id": tenant_id,
         "hotel_code": ex_hotel if ex_is_active else "DEMO-EXELY",
         "credentials_ref": f"vault:exely:{ex_hotel if ex_is_active else 'DEMO-EXELY'}",
-        "endpoint_url": "https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc?HotelCode=501694",
+        "endpoint_url": f"https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc?HotelCode={ex_hotel}" if ex_is_active else None,
 
         "property_name": "TEST Syroce PMS (Exely)",
         "auto_sync_reservations": True,

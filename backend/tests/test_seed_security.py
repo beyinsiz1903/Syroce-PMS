@@ -1,4 +1,5 @@
 import os
+import uuid
 import pytest
 from motor.motor_asyncio import AsyncIOMotorClient
 from core.database import _raw_db
@@ -14,14 +15,20 @@ class MockDB:
 @pytest.fixture
 async def db():
     # Use a specific test db for seed testing
-    test_db_name = "hotel_pms_seed_test"
+    test_db_name = f"hotel_pms_seed_test_{uuid.uuid4().hex}"
     client = AsyncIOMotorClient(os.environ.get("MONGO_URL", "mongodb://127.0.0.1:27017"))
+    
+    # Clean before test
+    await client.drop_database(test_db_name)
+    
     motor_db = client[test_db_name]
     mock_db = MockDB(motor_db)
     
     yield mock_db
     
+    # Clean after test
     await client.drop_database(test_db_name)
+    client.close()
 
 @pytest.mark.asyncio
 async def test_channel_seed_defaults_to_fail_closed(db, monkeypatch):
@@ -49,10 +56,19 @@ async def test_channel_seed_defaults_to_fail_closed(db, monkeypatch):
     assert cm_hr.get("status") == "inactive"
     assert cm_hr.get("sync_enabled") is False
     
-    flags = await db.connector_flags.find_one({"provider": "hotelrunner"})
-    assert flags.get("write_enabled") is False
-    assert flags.get("shadow_mode") is True
-    assert flags.get("connector_enabled") is False
+    for provider in ("hotelrunner", "exely"):
+        flags = await db.connector_flags.find_one({"provider": provider})
+        assert flags.get("connector_enabled") is False
+        assert flags.get("write_enabled") is False
+        assert flags.get("shadow_mode") is True
+        
+        # Mappings checks
+        rm = await db.room_mappings.find_one({"provider": provider})
+        assert rm.get("is_active") is False
+        assert rm.get("validation_status") == "unverified"
+        
+        rp = await db.rate_plan_mappings.find_one({"provider": provider})
+        assert rp.get("is_active") is False
 
 @pytest.mark.asyncio
 async def test_channel_seed_does_not_persist_plaintext_secrets(db, monkeypatch):
@@ -84,3 +100,15 @@ async def test_channel_seed_does_not_persist_plaintext_secrets(db, monkeypatch):
             assert fake_token not in doc_str, f"Plaintext token leaked in {coll_name}!"
             assert fake_pass not in doc_str, f"Plaintext password leaked in {coll_name}!"
             assert fake_user not in doc_str, f"Plaintext user leaked in {coll_name}!"
+            
+            # Recursive check for forbidden keys
+            def check_keys(d):
+                if isinstance(d, dict):
+                    for k, v in d.items():
+                        assert k not in ["credentials", "token", "password", "username", "hr_token"], f"Forbidden key '{k}' found in {coll_name}!"
+                        check_keys(v)
+                elif isinstance(d, list):
+                    for item in d:
+                        check_keys(item)
+            
+            check_keys(doc)
