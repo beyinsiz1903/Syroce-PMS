@@ -165,14 +165,16 @@ def hotelrunner_webhook_db():
         try:
             db.provider_secrets.delete_one({"id": "mock_secret_id"})
             db.provider_secrets.delete_one({"id": "mock_secret_id_b"})
-            db.room_mappings.delete_many({"tenant_id": TEST_TENANT_ID})
-            db.rate_plan_mappings.delete_many({"tenant_id": TEST_TENANT_ID})
-            db.hotelrunner_connections.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
-            db.raw_channel_events.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
-            db.reservation_lineage.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
-            db.hotelrunner_reservations.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
-            db.hotelrunner_room_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
-            db.hotelrunner_rate_plan_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+            test_tenants = [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]
+            db.room_mappings.delete_many({"tenant_id": {"$in": test_tenants}})
+            db.rate_plan_mappings.delete_many({"tenant_id": {"$in": test_tenants}})
+            db.hotelrunner_connections.delete_many({"tenant_id": {"$in": test_tenants}})
+            db.raw_channel_events.delete_many({"tenant_id": {"$in": test_tenants}})
+            db.reservation_lineage.delete_many({"tenant_id": {"$in": test_tenants}})
+            db.bookings.delete_many({"tenant_id": {"$in": test_tenants}})
+            db.hotelrunner_reservations.delete_many({"tenant_id": {"$in": test_tenants}})
+            db.hotelrunner_room_mappings.delete_many({"tenant_id": {"$in": test_tenants}})
+            db.hotelrunner_rate_plan_mappings.delete_many({"tenant_id": {"$in": test_tenants}})
         except Exception as e:
             pytest.fail(f"Teardown failed, database may be polluted: {e}")
         finally:
@@ -740,7 +742,7 @@ class TestIngestPipelineLineage:
         time.sleep(4)
         
         db = hotelrunner_webhook_db
-        # Fixture matches production schema (hr_inv_code) so pipeline can find mappings immediately.
+        # Active ingest pipeline reads provider_room_code from room_mappings.
         # The pipeline runs asynchronously via BackgroundTasks
         time.sleep(2)
         event = db.raw_channel_events.find_one({
