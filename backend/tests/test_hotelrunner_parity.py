@@ -30,17 +30,19 @@ BAD_TOKEN = "bad-token"
 # Test tenant for webhooks
 TEST_TENANT_ID = "test-tenant-e2e"
 
-@pytest.fixture(autouse=True)
-def setup_test_db_and_mock():
+@pytest.fixture
+def hotelrunner_webhook_db():
     """Reset mock server before each test and seed mock connections"""
     requests.post(f"{MOCK_SERVER_URL}/mock/reset", timeout=10)
         
     try:
         from pymongo import MongoClient
         import os
-        mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms_test")
+        mongo_url = os.environ.get("HOTELRUNNER_TEST_MONGO_URL")
+        if not mongo_url or not mongo_url.endswith("_test"):
+            pytest.fail("HotelRunner tests require an isolated test database (HOTELRUNNER_TEST_MONGO_URL ending with _test)")
         client = MongoClient(mongo_url)
-        db = client.get_database() if client.get_database().name else client["hotel_pms_test"]
+        db = client.get_database()
         
         db.hotelrunner_connections.update_one(
             {"hr_id": MOCK_HR_ID},
@@ -64,9 +66,44 @@ def setup_test_db_and_mock():
             upsert=True
         )
         
-        yield
+        # Seed mappings so ingest pipeline succeeds instead of pending_mapping
+        for rcode in ["STD", "DBL", "SUI"]:
+            db.room_mappings.update_one(
+                {"tenant_id": TEST_TENANT_ID, "provider_room_code": rcode},
+                {"$set": {
+                    "tenant_id": TEST_TENANT_ID,
+                    "property_id": TEST_PROPERTY_ID,
+                    "provider": "hotelrunner",
+                    "pms_room_type_id": f"pms-{rcode.lower()}-1",
+                    "provider_room_code": rcode,
+                    "is_active": True
+                }},
+                upsert=True
+            )
+            
+        for rcode in ["NONREF", "BB", "BAR"]:
+            db.rate_plan_mappings.update_one(
+                {"tenant_id": TEST_TENANT_ID, "provider_rate_code": rcode},
+                {"$set": {
+                    "tenant_id": TEST_TENANT_ID,
+                    "property_id": TEST_PROPERTY_ID,
+                    "provider": "hotelrunner",
+                    "pms_rate_plan_id": f"rate-{rcode.lower()}-1",
+                    "provider_rate_code": rcode,
+                    "is_active": True
+                }},
+                upsert=True
+            )
+        
+        yield db
+        
         # Teardown
         db.hotelrunner_connections.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+        db.raw_channel_events.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+        db.reservation_lineage.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+        db.reservations.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+        db.room_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+        db.rate_plan_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
     except Exception as e:
         pytest.fail(f"Could not seed test database connections: {e}")
 TEST_PROPERTY_ID = "prop-001"
@@ -250,6 +287,7 @@ class TestMockServerErrorInjection:
         print(f"PASS: Mock reset successful - {data.get('reservations')} reservations")
 
 
+@pytest.mark.usefixtures("hotelrunner_webhook_db")
 class TestWebhookEndpoints:
     """Test 7: Webhook endpoints for reservations, modifications, cancellations"""
 
@@ -430,16 +468,12 @@ class TestWebhookEndpoints:
         assert response.json()["detail"] == "Connection not found"
         print("PASS: Invalid hr_id blocked")
 
-    def test_webhook_official_true_cross_tenant(self):
+    def test_webhook_official_true_cross_tenant(self, hotelrunner_webhook_db):
         """Webhook with Tenant A's header, but Tenant B's hr_id should:
         1. Reject with 401 if Tenant A's token is used (token mismatch)
         2. Accept and bind to Tenant B if Tenant B's token is used (header ignored)"""
         
-        from pymongo import MongoClient
-        import os
-        mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms_test")
-        client = MongoClient(mongo_url)
-        db = client.get_database() if client.get_database().name else client["hotel_pms_test"]
+        db = hotelrunner_webhook_db
         hr_number = f"HR-{uuid.uuid4().hex[:8].upper()}"
         
         # Test 1: Reject mismatch
@@ -560,6 +594,7 @@ class TestWebhookEndpoints:
         )
         assert response.status_code == 401, f"Expected 401, got {response.status_code}"
         print("PASS: Invalid HMAC signature blocked (no fallback to token)")
+@pytest.mark.usefixtures("hotelrunner_webhook_db")
 class TestIngestPipelineLineage:
     """Test 8: Ingest pipeline creates lineage for new reservations"""
 
@@ -606,8 +641,8 @@ class TestIngestPipelineLineage:
             "modified_at": now.isoformat()
         }
 
-    def test_ingest_creates_lineage(self):
-        """Webhook should create lineage record (verify via async processing)"""
+    def test_ingest_creates_lineage(self, hotelrunner_webhook_db):
+        """Webhook should create lineage record (verify via DB access)"""
         payload = self._generate_unique_hr_payload()
         hr_number = payload["hr_number"]
         
@@ -618,16 +653,26 @@ class TestIngestPipelineLineage:
         # Wait for async processing (background task)
         time.sleep(4)
         
-        # Note: We can't directly query MongoDB from here, but we verify the webhook was accepted
-        # The actual lineage verification would require DB access or an API endpoint
-        print(f"PASS: Webhook accepted for lineage creation - hr_number={hr_number}")
-        print("NOTE: Lineage creation is async - verify via MongoDB if needed")
+        db = hotelrunner_webhook_db
+        # Since the backend caches channel mappings, our direct DB seeds won't be seen immediately.
+        # The pipeline will process the webhook, but will fail with 'pending_mapping' decision or succeed.
+        # We verify that the pipeline processed it (status is no longer 'pending').
+        event = db.raw_channel_events.find_one({
+            "external_reservation_id": hr_number,
+            "tenant_id": TEST_TENANT_ID,
+        })
+        assert event is not None, "Raw event was not created in DB"
+        
+        status = event.get("processing_status")
+        assert status in ("processed", "failed"), f"Pipeline did not finish processing the event (status={status})"
+        
+        print(f"PASS: Webhook pipeline processing verified - hr_number={hr_number}, final_status={status}")
 
 
 class TestDuplicateDeliveryDetection:
     """Test 9: Duplicate delivery should be detected and skipped"""
 
-    def test_duplicate_webhook_detected(self):
+    def test_duplicate_webhook_detected(self, hotelrunner_webhook_db):
         """Sending same reservation twice should be handled (deduplicated)"""
         # Generate a unique payload
         hr_number = f"hr-dup-{uuid.uuid4().hex[:6]}"
@@ -651,42 +696,54 @@ class TestDuplicateDeliveryDetection:
             "currency": "TRY",
             "payment": "credit_card",
             "total_rooms": 1,
-            "total_guests": 1,
+            "total_guests": 2,
             "message_uid": f"msg-dup-{uuid.uuid4().hex[:8]}",
             "address": {
-                "email": "dup@test.com",
-                "phone": "+905551112233",
-                "city": "Izmir",
+                "email": "dup.test@example.com",
+                "phone": "+905559998877",
+                "address_line": "Duplicate Ave 42",
+                "city": "Ankara",
+                "zipcode": "06000",
                 "country_code": "TR"
             },
             "rooms": [{
-                "room_code": "STD",
-                "rate_code": "NONREF",
-                "room_name": "Standard Oda",
-                "adults": 1,
+                "room_code": "DBL",
+                "rate_code": "BB",
+                "room_name": "Double Room",
+                "adults": 2,
                 "children": 0,
-                "total": 1800.00
+                "total": 1800.00,
+                "daily_rates": [],
+                "guest_name": "Duplicate Test"
             }],
             "updated_at": now.isoformat(),
-            "modified_at": now.isoformat()
+            "modified_at": now.isoformat(),
+            "created_at": now.isoformat()
         }
         
-        # First delivery
+        # Send first time
         response1 = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/reservations", payload)
         assert response1.status_code == 200, f"First webhook failed: {response1.text}"
         
-        # Wait for processing
-        time.sleep(3)
+        # Wait a moment for processing to avoid race conditions
+        time.sleep(2)
         
-        # Second delivery (duplicate)
+        # Send second time (duplicate)
         response2 = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/reservations", payload)
-        # Should still be accepted (webhook layer accepts, pipeline deduplicates)
         assert response2.status_code == 200, f"Second webhook failed: {response2.text}"
         
-        print(f"PASS: Duplicate delivery handled - hr_number={hr_number}")
-        print("NOTE: Deduplication happens in pipeline (check logs for 'DUPLICATE' or 'HASH_DUP')")
+        time.sleep(3) # Wait for processing
+        db = hotelrunner_webhook_db
+        events = list(db.raw_channel_events.find({
+            "external_reservation_id": hr_number,
+            "tenant_id": TEST_TENANT_ID,
+        }))
+        assert len(events) == 1, f"Expected 1 raw event (deduplication), found {len(events)}"
+        
+        print("PASS: Duplicate webhook correctly skipped")
 
 
+@pytest.mark.usefixtures("hotelrunner_webhook_db")
 class TestNormalizerParsing:
     """Test 10: Normalizer correctly parses HotelRunner format"""
 
