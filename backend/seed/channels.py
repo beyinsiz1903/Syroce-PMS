@@ -26,16 +26,21 @@ async def seed_channels(db, ctx):
     ex_is_active = bool(ex_user and ex_pass and ex_hotel)
     ex_status = "active" if ex_is_active else "inactive"
 
+    hr_sync_enabled = hr_is_active
+    ex_sync_enabled = ex_is_active
+    hr_mapping_active = hr_is_active
+    hr_validation = "valid" if hr_is_active else "unverified"
+    ex_mapping_active = ex_is_active
+    ex_validation = "valid" if ex_is_active else "unverified"
 
     # ── 8. Exely Connection (for webhook tests) ──────────
     exely_conn = {
         "id": _uuid(),
         "tenant_id": tenant_id,
-        "hotel_code": ex_hotel if ex_hotel else "501694",
-        "credentials_ref": "vault:exely:501694",
+        "hotel_code": ex_hotel if ex_is_active else "DEMO-EXELY",
+        "credentials_ref": f"vault:exely:{ex_hotel if ex_is_active else 'DEMO-EXELY'}",
         "endpoint_url": "https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc?HotelCode=501694",
-        "username": ex_user,
-        "password": ex_pass,
+
         "property_name": "TEST Syroce PMS (Exely)",
         "auto_sync_reservations": True,
         "sync_interval_minutes": 15,
@@ -59,7 +64,7 @@ async def seed_channels(db, ctx):
         "created_by": "auto_seed",
     }
     await db.exely_connections.update_one(
-        {"hotel_code": "501694"},
+        {"hotel_code": ex_hotel if ex_is_active else "DEMO-EXELY"},
         {"$set": exely_conn},
         upsert=True,
     )
@@ -73,7 +78,7 @@ async def seed_channels(db, ctx):
         "provider": "hotelrunner",
         "status": hr_status,
         "display_name": "HotelRunner Connection",
-        "credentials": {"hr_token": hr_token, "token": hr_token, "hr_id": hr_id},
+        "credentials_ref": f"secrets_manager::hotelrunner::{hr_id if hr_is_active else 'DEMO-HR'}",
         "sync_inventory": True,
         "sync_rates": True,
         "sync_reservations": True,
@@ -93,7 +98,7 @@ async def seed_channels(db, ctx):
         "provider": "exely",
         "status": ex_status,
         "display_name": "Exely Connection",
-        "credentials": {"username": ex_user, "password": ex_pass, "hotel_code": ex_hotel},
+        "credentials_ref": f"vault:exely:{ex_hotel if ex_is_active else 'DEMO-EXELY'}",
         "sync_inventory": True,
         "sync_rates": True,
         "sync_reservations": True,
@@ -111,8 +116,7 @@ async def seed_channels(db, ctx):
     # ── 9b. hotelrunner_connections (legacy format for overview) ──
     hr_legacy = {
         "tenant_id": tenant_id,
-        "hr_id": hr_id,
-        "token": hr_token,
+        "hr_id": hr_id if hr_is_active else "DEMO-HR",
         "property_name": "Syroce Demo Hotel",
         "environment": "live",
         "is_active": hr_is_active,
@@ -183,8 +187,8 @@ async def seed_channels(db, ctx):
         "provider_room_code": "STD",
         "provider_room_id": "hr-std-001",
         "occupancy_offset": 0,
-        "is_active": True,
-        "validation_status": "valid",
+        "is_active": hr_mapping_active,
+        "validation_status": hr_validation,
         "created_at": now_iso,
     }
     ex_room = {
@@ -197,8 +201,8 @@ async def seed_channels(db, ctx):
         "provider_room_code": "DLX",
         "provider_room_id": "ex-dlx-001",
         "occupancy_offset": 0,
-        "is_active": True,
-        "validation_status": "valid",
+        "is_active": ex_mapping_active,
+        "validation_status": ex_validation,
         "created_at": now_iso,
     }
     await db.room_mappings.insert_many([hr_room, ex_room])
@@ -213,7 +217,7 @@ async def seed_channels(db, ctx):
         "pms_rate_plan_name": "Best Available Rate",
         "provider_rate_code": "BAR",
         "provider_rate_id": "hr-bar-001",
-        "is_active": True,
+        "is_active": hr_mapping_active,
         "created_at": now_iso,
     }
     ex_rate = {
@@ -225,7 +229,7 @@ async def seed_channels(db, ctx):
         "pms_rate_plan_name": "Rack Rate",
         "provider_rate_code": "RACK",
         "provider_rate_id": "ex-rack-001",
-        "is_active": True,
+        "is_active": ex_mapping_active,
         "created_at": now_iso,
     }
     await db.rate_plan_mappings.insert_many([hr_rate, ex_rate])
@@ -238,9 +242,9 @@ async def seed_channels(db, ctx):
                 "$set": {
                     "tenant_id": tenant_id,
                     "provider": prov,
-                    "connector_enabled": True,
-                    "shadow_mode": False,
-                    "write_enabled": True,
+                    "connector_enabled": hr_is_active if prov == "hotelrunner" else ex_is_active,
+                    "shadow_mode": True,
+                    "write_enabled": False,
                     "updated_at": now_iso,
                     "updated_by": "auto_seed",
                 }
@@ -259,9 +263,8 @@ async def seed_channels(db, ctx):
         "provider": "hotelrunner",
         "display_name": "HotelRunner - Syroce Demo",
         "status": hr_status,
-        "credentials": {"hr_token": hr_token, "token": hr_token, "hr_id": hr_id},
-        "credentials_encrypted": False,
-        "sync_enabled": True,
+        "credentials_ref": f"secrets_manager::hotelrunner::{hr_id if hr_is_active else 'DEMO-HR'}",
+        "sync_enabled": hr_sync_enabled,
         "created_at": now_iso,
         "updated_at": now_iso,
     }
@@ -272,9 +275,8 @@ async def seed_channels(db, ctx):
         "provider": "exely",
         "display_name": "Exely - Syroce Demo",
         "status": ex_status,
-        "credentials": {"username": ex_user, "password": ex_pass, "hotel_code": ex_hotel},
-        "credentials_encrypted": False,
-        "sync_enabled": True,
+        "credentials_ref": f"vault:exely:{ex_hotel if ex_is_active else 'DEMO-EXELY'}",
+        "sync_enabled": ex_sync_enabled,
         "created_at": now_iso,
         "updated_at": now_iso,
     }
