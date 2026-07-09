@@ -200,16 +200,9 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
 
     # ── MODE 1: HMAC Signature (Syroce Internal/Mock) ──
     if sig_header:
-        global_secret = _os.environ.get("HOTELRUNNER_WEBHOOK_SECRET")
-        per_property_secret = await _load_webhook_secret(conn) if conn else None
-        active_secret = per_property_secret or global_secret
-
-        if not active_secret:
-            # P0 Fix: Removed ALLOW_UNSIGNED escape hatch entirely. Fail-closed if no secret.
-            raise HTTPException(
-                status_code=503,
-                detail="Webhook signing not configured",
-            )
+        if not conn:
+            _log_webhook_reject("unknown_connection", source_ip, tenant_hint, hr_id_hint)
+            raise HTTPException(status_code=401, detail="Connection not found")
 
         ts_header = (request.headers.get("X-HotelRunner-Timestamp") or request.headers.get("X-Timestamp") or "").strip()
         if not ts_header:
@@ -223,6 +216,16 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
         if out_of_tolerance:
             _log_webhook_reject("stale_timestamp", source_ip, tenant_hint, hr_id_hint)
             raise HTTPException(status_code=401, detail="Timestamp out of tolerance")
+
+        global_secret = _os.environ.get("HOTELRUNNER_WEBHOOK_SECRET")
+        per_property_secret = await _load_webhook_secret(conn)
+        active_secret = per_property_secret or global_secret
+        
+        if not active_secret:
+            raise HTTPException(
+                status_code=503,
+                detail="Webhook signing not configured",
+            )
 
         signed_payload = f"{ts_header}.".encode() + raw
         expected = _hmac.new(active_secret.encode(), signed_payload, _hashlib.sha256).hexdigest()
@@ -516,11 +519,9 @@ async def webhook_reservations(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    tenant_id = _verified_tenant(request) or request.headers.get("X-Tenant-ID") or request.query_params.get("tenant_id")
+    tenant_id = _verified_tenant(request)
     if not tenant_id:
-        tenant_id = body.get("tenant_id", "")
-    if not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id required (header X-Tenant-ID or query param)")
+        raise HTTPException(status_code=401, detail="Verified tenant binding required")
 
     property_id = _resolve_property_id(body)
     reservations = body.get("reservations", [body] if "hr_number" in body else [])
@@ -555,12 +556,9 @@ async def webhook_modifications(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    tenant_id = _verified_tenant(request) or request.headers.get("X-Tenant-ID") or request.query_params.get("tenant_id")
+    tenant_id = _verified_tenant(request)
     if not tenant_id:
-        tenant_id = body.get("tenant_id", "")
-    if not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id required")
-
+        raise HTTPException(status_code=401, detail="Verified tenant binding required")
     property_id = _resolve_property_id(body)
     reservations = body.get("reservations", [body] if "hr_number" in body else [])
     source_ip = request.client.host if request.client else "unknown"
@@ -589,12 +587,9 @@ async def webhook_cancellations(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    tenant_id = _verified_tenant(request) or request.headers.get("X-Tenant-ID") or request.query_params.get("tenant_id")
+    tenant_id = _verified_tenant(request)
     if not tenant_id:
-        tenant_id = body.get("tenant_id", "")
-    if not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id required")
-
+        raise HTTPException(status_code=401, detail="Verified tenant binding required")
     property_id = _resolve_property_id(body)
     reservations = body.get("reservations", [body] if "hr_number" in body else [])
     source_ip = request.client.host if request.client else "unknown"

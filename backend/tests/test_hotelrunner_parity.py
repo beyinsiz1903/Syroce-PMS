@@ -215,8 +215,40 @@ class TestWebhookEndpoints:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        """Reset mock server before each test"""
+        """Reset mock server before each test and seed mock connections"""
         requests.post(f"{MOCK_SERVER_URL}/mock/reset", timeout=10)
+        
+        try:
+            from pymongo import MongoClient
+            import os
+            mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
+            client = MongoClient(mongo_url)
+            # Use the database specified in the URI, fallback to hotel_pms
+            db = client.get_database() if client.get_database().name else client["hotel_pms"]
+            
+            db.hotelrunner_connections.update_one(
+                {"hr_id": MOCK_HR_ID},
+                {"$set": {
+                    "tenant_id": TEST_TENANT_ID,
+                    "hr_id": MOCK_HR_ID,
+                    "token": MOCK_TOKEN,
+                    "is_active": True
+                }},
+                upsert=True
+            )
+            
+            db.hotelrunner_connections.update_one(
+                {"hr_id": MOCK_HR_ID + "_B"},
+                {"$set": {
+                    "tenant_id": TEST_TENANT_ID + "_B",
+                    "hr_id": MOCK_HR_ID + "_B",
+                    "token": MOCK_TOKEN + "_B",
+                    "is_active": True
+                }},
+                upsert=True
+            )
+        except Exception as e:
+            print(f"Warning: Could not seed test database connections: {e}")
 
     def _generate_hr_payload(self, hr_number: str = None, state: str = "confirmed"):
         """Generate a realistic HotelRunner reservation payload"""
@@ -400,16 +432,14 @@ class TestWebhookEndpoints:
         assert response.status_code in (401, 503), f"Expected 401/503, got {response.status_code}"
         print("PASS: Invalid hr_id blocked")
 
-    def test_webhook_official_true_cross_tenant_returns_401(self):
-        """Webhook with Tenant A's header and token, but Tenant B's hr_id should be blocked.
-        This tests the P0 vulnerability where X-Tenant-ID was used for lookup instead of hr_id."""
-        # Assume TEST_TENANT_ID is Tenant A.
-        # We will use MOCK_HR_ID + "_other" as Tenant B's hr_id.
-        # If the code incorrectly uses X-Tenant-ID, it will find Tenant A's connection,
-        # see that MOCK_TOKEN matches, and accept the payload even though it belongs to Tenant B.
+    def test_webhook_official_true_cross_tenant(self):
+        """Webhook with Tenant A's header, but Tenant B's hr_id should:
+        1. Reject with 401 if Tenant A's token is used (token mismatch)
+        2. Accept and bind to Tenant B if Tenant B's token is used (header ignored)"""
         
+        # Test 1: Reject mismatch
         payload = self._generate_hr_payload()
-        payload["hr_id"] = MOCK_HR_ID + "_other" # Tenant B hr_id
+        payload["hr_id"] = MOCK_HR_ID + "_B" # Tenant B hr_id
         
         import json
         from urllib.parse import urlencode
@@ -423,8 +453,18 @@ class TestWebhookEndpoints:
             data=encoded_body,
             timeout=15
         )
-        assert response.status_code in (401, 503), f"Expected 401/503 for cross-tenant, got {response.status_code}"
+        assert response.status_code in (401, 503), f"Expected 401/503 for cross-tenant mismatch, got {response.status_code}"
         print("PASS: True cross-tenant mismatch blocked")
+        
+        # Test 2: Accept correct token, ignore header
+        response_success = requests.post(
+            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations?token={MOCK_TOKEN}_B",
+            headers={"Content-Type": "application/x-www-form-urlencoded", "X-Tenant-ID": TEST_TENANT_ID},
+            data=encoded_body,
+            timeout=15
+        )
+        assert response_success.status_code == 200, f"Expected 200, got {response_success.status_code}"
+        print("PASS: Cross-tenant payload with correct token accepted, header safely ignored")
 
     def test_webhook_official_token_in_form_body_accepted(self):
         """Webhook with token inside the form-urlencoded body instead of query should be accepted"""
