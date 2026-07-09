@@ -35,15 +35,19 @@ def hotelrunner_webhook_db():
     """Reset mock server before each test and seed mock connections"""
     requests.post(f"{MOCK_SERVER_URL}/mock/reset", timeout=10)
         
-    try:
-        from pymongo import MongoClient
-        import os
-        mongo_url = os.environ.get("HOTELRUNNER_TEST_MONGO_URL")
-        if not mongo_url or not mongo_url.endswith("_test"):
-            pytest.fail("HotelRunner tests require an isolated test database (HOTELRUNNER_TEST_MONGO_URL ending with _test)")
-        client = MongoClient(mongo_url)
-        db = client.get_database()
+    mongo_url = os.getenv("HOTELRUNNER_TEST_MONGO_URL")
+    if not mongo_url:
+        pytest.fail("Test suite requires HOTELRUNNER_TEST_MONGO_URL environment variable to prevent accidental data corruption.")
+    
+    from pymongo import MongoClient
+    client = MongoClient(mongo_url)
+    db = client.get_default_database()
+    
+    if not db.name.endswith("_test"):
+        pytest.fail("Database name in HOTELRUNNER_TEST_MONGO_URL must end with '_test' (e.g. hotel_pms_test)")
         
+    try:
+        # Seed test tenant and connection
         db.hotelrunner_connections.update_one(
             {"hr_id": MOCK_HR_ID},
             {"$set": {
@@ -55,6 +59,7 @@ def hotelrunner_webhook_db():
             upsert=True
         )
         
+        # Cross-tenant test seed
         db.hotelrunner_connections.update_one(
             {"hr_id": MOCK_HR_ID + "_B"},
             {"$set": {
@@ -67,7 +72,7 @@ def hotelrunner_webhook_db():
         )
         
         # Seed mappings so ingest pipeline succeeds instead of pending_mapping
-        for rcode in ["STD", "DBL", "SUI"]:
+        for rcode in ["STD", "DBL", "SUI", "DLX"]:
             db.room_mappings.update_one(
                 {"tenant_id": TEST_TENANT_ID, "provider_room_code": rcode},
                 {"$set": {
@@ -97,15 +102,19 @@ def hotelrunner_webhook_db():
         
         yield db
         
+    finally:
         # Teardown
-        db.hotelrunner_connections.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
-        db.raw_channel_events.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
-        db.reservation_lineage.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
-        db.reservations.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
-        db.room_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
-        db.rate_plan_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
-    except Exception as e:
-        pytest.fail(f"Could not seed test database connections: {e}")
+        try:
+            db.hotelrunner_connections.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+            db.raw_channel_events.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+            db.reservation_lineage.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+            db.reservations.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+            db.room_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+            db.rate_plan_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+        except Exception as e:
+            print(f"Warning: Teardown failed {e}")
+        finally:
+            client.close()
 TEST_PROPERTY_ID = "prop-001"
 
 def send_hr_webhook(path: str, payload: dict, secret: str = None, override_headers: dict = None):
@@ -664,7 +673,13 @@ class TestIngestPipelineLineage:
         assert event is not None, "Raw event was not created in DB"
         
         status = event.get("processing_status")
-        assert status in ("processed", "failed"), f"Pipeline did not finish processing the event (status={status})"
+        assert status == "processed", f"Pipeline did not finish successfully (status={status})"
+        
+        lineage = db.reservation_lineage.find_one({
+            "external_reservation_id": hr_number,
+            "tenant_id": TEST_TENANT_ID,
+        })
+        assert lineage is not None, "Lineage record was not created in DB"
         
         print(f"PASS: Webhook pipeline processing verified - hr_number={hr_number}, final_status={status}")
 
@@ -739,6 +754,12 @@ class TestDuplicateDeliveryDetection:
             "tenant_id": TEST_TENANT_ID,
         }))
         assert len(events) == 1, f"Expected 1 raw event (deduplication), found {len(events)}"
+
+        reservations = list(db.reservations.find({
+            "external_reservation_id": hr_number,
+            "tenant_id": TEST_TENANT_ID,
+        }))
+        assert len(reservations) <= 1, f"Expected at most 1 reservations record, found {len(reservations)}"
         
         print("PASS: Duplicate webhook correctly skipped")
 
