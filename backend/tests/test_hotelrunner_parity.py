@@ -58,6 +58,7 @@ def hotelrunner_webhook_db():
                 "is_active": True,
             }
         )
+        print("FIXTURE INSERTION VERIFY:", db.hotelrunner_connections.find_one({"hr_id": MOCK_HR_ID}))
 
 
         # 1.5. Mock credential vault for HotelRunnerV2Service
@@ -131,7 +132,7 @@ def hotelrunner_webhook_db():
         
         # Seed mappings so ingest pipeline succeeds instead of pending_mapping
         for rcode in ["STD", "DBL", "SUI", "DLX"]:
-            db.room_mappings.update_one(
+            db.hotelrunner_room_mappings.update_one(
                 {"tenant_id": TEST_TENANT_ID, "provider_room_code": rcode},
                 {"$set": {
                     "tenant_id": TEST_TENANT_ID,
@@ -145,7 +146,7 @@ def hotelrunner_webhook_db():
             )
             
         for rcode in ["NONREF", "BB", "BAR"]:
-            db.rate_plan_mappings.update_one(
+            db.hotelrunner_rate_plan_mappings.update_one(
                 {"tenant_id": TEST_TENANT_ID, "provider_rate_code": rcode},
                 {"$set": {
                     "tenant_id": TEST_TENANT_ID,
@@ -167,8 +168,8 @@ def hotelrunner_webhook_db():
             db.raw_channel_events.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
             db.reservation_lineage.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
             db.bookings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
-            db.room_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
-            db.rate_plan_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+            db.hotelrunner_room_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+            db.hotelrunner_rate_plan_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
         except Exception as e:
             pytest.fail(f"Teardown failed, database may be polluted: {e}")
         finally:
@@ -414,22 +415,38 @@ class TestWebhookEndpoints:
         return payload["hr_number"]
 
     def test_webhook_modification_accepted(self):
-        """POST /api/channel-manager/hotelrunner/webhooks/reservations should return success for modifications"""
+        """POST /api/channel-manager/hotelrunner/webhooks/modifications should return success for modifications"""
         payload = self._generate_hr_payload(state="modified")
-        response = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/reservations", payload)
+        response = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/modifications", payload)
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
         data = response.json()
         assert data.get("status") == "accepted"
         print(f"PASS: Webhook modification accepted")
 
     def test_webhook_cancellation_accepted(self):
-        """POST /api/channel-manager/hotelrunner/webhooks/reservations should return success for cancellations"""
+        """POST /api/channel-manager/hotelrunner/webhooks/cancellations should return success for cancellations"""
         payload = self._generate_hr_payload(state="cancelled")
-        response = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/reservations", payload)
+        response = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/cancellations", payload)
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
         data = response.json()
         assert data.get("status") == "accepted"
         print(f"PASS: Webhook cancellation accepted")
+
+    def test_webhook_unified_callback_new_reservation(self):
+        """POST /api/channel-manager/hotelrunner/callback should handle new reservations"""
+        payload = self._generate_hr_payload(state="confirmed")
+        response = send_hr_webhook("/api/channel-manager/hotelrunner/callback", payload)
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+        data = response.json()
+        assert data.get("status") == "accepted"
+
+    def test_webhook_unified_callback_modification(self):
+        """POST /api/channel-manager/hotelrunner/callback should handle modifications"""
+        payload = self._generate_hr_payload(state="modified")
+        response = send_hr_webhook("/api/channel-manager/hotelrunner/callback", payload)
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+        data = response.json()
+        assert data.get("status") == "accepted"
 
     def test_webhook_missing_tenant_succeeds(self):
         """Webhook without X-Tenant-ID should succeed via hr_id lookup"""
@@ -723,11 +740,14 @@ class TestIngestPipelineLineage:
         # Since the backend caches channel mappings, our direct DB seeds won't be seen immediately.
         # The pipeline will process the webhook, but will fail with 'pending_mapping' decision or succeed.
         # We verify that the pipeline processed it (status is no longer 'pending').
+        # The pipeline runs asynchronously via BackgroundTasks
+        time.sleep(2)
         event = db.raw_channel_events.find_one({
             "external_reservation_id": hr_number,
             "tenant_id": TEST_TENANT_ID,
         })
         assert event is not None, "Raw event was not created in DB"
+        print("EVENT DUMP:", event)
         
         status = event.get("processing_status")
         assert status == "processed", f"Pipeline did not finish successfully (status={status})"
@@ -806,6 +826,13 @@ class TestDuplicateDeliveryDetection:
         
         time.sleep(3) # Wait for processing
         db = hotelrunner_webhook_db
+        lineage = list(db.reservation_lineage.find({
+            "external_reservation_id": hr_number,
+            "tenant_id": TEST_TENANT_ID,
+        }))
+        event1 = db.raw_channel_events.find_one({"external_reservation_id": hr_number})
+
+
         lineage = list(db.reservation_lineage.find({
             "external_reservation_id": hr_number,
             "tenant_id": TEST_TENANT_ID,

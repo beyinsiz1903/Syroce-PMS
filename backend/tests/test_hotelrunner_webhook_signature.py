@@ -285,7 +285,7 @@ async def test_webhook_official_production_secrets_manager_path(monkeypatch):
         await _verify_hotelrunner_callback(req_bad_token)
     assert ei.value.status_code == 401
     
-    # Test 3: Missing secret in path -> 503
+    # Test 3: Missing or wrong callback path secret -> 401
     req_no_secret = _FakeRequest(headers, raw, query_params={"token": "prod-sm-token"})
     req_no_secret.path_params = {}
     req_no_secret.url = SimpleNamespace(path="/api/channel-manager/hotelrunner/webhooks/reservations/")
