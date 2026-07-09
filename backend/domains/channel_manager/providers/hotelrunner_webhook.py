@@ -18,8 +18,11 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
 from core.database import db
-from core.secrets import get_secrets_manager
 from core.security import get_current_user
+from domains.channel_manager.providers.hotelrunner_security import (
+    _verified_tenant,
+    _verify_hotelrunner_callback,
+)
 from domains.channel_manager.providers.hotelrunner_shared import (
     _persist_and_process,
     _resolve_property_id,
@@ -27,10 +30,6 @@ from domains.channel_manager.providers.hotelrunner_shared import (
 )
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v96 DW
-from domains.channel_manager.providers.hotelrunner_security import (
-    _verify_hotelrunner_callback,
-    _verified_tenant,
-)
 
 logger = logging.getLogger(__name__)
 

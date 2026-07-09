@@ -72,7 +72,7 @@ async def csrf_guard_middleware(request: Request, call_next):
     )
     def matches_webhook_path(path: str, base: str) -> bool:
         return path == base or path.startswith(base + "/")
-        
+
     if any(matches_webhook_path(request.url.path, base) for base in HR_WEBHOOK_PATHS):
         return await call_next(request)
 

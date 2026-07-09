@@ -40,7 +40,7 @@ def _extract_signature_hints(request: Request, raw: bytes) -> tuple[str, str]:
     candidate connection — never to authorize."""
     tenant_hint = ""
     hr_id_hint = ""
-    
+
     qp = getattr(request, "query_params", None)
     if qp is not None:
         tenant_hint = qp.get("tenant_id") or ""
@@ -52,7 +52,6 @@ def _extract_signature_hints(request: Request, raw: bytes) -> tuple[str, str]:
     except Exception:
         pass
 
-    import json
     try:
         body = {}
         content_type = request.headers.get("content-type", "")
@@ -73,7 +72,7 @@ def _extract_signature_hints(request: Request, raw: bytes) -> tuple[str, str]:
                 pass
         else:
             body = json.loads(raw or b"{}")
-            
+
         if isinstance(body, dict):
             if not tenant_hint:
                 tenant_hint = body.get("tenant_id") or ""
@@ -101,7 +100,7 @@ async def _lookup_signing_connection(hr_id_hint: str) -> dict | None:
             bool(doc),
         )
         return doc
-    except Exception as e:
+    except Exception:
         logger.exception("Database error while looking up HotelRunner connection")
         raise HTTPException(status_code=503, detail="Webhook connection lookup unavailable")
 
@@ -116,7 +115,7 @@ async def _load_webhook_secret(conn: dict) -> str | None:
     try:
         sm = get_secrets_manager()
         return await sm.get_webhook_secret(tenant_id, "hotelrunner", str(hr_id))
-    except Exception as e:
+    except Exception:
         logger.exception("SecretsManager error while loading HotelRunner webhook secret")
         raise HTTPException(status_code=503, detail="Webhook credential service unavailable")
 
@@ -152,10 +151,6 @@ def _verified_tenant(request: Request) -> str:
 #    and validates the `{secret}` path parameter if HOTELRUNNER_CALLBACK_SECRET is set.
 
 async def _verify_hotelrunner_callback(request: Request) -> None:
-    import hashlib as _hashlib
-    import hmac as _hmac
-    import os as _os
-    import time as _time
 
     sig_header = (request.headers.get("X-HotelRunner-Signature") or request.headers.get("X-Signature") or "").strip()
     source_ip = _source_ip(request)
@@ -194,7 +189,7 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
         global_secret = _os.environ.get("HOTELRUNNER_WEBHOOK_SECRET")
         per_property_secret = await _load_webhook_secret(conn)
         active_secret = per_property_secret or global_secret
-        
+
         if not active_secret:
             raise HTTPException(
                 status_code=503,
@@ -212,21 +207,21 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
         return
 
     # ── MODE 2: Official Callback Validation (Token + hr_id + callback_secret) ──
-    
+
     # 1. Callback Secret Validation
     # Prefer connection-specific callback secret, fallback to global
     global_callback_secret = _os.environ.get("HOTELRUNNER_CALLBACK_SECRET")
     connection_callback_secret = conn.get("callback_secret") if conn else None
-    
+
     expected_secret = connection_callback_secret or global_callback_secret
-    
+
     # P1 Fix: Fail closed in production if no secret is configured at all
     if _os.environ.get("APP_ENV") == "production" and not expected_secret:
         raise HTTPException(
             status_code=503,
             detail="HotelRunner callback secret not configured",
         )
-        
+
     if expected_secret:
         path_secret = request.path_params.get("secret")
         if not path_secret or not _hmac.compare_digest(str(path_secret), str(expected_secret)):
@@ -264,7 +259,7 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
         creds = await sm.get_provider_credentials(conn.get("tenant_id"), "hotelrunner", str(conn.get("hr_id")))
         if creds:
             real_token = creds.get("token")
-    except Exception as e:
+    except Exception:
         logger.exception("SecretsManager error while loading HotelRunner token")
         raise HTTPException(status_code=503, detail="Webhook credential service unavailable")
 

@@ -298,7 +298,7 @@ _HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT = 0
 
 # The sync engine logs an ERROR for every PULL page that fails. When that
 # failure is an EXTERNAL HotelRunner 429 (rate limit) or a transient network
-# error (timeout/5xx), the client layer has ALREADY exhausted its retries 
+# error (timeout/5xx), the client layer has ALREADY exhausted its retries
 # and the scheduler backs off — the per-attempt ERROR is expected operational
 # backpressure, not a server fault. The real "sync is behind" signal is the
 # separate channel-manager backlog alert, so this per-page ERROR is pure
