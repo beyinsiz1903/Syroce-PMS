@@ -8,27 +8,40 @@
 - CM v2 connectors + external room types/rate plans + mappings
 """
 
+import os
 from seed._helpers import _now, _uuid
 
 
 async def seed_channels(db, ctx):
     tenant_id = ctx["tenant_id"]
 
+    hr_token = os.environ.get("SEED_HOTELRUNNER_TOKEN", "")
+    hr_id = os.environ.get("SEED_HOTELRUNNER_HR_ID", "")
+    hr_is_active = bool(hr_token and hr_id)
+    hr_status = "active" if hr_is_active else "inactive"
+    
+    ex_user = os.environ.get("SEED_EXELY_USERNAME", "")
+    ex_pass = os.environ.get("SEED_EXELY_PASSWORD", "")
+    ex_hotel = os.environ.get("SEED_EXELY_HOTEL_CODE", "")
+    ex_is_active = bool(ex_user and ex_pass and ex_hotel)
+    ex_status = "active" if ex_is_active else "inactive"
+
+
     # ── 8. Exely Connection (for webhook tests) ──────────
     exely_conn = {
         "id": _uuid(),
         "tenant_id": tenant_id,
-        "hotel_code": "501694",
+        "hotel_code": ex_hotel if ex_hotel else "501694",
         "credentials_ref": "vault:exely:501694",
         "endpoint_url": "https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc?HotelCode=501694",
-        "username": "PMSConnect.501694",
-        "password": "@G,7}sguup4P",
+        "username": ex_user,
+        "password": ex_pass,
         "property_name": "TEST Syroce PMS (Exely)",
         "auto_sync_reservations": True,
         "sync_interval_minutes": 15,
         "mode": "sandbox",
         "currency": "USD",
-        "is_active": True,
+        "is_active": ex_is_active,
         "room_types": [
             {"code": "5001574", "name": "Standart", "max_occupancy": 2},
             {"code": "5001575", "name": "Deluxe", "max_occupancy": 3},
@@ -58,9 +71,9 @@ async def seed_channels(db, ctx):
         "tenant_id": tenant_id,
         "property_id": "prop-001",
         "provider": "hotelrunner",
-        "status": "active",
+        "status": hr_status,
         "display_name": "HotelRunner Connection",
-        "credentials": {"hr_token": "A9cM3IZjr3iSOZASwK7D30mUNVqM3BtULpEHrf05", "token": "A9cM3IZjr3iSOZASwK7D30mUNVqM3BtULpEHrf05", "hr_id": "373816343"},
+        "credentials": {"hr_token": hr_token, "token": hr_token, "hr_id": hr_id},
         "sync_inventory": True,
         "sync_rates": True,
         "sync_reservations": True,
@@ -78,9 +91,9 @@ async def seed_channels(db, ctx):
         "tenant_id": tenant_id,
         "property_id": "prop-001",
         "provider": "exely",
-        "status": "active",
+        "status": ex_status,
         "display_name": "Exely Connection",
-        "credentials": {"username": "PMSConnect.501694", "password": "@G,7}sguup4P", "hotel_code": "501694"},
+        "credentials": {"username": ex_user, "password": ex_pass, "hotel_code": ex_hotel},
         "sync_inventory": True,
         "sync_rates": True,
         "sync_reservations": True,
@@ -98,11 +111,11 @@ async def seed_channels(db, ctx):
     # ── 9b. hotelrunner_connections (legacy format for overview) ──
     hr_legacy = {
         "tenant_id": tenant_id,
-        "hr_id": "373816343",
-        "token": "A9cM3IZjr3iSOZASwK7D30mUNVqM3BtULpEHrf05",
+        "hr_id": hr_id,
+        "token": hr_token,
         "property_name": "Syroce Demo Hotel",
         "environment": "live",
-        "is_active": True,
+        "is_active": hr_is_active,
         "channels": ["booking.com", "expedia", "airbnb"],
         "auto_sync_reservations": True,
         "connected_at": now_iso,
@@ -245,8 +258,8 @@ async def seed_channels(db, ctx):
         "property_id": "prop-001",
         "provider": "hotelrunner",
         "display_name": "HotelRunner - Syroce Demo",
-        "status": "active",
-        "credentials": {"hr_token": "A9cM3IZjr3iSOZASwK7D30mUNVqM3BtULpEHrf05", "token": "A9cM3IZjr3iSOZASwK7D30mUNVqM3BtULpEHrf05", "hr_id": "373816343"},
+        "status": hr_status,
+        "credentials": {"hr_token": hr_token, "token": hr_token, "hr_id": hr_id},
         "credentials_encrypted": False,
         "sync_enabled": True,
         "created_at": now_iso,
@@ -258,8 +271,8 @@ async def seed_channels(db, ctx):
         "property_id": "prop-001",
         "provider": "exely",
         "display_name": "Exely - Syroce Demo",
-        "status": "active",
-        "credentials": {"username": "PMSConnect.501694", "password": "@G,7}sguup4P", "hotel_code": "501694"},
+        "status": ex_status,
+        "credentials": {"username": ex_user, "password": ex_pass, "hotel_code": ex_hotel},
         "credentials_encrypted": False,
         "sync_enabled": True,
         "created_at": now_iso,
