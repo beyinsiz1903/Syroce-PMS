@@ -58,7 +58,6 @@ def hotelrunner_webhook_db():
                 "is_active": True,
             }
         )
-        print("FIXTURE INSERTION VERIFY:", db.hotelrunner_connections.find_one({"hr_id": MOCK_HR_ID}))
 
 
         # 1.5. Mock credential vault for HotelRunnerV2Service
@@ -747,7 +746,6 @@ class TestIngestPipelineLineage:
             "tenant_id": TEST_TENANT_ID,
         })
         assert event is not None, "Raw event was not created in DB"
-        print("EVENT DUMP:", event)
         
         status = event.get("processing_status")
         assert status == "processed", f"Pipeline did not finish successfully (status={status})"
@@ -826,12 +824,6 @@ class TestDuplicateDeliveryDetection:
         
         time.sleep(3) # Wait for processing
         db = hotelrunner_webhook_db
-        lineage = list(db.reservation_lineage.find({
-            "external_reservation_id": hr_number,
-            "tenant_id": TEST_TENANT_ID,
-        }))
-        event1 = db.raw_channel_events.find_one({"external_reservation_id": hr_number})
-
 
         lineage = list(db.reservation_lineage.find({
             "external_reservation_id": hr_number,

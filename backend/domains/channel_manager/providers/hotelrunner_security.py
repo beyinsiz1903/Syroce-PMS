@@ -91,18 +91,19 @@ async def _lookup_signing_connection(hr_id_hint: str) -> dict | None:
     if not hr_id_hint:
         return None
     query: dict = {"is_active": True, "hr_id": str(hr_id_hint)}
-    query: dict = {"is_active": True, "hr_id": str(hr_id_hint)}
     try:
         doc = await _raw_db.hotelrunner_connections.find_one(
             query,
             {"_id": 0, "tenant_id": 1, "hr_id": 1, "callback_secret": 1, "token": 1},
         )
-        logger.warning(f"DEBUG: lookup_signing_connection DB_NAME={_raw_db.name} query={query} result={doc}")
+        logger.debug(
+            "HotelRunner connection lookup completed found=%s",
+            bool(doc),
+        )
         return doc
     except Exception as e:
         logger.exception("Database error while looking up HotelRunner connection")
-        from fastapi import HTTPException
-        raise HTTPException(status_code=503, detail="Service Unavailable: Database error")
+        raise HTTPException(status_code=503, detail="Webhook connection lookup unavailable")
 
 
 async def _load_webhook_secret(conn: dict) -> str | None:
@@ -117,8 +118,7 @@ async def _load_webhook_secret(conn: dict) -> str | None:
         return await sm.get_webhook_secret(tenant_id, "hotelrunner", str(hr_id))
     except Exception as e:
         logger.exception("SecretsManager error while loading HotelRunner webhook secret")
-        from fastapi import HTTPException
-        raise HTTPException(status_code=503, detail="Service Unavailable: SecretsManager error")
+        raise HTTPException(status_code=503, detail="Webhook credential service unavailable")
 
 
 def _bind_verified_tenant(request: Request, conn: dict | None) -> None:
@@ -266,7 +266,7 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
             real_token = creds.get("token")
     except Exception as e:
         logger.exception("SecretsManager error while loading HotelRunner token")
-        raise HTTPException(status_code=503, detail="Service Unavailable: SecretsManager error")
+        raise HTTPException(status_code=503, detail="Webhook credential service unavailable")
 
     if not real_token and "token" in conn:
         if _os.environ.get("APP_ENV") in ("test", "development"):
