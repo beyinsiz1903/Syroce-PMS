@@ -117,21 +117,17 @@ def _extract_signature_hints(request: Request, raw: bytes) -> tuple[str, str]:
     return str(tenant_hint), str(hr_id_hint)
 
 
-async def _lookup_signing_connection(tenant_hint: str, hr_id_hint: str) -> dict | None:
+async def _lookup_signing_connection(hr_id_hint: str) -> dict | None:
     """Resolve the active connection that should govern this request from the
     untrusted hint. No hint → None (no DB hit), so the global-secret
     backward-compat path stays self-contained."""
-    if not (tenant_hint or hr_id_hint):
+    if not hr_id_hint:
         return None
-    query: dict = {"is_active": True}
-    if tenant_hint:
-        query["tenant_id"] = tenant_hint
-    elif hr_id_hint:
-        query["hr_id"] = str(hr_id_hint)
+    query: dict = {"is_active": True, "hr_id": str(hr_id_hint)}
     try:
         return await db.hotelrunner_connections.find_one(
             query,
-            {"_id": 0, "tenant_id": 1, "hr_id": 1},
+            {"_id": 0, "tenant_id": 1, "hr_id": 1, "callback_secret": 1, "token": 1},
         )
     except Exception:
         return None
@@ -192,7 +188,15 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     raw = await request.body()
     tenant_hint, hr_id_hint = _extract_signature_hints(request, raw)
 
-    conn = await _lookup_signing_connection(tenant_hint, hr_id_hint)
+    if not hr_id_hint:
+        _log_webhook_reject("missing_headers", source_ip, tenant_hint, hr_id_hint)
+        raise HTTPException(status_code=401, detail="Missing HotelRunner hr_id")
+
+    conn = await _lookup_signing_connection(hr_id_hint)
+
+    if conn and not _hmac.compare_digest(str(conn["hr_id"]), str(hr_id_hint)):
+        _log_webhook_reject("invalid_connection", source_ip, tenant_hint, hr_id_hint)
+        raise HTTPException(status_code=401, detail="Connection ID mismatch")
 
     # ── MODE 1: HMAC Signature (Syroce Internal/Mock) ──
     if sig_header:
@@ -238,6 +242,14 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     connection_callback_secret = conn.get("callback_secret") if conn else None
     
     expected_secret = connection_callback_secret or global_callback_secret
+    
+    # P1 Fix: Fail closed in production if no secret is configured at all
+    if _os.environ.get("APP_ENV") == "production" and not expected_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="HotelRunner callback secret not configured",
+        )
+        
     if expected_secret:
         path_secret = request.path_params.get("secret")
         if not path_secret or not _hmac.compare_digest(str(path_secret), str(expected_secret)):

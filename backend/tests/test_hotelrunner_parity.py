@@ -400,25 +400,31 @@ class TestWebhookEndpoints:
         assert response.status_code in (401, 503), f"Expected 401/503, got {response.status_code}"
         print("PASS: Invalid hr_id blocked")
 
-    def test_webhook_official_cross_tenant_returns_401(self):
-        """Webhook with valid token but hr_id belonging to another tenant should be blocked if token doesn't match that hr_id"""
+    def test_webhook_official_true_cross_tenant_returns_401(self):
+        """Webhook with Tenant A's header and token, but Tenant B's hr_id should be blocked.
+        This tests the P0 vulnerability where X-Tenant-ID was used for lookup instead of hr_id."""
+        # Assume TEST_TENANT_ID is Tenant A.
+        # We will use MOCK_HR_ID + "_other" as Tenant B's hr_id.
+        # If the code incorrectly uses X-Tenant-ID, it will find Tenant A's connection,
+        # see that MOCK_TOKEN matches, and accept the payload even though it belongs to Tenant B.
+        
         payload = self._generate_hr_payload()
-        payload["hr_id"] = MOCK_HR_ID
+        payload["hr_id"] = MOCK_HR_ID + "_other" # Tenant B hr_id
         
         import json
         from urllib.parse import urlencode
         data_str = json.dumps(payload)
         encoded_body = urlencode({"data": data_str}).encode("utf-8")
         
-        # We send a completely wrong token pretending to be cross-tenant
+        # We send Tenant A's token and Tenant A's header, but Tenant B's payload
         response = requests.post(
-            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations?token=other-tenant-token",
+            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations?token={MOCK_TOKEN}",
             headers={"Content-Type": "application/x-www-form-urlencoded", "X-Tenant-ID": TEST_TENANT_ID},
             data=encoded_body,
             timeout=15
         )
-        assert response.status_code == 401, f"Expected 401, got {response.status_code}"
-        print("PASS: Cross-tenant token mismatch blocked")
+        assert response.status_code in (401, 503), f"Expected 401/503 for cross-tenant, got {response.status_code}"
+        print("PASS: True cross-tenant mismatch blocked")
 
     def test_webhook_official_token_in_form_body_accepted(self):
         """Webhook with token inside the form-urlencoded body instead of query should be accepted"""
