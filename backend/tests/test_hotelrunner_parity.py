@@ -129,9 +129,9 @@ def hotelrunner_webhook_db():
             "updated_at": datetime.utcnow().isoformat(),
         })
         
-        # Seed mappings so ingest pipeline succeeds instead of pending_mapping
+        # Fixture matches unified repository schema
         for rcode in ["STD", "DBL", "SUI", "DLX"]:
-            db.hotelrunner_room_mappings.update_one(
+            db.room_mappings.update_one(
                 {"tenant_id": TEST_TENANT_ID, "provider_room_code": rcode},
                 {"$set": {
                     "tenant_id": TEST_TENANT_ID,
@@ -145,7 +145,7 @@ def hotelrunner_webhook_db():
             )
             
         for rcode in ["NONREF", "BB", "BAR"]:
-            db.hotelrunner_rate_plan_mappings.update_one(
+            db.rate_plan_mappings.update_one(
                 {"tenant_id": TEST_TENANT_ID, "provider_rate_code": rcode},
                 {"$set": {
                     "tenant_id": TEST_TENANT_ID,
@@ -163,10 +163,14 @@ def hotelrunner_webhook_db():
     finally:
         # Teardown
         try:
+            db.provider_secrets.delete_one({"id": "mock_secret_id"})
+            db.provider_secrets.delete_one({"id": "mock_secret_id_b"})
+            db.room_mappings.delete_many({"tenant_id": TEST_TENANT_ID})
+            db.rate_plan_mappings.delete_many({"tenant_id": TEST_TENANT_ID})
             db.hotelrunner_connections.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
             db.raw_channel_events.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
             db.reservation_lineage.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
-            db.bookings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+            db.hotelrunner_reservations.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
             db.hotelrunner_room_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
             db.hotelrunner_rate_plan_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
         except Exception as e:
@@ -736,9 +740,7 @@ class TestIngestPipelineLineage:
         time.sleep(4)
         
         db = hotelrunner_webhook_db
-        # Since the backend caches channel mappings, our direct DB seeds won't be seen immediately.
-        # The pipeline will process the webhook, but will fail with 'pending_mapping' decision or succeed.
-        # We verify that the pipeline processed it (status is no longer 'pending').
+        # Fixture matches production schema (hr_inv_code) so pipeline can find mappings immediately.
         # The pipeline runs asynchronously via BackgroundTasks
         time.sleep(2)
         event = db.raw_channel_events.find_one({
