@@ -112,7 +112,7 @@ def hotelrunner_webhook_db():
             db.room_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
             db.rate_plan_mappings.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
         except Exception as e:
-            print(f"Warning: Teardown failed {e}")
+            pytest.fail(f"Teardown failed, database may be polluted: {e}")
         finally:
             client.close()
 TEST_PROPERTY_ID = "prop-001"
@@ -759,7 +759,7 @@ class TestDuplicateDeliveryDetection:
             "external_reservation_id": hr_number,
             "tenant_id": TEST_TENANT_ID,
         }))
-        assert len(reservations) <= 1, f"Expected at most 1 reservations record, found {len(reservations)}"
+        assert len(reservations) == 1, f"Expected exactly 1 reservations record, found {len(reservations)}"
         
         print("PASS: Duplicate webhook correctly skipped")
 
