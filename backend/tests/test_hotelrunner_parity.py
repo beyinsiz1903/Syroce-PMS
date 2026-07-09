@@ -221,10 +221,11 @@ class TestWebhookEndpoints:
         try:
             from pymongo import MongoClient
             import os
-            mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
+            mongo_url = os.environ.get("HOTELRUNNER_TEST_MONGO_URL", "mongodb://localhost:27017/hotel_pms_test")
             client = MongoClient(mongo_url)
-            # Use the database specified in the URI, fallback to hotel_pms
-            db = client.get_database() if client.get_database().name else client["hotel_pms"]
+            db = client.get_default_database()
+            if db is None:
+                db = client["hotel_pms_test"]
             
             db.hotelrunner_connections.update_one(
                 {"hr_id": MOCK_HR_ID},
@@ -247,8 +248,14 @@ class TestWebhookEndpoints:
                 }},
                 upsert=True
             )
+            
+            yield db
+            
+            db.hotelrunner_connections.delete_many({"hr_id": {"$in": [MOCK_HR_ID, MOCK_HR_ID + "_B"]}})
+            db.raw_channel_events.delete_many({"tenant_id": {"$in": [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]}})
+            
         except Exception as e:
-            print(f"Warning: Could not seed test database connections: {e}")
+            pytest.fail(f"HotelRunner test connection seed failed: {e}")
 
     def _generate_hr_payload(self, hr_number: str = None, state: str = "confirmed"):
         """Generate a realistic HotelRunner reservation payload"""
@@ -429,16 +436,20 @@ class TestWebhookEndpoints:
             data=encoded_body,
             timeout=15
         )
-        assert response.status_code in (401, 503), f"Expected 401/503, got {response.status_code}"
+        assert response.status_code == 401, f"Expected 401, got {response.status_code}"
+        assert response.json()["detail"] == "Connection not found"
         print("PASS: Invalid hr_id blocked")
 
-    def test_webhook_official_true_cross_tenant(self):
+    def test_webhook_official_true_cross_tenant(self, setup):
         """Webhook with Tenant A's header, but Tenant B's hr_id should:
         1. Reject with 401 if Tenant A's token is used (token mismatch)
         2. Accept and bind to Tenant B if Tenant B's token is used (header ignored)"""
         
+        db = setup
+        hr_number = f"HR-{uuid.uuid4().hex[:8].upper()}"
+        
         # Test 1: Reject mismatch
-        payload = self._generate_hr_payload()
+        payload = self._generate_hr_payload(hr_number=hr_number)
         payload["hr_id"] = MOCK_HR_ID + "_B" # Tenant B hr_id
         
         import json
@@ -453,7 +464,7 @@ class TestWebhookEndpoints:
             data=encoded_body,
             timeout=15
         )
-        assert response.status_code in (401, 503), f"Expected 401/503 for cross-tenant mismatch, got {response.status_code}"
+        assert response.status_code == 401, f"Expected 401 for cross-tenant mismatch, got {response.status_code}"
         print("PASS: True cross-tenant mismatch blocked")
         
         # Test 2: Accept correct token, ignore header
@@ -464,7 +475,27 @@ class TestWebhookEndpoints:
             timeout=15
         )
         assert response_success.status_code == 200, f"Expected 200, got {response_success.status_code}"
-        print("PASS: Cross-tenant payload with correct token accepted, header safely ignored")
+        
+        # Verify event was recorded under Tenant B (header safely ignored)
+        # Using a brief polling since background tasks insert it
+        import time
+        event = None
+        for _ in range(5):
+            event = db.raw_channel_events.find_one({"external_id": hr_number})
+            if event:
+                break
+            time.sleep(0.2)
+            
+        assert event is not None, "Raw channel event was not created"
+        assert event["tenant_id"] == TEST_TENANT_ID + "_B", f"Expected Tenant B, got {event['tenant_id']}"
+        
+        # Verify no event was created for Tenant A
+        wrong_event = db.raw_channel_events.find_one({
+            "external_id": hr_number,
+            "tenant_id": TEST_TENANT_ID,
+        })
+        assert wrong_event is None, "Cross-tenant leakage: event created for Tenant A"
+        print("PASS: Cross-tenant payload with correct token accepted and mapped to Tenant B correctly")
 
     def test_webhook_official_token_in_form_body_accepted(self):
         """Webhook with token inside the form-urlencoded body instead of query should be accepted"""

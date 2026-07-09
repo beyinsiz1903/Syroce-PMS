@@ -383,36 +383,12 @@ def _detect_event_type(body: dict) -> str:
 async def _resolve_tenant_from_callback(body: dict, request: Request) -> str:
     """Resolve tenant_id for the callback.
 
-    Priority: signature-verified tenant (cryptographically bound) > header >
-    query param > body > HR connection lookup by hr_id.
-
-    Task #397: the cryptographically-verified tenant always wins. The
-    insecure "first active connection" fallback has been removed — a signed
-    request that resolves no specific connection no longer leaks an arbitrary
-    tenant identity.
+    Priority: signature-verified tenant (cryptographically bound).
+    All insecure fallbacks have been removed.
     """
     bound = _verified_tenant(request)
     if bound:
         return bound
-
-    tenant_id = request.headers.get("X-Tenant-ID") or request.query_params.get("tenant_id")
-    if tenant_id:
-        return tenant_id
-
-    tenant_id = body.get("tenant_id", "")
-    if tenant_id:
-        return tenant_id
-
-    # Try to resolve from HR connection by hr_id
-    hr_id = body.get("hr_id") or body.get("hotel_id") or body.get("property_id") or ""
-    if hr_id:
-        conn = await db.hotelrunner_connections.find_one(
-            {"hr_id": str(hr_id), "is_active": True},
-            {"_id": 0, "tenant_id": 1},
-        )
-        if conn:
-            return conn["tenant_id"]
-
     return ""
 
 
