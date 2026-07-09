@@ -62,6 +62,13 @@ async def test_channel_seed_defaults_to_fail_closed(db, monkeypatch):
         assert flags.get("write_enabled") is False
         assert flags.get("shadow_mode") is True
         
+        # Verify provider connection sync flags
+        prov_conn = await db.provider_connections.find_one({"provider": provider})
+        assert prov_conn.get("sync_inventory") is False
+        assert prov_conn.get("sync_rates") is False
+        assert prov_conn.get("sync_reservations") is False
+        assert prov_conn.get("sync_restrictions") is False
+
         # Mappings checks
         rm = await db.room_mappings.find_one({"provider": provider})
         assert rm.get("is_active") is False
@@ -69,6 +76,7 @@ async def test_channel_seed_defaults_to_fail_closed(db, monkeypatch):
         
         rp = await db.rate_plan_mappings.find_one({"provider": provider})
         assert rp.get("is_active") is False
+        assert rp.get("validation_status") == "unverified"
 
 @pytest.mark.asyncio
 async def test_channel_seed_does_not_persist_plaintext_secrets(db, monkeypatch):
