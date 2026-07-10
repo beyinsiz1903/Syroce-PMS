@@ -11,6 +11,7 @@ For system operations (startup, health), use `_raw_db` directly.
 import os
 from pathlib import Path
 
+import certifi
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -23,6 +24,7 @@ db_name = os.environ.get("DB_NAME", "hotel_pms")
 # Optimized connection pool for high concurrency (550 rooms, 300+ daily transactions)
 client = AsyncIOMotorClient(
     mongo_url,
+    tlsCAFile=certifi.where() if mongo_url.startswith("mongodb+srv://") else None,
     maxPoolSize=500,
     minPoolSize=50,
     maxIdleTimeMS=45000,
