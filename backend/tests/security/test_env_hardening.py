@@ -114,31 +114,41 @@ class TestGenerateEnv:
 
 def _run_start_sh_dry(env_overrides: dict) -> subprocess.CompletedProcess:
     """
-    Run start.sh up to the CM_MASTER_KEY guard by injecting an early exit
-    so we don't actually start MongoDB / Redis / uvicorn.
+    Source _validate_master_key() from the real start.sh and call it.
+
+    This exercises the actual production function, not a copy of it.
+    If start.sh is changed, this test will pick up the change automatically.
     """
-    guard_script = f"""
+    # Extract only function definitions + the guard call to avoid side-effects
+    # (MongoDB/Redis startup etc). We do this by sourcing start.sh with set -n
+    # (parse without executing) to get the function defined, then calling it.
+    # Simpler and more portable: grep out the function body and call it.
+    wrapper = f"""
 #!/bin/bash
 set -e
 
-# Replicate only the relevant guard block from start.sh
-APP_ENV="${{APP_ENV:-}}"
-CLOUD_DEPLOYMENT="${{CLOUD_DEPLOYMENT:-}}"
-CM_MASTER_KEY_CURRENT="${{CM_MASTER_KEY_CURRENT:-}}"
+# Source only the _validate_master_key function from the real start.sh.
+# We use `source` with a sub-shell trick: extract the function, eval it,
+# then call it. This avoids executing the rest of start.sh.
+_fn_body=$(awk '
+  /^_validate_master_key\\(\\)/ {{ found=1 }}
+  found {{ print }}
+  found && /^\\}}/ {{ found=0; exit }}
+' "{START_SH}")
 
-if [ "$APP_ENV" = "production" ] || [ -n "$CLOUD_DEPLOYMENT" ]; then
-  if [ -z "$CM_MASTER_KEY_CURRENT" ]; then
-    echo "ERROR: CM_MASTER_KEY_CURRENT is required in production and must not be empty."
-    exit 1
-  fi
-  echo "KEY_CHECK: ok (production, key set)"
+eval "$_fn_body"
+
+_validate_master_key
+EXIT=$?
+if [ "$EXIT" -eq 0 ]; then
+  echo "KEY_CHECK: ok"
 else
-  export CM_MASTER_KEY_CURRENT="${{CM_MASTER_KEY_CURRENT:-dev-master-key-not-for-production-use-only}}"
-  echo "KEY_CHECK: ok (non-production, fallback allowed)"
+  echo "KEY_CHECK: failed"
+  exit 1
 fi
 """
     with tempfile.NamedTemporaryFile(suffix=".sh", mode="w", delete=False) as f:
-        f.write(guard_script)
+        f.write(wrapper)
         script_path = f.name
 
     try:

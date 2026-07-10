@@ -56,17 +56,21 @@ export SYROCE_MONITOR_INTERVAL="${SYROCE_MONITOR_INTERVAL:-300}"
 export CORS_ORIGINS="${CORS_ORIGINS:-*}"
 
 # CM_MASTER_KEY_CURRENT: production ortamında zorunludur; dev fallback kullanılamaz.
-# Production (APP_ENV=production veya CLOUD_DEPLOYMENT set): key eksikse fail-closed.
-# Non-production: dev fallback devreye girer.
-if [ "${APP_ENV:-}" = "production" ] || [ -n "${CLOUD_DEPLOYMENT:-}" ]; then
-  if [ -z "${CM_MASTER_KEY_CURRENT:-}" ]; then
-    echo "ERROR: CM_MASTER_KEY_CURRENT is required in production and must not be empty."
-    echo "       Set it to a cryptographically strong secret (32+ chars) via your deployment secrets."
-    exit 1
+# Guard ayrı fonksiyon olarak tanımlandı: hem start.sh hem de testler gerçek kodu kullanır.
+_validate_master_key() {
+  if [ "${APP_ENV:-}" = "production" ] || [ -n "${CLOUD_DEPLOYMENT:-}" ]; then
+    if [ -z "${CM_MASTER_KEY_CURRENT:-}" ]; then
+      echo "ERROR: CM_MASTER_KEY_CURRENT is required in production and must not be empty."
+      echo "       Set it to a cryptographically strong secret (32+ chars) via your deployment secrets."
+      return 1
+    fi
+  else
+    export CM_MASTER_KEY_CURRENT="${CM_MASTER_KEY_CURRENT:-dev-master-key-not-for-production-use-only}"
   fi
-else
-  export CM_MASTER_KEY_CURRENT="${CM_MASTER_KEY_CURRENT:-dev-master-key-not-for-production-use-only}"
-fi
+}
+
+_validate_master_key || exit 1
+
 export CM_KEY_VERSION="${CM_KEY_VERSION:-v1}"
 
 # v42 Bug BH (defense-in-depth): enforce strict tenant isolation. Without
