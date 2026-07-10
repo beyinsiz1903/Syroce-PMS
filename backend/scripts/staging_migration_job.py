@@ -356,6 +356,29 @@ async def main_async(cfg: dict, run_migration: bool) -> None:
         logger.error("Dry-run found failures or unknown kids. Halting.")
         sys.exit(1)
 
+    # ── Meaningfulness guard ───────────────────────────────────────────────
+    total = dry_stats.get("total_records", 0)
+    old_kid = dry_stats.get("old_kid_records", 0)
+    if total == 0 or old_kid == 0:
+        if run_migration:
+            logger.error(
+                "REHEARSAL NOT MEANINGFUL: total_records=%d, old_kid_records=%d. "
+                "The staging DB has no records that need migration. "
+                "Populate staging DB with real encrypted records before running --run-migration.",
+                total,
+                old_kid,
+            )
+            sys.exit(1)
+        else:
+            logger.warning(
+                "REHEARSAL NOT MEANINGFUL: total_records=%d, old_kid_records=%d. "
+                "The staging DB appears empty or already migrated. "
+                "Dry-run completed but no real crypto roundtrip was exercised. "
+                "Populate staging DB with encrypted records before proceeding to --run-migration.",
+                total,
+                old_kid,
+            )
+
     if not run_migration:
         logger.info("--dry-run only mode. PASS. Re-run with --run-migration for full rehearsal.")
         return
