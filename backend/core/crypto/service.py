@@ -21,7 +21,7 @@ import secrets
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .engine import AADContext, AESGCMEngine
-from .envelope import is_envelope
+from .envelope import extract_kid, is_envelope
 from .errors import CryptoError, DecryptionError
 from .keys import load_keyring
 from .masking import mask_dict, mask_value
@@ -197,10 +197,14 @@ class CredentialEncryptionService:
 
     # ── Format Detection ──────────────────────────────────────────────
 
-    @staticmethod
-    def is_current_format(value: str) -> bool:
-        """Check if value is in the current SYR1 envelope format."""
-        return is_envelope(value)
+    def is_current_format(self, value: str) -> bool:
+        """Check if value is in the current SYR1 envelope format AND uses the current key."""
+        if not is_envelope(value):
+            return False
+        try:
+            return extract_kid(value) == self._keyring.current_kid
+        except Exception:
+            return False
 
     @staticmethod
     def detect_format(value: str) -> CiphertextFormat:

@@ -112,3 +112,15 @@ class EncryptionEnvelope:
 def is_envelope(data: str) -> bool:
     """Fast check: is this a SYR1: envelope?"""
     return isinstance(data, str) and data.startswith(ENVELOPE_PREFIX)
+
+
+def extract_kid(data: str) -> str:
+    """Fast extraction of the 'kid' field from a SYR1: envelope without full parsing."""
+    if not is_envelope(data):
+        raise EnvelopeParseError("missing_SYR1_prefix")
+    try:
+        raw = base64.b64decode(data[len(ENVELOPE_PREFIX) :])
+        obj = json.loads(raw)
+        return obj["kid"]
+    except Exception as e:
+        raise EnvelopeParseError(f"invalid_or_missing_kid: {e}")
