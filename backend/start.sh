@@ -54,7 +54,19 @@ export SYROCE_MONITOR_INTERVAL="${SYROCE_MONITOR_INTERVAL:-300}"
 
 # Dev fallbacks for non-production startup checks (silences harmless warnings)
 export CORS_ORIGINS="${CORS_ORIGINS:-*}"
-export CM_MASTER_KEY_CURRENT="${CM_MASTER_KEY_CURRENT:-dev-master-key-not-for-production-use-only}"
+
+# CM_MASTER_KEY_CURRENT: production ortamında zorunludur; dev fallback kullanılamaz.
+# Production (APP_ENV=production veya CLOUD_DEPLOYMENT set): key eksikse fail-closed.
+# Non-production: dev fallback devreye girer.
+if [ "${APP_ENV:-}" = "production" ] || [ -n "${CLOUD_DEPLOYMENT:-}" ]; then
+  if [ -z "${CM_MASTER_KEY_CURRENT:-}" ]; then
+    echo "ERROR: CM_MASTER_KEY_CURRENT is required in production and must not be empty."
+    echo "       Set it to a cryptographically strong secret (32+ chars) via your deployment secrets."
+    exit 1
+  fi
+else
+  export CM_MASTER_KEY_CURRENT="${CM_MASTER_KEY_CURRENT:-dev-master-key-not-for-production-use-only}"
+fi
 export CM_KEY_VERSION="${CM_KEY_VERSION:-v1}"
 
 # v42 Bug BH (defense-in-depth): enforce strict tenant isolation. Without
