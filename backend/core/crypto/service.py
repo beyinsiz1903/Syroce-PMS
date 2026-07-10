@@ -21,7 +21,7 @@ import secrets
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .engine import AADContext, AESGCMEngine
-from .envelope import is_envelope, extract_kid
+from .envelope import extract_kid, is_envelope
 from .errors import CryptoError, DecryptionError
 from .keys import load_keyring
 from .masking import mask_dict, mask_value

@@ -69,7 +69,8 @@ def _canonical_json(records) -> bytes:
 
 def _record_status(svc, val: str) -> str:
     """Analyze a single ciphertext string's status."""
-    from core.crypto.envelope import is_envelope, extract_kid
+    from core.crypto.envelope import extract_kid, is_envelope
+
     if not val:
         return "skipped"
     if svc.is_current_format(val):
@@ -213,7 +214,7 @@ def create_backup_file(db, svc, records) -> str:
         raise RuntimeError(f"Directory fsync failed, backup durability not guaranteed. Aborting: {e}")
 
     # Read-back validation with canonical checksum
-    with open(backup_file, "r") as f:
+    with open(backup_file) as f:
         read_back = bson.json_util.loads(f.read())
         read_checksum = hashlib.sha256(_canonical_json(read_back["records"])).hexdigest()
         if read_checksum != payload_checksum:
@@ -264,9 +265,7 @@ async def restore_single_doc(db, col_name, doc):
     filter_query = _get_filter_query(col_name, doc)
     res = await coll.replace_one(filter_query, doc, upsert=False)
     if res.matched_count != 1:
-        raise RollbackVerificationError(
-            f"Rollback replace_one matched {res.matched_count} for {filter_query}"
-        )
+        raise RollbackVerificationError(f"Rollback replace_one matched {res.matched_count} for {filter_query}")
 
     # Read-back to confirm restore was successful
     written = await coll.find_one(filter_query, {"_id": 0})
@@ -274,9 +273,7 @@ async def restore_single_doc(db, col_name, doc):
     doc_without_id = {k: v for k, v in doc.items() if k != "_id"}
     written_without_id = {k: v for k, v in (written or {}).items() if k != "_id"}
     if written_without_id != doc_without_id:
-        raise RollbackVerificationError(
-            f"Rollback read-back mismatch for {filter_query}. DB and original doc differ."
-        )
+        raise RollbackVerificationError(f"Rollback read-back mismatch for {filter_query}. DB and original doc differ.")
 
 
 async def execute_migration(db, svc, records, dry_run: bool):
@@ -296,7 +293,9 @@ async def execute_migration(db, svc, records, dry_run: bool):
                 prop = doc.get("property_id", "")
                 payload = doc.get("encrypted_payload", {})
                 aad = AADContext(
-                    tenant_id=tenant, provider=provider, property_id=prop,
+                    tenant_id=tenant,
+                    provider=provider,
+                    property_id=prop,
                     environment=os.environ.get("APP_ENV", "development"),
                     context_type="credential",
                 )
@@ -330,7 +329,9 @@ async def execute_migration(db, svc, records, dry_run: bool):
                 cred_type = doc.get("credential_type", "")
                 cred_key = doc.get("credential_key", "")
                 aad = AADContext(
-                    tenant_id=tenant, provider=cred_type, property_id=cred_key,
+                    tenant_id=tenant,
+                    provider=cred_type,
+                    property_id=cred_key,
                     environment=os.environ.get("APP_ENV", "development"),
                     context_type="credential",
                 )
@@ -351,7 +352,15 @@ async def execute_migration(db, svc, records, dry_run: bool):
                     filter_query = _get_filter_query(col_name, doc)
                     res = await coll.update_one(
                         filter_query,
-                        {"$set": {"credential_encrypted": encrypted, "key_version": svc._keyring.current_kid, "credential_value_encoded": None, "credential_value_hash": None, "migrated_at": datetime.now(UTC).isoformat()}},
+                        {
+                            "$set": {
+                                "credential_encrypted": encrypted,
+                                "key_version": svc._keyring.current_kid,
+                                "credential_value_encoded": None,
+                                "credential_value_hash": None,
+                                "migrated_at": datetime.now(UTC).isoformat(),
+                            }
+                        },
                     )
                     if res.matched_count != 1 or res.modified_count != 1:
                         raise RuntimeError(f"Update failed. matched={res.matched_count}, modified={res.modified_count}")
@@ -440,7 +449,7 @@ async def run_restore(db, backup_file):
         logger.error("Backup file %s not found.", backup_file)
         sys.exit(1)
 
-    with open(backup_file, "r") as f:
+    with open(backup_file) as f:
         data = bson.json_util.loads(f.read())
 
     manifest = data.get("manifest")

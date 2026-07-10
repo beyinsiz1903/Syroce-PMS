@@ -100,13 +100,13 @@ def load_keyring() -> KeyRing:
 
     current_master = os.environ.get("CM_MASTER_KEY_CURRENT", "")
     previous_master = os.environ.get("CM_MASTER_KEY_PREVIOUS", "")
-    
+
     # Enforce CM_KEY_VERSION_CURRENT as canonical if both exist, reject if mismatched.
     legacy_version = os.environ.get("CM_KEY_VERSION")
     canon_version = os.environ.get("CM_KEY_VERSION_CURRENT")
     if legacy_version and canon_version and legacy_version != canon_version:
         raise KeyDerivationError("CM_KEY_VERSION and CM_KEY_VERSION_CURRENT are both set but do not match.")
-    
+
     key_version_current = canon_version or legacy_version
     if not key_version_current:
         if is_prod:
@@ -114,13 +114,13 @@ def load_keyring() -> KeyRing:
         key_version_current = "v1"
 
     key_version_previous = os.environ.get("CM_KEY_VERSION_PREVIOUS", "")
-    
+
     if bool(previous_master) != bool(key_version_previous):
         raise KeyDerivationError("Both CM_MASTER_KEY_PREVIOUS and CM_KEY_VERSION_PREVIOUS must be set together.")
-        
+
     if previous_master and hmac.compare_digest(current_master.encode("utf-8"), previous_master.encode("utf-8")):
         raise KeyDerivationError("Current and previous master keys cannot be identical.")
-        
+
     if key_version_previous and key_version_current == key_version_previous:
         raise KeyDerivationError("Current and previous key versions (kids) cannot be identical.")
 
@@ -131,7 +131,7 @@ def load_keyring() -> KeyRing:
             raise KeyDerivationError("CM_MASTER_KEY_CURRENT is too weak for production (minimum 32 bytes required).")
         if previous_master and len(previous_master.encode("utf-8")) < 32:
             raise KeyDerivationError("CM_MASTER_KEY_PREVIOUS is too weak for production (minimum 32 bytes required).")
-            
+
     if not current_master:
         # Development fallback chain: CM_CREDENTIAL_KEY → hardcoded dev key
         current_master = os.environ.get("CM_CREDENTIAL_KEY", "") or _DEV_FALLBACK_KEY
