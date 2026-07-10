@@ -99,8 +99,27 @@ def load_keyring() -> KeyRing:
 
     current_master = os.environ.get("CM_MASTER_KEY_CURRENT", "")
     previous_master = os.environ.get("CM_MASTER_KEY_PREVIOUS", "")
-    key_version_current = os.environ.get("CM_KEY_VERSION", os.environ.get("CM_KEY_VERSION_CURRENT", "v1"))
+    
+    # Enforce CM_KEY_VERSION_CURRENT as canonical if both exist, reject if mismatched.
+    legacy_version = os.environ.get("CM_KEY_VERSION")
+    canon_version = os.environ.get("CM_KEY_VERSION_CURRENT")
+    if legacy_version and canon_version and legacy_version != canon_version:
+        raise KeyDerivationError("CM_KEY_VERSION and CM_KEY_VERSION_CURRENT are both set but do not match.")
+    
+    key_version_current = canon_version or legacy_version or "v1"
     key_version_previous = os.environ.get("CM_KEY_VERSION_PREVIOUS", "")
+
+    if not key_version_current:
+        raise KeyDerivationError("Current key version (CM_KEY_VERSION_CURRENT) cannot be empty.")
+    
+    if bool(previous_master) != bool(key_version_previous):
+        raise KeyDerivationError("Both CM_MASTER_KEY_PREVIOUS and CM_KEY_VERSION_PREVIOUS must be set together.")
+        
+    if previous_master and current_master == previous_master:
+        raise KeyDerivationError("Current and previous master keys cannot be identical.")
+        
+    if key_version_previous and key_version_current == key_version_previous:
+        raise KeyDerivationError("Current and previous key versions (kids) cannot be identical.")
 
     if not current_master:
         if is_prod:
