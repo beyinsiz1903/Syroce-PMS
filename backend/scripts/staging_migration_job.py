@@ -1,53 +1,62 @@
 #!/usr/bin/env python3
 """
-Staging Migration Job — One-shot crypto key rotation rehearsal.
+Staging Migration Job — Option A (corrected)
 
-PURPOSE
--------
-Runs a full dry-run → migrate → verify → restore cycle against a staging
-database WITHOUT exposing any secret values in logs or environment dumps.
+DESIGN
+------
+Runs a full dry-run → migrate → verify → restore cycle against a STAGING
+database while reading the production CM_MASTER_KEY_CURRENT in-process as
+the PREVIOUS key — without ever copying or logging the secret value.
 
-DESIGN (Option A — in-process key re-use)
------------------------------------------
-The production CM_MASTER_KEY_CURRENT is read at startup and assigned
-in-process as CM_MASTER_KEY_PREVIOUS **before** the crypto service is
-initialized. The original environment variable name is then overwritten
-with the NEW v2 key. No secret value is ever logged.
+KEY PRINCIPLE
+-------------
+This script does NOT import `core.database`. It builds its own Motor client
+using STAGING_MONGO_URL + STAGING_DB_NAME so that production MONGO_URL and
+DB_NAME environment variables are never touched, even when this job runs
+inside the same App Platform component as production.
 
-SAFETY RULES (enforced in code, not just by convention)
---------------------------------------------------------
-1. DB_NAME must NOT match STAGING_FORBIDDEN_DB_NAMES. Hard exit otherwise.
-2. CM_MASTER_KEY_CURRENT and CM_KEY_VERSION_CURRENT must be SET at entry.
-3. STAGING_NEW_MASTER_KEY must be SET and >= 32 bytes.
-4. All output is restricted to numeric counters only — no key values.
-5. Backup file is written with 0600 permissions.
-6. Dry-run ALWAYS runs first. Real migration is skipped unless --run-migration
-   is explicitly passed.
+REQUIRED ENV VARS
+-----------------
+Set only in the job/console component, NOT in app-level env:
 
-USAGE (on DigitalOcean App Platform console / one-off job)
------------------------------------------------------------
-Required env vars (set in the staging job component only):
-  MONGO_URL              = <staging MongoDB URL>
-  DB_NAME                = syroce-pms-staging   (must NOT be production DB)
-  CRYPTO_V2_ENABLED      = true
-  CM_MASTER_KEY_CURRENT  = <existing production key — becomes PREVIOUS in-process>
-  CM_KEY_VERSION_CURRENT = v1   (version of the existing production key)
-  CM_KEY_VERSION_PREVIOUS= v1   (same, set explicitly for clarity)
-  STAGING_NEW_MASTER_KEY = <freshly generated 32-byte key for v2>
-  STAGING_NEW_KEY_VERSION= v2
+  STAGING_MONGO_URL       MongoDB Atlas URL for the STAGING database.
+  STAGING_DB_NAME         Staging database name (must contain "staging" or
+                          "rehearsal" and must NOT be a production DB name).
+  STAGING_NEW_MASTER_KEY  Freshly generated key for v2 (>= 32 bytes).
+                          Generate with: openssl rand -hex 32
+  STAGING_NEW_KEY_VERSION Version label for the new key (e.g. "v2").
 
-Run dry-run only (safe, no DB writes):
+  From existing app-level env (no change needed there):
+  CM_MASTER_KEY_CURRENT   Existing production key — read in-process as PREVIOUS.
+  CM_KEY_VERSION_CURRENT  Preferred version alias. Falls back to CM_KEY_VERSION.
+  CRYPTO_V2_ENABLED       Must be "true".
+
+USAGE
+-----
+  # Safe — no DB writes:
   python scripts/staging_migration_job.py --dry-run
 
-Run full rehearsal (dry-run + migrate + restore):
+  # Full rehearsal (dry-run + migrate + restore):
   python scripts/staging_migration_job.py --run-migration
+
+DO NOT
+------
+  * Copy CM_MASTER_KEY_CURRENT into any other component manually.
+  * Run with STAGING_DB_NAME pointing at a production database.
+  * Merge this script to main before a successful --dry-run PASS.
 """
 
 import argparse
 import asyncio
+import hashlib
+import json
 import logging
 import os
 import sys
+import tempfile
+from datetime import UTC, datetime
+
+import certifi
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -57,48 +66,95 @@ logging.basicConfig(
 )
 logger = logging.getLogger("staging_migration_job")
 
-# ── Safety constants ──────────────────────────────────────────────────────────
-STAGING_FORBIDDEN_DB_NAMES = {
-    "syroce-pms",
-    "syroce_production",
-    "hotel_pms",
-    "hotel_pms_production",
-}
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+PRODUCTION_FORBIDDEN_DB_NAMES = frozenset(
+    {
+        "syroce-pms",
+        "syroce_production",
+        "hotel_pms",
+        "hotel_pms_production",
+        "production",
+    }
+)
+
+STAGING_SAFE_KEYWORDS = ("staging", "rehearsal", "test", "migration")
 MIN_KEY_BYTES = 32
 
+ALLOWED_COLLECTIONS = {"provider_secrets", "credential_vault", "_dev_secrets"}
 
-# ── Pre-flight checks ─────────────────────────────────────────────────────────
 
-def _preflight():
-    """Validate environment before touching any crypto or DB state."""
+# ── Pre-flight ────────────────────────────────────────────────────────────────
+
+
+def _abort(msg: str) -> None:
+    logger.error("PREFLIGHT FAIL: %s", msg)
+    sys.exit(1)
+
+
+def _preflight() -> dict:
+    """
+    Validate all required environment variables.
+    Returns a dict of resolved config values (no secret values included).
+    Exits with code 1 on any violation.
+    """
     errors = []
 
-    db_name = os.environ.get("DB_NAME", "")
-    if not db_name:
-        errors.append("DB_NAME is not set.")
-    elif db_name in STAGING_FORBIDDEN_DB_NAMES:
+    # --- STAGING_MONGO_URL ---
+    staging_url = os.environ.get("STAGING_MONGO_URL", "")
+    if not staging_url:
+        errors.append("STAGING_MONGO_URL is not set.")
+
+    # --- STAGING_DB_NAME ---
+    staging_db = os.environ.get("STAGING_DB_NAME", "")
+    if not staging_db:
+        errors.append("STAGING_DB_NAME is not set.")
+    else:
+        if staging_db in PRODUCTION_FORBIDDEN_DB_NAMES:
+            errors.append(
+                f"STAGING_DB_NAME='{staging_db}' is a FORBIDDEN production database name."
+            )
+        if not any(kw in staging_db.lower() for kw in STAGING_SAFE_KEYWORDS):
+            errors.append(
+                f"STAGING_DB_NAME='{staging_db}' must contain one of: "
+                f"{STAGING_SAFE_KEYWORDS}. This is a safety guard."
+            )
+
+    # --- Existing production key (becomes PREVIOUS in-process) ---
+    old_key = os.environ.get("CM_MASTER_KEY_CURRENT", "")
+    if not old_key:
+        errors.append("CM_MASTER_KEY_CURRENT is not set (needed as in-process PREVIOUS key).")
+
+    # CM_KEY_VERSION_CURRENT preferred; fall back to CM_KEY_VERSION
+    old_version = os.environ.get("CM_KEY_VERSION_CURRENT") or os.environ.get("CM_KEY_VERSION", "")
+    if not old_version:
         errors.append(
-            f"DB_NAME='{db_name}' is a FORBIDDEN production database. "
-            "This job MUST target a staging or rehearsal database only."
+            "Neither CM_KEY_VERSION_CURRENT nor CM_KEY_VERSION is set. "
+            "Cannot determine the existing key version."
         )
 
-    if not os.environ.get("CM_MASTER_KEY_CURRENT"):
-        errors.append("CM_MASTER_KEY_CURRENT is not set (needed as PREVIOUS key).")
-
-    if not os.environ.get("CM_KEY_VERSION_CURRENT"):
-        errors.append("CM_KEY_VERSION_CURRENT is not set.")
-
+    # --- New staging key ---
     new_key = os.environ.get("STAGING_NEW_MASTER_KEY", "")
     if not new_key:
         errors.append("STAGING_NEW_MASTER_KEY is not set.")
-    elif len(new_key.encode()) < MIN_KEY_BYTES:
+    elif len(new_key.encode("utf-8")) < MIN_KEY_BYTES:
         errors.append(
             f"STAGING_NEW_MASTER_KEY is too short "
-            f"({len(new_key.encode())} bytes, minimum {MIN_KEY_BYTES})."
+            f"({len(new_key.encode('utf-8'))} bytes, minimum {MIN_KEY_BYTES})."
         )
 
-    if not os.environ.get("STAGING_NEW_KEY_VERSION"):
+    new_version = os.environ.get("STAGING_NEW_KEY_VERSION", "")
+    if not new_version:
         errors.append("STAGING_NEW_KEY_VERSION is not set.")
+    elif old_version and new_version == old_version:
+        errors.append(
+            f"STAGING_NEW_KEY_VERSION='{new_version}' must differ from "
+            f"the existing version='{old_version}'."
+        )
+
+    # --- CRYPTO_V2_ENABLED ---
+    if os.environ.get("CRYPTO_V2_ENABLED", "").lower() != "true":
+        errors.append("CRYPTO_V2_ENABLED must be 'true'.")
 
     if errors:
         for e in errors:
@@ -106,84 +162,111 @@ def _preflight():
         sys.exit(1)
 
     logger.info("Pre-flight OK.")
-    logger.info("  DB_NAME              : %s", db_name)
-    logger.info("  CM_KEY_VERSION_CURRENT (old/previous): %s",
-                os.environ.get("CM_KEY_VERSION_CURRENT"))
-    logger.info("  STAGING_NEW_KEY_VERSION (new/current): %s",
-                os.environ.get("STAGING_NEW_KEY_VERSION"))
-    logger.info("  CM_MASTER_KEY_CURRENT: SET (value hidden)")
+    logger.info("  STAGING_DB_NAME       : %s", staging_db)
+    logger.info("  old_version (PREVIOUS): %s", old_version)
+    logger.info("  new_version (CURRENT) : %s", new_version)
+    logger.info("  CM_MASTER_KEY_CURRENT : SET (value hidden)")
     logger.info("  STAGING_NEW_MASTER_KEY: SET (value hidden)")
 
+    return {
+        "staging_url": staging_url,
+        "staging_db": staging_db,
+        "old_key": old_key,
+        "old_version": old_version,
+        "new_key": new_key,
+        "new_version": new_version,
+    }
 
-def _rotate_keys_in_process():
+
+# ── In-process key rotation ───────────────────────────────────────────────────
+
+
+def _rotate_keys_in_process(cfg: dict) -> None:
     """
-    Re-assign environment variables IN-PROCESS so that:
-      - The existing production key becomes CM_MASTER_KEY_PREVIOUS / CM_KEY_VERSION_PREVIOUS
-      - The new staging key becomes CM_MASTER_KEY_CURRENT / CM_KEY_VERSION_CURRENT
+    Re-map environment variables in this process only.
 
-    No key value is ever written to a log or printed.
+    After this call:
+      CM_MASTER_KEY_PREVIOUS = old production key
+      CM_KEY_VERSION_PREVIOUS = old version
+      CM_MASTER_KEY_CURRENT   = new staging key
+      CM_KEY_VERSION_CURRENT  = new version
+      CM_KEY_VERSION          = new version (legacy alias)
+
+    No value is ever written to a log.
     """
-    existing_key = os.environ.pop("CM_MASTER_KEY_CURRENT")
-    existing_version = os.environ.pop("CM_KEY_VERSION_CURRENT")
+    # Remove staging-specific vars so they don't leak into crypto service init
+    os.environ.pop("STAGING_NEW_MASTER_KEY", None)
+    os.environ.pop("STAGING_NEW_KEY_VERSION", None)
+    os.environ.pop("STAGING_MONGO_URL", None)
 
-    os.environ["CM_MASTER_KEY_PREVIOUS"] = existing_key
-    os.environ["CM_KEY_VERSION_PREVIOUS"] = existing_version
+    # Assign PREVIOUS from the existing production key (already in RAM)
+    os.environ["CM_MASTER_KEY_PREVIOUS"] = cfg["old_key"]
+    os.environ["CM_KEY_VERSION_PREVIOUS"] = cfg["old_version"]
 
-    os.environ["CM_MASTER_KEY_CURRENT"] = os.environ.pop("STAGING_NEW_MASTER_KEY")
-    os.environ["CM_KEY_VERSION_CURRENT"] = os.environ.pop("STAGING_NEW_KEY_VERSION")
-
-    # Also honour the legacy alias if code reads it
-    os.environ["CM_KEY_VERSION"] = os.environ["CM_KEY_VERSION_CURRENT"]
+    # Assign new CURRENT
+    os.environ["CM_MASTER_KEY_CURRENT"] = cfg["new_key"]
+    os.environ["CM_KEY_VERSION_CURRENT"] = cfg["new_version"]
+    os.environ["CM_KEY_VERSION"] = cfg["new_version"]
 
     logger.info("In-process key rotation complete.")
-    logger.info("  Previous kid (old production): %s", os.environ["CM_KEY_VERSION_PREVIOUS"])
-    logger.info("  Current  kid (new staging v2): %s", os.environ["CM_KEY_VERSION_CURRENT"])
+    logger.info("  PREVIOUS kid: %s", cfg["old_version"])
+    logger.info("  CURRENT  kid: %s", cfg["new_version"])
 
 
-# ── Migration helpers ─────────────────────────────────────────────────────────
-
-async def _run_dry_run(db, svc):
-    """Run full in-memory dry-run. Returns stats dict."""
-    from scripts.migrate_crypto import collect_records, execute_migration, stats, ALLOWED_COLLECTIONS
-
-    # Reset global stats before each run
-    for k in stats:
-        stats[k] = 0
-
-    records = await collect_records(db, svc, ALLOWED_COLLECTIONS)
-    await execute_migration(db, svc, records, dry_run=True)
-
-    return dict(stats), records
+# ── Staging DB client ─────────────────────────────────────────────────────────
 
 
-async def _run_real_migration(db, svc):
-    """Run real migration with backup. Returns (stats, backup_filename)."""
-    from scripts.migrate_crypto import (
-        collect_records, execute_migration, create_backup_file,
-        MigrationPreflightError, stats, ALLOWED_COLLECTIONS,
+async def _build_staging_db(staging_url: str, staging_db: str):
+    """Build a Motor client pointed exclusively at the staging database."""
+    from motor.motor_asyncio import AsyncIOMotorClient
+
+    tls_kwargs = {}
+    if staging_url.startswith("mongodb+srv://"):
+        tls_kwargs["tlsCAFile"] = certifi.where()
+
+    client = AsyncIOMotorClient(
+        staging_url,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+        socketTimeoutMS=20000,
+        retryWrites=True,
+        **tls_kwargs,
     )
 
-    for k in stats:
-        stats[k] = 0
+    # Identity / connectivity check — logs DB name, never secrets
+    try:
+        info = await client.admin.command("ping")
+        logger.info("Staging DB ping OK: %s", info)
+    except Exception as e:
+        logger.error("Cannot connect to staging DB: %s", e)
+        sys.exit(1)
 
-    records = await collect_records(db, svc, ALLOWED_COLLECTIONS)
+    db = client[staging_db]
 
-    if stats.get("unknown_kid_records", 0) > 0:
-        raise MigrationPreflightError("unknown_kid_records > 0, aborting.")
+    # Double-check the actual database name we are connected to
+    actual_name = db.name
+    logger.info("Connected staging database name: %s", actual_name)
+    if actual_name in PRODUCTION_FORBIDDEN_DB_NAMES:
+        logger.error(
+            "SAFETY ABORT: Connected database '%s' is in the production forbidden list.",
+            actual_name,
+        )
+        sys.exit(1)
+    if not any(kw in actual_name.lower() for kw in STAGING_SAFE_KEYWORDS):
+        logger.error(
+            "SAFETY ABORT: Connected database '%s' does not contain a safe keyword %s.",
+            actual_name,
+            STAGING_SAFE_KEYWORDS,
+        )
+        sys.exit(1)
 
-    backup_file = create_backup_file(db, svc, records)
-    await execute_migration(db, svc, records, dry_run=False)
-
-    return dict(stats), backup_file
+    return db
 
 
-async def _run_restore(db, backup_file: str):
-    """Restore from backup file."""
-    from scripts.migrate_crypto import run_restore
-    await run_restore(db, backup_file)
+# ── Migration helpers (self-contained, no core.database import) ───────────────
 
 
-def _log_stats(label: str, s: dict):
+def _log_stats(label: str, s: dict) -> None:
     logger.info("=" * 60)
     logger.info("%s", label)
     logger.info("  total_encrypted_records: %d", s.get("total_records", 0))
@@ -196,15 +279,54 @@ def _log_stats(label: str, s: dict):
     logger.info("=" * 60)
 
 
+async def _run_phase(db, svc, dry_run: bool) -> tuple[dict, list]:
+    """
+    Collect records and execute migration (or dry-run).
+    Returns (stats_snapshot, records_list).
+    """
+    from scripts.migrate_crypto import (
+        ALLOWED_COLLECTIONS,
+        collect_records,
+        execute_migration,
+        stats,
+    )
+
+    # Reset the global stats counter for this phase
+    for k in list(stats.keys()):
+        stats[k] = 0
+
+    records = await collect_records(db, svc, ALLOWED_COLLECTIONS)
+    await execute_migration(db, svc, records, dry_run=dry_run)
+    return dict(stats), records
+
+
+async def _create_and_write_backup(db, svc, records) -> str:
+    """Write a 0600 backup file. Returns the filename."""
+    from scripts.migrate_crypto import create_backup_file
+
+    backup_file = create_backup_file(db, svc, records)
+    logger.info("Backup created: %s (content hidden)", backup_file)
+    return backup_file
+
+
+async def _run_restore(db, backup_file: str) -> None:
+    from scripts.migrate_crypto import run_restore
+
+    await run_restore(db, backup_file)
+
+
 # ── Main flow ─────────────────────────────────────────────────────────────────
 
-async def main_async(run_migration: bool):
-    # Step 1: rotate keys in-process (production key → PREVIOUS, new key → CURRENT)
-    _rotate_keys_in_process()
 
-    # Step 2: initialise crypto service and DB (after key rotation)
+async def main_async(cfg: dict, run_migration: bool) -> None:
+    # Step 1: Rotate keys in-process BEFORE importing crypto modules
+    _rotate_keys_in_process(cfg)
+
+    # Step 2: Build staging-only DB connection (no core.database import)
+    db = await _build_staging_db(cfg["staging_url"], cfg["staging_db"])
+
+    # Step 3: Initialize crypto service (now sees rotated env vars)
     from core.crypto.service import get_crypto_service
-    from core.database import _raw_db as db  # use raw db, no tenant proxy
 
     try:
         svc = get_crypto_service()
@@ -213,15 +335,21 @@ async def main_async(run_migration: bool):
         sys.exit(1)
 
     health = svc.health()
-    logger.info("Crypto service health: v2=%s bypass=%s kid=%s has_previous=%s",
-                health.get("v2_enabled"),
-                health.get("bypass_active"),
-                health.get("current_kid"),
-                health.get("has_previous_key"))
+    logger.info(
+        "Crypto service: v2=%s bypass=%s kid=%s has_previous=%s",
+        health.get("v2_enabled"),
+        health.get("bypass_active"),
+        health.get("current_kid"),
+        health.get("has_previous_key"),
+    )
 
-    # Step 3: Dry-run (always runs)
-    logger.info(">>> STEP 1: DRY-RUN <<<")
-    dry_stats, _ = await _run_dry_run(db, svc)
+    if not health.get("has_previous_key"):
+        logger.error("Crypto service has no previous key. In-process rotation may have failed.")
+        sys.exit(1)
+
+    # ── Step 4: Dry-run (mandatory, always first) ──────────────────────────
+    logger.info(">>> STEP 1/5: DRY-RUN <<<")
+    dry_stats, _ = await _run_phase(db, svc, dry_run=True)
     _log_stats("DRY-RUN RESULT", dry_stats)
 
     if dry_stats.get("failed", 0) > 0 or dry_stats.get("unknown_kid_records", 0) > 0:
@@ -229,80 +357,104 @@ async def main_async(run_migration: bool):
         sys.exit(1)
 
     if not run_migration:
-        logger.info("--dry-run only mode. Stopping here. Pass --run-migration for full rehearsal.")
+        logger.info("--dry-run only mode. PASS. Re-run with --run-migration for full rehearsal.")
         return
 
-    # Step 4: Real migration
-    logger.info(">>> STEP 2: REAL MIGRATION <<<")
-    mig_stats, backup_file = await _run_real_migration(db, svc)
+    # ── Step 5: Real migration ─────────────────────────────────────────────
+    logger.info(">>> STEP 2/5: REAL MIGRATION <<<")
+    from scripts.migrate_crypto import collect_records, execute_migration, stats
+
+    # Collect records for backup + migration
+    for k in list(stats.keys()):
+        stats[k] = 0
+
+    records = await collect_records(db, svc, ALLOWED_COLLECTIONS)
+
+    if stats.get("unknown_kid_records", 0) > 0:
+        logger.error("unknown_kid_records > 0 during migration collection. Aborting.")
+        sys.exit(1)
+
+    # Write backup before any DB writes
+    backup_file = await _create_and_write_backup(db, svc, records)
+
+    # Execute migration
+    for k in list(stats.keys()):
+        stats[k] = 0
+
+    await execute_migration(db, svc, records, dry_run=False)
+    mig_stats = dict(stats)
     _log_stats("MIGRATION RESULT", mig_stats)
 
     if mig_stats.get("failed", 0) > 0:
-        logger.error("Migration had failures. NOT restoring automatically. Inspect backup: %s", backup_file)
-        sys.exit(1)
-
-    # Step 5: Post-migration dry-run (must show old_kid_records=0)
-    logger.info(">>> STEP 3: POST-MIGRATION DRY-RUN <<<")
-    post_stats, _ = await _run_dry_run(db, svc)
-    _log_stats("POST-MIGRATION DRY-RUN RESULT", post_stats)
-
-    if post_stats.get("old_kid_records", 0) != 0:
-        logger.error("Post-migration dry-run still shows old_kid_records > 0. Check migration output.")
-        sys.exit(1)
-
-    # Step 6: Restore (rehearsal only — proves rollback works)
-    logger.info(">>> STEP 4: RESTORE (ROLLBACK REHEARSAL) <<<")
-    await _run_restore(db, backup_file)
-
-    # Step 7: Post-restore dry-run (must show old_kid_records == pre-migration count)
-    logger.info(">>> STEP 5: POST-RESTORE DRY-RUN <<<")
-    restore_stats, _ = await _run_dry_run(db, svc)
-    _log_stats("POST-RESTORE DRY-RUN RESULT", restore_stats)
-
-    if restore_stats.get("old_kid_records", 0) != dry_stats.get("old_kid_records", 0):
         logger.error(
-            "Post-restore old_kid_records=%d does not match pre-migration=%d. "
-            "Restore may be incomplete.",
-            restore_stats.get("old_kid_records", 0),
-            dry_stats.get("old_kid_records", 0),
+            "Migration had %d failures. NOT auto-restoring. Inspect backup: %s",
+            mig_stats["failed"],
+            backup_file,
         )
         sys.exit(1)
 
-    logger.info("STAGING REHEARSAL COMPLETE. All steps PASSED.")
+    # ── Step 6: Post-migration dry-run ─────────────────────────────────────
+    logger.info(">>> STEP 3/5: POST-MIGRATION DRY-RUN <<<")
+    post_stats, _ = await _run_phase(db, svc, dry_run=True)
+    _log_stats("POST-MIGRATION DRY-RUN RESULT", post_stats)
+
+    if post_stats.get("old_kid_records", 0) != 0:
+        logger.error("old_kid_records still > 0 after migration. Check logs.")
+        sys.exit(1)
+
+    # ── Step 7: Restore (rollback rehearsal) ──────────────────────────────
+    logger.info(">>> STEP 4/5: RESTORE (ROLLBACK REHEARSAL) <<<")
+    await _run_restore(db, backup_file)
+
+    # ── Step 8: Post-restore dry-run ───────────────────────────────────────
+    logger.info(">>> STEP 5/5: POST-RESTORE DRY-RUN <<<")
+    restore_stats, _ = await _run_phase(db, svc, dry_run=True)
+    _log_stats("POST-RESTORE DRY-RUN RESULT", restore_stats)
+
+    expected_old = dry_stats.get("old_kid_records", 0)
+    actual_old = restore_stats.get("old_kid_records", 0)
+    if actual_old != expected_old:
+        logger.error(
+            "Post-restore old_kid_records=%d does not match pre-migration=%d.",
+            actual_old,
+            expected_old,
+        )
+        sys.exit(1)
+
+    logger.info("STAGING REHEARSAL COMPLETE — ALL STEPS PASSED.")
     logger.info("Summary:")
     logger.info("  Pre-migration old_kid_records : %d", dry_stats.get("old_kid_records", 0))
     logger.info("  Migrated records              : %d", mig_stats.get("migrated", 0))
     logger.info("  Migration failures            : %d", mig_stats.get("failed", 0))
     logger.info("  Post-restore old_kid_records  : %d", restore_stats.get("old_kid_records", 0))
-    logger.info("  Backup file                   : %s (keep until production rotation completes)", backup_file)
+    logger.info("  Backup file (keep until prod rotation): %s", backup_file)
 
 
-def main():
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Staging migration rehearsal job (Option A: in-process key rotation)"
+        description=(
+            "Staging migration rehearsal — Option A in-process key rotation. "
+            "Targets STAGING_MONGO_URL only. Never touches production DB."
+        )
     )
-    parser.add_argument(
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
         "--dry-run",
         action="store_true",
-        help="Run dry-run only. No DB writes. Default mode.",
+        help="Run dry-run only. No DB writes.",
     )
-    parser.add_argument(
+    group.add_argument(
         "--run-migration",
         action="store_true",
-        help="Run full rehearsal: dry-run → migrate → post dry-run → restore → post dry-run.",
+        help="Full rehearsal: dry-run → migrate → post dry-run → restore → post dry-run.",
     )
     args = parser.parse_args()
 
-    if args.dry_run and args.run_migration:
-        print("ERROR: Cannot specify both --dry-run and --run-migration.")
-        sys.exit(1)
-
-    if not args.dry_run and not args.run_migration:
-        print("ERROR: Specify --dry-run or --run-migration.")
-        sys.exit(1)
-
-    _preflight()
-    asyncio.run(main_async(run_migration=args.run_migration))
+    cfg = _preflight()
+    asyncio.run(main_async(cfg, run_migration=args.run_migration))
 
 
 if __name__ == "__main__":
