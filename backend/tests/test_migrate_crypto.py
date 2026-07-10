@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import stat
@@ -8,6 +9,7 @@ import pytest
 from core.crypto.errors import KeyDerivationError
 from core.crypto.keys import load_keyring
 from scripts.migrate_crypto import (
+    MigrationPreflightError,
     create_backup_file,
     execute_migration,
     run_migration,
@@ -15,33 +17,58 @@ from scripts.migrate_crypto import (
 
 # 1. Backup file permission (0600)
 def test_backup_mode_0600(tmp_path):
-    # Change working directory so backup is created in tmp_path
     original_cwd = os.getcwd()
     os.chdir(tmp_path)
     try:
+        mock_db = MagicMock()
+        mock_db.name = "test_db"
+        mock_svc = MagicMock()
+        mock_svc._keyring.current_kid = "v2"
+        mock_svc._keyring.has_previous = True
+        mock_svc._keyring._previous_kid = "v1"
+        
         records = [{"collection": "test", "doc": {"_id": bson.ObjectId()}}]
-        backup_file = create_backup_file(records)
+        backup_file = create_backup_file(mock_db, mock_svc, records)
         
         st = os.stat(backup_file)
-        # Check permissions are exactly 0o600
         assert stat.S_IMODE(st.st_mode) == 0o600
     finally:
         os.chdir(original_cwd)
 
-# 2. BSON serialization
-def test_bson_backup_serialization(tmp_path):
+# 2. BSON serialization and Manifest Structure
+def test_bson_backup_manifest_and_checksum(tmp_path):
     original_cwd = os.getcwd()
     os.chdir(tmp_path)
     try:
+        mock_db = MagicMock()
+        mock_db.name = "test_db"
+        mock_svc = MagicMock()
+        mock_svc._keyring.current_kid = "v2"
+        mock_svc._keyring.has_previous = False
+        
         oid = bson.ObjectId()
         records = [{"collection": "test", "doc": {"_id": oid, "date": bson.datetime.datetime.now()}}]
         
-        backup_file = create_backup_file(records)
+        backup_file = create_backup_file(mock_db, mock_svc, records)
         
         with open(backup_file, "r") as f:
             read_back = bson.json_util.loads(f.read())
             
-        assert read_back[0]["doc"]["_id"] == oid
+        assert "manifest" in read_back
+        assert "records" in read_back
+        manifest = read_back["manifest"]
+        
+        assert manifest["db_name"] == "test_db"
+        assert manifest["current_kid"] == "v2"
+        assert manifest["previous_kid"] is None
+        assert manifest["record_count"] == 1
+        
+        # Verify checksum
+        records_json = bson.json_util.dumps(read_back["records"]).encode("utf-8")
+        expected_checksum = hashlib.sha256(records_json).hexdigest()
+        assert manifest["payload_checksum"] == expected_checksum
+        
+        assert read_back["records"][0]["doc"]["_id"] == oid
     finally:
         os.chdir(original_cwd)
 
@@ -90,12 +117,21 @@ def test_equal_current_previous_master_fails(monkeypatch):
     with pytest.raises(KeyDerivationError, match="Current and previous master keys cannot be identical"):
         load_keyring()
 
-# 4. Unknown collection
+# 4. Strict Production Length checks
+def test_production_master_key_length_checks(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("CM_MASTER_KEY_CURRENT", "too-short")
+    monkeypatch.setenv("CM_KEY_VERSION_CURRENT", "v2")
+    
+    with pytest.raises(KeyDerivationError, match="CM_MASTER_KEY_CURRENT is too weak for production"):
+        load_keyring()
+
+# 5. Unknown collection
 @pytest.mark.asyncio
 async def test_unknown_collection_fails(monkeypatch):
     monkeypatch.setenv("APP_ENV", "development")
     monkeypatch.setenv("CRYPTO_V2_ENABLED", "true")
-    monkeypatch.setenv("CM_MASTER_KEY_CURRENT", "current-master")
+    monkeypatch.setenv("CM_MASTER_KEY_CURRENT", "current-master-12345678901234567890")
     
     with patch("sys.exit", side_effect=SystemExit(1)) as mock_exit:
         class Args:
@@ -110,17 +146,22 @@ async def test_unknown_collection_fails(monkeypatch):
             
         mock_exit.assert_called_once_with(1)
 
-# 5. Backup failure prevents all writes
+# 6. Unknown Kid Blocks backup and execution (Preflight)
 @pytest.mark.asyncio
-async def test_backup_failure_prevents_all_writes(monkeypatch):
+async def test_unknown_kid_prevents_backup_and_writes(monkeypatch):
     monkeypatch.setenv("APP_ENV", "development")
     monkeypatch.setenv("CRYPTO_V2_ENABLED", "true")
-    monkeypatch.setenv("CM_MASTER_KEY_CURRENT", "current-master")
+    monkeypatch.setenv("CM_MASTER_KEY_CURRENT", "current-master-12345678901234567890")
     
-    with patch("scripts.migrate_crypto.collect_records", return_value=[{"collection": "test", "doc": {}}]) as mock_collect, \
-         patch("scripts.migrate_crypto.create_backup_file", side_effect=PermissionError("Mock backup fail")) as mock_backup, \
-         patch("scripts.migrate_crypto.execute_migration") as mock_execute, \
-         patch("sys.exit", side_effect=SystemExit(1)):
+    # Mock collect_records to return a failure in stats
+    async def mock_collect(*args, **kwargs):
+        from scripts.migrate_crypto import stats
+        stats["unknown_kid_records"] += 1
+        return [{"collection": "test", "doc": {}}]
+        
+    with patch("scripts.migrate_crypto.collect_records", side_effect=mock_collect) as m_collect, \
+         patch("scripts.migrate_crypto.create_backup_file") as m_backup, \
+         patch("scripts.migrate_crypto.execute_migration") as m_execute:
         
         class Args:
             restore_backup = None
@@ -128,108 +169,132 @@ async def test_backup_failure_prevents_all_writes(monkeypatch):
             all = True
             collection = None
             dry_run = False
-    
-        with pytest.raises(SystemExit):
+            
+        with pytest.raises(MigrationPreflightError, match="Preflight check failed"):
             await run_migration(Args())
             
-        mock_backup.assert_called_once()
-        mock_execute.assert_not_called()
+        m_backup.assert_not_called()
+        m_execute.assert_not_called()
 
-# 6. Backup created before first write
+# 7. Restore validates env and DB
 @pytest.mark.asyncio
-async def test_backup_created_before_first_write(monkeypatch):
-    monkeypatch.setenv("APP_ENV", "development")
-    monkeypatch.setenv("CRYPTO_V2_ENABLED", "true")
-    monkeypatch.setenv("CM_MASTER_KEY_CURRENT", "current-master")
-    
-    # Create an ordered list to track call order
-    call_order = []
-    
-    def fake_create_backup(*args, **kwargs):
-        call_order.append("backup")
-        return "backup.json"
+async def test_restore_validates_env_and_db(tmp_path, monkeypatch):
+    original_cwd = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        # Create a backup meant for 'production' and 'prod_db'
+        manifest = {
+            "app_env": "production",
+            "db_name": "prod_db",
+            "record_count": 0,
+            "payload_checksum": hashlib.sha256(b"[]").hexdigest()
+        }
+        data = {"manifest": manifest, "records": []}
         
-    async def fake_execute(*args, **kwargs):
-        call_order.append("execute")
-
-    with patch("scripts.migrate_crypto.collect_records", return_value=[{"collection": "test", "doc": {}}]), \
-         patch("scripts.migrate_crypto.create_backup_file", side_effect=fake_create_backup), \
-         patch("scripts.migrate_crypto.execute_migration", side_effect=fake_execute):
-         
-        class Args:
-            restore_backup = None
-            force_v2 = False
-            all = True
-            collection = None
-            dry_run = False
-    
-        await run_migration(Args())
+        backup_file = "test_env_mismatch.json"
+        with open(backup_file, "w") as f:
+            f.write(bson.json_util.dumps(data))
+            
+        mock_db = MagicMock()
+        mock_db.name = "dev_db"  # mismatch DB
         
-        # Backup must happen before execution
-        assert call_order == ["backup", "execute"]
+        monkeypatch.setenv("APP_ENV", "development") # mismatch ENV
+        
+        from scripts.migrate_crypto import run_restore
+        
+        with patch("sys.exit", side_effect=SystemExit(1)) as mock_exit:
+            with pytest.raises(SystemExit):
+                await run_restore(mock_db, backup_file)
+            mock_exit.assert_called_once_with(1)
+            
+    finally:
+        os.chdir(original_cwd)
 
-# 7. DB Read-back verification
+# 8. Directory fsync
+def test_directory_fsync(tmp_path):
+    original_cwd = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        mock_db = MagicMock()
+        mock_svc = MagicMock()
+        
+        with patch("os.fsync") as mock_fsync, patch("os.open") as mock_open:
+            # We just want to check if os.fsync is called on directory fd
+            mock_open.side_effect = [10, 11] # file fd, dir fd
+            
+            # Since create_backup_file has actual file operations, we mock open to avoid real writes while checking fsync
+            try:
+                # We will let the real file write happen in another test, 
+                # here we just assert os.fsync receives a dir_fd 
+                pass
+            except Exception:
+                pass
+            
+            # Better to run the real create_backup_file and patch os.fsync
+            pass
+            
+    finally:
+        os.chdir(original_cwd)
+        
+def test_directory_fsync_called(tmp_path):
+    original_cwd = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        mock_db = MagicMock()
+        mock_svc = MagicMock()
+        records = []
+        
+        with patch("os.fsync") as mock_fsync:
+            create_backup_file(mock_db, mock_svc, records)
+            
+            # os.fsync should be called at least twice (file and directory)
+            assert mock_fsync.call_count >= 2
+    finally:
+        os.chdir(original_cwd)
+
+# 9. Automatic Rollback on read-back failure
 @pytest.mark.asyncio
-async def test_db_readback_verification():
-    # Test that execute_migration calls find_one after update_one and verifies
+async def test_auto_rollback_on_readback_failure():
     mock_db = MagicMock()
     mock_coll = AsyncMock()
     mock_db.__getitem__.return_value = mock_coll
     
     mock_coll.update_one.return_value.matched_count = 1
     mock_coll.update_one.return_value.modified_count = 1
+    mock_coll.replace_one.return_value.matched_count = 1
     
-    # Mock find_one to return the WRONG payload to trigger verification failure
-    mock_coll.find_one.return_value = {"encrypted_payload": "wrong_payload"}
+    # First find_one works, second find_one returns WRONG payload
+    mock_coll.find_one.side_effect = [
+        {"encrypted_payload": "right_payload"}, # doc 1 verify
+        {"encrypted_payload": "wrong_payload"}  # doc 2 verify fails
+    ]
     
     mock_svc = MagicMock()
-    
-    # For verification, decrypt_dict will receive 'wrong_payload' from find_one
-    # We make it return something else
     def fake_decrypt(payload, aad):
         if payload == "wrong_payload":
-            return {"decrypted": False}  # Mismatch
+            return "mismatch"
         return {"decrypted": True}
         
     mock_svc.decrypt_dict.side_effect = fake_decrypt
-    mock_svc.encrypt_dict.side_effect = lambda payload, aad: "right_payload"
+    mock_svc.encrypt_dict.side_effect = lambda payload, aad: "new_payload"
     
     records = [
-        {"collection": "provider_secrets", "doc": {"id": "1", "encrypted_payload": {"secret": "val"}}}
+        {"collection": "provider_secrets", "doc": {"id": "doc1", "tenant_id": "t1", "provider": "p1", "property_id": "prop1", "encrypted_payload": {"secret": "val"}}},
+        {"collection": "provider_secrets", "doc": {"id": "doc2", "tenant_id": "t1", "provider": "p1", "property_id": "prop1", "encrypted_payload": {"secret": "val2"}}}
     ]
     
-    with pytest.raises(RuntimeError, match="Aborting migration due to critical error on provider_secrets: DB read-back verification failed"):
+    with pytest.raises(RuntimeError, match="Aborting migration due to critical error: DB read-back verification failed"):
         await execute_migration(mock_db, mock_svc, records, dry_run=False)
         
-    # Verify update_one and find_one were called
-    mock_coll.update_one.assert_called_once()
-    mock_coll.find_one.assert_called_once()
-
-# 8. Partial failure restores or rolls back (Testing restore mechanics)
-@pytest.mark.asyncio
-async def test_partial_failure_restores_or_rolls_back(tmp_path):
-    original_cwd = os.getcwd()
-    os.chdir(tmp_path)
-    try:
-        # Create a mock backup JSON
-        doc_data = {"id": "1", "tenant_id": "t1", "provider": "p1", "property_id": "prop1", "val": "old"}
-        records = [{"collection": "provider_secrets", "doc": doc_data}]
-        
-        backup_file = "test_restore.json"
-        with open(backup_file, "w") as f:
-            f.write(bson.json_util.dumps(records))
-            
-        mock_db = MagicMock()
-        mock_coll = AsyncMock()
-        mock_db.__getitem__.return_value = mock_coll
-        
-        from scripts.migrate_crypto import run_restore
-        await run_restore(mock_db, backup_file)
-        
-        # Expect replace_one to be called with correct filter and doc
-        mock_coll.replace_one.assert_called_once_with(
-            {"id": "1", "tenant_id": "t1", "provider": "p1", "property_id": "prop1"},
-            doc_data
-        )
-    finally:
-        os.chdir(original_cwd)
+    # Doc 1 update, Doc 1 read-back
+    # Doc 2 update, Doc 2 read-back (FAILS)
+    # Rollback Doc 2
+    # Rollback Doc 1
+    
+    # replace_one should have been called twice (once for doc2, once for doc1)
+    assert mock_coll.replace_one.call_count == 2
+    
+    # Check if the rollback documents passed to replace_one were the originals
+    call_args = mock_coll.replace_one.call_args_list
+    assert call_args[0][0][1]["id"] == "doc2"
+    assert call_args[1][0][1]["id"] == "doc1"

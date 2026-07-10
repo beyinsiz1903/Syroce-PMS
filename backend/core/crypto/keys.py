@@ -11,6 +11,7 @@ Environment variables:
   APP_ENV                 — production | staging | development
 """
 
+import hmac
 import logging
 import os
 from dataclasses import dataclass, field
@@ -106,24 +107,32 @@ def load_keyring() -> KeyRing:
     if legacy_version and canon_version and legacy_version != canon_version:
         raise KeyDerivationError("CM_KEY_VERSION and CM_KEY_VERSION_CURRENT are both set but do not match.")
     
-    key_version_current = canon_version or legacy_version or "v1"
-    key_version_previous = os.environ.get("CM_KEY_VERSION_PREVIOUS", "")
-
+    key_version_current = canon_version or legacy_version
     if not key_version_current:
-        raise KeyDerivationError("Current key version (CM_KEY_VERSION_CURRENT) cannot be empty.")
+        if is_prod:
+            raise KeyDerivationError("CM_KEY_VERSION_CURRENT is mandatory in production/staging.")
+        key_version_current = "v1"
+
+    key_version_previous = os.environ.get("CM_KEY_VERSION_PREVIOUS", "")
     
     if bool(previous_master) != bool(key_version_previous):
         raise KeyDerivationError("Both CM_MASTER_KEY_PREVIOUS and CM_KEY_VERSION_PREVIOUS must be set together.")
         
-    if previous_master and current_master == previous_master:
+    if previous_master and hmac.compare_digest(current_master.encode("utf-8"), previous_master.encode("utf-8")):
         raise KeyDerivationError("Current and previous master keys cannot be identical.")
         
     if key_version_previous and key_version_current == key_version_previous:
         raise KeyDerivationError("Current and previous key versions (kids) cannot be identical.")
 
-    if not current_master:
-        if is_prod:
+    if is_prod:
+        if not current_master:
             raise KeyDerivationError("CM_MASTER_KEY_CURRENT is required in production/staging. Set it to a cryptographically strong secret (32+ characters).")
+        if len(current_master.encode("utf-8")) < 32:
+            raise KeyDerivationError("CM_MASTER_KEY_CURRENT is too weak for production (minimum 32 bytes required).")
+        if previous_master and len(previous_master.encode("utf-8")) < 32:
+            raise KeyDerivationError("CM_MASTER_KEY_PREVIOUS is too weak for production (minimum 32 bytes required).")
+            
+    if not current_master:
         # Development fallback chain: CM_CREDENTIAL_KEY → hardcoded dev key
         current_master = os.environ.get("CM_CREDENTIAL_KEY", "") or _DEV_FALLBACK_KEY
         logger.warning("CM_MASTER_KEY_CURRENT not set — using dev fallback. NOT SAFE FOR PRODUCTION.")
