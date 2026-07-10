@@ -16,6 +16,7 @@ import uuid
 from datetime import datetime, timedelta
 
 import pytest
+import pytest_asyncio
 import requests
 
 # API URLs
@@ -30,8 +31,8 @@ BAD_TOKEN = "bad-token"
 # Test tenant for webhooks
 TEST_TENANT_ID = "test-tenant-e2e"
 
-@pytest.fixture
-def hotelrunner_webhook_db():
+@pytest_asyncio.fixture
+async def hotelrunner_webhook_db():
     """Reset mock server before each test and seed mock connections"""
     requests.post(f"{MOCK_SERVER_URL}/mock/reset", timeout=10)
         
@@ -47,88 +48,64 @@ def hotelrunner_webhook_db():
         pytest.fail("Database name in HOTELRUNNER_TEST_MONGO_URL must end with '_test' (e.g. hotel_pms_test)")
         
     try:
+        from core.secrets.manager import get_secrets_manager
+        sm = get_secrets_manager()
+
         # Seed test tenant and connection
         db.hotelrunner_connections.delete_many({"hr_id": MOCK_HR_ID})
         db.hotelrunner_connections.delete_many({"tenant_id": TEST_TENANT_ID})
-        db.hotelrunner_connections.insert_one(
-            {
-                "hr_id": MOCK_HR_ID,
-                "tenant_id": TEST_TENANT_ID,
-                "token": MOCK_TOKEN,
-                "is_active": True,
-            }
-        )
 
-
-        # 1.5. Mock credential vault for HotelRunnerV2Service
-        db.provider_secrets.delete_many({"tenant_id": TEST_TENANT_ID})
-        
-        os.environ["CRYPTO_V2_ENABLED"] = "false"
-        from core.crypto.service import CredentialEncryptionService
-        from core.crypto.engine import AADContext
-        
-        svc = CredentialEncryptionService()
-        aad = AADContext(
+        # 1.5. Mock credential vault via SecretsManager
+        ref_a = await sm.store_provider_credentials(
             tenant_id=TEST_TENANT_ID,
             provider="hotelrunner",
             property_id=MOCK_HR_ID,
-            environment="test",
-            context_type="credential"
-        )
-        encrypted_payload = {
-            "token": svc.encrypt(MOCK_TOKEN, aad=aad),
-            "hr_id": svc.encrypt(MOCK_HR_ID, aad=aad),
-            "environment": svc.encrypt("mock", aad=aad)
-        }
-        db.provider_secrets.insert_one({
-            "id": "mock_secret_id",
-            "tenant_id": TEST_TENANT_ID,
-            "provider": "hotelrunner",
-            "property_id": MOCK_HR_ID,
-            "encrypted_payload": encrypted_payload,
-            "key_version": "v0",
-            "field_names": ["token", "hr_id", "environment"],
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
-        })
-        
-        # Cross-tenant test seed
-        db.hotelrunner_connections.update_one(
-            {"hr_id": MOCK_HR_ID + "_B"},
-            {"$set": {
-                "tenant_id": TEST_TENANT_ID + "_B",
-                "hr_id": MOCK_HR_ID + "_B",
-                "token": MOCK_TOKEN + "_B",
-                "is_active": True
-            }},
-            upsert=True
+            credentials={
+                "token": MOCK_TOKEN,
+                "hr_id": MOCK_HR_ID,
+                "environment": "mock",
+            },
+            actor="pytest",
         )
 
-        db.provider_secrets.delete_many({"tenant_id": TEST_TENANT_ID + "_B"})
-        aad_b = AADContext(
+        db.hotelrunner_connections.insert_one(
+            {
+                "tenant_id": TEST_TENANT_ID,
+                "hr_id": MOCK_HR_ID,
+                "property_id": MOCK_HR_ID,
+                "credentials_ref": ref_a,
+                "is_active": True,
+                "environment": "test",
+            }
+        )
+
+        # Cross-tenant test seed
+        db.hotelrunner_connections.delete_many({"hr_id": MOCK_HR_ID + "_B"})
+        db.hotelrunner_connections.delete_many({"tenant_id": TEST_TENANT_ID + "_B"})
+
+        ref_b = await sm.store_provider_credentials(
             tenant_id=TEST_TENANT_ID + "_B",
             provider="hotelrunner",
             property_id=MOCK_HR_ID + "_B",
-            environment="test",
-            context_type="credential"
+            credentials={
+                "token": MOCK_TOKEN + "_B",
+                "hr_id": MOCK_HR_ID + "_B",
+                "environment": "mock",
+            },
+            actor="pytest",
         )
-        encrypted_payload_b = {
-            "token": svc.encrypt(MOCK_TOKEN + "_B", aad=aad_b),
-            "hr_id": svc.encrypt(MOCK_HR_ID + "_B", aad=aad_b),
-            "environment": svc.encrypt("mock", aad=aad_b)
-        }
-        db.provider_secrets.insert_one({
-            "id": "mock_secret_id_b",
-            "tenant_id": TEST_TENANT_ID + "_B",
-            "provider": "hotelrunner",
-            "property_id": MOCK_HR_ID + "_B",
-            "encrypted_payload": encrypted_payload_b,
-            "key_version": "v0",
-            "field_names": ["token", "hr_id", "environment"],
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
-        })
         
+        db.hotelrunner_connections.insert_one(
+            {
+                "tenant_id": TEST_TENANT_ID + "_B",
+                "hr_id": MOCK_HR_ID + "_B",
+                "property_id": MOCK_HR_ID + "_B",
+                "credentials_ref": ref_b,
+                "is_active": True,
+                "environment": "test",
+            }
+        )
+
         # Fixture matches unified repository schema
         for rcode in ["STD", "DBL", "SUI", "DLX"]:
             db.room_mappings.update_one(
@@ -163,8 +140,21 @@ def hotelrunner_webhook_db():
     finally:
         # Teardown
         try:
-            db.provider_secrets.delete_one({"id": "mock_secret_id"})
-            db.provider_secrets.delete_one({"id": "mock_secret_id_b"})
+            from core.secrets.manager import get_secrets_manager
+            sm = get_secrets_manager()
+            await sm.delete_provider_credentials(
+                TEST_TENANT_ID,
+                "hotelrunner",
+                MOCK_HR_ID,
+                actor="pytest",
+            )
+            await sm.delete_provider_credentials(
+                TEST_TENANT_ID + "_B",
+                "hotelrunner",
+                MOCK_HR_ID + "_B",
+                actor="pytest",
+            )
+            
             test_tenants = [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]
             db.room_mappings.delete_many({"tenant_id": {"$in": test_tenants}})
             db.rate_plan_mappings.delete_many({"tenant_id": {"$in": test_tenants}})
