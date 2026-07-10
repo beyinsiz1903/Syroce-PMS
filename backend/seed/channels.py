@@ -9,20 +9,18 @@
 """
 
 import os
+
 from seed._helpers import _now, _uuid
 
 
 async def seed_channels(db, ctx):
     tenant_id = ctx["tenant_id"]
 
-    hr_token = os.environ.get("SEED_HOTELRUNNER_TOKEN", "")
     hr_id = os.environ.get("SEED_HOTELRUNNER_HR_ID", "")
     # Seed never creates active connections to avoid dangling credential refs
     hr_is_active = False
     hr_status = "inactive"
-    
-    ex_user = os.environ.get("SEED_EXELY_USERNAME", "")
-    ex_pass = os.environ.get("SEED_EXELY_PASSWORD", "")
+
     ex_hotel = os.environ.get("SEED_EXELY_HOTEL_CODE", "")
     # Seed never creates active connections to avoid dangling credential refs
     ex_is_active = False
