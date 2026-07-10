@@ -5,10 +5,12 @@ Crypto Migration Script — Re-encrypt credentials to SYR1 envelope format secur
 Features:
   - Strict kid-based format detection
   - Pre-migration backup to JSON (BSON safe, atomic, 0600) with Manifest
+  - Directory fsync for durability guarantee (fatal if it fails)
   - DB Read-back verification (ensures written data is decryptable)
-  - Automatic migration-level rollback on any failure
+  - Dry-run performs full decrypt→encrypt→decrypt→equality verify in memory
+  - Automatic migration-level rollback on any failure (independent per-record)
   - Context-bound MongoDB update filters (tenant/provider)
-  - Restore backup support (--restore-backup)
+  - Restore backup support (--restore-backup) with strict manifest, allowlist, and read-back
   - Strict exit codes on unknown collections or crypto failures
 """
 
@@ -43,11 +45,27 @@ stats = {
     "skipped": 0,
 }
 
+
 class MigrationPreflightError(Exception):
     pass
 
+
 class DBVerificationError(Exception):
     pass
+
+
+class RollbackVerificationError(Exception):
+    pass
+
+
+def _canonical_json(records) -> bytes:
+    """Produce a deterministic, canonical JSON serialization of records."""
+    return bson.json_util.dumps(
+        records,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
 
 def _record_status(svc, val: str) -> str:
     """Analyze a single ciphertext string's status."""
@@ -67,10 +85,11 @@ def _record_status(svc, val: str) -> str:
     # Legacy format
     return "old_kid_records"
 
+
 async def collect_records(db, svc, target_collections):
     """Scan the db and return all records that need migration."""
     records_to_migrate = []
-    
+
     if "provider_secrets" in target_collections:
         coll = db["provider_secrets"]
         async for doc in coll.find({}, {"_id": 0}):
@@ -91,7 +110,7 @@ async def collect_records(db, svc, target_collections):
                 logger.error("provider_secrets/%s has unknown kid formats", doc.get("id"))
                 stats["failed"] += 1
                 continue
-            
+
             stats["old_kid_records"] += 1
             records_to_migrate.append({"collection": "provider_secrets", "doc": doc})
 
@@ -112,7 +131,7 @@ async def collect_records(db, svc, target_collections):
                 stats["failed"] += 1
                 logger.error("credential_vault/%s has unknown kid", doc.get("id"))
                 continue
-            
+
             stats["old_kid_records"] += 1
             records_to_migrate.append({"collection": "credential_vault", "doc": doc})
 
@@ -132,10 +151,10 @@ async def collect_records(db, svc, target_collections):
                 stats["failed"] += 1
                 logger.error("_dev_secrets/%s has unknown kid", doc.get("path"))
                 continue
-            
+
             stats["old_kid_records"] += 1
             records_to_migrate.append({"collection": "_dev_secrets", "doc": doc})
-            
+
     return records_to_migrate
 
 
@@ -143,15 +162,16 @@ def create_backup_file(db, svc, records) -> str:
     ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     uid = str(uuid.uuid4())[:8]
     backup_file = f"migration_backup_{ts}_{uid}.json"
-    
+
     app_env = os.environ.get("APP_ENV", "development")
     db_name = db.name
     current_kid = svc._keyring.current_kid
     previous_kid = svc._keyring._previous_kid if svc._keyring.has_previous else None
-    
-    records_json = bson.json_util.dumps(records).encode("utf-8")
-    payload_checksum = hashlib.sha256(records_json).hexdigest()
-    
+
+    # Use canonical JSON for checksum computation
+    records_canonical = _canonical_json(records)
+    payload_checksum = hashlib.sha256(records_canonical).hexdigest()
+
     manifest_data = {
         "manifest": {
             "migration_id": uid,
@@ -161,13 +181,13 @@ def create_backup_file(db, svc, records) -> str:
             "previous_kid": previous_kid,
             "created_at": ts,
             "record_count": len(records),
-            "payload_checksum": payload_checksum
+            "payload_checksum": payload_checksum,
         },
-        "records": records
+        "records": records,
     }
-    
-    data_bytes = bson.json_util.dumps(manifest_data).encode("utf-8")
-    
+
+    data_bytes = bson.json_util.dumps(manifest_data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
     fd = os.open(backup_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     try:
         with os.fdopen(fd, "wb", closefd=True) as f:
@@ -178,111 +198,199 @@ def create_backup_file(db, svc, records) -> str:
         if os.path.exists(backup_file):
             os.remove(backup_file)
         raise RuntimeError(f"Failed to write backup file securely: {e}")
-        
+
+    # Directory fsync — fatal if it fails
     parent_dir = os.path.dirname(os.path.abspath(backup_file))
     try:
         dir_fd = os.open(parent_dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-        os.fsync(dir_fd)
-        os.close(dir_fd)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
     except Exception as e:
-        logger.warning("Directory fsync failed, continuing anyway: %s", e)
-        
+        if os.path.exists(backup_file):
+            os.remove(backup_file)
+        raise RuntimeError(f"Directory fsync failed, backup durability not guaranteed. Aborting: {e}")
+
+    # Read-back validation with canonical checksum
     with open(backup_file, "r") as f:
         read_back = bson.json_util.loads(f.read())
-        read_records_json = bson.json_util.dumps(read_back["records"]).encode("utf-8")
-        if hashlib.sha256(read_records_json).hexdigest() != payload_checksum:
+        read_checksum = hashlib.sha256(_canonical_json(read_back["records"])).hexdigest()
+        if read_checksum != payload_checksum:
             raise RuntimeError("Backup file write validation failed! Checksum mismatch.")
-            
+
     logger.info("Saved %d records to %s securely before migrating.", len(records), backup_file)
     return backup_file
 
 
 def _get_filter_query(col_name, doc):
     if col_name == "provider_secrets":
-        return {"id": doc.get("id"), "tenant_id": doc.get("tenant_id"), "provider": doc.get("provider"), "property_id": doc.get("property_id")}
+        return {
+            "id": doc.get("id"),
+            "tenant_id": doc.get("tenant_id"),
+            "provider": doc.get("provider"),
+            "property_id": doc.get("property_id"),
+        }
     elif col_name == "credential_vault":
-        return {"id": doc.get("id"), "tenant_id": doc.get("tenant_id"), "credential_type": doc.get("credential_type"), "credential_key": doc.get("credential_key")}
+        return {
+            "id": doc.get("id"),
+            "tenant_id": doc.get("tenant_id"),
+            "credential_type": doc.get("credential_type"),
+            "credential_key": doc.get("credential_key"),
+        }
     elif col_name == "_dev_secrets":
         return {"path": doc.get("path")}
     raise ValueError(f"Unknown collection {col_name}")
 
+
+def _validate_backup_doc(col_name, doc):
+    """Validate each backup document before restore (allowlist + required fields)."""
+    if col_name not in ALLOWED_COLLECTIONS:
+        raise ValueError(f"Backup contains unknown collection '{col_name}'")
+    if col_name == "provider_secrets":
+        if not doc.get("id") or not doc.get("tenant_id"):
+            raise ValueError(f"provider_secrets doc missing required fields: {doc.get('id')}")
+    elif col_name == "credential_vault":
+        if not doc.get("id") or not doc.get("tenant_id"):
+            raise ValueError(f"credential_vault doc missing required fields: {doc.get('id')}")
+    elif col_name == "_dev_secrets":
+        if not doc.get("path"):
+            raise ValueError("_dev_secrets doc missing required 'path' field")
+
+
 async def restore_single_doc(db, col_name, doc):
+    """Restore a single document and verify with DB read-back."""
     coll = db[col_name]
     filter_query = _get_filter_query(col_name, doc)
     res = await coll.replace_one(filter_query, doc, upsert=False)
     if res.matched_count != 1:
-        raise RuntimeError(f"Rollback failed for {filter_query}: matched {res.matched_count}")
+        raise RollbackVerificationError(
+            f"Rollback replace_one matched {res.matched_count} for {filter_query}"
+        )
+
+    # Read-back to confirm restore was successful
+    written = await coll.find_one(filter_query, {"_id": 0})
+    # Compare without _id to avoid ObjectId mismatch
+    doc_without_id = {k: v for k, v in doc.items() if k != "_id"}
+    written_without_id = {k: v for k, v in (written or {}).items() if k != "_id"}
+    if written_without_id != doc_without_id:
+        raise RollbackVerificationError(
+            f"Rollback read-back mismatch for {filter_query}. DB and original doc differ."
+        )
+
 
 async def execute_migration(db, svc, records, dry_run: bool):
     from core.crypto.engine import AADContext
-    
+
     successfully_migrated_docs = []
-    
+
     for item in records:
         col_name = item["collection"]
         doc = item["doc"]
         coll = db[col_name]
-        
+
         try:
             if col_name == "provider_secrets":
-                secret_id, tenant, provider, prop = doc.get("id"), doc.get("tenant_id", ""), doc.get("provider", ""), doc.get("property_id", "")
+                tenant = doc.get("tenant_id", "")
+                provider = doc.get("provider", "")
+                prop = doc.get("property_id", "")
                 payload = doc.get("encrypted_payload", {})
-                aad = AADContext(tenant_id=tenant, provider=provider, property_id=prop, environment=os.environ.get("APP_ENV", "development"), context_type="credential")
-                
+                aad = AADContext(
+                    tenant_id=tenant, provider=provider, property_id=prop,
+                    environment=os.environ.get("APP_ENV", "development"),
+                    context_type="credential",
+                )
+
                 decrypted = svc.decrypt_dict(payload, aad=aad)
                 new_payload = svc.encrypt_dict(decrypted, aad=aad)
-                
+
+                # Dry-run: full in-memory crypto roundtrip verify
+                verify_dry = svc.decrypt_dict(new_payload, aad=aad)
+                if verify_dry != decrypted:
+                    raise DBVerificationError("Dry-run in-memory crypto roundtrip verification failed")
+
                 if not dry_run:
                     filter_query = _get_filter_query(col_name, doc)
-                    res = await coll.update_one(filter_query, {"$set": {"encrypted_payload": new_payload, "key_version": svc._keyring.current_kid, "migrated_at": datetime.now(UTC).isoformat()}})
+                    res = await coll.update_one(
+                        filter_query,
+                        {"$set": {"encrypted_payload": new_payload, "key_version": svc._keyring.current_kid, "migrated_at": datetime.now(UTC).isoformat()}},
+                    )
                     if res.matched_count != 1 or res.modified_count != 1:
                         raise RuntimeError(f"Update failed. matched={res.matched_count}, modified={res.modified_count}")
-                    
+
                     written = await coll.find_one(filter_query)
                     if not written:
                         raise DBVerificationError("DB read-back failed: record not found")
                     verify_decrypted = svc.decrypt_dict(written["encrypted_payload"], aad=aad)
                     if verify_decrypted != decrypted:
                         raise DBVerificationError("DB read-back verification failed: decrypted data does not match original plaintext")
-                        
+
             elif col_name == "credential_vault":
-                cred_id, tenant, cred_type, cred_key = doc.get("id"), doc.get("tenant_id", ""), doc.get("credential_type", ""), doc.get("credential_key", "")
-                aad = AADContext(tenant_id=tenant, provider=cred_type, property_id=cred_key, environment=os.environ.get("APP_ENV", "development"), context_type="credential")
-                
+                tenant = doc.get("tenant_id", "")
+                cred_type = doc.get("credential_type", "")
+                cred_key = doc.get("credential_key", "")
+                aad = AADContext(
+                    tenant_id=tenant, provider=cred_type, property_id=cred_key,
+                    environment=os.environ.get("APP_ENV", "development"),
+                    context_type="credential",
+                )
+
                 if doc.get("credential_encrypted"):
                     plaintext = svc.decrypt(doc.get("credential_encrypted"), aad=aad)
                 else:
                     plaintext = svc.decrypt_legacy_base64(doc.get("credential_value_encoded", ""))
-                    
+
                 encrypted = svc.encrypt(plaintext, aad=aad)
-                
+
+                # Dry-run: full in-memory crypto roundtrip verify
+                verify_dry = svc.decrypt(encrypted, aad=aad)
+                if verify_dry != plaintext:
+                    raise DBVerificationError("Dry-run in-memory crypto roundtrip verification failed")
+
                 if not dry_run:
                     filter_query = _get_filter_query(col_name, doc)
-                    res = await coll.update_one(filter_query, {"$set": {"credential_encrypted": encrypted, "key_version": svc._keyring.current_kid, "credential_value_encoded": None, "credential_value_hash": None, "migrated_at": datetime.now(UTC).isoformat()}})
+                    res = await coll.update_one(
+                        filter_query,
+                        {"$set": {"credential_encrypted": encrypted, "key_version": svc._keyring.current_kid, "credential_value_encoded": None, "credential_value_hash": None, "migrated_at": datetime.now(UTC).isoformat()}},
+                    )
                     if res.matched_count != 1 or res.modified_count != 1:
                         raise RuntimeError(f"Update failed. matched={res.matched_count}, modified={res.modified_count}")
-                        
+
                     written = await coll.find_one(filter_query)
                     if not written:
                         raise DBVerificationError("DB read-back failed: record not found")
                     verify_plaintext = svc.decrypt(written["credential_encrypted"], aad=aad)
                     if verify_plaintext != plaintext:
                         raise DBVerificationError("DB read-back verification failed")
-                        
+
             elif col_name == "_dev_secrets":
                 path = doc.get("path", "")
                 parts = path.split("/")
-                aad = AADContext(tenant_id=parts[3] if len(parts) > 3 else "", provider=parts[4] if len(parts) > 4 else "", property_id=parts[5] if len(parts) > 5 else "", environment=os.environ.get("APP_ENV", "development"), context_type="secret")
-                
+                aad = AADContext(
+                    tenant_id=parts[3] if len(parts) > 3 else "",
+                    provider=parts[4] if len(parts) > 4 else "",
+                    property_id=parts[5] if len(parts) > 5 else "",
+                    environment=os.environ.get("APP_ENV", "development"),
+                    context_type="secret",
+                )
+
                 plaintext = svc.decrypt(doc.get("encrypted_payload", ""), aad=aad)
                 new_encrypted = svc.encrypt(plaintext, aad=aad)
-                
+
+                # Dry-run: full in-memory crypto roundtrip verify
+                verify_dry = svc.decrypt(new_encrypted, aad=aad)
+                if verify_dry != plaintext:
+                    raise DBVerificationError("Dry-run in-memory crypto roundtrip verification failed")
+
                 if not dry_run:
                     filter_query = _get_filter_query(col_name, doc)
-                    res = await coll.update_one(filter_query, {"$set": {"encrypted_payload": new_encrypted, "key_version": svc._keyring.current_kid, "migrated_at": datetime.now(UTC).isoformat()}})
+                    res = await coll.update_one(
+                        filter_query,
+                        {"$set": {"encrypted_payload": new_encrypted, "key_version": svc._keyring.current_kid, "migrated_at": datetime.now(UTC).isoformat()}},
+                    )
                     if res.matched_count != 1 or res.modified_count != 1:
                         raise RuntimeError(f"Update failed. matched={res.matched_count}, modified={res.modified_count}")
-                        
+
                     written = await coll.find_one(filter_query)
                     if not written:
                         raise DBVerificationError("DB read-back failed: record not found")
@@ -296,15 +404,34 @@ async def execute_migration(db, svc, records, dry_run: bool):
         except Exception as e:
             stats["failed"] += 1
             logger.error("FAILED %s: %s", col_name, str(e))
+
             if not dry_run:
-                logger.error("Triggering automatic rollback for %d migrated records + 1 failing record...", len(successfully_migrated_docs))
-                try:
-                    await restore_single_doc(db, col_name, doc)
-                    for restored_item in reversed(successfully_migrated_docs):
-                        await restore_single_doc(db, restored_item["collection"], restored_item["doc"])
-                    logger.info("Automatic rollback completed successfully.")
-                except Exception as rollback_err:
-                    logger.critical("FATAL: Automatic rollback failed! Manual restore required. Error: %s", rollback_err)
+                # Collect all items to roll back: failing item first, then migrated in reverse
+                rollback_targets = [{"collection": col_name, "doc": doc}] + list(reversed(successfully_migrated_docs))
+                rollback_errors = []
+
+                logger.error(
+                    "Triggering automatic rollback for %d records (including failing record)...",
+                    len(rollback_targets),
+                )
+
+                for rb_item in rollback_targets:
+                    try:
+                        await restore_single_doc(db, rb_item["collection"], rb_item["doc"])
+                        logger.info("Rolled back: %s/%s", rb_item["collection"], rb_item["doc"].get("id") or rb_item["doc"].get("path"))
+                    except Exception as rollback_err:
+                        rollback_errors.append(f"{rb_item['collection']}: {rollback_err}")
+                        logger.critical(
+                            "ROLLBACK FAILED for %s: %s — manual restore required!",
+                            rb_item["collection"],
+                            rollback_err,
+                        )
+
+                if rollback_errors:
+                    logger.critical("FATAL: %d rollback(s) failed. Use --restore-backup immediately.", len(rollback_errors))
+                else:
+                    logger.info("Automatic rollback completed successfully for all records.")
+
             raise RuntimeError(f"Aborting migration due to critical error: {str(e)}")
 
 
@@ -312,70 +439,79 @@ async def run_restore(db, backup_file):
     if not os.path.exists(backup_file):
         logger.error("Backup file %s not found.", backup_file)
         sys.exit(1)
-        
+
     with open(backup_file, "r") as f:
         data = bson.json_util.loads(f.read())
-        
+
     manifest = data.get("manifest")
     records = data.get("records")
-    
-    if not manifest or not records:
+
+    if not manifest or records is None:
         logger.error("Invalid backup format. Manifest or records missing.")
         sys.exit(1)
-        
+
     app_env = os.environ.get("APP_ENV", "development")
     if manifest["app_env"] != app_env:
         logger.error("Restore environment mismatch! Backup: %s, Current: %s", manifest["app_env"], app_env)
         sys.exit(1)
-        
+
     if manifest["db_name"] != db.name:
         logger.error("Restore DB mismatch! Backup: %s, Current: %s", manifest["db_name"], db.name)
         sys.exit(1)
-        
+
     if manifest["record_count"] != len(records):
         logger.error("Restore record count mismatch!")
         sys.exit(1)
-        
-    records_json = bson.json_util.dumps(records).encode("utf-8")
-    if hashlib.sha256(records_json).hexdigest() != manifest["payload_checksum"]:
+
+    # Canonical checksum verification
+    if hashlib.sha256(_canonical_json(records)).hexdigest() != manifest["payload_checksum"]:
         logger.error("Restore checksum mismatch! File is corrupted or modified.")
         sys.exit(1)
-        
+
     logger.info("Manifest validated. Restoring %d records from %s...", len(records), backup_file)
     restored = 0
-    
+
     for item in records:
-        col_name = item["collection"]
-        doc = item["doc"]
+        col_name = item.get("collection", "")
+        doc = item.get("doc", {})
+
+        # Per-record allowlist and schema validation
+        try:
+            _validate_backup_doc(col_name, doc)
+        except ValueError as ve:
+            logger.error("Skipping invalid restore record: %s", ve)
+            sys.exit(1)
+
         coll = db[col_name]
-        
         filter_query = _get_filter_query(col_name, doc)
         res = await coll.replace_one(filter_query, doc, upsert=False)
         if res.matched_count != 1:
             logger.error("Failed to restore doc %s: matched_count=%d", filter_query, res.matched_count)
             sys.exit(1)
-            
-        written = await coll.find_one(filter_query)
-        if written != doc:
+
+        # Read-back verification
+        written = await coll.find_one(filter_query, {"_id": 0})
+        doc_without_id = {k: v for k, v in doc.items() if k != "_id"}
+        written_without_id = {k: v for k, v in (written or {}).items() if k != "_id"}
+        if written_without_id != doc_without_id:
             logger.error("Read-back verification failed during restore for %s", filter_query)
             sys.exit(1)
-            
+
         restored += 1
-        
+
     logger.info("Restore complete. %d records restored safely.", restored)
 
 
 async def run_migration(args):
     from core.crypto.service import get_crypto_service
     from core.database import db
-    
+
     if args.restore_backup:
         await run_restore(db, args.restore_backup)
         return
 
-    is_prod = os.environ.get("APP_ENV", "development") in {"production", "staging"}
     v2_env = os.environ.get("CRYPTO_V2_ENABLED", "false").lower() == "true"
-    
+
     if args.force_v2:
         os.environ["CRYPTO_V2_ENABLED"] = "true"
     elif not v2_env:
@@ -387,7 +523,7 @@ async def run_migration(args):
     except Exception as e:
         logger.error("Crypto service failed to initialize: %s", str(e))
         sys.exit(1)
-        
+
     health = svc.health()
     logger.info("Crypto service: %s", health)
 
@@ -404,22 +540,22 @@ async def run_migration(args):
         sys.exit(1)
 
     records_to_migrate = await collect_records(db, svc, target_collections)
-    
+
     if stats["failed"] > 0 or stats["unknown_kid_records"] > 0:
         logger.error("Unknown kid formats detected during pre-flight scan. Aborting before any writes.")
         raise MigrationPreflightError("Preflight check failed. Migration blocked.")
-        
+
     if not records_to_migrate:
         logger.info("No records need migration.")
         return
-        
+
     if not args.dry_run:
         try:
             create_backup_file(db, svc, records_to_migrate)
         except Exception as e:
             logger.error("Failed to create secure backup: %s. Aborting before any writes.", str(e))
             sys.exit(1)
-            
+
     try:
         await execute_migration(db, svc, records_to_migrate, args.dry_run)
     except Exception as e:
@@ -427,7 +563,7 @@ async def run_migration(args):
         sys.exit(1)
 
     logger.info("=" * 60)
-    logger.info("Migration %s", "DRY RUN (Simulated in memory)" if args.dry_run else "COMPLETE")
+    logger.info("Migration %s", "DRY RUN (full in-memory crypto roundtrip)" if args.dry_run else "COMPLETE")
     logger.info("  total_encrypted_records: %d", stats["total_records"])
     logger.info("  already_current_kid:     %d", stats["already_current_kid"])
     logger.info("  old_kid_records:         %d", stats["old_kid_records"])
@@ -439,7 +575,7 @@ async def run_migration(args):
 
 def main():
     parser = argparse.ArgumentParser(description="Crypto migration: legacy/old key → current SYR1 envelope")
-    parser.add_argument("--dry-run", action="store_true", help="Simulate decrypt/encrypt/verify in memory")
+    parser.add_argument("--dry-run", action="store_true", help="Simulate full decrypt→encrypt→decrypt verify in memory (no DB writes)")
     parser.add_argument("--collection", help="Specific collection to migrate")
     parser.add_argument("--all", action="store_true", help="Migrate all collections")
     parser.add_argument("--force-v2", action="store_true", help="Force V2 mode safely")
