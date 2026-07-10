@@ -56,6 +56,7 @@ class KeyRing:
 
     current_kid: str
     _current_key: bytes = field(repr=False)
+    _previous_kid: str | None = field(default=None)
     _previous_key: bytes | None = field(default=None, repr=False)
 
     def encryption_key(self) -> tuple:
@@ -63,10 +64,10 @@ class KeyRing:
         return (self.current_kid, self._current_key)
 
     def decryption_key(self, kid: str) -> bytes:
-        """Resolve derived key by kid. Falls back to previous for non-current kids."""
+        """Resolve derived key by kid. Rejects unknown kids strictly."""
         if kid == self.current_kid:
             return self._current_key
-        if self._previous_key is not None:
+        if self._previous_key is not None and kid == self._previous_kid:
             return self._previous_key
         raise KeyNotFoundError(kid)
 
@@ -86,6 +87,7 @@ class KeyRing:
         return cls(
             current_kid=kid,
             _current_key=current_key,
+            _previous_kid=previous_kid,
             _previous_key=previous_key,
         )
 
@@ -97,7 +99,8 @@ def load_keyring() -> KeyRing:
 
     current_master = os.environ.get("CM_MASTER_KEY_CURRENT", "")
     previous_master = os.environ.get("CM_MASTER_KEY_PREVIOUS", "")
-    key_version = os.environ.get("CM_KEY_VERSION", "v1")
+    key_version_current = os.environ.get("CM_KEY_VERSION", os.environ.get("CM_KEY_VERSION_CURRENT", "v1"))
+    key_version_previous = os.environ.get("CM_KEY_VERSION_PREVIOUS", "")
 
     if not current_master:
         if is_prod:
@@ -110,13 +113,14 @@ def load_keyring() -> KeyRing:
     previous_key = derive_key(previous_master) if previous_master else None
 
     logger.info(
-        "KeyRing loaded: kid=%s has_previous=%s env=%s",
-        key_version,
-        previous_key is not None,
+        "KeyRing loaded: kid=%s previous_kid=%s env=%s",
+        key_version_current,
+        key_version_previous if previous_key else None,
         app_env,
     )
     return KeyRing(
-        current_kid=key_version,
+        current_kid=key_version_current,
         _current_key=current_key,
+        _previous_kid=key_version_previous if previous_key else None,
         _previous_key=previous_key,
     )

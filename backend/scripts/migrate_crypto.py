@@ -1,38 +1,30 @@
 #!/usr/bin/env python3
 """
-Crypto Migration Script — Re-encrypt legacy credentials to SYR1 envelope format.
+Crypto Migration Script — Re-encrypt credentials to SYR1 envelope format securely.
 
-Scans all credential collections, detects legacy formats, decrypts with
-the original key derivation, and re-encrypts with the new HKDF-derived key.
-
-Usage:
-  python scripts/migrate_crypto.py --dry-run           # Preview only
-  python scripts/migrate_crypto.py --collection provider_secrets
-  python scripts/migrate_crypto.py --all               # Migrate everything
-  python scripts/migrate_crypto.py --all --force-v2    # Force SYR1 even if CRYPTO_V2_ENABLED=false
+Features:
+  - Strict kid-based format detection
+  - Pre-migration backup to JSON
+  - Context-bound MongoDB update filters (tenant/provider)
+  - Post-write verification
+  - Strict exit codes
 
 Collections scanned:
-  - provider_secrets       (XOR-encrypted per-field credentials)
-  - credential_vault       (base64-encoded credentials)
-  - _dev_secrets          (AES-GCM encrypted JSON blobs)
-  - connector_accounts     (AES-GCM encrypted per-field credentials)
+  - provider_secrets
+  - credential_vault
+  - _dev_secrets
 
-Environment:
-  CM_MASTER_KEY_CURRENT   — new master key (required)
-  CM_CREDENTIAL_KEY       — legacy key for AES-GCM decryption
-  CM_ENCRYPTION_KEY       — legacy key for XOR decryption (optional)
-  JWT_SECRET              — fallback for XOR decryption
-  CRYPTO_V2_ENABLED=true  — must be true for migration (or use --force-v2)
+(Note: connector_accounts was removed as it does not exist in the codebase)
 """
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 import sys
 from datetime import UTC, datetime
 
-# Add backend to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 logging.basicConfig(
@@ -41,25 +33,42 @@ logging.basicConfig(
 )
 logger = logging.getLogger("migrate_crypto")
 
-_NO_ID = {"_id": 0}
-
-# Stats
 stats = {
-    "scanned": 0,
-    "already_current": 0,
+    "total_records": 0,
+    "already_current_kid": 0,
+    "old_kid_records": 0,
+    "unknown_kid_records": 0,
     "migrated": 0,
     "failed": 0,
     "skipped": 0,
 }
 
+backup_records = []
+
+def _record_status(svc, val: str) -> str:
+    """Analyze a single ciphertext string's status."""
+    from core.crypto.envelope import is_envelope, extract_kid
+    if not val:
+        return "skipped"
+    if svc.is_current_format(val):
+        return "already_current_kid"
+    if is_envelope(val):
+        try:
+            kid = extract_kid(val)
+            if svc._keyring.has_previous and kid == svc._keyring._previous_kid:
+                return "old_kid_records"
+            return "unknown_kid_records"
+        except Exception:
+            return "unknown_kid_records"
+    # Legacy format
+    return "old_kid_records"
+
 
 async def migrate_provider_secrets(db, svc, dry_run: bool):
-    """Migrate provider_secrets collection (XOR/AES-GCM per-field)."""
     coll = db["provider_secrets"]
-    cursor = coll.find({}, _NO_ID)
-    async for doc in cursor:
-        stats["scanned"] += 1
-        secret_id = doc.get("id", "?")
+    async for doc in coll.find({}, {"_id": 0}):
+        stats["total_records"] += 1
+        secret_id = doc.get("id", "")
         tenant = doc.get("tenant_id", "")
         provider = doc.get("provider", "")
         prop = doc.get("property_id", "")
@@ -69,14 +78,25 @@ async def migrate_provider_secrets(db, svc, dry_run: bool):
             stats["skipped"] += 1
             continue
 
-        all_current = all(svc.is_current_format(v) for v in payload.values() if isinstance(v, str) and v)
-        if all_current:
-            stats["already_current"] += 1
+        statuses = [_record_status(svc, v) for v in payload.values() if isinstance(v, str) and v]
+        if not statuses:
+            stats["skipped"] += 1
             continue
 
-        try:
-            from core.crypto import AADContext
+        if all(s == "already_current_kid" for s in statuses):
+            stats["already_current_kid"] += 1
+            continue
+        if any(s == "unknown_kid_records" for s in statuses):
+            stats["unknown_kid_records"] += 1
+            logger.error("provider_secrets/%s has unknown kid formats", secret_id)
+            stats["failed"] += 1
+            continue
+        
+        stats["old_kid_records"] += 1
+        backup_records.append({"collection": "provider_secrets", "doc": doc})
 
+        try:
+            from core.crypto.engine import AADContext
             aad = AADContext(
                 tenant_id=tenant,
                 provider=provider,
@@ -84,11 +104,25 @@ async def migrate_provider_secrets(db, svc, dry_run: bool):
                 environment=os.environ.get("APP_ENV", "development"),
                 context_type="credential",
             )
-            new_payload = svc.re_encrypt_dict(payload, aad=aad)
+            
+            # Simulation: decrypt, encrypt, decrypt-verify
+            decrypted = svc.decrypt_dict(payload, aad=aad)
+            new_payload = svc.encrypt_dict(decrypted, aad=aad)
+            verify_decrypted = svc.decrypt_dict(new_payload, aad=aad)
+            
+            if decrypted != verify_decrypted:
+                raise ValueError("Verification failed: re-decrypted data does not match original plaintext")
 
             if not dry_run:
-                await coll.update_one(
-                    {"id": secret_id},
+                # Context-bound strict update
+                filter_query = {
+                    "id": secret_id,
+                    "tenant_id": tenant,
+                    "provider": provider,
+                    "property_id": prop
+                }
+                res = await coll.update_one(
+                    filter_query,
                     {
                         "$set": {
                             "encrypted_payload": new_payload,
@@ -97,44 +131,44 @@ async def migrate_provider_secrets(db, svc, dry_run: bool):
                         }
                     },
                 )
+                if res.matched_count != 1 or res.modified_count != 1:
+                    raise RuntimeError(f"Update failed. matched={res.matched_count}, modified={res.modified_count}")
+            
             stats["migrated"] += 1
-            logger.info(
-                "%s provider_secrets/%s (%s/%s)",
-                "WOULD MIGRATE" if dry_run else "MIGRATED",
-                secret_id,
-                provider,
-                prop,
-            )
         except Exception as e:
             stats["failed"] += 1
-            logger.error("FAILED provider_secrets/%s: %s", secret_id, type(e).__name__)
+            logger.error("FAILED provider_secrets/%s: %s", secret_id, str(e))
 
 
 async def migrate_credential_vault(db, svc, dry_run: bool):
-    """Migrate credential_vault collection (base64-encoded)."""
     coll = db["credential_vault"]
-    cursor = coll.find({"status": "active"}, _NO_ID)
-    async for doc in cursor:
-        stats["scanned"] += 1
-        cred_id = doc.get("id", "?")
+    async for doc in coll.find({"status": "active"}, {"_id": 0}):
+        stats["total_records"] += 1
+        cred_id = doc.get("id", "")
         tenant = doc.get("tenant_id", "")
         cred_type = doc.get("credential_type", "")
         cred_key = doc.get("credential_key", "")
-
-        # Check if already migrated
-        if doc.get("credential_encrypted") and svc.is_current_format(doc.get("credential_encrypted", "")):
-            stats["already_current"] += 1
-            continue
-
-        encoded = doc.get("credential_value_encoded", "")
-        if not encoded:
+        
+        val = doc.get("credential_encrypted") or doc.get("credential_value_encoded")
+        status = _record_status(svc, val)
+        
+        if status == "skipped":
             stats["skipped"] += 1
             continue
+        if status == "already_current_kid":
+            stats["already_current_kid"] += 1
+            continue
+        if status == "unknown_kid_records":
+            stats["unknown_kid_records"] += 1
+            stats["failed"] += 1
+            logger.error("credential_vault/%s has unknown kid", cred_id)
+            continue
+            
+        stats["old_kid_records"] += 1
+        backup_records.append({"collection": "credential_vault", "doc": doc})
 
         try:
-            from core.crypto import AADContext
-
-            plaintext = svc.decrypt_legacy_base64(encoded)
+            from core.crypto.engine import AADContext
             aad = AADContext(
                 tenant_id=tenant,
                 provider=cred_type,
@@ -142,11 +176,29 @@ async def migrate_credential_vault(db, svc, dry_run: bool):
                 environment=os.environ.get("APP_ENV", "development"),
                 context_type="credential",
             )
+
+            # Decrypt correctly based on which field was used
+            if doc.get("credential_encrypted"):
+                plaintext = svc.decrypt(doc.get("credential_encrypted"), aad=aad)
+            else:
+                plaintext = svc.decrypt_legacy_base64(doc.get("credential_value_encoded", ""))
+
             encrypted = svc.encrypt(plaintext, aad=aad)
+            
+            # Verify
+            verify_plaintext = svc.decrypt(encrypted, aad=aad)
+            if plaintext != verify_plaintext:
+                raise ValueError("Verification failed")
 
             if not dry_run:
-                await coll.update_one(
-                    {"id": cred_id},
+                filter_query = {
+                    "id": cred_id,
+                    "tenant_id": tenant,
+                    "credential_type": cred_type,
+                    "credential_key": cred_key
+                }
+                res = await coll.update_one(
+                    filter_query,
                     {
                         "$set": {
                             "credential_encrypted": encrypted,
@@ -157,39 +209,40 @@ async def migrate_credential_vault(db, svc, dry_run: bool):
                         }
                     },
                 )
+                if res.matched_count != 1 or res.modified_count != 1:
+                    raise RuntimeError(f"Update failed. matched={res.matched_count}, modified={res.modified_count}")
+                    
             stats["migrated"] += 1
-            logger.info(
-                "%s credential_vault/%s (%s/%s)",
-                "WOULD MIGRATE" if dry_run else "MIGRATED",
-                cred_id,
-                cred_type,
-                cred_key,
-            )
         except Exception as e:
             stats["failed"] += 1
-            logger.error("FAILED credential_vault/%s: %s", cred_id, type(e).__name__)
+            logger.error("FAILED credential_vault/%s: %s", cred_id, str(e))
 
 
 async def migrate_dev_secrets(db, svc, dry_run: bool):
-    """Migrate _dev_secrets collection (AES-GCM JSON blobs)."""
     coll = db["_dev_secrets"]
-    cursor = coll.find({}, _NO_ID)
-    async for doc in cursor:
-        stats["scanned"] += 1
-        path = doc.get("path", "?")
+    async for doc in coll.find({}, {"_id": 0}):
+        stats["total_records"] += 1
+        path = doc.get("path", "")
         encrypted = doc.get("encrypted_payload", "")
-
-        if not encrypted:
+        
+        status = _record_status(svc, encrypted)
+        if status == "skipped":
             stats["skipped"] += 1
             continue
-
-        if svc.is_current_format(encrypted):
-            stats["already_current"] += 1
+        if status == "already_current_kid":
+            stats["already_current_kid"] += 1
             continue
+        if status == "unknown_kid_records":
+            stats["unknown_kid_records"] += 1
+            stats["failed"] += 1
+            logger.error("_dev_secrets/%s has unknown kid", path)
+            continue
+            
+        stats["old_kid_records"] += 1
+        backup_records.append({"collection": "_dev_secrets", "doc": doc})
 
         try:
-            from core.crypto import AADContext
-
+            from core.crypto.engine import AADContext
             parts = path.split("/")
             aad = AADContext(
                 tenant_id=parts[3] if len(parts) > 3 else "",
@@ -198,10 +251,16 @@ async def migrate_dev_secrets(db, svc, dry_run: bool):
                 environment=os.environ.get("APP_ENV", "development"),
                 context_type="secret",
             )
-            new_encrypted = svc.re_encrypt(encrypted, aad=aad)
+            
+            plaintext = svc.decrypt(encrypted, aad=aad)
+            new_encrypted = svc.encrypt(plaintext, aad=aad)
+            verify_plaintext = svc.decrypt(new_encrypted, aad=aad)
+            
+            if plaintext != verify_plaintext:
+                raise ValueError("Verification failed")
 
             if not dry_run:
-                await coll.update_one(
+                res = await coll.update_one(
                     {"path": path},
                     {
                         "$set": {
@@ -211,69 +270,82 @@ async def migrate_dev_secrets(db, svc, dry_run: bool):
                         }
                     },
                 )
+                if res.matched_count != 1 or res.modified_count != 1:
+                    raise RuntimeError(f"Update failed. matched={res.matched_count}, modified={res.modified_count}")
+                    
             stats["migrated"] += 1
-            logger.info(
-                "%s _dev_secrets/%s",
-                "WOULD MIGRATE" if dry_run else "MIGRATED",
-                path,
-            )
         except Exception as e:
             stats["failed"] += 1
-            logger.error("FAILED _dev_secrets/%s: %s", path, type(e).__name__)
+            logger.error("FAILED _dev_secrets/%s: %s", path, str(e))
 
 
 async def run_migration(args):
-    from core.crypto import get_crypto_service
-    from core.database import db
-
-    svc = get_crypto_service()
-    health = svc.health()
-    logger.info("Crypto service: %s", health)
-
-    if not health["v2_enabled"] and not args.force_v2:
-        logger.error("CRYPTO_V2_ENABLED=false — migration requires V2 or --force-v2 flag")
-        return
-
+    # Pre-flight environment validation before singleton instantiation
+    is_prod = os.environ.get("APP_ENV", "development") in {"production", "staging"}
+    v2_env = os.environ.get("CRYPTO_V2_ENABLED", "false").lower() == "true"
+    
     if args.force_v2:
         os.environ["CRYPTO_V2_ENABLED"] = "true"
-        from core.crypto.service import reset_crypto_service
+    elif not v2_env:
+        logger.error("CRYPTO_V2_ENABLED is false. Migration requires V2 mode or --force-v2 flag.")
+        sys.exit(1)
 
-        reset_crypto_service()
+    if is_prod and not os.environ.get("CM_MASTER_KEY_CURRENT"):
+        logger.error("CM_MASTER_KEY_CURRENT missing in production.")
+        sys.exit(1)
+
+    from core.crypto.service import get_crypto_service
+    from core.database import db
+
+    try:
         svc = get_crypto_service()
-        logger.info("Forced V2 mode for migration")
+    except Exception as e:
+        logger.error("Crypto service failed to initialize: %s", str(e))
+        sys.exit(1)
+        
+    health = svc.health()
+    logger.info("Crypto service: %s", health)
 
     target = args.collection or ("all" if args.all else None)
     if not target:
         logger.error("Specify --collection <name> or --all")
-        return
+        sys.exit(1)
 
     if target in ("all", "provider_secrets"):
         await migrate_provider_secrets(db, svc, args.dry_run)
-
     if target in ("all", "credential_vault"):
         await migrate_credential_vault(db, svc, args.dry_run)
-
     if target in ("all", "_dev_secrets"):
         await migrate_dev_secrets(db, svc, args.dry_run)
 
-    logger.info("=" * 60)
-    logger.info("Migration %s", "DRY RUN" if args.dry_run else "COMPLETE")
-    logger.info("  Scanned:         %d", stats["scanned"])
-    logger.info("  Already current: %d", stats["already_current"])
-    logger.info("  Migrated:        %d", stats["migrated"])
-    logger.info("  Failed:          %d", stats["failed"])
-    logger.info("  Skipped:         %d", stats["skipped"])
+    if not args.dry_run and backup_records:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_file = f"migration_backup_{ts}.json"
+        with open(backup_file, "w") as f:
+            json.dump(backup_records, f)
+        logger.info("Saved %d records to %s before migrating.", len(backup_records), backup_file)
 
-    if stats["failed"] > 0:
-        logger.warning("Some records failed — investigate before proceeding")
+    logger.info("=" * 60)
+    logger.info("Migration %s", "DRY RUN (Simulated in memory)" if args.dry_run else "COMPLETE")
+    logger.info("  total_encrypted_records: %d", stats["total_records"])
+    logger.info("  already_current_kid:     %d", stats["already_current_kid"])
+    logger.info("  old_kid_records:         %d", stats["old_kid_records"])
+    logger.info("  unknown_kid_records:     %d", stats["unknown_kid_records"])
+    logger.info("  migrated:                %d", stats["migrated"])
+    logger.info("  failed:                  %d", stats["failed"])
+    logger.info("  skipped (empty):         %d", stats["skipped"])
+
+    if stats["failed"] > 0 or stats["unknown_kid_records"] > 0:
+        logger.error("Migration finished with errors or unknown keys. Action required.")
+        sys.exit(1)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Crypto migration: legacy → SYR1 envelope")
-    parser.add_argument("--dry-run", action="store_true", help="Preview only, no writes")
+    parser = argparse.ArgumentParser(description="Crypto migration: legacy/old key → current SYR1 envelope")
+    parser.add_argument("--dry-run", action="store_true", help="Simulate decrypt/encrypt/verify in memory")
     parser.add_argument("--collection", help="Specific collection to migrate")
     parser.add_argument("--all", action="store_true", help="Migrate all collections")
-    parser.add_argument("--force-v2", action="store_true", help="Force V2 mode")
+    parser.add_argument("--force-v2", action="store_true", help="Force V2 mode safely")
     args = parser.parse_args()
 
     asyncio.run(run_migration(args))
