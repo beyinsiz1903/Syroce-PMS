@@ -100,13 +100,15 @@ test.describe('F8U § 98 — Auth Token Lifecycle', () => {
     let freshExpiresIn = null;
     let rotatedAccess = null;
     let rotatedRefresh = null;
+    let testEmail = null;
+    let testPassword = null;
 
     test('Setup: pilot baseline + fresh login (isolated session) + token shape', async ({ request, stressTokens, stressState }, testInfo) => {
         prefix = stressState.data_prefix;
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
 
-        const testEmail = `auth-test-${Date.now()}@syroce.com`;
-        const testPassword = 'AuthTestPass123!';
+        testEmail = `auth-test-${Date.now()}@syroce.com`;
+        testPassword = 'AuthTestPass123!';
         
         // Create a temporary user to avoid cross-shard token invalidation 
         // when the logout test bumps tokens_invalid_before.
@@ -406,8 +408,8 @@ test.describe('F8U § 98 — Auth Token Lifecycle', () => {
             test.skip(true, 'module blocked');
             return;
         }
-        const email = process.env.E2E_STRESS_ADMIN_EMAIL;
-        const password = process.env.E2E_STRESS_ADMIN_PASSWORD;
+        const email = testEmail;
+        const password = testPassword;
         const login = await freshLogin(request, email, password);
         if (!login.ok || !login.body?.refresh_token) {
             // Fresh login başarısız → cross-scope test edilemez. Refresh_token

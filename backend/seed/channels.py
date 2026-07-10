@@ -8,27 +8,45 @@
 - CM v2 connectors + external room types/rate plans + mappings
 """
 
+import os
+
 from seed._helpers import _now, _uuid
 
 
 async def seed_channels(db, ctx):
     tenant_id = ctx["tenant_id"]
 
+    hr_id = os.environ.get("SEED_HOTELRUNNER_HR_ID", "")
+    # Seed never creates active connections to avoid dangling credential refs
+    hr_is_active = False
+    hr_status = "inactive"
+
+    ex_hotel = os.environ.get("SEED_EXELY_HOTEL_CODE", "")
+    # Seed never creates active connections to avoid dangling credential refs
+    ex_is_active = False
+    ex_status = "inactive"
+
+    hr_sync_enabled = hr_is_active
+    ex_sync_enabled = ex_is_active
+    hr_mapping_active = hr_is_active
+    hr_validation = "valid" if hr_is_active else "unverified"
+    ex_mapping_active = ex_is_active
+    ex_validation = "valid" if ex_is_active else "unverified"
+
     # ── 8. Exely Connection (for webhook tests) ──────────
     exely_conn = {
         "id": _uuid(),
         "tenant_id": tenant_id,
-        "hotel_code": "501694",
-        "credentials_ref": "vault:exely:501694",
-        "endpoint_url": "https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc?HotelCode=501694",
-        "username": "PMSConnect.501694",
-        "password": "@G,7}sguup4P",
+        "hotel_code": ex_hotel if ex_is_active else "DEMO-EXELY",
+        "credentials_ref": f"vault:exely:{ex_hotel if ex_is_active else 'DEMO-EXELY'}",
+        "endpoint_url": f"https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc?HotelCode={ex_hotel}" if ex_is_active else None,
+
         "property_name": "TEST Syroce PMS (Exely)",
-        "auto_sync_reservations": True,
+        "auto_sync_reservations": False,
         "sync_interval_minutes": 15,
         "mode": "sandbox",
         "currency": "USD",
-        "is_active": True,
+        "is_active": ex_is_active,
         "room_types": [
             {"code": "5001574", "name": "Standart", "max_occupancy": 2},
             {"code": "5001575", "name": "Deluxe", "max_occupancy": 3},
@@ -46,7 +64,7 @@ async def seed_channels(db, ctx):
         "created_by": "auto_seed",
     }
     await db.exely_connections.update_one(
-        {"hotel_code": "501694"},
+        {"hotel_code": ex_hotel if ex_is_active else "DEMO-EXELY"},
         {"$set": exely_conn},
         upsert=True,
     )
@@ -58,13 +76,13 @@ async def seed_channels(db, ctx):
         "tenant_id": tenant_id,
         "property_id": "prop-001",
         "provider": "hotelrunner",
-        "status": "active",
+        "status": hr_status,
         "display_name": "HotelRunner Connection",
-        "credentials": {"hr_token": "A9cM3IZjr3iSOZASwK7D30mUNVqM3BtULpEHrf05", "token": "A9cM3IZjr3iSOZASwK7D30mUNVqM3BtULpEHrf05", "hr_id": "373816343"},
-        "sync_inventory": True,
-        "sync_rates": True,
-        "sync_reservations": True,
-        "sync_restrictions": True,
+        "credentials_ref": f"secrets_manager::hotelrunner::{hr_id if hr_is_active else 'DEMO-HR'}",
+        "sync_inventory": False,
+        "sync_rates": False,
+        "sync_reservations": False,
+        "sync_restrictions": False,
         "max_requests_per_minute": 60,
         "max_requests_per_hour": 1000,
         "consecutive_failures": 0,
@@ -78,13 +96,13 @@ async def seed_channels(db, ctx):
         "tenant_id": tenant_id,
         "property_id": "prop-001",
         "provider": "exely",
-        "status": "active",
+        "status": ex_status,
         "display_name": "Exely Connection",
-        "credentials": {"username": "PMSConnect.501694", "password": "@G,7}sguup4P", "hotel_code": "501694"},
-        "sync_inventory": True,
-        "sync_rates": True,
-        "sync_reservations": True,
-        "sync_restrictions": True,
+        "credentials_ref": f"vault:exely:{ex_hotel if ex_is_active else 'DEMO-EXELY'}",
+        "sync_inventory": False,
+        "sync_rates": False,
+        "sync_reservations": False,
+        "sync_restrictions": False,
         "max_requests_per_minute": 60,
         "max_requests_per_hour": 1000,
         "consecutive_failures": 0,
@@ -98,13 +116,12 @@ async def seed_channels(db, ctx):
     # ── 9b. hotelrunner_connections (legacy format for overview) ──
     hr_legacy = {
         "tenant_id": tenant_id,
-        "hr_id": "373816343",
-        "token": "A9cM3IZjr3iSOZASwK7D30mUNVqM3BtULpEHrf05",
+        "hr_id": hr_id if hr_is_active else "DEMO-HR",
         "property_name": "Syroce Demo Hotel",
         "environment": "live",
-        "is_active": True,
+        "is_active": hr_is_active,
         "channels": ["booking.com", "expedia", "airbnb"],
-        "auto_sync_reservations": True,
+        "auto_sync_reservations": False,
         "connected_at": now_iso,
         "last_sync_at": None,
         "created_by": "auto_seed",
@@ -170,8 +187,8 @@ async def seed_channels(db, ctx):
         "provider_room_code": "STD",
         "provider_room_id": "hr-std-001",
         "occupancy_offset": 0,
-        "is_active": True,
-        "validation_status": "valid",
+        "is_active": hr_mapping_active,
+        "validation_status": hr_validation,
         "created_at": now_iso,
     }
     ex_room = {
@@ -184,8 +201,8 @@ async def seed_channels(db, ctx):
         "provider_room_code": "DLX",
         "provider_room_id": "ex-dlx-001",
         "occupancy_offset": 0,
-        "is_active": True,
-        "validation_status": "valid",
+        "is_active": ex_mapping_active,
+        "validation_status": ex_validation,
         "created_at": now_iso,
     }
     await db.room_mappings.insert_many([hr_room, ex_room])
@@ -200,7 +217,8 @@ async def seed_channels(db, ctx):
         "pms_rate_plan_name": "Best Available Rate",
         "provider_rate_code": "BAR",
         "provider_rate_id": "hr-bar-001",
-        "is_active": True,
+        "is_active": hr_mapping_active,
+        "validation_status": hr_validation,
         "created_at": now_iso,
     }
     ex_rate = {
@@ -212,7 +230,8 @@ async def seed_channels(db, ctx):
         "pms_rate_plan_name": "Rack Rate",
         "provider_rate_code": "RACK",
         "provider_rate_id": "ex-rack-001",
-        "is_active": True,
+        "is_active": ex_mapping_active,
+        "validation_status": ex_validation,
         "created_at": now_iso,
     }
     await db.rate_plan_mappings.insert_many([hr_rate, ex_rate])
@@ -225,9 +244,9 @@ async def seed_channels(db, ctx):
                 "$set": {
                     "tenant_id": tenant_id,
                     "provider": prov,
-                    "connector_enabled": True,
-                    "shadow_mode": False,
-                    "write_enabled": True,
+                    "connector_enabled": hr_is_active if prov == "hotelrunner" else ex_is_active,
+                    "shadow_mode": True,
+                    "write_enabled": False,
                     "updated_at": now_iso,
                     "updated_by": "auto_seed",
                 }
@@ -245,10 +264,9 @@ async def seed_channels(db, ctx):
         "property_id": "prop-001",
         "provider": "hotelrunner",
         "display_name": "HotelRunner - Syroce Demo",
-        "status": "active",
-        "credentials": {"hr_token": "A9cM3IZjr3iSOZASwK7D30mUNVqM3BtULpEHrf05", "token": "A9cM3IZjr3iSOZASwK7D30mUNVqM3BtULpEHrf05", "hr_id": "373816343"},
-        "credentials_encrypted": False,
-        "sync_enabled": True,
+        "status": hr_status,
+        "credentials_ref": f"secrets_manager::hotelrunner::{hr_id if hr_is_active else 'DEMO-HR'}",
+        "sync_enabled": hr_sync_enabled,
         "created_at": now_iso,
         "updated_at": now_iso,
     }
@@ -258,10 +276,9 @@ async def seed_channels(db, ctx):
         "property_id": "prop-001",
         "provider": "exely",
         "display_name": "Exely - Syroce Demo",
-        "status": "active",
-        "credentials": {"username": "PMSConnect.501694", "password": "@G,7}sguup4P", "hotel_code": "501694"},
-        "credentials_encrypted": False,
-        "sync_enabled": True,
+        "status": ex_status,
+        "credentials_ref": f"vault:exely:{ex_hotel if ex_is_active else 'DEMO-EXELY'}",
+        "sync_enabled": ex_sync_enabled,
         "created_at": now_iso,
         "updated_at": now_iso,
     }
