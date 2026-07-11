@@ -5,7 +5,6 @@ This test covers all the new v4.0 endpoints with proper error handling and repor
 """
 
 import requests
-import json
 from datetime import datetime
 
 BASE_URL = "http://localhost:8000/api"

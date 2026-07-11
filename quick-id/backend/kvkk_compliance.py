@@ -7,11 +7,10 @@ KVKK (6698 Sayılı Kişisel Verilerin Korunması Kanunu) Tam Uyumluluk Modülü
 - Rıza yönetimi
 """
 from datetime import datetime, timezone, timedelta
-from typing import Optional, List
+from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 import uuid
-import json
 
 
 # ============== KVKK Hak Talepleri ==============

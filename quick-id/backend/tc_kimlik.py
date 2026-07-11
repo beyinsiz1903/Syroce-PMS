@@ -5,7 +5,6 @@ TC Kimlik No Doğrulama ve Emniyet Bildirimi Modülü
 - Otomatik form doldurma
 """
 from datetime import datetime, timezone
-from typing import Optional
 import uuid
 
 

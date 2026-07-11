@@ -6,10 +6,7 @@ Biyometrik Yüz Eşleştirme Modülü
 - Işık ve açı toleransı
 """
 from datetime import datetime, timezone
-from typing import Optional
 import uuid
-import json
-import os
 import random
 
 LIVENESS_CHALLENGES = [

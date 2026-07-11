@@ -14,10 +14,8 @@ P1 FEATURES TO TEST:
 5. Background Scheduler - Check backend logs for startup message
 """
 import requests
-import json
 import time
-import uuid
-from typing import Optional, Dict, Any
+from typing import Optional
 
 # Configuration
 BASE_URL = "http://localhost:8000"
@@ -124,7 +122,7 @@ class P1BackendTester:
             if response.status_code == 200:
                 data = response.json()
                 if data.get("total", 0) == 0:
-                    print(f"    ✅ Guest hidden in normal search (total: 0)")
+                    print("    ✅ Guest hidden in normal search (total: 0)")
                 else:
                     return (False, f"Guest still visible in normal search (total: {data.get('total')})")
             else:
@@ -142,7 +140,7 @@ class P1BackendTester:
                 if data.get("total", 0) == 1:
                     guest = data.get("guests", [{}])[0]
                     if guest.get("status") == "deleted":
-                        print(f"    ✅ Soft-deleted guest found with include_deleted=true")
+                        print("    ✅ Soft-deleted guest found with include_deleted=true")
                         return (True, "Soft delete working correctly")
                     else:
                         return (False, f"Guest found but status is '{guest.get('status')}', expected 'deleted'")
@@ -183,7 +181,7 @@ class P1BackendTester:
                 if data.get("success") and data.get("guest"):
                     guest = data["guest"]
                     if guest.get("status") == "pending":
-                        print(f"    ✅ Guest restored successfully with status 'pending'")
+                        print("    ✅ Guest restored successfully with status 'pending'")
                     else:
                         return (False, f"Guest restored but status is '{guest.get('status')}', expected 'pending'")
                 else:
@@ -201,7 +199,7 @@ class P1BackendTester:
             if response.status_code == 200:
                 data = response.json()
                 if data.get("total", 0) >= 1:
-                    print(f"    ✅ Restored guest visible in normal search")
+                    print("    ✅ Restored guest visible in normal search")
                     return (True, "Guest restore working correctly")
                 else:
                     return (False, f"Restored guest not visible in normal search (total: {data.get('total')})")
@@ -233,7 +231,7 @@ class P1BackendTester:
             if response.status_code == 200:
                 data = response.json()
                 if data.get("success") and data.get("action") == "permanently_deleted":
-                    print(f"    ✅ Permanent delete successful")
+                    print("    ✅ Permanent delete successful")
                 else:
                     return (False, f"Unexpected permanent delete response: {data}")
             else:
@@ -249,7 +247,7 @@ class P1BackendTester:
             if response.status_code == 200:
                 data = response.json()
                 if data.get("total", 0) == 0:
-                    print(f"    ✅ Permanently deleted guest not found (total: 0)")
+                    print("    ✅ Permanently deleted guest not found (total: 0)")
                     return (True, "Permanent delete working correctly")
                 else:
                     return (False, f"Permanently deleted guest still found (total: {data.get('total')})")

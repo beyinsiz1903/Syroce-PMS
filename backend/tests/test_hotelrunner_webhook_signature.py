@@ -302,3 +302,34 @@ async def test_webhook_official_production_secrets_manager_path(monkeypatch):
     with pytest.raises(HTTPException) as ei:
         await _verify_hotelrunner_callback(req)
     assert ei.value.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_hotelrunner_webhook_csrf_exemption(monkeypatch):
+    """Ensure HotelRunner webhook endpoints bypass CSRF check."""
+    from security.csrf_guard import csrf_guard_middleware
+    
+    # Simulate a POST request without Origin/Referer (which would normally trigger 403 CSRF)
+    headers = {}
+    
+    # 1. Test unified callback path
+    req_callback = _FakeRequest(headers, b"{}")
+    req_callback.method = "POST"
+    req_callback.url = SimpleNamespace(path="/api/channel-manager/hotelrunner/callback/secret123")
+    
+    # Mock call_next to just return 200 (meaning it bypassed CSRF)
+    async def mock_call_next(req):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=200, content={"success": True})
+        
+    resp_callback = await csrf_guard_middleware(req_callback, mock_call_next)
+    assert resp_callback.status_code == 200, "CSRF guard blocked the unified callback path"
+    
+    # 2. Test specific webhook path
+    req_webhook = _FakeRequest(headers, b"{}")
+    req_webhook.method = "POST"
+    req_webhook.url = SimpleNamespace(path="/api/channel-manager/hotelrunner/webhooks/reservations/secret123")
+    
+    resp_webhook = await csrf_guard_middleware(req_webhook, mock_call_next)
+    assert resp_webhook.status_code == 200, "CSRF guard blocked the specific webhook path"
+>>>>>>> origin/main

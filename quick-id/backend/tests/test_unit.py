@@ -6,11 +6,9 @@ Hedef: %80+ coverage
 Kullanım: cd /app/backend && python -m pytest tests/ -v
 """
 import pytest
-import asyncio
 import os
 import sys
 from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, patch, MagicMock
 
 # Add backend to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

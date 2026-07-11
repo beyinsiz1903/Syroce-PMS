@@ -7,8 +7,6 @@ Kullanım: cd /app/backend && python -m pytest tests/test_api.py -v
 import pytest
 import asyncio
 import httpx
-import os
-import sys
 
 # Backend URL
 BASE_URL = "http://localhost:8001"

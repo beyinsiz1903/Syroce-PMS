@@ -6,10 +6,7 @@ Multi-Provider OCR Yönetimi
 - Maliyet takibi
 """
 import os
-import json
-import uuid
 import time
-import asyncio
 from typing import Optional
 from datetime import datetime, timezone
 
