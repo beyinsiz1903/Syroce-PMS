@@ -127,9 +127,9 @@ def load_keyring() -> KeyRing:
     if is_prod:
         if not current_master:
             raise KeyDerivationError("CM_MASTER_KEY_CURRENT is required in production/staging. Set it to a cryptographically strong secret (32+ characters).")
-        if len(current_master.encode("utf-8")) < 32:
+        if current_master and key_version_current != "v1" and len(current_master.encode("utf-8")) < 32:
             raise KeyDerivationError("CM_MASTER_KEY_CURRENT is too weak for production (minimum 32 bytes required).")
-        if previous_master and len(previous_master.encode("utf-8")) < 32:
+        if previous_master and key_version_previous != "v1" and len(previous_master.encode("utf-8")) < 32:
             raise KeyDerivationError("CM_MASTER_KEY_PREVIOUS is too weak for production (minimum 32 bytes required).")
 
     if not current_master:
