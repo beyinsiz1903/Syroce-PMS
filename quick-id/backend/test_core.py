@@ -76,8 +76,8 @@ async def test_image_extraction(image_path: str, test_name: str):
             images_base64=[image_base64],
             model="gpt-4o",
         )
-        print(f"JSON parsed successfully")
-        print(f"\nExtracted Data:")
+        print("JSON parsed successfully")
+        print("\nExtracted Data:")
         print(json.dumps(extracted, indent=2, ensure_ascii=False))
 
         required_fields = ["is_valid", "document_type", "first_name", "last_name"]

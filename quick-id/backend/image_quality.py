@@ -11,7 +11,6 @@ Geliştirilmiş Görüntü Kalite Kontrolü Modülü
 - Ağırlıklı puanlama
 """
 import base64
-import io
 import math
 from typing import Optional
 

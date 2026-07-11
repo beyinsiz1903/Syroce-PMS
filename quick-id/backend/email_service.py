@@ -10,7 +10,6 @@ SMTP ayarlarini yapilandirin veya SendGrid/SES entegrasyonu ekleyin.
 import os
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 
 logger = logging.getLogger("quickid.email")
 

@@ -6,7 +6,6 @@ Monitoring & Metrik Modülü
 - Günlük/haftalık/aylık raporlar
 """
 from datetime import datetime, timezone, timedelta
-from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorDatabase
 import uuid
 

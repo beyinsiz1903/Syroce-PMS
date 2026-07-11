@@ -5,7 +5,7 @@ Multi-Property & Kiosk Modu
 - Offline mod (yerel tarama, senkronizasyon)
 """
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorDatabase
 import uuid
 

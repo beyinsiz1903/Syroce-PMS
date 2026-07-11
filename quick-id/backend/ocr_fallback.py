@@ -12,7 +12,6 @@ import base64
 import io
 import re
 from typing import Optional
-from datetime import datetime, timezone
 
 try:
     import pytesseract

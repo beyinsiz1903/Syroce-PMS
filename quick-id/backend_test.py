@@ -17,11 +17,8 @@ SECURITY HARDENING TESTS:
 IMPORTANT: Login rate limit is 5/minute, so wait between bursts of login attempts if needed.
 """
 import requests
-import json
 import time
-import base64
 import uuid
-from typing import Optional
 
 # Configuration
 BASE_URL = "http://localhost:8000"  # Use the actual backend URL
@@ -82,7 +79,7 @@ class SecurityTester:
             if response.status_code == 200:
                 data = response.json()
                 if data.get("valid") == False and isinstance(data.get("errors"), list) and len(data.get("errors", [])) > 0:
-                    print(f"    ✅ Weak password correctly rejected")
+                    print("    ✅ Weak password correctly rejected")
                     print(f"       Errors: {data.get('errors')}")
                     print(f"       Strength: {data.get('strength')}")
                     results.append(("Weak password rejection", True, f"Rejected with {len(data.get('errors', []))} errors"))
@@ -109,10 +106,10 @@ class SecurityTester:
             if response.status_code == 200:
                 data = response.json()
                 if data.get("valid") == False and any("özel" in error.lower() or "special" in error.lower() for error in data.get("errors", [])):
-                    print(f"    ✅ Medium password correctly rejected (missing special char)")
+                    print("    ✅ Medium password correctly rejected (missing special char)")
                     print(f"       Errors: {data.get('errors')}")
                     print(f"       Strength: {data.get('strength')}")
-                    results.append(("Medium password rejection", True, f"Rejected for missing special character"))
+                    results.append(("Medium password rejection", True, "Rejected for missing special character"))
                 else:
                     print(f"    ❌ Medium password validation failed: {data}")
                     results.append(("Medium password rejection", False, f"Should reject for missing special char, got: {data}"))
@@ -136,7 +133,7 @@ class SecurityTester:
             if response.status_code == 200:
                 data = response.json()
                 if data.get("valid") == True and data.get("strength") in ["strong", "very_strong"]:
-                    print(f"    ✅ Strong password correctly validated")
+                    print("    ✅ Strong password correctly validated")
                     print(f"       Valid: {data.get('valid')}")
                     print(f"       Strength: {data.get('strength')}")
                     print(f"       Score: {data.get('score')}/{data.get('max_score')}")
@@ -180,7 +177,7 @@ class SecurityTester:
                     data = response.json()
                     detail = data.get("detail", {})
                     if isinstance(detail, dict) and "errors" in detail:
-                        print(f"    ✅ Weak password correctly rejected in user creation")
+                        print("    ✅ Weak password correctly rejected in user creation")
                         print(f"       Message: {detail.get('message')}")
                         print(f"       Errors: {detail.get('errors')}")
                         results.append(("User creation weak password rejection", True, "Rejected with password validation errors"))
@@ -188,7 +185,7 @@ class SecurityTester:
                         print(f"    ❌ Weak password rejected but wrong error format: {data}")
                         results.append(("User creation weak password rejection", False, f"Wrong error format: {data}"))
                 except:
-                    print(f"    ✅ Weak password correctly rejected (status 400)")
+                    print("    ✅ Weak password correctly rejected (status 400)")
                     results.append(("User creation weak password rejection", True, "Rejected with status 400"))
             else:
                 print(f"    ❌ Weak password not rejected: {response.status_code} - {response.text}")
@@ -218,7 +215,7 @@ class SecurityTester:
                 data = response.json()
                 if data.get("success") and data.get("user"):
                     test_user_id = data.get("user", {}).get("id")
-                    print(f"    ✅ Strong password user created successfully")
+                    print("    ✅ Strong password user created successfully")
                     print(f"       User ID: {test_user_id}")
                     print(f"       Email: {data.get('user', {}).get('email')}")
                     results.append(("User creation strong password acceptance", True, f"User created with ID: {test_user_id}"))
@@ -243,7 +240,7 @@ class SecurityTester:
                 )
                 
                 if response.status_code == 200:
-                    print(f"    ✅ Test user cleaned up successfully")
+                    print("    ✅ Test user cleaned up successfully")
                 else:
                     print(f"    ⚠️  Test user cleanup failed: {response.status_code}")
                     
@@ -303,7 +300,7 @@ class SecurityTester:
                     data = response.json()
                     detail = data.get("detail", {})
                     if isinstance(detail, dict) and "errors" in detail:
-                        print(f"    ✅ Weak password correctly rejected in reset")
+                        print("    ✅ Weak password correctly rejected in reset")
                         print(f"       Message: {detail.get('message')}")
                         print(f"       Errors: {detail.get('errors')}")
                         results.append(("Password reset weak password rejection", True, "Rejected with password validation errors"))
@@ -311,7 +308,7 @@ class SecurityTester:
                         print(f"    ❌ Weak password rejected but wrong error format: {data}")
                         results.append(("Password reset weak password rejection", False, f"Wrong error format: {data}"))
                 except:
-                    print(f"    ✅ Weak password correctly rejected (status 400)")
+                    print("    ✅ Weak password correctly rejected (status 400)")
                     results.append(("Password reset weak password rejection", True, "Rejected with status 400"))
             else:
                 print(f"    ❌ Weak password not rejected: {response.status_code} - {response.text}")
@@ -333,7 +330,7 @@ class SecurityTester:
             if response.status_code == 200:
                 data = response.json()
                 if data.get("success"):
-                    print(f"    ✅ Strong password reset successful")
+                    print("    ✅ Strong password reset successful")
                     print(f"       Message: {data.get('message')}")
                     results.append(("Password reset strong password acceptance", True, "Password reset successful"))
                 else:
@@ -357,7 +354,7 @@ class SecurityTester:
                 )
                 
                 if response.status_code == 200:
-                    print(f"    ✅ Test user cleaned up successfully")
+                    print("    ✅ Test user cleaned up successfully")
                 else:
                     print(f"    ⚠️  Test user cleanup failed: {response.status_code}")
                     
@@ -434,7 +431,7 @@ class SecurityTester:
                     try:
                         error_detail = response.text
                         if "kalan" in error_detail.lower() or "remaining" in error_detail.lower():
-                            print(f"       Remaining attempts warning detected")
+                            print("       Remaining attempts warning detected")
                             remaining_attempts_seen = True
                         print(f"       Response: {error_detail[:100]}")
                     except:
@@ -524,7 +521,7 @@ class SecurityTester:
             
             if response.status_code == 200:
                 data = response.json()
-                print(f"    ✅ Lockout status retrieved successfully")
+                print("    ✅ Lockout status retrieved successfully")
                 print(f"       Email: {data.get('email')}")
                 
                 lockout_info = data.get("lockout", {})
@@ -551,7 +548,7 @@ class SecurityTester:
             if response.status_code == 200:
                 data = response.json()
                 if data.get("success"):
-                    print(f"    ✅ Account unlock successful")
+                    print("    ✅ Account unlock successful")
                     print(f"       Message: {data.get('message')}")
                     print(f"       Cleared attempts: {data.get('cleared_attempts', 0)}")
                     results.append(("Admin unlock function", True, f"Account unlocked, cleared {data.get('cleared_attempts', 0)} attempts"))
@@ -576,7 +573,7 @@ class SecurityTester:
                 )
                 
                 if response.status_code == 200:
-                    print(f"    ✅ Test user cleaned up successfully")
+                    print("    ✅ Test user cleaned up successfully")
                 else:
                     print(f"    ⚠️  Test user cleanup failed: {response.status_code}")
                     
@@ -612,14 +609,14 @@ class SecurityTester:
                     data = response.json()
                     detail = data.get("detail", "")
                     if "csrf" in detail.lower():
-                        print(f"    ✅ CSRF protection working - request blocked")
+                        print("    ✅ CSRF protection working - request blocked")
                         print(f"       Error: {detail}")
                         results.append(("CSRF protection without token", True, "Request blocked with CSRF error"))
                     else:
                         print(f"    ✅ Request blocked (403) but unclear error: {detail}")
                         results.append(("CSRF protection without token", True, f"Blocked with 403: {detail}"))
                 except:
-                    print(f"    ✅ CSRF protection working - request blocked (403)")
+                    print("    ✅ CSRF protection working - request blocked (403)")
                     results.append(("CSRF protection without token", True, "Request blocked with 403"))
             else:
                 print(f"    ❌ CSRF protection failed: Expected 403, got {response.status_code}")
@@ -655,16 +652,16 @@ class SecurityTester:
                     data = response.json()
                     detail = data.get("detail", "")
                     if "csrf" in detail.lower():
-                        print(f"    ❌ CSRF protection too strict - blocking authenticated requests")
+                        print("    ❌ CSRF protection too strict - blocking authenticated requests")
                         results.append(("CSRF protection with token", False, "Blocking authenticated requests"))
                     else:
                         print(f"    ✅ CSRF passed, other auth error (expected): {detail}")
                         results.append(("CSRF protection with token", True, f"CSRF passed, other error: {detail}"))
                 except:
-                    print(f"    ✅ CSRF passed, other auth error (expected)")
+                    print("    ✅ CSRF passed, other auth error (expected)")
                     results.append(("CSRF protection with token", True, "CSRF passed, other auth error"))
             elif response.status_code in [200, 400, 401, 422]:
-                print(f"    ✅ CSRF protection passed with Bearer token")
+                print("    ✅ CSRF protection passed with Bearer token")
                 print(f"       Status: {response.status_code} (CSRF check passed)")
                 results.append(("CSRF protection with token", True, f"CSRF passed, status: {response.status_code}"))
             else:

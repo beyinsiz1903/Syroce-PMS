@@ -5,15 +5,13 @@ PDF Rapor Oluşturucu
 - KVKK Uyumluluk Raporu
 """
 import io
-from datetime import datetime, timezone
+from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm, cm
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.enums import TA_CENTER
 import logging
 
 logger = logging.getLogger("quickid.pdf")
