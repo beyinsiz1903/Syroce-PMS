@@ -250,8 +250,7 @@ async def test_cross_tenant_forge_with_other_secret_rejected(monkeypatch):
 async def test_webhook_official_production_secrets_manager_path(monkeypatch):
     """Production path test: APP_ENV=production, connection.token is absent, token is loaded from SecretsManager"""
     monkeypatch.setenv("APP_ENV", "production")
-    
-    conn = {"tenant_id": "tenant-prod", "hr_id": "hotel-prod", "callback_secret": "prod-callback-secret"}
+    conn = {"tenant_id": "tenant-prod", "hr_id": "hotel-prod"}
     
     async def _fake_lookup(hr_id_hint):
         return conn if hr_id_hint == "hotel-prod" else None
@@ -259,7 +258,7 @@ async def test_webhook_official_production_secrets_manager_path(monkeypatch):
     class FakeSecretsManager:
         async def get_provider_credentials(self, tenant_id, provider, property_id, actor="system"):
             if tenant_id == "tenant-prod":
-                return {"token": "prod-sm-token"}
+                return {"token": "prod-sm-token", "callback_secret": "prod-callback-secret"}
             return None
             
     monkeypatch.setattr(hs, "_lookup_signing_connection", _fake_lookup)

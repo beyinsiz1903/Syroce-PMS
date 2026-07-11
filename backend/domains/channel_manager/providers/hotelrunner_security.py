@@ -209,11 +209,23 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     # ── MODE 2: Official Callback Validation (Token + hr_id + callback_secret) ──
 
     # 1. Callback Secret Validation
-    # Prefer connection-specific callback secret, fallback to global
+    # Priority: SecretsManager > connection.callback_secret (legacy) > global
+    sm = get_secrets_manager()
+    tenant_id = conn.get("tenant_id") if conn else ""
+    
+    secret_manager_callback_secret = None
+    if tenant_id and hr_id_hint:
+        try:
+            creds = await sm.get_provider_credentials(tenant_id, "hotelrunner", hr_id_hint)
+            if creds:
+                secret_manager_callback_secret = creds.get("callback_secret")
+        except Exception:
+            pass
+            
     global_callback_secret = _os.environ.get("HOTELRUNNER_CALLBACK_SECRET")
     connection_callback_secret = conn.get("callback_secret") if conn else None
 
-    expected_secret = connection_callback_secret or global_callback_secret
+    expected_secret = secret_manager_callback_secret or connection_callback_secret or global_callback_secret
 
     # P1 Fix: Fail closed in production if no secret is configured at all
     if _os.environ.get("APP_ENV") == "production" and not expected_secret:
