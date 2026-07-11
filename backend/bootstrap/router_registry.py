@@ -340,7 +340,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.guest_relations", "router", ["Guest Relations Smart Engine"], None, None),
     # CM Conflict Queue — front-desk resolution UI for pending_assignment bookings (Turu #1b)
     ("routers.cm_conflict_queue", "router", ["channel-manager"], None, None),
-    
+
     # IoT Hardware Integration
     ("domains.iot.access_control_router", "router", ["IoT Access Control"], None, None),
 ]

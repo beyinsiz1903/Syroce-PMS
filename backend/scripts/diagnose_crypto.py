@@ -105,18 +105,18 @@ async def main():
         return await coll.find({"status": "active"}).to_list(None)
 
     await analyze_collection(
-        db, svc, "credential_vault", 
+        db, svc, "credential_vault",
         get_cv_docs,
         lambda d: d.get("credential_encrypted") or d.get("credential_value_encoded"),
         lambda d: AADContext(tenant_id=d.get("tenant_id"), integration_id="cv", context_type="credential") if d.get("tenant_id") else None
     )
-    
+
     # 2. provider_secrets
     async def get_ps_docs(coll):
         return await coll.find({}).to_list(None)
-        
+
     await analyze_collection(
-        db, svc, "provider_secrets", 
+        db, svc, "provider_secrets",
         get_ps_docs,
         lambda d: d.get("credentials_encrypted") or d.get("token_encrypted"),
         lambda d: AADContext(tenant_id=d.get("tenant_id"), integration_id="ps", context_type="credential") if d.get("tenant_id") else None
