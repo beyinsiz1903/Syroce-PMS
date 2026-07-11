@@ -93,7 +93,7 @@ async def collect_records(db, svc, target_collections):
 
     if "provider_secrets" in target_collections:
         coll = db["provider_secrets"]
-        async for doc in coll.find({}, {"_id": 0}):
+        async for doc in coll.find({}):
             stats["total_records"] += 1
             payload = doc.get("encrypted_payload", {})
             if not payload:
@@ -117,7 +117,7 @@ async def collect_records(db, svc, target_collections):
 
     if "credential_vault" in target_collections:
         coll = db["credential_vault"]
-        async for doc in coll.find({"status": "active"}, {"_id": 0}):
+        async for doc in coll.find({"status": "active"}):
             stats["total_records"] += 1
             val = doc.get("credential_encrypted") or doc.get("credential_value_encoded")
             status = _record_status(svc, val)
@@ -138,7 +138,7 @@ async def collect_records(db, svc, target_collections):
 
     if "_dev_secrets" in target_collections:
         coll = db["_dev_secrets"]
-        async for doc in coll.find({}, {"_id": 0}):
+        async for doc in coll.find({}):
             stats["total_records"] += 1
             status = _record_status(svc, doc.get("encrypted_payload", ""))
             if status == "skipped":
@@ -225,23 +225,9 @@ def create_backup_file(db, svc, records) -> str:
 
 
 def _get_filter_query(col_name, doc):
-    if col_name == "provider_secrets":
-        return {
-            "id": doc.get("id"),
-            "tenant_id": doc.get("tenant_id"),
-            "provider": doc.get("provider"),
-            "property_id": doc.get("property_id"),
-        }
-    elif col_name == "credential_vault":
-        return {
-            "id": doc.get("id"),
-            "tenant_id": doc.get("tenant_id"),
-            "credential_type": doc.get("credential_type"),
-            "credential_key": doc.get("credential_key"),
-        }
-    elif col_name == "_dev_secrets":
-        return {"path": doc.get("path")}
-    raise ValueError(f"Unknown collection {col_name}")
+    if "_id" not in doc:
+        raise ValueError(f"Document missing _id in {col_name}. Cannot generate safe filter_query.")
+    return {"_id": doc["_id"]}
 
 
 def _validate_backup_doc(col_name, doc):
@@ -268,7 +254,7 @@ async def restore_single_doc(db, col_name, doc):
         raise RollbackVerificationError(f"Rollback replace_one matched {res.matched_count} for {filter_query}")
 
     # Read-back to confirm restore was successful
-    written = await coll.find_one(filter_query, {"_id": 0})
+    written = await coll.find_one(filter_query)
     # Compare without _id to avoid ObjectId mismatch
     doc_without_id = {k: v for k, v in doc.items() if k != "_id"}
     written_without_id = {k: v for k, v in (written or {}).items() if k != "_id"}
@@ -499,7 +485,7 @@ async def run_restore(db, backup_file):
             sys.exit(1)
 
         # Read-back verification
-        written = await coll.find_one(filter_query, {"_id": 0})
+        written = await coll.find_one(filter_query)
         doc_without_id = {k: v for k, v in doc.items() if k != "_id"}
         written_without_id = {k: v for k, v in (written or {}).items() if k != "_id"}
         if written_without_id != doc_without_id:
