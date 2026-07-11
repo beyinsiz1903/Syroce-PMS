@@ -1,5 +1,4 @@
 import os
-import re
 
 dirs = ['hr', 'settings', 'maintenance']
 base_path = '/Users/syroce/Documents/GitHub/SyrocePMS/frontend/src/pages'

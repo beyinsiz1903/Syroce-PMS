@@ -116,7 +116,7 @@ class OpsEventsAPITester:
                         if missing_fields:
                             self.log_test(f"{method} {endpoint}", "FAIL", f"Missing fields: {missing_fields}")
                         else:
-                            details = f"Response structure OK"
+                            details = "Response structure OK"
                             if params:
                                 details += f" (params: {params})"
                             self.log_test(f"{method} {endpoint}", "PASS", details)
@@ -136,7 +136,7 @@ class OpsEventsAPITester:
     
     async def run_ops_events_tests(self):
         """Run all ops events endpoint tests"""
-        print(f"\n🧪 Testing Ops Events & Telemetry Endpoints")
+        print("\n🧪 Testing Ops Events & Telemetry Endpoints")
         print(f"Backend URL: {self.base_url}")
         print("=" * 60)
         
@@ -198,7 +198,7 @@ class OpsEventsAPITester:
         )
         
         # Test 10: DLQ retry with invalid ID (should return 400)
-        print(f"\n🧪 Testing DLQ retry with invalid ID (expecting 400)...")
+        print("\n🧪 Testing DLQ retry with invalid ID (expecting 400)...")
         try:
             async with self.session.post(
                 f"{self.api_base}/ops-events/webhook-dlq/fake-id/retry",
@@ -228,12 +228,12 @@ class OpsEventsAPITester:
         print(f"Success Rate: {(passed/total*100):.1f}%" if total > 0 else "0%")
         
         if failed > 0:
-            print(f"\n❌ FAILED TESTS:")
+            print("\n❌ FAILED TESTS:")
             for result in self.test_results:
                 if result["status"] == "FAIL":
                     print(f"  • {result['endpoint']} - {result['details']}")
         
-        print(f"\n📊 DETAILED RESULTS:")
+        print("\n📊 DETAILED RESULTS:")
         for result in self.test_results:
             status_icon = "✅" if result["status"] == "PASS" else "❌"
             print(f"  {status_icon} {result['endpoint']}")
@@ -264,7 +264,7 @@ async def main():
             print(f"\n❌ {failed_count} tests failed")
             sys.exit(1)
         else:
-            print(f"\n✅ All tests passed!")
+            print("\n✅ All tests passed!")
             sys.exit(0)
 
 

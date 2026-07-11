@@ -1,6 +1,7 @@
-import sys, os, asyncio
+import sys
+import os
+import asyncio
 sys.path.insert(0, os.path.abspath('backend'))
-from models.schemas import User
 from core.database import get_system_db
 
 async def main():

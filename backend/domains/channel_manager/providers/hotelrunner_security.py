@@ -212,7 +212,7 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     # Priority: SecretsManager > connection.callback_secret (legacy) > global
     sm = get_secrets_manager()
     tenant_id = conn.get("tenant_id") if conn else ""
-    
+
     secret_manager_callback_secret = None
     if tenant_id and hr_id_hint:
         try:
@@ -221,7 +221,7 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
                 secret_manager_callback_secret = creds.get("callback_secret")
         except Exception:
             pass
-            
+
     global_callback_secret = _os.environ.get("HOTELRUNNER_CALLBACK_SECRET")
     connection_callback_secret = conn.get("callback_secret") if conn else None
 

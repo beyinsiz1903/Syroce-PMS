@@ -1,4 +1,3 @@
-import re
 
 with open('frontend/src/pages/HotelInventory.jsx', 'r') as f:
     content = f.read()

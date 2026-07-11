@@ -1,8 +1,8 @@
 import asyncio
-import os
 import sys
 
 from dotenv import load_dotenv
+
 load_dotenv(override=False)
 sys.path.append("/app")
 
@@ -13,24 +13,24 @@ async def main():
     print("==================================================")
     print("HOTELRUNNER LIVE (READ-ONLY) DIAGNOSTIC")
     print("==================================================")
-    
-    from core import database
-    from core.secrets import get_secrets_manager
-    from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service, HRv2AuthError
+
     from channel_manager.connectors.hotelrunner_v2.client import HRv2Client
     from channel_manager.connectors.hotelrunner_v2.endpoint_map import ENV_URLS
-    
+    from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service, HRv2AuthError
+    from core import database
+    from core.secrets import get_secrets_manager
+
     db = database._raw_db
     sm = get_secrets_manager()
-    
+
     conn = await db.hotelrunner_connections.find_one({"is_active": True, "environment": "live"})
     if not conn:
         log_result("Real HR connection lookup", "FAIL", "No live connection found")
         sys.exit(1)
-        
+
     tenant_id = conn["tenant_id"]
     hr_id = conn["hr_id"]
-    
+
     try:
         secret_data = await sm.get_provider_credentials(tenant_id, "hotelrunner", hr_id)
         token = secret_data.get("token")
@@ -55,7 +55,7 @@ async def main():
         base_url = ENV_URLS.get(env, ENV_URLS["production"])
         client = HRv2Client(token=t, hr_id=h, base_url=base_url)
         return cls(t_id, p_id, client, environment=env)
-        
+
     HotelRunnerV2Service.create = new_create
 
     try:
@@ -69,7 +69,7 @@ async def main():
             log_result("Real HR API call (GET rooms)", "FAIL", result.get("error", ""))
     except Exception as e:
         log_result("Real HR API call (GET rooms)", "FAIL", str(e))
-        
+
     print("Token/secret log: Yok (Redacted & Clean)")
     print("==================================================")
 

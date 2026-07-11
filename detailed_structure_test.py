@@ -7,8 +7,6 @@ This script examines the actual response structures to ensure they match
 the expected format specified in the review request.
 """
 import asyncio
-import json
-from datetime import datetime
 
 import aiohttp
 
