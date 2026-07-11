@@ -48,13 +48,9 @@ DO NOT
 
 import argparse
 import asyncio
-import hashlib
-import json
 import logging
 import os
 import sys
-import tempfile
-from datetime import UTC, datetime
 
 import certifi
 
