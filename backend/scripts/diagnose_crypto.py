@@ -80,7 +80,7 @@ async def main():
         svc = get_crypto_service()
         print(f"v2_enabled: {svc._v2_enabled}")
         print(f"current_kid: {svc._keyring.current_kid}")
-        print(f"has_previous_key: {bool(svc._keyring.previous_master)}")
+        print(f"has_previous_key: {bool(svc._keyring._previous_key)}")
     except Exception as e:
         print(f"Failed to load crypto service: {e}")
         sys.exit(1)
