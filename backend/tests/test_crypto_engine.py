@@ -67,6 +67,7 @@ def env_with_rotation(monkeypatch):
     monkeypatch.setenv("CM_MASTER_KEY_CURRENT", "new-master-key-v2")
     monkeypatch.setenv("CM_MASTER_KEY_PREVIOUS", "old-master-key-v1")
     monkeypatch.setenv("CM_KEY_VERSION", "v2")
+    monkeypatch.setenv("CM_KEY_VERSION_PREVIOUS", "v1")
     monkeypatch.setenv("APP_ENV", "development")
     from core.crypto.service import reset_crypto_service
     reset_crypto_service()
@@ -254,6 +255,7 @@ class TestKeyRotation:
         monkeypatch.setenv("CM_MASTER_KEY_CURRENT", "new-key-v2")
         monkeypatch.setenv("CM_MASTER_KEY_PREVIOUS", "original-key-v1")
         monkeypatch.setenv("CM_KEY_VERSION", "v2")
+        monkeypatch.setenv("CM_KEY_VERSION_PREVIOUS", "v1")
         reset_crypto_service()
 
         svc_v2 = get_crypto_service()
@@ -281,6 +283,7 @@ class TestKeyRotation:
         monkeypatch.setenv("CM_MASTER_KEY_CURRENT", "key-v2")
         monkeypatch.setenv("CM_MASTER_KEY_PREVIOUS", "key-v1")
         monkeypatch.setenv("CM_KEY_VERSION", "v2")
+        monkeypatch.setenv("CM_KEY_VERSION_PREVIOUS", "v1")
         reset_crypto_service()
 
         svc = get_crypto_service()
