@@ -51,13 +51,99 @@ class ReservationPullScheduler:
         return self._running
 
     async def _run_loop(self, sleep_seconds: int, safety_window_minutes: int):
+        import os
+
+        from infra.distributed_lock import DistributedLock, lock_manager
+
         while self._running:
+            # Enforce same deployment key across replicas (do not fallback to hostnames)
+            env = os.environ.get("DEPLOYMENT_ENV") or os.environ.get("APP_ENV") or os.environ.get("ENVIRONMENT") or "production"
+            redis = lock_manager.get_redis()
+            expected_sleep = sleep_seconds
+
+            if self._consecutive_rate_limits > 0:
+                expected_sleep = self._base_interval * min(2**self._consecutive_rate_limits, 16)
+
+            if redis is None:
+                logger.warning("[PULL] distributed_lock_unavailable — skipping cycle to prevent split-brain")
+                await asyncio.sleep(expected_sleep)
+                continue
+
+            lock_name = f"syroce:{env}:hotelrunner:pull-cycle"
+            # 600 seconds (10 minutes) TTL to safely cover 3x 60s retries + API overhead
+            dl = DistributedLock(redis, lock_name, timeout=600.0, retry_count=1)
+
             try:
-                await self._pull_all_tenants(safety_window_minutes)
+                acquired = await dl.acquire()
+            except Exception as lock_err:
+                logger.error(
+                    "[PULL] Distributed lock acquisition failed; "
+                    "skipping cycle to prevent split-brain: %s",
+                    lock_err,
+                )
+                await asyncio.sleep(expected_sleep)
+                continue
+
+            if not acquired:
+                logger.debug("[PULL] Cycle owned by another worker; skipping")
+                await asyncio.sleep(expected_sleep)
+                continue
+
+            lock_lost = asyncio.Event()
+
+            # Start a heartbeat to extend the lock if it approaches the 600s TTL
+            async def lock_heartbeat():
+                while True:
+                    await asyncio.sleep(300)  # extend every 5 minutes
+                    try:
+                        extended = await dl.extend(600.0)
+                        if extended:
+                            logger.debug("[PULL] Lock extended by 600s via heartbeat")
+                        else:
+                            logger.warning("[PULL] Failed to extend lock (token mismatch/expired)")
+                            lock_lost.set()
+                            return
+                    except Exception as hb_err:
+                        logger.error(f"[PULL] Heartbeat error: {hb_err}")
+                        lock_lost.set()
+                        return
+
+            heartbeat_task = asyncio.create_task(lock_heartbeat())
+            pull_task = asyncio.create_task(self._pull_all_tenants(safety_window_minutes))
+            lost_task = asyncio.create_task(lock_lost.wait())
+
+            try:
+                done, _ = await asyncio.wait(
+                    {pull_task, lost_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                if lost_task in done and lock_lost.is_set():
+                    pull_task.cancel()
+                    await asyncio.gather(pull_task, return_exceptions=True)
+                    logger.error("[PULL] Distributed lock lost; cycle aborted")
+                else:
+                    # pull_task finished successfully or with an exception before lock was lost
+                    await pull_task
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"[PULL] Loop error: {e}")
+            finally:
+                if not heartbeat_task.done():
+                    heartbeat_task.cancel()
+                    await asyncio.gather(heartbeat_task, return_exceptions=True)
+
+                if not pull_task.done():
+                    pull_task.cancel()
+                    await asyncio.gather(pull_task, return_exceptions=True)
+
+                if not lost_task.done():
+                    lost_task.cancel()
+                    await asyncio.gather(lost_task, return_exceptions=True)
+
+                await dl.release()
 
             if self._consecutive_rate_limits > 0:
                 backoff_multiplier = min(2**self._consecutive_rate_limits, 16)
