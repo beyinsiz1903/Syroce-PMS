@@ -81,7 +81,9 @@ async def hotelrunner_pull_once() -> dict[str, Any]:
     Fetches updated reservations since last cursor, persists into raw_channel_events.
     """
     from domains.channel_manager.data_model import COLL_PROVIDER_CONNECTIONS
-    from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
+    from domains.channel_manager.providers.hotelrunner.factory import (
+        get_provider as get_hotelrunner_provider,
+    )
 
     state = _worker_state["hotelrunner_pull"]
     if state["running"]:
@@ -119,19 +121,20 @@ async def hotelrunner_pull_once() -> dict[str, Any]:
             )
 
         for conn in connections:
-            credentials = conn.get("credentials", {})
-            token = credentials.get("token") or credentials.get("api_key", "")
-            hr_id = credentials.get("hr_id") or credentials.get("hotel_id", "")
             tenant_id = conn.get("tenant_id", "")
             property_id = conn.get("property_id", "")
             connection_id = conn.get("id", "")
 
-            if not token or not hr_id:
-                logger.warning(f"HotelRunner pull: missing credentials for {property_id}")
+            if not tenant_id:
+                result["errors"] += 1
+                logger.error("HotelRunner pull: tenant_id missing")
                 continue
 
             try:
-                provider = HotelRunnerProvider(token=token, hr_id=hr_id)
+                provider, resolved_conn = await get_hotelrunner_provider(tenant_id)
+
+                property_id = resolved_conn.get("property_id") or property_id
+                connection_id = resolved_conn.get("id") or connection_id
                 page = 1
                 fetched_events = []
 
