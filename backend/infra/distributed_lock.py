@@ -114,6 +114,9 @@ class DistributedLockManager:
     def set_redis(self, redis_client):
         self._redis = redis_client
 
+    def get_redis(self):
+        return self._redis
+
     @asynccontextmanager
     async def lock(self, name: str, timeout: float = 30.0, tenant_id: str | None = None):
         """Acquire a distributed lock as async context manager."""
