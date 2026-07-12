@@ -104,12 +104,27 @@ async def get_provider(tenant_id: str):
         else:
             raise HTTPException(status_code=502, detail="HotelRunner kimlik bilgileri bulunamadi")
 
+    resolved_hr_id = (
+        creds.get("hr_id")
+        or conn.get("hr_id")
+        or conn.get("hotel_id")
+    )
+
+    if not resolved_hr_id:
+        raise HTTPException(
+            status_code=502,
+            detail="HotelRunner HR ID bulunamadi",
+        )
+
     try:
         return HotelRunnerProvider(
             token=creds["token"],
-            hr_id=creds.get("hr_id", ""),
+            hr_id=resolved_hr_id,
             environment=environment,
             connection_id=f"{tenant_id}:{property_id}",
         ), conn
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"HotelRunner kimlik bilgileri gecersiz: {exc}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"HotelRunner kimlik bilgileri gecersiz: {exc}",
+        )
