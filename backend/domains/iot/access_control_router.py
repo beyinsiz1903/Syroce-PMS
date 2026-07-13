@@ -2,8 +2,7 @@ import logging
 from datetime import UTC, datetime
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from fastapi import APIRouter, HTTPException, Request
 
 from core.database import _raw_db
 from core.security import JWT_ALGORITHM, JWT_SECRET
