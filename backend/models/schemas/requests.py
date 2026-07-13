@@ -302,6 +302,11 @@ class CreateOutletRequest(BaseModel):
     location: str
     capacity: int | None = None
     opening_hours: str | None = None
+    # Opsiyonel ancak ozellikle offline/mobile POS cihazlarindan gelen isteklerin
+    # baglanti kopmasi vb. durumlarda retry edildiginde (idempotency) ayni
+    # islemin iki kere kota tuketmemesi ve ayni outlet'in yaratilmamasi icin
+    # gonderilmesi hararetle tavsiye edilir.
+    client_request_id: str | None = None
 
 
 class UpdateOutletRequest(BaseModel):

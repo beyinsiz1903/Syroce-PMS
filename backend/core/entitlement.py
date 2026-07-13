@@ -28,7 +28,7 @@ ROUTE_MODULE_MAP: dict[str, str] = {
     "/api/webhooks/hotelrunner": "channel_manager",
     "/api/lockdown": "channel_manager",
     "/api/night-audit": "night_audit",
-    "/api/pos/": "invoices",
+    "/api/pos/": "pos_fnb",
     "/api/revenue/": "revenue_management",
     "/api/rms/": "revenue_management",
     "/api/ai/": "ai",
