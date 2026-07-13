@@ -63,6 +63,10 @@ async def csrf_guard_middleware(request: Request, call_next):
     if request.url.path in TWILIO_PUBLIC_WEBHOOKS:
         return await call_next(request)
 
+    # Bypass CSRF check for IoT endpoints (uses x-device-token)
+    if request.url.path.startswith("/api/v1/access-control"):
+        return await call_next(request)
+
     # Bypass CSRF check for HotelRunner public webhooks.
     # These endpoints use HotelRunner's signature or token validation.
     HR_WEBHOOK_PATHS = (

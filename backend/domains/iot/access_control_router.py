@@ -5,7 +5,7 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from core.database import get_db
+from core.database import _raw_db
 from core.security import JWT_ALGORITHM, JWT_SECRET
 
 logger = logging.getLogger(__name__)
@@ -17,10 +17,7 @@ router = APIRouter(prefix="/api/v1/access-control", tags=["IoT Access Control"])
 IOT_DEVICE_SECRET = "super_secret_esp32_token_2026"
 
 @router.post("/verify")
-async def verify_qr_access(
-    request: Request,
-    db: AsyncIOMotorDatabase = Depends(get_db)
-):
+async def verify_qr_access(request: Request):
     """
     ESP32'den gelen QR kodu doğrular ve kapıyı açıp açmamaya karar verir.
     """
@@ -49,6 +46,7 @@ async def verify_qr_access(
             return {"action": "deny", "reason": "invalid_payload"}
 
         # 3. Veritabanından Booking kontrolü
+        db = _raw_db
         booking = await db.bookings.find_one({"id": booking_id})
 
         if not booking:
