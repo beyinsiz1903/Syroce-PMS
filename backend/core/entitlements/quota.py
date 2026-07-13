@@ -1,7 +1,10 @@
-from datetime import datetime, UTC
+from datetime import UTC, datetime
+
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
+
 from core.database import db
+
 
 class QuotaExceededException(Exception):
     pass
@@ -67,9 +70,9 @@ async def reserve_quota(tenant_id: str, module_key: str, metric: str, resource_i
         # If it's already in the list, it's an idempotent success
         if current and resource_id in current.get("resources", []):
             return current
-            
+
         raise QuotaExceededException(f"Maksimum limit ({limit}) asildi.")
-    
+
     return doc
 
 async def release_quota(tenant_id: str, module_key: str, metric: str, resource_id: str) -> None:

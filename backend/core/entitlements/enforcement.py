@@ -1,6 +1,6 @@
 import logging
 from datetime import UTC, datetime
-from typing import Callable, Any
+from typing import Callable
 
 from fastapi import Depends, HTTPException
 from starlette.requests import Request
@@ -8,8 +8,8 @@ from starlette.requests import Request
 from core.database import db
 from core.entitlements.registry import get_module_definition
 from core.security import get_current_user
-from models.schemas import User
 from core.subscriptions import tenant_has_module
+from models.schemas import User
 
 logger = logging.getLogger(__name__)
 
@@ -33,21 +33,21 @@ async def get_tenant_active_editions(tenant_id: str, module_key: str) -> list[st
         },
         {"_id": 0, "product_key": 1}
     ).to_list(100)
-    
+
     editions = []
     for sub in subs:
         pk = sub.get("product_key", "")
         # e.g. pos_fnb_pro -> edition is 'pro'
         if pk.startswith(f"{module_key}_"):
             editions.append(pk[len(module_key)+1:])
-            
+
     # Fallback to check if module is natively enabled via legacy tenant plan
     if not editions:
         has_legacy = await tenant_has_module(tenant_id, module_key)
         if has_legacy:
             # We assume legacy module access maps to 'pro' for now to avoid breaking existing users.
             editions.append("pro")
-            
+
     return editions
 
 async def tenant_has_feature(tenant_id: str, module_key: str, feature_key: str) -> bool:
@@ -55,32 +55,32 @@ async def tenant_has_feature(tenant_id: str, module_key: str, feature_key: str) 
     editions = await get_tenant_active_editions(tenant_id, module_key)
     if not editions:
         return False
-        
+
     module_def = get_module_definition(module_key)
     if not module_def:
         # If no definition is found, we fall back to strict rejection.
         return False
-        
+
     for ed in editions:
         edition_def = module_def.editions.get(ed)
         if edition_def and feature_key in edition_def.features:
             return True
-            
+
     return False
 
 async def get_tenant_limit(tenant_id: str, module_key: str, limit_key: str) -> int | None:
     """
-    Get the highest limit for a given limit_key across all active editions 
+    Get the highest limit for a given limit_key across all active editions
     the tenant has for the module.
     """
     editions = await get_tenant_active_editions(tenant_id, module_key)
     if not editions:
         return 0
-        
+
     module_def = get_module_definition(module_key)
     if not module_def:
         return 0
-        
+
     max_limit = -1
     for ed in editions:
         edition_def = module_def.editions.get(ed)
@@ -89,7 +89,7 @@ async def get_tenant_limit(tenant_id: str, module_key: str, limit_key: str) -> i
             # None or 0 means unlimited in some contexts, but let's assume integers
             if limit_val > max_limit:
                 max_limit = limit_val
-                
+
     return max_limit if max_limit >= 0 else 0
 
 
@@ -129,9 +129,9 @@ def require_limit(module_key: str, limit_key: str, current_count_resolver: Calla
     """
     To use this, pass a callable that takes the current FastAPI dependencies (like `request`, `current_user`)
     and returns the current usage count.
-    Currently, we will just provide the limit getter, and let the endpoint check it manually to avoid 
+    Currently, we will just provide the limit getter, and let the endpoint check it manually to avoid
     complex dynamic dependencies.
     """
-    # Alternative: it's often easier to check limits inside the router logic 
+    # Alternative: it's often easier to check limits inside the router logic
     # instead of a Depends, because counting usage might require DB queries.
     pass

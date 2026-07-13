@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+
 class ModuleFeature(BaseModel):
     key: str
     description: str

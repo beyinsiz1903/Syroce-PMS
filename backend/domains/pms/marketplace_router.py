@@ -4,11 +4,11 @@ Domain Router: POS Marketplace
 POS enhancements, warehouse procurement, marketplace extensions.
 """
 
+import logging
 import uuid
 from datetime import UTC, datetime
-import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
 logger = logging.getLogger(__name__)
@@ -59,9 +59,11 @@ async def get_outlets(current_user: User = Depends(get_current_user)):
     return {"outlets": outlets, "count": len(outlets)}
 
 
-from core.entitlements.enforcement import get_tenant_limit
-from core.entitlements.quota import reserve_quota, release_quota, QuotaExceededException
 from pymongo.errors import DuplicateKeyError
+
+from core.entitlements.enforcement import get_tenant_limit
+from core.entitlements.quota import QuotaExceededException, release_quota, reserve_quota
+
 
 @router.post("/pos/outlets")
 async def create_outlet(
@@ -80,7 +82,7 @@ async def create_outlet(
 
     outlet_id = str(uuid.uuid4())
     max_outlets = await get_tenant_limit(current_user.tenant_id, "pos_fnb", "outlets")
-    
+
     if max_outlets and max_outlets > 0:
         try:
             await reserve_quota(current_user.tenant_id, "pos_fnb", "outlets", outlet_id, max_outlets)
@@ -115,7 +117,7 @@ async def create_outlet(
     except DuplicateKeyError:
         if max_outlets and max_outlets > 0:
             await release_quota(current_user.tenant_id, "pos_fnb", "outlets", outlet_id)
-            
+
         if request.client_request_id:
             existing = await db.pos_outlets.find_one(
                 {
@@ -171,7 +173,7 @@ async def delete_outlet(
         {"id": outlet_id, "tenant_id": current_user.tenant_id, "status": {"$ne": "deleted"}},
         {"$set": {"status": "deleted", "deleted_at": datetime.now(UTC).isoformat()}}
     )
-    
+
     if res.matched_count == 0:
         # Either not found or already deleted
         existing = await db.pos_outlets.find_one({"id": outlet_id, "tenant_id": current_user.tenant_id})

@@ -460,6 +460,7 @@ async def _build_menu_engineering(
 
 
 from core.entitlements.enforcement import require_feature
+
 router = APIRouter(prefix="/api", tags=["PMS / POS & F&B"], dependencies=[Depends(require_feature("pos_fnb", "kds"))])
 
 

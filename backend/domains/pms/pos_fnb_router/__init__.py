@@ -4,6 +4,7 @@ Public API: from domains.pms.pos_fnb_router import router
 """
 
 from fastapi import APIRouter, Depends
+
 from core.entitlements.enforcement import require_module
 
 from .fnb_reports import router as _fnb_reports_r

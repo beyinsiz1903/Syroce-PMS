@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -21,21 +21,21 @@ async def ensure_entitlement_indexes(db):
     async for dup in db.entitlement_quota_usage.aggregate(pipeline):
         docs = dup["docs"]
         all_resources_nested = dup["all_resources"]
-        
+
         # Merge resources uniquely
         merged_resources = set()
         for res_list in all_resources_nested:
             if res_list:
                 merged_resources.update(res_list)
-        
+
         merged_resources_list = list(merged_resources)
         merged_used = len(merged_resources_list)
-        
+
         keeper_id = docs[0]
         docs_to_delete = docs[1:]
-        
+
         logger.warning(f"[STARTUP] Found duplicate quota docs for {dup['_id']}. Merging into {keeper_id} and deleting the rest.")
-        
+
         # Update canonical doc
         await db.entitlement_quota_usage.update_one(
             {"_id": keeper_id},
@@ -45,16 +45,16 @@ async def ensure_entitlement_indexes(db):
                 "updated_at": datetime.now(UTC)
             }}
         )
-        
+
         # Delete duplicates
         await db.entitlement_quota_usage.delete_many({"_id": {"$in": docs_to_delete}})
-        
+
     await db.entitlement_quota_usage.create_index(
         [("tenant_id", 1), ("module_key", 1), ("metric", 1)],
         unique=True,
         name="uniq_entitlement_quota_metric",
     )
-    
+
     await db.pos_outlets.create_index(
         [("tenant_id", 1), ("client_request_id", 1)],
         unique=True,
