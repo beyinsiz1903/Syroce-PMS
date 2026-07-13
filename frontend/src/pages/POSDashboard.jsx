@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import {
   UtensilsCrossed, BarChart3, Sparkles, Store, LayoutGrid,
   AlertCircle, Coffee, Tablet, Printer, Menu as MenuIcon,
-  TrendingUp, ShoppingBag, ArrowLeft, ChevronRight,
+  TrendingUp, ShoppingBag, ArrowLeft, ChevronRight, Monitor,
 } from 'lucide-react';
 
 /* ── helper ── */
@@ -144,6 +144,7 @@ const POSDashboard = () => {
             {/* quick actions */}
             <div className="flex items-center gap-2 flex-wrap">
               <QuickBtn accent icon={Tablet}          label="Garson Terminali"   onClick={() => navigate('/pos/terminal')}      testId="nav-waiter-terminal" />
+              <QuickBtn        icon={Monitor}         label={t('fnb.kitchenDisplay', 'Mutfak Ekranı')} onClick={() => navigate('/kitchen-display')} testId="nav-kitchen-display" />
               <QuickBtn        icon={Coffee}          label={t('staffRoomService.title', 'Oda Servisi Siparişleri')} onClick={() => navigate('/staff/room-service')} testId="nav-staff-room-service" />
               <QuickBtn        icon={UtensilsCrossed} label={t('posDashboard.fnbSuite', 'F&B Paketi')}    onClick={() => navigate('/fnb-complete')}       testId="nav-fnb-complete" />
               <QuickBtn        icon={Sparkles}        label={t('posDashboard.allFeatures', 'Tüm Özellikler')} onClick={() => navigate('/admin/features')} />
