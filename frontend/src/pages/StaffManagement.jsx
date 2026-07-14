@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { useEntitlements } from "@/context/EntitlementContext";
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -117,8 +118,11 @@ const EMPTY_STAFF = {
 const StaffManagement = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { getLimit } = useEntitlements();
   const [refreshing, setRefreshing] = useState(false);
   const [staff, setStaff] = useState([]);
+  const employeeLimit = getLimit('hr', 'employees');
+  const isLimitReached = employeeLimit !== Infinity && staff.length >= employeeLimit;
   const [departments, setDepartments] = useState([]);
   const [positions, setPositions] = useState([]);
   const [leaveCounts, setLeaveCounts] = useState({
@@ -485,9 +489,16 @@ const StaffManagement = () => {
       <Button variant="outline" size="sm" onClick={loadAll} disabled={refreshing} className="rounded-lg shadow-sm border-slate-200 hover:bg-slate-50 text-slate-600">
         <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />{t("cm.pages_StaffManagement.yenile")}</Button>
       <div className="border-l border-slate-200 h-6 mx-1"></div>
-      <UserProvisionDialog departments={departments} onCreated={loadAll} />
-      <Button size="sm" onClick={openCreate} data-testid="btn-add-staff" className="rounded-lg shadow-sm bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white border-0">
-        <UserPlus className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.yeni_personel_girissiz")}</Button>
+      <UserProvisionDialog departments={departments} onCreated={loadAll} disabled={isLimitReached} />
+      <Button size="sm" onClick={openCreate} disabled={isLimitReached} data-testid="btn-add-staff" className="rounded-lg shadow-sm bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white border-0">
+        <UserPlus className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.yeni_personel_girissiz")}
+      </Button>
+      {isLimitReached && (
+        <span className="text-xs text-rose-600 flex items-center ml-2 bg-rose-50 px-2 py-1 rounded border border-rose-200">
+          <AlertTriangle className="w-3 h-3 mr-1" />
+          Personel limiti ({employeeLimit}) dolu
+        </span>
+      )}
     </div>;
   // itemData for react-window SmStaffRow (navigate/handlers are stable across renders)
   const staffRowData = useMemo(() => ({
@@ -651,8 +662,14 @@ const StaffManagement = () => {
                 </div>
                 <h3 className="text-sm font-semibold text-slate-900 mb-1">{staff.length === 0 ? 'Henüz personel eklenmemiş' : 'Arama sonucu bulunamadı'}</h3>
                 <p className="text-xs text-slate-500 mb-6">{staff.length === 0 ? 'Personel yönetimini kullanmaya başlamak için ilk personeli ekleyin.' : 'Farklı arama kriterleri deneyin.'}</p>
-                {staff.length === 0 && <Button onClick={openCreate} data-testid="btn-add-staff" className="rounded-lg shadow-sm bg-slate-900 text-white hover:bg-slate-800">
+                {staff.length === 0 && <Button onClick={openCreate} disabled={isLimitReached} data-testid="btn-add-staff" className="rounded-lg shadow-sm bg-slate-900 text-white hover:bg-slate-800">
                     <UserPlus className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.i_lk_personeli_ekle")}</Button>}
+                {isLimitReached && staff.length === 0 && (
+                    <div className="text-xs text-rose-600 mt-2 flex items-center justify-center bg-rose-50 px-2 py-1.5 rounded border border-rose-200 max-w-xs mx-auto">
+                      <AlertTriangle className="w-3 h-3 mr-1" />
+                      Mevcut paketinizin personel limiti doludur.
+                    </div>
+                )}
               </div>
             ) : (
               <FixedSizeList

@@ -291,4 +291,82 @@ describe('Frontend Behavior Tests', () => {
 
     expect(window.localStorage.getItem("entitlements")).toBeNull();
   });
+
+  it('HR modülü yoksa İK menüsü görünmez', async () => {
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { 'frontdesk': true },
+      entitlements: {}
+    } }));
+
+    render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <Layout tenant={{}} currentModule="dashboard" onLogout={() => {}}>
+            <div>Test</div>
+          </Layout>
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('nav-hr_hub-button')).toBeNull();
+    });
+  });
+
+  it('HR modülü var ancak payroll yetkisi yoksa, Bordro (payroll) sekmesi kilitlenir/gizlenir', async () => {
+    // Basic edition, hr var ama payroll yok
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { 'hr': true },
+      entitlements: {
+        hr: { editions: ['basic'], features: ['shift'], limits: { employees: 50 } }
+      }
+    } }));
+
+    const { default: HRComplete } = await import('@/pages/HRComplete');
+    
+    render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <HRComplete tenant={{}} user={{}} />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      // should have attendance tab
+      expect(screen.getByTestId('tab-attendance')).not.toBeNull();
+      // should NOT have payroll tab
+      expect(screen.queryByTestId('tab-payroll')).toBeNull();
+      // should NOT have leave tab
+      expect(screen.queryByTestId('tab-leave')).toBeNull();
+      expect(screen.queryByTestId('tab-recruitment')).toBeNull();
+    });
+  });
+  
+  it('HR Pro paketinde (payroll yetkisi olan), Bordro (payroll) sekmesi gösterilir', async () => {
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { 'hr': true },
+      entitlements: {
+        hr: { editions: ['pro'], features: ['shift', 'payroll', 'leave', 'recruitment'], limits: { employees: 200 } }
+      }
+    } }));
+
+    const { default: HRComplete } = await import('@/pages/HRComplete');
+    
+    render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <HRComplete tenant={{}} user={{}} />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('tab-attendance')).not.toBeNull();
+      expect(screen.getByTestId('tab-payroll')).not.toBeNull();
+      expect(screen.getByTestId('tab-leave')).not.toBeNull();
+      expect(screen.getByTestId('tab-recruitment')).not.toBeNull();
+    });
+  });
+
 });

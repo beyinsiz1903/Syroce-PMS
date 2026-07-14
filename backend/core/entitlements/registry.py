@@ -25,6 +25,37 @@ class ModuleDefinition(BaseModel):
 # ─── SYROCE ENTITLEMENT REGISTRY ───
 
 ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
+    "hr": ModuleDefinition(
+        key="hr",
+        name="İnsan Kaynakları",
+        features=[
+            ModuleFeature(key="payroll", description="Bordro Yönetimi"),
+            ModuleFeature(key="leave", description="İzin ve Mesai Yönetimi"),
+            ModuleFeature(key="recruitment", description="İşe Alım ve Personel Talepleri"),
+            ModuleFeature(key="shift", description="Vardiya Planlama"),
+        ],
+        limits=[
+            ModuleLimit(key="employees", description="Maksimum Personel Sayısı"),
+        ],
+        editions={
+            "basic": EditionDefinition(
+                key="basic",
+                name="HR Basic",
+                features={"shift"},
+                limits={
+                    "employees": 50,
+                }
+            ),
+            "pro": EditionDefinition(
+                key="pro",
+                name="HR Pro",
+                features={"shift", "payroll", "leave", "recruitment"},
+                limits={
+                    "employees": 200,
+                }
+            )
+        }
+    ),
     "pos_fnb": ModuleDefinition(
         key="pos_fnb",
         name="Restoran POS (F&B)",

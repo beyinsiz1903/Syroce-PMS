@@ -1,0 +1,508 @@
+2026-07-14T08:23:28 [INFO] server: Log sanitization filter attached to all handlers
+2026-07-14T08:23:28 [WARNING] cache_manager: Redis not available: Error 61 connecting to localhost:6379. Connection refused.. Falling back to in-memory cache.
+2026-07-14T08:23:28 [INFO] server: APM & Rate Limiting middleware activated
+2026-07-14T08:23:28 [INFO] server: Entitlement enforcement middleware activated
+2026-07-14T08:23:28 [INFO] server: Error response normalizer middleware activated
+2026-07-14T08:23:28 [INFO] server: Upload size-limit middleware activated
+2026-07-14T08:23:28 [INFO] server: Static disconnect silencer middleware activated
+2026-07-14T08:23:28 [INFO] server: PII Masking: application-layer masking active (middleware bypassed)
+2026-07-14T08:23:28 [INFO] server:   ✅ AI Intelligence endpoints loaded
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.auth
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.db_admin
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.housekeeping
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.departments
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.pms
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.pms_rooms
+2026-07-14T08:23:28 [WARNING] core.crypto.keys: CM_MASTER_KEY_CURRENT not set — using dev fallback. NOT SAFE FOR PRODUCTION.
+2026-07-14T08:23:28 [INFO] core.crypto.keys: KeyRing loaded: kid=v1 previous_kid=None env=development
+2026-07-14T08:23:28 [INFO] core.crypto.service: CredentialEncryptionService initialized: v2=False bypass=False kid=v1
+2026-07-14T08:23:28 [INFO] security.field_encryption: FieldEncryptionService initialized: crypto_health={'v2_enabled': False, 'bypass_active': False, 'current_kid': 'v1', 'has_previous_key': False}
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.pms_guests
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.shift_handover
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.early_late_pricing
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.eod_report
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.no_show_risk
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.walkin
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.room_map
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.pms_bookings
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.pms_dashboard
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.pms_analytics
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.pms_services
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.pms_room_queue
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.pms_room_details
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.pms_reservations
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.pms_availability
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.reservation_detail
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.vcc_router
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.payments_router
+2026-07-14T08:23:28 [INFO] bootstrap.router_registry:   ✅ routers.hotel_services
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.finance
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.finance.folio_einvoice_public
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.finance.einvoice
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.finance.general_ledger
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.finance.open_banking
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.reports
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.pms_hardening
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.revenue_management
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.displacement_analysis
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.travel_agent_arap
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.event_system
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.guest_journey
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.platform_scaling
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.enterprise_live
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.data_intelligence
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.messaging
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.ml_scheduler
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.revenue_autopilot_v2
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.websocket_health
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.analytics_export
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.data_pipeline
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.event_bus
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.observability
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.security_hardening
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.runtime_infrastructure
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.infra_hardening
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.production_golive
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.report_builder
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.guest_messaging
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.mailing
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.marketplace
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.integrations_afsadakat
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.pms_outbound
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.onboarding
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.security_2fa
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.pci_compliance
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.xchange
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ domains.spa.router
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ domains.golf.router
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.sustainability
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.wbe_public
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.mice
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.sales_catering
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.banquet_competitor
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.cross_property
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.procurement
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.integration_rollout
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ routers.uploads
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.router
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ domains.guest.router
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ domains.guest.checkin_router
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ domains.sales.router
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ domains.pms.pos_router
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ domains.pms.mobile_router
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ domains.revenue.analytics_router
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ domains.pms.enterprise_router
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ domains.pms.marketplace_router
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ domains.revenue.rms_router
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ domains.guest.experience_router
+2026-07-14T08:23:29 [INFO] bootstrap.router_registry:   ✅ domains.hr.router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.ai.router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.night_audit_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.guest.messaging.router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.guest.messaging.guest_requests_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.revenue.pricing_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.admin.router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.notification_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.dashboard_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.frontdesk_router
+Server initialized for asgi.
+2026-07-14T08:23:30 [INFO] engineio.server: Server initialized for asgi.
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.pos_fnb_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.housekeeping_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.maintenance_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.guest.operations_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.guest.qr_badge
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.groups_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ routers.reservation_waitlist
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.operations_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.sales.crm_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.calendar_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.approvals_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.misc_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.accounting.router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.accounting.gl_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.accounting.ap_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.accounting.budget_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.accounting.fixed_asset_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.accounting.payroll_gl_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.hardening_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ workers.hardening_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ security.hardening_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ modules.observability.hardening_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.night_audit.router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ routers.audit_timeline
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ routers.operational_metrics
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ routers.system_health_dashboard
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ routers.system_health_normalized
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ routers.system_health_live
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.frontdesk_router_v2
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.pos_fnb_router_v2
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.pos_extensions.pos_currency
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.pos_extensions.pos_happy_hour
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.pos_extensions.pos_coupons
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.pos_extensions.pos_loyalty_pos
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.pos_extensions.pos_shift_close
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.pos_extensions.pos_barcode
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.pos_extensions.pos_print_spool
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.pms.pos_extensions.pos_fiscal
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ modules.stays.router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ modules.inventory.router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ routers.integration_credentials
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ routers.capx_integration
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ routers.capx_webhook
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ modules.observability.alert_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ modules.incident.incident_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.validation_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.providers.hotelrunner_router
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.providers.hotelrunner_webhook
+2026-07-14T08:23:30 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.providers.hotelrunner_sync
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.providers.exely.exely_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.providers.exely.exely_webhook_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.ari.router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.rate_manager_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.hr_rate_manager_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.unified_rate_manager_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.channel_connections_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.auto_map_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.wire_failure_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ security.pii_strict_mode_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.model_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.ingest.ingest_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.reconciliation_engine.reconciliation_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.monitoring.monitoring_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.provider_config_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ security.tenant_isolation_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ ops.pilot_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ ops.validation_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ ops.production_rollout_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.lockdown_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.incident_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.runtime_enforcement_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.channel_manager.notification_events_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ controlplane.ops_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ controlplane.timeline_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ controlplane.dashboard_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ controlplane.dashboard_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.folio_ledger
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ controlplane.learning_loop_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ controlplane.security_ops_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ controlplane.sandbox_dashboard_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ controlplane.cicd_pipeline_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.room_blocks
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.booking_holds
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.inventory
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.hotelrunner_compat
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ channel_manager.connectors.hotelrunner_v2.router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.agency_portal
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.agency_content
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.b2b_api
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.agency_v1
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.b2b_analytics
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.marketplace_b2b
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.agency_contracts
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.agency_contracts
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.agency_contracts
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.kbs
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.help
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.academy
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.academy_public
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.contact_center.router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.contact_center.voice_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.contact_center.voice_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.regulatory
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.report_scheduler
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.minibar_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.cashier_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.laundry_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.transfer_parking_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.concierge_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.fnb_cost_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.turndown_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.folio_routing_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.folio_window_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.long_stay_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.block_management_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.activity_scheduler_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.function_space_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.guest.loyalty_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.guest.profile_udf_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.catering_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.suite_connecting_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.revenue.hurdle_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.revenue.forecast_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.operations_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.ops_events_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.ops_timeline_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.early_warning_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.outbox_admin
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.import_admin
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.room_qr_requests
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.door_reader
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.pms.lock_bridge.connector_router
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.physical_security
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.spa_dining_packages
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.procurement_b2b
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.guest_relations
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ routers.cm_conflict_queue
+2026-07-14T08:23:31 [INFO] bootstrap.router_registry:   ✅ domains.iot.access_control_router
+2026-07-14T08:23:32 [INFO] bootstrap.router_registry:   ✅ channel_manager.interfaces.router_registry (optional)
+2026-07-14T08:23:32 [INFO] server:   ✅ routers.missing_endpoints_compat
+2026-07-14T08:23:32 [INFO] server: ✅ Supplies Marketplace routers mounted
+2026-07-14T08:23:32 [INFO] server:   ✅ Webhook Admin router loaded (deliveries/DLQ/retry)
+2026-07-14T08:23:32 [INFO] server:   ✅ Entitlement & Metering admin router loaded
+2026-07-14T08:23:32 [INFO] server:   ✅ Deploy Pipeline router loaded
+2026-07-14T08:23:32 [INFO] server:   ✅ Wire Status router loaded
+2026-07-14T08:23:32 [INFO] server:   ✅ Quick-ID proxy router loaded
+2026-07-14T08:23:32 [INFO] server:   ✅ WhatsApp webhook router loaded
+2026-07-14T08:23:32 [INFO] server:   ✅ Integrations Overview router loaded
+2026-07-14T08:23:32 [INFO] server:   ✅ Security Classification & PII router loaded
+2026-07-14T08:23:32 [INFO] server:   ✅ Secret Rotation router loaded
+2026-07-14T08:23:32 [INFO] server:   ✅ Field Encryption router loaded
+2026-07-14T08:23:32 [INFO] server:   ✅ Notifications router loaded
+2026-07-14T08:23:32 [INFO] server:   ✅ Encryption Management router loaded
+INFO:     Started server process [7382]
+INFO:     Waiting for application startup.
+2026-07-14T08:23:32 [INFO] apm_middleware: Rate limiter profile: PROD | CLOUD_DEPLOYMENT= | CLOUD_INSTANCE_ID_set=False
+2026-07-14T08:23:32 [INFO] bootstrap.migrations.runner: DB migration: bekleyen yok (1 migration zaten uygulanmış)
+2026-07-14T08:23:32 [ERROR] server: WeasyPrint önyükleme BAŞARISIZ (cannot load library 'libgobject-2.0-0': dlopen(libgobject-2.0-0, 0x0002): tried: 'libgobject-2.0-0' (no such file), '/System/Volumes/Preboot/Cryptexes/OSlibgobject-2.0-0' (no such file), '/usr/lib/libgobject-2.0-0' (no such file, not in dyld cache), 'libgobject-2.0-0' (no such file).  Additionally, ctypes.util.find_library() did not manage to locate a library called 'libgobject-2.0-0'); PDF endpoint'leri import anında 503 verebilir — digitalocean.nix + LD_LIBRARY_PATH/VM IO baskısını incele
+2026-07-14T08:23:32 [INFO] bootstrap.phases.a_security: Crypto service initialized: v2=False kid=v1 bypass=False
+2026-07-14T08:23:32 [INFO] core.secrets.config: Secrets config loaded: provider=local_dev env=development legacy_fallback=True audit=True
+2026-07-14T08:23:32 [INFO] core.secrets.local_dev: Secrets backend active: MongoDB-encrypted store (development mode, APP_ENV=development).
+2026-07-14T08:23:32 [INFO] bootstrap.phases.a_security: Secrets manager initialized: provider=local_dev env=development
+2026-07-14T08:23:32 [INFO] bootstrap.phases.a_security: PII audit indexes ensured
+2026-07-14T08:23:32 [INFO] bootstrap.phases.a_security: Rotation engine indexes ensured
+2026-07-14T08:23:32 [INFO] controlplane.indexes: Ensuring control plane indexes...
+2026-07-14T08:23:32 [INFO] controlplane.indexes: Control plane indexes ensured.
+2026-07-14T08:23:32 [ERROR] controlplane.startup_validator: STARTUP: Missing required env vars: ['CM_MASTER_KEY_CURRENT', 'CM_KEY_VERSION']
+2026-07-14T08:23:32 [WARNING] controlplane.startup_validator: STARTUP: Control plane validation issues: ['Missing env vars: CM_MASTER_KEY_CURRENT, CM_KEY_VERSION']
+2026-07-14T08:23:32 [INFO] bootstrap.phases.a_security: Control plane validation: fail (1 issues)
+2026-07-14T08:23:32 [INFO] controlplane.timeline_writer: Event timeline indexes ensured
+2026-07-14T08:23:32 [INFO] bootstrap.phases.a_security: Event timeline indexes ensured
+2026-07-14T08:23:32 [INFO] bootstrap.phases.a_security: Webhook raw payload indexes ensured
+2026-07-14T08:23:32 [INFO] controlplane.dashboard_aggregator: Dashboard snapshot indexes ensured
+2026-07-14T08:23:32 [INFO] controlplane.dashboard_aggregator: Dashboard snapshot worker started (interval=60.0s)
+2026-07-14T08:23:32 [INFO] bootstrap.phases.a_security: Dashboard snapshot worker started (60s interval)
+2026-07-14T08:23:32 [INFO] controlplane.deploy_tracker: Deploy event indexes ensured
+2026-07-14T08:23:32 [INFO] bootstrap.phases.a_security: Deploy event indexes ensured
+2026-07-14T08:23:32 [INFO] auto_seed: ℹ️  Database already has users — skipping auto-seed.
+2026-07-14T08:23:32 [INFO] bootstrap.phases.b_seed: Supplies market ensure no-op — vendor + catalogue healthy
+2026-07-14T08:23:32 [INFO] core.atomic_booking: Booking indexes ensured (room-night locking + OOO/OOS enabled)
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: Booking overlap prevention indexes ensured
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: Lock-bridge indexes ensured
+2026-07-14T08:23:32 [INFO] core.room_type_inventory: room_type_inventory indexes ensured
+2026-07-14T08:23:32 [INFO] core.room_type_inventory: RoomTypeInventoryWorker started (interval=300s)
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: Room-type inventory worker started (300s interval)
+2026-07-14T08:23:32 [INFO] core.booking_hold: Booking hold sweeper task created
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: Booking hold sweeper started
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: Mailing automation worker started (600s interval)
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: Subscription expiry worker started (3600s interval)
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: KVKK ID photo view alert worker started (600s interval)
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: Mobile push scheduler started (VIP + no-show)
+2026-07-14T08:23:32 [INFO] core.booking_hold: Booking hold sweeper started (interval=60s)
+2026-07-14T08:23:32 [INFO] workers.mailing_automation: [mailing-auto] worker started (interval=600s)
+2026-07-14T08:23:32 [INFO] workers.subscription_expiry: [sub-expiry] worker started, interval=3600s
+2026-07-14T08:23:32 [INFO] workers.id_photo_view_alert: [kvkk-id-photo-alert] worker started (interval=600s)
+2026-07-14T08:23:32 [INFO] workers.mobile_push_scheduler: [mobile-push-scheduler] loop started (interval=900s)
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: TGA scheduler started
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: Report scheduler worker started
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: Konaklama Vergisi scheduler started
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: Folio reconciliation backstop scheduler started
+2026-07-14T08:23:32 [INFO] workers.tga_scheduler: [tga-retry] loop started interval=60s
+2026-07-14T08:23:32 [INFO] workers.tga_scheduler: [tga-scheduler] loop started interval=21600s backfill=7d
+2026-07-14T08:23:32 [INFO] workers.report_scheduler_worker: [report-scheduler] loop started interval=60s
+2026-07-14T08:23:32 [INFO] workers.konaklama_vergisi_scheduler: [kvb-scheduler] loop started interval=3600s
+2026-07-14T08:23:32 [INFO] workers.folio_recon_scheduler: [folio-recon] loop started interval=21600s apply=False
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: Marketplace indexes ensured
+2026-07-14T08:23:32 [INFO] core.atomic_checkin_checkout: Check-in/check-out indexes ensured
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: Check-in/check-out indexes ensured
+2026-07-14T08:23:32 [INFO] core.folio_ledger_service: Folio ledger indexes ensured
+2026-07-14T08:23:32 [INFO] core.learning_loop: Learning loop indexes ensured
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: Performance indexes ensured
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: Encrypted-PII hash indexes ensured (15 created)
+2026-07-14T08:23:32 [INFO] security.field_encryption: encrypted_hash_index_verify_ok: 15 searchable `_hash_` indexes present
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: Search-normalize indexes ensured (16 created)
+2026-07-14T08:23:32 [INFO] bootstrap.phases.c_domain: Ngram infix indexes ensured (1 created)
+2026-07-14T08:23:32 [INFO] bootstrap.phases.d_perf: ✅ Agency booking request indexes created
+2026-07-14T08:23:32 [INFO] bootstrap.phases.d_perf: 🚀 Initializing Redis ultra-fast cache...
+2026-07-14T08:23:32 [INFO] redis_cache: ⚠️ Redis initialization failed: Error 61 connecting to 127.0.0.1:6380. Connection refused.
+2026-07-14T08:23:32 [INFO] bootstrap.phases.d_perf: ✅ Redis cache initialized!
+2026-07-14T08:23:32 [INFO] bootstrap.phases.d_perf: 🔥 Initializing ultra-fast cache warmer...
+2026-07-14T08:23:32 [INFO] cache_warmer: 🔥 Warming caches for tenant: be0c46d3-384a-4995-9b83-761b46bc3d75
+2026-07-14T08:23:32 [INFO] cache_warmer:   ✅ Housekeeping endpoints pre-warmed
+2026-07-14T08:23:32 [INFO] cache_warmer:   ✅ Front desk endpoints pre-warmed
+2026-07-14T08:23:32 [INFO] cache_warmer:   🔍 Total bookings in DB: 273
+2026-07-14T08:23:32 [INFO] cache_warmer:   🔍 Total rooms in DB: 30
+2026-07-14T08:23:32 [INFO] cache_warmer:   ✅ Bookings cache warmed for tenant be0c46d3: 50 bookings
+2026-07-14T08:23:32 [INFO] cache_warmer:   ✅ Rooms cache warmed for tenant be0c46d3: 30 rooms
+2026-07-14T08:23:32 [INFO] cache_warmer:   ✅ Guest/Room maps warmed for tenant be0c46d3: 50 guests, 30 rooms
+2026-07-14T08:23:32 [INFO] cache_warmer:   ✅ Dashboard cache warmed
+2026-07-14T08:23:32 [INFO] cache_warmer: ✅ Cache warming complete for tenant: be0c46d3-384a-4995-9b83-761b46bc3d75
+2026-07-14T08:23:32 [INFO] bootstrap.phases.d_perf: ✅ Cache warmer initialized - responses will be instant!
+2026-07-14T08:23:32 [INFO] bootstrap.phases.d_perf: 🚀 Initializing enterprise optimization systems...
+2026-07-14T08:23:32 [INFO] bootstrap.phases.d_perf: ℹ️ No orgs with RMS enabled; skipping optimization init
+2026-07-14T08:23:33 [INFO] channel_manager.unified_repository: 9-collection indexes created successfully
+2026-07-14T08:23:33 [INFO] bootstrap.phases.d_perf: ✅ Channel Manager 9-collection indexes created
+2026-07-14T08:23:33 [INFO] domains.guest.qr_badge.indexes: ✅ guest_qr_tokens indexes ensured
+2026-07-14T08:23:33 [INFO] domains.guest.qr_badge.indexes: ✅ pending_qr_charges indexes ensured
+2026-07-14T08:23:33 [INFO] bootstrap.phases.d_perf: ✅ Tenant uniqueness indexes ensured (hotel_id, username, performance_reviews, shift_schedule_locks, hr_coverage_rules)
+2026-07-14T08:23:33 [INFO] bootstrap.phases.d_perf: ✅ Sales CRM piggyback indexes ensured (mice_opportunities, mice_opportunity_activities)
+2026-07-14T08:23:33 [INFO] bootstrap.phases.d_perf: 🚀 Running comprehensive database optimization...
+2026-07-14T08:23:33 [INFO] bootstrap.phases.d_perf: ✅ Shift lock backfill complete: scanned=0 upserted=0
+2026-07-14T08:23:33 [INFO] infra.database_optimizer: ✅ All indexes created successfully: {'bookings': {'created': 1, 'indexes': ['guest_name_text']}, 'guests': {'created': 6, 'indexes': ['phone_1', 'id_number_1', 'tags_1', 'created_at_-1', 'name_text', 'idx_guests_tenant_email_unique']}, 'rooms': {'created': 2, 'indexes': ['room_type_1', 'floor_1']}, 'folios': {'created': 0, 'indexes': []}, 'users': {'created': 2, 'indexes': ['role_1', 'uniq_users_hash_email']}, 'tasks': {'created': 6, 'indexes': ['room_id_1', 'status_1', 'assigned_to_1', 'created_at_-1', 'task_type_1', 'status_1_created_at_-1']}, 'audit_logs': {'created': 6, 'indexes': ['user_id_1', 'action_1', 'timestamp_-1', 'resource_type_1', 'timestamp_-1_user_id_1', 'timestamp_1']}, 'reports': {'created': 2, 'indexes': ['date_-1', 'generated_at_-1']}, 'tenant_compound': {'created': 14}}
+2026-07-14T08:23:33 [INFO] bootstrap.phases.d_perf: ✅ Database optimization complete: 39 indexes ensured
+2026-07-14T08:23:33 [INFO] bootstrap.phases.d_perf: 🚀 Creating performance indexes for large-scale operations...
+2026-07-14T08:23:33 [INFO] core.metering: Metering indexes ensured
+2026-07-14T08:23:33 [INFO] bootstrap.phases.d_perf: ✅ Usage metering indexes ensured
+2026-07-14T08:23:33 [INFO] core.outbox_service: OTA outbox indexes ensured
+2026-07-14T08:23:33 [INFO] bootstrap.phases.e_outbox: Outbox pattern indexes ensured (OTA-002)
+2026-07-14T08:23:33 [INFO] core.outbox_worker: OTA Outbox Worker started: 192.168.1.123:7382:c6cd2925
+2026-07-14T08:23:33 [INFO] bootstrap.phases.e_outbox: OTA Outbox Worker started (guaranteed delivery)
+2026-07-14T08:23:33 [INFO] core.feature_flags: Feature flag indexes ensured
+2026-07-14T08:23:33 [INFO] bootstrap.phases.d_perf: ✅ Feature flag indexes ensured
+2026-07-14T08:23:33 [INFO] bootstrap.phases.d_perf: ✅ Deploy pipeline indexes ensured
+2026-07-14T08:23:33 [INFO] bootstrap.phases.d_perf: ✅ Boot phase D unique-index gate complete — readiness probe is now green (redundant cleanup continues in BG tail)
+2026-07-14T08:23:33 [INFO] core.import_bridge_service: Import bridge indexes ensured (DATA-001)
+2026-07-14T08:23:33 [INFO] bootstrap.phases.e_outbox: Import bridge indexes ensured (DATA-001)
+2026-07-14T08:23:33 [INFO] core.import_retry_worker: Import Retry Worker started: import-192.168.1.123:7382:a275209d
+2026-07-14T08:23:33 [INFO] bootstrap.phases.e_outbox: Import Retry Worker started (DATA-001)
+2026-07-14T08:23:33 [INFO] shared_kernel.outbox_lifecycle: Outbox lifecycle worker started owner_id=192.168.1.123:7382:5bce28b6
+2026-07-14T08:23:33 [INFO] bootstrap.phases.e_outbox: Legacy outbox lifecycle worker started
+2026-07-14T08:23:33 [INFO] bootstrap.phases.e_outbox: ✅ Af-sadakat outbound dispatcher started
+2026-07-14T08:23:33 [INFO] core.afsadakat_outbound: [afsadakat-out] dispatcher loop started
+2026-07-14T08:23:33 [INFO] channel_manager.infrastructure.indexes: Channel Manager indexes created successfully
+2026-07-14T08:23:33 [INFO] bootstrap.phases.e_outbox: ✅ Channel Manager v2 indexes created
+2026-07-14T08:23:33 [INFO] event_bus.abstraction: Event bus initialized in IN_MEMORY mode (no REDIS_URL)
+2026-07-14T08:23:33 [INFO] bootstrap.phases.e_outbox: ✅ Event Bus initialized in IN_MEMORY mode
+2026-07-14T08:23:33 [INFO] bootstrap.phases.d_perf: ✅ Redundant index cleanup: 45 dropped → users.tenant_id_1, bookings.idx_booking_room_status, bookings.idx_b_tid_chkin, bookings.idx_b_tid_chkout, bookings.idx_booking_tenant_guest, bookings.guest_id_1, bookings.guest_id_1_check_in_-1, bookings.room_id_1, bookings.room_id_1_check_in_-1, bookings.check_in_-1, bookings.check_in_-1_status_1, bookings.check_out_-1, bookings.created_at_-1, bookings.created_at_-1_status_1, bookings.status_1, bookings.status_1_check_in_-1, bookings.status_1_check_out_-1, bookings.status_1_room_type_1, bookings.channel_1, rooms.status_1, rooms.status_1_room_type_1, rooms.room_number_1, rooms.room_type_1, rooms.floor_1, bookings.idx_b_tid_id, bookings.idx_b_tid_status, bookings.idx_b_tid_status_chkin, bookings.idx_b_tid_room, bookings.idx_b_tid_guest, bookings.idx_b_tid_created, folios.booking_id_1, folios.guest_id_1, folios.status_1, folios.created_at_-1, folios.folio_type_1, folios.booking_id_1_folio_type_1, folios.idx_f_tid_booking, folios.idx_folio_tenant_booking, folios.idx_f_tid_status, housekeeping_tasks.idx_hk_tid_status, housekeeping_tasks.idx_hk_tid_done, housekeeping_tasks.room_id_1, housekeeping_tasks.assigned_to_1, housekeeping_tasks.status_1, housekeeping_tasks.task_type_1
+2026-07-14T08:23:33 [INFO] bootstrap.phases.d_perf: ✅ Boot phase D BG tail complete (readiness was already green)
+2026-07-14T08:23:33 [INFO] persistence.repositories: MongoDB indexes ensured for 8 repositories
+2026-07-14T08:23:33 [INFO] bootstrap.phases.e_outbox: ✅ Persistence repository indexes ensured
+2026-07-14T08:23:33 [INFO] infra.redis_cluster: REDIS_URL not set — Redis disabled
+2026-07-14T08:23:33 [INFO] infra.ws_redis_adapter: WS Redis adapter: no Redis, using local-only mode
+2026-07-14T08:23:33 [INFO] bootstrap.phases.f_hardening: ℹ️ Infrastructure Hardening: Redis unavailable, WS adapter running in local-only mode
+2026-07-14T08:23:33 [INFO] infra.observability: OTEL_EXPORTER_ENDPOINT not set — tracing disabled
+2026-07-14T08:23:33 [INFO] infra.observability: SENTRY_DSN not set — Sentry disabled
+2026-07-14T08:23:33 [INFO] bootstrap.phases.f_hardening: ✅ Cloud observability initialized
+2026-07-14T08:23:33 [WARNING] infra.production_config: Startup check — missing critical vars: ['CORS_ORIGINS', 'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY']
+2026-07-14T08:23:33 [WARNING] infra.production_config: Startup check — Web Push VAPID keys are not set (['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY']). Development fallback (db-persisted auto-generated keypair) will be used; production deploys will refuse to start without these env vars.
+2026-07-14T08:23:33 [INFO] bootstrap.phases.f_hardening: ✅ Production Go-Live validators initialized (config: fail)
+2026-07-14T08:23:33 [INFO] domains.channel_manager.ari.outbound_service: Registered ARI adapter: hotelrunner
+2026-07-14T08:23:33 [INFO] domains.channel_manager.ari.outbound_service: Registered ARI adapter: exely
+2026-07-14T08:23:33 [INFO] bootstrap.phases.g_channels: ✅ ARI Push Engine initialized (HotelRunner + Exely adapters)
+2026-07-14T08:23:33 [INFO] monitoring.worker: Monitoring worker started (300s interval)
+2026-07-14T08:23:33 [INFO] bootstrap.phases.g_channels: ✅ Operational Monitoring worker started (60s interval)
+2026-07-14T08:23:33 [INFO] domains.channel_manager.providers.exely.exely_pull_worker: [EXELY-PULL] Scheduler started: every 180s
+2026-07-14T08:23:33 [INFO] bootstrap.phases.g_channels: ✅ Exely Pull Scheduler started (180s interval, auto-import enabled)
+2026-07-14T08:23:33 [INFO] bootstrap.phases.g_channels: No active HotelRunner connections; pull scheduler not started
+2026-07-14T08:23:33 [WARNING] domains.channel_manager.providers.exely.exely_pull_worker: [EXELY-PULL] No credentials available for tenant be0c46d3-384a-4995-9b83-761b46bc3d75, hotel 501694. Connect Exely from the UI (Channel Manager → Exely → Connect) to enable auto-pull.
+2026-07-14T08:23:33 [INFO] monitoring.worker: Monitoring cycle #1: health=degraded, alerts_created=0, alerts_resolved=0
+2026-07-14T08:23:33 [INFO] core.night_audit_hardened: Night audit hardening indexes ensured (NA-001/NA-002)
+2026-07-14T08:23:33 [INFO] bootstrap.phases.g_channels: ✅ Night audit hardening indexes ensured (NA-001/NA-002)
+2026-07-14T08:23:33 [INFO] bootstrap.phases.g_channels: ✅ Web Push cleanup worker started
+2026-07-14T08:23:33 [INFO] bootstrap.phases.g_channels: ✅ Check-in ID photo cleanup worker started
+2026-07-14T08:23:33 [INFO] domains.guest.messaging.web_push_cleanup: web_push_cleanup: worker started (interval=86400s)
+2026-07-14T08:23:33 [INFO] domains.guest.checkin_id_photo_cleanup: checkin_id_photo_cleanup: worker started (interval=3600s)
+2026-07-14T08:23:33 [INFO] bootstrap.phases.g_channels: ℹ️ CapX not configured (env+tenant boş); availability scheduler not started
+2026-07-14T08:23:33 [INFO] channel_manager.availability_reconciliation: [AVAIL-RECON] Worker started: 900s interval
+2026-07-14T08:23:33 [INFO] bootstrap.phases.g_channels: ✅ Availability Reconciliation Worker started (15min interval)
+2026-07-14T08:23:33 [INFO] domains.pms.notification_router: notifications: ensured (user_id, created_at) compound indexes
+2026-07-14T08:23:33 [INFO] index_backstops: UNIQUE_INDEX_BACKSTOP_ACTIVE backstop=uniq_mice_acc_client_taxno collection=mice_accounts — duplicate-prevention safeguard enforced
+2026-07-14T08:23:33 [INFO] index_backstops: UNIQUE_INDEX_BACKSTOP_ACTIVE backstop=uniq_mice_acc_client_email collection=mice_accounts — duplicate-prevention safeguard enforced
+2026-07-14T08:23:33 [INFO] index_backstops: UNIQUE_INDEX_BACKSTOP_ACTIVE backstop=uniq_corp_contract_rate_code collection=corporate_contracts — duplicate-prevention safeguard enforced
+2026-07-14T08:23:33 [INFO] index_backstops: UNIQUE_INDEX_BACKSTOP_ACTIVE backstop=uniq_corp_contract_contact_email collection=corporate_contracts — duplicate-prevention safeguard enforced
+2026-07-14T08:23:33 [INFO] scripts.create_operator_admin: ensure_operator_admin: secrets not set, skipping
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+
+-----
+
+WeasyPrint could not import some external libraries. Please carefully follow the installation steps before reporting an issue:
+https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#installation
+https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#troubleshooting 
+
+-----
+
+INFO:     127.0.0.1:53639 - "POST /api/channel-manager/hotelrunner/webhooks/reservations HTTP/1.1" 200 OK
+2026-07-14T08:23:43 [INFO] ingest.pipeline: [923dc5de-2a28-480d-aeea-e336dc7602a3] pending_mapping: [unmapped] No room mapping found for provider room code: STD | Action: Create a room mapping for this provider room code in the Data Model dashboard mutation=MutationType.NEW_BOOKING trace=a5fa62fb-b6a0-4a4b-8bfb-2ad0727e1730
+2026-07-14T08:23:43 [INFO] domains.channel_manager.providers.hotelrunner_shared: [WEBHOOK] reservation_create: 923dc5de-2a28-480d-aeea-e336dc7602a3 -> pending_mapping ([unmapped] No room mapping found for provider room code: STD | Action: Create a room mapping for this provider room code in the Data Model dashboard)
+INFO:     127.0.0.1:53646 - "POST /api/channel-manager/hotelrunner/webhooks/modifications HTTP/1.1" 200 OK
+2026-07-14T08:23:43 [INFO] ingest.pipeline: [825ae11a-b98b-4f63-8653-379a016721f6] pending_mapping: [unmapped] No room mapping found for provider room code: STD | Action: Create a room mapping for this provider room code in the Data Model dashboard mutation=MutationType.NEW_BOOKING trace=34eafe67-20e3-4d7e-916a-202b5b3d1b85
+2026-07-14T08:23:43 [INFO] domains.channel_manager.providers.hotelrunner_shared: [WEBHOOK] reservation_modify: 825ae11a-b98b-4f63-8653-379a016721f6 -> pending_mapping ([unmapped] No room mapping found for provider room code: STD | Action: Create a room mapping for this provider room code in the Data Model dashboard)
+INFO:     127.0.0.1:53653 - "POST /api/channel-manager/hotelrunner/webhooks/cancellations HTTP/1.1" 200 OK
+2026-07-14T08:23:43 [INFO] ingest.pipeline: [ac08a125-4f19-4bce-83d4-3498172e8938] cancel: Cancellation without existing reservation HR-D1B28442 mutation=MutationType.NEW_BOOKING trace=2e131639-1a03-47ee-a61c-54887271272d
+2026-07-14T08:23:43 [INFO] domains.channel_manager.providers.hotelrunner_shared: [WEBHOOK] reservation_cancel: ac08a125-4f19-4bce-83d4-3498172e8938 -> cancel (Cancellation without existing reservation HR-D1B28442)
+2026-07-14T08:23:44 [INFO] domains.channel_manager.providers.hotelrunner_webhook: [CALLBACK] Received reservation_create: 1 reservation(s) from 127.0.0.1, tenant=test-tenant-e2e
+INFO:     127.0.0.1:53660 - "POST /api/channel-manager/hotelrunner/callback HTTP/1.1" 200 OK
+2026-07-14T08:23:44 [INFO] ingest.pipeline: [bcb98e55-efba-4bf7-ba85-8e747ee31ae2] pending_mapping: [unmapped] No room mapping found for provider room code: STD | Action: Create a room mapping for this provider room code in the Data Model dashboard mutation=MutationType.NEW_BOOKING trace=6db45cce-7c4d-4493-a58d-f76aa0410bc3
+2026-07-14T08:23:44 [INFO] domains.channel_manager.providers.hotelrunner_shared: [WEBHOOK] reservation_create: bcb98e55-efba-4bf7-ba85-8e747ee31ae2 -> pending_mapping ([unmapped] No room mapping found for provider room code: STD | Action: Create a room mapping for this provider room code in the Data Model dashboard)
+2026-07-14T08:23:44 [INFO] domains.channel_manager.providers.hotelrunner_webhook: [CALLBACK] Received reservation_modify: 1 reservation(s) from 127.0.0.1, tenant=test-tenant-e2e
+INFO:     127.0.0.1:53667 - "POST /api/channel-manager/hotelrunner/callback HTTP/1.1" 200 OK
+2026-07-14T08:23:44 [INFO] ingest.pipeline: [00e19acb-5b98-4319-944d-fe9388d11564] pending_mapping: [unmapped] No room mapping found for provider room code: STD | Action: Create a room mapping for this provider room code in the Data Model dashboard mutation=MutationType.NEW_BOOKING trace=898c7c3f-9562-43c9-97ea-9138f0746c8b
+2026-07-14T08:23:44 [INFO] domains.channel_manager.providers.hotelrunner_shared: [WEBHOOK] reservation_modify: 00e19acb-5b98-4319-944d-fe9388d11564 -> pending_mapping ([unmapped] No room mapping found for provider room code: STD | Action: Create a room mapping for this provider room code in the Data Model dashboard)
+INFO:     127.0.0.1:53723 - "POST /api/channel-manager/hotelrunner/webhooks/reservations HTTP/1.1" 200 OK
+2026-07-14T08:23:44 [INFO] ingest.pipeline: [6e1b4c55-2918-45b7-ab5b-7a7e5fe1b015] pending_mapping: [unmapped] No room mapping found for provider room code: STD | Action: Create a room mapping for this provider room code in the Data Model dashboard mutation=MutationType.NEW_BOOKING trace=1090e0e8-0144-4a4e-ab56-e33a2da45915
+2026-07-14T08:23:44 [INFO] domains.channel_manager.providers.hotelrunner_shared: [WEBHOOK] reservation_create: 6e1b4c55-2918-45b7-ab5b-7a7e5fe1b015 -> pending_mapping ([unmapped] No room mapping found for provider room code: STD | Action: Create a room mapping for this provider room code in the Data Model dashboard)
+2026-07-14T08:23:44 [WARNING] domains.channel_manager.providers.hotelrunner_security: [HR-WEBHOOK][SECURITY] reject reason=missing_official_credentials source_ip=127.0.0.1 tenant_hint=test-tenant-e2e hr_id_hint=HR-HOTEL-001
+INFO:     127.0.0.1:53730 - "POST /api/channel-manager/hotelrunner/webhooks/reservations HTTP/1.1" 401 Unauthorized
+2026-07-14T08:23:44 [WARNING] domains.channel_manager.providers.hotelrunner_security: [HR-WEBHOOK][SECURITY] reject reason=stale_timestamp source_ip=127.0.0.1 tenant_hint=test-tenant-e2e hr_id_hint=HR-HOTEL-001
+INFO:     127.0.0.1:53737 - "POST /api/channel-manager/hotelrunner/webhooks/reservations HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:53744 - "POST /api/channel-manager/hotelrunner/webhooks/reservations?token=mock-hr-token-001 HTTP/1.1" 200 OK
+2026-07-14T08:23:45 [INFO] ingest.pipeline: [206e6568-525e-4ea6-b868-d08dcd8686a8] pending_mapping: [unmapped] No room mapping found for provider room code: STD | Action: Create a room mapping for this provider room code in the Data Model dashboard mutation=MutationType.NEW_BOOKING trace=ce4725d9-1be2-410f-bc36-2055060b6946
+2026-07-14T08:23:45 [INFO] domains.channel_manager.providers.hotelrunner_shared: [WEBHOOK] reservation_create: 206e6568-525e-4ea6-b868-d08dcd8686a8 -> pending_mapping ([unmapped] No room mapping found for provider room code: STD | Action: Create a room mapping for this provider room code in the Data Model dashboard)
+2026-07-14T08:23:45 [WARNING] domains.channel_manager.providers.hotelrunner_security: [HR-WEBHOOK][SECURITY] reject reason=invalid_token source_ip=127.0.0.1 tenant_hint=test-tenant-e2e hr_id_hint=HR-HOTEL-001
+INFO:     127.0.0.1:53751 - "POST /api/channel-manager/hotelrunner/webhooks/reservations?token=wrong-token HTTP/1.1" 401 Unauthorized
+2026-07-14T08:23:45 [WARNING] domains.channel_manager.providers.hotelrunner_security: [HR-WEBHOOK][SECURITY] reject reason=unknown_connection source_ip=127.0.0.1 tenant_hint=test-tenant-e2e hr_id_hint=invalid_hr_id_9999
+INFO:     127.0.0.1:53758 - "POST /api/channel-manager/hotelrunner/webhooks/reservations?token=mock-hr-token-001 HTTP/1.1" 401 Unauthorized
+2026-07-14T08:23:45 [WARNING] domains.channel_manager.providers.hotelrunner_security: [HR-WEBHOOK][SECURITY] reject reason=invalid_token source_ip=127.0.0.1 tenant_hint=test-tenant-e2e hr_id_hint=HR-HOTEL-001_B
+INFO:     127.0.0.1:53765 - "POST /api/channel-manager/hotelrunner/webhooks/reservations?token=mock-hr-token-001 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:53766 - "POST /api/channel-manager/hotelrunner/webhooks/reservations?token=mock-hr-token-001_B HTTP/1.1" 200 OK
+2026-07-14T08:23:45 [INFO] ingest.pipeline: [d88a5471-f009-4ca0-bef9-fda872d3278f] pending_mapping: [unmapped] No room mapping found for provider room code: STD | Action: Create a room mapping for this provider room code in the Data Model dashboard mutation=MutationType.NEW_BOOKING trace=e4575d3c-8c09-4a0a-aa07-d856e16f3ec9
+2026-07-14T08:23:45 [INFO] domains.channel_manager.providers.hotelrunner_shared: [WEBHOOK] reservation_create: d88a5471-f009-4ca0-bef9-fda872d3278f -> pending_mapping ([unmapped] No room mapping found for provider room code: STD | Action: Create a room mapping for this provider room code in the Data Model dashboard)
+INFO:     127.0.0.1:53773 - "POST /api/channel-manager/hotelrunner/webhooks/reservations HTTP/1.1" 200 OK
+2026-07-14T08:23:45 [INFO] ingest.pipeline: [6d718d23-95df-45e6-9ba3-1f75b2266341] pending_mapping: [unmapped] No room mapping found for provider room code: STD | Action: Create a room mapping for this provider room code in the Data Model dashboard mutation=MutationType.NEW_BOOKING trace=628d9bbe-2c40-4df6-ba84-f84473fd111a
+2026-07-14T08:23:45 [INFO] domains.channel_manager.providers.hotelrunner_shared: [WEBHOOK] reservation_create: 6d718d23-95df-45e6-9ba3-1f75b2266341 -> pending_mapping ([unmapped] No room mapping found for provider room code: STD | Action: Create a room mapping for this provider room code in the Data Model dashboard)
+2026-07-14T08:23:46 [WARNING] domains.channel_manager.providers.hotelrunner_security: [HR-WEBHOOK][SECURITY] reject reason=missing_headers source_ip=127.0.0.1 tenant_hint=test-tenant-e2e hr_id_hint=HR-HOTEL-001
+INFO:     127.0.0.1:53780 - "POST /api/channel-manager/hotelrunner/webhooks/reservations HTTP/1.1" 401 Unauthorized
+2026-07-14T08:23:46 [WARNING] domains.channel_manager.providers.hotelrunner_security: [HR-WEBHOOK][SECURITY] reject reason=invalid_signature source_ip=127.0.0.1 tenant_hint=test-tenant-e2e hr_id_hint=HR-HOTEL-001
+INFO:     127.0.0.1:53787 - "POST /api/channel-manager/hotelrunner/webhooks/reservations HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:53794 - "POST /api/channel-manager/hotelrunner/webhooks/reservations HTTP/1.1" 200 OK
+2026-07-14T08:23:46 [INFO] core.import_bridge_service: Import record created: id=93c63561-9ef1-4b54-a5ce-d9221a1af992 ext=HR-LINEAGE-147A2B55 status=pending_auto_import
+2026-07-14T08:23:46 [INFO] ingest.pipeline: Import bridge: enqueued ext=HR-LINEAGE-147A2B55 status=pending_auto_import reason=None
+2026-07-14T08:23:46 [INFO] ingest.pipeline: [cddee077-f6f7-4453-bba9-533b9baf4a4f] create: New reservation HR-LINEAGE-147A2B55 mutation=MutationType.NEW_BOOKING trace=70c7c81e-d7ac-4676-8beb-dea0e4d33234
+2026-07-14T08:23:46 [INFO] domains.channel_manager.providers.hotelrunner_shared: [WEBHOOK] reservation_create: cddee077-f6f7-4453-bba9-533b9baf4a4f -> create (New reservation HR-LINEAGE-147A2B55)
+2026-07-14T08:23:48 [INFO] core.import_bridge_service: Notification created for OTA import: booking=1fe42582-afac-4dac-89a7-c8f4d58a5e6c
+2026-07-14T08:23:48 [INFO] core.outbox_service: Outbox event enqueued: id=edc65ceb-6826-431b-8300-f786de27da33 type=booking.created.v1 entity=booking/1fe42582-afac-4dac-89a7-c8f4d58a5e6c provider=hotelrunner
+2026-07-14T08:23:48 [INFO] core.import_bridge_service: OTA reservation imported: import=93c63561-9ef1-4b54-a5ce-d9221a1af992 booking=1fe42582-afac-4dac-89a7-c8f4d58a5e6c ext=HR-LINEAGE-147A2B55 provider=hotelrunner
+2026-07-14T08:23:48 [INFO] core.import_retry_worker: Import worker processed: 93c63561-9ef1-4b54-a5ce-d9221a1af992 → Booking 1fe42582-afac-4dac-89a7-c8f4d58a5e6c created successfully
+2026-07-14T08:23:49 [WARNING] core.agency_fanout: Agency fan-out skipped (unresolved room_type/date): event=edc65ceb-6826-431b-8300-f786de27da33 type=booking.created.v1
+2026-07-14T08:23:49 [INFO] core.outbox_worker: Outbox event processed: edc65ceb-6826-431b-8300-f786de27da33 type=booking.created.v1 msg=Dispatched: 0 sync jobs created
+INFO:     127.0.0.1:53802 - "POST /api/channel-manager/hotelrunner/webhooks/reservations HTTP/1.1" 200 OK
+2026-07-14T08:23:52 [INFO] core.import_bridge_service: Import record created: id=22e8f702-4dc3-4528-95a3-dfbf8d844dc2 ext=hr-dup-7ced8b status=pending_auto_import
+2026-07-14T08:23:52 [INFO] ingest.pipeline: Import bridge: enqueued ext=hr-dup-7ced8b status=pending_auto_import reason=None
+2026-07-14T08:23:52 [INFO] ingest.pipeline: [161155d4-fe8d-42c8-9f99-bb4bbbe755d0] create: New reservation hr-dup-7ced8b mutation=MutationType.NEW_BOOKING trace=6351babf-7722-4636-8cd6-b776c957d677
+2026-07-14T08:23:52 [INFO] domains.channel_manager.providers.hotelrunner_shared: [WEBHOOK] reservation_create: 161155d4-fe8d-42c8-9f99-bb4bbbe755d0 -> create (New reservation hr-dup-7ced8b)
+2026-07-14T08:23:53 [INFO] core.import_bridge_service: Notification created for OTA import: booking=09f1fef8-84af-41fd-9214-a596d3ce6e12
+2026-07-14T08:23:53 [INFO] core.outbox_service: Outbox event enqueued: id=db2c3708-bd29-4db1-a79f-003c7cebd164 type=booking.created.v1 entity=booking/09f1fef8-84af-41fd-9214-a596d3ce6e12 provider=hotelrunner
+2026-07-14T08:23:53 [INFO] core.import_bridge_service: OTA reservation imported: import=22e8f702-4dc3-4528-95a3-dfbf8d844dc2 booking=09f1fef8-84af-41fd-9214-a596d3ce6e12 ext=hr-dup-7ced8b provider=hotelrunner
+2026-07-14T08:23:53 [INFO] core.import_retry_worker: Import worker processed: 22e8f702-4dc3-4528-95a3-dfbf8d844dc2 → Booking 09f1fef8-84af-41fd-9214-a596d3ce6e12 created successfully
+INFO:     127.0.0.1:53803 - "POST /api/channel-manager/hotelrunner/webhooks/reservations HTTP/1.1" 200 OK
+2026-07-14T08:23:54 [INFO] domains.channel_manager.providers.hotelrunner_shared: [CATCHUP-DEDUP] skip insert: provider_event_id=hr-dup-7ced8b_reservation_create_2026-07-14T05:23:52.608537 already recorded (status=processed, decision=create)
+2026-07-14T08:23:55 [WARNING] core.agency_fanout: Agency fan-out skipped (unresolved room_type/date): event=db2c3708-bd29-4db1-a79f-003c7cebd164 type=booking.created.v1
+2026-07-14T08:23:55 [INFO] core.outbox_worker: Outbox event processed: db2c3708-bd29-4db1-a79f-003c7cebd164 type=booking.created.v1 msg=Dispatched: 0 sync jobs created
+INFO:     127.0.0.1:53810 - "POST /api/channel-manager/hotelrunner/webhooks/reservations HTTP/1.1" 200 OK
+2026-07-14T08:23:57 [INFO] ingest.pipeline: [3b24e875-634e-4911-a9d2-ee084bacfbb0] pending_mapping: [unmapped] No room mapping found for provider room code: SUI | Action: Create a room mapping for this provider room code in the Data Model dashboard mutation=MutationType.NEW_BOOKING trace=b0f19ce1-e6db-4e24-a772-b6001d17e93b
+2026-07-14T08:23:57 [INFO] domains.channel_manager.providers.hotelrunner_shared: [WEBHOOK] reservation_create: 3b24e875-634e-4911-a9d2-ee084bacfbb0 -> pending_mapping ([unmapped] No room mapping found for provider room code: SUI | Action: Create a room mapping for this provider room code in the Data Model dashboard)
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-07-14T08:23:58 [INFO] infra.redis_cluster: Redis connections closed
+2026-07-14T08:23:58 [INFO] controlplane.dashboard_aggregator: Dashboard snapshot worker stopped
+2026-07-14T08:23:58 [INFO] core.room_type_inventory: RoomTypeInventoryWorker stopped
+2026-07-14T08:23:58 [INFO] core.outbox_worker: OTA Outbox Worker stopped: 192.168.1.123:7382:c6cd2925
+2026-07-14T08:23:58 [INFO] core.import_retry_worker: Import Retry Worker stopped: import-192.168.1.123:7382:a275209d
+2026-07-14T08:23:58 [INFO] shared_kernel.outbox_lifecycle: Outbox lifecycle worker stopped owner_id=192.168.1.123:7382:5bce28b6
+2026-07-14T08:23:58 [INFO] monitoring.worker: Monitoring worker stopped
+2026-07-14T08:23:58 [INFO] domains.channel_manager.providers.exely.exely_pull_worker: [EXELY-PULL] Scheduler stopped
+2026-07-14T08:23:58 [INFO] channel_manager.availability_reconciliation: [AVAIL-RECON] Worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [7382]
+2026-07-14T08:23:58 [INFO] core.booking_hold: Booking hold sweeper stopped

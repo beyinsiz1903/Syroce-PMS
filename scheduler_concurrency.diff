@@ -1,0 +1,87 @@
+diff --git a/backend/domains/channel_manager/providers/exely/exely_pull_worker.py b/backend/domains/channel_manager/providers/exely/exely_pull_worker.py
+index 4a07cf255..263d41c4e 100644
+--- a/backend/domains/channel_manager/providers/exely/exely_pull_worker.py
++++ b/backend/domains/channel_manager/providers/exely/exely_pull_worker.py
+@@ -162,7 +162,27 @@ class ExelyPullScheduler:
+         return self._running
+ 
+     async def _run_loop(self, interval_seconds: int, safety_window_minutes: int):
++        import os
++        from infra.distributed_lock import lock_manager, DistributedLock
++
+         while self._running:
++            env = os.environ.get("ENV", "development")
++            redis = lock_manager._redis
++
++            if not redis:
++                logger.warning("[EXELY-PULL] distributed_lock_unavailable — skipping cycle")
++                await asyncio.sleep(interval_seconds)
++                continue
++
++            lock_name = f"{env}:exely:pull-cycle"
++            dl = DistributedLock(redis, lock_name, timeout=180.0, retry_count=1)
++            acquired = await dl.acquire()
++
++            if not acquired:
++                logger.debug("[EXELY-PULL] Cycle owned by another worker; skipping")
++                await asyncio.sleep(interval_seconds)
++                continue
++
+             try:
+                 await self._pull_all_tenants(safety_window_minutes)
+             except asyncio.CancelledError:
+@@ -177,6 +197,9 @@ class ExelyPullScheduler:
+                 )
+             else:
+                 _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
++            finally:
++                await dl.release()
++            
+             await asyncio.sleep(interval_seconds)
+ 
+     async def _heartbeat(self, provider: ExelyProvider, tenant_id: str):
+diff --git a/backend/domains/channel_manager/providers/sync_scheduler.py b/backend/domains/channel_manager/providers/sync_scheduler.py
+index 87a5fdde4..e633709bc 100644
+--- a/backend/domains/channel_manager/providers/sync_scheduler.py
++++ b/backend/domains/channel_manager/providers/sync_scheduler.py
+@@ -51,13 +51,40 @@ class ReservationPullScheduler:
+         return self._running
+ 
+     async def _run_loop(self, sleep_seconds: int, safety_window_minutes: int):
++        import os
++        from infra.distributed_lock import lock_manager, DistributedLock
++
+         while self._running:
++            env = os.environ.get("ENV", "development")
++            redis = lock_manager._redis
++            expected_sleep = sleep_seconds
++            
++            if self._consecutive_rate_limits > 0:
++                expected_sleep = self._base_interval * min(2**self._consecutive_rate_limits, 16)
++
++            if not redis:
++                logger.warning("[PULL] distributed_lock_unavailable — skipping cycle")
++                await asyncio.sleep(expected_sleep)
++                continue
++
++            lock_name = f"{env}:hotelrunner:pull-cycle"
++            # Acquire try-lock with max expected execution TTL (e.g. 180s)
++            dl = DistributedLock(redis, lock_name, timeout=180.0, retry_count=1)
++            acquired = await dl.acquire()
++
++            if not acquired:
++                logger.debug("[PULL] Cycle owned by another worker; skipping")
++                await asyncio.sleep(expected_sleep)
++                continue
++
+             try:
+                 await self._pull_all_tenants(safety_window_minutes)
+             except asyncio.CancelledError:
+                 break
+             except Exception as e:
+                 logger.error(f"[PULL] Loop error: {e}")
++            finally:
++                await dl.release()
+ 
+             if self._consecutive_rate_limits > 0:
+                 backoff_multiplier = min(2**self._consecutive_rate_limits, 16)
