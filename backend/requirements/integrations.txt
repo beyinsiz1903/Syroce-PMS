@@ -21,7 +21,7 @@ google-generativeai==0.8.6
 googleapis-common-protos==1.72.0
 grpcio==1.78.1
 grpcio-status==1.71.2
-httplib2==0.31.2
+httplib2==0.32.0
 iyzipay==1.0.46
 jmespath==1.0.1
 litellm==1.80.0

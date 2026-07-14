@@ -75,3 +75,4 @@ tzdata==2025.2
 tzlocal==5.3.1
 urllib3==2.7.0
 zipp==3.23.0
+setuptools>=83.0.0
