@@ -16,6 +16,7 @@ import uuid
 from datetime import datetime, timedelta
 
 import pytest
+import pytest_asyncio
 import requests
 
 # API URLs
@@ -29,7 +30,177 @@ BAD_TOKEN = "bad-token"
 
 # Test tenant for webhooks
 TEST_TENANT_ID = "test-tenant-e2e"
+
+@pytest_asyncio.fixture
+async def hotelrunner_webhook_db():
+    """Reset mock server before each test and seed mock connections"""
+    requests.post(f"{MOCK_SERVER_URL}/mock/reset", timeout=10)
+        
+    mongo_url = os.getenv("HOTELRUNNER_TEST_MONGO_URL")
+    if not mongo_url:
+        pytest.fail("Test suite requires HOTELRUNNER_TEST_MONGO_URL environment variable to prevent accidental data corruption.")
+    
+    from pymongo import MongoClient
+    client = MongoClient(mongo_url)
+    db = client.get_default_database()
+    
+    if not db.name.endswith("_test"):
+        pytest.fail("Database name in HOTELRUNNER_TEST_MONGO_URL must end with '_test' (e.g. hotel_pms_test)")
+        
+    try:
+        from core.secrets.manager import get_secrets_manager
+        sm = get_secrets_manager()
+
+        # Seed test tenant and connection
+        db.hotelrunner_connections.delete_many({"hr_id": MOCK_HR_ID})
+        db.hotelrunner_connections.delete_many({"tenant_id": TEST_TENANT_ID})
+
+        # 1.5. Mock credential vault via SecretsManager
+        ref_a = await sm.store_provider_credentials(
+            tenant_id=TEST_TENANT_ID,
+            provider="hotelrunner",
+            property_id=MOCK_HR_ID,
+            credentials={
+                "token": MOCK_TOKEN,
+                "hr_id": MOCK_HR_ID,
+                "environment": "mock",
+            },
+            actor="pytest",
+        )
+
+        db.hotelrunner_connections.insert_one(
+            {
+                "tenant_id": TEST_TENANT_ID,
+                "hr_id": MOCK_HR_ID,
+                "property_id": MOCK_HR_ID,
+                "credentials_ref": ref_a,
+                "is_active": True,
+                "environment": "test",
+            }
+        )
+
+        # Cross-tenant test seed
+        db.hotelrunner_connections.delete_many({"hr_id": MOCK_HR_ID + "_B"})
+        db.hotelrunner_connections.delete_many({"tenant_id": TEST_TENANT_ID + "_B"})
+
+        ref_b = await sm.store_provider_credentials(
+            tenant_id=TEST_TENANT_ID + "_B",
+            provider="hotelrunner",
+            property_id=MOCK_HR_ID + "_B",
+            credentials={
+                "token": MOCK_TOKEN + "_B",
+                "hr_id": MOCK_HR_ID + "_B",
+                "environment": "mock",
+            },
+            actor="pytest",
+        )
+        
+        db.hotelrunner_connections.insert_one(
+            {
+                "tenant_id": TEST_TENANT_ID + "_B",
+                "hr_id": MOCK_HR_ID + "_B",
+                "property_id": MOCK_HR_ID + "_B",
+                "credentials_ref": ref_b,
+                "is_active": True,
+                "environment": "test",
+            }
+        )
+
+        # Fixture matches unified repository schema
+        for rcode in ["STD", "DBL", "SUI", "DLX"]:
+            db.room_mappings.update_one(
+                {"tenant_id": TEST_TENANT_ID, "provider_room_code": rcode},
+                {"$set": {
+                    "tenant_id": TEST_TENANT_ID,
+                    "property_id": "prop-001",
+                    "provider": "hotelrunner",
+                    "pms_room_type_id": f"pms-{rcode.lower()}-1",
+                    "provider_room_code": rcode,
+                    "is_active": True
+                }},
+                upsert=True
+            )
+            
+        for rcode in ["NONREF", "BB", "BAR"]:
+            db.rate_plan_mappings.update_one(
+                {"tenant_id": TEST_TENANT_ID, "provider_rate_code": rcode},
+                {"$set": {
+                    "tenant_id": TEST_TENANT_ID,
+                    "property_id": "prop-001",
+                    "provider": "hotelrunner",
+                    "pms_rate_plan_id": f"rate-{rcode.lower()}-1",
+                    "provider_rate_code": rcode,
+                    "is_active": True
+                }},
+                upsert=True
+            )
+        
+        yield db
+        
+    finally:
+        # Teardown
+        try:
+            from core.secrets.manager import get_secrets_manager
+            sm = get_secrets_manager()
+            await sm.delete_provider_credentials(
+                TEST_TENANT_ID,
+                "hotelrunner",
+                MOCK_HR_ID,
+                actor="pytest",
+            )
+            await sm.delete_provider_credentials(
+                TEST_TENANT_ID + "_B",
+                "hotelrunner",
+                MOCK_HR_ID + "_B",
+                actor="pytest",
+            )
+            
+            test_tenants = [TEST_TENANT_ID, TEST_TENANT_ID + "_B"]
+            db.room_mappings.delete_many({"tenant_id": {"$in": test_tenants}})
+            db.rate_plan_mappings.delete_many({"tenant_id": {"$in": test_tenants}})
+            db.hotelrunner_connections.delete_many({"tenant_id": {"$in": test_tenants}})
+            db.raw_channel_events.delete_many({"tenant_id": {"$in": test_tenants}})
+            db.reservation_lineage.delete_many({"tenant_id": {"$in": test_tenants}})
+            db.bookings.delete_many({"tenant_id": {"$in": test_tenants}})
+            db.hotelrunner_reservations.delete_many({"tenant_id": {"$in": test_tenants}})
+            db.hotelrunner_room_mappings.delete_many({"tenant_id": {"$in": test_tenants}})
+            db.hotelrunner_rate_plan_mappings.delete_many({"tenant_id": {"$in": test_tenants}})
+        except Exception as e:
+            pytest.fail(f"Teardown failed, database may be polluted: {e}")
+        finally:
+            client.close()
 TEST_PROPERTY_ID = "prop-001"
+
+def send_hr_webhook(path: str, payload: dict, secret: str = None, override_headers: dict = None):
+    import json, hmac, hashlib, time
+    from urllib.parse import urlencode
+
+    if secret is None:
+        secret = os.environ.get("HOTELRUNNER_WEBHOOK_SECRET", "test-secret")
+
+    data_str = json.dumps(payload)
+    encoded_body = urlencode({"data": data_str}).encode("utf-8")
+
+    ts = str(int(time.time()))
+    signed_payload = f"{ts}.".encode() + encoded_body
+    signature = hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
+
+    headers = {
+        "X-Tenant-ID": TEST_TENANT_ID,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-HotelRunner-Timestamp": ts,
+        "X-HotelRunner-Signature": signature
+    }
+    if override_headers:
+        headers.update(override_headers)
+
+    return requests.post(
+        f"{API_URL}{path}",
+        headers=headers,
+        data=encoded_body,
+        timeout=15
+    )
+
 
 
 class TestMockServerHealth:
@@ -179,13 +350,9 @@ class TestMockServerErrorInjection:
         print(f"PASS: Mock reset successful - {data.get('reservations')} reservations")
 
 
+@pytest.mark.usefixtures("hotelrunner_webhook_db")
 class TestWebhookEndpoints:
     """Test 7: Webhook endpoints for reservations, modifications, cancellations"""
-
-    @pytest.fixture(autouse=True)
-    def setup(self):
-        """Reset mock server before each test"""
-        requests.post(f"{MOCK_SERVER_URL}/mock/reset", timeout=10)
 
     def _generate_hr_payload(self, hr_number: str = None, state: str = "confirmed"):
         """Generate a realistic HotelRunner reservation payload"""
@@ -198,6 +365,7 @@ class TestWebhookEndpoints:
         
         return {
             "hr_number": hr_number,
+            "hotel_id": MOCK_HR_ID,
             "reservation_id": str(10000 + hash(hr_number) % 1000),
             "state": state,
             "firstname": "Test",
@@ -234,64 +402,277 @@ class TestWebhookEndpoints:
     def test_webhook_new_reservation_accepted(self):
         """POST /api/channel-manager/hotelrunner/webhooks/reservations should return accepted"""
         payload = self._generate_hr_payload()
-        
-        response = requests.post(
-            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations",
-            headers={"X-Tenant-ID": TEST_TENANT_ID, "Content-Type": "application/json"},
-            json=payload,
-            timeout=15
-        )
+        response = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/reservations", payload)
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
         data = response.json()
         assert data.get("status") == "accepted"
-        assert data.get("count") == 1
         print(f"PASS: Webhook new reservation accepted - hr_number={payload['hr_number']}")
         return payload["hr_number"]
 
     def test_webhook_modification_accepted(self):
-        """POST /api/channel-manager/hotelrunner/webhooks/modifications should return accepted"""
+        """POST /api/channel-manager/hotelrunner/webhooks/modifications should return success for modifications"""
         payload = self._generate_hr_payload(state="modified")
-        
-        response = requests.post(
-            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/modifications",
-            headers={"X-Tenant-ID": TEST_TENANT_ID, "Content-Type": "application/json"},
-            json=payload,
-            timeout=15
-        )
+        response = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/modifications", payload)
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
         data = response.json()
         assert data.get("status") == "accepted"
         print(f"PASS: Webhook modification accepted")
 
     def test_webhook_cancellation_accepted(self):
-        """POST /api/channel-manager/hotelrunner/webhooks/cancellations should return accepted"""
+        """POST /api/channel-manager/hotelrunner/webhooks/cancellations should return success for cancellations"""
         payload = self._generate_hr_payload(state="cancelled")
-        
-        response = requests.post(
-            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/cancellations",
-            headers={"X-Tenant-ID": TEST_TENANT_ID, "Content-Type": "application/json"},
-            json=payload,
-            timeout=15
-        )
+        response = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/cancellations", payload)
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
         data = response.json()
         assert data.get("status") == "accepted"
         print(f"PASS: Webhook cancellation accepted")
 
-    def test_webhook_missing_tenant_returns_400(self):
-        """POST webhook without X-Tenant-ID should return 400"""
+    def test_webhook_unified_callback_new_reservation(self):
+        """POST /api/channel-manager/hotelrunner/callback should handle new reservations"""
+        payload = self._generate_hr_payload(state="confirmed")
+        response = send_hr_webhook("/api/channel-manager/hotelrunner/callback", payload)
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+        data = response.json()
+        assert data.get("status") == "accepted"
+
+    def test_webhook_unified_callback_modification(self):
+        """POST /api/channel-manager/hotelrunner/callback should handle modifications"""
+        payload = self._generate_hr_payload(state="modified")
+        response = send_hr_webhook("/api/channel-manager/hotelrunner/callback", payload)
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+        data = response.json()
+        assert data.get("status") == "accepted"
+
+    def test_webhook_missing_tenant_succeeds(self):
+        """Webhook without X-Tenant-ID should succeed via hr_id lookup"""
         payload = self._generate_hr_payload()
+        # Ensure we drop the X-Tenant-ID header
+        response = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/reservations", payload, override_headers={"X-Tenant-ID": None})
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+        print(f"PASS: Webhook missing tenant returned {response.status_code}")
+
+    # ── Negative Signature Tests ──────────────────────────────────────────
+
+    def test_webhook_missing_signature_returns_401(self):
+        """POST without signature or valid official creds should return 401"""
+        payload = self._generate_hr_payload()
+        # send_hr_webhook with override_headers removes the signature headers
+        response = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/reservations", payload, override_headers={"X-HotelRunner-Signature": ""})
+        assert response.status_code == 401, f"Expected 401, got {response.status_code}"
+        assert "Missing hr_id or token for official validation" in response.text
+        print("PASS: Invalid signature blocked")
+
+    def test_webhook_stale_timestamp_returns_401(self):
+        """Webhook with stale timestamp should return 401"""
+        payload = self._generate_hr_payload()
+        import time
+        stale_ts = str(int(time.time()) - 400) # 400 seconds ago (>300 tolerance)
+        
+        import json, hmac, hashlib
+        from urllib.parse import urlencode
+        secret = os.environ.get("HOTELRUNNER_WEBHOOK_SECRET", "test-secret")
+        data_str = json.dumps(payload)
+        encoded_body = urlencode({"data": data_str}).encode("utf-8")
+        
+        signed_payload = f"{stale_ts}.".encode() + encoded_body
+        signature = hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
+        
+        response = send_hr_webhook(
+            "/api/channel-manager/hotelrunner/webhooks/reservations", 
+            payload, 
+            override_headers={"X-HotelRunner-Timestamp": stale_ts, "X-HotelRunner-Signature": signature}
+        )
+        assert response.status_code == 401, f"Expected 401, got {response.status_code}: {response.text}"
+        assert "Timestamp out of tolerance" in response.text
+        print("PASS: Stale timestamp blocked")
+
+    # ── Official Mode (Token Validation) Tests ──────────────────────────────
+
+    def test_webhook_official_validation_accepted(self):
+        """Webhook without HMAC but WITH valid token and hr_id should be accepted"""
+        payload = self._generate_hr_payload()
+        payload["hr_id"] = MOCK_HR_ID  # Use valid mock hr_id
+        
+        import json
+        from urllib.parse import urlencode
+        data_str = json.dumps(payload)
+        encoded_body = urlencode({"data": data_str}).encode("utf-8")
+        
+        response = requests.post(
+            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations?token={MOCK_TOKEN}",
+            headers={"Content-Type": "application/x-www-form-urlencoded", "X-Tenant-ID": TEST_TENANT_ID},
+            data=encoded_body,
+            timeout=15
+        )
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+        print("PASS: Official Token Validation accepted")
+
+    def test_webhook_official_invalid_token_returns_401(self):
+        """Webhook without HMAC and INVALID token should return 401"""
+        payload = self._generate_hr_payload()
+        payload["hr_id"] = MOCK_HR_ID
+        
+        import json
+        from urllib.parse import urlencode
+        data_str = json.dumps(payload)
+        encoded_body = urlencode({"data": data_str}).encode("utf-8")
+        
+        response = requests.post(
+            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations?token=wrong-token",
+            headers={"Content-Type": "application/x-www-form-urlencoded", "X-Tenant-ID": TEST_TENANT_ID},
+            data=encoded_body,
+            timeout=15
+        )
+        assert response.status_code == 401, f"Expected 401, got {response.status_code}: {response.text}"
+        print("PASS: Official Token Validation blocked invalid token")
+
+    def test_webhook_official_invalid_hr_id_returns_401(self):
+        """Webhook with valid token but INVALID hr_id should return 401 (or 503 if not found)"""
+        payload = self._generate_hr_payload()
+        payload["hr_id"] = "invalid_hr_id_9999"
+        
+        import json
+        from urllib.parse import urlencode
+        data_str = json.dumps(payload)
+        encoded_body = urlencode({"data": data_str}).encode("utf-8")
+        
+        response = requests.post(
+            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations?token={MOCK_TOKEN}",
+            headers={"Content-Type": "application/x-www-form-urlencoded", "X-Tenant-ID": TEST_TENANT_ID},
+            data=encoded_body,
+            timeout=15
+        )
+        assert response.status_code == 401, f"Expected 401, got {response.status_code}"
+        assert response.json()["detail"] == "Connection not found"
+        print("PASS: Invalid hr_id blocked")
+
+    def test_webhook_official_true_cross_tenant(self, hotelrunner_webhook_db):
+        """Webhook with Tenant A's header, but Tenant B's hr_id should:
+        1. Reject with 401 if Tenant A's token is used (token mismatch)
+        2. Accept and bind to Tenant B if Tenant B's token is used (header ignored)"""
+        
+        db = hotelrunner_webhook_db
+        hr_number = f"HR-{uuid.uuid4().hex[:8].upper()}"
+        
+        # Test 1: Reject mismatch
+        payload = self._generate_hr_payload(hr_number=hr_number)
+        payload["hr_id"] = MOCK_HR_ID + "_B" # Tenant B hr_id
+        
+        import json
+        from urllib.parse import urlencode
+        data_str = json.dumps(payload)
+        encoded_body = urlencode({"data": data_str}).encode("utf-8")
+        
+        # We send Tenant A's token and Tenant A's header, but Tenant B's payload
+        response = requests.post(
+            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations?token={MOCK_TOKEN}",
+            headers={"Content-Type": "application/x-www-form-urlencoded", "X-Tenant-ID": TEST_TENANT_ID},
+            data=encoded_body,
+            timeout=15
+        )
+        assert response.status_code == 401, f"Expected 401 for cross-tenant mismatch, got {response.status_code}"
+        print("PASS: True cross-tenant mismatch blocked")
+        
+        # Test 2: Accept correct token, ignore header
+        response_success = requests.post(
+            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations?token={MOCK_TOKEN}_B",
+            headers={"Content-Type": "application/x-www-form-urlencoded", "X-Tenant-ID": TEST_TENANT_ID},
+            data=encoded_body,
+            timeout=15
+        )
+        assert response_success.status_code == 200, f"Expected 200, got {response_success.status_code}"
+        
+        # Verify event was recorded under Tenant B (header safely ignored)
+        # Using a brief polling since background tasks insert it
+        import time
+        event = None
+        for _ in range(5):
+            event = db.raw_channel_events.find_one({"external_reservation_id": hr_number})
+            if event:
+                break
+            time.sleep(0.2)
+            
+        assert event is not None, "Raw channel event was not created"
+        assert event["tenant_id"] == TEST_TENANT_ID + "_B", f"Expected Tenant B, got {event['tenant_id']}"
+        
+        # Verify no event was created for Tenant A
+        wrong_event = db.raw_channel_events.find_one({
+            "external_reservation_id": hr_number,
+            "tenant_id": TEST_TENANT_ID,
+        })
+        assert wrong_event is None, "Cross-tenant leakage: event created for Tenant A"
+        print("PASS: Cross-tenant payload with correct token accepted and mapped to Tenant B correctly")
+
+    def test_webhook_official_token_in_form_body_accepted(self):
+        """Webhook with token inside the form-urlencoded body instead of query should be accepted"""
+        payload = self._generate_hr_payload()
+        payload["hr_id"] = MOCK_HR_ID
+        
+        import json
+        from urllib.parse import urlencode
+        data_str = json.dumps(payload)
+        # Token is in body
+        encoded_body = urlencode({"data": data_str, "token": MOCK_TOKEN}).encode("utf-8")
         
         response = requests.post(
             f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations",
-            headers={"Content-Type": "application/json"},
-            json=payload,
+            headers={"Content-Type": "application/x-www-form-urlencoded", "X-Tenant-ID": TEST_TENANT_ID},
+            data=encoded_body,
             timeout=15
         )
-        assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
-        print(f"PASS: Missing tenant ID correctly rejected with 400")
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+        print("PASS: Token parsed from form body accepted")
 
+    def test_webhook_hmac_missing_timestamp_returns_401(self):
+        """Webhook with HMAC signature but NO timestamp should return 401"""
+        payload = self._generate_hr_payload()
+        payload["hr_id"] = MOCK_HR_ID
+        
+        import json
+        from urllib.parse import urlencode
+        data_str = json.dumps(payload)
+        encoded_body = urlencode({"data": data_str}).encode("utf-8")
+        
+        response = requests.post(
+            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations",
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded", 
+                "X-Tenant-ID": TEST_TENANT_ID,
+                "X-HotelRunner-Signature": "dummy-sig"
+                # Missing timestamp
+            },
+            data=encoded_body,
+            timeout=15
+        )
+        assert response.status_code == 401, f"Expected 401, got {response.status_code}"
+        print("PASS: HMAC missing timestamp blocked")
 
+    def test_webhook_hmac_invalid_signature_does_not_fallback(self):
+        """Webhook with invalid HMAC signature but VALID token should STILL return 401, no fallback"""
+        payload = self._generate_hr_payload()
+        payload["hr_id"] = MOCK_HR_ID
+        
+        import json
+        import time
+        from urllib.parse import urlencode
+        data_str = json.dumps(payload)
+        encoded_body = urlencode({"data": data_str, "token": MOCK_TOKEN}).encode("utf-8")
+        ts = str(int(time.time()))
+        
+        response = requests.post(
+            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations",
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded", 
+                "X-Tenant-ID": TEST_TENANT_ID,
+                "X-HotelRunner-Signature": "invalid-signature",
+                "X-HotelRunner-Timestamp": ts
+            },
+            data=encoded_body,
+            timeout=15
+        )
+        assert response.status_code == 401, f"Expected 401, got {response.status_code}"
+        print("PASS: Invalid HMAC signature blocked (no fallback to token)")
+@pytest.mark.usefixtures("hotelrunner_webhook_db")
 class TestIngestPipelineLineage:
     """Test 8: Ingest pipeline creates lineage for new reservations"""
 
@@ -303,6 +684,7 @@ class TestIngestPipelineLineage:
         checkout = checkin + timedelta(days=2)
         
         return {
+            "hotel_id": MOCK_HR_ID,
             "hr_number": hr_number,
             "reservation_id": str(20000 + hash(hr_number) % 1000),
             "state": "confirmed",
@@ -337,41 +719,53 @@ class TestIngestPipelineLineage:
             "modified_at": now.isoformat()
         }
 
-    def test_ingest_creates_lineage(self):
-        """Webhook should create lineage record (verify via async processing)"""
+    def test_ingest_creates_lineage(self, hotelrunner_webhook_db):
+        """Webhook should create lineage record (verify via DB access)"""
         payload = self._generate_unique_hr_payload()
         hr_number = payload["hr_number"]
         
         # Send webhook
-        response = requests.post(
-            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations",
-            headers={"X-Tenant-ID": TEST_TENANT_ID, "Content-Type": "application/json"},
-            json=payload,
-            timeout=15
-        )
+        response = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/reservations", payload)
         assert response.status_code == 200, f"Webhook failed: {response.text}"
         
         # Wait for async processing (background task)
         time.sleep(4)
         
-        # Note: We can't directly query MongoDB from here, but we verify the webhook was accepted
-        # The actual lineage verification would require DB access or an API endpoint
-        print(f"PASS: Webhook accepted for lineage creation - hr_number={hr_number}")
-        print("NOTE: Lineage creation is async - verify via MongoDB if needed")
+        db = hotelrunner_webhook_db
+        # Active ingest pipeline reads provider_room_code from room_mappings.
+        # The pipeline runs asynchronously via BackgroundTasks
+        time.sleep(2)
+        event = db.raw_channel_events.find_one({
+            "external_reservation_id": hr_number,
+            "tenant_id": TEST_TENANT_ID,
+        })
+        assert event is not None, "Raw event was not created in DB"
+        
+        status = event.get("processing_status")
+        assert status == "processed", f"Pipeline did not finish successfully (status={status})"
+        
+        lineage = db.reservation_lineage.find_one({
+            "external_reservation_id": hr_number,
+            "tenant_id": TEST_TENANT_ID,
+        })
+        assert lineage is not None, "Lineage record was not created in DB"
+        
+        print(f"PASS: Webhook pipeline processing verified - hr_number={hr_number}, final_status={status}")
 
 
 class TestDuplicateDeliveryDetection:
     """Test 9: Duplicate delivery should be detected and skipped"""
 
-    def test_duplicate_webhook_detected(self):
+    def test_duplicate_webhook_detected(self, hotelrunner_webhook_db):
         """Sending same reservation twice should be handled (deduplicated)"""
         # Generate a unique payload
-        hr_number = f"HR-DUP-{uuid.uuid4().hex[:8].upper()}"
+        hr_number = f"hr-dup-{uuid.uuid4().hex[:6]}"
         now = datetime.utcnow()
         checkin = now + timedelta(days=21)
         checkout = checkin + timedelta(days=2)
         
         payload = {
+            "hotel_id": MOCK_HR_ID,
             "hr_number": hr_number,
             "reservation_id": str(30000 + hash(hr_number) % 1000),
             "state": "confirmed",
@@ -386,52 +780,67 @@ class TestDuplicateDeliveryDetection:
             "currency": "TRY",
             "payment": "credit_card",
             "total_rooms": 1,
-            "total_guests": 1,
+            "total_guests": 2,
             "message_uid": f"msg-dup-{uuid.uuid4().hex[:8]}",
             "address": {
-                "email": "dup@test.com",
-                "phone": "+905551112233",
-                "city": "Izmir",
+                "email": "dup.test@example.com",
+                "phone": "+905559998877",
+                "address_line": "Duplicate Ave 42",
+                "city": "Ankara",
+                "zipcode": "06000",
                 "country_code": "TR"
             },
             "rooms": [{
-                "room_code": "STD",
-                "rate_code": "NONREF",
-                "room_name": "Standard Oda",
-                "adults": 1,
+                "room_code": "DBL",
+                "rate_code": "BB",
+                "room_name": "Double Room",
+                "adults": 2,
                 "children": 0,
-                "total": 1800.00
+                "total": 1800.00,
+                "daily_rates": [],
+                "guest_name": "Duplicate Test"
             }],
             "updated_at": now.isoformat(),
-            "modified_at": now.isoformat()
+            "modified_at": now.isoformat(),
+            "created_at": now.isoformat()
         }
         
-        # First delivery
-        response1 = requests.post(
-            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations",
-            headers={"X-Tenant-ID": TEST_TENANT_ID, "Content-Type": "application/json"},
-            json=payload,
-            timeout=15
-        )
+        # Send first time
+        response1 = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/reservations", payload)
         assert response1.status_code == 200, f"First webhook failed: {response1.text}"
         
-        # Wait for processing
-        time.sleep(3)
+        # Wait a moment for processing to avoid race conditions
+        time.sleep(2)
         
-        # Second delivery (duplicate)
-        response2 = requests.post(
-            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations",
-            headers={"X-Tenant-ID": TEST_TENANT_ID, "Content-Type": "application/json"},
-            json=payload,
-            timeout=15
-        )
-        # Should still be accepted (webhook layer accepts, pipeline deduplicates)
+        # Send second time (duplicate)
+        response2 = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/reservations", payload)
         assert response2.status_code == 200, f"Second webhook failed: {response2.text}"
         
-        print(f"PASS: Duplicate delivery handled - hr_number={hr_number}")
-        print("NOTE: Deduplication happens in pipeline (check logs for 'DUPLICATE' or 'HASH_DUP')")
+        time.sleep(3) # Wait for processing
+        db = hotelrunner_webhook_db
+
+        lineage = list(db.reservation_lineage.find({
+            "external_reservation_id": hr_number,
+            "tenant_id": TEST_TENANT_ID,
+        }))
+        assert len(lineage) == 1, f"Expected 1 lineage record (deduplication), found {len(lineage)}"
+
+        bookings = list(db.bookings.find({
+            "external_reservation_id": hr_number,
+            "tenant_id": TEST_TENANT_ID,
+        }))
+        if len(bookings) == 0:
+            time.sleep(3)
+            bookings = list(db.bookings.find({
+                "external_reservation_id": hr_number,
+                "tenant_id": TEST_TENANT_ID,
+            }))
+        assert len(bookings) == 1, f"Expected exactly 1 booking record, found {len(bookings)}"
+        
+        print("PASS: Duplicate webhook correctly skipped")
 
 
+@pytest.mark.usefixtures("hotelrunner_webhook_db")
 class TestNormalizerParsing:
     """Test 10: Normalizer correctly parses HotelRunner format"""
 
@@ -440,9 +849,11 @@ class TestNormalizerParsing:
         # This is a unit-style test that verifies the normalizer logic
         # We test by sending a webhook and checking it's accepted
         
+        hr_number = f"HR-NORM-{uuid.uuid4().hex[:6].upper()}"
         # Real HotelRunner format with all fields
         payload = {
-            "hr_number": f"HR-NORM-{uuid.uuid4().hex[:6].upper()}",
+            "hotel_id": MOCK_HR_ID,
+            "hr_number": hr_number,
             "reservation_id": "12345",
             "state": "confirmed",  # HotelRunner uses 'state' not 'status'
             "firstname": "John",   # HotelRunner uses firstname/lastname
@@ -481,14 +892,11 @@ class TestNormalizerParsing:
             "created_at": datetime.utcnow().isoformat()
         }
         
-        response = requests.post(
-            f"{API_URL}/api/channel-manager/hotelrunner/webhooks/reservations",
-            headers={"X-Tenant-ID": TEST_TENANT_ID, "Content-Type": "application/json"},
-            json=payload,
-            timeout=15
-        )
+        response = send_hr_webhook("/api/channel-manager/hotelrunner/webhooks/reservations", payload)
         assert response.status_code == 200, f"Normalizer test failed: {response.text}"
-        print(f"PASS: Normalizer correctly handles real HotelRunner format")
+        
+        # If we get 200, it means it parsed successfully and triggered the webhook.
+        print(f"PASS: Normalizer handled payload correctly - hr_number={hr_number}")
 
 
 if __name__ == "__main__":

@@ -18,8 +18,11 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
 from core.database import db
-from core.secrets import get_secrets_manager
 from core.security import get_current_user
+from domains.channel_manager.providers.hotelrunner_security import (
+    _verified_tenant,
+    _verify_hotelrunner_callback,
+)
 from domains.channel_manager.providers.hotelrunner_shared import (
     _persist_and_process,
     _resolve_property_id,
@@ -43,178 +46,6 @@ router = APIRouter(
 # client-supplied header/query/body value. A per-property secret takes
 # precedence; the global HOTELRUNNER_WEBHOOK_SECRET remains a backward-compat
 # fallback only when no per-property secret exists. Neither set → fail-closed.
-
-
-def _source_ip(request: Request) -> str:
-    try:
-        client = getattr(request, "client", None)
-        return client.host if client else "unknown"
-    except Exception:
-        return "unknown"
-
-
-def _log_webhook_reject(reason: str, source_ip: str, tenant_hint: str, hr_id_hint: str) -> None:
-    """Structured security log for every rejected webhook.
-
-    Records the source IP, the rejection reason and the (untrusted) tenant /
-    hr_id hint. Secret and signature material is NEVER logged.
-    """
-    logger.warning(
-        "[HR-WEBHOOK][SECURITY] reject reason=%s source_ip=%s tenant_hint=%s hr_id_hint=%s",
-        reason,
-        source_ip or "unknown",
-        tenant_hint or "-",
-        hr_id_hint or "-",
-    )
-
-
-def _extract_signature_hints(request: Request, raw: bytes) -> tuple[str, str]:
-    """Pull the (untrusted) tenant / hr_id hints used only to LOCATE the
-    candidate connection — never to authorize. Defensive against partial
-    request shims (tests) and malformed bodies."""
-    tenant_hint = ""
-    hr_id_hint = ""
-    try:
-        tenant_hint = request.headers.get("X-Tenant-ID") or ""
-    except Exception:
-        tenant_hint = ""
-    qp = getattr(request, "query_params", None)
-    if not tenant_hint and qp is not None:
-        try:
-            tenant_hint = qp.get("tenant_id") or ""
-        except Exception:
-            tenant_hint = ""
-    try:
-        body = json.loads(raw or b"{}")
-        if isinstance(body, dict):
-            if not tenant_hint:
-                tenant_hint = body.get("tenant_id") or ""
-            hr_id_hint = body.get("hr_id") or body.get("hotel_id") or body.get("property_id") or ""
-    except Exception:
-        pass
-    return str(tenant_hint), str(hr_id_hint)
-
-
-async def _lookup_signing_connection(tenant_hint: str, hr_id_hint: str) -> dict | None:
-    """Resolve the active connection that should govern this request from the
-    untrusted hint. No hint → None (no DB hit), so the global-secret
-    backward-compat path stays self-contained."""
-    if not (tenant_hint or hr_id_hint):
-        return None
-    query: dict = {"is_active": True}
-    if tenant_hint:
-        query["tenant_id"] = tenant_hint
-    elif hr_id_hint:
-        query["hr_id"] = str(hr_id_hint)
-    try:
-        return await db.hotelrunner_connections.find_one(
-            query,
-            {"_id": 0, "tenant_id": 1, "hr_id": 1},
-        )
-    except Exception:
-        return None
-
-
-async def _load_webhook_secret(conn: dict) -> str | None:
-    """Load the connection's per-property webhook signing secret (decrypted)
-    from the SecretsManager. Returns None if none is configured."""
-    tenant_id = conn.get("tenant_id")
-    hr_id = conn.get("hr_id")
-    if not (tenant_id and hr_id):
-        return None
-    try:
-        sm = get_secrets_manager()
-        return await sm.get_webhook_secret(tenant_id, "hotelrunner", str(hr_id))
-    except Exception:
-        return None
-
-
-def _bind_verified_tenant(request: Request, conn: dict | None) -> None:
-    """Bind the cryptographically-verified tenant onto request.state so the
-    endpoints can use it instead of any client-supplied value."""
-    if not (conn and conn.get("tenant_id")):
-        return
-    state = getattr(request, "state", None)
-    if state is None:
-        return
-    try:
-        state.hr_webhook_tenant_id = conn["tenant_id"]
-    except Exception:
-        pass
-
-
-def _verified_tenant(request: Request) -> str:
-    """Return the tenant bound by a verified signature, or empty string."""
-    state = getattr(request, "state", None)
-    if state is None:
-        return ""
-    return getattr(state, "hr_webhook_tenant_id", "") or ""
-
-
-# ── v106 Bug DAC (architect adversarial #6): inbound webhook signature
-# verification. Mirrors the Resend hardening pattern. Without this an
-# attacker who knew (or guessed) any tenant_id could forge create / modify /
-# cancel reservation events at will (revenue corruption, fake bookings,
-# channel-manager state poisoning). Fail-closed if secret is unset; explicit
-# dev escape hatch via ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK=1.
-#
-# Task #397 upgrade: per-property secret + cryptographic tenant binding.
-async def _verify_hotelrunner_signature(request: Request) -> None:
-    import hashlib as _hashlib
-    import hmac as _hmac
-    import os as _os
-    import time as _time
-
-    global_secret = _os.environ.get("HOTELRUNNER_WEBHOOK_SECRET")
-    escape = _os.environ.get("ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK") == "1"
-
-    source_ip = _source_ip(request)
-    raw = await request.body()
-    tenant_hint, hr_id_hint = _extract_signature_hints(request, raw)
-
-    # Resolve the target connection from the hint and load its per-property
-    # secret. Per-property wins; global is the backward-compat fallback only
-    # when no per-property secret exists.
-    conn = await _lookup_signing_connection(tenant_hint, hr_id_hint)
-    per_property_secret = await _load_webhook_secret(conn) if conn else None
-    active_secret = per_property_secret or global_secret
-
-    if not active_secret:
-        if escape:
-            _bind_verified_tenant(request, conn)
-            return
-        raise HTTPException(
-            status_code=503,
-            detail="Webhook signing not configured (set HOTELRUNNER_WEBHOOK_SECRET)",
-        )
-
-    sig_header = (request.headers.get("X-HotelRunner-Signature") or request.headers.get("X-Signature") or "").strip()
-    ts_header = (request.headers.get("X-HotelRunner-Timestamp") or request.headers.get("X-Timestamp") or "").strip()
-    if not (sig_header and ts_header):
-        _log_webhook_reject("missing_headers", source_ip, tenant_hint, hr_id_hint)
-        raise HTTPException(status_code=401, detail="Missing signature headers")
-    try:
-        out_of_tolerance = abs(int(_time.time()) - int(ts_header)) > 300
-    except (ValueError, TypeError):
-        _log_webhook_reject("invalid_timestamp", source_ip, tenant_hint, hr_id_hint)
-        raise HTTPException(status_code=401, detail="Invalid timestamp")
-    if out_of_tolerance:
-        _log_webhook_reject("stale_timestamp", source_ip, tenant_hint, hr_id_hint)
-        raise HTTPException(status_code=401, detail="Timestamp out of tolerance")
-
-    signed_payload = f"{ts_header}.".encode() + raw
-    expected = _hmac.new(active_secret.encode(), signed_payload, _hashlib.sha256).hexdigest()
-    provided = sig_header.split("=", 1)[1] if "=" in sig_header else sig_header
-    if not _hmac.compare_digest(expected, provided.lower()):
-        _log_webhook_reject("invalid_signature", source_ip, tenant_hint, hr_id_hint)
-        raise HTTPException(status_code=401, detail="Invalid signature")
-
-    # Signature verified — bind the processed tenant to the connection that
-    # owns the secret (cryptographic tenant binding).
-    _bind_verified_tenant(request, conn)
-
-
-# ── Webhook Batch Processor ──────────────────────────────────────────
 
 
 async def _process_webhook_batch(
@@ -288,47 +119,40 @@ def _detect_event_type(body: dict) -> str:
 async def _resolve_tenant_from_callback(body: dict, request: Request) -> str:
     """Resolve tenant_id for the callback.
 
-    Priority: signature-verified tenant (cryptographically bound) > header >
-    query param > body > HR connection lookup by hr_id.
-
-    Task #397: the cryptographically-verified tenant always wins. The
-    insecure "first active connection" fallback has been removed — a signed
-    request that resolves no specific connection no longer leaks an arbitrary
-    tenant identity.
+    Priority: signature-verified tenant (cryptographically bound).
+    All insecure fallbacks have been removed.
     """
     bound = _verified_tenant(request)
     if bound:
         return bound
-
-    tenant_id = request.headers.get("X-Tenant-ID") or request.query_params.get("tenant_id")
-    if tenant_id:
-        return tenant_id
-
-    tenant_id = body.get("tenant_id", "")
-    if tenant_id:
-        return tenant_id
-
-    # Try to resolve from HR connection by hr_id
-    hr_id = body.get("hr_id") or body.get("hotel_id") or body.get("property_id") or ""
-    if hr_id:
-        conn = await db.hotelrunner_connections.find_one(
-            {"hr_id": str(hr_id), "is_active": True},
-            {"_id": 0, "tenant_id": 1},
-        )
-        if conn:
-            return conn["tenant_id"]
-
     return ""
+
+
+async def _parse_payload(request: Request) -> dict:
+    """Parse JSON from either direct body or x-www-form-urlencoded 'data' field."""
+    try:
+        content_type = request.headers.get("content-type", "")
+        if "application/x-www-form-urlencoded" in content_type:
+            form = await request.form()
+            data_str = form.get("data")
+            if not data_str:
+                raise ValueError("Missing 'data' field in form")
+            return json.loads(data_str)
+        return await request.json()
+    except Exception as e:
+        logger.error(f"[WEBHOOK] Payload parsing failed: {e}")
+        raise HTTPException(status_code=400, detail="Invalid payload format")
 
 
 # ── UNIFIED CALLBACK — Single endpoint for HotelRunner "Dönüş adresi" ──
 
 
 @router.post("/callback")
+@router.post("/callback/{secret}")
 async def unified_callback(
     request: Request,
     background_tasks: BackgroundTasks,
-    _sig: None = Depends(_verify_hotelrunner_signature),
+    _sig: None = Depends(_verify_hotelrunner_callback),
 ):
     """
     Unified callback endpoint for HotelRunner webhook notifications.
@@ -346,7 +170,7 @@ async def unified_callback(
     helper applied here for parity (fail-closed without the env secret).
     """
     try:
-        body = await request.json()
+        body = await _parse_payload(request)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
@@ -392,25 +216,24 @@ async def unified_callback(
 
 
 @router.post("/webhooks/reservations")
+@router.post("/webhooks/reservations/{secret}")
 async def webhook_reservations(
     request: Request,
     background_tasks: BackgroundTasks,
-    _sig: None = Depends(_verify_hotelrunner_signature),
+    _sig: None = Depends(_verify_hotelrunner_callback),
 ):
     """
     Webhook endpoint for new reservations from HotelRunner.
     Persists as raw_channel_event and processes via unified ingest pipeline.
     """
     try:
-        body = await request.json()
+        body = await _parse_payload(request)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    tenant_id = _verified_tenant(request) or request.headers.get("X-Tenant-ID") or request.query_params.get("tenant_id")
+    tenant_id = _verified_tenant(request)
     if not tenant_id:
-        tenant_id = body.get("tenant_id", "")
-    if not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id required (header X-Tenant-ID or query param)")
+        raise HTTPException(status_code=401, detail="Verified tenant binding required")
 
     property_id = _resolve_property_id(body)
     reservations = body.get("reservations", [body] if "hr_number" in body else [])
@@ -433,23 +256,21 @@ async def webhook_reservations(
 
 
 @router.post("/webhooks/modifications")
+@router.post("/webhooks/modifications/{secret}")
 async def webhook_modifications(
     request: Request,
     background_tasks: BackgroundTasks,
-    _sig: None = Depends(_verify_hotelrunner_signature),
+    _sig: None = Depends(_verify_hotelrunner_callback),
 ):
     """Webhook for reservation modifications -> unified ingest pipeline."""
     try:
-        body = await request.json()
+        body = await _parse_payload(request)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    tenant_id = _verified_tenant(request) or request.headers.get("X-Tenant-ID") or request.query_params.get("tenant_id")
+    tenant_id = _verified_tenant(request)
     if not tenant_id:
-        tenant_id = body.get("tenant_id", "")
-    if not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id required")
-
+        raise HTTPException(status_code=401, detail="Verified tenant binding required")
     property_id = _resolve_property_id(body)
     reservations = body.get("reservations", [body] if "hr_number" in body else [])
     source_ip = request.client.host if request.client else "unknown"
@@ -466,23 +287,21 @@ async def webhook_modifications(
 
 
 @router.post("/webhooks/cancellations")
+@router.post("/webhooks/cancellations/{secret}")
 async def webhook_cancellations(
     request: Request,
     background_tasks: BackgroundTasks,
-    _sig: None = Depends(_verify_hotelrunner_signature),
+    _sig: None = Depends(_verify_hotelrunner_callback),
 ):
     """Webhook for reservation cancellations -> unified ingest pipeline."""
     try:
-        body = await request.json()
+        body = await _parse_payload(request)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    tenant_id = _verified_tenant(request) or request.headers.get("X-Tenant-ID") or request.query_params.get("tenant_id")
+    tenant_id = _verified_tenant(request)
     if not tenant_id:
-        tenant_id = body.get("tenant_id", "")
-    if not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id required")
-
+        raise HTTPException(status_code=401, detail="Verified tenant binding required")
     property_id = _resolve_property_id(body)
     reservations = body.get("reservations", [body] if "hr_number" in body else [])
     source_ip = request.client.host if request.client else "unknown"
