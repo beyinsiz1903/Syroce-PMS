@@ -14,6 +14,7 @@ import {
   AlertCircle, Coffee, Tablet, Printer, Menu as MenuIcon,
   TrendingUp, ShoppingBag, ArrowLeft, ChevronRight, Monitor,
 } from 'lucide-react';
+import { useEntitlements } from '@/context/EntitlementContext';
 
 /* ── helper ── */
 const fmt = (n, digits = 0) =>
@@ -76,6 +77,7 @@ const POSDashboard = () => {
   const [selectedOutletId, setSelectedOutletId] = useState('all');
   const [stats,           setStats]           = useState({ outlet_count: 0, menu_count: 0, today_orders: 0, today_revenue: 0 });
   const [loadingStats,    setLoadingStats]    = useState(true);
+  const { hasFeature } = useEntitlements();
 
   /* ── data ── */
   const loadOutlets = useCallback(async () => {
@@ -144,7 +146,9 @@ const POSDashboard = () => {
             {/* quick actions */}
             <div className="flex items-center gap-2 flex-wrap">
               <QuickBtn accent icon={Tablet}          label="Garson Terminali"   onClick={() => navigate('/pos/terminal')}      testId="nav-waiter-terminal" />
-              <QuickBtn        icon={Monitor}         label={t('fnb.kitchenDisplay', 'Mutfak Ekranı')} onClick={() => navigate('/kitchen-display')} testId="nav-kitchen-display" />
+              {hasFeature('pos_fnb', 'kds') && (
+                <QuickBtn        icon={Monitor}         label={t('fnb.kitchenDisplay', 'Mutfak Ekranı')} onClick={() => navigate('/kitchen-display')} testId="nav-kitchen-display" />
+              )}
               <QuickBtn        icon={Coffee}          label={t('staffRoomService.title', 'Oda Servisi Siparişleri')} onClick={() => navigate('/staff/room-service')} testId="nav-staff-room-service" />
               <QuickBtn        icon={UtensilsCrossed} label={t('posDashboard.fnbSuite', 'F&B Paketi')}    onClick={() => navigate('/fnb-complete')}       testId="nav-fnb-complete" />
               <QuickBtn        icon={Sparkles}        label={t('posDashboard.allFeatures', 'Tüm Özellikler')} onClick={() => navigate('/admin/features')} />

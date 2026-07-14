@@ -253,6 +253,34 @@ async def get_feature_comparison_endpoint():
     return {"features": get_feature_comparison(), "tiers": [tier.value for tier in SubscriptionTier]}
 
 
+
+from core.entitlements.enforcement import get_tenant_active_editions
+from core.entitlements.registry import ENTITLEMENT_REGISTRY
+
+
+async def _get_full_entitlements(tenant_id: str) -> dict:
+    result = {}
+    for mod_key, mod_def in ENTITLEMENT_REGISTRY.items():
+        editions = await get_tenant_active_editions(tenant_id, mod_key)
+        if not editions:
+            continue
+
+        features = set()
+        limits = {}
+        for ed in editions:
+            ed_def = mod_def.editions.get(ed)
+            if ed_def:
+                features.update(ed_def.features)
+                for lk, lv in ed_def.limits.items():
+                    limits[lk] = max(limits.get(lk, 0), lv)
+
+        result[mod_key] = {
+            "editions": editions,
+            "features": list(features),
+            "limits": limits
+        }
+    return result
+
 # ── GET /subscription/current ──
 @router.get("/subscription/current")
 async def get_current_subscription(current_user: User = Depends(get_current_user)):

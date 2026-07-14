@@ -23,6 +23,7 @@ import {
   ProtectedRoute, ProtectedRouteWithMemory, ModuleGuardedRoute, LoadingFallback,
 } from "@/routes/ProtectedRoute";
 import { registerRoutes } from "@/routes/preload";
+import { EntitlementProvider } from "@/context/EntitlementContext";
 import { prefetchHeavyModules } from "@/lib/prefetch";
 import { websocket } from "@/lib/websocket";
 
@@ -304,8 +305,14 @@ function App() {
     return <Navigate to={redirectTarget} replace />;
   };
 
+
+  const uRoles = (user?.roles || []).map(r => r.toLowerCase());
+  const uRole = (user?.role || "").toLowerCase();
+  const isSuperAdminUser = uRoles.includes("super_admin") || uRole === "super_admin" || uRole === "demo_manager_readonly";
+
   return (
-    <NotificationProvider>
+    <EntitlementProvider currentTenantId={tenant?.id} isSuperAdmin={isSuperAdminUser}>
+      <NotificationProvider>
       <CurrencyProvider isAuthenticated={isAuthenticated}>
       <QueryClientProvider client={queryClient}>
         <div className="App">
@@ -407,6 +414,7 @@ function App() {
       </QueryClientProvider>
       </CurrencyProvider>
     </NotificationProvider>
+    </EntitlementProvider>
   );
 }
 

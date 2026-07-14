@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { preloadRoute } from '@/routes/preload';
+import { useEntitlements } from '@/context/EntitlementContext';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -110,7 +111,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [expandedMobileGroup, setExpandedMobileGroup] = useState(null);
 
-  const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
+  const { isSuperAdmin, hasModule } = useEntitlements();
   const navRef = useRef(null);
   const mainRef = useRef(null);
 
@@ -127,7 +128,6 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
       window.scrollTo(0, 0);
     }
   }, [location.pathname, location.hash]);
-  const modules = useMemo(() => tenant?.modules || {}, [tenant]);
   const hiddenNavGroups = useMemo(() => new Set(tenant?.hidden_nav_groups || []), [tenant]);
   const hiddenNavItems = useMemo(() => new Set(tenant?.hidden_nav_items || []), [tenant]);
 
@@ -153,30 +153,11 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
 
   const getUpgradeTier = (itemTier) => itemTier === 'professional' ? 'professional' : 'enterprise';
 
-  // Paid add-on modules: route guard requires explicit `true` (strict).
-  // Keep nav visibility consistent so users don't see buttons that bounce
-  // back to home. Source of truth: `strict: true` flags in routeDefinitions.jsx.
-  const STRICT_MODULES = new Set(['mice', 'spa']);
-
-  const isModuleEnabled = (moduleKey) => {
-    if (!moduleKey) return true;
-    // Super admin bypasses all module gating (full access).
-    if (isSuperAdmin) return true;
-    if (STRICT_MODULES.has(moduleKey)) {
-      return modules?.[moduleKey] === true;
-    }
-    if (!modules || Object.keys(modules).length === 0) return true;
-    // Only hide if explicitly set to false; treat missing/undefined as enabled
-    return modules[moduleKey] !== false;
-  };
-
   const normalizeKey = (key) => key ? key.replace(/-/g, '_') : '';
   const normalizedCurrentModule = normalizeKey(currentModule);
 
-  const { visibleNav, lockedNav, upgradeTier } = useMemo(() => {
+  const { visibleNav } = useMemo(() => {
     const visible = [];
-    const locked = [];
-    let nextUpgradeTier = null;
 
     NAV_ITEMS.forEach((item) => {
       if (item.hidden) return;
@@ -186,19 +167,15 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
         if (isSuperAdmin) visible.push(item);
         return;
       }
-      if (item.moduleKey && isModuleEnabled(item.moduleKey)) {
-        visible.push(item);
-      } else if (item.moduleKey && !isModuleEnabled(item.moduleKey)) {
-        locked.push(item);
-        if (!nextUpgradeTier) nextUpgradeTier = getUpgradeTier(item.tier);
-      } else {
-        visible.push(item);
+      if (item.moduleKey && !hasModule(item.moduleKey)) {
+        return; // Yetkisizse gizle (Kilit ikonunu kaldırdık)
       }
+      visible.push(item);
     });
 
-    return { visibleNav: visible, lockedNav: locked, upgradeTier: nextUpgradeTier };
+    return { visibleNav: visible };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [modules, isSuperAdmin, hiddenNavGroups, hiddenNavItems]);
+  }, [hasModule, isSuperAdmin, hiddenNavGroups, hiddenNavItems]);
 
   const { standaloneItems, groupedItems } = useMemo(() => {
     const standalone = [];
@@ -596,10 +573,6 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                   </Button>
                 );
               })}
-
-              {!isSuperAdmin && lockedNav.length > 0 && upgradeTier && (
-                <UpgradeBanner requiredTier={upgradeTier} variant="nav-footer" />
-              )}
             </nav>
           )}
         </div>
