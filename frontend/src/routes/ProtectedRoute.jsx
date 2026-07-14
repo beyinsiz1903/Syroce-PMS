@@ -10,6 +10,7 @@
  */
 import { Suspense, lazy } from "react";
 import { Navigate } from "react-router-dom";
+import { useEntitlements } from "@/context/EntitlementContext";
 
 const Layout = lazy(() => import("@/components/Layout"));
 
@@ -73,7 +74,8 @@ export function ProtectedRouteWithMemory({
 
 export function ModuleGuardedRoute({
   isAuthenticated,
-  moduleEnabled,
+  moduleKey,
+  featureKey,
   element,
   strict = false,
   wrapLayout = false,
@@ -82,12 +84,26 @@ export function ModuleGuardedRoute({
   tenant,
   onLogout,
 }) {
+  const { hasModule, hasFeature, loading, error, isSuperAdmin } = useEntitlements();
+
   if (!isAuthenticated) return <Navigate to="/auth" replace />;
-  // strict=true → deny when not explicitly true (used for paid add-on
-  // modules like spa/mice so a stale or empty modules payload cannot
-  // accidentally render the page shell).
-  if (strict ? moduleEnabled !== true : moduleEnabled === false) {
-    return <Navigate to="/" replace />;
+
+  if (loading) {
+    return <LoadingFallback />;
+  }
+
+  // Prevent redirect loops by checking if the user is already on the fallback route
+  const currentPath = window.location.pathname;
+  const fallbackRoute = isSuperAdmin ? "/admin" : "/app/dashboard";
+
+  if (moduleKey && !hasModule(moduleKey)) {
+    if (currentPath === fallbackRoute) return null; // Avoid loop
+    return <Navigate to={fallbackRoute} replace />;
+  }
+  
+  if (featureKey && !hasFeature(moduleKey, featureKey)) {
+    if (currentPath === fallbackRoute) return null; // Avoid loop
+    return <Navigate to={fallbackRoute} replace />;
   }
   return (
     <Suspense fallback={<LoadingFallback />}>

@@ -21,6 +21,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useEntitlements } from '@/context/EntitlementContext';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
 /* ── constants ── */
 const OUTLET_TYPES = [
@@ -58,6 +60,7 @@ const POSOutletManagement = ({ onChange }) => {
   const [editing,     setEditing]    = useState(null);
   const [form,        setForm]       = useState(blankForm);
   const [saving,      setSaving]     = useState(false);
+  const { getLimit } = useEntitlements();
 
   const load = useCallback(async () => {
     try {
@@ -216,13 +219,26 @@ const POSOutletManagement = ({ onChange }) => {
             Yenile
           </Button>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" onClick={openNew} data-testid="button-new-outlet"
-                className="bg-amber-500 hover:bg-amber-600 text-white border-0">
-                <Plus className="w-4 h-4 mr-1.5" />
-                Yeni Satış Noktası
-              </Button>
-            </DialogTrigger>
+            <TooltipProvider>
+              <Tooltip delayDuration={300}>
+                <TooltipTrigger asChild>
+                  <div className="inline-block">
+                    <DialogTrigger asChild>
+                      <Button size="sm" onClick={openNew} disabled={outlets.length >= (getLimit("pos_fnb", "outlets") || 1)} data-testid="button-new-outlet"
+                        className="bg-amber-500 hover:bg-amber-600 text-white border-0 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <Plus className="w-4 h-4 mr-1.5" />
+                        Yeni Satış Noktası
+                      </Button>
+                    </DialogTrigger>
+                  </div>
+                </TooltipTrigger>
+                {outlets.length >= (getLimit("pos_fnb", "outlets") || 1) && (
+                  <TooltipContent side="top" className="bg-slate-800 text-white text-xs">
+                    Maksimum outlet limitine ({getLimit("pos_fnb", "outlets") || 1}) ulaştınız. Lütfen planınızı yükseltin.
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>{editing ? 'Satış Noktasını Düzenle' : 'Yeni Satış Noktası'}</DialogTitle>
