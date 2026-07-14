@@ -76,14 +76,15 @@ class HotelRunnerV2Service:
         Factory: resolve credentials from SecretManager and build service.
         Never uses plaintext credentials.
         """
-        from domains.channel_manager.credential_vault import get_decrypted_credentials
+        from core.secrets import get_secrets_manager
 
-        creds = await get_decrypted_credentials(tenant_id, "hotelrunner", property_id)
+        sm = get_secrets_manager()
+        creds = await sm.get_provider_credentials(tenant_id, "hotelrunner", property_id)
         if not creds:
             raise HRv2AuthError(f"No credentials found for tenant={tenant_id} property={property_id}")
 
         token = creds.get("token", "")
-        hr_id = creds.get("hr_id", "")
+        hr_id = creds.get("hr_id", property_id)
         if not token or not hr_id:
             raise HRv2AuthError("Incomplete credentials (token or hr_id missing)")
 

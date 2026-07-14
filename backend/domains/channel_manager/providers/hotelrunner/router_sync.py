@@ -17,6 +17,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user
@@ -247,3 +248,62 @@ async def confirm_reservation_delivery(
     )
 
     return {"message": "Rezervasyon teslimati onaylandi", "hr_number": hr_number}
+
+
+class ReservationStateUpdateReq(BaseModel):
+    event: str
+    cancel_reason: str | None = None
+
+
+@router.post("/reservations/{hr_number}/state")
+async def update_reservation_state(
+    hr_number: str,
+    payload: ReservationStateUpdateReq,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),
+):
+    """
+    Send outbound reservation state update (confirm/cancel) to HotelRunner.
+    """
+    provider, conn = await get_provider(current_user.tenant_id)
+
+    res = await db.hotelrunner_reservations.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "hr_number": hr_number,
+        }
+    )
+    if not res:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+
+    message_uid = res.get("message_uid")
+    if not message_uid:
+        raise HTTPException(status_code=400, detail="message_uid bulunamadi")
+
+    if payload.event not in ("confirm", "cancel"):
+        raise HTTPException(status_code=400, detail="Gecersiz event. 'confirm' veya 'cancel' olmali.")
+
+    if payload.event == "cancel" and payload.cancel_reason not in ("customer", "no_room", "no_show", "invalid_price"):
+        raise HTTPException(status_code=400, detail="Gecersiz cancel_reason.")
+
+    result = await provider.update_reservation_state(
+        message_uid=message_uid,
+        event=payload.event,
+        cancel_reason=payload.cancel_reason,
+    )
+
+    if not result.success:
+        raise HTTPException(status_code=502, detail=f"Durum guncelleme hatasi: {result.error}")
+
+    await db.hotelrunner_reservations.update_one(
+        {"tenant_id": current_user.tenant_id, "hr_number": hr_number},
+        {
+            "$set": {
+                "outbound_state": payload.event,
+                "outbound_reason": payload.cancel_reason,
+                "outbound_updated_at": datetime.now(UTC).isoformat(),
+            }
+        },
+    )
+
+    return {"message": "Rezervasyon durumu guncellendi", "hr_number": hr_number, "event": payload.event}

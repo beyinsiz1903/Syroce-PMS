@@ -577,7 +577,7 @@ class HotelRunnerProvider:
                 params["pms_number"] = pms_number
 
             async def _call():
-                return await self._client.put(ep.RESERVATIONS_FIRE, params=params)
+                return await self._client.put(ep.RESERVATIONS_ACK, params=params)
 
             result = await self._retry.execute(_call)
             duration_ms = int((time.time() - start) * 1000)
@@ -588,7 +588,50 @@ class HotelRunnerProvider:
                 status_code=result.status_code,
                 duration_ms=duration_ms,
                 success=result.success,
-                connection_id=self._connection_id,
+                tenant_id=self._config.tenant_id,
+                connection_id=self._config.connection_id,
+            )
+            return result
+
+        except Exception as e:
+            return self._handle_error(e, start, ep.RESERVATIONS_ACK)
+
+    # ── Reservation State Update ──────────────────────────────────────────
+
+    async def update_reservation_state(
+        self,
+        message_uid: str,
+        event: str,
+        cancel_reason: str | None = None,
+    ) -> ProviderResult:
+        """
+        Send outbound reservation status (confirm/cancel) to HotelRunner via /reservations/fire.
+        event: "confirm" or "cancel"
+        cancel_reason: "customer", "no_room", "no_show", "invalid_price" (only if event="cancel")
+        """
+        start = time.time()
+        try:
+            params: dict[str, str] = {
+                "message_uid": message_uid,
+                "event": event,
+            }
+            if event == "cancel" and cancel_reason:
+                params["cancel_reason"] = cancel_reason
+
+            async def _call():
+                return await self._client.put(ep.RESERVATIONS_FIRE, params=params)
+
+            result = await self._retry.execute(_call)
+            duration_ms = int((time.time() - start) * 1000)
+
+            obs.record_provider_call(
+                path=ep.RESERVATIONS_FIRE,
+                method="PUT",
+                status_code=result.status_code,
+                duration_ms=duration_ms,
+                success=result.success,
+                tenant_id=self._config.tenant_id,
+                connection_id=self._config.connection_id,
             )
             return ProviderResult(
                 success=result.success,
@@ -596,8 +639,8 @@ class HotelRunnerProvider:
                 error=result.error,
                 duration_ms=duration_ms,
             )
-        except HotelRunnerError as e:
-            return self._handle_error(e, start, ep.RESERVATIONS_ACK)
+        except Exception as e:
+            return self._handle_error(e, start, ep.RESERVATIONS_FIRE)
 
     # ── Canonical helpers (for snapshot collectors & ingest) ───────────
 
