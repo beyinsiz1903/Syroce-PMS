@@ -2269,7 +2269,7 @@ async def post_agent_disposition(
     return {"success": True, "detail": "Çağrı değerlendirme formu kaydedildi ve Müsait durumuna geçildi."}
 
 
-@router.get("/callbacks")
+@router.get("/contact-center/callbacks")
 async def get_callbacks(
     current_user: User = Depends(get_current_user),
     _mod=Depends(require_module("contact_center")),
@@ -2282,7 +2282,7 @@ async def get_callbacks(
     return {"callbacks": docs}
 
 
-@router.post("/callbacks/{callback_id}/assign")
+@router.post("/contact-center/callbacks/{callback_id}/assign")
 async def post_callback_assign(
     callback_id: str,
     current_user: User = Depends(get_current_user),
@@ -2296,7 +2296,7 @@ async def post_callback_assign(
     return {"success": True, "detail": "Geri arama kaydı atandı."}
 
 
-@router.post("/callbacks/{callback_id}/complete")
+@router.post("/contact-center/callbacks/{callback_id}/complete")
 async def post_callback_complete(
     callback_id: str,
     result: str = "completed",

@@ -1773,3 +1773,24 @@ async def get_menu_engineering(
         end.isoformat(),
         outlet_id,
     )
+
+# ── GET /pos/tables (Legacy wrapper for frontend) ──
+@router.get("/pos/tables")
+async def get_pos_tables_legacy(outlet_id: str, current_user: User = Depends(get_current_user)):
+    """Legacy endpoint wrapper for POSTableManagement.jsx"""
+    res = await get_table_layout(outlet_id, current_user)
+    return {
+        "tables": res["tables"],
+        "status_counts": {
+            "available": res["available"],
+            "occupied": res["occupied"],
+            "reserved": res["reserved"]
+        }
+    }
+
+# ── PUT /pos/tables/{table_id}/status (Legacy wrapper for frontend) ──
+@router.put("/pos/tables/{table_id}/status")
+async def update_pos_table_status_legacy(table_id: str, new_status: str, current_user: User = Depends(get_current_user)):
+    """Legacy endpoint wrapper for POSTableManagement.jsx"""
+    await db.table_layouts.update_one({"id": table_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": new_status}})
+    return {"success": True}
