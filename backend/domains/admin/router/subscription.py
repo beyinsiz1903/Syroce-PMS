@@ -254,8 +254,9 @@ async def get_feature_comparison_endpoint():
 
 
 
-from core.entitlements.registry import ENTITLEMENT_REGISTRY
 from core.entitlements.enforcement import get_tenant_active_editions
+from core.entitlements.registry import ENTITLEMENT_REGISTRY
+
 
 async def _get_full_entitlements(tenant_id: str) -> dict:
     result = {}
@@ -263,7 +264,7 @@ async def _get_full_entitlements(tenant_id: str) -> dict:
         editions = await get_tenant_active_editions(tenant_id, mod_key)
         if not editions:
             continue
-            
+
         features = set()
         limits = {}
         for ed in editions:
@@ -272,7 +273,7 @@ async def _get_full_entitlements(tenant_id: str) -> dict:
                 features.update(ed_def.features)
                 for lk, lv in ed_def.limits.items():
                     limits[lk] = max(limits.get(lk, 0), lv)
-                    
+
         result[mod_key] = {
             "editions": editions,
             "features": list(features),
