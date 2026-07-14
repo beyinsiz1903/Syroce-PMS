@@ -48,6 +48,20 @@ class _FakeCursor:
 
     async def to_list(self, _n):
         return list(self._data)
+        
+    def sort(self, *args, **kwargs):
+        return self
+        
+    def __aiter__(self):
+        class _AsyncIter:
+            def __init__(self, data):
+                self.data = iter(data)
+            async def __anext__(self):
+                try:
+                    return next(self.data)
+                except StopIteration:
+                    raise StopAsyncIteration
+        return _AsyncIter(self._data)
 
 
 class _Coll:
@@ -84,46 +98,177 @@ class _Coll:
         self.docs.append(dict(doc))
         return SimpleNamespace(inserted_id="x")
 
+    def _match_doc(self, d, flt):
+        for k, v in flt.items():
+            if k == "$or":
+                or_match = False
+                for cond in v:
+                    cond_match = True
+                    for ok, ov in cond.items():
+                        if isinstance(ov, dict):
+                            if "$gt" in ov and not (d.get(ok) and d.get(ok) > ov["$gt"]): cond_match = False
+                            if "$lt" in ov and not (d.get(ok) is not None and d.get(ok) < ov["$lt"]): cond_match = False
+                            if "$in" in ov and d.get(ok) not in ov["$in"]: cond_match = False
+                        elif d.get(ok) != ov:
+                            cond_match = False
+                    if cond_match:
+                        or_match = True
+                        break
+                if not or_match:
+                    return False
+            elif isinstance(v, dict):
+                if "$regex" in v:
+                    import re
+                    if not re.search(v["$regex"], d.get(k, "")): return False
+                if "$in" in v and d.get(k) not in v["$in"]: return False
+                if "$ne" in v and d.get(k) == v["$ne"]: return False
+                if "$lt" in v and not (d.get(k) is not None and d.get(k) < v["$lt"]): return False
+                if "$gt" in v and not (d.get(k) is not None and d.get(k) > v["$gt"]): return False
+            elif isinstance(d.get(k), list):
+                if v not in d.get(k): return False
+            elif d.get(k) != v:
+                return False
+        return True
+
     async def find_one(self, flt, proj=None, session=None):
         for d in self.docs:
-            if all(d.get(k) == v for k, v in flt.items()):
+            if self._match_doc(d, flt):
                 r = dict(d)
                 r.pop("_id", None)
                 return r
         return None
 
+    def find(self, flt, proj=None, session=None):
+        from tests.test_pos_folio_atomicity import _FakeCursor
+        res = []
+        for d in self.docs:
+            if self._match_doc(d, flt):
+                r = dict(d)
+                r.pop("_id", None)
+                res.append(r)
+        return _FakeCursor(res)
+
     async def update_one(self, flt, update, upsert=False, session=None):
         for d in self.docs:
-            if all(d.get(k) == v for k, v in flt.items()):
-                if "$set" in update:
-                    d.update(update["$set"])
-                return SimpleNamespace(matched_count=1, modified_count=1)
+            if self._match_doc(d, flt):
+                if "$inc" in update:
+                    for k, v in update["$inc"].items(): d[k] = d.get(k, 0) + v
+                if "$set" in update: d.update(update["$set"])
+                if "$addToSet" in update:
+                    for k, v in update["$addToSet"].items():
+                        if k not in d: d[k] = []
+                        if isinstance(v, dict) and "$each" in v:
+                            for item in v["$each"]:
+                                if item not in d[k]: d[k].append(item)
+                        elif v not in d[k]: d[k].append(v)
+                if "$pull" in update:
+                    for k, v in update["$pull"].items():
+                        if k in d and v in d[k]: d[k].remove(v)
+                return SimpleNamespace(matched_count=1, modified_count=1, upserted_id=None)
         if upsert:
-            newd = dict(flt)
-            if "$setOnInsert" in update:
-                newd.update(update["$setOnInsert"])
-            if "$set" in update:
-                newd.update(update["$set"])
-            self.docs.append(newd)
-            return SimpleNamespace(matched_count=0, modified_count=0, upserted_id="x")
+            nd = dict(flt)
+            if "$setOnInsert" in update: nd.update(update["$setOnInsert"])
+            if "$set" in update: nd.update(update["$set"])
+            if "$inc" in update:
+                for k, v in update["$inc"].items(): nd[k] = nd.get(k, 0) + v
+            self.docs.append(nd)
+            return SimpleNamespace(matched_count=0, modified_count=1, upserted_id="x")
         return SimpleNamespace(matched_count=0, modified_count=0)
+        
+    async def delete_many(self, flt, session=None):
+        initial_len = len(self.docs)
+        self.docs = [d for d in self.docs if not self._match_doc(d, flt)]
+        return SimpleNamespace(deleted_count=initial_len - len(self.docs))
+
+    async def find_one_and_update(self, flt, update, return_document=None, upsert=False, session=None):
+        for d in self.docs:
+            if self._match_doc(d, flt):
+                if "$inc" in update:
+                    for k, v in update["$inc"].items(): d[k] = d.get(k, 0) + v
+                if "$set" in update: d.update(update["$set"])
+                if "$addToSet" in update:
+                    for k, v in update["$addToSet"].items():
+                        if k not in d: d[k] = []
+                        if isinstance(v, dict) and "$each" in v:
+                            for item in v["$each"]:
+                                if item not in d[k]: d[k].append(item)
+                        elif v not in d[k]: d[k].append(v)
+                if "$pull" in update:
+                    for k, v in update["$pull"].items():
+                        if k in d and v in d[k]: d[k].remove(v)
+                return dict(d)
+        if upsert:
+            nd = {}
+            for k, v in flt.items():
+                if not isinstance(v, dict):
+                    nd[k] = v
+            if "$setOnInsert" in update: nd.update(update["$setOnInsert"])
+            if "$set" in update: nd.update(update["$set"])
+            if "$inc" in update:
+                for k, v in update["$inc"].items(): nd[k] = nd.get(k, 0) + v
+            self.docs.append(nd)
+            return dict(nd)
+        return None
 
     def aggregate(self, pipeline, session=None):
-        match = pipeline[0]["$match"]
-        group = pipeline[1]["$group"]
-        rows = [d for d in self.docs if all(d.get(k) == v for k, v in match.items())]
-        sum_spec = group["total"]["$sum"]
-        total = 0.0
-        for d in rows:
-            if isinstance(sum_spec, dict) and "$ifNull" in sum_spec:
-                a, b = sum_spec["$ifNull"]
-                val = d.get(a[1:])
-                if val is None:
-                    val = d.get(b[1:])
-                total += val or 0
-            elif isinstance(sum_spec, str):
-                total += d.get(sum_spec[1:]) or 0
-        return _FakeCursor([{"total": total}] if rows else [])
+        if "$group" in pipeline[0]:
+            group = pipeline[0]["$group"]
+            match = pipeline[1]["$match"] if len(pipeline) > 1 else None
+        else:
+            match = pipeline[0]["$match"]
+            group = pipeline[1]["$group"]
+            
+        groups = {}
+        for d in self.docs:
+            if match and "$match" in pipeline[0] and not self._match_doc(d, match):
+                continue
+            
+            gid = {}
+            for k, v in group["_id"].items():
+                if v.startswith("$"):
+                    gid[k] = d.get(v[1:])
+                else:
+                    gid[k] = v
+                    
+            gk = str(gid)
+            if gk not in groups:
+                groups[gk] = {"_id": gid}
+                for k, v in group.items():
+                    if k == "_id": continue
+                    if "$sum" in v: groups[gk][k] = 0
+                    if "$push" in v: groups[gk][k] = []
+                    if "$addToSet" in v: groups[gk][k] = []
+            
+            for k, v in group.items():
+                if k == "_id": continue
+                if "$sum" in v: groups[gk][k] += 1
+                if "$push" in v: groups[gk][k].append(d.get(v["$push"][1:]))
+                if "$addToSet" in v:
+                    val = d.get(v["$addToSet"][1:])
+                    if val not in groups[gk][k]: groups[gk][k].append(val)
+                    
+        res = list(groups.values())
+        if match and "$match" in pipeline[1]:
+            res = [r for r in res if self._match_doc(r, match)]
+        
+        # apply project if exists
+        project = next((p["$project"] for p in pipeline if "$project" in p), None)
+        if project:
+            proj_res = []
+            for r in res:
+                pr = {}
+                for pk, pv in project.items():
+                    if isinstance(pv, dict) and "$size" in pv:
+                        pr[pk] = len(r.get(pv["$size"][1:], []))
+                    elif str(pv).startswith("$"):
+                        pr[pk] = r.get(pv[1:])
+                    elif pv == 1:
+                        pr[pk] = r.get(pk)
+                proj_res.append(pr)
+            res = proj_res
+            
+        from tests.test_pos_folio_atomicity import _FakeCursor
+        return _FakeCursor(res)
 
 
 class _FakeSession:

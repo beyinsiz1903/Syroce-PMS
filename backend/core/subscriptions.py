@@ -47,6 +47,7 @@ MODULE_ALIASES: dict[str, list[str]] = {
     "mailing": ["mailing", "mailing_starter", "mailing_pro"],
     "quick_id": ["quick_id", "quick_id_integration"],
     "af_sadakat": ["af_sadakat", "af_sadakat_loyalty"],
+    "pos_fnb": ["pos_fnb", "pos_fnb_basic", "pos_fnb_pro"],
 }
 
 
@@ -129,5 +130,11 @@ async def ensure_indexes() -> None:
             partialFilterExpression={"external_ref": {"$type": "string"}},
             name="uniq_folio_charge_external_ref",
         )
+
+        # Entitlement Quota Deduplication & Index
+        from core.entitlements.indexes import ensure_entitlement_indexes
+        await ensure_entitlement_indexes(db)
+
     except Exception:
-        logger.warning("subscriptions: failed to ensure folio_charge external_ref index", exc_info=True)
+        logger.exception("[STARTUP] Entitlement quota index initialization failed")
+        raise

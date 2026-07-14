@@ -4,11 +4,14 @@ Domain Router: POS Marketplace
 POS enhancements, warehouse procurement, marketplace extensions.
 """
 
+import logging
 import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
+
+logger = logging.getLogger(__name__)
 
 from core.database import db
 from core.helpers import require_feature
@@ -56,6 +59,12 @@ async def get_outlets(current_user: User = Depends(get_current_user)):
     return {"outlets": outlets, "count": len(outlets)}
 
 
+from pymongo.errors import DuplicateKeyError
+
+from core.entitlements.enforcement import get_tenant_limit
+from core.entitlements.quota import QuotaExceededException, release_quota, reserve_quota
+
+
 @router.post("/pos/outlets")
 async def create_outlet(
     request: CreateOutletRequest,
@@ -63,8 +72,34 @@ async def create_outlet(
     _perm=Depends(require_op("manage_sales")),  # v99 DW
 ):
     """Create new F&B outlet"""
+    if request.client_request_id:
+        existing_outlet = await db.pos_outlets.find_one({
+            "tenant_id": current_user.tenant_id,
+            "client_request_id": request.client_request_id
+        }, {"_id": 0})
+        if existing_outlet:
+            return existing_outlet
+
+    outlet_id = str(uuid.uuid4())
+    max_outlets = await get_tenant_limit(current_user.tenant_id, "pos_fnb", "outlets")
+
+    if max_outlets and max_outlets > 0:
+        try:
+            await reserve_quota(current_user.tenant_id, "pos_fnb", "outlets", outlet_id, max_outlets)
+        except QuotaExceededException:
+            import os
+            mode = os.environ.get("ENTITLEMENT_ENFORCEMENT_MODE", "observe")
+            if mode == "observe":
+                logger.warning(f"[ENTITLEMENT_OBSERVE] Tenant {current_user.tenant_id} blocked for outlet limit ({max_outlets}) but allowed due to observe mode.")
+                await reserve_quota(current_user.tenant_id, "pos_fnb", "outlets", outlet_id, max_outlets, force=True)
+            else:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Maksimum outlet limitine ({max_outlets}) ulastiniz. Daha fazlasi icin paketinizi yukseltin."
+                )
+
     outlet = {
-        "id": str(uuid.uuid4()),
+        "id": outlet_id,
         "tenant_id": current_user.tenant_id,
         "outlet_name": request.outlet_name,
         "outlet_type": request.outlet_type,
@@ -73,10 +108,32 @@ async def create_outlet(
         "opening_hours": request.opening_hours,
         "status": "active",
         "created_at": datetime.now(UTC).isoformat(),
+        "client_request_id": request.client_request_id,
     }
 
-    outlet_copy = outlet.copy()
-    await db.pos_outlets.insert_one(outlet_copy)
+    try:
+        outlet_copy = outlet.copy()
+        await db.pos_outlets.insert_one(outlet_copy)
+    except DuplicateKeyError:
+        if max_outlets and max_outlets > 0:
+            await release_quota(current_user.tenant_id, "pos_fnb", "outlets", outlet_id)
+
+        if request.client_request_id:
+            existing = await db.pos_outlets.find_one(
+                {
+                    "tenant_id": current_user.tenant_id,
+                    "client_request_id": request.client_request_id,
+                },
+                {"_id": 0}
+            )
+            if existing:
+                return existing
+        raise
+    except Exception as e:
+        if max_outlets and max_outlets > 0:
+            await release_quota(current_user.tenant_id, "pos_fnb", "outlets", outlet_id)
+        raise e
+
     return outlet
 
 
@@ -108,13 +165,27 @@ async def delete_outlet(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
 ):
-    """Soft-delete: status='inactive' (siparis gecmisi korunur)."""
-    existing = await db.pos_outlets.find_one({"id": outlet_id, "tenant_id": current_user.tenant_id})
-    if not existing:
-        raise HTTPException(status_code=404, detail="Outlet not found")
+    """Kalic silme: status='deleted' olarak isaretlenir ve kota serbest birakilir.
+    (Mevcut politikaya gore status='inactive' olan outlet'ler kotadan sayilmaya devam eder.
+    Kotayi bosaltmak icin kalici silinmesi yani 'deleted' durumuna cekilmesi gerekir.)
+    """
+    res = await db.pos_outlets.update_one(
+        {"id": outlet_id, "tenant_id": current_user.tenant_id, "status": {"$ne": "deleted"}},
+        {"$set": {"status": "deleted", "deleted_at": datetime.now(UTC).isoformat()}}
+    )
 
-    await db.pos_outlets.update_one({"id": outlet_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "inactive", "deleted_at": datetime.now(UTC).isoformat()}})
-    return {"message": "Outlet pasif duruma alindi", "outlet_id": outlet_id}
+    if res.matched_count == 0:
+        # Either not found or already deleted
+        existing = await db.pos_outlets.find_one({"id": outlet_id, "tenant_id": current_user.tenant_id})
+        if not existing:
+            raise HTTPException(status_code=404, detail="Outlet not found")
+        # If it was already deleted, we don't return an error, but we don't double-release
+        return {"message": "Outlet zaten silinmis", "outlet_id": outlet_id}
+
+    if res.modified_count == 1:
+        await release_quota(current_user.tenant_id, "pos_fnb", "outlets", outlet_id)
+
+    return {"message": "Outlet silindi ve kota serbest birakildi", "outlet_id": outlet_id}
 
 
 @router.get("/pos/outlets/{outlet_id}")
