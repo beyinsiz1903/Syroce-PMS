@@ -89,6 +89,39 @@ ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
                 }
             )
         }
+    ),
+    "mice": ModuleDefinition(
+        key="mice",
+        name="MICE / Banquet",
+        features=[
+            ModuleFeature(key="proposals_contracts", description="Teklif ve Sözleşme Yönetimi"),
+            ModuleFeature(key="banquet_operations", description="BEO, Mutfak Fişi, Ops Sheet"),
+            ModuleFeature(key="advanced_reporting", description="Gelişmiş MICE Raporları"),
+        ],
+        limits=[
+            ModuleLimit(key="spaces_limit", description="Maksimum Salon Sayısı"),
+            ModuleLimit(key="concurrent_events", description="Eşzamanlı Etkinlik Limiti"),
+        ],
+        editions={
+            "basic": EditionDefinition(
+                key="basic",
+                name="MICE Basic",
+                features=set(),
+                limits={
+                    "spaces_limit": 2,
+                    "concurrent_events": 5,
+                }
+            ),
+            "pro": EditionDefinition(
+                key="pro",
+                name="MICE Pro",
+                features={"proposals_contracts", "banquet_operations", "advanced_reporting"},
+                limits={
+                    "spaces_limit": 10,
+                    "concurrent_events": 50,
+                }
+            )
+        }
     )
 }
 
