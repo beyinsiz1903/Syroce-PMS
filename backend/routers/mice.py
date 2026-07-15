@@ -30,6 +30,8 @@ from core.booking_atomicity import (
     standalone_fallback_allowed,
     with_resource_locks,
 )
+from core.entitlements.enforcement import get_tenant_limit
+from core.entitlements.quota import release_quota, reserve_quota
 from core.security import JWT_ALGORITHM, JWT_SECRET, get_current_user
 from core.spa_mice_authz import require_catalog, require_finance, require_mice_ops
 from core.tenant_db import get_system_db
@@ -133,6 +135,7 @@ class FunctionSpaceIn(BaseModel):
     capacity_u_shape: int = Field(0, ge=0)
     capacity_boardroom: int = Field(0, ge=0)
     hourly_rate: float = Field(0, ge=0)
+    client_request_id: str | None = None
     daily_rate: float = Field(0, ge=0)
     currency: str = "TRY"
     amenities: list[str] = Field(default_factory=list)  # ["projector","stage",...]
@@ -225,11 +228,40 @@ async def create_space(
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
-    doc = {"id": str(uuid.uuid4()), "tenant_id": current_user.tenant_id, **body.model_dump(), "created_at": datetime.now(UTC).isoformat()}
-    await db.mice_spaces.insert_one(doc)
+
+    body_dict = body.model_dump()
+    client_request_id = body_dict.pop("client_request_id", None)
+
+    limit = await get_tenant_limit(current_user.tenant_id, "mice", "spaces_limit")
+    if limit is not None:
+        await reserve_quota(current_user.tenant_id, "mice", "spaces_limit", limit, increment=1)
+
+    doc = {"id": str(uuid.uuid4()), "tenant_id": current_user.tenant_id, **body_dict, "created_at": datetime.now(UTC).isoformat()}
+    if client_request_id:
+        doc["client_request_id"] = client_request_id
+
+    try:
+        await db.mice_spaces.insert_one(doc)
+    except DuplicateKeyError:
+        if client_request_id:
+            existing = await db.mice_spaces.find_one({
+                "tenant_id": current_user.tenant_id,
+                "client_request_id": client_request_id
+            })
+            if existing:
+                existing.pop("_id", None)
+                return {"success": True, "source": "idempotent", "space_id": existing["id"]}
+        if limit is not None:
+            await release_quota(current_user.tenant_id, "mice", "spaces_limit", increment=1)
+        raise HTTPException(status_code=409, detail="Mekan eklenirken çakışma oluştu.")
+    except Exception as e:
+        if limit is not None:
+            await release_quota(current_user.tenant_id, "mice", "spaces_limit", increment=1)
+        raise e
+
     doc.pop("_id", None)
     _invalidate_mice_spaces_cache(current_user.tenant_id)
-    return doc
+    return {"success": True, "source": "created", "space_id": doc["id"], "doc": doc}
 
 
 @router.put("/spaces/{space_id}")
@@ -1083,6 +1115,15 @@ async def create_event(
     db = get_system_db()
     tenant_id = current_user.tenant_id
 
+    client_request_id = body.client_request_id
+    limit = None
+    reserve_increment = 0
+    if body.status not in {"cancelled", "completed", "lost"}:
+        limit = await get_tenant_limit(tenant_id, "mice", "concurrent_events")
+        if limit is not None:
+            await reserve_quota(tenant_id, "mice", "concurrent_events", limit, increment=1)
+            reserve_increment = 1
+
     bookings = [b.model_dump() for b in body.space_bookings]
     for b in bookings:
         b["starts_at"] = b["starts_at"].isoformat() if isinstance(b["starts_at"], datetime) else b["starts_at"]
@@ -1116,18 +1157,21 @@ async def create_event(
     space_ids = [b["space_id"] for b in bookings if b.get("space_id")]
     inv_ids = [r["inventory_id"] for r in resources if r.get("inventory_id")]
 
+    if client_request_id:
+        event_doc["client_request_id"] = client_request_id
+
     async def _do_insert(session) -> dict:
         if holds_active:
             conflict = await _check_space_conflict(tenant_id, bookings, session=session)
             if conflict:
                 raise HTTPException(409, conflict)
-            # Cross-event inventory aggregation INSIDE the tx so two
-            # concurrent inserts cannot both pass the check and
-            # over-subscribe a shared resource (architect: CRITICAL).
             inv_err = await _check_resource_inventory_conflict(tenant_id, resources, bookings, session=session)
             if inv_err:
                 raise HTTPException(409, inv_err)
-        await db.mice_events.insert_one(event_doc, session=session)
+        try:
+            await db.mice_events.insert_one(event_doc, session=session)
+        except DuplicateKeyError as de:
+            raise de
         return event_doc
 
     try:
@@ -1139,50 +1183,54 @@ async def create_event(
             resources=_event_lock_resources(space_ids, inv_ids) if holds_active else [],
             callback=_do_insert,
         )
+    except DuplicateKeyError:
+        if client_request_id:
+            existing = await db.mice_events.find_one({
+                "tenant_id": tenant_id,
+                "client_request_id": client_request_id
+            })
+            if existing:
+                existing.pop("_id", None)
+                if reserve_increment:
+                    await release_quota(tenant_id, "mice", "concurrent_events", increment=reserve_increment)
+                return {"success": True, "source": "idempotent", "event_id": existing["id"]}
+        if reserve_increment:
+            await release_quota(tenant_id, "mice", "concurrent_events", increment=reserve_increment)
+        raise HTTPException(status_code=409, detail="Etkinlik eklenirken çakışma oluştu.")
     except HTTPException:
+        if reserve_increment:
+            await release_quota(tenant_id, "mice", "concurrent_events", increment=reserve_increment)
         raise
     except Exception as exc:  # noqa: BLE001
+        if reserve_increment:
+            await release_quota(tenant_id, "mice", "concurrent_events", increment=reserve_increment)
         if not is_replica_set_unavailable(exc):
             raise
+        # Standalone fallback
         if not standalone_fallback_allowed():
-            raise HTTPException(
-                status_code=503,
-                detail=("Etkinlik servisi şu anda atomik garanti sağlayamıyor (Mongo replica set gerekli)."),
-            )
-        # Dev opt-in: best-effort non-tx fallback.
-        if holds_active:
-            conflict = await _check_space_conflict(tenant_id, bookings)
-            if conflict:
-                raise HTTPException(409, conflict)
-            inv_err = await _check_resource_inventory_conflict(tenant_id, resources, bookings)
-            if inv_err:
-                raise HTTPException(409, inv_err)
-        await db.mice_events.insert_one(event_doc)
+            raise HTTPException(status_code=503, detail="Cluster unavailable")
+
+        try:
+            if holds_active:
+                conflict = await _check_space_conflict(tenant_id, bookings, session=None)
+                if conflict:
+                    raise HTTPException(409, conflict)
+                inv_err = await _check_resource_inventory_conflict(tenant_id, resources, bookings, session=None)
+                if inv_err:
+                    raise HTTPException(409, inv_err)
+            await db.mice_events.insert_one(event_doc, session=None)
+        except DuplicateKeyError:
+            if client_request_id:
+                existing = await db.mice_events.find_one({"tenant_id": tenant_id, "client_request_id": client_request_id})
+                if existing:
+                    existing.pop("_id", None)
+                    return {"success": True, "source": "idempotent", "event_id": existing["id"]}
+            raise HTTPException(status_code=409, detail="Etkinlik eklenirken çakışma oluştu.")
+        except Exception as se:
+            raise se
 
     event_doc.pop("_id", None)
-    await log_audit_event(
-        tenant_id=tenant_id,
-        user_id=current_user.username,
-        action="create",
-        entity_type="mice_event",
-        entity_id=event_doc["id"],
-        details=f"Etkinlik oluşturuldu: {event_doc.get('name')} ({event_doc.get('start_date')})",
-        before_value=None,
-        after_value=event_doc,
-        db=db,
-    )
-    _invalidate_mice_events_cache(tenant_id)
-    return event_doc
-
-
-@router.get("/events/{event_id}")
-async def get_event(event_id: str, current_user: User = Depends(get_current_user)) -> dict:
-    db = get_system_db()
-    doc = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
-    if not doc:
-        raise HTTPException(404, "Etkinlik bulunamadı")
-    return doc
-
+    return {"success": True, "source": "created", "event_id": event_doc["id"], "doc": event_doc}
 
 @router.put("/events/{event_id}")
 async def update_event(

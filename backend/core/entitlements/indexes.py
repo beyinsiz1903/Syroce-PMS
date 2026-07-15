@@ -68,3 +68,17 @@ async def ensure_entitlement_indexes(db):
         partialFilterExpression={"client_request_id": {"$exists": True}},
         name="uq_staff_tenant_client_request_id",
     )
+
+    await db.mice_spaces.create_index(
+        [("tenant_id", 1), ("client_request_id", 1)],
+        unique=True,
+        partialFilterExpression={"client_request_id": {"$exists": True}},
+        name="uq_mice_spaces_tenant_client_req",
+    )
+
+    await db.mice_events.create_index(
+        [("tenant_id", 1), ("client_request_id", 1)],
+        unique=True,
+        partialFilterExpression={"client_request_id": {"$exists": True}},
+        name="uq_mice_events_tenant_client_req",
+    )

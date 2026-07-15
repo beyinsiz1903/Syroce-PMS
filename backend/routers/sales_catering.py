@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from core.audit import log_audit_event
 from core.database import db
+from core.entitlements.enforcement import require_feature
 from core.security import get_current_user
 from core.spa_mice_authz import require_catalog, require_mice_ops
 from models.schemas import User
@@ -124,7 +125,7 @@ class PackageIn(BaseModel):
 
 
 # ── Opportunities ────────────────────────────────────────────────
-@router.get("/opportunities")
+@router.get("/opportunities", dependencies=[Depends(require_feature("mice", "proposals_contracts"))])
 async def list_opportunities(
     stage: str | None = Query(None),
     account_id: str | None = Query(None),
@@ -144,7 +145,7 @@ async def list_opportunities(
     return {"opportunities": [o async for o in cursor]}
 
 
-@router.post("/opportunities", status_code=201)
+@router.post("/opportunities", status_code=201, dependencies=[Depends(require_feature("mice", "proposals_contracts"))])
 async def create_opportunity(
     payload: OpportunityIn,
     current_user: User = Depends(get_current_user),
@@ -168,7 +169,7 @@ async def create_opportunity(
     return doc
 
 
-@router.get("/opportunities/{opp_id}")
+@router.get("/opportunities/{opp_id}", dependencies=[Depends(require_feature("mice", "proposals_contracts"))])
 async def get_opportunity(opp_id: str, current_user: User = Depends(get_current_user)):
     o = await db.mice_opportunities.find_one({"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not o:
@@ -185,7 +186,7 @@ async def get_opportunity(opp_id: str, current_user: User = Depends(get_current_
     return o
 
 
-@router.put("/opportunities/{opp_id}")
+@router.put("/opportunities/{opp_id}", dependencies=[Depends(require_feature("mice", "proposals_contracts"))])
 async def update_opportunity(
     opp_id: str,
     payload: OpportunityIn,
@@ -202,7 +203,7 @@ async def update_opportunity(
     return {"ok": True}
 
 
-@router.delete("/opportunities/{opp_id}")
+@router.delete("/opportunities/{opp_id}", dependencies=[Depends(require_feature("mice", "proposals_contracts"))])
 async def delete_opportunity(
     opp_id: str,
     current_user: User = Depends(get_current_user),
@@ -215,7 +216,7 @@ async def delete_opportunity(
     return {"ok": True}
 
 
-@router.post("/opportunities/{opp_id}/transition")
+@router.post("/opportunities/{opp_id}/transition", dependencies=[Depends(require_feature("mice", "proposals_contracts"))])
 async def transition_stage(
     opp_id: str,
     payload: StageTransitionIn,
@@ -287,7 +288,7 @@ def _stage_default_probability(stage: str, current: int) -> int:
     }.get(stage, current)
 
 
-@router.post("/opportunities/{opp_id}/activities", status_code=201)
+@router.post("/opportunities/{opp_id}/activities", status_code=201, dependencies=[Depends(require_feature("mice", "proposals_contracts"))])
 async def add_activity(
     opp_id: str,
     payload: ActivityIn,
@@ -318,7 +319,7 @@ async def add_activity(
 
 
 # ── Pipeline summary ─────────────────────────────────────────────
-@router.get("/pipeline")
+@router.get("/pipeline", dependencies=[Depends(require_feature("mice", "proposals_contracts"))])
 async def pipeline_summary(current_user: User = Depends(get_current_user)):
     pipeline = [
         {"$match": {"_kind": _NOT_LEAD, "tenant_id": current_user.tenant_id}},
@@ -455,7 +456,7 @@ async def delete_package(
     return {"ok": True}
 
 
-@router.post("/packages/{pkg_id}/quote")
+@router.post("/packages/{pkg_id}/quote", dependencies=[Depends(require_feature("mice", "proposals_contracts"))])
 async def quote_package(
     pkg_id: str,
     pax: int = Query(..., ge=1),

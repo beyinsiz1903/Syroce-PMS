@@ -29,12 +29,26 @@ import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
 import EmptyState from '@/components/EmptyState';
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { useEntitlements } from '@/context/EntitlementContext';
 const MicePage = ({
   user,
   tenant,
   onLogout
 }) => {
   const { t, i18n } = useTranslation();
+  const { entitlements, getQuotaUsage } = useEntitlements();
+  const spacesLimit = entitlements?.mice?.limits?.spaces_limit ?? null;
+  const spacesUsed = getQuotaUsage('mice', 'spaces_limit');
+  const spacesLimitReached = spacesLimit !== null && spacesUsed >= spacesLimit;
+
+  const concurrentEventsLimit = entitlements?.mice?.limits?.concurrent_events ?? null;
+  const concurrentEventsUsed = getQuotaUsage('mice', 'concurrent_events');
+  const eventsLimitReached = concurrentEventsLimit !== null && concurrentEventsUsed >= concurrentEventsLimit;
+
+  const hasBanquet = entitlements?.mice?.features?.includes('banquet_operations');
+  const hasProposals = entitlements?.mice?.features?.includes('proposals_contracts');
+  const hasAdvancedReporting = entitlements?.mice?.features?.includes('advanced_reporting');
+
   const [events, setEvents] = useState([]);
   const [summary, setSummary] = useState({});
   // tab badge counts come from /mice/events response; survives lazy-loaded
@@ -593,13 +607,13 @@ const MicePage = ({
         </div>
         <div className="flex gap-2 flex-wrap">
           <Input type="date" value={opsDate} onChange={e => setOpsDate(e.target.value)} className="max-w-[160px]" />
-          <Button variant="outline" onClick={showOpsSheet}>
+          {hasBanquet && <Button variant="outline" onClick={showOpsSheet}>
             <ClipboardList className="w-4 h-4 mr-1" /> {t('cm.pages_MicePage.gunun_ops_sheet_i')}
-          </Button>
+          </Button>}
           <Button variant="outline" onClick={load}>
             <RefreshCw className="w-4 h-4 mr-1" /> {t('cm.pages_MicePage.yenile')}
           </Button>
-          <Button onClick={openNew}><Plus className="w-4 h-4 mr-1" /> {t('cm.pages_MicePage.yeni_etkinlik')}</Button>
+          <Button onClick={openNew} disabled={eventsLimitReached} title={eventsLimitReached ? 'Eşzamanlı etkinlik limitine ulaşıldı' : ''}><Plus className="w-4 h-4 mr-1" /> {t('cm.pages_MicePage.yeni_etkinlik')}</Button>
         </div>
       </div>
 
@@ -620,12 +634,12 @@ const MicePage = ({
         {['tentative', 'definite', 'confirmed'].map(k => {
           const count = summary[k]?.count || 0;
           const totalValue = summary[k]?.total_value || 0;
-          
+
           let theme = '';
           if (k === 'tentative') theme = 'from-amber-50 to-amber-100/50 border-amber-200/60 text-amber-900 label-amber-600/80 icon-amber-500/10 val-amber-700';
           else if (k === 'definite') theme = 'from-blue-50 to-sky-100/50 border-blue-200/60 text-blue-900 label-blue-600/80 icon-blue-500/10 val-blue-700';
           else if (k === 'confirmed') theme = 'from-emerald-50 to-teal-100/50 border-emerald-200/60 text-emerald-900 label-emerald-600/80 icon-emerald-500/10 val-emerald-700';
-          
+
           const parts = theme.split(' ');
           const bg = parts[0] + ' ' + parts[1];
           const border = parts[2];
@@ -674,7 +688,7 @@ const MicePage = ({
           <TabsTrigger value="spaces">Mekanlar ({loadedTabs.has('spaces') ? spaces.length : counts.spaces ?? '…'})</TabsTrigger>
           <TabsTrigger value="menus">{t('cm.pages_MicePage.menuler_paketler')}{loadedTabs.has('menus') ? menus.length : counts.menus ?? '…'})</TabsTrigger>
           <TabsTrigger value="resources">Envanter ({loadedTabs.has('resources') ? resources.length : counts.resources ?? '…'})</TabsTrigger>
-          <TabsTrigger value="pipeline">{t('cm.pages_MicePage.satis_pipeline')}</TabsTrigger>
+          {hasProposals && <TabsTrigger value="pipeline">{t('cm.pages_MicePage.satis_pipeline')}</TabsTrigger>}
           <TabsTrigger value="packages">Paketler</TabsTrigger>
           <TabsTrigger value="competitors">Rakip Analizi</TabsTrigger>
         </TabsList>
@@ -718,15 +732,15 @@ const MicePage = ({
                         {ev.lost_reason && <div className="text-xs text-red-600 mt-1 max-w-[160px]" title={ev.lost_reason}>↳ {ev.lost_reason.slice(0, 30)}…</div>}
                       </td>
                       <td className="p-2 text-right space-x-1 whitespace-nowrap">
-                        <Button size="sm" variant="ghost" title="BEO" onClick={() => showBeo(ev.id)}>
+                        {hasBanquet && <Button size="sm" variant="ghost" title="BEO" onClick={() => showBeo(ev.id)}>
                           <FileText className="w-4 h-4" />
-                        </Button>
-                        <Button size="sm" variant="ghost" title={t('cm.pages_MicePage.mutfak_fisi')} onClick={() => showKitchen(ev.id)}>
+                        </Button>}
+                        {hasBanquet && <Button size="sm" variant="ghost" title={t('cm.pages_MicePage.mutfak_fisi')} onClick={() => showKitchen(ev.id)}>
                           <ChefHat className="w-4 h-4" />
-                        </Button>
-                        <Button size="sm" variant="ghost" title="Mutfak Siparişleri" onClick={() => setFnbOrderEvent(ev)}>
+                        </Button>}
+                        {hasBanquet && <Button size="sm" variant="ghost" title="Mutfak Siparişleri" onClick={() => setFnbOrderEvent(ev)}>
                           <Send className="w-4 h-4" />
-                        </Button>
+                        </Button>}
                         <Button size="sm" variant="ghost" title={t('cm.pages_MicePage.degisiklik_gecmisi')} onClick={() => setHistoryEvent(ev)}>
                           <HistoryIcon className="w-4 h-4" />
                         </Button>
