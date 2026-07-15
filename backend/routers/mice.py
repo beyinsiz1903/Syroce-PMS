@@ -30,7 +30,7 @@ from core.booking_atomicity import (
     standalone_fallback_allowed,
     with_resource_locks,
 )
-from core.entitlements.enforcement import get_tenant_limit
+from core.entitlements.enforcement import get_tenant_limit, require_feature
 from core.entitlements.quota import release_quota, reserve_quota
 from core.security import JWT_ALGORITHM, JWT_SECRET, get_current_user
 from core.spa_mice_authz import require_catalog, require_finance, require_mice_ops
@@ -297,7 +297,10 @@ async def delete_space(
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
-    await db.mice_spaces.delete_one({"id": space_id, "tenant_id": current_user.tenant_id})
+    res = await db.mice_spaces.delete_one({"id": space_id, "tenant_id": current_user.tenant_id})
+    if res.deleted_count > 0:
+        from core.entitlements.quota import release_quota
+        await release_quota(current_user.tenant_id, "mice", "spaces_limit", space_id)
     _invalidate_mice_spaces_cache(current_user.tenant_id)
     return {"ok": True}
 
@@ -738,6 +741,7 @@ async def delete_resource(
 
 # ── Events ──────────────────────────────────────────────────────
 EVENT_STATUSES = {"lead", "tentative", "definite", "confirmed", "completed", "cancelled"}
+ACTIVE_QUOTA_STATUSES = {"tentative", "definite", "confirmed"}
 
 
 class SpaceBookingIn(BaseModel):
@@ -1129,7 +1133,7 @@ async def create_event(
 
     limit = None
     reserved = False
-    if body.status not in {"cancelled", "completed", "lost"}:
+    if body.status in ACTIVE_QUOTA_STATUSES:
         limit = await get_tenant_limit(tenant_id, "mice", "concurrent_events")
         if limit is not None:
             from core.entitlements.quota import QuotaExceededException
@@ -1335,6 +1339,8 @@ async def update_event(
         if not res.matched_count:
             raise HTTPException(404, "Etkinlik bulunamadı")
         after = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
+    if body.status == "completed":
+        await _post_event_to_folio(tenant_id, after)
         state["before"], state["after"] = before, after
 
     before, after = state["before"], state["after"]
@@ -1402,7 +1408,6 @@ async def change_status(
                 "İptal/lost-business için en az 10 karakter sebep girilmelidir.",
             )
     resource_id = event.get("client_request_id") or event_id
-    ACTIVE_QUOTA_STATUSES = {"tentative", "definite", "confirmed"}
     was_counted = cur_status in ACTIVE_QUOTA_STATUSES
     will_be_counted = body.status in ACTIVE_QUOTA_STATUSES
 
@@ -1423,7 +1428,6 @@ async def change_status(
         update["lost_at"] = datetime.now(UTC).isoformat()
     if body.status == "completed":
         update["completed_at"] = datetime.now(UTC).isoformat()
-        await _post_event_to_folio(tenant_id, event)
 
     async def _do_status(session) -> None:
         conflict = await _check_space_conflict(tenant_id, bookings, exclude_event_id=event_id, session=session)
@@ -1484,10 +1488,12 @@ async def change_status(
             if reserved:
                 await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
             raise se
-            
+
     if was_counted and not will_be_counted:
         await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
     after = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
+    if body.status == "completed":
+        await _post_event_to_folio(tenant_id, after)
     before_clean = {k: v for k, v in event.items() if k != "_id"}
     await log_audit_event(
         tenant_id=tenant_id,
@@ -1518,6 +1524,14 @@ async def _post_event_to_folio(tenant_id: str, event: dict) -> None:
     db = get_system_db()
     total = float((event.get("totals") or {}).get("grand_total", 0))
     if total <= 0 or not event.get("reservation_id"):
+        return
+    existing = await db.folio_postings.find_one({
+        "tenant_id": tenant_id,
+        "reference": event["id"],
+        "source": "mice_module",
+        "posting_type": "CHARGE"
+    })
+    if existing:
         return
     posting = {
         "id": str(uuid.uuid4()),
@@ -1618,7 +1632,7 @@ async def diary(
 
 
 # ── BEO (Banquet Event Order) ──────────────────────────────────
-@router.get("/events/{event_id}/beo")
+@router.get("/events/{event_id}/beo", dependencies=[Depends(require_feature("mice", "banquet_operations"))])
 async def beo(event_id: str, current_user: User = Depends(get_current_user)) -> dict:
     db = get_system_db()
     event = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
