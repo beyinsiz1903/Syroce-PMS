@@ -10,6 +10,7 @@ import POSOutletManagement from '../../components/POSOutletManagement';
 import Layout from '../../components/Layout';
 import POSDashboard from '../../pages/POSDashboard';
 import SpaWellness from '../../pages/SpaWellness';
+import TransferParkingPage from '../../pages/TransferParkingPage';
 
 vi.mock('axios');
 
@@ -40,6 +41,11 @@ global.ResizeObserver = class ResizeObserver {
   unobserve() {}
   disconnect() {}
 };
+
+// Mock scrollIntoView for Radix Select
+window.HTMLElement.prototype.scrollIntoView = function() {};
+window.HTMLElement.prototype.hasPointerCapture = function() { return false; };
+window.HTMLElement.prototype.releasePointerCapture = function() {};
 
 
 const TestComponent = ({ moduleKey }) => {
@@ -653,6 +659,94 @@ describe('Frontend Behavior Tests', () => {
       expect(screen.getByTestId('tab-guest-history')).toBeInTheDocument();
       expect(screen.getByTestId('tab-availability')).toBeInTheDocument();
       expect(screen.getByTestId('tab-packages')).toBeInTheDocument();
+  });
+
+  it('TransferParkingPage: Basic shows only basic tabs and disables button if limit reached', async () => {
+      axios.get.mockImplementation((url) => {
+          if (url === '/subscription/current') return Promise.resolve({
+              data: {
+                  modules: {},
+                  entitlements: {
+                      parking: {
+                          editions: ['basic'],
+                          limits: { transfer_vehicles: 2, parking_spots: 50 },
+                          features: []
+                      }
+                  }
+              }
+          });
+          if (url === '/transfer-parking/resources') return Promise.resolve({
+              data: { resources: [
+                  {id: '1', kind: 'transfer_vehicle', active: true},
+                  {id: '2', kind: 'transfer_vehicle', active: true}
+              ] }
+          });
+          if (url === '/transfer-parking/bookings') return Promise.resolve({ data: { bookings: [] } });
+          if (url === '/transfer-parking/late-charges') return Promise.resolve({ data: { late_charges: [] } });
+          return Promise.resolve({ data: {} });
+      });
+
+      render(
+          <MemoryRouter>
+              <EntitlementProvider currentTenantId="t1" isSuperAdmin={false}>
+                  <TransferParkingPage />
+              </EntitlementProvider>
+          </MemoryRouter>
+      );
+
+      await waitFor(() => {
+          expect(screen.getByText(/Transfer & Otopark/i)).toBeInTheDocument();
+      });
+
+      // No pro tabs
+      expect(screen.queryByText('Vale')).not.toBeInTheDocument();
+      expect(screen.queryByText('Plaka Tanıma')).not.toBeInTheDocument();
+      expect(screen.queryByText('Analiz')).not.toBeInTheDocument();
+
+      // Check button disabled for vehicle limit
+      fireEvent.click(screen.getByRole('tab', { name: /Kaynaklar/i }));
+      await waitFor(() => {
+          // Since there are 2 vehicles and limit is 2, vehicle is full.
+          // Spot is 0/50, so spot is NOT full.
+          // The "Yeni Kaynak" button should NOT be disabled because we can still add a spot.
+          const btn = screen.getByText(/Yeni Kaynak/i).closest('button');
+          expect(btn).not.toBeDisabled();
+      });
+  });
+
+  it('TransferParkingPage: Pro shows all tabs', async () => {
+      axios.get.mockImplementation((url) => {
+          if (url === '/subscription/current') return Promise.resolve({
+              data: {
+                  modules: {},
+                  entitlements: {
+                      parking: {
+                          editions: ['pro'],
+                          limits: { transfer_vehicles: 10, parking_spots: 500 },
+                          features: ['valet_service', 'lpr_integration', 'parking_analytics']
+                      }
+                  }
+              }
+          });
+          if (url === '/transfer-parking/resources') return Promise.resolve({ data: { resources: [] } });
+          if (url === '/transfer-parking/bookings') return Promise.resolve({ data: { bookings: [] } });
+          if (url === '/transfer-parking/late-charges') return Promise.resolve({ data: { late_charges: [] } });
+          return Promise.resolve({ data: {} });
+      });
+
+      render(
+          <MemoryRouter>
+              <EntitlementProvider currentTenantId="t1" isSuperAdmin={false}>
+                  <TransferParkingPage />
+              </EntitlementProvider>
+          </MemoryRouter>
+      );
+
+      await waitFor(() => {
+          expect(screen.getByText('Vale')).toBeInTheDocument();
+          expect(screen.getByText('Plaka Tanıma')).toBeInTheDocument();
+          expect(screen.getByText('Analiz')).toBeInTheDocument();
+      });
   });
 
 });
