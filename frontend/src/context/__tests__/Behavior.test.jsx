@@ -3,6 +3,7 @@ import { render, screen, act, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import axios from 'axios';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import HousekeepingDashboard from "../../pages/HousekeepingDashboard";
 import { EntitlementProvider, useEntitlements } from '../EntitlementContext';
 import { ModuleGuardedRoute } from '../../routes/ProtectedRoute';
 import POSOutletManagement from '../../components/POSOutletManagement';
@@ -371,12 +372,12 @@ describe('Frontend Behavior Tests', () => {
 
   const TestMiceComponent = () => {
     const { entitlements, getLimit, hasFeature, hasModule } = useEntitlements();
-    
+
     if (!entitlements) return <div data-testid="loading">Yükleniyor...</div>;
 
     const canSeeMice = hasModule('mice');
     const hasBanquet = entitlements?.mice?.features?.includes('banquet_operations');
-    
+
     const eventsLimit = entitlements?.mice?.limits?.concurrent_events ?? 0;
     const eventsUsage = entitlements?.mice?.usage?.concurrent_events ?? 0;
     const eventsLimitHit = eventsLimit > 0 && eventsUsage >= eventsLimit;
@@ -429,7 +430,7 @@ describe('Frontend Behavior Tests', () => {
               entitlements: {
                   mice: {
                       tier: "basic",
-                      features: [], 
+                      features: [],
                       limits: { concurrent_events: 5 },
                       usage: { concurrent_events: 2 }
                   }
@@ -457,7 +458,7 @@ describe('Frontend Behavior Tests', () => {
       axios.get.mockResolvedValue({
           data: {
               tenant_id: "t1",
-              modules: { hotel_rooms: true }, 
+              modules: { hotel_rooms: true },
               entitlements: {}
           }
       });
@@ -474,6 +475,89 @@ describe('Frontend Behavior Tests', () => {
 
       expect(screen.getByTestId("no-mice")).not.toBeNull();
       expect(screen.queryByTestId("mice-menu")).toBeNull();
+  });
+
+
+  // --------------------------------------------------------------------------------
+  // HOUSEKEEPING ENTITLEMENT TESTS
+  // --------------------------------------------------------------------------------
+
+  it('renders HousekeepingDashboard features for PRO users', async () => {
+      axios.get.mockImplementation((url) => {
+          if (url === '/subscription/current') {
+              return Promise.resolve({
+                  data: {
+                      modules: { housekeeping: true },
+                      entitlements: {
+                          housekeeping: {
+                              features: ['advanced_reporting', 'quality_control', 'mobile_app']
+                          }
+                      }
+                  }
+              });
+          }
+          if (url === '/housekeeping/room-status') {
+              return Promise.resolve({ data: { rooms: [{ id: '1' }], total_rooms: 1 } });
+          }
+          return Promise.resolve({ data: {} });
+      });
+
+      render(
+          <MemoryRouter>
+              <EntitlementProvider currentTenantId="t1" isSuperAdmin={false}>
+                  <HousekeepingDashboard />
+              </EntitlementProvider>
+          </MemoryRouter>
+      );
+
+      await waitFor(() => {
+          expect(screen.getByTestId("page-housekeeping")).toBeInTheDocument();
+      });
+
+      // Assert Pro features are visible
+      await waitFor(() => expect(screen.getByText("hkDashboard.detailedReports")).toBeInTheDocument());
+      // Test mobile button is enabled
+      const mobileBtn = screen.getByTestId("hk-quick-mobile");
+      expect(mobileBtn).not.toBeDisabled();
+  });
+
+  it('hides HousekeepingDashboard features for BASIC users', async () => {
+      axios.get.mockImplementation((url) => {
+          if (url === '/subscription/current') {
+              return Promise.resolve({
+                  data: {
+                      modules: { housekeeping: true },
+                      entitlements: {
+                          housekeeping: {
+                              features: [] // Basic subscription
+                          }
+                      }
+                  }
+              });
+          }
+          if (url === '/housekeeping/room-status') {
+              return Promise.resolve({ data: { rooms: [{ id: '1' }], total_rooms: 1 } });
+          }
+          return Promise.resolve({ data: {} });
+      });
+
+      render(
+          <MemoryRouter>
+              <EntitlementProvider currentTenantId="t1" isSuperAdmin={false}>
+                  <HousekeepingDashboard />
+              </EntitlementProvider>
+          </MemoryRouter>
+      );
+
+      await waitFor(() => {
+          expect(screen.getByTestId("page-housekeeping")).toBeInTheDocument();
+      });
+
+      // Assert Pro features are hidden
+      expect(screen.queryByText("hkDashboard.detailedReports")).not.toBeInTheDocument();
+      // Test mobile button is disabled
+      const mobileBtn = screen.getByTestId("hk-quick-mobile");
+      expect(mobileBtn).toBeDisabled();
   });
 
 });

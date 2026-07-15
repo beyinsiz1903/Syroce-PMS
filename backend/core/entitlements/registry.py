@@ -122,6 +122,36 @@ ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
                 }
             )
         }
+    ),
+    "housekeeping": ModuleDefinition(
+        key="housekeeping",
+        name="Kat Hizmetleri (Housekeeping)",
+        features=[
+            ModuleFeature(key="quality_control", description="Kalite Kontrol ve Denetim Görevleri"),
+            ModuleFeature(key="advanced_reporting", description="Detaylı Personel Performans Raporları"),
+            ModuleFeature(key="mobile_app", description="Mobil HK Uygulaması Erişimi"),
+        ],
+        limits=[
+            ModuleLimit(key="active_tasks", description="Maksimum Aktif Görev Sayısı"),
+        ],
+        editions={
+            "basic": EditionDefinition(
+                key="basic",
+                name="Housekeeping Basic",
+                features=set(),
+                limits={
+                    "active_tasks": 100,
+                }
+            ),
+            "pro": EditionDefinition(
+                key="pro",
+                name="Housekeeping Pro",
+                features={"quality_control", "advanced_reporting", "mobile_app"},
+                limits={
+                    "active_tasks": 1000,
+                }
+            )
+        }
     )
 }
 

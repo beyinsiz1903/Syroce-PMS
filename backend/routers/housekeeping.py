@@ -16,6 +16,8 @@ from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field
 
 from core.database import db
+from core.entitlements.enforcement import get_tenant_limit, require_feature
+from core.entitlements.quota import QuotaExceededException, release_quota, reserve_quota
 from core.security import get_current_user
 from models.schemas import HousekeepingTask, User
 from modules.inventory.services.create_room_block_service import CreateRoomBlockService
@@ -100,6 +102,8 @@ class HousekeepingTaskCreate(BaseModel):
 _HK_VALID_TASK_TYPES = {"cleaning", "inspection", "maintenance", "deep_cleaning", "turndown", "linen_change"}
 _HK_VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
 
+ACTIVE_QUOTA_STATUSES = {"pending", "in_progress"}
+
 
 @router.post("/housekeeping/tasks")
 async def create_housekeeping_task(
@@ -118,12 +122,11 @@ async def create_housekeeping_task(
             status_code=422,
             detail=f"Gecersiz priority. Izinli={sorted(_HK_VALID_PRIORITIES)}",
         )
-    # Verify room exists in this tenant — prevents cross-tenant id forging.
-    room = await db.rooms.find_one({"id": payload.room_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1})
-    if not room:
-        raise HTTPException(status_code=404, detail="Oda bulunamadi")
+    # Feature Guard
+    if payload.task_type == "inspection":
+        await require_feature("housekeeping", "quality_control")(request, current_user)
 
-    # Optional Idempotency-Key replay protection (e.g. retry after timeout).
+    # Optional Idempotency-Key replay protection
     idem_key = get_idempotency_key(request)
     lock_id = None
     if idem_key:
@@ -142,23 +145,45 @@ async def create_housekeeping_task(
             )
         lock_id = claim["lock_id"]
 
+    task = HousekeepingTask(
+        tenant_id=current_user.tenant_id,
+        room_id=payload.room_id,
+        task_type=payload.task_type,
+        priority=payload.priority,
+        notes=payload.notes,
+    )
+
+    quota_reserved = False
     try:
-        task = HousekeepingTask(
-            tenant_id=current_user.tenant_id,
-            room_id=payload.room_id,
-            task_type=payload.task_type,
-            priority=payload.priority,
-            notes=payload.notes,
-        )
+        # Quota Reservation (After Idempotency)
+        limit = await get_tenant_limit(current_user.tenant_id, "housekeeping", "active_tasks")
+        try:
+            await reserve_quota(current_user.tenant_id, "housekeeping", "active_tasks", task.id, limit)
+            quota_reserved = True
+        except QuotaExceededException as e:
+            raise HTTPException(status_code=403, detail=str(e))
+
+        # Verify room exists in this tenant — prevents cross-tenant id forging.
+        room = await db.rooms.find_one({"id": payload.room_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1})
+        if not room:
+            raise HTTPException(status_code=404, detail="Oda bulunamadi")
+
         task_dict = task.model_dump()
         task_dict["created_at"] = task_dict["created_at"].isoformat()
+
         await db.housekeeping_tasks.insert_one(task_dict.copy())
         task_dict.pop("_id", None)
         _invalidate_hk_caches(current_user.tenant_id)  # v95.2
+
         if lock_id:
             await complete_idempotency(db, lock_id=lock_id, response_body=task_dict)
         return task
     except Exception as exc:
+        if quota_reserved:
+            try:
+                await release_quota(current_user.tenant_id, "housekeeping", "active_tasks", task.id)
+            except Exception:
+                pass
         if lock_id:
             await release_idempotency(db, lock_id=lock_id, error=str(exc))
         raise
@@ -176,6 +201,11 @@ async def delete_housekeeping_task(
     delete filter itself (atomic). Splitting find + delete would let a task
     that flips to in_progress between the two ops still be removed.
     """
+    # Find before delete to know status
+    task = await db.housekeeping_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id})
+    if not task:
+        raise HTTPException(status_code=404, detail="Gorev bulunamadi")
+
     # Atomic guarded delete — status check is part of the WHERE clause.
     result = await db.housekeeping_tasks.delete_one(
         {
@@ -185,6 +215,8 @@ async def delete_housekeeping_task(
         }
     )
     if result.deleted_count == 1:
+        if task.get("status", "pending") in ACTIVE_QUOTA_STATUSES:
+            await release_quota(current_user.tenant_id, "housekeeping", "active_tasks", task_id)
         _invalidate_hk_caches(current_user.tenant_id)  # v95.2
         return {"success": True, "task_id": task_id, "deleted": 1}
 
@@ -205,6 +237,10 @@ async def update_housekeeping_task(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
+    task_before = await db.housekeeping_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if not task_before:
+        raise HTTPException(status_code=404, detail="Görev bulunamadı")
+
     updates = {}
     if status:
         updates["status"] = status
@@ -214,9 +250,9 @@ async def update_housekeeping_task(
             updates["completed_at"] = datetime.now(UTC).isoformat()
             # v109 round-9 IDOR: scope find + chained room update by tenant.
             task = await db.housekeeping_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
-            if task and task["task_type"] == "cleaning":
+            if task and task.get("task_type") == "cleaning" and task.get("room_id"):
                 await db.rooms.update_one(
-                    {"id": task["room_id"], "tenant_id": current_user.tenant_id},
+                    {"id": task.get("room_id"), "tenant_id": current_user.tenant_id},
                     {"$set": {"status": "inspected", "last_cleaned": datetime.now(UTC).isoformat()}},
                 )
     # Task #441: relational assignment — bind to an active user in the caller's
@@ -233,7 +269,37 @@ async def update_housekeeping_task(
         updates["assigned_to"] = assignee.get("name") or "Personel"
     if not updates:
         raise HTTPException(status_code=400, detail="Güncellenecek alan yok")
-    await db.housekeeping_tasks.update_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
+
+    # Check quota status transition
+    old_status = task_before.get("status", "pending")
+    new_status = updates.get("status", old_status)
+
+    was_counted = old_status in ACTIVE_QUOTA_STATUSES
+    will_be_counted = new_status in ACTIVE_QUOTA_STATUSES
+
+    reserved = False
+    try:
+        if not was_counted and will_be_counted:
+            limit = await get_tenant_limit(current_user.tenant_id, "housekeeping", "active_tasks")
+            try:
+                await reserve_quota(current_user.tenant_id, "housekeeping", "active_tasks", task_id, limit)
+                reserved = True
+            except QuotaExceededException as e:
+                raise HTTPException(status_code=403, detail=str(e))
+
+        result = await db.housekeeping_tasks.update_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
+
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Görev bulunamadı")
+
+        if was_counted and not will_be_counted:
+            await release_quota(current_user.tenant_id, "housekeeping", "active_tasks", task_id)
+
+    except Exception:
+        if reserved:
+            await release_quota(current_user.tenant_id, "housekeeping", "active_tasks", task_id)
+        raise
+
     task = await db.housekeeping_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     _invalidate_hk_caches(current_user.tenant_id)  # v95.2
     return task
@@ -452,6 +518,7 @@ async def get_room_status_report(current_user: User = Depends(get_current_user))
 async def get_staff_performance_detailed(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_executive_reports")),  # v77 Bug DM: HR/staff metrics
+    _feat=Depends(require_feature("housekeeping", "advanced_reporting")),
 ):
     """Detailed staff performance metrics"""
 

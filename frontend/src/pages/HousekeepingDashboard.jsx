@@ -16,9 +16,15 @@ import { KpiCard } from '@/components/ui/kpi-card';
 import { Bed, ArrowLeft, Smartphone, ClipboardList, Wrench, BedDouble, Sparkles, Brush, AlertOctagon } from 'lucide-react';
 import { Skeleton } from '../components/ui/skeleton';
 import { useTranslation } from 'react-i18next';
+import { useEntitlements } from '@/context/EntitlementContext';
 
 const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
+  const { entitlements } = useEntitlements();
+  const hasAdvancedReporting = entitlements?.housekeeping?.features?.includes('advanced_reporting');
+  const hasQualityControl = entitlements?.housekeeping?.features?.includes('quality_control');
+  const hasMobileApp = entitlements?.housekeeping?.features?.includes('mobile_app');
+
   const navigate = useNavigate();
   const [roomStatus, setRoomStatus] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -79,19 +85,21 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
         )}
 
         {/* Detailed Reports */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('hkDashboard.detailedReports')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Suspense fallback={<Skeleton className="h-32" />}>
-              <HousekeepingDetailedReports />
-            </Suspense>
-          </CardContent>
-        </Card>
+        {hasAdvancedReporting && (
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('hkDashboard.detailedReports')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Suspense fallback={<Skeleton className="h-32" />}>
+                <HousekeepingDetailedReports />
+              </Suspense>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Quality Control — yalnızca oda verisi varsa */}
-        {roomStatus?.rooms?.length ? (
+        {hasQualityControl && roomStatus?.rooms?.length ? (
           <Suspense fallback={<Skeleton className="h-32" />}>
             <HousekeepingQualityPanel rooms={roomStatus.rooms} />
           </Suspense>
@@ -132,6 +140,8 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
                 className="h-20 flex flex-col items-center justify-center gap-1"
                 onClick={() => navigate('/mobile/housekeeping')}
                 data-testid="hk-quick-mobile"
+                disabled={!hasMobileApp}
+                title={!hasMobileApp ? "Housekeeping Pro paketi gerektirir" : ""}
               >
                 <Smartphone className="w-5 h-5 text-indigo-600" />
                 <span className="text-sm">{t('hkDashboard.mobileApp')}</span>
