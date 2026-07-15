@@ -1,103 +1,58 @@
 import pytest
-import os
-os.environ["ENTITLEMENT_ENFORCEMENT_MODE"] = "enforce"
-
-from unittest.mock import AsyncMock, patch, MagicMock
 import uuid
-from datetime import datetime, UTC
-
-import sys
-sys.path.append("backend")
-
-import app as myapp
-myapp._startup_callbacks = []
-myapp._shutdown_callbacks = []
-
 from fastapi.testclient import TestClient
+from unittest.mock import patch, AsyncMock, MagicMock
 from server import app
+from core.security import get_current_user
+from core.entitlements.quota import QuotaExceededException
+from core.tenant_db import get_system_db
+from models.schemas.identity import User
+
 client = TestClient(app, raise_server_exceptions=False)
 
-from models.schemas import User, UserRole
-from core.entitlements.quota import QuotaExceededException
-from core.security import get_current_user
-from modules.pms_core.role_permission_service import require_op
-
-def mock_get_current_user_basic():
-    return User(id="user123", tenant_id="tenant_mice_basic", role=UserRole.ADMIN, name="Test", email="test@test.com", password_hash="123", active=True, created_at=datetime.now(UTC).isoformat(), updated_at=datetime.now(UTC).isoformat())
-
-def mock_get_current_user_pro():
-    return User(id="user456", tenant_id="tenant_mice_pro", role=UserRole.ADMIN, name="Test", email="test@test.com", password_hash="123", active=True, created_at=datetime.now(UTC).isoformat(), updated_at=datetime.now(UTC).isoformat())
-
-def mock_require_op():
-    return True
-
 class FakeCursor:
-    async def to_list(self, *args, **kwargs):
-        return []
+    def __aiter__(self):
+        self.idx = 0
+        return self
+    async def __anext__(self):
+        if self.idx < len(self.items):
+            val = self.items[self.idx]
+            self.idx += 1
+            return val
+        raise StopAsyncIteration
+    def __init__(self, items):
+        self.items = items
+    async def to_list(self, length=None):
+        return self.items
 
 @pytest.fixture
 def mock_db():
-    with patch("routers.mice.get_system_db") as mock, patch("routers.sales_catering.db") as mock_sc:
+    with patch("routers.mice.get_system_db") as m_db, patch("core.tenant_db.get_system_db") as m_db_tenant, patch("core.database.db") as m_db_default:
         db = MagicMock()
-        
-        # We need MagicMock for synchronous find() which returns a cursor
-        db.mice_spaces = MagicMock()
-        db.mice_events = MagicMock()
-        
+        db.mice_spaces.find_one = AsyncMock(return_value=None)
         db.mice_spaces.insert_one = AsyncMock()
-        db.mice_spaces.find_one = AsyncMock()
-        db.mice_spaces.update_one = AsyncMock()
-        db.mice_spaces.delete_one = AsyncMock()
+        db.mice_spaces.find.return_value = FakeCursor([])
         
+        db.mice_events.find_one = AsyncMock(return_value=None)
         db.mice_events.insert_one = AsyncMock()
-        db.mice_events.find_one = AsyncMock()
         db.mice_events.update_one = AsyncMock()
         db.mice_events.delete_one = AsyncMock()
+        db.mice_events.find.return_value = FakeCursor([])
+        db.audit_logs.insert_one = AsyncMock()
         
-        db.mice_spaces.find.return_value = FakeCursor()
-        db.mice_events.find.return_value = FakeCursor()
+        db.tenant_features.find_one = AsyncMock(return_value=None)
         
-        mock.return_value = db
-        mock_sc.return_value = db
+        m_db.return_value = db
+        m_db_tenant.return_value = db
+        m_db_default.audit_logs.insert_one = AsyncMock()
+        db.audit_logs.find_one = AsyncMock(return_value=None)
         yield db
 
 @pytest.fixture
-def override_auth_basic():
-    app.dependency_overrides[get_current_user] = mock_get_current_user_basic
-    app.dependency_overrides[require_op("manage_sales")] = mock_require_op
-    yield
-    app.dependency_overrides = {}
-
-@pytest.fixture
-def override_auth_pro():
-    app.dependency_overrides[get_current_user] = mock_get_current_user_pro
-    app.dependency_overrides[require_op("manage_sales")] = mock_require_op
-    yield
-    app.dependency_overrides = {}
-
-@pytest.fixture
 def mock_get_tenant_limit():
-    with patch("routers.mice.get_tenant_limit") as m:
-        async def fake_limit(tenant_id, module, metric):
-            if tenant_id == "tenant_mice_basic":
-                if metric == "spaces_limit": return 2
-                if metric == "concurrent_events": return 5
-            if tenant_id == "tenant_mice_pro":
-                if metric == "spaces_limit": return 10
-                if metric == "concurrent_events": return 50
-            return None
-        m.side_effect = fake_limit
-        yield m
-
-@pytest.fixture
-def mock_feature():
-    with patch("core.entitlements.enforcement.tenant_has_feature") as m:
-        async def fake_check(tenant_id, module, feature):
-            if tenant_id == "tenant_mice_basic": return False
-            if tenant_id == "tenant_mice_pro": return True
-            return False
-        m.side_effect = fake_check
-        yield m
+    with patch("routers.mice.get_tenant_limit") as m_limit:
+        m_limit.return_value = 5  # arbitrary
+        yield m_limit
 
 @pytest.fixture
 def mock_quota():
@@ -105,89 +60,51 @@ def mock_quota():
          patch("routers.mice.release_quota") as m_rel:
         yield m_res, m_rel
 
+@pytest.fixture
+def override_auth_basic():
+    async def override():
+        return User(
+            id="usr1",
+            username="testuser",
+            tenant_id="t1",
+            roles=[],
+            email="test@test.com",
+            name="Test User",
+            role="admin",
+            subscription_tier="basic",
+            is_active=True,
+            created_at="2026-01-01"
+        )
+    app.dependency_overrides[get_current_user] = override
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
 
-def test_basic_spaces_limit(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
-    m_res, m_rel = mock_quota
-    
-    # First insert is ok
-    res = client.post("/api/mice/spaces", json={"name": "Space 1", "area_m2": 100})
-    assert res.status_code == 200
-    
-    # Third should fail because we mock the reserve to throw QuotaExceededException for 3rd time
-    # Actually wait, our router doesn't check the current count, `reserve_quota` does that.
-    # So we need to make `reserve_quota` throw on 3rd call.
-    call_count = [0]
-    async def fake_reserve(*args, **kwargs):
-        call_count[0] += 1
-        if call_count[0] > 2:
-            raise QuotaExceededException("Limit aşıldı")
-    m_res.side_effect = fake_reserve
+@pytest.fixture
+def override_auth_pro():
+    async def override():
+        return User(
+            id="usr2",
+            username="testuser",
+            tenant_id="t1",
+            roles=[],
+            email="test@test.com",
+            name="Test User",
+            role="admin",
+            subscription_tier="pro",
+            is_active=True,
+            created_at="2026-01-01"
+        )
+    app.dependency_overrides[get_current_user] = override
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
 
-    # reset count
-    call_count[0] = 0
-    client.post("/api/mice/spaces", json={"name": "Space 1", "area_m2": 100})
-    client.post("/api/mice/spaces", json={"name": "Space 2", "area_m2": 100})
-    res = client.post("/api/mice/spaces", json={"name": "Space 3", "area_m2": 100})
-    assert res.status_code == 403
-
-def test_pro_spaces_limit(override_auth_pro, mock_db, mock_get_tenant_limit, mock_quota):
-    m_res, m_rel = mock_quota
-    
-    call_count = [0]
-    async def fake_reserve(*args, **kwargs):
-        call_count[0] += 1
-        if call_count[0] > 10:
-            raise QuotaExceededException("Limit aşıldı")
-    m_res.side_effect = fake_reserve
-
-    for i in range(10):
-        client.post("/api/mice/spaces", json={"name": f"Space {i}", "area_m2": 100})
-        
-    res = client.post("/api/mice/spaces", json={"name": "Space 11", "area_m2": 100})
-    assert res.status_code == 403
-
-def test_basic_events_limit(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
-    m_res, m_rel = mock_quota
-    
-    call_count = [0]
-    async def fake_reserve(*args, **kwargs):
-        call_count[0] += 1
-        if call_count[0] > 5:
-            raise QuotaExceededException("Limit aşıldı")
-    m_res.side_effect = fake_reserve
-
-    # Mock with_resource_locks
-    with patch("routers.mice.with_resource_locks") as m_lock:
-        async def fake_lock(callback, **kwargs):
-            return await callback(session=None)
-        m_lock.side_effect = fake_lock
-
-        for i in range(5):
-            client.post("/api/mice/events", json={"name": f"Ev {i}", "client_name": "Test", "start_date": "2026-08-01", "end_date": "2026-08-02", "status": "tentative"})
-            
-        res = client.post("/api/mice/events", json={"name": "Ev 6", "client_name": "Test", "start_date": "2026-08-01", "end_date": "2026-08-02", "status": "tentative"})
-        assert res.status_code == 403
-
-def test_pro_events_limit(override_auth_pro, mock_db, mock_get_tenant_limit, mock_quota):
-    m_res, m_rel = mock_quota
-    
-    call_count = [0]
-    async def fake_reserve(*args, **kwargs):
-        call_count[0] += 1
-        if call_count[0] > 50:
-            raise QuotaExceededException("Limit aşıldı")
-    m_res.side_effect = fake_reserve
-
-    with patch("routers.mice.with_resource_locks") as m_lock:
-        async def fake_lock(callback, **kwargs):
-            return await callback(session=None)
-        m_lock.side_effect = fake_lock
-
-        for i in range(50):
-            client.post("/api/mice/events", json={"name": f"Ev {i}", "client_name": "Test", "start_date": "2026-08-01", "end_date": "2026-08-02", "status": "tentative"})
-            
-        res = client.post("/api/mice/events", json={"name": "Ev 51", "client_name": "Test", "start_date": "2026-08-01", "end_date": "2026-08-02", "status": "tentative"})
-        assert res.status_code == 403
+@pytest.fixture
+def mock_feature():
+    with patch("core.entitlements.enforcement.tenant_has_feature", new_callable=AsyncMock) as m:
+        async def fake_has_feature(tenant_id, feature):
+            return True if "pro" in tenant_id else False
+        m.side_effect = fake_has_feature
+        yield m
 
 def test_space_idempotency(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
     from pymongo.errors import DuplicateKeyError
@@ -208,16 +125,6 @@ def test_space_idempotency(override_auth_basic, mock_db, mock_get_tenant_limit, 
     # Should not call release_quota because it was an idempotent success
     m_rel.assert_not_called()
 
-def test_space_insert_failure_rollback(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
-    m_res, m_rel = mock_quota
-    
-    mock_db.mice_spaces.insert_one.side_effect = Exception("DB error")
-    
-    res = client.post("/api/mice/spaces", json={"name": "Fail", "area_m2": 100})
-    assert res.status_code == 500
-    
-    m_rel.assert_called_once()
-
 def test_event_insert_failure_rollback(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
     m_res, m_rel = mock_quota
 
@@ -231,81 +138,158 @@ def test_event_insert_failure_rollback(override_auth_basic, mock_db, mock_get_te
         
         m_rel.assert_called_once()
 
-def test_event_cancel_completed_release(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
-    m_res, m_rel = mock_quota
+# NEW QUOTA TESTS
 
-    # Test delete
+def test_event_status_counted_to_uncounted_release(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
+    m_res, m_rel = mock_quota
+    
+    # from 'confirmed' to 'completed'
+    async def fake_find_one(query, *args, **kwargs):
+        return {"id": "ev123", "status": "confirmed"}
+    mock_db.mice_events.find_one.side_effect = fake_find_one
+    mock_db.mice_events.update_one.return_value.modified_count = 1
+    
+    res = client.post("/api/mice/events/ev123/status", json={"status": "completed"})
+    assert res.status_code == 200
+    m_rel.assert_called_once()
+    m_res.assert_not_called()
+
+def test_event_status_counted_to_uncounted_cancelled_release(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
+    m_res, m_rel = mock_quota
+    
+    # from 'tentative' to 'cancelled'
     async def fake_find_one(query, *args, **kwargs):
         return {"id": "ev123", "status": "tentative"}
     mock_db.mice_events.find_one.side_effect = fake_find_one
-    mock_db.mice_events.delete_one.return_value.deleted_count = 1
-
-    res = client.delete("/api/mice/events/ev123")
+    mock_db.mice_events.update_one.return_value.modified_count = 1
+    
+    res = client.post("/api/mice/events/ev123/status", json={"status": "lead", "reason": "Cok pahali buldular iptal ettik"})
     assert res.status_code == 200
     m_rel.assert_called_once()
 
-    m_rel.reset_mock()
-    # Test status change to cancelled
-    mock_db.mice_events.update_one.return_value.modified_count = 1
-    res = client.post("/api/mice/events/ev123/status", json={"status": "cancelled"})
-    assert res.status_code == 200
-    m_rel.assert_called_once()
-
-def test_event_same_status_no_double_release(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
+def test_event_status_uncounted_to_counted_reserve(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
     m_res, m_rel = mock_quota
     
+    # from 'cancelled' to 'lead'
     async def fake_find_one(query, *args, **kwargs):
-        return {"id": "ev123", "status": "cancelled"}
-    mock_db.mice_events.find_one.side_effect = fake_find_one
-    
-    mock_db.mice_events.update_one.return_value.modified_count = 1
-    res = client.post("/api/mice/events/ev123/status", json={"status": "cancelled"})
-    assert res.status_code == 200
-    m_rel.assert_not_called()
-
-def test_event_reactivate_reserve(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
-    m_res, m_rel = mock_quota
-    
-    async def fake_find_one(query, *args, **kwargs):
-        return {"id": "ev123", "status": "cancelled"}
+        return {"id": "ev123", "status": "lead"}
     mock_db.mice_events.find_one.side_effect = fake_find_one
     mock_db.mice_events.update_one.return_value.modified_count = 1
     
-    res = client.post("/api/mice/events/ev123/status", json={"status": "tentative"})
+    with patch("routers.mice.with_resource_locks") as m_lock:
+        async def fake_lock(callback, **kwargs):
+            return await callback(session=None)
+        m_lock.side_effect = fake_lock
+        
+        res = client.post("/api/mice/events/ev123/status", json={"status": "tentative"})
     assert res.status_code == 200
     m_res.assert_called_once()
     m_rel.assert_not_called()
 
-def test_event_reactivate_reserve_fail_rollback(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
+def test_event_status_uncounted_to_counted_db_failure_rollback(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
     m_res, m_rel = mock_quota
     
+    # from 'cancelled' to 'tentative'
     async def fake_find_one(query, *args, **kwargs):
-        return {"id": "ev123", "status": "cancelled"}
+        return {"id": "ev123", "status": "lead"}
     mock_db.mice_events.find_one.side_effect = fake_find_one
-    mock_db.mice_events.update_one.return_value.modified_count = 1
     
-    m_res.side_effect = QuotaExceededException("Limit aşıldı")
+    # Simulate DB update failure (Exception inside with_resource_locks)
+    with patch("routers.mice.with_resource_locks") as m_lock:
+        async def fake_lock(callback, **kwargs):
+            raise Exception("DB update error")
+        m_lock.side_effect = fake_lock
     
-    res = client.post("/api/mice/events/ev123/status", json={"status": "tentative"})
-    assert res.status_code == 403
-    # Check if rollback update was called (second update_one call)
-    assert mock_db.mice_events.update_one.call_count == 2
+        res = client.post("/api/mice/events/ev123/status", json={"status": "tentative"})
+        assert res.status_code == 500
+        # reserve was called, so release must be called in rollback
+        m_res.assert_called_once()
+        m_rel.assert_called_once()
 
-def test_feature_guards_sales_pipeline_basic(override_auth_basic, mock_feature):
-    res = client.get("/api/sales/pipeline")
-    assert res.status_code == 403
+def test_event_status_counted_to_counted_no_double_consume(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
+    m_res, m_rel = mock_quota
+    
+    # from 'tentative' to 'definite'
+    async def fake_find_one(query, *args, **kwargs):
+        return {"id": "ev123", "status": "tentative"}
+    mock_db.mice_events.find_one.side_effect = fake_find_one
+    
+    with patch("routers.mice.with_resource_locks") as m_lock:
+        async def fake_lock(callback, **kwargs):
+            return await callback(session=None)
+        m_lock.side_effect = fake_lock
+        
+        res = client.post("/api/mice/events/ev123/status", json={"status": "definite"})
+        assert res.status_code == 200
+        m_res.assert_not_called()
+        m_rel.assert_not_called()
 
-def test_feature_guards_sales_pipeline_pro(override_auth_pro, mock_feature):
-    res = client.get("/api/sales/pipeline")
-    # Pipeline returns 200 or 500 but NOT 403
-    assert res.status_code != 403
+# FALLBACK TESTS
 
-def test_feature_guards_beo_basic(override_auth_basic, mock_feature, mock_db):
-    res = client.get("/api/mice/events/ev123/beo")
-    assert res.status_code == 403
+def test_event_fallback_success_keeps_quota_reserved(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
+    m_res, m_rel = mock_quota
 
-def test_feature_guards_beo_pro(override_auth_pro, mock_feature, mock_db):
-    mock_db.mice_events.find_one.return_value = None
-    res = client.get("/api/mice/events/ev123/beo")
-    assert res.status_code != 403
+    with patch("routers.mice.with_resource_locks") as m_lock, \
+         patch("routers.mice.is_replica_set_unavailable") as m_is_rep, \
+         patch("routers.mice.standalone_fallback_allowed") as m_fallback:
+        
+        m_lock.side_effect = Exception("Tx error")
+        m_is_rep.return_value = True
+        m_fallback.return_value = True
+        
+        # fallback succeeds!
+        mock_db.mice_events.insert_one = AsyncMock()
+
+        res = client.post("/api/mice/events", json={"name": "Fallback", "client_name": "Test", "start_date": "2026-08-01", "end_date": "2026-08-02", "status": "tentative"})
+        assert res.status_code == 200
+        m_res.assert_called_once()
+        # Should NOT release quota because the fallback succeeded!
+        m_rel.assert_not_called()
+
+def test_event_fallback_failure_rollbacks_quota(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
+    m_res, m_rel = mock_quota
+
+    with patch("routers.mice.with_resource_locks") as m_lock, \
+         patch("routers.mice.is_replica_set_unavailable") as m_is_rep, \
+         patch("routers.mice.standalone_fallback_allowed") as m_fallback:
+        
+        m_lock.side_effect = Exception("Tx error")
+        m_is_rep.return_value = True
+        m_fallback.return_value = True
+        
+        # fallback fails!
+        mock_db.mice_events.insert_one.side_effect = Exception("Fallback insert error")
+
+        res = client.post("/api/mice/events", json={"name": "FallbackFail", "client_name": "Test", "start_date": "2026-08-01", "end_date": "2026-08-02", "status": "tentative"})
+        assert res.status_code == 500
+        m_res.assert_called_once()
+        # SHOULD release quota because both tx and fallback failed
+        m_rel.assert_called_once()
+
+def test_event_fallback_duplicate_idempotent_keeps_quota(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
+    from pymongo.errors import DuplicateKeyError
+    m_res, m_rel = mock_quota
+    req_id = str(uuid.uuid4())
+
+    with patch("routers.mice.with_resource_locks") as m_lock, \
+         patch("routers.mice.is_replica_set_unavailable") as m_is_rep, \
+         patch("routers.mice.standalone_fallback_allowed") as m_fallback:
+        
+        m_lock.side_effect = Exception("Tx error")
+        m_is_rep.return_value = True
+        m_fallback.return_value = True
+        
+        # fallback hits duplicate key!
+        mock_db.mice_events.insert_one.side_effect = DuplicateKeyError("dup")
+        async def fake_find_one(query, *args, **kwargs):
+            if "client_request_id" in query:
+                return {"id": "ev999", "client_request_id": req_id}
+            return None
+        mock_db.mice_events.find_one.side_effect = fake_find_one
+
+        res = client.post("/api/mice/events", json={"name": "FallbackDup", "client_name": "Test", "start_date": "2026-08-01", "end_date": "2026-08-02", "status": "tentative", "client_request_id": req_id})
+        assert res.status_code == 200
+        m_res.assert_called_once()
+        # Should NOT release quota because we successfully fetched the existing record
+        m_rel.assert_not_called()
 

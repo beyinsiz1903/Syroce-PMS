@@ -827,6 +827,8 @@ class EntertainmentIn(BaseModel):
 
 
 class EventIn(BaseModel):
+    client_request_id: str | None = None
+
     name: str
     client_name: str
     client_email: str | None = None
@@ -1213,12 +1215,14 @@ async def create_event(
             await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
         raise
     except Exception as exc:  # noqa: BLE001
-        if reserved:
-            await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
         if not is_replica_set_unavailable(exc):
+            if reserved:
+                await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
             raise
         # Standalone fallback
         if not standalone_fallback_allowed():
+            if reserved:
+                await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
             raise HTTPException(status_code=503, detail="Cluster unavailable")
 
         try:
@@ -1231,6 +1235,7 @@ async def create_event(
                     raise HTTPException(409, inv_err)
             await db.mice_events.insert_one(event_doc, session=None)
         except DuplicateKeyError:
+            # Idempotent case: duplicate key but it might be our own request
             if client_request_id:
                 existing = await db.mice_events.find_one({"tenant_id": tenant_id, "client_request_id": client_request_id})
                 if existing:
@@ -1238,6 +1243,8 @@ async def create_event(
                     return existing
             raise HTTPException(status_code=409, detail="Etkinlik eklenirken çakışma oluştu.")
         except Exception as se:
+            if reserved:
+                await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
             raise se
 
     event_doc.pop("_id", None)
@@ -1394,6 +1401,22 @@ async def change_status(
                 422,
                 "İptal/lost-business için en az 10 karakter sebep girilmelidir.",
             )
+    resource_id = event.get("client_request_id") or event_id
+    ACTIVE_QUOTA_STATUSES = {"tentative", "definite", "confirmed"}
+    was_counted = cur_status in ACTIVE_QUOTA_STATUSES
+    will_be_counted = body.status in ACTIVE_QUOTA_STATUSES
+
+    reserved = False
+    if will_be_counted and not was_counted:
+        limit = await get_tenant_limit(tenant_id, "mice", "concurrent_events")
+        if limit is not None:
+            from core.entitlements.quota import QuotaExceededException
+            try:
+                await reserve_quota(tenant_id, "mice", "concurrent_events", resource_id, limit)
+                reserved = True
+            except QuotaExceededException:
+                raise HTTPException(403, "Eşzamanlı etkinlik limiti aşıldı. Lütfen paketinizi yükseltin.")
+
     update = {"status": body.status, "updated_at": datetime.now(UTC).isoformat()}
     if body.status == "cancelled":
         update["lost_reason"] = body.reason.strip()
@@ -1426,8 +1449,12 @@ async def change_status(
             raise
         except Exception as exc:  # noqa: BLE001
             if not is_replica_set_unavailable(exc):
+                if reserved:
+                    await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
                 raise
             if not standalone_fallback_allowed():
+                if reserved:
+                    await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
                 raise HTTPException(
                     status_code=503,
                     detail=("Etkinlik servisi şu anda atomik garanti sağlayamıyor (Mongo replica set gerekli)."),
@@ -1435,14 +1462,31 @@ async def change_status(
             # Dev opt-in: best-effort non-tx fallback.
             conflict = await _check_space_conflict(tenant_id, bookings, exclude_event_id=event_id)
             if conflict:
+                if reserved:
+                    await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
                 raise HTTPException(409, conflict)
             inv_err = await _check_resource_inventory_conflict(tenant_id, resources, bookings, exclude_event_id=event_id)
             if inv_err:
+                if reserved:
+                    await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
                 raise HTTPException(409, inv_err)
-            await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id}, {"$set": update})
+            try:
+                await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id}, {"$set": update})
+            except Exception as se:
+                if reserved:
+                    await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
+                raise se
     else:
         # IMPORTANT: tenant_id in write filter (cross-tenant safety).
-        await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id}, {"$set": update})
+        try:
+            await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id}, {"$set": update})
+        except Exception as se:
+            if reserved:
+                await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
+            raise se
+            
+    if was_counted and not will_be_counted:
+        await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
     after = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
     before_clean = {k: v for k, v in event.items() if k != "_id"}
     await log_audit_event(
