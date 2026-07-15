@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from core.database import db
 from core.entitlements.enforcement import get_tenant_limit, require_feature
-from core.entitlements.quota import release_quota, reserve_quota
+from core.entitlements.quota import QuotaExceededException, release_quota, reserve_quota
 from core.security import get_current_user
 from models.schemas import HousekeepingTask, User
 from modules.inventory.services.create_room_block_service import CreateRoomBlockService
@@ -126,26 +126,7 @@ async def create_housekeeping_task(
     if payload.task_type == "inspection":
         await require_feature("housekeeping", "quality_control")(request, current_user)
 
-    task = HousekeepingTask(
-        tenant_id=current_user.tenant_id,
-        room_id=payload.room_id,
-        task_type=payload.task_type,
-        priority=payload.priority,
-        notes=payload.notes,
-    )
-
-    # Quota Reservation
-    limit = await get_tenant_limit(current_user.tenant_id, "housekeeping", "active_tasks")
-    await reserve_quota(current_user.tenant_id, "housekeeping", "active_tasks", task.id, limit)
-    quota_reserved = True
-
-    # Verify room exists in this tenant — prevents cross-tenant id forging.
-    room = await db.rooms.find_one({"id": payload.room_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1})
-    if not room:
-        await release_quota(current_user.tenant_id, "housekeeping", "active_tasks", task.id)
-        raise HTTPException(status_code=404, detail="Oda bulunamadi")
-
-    # Optional Idempotency-Key replay protection (e.g. retry after timeout).
+    # Optional Idempotency-Key replay protection
     idem_key = get_idempotency_key(request)
     lock_id = None
     if idem_key:
@@ -156,32 +137,51 @@ async def create_housekeeping_task(
             idempotency_key=idem_key,
         )
         if claim["status"] == "replay":
-            if quota_reserved:
-                await release_quota(current_user.tenant_id, "housekeeping", "active_tasks", task.id)
             return claim["response"]
         if claim["status"] == "in_flight":
-            if quota_reserved:
-                await release_quota(current_user.tenant_id, "housekeeping", "active_tasks", task.id)
             raise HTTPException(
                 status_code=409,
                 detail="Ayni Idempotency-Key ile baska bir istek isleniyor",
             )
         lock_id = claim["lock_id"]
 
+    task = HousekeepingTask(
+        tenant_id=current_user.tenant_id,
+        room_id=payload.room_id,
+        task_type=payload.task_type,
+        priority=payload.priority,
+        notes=payload.notes,
+    )
+
+    quota_reserved = False
     try:
-        if lock_id and claim["status"] == "replay":
-            if quota_reserved:
-                await release_quota(current_user.tenant_id, "housekeeping", "active_tasks", task.id)
+        # Quota Reservation (After Idempotency)
+        limit = await get_tenant_limit(current_user.tenant_id, "housekeeping", "active_tasks")
+        try:
+            await reserve_quota(current_user.tenant_id, "housekeeping", "active_tasks", task.id, limit)
+            quota_reserved = True
+        except QuotaExceededException as e:
+            raise HTTPException(status_code=403, detail=str(e))
+
+        # Verify room exists in this tenant — prevents cross-tenant id forging.
+        room = await db.rooms.find_one({"id": payload.room_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1})
+        if not room:
+            raise HTTPException(status_code=404, detail="Oda bulunamadi")
 
         task_dict = task.model_dump()
         task_dict["created_at"] = task_dict["created_at"].isoformat()
+
         await db.housekeeping_tasks.insert_one(task_dict.copy())
         task_dict.pop("_id", None)
         _invalidate_hk_caches(current_user.tenant_id)  # v95.2
+
         if lock_id:
             await complete_idempotency(db, lock_id=lock_id, response_body=task_dict)
         return task
     except Exception as exc:
+        import traceback
+        with open("error.log", "w") as f:
+            traceback.print_exc(file=f)
         if quota_reserved:
             try:
                 await release_quota(current_user.tenant_id, "housekeeping", "active_tasks", task.id)
@@ -253,9 +253,9 @@ async def update_housekeeping_task(
             updates["completed_at"] = datetime.now(UTC).isoformat()
             # v109 round-9 IDOR: scope find + chained room update by tenant.
             task = await db.housekeeping_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
-            if task and task["task_type"] == "cleaning":
+            if task and task.get("task_type") == "cleaning" and task.get("room_id"):
                 await db.rooms.update_one(
-                    {"id": task["room_id"], "tenant_id": current_user.tenant_id},
+                    {"id": task.get("room_id"), "tenant_id": current_user.tenant_id},
                     {"$set": {"status": "inspected", "last_cleaned": datetime.now(UTC).isoformat()}},
                 )
     # Task #441: relational assignment — bind to an active user in the caller's
@@ -280,13 +280,28 @@ async def update_housekeeping_task(
     was_counted = old_status in ACTIVE_QUOTA_STATUSES
     will_be_counted = new_status in ACTIVE_QUOTA_STATUSES
 
-    if not was_counted and will_be_counted:
-        await reserve_quota(current_user.tenant_id, "housekeeping", "active_tasks")
+    reserved = False
+    try:
+        if not was_counted and will_be_counted:
+            limit = await get_tenant_limit(current_user.tenant_id, "housekeeping", "active_tasks")
+            try:
+                await reserve_quota(current_user.tenant_id, "housekeeping", "active_tasks", task_id, limit)
+                reserved = True
+            except QuotaExceededException as e:
+                raise HTTPException(status_code=403, detail=str(e))
 
-    await db.housekeeping_tasks.update_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
+        result = await db.housekeeping_tasks.update_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
 
-    if was_counted and not will_be_counted:
-        await release_quota(current_user.tenant_id, "housekeeping", "active_tasks")
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Görev bulunamadı")
+
+        if was_counted and not will_be_counted:
+            await release_quota(current_user.tenant_id, "housekeeping", "active_tasks", task_id)
+
+    except Exception:
+        if reserved:
+            await release_quota(current_user.tenant_id, "housekeeping", "active_tasks", task_id)
+        raise
 
     task = await db.housekeeping_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     _invalidate_hk_caches(current_user.tenant_id)  # v95.2
