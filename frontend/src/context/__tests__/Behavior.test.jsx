@@ -476,4 +476,94 @@ describe('Frontend Behavior Tests', () => {
       expect(screen.queryByTestId("mice-menu")).toBeNull();
   });
 
+
+  // --------------------------------------------------------------------------------
+  // HOUSEKEEPING ENTITLEMENT TESTS
+  // --------------------------------------------------------------------------------
+
+  it('renders HousekeepingDashboard features for PRO users', async () => {
+      axios.get.mockResolvedValueOnce({
+          data: { 
+              modules: { housekeeping: true }, 
+              entitlements: {
+                  housekeeping: {
+                      features: ['advanced_reporting', 'quality_control', 'mobile_app']
+                  }
+              }
+          }
+      });
+
+      const TestHKComponent = () => {
+          const { entitlements, loading } = useEntitlements();
+          if (loading) return <div data-testid="loading">Yükleniyor...</div>;
+          
+          const hasAdvancedReporting = entitlements?.housekeeping?.features?.includes('advanced_reporting');
+          const hasQualityControl = entitlements?.housekeeping?.features?.includes('quality_control');
+          
+          return (
+              <div>
+                  {hasAdvancedReporting && <div data-testid="hk-reports">Detailed Reports</div>}
+                  {hasQualityControl && <div data-testid="hk-quality">Quality Control Panel</div>}
+              </div>
+          );
+      };
+
+      render(
+          <MemoryRouter>
+              <EntitlementProvider currentTenantId="t1" isSuperAdmin={false}>
+                  <TestHKComponent />
+              </EntitlementProvider>
+          </MemoryRouter>
+      );
+
+      await waitFor(() => expect(screen.queryByTestId("loading")).not.toBeInTheDocument());
+
+      expect(screen.getByTestId("hk-reports")).toBeInTheDocument();
+      expect(screen.getByTestId("hk-quality")).toBeInTheDocument();
+  });
+
+  it('hides HousekeepingDashboard features for BASIC users', async () => {
+      axios.get.mockResolvedValueOnce({
+          data: { 
+              modules: { housekeeping: true }, 
+              entitlements: {
+                  housekeeping: {
+                      features: [] // Basic subscription
+                  }
+              }
+          }
+      });
+
+      const TestHKComponent = () => {
+          const { entitlements, loading } = useEntitlements();
+          if (loading) return <div data-testid="loading">Yükleniyor...</div>;
+          
+          const hasAdvancedReporting = entitlements?.housekeeping?.features?.includes('advanced_reporting');
+          const hasQualityControl = entitlements?.housekeeping?.features?.includes('quality_control');
+          const hasMobileApp = entitlements?.housekeeping?.features?.includes('mobile_app');
+          
+          return (
+              <div>
+                  {hasAdvancedReporting ? <div data-testid="hk-reports">Detailed Reports</div> : <div data-testid="no-reports">No Reports</div>}
+                  {hasQualityControl ? <div data-testid="hk-quality">Quality Control Panel</div> : <div data-testid="no-quality">No Quality</div>}
+                  <button data-testid="hk-mobile" disabled={!hasMobileApp}>Mobile App</button>
+              </div>
+          );
+      };
+
+      render(
+          <MemoryRouter>
+              <EntitlementProvider currentTenantId="t1" isSuperAdmin={false}>
+                  <TestHKComponent />
+              </EntitlementProvider>
+          </MemoryRouter>
+      );
+
+      await waitFor(() => expect(screen.queryByTestId("loading")).not.toBeInTheDocument());
+
+      expect(screen.getByTestId("no-reports")).toBeInTheDocument();
+      expect(screen.getByTestId("no-quality")).toBeInTheDocument();
+      expect(screen.getByTestId("hk-mobile")).toBeDisabled();
+  });
+
 });
