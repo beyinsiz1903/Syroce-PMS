@@ -231,12 +231,18 @@ async def create_space(
 
     body_dict = body.model_dump()
     client_request_id = body_dict.pop("client_request_id", None)
+    space_id = str(uuid.uuid4())
+    resource_id = client_request_id or space_id
 
     limit = await get_tenant_limit(current_user.tenant_id, "mice", "spaces_limit")
     if limit is not None:
-        await reserve_quota(current_user.tenant_id, "mice", "spaces_limit", limit, increment=1)
+        from core.entitlements.quota import QuotaExceededException
+        try:
+            await reserve_quota(current_user.tenant_id, "mice", "spaces_limit", resource_id, limit)
+        except QuotaExceededException:
+            raise HTTPException(403, "Mekan limiti aşıldı. Lütfen paketinizi yükseltin.")
 
-    doc = {"id": str(uuid.uuid4()), "tenant_id": current_user.tenant_id, **body_dict, "created_at": datetime.now(UTC).isoformat()}
+    doc = {"id": space_id, "tenant_id": current_user.tenant_id, **body_dict, "created_at": datetime.now(UTC).isoformat()}
     if client_request_id:
         doc["client_request_id"] = client_request_id
 
@@ -250,18 +256,18 @@ async def create_space(
             })
             if existing:
                 existing.pop("_id", None)
-                return {"success": True, "source": "idempotent", "space_id": existing["id"]}
+                return existing
         if limit is not None:
-            await release_quota(current_user.tenant_id, "mice", "spaces_limit", increment=1)
+            await release_quota(current_user.tenant_id, "mice", "spaces_limit", resource_id)
         raise HTTPException(status_code=409, detail="Mekan eklenirken çakışma oluştu.")
     except Exception as e:
         if limit is not None:
-            await release_quota(current_user.tenant_id, "mice", "spaces_limit", increment=1)
+            await release_quota(current_user.tenant_id, "mice", "spaces_limit", resource_id)
         raise e
 
     doc.pop("_id", None)
     _invalidate_mice_spaces_cache(current_user.tenant_id)
-    return {"success": True, "source": "created", "space_id": doc["id"], "doc": doc}
+    return doc
 
 
 @router.put("/spaces/{space_id}")
@@ -1116,13 +1122,20 @@ async def create_event(
     tenant_id = current_user.tenant_id
 
     client_request_id = body.client_request_id
+    event_id = str(uuid.uuid4())
+    resource_id = client_request_id or event_id
+
     limit = None
-    reserve_increment = 0
+    reserved = False
     if body.status not in {"cancelled", "completed", "lost"}:
         limit = await get_tenant_limit(tenant_id, "mice", "concurrent_events")
         if limit is not None:
-            await reserve_quota(tenant_id, "mice", "concurrent_events", limit, increment=1)
-            reserve_increment = 1
+            from core.entitlements.quota import QuotaExceededException
+            try:
+                await reserve_quota(tenant_id, "mice", "concurrent_events", resource_id, limit)
+                reserved = True
+            except QuotaExceededException:
+                raise HTTPException(403, "Eşzamanlı etkinlik limiti aşıldı. Lütfen paketinizi yükseltin.")
 
     bookings = [b.model_dump() for b in body.space_bookings]
     for b in bookings:
@@ -1143,7 +1156,7 @@ async def create_event(
     # bu şekilde agenda[].starts_at ve payment_schedule[].due_date BSON için
     # geçerli kalır (PyMongo native `datetime.date`'i kabul etmez).
     event_doc = {
-        "id": str(uuid.uuid4()),
+        "id": event_id,
         "tenant_id": tenant_id,
         **body.model_dump(mode="json", exclude={"space_bookings", "resources"}),
         "space_bookings": bookings,
@@ -1191,19 +1204,17 @@ async def create_event(
             })
             if existing:
                 existing.pop("_id", None)
-                if reserve_increment:
-                    await release_quota(tenant_id, "mice", "concurrent_events", increment=reserve_increment)
-                return {"success": True, "source": "idempotent", "event_id": existing["id"]}
-        if reserve_increment:
-            await release_quota(tenant_id, "mice", "concurrent_events", increment=reserve_increment)
+                return existing
+        if reserved:
+            await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
         raise HTTPException(status_code=409, detail="Etkinlik eklenirken çakışma oluştu.")
     except HTTPException:
-        if reserve_increment:
-            await release_quota(tenant_id, "mice", "concurrent_events", increment=reserve_increment)
+        if reserved:
+            await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
         raise
     except Exception as exc:  # noqa: BLE001
-        if reserve_increment:
-            await release_quota(tenant_id, "mice", "concurrent_events", increment=reserve_increment)
+        if reserved:
+            await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
         if not is_replica_set_unavailable(exc):
             raise
         # Standalone fallback
@@ -1224,13 +1235,13 @@ async def create_event(
                 existing = await db.mice_events.find_one({"tenant_id": tenant_id, "client_request_id": client_request_id})
                 if existing:
                     existing.pop("_id", None)
-                    return {"success": True, "source": "idempotent", "event_id": existing["id"]}
+                    return existing
             raise HTTPException(status_code=409, detail="Etkinlik eklenirken çakışma oluştu.")
         except Exception as se:
             raise se
 
     event_doc.pop("_id", None)
-    return {"success": True, "source": "created", "event_id": event_doc["id"], "doc": event_doc}
+    return event_doc
 
 @router.put("/events/{event_id}")
 async def update_event(
