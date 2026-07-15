@@ -185,6 +185,40 @@ ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
                 }
             )
         }
+    ),
+    "parking": ModuleDefinition(
+        key="parking",
+        name="Otopark & Transfer",
+        features=[
+            ModuleFeature(key="valet_service", description="Vale Hizmeti"),
+            ModuleFeature(key="lpr_integration", description="Plaka Tanıma (LPR) Entegrasyonu"),
+            ModuleFeature(key="long_term_parking", description="Uzun Dönem Park ve Personel Abonmanlıkları"),
+            ModuleFeature(key="parking_analytics", description="Gelir ve Doluluk Analiz Raporları"),
+        ],
+        limits=[
+            ModuleLimit(key="transfer_vehicles", description="Maksimum Transfer Aracı Sayısı"),
+            ModuleLimit(key="parking_spots", description="Maksimum Otopark Yeri Sayısı"),
+        ],
+        editions={
+            "basic": EditionDefinition(
+                key="basic",
+                name="Parking Basic",
+                features=set(),
+                limits={
+                    "transfer_vehicles": 2,
+                    "parking_spots": 50,
+                }
+            ),
+            "pro": EditionDefinition(
+                key="pro",
+                name="Parking Pro",
+                features={"valet_service", "lpr_integration", "long_term_parking", "parking_analytics"},
+                limits={
+                    "transfer_vehicles": 10,
+                    "parking_spots": 500,
+                }
+            )
+        }
     )
 }
 

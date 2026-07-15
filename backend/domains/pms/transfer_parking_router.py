@@ -24,15 +24,18 @@ import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
 from core.database import db
+from core.entitlements.enforcement import get_tenant_limit
+from core.entitlements.quota import release_quota, reserve_quota
 from core.pos_folio_consumer import _recalc_folio_balance
 from core.security import get_current_user
 from domains.pms.pos_extensions._idem import ensure_compound_unique
 from models.schemas import User
+from shared_kernel.idempotency import claim_idempotency, complete_idempotency, get_idempotency_key, release_idempotency
 
 logger = logging.getLogger("domains.pms.transfer_parking")
 
@@ -165,16 +168,32 @@ async def list_resources(
 
 @router.post("/resources")
 async def create_resource(
+    request: Request,
     payload: ResourceIn,
     current_user: User = Depends(get_current_user),
 ):
     _require_role(current_user, _CATALOG_ROLES)
     tenant_id = _tenant_of(current_user)
     if payload.kind not in _VALID_KINDS:
-        raise HTTPException(status_code=400, detail="Geçersiz kaynak tipi")
+        raise HTTPException(status_code=422, detail="Geçersiz kaynak tipi")
+
+    idem_key = get_idempotency_key(request)
+    if idem_key:
+        lock_doc = await claim_idempotency(db, tenant_id=tenant_id, lock_id=idem_key, context="transfer_parking_create_resource")
+        if lock_doc:
+            return lock_doc["response"]
+
+    limit_key = "transfer_vehicles" if payload.kind == _KIND_TRANSFER else "parking_spots"
+    limit_val = await get_tenant_limit(tenant_id, "parking", limit_key, default=0)
+
     now = _now_iso()
+    doc_id = str(uuid.uuid4())
+
+    # Quota reserve
+    await reserve_quota(tenant_id, "parking", limit_key, doc_id, limit_val)
+
     doc = {
-        "id": str(uuid.uuid4()),
+        "id": doc_id,
         "tenant_id": tenant_id,
         "name": payload.name.strip(),
         "kind": payload.kind,
@@ -185,8 +204,20 @@ async def create_resource(
         "updated_at": now,
         "created_by": _actor_id(current_user),
     }
-    await db.transport_resources.insert_one(dict(doc))
-    return {"resource": _serialize(doc)}
+
+    try:
+        await db.transport_resources.insert_one(dict(doc))
+    except Exception as exc:
+        await release_quota(tenant_id, "parking", limit_key, doc_id)
+        if idem_key:
+            await release_idempotency(db, lock_id=idem_key)
+        raise HTTPException(status_code=500, detail="Kaynak oluşturulamadı") from exc
+
+    res_data = {"resource": _serialize(doc)}
+    if idem_key:
+        await complete_idempotency(db, lock_id=idem_key, response_data=res_data)
+
+    return res_data
 
 
 @router.put("/resources/{resource_id}")
@@ -197,17 +228,45 @@ async def update_resource(
 ):
     _require_role(current_user, _CATALOG_ROLES)
     tenant_id = _tenant_of(current_user)
+
+    current_resource = await db.transport_resources.find_one({"id": resource_id, "tenant_id": tenant_id})
+    if not current_resource:
+        raise HTTPException(status_code=404, detail="Kaynak bulunamadı")
+
     updates = dict(payload.model_dump(exclude_unset=True))
+
+    # Handle quota when toggling active state
+    limit_key = "transfer_vehicles" if current_resource.get("kind") == _KIND_TRANSFER else "parking_spots"
+    is_activating = "active" in updates and updates["active"] and not current_resource.get("active", True)
+    is_deactivating = "active" in updates and not updates["active"] and current_resource.get("active", True)
+
+    if is_activating:
+        limit_val = await get_tenant_limit(tenant_id, "parking", limit_key, default=0)
+        await reserve_quota(tenant_id, "parking", limit_key, resource_id, limit_val)
+
     if "name" in updates and updates["name"]:
         updates["name"] = updates["name"].strip()
     if "price" in updates and updates["price"] is not None:
         updates["price"] = round(float(updates["price"]), 2)
     if not updates:
         raise HTTPException(status_code=400, detail="Güncellenecek alan yok")
+
     updates["updated_at"] = _now_iso()
-    res = await db.transport_resources.update_one({"id": resource_id, "tenant_id": tenant_id}, {"$set": updates})
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Kaynak bulunamadı")
+
+    try:
+        res = await db.transport_resources.update_one({"id": resource_id, "tenant_id": tenant_id}, {"$set": updates})
+        if res.matched_count == 0:
+            if is_activating:
+                await release_quota(tenant_id, "parking", limit_key, resource_id)
+            raise HTTPException(status_code=404, detail="Kaynak bulunamadı")
+    except Exception as exc:
+        if is_activating:
+            await release_quota(tenant_id, "parking", limit_key, resource_id)
+        raise HTTPException(status_code=500, detail="Güncelleme hatası") from exc
+
+    if is_deactivating and res.modified_count > 0:
+        await release_quota(tenant_id, "parking", limit_key, resource_id)
+
     doc = await db.transport_resources.find_one({"id": resource_id, "tenant_id": tenant_id}, {"_id": 0})
     return {"resource": doc}
 
@@ -220,12 +279,19 @@ async def deactivate_resource(
     """Soft-delete: kaynağı pasifleştirir (geçmiş rezervasyon referansları korunur)."""
     _require_role(current_user, _CATALOG_ROLES)
     tenant_id = _tenant_of(current_user)
+
+    current_resource = await db.transport_resources.find_one({"id": resource_id, "tenant_id": tenant_id})
+    if not current_resource:
+        raise HTTPException(status_code=404, detail="Kaynak bulunamadı")
+
     res = await db.transport_resources.update_one(
-        {"id": resource_id, "tenant_id": tenant_id},
+        {"id": resource_id, "tenant_id": tenant_id, "active": {"$ne": False}},
         {"$set": {"active": False, "updated_at": _now_iso()}},
     )
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Kaynak bulunamadı")
+    if res.modified_count == 1:
+        limit_key = "transfer_vehicles" if current_resource.get("kind") == _KIND_TRANSFER else "parking_spots"
+        await release_quota(tenant_id, "parking", limit_key, resource_id)
+
     return {"ok": True, "id": resource_id}
 
 

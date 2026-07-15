@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useEntitlements } from '@/context/EntitlementContext';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
@@ -57,6 +58,17 @@ const TransferParkingPage = () => {
   const activeResources = resources.filter((r) => r.active);
   const selectedResource = activeResources.find((r) => r.id === bookingForm.resource_id);
   const selectedKind = selectedResource?.kind;
+
+  const { getLimit, hasFeature } = useEntitlements();
+  const vehicleLimit = getLimit('parking', 'transfer_vehicles', 0);
+  const spotLimit = getLimit('parking', 'parking_spots', 0);
+
+  const vehicleCount = activeResources.filter((r) => r.kind === 'transfer_vehicle').length;
+  const spotCount = activeResources.filter((r) => r.kind === 'parking_spot').length;
+
+  const canAddVehicle = vehicleLimit === 0 || vehicleCount < vehicleLimit;
+  const canAddSpot = spotLimit === 0 || spotCount < spotLimit;
+  const canAddResource = canAddVehicle || canAddSpot;
 
   const loadResources = useCallback(async () => {
     try {
@@ -260,6 +272,9 @@ const TransferParkingPage = () => {
               <Badge variant="destructive" className="ml-2">{lateCharges.length}</Badge>
             )}
           </TabsTrigger>
+          {hasFeature('parking', 'valet_service') && <TabsTrigger value="valet">Vale</TabsTrigger>}
+          {hasFeature('parking', 'lpr_integration') && <TabsTrigger value="lpr">Plaka Tanıma</TabsTrigger>}
+          {hasFeature('parking', 'parking_analytics') && <TabsTrigger value="analytics">Analiz</TabsTrigger>}
         </TabsList>
 
         {/* ── Rezervasyonlar ── */}
@@ -324,9 +339,13 @@ const TransferParkingPage = () => {
         {/* ── Kaynaklar ── */}
         <TabsContent value="resources" className="space-y-4">
           <div className="flex justify-end">
-            <Button className="bg-black text-white" onClick={() => { setResourceForm(EMPTY_RESOURCE); setShowResourceDialog(true); }}>
+            <Button
+              className="bg-black text-white"
+              onClick={() => { setResourceForm(EMPTY_RESOURCE); setShowResourceDialog(true); }}
+              disabled={!canAddResource}
+            >
               <Plus className="h-4 w-4 mr-2" />
-              Yeni Kaynak
+              {canAddResource ? 'Yeni Kaynak' : 'Limit Doldu'}
             </Button>
           </div>
           <Card>
@@ -430,7 +449,18 @@ const TransferParkingPage = () => {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {KIND_OPTIONS.map((k) => (
-                    <SelectItem key={k.value} value={k.value}>{k.label}</SelectItem>
+                    <SelectItem
+                      key={k.value}
+                      value={k.value}
+                      disabled={
+                        (k.value === 'transfer_vehicle' && !canAddVehicle) ||
+                        (k.value === 'parking_spot' && !canAddSpot)
+                      }
+                    >
+                      {k.label}
+                      {k.value === 'transfer_vehicle' && !canAddVehicle && ' (Limit dolu)'}
+                      {k.value === 'parking_spot' && !canAddSpot && ' (Limit dolu)'}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
