@@ -9,6 +9,7 @@ import { ModuleGuardedRoute } from '../../routes/ProtectedRoute';
 import POSOutletManagement from '../../components/POSOutletManagement';
 import Layout from '../../components/Layout';
 import POSDashboard from '../../pages/POSDashboard';
+import SpaWellness from '../../pages/SpaWellness';
 
 vi.mock('axios');
 
@@ -558,6 +559,100 @@ describe('Frontend Behavior Tests', () => {
       // Test mobile button is disabled
       const mobileBtn = screen.getByTestId("hk-quick-mobile");
       expect(mobileBtn).toBeDisabled();
+  });
+
+  it('SpaWellness: enforces Basic limits and hides Pro features', async () => {
+      axios.get.mockImplementation((url) => {
+          if (url === '/subscription/current') return Promise.resolve({
+              data: {
+                  modules: { spa: true },
+                  entitlements: { spa: { limits: { therapists: 3, rooms: 2 }, features: [] } }
+              }
+          });
+          if (url === '/spa/services') return Promise.resolve({ data: { services: [] } });
+          if (url === '/spa/therapists') return Promise.resolve({ data: { therapists: [{id:'1'},{id:'2'},{id:'3'}] } });
+          if (url === '/spa/rooms') return Promise.resolve({ data: { rooms: [{id:'1'},{id:'2'}] } });
+          if (url === '/spa/appointments') return Promise.resolve({ data: { appointments: [] } });
+          if (url === '/spa/daily-summary') return Promise.resolve({ data: { total: 0 } });
+          return Promise.resolve({ data: {} });
+      });
+
+      render(
+          <MemoryRouter>
+              <EntitlementProvider currentTenantId="t1" isSuperAdmin={false}>
+                  <SpaWellness />
+              </EntitlementProvider>
+          </MemoryRouter>
+      );
+
+      await waitFor(() => {
+          expect(screen.getByText(/Spa & Wellness/i)).toBeInTheDocument();
+      });
+
+      // Switch to therapists tab to see the button
+      fireEvent.click(screen.getByRole('tab', { name: /Terapistler/i }));
+      await waitFor(() => {
+          const btn = screen.getByText(/Terapist Ekle|terapist_ekle/i).closest('button');
+          expect(btn).toBeDisabled();
+      });
+
+      // Switch to rooms tab
+      fireEvent.click(screen.getByRole('tab', { name: /Odalar/i }));
+      await waitFor(() => {
+          const btn = screen.getByText(/Oda Ekle|oda_ekle/i).closest('button');
+          expect(btn).toBeDisabled();
+      });
+
+      // Assert Pro tabs are hidden
+      expect(screen.queryByTestId('tab-guest-history')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('tab-availability')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('tab-packages')).not.toBeInTheDocument();
+  });
+
+  it('SpaWellness: allows Pro features and limits', async () => {
+      axios.get.mockImplementation((url) => {
+          if (url === '/subscription/current') return Promise.resolve({
+              data: {
+                  modules: { spa: true },
+                  entitlements: {
+                      spa: {
+                          limits: { therapists: 20, rooms: 10 },
+                          features: ['guest_history', 'advanced_availability', 'cross_department_packages']
+                      }
+                  }
+              }
+          });
+          if (url === '/spa/services') return Promise.resolve({ data: { services: [] } });
+          if (url === '/spa/therapists') return Promise.resolve({ data: { therapists: [{id:'1'},{id:'2'},{id:'3'}] } });
+          if (url === '/spa/rooms') return Promise.resolve({ data: { rooms: [{id:'1'},{id:'2'}] } });
+          if (url === '/spa/appointments') return Promise.resolve({ data: { appointments: [] } });
+          if (url === '/spa/daily-summary') return Promise.resolve({ data: { total: 0 } });
+          return Promise.resolve({ data: {} });
+      });
+
+      render(
+          <MemoryRouter>
+              <EntitlementProvider currentTenantId="t1" isSuperAdmin={false}>
+                  <SpaWellness />
+              </EntitlementProvider>
+          </MemoryRouter>
+      );
+
+      await waitFor(() => {
+          expect(screen.getByText(/Spa & Wellness/i)).toBeInTheDocument();
+      });
+
+      // Therapists button enabled since 3 < 20
+      fireEvent.click(screen.getByRole('tab', { name: /Terapistler/i }));
+      await waitFor(() => {
+          const btn = screen.getByText(/Terapist Ekle|terapist_ekle/i).closest('button');
+          expect(btn).not.toBeDisabled();
+      });
+
+      // Assert Pro tabs are visible
+      expect(screen.getByTestId('tab-guest-history')).toBeInTheDocument();
+      expect(screen.getByTestId('tab-availability')).toBeInTheDocument();
+      expect(screen.getByTestId('tab-packages')).toBeInTheDocument();
   });
 
 });

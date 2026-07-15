@@ -16,7 +16,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from cache_manager import cache as _cache
@@ -26,11 +26,19 @@ from core.booking_atomicity import (
     standalone_fallback_allowed,
     with_resource_locks,
 )
+from core.entitlements.enforcement import get_tenant_limit, require_feature
+from core.entitlements.quota import QuotaExceededException, release_quota, reserve_quota
 from core.security import get_current_user
 from core.spa_mice_authz import require_catalog, require_finance, require_spa_ops
 from core.tenant_db import get_system_db
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v101 DW
+from shared_kernel.idempotency import (
+    claim_idempotency,
+    complete_idempotency,
+    get_idempotency_key,
+    release_idempotency,
+)
 
 router = APIRouter(prefix="/api/spa", tags=["spa"])
 
@@ -207,21 +215,61 @@ async def list_therapists(current_user: User = Depends(get_current_user)) -> dic
 
 @router.post("/therapists")
 async def create_therapist(
+    request: Request,
     body: TherapistIn,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
-    doc = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
-        **body.model_dump(),
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    await db.spa_therapists.insert_one(doc)
-    doc.pop("_id", None)
-    return doc
+
+    idem_key = get_idempotency_key(request)
+    lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db,
+            tenant_id=current_user.tenant_id,
+            scope="spa_therapist_create",
+            idempotency_key=idem_key,
+        )
+        if claim["status"] == "replay":
+            return claim["response"]
+        elif claim["status"] == "in_flight":
+            raise HTTPException(409, "Aynı Idempotency-Key ile başka bir istek işleniyor")
+        lock_id = claim["lock_id"]
+
+    try:
+        limit = await get_tenant_limit(current_user.tenant_id, "spa", "therapists")
+        therapist_id = str(uuid.uuid4())
+
+        if limit is not None:
+            try:
+                await reserve_quota(current_user.tenant_id, "spa", "therapists", therapist_id, limit)
+            except QuotaExceededException:
+                raise HTTPException(status_code=403, detail="Maksimum terapist limitine ulaştınız. Lütfen paketinizi yükseltin.")
+
+        doc = {
+            "id": therapist_id,
+            "tenant_id": current_user.tenant_id,
+            **body.model_dump(),
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        try:
+            await db.spa_therapists.insert_one(doc)
+        except Exception:
+            if limit is not None:
+                await release_quota(current_user.tenant_id, "spa", "therapists", therapist_id)
+            raise
+        doc.pop("_id", None)
+
+        if lock_id:
+            await complete_idempotency(db, lock_id, doc)
+
+        return doc
+    except Exception:
+        if lock_id:
+            await release_idempotency(db, lock_id)
+        raise
 
 
 @router.put("/therapists/{therapist_id}")
@@ -250,7 +298,9 @@ async def delete_therapist(
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
-    await db.spa_therapists.delete_one({"id": therapist_id, "tenant_id": current_user.tenant_id})
+    res = await db.spa_therapists.delete_one({"id": therapist_id, "tenant_id": current_user.tenant_id})
+    if res.deleted_count == 1:
+        await release_quota(current_user.tenant_id, "spa", "therapists", therapist_id)
     return {"ok": True}
 
 
@@ -272,21 +322,61 @@ async def list_rooms(current_user: User = Depends(get_current_user)) -> dict:
 
 @router.post("/rooms")
 async def create_room(
+    request: Request,
     body: TreatmentRoomIn,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
-    doc = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
-        **body.model_dump(),
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    await db.spa_rooms.insert_one(doc)
-    doc.pop("_id", None)
-    return doc
+
+    idem_key = get_idempotency_key(request)
+    lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db,
+            tenant_id=current_user.tenant_id,
+            scope="spa_room_create",
+            idempotency_key=idem_key,
+        )
+        if claim["status"] == "replay":
+            return claim["response"]
+        elif claim["status"] == "in_flight":
+            raise HTTPException(409, "Aynı Idempotency-Key ile başka bir istek işleniyor")
+        lock_id = claim["lock_id"]
+
+    try:
+        limit = await get_tenant_limit(current_user.tenant_id, "spa", "rooms")
+        room_id = str(uuid.uuid4())
+
+        if limit is not None:
+            try:
+                await reserve_quota(current_user.tenant_id, "spa", "rooms", room_id, limit)
+            except QuotaExceededException:
+                raise HTTPException(status_code=403, detail="Maksimum oda limitine ulaştınız. Lütfen paketinizi yükseltin.")
+
+        doc = {
+            "id": room_id,
+            "tenant_id": current_user.tenant_id,
+            **body.model_dump(),
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        try:
+            await db.spa_rooms.insert_one(doc)
+        except Exception:
+            if limit is not None:
+                await release_quota(current_user.tenant_id, "spa", "rooms", room_id)
+            raise
+        doc.pop("_id", None)
+
+        if lock_id:
+            await complete_idempotency(db, lock_id, doc)
+
+        return doc
+    except Exception:
+        if lock_id:
+            await release_idempotency(db, lock_id)
+        raise
 
 
 @router.put("/rooms/{room_id}")
@@ -315,7 +405,9 @@ async def delete_room(
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
-    await db.spa_rooms.delete_one({"id": room_id, "tenant_id": current_user.tenant_id})
+    res = await db.spa_rooms.delete_one({"id": room_id, "tenant_id": current_user.tenant_id})
+    if res.deleted_count == 1:
+        await release_quota(current_user.tenant_id, "spa", "rooms", room_id)
     return {"ok": True}
 
 
@@ -640,7 +732,11 @@ async def delete_appointment(
 
 # ── Guest history ───────────────────────────────────────────────
 @router.get("/guests/{guest_id}/history")
-async def guest_history(guest_id: str, current_user: User = Depends(get_current_user)) -> dict:
+async def guest_history(
+    guest_id: str,
+    current_user: User = Depends(get_current_user),
+    _feat=Depends(require_feature("spa", "guest_history")),
+) -> dict:
     db = get_system_db()
     cur = (
         db.spa_appointments.find(
@@ -713,6 +809,7 @@ async def availability_grid(
     service_id: str | None = Query(None),
     slot_minutes: int = Query(30, ge=15, le=120),
     current_user: User = Depends(get_current_user),
+    _feat=Depends(require_feature("spa", "advanced_availability")),
 ) -> dict:
     """Terapist x zaman dilimi şeklinde müsaitlik tablosu döndürür.
 
@@ -851,6 +948,7 @@ class WaitlistEntryIn(BaseModel):
 async def list_waitlist(
     date: str | None = Query(None),
     current_user: User = Depends(get_current_user),
+    _feat=Depends(require_feature("spa", "advanced_availability")),
 ) -> dict:
     db = get_system_db()
     q: dict[str, Any] = {"tenant_id": current_user.tenant_id, "status": {"$in": ["waiting", "notified"]}}
@@ -865,6 +963,7 @@ async def add_to_waitlist(
     body: WaitlistEntryIn,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
+    _feat=Depends(require_feature("spa", "advanced_availability")),
 ) -> dict:
     require_spa_ops(current_user)
     db = get_system_db()
@@ -891,6 +990,7 @@ async def remove_waitlist(
     entry_id: str,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
+    _feat=Depends(require_feature("spa", "advanced_availability")),
 ) -> dict:
     require_spa_ops(current_user)
     db = get_system_db()
@@ -917,6 +1017,7 @@ async def update_waitlist(
     body: WaitlistUpdate,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
+    _feat=Depends(require_feature("spa", "advanced_availability")),
 ) -> dict:
     require_spa_ops(current_user)
     db = get_system_db()

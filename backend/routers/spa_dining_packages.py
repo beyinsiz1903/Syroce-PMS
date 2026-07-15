@@ -131,8 +131,14 @@ async def _post_package_to_folio(tenant_id: str, booking: dict) -> None:
         pass
 
 
+from core.entitlements.enforcement import require_feature
+
+
 @router.get("/packages")
-async def list_packages(current_user: User = Depends(get_current_user)) -> dict:
+async def list_packages(
+    current_user: User = Depends(get_current_user),
+    _feat=Depends(require_feature("spa", "cross_department_packages"))
+) -> dict:
     """Returns available SPA & Dining packages."""
     return {"packages": DEFAULT_PACKAGES}
 
@@ -142,6 +148,7 @@ async def list_package_bookings(
     guest_name: str | None = Query(None),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_security")),
+    _feat=Depends(require_feature("spa", "cross_department_packages")),
 ) -> dict:
     """List cross-departmental spa/dining bookings."""
     db = get_system_db()
@@ -158,6 +165,7 @@ async def create_package_booking(
     payload: PackageBookingRequest,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
+    _feat=Depends(require_feature("spa", "cross_department_packages")),
 ):
     """Atomic cross-booking for SPA & Restoran table package."""
     db = get_system_db()
