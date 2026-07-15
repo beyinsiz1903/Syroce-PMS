@@ -61,3 +61,10 @@ async def ensure_entitlement_indexes(db):
         partialFilterExpression={"client_request_id": {"$type": "string"}},
         name="uniq_pos_outlets_client_request_id",
     )
+
+    await db.staff_members.create_index(
+        [("tenant_id", 1), ("client_request_id", 1)],
+        unique=True,
+        partialFilterExpression={"client_request_id": {"$exists": True}},
+        name="uq_staff_tenant_client_request_id",
+    )

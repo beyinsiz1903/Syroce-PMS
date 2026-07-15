@@ -88,6 +88,7 @@ export const NAV_ITEMS = [
     key: "hr_hub",
     label: "İK",
     path: "/hr",
+    moduleKey: "hr",
     tier: "basic",
     group: "core",
     navGroup: "backoffice",

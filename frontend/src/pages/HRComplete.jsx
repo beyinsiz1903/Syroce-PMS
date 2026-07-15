@@ -23,6 +23,7 @@ import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatCurrency } from '@/lib/currency';
 import { useTranslation } from 'react-i18next';
+import { useEntitlements } from '@/context/EntitlementContext';
 import PaginationBar from '@/components/PaginationBar';
 import SkeletonRow from '@/components/SkeletonRow';
 import { useHRPagination } from '@/hooks/useHRPagination';
@@ -65,7 +66,16 @@ const todayMonth = () => {
 const HRComplete = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+    const { hasFeature } = useEntitlements();
   const [activeTab, setActiveTab] = useState('attendance');
+
+  useEffect(() => {
+    if (activeTab === 'payroll' && !hasFeature("hr", "payroll")) setActiveTab('attendance');
+    if (activeTab === 'leave' && !hasFeature("hr", "leave")) setActiveTab('attendance');
+    if (activeTab === 'overtime' && !hasFeature("hr", "leave")) setActiveTab('attendance');
+    if (activeTab === 'recruitment' && !hasFeature("hr", "recruitment")) setActiveTab('attendance');
+  }, [activeTab, hasFeature]);
+
   const [refreshing, setRefreshing] = useState(false);
 
   // Staff (dropdown data only)
@@ -889,25 +899,25 @@ const HRComplete = () => {
           <TabsTrigger value="attendance" data-testid="tab-attendance" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Clock className="w-4 h-4 mr-2" />Devam
           </TabsTrigger>
-          <TabsTrigger value="payroll" data-testid="tab-payroll" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
+          {hasFeature("hr", "payroll") && (<TabsTrigger value="payroll" data-testid="tab-payroll" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <DollarSign className="w-4 h-4 mr-2" />Bordro
-          </TabsTrigger>
-          <TabsTrigger value="leave" data-testid="tab-leave" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
+          </TabsTrigger>)}
+          {hasFeature("hr", "leave") && (<TabsTrigger value="leave" data-testid="tab-leave" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Calendar className="w-4 h-4 mr-2" />İzin
-          </TabsTrigger>
+          </TabsTrigger>)}
           <TabsTrigger value="performance" data-testid="tab-performance" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Briefcase className="w-4 h-4 mr-2" />Performans
           </TabsTrigger>
-          <TabsTrigger value="overtime" data-testid="tab-overtime" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
+          {hasFeature("hr", "leave") && (<TabsTrigger value="overtime" data-testid="tab-overtime" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Timer className="w-4 h-4 mr-1.5" />
             Mesai Onayı
             {overtimeCounts.pending > 0 && (
               <span className="ml-1.5 px-1.5 rounded-full bg-amber-500 text-white text-[10px]">{overtimeCounts.pending}</span>
             )}
-          </TabsTrigger>
-          <TabsTrigger value="recruitment" data-testid="tab-recruitment" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
+          </TabsTrigger>)}
+          {hasFeature("hr", "recruitment") && (<TabsTrigger value="recruitment" data-testid="tab-recruitment" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <ClipboardList className="w-4 h-4 mr-2" />Personel Talebi
-          </TabsTrigger>
+          </TabsTrigger>)}
         </TabsList>
 
         {/* === ATTENDANCE === */}

@@ -26,6 +26,8 @@ from pymongo.errors import DuplicateKeyError
 
 from common.json_safe import json_safe
 from core.database import _raw_db, db
+from core.entitlements.enforcement import get_tenant_limit, require_feature
+from core.entitlements.quota import QuotaExceededException, release_quota, reserve_quota
 from core.security import get_current_user
 from security.upload_validator import validate_document_bytes
 
@@ -493,7 +495,7 @@ class JobDecisionPayload(BaseModel):
 # ============= Attendance =============
 
 
-@router.post("/hr/clock-in")
+@router.post("/hr/clock-in", dependencies=[Depends(require_feature("hr", "shift"))])
 async def clock_in(payload: ClockInRequest, current_user: User = Depends(get_current_user)):
     """Personel giriş kaydı — tenant scoped, TR-TZ tarih, validated staff_id."""
     staff = await _verify_staff_in_tenant(payload.staff_id, current_user.tenant_id)
@@ -528,7 +530,7 @@ async def clock_in(payload: ClockInRequest, current_user: User = Depends(get_cur
     return {"success": True, "message": "Giriş kaydedildi", "time": record["clock_in"]}
 
 
-@router.post("/hr/clock-out")
+@router.post("/hr/clock-out", dependencies=[Depends(require_feature("hr", "shift"))])
 async def clock_out(payload: ClockInRequest, current_user: User = Depends(get_current_user)):
     # v109 Bug DAK round-6 (T08 P1): tenant_id scoped on both find and update.
     today_iso = _today_local().isoformat()
@@ -558,7 +560,7 @@ def _parse_date_range(start: str | None, end: str | None, days: int = 7):
     return start_date, end_date
 
 
-@router.get("/hr/attendance/records")
+@router.get("/hr/attendance/records", dependencies=[Depends(require_feature("hr", "shift"))])
 async def get_attendance_records(start_date: str | None = None, end_date: str | None = None, staff_id: str | None = None, limit: int = 500, current_user: User = Depends(get_current_user)):
     start_dt, end_dt = _parse_date_range(start_date, end_date, days=7)
     query: dict[str, Any] = {"tenant_id": current_user.tenant_id, "date": {"$gte": start_dt.isoformat(), "$lte": end_dt.isoformat()}}
@@ -575,7 +577,7 @@ async def get_attendance_records(start_date: str | None = None, end_date: str | 
     return {"records": records, "total": len(records), "range": {"start": start_dt.isoformat(), "end": end_dt.isoformat()}}
 
 
-@router.get("/hr/attendance/summary")
+@router.get("/hr/attendance/summary", dependencies=[Depends(require_feature("hr", "shift"))])
 async def get_attendance_summary(start_date: str | None = None, end_date: str | None = None, current_user: User = Depends(get_current_user)):
     start_dt, end_dt = _parse_date_range(start_date, end_date, days=30)
     query = {"tenant_id": current_user.tenant_id, "date": {"$gte": start_dt.isoformat(), "$lte": end_dt.isoformat()}}
@@ -637,7 +639,7 @@ async def get_attendance_summary(start_date: str | None = None, end_date: str | 
 # ============= Leave =============
 
 
-@router.post("/hr/leave-request")
+@router.post("/hr/leave-request", dependencies=[Depends(require_feature("hr", "leave"))])
 async def create_leave_request(
     payload: LeaveRequestPayload,
     current_user: User = Depends(get_current_user),
@@ -695,7 +697,7 @@ async def create_leave_request(
     return {"success": True, "leave_id": leave["id"], "total_days": total_days, "status": "pending"}
 
 
-@router.get("/hr/leave-requests")
+@router.get("/hr/leave-requests", dependencies=[Depends(require_feature("hr", "leave"))])
 async def list_leave_requests(
     status: str | None = None,
     staff_id: str | None = None,
@@ -810,7 +812,7 @@ async def _apply_leave_to_shifts(
     return written
 
 
-@router.post("/hr/leave-request/{leave_id}/decision")
+@router.post("/hr/leave-request/{leave_id}/decision", dependencies=[Depends(require_feature("hr", "leave"))])
 async def decide_leave_request(
     leave_id: str,
     payload: LeaveDecision,
@@ -913,7 +915,7 @@ async def decide_leave_request(
     }
 
 
-@router.get("/hr/leave/calendar")
+@router.get("/hr/leave/calendar", dependencies=[Depends(require_feature("hr", "leave"))])
 async def leave_calendar(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
     department: str | None = None,
@@ -1162,7 +1164,7 @@ async def _build_payroll(month: str | None, tenant_id: str):
     return period_month, payroll
 
 
-@router.get("/hr/payroll/export")
+@router.get("/hr/payroll/export", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def export_payroll(
     month: str | None = None,
     format: str = "json",
@@ -1195,7 +1197,7 @@ async def export_payroll(
     return response
 
 
-@router.get("/hr/payroll/export/csv")
+@router.get("/hr/payroll/export/csv", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def export_payroll_csv_stream(
     month: str | None = Query(None),
     current_user: User = Depends(get_current_user),
@@ -1244,7 +1246,7 @@ async def export_payroll_csv_stream(
     return StreamingResponse(iter([csv_text]), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="payroll_{period_month}.csv"'})
 
 
-@router.post("/hr/payroll/finalize", deprecated=True)
+@router.post("/hr/payroll/finalize", deprecated=True, dependencies=[Depends(require_feature("hr", "payroll"))])
 async def finalize_payroll(
     payload: PayrollFinalizePayload,
     current_user: User = Depends(get_current_user),
@@ -1626,7 +1628,7 @@ def _payroll_lifecycle_gate(user: User, *, allow_hr_manager: bool) -> None:
 # ---------- Payroll v2 endpoints (Task #264) ----------
 
 
-@router.get("/hr/payroll/runs")
+@router.get("/hr/payroll/runs", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def list_payroll_runs(
     month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
     current_user: User = Depends(get_current_user),
@@ -1641,7 +1643,7 @@ async def list_payroll_runs(
     return {"items": items, "count": len(items)}
 
 
-@router.get("/hr/payroll/runs/{run_id}")
+@router.get("/hr/payroll/runs/{run_id}", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def get_payroll_run(
     run_id: str,
     current_user: User = Depends(get_current_user),
@@ -1657,7 +1659,7 @@ async def get_payroll_run(
     return _payroll_run_to_response(run, current_user)
 
 
-@router.get("/hr/payroll/runs/{run_id}/revisions")
+@router.get("/hr/payroll/runs/{run_id}/revisions", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def list_payroll_revisions(
     run_id: str,
     current_user: User = Depends(get_current_user),
@@ -1681,7 +1683,7 @@ async def list_payroll_revisions(
     return {"items": items, "count": len(items)}
 
 
-@router.post("/hr/payroll/{month}/save")
+@router.post("/hr/payroll/{month}/save", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def save_payroll_draft(
     month: str,
     payload: PayrollSavePayload,
@@ -1814,7 +1816,7 @@ async def save_payroll_draft(
     }
 
 
-@router.post("/hr/payroll/{run_id}/finalize")
+@router.post("/hr/payroll/{run_id}/finalize", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def finalize_payroll_run(
     run_id: str,
     current_user: User = Depends(get_current_user),
@@ -1886,7 +1888,7 @@ async def finalize_payroll_run(
     }
 
 
-@router.post("/hr/payroll/{run_id}/revisions")
+@router.post("/hr/payroll/{run_id}/revisions", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def revise_payroll_run(
     run_id: str,
     payload: PayrollRevisionPayload,
@@ -1982,7 +1984,7 @@ async def revise_payroll_run(
     }
 
 
-@router.get("/hr/payroll/runs/{run_id}/export.xlsx")
+@router.get("/hr/payroll/runs/{run_id}/export.xlsx", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def export_payroll_run_xlsx(
     run_id: str,
     current_user: User = Depends(get_current_user),
@@ -2093,7 +2095,7 @@ _PAYROLL_ME_ALLOWED_ROLES = frozenset(
 )
 
 
-@router.get("/hr/payroll/me")
+@router.get("/hr/payroll/me", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def get_my_payroll(
     month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
     current_user: User = Depends(get_current_user),
@@ -2139,7 +2141,7 @@ async def get_my_payroll(
     return {"items": my_rows, "count": len(my_rows)}
 
 
-@router.get("/hr/payroll/{month}/dept-summary")
+@router.get("/hr/payroll/{month}/dept-summary", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def get_payroll_dept_summary(
     month: str,
     current_user: User = Depends(get_current_user),
@@ -2203,7 +2205,7 @@ async def get_payroll_dept_summary(
     }
 
 
-@router.get("/hr/payroll/{month}")
+@router.get("/hr/payroll/{month}", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def get_payroll(
     month: str,
     current_user: User = Depends(get_current_user),
@@ -2444,7 +2446,7 @@ async def list_performance_reviews(
 # ============= Recruitment =============
 
 
-@router.post("/hr/job-posting")
+@router.post("/hr/job-posting", dependencies=[Depends(require_feature("hr", "recruitment"))])
 async def create_job_posting(
     payload: JobPostingPayload,
     current_user: User = Depends(get_current_user),
@@ -2502,7 +2504,7 @@ async def create_job_posting(
     return {"success": True, "job_id": job["id"], "status": initial_status}
 
 
-@router.post("/hr/job-posting/{job_id}/approve")
+@router.post("/hr/job-posting/{job_id}/approve", dependencies=[Depends(require_feature("hr", "recruitment"))])
 async def approve_job_posting(
     job_id: str,
     payload: JobDecisionPayload,
@@ -2540,7 +2542,7 @@ async def approve_job_posting(
     return {"success": True, "status": "active"}
 
 
-@router.post("/hr/job-posting/{job_id}/reject")
+@router.post("/hr/job-posting/{job_id}/reject", dependencies=[Depends(require_feature("hr", "recruitment"))])
 async def reject_job_posting(
     job_id: str,
     payload: JobDecisionPayload,
@@ -2574,7 +2576,7 @@ async def reject_job_posting(
     return {"success": True, "status": "rejected"}
 
 
-@router.get("/hr/job-postings")
+@router.get("/hr/job-postings", dependencies=[Depends(require_feature("hr", "recruitment"))])
 async def list_job_postings(
     status: str | None = None,
     page: int = Query(1, ge=1),
@@ -2591,7 +2593,7 @@ async def list_job_postings(
     return {"items": items, "total": total, "page": page, "limit": limit, "total_pages": total_pages}
 
 
-@router.post("/hr/job-posting/{job_id}/close")
+@router.post("/hr/job-posting/{job_id}/close", dependencies=[Depends(require_feature("hr", "recruitment"))])
 async def close_job_posting(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -3096,8 +3098,16 @@ async def add_staff_member(
     """
     if not staff_data.get("name"):
         raise HTTPException(status_code=400, detail="Personel adı zorunludur")
+
+    # Enforce staff limit
+    staff_limit = await get_tenant_limit(current_user.tenant_id, "hr", "employees")
+
+    staff_id = str(uuid.uuid4())
+    client_request_id = staff_data.get("client_request_id")
+    resource_id = client_request_id if client_request_id else staff_id
+
     staff = {
-        "id": str(uuid.uuid4()),
+        "id": staff_id,
         "tenant_id": current_user.tenant_id,
         "name": staff_data["name"],
         "email": staff_data.get("email"),
@@ -3113,7 +3123,37 @@ async def add_staff_member(
         "active": True,
         "created_at": datetime.now(UTC).isoformat(),
     }
-    await db.staff_members.insert_one(staff)
+
+    try:
+        await reserve_quota(current_user.tenant_id, "hr", "employees", resource_id, staff_limit)
+    except QuotaExceededException as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+    try:
+        if client_request_id:
+            staff["client_request_id"] = client_request_id
+            res = await db.staff_members.update_one(
+                {"tenant_id": current_user.tenant_id, "client_request_id": client_request_id},
+                {"$setOnInsert": staff},
+                upsert=True
+            )
+            if res.upserted_id is None:
+                # Idempotent response
+                existing = await db.staff_members.find_one({"tenant_id": current_user.tenant_id, "client_request_id": client_request_id})
+                return {"success": True, "source": "idempotent", "staff_id": existing["id"]}
+        else:
+            await db.staff_members.insert_one(staff)
+    except DuplicateKeyError:
+        # Same resource_id reservation is idempotent, so quota is NOT consumed twice.
+        # Thus, we DO NOT release the quota.
+        if client_request_id:
+            existing = await db.staff_members.find_one({"tenant_id": current_user.tenant_id, "client_request_id": client_request_id})
+            if existing:
+                return {"success": True, "source": "idempotent", "staff_id": existing["id"]}
+        raise HTTPException(status_code=409, detail="Bu personel kaydı (ID/Request ID) zaten mevcut.")
+    except Exception as e:
+        await release_quota(current_user.tenant_id, "hr", "employees", resource_id)
+        raise e
     await _audit(
         current_user,
         "hr.staff.create",
@@ -3349,6 +3389,7 @@ class StaffUpdatePayload(BaseModel):
     hourly_rate: float | None = Field(None, ge=0, le=100000)
     monthly_hours: float | None = Field(None, ge=0, le=400)
     annual_leave_entitlement: int | None = Field(None, ge=0, le=365)
+    active: bool | None = None
 
 
 @router.put("/hr/staff/{staff_id}")
@@ -3371,7 +3412,27 @@ async def update_staff_member(
         if not update:
             return {"success": True, "updated_fields": 0}
         update["updated_at"] = datetime.now(UTC).isoformat()
-        await db.staff_members.update_one({"tenant_id": current_user.tenant_id, "id": staff_id}, {"$set": update})
+
+        is_deactivating = (existing.get("active", True) is True) and (update.get("active") is False)
+        is_reactivating = (existing.get("active", True) is False) and (update.get("active") is True)
+
+        if is_reactivating:
+            staff_limit = await get_tenant_limit(current_user.tenant_id, "hr", "employees")
+            try:
+                await reserve_quota(current_user.tenant_id, "hr", "employees", staff_id, staff_limit)
+            except QuotaExceededException as e:
+                raise HTTPException(status_code=403, detail=str(e))
+
+        try:
+            await db.staff_members.update_one({"tenant_id": current_user.tenant_id, "id": staff_id}, {"$set": update})
+        except Exception as e:
+            if is_reactivating:
+                await release_quota(current_user.tenant_id, "hr", "employees", staff_id)
+            raise e
+
+        if is_deactivating:
+            await release_quota(current_user.tenant_id, "hr", "employees", staff_id)
+
         # Audit: salary alanı değiştiyse severity=warning, diğerleri info.
         sev = "warning" if any(k in update for k in _PII_SALARY_FIELDS) else "info"
         await _audit(
@@ -3423,6 +3484,7 @@ async def delete_staff_member(
         },
     )
     if res.matched_count > 0:
+        await release_quota(current_user.tenant_id, "hr", "employees", staff_id)
         await _audit(
             current_user,
             "hr.staff.deactivate",
@@ -3597,7 +3659,7 @@ class LeaveBalancePayload(BaseModel):
     sick_entitlement: int | None = Field(None, ge=0, le=365)
 
 
-@router.get("/hr/leave-balance/{staff_id}")
+@router.get("/hr/leave-balance/{staff_id}", dependencies=[Depends(require_feature("hr", "leave"))])
 async def get_leave_balance(
     staff_id: str,
     year: int | None = None,
@@ -3653,7 +3715,7 @@ async def get_leave_balance(
     }
 
 
-@router.post("/hr/leave-balance")
+@router.post("/hr/leave-balance", dependencies=[Depends(require_feature("hr", "leave"))])
 async def set_leave_balance(
     payload: LeaveBalancePayload,
     current_user: User = Depends(get_current_user),
@@ -3999,7 +4061,7 @@ def _shift_datetimes(shift_date: str, start_time: str, end_time: str, crosses_mi
     return start_dt, end_dt
 
 
-@router.post("/hr/shifts")
+@router.post("/hr/shifts", dependencies=[Depends(require_feature("hr", "shift"))])
 async def create_shift_v2(
     payload: ShiftPayload,
     current_user: User = Depends(get_current_user),
@@ -4122,7 +4184,7 @@ async def create_shift_v2(
     return {"success": True, "shift": item}
 
 
-@router.get("/hr/shifts")
+@router.get("/hr/shifts", dependencies=[Depends(require_feature("hr", "shift"))])
 async def list_shifts(
     start: str | None = None,
     end: str | None = None,
@@ -4217,7 +4279,7 @@ async def list_shifts(
     }
 
 
-@router.delete("/hr/shifts/{shift_id}")
+@router.delete("/hr/shifts/{shift_id}", dependencies=[Depends(require_feature("hr", "shift"))])
 async def delete_shift(
     shift_id: str,
     current_user: User = Depends(get_current_user),
@@ -4272,7 +4334,7 @@ class BulkShiftPayload(BaseModel):
         return v
 
 
-@router.post("/hr/shifts/bulk")
+@router.post("/hr/shifts/bulk", dependencies=[Depends(require_feature("hr", "shift"))])
 async def create_shifts_bulk(
     payload: BulkShiftPayload,
     current_user: User = Depends(get_current_user),
@@ -4453,7 +4515,7 @@ class ApplicantStatusPayload(BaseModel):
     note: str | None = Field(None, max_length=500)
 
 
-@router.post("/hr/job-postings/{job_id}/applicants")
+@router.post("/hr/job-postings/{job_id}/applicants", dependencies=[Depends(require_feature("hr", "recruitment"))])
 async def add_applicant(
     job_id: str,
     payload: ApplicantPayload,
@@ -4490,7 +4552,7 @@ async def add_applicant(
     return {"success": True, "applicant": item}
 
 
-@router.get("/hr/job-postings/{job_id}/applicants")
+@router.get("/hr/job-postings/{job_id}/applicants", dependencies=[Depends(require_feature("hr", "recruitment"))])
 async def list_applicants(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -4562,7 +4624,7 @@ async def _trigger_staff_onboarding(applicant: dict, tenant_id: str, actor_id: s
     )
 
 
-@router.post("/hr/applicants/{applicant_id}/status")
+@router.post("/hr/applicants/{applicant_id}/status", dependencies=[Depends(require_feature("hr", "recruitment"))])
 async def update_applicant_status(
     applicant_id: str,
     payload: ApplicantStatusPayload,
@@ -4814,7 +4876,7 @@ async def _yearly_overtime_hours(tenant_id: str, staff_id: str, year: int) -> fl
     return total
 
 
-@router.post("/hr/overtime-request")
+@router.post("/hr/overtime-request", dependencies=[Depends(require_feature("hr", "shift"))])
 async def create_overtime_request(
     payload: OvertimeRequestPayload,
     current_user: User = Depends(get_current_user),
@@ -4853,7 +4915,7 @@ async def create_overtime_request(
     return {"success": True, "overtime_request": item}
 
 
-@router.get("/hr/overtime-requests")
+@router.get("/hr/overtime-requests", dependencies=[Depends(require_feature("hr", "shift"))])
 async def list_overtime_requests(
     staff_id: str | None = None,
     status: str | None = None,
@@ -4871,7 +4933,7 @@ async def list_overtime_requests(
     return {"items": items, "total": len(items), "counts": counts}
 
 
-@router.post("/hr/overtime-request/{req_id}/decision")
+@router.post("/hr/overtime-request/{req_id}/decision", dependencies=[Depends(require_feature("hr", "shift"))])
 async def decide_overtime_request(
     req_id: str,
     payload: OvertimeDecisionPayload,
@@ -4981,7 +5043,7 @@ async def decide_overtime_request(
     return {"success": True, "status": new_status}
 
 
-@router.get("/hr/overtime/ready-for-payroll")
+@router.get("/hr/overtime/ready-for-payroll", dependencies=[Depends(require_feature("hr", "shift"))])
 async def overtime_ready_for_payroll(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
     current_user: User = Depends(get_current_user),
@@ -5059,7 +5121,7 @@ class ShiftSwapDecisionPayload(BaseModel):
     note: str | None = Field(None, max_length=500)
 
 
-@router.post("/hr/shift-swap-request")
+@router.post("/hr/shift-swap-request", dependencies=[Depends(require_feature("hr", "shift"))])
 async def create_shift_swap(
     payload: ShiftSwapRequestPayload,
     current_user: User = Depends(get_current_user),
@@ -5143,7 +5205,7 @@ class ShiftSwapConsentPayload(BaseModel):
     note: str | None = Field(None, max_length=500)
 
 
-@router.post("/hr/shift-swap-request/{req_id}/consent")
+@router.post("/hr/shift-swap-request/{req_id}/consent", dependencies=[Depends(require_feature("hr", "shift"))])
 async def consent_shift_swap(
     req_id: str,
     payload: ShiftSwapConsentPayload,
@@ -5207,7 +5269,7 @@ async def consent_shift_swap(
     return {"success": True, "target_consent_status": new_consent, "status": new_status}
 
 
-@router.get("/hr/shift-swap-requests")
+@router.get("/hr/shift-swap-requests", dependencies=[Depends(require_feature("hr", "shift"))])
 async def list_shift_swap_requests(
     status: str | None = None,
     current_user: User = Depends(get_current_user),
@@ -5219,7 +5281,7 @@ async def list_shift_swap_requests(
     return {"items": items, "total": len(items)}
 
 
-@router.post("/hr/shift-swap-request/{req_id}/decision")
+@router.post("/hr/shift-swap-request/{req_id}/decision", dependencies=[Depends(require_feature("hr", "shift"))])
 async def decide_shift_swap(
     req_id: str,
     payload: ShiftSwapDecisionPayload,
@@ -6013,7 +6075,7 @@ class PayrollTaxRatesPayload(BaseModel):
     stamp_tax: float = Field(..., ge=0, le=100, description="Damga vergisi %")
 
 
-@router.get("/hr/settings/payroll-tax-rates")
+@router.get("/hr/settings/payroll-tax-rates", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def get_payroll_tax_rates(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
@@ -6039,7 +6101,7 @@ async def get_payroll_tax_rates(
     }
 
 
-@router.put("/hr/settings/payroll-tax-rates")
+@router.put("/hr/settings/payroll-tax-rates", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def set_payroll_tax_rates(
     payload: PayrollTaxRatesPayload,
     current_user: User = Depends(get_current_user),
@@ -6351,7 +6413,7 @@ async def coverage_check(
     }
 
 
-@router.get("/hr/shifts/weekly-hours")
+@router.get("/hr/shifts/weekly-hours", dependencies=[Depends(require_feature("hr", "shift"))])
 async def shifts_weekly_hours(
     week_start: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     current_user: User = Depends(get_current_user),
@@ -6414,7 +6476,7 @@ async def shifts_weekly_hours(
 # ============= Attendance v2 — Missing Clockout + Late/Early + Dept Summary (Task #263 / T005) =============
 
 
-@router.post("/hr/attendance/flag-missing")
+@router.post("/hr/attendance/flag-missing", dependencies=[Depends(require_feature("hr", "shift"))])
 async def flag_missing_clockouts(
     cutoff_date: str | None = None,
     current_user: User = Depends(get_current_user),
@@ -6494,7 +6556,7 @@ def _derive_late_early(record: dict, shift: dict | None) -> dict:
     return out
 
 
-@router.get("/hr/attendance/department-summary")
+@router.get("/hr/attendance/department-summary", dependencies=[Depends(require_feature("hr", "shift"))])
 async def attendance_department_summary(
     start: str | None = None,
     end: str | None = None,
@@ -6558,7 +6620,7 @@ def _xlsx_stream(workbook) -> StreamingResponse:
     )
 
 
-@router.get("/hr/shifts/export/xlsx")
+@router.get("/hr/shifts/export/xlsx", dependencies=[Depends(require_feature("hr", "shift"))])
 async def export_shifts_xlsx(
     start: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     end: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
@@ -6617,7 +6679,7 @@ async def export_shifts_xlsx(
     return resp
 
 
-@router.get("/hr/attendance/export/xlsx")
+@router.get("/hr/attendance/export/xlsx", dependencies=[Depends(require_feature("hr", "shift"))])
 async def export_attendance_xlsx(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
     current_user: User = Depends(get_current_user),
@@ -6685,7 +6747,7 @@ async def export_attendance_xlsx(
     return resp
 
 
-@router.get("/hr/leave/export/xlsx")
+@router.get("/hr/leave/export/xlsx", dependencies=[Depends(require_feature("hr", "leave"))])
 async def export_leave_xlsx(
     start: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     end: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
@@ -6737,7 +6799,7 @@ async def export_leave_xlsx(
     return resp
 
 
-@router.get("/hr/overtime/export/xlsx")
+@router.get("/hr/overtime/export/xlsx", dependencies=[Depends(require_feature("hr", "shift"))])
 async def export_overtime_xlsx(
     year: int = Query(..., ge=2020, le=2100),
     current_user: User = Depends(get_current_user),
@@ -7372,7 +7434,7 @@ async def list_expiring_trainings(
 # ─────────────────────────────────────────────────────────────────────
 # Maaş/Bordro Tahakkuku
 # ─────────────────────────────────────────────────────────────────────
-@router.post("/post-payroll-to-gl")
+@router.post("/post-payroll-to-gl", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def post_payroll_to_gl(
     payload: dict,
     current_user: User = Depends(get_current_user),
