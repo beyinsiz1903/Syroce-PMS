@@ -14,9 +14,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { confirmDialog } from '@/lib/dialogs';
 import {
   Sparkles, Plus, Calendar, Users, DoorOpen, RefreshCw, Trash2,
-  CheckCircle2, XCircle, PlayCircle, Receipt, History,
+  CheckCircle2, XCircle, PlayCircle, Receipt, History, Lock,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useEntitlements } from '@/context/EntitlementContext';
 
 const STATUS = {
   scheduled: { label: 'Planlandı', cls: 'bg-sky-100 text-sky-800' },
@@ -32,6 +33,8 @@ const fmtTime = (iso) => iso ? new Date(iso).toLocaleString('tr-TR', {
 
 const SpaWellness = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
+  const { getLimit, hasFeature } = useEntitlements();
+
   const [services, setServices] = useState([]);
   const [therapists, setTherapists] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -153,6 +156,15 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
     );
   }
 
+  const maxTherapists = getLimit('spa', 'therapists');
+  const maxRooms = getLimit('spa', 'rooms');
+
+  const canAddTherapist = maxTherapists === null || therapists.length < maxTherapists;
+  const canAddRoom = maxRooms === null || rooms.length < maxRooms;
+  const hasCrossDepartmentPackages = hasFeature('spa', 'cross_department_packages');
+  const hasAdvancedAvailability = hasFeature('spa', 'advanced_availability');
+  const hasGuestHistory = hasFeature('spa', 'guest_history');
+
   return (
     <>
     <div className="max-w-7xl mx-auto p-4 space-y-4">
@@ -190,6 +202,9 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
           <TabsTrigger value="services">Hizmetler ({services.length})</TabsTrigger>
           <TabsTrigger value="therapists">Terapistler ({therapists.length})</TabsTrigger>
           <TabsTrigger value="rooms">Odalar ({rooms.length})</TabsTrigger>
+          {hasGuestHistory && <TabsTrigger value="guest_history" data-testid="tab-guest-history">Misafir Geçmişi</TabsTrigger>}
+          {hasAdvancedAvailability && <TabsTrigger value="availability" data-testid="tab-availability">Gelişmiş Müsaitlik</TabsTrigger>}
+          {hasCrossDepartmentPackages && <TabsTrigger value="packages" data-testid="tab-packages">Çapraz Paketler</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="appointments" className="space-y-3">
@@ -299,9 +314,12 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
         </TabsContent>
 
         <TabsContent value="therapists" className="space-y-3">
-          <Button size="sm" onClick={() => setShowTherapistForm(true)}>
-            <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_SpaWellness.terapist_ekle')}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => setShowTherapistForm(true)} disabled={!canAddTherapist}>
+              <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_SpaWellness.terapist_ekle')}
+            </Button>
+            {!canAddTherapist && <Badge variant="secondary" className="text-xs"><Lock className="w-3 h-3 mr-1"/>Kota Dolu</Badge>}
+          </div>
           <div className="grid md:grid-cols-2 gap-3">
             {therapists.length === 0 && (
               <p className="text-sm text-gray-500 col-span-full">{t('cm.pages_SpaWellness.henuz_terapist_yok')}</p>
@@ -325,9 +343,12 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
         </TabsContent>
 
         <TabsContent value="rooms" className="space-y-3">
-          <Button size="sm" onClick={() => setShowRoomForm(true)}>
-            <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_SpaWellness.oda_ekle')}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => setShowRoomForm(true)} disabled={!canAddRoom}>
+              <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_SpaWellness.oda_ekle')}
+            </Button>
+            {!canAddRoom && <Badge variant="secondary" className="text-xs"><Lock className="w-3 h-3 mr-1"/>Kota Dolu</Badge>}
+          </div>
           <div className="grid md:grid-cols-3 gap-3">
             {rooms.length === 0 && (
               <p className="text-sm text-gray-500 col-span-full">{t('cm.pages_SpaWellness.henuz_tedavi_odasi_yok')}</p>

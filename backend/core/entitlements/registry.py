@@ -152,6 +152,39 @@ ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
                 }
             )
         }
+    ),
+    "spa": ModuleDefinition(
+        key="spa",
+        name="Spa & Wellness",
+        features=[
+            ModuleFeature(key="cross_department_packages", description="Spa & Restoran Çapraz Paketleri"),
+            ModuleFeature(key="advanced_availability", description="Gelişmiş Müsaitlik ve Bekleme Listesi"),
+            ModuleFeature(key="guest_history", description="Detaylı Misafir Geçmişi (CRM)"),
+        ],
+        limits=[
+            ModuleLimit(key="therapists", description="Maksimum Terapist Sayısı"),
+            ModuleLimit(key="rooms", description="Maksimum Tedavi Odası Sayısı"),
+        ],
+        editions={
+            "basic": EditionDefinition(
+                key="basic",
+                name="Spa Basic",
+                features=set(),
+                limits={
+                    "therapists": 3,
+                    "rooms": 2,
+                }
+            ),
+            "pro": EditionDefinition(
+                key="pro",
+                name="Spa Pro",
+                features={"cross_department_packages", "advanced_availability", "guest_history"},
+                limits={
+                    "therapists": 20,
+                    "rooms": 10,
+                }
+            )
+        }
     )
 }
 
