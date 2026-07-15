@@ -179,9 +179,6 @@ async def create_housekeeping_task(
             await complete_idempotency(db, lock_id=lock_id, response_body=task_dict)
         return task
     except Exception as exc:
-        import traceback
-        with open("error.log", "w") as f:
-            traceback.print_exc(file=f)
         if quota_reserved:
             try:
                 await release_quota(current_user.tenant_id, "housekeeping", "active_tasks", task.id)
