@@ -12,7 +12,7 @@ export const useEntitlements = () => {
 };
 
 // Strict modules require explicit "true" in modules map to be visible/accessible
-const STRICT_MODULES = new Set(['pos_fnb', 'mice', 'spa']);
+const STRICT_MODULES = new Set(['pos_fnb', 'mice', 'spa', 'hr']);
 
 export const EntitlementProvider = ({ children, currentTenantId, isSuperAdmin }) => {
   const [state, setState] = useState({
@@ -114,7 +114,7 @@ export const EntitlementProvider = ({ children, currentTenantId, isSuperAdmin })
     if (isSuperAdmin) return true;
     if (state.loading) return false;
     if (!isStateValid) return false;
-    const STRICT_MODULES = new Set(["pos_fnb", "mice", "spa"]);
+    const STRICT_MODULES = new Set(["pos_fnb", "mice", "spa", "hr"]);
     if (STRICT_MODULES.has(moduleKey)) {
       return (
         state.modules?.[moduleKey] === true ||
