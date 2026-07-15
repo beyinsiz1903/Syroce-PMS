@@ -1,11 +1,11 @@
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from core.entitlements.quota import QuotaExceededException
 from core.security import get_current_user
 from server import app
-from core.entitlements.quota import QuotaExceededException
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -232,7 +232,7 @@ def test_hk_delete_in_progress_409_release_not_called(mock_db, override_auth, mo
 
 def test_hk_tenant_isolation(mock_db, override_auth, mock_require_module):
     # Just verify that find_one is called with tenant_id="tenant_1"
-    res = client.delete("/api/housekeeping/tasks/task_1")
+    client.delete("/api/housekeeping/tasks/task_1")
     mock_db.housekeeping_tasks.find_one.assert_any_call({"id": "task_1", "tenant_id": "tenant_1"})
 
 def test_hk_create_concurrent_same_idempotency_key(mock_db, override_auth, mock_require_module):
