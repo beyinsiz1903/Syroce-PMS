@@ -1318,4 +1318,153 @@ describe('Frontend Behavior Tests', () => {
     expect(postCallCount).toBe(1);
   });
 
+  // ── SpaWellness fail-closed sentinel tests ─────────────────────────────────
+  // These tests verify that the add-therapist / add-room buttons are DISABLED
+  // whenever entitlements are unavailable, regardless of the reason.
+  // Fail-open (showing "enabled" when uncertain) is a security defect.
+
+  const _spaApiMock = (subscriptionData) => (url) => {
+    if (url === '/subscription/current') return Promise.resolve({ data: subscriptionData });
+    if (url === '/spa/services') return Promise.resolve({ data: { services: [] } });
+    if (url === '/spa/therapists') return Promise.resolve({ data: { therapists: [] } });
+    if (url === '/spa/rooms') return Promise.resolve({ data: { rooms: [] } });
+    if (url === '/spa/appointments') return Promise.resolve({ data: { appointments: [] } });
+    if (url === '/spa/daily-summary') return Promise.resolve({ data: { total: 0 } });
+    return Promise.resolve({ data: {} });
+  };
+
+  const _renderSpa = async (isSuperAdmin = false) => {
+    render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="t1" isSuperAdmin={isSuperAdmin}>
+          <SpaWellness />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(screen.getByText(/Spa & Wellness/i)).toBeInTheDocument());
+    // Navigate to Therapists tab to find the add button
+    const therapistsTab = screen.queryByRole('tab', { name: /Terapistler/i });
+    if (therapistsTab) fireEvent.click(therapistsTab);
+  };
+
+  const _getTherapistBtn = () =>
+    screen.queryByText(/Terapist Ekle|terapist_ekle/i)?.closest('button');
+
+  it('SpaWellness fail-closed: module disabled → add button disabled', async () => {
+    axios.get.mockImplementation(_spaApiMock({
+      modules: { spa: false },   // module explicitly disabled
+      entitlements: {}
+    }));
+    await _renderSpa();
+    await waitFor(() => {
+      const btn = _getTherapistBtn();
+      expect(btn).toBeTruthy();
+      expect(btn).toBeDisabled();
+    });
+  });
+
+  it('SpaWellness fail-closed: missing entitlement (module true but entitlements={}) → add disabled', async () => {
+    axios.get.mockImplementation(_spaApiMock({
+      modules: { spa: true },
+      entitlements: {}   // spa key missing
+    }));
+    await _renderSpa();
+    await waitFor(() => {
+      const btn = _getTherapistBtn();
+      expect(btn).toBeTruthy();
+      expect(btn).toBeDisabled();
+    });
+  });
+
+  it('SpaWellness fail-closed: zero limit (limits.therapists=0) → add disabled', async () => {
+    axios.get.mockImplementation(_spaApiMock({
+      modules: { spa: true },
+      entitlements: { spa: { limits: { therapists: 0, rooms: 0 }, features: [] } }
+    }));
+    await _renderSpa();
+    await waitFor(() => {
+      const btn = _getTherapistBtn();
+      expect(btn).toBeTruthy();
+      expect(btn).toBeDisabled();
+    });
+  });
+
+  it('SpaWellness fail-closed: subscription request error → add disabled', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url === '/subscription/current') return Promise.reject(new Error('Network error'));
+      if (url === '/spa/services') return Promise.resolve({ data: { services: [] } });
+      if (url === '/spa/therapists') return Promise.resolve({ data: { therapists: [] } });
+      if (url === '/spa/rooms') return Promise.resolve({ data: { rooms: [] } });
+      if (url === '/spa/appointments') return Promise.resolve({ data: { appointments: [] } });
+      if (url === '/spa/daily-summary') return Promise.resolve({ data: { total: 0 } });
+      return Promise.resolve({ data: {} });
+    });
+    await _renderSpa();
+    await waitFor(() => {
+      const btn = _getTherapistBtn();
+      expect(btn).toBeTruthy();
+      expect(btn).toBeDisabled();
+    });
+  });
+
+  it('SpaWellness: Basic below therapist limit (2 of 3) → add enabled', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url === '/subscription/current') return Promise.resolve({
+        data: {
+          modules: { spa: true },
+          entitlements: { spa: { limits: { therapists: 3, rooms: 2 }, features: [] } }
+        }
+      });
+      if (url === '/spa/therapists') return Promise.resolve({ data: { therapists: [{ id: '1' }, { id: '2' }] } });
+      if (url === '/spa/rooms') return Promise.resolve({ data: { rooms: [] } });
+      if (url === '/spa/services') return Promise.resolve({ data: { services: [] } });
+      if (url === '/spa/appointments') return Promise.resolve({ data: { appointments: [] } });
+      if (url === '/spa/daily-summary') return Promise.resolve({ data: { total: 0 } });
+      return Promise.resolve({ data: {} });
+    });
+    await _renderSpa();
+    await waitFor(() => {
+      const btn = _getTherapistBtn();
+      expect(btn).toBeTruthy();
+      expect(btn).not.toBeDisabled();
+    });
+  });
+
+  it('SpaWellness: Basic at therapist limit (3 of 3) → add disabled', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url === '/subscription/current') return Promise.resolve({
+        data: {
+          modules: { spa: true },
+          entitlements: { spa: { limits: { therapists: 3, rooms: 2 }, features: [] } }
+        }
+      });
+      if (url === '/spa/therapists') return Promise.resolve({ data: { therapists: [{ id: '1' }, { id: '2' }, { id: '3' }] } });
+      if (url === '/spa/rooms') return Promise.resolve({ data: { rooms: [] } });
+      if (url === '/spa/services') return Promise.resolve({ data: { services: [] } });
+      if (url === '/spa/appointments') return Promise.resolve({ data: { appointments: [] } });
+      if (url === '/spa/daily-summary') return Promise.resolve({ data: { total: 0 } });
+      return Promise.resolve({ data: {} });
+    });
+    await _renderSpa();
+    await waitFor(() => {
+      const btn = _getTherapistBtn();
+      expect(btn).toBeTruthy();
+      expect(btn).toBeDisabled();
+    });
+  });
+
+  it('SpaWellness: SuperAdmin bypasses quota limits → add always enabled', async () => {
+    // SuperAdmin with no entitlement at all — button must still be enabled
+    axios.get.mockImplementation(_spaApiMock({
+      modules: {},
+      entitlements: {}
+    }));
+    await _renderSpa(true /* isSuperAdmin */);
+    await waitFor(() => {
+      const btn = _getTherapistBtn();
+      expect(btn).toBeTruthy();
+      expect(btn).not.toBeDisabled();
+    });
+  });
+
 });

@@ -24,6 +24,7 @@ from modules.inventory.services.create_room_block_service import CreateRoomBlock
 from modules.inventory.services.release_room_block_service import ReleaseRoomBlockService
 from modules.pms_core.role_permission_service import require_op  # v77 Bug DM
 from shared_kernel.idempotency import (
+    begin_idempotency,
     claim_idempotency,
     complete_idempotency,
     get_idempotency_key,
@@ -687,6 +688,7 @@ async def update_room_status_hk(
 
 @router.post("/housekeeping/assign")
 async def assign_housekeeping_task(
+    request: Request,
     room_id: str,
     assigned_to: str,
     task_type: str = "cleaning",
@@ -695,22 +697,63 @@ async def assign_housekeeping_task(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
-    """Assign housekeeping task to staff"""
-    room = await db.rooms.find_one({"id": room_id, "tenant_id": current_user.tenant_id})
+    """Assign housekeeping task to staff.
 
+    Quota: /assign creates a new HousekeepingTask with status='pending'
+    which is counted in ACTIVE_QUOTA_STATUSES — reserve_quota fires before
+    insert so the ledger stays consistent. On insert failure the reservation
+    is rolled back. HTTP Idempotency-Key is supported: a repeated request
+    with the same key returns the cached response without re-reserving quota.
+    """
+    room = await db.rooms.find_one({"id": room_id, "tenant_id": current_user.tenant_id})
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
 
+    # Build the task object upfront so task.id is stable for idempotency + quota.
     task = HousekeepingTask(
-        tenant_id=current_user.tenant_id, room_id=room_id, assigned_to=assigned_to, task_type=task_type, priority=priority, notes=notes or f"{task_type.title()} for Room {room['room_number']}"
+        tenant_id=current_user.tenant_id,
+        room_id=room_id,
+        assigned_to=assigned_to,
+        task_type=task_type,
+        priority=priority,
+        notes=notes or f"{task_type.title()} for Room {room['room_number']}",
     )
+
+    # Idempotency: optional Idempotency-Key header prevents duplicate quota + insert.
+    guard, replay = await begin_idempotency(
+        db,
+        request,
+        tenant_id=current_user.tenant_id,
+        scope="hk_assign",
+        payload={"room_id": room_id, "assigned_to": assigned_to, "task_type": task_type},
+    )
+    if replay is not None:
+        return replay
+
+    # Reserve active-task quota BEFORE inserting.
+    limit = await get_tenant_limit(current_user.tenant_id, "housekeeping", "active_tasks")
+    if limit is not None:
+        try:
+            await reserve_quota(current_user.tenant_id, "housekeeping", "active_tasks", task.id, limit)
+        except QuotaExceededException as e:
+            await guard.release(error=str(e))
+            raise HTTPException(status_code=403, detail=str(e))
 
     task_dict = task.model_dump()
     task_dict["created_at"] = task_dict["created_at"].isoformat()
-    await db.housekeeping_tasks.insert_one(task_dict)
-    _invalidate_hk_caches(current_user.tenant_id)  # v95.2
+    try:
+        await db.housekeeping_tasks.insert_one(task_dict)
+    except Exception as exc:
+        # Insert failed — roll back quota reservation to keep ledger consistent.
+        if limit is not None:
+            await release_quota(current_user.tenant_id, "housekeeping", "active_tasks", task.id)
+        await guard.release(error=str(exc))
+        raise HTTPException(status_code=500, detail="Görev atanamadı") from exc
 
-    return {"message": f"Task assigned to {assigned_to}", "task": task}
+    _invalidate_hk_caches(current_user.tenant_id)  # v95.2
+    result = {"message": f"Task assigned to {assigned_to}", "task": task.model_dump()}
+    await guard.complete(result)
+    return result
 
 
 # ============= ROOM BLOCKS (OUT OF ORDER / OUT OF SERVICE) =============

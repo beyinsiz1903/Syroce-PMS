@@ -24,7 +24,6 @@ from core import email as core_email
 from routers import mice as mice_router
 from routers.mice import router as mice_api_router
 
-
 TENANT_ID = "t-beo-1"
 OTHER_TENANT = "t-beo-2"
 
@@ -51,6 +50,8 @@ class _FakeCursor:
     async def __anext__(self):
         try: return next(self._it)
         except StopIteration: raise StopAsyncIteration
+    async def to_list(self, length=None):
+        return list(self._docs) if length is None else list(self._docs)[:length]
 
 
 class _EventsCollection:
@@ -98,6 +99,18 @@ def env(monkeypatch):
     except Exception:
         pass
 
+    # Stub feature check so tests don't hit MongoDB via require_feature dependency.
+    import core.entitlements.enforcement as _enf
+
+    async def _always_true(*_a, **_kw):
+        return True
+
+    monkeypatch.setattr(_enf, "tenant_has_feature", _always_true)
+
+    # Stub PDF renderer so tests don't require weasyprint system libraries.
+    _FAKE_PDF = b"%PDF-1.4 fake-bytes-for-testing"
+    monkeypatch.setattr(mice_router, "_beo_pdf_bytes", lambda payload: _FAKE_PDF)
+
     sent: list[dict[str, Any]] = []
 
     async def _fake_send_email(**kwargs):
@@ -119,8 +132,11 @@ def env(monkeypatch):
         )
 
     app.dependency_overrides[get_current_user] = _admin_user
+
     client = TestClient(app)
     return SimpleNamespace(client=client, db=fake_db, sent=sent, app=app)
+
+
 
 
 def test_beo_email_happy_path_sends_per_recipient_and_audits(env):

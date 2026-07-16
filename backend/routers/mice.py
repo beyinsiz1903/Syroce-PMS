@@ -1583,9 +1583,22 @@ async def delete_event(
     require_mice_ops(current_user)
     db = get_system_db()
     before = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+
+    # Capture quota-relevant state BEFORE deletion so we know whether a
+    # release is needed.  Events in ACTIVE_QUOTA_STATUSES hold a ledger
+    # reservation; deleting them without releasing leaks that slot forever.
+    was_active = (before or {}).get("status") in ACTIVE_QUOTA_STATUSES
+
     res = await db.mice_events.delete_one({"id": event_id, "tenant_id": current_user.tenant_id})
     if not res.deleted_count:
         raise HTTPException(404, "Etkinlik bulunamadı")
+
+    # Release the quota slot only when the event was actively counted in the
+    # ledger at deletion time.  Cancelled / completed events were already
+    # released during the status transition, so we must not double-release.
+    if was_active:
+        await release_quota(current_user.tenant_id, "mice", "concurrent_events", event_id)
+
     await log_audit_event(
         tenant_id=current_user.tenant_id,
         user_id=current_user.username,
@@ -1599,6 +1612,7 @@ async def delete_event(
     )
     _invalidate_mice_events_cache(current_user.tenant_id)
     return {"ok": True}
+
 
 
 # ── Function diary (calendar feed) ─────────────────────────────
@@ -1922,9 +1936,17 @@ def _beo_pdf_bytes(payload: dict) -> bytes:
         ) from exc
 
 
-@router.get("/events/{event_id}/beo.pdf")
+@router.get(
+    "/events/{event_id}/beo.pdf",
+    dependencies=[Depends(require_feature("mice", "banquet_operations"))],
+)
 async def beo_pdf(event_id: str, current_user: User = Depends(get_current_user)):
-    """Printable BEO sheet — same payload as JSON endpoint, rendered as PDF."""
+    """Printable BEO sheet — same payload as JSON endpoint, rendered as PDF.
+
+    Requires the ``banquet_operations`` feature (explicit guard mirrors the
+    JSON BEO endpoint — the helper call alone is not sufficient because the
+    dependency is resolved lazily via the call stack, not by the router).
+    """
     from fastapi.responses import Response
 
     payload = await beo(event_id, current_user)  # tenant-scoped 404 inside
@@ -1942,7 +1964,10 @@ class BeoEmailRequest(BaseModel):
     note: str | None = None
 
 
-@router.post("/events/{event_id}/beo/email")
+@router.post(
+    "/events/{event_id}/beo/email",
+    dependencies=[Depends(require_feature("mice", "banquet_operations"))],
+)
 async def beo_email(
     event_id: str,
     body: BeoEmailRequest,

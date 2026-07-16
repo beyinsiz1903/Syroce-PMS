@@ -299,6 +299,7 @@ async def get_current_subscription(current_user: User = Depends(get_current_user
     except ValueError:
         plan = SUBSCRIPTION_PLANS.get(SubscriptionTier.BASIC)
 
+    entitlements = await _get_full_entitlements(current_user.tenant_id)
     return {
         "tenant_id": current_user.tenant_id,
         "tier": normalized_tier,
@@ -308,6 +309,7 @@ async def get_current_subscription(current_user: User = Depends(get_current_user
         "rooms_count": await db.rooms.count_documents({"tenant_id": current_user.tenant_id}),
         "users_count": await db.users.count_documents({"tenant_id": current_user.tenant_id}),
         "modules": get_tenant_modules(tenant),
+        "entitlements": entitlements,
     }
 
 
