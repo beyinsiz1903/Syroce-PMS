@@ -3,22 +3,28 @@
 import logging
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from .client import NilveraHttpClient
-from .errors import NilveraApiError
+from .errors import NilveraApiError, NilveraValidationError
 
 logger = logging.getLogger("core.integrations.nilvera.taxpayer")
 
 
-class TaxpayerInfo(BaseModel):
-    """Normalized taxpayer information for Syroce."""
+class TaxpayerCheckResult(BaseModel):
+    """Result of checking if a taxpayer is an e-Invoice user."""
 
     tax_number: str
     is_e_invoice_user: bool
     document_type: Literal["E_INVOICE", "E_ARCHIVE"]
     title: str | None = None
-    aliases: list[str] = []
+
+
+class TaxpayerAliasResult(BaseModel):
+    """Result of fetching aliases for a taxpayer."""
+
+    tax_number: str
+    aliases: list[str] = Field(default_factory=list)
 
 
 class NilveraCheckResponseItem(BaseModel):
@@ -68,54 +74,65 @@ class NilveraTaxpayerService:
     def __init__(self, client: NilveraHttpClient):
         self._client = client
 
-    async def check_taxpayer(self, tax_number: str, correlation_id: str | None = None) -> TaxpayerInfo:
-        """
-        Check if the given VKN/TCKN is an e-Invoice taxpayer.
-
-        Returns TaxpayerInfo containing boolean status, default E_INVOICE/E_ARCHIVE
-        document type, and potentially the company Title if available.
-        """
-        tax_number = (tax_number or "").strip()
-
-        # 10 digits for VKN, 11 digits for TCKN
-        if not tax_number.isdigit() or len(tax_number) not in (10, 11):
+    def _validate_tax_number(self, tax_number: str, correlation_id: str | None) -> str:
+        """Validate format and length of tax number."""
+        clean_number = (tax_number or "").strip()
+        if not clean_number or not clean_number.isdigit() or len(clean_number) not in (10, 11):
             logger.warning(
-                "Invalid tax number length: %s. Defaulting to E_ARCHIVE",
-                _mask_tax_number(tax_number),
+                "Invalid tax number format for %s",
+                _mask_tax_number(clean_number),
                 extra={"correlation_id": correlation_id},
             )
-            return TaxpayerInfo(
-                tax_number=tax_number,
-                is_e_invoice_user=False,
-                document_type="E_ARCHIVE",
+            raise NilveraValidationError(
+                message="Geçersiz Vergi Kimlik Numarası (VKN) veya TCKN",
+                correlation_id=correlation_id,
             )
+        return clean_number
+
+    async def check_taxpayer(self, tax_number: str, correlation_id: str | None = None) -> TaxpayerCheckResult:
+        """
+        Check if the given VKN/TCKN is an e-Invoice taxpayer.
+        """
+        clean_number = self._validate_tax_number(tax_number, correlation_id)
 
         try:
-            path = f"/general/GlobalCompany/Check/TaxNumber/{tax_number}?globalUserType=Invoice"
+            path = f"/general/GlobalCompany/Check/TaxNumber/{clean_number}?globalUserType=Invoice"
             response_data = await self._client.get(path, correlation_id=correlation_id)
 
             if not isinstance(response_data, list):
-                logger.warning(
+                logger.error(
                     "Unexpected response type from Check/TaxNumber: %s",
                     type(response_data).__name__,
                     extra={"correlation_id": correlation_id},
                 )
-                return TaxpayerInfo(tax_number=tax_number, is_e_invoice_user=False, document_type="E_ARCHIVE")
+                raise NilveraValidationError(
+                    message="Nilvera Check servisi geçersiz yanıt döndürdü (Liste bekleniyordu).",
+                    correlation_id=correlation_id,
+                )
 
             if len(response_data) == 0:
-                return TaxpayerInfo(tax_number=tax_number, is_e_invoice_user=False, document_type="E_ARCHIVE")
+                return TaxpayerCheckResult(
+                    tax_number=clean_number,
+                    is_e_invoice_user=False,
+                    document_type="E_ARCHIVE",
+                )
 
-            # Parse the first item to safely extract Title if needed
-            first_item = NilveraCheckResponseItem(**response_data[0])
+            try:
+                first_item = NilveraCheckResponseItem(**response_data[0])
+            except ValidationError as e:
+                logger.error(
+                    "Malformed response item in Check/TaxNumber for %s: %s",
+                    _mask_tax_number(clean_number),
+                    str(e),
+                    extra={"correlation_id": correlation_id},
+                )
+                raise NilveraValidationError(
+                    message="Nilvera Check servisi geçersiz öğe döndürdü.",
+                    correlation_id=correlation_id,
+                ) from e
 
-            logger.info(
-                "Taxpayer check for %s: is_e_invoice_user=True",
-                _mask_tax_number(tax_number),
-                extra={"correlation_id": correlation_id},
-            )
-
-            return TaxpayerInfo(
-                tax_number=tax_number,
+            return TaxpayerCheckResult(
+                tax_number=clean_number,
                 is_e_invoice_user=True,
                 document_type="E_INVOICE",
                 title=first_item.title,
@@ -124,53 +141,60 @@ class NilveraTaxpayerService:
         except NilveraApiError as e:
             logger.error(
                 "Failed to check taxpayer status for %s: %s",
-                _mask_tax_number(tax_number),
-                e,
+                _mask_tax_number(clean_number),
+                e.__class__.__name__,
                 extra={"correlation_id": correlation_id},
             )
             raise
 
-    async def get_taxpayer_aliases(self, tax_number: str, correlation_id: str | None = None) -> TaxpayerInfo:
+    async def get_taxpayer_aliases(self, tax_number: str, correlation_id: str | None = None) -> TaxpayerAliasResult:
         """
-        Get detailed customer info including Aliases for a given VKN/TCKN.
+        Get detailed customer info including active Aliases for a given VKN/TCKN.
         """
-        tax_number = (tax_number or "").strip()
-
-        if not tax_number.isdigit() or len(tax_number) not in (10, 11):
-            return TaxpayerInfo(tax_number=tax_number, is_e_invoice_user=False, document_type="E_ARCHIVE")
+        clean_number = self._validate_tax_number(tax_number, correlation_id)
 
         try:
-            path = f"/general/GlobalCompany/GetGlobalCustomerInfo/{tax_number}?globalUserType=Invoice"
+            path = f"/general/GlobalCompany/GetGlobalCustomerInfo/{clean_number}?globalUserType=Invoice"
             response_data = await self._client.get(path, correlation_id=correlation_id)
 
             if not isinstance(response_data, dict):
-                logger.warning(
+                logger.error(
                     "Unexpected response type from GetGlobalCustomerInfo: %s",
                     type(response_data).__name__,
                     extra={"correlation_id": correlation_id},
                 )
-                return TaxpayerInfo(tax_number=tax_number, is_e_invoice_user=False, document_type="E_ARCHIVE")
+                raise NilveraValidationError(
+                    message="Nilvera CustomerInfo servisi geçersiz yanıt döndürdü (Obje bekleniyordu).",
+                    correlation_id=correlation_id,
+                )
 
-            info = NilveraCustomerInfoResponse(**response_data)
+            try:
+                info = NilveraCustomerInfoResponse(**response_data)
+            except ValidationError as e:
+                logger.error(
+                    "Malformed response in GetGlobalCustomerInfo for %s: %s",
+                    _mask_tax_number(clean_number),
+                    str(e),
+                    extra={"correlation_id": correlation_id},
+                )
+                raise NilveraValidationError(
+                    message="Nilvera CustomerInfo servisi geçersiz öğe döndürdü.",
+                    correlation_id=correlation_id,
+                ) from e
 
             # Extract active aliases (those without a DeletionTime)
             active_aliases = [alias.name for alias in info.aliases if alias.deletion_time is None]
 
-            is_taxpayer = len(active_aliases) > 0
-
-            return TaxpayerInfo(
-                tax_number=tax_number,
-                is_e_invoice_user=is_taxpayer,
-                document_type="E_INVOICE" if is_taxpayer else "E_ARCHIVE",
-                title=info.title,
+            return TaxpayerAliasResult(
+                tax_number=clean_number,
                 aliases=active_aliases,
             )
 
         except NilveraApiError as e:
             logger.error(
                 "Failed to get taxpayer aliases for %s: %s",
-                _mask_tax_number(tax_number),
-                e,
+                _mask_tax_number(clean_number),
+                e.__class__.__name__,
                 extra={"correlation_id": correlation_id},
             )
             raise
