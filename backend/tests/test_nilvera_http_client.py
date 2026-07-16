@@ -440,7 +440,8 @@ async def test_small_json_error_is_parsed(config_override):
     async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
         with pytest.raises(NilveraValidationError) as exc:
             await http_client.get("/test")
-        assert "Bad" in str(exc.value)
+        assert "Bad" in exc.value.sanitized_preview
+        assert exc.value.args == ("Nilvera provider request failed",)
 
 @pytest.mark.asyncio
 async def test_small_html_error_returns_safe_typed_error(config_override):
@@ -491,3 +492,61 @@ async def test_retry_max_3_performs_4_attempts(monkeypatch, mock_sleeper):
         with pytest.raises(NilveraServerError):
             await http_client.get("/test", _sleeper=mock_sleeper)
         assert calls == 4
+
+# --- NEW REDACTION AND SECURITY TESTS ---
+
+def test_provider_message_not_used_as_exception_message():
+    err = NilveraApiError(message="Nilvera provider request failed", raw_response={"Message": "SECRET_MSG"})
+    assert str(err).startswith("Nilvera provider request failed")
+    assert "SECRET_MSG" not in str(err)
+    assert "SECRET_MSG" not in err.args
+
+def test_provider_message_vkn_is_redacted():
+    err = NilveraApiError("Test", raw_response={"Message": "VKN 12345678901"})
+    assert "12345678901" not in err.sanitized_preview
+
+def test_provider_message_tckn_is_redacted():
+    err = NilveraApiError("Test", raw_response={"Message": "TCKN 12345678901"})
+    assert "12345678901" not in err.sanitized_preview
+
+def test_provider_message_email_is_redacted():
+    err = NilveraApiError("Test", raw_response={"Message": "Contact test@example.com"})
+    assert "test@example.com" not in err.sanitized_preview
+    assert "[REDACTED_EMAIL]" in err.sanitized_preview
+
+def test_provider_message_bearer_token_is_redacted():
+    err = NilveraApiError("Test", raw_response={"Message": "Bearer abcdef123456"})
+    assert "abcdef123456" not in err.sanitized_preview
+    assert "[REDACTED_POTENTIAL_SECRETS]" in err.sanitized_preview
+
+def test_description_and_detail_are_not_raw():
+    err = NilveraApiError("Test", description="Desc with 12345678901", detail="Detail with user@example.com")
+    assert not hasattr(err, "description")
+    assert not hasattr(err, "detail")
+    assert err.sanitized_description is not None
+    assert err.sanitized_detail is not None
+    assert "12345678901" not in err.sanitized_description
+    assert "user@example.com" not in err.sanitized_detail
+
+def test_str_never_contains_provider_message():
+    err = NilveraApiError("Test", raw_response={"Message": "SECRET_PROVIDER_MESSAGE"})
+    assert "SECRET_PROVIDER_MESSAGE" not in str(err)
+
+def test_repr_never_contains_provider_message():
+    err = NilveraApiError("Test", raw_response={"Message": "SECRET_PROVIDER_MESSAGE"})
+    assert "SECRET_PROVIDER_MESSAGE" not in repr(err)
+
+def test_exception_args_contain_only_safe_static_message():
+    err = NilveraApiError("Nilvera provider request failed", raw_response={"Message": "SECRET"})
+    assert err.args == ("Nilvera provider request failed",)
+
+@pytest.mark.asyncio
+async def test_client_parses_safe_message_for_exception(config_override):
+    def handler(request):
+        return httpx.Response(400, headers={"Content-Type": "application/json"}, content=b'{"Message": "SECRET_PROVIDER_MESSAGE"}')
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        with pytest.raises(NilveraValidationError) as exc:
+            await http_client.get("/test")
+        assert "SECRET_PROVIDER_MESSAGE" not in str(exc.value)
+        assert exc.value.args == ("Nilvera provider request failed",)
+

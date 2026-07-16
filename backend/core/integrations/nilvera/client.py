@@ -62,7 +62,6 @@ class NilveraHttpClient:
             except ValueError:
                 pass
 
-        message = data.get("Message", "Unknown error")
         errors = data.get("Errors", [])
 
         provider_code = None
@@ -76,7 +75,7 @@ class NilveraHttpClient:
                 detail = first_err.get("Detail")
 
         kwargs = {
-            "message": message,
+            "message": "Nilvera provider request failed",
             "http_status": status_code,
             "provider_code": provider_code,
             "description": description,

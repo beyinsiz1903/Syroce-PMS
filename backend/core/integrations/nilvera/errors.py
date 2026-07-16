@@ -23,10 +23,16 @@ class NilveraApiError(Exception):
         self.safe_user_message = safe_user_message or "E-Belge entegratörü ile iletişimde bir sorun oluştu."
         self.http_status = http_status
         self.provider_code = provider_code
-        self.description = description
-        self.detail = detail
         self.correlation_id = correlation_id
         self.retryable = retryable
+
+        self.sanitized_description: str | None = None
+        if description:
+            self.sanitized_description = self._create_sanitized_preview(description)
+
+        self.sanitized_detail: str | None = None
+        if detail:
+            self.sanitized_detail = self._create_sanitized_preview(detail)
 
         self.sanitized_preview: str | None = None
         if raw_response is not None:
@@ -47,11 +53,15 @@ class NilveraApiError(Exception):
         import re
         # Hard redaction of common sensitive patterns
         content_lower = content.lower()
-        if "authorization" in content_lower or "api_key" in content_lower or "bearer" in content_lower:
+        if "authorization" in content_lower or "api_key" in content_lower or "bearer" in content_lower or "password" in content_lower:
             content = "[REDACTED_POTENTIAL_SECRETS]"
 
-        # Redact VKN/TCKN-like values in the string
+        # Redact VKN/TCKN-like values or any 10+ digit number in the string
         content = re.sub(r'(?i)(vkn|tckn)[\"\'\s:=]+([0-9]{10,11})', r'\1: [REDACTED]', content)
+        content = re.sub(r'\b\d{10,}\b', '[REDACTED_NUM]', content)
+
+        # Redact emails
+        content = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '[REDACTED_EMAIL]', content)
 
         return content[:512]
 
