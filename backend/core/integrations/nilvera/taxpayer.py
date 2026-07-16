@@ -11,6 +11,23 @@ from .errors import NilveraApiError, NilveraValidationError
 logger = logging.getLogger("core.integrations.nilvera.taxpayer")
 
 
+def _safe_validation_summary(error: ValidationError) -> dict:
+    """Safely extract validation error locations without exposing sensitive inputs."""
+    # include_input=False ensures input values are omitted from the dict representation
+    errors = error.errors(include_input=False)
+    return {
+        "error_count": len(errors),
+        "locations": [".".join(str(part) for part in item.get("loc", ())) for item in errors],
+    }
+
+
+def _mask_tax_number(tax_number: str) -> str:
+    """Mask VKN/TCKN for safe logging (e.g., '***1234')."""
+    if not tax_number or len(tax_number) < 4:
+        return "****"
+    return "***" + tax_number[-4:]
+
+
 class TaxpayerCheckResult(BaseModel):
     """Result of checking if a taxpayer is an e-Invoice user."""
 
@@ -65,7 +82,9 @@ class NilveraCustomerInfoResponse(BaseModel):
     website: str | None = Field(None, alias="WebSite")
     module_type: str | None = Field(None, alias="ModuleType")
     first_creation_time: str | None = Field(None, alias="FirstCreationTime")
-    aliases: list[NilveraAliasItem] = Field(default_factory=list, alias="Aliases")
+    # In Nilvera's response, the Aliases array is strictly present even if empty,
+    # so we enforce its presence without a default_factory to fail-closed if missing.
+    aliases: list[NilveraAliasItem] = Field(alias="Aliases")
 
 
 class NilveraTaxpayerService:
@@ -121,10 +140,12 @@ class NilveraTaxpayerService:
                 first_item = NilveraCheckResponseItem(**response_data[0])
             except ValidationError as e:
                 logger.error(
-                    "Malformed response item in Check/TaxNumber for %s: %s",
+                    "Malformed response item in Check/TaxNumber for %s",
                     _mask_tax_number(clean_number),
-                    str(e),
-                    extra={"correlation_id": correlation_id},
+                    extra={
+                        "correlation_id": correlation_id,
+                        "validation_errors": _safe_validation_summary(e),
+                    },
                 )
                 raise NilveraValidationError(
                     message="Nilvera Check servisi geçersiz öğe döndürdü.",
@@ -172,10 +193,12 @@ class NilveraTaxpayerService:
                 info = NilveraCustomerInfoResponse(**response_data)
             except ValidationError as e:
                 logger.error(
-                    "Malformed response in GetGlobalCustomerInfo for %s: %s",
+                    "Malformed response in GetGlobalCustomerInfo for %s",
                     _mask_tax_number(clean_number),
-                    str(e),
-                    extra={"correlation_id": correlation_id},
+                    extra={
+                        "correlation_id": correlation_id,
+                        "validation_errors": _safe_validation_summary(e),
+                    },
                 )
                 raise NilveraValidationError(
                     message="Nilvera CustomerInfo servisi geçersiz öğe döndürdü.",
@@ -198,10 +221,3 @@ class NilveraTaxpayerService:
                 extra={"correlation_id": correlation_id},
             )
             raise
-
-
-def _mask_tax_number(tax_number: str) -> str:
-    """Mask VKN/TCKN for safe logging (e.g., '***1234')."""
-    if not tax_number or len(tax_number) < 4:
-        return "****"
-    return "***" + tax_number[-4:]
