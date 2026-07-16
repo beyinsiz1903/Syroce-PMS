@@ -44,10 +44,14 @@ class NilveraApiError(Exception):
         else:
             content = str(raw_response)
 
+        import re
         # Hard redaction of common sensitive patterns
         content_lower = content.lower()
         if "authorization" in content_lower or "api_key" in content_lower or "bearer" in content_lower:
             content = "[REDACTED_POTENTIAL_SECRETS]"
+
+        # Redact VKN/TCKN-like values in the string
+        content = re.sub(r'(?i)(vkn|tckn)[\"\'\s:=]+([0-9]{10,11})', r'\1: [REDACTED]', content)
 
         return content[:512]
 
@@ -62,6 +66,10 @@ class NilveraApiError(Exception):
             parts.append(f"CorrID {self.correlation_id}")
         ctx = f" [{', '.join(parts)}]" if parts else ""
         return f"{base}{ctx}"
+
+    def __repr__(self) -> str:
+        # Prevent any automatic exposure of detail, description, or sanitized_preview
+        return f"{self.__class__.__name__}({repr(self.args[0]) if self.args else ''})"
 
 
 class NilveraValidationError(NilveraApiError):

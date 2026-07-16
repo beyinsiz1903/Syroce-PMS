@@ -12,7 +12,7 @@ class NilveraSettings(BaseModel):
     env: Literal["test", "production"] = Field(default="test")
     base_url_override: str | None = Field(default=None)
     timeout_ms: int = Field(default=30000, gt=0, le=120000)
-    retry_max: int = Field(default=3, ge=0, le=5)
+    retry_max: int = Field(default=3, ge=0, le=5, description="Number of retries after the initial attempt. 3 means 4 total attempts.")
     retry_base_delay_ms: int = Field(default=1000, gt=0)
     max_response_size_bytes: int = Field(default=10 * 1024 * 1024, gt=0)  # 10MB default
 
@@ -33,9 +33,11 @@ def get_nilvera_config() -> NilveraSettings:
     """Lazy loader for config."""
     global _config
     if _config is None:
-        env_val = os.environ.get("NILVERA_ENV", "test").lower()
-        if env_val not in ("test", "production"):
+        raw_env = os.environ.get("NILVERA_ENV")
+        if raw_env is None:
             env_val = "test"
+        else:
+            env_val = raw_env.strip().lower()
 
         _config = NilveraSettings(
             env=env_val,

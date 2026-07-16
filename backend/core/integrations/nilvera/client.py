@@ -106,6 +106,26 @@ class NilveraHttpClient:
 
         return NilveraApiError(**kwargs)
 
+    async def _read_bounded_response(self, response: httpx.Response, max_bytes: int, correlation_id: str | None) -> bytes:
+        content_length = response.headers.get("Content-Length")
+        if content_length and int(content_length) > max_bytes:
+            await response.aclose()
+            raise NilveraResponseSizeError(
+                f"Response size {content_length} exceeds limit", correlation_id=correlation_id
+            )
+
+        body = bytearray()
+        try:
+            async for chunk in response.aiter_bytes(chunk_size=8192):
+                body.extend(chunk)
+                if len(body) > max_bytes:
+                    await response.aclose()
+                    raise NilveraResponseSizeError("Response body exceeded limits while reading", correlation_id=correlation_id)
+        except Exception:
+            await response.aclose()
+            raise
+        return bytes(body)
+
     async def _request(
         self,
         method: str,
@@ -136,22 +156,18 @@ class NilveraHttpClient:
         while True:
             attempts += 1
             try:
-                # If streaming, we must handle reading safely inside the caller,
-                # but for simplicity, we do standard request unless stream is requested.
                 request_obj = client.build_request(method, path, headers=headers, **kwargs)
                 response = await client.send(request_obj, stream=True)
 
-                content_length = response.headers.get("Content-Length")
-                if content_length and int(content_length) > self._config.max_response_size_bytes:
-                    await response.aclose()
-                    raise NilveraResponseSizeError(
-                        f"Response size {content_length} exceeds limit", correlation_id=correlation_id
-                    )
-
                 if response.is_error:
-                    await response.aread()  # safe because it's an error and likely small
+                    try:
+                        body_bytes = await self._read_bounded_response(response, self._config.max_response_size_bytes, correlation_id)
+                        text_content = body_bytes.decode("utf-8", errors="replace")
+                    finally:
+                        await response.aclose()
+
                     error_obj = self._parse_error_response(
-                        response.status_code, response.text, response.headers, correlation_id
+                        response.status_code, text_content, response.headers, correlation_id
                     )
 
                     if isinstance(error_obj, NilveraRateLimitError) and is_retryable and attempts <= max_attempts:
@@ -169,18 +185,15 @@ class NilveraHttpClient:
                     raise error_obj
 
                 if not stream:
-                    # Enforce stream size locally
-                    body = bytearray()
-                    async for chunk in response.aiter_bytes(chunk_size=8192):
-                        body.extend(chunk)
-                        if len(body) > self._config.max_response_size_bytes:
-                            await response.aclose()
-                            raise NilveraResponseSizeError("Response body exceeded limits while reading", correlation_id=correlation_id)
-                    # We emulate a full httpx response for consistency
+                    try:
+                        body_bytes = await self._read_bounded_response(response, self._config.max_response_size_bytes, correlation_id)
+                    finally:
+                        await response.aclose()
+
                     response = httpx.Response(
                         status_code=response.status_code,
                         headers=response.headers,
-                        content=bytes(body),
+                        content=body_bytes,
                         request=request_obj,
                     )
 
@@ -198,7 +211,8 @@ class NilveraHttpClient:
     async def get(self, path: str, correlation_id: str | None = None, **kwargs: Any) -> dict[str, Any]:
         response = await self._request("GET", path, correlation_id=correlation_id, stream=False, **kwargs)
         content_type = response.headers.get("Content-Type", "").lower()
-        if "application/json" not in content_type:
+        ct = content_type.split(";")[0].strip()
+        if ct != "application/json" and not (ct.startswith("application/") and ct.endswith("+json")):
             raise NilveraValidationError(f"Expected JSON, got {content_type}", correlation_id=correlation_id)
         import json
         try:

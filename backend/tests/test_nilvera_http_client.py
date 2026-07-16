@@ -48,9 +48,37 @@ def test_config_selects_production_base_url():
     cfg = NilveraSettings(env="production")
     assert cfg.base_url == "https://api.nilvera.com"
 
-def test_config_rejects_invalid_environment():
+def test_loader_defaults_to_test_when_env_missing(monkeypatch):
+    import core.integrations.nilvera.config as mod
+    mod._config = None
+    monkeypatch.delenv("NILVERA_ENV", raising=False)
+    assert get_nilvera_config().env == "test"
+
+def test_loader_accepts_test(monkeypatch):
+    import core.integrations.nilvera.config as mod
+    mod._config = None
+    monkeypatch.setenv("NILVERA_ENV", "TeSt ")
+    assert get_nilvera_config().env == "test"
+
+def test_loader_accepts_production(monkeypatch):
+    import core.integrations.nilvera.config as mod
+    mod._config = None
+    monkeypatch.setenv("NILVERA_ENV", " PRODUCTION")
+    assert get_nilvera_config().env == "production"
+
+def test_loader_rejects_invalid_environment(monkeypatch):
+    import core.integrations.nilvera.config as mod
+    mod._config = None
+    monkeypatch.setenv("NILVERA_ENV", "invalid")
     with pytest.raises(ValidationError):
-        NilveraSettings(env="invalid")
+        get_nilvera_config()
+
+def test_loader_rejects_typo_in_production_environment(monkeypatch):
+    import core.integrations.nilvera.config as mod
+    mod._config = None
+    monkeypatch.setenv("NILVERA_ENV", "prodution")
+    with pytest.raises(ValidationError):
+        get_nilvera_config()
 
 def test_config_rejects_non_positive_timeout():
     with pytest.raises(ValidationError):
@@ -68,11 +96,6 @@ def test_config_rejects_invalid_response_size():
 
 def test_config_has_no_api_key_field():
     assert "api_key" not in NilveraSettings.model_fields
-
-def test_config_import_is_lazy_and_does_not_require_env(monkeypatch):
-    monkeypatch.delenv("NILVERA_ENV", raising=False)
-    # The import should not fail and the object should be lazy
-    assert get_nilvera_config().env == "test"
 
 # --- ERROR REDACTION TESTS ---
 
@@ -342,3 +365,129 @@ async def test_base_url_path_joining_does_not_double_slash():
 def test_api_key_does_not_appear_in_repr():
     client = NilveraHttpClient("secret_key_999")
     assert "secret_key_999" not in repr(client)
+
+# --- NEW EDGE CASE TESTS ---
+
+def test_error_repr_does_not_expose_detail():
+    err = NilveraApiError("Test", detail="SECRET_DETAIL_123")
+    r = repr(err)
+    assert "SECRET_DETAIL_123" not in r
+
+def test_error_str_does_not_expose_description():
+    err = NilveraApiError("Test", description="SECRET_DESC_456")
+    s = str(err)
+    assert "SECRET_DESC_456" not in s
+
+def test_error_preview_redacts_authorization_case_insensitive():
+    err = NilveraApiError("Test", raw_response={"aUtHoRiZaTiOn": "Bearer secret", "safe_key": "val"})
+    assert err.sanitized_preview == '{"safe_key": "val"}'
+
+def test_error_preview_redacts_vkn_tckn_like_values():
+    err = NilveraApiError("Test", raw_response='{"vkn": "1234567890", "tckn":"12345678901", "other": "1"}')
+    preview = err.sanitized_preview
+    assert "1234567890" not in preview
+    assert "12345678901" not in preview
+    assert "[REDACTED]" in preview
+
+@pytest.mark.asyncio
+async def test_problem_json_is_accepted(config_override):
+    def handler(request):
+        return httpx.Response(200, content=b'{"ok": true}', headers={"Content-Type": "application/problem+json"})
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        res = await http_client.get("/test")
+        assert res == {"ok": True}
+
+@pytest.mark.asyncio
+async def test_vendor_json_is_accepted(config_override):
+    def handler(request):
+        return httpx.Response(200, content=b'{"ok": true}', headers={"Content-Type": "application/vnd.api+json"})
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        res = await http_client.get("/test")
+        assert res == {"ok": True}
+
+@pytest.mark.asyncio
+async def test_oversized_error_body_without_content_length_rejected(monkeypatch):
+    import core.integrations.nilvera.config as mod
+    mod._config = None
+    monkeypatch.setenv("NILVERA_MAX_RESPONSE_SIZE_BYTES", "10")
+
+    def handler(request):
+        # No content length, large body
+        return httpx.Response(500, content=b"12345678901234567890")
+
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        with pytest.raises(NilveraResponseSizeError):
+            await http_client.get("/test", retryable=False)
+
+@pytest.mark.asyncio
+async def test_oversized_error_content_length_rejected_before_full_read(monkeypatch):
+    import core.integrations.nilvera.config as mod
+    mod._config = None
+    monkeypatch.setenv("NILVERA_MAX_RESPONSE_SIZE_BYTES", "10")
+
+    def handler(request):
+        # Has content length exceeding limit
+        return httpx.Response(500, headers={"Content-Length": "200"}, content=b"fake")
+
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        with pytest.raises(NilveraResponseSizeError):
+            await http_client.get("/test", retryable=False)
+
+@pytest.mark.asyncio
+async def test_small_json_error_is_parsed(config_override):
+    def handler(request):
+        return httpx.Response(400, headers={"Content-Type": "application/json"}, content=b'{"Message": "Bad"}')
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        with pytest.raises(NilveraValidationError) as exc:
+            await http_client.get("/test")
+        assert "Bad" in str(exc.value)
+
+@pytest.mark.asyncio
+async def test_small_html_error_returns_safe_typed_error(config_override):
+    def handler(request):
+        return httpx.Response(502, headers={"Content-Type": "text/html"}, content=b'<html>bad gateway</html>')
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        with pytest.raises(NilveraServerError) as exc:
+            await http_client.get("/test", retryable=False)
+        assert exc.value.http_status == 502
+
+@pytest.mark.asyncio
+async def test_error_response_is_closed_after_size_rejection(monkeypatch):
+    import core.integrations.nilvera.config as mod
+    mod._config = None
+    monkeypatch.setenv("NILVERA_MAX_RESPONSE_SIZE_BYTES", "5")
+
+    response_closed = False
+    class CustomTransport(httpx.MockTransport):
+        async def handle_async_request(self, request):
+            res = httpx.Response(500, content=b"1234567890")
+            original_aclose = res.aclose
+            async def mock_aclose():
+                nonlocal response_closed
+                response_closed = True
+                await original_aclose()
+            res.aclose = mock_aclose
+            return res
+
+    async with NilveraHttpClient("key", client=httpx.AsyncClient(transport=CustomTransport(lambda req: None), base_url="https://test")) as http_client:
+        with pytest.raises(NilveraResponseSizeError):
+            await http_client.get("/test", retryable=False)
+
+    assert response_closed
+
+@pytest.mark.asyncio
+async def test_retry_max_3_performs_4_attempts(monkeypatch, mock_sleeper):
+    import core.integrations.nilvera.config as mod
+    mod._config = None
+    monkeypatch.setenv("NILVERA_RETRY_MAX", "3")
+
+    calls = 0
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(502)
+
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        with pytest.raises(NilveraServerError):
+            await http_client.get("/test", _sleeper=mock_sleeper)
+        assert calls == 4
