@@ -150,7 +150,7 @@ class NilveraTaxpayerService:
                 raise NilveraValidationError(
                     message="Nilvera Check servisi geçersiz öğe döndürdü.",
                     correlation_id=correlation_id,
-                ) from e
+                ) from None
 
             return TaxpayerCheckResult(
                 tax_number=clean_number,
@@ -203,7 +203,7 @@ class NilveraTaxpayerService:
                 raise NilveraValidationError(
                     message="Nilvera CustomerInfo servisi geçersiz öğe döndürdü.",
                     correlation_id=correlation_id,
-                ) from e
+                ) from None
 
             # Extract active aliases (those without a DeletionTime)
             active_aliases = [alias.name for alias in info.aliases if alias.deletion_time is None]

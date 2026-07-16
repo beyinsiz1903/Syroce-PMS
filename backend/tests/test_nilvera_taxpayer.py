@@ -1,4 +1,5 @@
 import logging
+import traceback
 from unittest.mock import AsyncMock
 
 import pytest
@@ -134,6 +135,15 @@ async def test_check_taxpayer_malformed_item_error(taxpayer_service, mock_client
         await taxpayer_service.check_taxpayer("1234567801")
     assert "geçersiz öğe döndürdü" in str(exc.value)
 
+    # Check that original Pydantic ValidationError is NOT in __cause__
+    assert exc.value.__cause__ is None
+
+    # Verify PII/sensitive data is NOT in the exception traceback
+    tb_text = "".join(traceback.format_exception(type(exc.value), exc.value, exc.value.__traceback__))
+    assert sensitive_vkn not in tb_text
+    assert sensitive_title not in tb_text
+    assert sensitive_name not in tb_text
+
     # Check that safe message is logged
     assert "Malformed response item in Check/TaxNumber for ***7801" in caplog.text
     # Verify PII/sensitive data is NOT in the logs
@@ -246,6 +256,16 @@ async def test_get_taxpayer_aliases_malformed_item(taxpayer_service, mock_client
     with pytest.raises(NilveraValidationError) as exc:
         await taxpayer_service.get_taxpayer_aliases("1234567801")
     assert "geçersiz öğe döndürdü" in str(exc.value)
+
+    # Check that original Pydantic ValidationError is NOT in __cause__
+    assert exc.value.__cause__ is None
+
+    # Verify PII/sensitive data is NOT in the exception traceback
+    tb_text = "".join(traceback.format_exception(type(exc.value), exc.value, exc.value.__traceback__))
+    assert sensitive_vkn not in tb_text
+    assert sensitive_email not in tb_text
+    assert sensitive_address not in tb_text
+    assert sensitive_alias not in tb_text
 
     assert "Malformed response in GetGlobalCustomerInfo for ***7801" in caplog.text
     # Verify PII/sensitive data is NOT in the logs
