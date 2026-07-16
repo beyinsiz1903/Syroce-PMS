@@ -237,7 +237,8 @@ def test_hk_tenant_isolation(mock_db, override_auth, mock_require_module):
 
 def test_hk_create_concurrent_same_idempotency_key(mock_db, override_auth, mock_require_module):
     # This is basically the same as in-flight
-    with patch("routers.housekeeping.claim_idempotency", new_callable=AsyncMock) as m_claim,          patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res:
+    with patch("routers.housekeeping.claim_idempotency", new_callable=AsyncMock) as m_claim, \
+         patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res:
 
         m_claim.return_value = {"status": "in_flight"}
 
@@ -246,3 +247,210 @@ def test_hk_create_concurrent_same_idempotency_key(mock_db, override_auth, mock_
 
         assert res.status_code == 409
         m_res.assert_not_called()
+
+
+# ── /housekeeping/assign — quota + idempotency tests ──────────────────────────
+
+
+def test_assign_reserves_active_task_quota(mock_db, override_auth, mock_require_module):
+    """/assign yeni aktif task oluşturduğu için insert öncesi reserve_quota çağrılmalı."""
+    with patch("routers.housekeeping.begin_idempotency", new_callable=AsyncMock) as m_ib, \
+         patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
+         patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res:
+
+        mock_guard = MagicMock()
+        mock_guard.complete = AsyncMock()
+        mock_guard.release = AsyncMock()
+        m_ib.return_value = (mock_guard, None)
+        m_limit.return_value = 10
+        mock_db.rooms.find_one.return_value = {"id": "room_1", "tenant_id": "tenant_1", "room_number": "101"}
+
+        res = client.post("/api/housekeeping/assign", params={"room_id": "room_1", "assigned_to": "staff_1"})
+
+        assert res.status_code == 200
+        m_res.assert_called_once()
+        args = m_res.call_args[0]
+        assert args[0] == "tenant_1"
+        assert args[1] == "housekeeping"
+        assert args[2] == "active_tasks"
+
+
+def test_assign_quota_exceeded_returns_403(mock_db, override_auth, mock_require_module):
+    """/assign kota doluysa 403 dönmeli ve insert çağrılmamalı."""
+    with patch("routers.housekeeping.begin_idempotency", new_callable=AsyncMock) as m_ib, \
+         patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
+         patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res:
+
+        mock_guard = MagicMock()
+        mock_guard.complete = AsyncMock()
+        mock_guard.release = AsyncMock()
+        m_ib.return_value = (mock_guard, None)
+        m_limit.return_value = 5
+        m_res.side_effect = QuotaExceededException("Aktif görev kotası doldu")
+        mock_db.rooms.find_one.return_value = {"id": "room_1", "tenant_id": "tenant_1", "room_number": "101"}
+
+        res = client.post("/api/housekeeping/assign", params={"room_id": "room_1", "assigned_to": "staff_1"})
+
+        assert res.status_code == 403
+        mock_db.housekeeping_tasks.insert_one.assert_not_called()
+        mock_guard.release.assert_called_once()
+
+
+def test_assign_insert_failure_rolls_back_quota(mock_db, override_auth, mock_require_module):
+    """Insert başarısız olursa quota rollback yapılmalı."""
+    with patch("routers.housekeeping.begin_idempotency", new_callable=AsyncMock) as m_ib, \
+         patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
+         patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res, \
+         patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
+
+        mock_guard = MagicMock()
+        mock_guard.complete = AsyncMock()
+        mock_guard.release = AsyncMock()
+        m_ib.return_value = (mock_guard, None)
+        m_limit.return_value = 10
+        mock_db.rooms.find_one.return_value = {"id": "room_1", "tenant_id": "tenant_1", "room_number": "101"}
+        mock_db.housekeeping_tasks.insert_one.side_effect = Exception("DB Error")
+
+        res = client.post("/api/housekeeping/assign", params={"room_id": "room_1", "assigned_to": "staff_1"})
+
+        assert res.status_code == 500
+        m_res.assert_called_once()
+        m_rel.assert_called_once()
+
+
+def test_assign_idempotency_replay_no_double_reserve(mock_db, override_auth, mock_require_module):
+    """Idempotency replay: aynı anahtar tekrar geldiğinde quota reserve edilmemeli."""
+    with patch("routers.housekeeping.begin_idempotency", new_callable=AsyncMock) as m_ib, \
+         patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res:
+
+        cached = {"message": "Task assigned to staff_1", "task": {"id": "task_1"}}
+        mock_guard = MagicMock()
+        mock_guard.complete = AsyncMock()
+        mock_guard.release = AsyncMock()
+        # Replay: begin_idempotency döner (guard, cached_response)
+        m_ib.return_value = (mock_guard, cached)
+        mock_db.rooms.find_one.return_value = {"id": "room_1", "tenant_id": "tenant_1", "room_number": "101"}
+
+        res = client.post("/api/housekeeping/assign",
+                          params={"room_id": "room_1", "assigned_to": "staff_1"},
+                          headers={"Idempotency-Key": "key-abc"})
+
+        # Replay yanıtı cached dict'tir; quota ve insert atlanmalı
+        assert res.status_code == 200
+        m_res.assert_not_called()
+        mock_db.housekeeping_tasks.insert_one.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_assign_idempotency_in_flight_returns_409():
+    """Aynı Idempotency-Key ile in-flight istek varsa 409 dönmeli."""
+    from fastapi import HTTPException as _HTTPException
+
+    from routers.housekeeping import assign_housekeeping_task
+
+    with patch("routers.housekeeping.db") as m_db, \
+         patch("routers.housekeeping.begin_idempotency", new_callable=AsyncMock) as m_ib:
+
+        m_db.rooms.find_one = AsyncMock(return_value={"id": "room_1", "tenant_id": "t1", "room_number": "101"})
+        m_ib.side_effect = _HTTPException(status_code=409, detail="In flight")
+
+        request = MagicMock()
+        request.headers = {}
+
+        class _User:
+            tenant_id = "t1"
+            id = "u1"
+            role = "admin"
+
+        with pytest.raises(_HTTPException) as exc:
+            await assign_housekeeping_task(
+                request=request,
+                room_id="room_1",
+                assigned_to="staff_1",
+                current_user=_User(),
+                _perm=None,
+            )
+        assert exc.value.status_code == 409
+
+
+def test_assign_tenant_isolation(mock_db, override_auth, mock_require_module):
+    """/assign room lookup tenant_id ile scope'lanmış olmalı."""
+    with patch("routers.housekeeping.begin_idempotency", new_callable=AsyncMock) as m_ib, \
+         patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
+         patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock):
+
+        mock_guard = MagicMock()
+        mock_guard.complete = AsyncMock()
+        mock_guard.release = AsyncMock()
+        m_ib.return_value = (mock_guard, None)
+        m_limit.return_value = 10
+        # Simüle: farklı tenant'ın odası bulunamıyor
+        mock_db.rooms.find_one.return_value = None
+
+        res = client.post("/api/housekeeping/assign", params={"room_id": "other_room", "assigned_to": "staff_1"})
+
+        assert res.status_code == 404
+        mock_db.rooms.find_one.assert_called_once_with({"id": "other_room", "tenant_id": "tenant_1"})
+
+def test_assign_insert_failure_releases_idempotency_lock(mock_db, override_auth, mock_require_module):
+    """Insert hatası hem quota hem idempotency guard.release()'i tetiklemeli."""
+    with patch("routers.housekeeping.begin_idempotency", new_callable=AsyncMock) as m_ib, \
+         patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
+         patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res, \
+         patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
+
+        mock_guard = MagicMock()
+        mock_guard.complete = AsyncMock()
+        mock_guard.release = AsyncMock()
+        m_ib.return_value = (mock_guard, None)
+        m_limit.return_value = 10
+        mock_db.rooms.find_one.return_value = {"id": "room_1", "tenant_id": "tenant_1", "room_number": "101"}
+        mock_db.housekeeping_tasks.insert_one.side_effect = Exception("DB write failed")
+
+        res = client.post("/api/housekeeping/assign", params={"room_id": "room_1", "assigned_to": "staff_1"})
+
+        assert res.status_code == 500
+        # Quota must be rolled back
+        m_res.assert_called_once()
+        m_rel.assert_called_once()
+        # Idempotency guard must be released (not completed) on error
+        mock_guard.release.assert_called_once()
+        mock_guard.complete.assert_not_called()
+
+
+def test_assign_without_key_no_replay(mock_db, override_auth, mock_require_module):
+    """Idempotency-Key header yoksa replay=None → her istek unique işlenir."""
+    with patch("routers.housekeeping.begin_idempotency", new_callable=AsyncMock) as m_ib, \
+         patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
+         patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res:
+
+        mock_guard = MagicMock()
+        mock_guard.complete = AsyncMock()
+        mock_guard.release = AsyncMock()
+        m_ib.return_value = (mock_guard, None)  # No cached replay
+        m_limit.return_value = 10
+        mock_db.rooms.find_one.return_value = {"id": "room_1", "tenant_id": "tenant_1", "room_number": "101"}
+
+        res = client.post("/api/housekeeping/assign", params={"room_id": "room_1", "assigned_to": "staff_1"})
+
+        assert res.status_code == 200
+        # Normal flow: reserve then complete
+        m_res.assert_called_once()
+        mock_guard.complete.assert_called_once()
+        mock_guard.release.assert_not_called()
+
+
+def test_complete_then_delete_no_double_release(mock_db, override_auth, mock_require_module):
+    """Completed task silinince release_quota ÇAĞRILMAMALI (status geçişinde zaten serbest bırakıldı)."""
+    with patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
+        mock_db.housekeeping_tasks.find_one.return_value = {
+            "id": "task_completed",
+            "tenant_id": "tenant_1",
+            "status": "completed",
+            "room_id": "room_1",
+        }
+
+        res = client.delete("/api/housekeeping/tasks/task_completed")
+
+        assert res.status_code == 200
+        m_rel.assert_not_called()
