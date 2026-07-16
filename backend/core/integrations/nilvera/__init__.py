@@ -14,6 +14,7 @@ from .errors import (
     NilveraTimeoutError,
     NilveraValidationError,
 )
+from .series import NilveraSeriesDetail, NilveraSeriesItem, NilveraSeriesPage, NilveraSeriesService
 
 __all__ = [
     "NilveraSettings",
@@ -29,4 +30,8 @@ __all__ = [
     "NilveraTimeoutError",
     "NilveraValidationError",
     "NilveraHttpClient",
+    "NilveraSeriesService",
+    "NilveraSeriesPage",
+    "NilveraSeriesItem",
+    "NilveraSeriesDetail",
 ]
