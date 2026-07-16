@@ -1,17 +1,23 @@
 """Backend tests for the BEO PDF endpoint (Task #54 / #69 follow-up).
 
-Locks in three regressions for `GET /api/mice/events/{id}/beo.pdf`:
+Tests are split into two groups:
 
-1. Happy path returns 200 with `application/pdf` and a body that starts
-   with `%PDF` (weasyprint signature).
-2. Cross-tenant event id resolves to 404 (the JSON `beo()` helper already
-   tenant-scopes the lookup; this test pins that the PDF endpoint inherits
-   that guard rather than ever returning a renderer error).
-3. Optional sections (`agenda`, `payment_schedule`,
-   `technical_requirements`, `staff_assignments`, plus `totals` and
-   `resources`) may be absent / null without breaking the HTML→PDF render.
-   Also exercises a non-ASCII client name so the `html.escape` path is
-   covered for UTF-8 payloads.
+A) Guard / routing tests (``client`` fixture)
+   ─────────────────────────────────────────
+   ``_beo_pdf_bytes`` is stubbed so these tests run without weasyprint system
+   libraries.  They cover:
+   - banquet_operations feature guard → 200 (enabled) or 403 (disabled)
+   - Tenant-scope isolation → 404 for cross-tenant event id
+   - Content-Disposition header correctness
+   - Routing with sparse / optional-field payloads (no renderer crash)
+
+B) Real renderer tests (``renderer_client`` fixture)
+   ──────────────────────────────────────────────────
+   Require weasyprint *and* its native system libraries (cairo/pango/glib).
+   Skipped automatically when the libraries are absent via
+   ``pytest.importorskip``.  They cover:
+   - Happy path: response body starts with ``%PDF`` and is > 500 bytes
+   - Sparse payload: non-ASCII client name rendered without crash
 """
 from __future__ import annotations
 
@@ -24,7 +30,6 @@ from fastapi.testclient import TestClient
 
 from routers import mice as mice_router
 from routers.mice import router as mice_api_router
-
 
 TENANT_ID = "t-beo-1"
 OTHER_TENANT = "t-beo-2"
@@ -83,10 +88,9 @@ _FULL_EVENT = {
     "entertainment": {"type": "dj", "name": "DJ Volkan"},
 }
 
-# Sparse event: only the fields `beo()` projects are present, and every
-# optional section is missing or empty so we exercise the renderer's
-# fallback branches. Client name uses non-ASCII chars (Çağrı + emoji-free
-# Turkish diacritics) to lock the html.escape path.
+# Sparse event: every optional section is missing so we exercise fallback
+# branches in the renderer.  Client name uses non-ASCII Turkish diacritics
+# to lock the html.escape path.
 _SPARSE_EVENT = {
     "id": "evt-sparse",
     "tenant_id": TENANT_ID,
@@ -101,6 +105,10 @@ _SPARSE_EVENT = {
     # / technical_requirements / staff_assignments / entertainment.
 }
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Shared fake infrastructure
+# ──────────────────────────────────────────────────────────────────────────────
 
 class _FakeCursor:
     def __init__(self, docs: list[dict]):
@@ -122,6 +130,9 @@ class _FakeCursor:
         except StopIteration:  # noqa: PERF203
             raise StopAsyncIteration
 
+    async def to_list(self, length=None):
+        return list(self._docs) if length is None else list(self._docs)[:length]
+
 
 class _EventsCollection:
     def __init__(self, events: list[dict]):
@@ -131,7 +142,6 @@ class _EventsCollection:
         for doc in self._events:
             if (doc["id"] == flt.get("id")
                     and doc["tenant_id"] == flt.get("tenant_id")):
-                # Strip Mongo _id semantics — beo() passes `{"_id": 0}`.
                 return {k: v for k, v in doc.items() if k != "_id"}
         return None
 
@@ -154,26 +164,55 @@ class _FakeDB:
         ])
 
 
-@pytest.fixture
-def client(monkeypatch):
+def _setup_app(monkeypatch, *, stub_renderer: bool = True, tenant_id: str = TENANT_ID):
+    """Build a minimal FastAPI app with the MICE router for testing.
+
+    Args:
+        stub_renderer: Replace ``_beo_pdf_bytes`` with a fake that returns
+            ``b"%PDF-1.4 stub"`` — use this for guard/routing tests that must
+            not depend on weasyprint system libs.
+        tenant_id: The tenant_id the fake user belongs to.
+    """
     fake_db = _FakeDB()
     monkeypatch.setattr(mice_router, "get_system_db", lambda: fake_db)
+
+    import core.entitlements.enforcement as _enf
+
+    async def _async_true(*_a, **_kw):
+        return True
+
+    monkeypatch.setattr(_enf, "tenant_has_feature", _async_true)
+
+    if stub_renderer:
+        _FAKE_PDF = b"%PDF-1.4 stub"
+        monkeypatch.setattr(mice_router, "_beo_pdf_bytes", lambda _payload: _FAKE_PDF)
 
     app = FastAPI()
     app.include_router(mice_api_router)
 
     from core.security import get_current_user
 
+    _tid = tenant_id
+
     async def _fake_user():
-        return SimpleNamespace(
-            id="u1", username="tester", tenant_id=TENANT_ID, role="admin",
-        )
+        return SimpleNamespace(id="u1", username="tester", tenant_id=_tid, role="admin")
 
     app.dependency_overrides[get_current_user] = _fake_user
     return TestClient(app)
 
 
-def test_beo_pdf_returns_pdf_bytes(client):
+# ──────────────────────────────────────────────────────────────────────────────
+# A) Guard / routing tests  (renderer stubbed — no weasyprint required)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def client(monkeypatch):
+    """Guard/routing fixture: renderer is stubbed."""
+    return _setup_app(monkeypatch, stub_renderer=True)
+
+
+def test_beo_pdf_returns_200_and_pdf_content_type(client):
+    """Endpoint returns 200 + application/pdf with correct Content-Disposition."""
     r = client.get("/api/mice/events/evt-full/beo.pdf")
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith("application/pdf")
@@ -183,7 +222,7 @@ def test_beo_pdf_returns_pdf_bytes(client):
 
 
 def test_beo_pdf_cross_tenant_returns_404(monkeypatch, client):
-    # Flip the caller's tenant: the same event id must now be invisible.
+    """Cross-tenant event id must resolve to 404 (tenant isolation)."""
     from core.security import get_current_user
 
     async def _other_tenant_user():
@@ -196,12 +235,93 @@ def test_beo_pdf_cross_tenant_returns_404(monkeypatch, client):
     assert r.status_code == 404
 
 
-def test_beo_pdf_renders_when_optional_sections_absent(client):
-    """Sparse event has no totals/agenda/payment_schedule/tech/staff and a
-    non-ASCII client name — the renderer must still produce a valid PDF."""
+def test_beo_pdf_sparse_event_no_crash(client):
+    """Sparse event (no optional sections, non-ASCII client name) must not
+    crash the endpoint.  Routing + payload correctness only — renderer is
+    stubbed, so byte size is not checked here (see renderer tests below).
+    """
     r = client.get("/api/mice/events/evt-sparse/beo.pdf")
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith("application/pdf")
     assert r.content[:4] == b"%PDF"
-    # Sanity: a meaningful body, not a 0-byte placeholder.
+    assert len(r.content) > 0
+
+
+def test_beo_pdf_feature_guard_blocks_when_disabled(monkeypatch):
+    """banquet_operations feature guard must return 403 when feature is off."""
+    import core.entitlements.enforcement as _enf
+
+    async def _deny(*_a, **_kw):
+        return False
+
+    # Build a client where tenant_has_feature returns False
+    # so require_feature raises 403.
+    fake_db = _FakeDB()
+    monkeypatch.setattr(mice_router, "get_system_db", lambda: fake_db)
+    monkeypatch.setattr(_enf, "tenant_has_feature", _deny)
+
+    monkeypatch.setenv("ENTITLEMENT_ENFORCEMENT_MODE", "enforce")
+
+    _FAKE_PDF = b"%PDF-1.4 stub"
+    monkeypatch.setattr(mice_router, "_beo_pdf_bytes", lambda _payload: _FAKE_PDF)
+
+    app = FastAPI()
+    app.include_router(mice_api_router)
+
+    from core.security import get_current_user
+
+    async def _fake_user():
+        return SimpleNamespace(id="u1", username="tester", tenant_id=TENANT_ID, role="admin")
+
+    app.dependency_overrides[get_current_user] = _fake_user
+    tc = TestClient(app, raise_server_exceptions=False)
+    r = tc.get("/api/mice/events/evt-full/beo.pdf")
+    assert r.status_code == 403
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# B) Real renderer tests  (skipped when weasyprint / system libs absent)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Attempt to import weasyprint AND actually load the native libs (the import
+# succeeds on systems without cairo/glib, but the first HTML() call would fail).
+# We detect this by trying a minimal render here at collection time.
+def _weasyprint_available() -> bool:
+    try:
+        from weasyprint import HTML  # type: ignore
+        HTML(string="<p>ok</p>").write_pdf()
+        return True
+    except Exception:
+        return False
+
+
+_WEASYPRINT_REASON = (
+    "weasyprint + system libs (cairo/pango/glib) not available in this environment"
+)
+_needs_weasyprint = pytest.mark.skipif(
+    not _weasyprint_available(), reason=_WEASYPRINT_REASON
+)
+
+
+@pytest.fixture
+def renderer_client(monkeypatch):
+    """Real-renderer fixture: _beo_pdf_bytes is NOT stubbed."""
+    return _setup_app(monkeypatch, stub_renderer=False)
+
+
+@_needs_weasyprint
+def test_beo_pdf_real_render_returns_valid_pdf(renderer_client):
+    """Real weasyprint render: body must be >500 bytes and start with %PDF."""
+    r = renderer_client.get("/api/mice/events/evt-full/beo.pdf")
+    assert r.status_code == 200, r.text
+    assert r.content[:4] == b"%PDF"
+    assert len(r.content) > 500
+
+
+@_needs_weasyprint
+def test_beo_pdf_real_render_sparse_event(renderer_client):
+    """Real render with sparse payload (non-ASCII name, no optional sections)."""
+    r = renderer_client.get("/api/mice/events/evt-sparse/beo.pdf")
+    assert r.status_code == 200, r.text
+    assert r.content[:4] == b"%PDF"
     assert len(r.content) > 500
