@@ -26,9 +26,9 @@ export const landingDefaults = {
     descriptionAccent: ' tek işletim sistemi.',
   },
   contact: {
-    phone: '+90 (212) 000 00 00',
-    email: 'iletisim@syroce.com',
-    address: 'İstanbul, Türkiye',
+    phone: '0540 452 93 26',
+    email: 'info@syroce.com',
+    address: 'Kocaeli / Kartepe',
   },
   solutions: [
     { title: 'Otel Yönetimi',          desc: 'Rezervasyon, oda, ön büro, check-in ve check-out — tek ekrandan kontrol.' },

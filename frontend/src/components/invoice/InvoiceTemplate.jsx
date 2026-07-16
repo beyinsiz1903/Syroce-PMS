@@ -69,7 +69,7 @@ const InvoiceTemplate = ({ invoice, tenant }) => {
           <div className="text-gray-600 space-y-1 text-xs">
             <p className="max-w-[250px]">{tenantAddress}</p>
             <p><strong>VD:</strong> {tenantTaxOffice} | <strong>VKN/TCKN:</strong> {tenantTaxId}</p>
-            <p><strong>Tel:</strong> +90 555 123 4567 | <strong>Email:</strong> info@syrocepms.com</p>
+            <p><strong>Tel:</strong> 0540 452 93 26 | <strong>Email:</strong> info@syroce.com</p>
           </div>
         </div>
 
