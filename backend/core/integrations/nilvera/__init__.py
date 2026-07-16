@@ -1,5 +1,6 @@
 """Nilvera Integration package."""
 
+from .alias import resolve_receiver_alias
 from .client import NilveraHttpClient
 from .config import NilveraSettings, get_nilvera_config
 from .errors import (
@@ -17,6 +18,7 @@ from .errors import (
 from .series import NilveraSeriesDetail, NilveraSeriesItem, NilveraSeriesPage, NilveraSeriesService
 
 __all__ = [
+    "resolve_receiver_alias",
     "NilveraSettings",
     "get_nilvera_config",
     "NilveraApiError",
