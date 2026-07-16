@@ -350,3 +350,50 @@ async def test_pagination_fields_mapped(series_service, mock_client):
     assert result.page_size == 10
     assert result.total_count == 25
     assert result.total_pages == 3
+
+
+# ---------------------------------------------------------------------------
+# 13–17. Input validation — invalid pagination values must not reach the API
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_page_zero_raises_validation_error(series_service, mock_client):
+    with pytest.raises(NilveraValidationError) as exc:
+        await series_service.list_einvoice_series(page=0)
+    assert "page" in str(exc.value).lower()
+    mock_client.get.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_page_negative_raises_validation_error(series_service, mock_client):
+    with pytest.raises(NilveraValidationError) as exc:
+        await series_service.list_einvoice_series(page=-1)
+    assert "page" in str(exc.value).lower()
+    mock_client.get.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_page_size_zero_raises_validation_error(series_service, mock_client):
+    with pytest.raises(NilveraValidationError) as exc:
+        await series_service.list_einvoice_series(page_size=0)
+    assert "page_size" in str(exc.value).lower()
+    mock_client.get.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_page_size_negative_raises_validation_error(series_service, mock_client):
+    with pytest.raises(NilveraValidationError) as exc:
+        await series_service.list_einvoice_series(page_size=-1)
+    assert "page_size" in str(exc.value).lower()
+    mock_client.get.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_invalid_pagination_never_calls_api(series_service, mock_client):
+    """Guard test: any invalid pagination input must abort before the HTTP call."""
+    for kwargs in [{"page": 0}, {"page": -5}, {"page_size": 0}, {"page_size": -99}]:
+        mock_client.reset_mock()
+        with pytest.raises(NilveraValidationError):
+            await series_service.list_einvoice_series(**kwargs)
+        mock_client.get.assert_not_called()

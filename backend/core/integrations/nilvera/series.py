@@ -66,8 +66,10 @@ class NilveraSeriesPage(BaseModel):
 class NilveraSeriesService:
     """Read-only service for listing e-Invoice series from Nilvera.
 
-    Only GET /einvoice/Series is covered in this phase.
-    Sending, mapping, routing and e-Archive series are out of scope.
+    Covers GET /einvoice/Series per the official Nilvera API v1 contract.
+    The endpoint also supports Search, SortColumn and SortType query parameters;
+    these are intentionally out of scope for this phase and not implemented here.
+    Sending, mapping, routing and e-Archive series are also out of scope.
     """
 
     def __init__(self, client: NilveraHttpClient) -> None:
@@ -84,11 +86,14 @@ class NilveraSeriesService:
     ) -> NilveraSeriesPage:
         """Fetch a page of e-Invoice series from Nilvera.
 
+        The official Nilvera API contract additionally accepts Search, SortColumn
+        and SortType parameters; those are not exposed here (out of scope).
+
         Args:
             is_active: When provided, filters to active (True) or passive (False) series.
             is_default: When provided, filters to default (True) or non-default (False) series.
-            page: 1-indexed page number (default: 1).
-            page_size: Records per page (default: 50).
+            page: 1-indexed page number. Must be >= 1 (default: 1).
+            page_size: Records per page. Must be >= 1 (default: 50).
             correlation_id: Optional correlation ID for log tracing.
 
         Returns:
@@ -97,9 +102,21 @@ class NilveraSeriesService:
             alias/default selection is intentionally deferred to the caller.
 
         Raises:
-            NilveraValidationError: If the provider returns an unexpected response structure.
+            NilveraValidationError: If pagination inputs are invalid, or if the
+                provider returns an unexpected response structure.
             NilveraApiError: On network or HTTP-level failures.
         """
+        if page < 1:
+            raise NilveraValidationError(
+                message="Geçersiz sayfalama: page en az 1 olmalıdır.",
+                correlation_id=correlation_id,
+            )
+        if page_size < 1:
+            raise NilveraValidationError(
+                message="Geçersiz sayfalama: page_size en az 1 olmalıdır.",
+                correlation_id=correlation_id,
+            )
+
         params: dict[str, str | int | bool] = {"Page": page, "PageSize": page_size}
         if is_active is not None:
             params["IsActive"] = is_active
