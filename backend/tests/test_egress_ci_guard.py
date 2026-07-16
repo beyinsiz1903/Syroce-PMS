@@ -62,6 +62,9 @@ ALLOWED_RAW_HTTPX = {
     "backend/load_tests/test_concurrent_mutations.py",
     "backend/load_tests/test_failure_injection.py",
     "backend/load_tests/test_multi_tenant_load.py",
+    # Hardcoded official Nilvera API hosts; base URL is not tenant-configurable and
+    # is restricted to api.nilvera.com / apitest.nilvera.com.
+    "backend/core/integrations/nilvera/client.py",
 }
 
 # Round-7 follow-up #2 (architect 2026-04-24): also scan aiohttp.ClientSession,

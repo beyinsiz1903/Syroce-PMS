@@ -10,7 +10,6 @@ class NilveraSettings(BaseModel):
     """Configuration for Nilvera integration."""
 
     env: Literal["test", "production"] = Field(default="test")
-    base_url_override: str | None = Field(default=None)
     timeout_ms: int = Field(default=30000, gt=0, le=120000)
     retry_max: int = Field(default=3, ge=0, le=5, description="Number of retries after the initial attempt. 3 means 4 total attempts.")
     retry_base_delay_ms: int = Field(default=1000, gt=0)
@@ -19,8 +18,6 @@ class NilveraSettings(BaseModel):
     @property
     def base_url(self) -> str:
         """Get the effective base URL."""
-        if self.base_url_override:
-            return self.base_url_override
         if self.env == "production":
             return "https://api.nilvera.com"
         return "https://apitest.nilvera.com"
@@ -41,7 +38,6 @@ def get_nilvera_config() -> NilveraSettings:
 
         _config = NilveraSettings(
             env=env_val,
-            base_url_override=os.environ.get("NILVERA_BASE_URL") or None,
             timeout_ms=int(os.environ.get("NILVERA_TIMEOUT_MS", "30000")),
             retry_max=int(os.environ.get("NILVERA_RETRY_MAX", "3")),
             retry_base_delay_ms=int(os.environ.get("NILVERA_RETRY_BASE_DELAY_MS", "1000")),

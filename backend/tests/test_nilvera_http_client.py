@@ -550,3 +550,48 @@ async def test_client_parses_safe_message_for_exception(config_override):
         assert "SECRET_PROVIDER_MESSAGE" not in str(exc.value)
         assert exc.value.args == ("Nilvera provider request failed",)
 
+# --- EGRESS ALLOWLIST & RESTRICTION TESTS ---
+
+def test_config_rejects_arbitrary_base_url(monkeypatch):
+    import core.integrations.nilvera.config as mod
+    mod._config = None
+    monkeypatch.setenv("NILVERA_BASE_URL", "https://hacker.com")
+    cfg = get_nilvera_config()
+    assert cfg.base_url == "https://apitest.nilvera.com"
+
+def test_config_rejects_http_base_url(monkeypatch):
+    import core.integrations.nilvera.config as mod
+    mod._config = None
+    monkeypatch.setenv("NILVERA_BASE_URL", "http://api.nilvera.com")
+    cfg = get_nilvera_config()
+    assert cfg.base_url.startswith("https://")
+
+def test_config_rejects_localhost(monkeypatch):
+    import core.integrations.nilvera.config as mod
+    mod._config = None
+    monkeypatch.setenv("NILVERA_BASE_URL", "http://localhost:8080")
+    cfg = get_nilvera_config()
+    assert "localhost" not in cfg.base_url
+
+def test_config_rejects_ip_literal(monkeypatch):
+    import core.integrations.nilvera.config as mod
+    mod._config = None
+    monkeypatch.setenv("NILVERA_BASE_URL", "https://127.0.0.1")
+    cfg = get_nilvera_config()
+    assert "127.0.0.1" not in cfg.base_url
+
+def test_config_rejects_embedded_credentials(monkeypatch):
+    import core.integrations.nilvera.config as mod
+    mod._config = None
+    monkeypatch.setenv("NILVERA_BASE_URL", "https://user:pass@api.nilvera.com")
+    cfg = get_nilvera_config()
+    assert "user:pass" not in cfg.base_url
+
+def test_config_only_uses_official_nilvera_hosts():
+    import core.integrations.nilvera.config as mod
+    cfg_test = mod.NilveraSettings(env="test")
+    cfg_prod = mod.NilveraSettings(env="production")
+
+    assert cfg_test.base_url == "https://apitest.nilvera.com"
+    assert cfg_prod.base_url == "https://api.nilvera.com"
+    assert not hasattr(cfg_test, "base_url_override")
