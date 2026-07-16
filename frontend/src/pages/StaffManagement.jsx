@@ -122,7 +122,22 @@ const StaffManagement = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [staff, setStaff] = useState([]);
   const employeeLimit = getLimit('hr', 'employees');
-  const isLimitReached = employeeLimit !== Infinity && staff.length >= employeeLimit;
+  const activeEmployeeLimit = getLimit('hr', 'active_employees');
+  const activeStaff = useMemo(() => staff.filter(s => s.active !== false && !s.terminated_at), [staff]);
+  const isLimitReached = (
+    // getLimit returns 0 when no limit is defined; only enforce when limit > 0.
+    (employeeLimit > 0 && staff.length >= employeeLimit) ||
+    (activeEmployeeLimit > 0 && activeStaff.length >= activeEmployeeLimit)
+  );
+  // Idempotency key for staff create — generated once per dialog open,
+  // preserved across retry/network errors, reset after successful create.
+  const pendingIdemKeyRef = useRef(null);
+  // submitLockRef provides a SYNCHRONOUS guard against double-click.
+  // React state (savingStaff) updates asynchronously — a second click may arrive
+  // before the first render cycle. This ref is set synchronously at the start of
+  // submitStaff and cleared on completion, error, or modal dismiss.
+  const submitLockRef = useRef(false);
+
   const [departments, setDepartments] = useState([]);
   const [positions, setPositions] = useState([]);
   const [leaveCounts, setLeaveCounts] = useState({
@@ -304,13 +319,19 @@ const StaffManagement = () => {
       return new Date(hd).getTime() >= cutoff;
     }).length;
   }, [staff]);
-  const openCreate = () => setStaffDialog({
-    open: true,
-    mode: 'create',
-    form: EMPTY_STAFF,
-    id: null,
-    derived: false
-  });
+  const openCreate = () => {
+    // Generate a fresh idempotency key for this dialog session.
+    pendingIdemKeyRef.current = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setStaffDialog({
+      open: true,
+      mode: 'create',
+      form: EMPTY_STAFF,
+      id: null,
+      derived: false
+    });
+  };
   const openEdit = useCallback(s => {
     setStaffDialog({
       open: true,
@@ -333,6 +354,11 @@ const StaffManagement = () => {
   }, []); // setStaffDialog is a stable setState setter
   const submitStaff = async e => {
     e.preventDefault();
+    // Synchronous double-submit guard — checked before any async work.
+    // savingStaff state guard alone is insufficient because React batches
+    // state updates; a second rapid click may still see stale false value.
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
     const f = staffDialog.form;
     if (!f.name?.trim()) {
       toast.error('İsim zorunludur');
@@ -357,7 +383,14 @@ const StaffManagement = () => {
     try {
       setSavingStaff(true);
       if (staffDialog.mode === 'create') {
-        await axios.post('/hr/staff', payload);
+        // Send idempotency key so server-side dedup works on retry.
+        const headers = {};
+        if (pendingIdemKeyRef.current) {
+          headers['Idempotency-Key'] = pendingIdemKeyRef.current;
+        }
+        await axios.post('/hr/staff', payload, { headers });
+        // Reset key — successful create means a new dialog will need a new key.
+        pendingIdemKeyRef.current = null;
         toast.success('Personel eklendi');
       } else {
         await axios.put(`/hr/staff/${staffDialog.id}`, payload);
@@ -372,9 +405,16 @@ const StaffManagement = () => {
       });
       loadAll();
     } catch (err) {
+      // On error keep pendingIdemKeyRef so a retry uses the same key.
+      // Release the submit lock so the user can retry.
+      submitLockRef.current = false;
       toast.error(err.response?.data?.detail || 'Kaydedilemedi');
     } finally {
       setSavingStaff(false);
+      // If the request succeeded (lock was reset inside try), this is a no-op.
+      // If it failed, the error handler already cleared it.
+      // Clear on any path so future calls work even if the catch block is bypassed.
+      submitLockRef.current = false;
     }
   };
   const offboardStaff = useCallback(async s => {
@@ -689,10 +729,14 @@ const StaffManagement = () => {
       </Card>
 
       {/* Add/Edit Staff Dialog */}
-      <Dialog open={staffDialog.open} onOpenChange={o => !o && setStaffDialog({
-      ...staffDialog,
-      open: false
-    })}>
+      <Dialog open={staffDialog.open} onOpenChange={o => {
+        if (!o) {
+          // User dismissed the dialog — clear submission state so a fresh open starts clean.
+          submitLockRef.current = false;
+          pendingIdemKeyRef.current = null;
+          setStaffDialog({ ...staffDialog, open: false });
+        }
+      }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
@@ -821,10 +865,11 @@ const StaffManagement = () => {
             })} />
             </div>
             <DialogFooter className="md:col-span-2">
-              <Button type="button" variant="outline" onClick={() => setStaffDialog({
-              ...staffDialog,
-              open: false
-            })}>{t("cm.pages_StaffManagement.vazge\xE7")}</Button>
+              <Button type="button" variant="outline" onClick={() => {
+                submitLockRef.current = false;
+                pendingIdemKeyRef.current = null;
+                setStaffDialog({ ...staffDialog, open: false });
+              }}>{t("cm.pages_StaffManagement.vazge\xE7")}</Button>
               <Button type="submit" disabled={savingStaff} data-testid="btn-save-staff">
                 {savingStaff ? 'Kaydediliyor...' : staffDialog.mode === 'create' ? 'Ekle' : 'Güncelle'}
               </Button>

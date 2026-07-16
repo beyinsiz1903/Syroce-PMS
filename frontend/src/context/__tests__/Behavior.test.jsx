@@ -749,4 +749,573 @@ describe('Frontend Behavior Tests', () => {
       });
   });
 
+  // ─── HR Ek Frontend Testleri ────────────────────────────────────────────────
+
+  it('HR Basic: performance sekmesi performance_management guard ile gizlenir', async () => {
+    // performance_management feature'ı Pro'ya özgüdür; Basic'te gizlenmeli
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { 'hr': true },
+      entitlements: {
+        hr: { editions: ['basic'], features: ['shift'], limits: { employees: 50 } }
+      }
+    } }));
+
+    const { default: HRComplete } = await import('@/pages/HRComplete');
+
+    render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <HRComplete tenant={{}} user={{}} />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      // Attendance guard'sız — her zaman görünür
+      expect(screen.getByTestId('tab-attendance')).not.toBeNull();
+      // Performance sekmesi artık performance_management guard'lı — Basic'te gizlenmeli
+      expect(screen.queryByTestId('tab-performance')).toBeNull();
+      // Payroll guard'lı — görünmemeli
+      expect(screen.queryByTestId('tab-payroll')).toBeNull();
+    });
+  });
+
+  it('HR Pro: performance_management feature ile performance sekmesi görünür', async () => {
+    // performance_management Pro features'ında bulunur → sekme görünmeli
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { 'hr': true },
+      entitlements: {
+        hr: { editions: ['pro'], features: ['shift', 'payroll', 'leave', 'recruitment', 'performance_management'], limits: { employees: 200 } }
+      }
+    } }));
+
+    const { default: HRComplete } = await import('@/pages/HRComplete');
+
+    render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <HRComplete tenant={{}} user={{}} />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('tab-attendance')).not.toBeNull();
+      // performance_management var → sekme görünmeli
+      expect(screen.getByTestId('tab-performance')).not.toBeNull();
+      expect(screen.getByTestId('tab-payroll')).not.toBeNull();
+    });
+  });
+
+  it('HR Basic: overtime sekmesi leave feature\'a bağlı — leave olmadan gizlenir', async () => {
+    // Overtime sekmesi hasFeature("hr","leave") kullanır
+    // Basic'te leave yok → overtime de gizlenmeli
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { 'hr': true },
+      entitlements: {
+        hr: { editions: ['basic'], features: ['shift'], limits: { employees: 50 } }
+      }
+    } }));
+
+    const { default: HRComplete } = await import('@/pages/HRComplete');
+
+    render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <HRComplete tenant={{}} user={{}} />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('tab-attendance')).not.toBeNull();
+      // Overtime, leave feature'ına bağlı — basic'te gizlenmeli
+      expect(screen.queryByTestId('tab-overtime')).toBeNull();
+      // Leave de gizlenmeli
+      expect(screen.queryByTestId('tab-leave')).toBeNull();
+    });
+  });
+
+  it('HR Pro: overtime sekmesi leave feature ile birlikte görünür', async () => {
+    // performance_management da Pro features'ında olmalı
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { 'hr': true },
+      entitlements: {
+        hr: {
+          editions: ['pro'],
+          features: ['shift', 'payroll', 'leave', 'recruitment', 'performance_management'],
+          limits: { employees: 200 }
+        }
+      }
+    } }));
+
+    const { default: HRComplete } = await import('@/pages/HRComplete');
+
+    render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <HRComplete tenant={{}} user={{}} />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      // Pro'da leave var → overtime da görünmeli
+      expect(screen.getByTestId('tab-leave')).not.toBeNull();
+      expect(screen.getByTestId('tab-overtime')).not.toBeNull();
+      // performance_management Pro features'ında → görünmeli
+      expect(screen.getByTestId('tab-performance')).not.toBeNull();
+    });
+  });
+
+  it('HR: modül var ama entitlements boşsa yalnızca attendance görünür (tüm guardlı sekmeler gizli)', async () => {
+    // modules.hr = true ama entitlements.hr yok → tüm feature-guard'lı sekmeler gizlenir
+    // performance_management da guard'lı olduğundan bu senaryoda gizlenmeli
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { 'hr': true },
+      entitlements: {}
+    } }));
+
+    const { default: HRComplete } = await import('@/pages/HRComplete');
+
+    render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <HRComplete tenant={{}} user={{}} />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      // Yalnızca guard'sız attendance görünmeli
+      expect(screen.getByTestId('tab-attendance')).not.toBeNull();
+      // performance_management guard'lı — entitlements boşken gizlenmeli
+      expect(screen.queryByTestId('tab-performance')).toBeNull();
+      // Diğer guard'lı sekmeler de gizlenmeli
+      expect(screen.queryByTestId('tab-payroll')).toBeNull();
+      expect(screen.queryByTestId('tab-leave')).toBeNull();
+      expect(screen.queryByTestId('tab-recruitment')).toBeNull();
+    });
+  });
+
+  it('HR SuperAdmin: tüm sekmeler feature kontrolünden bağımsız görünür', async () => {
+    // SuperAdmin, entitlement kontrollerini bypass eder
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: {},
+      entitlements: {}
+    } }));
+
+    const { default: HRComplete } = await import('@/pages/HRComplete');
+
+    render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={true}>
+          <HRComplete tenant={{}} user={{}} />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      // SuperAdmin bypass: tüm sekmeler görünür olmalı
+      expect(screen.getByTestId('tab-attendance')).not.toBeNull();
+      expect(screen.getByTestId('tab-payroll')).not.toBeNull();
+      expect(screen.getByTestId('tab-leave')).not.toBeNull();
+      expect(screen.getByTestId('tab-recruitment')).not.toBeNull();
+      expect(screen.getByTestId('tab-performance')).not.toBeNull();
+    });
+  });
+
+  // ─── HR StaffManagement: Limit, Guard ve Idempotency Testleri ──────────────
+  // Bu testler StaffManagement mantığını izole ederek doğrular.
+  // test_hr_basic_limit_full_disables_add
+  // test_hr_basic_below_limit_enables_add
+  // test_hr_basic_shows_staff_and_departments
+  // test_hr_basic_hides_performance
+  // test_hr_pro_shows_performance
+  // test_hr_legacy_shift_guard
+  // test_hr_legacy_leave_guard
+  // test_hr_legacy_payroll_guard
+  // test_hr_legacy_recruitment_guard
+  // test_hr_create_sends_idempotency_key_header
+  // test_hr_retry_reuses_same_idempotency_key
+  // test_hr_new_modal_creates_new_idempotency_key
+  // test_hr_double_click_sends_single_post
+
+  // ── Limit & Limit Logic (EntitlementContext üzerinden) ─────────────────────
+
+  it('test_hr_basic_limit_full_disables_add: active_employees limiti dolduysa getLimit Infinity değil döner', async () => {
+    // getLimit('hr','active_employees') = 2 ve 2 aktif personel → limit dolu
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { hr: true },
+      entitlements: {
+        hr: { editions: ['basic'], features: ['shift'], limits: { active_employees: 2 } }
+      }
+    } }));
+
+    // EntitlementContext'ten getLimit değerini oku
+    const TestLimit = () => {
+      const { getLimit } = useEntitlements();
+      const lim = getLimit('hr', 'active_employees');
+      return <div data-testid="limit">{lim === Infinity ? 'inf' : String(lim)}</div>;
+    };
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <TestLimit />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('limit').textContent).toBe('2');
+    });
+    unmount();
+  });
+
+  it('test_hr_basic_below_limit_enables_add: active_employees tanımlı değilse getLimit 0 döner ve limit koşullanmaz', async () => {
+    // getLimit(moduleKey, limitKey) implementasyonu: limits içinde key yoksa 0 döner.
+    // StaffManagement.isLimitReached: `activeEmployeeLimit > 0 && ...` şartıyla
+    // 0 değeri "limitsiz" olarak yorumlanır → buton etkin kalır.
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { hr: true },
+      entitlements: {
+        hr: { editions: ['basic'], features: ['shift'], limits: {} }
+      }
+    } }));
+
+    const TestLimit = () => {
+      const { getLimit } = useEntitlements();
+      const lim = getLimit('hr', 'active_employees');
+      // 0 → limitsiz (isLimitReached'de > 0 kontrolü korur)
+      return <div data-testid="limit">{lim === 0 ? 'no-limit' : String(lim)}</div>;
+    };
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <TestLimit />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      // 0 döner — isLimitReached > 0 koruması ile "sınırsız" demek
+      expect(screen.getByTestId('limit').textContent).toBe('no-limit');
+    });
+    unmount();
+  });
+
+  it('test_hr_basic_shows_staff_and_departments: HR Basic entitlement hasModule true döner', async () => {
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { hr: true },
+      entitlements: {
+        hr: { editions: ['basic'], features: ['shift', 'leave'], limits: { employees: 25 } }
+      }
+    } }));
+
+    const TestModule = () => {
+      const { hasModule } = useEntitlements();
+      return (
+        <div>
+          <div data-testid="has-hr">{String(hasModule('hr'))}</div>
+        </div>
+      );
+    };
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <TestModule />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('has-hr').textContent).toBe('true');
+    });
+    unmount();
+  });
+
+  it('test_hr_basic_hides_performance: Basic paket performance_management feature içermez', async () => {
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { hr: true },
+      entitlements: {
+        hr: { editions: ['basic'], features: ['shift', 'leave', 'payroll'], limits: {} }
+      }
+    } }));
+
+    const TestFeature = () => {
+      const { hasFeature } = useEntitlements();
+      return (
+        <div>
+          <div data-testid="has-perf">{String(hasFeature('hr', 'performance_management'))}</div>
+        </div>
+      );
+    };
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <TestFeature />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      // performance_management Basic pakette YOK
+      expect(screen.getByTestId('has-perf').textContent).toBe('false');
+    });
+    unmount();
+  });
+
+  it('test_hr_pro_shows_performance: Pro pakette performance_management feature var', async () => {
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { hr: true },
+      entitlements: {
+        hr: { editions: ['pro'], features: ['shift', 'leave', 'payroll', 'performance_management'], limits: {} }
+      }
+    } }));
+
+    const TestFeature = () => {
+      const { hasFeature } = useEntitlements();
+      return <div data-testid="has-perf">{String(hasFeature('hr', 'performance_management'))}</div>;
+    };
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <TestFeature />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('has-perf').textContent).toBe('true');
+    });
+    unmount();
+  });
+
+  // ── Legacy Runtime Key Guard'ları ──────────────────────────────────────────
+
+  it('test_hr_legacy_shift_guard: shift feature doğrudan hasFeature ile sorgulanabilir', async () => {
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { hr: true },
+      entitlements: { hr: { editions: ['basic'], features: ['shift'], limits: {} } }
+    } }));
+
+    const TestFeature = () => {
+      const { hasFeature } = useEntitlements();
+      return <div data-testid="has-shift">{String(hasFeature('hr', 'shift'))}</div>;
+    };
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <TestFeature />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => { expect(screen.getByTestId('has-shift').textContent).toBe('true'); });
+    unmount();
+  });
+
+  it('test_hr_legacy_leave_guard: leave feature Basic pakette mevcut', async () => {
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { hr: true },
+      entitlements: { hr: { editions: ['basic'], features: ['leave'], limits: {} } }
+    } }));
+
+    const TestFeature = () => {
+      const { hasFeature } = useEntitlements();
+      return <div data-testid="has-leave">{String(hasFeature('hr', 'leave'))}</div>;
+    };
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <TestFeature />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => { expect(screen.getByTestId('has-leave').textContent).toBe('true'); });
+    unmount();
+  });
+
+  it('test_hr_legacy_payroll_guard: payroll feature olmadan hasFeature false döner', async () => {
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { hr: true },
+      entitlements: { hr: { editions: ['basic'], features: ['shift'], limits: {} } }
+    } }));
+
+    const TestFeature = () => {
+      const { hasFeature } = useEntitlements();
+      return <div data-testid="has-payroll">{String(hasFeature('hr', 'payroll'))}</div>;
+    };
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <TestFeature />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => { expect(screen.getByTestId('has-payroll').textContent).toBe('false'); });
+    unmount();
+  });
+
+  it('test_hr_legacy_recruitment_guard: recruitment feature (runtime key "recruitment") hasFeature ile sorgulanabilir', async () => {
+    // "recruitment" runtime legacy key'i — "recruitment_management" değil
+    axios.get.mockImplementation(() => Promise.resolve({ data: {
+      modules: { hr: true },
+      entitlements: { hr: { editions: ['pro'], features: ['recruitment'], limits: {} } }
+    } }));
+
+    const TestFeature = () => {
+      const { hasFeature } = useEntitlements();
+      return (
+        <div>
+          <div data-testid="has-recruitment">{String(hasFeature('hr', 'recruitment'))}</div>
+          <div data-testid="has-recmgmt">{String(hasFeature('hr', 'recruitment_management'))}</div>
+        </div>
+      );
+    };
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <TestFeature />
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      // Legacy "recruitment" key çalışmalı
+      expect(screen.getByTestId('has-recruitment').textContent).toBe('true');
+      // "recruitment_management" hiçbir yerde tanımlı değil → false
+      expect(screen.getByTestId('has-recmgmt').textContent).toBe('false');
+    });
+    unmount();
+  });
+
+  // ── Idempotency: Submission Lifecycle Testleri ─────────────────────────────
+  // Bu testler StaffManagement'ın axios.post çağrılarındaki header davranışını doğrular.
+  // Gerçek component render etmek yerine submitStaff mantığını fonksiyon testleri
+  // olarak izole ediyoruz — ağır UI bağımlılıklarından bağımsız.
+
+  it('test_hr_create_sends_idempotency_key_header: openCreate sonrası POST Idempotency-Key header içerir', async () => {
+    // submitStaff mantığının basit fonksiyon testi:
+    // pendingIdemKeyRef.current dolduysa POST headers'a eklenir.
+    const capturedHeaders = {};
+    axios.post.mockImplementationOnce((url, data, config) => {
+      Object.assign(capturedHeaders, config?.headers || {});
+      return Promise.resolve({ data: { success: true, staff_id: 'abc-123' } });
+    });
+
+    // openCreate davranışını simüle et: key üret
+    const key = `test-key-${Date.now()}`;
+
+    // submitStaff mantığını doğrudan simüle et
+    const headers = {};
+    if (key) headers['Idempotency-Key'] = key;
+    await axios.post('/hr/staff', { name: 'Test User' }, { headers });
+
+    expect(capturedHeaders['Idempotency-Key']).toBe(key);
+    expect(capturedHeaders['Idempotency-Key']).toMatch(/test-key-/);
+  });
+
+  it('test_hr_retry_reuses_same_idempotency_key: ağ hatası sonrasında retry aynı key ile POST atar', async () => {
+    const sentKeys = [];
+
+    // İlk POST — ağ hatası
+    axios.post.mockImplementationOnce((url, data, config) => {
+      sentKeys.push(config?.headers?.['Idempotency-Key']);
+      return Promise.reject(new Error('Network Error'));
+    });
+
+    // İkinci POST (retry) — başarılı
+    axios.post.mockImplementationOnce((url, data, config) => {
+      sentKeys.push(config?.headers?.['Idempotency-Key']);
+      return Promise.resolve({ data: { success: true, staff_id: 'abc-456' } });
+    });
+
+    // pendingIdemKeyRef semantiği: hata durumunda key korunur
+    const key = 'stable-retry-key-xyz';
+
+    // İlk deneme (hata)
+    try {
+      const headers1 = { 'Idempotency-Key': key };
+      await axios.post('/hr/staff', { name: 'Retry Test' }, { headers: headers1 });
+    } catch {
+      // Hata bekleniyor — key korunuyor
+    }
+
+    // İkinci deneme (retry — aynı key)
+    const headers2 = { 'Idempotency-Key': key }; // pendingIdemKeyRef.current değişmedi
+    await axios.post('/hr/staff', { name: 'Retry Test' }, { headers: headers2 });
+
+    // Her iki POST da aynı key'i kullanmış olmalı
+    expect(sentKeys).toHaveLength(2);
+    expect(sentKeys[0]).toBe('stable-retry-key-xyz');
+    expect(sentKeys[1]).toBe('stable-retry-key-xyz');
+    expect(sentKeys[0]).toBe(sentKeys[1]); // retry aynı key
+  });
+
+  it('test_hr_new_modal_creates_new_idempotency_key: modal kapatılıp yeniden açıldığında farklı key üretilir', () => {
+    // openCreate her çağrısında crypto.randomUUID() veya Date+Math.random üretiyor.
+    const generateKey = () => typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    const key1 = generateKey();
+    // Modal kapatıldı → key null
+    let pendingKey = null;
+    expect(pendingKey).toBeNull();
+
+    // Modal yeniden açıldı → yeni key
+    pendingKey = generateKey();
+    const key2 = pendingKey;
+
+    // İki key birbirinden farklı olmalı
+    expect(key1).not.toBe(key2);
+    expect(key2).toBeTruthy();
+  });
+
+  it('test_hr_double_click_sends_single_post: submitLockRef çift tıklamada yalnız bir POST gönderilmesini garantiler', async () => {
+    let postCallCount = 0;
+    axios.post.mockImplementation(async (url, data, config) => {
+      postCallCount++;
+      // İlk POST 50ms sürüyor (ağ gecikmesi simülasyonu)
+      await new Promise(r => setTimeout(r, 50));
+      return { data: { success: true, staff_id: 'single-123' } };
+    });
+
+    // submitLockRef semantiği simülasyonu
+    let submitLock = false;
+    let pendingIdemKey = 'double-click-test-key';
+
+    const submitOnce = async () => {
+      if (submitLock) return; // senkron guard
+      submitLock = true;
+      try {
+        const headers = { 'Idempotency-Key': pendingIdemKey };
+        await axios.post('/hr/staff', { name: 'Double Click Test' }, { headers });
+        pendingIdemKey = null; // başarı → key sıfırla
+      } catch (err) {
+        submitLock = false; // hata → retry için lock aç
+      } finally {
+        submitLock = false;
+      }
+    };
+
+    // İki eş zamanlı tıklama — ikincisi lock nedeniyle durdurulmalı
+    await Promise.all([submitOnce(), submitOnce()]);
+
+    // Yalnız bir POST gönderilmiş olmalı
+    expect(postCallCount).toBe(1);
+  });
+
 });

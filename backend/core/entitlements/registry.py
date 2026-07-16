@@ -29,29 +29,43 @@ ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
         key="hr",
         name="İnsan Kaynakları",
         features=[
-            ModuleFeature(key="payroll", description="Bordro Yönetimi"),
-            ModuleFeature(key="leave", description="İzin ve Mesai Yönetimi"),
-            ModuleFeature(key="recruitment", description="İşe Alım ve Personel Talepleri"),
-            ModuleFeature(key="shift", description="Vardiya Planlama"),
+            ModuleFeature(key="payroll", description="Bordro Yönetimi (Legacy)"),
+            ModuleFeature(key="leave", description="İzin ve Mesai Yönetimi (Legacy)"),
+            ModuleFeature(key="recruitment", description="İşe Alım ve Personel Talepleri (Legacy)"),
+            ModuleFeature(key="shift", description="Vardiya Planlama (Legacy)"),
+            ModuleFeature(key="advanced_scheduling", description="Gelişmiş Vardiya Planlama (Gelecek)"),
+            ModuleFeature(key="leave_management", description="Gelişmiş İzin Yönetimi (Gelecek)"),
+            ModuleFeature(key="performance_management", description="Performans Yönetimi"),
+            ModuleFeature(key="payroll_export", description="Bordro Dışa Aktarma (Gelecek)"),
+            ModuleFeature(key="advanced_hr_reporting", description="Gelişmiş İK Raporları"),
         ],
         limits=[
-            ModuleLimit(key="employees", description="Maksimum Personel Sayısı"),
+            ModuleLimit(key="employees", description="Maksimum Personel Sayısı (Legacy)"),
+            ModuleLimit(key="active_employees", description="Aktif Çalışan Limiti"),
         ],
         editions={
             "basic": EditionDefinition(
                 key="basic",
                 name="HR Basic",
-                features={"shift"},
+                features={"shift"},  # Legacy support; performance_management Basic'te yok
                 limits={
-                    "employees": 50,
+                    "employees": 50,  # Legacy support
+                    "active_employees": 25,
                 }
             ),
             "pro": EditionDefinition(
                 key="pro",
                 name="HR Pro",
-                features={"shift", "payroll", "leave", "recruitment"},
+                features={
+                    "shift", "payroll", "leave", "recruitment",  # Legacy support
+                    "advanced_scheduling", "leave_management",    # Gelecek — runtime'da henüz guard yok
+                    "performance_management",
+                    "payroll_export",                            # Gelecek — runtime'da henüz guard yok
+                    "advanced_hr_reporting",
+                },
                 limits={
-                    "employees": 200,
+                    "employees": 200,  # Legacy support
+                    "active_employees": 250,
                 }
             )
         }

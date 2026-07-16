@@ -18,7 +18,7 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Any, Literal
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 from pydantic import BaseModel, Field, field_validator
@@ -27,9 +27,10 @@ from pymongo.errors import DuplicateKeyError
 from common.json_safe import json_safe
 from core.database import _raw_db, db
 from core.entitlements.enforcement import get_tenant_limit, require_feature
-from core.entitlements.quota import QuotaExceededException, release_quota, reserve_quota
+from core.entitlements.quota import QuotaExceededException, bootstrap_hr_active_employees, release_quota, reserve_quota
 from core.security import get_current_user
 from security.upload_validator import validate_document_bytes
+from shared_kernel.idempotency import begin_idempotency
 
 # GridFS bucket — personel belgeleri için (5MB üstü destek + memory verimi).
 # Eski kayıtlar `data_b64` alanı üzerinden okunmaya devam eder (geriye uyum).
@@ -3085,6 +3086,7 @@ def _scrub_encrypted(value):
 
 @router.post("/hr/staff")
 async def add_staff_member(
+    request: Request,
     staff_data: dict,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
@@ -3095,16 +3097,30 @@ async def add_staff_member(
     de minimum personel kaydı oluşturabilsin diye gevşetildi.
     Ek finansal alanlar (hourly_rate, monthly_hours, annual_leave_entitlement)
     payroll ve izin bakiyesi hesaplarında kullanılır.
+
+    İdempotency: isteğe bağlı `Idempotency-Key` HTTP başlığı ile korunur.
+    Aynı anahtar + başarılı sonuç → kayıtlı yanıt döner, kayıt tekrar oluşturulmaz.
     """
     if not staff_data.get("name"):
         raise HTTPException(status_code=400, detail="Personel adı zorunludur")
 
-    # Enforce staff limit
-    staff_limit = await get_tenant_limit(current_user.tenant_id, "hr", "employees")
+    # Idempotency: HTTP Idempotency-Key başlığından (opsiyonel)
+    guard, replay = await begin_idempotency(
+        db,
+        request,
+        tenant_id=current_user.tenant_id,
+        scope="hr_staff_create",
+        payload=staff_data,
+    )
+    if replay is not None:
+        return replay or {"success": True, "source": "idempotent"}
 
+    # Ensure existing active staff are reflected in the quota ledger before
+    # enforcing the limit for the first time on this tenant.
+    await bootstrap_hr_active_employees(current_user.tenant_id)
+
+    staff_limit = await get_tenant_limit(current_user.tenant_id, "hr", "active_employees")
     staff_id = str(uuid.uuid4())
-    client_request_id = staff_data.get("client_request_id")
-    resource_id = client_request_id if client_request_id else staff_id
 
     staff = {
         "id": staff_id,
@@ -3125,35 +3141,20 @@ async def add_staff_member(
     }
 
     try:
-        await reserve_quota(current_user.tenant_id, "hr", "employees", resource_id, staff_limit)
+        await reserve_quota(current_user.tenant_id, "hr", "active_employees", staff_id, staff_limit)
     except QuotaExceededException as e:
+        await guard.release(error=str(e))
         raise HTTPException(status_code=403, detail=str(e))
 
     try:
-        if client_request_id:
-            staff["client_request_id"] = client_request_id
-            res = await db.staff_members.update_one(
-                {"tenant_id": current_user.tenant_id, "client_request_id": client_request_id},
-                {"$setOnInsert": staff},
-                upsert=True
-            )
-            if res.upserted_id is None:
-                # Idempotent response
-                existing = await db.staff_members.find_one({"tenant_id": current_user.tenant_id, "client_request_id": client_request_id})
-                return {"success": True, "source": "idempotent", "staff_id": existing["id"]}
-        else:
-            await db.staff_members.insert_one(staff)
-    except DuplicateKeyError:
-        # Same resource_id reservation is idempotent, so quota is NOT consumed twice.
-        # Thus, we DO NOT release the quota.
-        if client_request_id:
-            existing = await db.staff_members.find_one({"tenant_id": current_user.tenant_id, "client_request_id": client_request_id})
-            if existing:
-                return {"success": True, "source": "idempotent", "staff_id": existing["id"]}
-        raise HTTPException(status_code=409, detail="Bu personel kaydı (ID/Request ID) zaten mevcut.")
+        await db.staff_members.insert_one(staff)
     except Exception as e:
-        await release_quota(current_user.tenant_id, "hr", "employees", resource_id)
+        await release_quota(current_user.tenant_id, "hr", "active_employees", staff_id)
+        await guard.release(error=str(e))
         raise e
+
+    result = {"success": True, "staff_id": staff_id}
+    await guard.complete(result)
     await _audit(
         current_user,
         "hr.staff.create",
@@ -3416,10 +3417,14 @@ async def update_staff_member(
         is_deactivating = (existing.get("active", True) is True) and (update.get("active") is False)
         is_reactivating = (existing.get("active", True) is False) and (update.get("active") is True)
 
+        resource_id = staff_id  # stable resource id — same id used in add/release
+
         if is_reactivating:
-            staff_limit = await get_tenant_limit(current_user.tenant_id, "hr", "employees")
+            # Ensure legacy active staff are reflected in ledger before enforcing.
+            await bootstrap_hr_active_employees(current_user.tenant_id)
+            staff_limit = await get_tenant_limit(current_user.tenant_id, "hr", "active_employees")
             try:
-                await reserve_quota(current_user.tenant_id, "hr", "employees", staff_id, staff_limit)
+                await reserve_quota(current_user.tenant_id, "hr", "active_employees", resource_id, staff_limit)
             except QuotaExceededException as e:
                 raise HTTPException(status_code=403, detail=str(e))
 
@@ -3427,11 +3432,11 @@ async def update_staff_member(
             await db.staff_members.update_one({"tenant_id": current_user.tenant_id, "id": staff_id}, {"$set": update})
         except Exception as e:
             if is_reactivating:
-                await release_quota(current_user.tenant_id, "hr", "employees", staff_id)
+                await release_quota(current_user.tenant_id, "hr", "active_employees", resource_id)
             raise e
 
         if is_deactivating:
-            await release_quota(current_user.tenant_id, "hr", "employees", staff_id)
+            await release_quota(current_user.tenant_id, "hr", "active_employees", resource_id)
 
         # Audit: salary alanı değiştiyse severity=warning, diğerleri info.
         sev = "warning" if any(k in update for k in _PII_SALARY_FIELDS) else "info"
@@ -3474,6 +3479,7 @@ async def delete_staff_member(
     Users-derived: `users.is_active=False`.
     """
     now_iso = datetime.now(UTC).isoformat()
+    existing_staff = await db.staff_members.find_one({"tenant_id": current_user.tenant_id, "id": staff_id})
     res = await db.staff_members.update_one(
         {"tenant_id": current_user.tenant_id, "id": staff_id},
         {
@@ -3484,7 +3490,9 @@ async def delete_staff_member(
         },
     )
     if res.matched_count > 0:
-        await release_quota(current_user.tenant_id, "hr", "employees", staff_id)
+        if existing_staff and existing_staff.get("active", False):
+            resource_id = existing_staff.get("client_request_id") or staff_id
+            await release_quota(current_user.tenant_id, "hr", "active_employees", resource_id)
         await _audit(
             current_user,
             "hr.staff.deactivate",
@@ -5645,6 +5653,11 @@ async def terminate_staff(
             }
         },
     )
+
+    resource_id = staff.get("client_request_id") or staff_id
+    if staff.get("active", True):
+        await release_quota(current_user.tenant_id, "hr", "active_employees", resource_id)
+
     record.pop("_id", None)
     return {"success": True, "termination": record}
 

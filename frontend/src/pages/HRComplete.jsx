@@ -74,6 +74,7 @@ const HRComplete = () => {
     if (activeTab === 'leave' && !hasFeature("hr", "leave")) setActiveTab('attendance');
     if (activeTab === 'overtime' && !hasFeature("hr", "leave")) setActiveTab('attendance');
     if (activeTab === 'recruitment' && !hasFeature("hr", "recruitment")) setActiveTab('attendance');
+    if (activeTab === 'performance' && !hasFeature("hr", "performance_management")) setActiveTab('attendance');
   }, [activeTab, hasFeature]);
 
   const [refreshing, setRefreshing] = useState(false);
@@ -905,9 +906,9 @@ const HRComplete = () => {
           {hasFeature("hr", "leave") && (<TabsTrigger value="leave" data-testid="tab-leave" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Calendar className="w-4 h-4 mr-2" />İzin
           </TabsTrigger>)}
-          <TabsTrigger value="performance" data-testid="tab-performance" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
+          {hasFeature("hr", "performance_management") && (<TabsTrigger value="performance" data-testid="tab-performance" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Briefcase className="w-4 h-4 mr-2" />Performans
-          </TabsTrigger>
+          </TabsTrigger>)}
           {hasFeature("hr", "leave") && (<TabsTrigger value="overtime" data-testid="tab-overtime" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Timer className="w-4 h-4 mr-1.5" />
             Mesai Onayı
