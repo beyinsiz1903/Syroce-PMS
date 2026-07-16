@@ -33,7 +33,7 @@ const fmtTime = (iso) => iso ? new Date(iso).toLocaleString('tr-TR', {
 
 const SpaWellness = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
-  const { getLimit, hasFeature } = useEntitlements();
+  const { getLimit, hasFeature, hasModule, loading: entLoading, isSuperAdmin } = useEntitlements();
 
   const [services, setServices] = useState([]);
   const [therapists, setTherapists] = useState([]);
@@ -159,8 +159,22 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
   const maxTherapists = getLimit('spa', 'therapists');
   const maxRooms = getLimit('spa', 'rooms');
 
-  const canAddTherapist = maxTherapists === null || therapists.length < maxTherapists;
-  const canAddRoom = maxRooms === null || rooms.length < maxRooms;
+  // Fail-closed sentinel — must have all three conditions:
+  //  1. hasModule: spa module is explicitly enabled (loading/error/disabled → false)
+  //  2. getLimit > 0: a real positive limit was returned (0 means loading/invalid/
+  //     module-not-configured — registry has no unlimited sentinel for spa)
+  //  3. usage < limit: actual headroom remains
+  // SuperAdmin bypasses quota limits but not feature availability.
+  const spaModuleEnabled = isSuperAdmin || hasModule('spa');
+  const canAddTherapist =
+    !entLoading &&
+    spaModuleEnabled &&
+    (isSuperAdmin || (maxTherapists > 0 && therapists.length < maxTherapists));
+  const canAddRoom =
+    !entLoading &&
+    spaModuleEnabled &&
+    (isSuperAdmin || (maxRooms > 0 && rooms.length < maxRooms));
+
   const hasCrossDepartmentPackages = hasFeature('spa', 'cross_department_packages');
   const hasAdvancedAvailability = hasFeature('spa', 'advanced_availability');
   const hasGuestHistory = hasFeature('spa', 'guest_history');
