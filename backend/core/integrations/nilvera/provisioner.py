@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-from pydantic import BaseModel, Field, constr
+from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 
 from core.crypto import AADContext, get_crypto_service
