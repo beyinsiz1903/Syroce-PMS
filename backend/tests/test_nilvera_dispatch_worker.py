@@ -96,7 +96,7 @@ async def test_dispatch_service_retryable_error(mock_db, monkeypatch):
 
     mock_db.tenant_settings.find_one = AsyncMock(return_value={
         "tenant_id": tenant_id,
-        "nilvera": {"enabled": True, "api_key_enc": "dummy"}
+        "nilvera": {"enabled": True, "api_key_enc": "dummy", "company_info": {"vkn": "1111111111", "name": "N", "tax_office": "O", "address": "A", "city": "C", "country": "TR"}}
     })
 
     mock_db.invoices.find_one = AsyncMock(return_value={
@@ -109,6 +109,7 @@ async def test_dispatch_service_retryable_error(mock_db, monkeypatch):
         "currency": "TRY",
         "issue_date": datetime.now(UTC),
         "buyer_tax_number": "1111111111",
+        "buyer_alias": "urn:mail:defaultpk@nilvera.com",
         "buyer_legal_name": "Test Buyer",
         "buyer_country_name": "Türkiye",
         "buyer_city": "İstanbul",
@@ -166,7 +167,7 @@ async def test_dispatch_service_permanent_error(mock_db, monkeypatch):
 
     mock_db.tenant_settings.find_one = AsyncMock(return_value={
         "tenant_id": tenant_id,
-        "nilvera": {"enabled": True, "api_key_enc": "dummy"}
+        "nilvera": {"enabled": True, "api_key_enc": "dummy", "company_info": {"vkn": "1111111111", "name": "N", "tax_office": "O", "address": "A", "city": "C", "country": "TR"}}
     })
 
     mock_db.invoices.find_one = AsyncMock(return_value={
@@ -179,6 +180,7 @@ async def test_dispatch_service_permanent_error(mock_db, monkeypatch):
         "currency": "TRY",
         "issue_date": datetime.now(UTC),
         "buyer_tax_number": "1111111111",
+        "buyer_alias": "urn:mail:defaultpk@nilvera.com",
         "buyer_legal_name": "Test Buyer",
         "buyer_country_name": "Türkiye",
         "buyer_city": "İstanbul",
@@ -226,11 +228,11 @@ async def test_dispatch_service_409_duplicate(mock_db, monkeypatch):
         "updated_at": datetime.now(UTC)
     })
 
-    mock_db.tenant_settings.find_one = AsyncMock(return_value={"tenant_id": tenant_id, "nilvera": {"enabled": True, "api_key_enc": "dummy"}})
+    mock_db.tenant_settings.find_one = AsyncMock(return_value={"tenant_id": tenant_id, "nilvera": {"enabled": True, "api_key_enc": "dummy", "company_info": {"vkn": "1111111111", "name": "N", "tax_office": "O", "address": "A", "city": "C", "country": "TR"}}})
     mock_db.invoices.find_one = AsyncMock(return_value={
         "id": str(uuid.uuid4()), "tenant_id": tenant_id, "invoice_number": "T1", "invoice_type": "SATIS",
         "profile": "TICARIFATURA", "series": "ABC", "currency": "TRY", "issue_date": datetime.now(UTC),
-        "buyer_tax_number": "1", "buyer_legal_name": "N", "buyer_country_name": "TR", "buyer_city": "IST",
+        "buyer_tax_number": "1", "buyer_alias": "urn:mail:defaultpk@nilvera.com", "buyer_legal_name": "N", "buyer_country_name": "TR", "buyer_city": "IST",
         "buyer_address": "A", "payable_total": 100, "items": [{"description": "X", "quantity": 1, "tax_quantity": 1, "unit_code": "C62", "unit_price": 100.0, "tax_unit_price": 100.0, "discount_amount": 0.0, "kdv_rate": 20.0, "kdv_amount": 20.0, "total": 100.0}]
     })
     mock_db.invoice_sync.update_one = AsyncMock(return_value=MagicMock(modified_count=1))

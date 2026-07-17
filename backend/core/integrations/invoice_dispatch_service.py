@@ -131,32 +131,50 @@ class InvoiceDispatchService:
 
         invoice = Invoice(**invoice_doc)
 
-        # 4. Mock Seller Snapshot for now (Normally fetched from tenant config/EFatura settings)
-        from core.efatura_provider import is_configured, provider_config
-        try:
-            p_config = provider_config() if is_configured() else {}
-            supplier_vkn = p_config.get("supplier_vkn", "1111111111")
-            supplier_name = p_config.get("supplier_name", "Test Supplier")
-        except Exception:
-            supplier_vkn = "1111111111"
-            supplier_name = "Test Supplier"
+        seller_info = nilvera_cfg.get("seller", {})
+        if not seller_info.get("vkn") or not seller_info.get("name") or not seller_info.get("tax_office") or not seller_info.get("address"):
+            await InvoiceSyncRepository.transition_state(
+                tenant_id,
+                dispatch_id,
+                current_state=InvoiceSyncState.SENDING,
+                target_state=InvoiceSyncState.PERMANENT_ERROR,
+                update_fields={
+                    "last_error_message": "Tenant company info (VKN, Name, Tax Office, Address) is incomplete. Cannot dispatch.",
+                    "last_error_category": DispatchErrorCategory.VALIDATION,
+                    "last_error_retryable": False,
+                }
+            )
+            return False
 
-        # Hardcoding the rest for the mapping until Tenant Company Info is fully available
         seller = SellerSnapshot(
-            tax_number=supplier_vkn,
-            name=supplier_name,
-            tax_office="Test Office",
-            country="Türkiye",
-            city="İstanbul",
-            address="Test Address 123",
+            tax_number=seller_info["vkn"],
+            name=seller_info["name"],
+            tax_office=seller_info["tax_office"],
+            country=seller_info.get("country", "Türkiye"),
+            city=seller_info.get("city", "İstanbul"),
+            address=seller_info["address"],
         )
 
-        # 5. Map payload
+        customer_alias = getattr(invoice, "buyer_alias", None)
+        if sync_model.document_kind == InvoiceDocumentKind.E_INVOICE and not customer_alias:
+            await InvoiceSyncRepository.transition_state(
+                tenant_id,
+                dispatch_id,
+                current_state=InvoiceSyncState.SENDING,
+                target_state=InvoiceSyncState.PERMANENT_ERROR,
+                update_fields={
+                    "last_error_message": "Customer alias is required for E-Invoice but missing from invoice snapshot.",
+                    "last_error_category": DispatchErrorCategory.VALIDATION,
+                    "last_error_retryable": False,
+                }
+            )
+            return False
+
         try:
             payload = NilveraInvoiceMapper.map_to_nilvera(
                 invoice=invoice,
                 seller=seller,
-                customer_alias="urn:mail:defaultpk@nilvera.com",  # E-Invoice requires a valid alias. Can be dynamic later.
+                customer_alias=customer_alias,
                 request_uuid=uuid.UUID(sync_model.request_uuid)
             )
         except Exception as e:
@@ -203,8 +221,6 @@ class InvoiceDispatchService:
             async with NilveraHttpClient(api_key=api_key) as client:
                 payload_dict = payload.model_dump(by_alias=True, exclude_none=True)
 
-                # Assume /general/SendInvoice or similar Nilvera endpoint for draft invoice creation
-                # (We will use a generic endpoint here for demonstration of the dispatch flow)
                 response_data = await client.post("/general/Invoice/Draft", json=payload_dict, correlation_id=sync_model.request_uuid)
 
                 provider_doc_id = None

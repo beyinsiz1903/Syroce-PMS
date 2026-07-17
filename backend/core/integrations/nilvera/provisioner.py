@@ -16,7 +16,7 @@ def _aad(tenant_id: str) -> AADContext:
     return AADContext(
         tenant_id=tenant_id,
         provider="nilvera",
-        context_type="tenant_settings"
+        context_type="nilvera_api_key_v1"
     )
 
 
@@ -33,10 +33,19 @@ async def get_nilvera_tenant_config(tenant_id: str, *, decrypt_api_key: bool = F
     )
 
     cfg = (doc or {}).get("nilvera") or {}
+    company = cfg.get("company_info") or {}
     out = {
         "enabled": bool(cfg.get("enabled")),
         "api_key_set": bool(cfg.get("api_key_enc")),
         "api_key": None,
+        "seller": {
+            "vkn": company.get("vkn"),
+            "name": company.get("name"),
+            "tax_office": company.get("tax_office"),
+            "address": company.get("address"),
+            "city": company.get("city"),
+            "country": company.get("country", "Türkiye")
+        }
     }
 
     if decrypt_api_key and cfg.get("api_key_enc"):
@@ -44,7 +53,7 @@ async def get_nilvera_tenant_config(tenant_id: str, *, decrypt_api_key: bool = F
             svc = get_crypto_service()
             out["api_key"] = svc.decrypt(cfg["api_key_enc"], aad=_aad(tenant_id))
         except Exception as exc:
-            logger.warning("[nilvera] api_key decrypt failed tenant=%s err=%s", tenant_id, exc)
+            logger.warning("[nilvera] api_key decrypt failed tenant=%s error_type=%s", tenant_id, type(exc).__name__)
             out["api_key"] = None
 
     return out
