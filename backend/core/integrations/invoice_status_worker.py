@@ -79,8 +79,9 @@ class InvoiceStatusWorker:
         for doc in docs:
             record = InvoiceSync.model_validate(doc)
             try:
-                await InvoiceStatusService.poll_invoice_status(record.tenant_id, record.id, self._worker_id)
-                processed += 1
+                claimed_and_processed = await InvoiceStatusService.poll_invoice_status(record.tenant_id, record.id, self._worker_id)
+                if claimed_and_processed:
+                    processed += 1
             except Exception as e:
                 logger.error(f"Error processing status for dispatch {record.id}: {e}")
 

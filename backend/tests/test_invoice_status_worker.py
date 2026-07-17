@@ -37,7 +37,7 @@ async def test_worker_process_batch(mock_service, mock_raw_db, worker):
     mock_cursor.to_list = AsyncMock(return_value=[mock_dict])
     mock_raw_db.invoice_sync.find.return_value = mock_cursor
 
-    mock_service.poll_invoice_status = AsyncMock()
+    mock_service.poll_invoice_status = AsyncMock(return_value=True)
 
     processed = await worker._process_batch()
 
@@ -50,6 +50,43 @@ async def test_worker_process_batch(mock_service, mock_raw_db, worker):
     assert query["reconciliation_required"] == {"$ne": True}
     assert "$or" in query
 
+    mock_service.poll_invoice_status.assert_called_once()
+
+@patch("core.integrations.invoice_status_worker._raw_db")
+@patch("core.integrations.invoice_status_worker.InvoiceStatusService")
+async def test_worker_process_batch_unclaimed(mock_service, mock_raw_db, worker):
+    mock_cursor = MagicMock()
+    mock_cursor.sort.return_value = mock_cursor
+    mock_cursor.limit.return_value = mock_cursor
+    from datetime import UTC, datetime
+    now = datetime.now(UTC)
+    mock_dict = {
+        "id": "test_id_1",
+        "tenant_id": "t1",
+        "invoice_id": "inv-1",
+        "provider": "NILVERA",
+        "document_kind": "E_INVOICE",
+        "idempotency_key": "v1:hash",
+        "request_uuid": "req-123",
+        "state": InvoiceSyncState.SUBMITTED.value,
+        "provider_document_id": "doc-123",
+        "reconciliation_required": False,
+        "prepared_at": now,
+        "created_at": now,
+        "updated_at": now,
+        "next_status_check_at": now,
+        "status_lease_owner": None,
+        "status_lease_expires_at": now,
+    }
+    mock_cursor.to_list = AsyncMock(return_value=[mock_dict])
+    mock_raw_db.invoice_sync.find.return_value = mock_cursor
+
+    mock_service.poll_invoice_status = AsyncMock(return_value=False)
+
+    processed = await worker._process_batch()
+
+    assert processed == 0
+    mock_raw_db.invoice_sync.find.assert_called_once()
     mock_service.poll_invoice_status.assert_called_once()
 
 @patch("core.integrations.invoice_status_worker._raw_db")

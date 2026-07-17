@@ -71,7 +71,21 @@ async def get_invoice_status(
     record = await InvoiceSyncRepository.get_by_id(user.tenant_id, dispatch_id)
     if not record:
         raise HTTPException(status_code=404, detail="Dispatch record not found")
-    return record
+
+    return {
+        "id": record.id,
+        "invoice_id": record.invoice_id,
+        "provider": record.provider.value,
+        "document_kind": record.document_kind.value,
+        "state": record.state.value,
+        "provider_status": record.provider_status,
+        "provider_status_code": record.provider_status_code,
+        "reconciliation_required": record.reconciliation_required,
+        "submitted_at": record.submitted_at,
+        "last_status_check_at": record.last_status_check_at,
+        "created_at": record.created_at,
+        "updated_at": record.updated_at,
+    }
 
 
 @router.post("/{dispatch_id}/reconcile")

@@ -27,7 +27,7 @@ class InvoiceStatusService:
     """Orchestrates status polling and reconciliation for Nilvera."""
 
     @staticmethod
-    async def poll_invoice_status(tenant_id: str, dispatch_id: str, worker_id: str) -> None:
+    async def poll_invoice_status(tenant_id: str, dispatch_id: str, worker_id: str) -> bool:
         """
         Polls Nilvera for the status of a specific SUBMITTED invoice.
         The worker must hold the status lease.
@@ -35,9 +35,10 @@ class InvoiceStatusService:
         db_record = await InvoiceStatusRepository.claim_status_lease(tenant_id, dispatch_id, worker_id, 60)
         # If we couldn't claim it or someone else has it, we just return.
         if not db_record:
-            return
+            return False
 
         await InvoiceStatusService.process_polled_record(db_record, worker_id)
+        return True
 
     @staticmethod
     async def process_polled_record(record: InvoiceSync, worker_id: str) -> None:
