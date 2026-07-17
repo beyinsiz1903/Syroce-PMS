@@ -80,7 +80,27 @@ class InvoiceSync(BaseModel):
 
     provider_document_id: str | None = None
     provider_status: str | None = None
+    provider_status_code: str | None = None
+    provider_status_message: str | None = None
     provider_correlation_id: str | None = None
+
+    status_tracking_started_at: datetime | None = None
+    last_status_check_at: datetime | None = None
+    next_status_check_at: datetime | None = None
+    status_check_attempt_count: int = 0
+
+    status_poll_error_code: str | None = None
+    status_poll_error_message: str | None = None
+    status_poll_retryable: bool | None = None
+
+    reconciliation_required: bool = False
+    reconciliation_reason: str | None = None
+    reconciled_at: datetime | None = None
+    reconciled_by: str | None = None
+    reconciliation_note: str | None = None
+
+    status_lease_owner: str | None = None
+    status_lease_expires_at: datetime | None = None
 
     last_error_category: DispatchErrorCategory | None = None
     last_error_code: str | None = None

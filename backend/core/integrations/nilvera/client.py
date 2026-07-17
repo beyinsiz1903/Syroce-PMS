@@ -207,8 +207,8 @@ class NilveraHttpClient:
                     raise NilveraTimeoutError("Connection timeout while contacting provider", correlation_id=correlation_id) from e
                 raise NilveraApiError(f"Network error: {str(e)}", correlation_id=correlation_id, retryable=True) from e
 
-    async def get(self, path: str, correlation_id: str | None = None, **kwargs: Any) -> dict[str, Any]:
-        response = await self._request("GET", path, correlation_id=correlation_id, stream=False, **kwargs)
+    async def get(self, path: str, correlation_id: str | None = None, retryable: bool | None = None, **kwargs: Any) -> dict[str, Any]:
+        response = await self._request("GET", path, correlation_id=correlation_id, retryable=retryable, stream=False, **kwargs)
         content_type = response.headers.get("Content-Type", "").lower()
         ct = content_type.split(";")[0].strip()
         if ct != "application/json" and not (ct.startswith("application/") and ct.endswith("+json")):
@@ -224,9 +224,10 @@ class NilveraHttpClient:
         path: str,
         expected_content_types: list[str] | None = None,
         correlation_id: str | None = None,
+        retryable: bool | None = None,
         **kwargs: Any,
     ) -> bytes:
-        response = await self._request("GET", path, correlation_id=correlation_id, stream=False, **kwargs)
+        response = await self._request("GET", path, correlation_id=correlation_id, retryable=retryable, stream=False, **kwargs)
 
         content_type = response.headers.get("Content-Type", "").split(";")[0].lower().strip()
         if expected_content_types and content_type not in [t.lower() for t in expected_content_types]:
