@@ -24,13 +24,13 @@ class ReconcileInvoiceStatusRequest(BaseModel):
     note: str
 
 
-from core.security import get_current_user
+from core.helpers import require_admin
 from models.schemas import User
 
 
 @router.get("/reconciliation")
 async def list_reconciliation_records(
-    user: User = Depends(get_current_user)
+    user: User = Depends(require_admin)
 ):
     """
     List records that require manual reconciliation.
@@ -38,14 +38,32 @@ async def list_reconciliation_records(
     db = get_db_for_tenant(user.tenant_id)
     cursor = db.invoice_sync.find({"reconciliation_required": True}).limit(100)
     docs = await cursor.to_list(length=100)
-    # We should normally return a paginated model. For now returning dicts.
-    return {"data": list(docs)}
+
+    # Safe projection / DTO mapping to prevent PII/credential leak
+    safe_docs = []
+    for doc in docs:
+        safe_docs.append({
+            "id": doc.get("id"),
+            "invoice_id": doc.get("invoice_id"),
+            "provider": doc.get("provider"),
+            "document_kind": doc.get("document_kind"),
+            "state": doc.get("state"),
+            "provider_status": doc.get("provider_status"),
+            "provider_status_code": doc.get("provider_status_code"),
+            "reconciliation_reason": doc.get("reconciliation_reason"),
+            "submitted_at": doc.get("submitted_at"),
+            "last_status_check_at": doc.get("last_status_check_at"),
+            "created_at": doc.get("created_at"),
+            "updated_at": doc.get("updated_at"),
+        })
+
+    return {"data": safe_docs}
 
 
 @router.get("/{dispatch_id}/status")
 async def get_invoice_status(
     dispatch_id: str = Path(...),
-    user: User = Depends(get_current_user)
+    user: User = Depends(require_admin)
 ):
     """
     Get the sync status of an invoice.
@@ -60,7 +78,7 @@ async def get_invoice_status(
 async def reconcile_invoice_status(
     req: ReconcileInvoiceStatusRequest,
     dispatch_id: str = Path(...),
-    user: User = Depends(get_current_user)
+    user: User = Depends(require_admin)
 ):
     """
     Manually reconcile a dispatch record stuck in UNKNOWN or inconsistent state.
@@ -110,7 +128,7 @@ async def reconcile_invoice_status(
 @router.post("/{dispatch_id}/retry-status")
 async def retry_invoice_status(
     dispatch_id: str = Path(...),
-    user: User = Depends(get_current_user)
+    user: User = Depends(require_admin)
 ):
     """
     Force a status poll for a SUBMITTED invoice. Does not re-trigger POST /einvoice/Send/Model.

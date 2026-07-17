@@ -2,10 +2,10 @@
 
 import asyncio
 import logging
+import uuid
 from datetime import UTC, datetime
 
 from core.database import _raw_db
-from core.integrations.invoice_status_repository import InvoiceStatusRepository
 from core.integrations.invoice_status_service import InvoiceStatusService
 from models.schemas.invoice_sync import InvoiceSync, InvoiceSyncState
 
@@ -18,7 +18,7 @@ class InvoiceStatusWorker:
     def __init__(self, batch_size: int = 50, poll_interval_sec: float = 5.0):
         self._batch_size = batch_size
         self._poll_interval_sec = poll_interval_sec
-        self._worker_id = "status_worker_01"  # in real env, from env var or uuid
+        self._worker_id = f"status_worker_{uuid.uuid4().hex[:8]}"
         self._running = False
         self._task: asyncio.Task | None = None
 
@@ -33,10 +33,13 @@ class InvoiceStatusWorker:
         self._running = False
         if self._task:
             try:
+                await asyncio.wait_for(self._task, timeout=10.0)
+            except (TimeoutError, asyncio.CancelledError):
                 self._task.cancel()
-                await self._task
-            except asyncio.CancelledError:
-                pass
+                try:
+                    await self._task
+                except asyncio.CancelledError:
+                    pass
         logger.info("InvoiceStatusWorker stopped")
 
     async def _run_loop(self) -> None:
@@ -75,17 +78,9 @@ class InvoiceStatusWorker:
         processed = 0
         for doc in docs:
             record = InvoiceSync.model_validate(doc)
-            # Try to claim the lease
-            # In an optimized worker, we could use a bulk claim or rely on the find_and_modify in the service
-            # For simplicity, we just pass to the service which claims it
             try:
-                # Service claims it
-                claimed = await InvoiceStatusRepository.claim_status_lease(
-                    record.tenant_id, record.id, self._worker_id, lease_duration_sec=60
-                )
-                if claimed:
-                    await InvoiceStatusService.process_polled_record(claimed, self._worker_id)
-                    processed += 1
+                await InvoiceStatusService.poll_invoice_status(record.tenant_id, record.id, self._worker_id)
+                processed += 1
             except Exception as e:
                 logger.error(f"Error processing status for dispatch {record.id}: {e}")
 

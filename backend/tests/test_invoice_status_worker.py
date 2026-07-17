@@ -12,9 +12,8 @@ def worker():
     return InvoiceStatusWorker(batch_size=5, poll_interval_sec=0.1)
 
 @patch("core.integrations.invoice_status_worker._raw_db")
-@patch("core.integrations.invoice_status_worker.InvoiceStatusRepository")
 @patch("core.integrations.invoice_status_worker.InvoiceStatusService")
-async def test_worker_process_batch(mock_service, mock_repo, mock_raw_db, worker):
+async def test_worker_process_batch(mock_service, mock_raw_db, worker):
     mock_cursor = MagicMock()
     mock_cursor.sort.return_value = mock_cursor
     mock_cursor.limit.return_value = mock_cursor
@@ -38,8 +37,7 @@ async def test_worker_process_batch(mock_service, mock_repo, mock_raw_db, worker
     mock_cursor.to_list = AsyncMock(return_value=[mock_dict])
     mock_raw_db.invoice_sync.find.return_value = mock_cursor
 
-    mock_repo.claim_status_lease = AsyncMock(return_value=True)
-    mock_service.process_polled_record = AsyncMock()
+    mock_service.poll_invoice_status = AsyncMock()
 
     processed = await worker._process_batch()
 
@@ -52,8 +50,7 @@ async def test_worker_process_batch(mock_service, mock_repo, mock_raw_db, worker
     assert query["reconciliation_required"] == {"$ne": True}
     assert "$or" in query
 
-    mock_repo.claim_status_lease.assert_called_once()
-    mock_service.process_polled_record.assert_called_once()
+    mock_service.poll_invoice_status.assert_called_once()
 
 @patch("core.integrations.invoice_status_worker._raw_db")
 async def test_worker_process_batch_empty(mock_raw_db, worker):
@@ -68,6 +65,8 @@ async def test_worker_process_batch_empty(mock_raw_db, worker):
     assert processed == 0
 
 async def test_worker_start_stop(worker):
+    assert worker._worker_id.startswith("status_worker_")
+
     await worker.start()
     assert worker._running is True
     assert worker._task is not None

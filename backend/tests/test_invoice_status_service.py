@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -16,14 +16,21 @@ def mock_repo():
         yield mock
 
 @pytest.fixture
-def mock_db():
-    with patch("core.integrations.invoice_status_service.get_db_for_tenant") as mock:
-        db_mock = MagicMock()
-        db_mock.tenants.find_one = AsyncMock(return_value={"settings": {"nilvera": {"api_key": "test_key"}}})
-        mock.return_value = db_mock
+def mock_config():
+    with patch("core.integrations.invoice_status_service.get_nilvera_tenant_config") as mock:
+        mock.side_effect = AsyncMock(return_value={"enabled": True, "api_key": "test_key"})
         yield mock
 
-def create_mock_sync(provider_doc_id="doc-123", tracking_started_at=None) -> InvoiceSync:
+async def test_invalid_provider_uuid(mock_repo, mock_config):
+    record = create_mock_sync(provider_doc_id="not-a-uuid")
+    await InvoiceStatusService.process_polled_record(record, "worker-1")
+
+    mock_repo.assert_called_once()
+    updates = mock_repo.call_args[0][3]
+    assert updates.get("reconciliation_required") is True
+    assert updates.get("reconciliation_reason") == "INVALID_PROVIDER_UUID"
+
+def create_mock_sync(provider_doc_id="12345678-1234-5678-1234-567812345678", tracking_started_at=None) -> InvoiceSync:
     now = datetime.now(UTC)
     return InvoiceSync(
         id="sync-1",
@@ -41,7 +48,7 @@ def create_mock_sync(provider_doc_id="doc-123", tracking_started_at=None) -> Inv
         updated_at=now,
     )
 
-async def test_24_hour_timeout(mock_repo, mock_db):
+async def test_24_hour_timeout(mock_repo, mock_config):
     old_time = datetime.now(UTC) - timedelta(hours=25)
     record = create_mock_sync(tracking_started_at=old_time)
     await InvoiceStatusService.process_polled_record(record, "worker-1")
@@ -52,7 +59,7 @@ async def test_24_hour_timeout(mock_repo, mock_db):
     assert updates.get("reconciliation_reason") == "STATUS_TIMEOUT_24H"
     assert updates.get("next_status_check_at") is None
 
-async def test_missing_provider_document_id(mock_repo, mock_db):
+async def test_missing_provider_document_id(mock_repo, mock_config):
     record = create_mock_sync(provider_doc_id=None)
     await InvoiceStatusService.process_polled_record(record, "worker-1")
 
@@ -62,7 +69,7 @@ async def test_missing_provider_document_id(mock_repo, mock_db):
     assert updates.get("reconciliation_reason") == "MISSING_PROVIDER_DOCUMENT_ID"
 
 @patch("core.integrations.invoice_status_service.NilveraHttpClient")
-async def test_successful_pending(mock_client_cls, mock_repo, mock_db):
+async def test_successful_pending(mock_client_cls, mock_repo, mock_config):
     mock_client = AsyncMock()
     mock_client.get.return_value = {"Status": "Kuyrukta", "StatusCode": "1000"}
     mock_client_cls.return_value.__aenter__.return_value = mock_client
@@ -77,7 +84,7 @@ async def test_successful_pending(mock_client_cls, mock_repo, mock_db):
 
 @patch("core.integrations.invoice_status_service.NilveraHttpClient")
 @patch("core.integrations.invoice_status_service.event_bus")
-async def test_successful_accepted(mock_event_bus, mock_client_cls, mock_repo, mock_db):
+async def test_successful_accepted(mock_event_bus, mock_client_cls, mock_repo, mock_config):
     mock_client = AsyncMock()
     mock_client.get.return_value = {"Status": "Başarılı", "StatusCode": "1300"}
     mock_client_cls.return_value.__aenter__.return_value = mock_client
@@ -92,7 +99,7 @@ async def test_successful_accepted(mock_event_bus, mock_client_cls, mock_repo, m
     mock_event_bus.publish.assert_called_once_with("invoice.accepted", {"dispatch_id": "sync-1", "tenant_id": "tenant-1"})
 
 @patch("core.integrations.invoice_status_service.NilveraHttpClient")
-async def test_api_error_404(mock_client_cls, mock_repo, mock_db):
+async def test_api_error_404(mock_client_cls, mock_repo, mock_config):
     mock_client = AsyncMock()
     mock_client.get.side_effect = NilveraApiError("Not Found", http_status=404)
     mock_client_cls.return_value.__aenter__.return_value = mock_client
@@ -106,7 +113,7 @@ async def test_api_error_404(mock_client_cls, mock_repo, mock_db):
     assert "state" not in updates
 
 @patch("core.integrations.invoice_status_service.NilveraHttpClient")
-async def test_api_error_401(mock_client_cls, mock_repo, mock_db):
+async def test_api_error_401(mock_client_cls, mock_repo, mock_config):
     mock_client = AsyncMock()
     mock_client.get.side_effect = NilveraApiError("Auth Error", http_status=401)
     mock_client_cls.return_value.__aenter__.return_value = mock_client
@@ -123,7 +130,7 @@ async def test_api_error_401(mock_client_cls, mock_repo, mock_db):
     # Let's check what the code actually does.
 
 @patch("core.integrations.invoice_status_service.NilveraHttpClient")
-async def test_api_error_500(mock_client_cls, mock_repo, mock_db):
+async def test_api_error_500(mock_client_cls, mock_repo, mock_config):
     mock_client = AsyncMock()
     mock_client.get.side_effect = NilveraApiError("Server Error", http_status=500)
     mock_client_cls.return_value.__aenter__.return_value = mock_client

@@ -7,8 +7,8 @@ from core.integrations.invoice_status_repository import InvoiceStatusRepository
 from core.integrations.nilvera.client import NilveraHttpClient
 from core.integrations.nilvera.config import NilveraEndpoints
 from core.integrations.nilvera.errors import NilveraApiError
+from core.integrations.nilvera.provisioner import get_nilvera_tenant_config
 from core.integrations.nilvera.status_mapper import ProviderInvoiceOutcome, map_nilvera_status
-from core.tenant_db import get_db_for_tenant
 from models.schemas.invoice_sync import InvoiceSync, InvoiceSyncState
 from modules.event_bus.abstraction import event_bus
 
@@ -35,10 +35,9 @@ class InvoiceStatusService:
         db_record = await InvoiceStatusRepository.claim_status_lease(tenant_id, dispatch_id, worker_id, 60)
         # If we couldn't claim it or someone else has it, we just return.
         if not db_record:
-            # We assume the caller already claimed it, or we re-claim just to be safe.
-            # Actually, the worker will pass the record it claimed.
-            # To be safe, we will just read from the DB without claim if the caller is the worker.
-            pass
+            return
+
+        await InvoiceStatusService.process_polled_record(db_record, worker_id)
 
     @staticmethod
     async def process_polled_record(record: InvoiceSync, worker_id: str) -> None:
@@ -76,17 +75,28 @@ class InvoiceStatusService:
             )
             return
 
+        import uuid
+        try:
+            normalized_uuid = str(uuid.UUID(record.provider_document_id))
+        except (ValueError, TypeError):
+            await InvoiceStatusRepository.update_status_poll_result(
+                record.tenant_id,
+                record.id,
+                worker_id,
+                {
+                    "reconciliation_required": True,
+                    "reconciliation_reason": "INVALID_PROVIDER_UUID",
+                    "next_status_check_at": None,
+                }
+            )
+            return
+
         next_attempt = record.status_check_attempt_count + 1
         delay_sec = _get_next_poll_delay(record.status_check_attempt_count)
         next_check = now + timedelta(seconds=delay_sec)
 
-        # tenant config check should go here in a real impl, but we will assume client can be instantiated
-        # We need the tenant api key
-        db = get_db_for_tenant(record.tenant_id)
-        tenant_doc = await db.tenants.find_one({"_id": record.tenant_id})
-        api_key = tenant_doc.get("settings", {}).get("nilvera", {}).get("api_key") if tenant_doc else None
-
-        if not api_key:
+        nilvera_cfg = await get_nilvera_tenant_config(record.tenant_id, decrypt_api_key=True)
+        if not nilvera_cfg.get("enabled") or not nilvera_cfg.get("api_key"):
             # Missing credential -> Do not consume attempt. Defer check.
             await InvoiceStatusRepository.update_status_poll_result(
                 record.tenant_id,
@@ -99,7 +109,9 @@ class InvoiceStatusService:
             )
             return
 
-        endpoint = NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=record.provider_document_id)
+        api_key = nilvera_cfg["api_key"]
+
+        endpoint = NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=normalized_uuid)
 
         try:
             async with NilveraHttpClient(api_key=api_key) as client:

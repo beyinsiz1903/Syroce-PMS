@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from api.routes.invoice_integrations import router
 from core.security import get_current_user
+from models.enums import UserRole
 from models.schemas.invoice_sync import InvoiceDocumentKind, InvoiceProvider, InvoiceSync, InvoiceSyncState
 
 app = FastAPI()
@@ -15,6 +16,7 @@ def mock_get_current_user():
     user = MagicMock()
     user.id = "ops_user_01"
     user.tenant_id = "tenant_1"
+    user.role = UserRole.ADMIN
     return user
 
 app.dependency_overrides[get_current_user] = mock_get_current_user
