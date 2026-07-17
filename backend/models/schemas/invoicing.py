@@ -96,6 +96,7 @@ class InvoiceCreate(BaseModel):
     buyer_country_code: str | None = None
     buyer_country_name: str | None = None
     buyer_tax_office: str | None = None
+    buyer_alias: str | None = None
     buyer_type: Literal["BUSINESS", "INDIVIDUAL_CONSUMER"] | None = None
 
     # E-document document-level snapshot fields
@@ -160,6 +161,7 @@ class Invoice(BaseModel):
     buyer_country_code: str | None = None
     buyer_country_name: str | None = None
     buyer_tax_office: str | None = None
+    buyer_alias: str | None = None
     buyer_type: Literal["BUSINESS", "INDIVIDUAL_CONSUMER"] | None = None
 
     # E-document document-level snapshot fields

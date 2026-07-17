@@ -78,6 +78,14 @@ async def shutdown_all(app):
         except Exception as e:
             logger.warning(f"Import Retry Worker shutdown warning: {e}")
 
+    # Nilvera Invoice Dispatch Worker
+    nilvera_worker = getattr(app.state, "invoice_dispatch_worker", None)
+    if nilvera_worker is not None:
+        try:
+            await nilvera_worker.stop()
+        except Exception as e:
+            logger.warning(f"Nilvera Dispatch Worker shutdown warning: {e}")
+
     # Outbox lifecycle worker
     worker = getattr(app.state, "outbox_lifecycle_worker", None)
     if worker is not None:

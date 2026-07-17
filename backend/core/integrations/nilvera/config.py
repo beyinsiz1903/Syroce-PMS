@@ -23,6 +23,16 @@ class NilveraSettings(BaseModel):
         return "https://apitest.nilvera.com"
 
 
+class NilveraEndpoints:
+    """Official Nilvera API endpoints (V1)."""
+    # Company / Taxpayer lookups
+    CHECK_TAX_NUMBER = "/general/GlobalCompany/Check/TaxNumber/{tax_number}"
+    GET_CUSTOMER_INFO = "/general/GlobalCompany/GetGlobalCustomerInfo/{tax_number}"
+
+    # E-Invoice
+    SEND_INVOICE_MODEL = "/einvoice/Send/Model"
+
+
 _config: NilveraSettings | None = None
 
 

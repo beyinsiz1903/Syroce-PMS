@@ -99,3 +99,80 @@ class InvoiceSyncRepository:
         if not doc:
             return None
         return InvoiceSync.model_validate(doc)
+
+    @staticmethod
+    async def transition_state(
+        tenant_id: str,
+        dispatch_id: str,
+        current_state: InvoiceSyncState,
+        target_state: InvoiceSyncState,
+        update_fields: dict,
+        inc_fields: dict | None = None
+    ) -> bool:
+        """
+        Transitions the state of a dispatch record if it is in the current_state.
+        Returns True if successful, False if the record was not found or not in the expected state.
+        """
+        db = get_db_for_tenant(tenant_id)
+        now = datetime.now(UTC)
+
+        updates = update_fields.copy()
+        updates["state"] = target_state.value
+        updates["updated_at"] = now
+
+        incs = {"version": 1}
+        if inc_fields:
+            incs.update(inc_fields)
+
+        result = await db.invoice_sync.update_one(
+            {
+                "id": dispatch_id,
+                "tenant_id": tenant_id,
+                "state": current_state.value
+            },
+            {
+                "$set": updates,
+                "$inc": incs
+            }
+        )
+        return result.modified_count > 0
+
+    @staticmethod
+    async def transition_state_with_lease(
+        tenant_id: str,
+        dispatch_id: str,
+        current_state: InvoiceSyncState,
+        target_state: InvoiceSyncState,
+        worker_id: str,
+        update_fields: dict,
+        inc_fields: dict | None = None
+    ) -> bool:
+        """
+        Transitions the state of a dispatch record validating its lease ownership and expiration.
+        Returns True if successful, False if the record was not found or lease expired.
+        """
+        db = get_db_for_tenant(tenant_id)
+        now = datetime.now(UTC)
+
+        updates = update_fields.copy()
+        updates["state"] = target_state.value
+        updates["updated_at"] = now
+
+        incs = {"version": 1}
+        if inc_fields:
+            incs.update(inc_fields)
+
+        result = await db.invoice_sync.update_one(
+            {
+                "id": dispatch_id,
+                "tenant_id": tenant_id,
+                "state": current_state.value,
+                "lease_owner": worker_id,
+                "lease_expires_at": {"$gt": now}
+            },
+            {
+                "$set": updates,
+                "$inc": incs
+            }
+        )
+        return result.modified_count > 0
