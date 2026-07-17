@@ -132,14 +132,14 @@ class InvoiceDispatchService:
         invoice = Invoice(**invoice_doc)
 
         seller_info = nilvera_cfg.get("seller", {})
-        if not seller_info.get("vkn") or not seller_info.get("name") or not seller_info.get("tax_office") or not seller_info.get("address"):
+        if not seller_info.get("vkn") or not seller_info.get("name") or not seller_info.get("tax_office") or not seller_info.get("address") or not seller_info.get("city") or not seller_info.get("country"):
             await InvoiceSyncRepository.transition_state(
                 tenant_id,
                 dispatch_id,
                 current_state=InvoiceSyncState.SENDING,
                 target_state=InvoiceSyncState.PERMANENT_ERROR,
                 update_fields={
-                    "last_error_message": "Tenant company info (VKN, Name, Tax Office, Address) is incomplete. Cannot dispatch.",
+                    "last_error_message": "Tenant company info (VKN, Name, Tax Office, Address, City, Country) is incomplete. Cannot dispatch.",
                     "last_error_category": DispatchErrorCategory.VALIDATION,
                     "last_error_retryable": False,
                 }
@@ -150,8 +150,8 @@ class InvoiceDispatchService:
             tax_number=seller_info["vkn"],
             name=seller_info["name"],
             tax_office=seller_info["tax_office"],
-            country=seller_info.get("country", "Türkiye"),
-            city=seller_info.get("city", "İstanbul"),
+            country=seller_info["country"],
+            city=seller_info["city"],
             address=seller_info["address"],
         )
 
@@ -222,13 +222,21 @@ class InvoiceDispatchService:
                 payload_dict = payload.model_dump(by_alias=True, exclude_none=True)
 
                 from core.integrations.nilvera.config import NilveraEndpoints
-                response_data = await client.post(NilveraEndpoints.CREATE_DRAFT_INVOICE, json=payload_dict, correlation_id=sync_model.request_uuid)
+                response_data = await client.post(NilveraEndpoints.SEND_INVOICE_MODEL, json=[payload_dict], correlation_id=sync_model.request_uuid)
 
                 provider_doc_id = None
                 if isinstance(response_data, list) and len(response_data) > 0:
-                     provider_doc_id = response_data[0].get("InvoiceUUID")
+                     provider_doc_id = response_data[0].get("UUID")
                 elif isinstance(response_data, dict):
-                     provider_doc_id = response_data.get("InvoiceUUID")
+                     provider_doc_id = response_data.get("UUID")
+
+                if not provider_doc_id:
+                     raise NilveraApiError(
+                         message=f"Missing UUID in provider response: {response_data}",
+                         http_status=200,
+                         provider_code="MISSING_UUID",
+                         retryable=False
+                     )
 
                 await InvoiceSyncRepository.transition_state(
                     tenant_id,

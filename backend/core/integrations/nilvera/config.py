@@ -30,7 +30,7 @@ class NilveraEndpoints:
     GET_CUSTOMER_INFO = "/general/GlobalCompany/GetGlobalCustomerInfo/{tax_number}"
     
     # E-Invoice
-    CREATE_DRAFT_INVOICE = "/general/Invoice/Draft"
+    SEND_INVOICE_MODEL = "/einvoice/Send/Model"
 
 
 _config: NilveraSettings | None = None

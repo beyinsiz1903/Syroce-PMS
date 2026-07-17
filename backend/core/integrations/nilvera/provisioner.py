@@ -3,12 +3,27 @@
 import logging
 from typing import Any
 
+from pydantic import BaseModel, Field, constr
 from pymongo import ReturnDocument
 
 from core.crypto import AADContext, get_crypto_service
 from core.tenant_db import get_system_db
 
 logger = logging.getLogger(__name__)
+
+
+class NilveraSellerConfig(BaseModel):
+    """Validation model for Nilvera seller configuration."""
+    vkn: str = Field(..., min_length=10, max_length=11, pattern=r"^\d+$")
+    name: str = Field(..., min_length=1)
+    tax_office: str = Field(..., min_length=1)
+    address: str = Field(..., min_length=1)
+    city: str = Field(..., min_length=1)
+    country: str = Field(..., min_length=1)
+
+    # Optional fields or formatting could go here if needed.
+    # Currently just ensuring no empty strings or missing data for the critical fields.
+
 
 
 def _aad(tenant_id: str) -> AADContext:
@@ -82,7 +97,11 @@ async def update_nilvera_tenant_config(
             updates["nilvera.api_key_enc"] = None
 
     if seller is not None:
-        updates["nilvera.seller"] = seller
+        try:
+            validated_seller = NilveraSellerConfig(**seller)
+            updates["nilvera.seller"] = validated_seller.model_dump()
+        except ValueError as e:
+            raise ValueError(f"Invalid seller configuration: {e}")
 
     if not updates:
         return await get_nilvera_tenant_config(tenant_id)
