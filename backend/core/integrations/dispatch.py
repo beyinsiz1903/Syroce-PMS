@@ -1,7 +1,7 @@
 import hashlib
-from datetime import datetime, timedelta
+from datetime import timedelta
 
-from models.schemas.invoice_sync import InvoiceSyncState, InvoiceProvider, InvoiceDocumentKind
+from models.schemas.invoice_sync import InvoiceDocumentKind, InvoiceProvider, InvoiceSyncState
 
 _TRANSITIONS = {
     None: {InvoiceSyncState.PREPARED},

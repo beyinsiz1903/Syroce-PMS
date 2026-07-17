@@ -5,8 +5,11 @@ Revises: v001
 """
 
 from __future__ import annotations
+
 import pymongo
+
 from ..base import Migration
+
 
 class InvoiceSyncIndexesMigration(Migration):
     version = "V002"

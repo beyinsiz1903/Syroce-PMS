@@ -60,7 +60,7 @@ class InvoiceSync(BaseModel):
         populate_by_name=True,
         extra="ignore",
     )
-    
+
     id: str
     tenant_id: str
     invoice_id: str

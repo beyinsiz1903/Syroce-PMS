@@ -1,17 +1,11 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from models.schemas.invoice_sync import (
-    InvoiceSync,
-    InvoiceSyncState,
-    InvoiceProvider,
-    InvoiceDocumentKind,
-    PrepareDispatchResult
-)
-from core.tenant_db import get_db_for_tenant
 from core.integrations.dispatch import generate_idempotency_key
-from core.integrations.invoice_sync_repository import InvoiceSyncRepository
 from core.integrations.errors import IntegrationNotFoundError, IntegrationValidationError
+from core.integrations.invoice_sync_repository import InvoiceSyncRepository
+from core.tenant_db import get_db_for_tenant
+from models.schemas.invoice_sync import InvoiceDocumentKind, InvoiceProvider, InvoiceSync, InvoiceSyncState, PrepareDispatchResult
 
 
 class InvoiceDispatchService:
@@ -31,7 +25,7 @@ class InvoiceDispatchService:
 
         db = get_db_for_tenant(tenant_id)
         invoice = await db.invoices.find_one({"id": invoice_id, "tenant_id": tenant_id})
-        
+
         if not invoice:
             raise IntegrationNotFoundError(
                 "Invoice not found",
@@ -44,7 +38,7 @@ class InvoiceDispatchService:
 
         idempotency_key = generate_idempotency_key(tenant_id, invoice_id, provider, document_kind)
         new_uuid = uuid.uuid4()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         sync_model = InvoiceSync(
             id=str(uuid.uuid4()),
