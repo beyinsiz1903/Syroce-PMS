@@ -94,6 +94,14 @@ async def shutdown_all(app):
         except Exception as e:
             logger.warning(f"Nilvera Status Worker shutdown warning: {e}")
 
+    # Nilvera Invoice Lifecycle Worker
+    nilvera_lifecycle_worker = getattr(app.state, "invoice_lifecycle_worker", None)
+    if nilvera_lifecycle_worker is not None:
+        try:
+            await nilvera_lifecycle_worker.stop()
+        except Exception as e:
+            logger.warning(f"Nilvera Lifecycle Worker shutdown warning: {e}")
+
     # Outbox lifecycle worker
     worker = getattr(app.state, "outbox_lifecycle_worker", None)
     if worker is not None:
