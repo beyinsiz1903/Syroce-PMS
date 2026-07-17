@@ -222,17 +222,26 @@ class InvoiceDispatchService:
                 payload_dict = payload.model_dump(by_alias=True, exclude_none=True)
 
                 from core.integrations.nilvera.config import NilveraEndpoints
-                response_data = await client.post(NilveraEndpoints.SEND_INVOICE_MODEL, json=[payload_dict], correlation_id=sync_model.request_uuid)
+                response_data = await client.post(
+                    NilveraEndpoints.SEND_INVOICE_MODEL,
+                    json=payload_dict,
+                    correlation_id=sync_model.request_uuid,
+                    retryable=False
+                )
 
-                provider_doc_id = None
-                if isinstance(response_data, list) and len(response_data) > 0:
-                     provider_doc_id = response_data[0].get("UUID")
-                elif isinstance(response_data, dict):
-                     provider_doc_id = response_data.get("UUID")
+                if not isinstance(response_data, dict):
+                     raise NilveraApiError(
+                         message="Invalid provider response type: expected object",
+                         http_status=200,
+                         provider_code="INVALID_RESPONSE_TYPE",
+                         retryable=False
+                     )
+
+                provider_doc_id = response_data.get("UUID")
 
                 if not provider_doc_id:
                      raise NilveraApiError(
-                         message=f"Missing UUID in provider response: {response_data}",
+                         message="Provider returned a successful response without a document UUID",
                          http_status=200,
                          provider_code="MISSING_UUID",
                          retryable=False
@@ -244,7 +253,7 @@ class InvoiceDispatchService:
                     current_state=InvoiceSyncState.SENDING,
                     target_state=InvoiceSyncState.SUBMITTED,
                     update_fields={
-                        "provider_document_id": provider_doc_id,
+                        "provider_document_id": str(provider_doc_id),
                         "submitted_at": datetime.now(UTC),
                         "last_error_message": None,
                         "last_error_category": None,
@@ -278,6 +287,9 @@ class InvoiceDispatchService:
                 "last_error_code": e.provider_code,
                 "last_error_retryable": is_retryable,
             }
+
+            if getattr(e, "provider_code", None) in ("INVALID_RESPONSE_TYPE", "MISSING_UUID"):
+                update_fields["last_error_category"] = DispatchErrorCategory.INVALID_PROVIDER_RESPONSE
 
             if is_retryable:
                 delay = get_retry_delay(sync_model.attempt_count)

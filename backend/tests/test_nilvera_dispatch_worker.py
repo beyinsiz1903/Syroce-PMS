@@ -339,3 +339,81 @@ async def test_dispatch_service_missing_seller_info(mock_db, monkeypatch):
     assert update_args["$set"]["state"] == InvoiceSyncState.PERMANENT_ERROR.value
     assert update_args["$set"]["last_error_category"] == "VALIDATION"
     assert "Tenant company info" in update_args["$set"]["last_error_message"]
+
+@pytest.mark.asyncio
+async def test_dispatch_service_success(mock_db, monkeypatch):
+    tenant_id = "test-tenant-success"
+    dispatch_id = str(uuid.uuid4())
+    invoice_id = str(uuid.uuid4())
+
+    mock_db.invoice_sync.find_one = AsyncMock(return_value={
+        "id": dispatch_id,
+        "tenant_id": tenant_id,
+        "invoice_id": invoice_id,
+        "provider": InvoiceProvider.NILVERA,
+        "document_kind": InvoiceDocumentKind.E_INVOICE,
+        "idempotency_key": "k",
+        "request_uuid": str(uuid.uuid4()),
+        "state": InvoiceSyncState.SENDING,
+        "attempt_count": 0,
+        "prepared_at": datetime.now(UTC),
+        "created_at": datetime.now(UTC),
+        "updated_at": datetime.now(UTC)
+    })
+
+    mock_db.tenant_settings.find_one = AsyncMock(return_value={
+        "tenant_id": tenant_id,
+        "nilvera": {"enabled": True, "api_key_enc": "dummy", "seller": {"vkn": "1111111111", "name": "N", "tax_office": "O", "address": "A", "city": "C", "country": "TR"}}
+    })
+
+    mock_db.invoices.find_one = AsyncMock(return_value={
+        "id": invoice_id,
+        "tenant_id": tenant_id,
+        "invoice_number": "TEST2024000000001",
+        "invoice_type": "SATIS",
+        "issue_date": datetime.now(UTC),
+        "buyer_tax_number": "1111111111",
+        "buyer_alias": "urn:mail:defaultpk@gib.gov.tr",
+        "buyer_legal_name": "Test",
+        "buyer_country_name": "Türkiye",
+        "buyer_city": "İstanbul",
+        "buyer_address": "Test",
+        "payable_total": 100.0,
+        "items": [{"description": "X", "quantity": 1, "tax_quantity": 1, "unit_code": "C62", "unit_price": 100.0, "tax_unit_price": 100.0, "discount_amount": 0.0, "kdv_rate": 20.0, "kdv_amount": 20.0, "total": 100.0}],
+    })
+
+    mock_db.invoice_sync.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
+
+    with patch("core.integrations.nilvera.provisioner.get_crypto_service") as m_crypto, \
+         patch("core.integrations.invoice_dispatch_service.NilveraHttpClient") as m_client_cls, \
+         patch("core.integrations.invoice_dispatch_service.NilveraInvoiceMapper") as m_mapper:
+
+        m_crypto.return_value.decrypt.return_value = "mock_api_key"
+
+        mock_payload = MagicMock()
+        mock_payload.model_dump.return_value = {"EInvoice": {"Test": "Data"}, "CustomerAlias": "urn:mail:defaultpk@gib.gov.tr"}
+        m_mapper.map_to_nilvera.return_value = mock_payload
+
+        m_client = AsyncMock()
+        m_client.post.return_value = {"UUID": "mock-uuid"}
+        m_client_cls.return_value.__aenter__.return_value = m_client
+
+        success = await InvoiceDispatchService.execute_dispatch(tenant_id, dispatch_id)
+
+    assert success is True
+
+    call_args = m_client.post.call_args
+    from core.integrations.nilvera.config import NilveraEndpoints
+    assert call_args.args[0] == NilveraEndpoints.SEND_INVOICE_MODEL
+
+    assert isinstance(call_args.kwargs["json"], dict)
+    assert not isinstance(call_args.kwargs["json"], list)
+    assert "EInvoice" in call_args.kwargs["json"]
+    assert "CustomerAlias" in call_args.kwargs["json"]
+    assert call_args.kwargs.get("retryable", False) is False
+
+    # Check that state was updated to SUBMITTED
+    mock_db.invoice_sync.update_one.assert_called()
+    update_args = mock_db.invoice_sync.update_one.call_args[0][1]
+    assert update_args["$set"]["state"] == InvoiceSyncState.SUBMITTED.value
+    assert update_args["$set"]["provider_document_id"] == "mock-uuid"
