@@ -299,3 +299,43 @@ async def test_worker_concurrency(worker, mock_db):
     mock_db.invoice_sync.find_one_and_update = AsyncMock(return_value=None)
     processed = await worker._process_batch()
     assert processed == 0
+
+@pytest.mark.asyncio
+async def test_dispatch_service_missing_seller_info(mock_db, monkeypatch):
+    tenant_id = "test-tenant-no-seller"
+    dispatch_id = str(uuid.uuid4())
+
+    mock_db.invoice_sync.find_one = AsyncMock(return_value={
+        "id": dispatch_id, "tenant_id": tenant_id, "invoice_id": str(uuid.uuid4()),
+        "provider": InvoiceProvider.NILVERA, "document_kind": InvoiceDocumentKind.E_INVOICE,
+        "idempotency_key": "k", "request_uuid": str(uuid.uuid4()), "state": InvoiceSyncState.SENDING,
+        "attempt_count": 1, "prepared_at": datetime.now(UTC), "created_at": datetime.now(UTC),
+        "updated_at": datetime.now(UTC)
+    })
+
+    # 3. Seller eksikse HTTP çağrısı yapılmadığını kanıtlayan test eklenmeli
+    mock_db.tenant_settings.find_one = AsyncMock(return_value={
+        "tenant_id": tenant_id,
+        "nilvera": {"enabled": True, "api_key_enc": "dummy"} # company_info is missing!
+    })
+
+    mock_db.invoices.find_one = AsyncMock(return_value={
+            "id": str(uuid.uuid4()), "tenant_id": tenant_id, "invoice_number": "T1", "invoice_type": "SATIS",
+            "profile": "TICARIFATURA", "series": "ABC", "currency": "TRY", "issue_date": datetime.now(UTC),
+            "buyer_tax_number": "1", "buyer_alias": "urn:mail:defaultpk@nilvera.com", "buyer_legal_name": "N", "buyer_country_name": "TR", "buyer_city": "IST",
+            "buyer_address": "A", "payable_total": 100, "items": [{"description": "X", "quantity": 1, "tax_quantity": 1, "unit_code": "C62", "unit_price": 100.0, "tax_unit_price": 100.0, "discount_amount": 0.0, "kdv_rate": 20.0, "kdv_amount": 20.0, "total": 100.0}]
+        })
+    mock_db.invoice_sync.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
+
+    with patch("core.integrations.nilvera.provisioner.get_crypto_service") as m_crypto,          patch("core.integrations.invoice_dispatch_service.NilveraHttpClient") as m_client_cls:
+        
+        m_crypto.return_value.decrypt.return_value = "mock_api_key"
+        success = await InvoiceDispatchService.execute_dispatch(tenant_id, dispatch_id)
+
+    assert not success
+    m_client_cls.assert_not_called() # 3. HTTP çağrısı kesinlikle yapılmamalı
+
+    update_args = mock_db.invoice_sync.update_one.call_args[0][1]
+    assert update_args["$set"]["state"] == InvoiceSyncState.PERMANENT_ERROR.value
+    assert update_args["$set"]["last_error_category"] == "VALIDATION"
+    assert "Tenant company info" in update_args["$set"]["last_error_message"]
