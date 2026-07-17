@@ -12,6 +12,7 @@ from models.schemas.frontoffice import *  # noqa: F401, F403
 from models.schemas.guests import *  # noqa: F401, F403
 from models.schemas.identity import *  # noqa: F401, F403
 from models.schemas.identity import _ensure_hotel_context  # noqa: F401
+from models.schemas.invoice_sync import *  # noqa: F401, F403
 from models.schemas.invoicing import *  # noqa: F401, F403
 from models.schemas.loyalty import *  # noqa: F401, F403
 from models.schemas.maintenance import *  # noqa: F401, F403

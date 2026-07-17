@@ -121,6 +121,7 @@ TENANT_SCOPED_COLLECTIONS: set[str] = {
     "companies",
     "contracts",
     "pos_late_charges",
+    "invoice_sync",
 }
 
 # ── Append-only audit collections (Task #568) ───────────────────

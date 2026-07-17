@@ -3,8 +3,10 @@
 import json
 from typing import Any
 
+from core.integrations.errors import IntegrationError
 
-class NilveraApiError(Exception):
+
+class NilveraApiError(IntegrationError):
     """Base exception for Nilvera API errors."""
 
     def __init__(
@@ -18,13 +20,21 @@ class NilveraApiError(Exception):
         correlation_id: str | None = None,
         retryable: bool = False,
         raw_response: str | dict[str, Any] | None = None,
+        category: str = "UNKNOWN",
+        safe_code: str = "NILVERA_UNKNOWN_ERROR",
     ):
-        super().__init__(message)
-        self.safe_user_message = safe_user_message or "E-Belge entegratörü ile iletişimde bir sorun oluştu."
-        self.http_status = http_status
-        self.provider_code = provider_code
-        self.correlation_id = correlation_id
-        self.retryable = retryable
+        safe_msg = safe_user_message or "E-Belge entegratörü ile iletişimde bir sorun oluştu."
+        super().__init__(
+            safe_user_message=safe_msg,
+            category=category,
+            safe_code=safe_code,
+            retryable=retryable,
+            http_status=http_status,
+            provider="NILVERA",
+            provider_code=provider_code,
+            correlation_id=correlation_id,
+        )
+        self.message = message
 
         self.sanitized_description: str | None = None
         if description:
@@ -37,6 +47,7 @@ class NilveraApiError(Exception):
         self.sanitized_preview: str | None = None
         if raw_response is not None:
             self.sanitized_preview = self._create_sanitized_preview(raw_response)
+            self.sanitized_context["preview"] = self.sanitized_preview
 
     def _create_sanitized_preview(self, raw_response: str | dict[str, Any]) -> str:
         """Create a bounded, safe preview of the response."""
@@ -66,7 +77,6 @@ class NilveraApiError(Exception):
         return content[:512]
 
     def __str__(self) -> str:
-        base = super().__str__()
         parts = []
         if self.http_status:
             parts.append(f"HTTP {self.http_status}")
@@ -75,44 +85,74 @@ class NilveraApiError(Exception):
         if self.correlation_id:
             parts.append(f"CorrID {self.correlation_id}")
         ctx = f" [{', '.join(parts)}]" if parts else ""
-        return f"{base}{ctx}"
+        return f"{self.message}{ctx}"
 
     def __repr__(self) -> str:
         # Prevent any automatic exposure of detail, description, or sanitized_preview
-        return f"{self.__class__.__name__}({repr(self.args[0]) if self.args else ''})"
+        return f"{self.__class__.__name__}('{self.message}')"
 
 
 class NilveraValidationError(NilveraApiError):
-    """Raised when request payload is invalid (HTTP 400)."""
+    def __init__(self, message: str, **kwargs):
+        kwargs.setdefault("category", "VALIDATION")
+        kwargs.setdefault("safe_code", "NILVERA_VALIDATION_FAILED")
+        super().__init__(message, **kwargs)
 
 
 class NilveraAuthError(NilveraApiError):
-    """Raised when authentication fails (HTTP 401/403)."""
+    def __init__(self, message: str, **kwargs):
+        kwargs.setdefault("category", "AUTHENTICATION")
+        kwargs.setdefault("safe_code", "NILVERA_AUTH_FAILED")
+        super().__init__(message, **kwargs)
 
 
 class NilveraNotFoundError(NilveraApiError):
-    """Raised when a resource is not found (HTTP 404)."""
+    def __init__(self, message: str, **kwargs):
+        kwargs.setdefault("category", "NOT_FOUND")
+        kwargs.setdefault("safe_code", "NILVERA_NOT_FOUND")
+        super().__init__(message, **kwargs)
 
 
 class NilveraDuplicateError(NilveraApiError):
-    """Raised when the UUID or invoice is a duplicate (HTTP 409)."""
+    def __init__(self, message: str, **kwargs):
+        kwargs.setdefault("category", "DUPLICATE")
+        kwargs.setdefault("safe_code", "NILVERA_DUPLICATE")
+        super().__init__(message, **kwargs)
 
 
 class NilveraBusinessRuleError(NilveraApiError):
-    """Raised when a business rule is violated (HTTP 422)."""
+    def __init__(self, message: str, **kwargs):
+        kwargs.setdefault("category", "BUSINESS_RULE")
+        kwargs.setdefault("safe_code", "NILVERA_BUSINESS_RULE")
+        super().__init__(message, **kwargs)
 
 
 class NilveraRateLimitError(NilveraApiError):
-    """Raised when rate limit is exceeded (HTTP 429)."""
+    def __init__(self, message: str, **kwargs):
+        kwargs.setdefault("category", "RATE_LIMIT")
+        kwargs.setdefault("safe_code", "NILVERA_RATE_LIMIT")
+        kwargs.setdefault("retryable", True)
+        super().__init__(message, **kwargs)
 
 
 class NilveraServerError(NilveraApiError):
-    """Raised when the provider has an internal error (HTTP 5xx)."""
+    def __init__(self, message: str, **kwargs):
+        kwargs.setdefault("category", "PROVIDER_UNAVAILABLE")
+        kwargs.setdefault("safe_code", "NILVERA_SERVER_ERROR")
+        kwargs.setdefault("retryable", True)
+        super().__init__(message, **kwargs)
 
 
 class NilveraTimeoutError(NilveraApiError):
-    """Raised when a network timeout occurs."""
+    def __init__(self, message: str, **kwargs):
+        kwargs.setdefault("category", "TIMEOUT")
+        kwargs.setdefault("safe_code", "NILVERA_TIMEOUT")
+        kwargs.setdefault("retryable", True)
+        super().__init__(message, **kwargs)
 
 
 class NilveraResponseSizeError(NilveraApiError):
-    """Raised when the response size exceeds the allowed limit."""
+    def __init__(self, message: str, **kwargs):
+        kwargs.setdefault("category", "INVALID_PROVIDER_RESPONSE")
+        kwargs.setdefault("safe_code", "NILVERA_RESPONSE_TOO_LARGE")
+        super().__init__(message, **kwargs)

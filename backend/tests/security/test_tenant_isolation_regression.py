@@ -131,3 +131,24 @@ async def test_super_admin_cross_tenant_access(live_test_db):
     assert audit_log is not None
     assert audit_log["target_tenant"] == TENANT_B
     assert audit_log["resource"] == f"booking:{BOOKING_B}"
+
+@pytest.mark.asyncio
+async def test_invoice_sync_tenant_isolation(live_test_db):
+    """Ensure that invoice_sync blocks cross-tenant access via TenantAwareDBProxy."""
+    from core.tenant_db import get_db, set_tenant_context, TenantViolationError
+
+    # We should have a tenant context
+    set_tenant_context(TENANT_A)
+    db = get_db()
+
+    # This should be allowed and scoped to TENANT_A
+    await db.invoice_sync.insert_one({"id": "disp_A", "tenant_id": TENANT_A, "state": "PREPARED"})
+
+    # Cannot insert for TENANT_B while in TENANT_A context
+    with pytest.raises(TenantViolationError):
+        await db.invoice_sync.insert_one({"id": "disp_B", "tenant_id": TENANT_B, "state": "PREPARED"})
+
+    # Reads should only return TENANT_A docs
+    docs = await db.invoice_sync.find({}).to_list(100)
+    assert len(docs) == 1
+    assert docs[0]["tenant_id"] == TENANT_A
