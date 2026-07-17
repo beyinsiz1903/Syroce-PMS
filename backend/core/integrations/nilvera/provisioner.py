@@ -23,7 +23,7 @@ def _aad(tenant_id: str) -> AADContext:
 async def get_nilvera_tenant_config(tenant_id: str, *, decrypt_api_key: bool = False) -> dict[str, Any]:
     """Retrieve Nilvera settings for a tenant.
 
-    Returns a dict with 'enabled' (bool) and 'api_key' (str | None).
+    Returns a dict with 'enabled' (bool), 'api_key' (str | None), and 'seller' (dict).
     If `decrypt_api_key` is False, the API key is omitted/masked.
     """
     sysdb = get_system_db()
@@ -33,19 +33,12 @@ async def get_nilvera_tenant_config(tenant_id: str, *, decrypt_api_key: bool = F
     )
 
     cfg = (doc or {}).get("nilvera") or {}
-    company = cfg.get("company_info") or {}
+    seller_cfg = cfg.get("seller") or {}
     out = {
         "enabled": bool(cfg.get("enabled")),
         "api_key_set": bool(cfg.get("api_key_enc")),
         "api_key": None,
-        "seller": {
-            "vkn": company.get("vkn"),
-            "name": company.get("name"),
-            "tax_office": company.get("tax_office"),
-            "address": company.get("address"),
-            "city": company.get("city"),
-            "country": company.get("country", "Türkiye")
-        }
+        "seller": seller_cfg,
     }
 
     if decrypt_api_key and cfg.get("api_key_enc"):
@@ -64,12 +57,14 @@ async def update_nilvera_tenant_config(
     *,
     enabled: bool | None = None,
     api_key: str | None = None,
+    seller: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Update Nilvera settings for a tenant.
 
     If `api_key` is provided, it is encrypted and saved.
     If `api_key` is empty string (""), the key is cleared.
     If `enabled` is provided, the integration toggle is updated.
+    If `seller` is provided, the seller info is updated.
     """
     sysdb = get_system_db()
     updates: dict[str, Any] = {}
@@ -85,6 +80,9 @@ async def update_nilvera_tenant_config(
         else:
             # Clear key
             updates["nilvera.api_key_enc"] = None
+
+    if seller is not None:
+        updates["nilvera.seller"] = seller
 
     if not updates:
         return await get_nilvera_tenant_config(tenant_id)
@@ -103,4 +101,5 @@ async def update_nilvera_tenant_config(
         "enabled": bool(cfg.get("enabled")),
         "api_key_set": bool(cfg.get("api_key_enc")),
         "api_key": None,
+        "seller": cfg.get("seller") or {}
     }

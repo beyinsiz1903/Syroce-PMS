@@ -221,7 +221,8 @@ class InvoiceDispatchService:
             async with NilveraHttpClient(api_key=api_key) as client:
                 payload_dict = payload.model_dump(by_alias=True, exclude_none=True)
 
-                response_data = await client.post("/general/Invoice/Draft", json=payload_dict, correlation_id=sync_model.request_uuid)
+                from core.integrations.nilvera.config import NilveraEndpoints
+                response_data = await client.post(NilveraEndpoints.CREATE_DRAFT_INVOICE, json=payload_dict, correlation_id=sync_model.request_uuid)
 
                 provider_doc_id = None
                 if isinstance(response_data, list) and len(response_data) > 0:
