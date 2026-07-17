@@ -7,8 +7,10 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from core.helpers import require_admin
 from core.integrations.incoming_invoice_repository import IncomingInvoiceRepository
 from core.integrations.invoice_lifecycle_repository import InvoiceLifecycleRepository
+from models.schemas import User
 from models.schemas.incoming_invoice import IncomingInvoiceProfile
 from models.schemas.invoice_lifecycle import (
     InvoiceLifecycleAction,
@@ -17,13 +19,10 @@ from models.schemas.invoice_lifecycle import (
     InvoiceLifecycleDirection,
 )
 
-
-def get_current_user_tenant() -> str:
-    # mock
-    return "tenant_1"
-
-
-router = APIRouter(prefix="/integrations/incoming-invoices", tags=["Incoming Invoices"])
+router = APIRouter(
+    prefix="/api/integrations/incoming-invoices",
+    tags=["Integrations", "Incoming Invoices"],
+)
 
 
 class IncomingInvoiceAnswerRequest(BaseModel):
@@ -44,13 +43,13 @@ class InvoiceLifecycleResponse(BaseModel):
     succeeded_at: datetime | None = None
 
 
-async def require_admin(tenant_id: str = Depends(get_current_user_tenant)) -> str:
-    # Here we would assert the user role
-    return tenant_id
-
-
 @router.post("/{invoice_id}/answer", response_model=InvoiceLifecycleResponse)
-async def answer_incoming_invoice(invoice_id: str, request: IncomingInvoiceAnswerRequest, tenant_id: str = Depends(require_admin)) -> InvoiceLifecycleResponse:
+async def answer_incoming_invoice(
+    invoice_id: str,
+    request: IncomingInvoiceAnswerRequest,
+    user: User = Depends(require_admin),
+) -> InvoiceLifecycleResponse:
+    tenant_id = user.tenant_id
     invoice = await IncomingInvoiceRepository.get_by_id(tenant_id, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -78,9 +77,9 @@ async def answer_incoming_invoice(invoice_id: str, request: IncomingInvoiceAnswe
         return _map_to_response(existing_action)
 
     # Make sure we don't already have an action for this invoice that has been processed or is processing.
-    # For now, just rely on standard provider conflict or we can check here.
-    # The requirement says "Daha önce cevaplanmış fatura -> ikinci provider POST yok",
-    # the provider will return 409 and we'll catch it as RECONCILIATION_REQUIRED, which is safe.
+    has_active = await InvoiceLifecycleRepository.has_active_action_for_invoice(tenant_id, invoice_id)
+    if has_active:
+        raise HTTPException(status_code=409, detail="INVOICE_ALREADY_ANSWERED")
 
     action_id = str(uuid.uuid4())
     action = InvoiceLifecycleAction(
@@ -95,7 +94,7 @@ async def answer_incoming_invoice(invoice_id: str, request: IncomingInvoiceAnswe
         idempotency_key=idempotency_key,
         request_fingerprint=request_fingerprint,
         reason=request.note,
-        requested_by="admin_user",  # mock
+        requested_by=str(user.id),
         requested_at=datetime.now(UTC),
     )
 
@@ -107,7 +106,8 @@ async def answer_incoming_invoice(invoice_id: str, request: IncomingInvoiceAnswe
 
 
 @router.get("/{invoice_id}/lifecycle", response_model=list[InvoiceLifecycleResponse])
-async def get_invoice_lifecycle(invoice_id: str, tenant_id: str = Depends(require_admin)) -> list[InvoiceLifecycleResponse]:
+async def get_invoice_lifecycle(invoice_id: str, user: User = Depends(require_admin)) -> list[InvoiceLifecycleResponse]:
+    tenant_id = user.tenant_id
     from core.tenant_db import get_db_for_tenant
 
     db = get_db_for_tenant(tenant_id)

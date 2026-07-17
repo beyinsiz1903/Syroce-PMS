@@ -18,7 +18,7 @@ class IncomingInvoiceRepository:
     @staticmethod
     async def get_by_id(tenant_id: str, invoice_id: str) -> IncomingInvoice | None:
         db: AsyncIOMotorDatabase = get_db_for_tenant(tenant_id)
-        doc = await db.incoming_invoices.find_one({"id": invoice_id})
+        doc = await db.incoming_invoices.find_one({"id": invoice_id, "tenant_id": tenant_id})
         if not doc:
             return None
         return IncomingInvoice.model_validate(doc)
@@ -27,7 +27,7 @@ class IncomingInvoiceRepository:
     async def update_answer_status(tenant_id: str, invoice_id: str, new_status: IncomingInvoiceAnswerStatus) -> bool:
         db: AsyncIOMotorDatabase = get_db_for_tenant(tenant_id)
         result = await db.incoming_invoices.update_one(
-            {"id": invoice_id},
+            {"id": invoice_id, "tenant_id": tenant_id},
             {
                 "$set": {
                     "answer_status": new_status.value,

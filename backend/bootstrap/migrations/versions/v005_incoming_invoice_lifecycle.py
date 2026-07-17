@@ -1,8 +1,8 @@
 import logging
 
-from pymongo import ASCENDING, IndexModel
 import pymongo.errors
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo import ASCENDING, IndexModel
 
 from bootstrap.migrations.base import Migration
 

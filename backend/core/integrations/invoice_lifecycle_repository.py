@@ -41,6 +41,24 @@ class InvoiceLifecycleRepository:
         return InvoiceLifecycleAction.model_validate(doc)
 
     @staticmethod
+    async def has_active_action_for_invoice(tenant_id: str, invoice_id: str) -> bool:
+        from models.schemas.invoice_lifecycle import InvoiceLifecycleActionType
+        db: AsyncIOMotorDatabase = get_db_for_tenant(tenant_id)
+        count = await db.invoice_lifecycle_actions.count_documents({
+            "tenant_id": tenant_id,
+            "source_invoice_id": invoice_id,
+            "action_type": {"$in": [InvoiceLifecycleActionType.ACCEPT_INCOMING.value, InvoiceLifecycleActionType.REJECT_INCOMING.value]},
+            "state": {"$in": [
+                InvoiceLifecycleActionState.REQUESTED.value,
+                InvoiceLifecycleActionState.PROCESSING.value,
+                InvoiceLifecycleActionState.RETRY_SCHEDULED.value,
+                InvoiceLifecycleActionState.SUCCEEDED.value,
+                InvoiceLifecycleActionState.RECONCILIATION_REQUIRED.value
+            ]}
+        })
+        return count > 0
+
+    @staticmethod
     async def claim_action_lease(tenant_id: str, action_id: str, worker_id: str, lease_duration_sec: int) -> InvoiceLifecycleAction | None:
         """
         Atomically claims a lifecycle action for processing.

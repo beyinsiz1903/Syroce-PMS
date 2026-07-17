@@ -54,6 +54,10 @@ class InvoiceLifecycleWorker:
         except TimeoutError:
             logger.warning(f"InvoiceLifecycleWorker ({self._worker_id}) did not shut down gracefully in time. Forcing.")
             self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
         except asyncio.CancelledError:
             pass
 

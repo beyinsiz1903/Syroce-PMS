@@ -62,8 +62,6 @@ class InvoiceLifecycleService:
             return
 
         next_attempt = action.attempt_count + 1
-        delay_sec = _get_next_poll_delay(action.attempt_count)
-        next_check = now + timedelta(seconds=delay_sec)
 
         nilvera_cfg = await get_nilvera_tenant_config(action.tenant_id, decrypt_api_key=True)
         if not nilvera_cfg.get("enabled") or not nilvera_cfg.get("api_key"):
