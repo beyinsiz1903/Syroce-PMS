@@ -1,23 +1,23 @@
-import pytest
-import uuid
 import asyncio
-from datetime import datetime, timezone
+import os
+import uuid
+from datetime import UTC, datetime
 
-from models.schemas.invoice_sync import InvoiceSync, InvoiceSyncState, InvoiceProvider, InvoiceDocumentKind
-from core.integrations.invoice_sync_repository import InvoiceSyncRepository
+import pytest
+
 from core.integrations.errors import IntegrationConflictError
-from core.tenant_db import set_tenant_context, clear_tenant_context
+from core.integrations.invoice_sync_repository import InvoiceSyncRepository
+from core.tenant_db import clear_tenant_context, set_tenant_context
+from models.schemas.invoice_sync import InvoiceDocumentKind, InvoiceProvider, InvoiceSync, InvoiceSyncState
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.live_mongo]
 
-import os
 try:
     from motor.motor_asyncio import AsyncIOMotorClient
 except ImportError:
     AsyncIOMotorClient = None
 
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
-
 async def _mongo_or_skip():
     if AsyncIOMotorClient is None:
         pytest.skip("motor not installed")
@@ -34,16 +34,16 @@ async def live_test_db(monkeypatch):
     client = await _mongo_or_skip()
     db_name = f"test_sync_{uuid.uuid4().hex[:8]}"
     raw_db = client[db_name]
-    
+
     import core.database
     from core.tenant_db import TenantAwareDBProxy
-    
+
     proxy_db = TenantAwareDBProxy(raw_db)
     monkeypatch.setattr(core.database, "db", proxy_db)
     monkeypatch.setattr(core.database, "_raw_db", raw_db)
-    
+
     yield raw_db
-    
+
     await client.drop_database(db_name)
     client.close()
 
@@ -56,7 +56,7 @@ def setup_tenant():
 @pytest.fixture
 async def migrated_db(live_test_db):
     import bootstrap.migrations.versions.v002_invoice_sync_indexes as mig
-    await mig.upgrade(live_test_db)
+    await mig.MIGRATION.up(live_test_db)
     yield live_test_db
     # Downgrade cleanup is handled by live_test_db destruction
 
@@ -70,9 +70,9 @@ async def test_repository_atomic_creation(migrated_db):
         idempotency_key="v1:hash1",
         request_uuid=str(uuid.uuid4()),
         state=InvoiceSyncState.PREPARED,
-        prepared_at=datetime.now(timezone.utc),
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        prepared_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
     # First creation should succeed
@@ -97,9 +97,9 @@ async def test_repository_conflict_different_business_key(migrated_db):
         idempotency_key="v1:hash1",
         request_uuid=req_uuid,
         state=InvoiceSyncState.PREPARED,
-        prepared_at=datetime.now(timezone.utc),
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        prepared_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     await InvoiceSyncRepository.create_prepared("tenant_realdb", sync_model1)
 
@@ -113,11 +113,11 @@ async def test_repository_conflict_different_business_key(migrated_db):
         idempotency_key="v1:hash2",
         request_uuid=req_uuid,
         state=InvoiceSyncState.PREPARED,
-        prepared_at=datetime.now(timezone.utc),
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        prepared_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
-    
+
     with pytest.raises(IntegrationConflictError) as exc:
         await InvoiceSyncRepository.create_prepared("tenant_realdb", sync_model2)
     assert "conflicting dispatch record" in str(exc.value)
@@ -132,9 +132,9 @@ async def test_repository_concurrent_transitions(migrated_db):
         idempotency_key="v1:hash_conc",
         request_uuid=str(uuid.uuid4()),
         state=InvoiceSyncState.PREPARED,
-        prepared_at=datetime.now(timezone.utc),
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        prepared_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     created, _ = await InvoiceSyncRepository.create_prepared("tenant_realdb", sync_model)
 
@@ -145,12 +145,12 @@ async def test_repository_concurrent_transitions(migrated_db):
             expected_state=InvoiceSyncState.PREPARED,
             expected_version=1,
             target_state=InvoiceSyncState.QUEUED,
-            update_fields={"queued_at": datetime.now(timezone.utc)}
+            update_fields={"queued_at": datetime.now(UTC)}
         )
 
     # Launch 5 concurrent transition attempts
     results = await asyncio.gather(*(attempt_transition(i) for i in range(5)))
-    
+
     # Exactly one should succeed (return not None), others should fail (return None)
     successes = [r for r in results if r is not None]
     assert len(successes) == 1

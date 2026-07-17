@@ -75,6 +75,9 @@ class InvoiceSync(BaseModel):
     last_attempt_at: datetime | None = None
     next_retry_at: datetime | None = None
 
+    lease_owner: str | None = None
+    lease_expires_at: datetime | None = None
+
     provider_document_id: str | None = None
     provider_status: str | None = None
     provider_correlation_id: str | None = None

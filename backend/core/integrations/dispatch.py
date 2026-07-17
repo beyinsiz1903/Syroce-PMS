@@ -8,6 +8,7 @@ _TRANSITIONS = {
     InvoiceSyncState.PREPARED: {
         InvoiceSyncState.PREPARED,
         InvoiceSyncState.QUEUED,
+        InvoiceSyncState.SENDING,
         InvoiceSyncState.CANCELLED,
     },
     InvoiceSyncState.QUEUED: {
@@ -31,6 +32,7 @@ _TRANSITIONS = {
     },
     InvoiceSyncState.RETRYABLE_ERROR: {
         InvoiceSyncState.QUEUED,
+        InvoiceSyncState.SENDING,
         InvoiceSyncState.CANCELLED,
         InvoiceSyncState.PERMANENT_ERROR,
     },
