@@ -76,6 +76,16 @@ async def phase_e_outbox_and_eventbus(app):
     except Exception as e:
         logger.error(f"❌ Nilvera Invoice Dispatch Worker failed to start: {e}. Application running in DEGRADED mode for this worker.")
 
+    # Nilvera Status Worker
+    try:
+        from core.integrations.invoice_status_worker import invoice_status_worker
+
+        await invoice_status_worker.start()
+        app.state.invoice_status_worker = invoice_status_worker
+        logger.info("✅ Nilvera Invoice Status Worker started")
+    except Exception as e:
+        logger.error(f"❌ Nilvera Invoice Status Worker failed to start: {e}. Application running in DEGRADED mode for this worker.")
+
     # Channel Manager v2 indexes
     try:
         from channel_manager.infrastructure.indexes import create_cm_indexes

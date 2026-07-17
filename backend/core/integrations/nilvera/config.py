@@ -31,6 +31,7 @@ class NilveraEndpoints:
 
     # E-Invoice
     SEND_INVOICE_MODEL = "/einvoice/Send/Model"
+    GET_SALE_INVOICE_STATUS = "/einvoice/Sale/{uuid}/Status"
 
 
 _config: NilveraSettings | None = None
