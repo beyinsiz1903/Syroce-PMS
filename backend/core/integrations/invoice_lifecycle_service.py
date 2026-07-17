@@ -52,12 +52,13 @@ class InvoiceLifecycleService:
                 action.tenant_id,
                 action.id,
                 worker_id,
-                {
+                update_fields={
                     "state": InvoiceLifecycleActionState.FAILED.value,
                     "reconciliation_required": True,
                     "reconciliation_reason": "INVALID_PROVIDER_UUID",
                     "next_attempt_at": None,
                 },
+                unset_fields={"answer_guard_key": ""}
             )
             return
 
@@ -106,17 +107,20 @@ class InvoiceLifecycleService:
             update_fields = {
                 "attempt_count": next_attempt,
             }
+            unset_fields = None
 
             if e.http_status in (401, 403):
                 update_fields["state"] = InvoiceLifecycleActionState.FAILED.value
                 update_fields["reconciliation_required"] = True
                 update_fields["reconciliation_reason"] = "CREDENTIAL_ERROR"
                 update_fields["next_attempt_at"] = None
+                unset_fields = {"answer_guard_key": ""}
             elif e.http_status == 400:
                 update_fields["state"] = InvoiceLifecycleActionState.FAILED.value
                 update_fields["reconciliation_required"] = True
                 update_fields["reconciliation_reason"] = "BAD_REQUEST"
                 update_fields["next_attempt_at"] = None
+                unset_fields = {"answer_guard_key": ""}
             elif e.http_status in (404, 409, 429) or e.http_status >= 500:
                 update_fields["state"] = InvoiceLifecycleActionState.RECONCILIATION_REQUIRED.value
                 update_fields["reconciliation_required"] = True
@@ -129,7 +133,7 @@ class InvoiceLifecycleService:
                 update_fields["reconciliation_reason"] = "UNKNOWN_ERROR"
                 update_fields["next_attempt_at"] = None
 
-            await InvoiceLifecycleRepository.update_action_result(action.tenant_id, action.id, worker_id, update_fields)
+            await InvoiceLifecycleRepository.update_action_result(action.tenant_id, action.id, worker_id, update_fields, unset_fields)
             await event_bus.publish(f"invoice.lifecycle.{action.action_type.value.lower()}.failed", {"action_id": action.id, "tenant_id": action.tenant_id, "reason": str(e)})
 
         except Exception as e:

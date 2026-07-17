@@ -12,7 +12,11 @@ class InvoiceLifecycleDirection(StrEnum):
 class InvoiceLifecycleActionType(StrEnum):
     ACCEPT_INCOMING = "ACCEPT_INCOMING"
     REJECT_INCOMING = "REJECT_INCOMING"
-    CREATE_RETURN_INVOICE = "CREATE_RETURN_INVOICE"
+
+class ActionCreationResult(StrEnum):
+    SUCCESS = "SUCCESS"
+    IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"
+    GUARD_CONFLICT = "GUARD_CONFLICT"
 
 
 class InvoiceLifecycleActionState(StrEnum):
@@ -58,6 +62,8 @@ class InvoiceLifecycleAction(BaseModel):
 
     lifecycle_lease_owner: str | None = None
     lifecycle_lease_expires_at: datetime | None = None
+
+    answer_guard_key: str | None = None
 
     requested_by: str
     requested_at: datetime

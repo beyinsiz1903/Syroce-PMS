@@ -93,14 +93,18 @@ async def answer_incoming_invoice(
         request_uuid=request.request_uuid,
         idempotency_key=idempotency_key,
         request_fingerprint=request_fingerprint,
+        answer_guard_key=invoice_id,
         reason=request.note,
         requested_by=str(user.id),
         requested_at=datetime.now(UTC),
     )
 
     created = await InvoiceLifecycleRepository.create_action(action)
-    if not created:
+    from models.schemas.invoice_lifecycle import ActionCreationResult
+    if created == ActionCreationResult.IDEMPOTENCY_CONFLICT:
         raise HTTPException(status_code=409, detail="IDEMPOTENCY_CONFLICT: Concurrent creation detected.")
+    if created == ActionCreationResult.GUARD_CONFLICT:
+        raise HTTPException(status_code=409, detail="INVOICE_ALREADY_ANSWERED: An answer is already being processed for this invoice.")
 
     return _map_to_response(action)
 
