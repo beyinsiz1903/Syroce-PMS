@@ -13,6 +13,16 @@ def mock_app():
     return app
 
 @pytest.fixture
+def isolated_shutdown(monkeypatch):
+    from unittest.mock import MagicMock
+    mock_client = MagicMock()
+    monkeypatch.setattr(
+        "bootstrap.phases.shutdown.client",
+        mock_client,
+    )
+    return mock_client
+
+@pytest.fixture
 def mock_workers():
     with patch("core.integrations.invoice_dispatch_worker.invoice_dispatch_worker") as m_dispatch, \
          patch("core.integrations.invoice_reconciliation_worker.invoice_reconciliation_worker") as m_recon:
@@ -38,7 +48,7 @@ async def test_bootstrap_startup_starts_workers_once(mock_app, mock_workers):
     assert m_recon.start.call_count == 1
 
 @pytest.mark.asyncio
-async def test_bootstrap_shutdown_stops_workers_idempotently(mock_app, mock_workers):
+async def test_bootstrap_shutdown_stops_workers_idempotently(mock_app, mock_workers, isolated_shutdown):
     m_dispatch, m_recon, m_dispatch_sd, m_recon_sd = mock_workers
 
     mock_app.state.invoice_dispatch_worker = m_dispatch_sd
