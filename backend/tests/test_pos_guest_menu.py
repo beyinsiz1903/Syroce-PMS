@@ -1,21 +1,18 @@
 import pytest
 from fastapi.testclient import TestClient
-from main import app  # Assuming main exports app, or fallback
+
+from app import create_app
+
 
 @pytest.fixture
 def client():
-    # If app import fails in CI, this test will fail, but it's a standard pattern
-    try:
-        from main import app
-    except ImportError:
-        from fastapi import FastAPI
-        app = FastAPI()
-    return TestClient(app)
+    return TestClient(create_app())
+
 
 def test_get_guest_menu(client):
     response = client.get("/public/fnb/test_tenant/outlet_1/menu")
-    # Even if 404 in isolated test environment, it verifies the route structure
     assert response.status_code in [200, 404]
+
 
 def test_place_guest_order(client):
     payload = {
