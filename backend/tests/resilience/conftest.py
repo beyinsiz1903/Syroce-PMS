@@ -34,33 +34,47 @@ def _utc_now() -> str:
 def event_loop():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-
-    from core import database
-    from motor.motor_asyncio import AsyncIOMotorClient
-    from dotenv import load_dotenv
-
-    load_dotenv(BACKEND_ROOT / ".env")
-    mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
-    db_name = os.environ.get("DB_NAME", "hotel_pms")
-    database.client = AsyncIOMotorClient(mongo_url)
-    database.db = database.client[db_name]
-
     yield loop
     loop.close()
 
 
 # ── Database Access ────────────────────────────────────────────────
 
-@pytest.fixture
-def db():
+@pytest.fixture(scope="session")
+def db(event_loop):
     """Return raw (unproxied) DB for resilience tests.
 
     Resilience tests always include tenant_id explicitly in documents
     and queries, so the TenantAwareDBProxy scoping is unnecessary.
     Using _raw_db avoids TenantViolationError when STRICT_TENANT_MODE=true.
     """
-    from core.database import _raw_db
-    return _raw_db
+    from core import database
+    from core.tenant_db import TenantAwareDBProxy
+    from motor.motor_asyncio import AsyncIOMotorClient
+    from dotenv import load_dotenv
+
+    load_dotenv(BACKEND_ROOT / ".env")
+    mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
+    db_name = os.environ.get("DB_NAME", "hotel_pms")
+
+    previous_client = database.client
+    previous_raw_db = getattr(database, "_raw_db", None)
+    previous_db = database.db
+
+    client = AsyncIOMotorClient(mongo_url)
+    raw_db = client[db_name]
+
+    database.client = client
+    database._raw_db = raw_db
+    database.db = TenantAwareDBProxy(raw_db)
+
+    try:
+        yield raw_db
+    finally:
+        client.close()
+        database.client = previous_client
+        database._raw_db = previous_raw_db
+        database.db = previous_db
 
 
 # ── Cleanup ────────────────────────────────────────────────────────
