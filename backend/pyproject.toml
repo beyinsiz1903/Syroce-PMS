@@ -2,6 +2,7 @@
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
+norecursedirs = ["tests/_quarantine"]
 markers = [
     "ci_load: Fast load tests safe for CI (every PR)",
     "chaos_l1: Level 1 unit chaos tests (fast, every PR)",
