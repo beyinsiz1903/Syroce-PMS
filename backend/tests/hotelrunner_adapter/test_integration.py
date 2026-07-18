@@ -252,7 +252,7 @@ class TestSnapshotCollectorIntegration:
             "currency": "TRY",
             "rooms": [{"inv_code": "STD", "total_adult": 2}],
         }
-        canonical = provider.map_reservation_to_canonical(raw)
+        canonical = provider.map_reservation_to_canonical_format(raw)
 
         assert canonical["external_reservation_id"] == "HR-001"
         assert canonical["provider"] == "hotelrunner"
