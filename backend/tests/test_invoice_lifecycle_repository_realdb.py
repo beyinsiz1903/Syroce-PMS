@@ -60,7 +60,9 @@ def setup_tenant():
 @pytest.fixture
 async def migrated_db(live_test_db):
     import bootstrap.migrations.versions.v005_incoming_invoice_lifecycle as mig5
+    import bootstrap.migrations.versions.v006_incoming_invoice_answer_atomicity as mig6
     await mig5.MIGRATION.up(live_test_db)
+    await mig6.MIGRATION.up(live_test_db)
     yield live_test_db
 
 async def test_repo_tenant_isolation(migrated_db):
@@ -188,3 +190,93 @@ async def test_cross_tenant_incoming_invoice_update_fails(migrated_db):
     # Check it wasn't updated
     doc = await IncomingInvoiceRepository.get_by_id("tenant_A", "inv_cross_upd")
     assert doc.answer_status == IncomingInvoiceAnswerStatus.PENDING
+
+async def test_repo_answer_guard_atomicity(migrated_db):
+    from datetime import UTC, datetime
+
+    from core.integrations.invoice_lifecycle_repository import InvoiceLifecycleRepository
+    from models.schemas.invoice_lifecycle import (
+        ActionCreationResult,
+        InvoiceLifecycleAction,
+        InvoiceLifecycleActionState,
+        InvoiceLifecycleActionType,
+        InvoiceLifecycleDirection,
+    )
+
+    tenant_id = "tenant_atomic"
+    action1 = InvoiceLifecycleAction(
+        id="act_atomic_1", tenant_id=tenant_id, direction=InvoiceLifecycleDirection.INCOMING,
+        source_invoice_id="inv_atomic", source_provider_uuid="p_uuid", action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING,
+        state=InvoiceLifecycleActionState.REQUESTED, request_uuid="req_1", idempotency_key="key_1", request_fingerprint="f_1",
+        answer_guard_key="inv_atomic", requested_by="u1", requested_at=datetime.now(UTC)
+    )
+
+    action2 = InvoiceLifecycleAction(
+        id="act_atomic_2", tenant_id=tenant_id, direction=InvoiceLifecycleDirection.INCOMING,
+        source_invoice_id="inv_atomic", source_provider_uuid="p_uuid", action_type=InvoiceLifecycleActionType.REJECT_INCOMING,
+        state=InvoiceLifecycleActionState.REQUESTED, request_uuid="req_2", idempotency_key="key_2", request_fingerprint="f_2",
+        answer_guard_key="inv_atomic", requested_by="u1", requested_at=datetime.now(UTC)
+    )
+
+    # First creation should succeed
+    created1 = await InvoiceLifecycleRepository.create_action(action1)
+    assert created1 == ActionCreationResult.SUCCESS
+
+    # Second creation with the same answer_guard_key should fail with GUARD_CONFLICT
+    created2 = await InvoiceLifecycleRepository.create_action(action2)
+    assert created2 == ActionCreationResult.GUARD_CONFLICT
+
+    # If we clear the guard key (simulate FAILED), we should be able to create again
+    await InvoiceLifecycleRepository.update_action_result(
+        tenant_id, "act_atomic_1", action1.lifecycle_lease_owner,
+        {"state": InvoiceLifecycleActionState.FAILED.value},
+        unset_fields={"answer_guard_key": ""}
+    )
+
+    # Now action2 should succeed
+    created2_retry = await InvoiceLifecycleRepository.create_action(action2)
+    assert created2_retry == ActionCreationResult.SUCCESS
+
+async def test_duplicate_guard_detected_from_key_pattern():
+    from unittest.mock import patch
+
+    from pymongo.errors import DuplicateKeyError
+
+    from models.schemas.invoice_lifecycle import ActionCreationResult
+
+    action = InvoiceLifecycleAction(
+        id="a1", tenant_id="t1", direction="INCOMING", source_invoice_id="i1",
+        source_provider_uuid="p1", action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING, state="REQUESTED",
+        request_uuid="r1", idempotency_key="id1", request_fingerprint="f1",
+        requested_by="user1", requested_at=datetime.now(UTC)
+    )
+
+    with patch("core.integrations.invoice_lifecycle_repository.get_db_for_tenant") as mock_get_db:
+        mock_db = mock_get_db.return_value
+        err = DuplicateKeyError("E11000 duplicate key error", 11000, {"keyPattern": {"answer_guard_key": 1}})
+        mock_db.invoice_lifecycle_actions.insert_one.side_effect = err
+
+        result = await InvoiceLifecycleRepository.create_action(action)
+        assert result == ActionCreationResult.GUARD_CONFLICT
+
+async def test_duplicate_idempotency_detected_from_key_pattern():
+    from unittest.mock import patch
+
+    from pymongo.errors import DuplicateKeyError
+
+    from models.schemas.invoice_lifecycle import ActionCreationResult
+
+    action = InvoiceLifecycleAction(
+        id="a1", tenant_id="t1", direction="INCOMING", source_invoice_id="i1",
+        source_provider_uuid="p1", action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING, state="REQUESTED",
+        request_uuid="r1", idempotency_key="id1", request_fingerprint="f1",
+        requested_by="user1", requested_at=datetime.now(UTC)
+    )
+
+    with patch("core.integrations.invoice_lifecycle_repository.get_db_for_tenant") as mock_get_db:
+        mock_db = mock_get_db.return_value
+        err = DuplicateKeyError("E11000 duplicate key error", 11000, {"keyPattern": {"idempotency_key": 1}})
+        mock_db.invoice_lifecycle_actions.insert_one.side_effect = err
+
+        result = await InvoiceLifecycleRepository.create_action(action)
+        assert result == ActionCreationResult.IDEMPOTENCY_CONFLICT

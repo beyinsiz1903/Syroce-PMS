@@ -4,25 +4,37 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo.errors import DuplicateKeyError
 
 from core.tenant_db import get_db_for_tenant
-from models.schemas.invoice_lifecycle import InvoiceLifecycleAction, InvoiceLifecycleActionState
+from models.schemas.invoice_lifecycle import ActionCreationResult, InvoiceLifecycleAction, InvoiceLifecycleActionState
 
 
 class InvoiceLifecycleRepository:
     """Repository for managing invoice lifecycle actions."""
 
     @staticmethod
-    async def create_action(action: InvoiceLifecycleAction) -> bool:
+    async def create_action(action: InvoiceLifecycleAction) -> ActionCreationResult:
         """
-        Creates a new lifecycle action. Returns True if successfully inserted,
-        False if an action with the same idempotency key already exists.
+        Creates a new lifecycle action. Returns SUCCESS if inserted,
+        IDEMPOTENCY_CONFLICT if idempotency key clashes, GUARD_CONFLICT if answer guard clashes.
         """
         db: AsyncIOMotorDatabase = get_db_for_tenant(action.tenant_id)
         doc = action.model_dump(by_alias=True)
         try:
             await db.invoice_lifecycle_actions.insert_one(doc)
-            return True
-        except DuplicateKeyError:
-            return False
+            return ActionCreationResult.SUCCESS
+        except DuplicateKeyError as e:
+            details = getattr(e, "details", None) or {}
+            key_pattern = details.get("keyPattern") or {}
+
+            if "answer_guard_key" in key_pattern:
+                return ActionCreationResult.GUARD_CONFLICT
+
+            if "idempotency_key" in key_pattern:
+                return ActionCreationResult.IDEMPOTENCY_CONFLICT
+
+            msg = str(details.get("errmsg") or e)
+            if "idx_lifecycle_actions_tenant_answer_guard_unique" in msg or "idx_tenant_answer_guard" in msg:
+                return ActionCreationResult.GUARD_CONFLICT
+            return ActionCreationResult.IDEMPOTENCY_CONFLICT
 
     @staticmethod
     async def get_by_id(tenant_id: str, action_id: str) -> InvoiceLifecycleAction | None:
@@ -91,7 +103,7 @@ class InvoiceLifecycleRepository:
         return InvoiceLifecycleAction.model_validate(doc)
 
     @staticmethod
-    async def update_action_result(tenant_id: str, action_id: str, worker_id: str, update_fields: dict) -> bool:
+    async def update_action_result(tenant_id: str, action_id: str, worker_id: str, update_fields: dict, unset_fields: dict | None = None) -> bool:
         """
         Updates the result of a processed action and releases the lease.
         Only succeeds if the worker still owns the lease.
@@ -102,5 +114,9 @@ class InvoiceLifecycleRepository:
         update_fields["lifecycle_lease_owner"] = None
         update_fields["lifecycle_lease_expires_at"] = None
 
-        result = await db.invoice_lifecycle_actions.update_one({"id": action_id, "tenant_id": tenant_id, "lifecycle_lease_owner": worker_id}, {"$set": update_fields})
+        update_op = {"$set": update_fields}
+        if unset_fields:
+            update_op["$unset"] = unset_fields
+
+        result = await db.invoice_lifecycle_actions.update_one({"id": action_id, "tenant_id": tenant_id, "lifecycle_lease_owner": worker_id}, update_op)
         return result.modified_count > 0

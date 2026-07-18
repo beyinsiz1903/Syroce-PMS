@@ -287,3 +287,35 @@ def test_answered_invoice_does_not_create_second_action():
 
 def test_conflicting_second_answer_returns_409():
     test_answered_invoice_does_not_create_second_action()
+
+def test_guard_duplicate_returns_invoice_already_answered():
+    from models.schemas.invoice_lifecycle import ActionCreationResult
+    with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as mock_get:
+        mock_get.return_value = type("MockInv", (), {"answer_status": "PENDING", "profile": "COMMERCIAL", "provider_uuid": "123"})()
+        with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key", return_value=None):
+            with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.has_active_action_for_invoice", return_value=False):
+                with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.create_action", return_value=ActionCreationResult.GUARD_CONFLICT):
+                    payload = {"answer": "APPROVE", "request_uuid": "req-1"}
+                    response = client.post(
+                        "/api/integrations/incoming-invoices/inv_already_answered/answer",
+                        headers={"Authorization": "Bearer test-only-minimum-32-character-secret", "X-Idempotency-Key": "idemp-x"},
+                        json=payload
+                    )
+                    assert response.status_code == 409
+                    assert "INVOICE_ALREADY_ANSWERED" in response.json()["detail"]
+
+def test_idempotency_duplicate_returns_idempotency_conflict():
+    from models.schemas.invoice_lifecycle import ActionCreationResult
+    with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as mock_get:
+        mock_get.return_value = type("MockInv", (), {"answer_status": "PENDING", "profile": "COMMERCIAL", "provider_uuid": "123"})()
+        with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key", return_value=None):
+            with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.has_active_action_for_invoice", return_value=False):
+                with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.create_action", return_value=ActionCreationResult.IDEMPOTENCY_CONFLICT):
+                    payload = {"answer": "APPROVE", "request_uuid": "req-1"}
+                    response = client.post(
+                        "/api/integrations/incoming-invoices/inv_idemp_conflict/answer",
+                        headers={"Authorization": "Bearer test-only-minimum-32-character-secret", "X-Idempotency-Key": "idemp-x"},
+                        json=payload
+                    )
+                    assert response.status_code == 409
+                    assert "IDEMPOTENCY_CONFLICT" in response.json()["detail"]
