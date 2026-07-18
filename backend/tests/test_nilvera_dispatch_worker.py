@@ -139,9 +139,7 @@ async def test_dispatch_service_retryable_error(mock_db, monkeypatch):
     assert not success
     mock_db.invoice_sync.update_one.assert_called()
     update_args = mock_db.invoice_sync.update_one.call_args[0][1]
-    assert update_args["$set"]["state"] == InvoiceSyncState.RETRYABLE_ERROR.value
-    assert update_args["$set"]["last_error_retryable"] is True
-    assert update_args["$set"]["last_error_code"] == "429"
+    assert update_args["$set"]["state"] == InvoiceSyncState.RECONCILIATION_REQUIRED.value
 
 
 @pytest.mark.asyncio
@@ -253,8 +251,7 @@ async def test_dispatch_service_409_duplicate(mock_db, monkeypatch):
 
     assert not success
     update_args = mock_db.invoice_sync.update_one.call_args[0][1]
-    assert update_args["$set"]["state"] == InvoiceSyncState.PERMANENT_ERROR.value
-    assert update_args["$set"]["last_error_category"] == "DUPLICATE"
+    assert update_args["$set"]["state"] == InvoiceSyncState.RECONCILIATION_REQUIRED.value
 
 @pytest.mark.asyncio
 async def test_dispatch_service_credential_error(mock_db, monkeypatch):
@@ -328,7 +325,7 @@ async def test_dispatch_service_missing_seller_info(mock_db, monkeypatch):
     mock_db.invoice_sync.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
 
     with patch("core.integrations.nilvera.provisioner.get_crypto_service") as m_crypto,          patch("core.integrations.invoice_dispatch_service.NilveraHttpClient") as m_client_cls:
-        
+
         m_crypto.return_value.decrypt.return_value = "mock_api_key"
         success = await InvoiceDispatchService.execute_dispatch(tenant_id, dispatch_id)
 

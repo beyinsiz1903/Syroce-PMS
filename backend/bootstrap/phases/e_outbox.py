@@ -74,7 +74,8 @@ async def phase_e_outbox_and_eventbus(app):
         app.state.invoice_dispatch_worker = invoice_dispatch_worker
         logger.info("✅ Nilvera Invoice Dispatch Worker started")
     except Exception as e:
-        logger.error(f"❌ Nilvera Invoice Dispatch Worker failed to start: {e}. Application running in DEGRADED mode for this worker.")
+        logger.error(f"❌ Nilvera Invoice Dispatch Worker failed to start: {e}")
+        raise
 
     # Nilvera Status Worker
     try:
@@ -85,6 +86,17 @@ async def phase_e_outbox_and_eventbus(app):
         logger.info("✅ Nilvera Invoice Status Worker started")
     except Exception as e:
         logger.error(f"❌ Nilvera Invoice Status Worker failed to start: {e}. Application running in DEGRADED mode for this worker.")
+
+    # Nilvera Reconciliation Worker
+    try:
+        from core.integrations.invoice_reconciliation_worker import invoice_reconciliation_worker
+
+        await invoice_reconciliation_worker.start()
+        app.state.invoice_reconciliation_worker = invoice_reconciliation_worker
+        logger.info("✅ Nilvera Invoice Reconciliation Worker started")
+    except Exception as e:
+        logger.error(f"❌ Nilvera Invoice Reconciliation Worker failed to start: {e}")
+        raise
 
     # Nilvera Invoice Lifecycle Worker
     try:

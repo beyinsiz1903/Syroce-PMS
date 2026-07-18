@@ -14,6 +14,10 @@ class InvoiceSyncState(StrEnum):
     REJECTED = "REJECTED"
     RETRYABLE_ERROR = "RETRYABLE_ERROR"
     PERMANENT_ERROR = "PERMANENT_ERROR"
+    CONFIGURATION_ERROR = "CONFIGURATION_ERROR"
+    RECONCILIATION_REQUIRED = "RECONCILIATION_REQUIRED"
+    SAFE_TO_RETRY = "SAFE_TO_RETRY"
+    MANUAL_REVIEW_REQUIRED = "MANUAL_REVIEW_REQUIRED"
     CANCELLED = "CANCELLED"
 
 
@@ -98,6 +102,16 @@ class InvoiceSync(BaseModel):
     reconciled_at: datetime | None = None
     reconciled_by: str | None = None
     reconciliation_note: str | None = None
+
+    reconciliation_started_at: datetime | None = None
+    first_not_found_at: datetime | None = None
+    last_reconciliation_at: datetime | None = None
+    not_found_count: int = 0
+    reconciliation_attempt_count: int = 0
+    redispatch_count: int = 0
+    next_reconciliation_at: datetime | None = None
+    last_counted_reconciliation_cycle_id: str | None = None
+    current_reconciliation_cycle_id: str | None = None
 
     status_lease_owner: str | None = None
     status_lease_expires_at: datetime | None = None
