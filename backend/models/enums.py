@@ -137,6 +137,14 @@ class InvoiceStatus(str, Enum):
     OVERDUE = "overdue"
 
 
+class ReturnAllocationState(str, Enum):
+    RESERVED = "RESERVED"
+    PROVIDER_PENDING = "PROVIDER_PENDING"
+    CONFIRMED = "CONFIRMED"
+    RELEASED = "RELEASED"
+    RECONCILIATION_REQUIRED = "RECONCILIATION_REQUIRED"
+
+
 class LoyaltyTier(str, Enum):
     BRONZE = "bronze"
     SILVER = "silver"

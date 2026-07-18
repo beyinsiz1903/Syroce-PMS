@@ -1,9 +1,11 @@
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from models.schemas.invoice_sync import InvoiceProvider
+from models.schemas.invoicing import TaxDetail
 
 
 class IncomingInvoiceProfile(StrEnum):
@@ -40,6 +42,32 @@ class IncomingInvoice(BaseModel):
     payable_amount: float | None = None
     currency: str | None = None
 
+    created_at: datetime
+    updated_at: datetime
+    version: int = 1
+
+
+class IncomingInvoiceLine(BaseModel):
+    id: str
+    tenant_id: str
+    incoming_invoice_id: str
+
+    provider_line_id: str | None = None
+    line_number: int
+
+    name: str
+    quantity: Decimal
+    unit_code: str
+    unit_price: Decimal
+
+    discount_amount: Decimal
+    line_extension_amount: Decimal
+
+    kdv_rate: Decimal
+    kdv_amount: Decimal
+    other_taxes: list[TaxDetail] = Field(default_factory=list)
+
+    currency: str
     created_at: datetime
     updated_at: datetime
     version: int = 1

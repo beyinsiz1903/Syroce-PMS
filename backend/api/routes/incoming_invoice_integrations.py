@@ -3,13 +3,16 @@
 import hashlib
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from core.helpers import require_admin
 from core.integrations.incoming_invoice_repository import IncomingInvoiceRepository
 from core.integrations.invoice_lifecycle_repository import InvoiceLifecycleRepository
+from core.integrations.invoice_return_service import ReturnQuantityRequest
 from models.schemas import User
 from models.schemas.incoming_invoice import IncomingInvoiceProfile
 from models.schemas.invoice_lifecycle import (
@@ -132,4 +135,68 @@ def _map_to_response(action: InvoiceLifecycleAction) -> InvoiceLifecycleResponse
         reconciliation_reason=action.reconciliation_reason,
         requested_at=action.requested_at,
         succeeded_at=action.completed_at,
+    )
+
+
+class IncomingInvoiceReturnRequest(BaseModel):
+    return_type: Literal["FULL", "PARTIAL"]
+    lines: list[ReturnQuantityRequest] | None = None
+    request_uuid: str
+
+
+class IncomingInvoiceReturnResponse(BaseModel):
+    return_action_id: str | None = None
+    source_invoice_id: str
+    return_type: str
+    allocated_lines_count: int
+
+
+@router.post("/{invoice_id}/return", response_model=IncomingInvoiceReturnResponse)
+async def create_incoming_invoice_return(
+    request: Request,
+    invoice_id: str,
+    payload: IncomingInvoiceReturnRequest,
+    user: User = Depends(require_admin),
+) -> IncomingInvoiceReturnResponse:
+    tenant_id = user.tenant_id
+
+    # 1. Validate UUID format for invoice_id
+    try:
+        uuid.UUID(invoice_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid invoice_id format")
+
+    try:
+        uuid.UUID(payload.request_uuid)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid request_uuid format")
+
+    # 2. Check incoming invoice existence and tenant match
+    invoice = await IncomingInvoiceRepository.get_by_id(tenant_id, invoice_id)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # 3. Payload validation
+    if payload.return_type == "PARTIAL":
+        if not payload.lines or len(payload.lines) == 0:
+            raise HTTPException(status_code=422, detail="PARTIAL return requires lines")
+
+        line_ids = set()
+        for line in payload.lines:
+            if line.quantity <= Decimal("0"):
+                raise HTTPException(status_code=422, detail="Return quantity must be greater than 0")
+            if line.source_line_id in line_ids:
+                raise HTTPException(status_code=422, detail="Duplicate source_line_id in payload")
+            line_ids.add(line.source_line_id)
+
+        # Optional: Validate lines belong to invoice (can be handled by service too, but good to check here)
+
+    # 4. Fail-Closed Option A: Provider Contract Not Verified
+    # Do not create allocation or action yet.
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "code": "PROVIDER_CONTRACT_NOT_VERIFIED",
+            "detail": "CreateReturn provider contract is not verified."
+        }
     )
