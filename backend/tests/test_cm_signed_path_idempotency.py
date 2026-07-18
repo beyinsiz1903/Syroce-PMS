@@ -23,8 +23,8 @@ from pathlib import Path
 
 import pytest
 
-from domains.channel_manager.providers.hotelrunner_webhook import (
-    _verify_hotelrunner_signature,
+from domains.channel_manager.providers.hotelrunner_security import (
+    _verify_hotelrunner_callback,
 )
 
 
@@ -32,6 +32,8 @@ class _FakeRequest:
     def __init__(self, headers=None, body=b"{}"):
         self.headers = headers or {}
         self._body = body
+        self.query_params = {}
+        self.path_params = {}
 
     async def body(self):
         return self._body
@@ -45,14 +47,23 @@ def _sign(secret, ts, raw):
 async def test_hotelrunner_valid_signed_path_accepted(monkeypatch):
     secret = "wave5-secret"
     monkeypatch.setenv("HOTELRUNNER_WEBHOOK_SECRET", secret)
-    raw = b'{"reservation":{"hr_number":"HR-1"}}'
+
+    async def mock_lookup(hr_id):
+        return {"hr_id": hr_id, "tenant_id": "mock-tenant"}
+    monkeypatch.setattr("domains.channel_manager.providers.hotelrunner_security._lookup_signing_connection", mock_lookup)
+
+    async def mock_load_secret(conn):
+        return secret
+    monkeypatch.setattr("domains.channel_manager.providers.hotelrunner_security._load_webhook_secret", mock_load_secret)
+
+    raw = b'{"hr_id": "mock-hr-id", "reservation":{"hr_number":"HR-1"}}'
     ts = str(int(time.time()))
     headers = {
         "X-HotelRunner-Signature": f"sha256={_sign(secret, ts, raw)}",
         "X-HotelRunner-Timestamp": ts,
     }
     # Returns without raising → signed path is the accepted ingress.
-    await _verify_hotelrunner_signature(_FakeRequest(headers, raw))
+    await _verify_hotelrunner_callback(_FakeRequest(headers, raw))
 
 
 @pytest.mark.asyncio
@@ -61,8 +72,23 @@ async def test_hotelrunner_default_fail_closed(monkeypatch):
     monkeypatch.delenv("ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK", raising=False)
     from fastapi import HTTPException
 
+    async def mock_lookup(hr_id):
+        return {"hr_id": hr_id, "tenant_id": "mock-tenant"}
+    monkeypatch.setattr("domains.channel_manager.providers.hotelrunner_security._lookup_signing_connection", mock_lookup)
+
+    async def mock_load_secret(conn):
+        return None
+    monkeypatch.setattr("domains.channel_manager.providers.hotelrunner_security._load_webhook_secret", mock_load_secret)
+
+    ts = str(int(time.time()))
+    headers = {
+        "X-HotelRunner-Signature": "sha256=invalid",
+        "X-HotelRunner-Timestamp": ts,
+    }
+    raw = b'{"hr_id": "mock-hr-id"}'
+
     with pytest.raises(HTTPException) as ei:
-        await _verify_hotelrunner_signature(_FakeRequest())
+        await _verify_hotelrunner_callback(_FakeRequest(headers, raw))
     assert ei.value.status_code == 503
 
 
