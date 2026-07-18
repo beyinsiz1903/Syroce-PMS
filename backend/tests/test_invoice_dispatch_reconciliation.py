@@ -19,6 +19,23 @@ def mock_now():
     return datetime(2026, 7, 18, 12, 0, 0, tzinfo=UTC)
 
 
+@pytest.fixture(autouse=True)
+def freeze_repository_time(monkeypatch, mock_now):
+    from datetime import datetime
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return mock_now.replace(tzinfo=None)
+            return mock_now.astimezone(tz)
+
+    monkeypatch.setattr(
+        "core.integrations.invoice_sync_repository.datetime",
+        FrozenDateTime,
+    )
+
+
 @pytest.fixture
 async def setup_sync_record(request: pytest.FixtureRequest, mock_now: datetime) -> InvoiceSync:
     tenant_id = "test_tenant"
