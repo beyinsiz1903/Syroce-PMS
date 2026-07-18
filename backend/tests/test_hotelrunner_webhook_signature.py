@@ -332,4 +332,3 @@ async def test_hotelrunner_webhook_csrf_exemption(monkeypatch):
     
     resp_webhook = await csrf_guard_middleware(req_webhook, mock_call_next)
     assert resp_webhook.status_code == 200, "CSRF guard blocked the specific webhook path"
->>>>>>> origin/main
