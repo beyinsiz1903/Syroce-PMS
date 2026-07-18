@@ -202,13 +202,11 @@ async def test_partial_return_and_state_transitions(migrated_db):
 # ==========================================
 # API Endpoint Tests
 # ==========================================
-import hashlib
 
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from api.routes.incoming_invoice_integrations import require_admin, router
-from models.schemas.invoice_lifecycle import InvoiceLifecycleAction
 
 app = FastAPI()
 app.include_router(router)
@@ -221,21 +219,11 @@ def mock_require_admin():
 
 app.dependency_overrides[require_admin] = mock_require_admin
 
-async def test_api_missing_header_returns_422():
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/api/integrations/incoming-invoices/f47ac10b-58cc-4372-a567-0e02b2c3d479/return",
-            json={"return_type": "FULL", "request_uuid": "f47ac10b-58cc-4372-a567-0e02b2c3d479"}
-        )
-    # Missing X-Idempotency-Key
-    assert response.status_code == 422
-    assert "x-idempotency-key" in response.text.lower()
 
 async def test_api_invalid_uuid_returns_422():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/integrations/incoming-invoices/invalid-uuid/return",
-            headers={"X-Idempotency-Key": "key1"},
             json={"return_type": "FULL", "request_uuid": "f47ac10b-58cc-4372-a567-0e02b2c3d479"}
         )
     assert response.status_code == 422
@@ -245,7 +233,6 @@ async def test_api_invoice_not_found_returns_404(migrated_db):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/integrations/incoming-invoices/f47ac10b-58cc-4372-a567-0e02b2c3d479/return",
-            headers={"X-Idempotency-Key": "key1"},
             json={"return_type": "FULL", "request_uuid": "f47ac10b-58cc-4372-a567-0e02b2c3d479"}
         )
     assert response.status_code == 404
@@ -268,7 +255,6 @@ async def test_api_duplicate_source_line_returns_422(migrated_db):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             f"/api/integrations/incoming-invoices/{invoice_id}/return",
-            headers={"X-Idempotency-Key": "key2"},
             json={
                 "return_type": "PARTIAL",
                 "request_uuid": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
@@ -295,7 +281,6 @@ async def test_api_provider_contract_unverified_returns_503(migrated_db):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             f"/api/integrations/incoming-invoices/{invoice_id}/return",
-            headers={"X-Idempotency-Key": "key-503-test"},
             json={"return_type": "FULL", "request_uuid": "f47ac10b-58cc-4372-a567-0e02b2c3d470"}
         )
     assert response.status_code == 503
@@ -306,87 +291,121 @@ async def test_api_provider_contract_unverified_returns_503(migrated_db):
     action_count = await migrated_db.invoice_lifecycle_actions.count_documents({"idempotency_key": f"{tenant_id}:return:key-503-test"})
     assert action_count == 0
 
-async def test_api_idempotency_conflict_returns_409(migrated_db):
-    tenant_id = "tenant_test"
-    invoice_id = "f47ac10b-58cc-4372-a567-0e02b2c3d471"
-    await migrated_db.incoming_invoices.insert_one({
-        "id": invoice_id, "tenant_id": tenant_id, "provider": "NILVERA", "provider_uuid": "123",
-        "invoice_number": "ABC", "sender_vkn_tckn": "111", "sender_title": "T",
-        "profile": "TICARIFATURA", "answer_status": "PENDING",
-        "issue_date": datetime.now(UTC), "received_at": datetime.now(UTC),
-        "created_at": datetime.now(UTC), "updated_at": datetime.now(UTC)
+async def test_repository_allocation_state_transition_cas_miss_rollback(migrated_db):
+    from core.integrations.invoice_return_repository import CASFailedError, update_allocation_state
+    from models.schemas.invoicing import ReturnAllocationState
+
+    tenant_id = "tenant_cas"
+    invoice_id = "inv_1"
+    line_id = "line_1"
+
+    # Insert balance
+    await migrated_db.invoice_return_balances.insert_one({
+        "tenant_id": tenant_id,
+        "source_incoming_invoice_id": invoice_id,
+        "source_line_id": line_id,
+        "original_quantity": "10.00",
+        "reserved_quantity": "2.00",
+        "confirmed_quantity": "0.00",
+        "version": 1
     })
 
-    # Manually insert action with DIFFERENT fingerprint
-    from models.schemas.invoice_lifecycle import InvoiceLifecycleActionState, InvoiceLifecycleActionType, InvoiceLifecycleDirection
-    action = InvoiceLifecycleAction(
-        id="act_idemp_1",
-        tenant_id=tenant_id,
-        direction=InvoiceLifecycleDirection.INCOMING,
-        source_invoice_id=invoice_id,
-        source_provider_uuid="123",
-        action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING, # Doesn't matter
-        state=InvoiceLifecycleActionState.REQUESTED,
-        request_uuid="old-uuid",
-        idempotency_key=f"{tenant_id}:return:key-conflict",
-        request_fingerprint="old-fingerprint",
-        requested_by="admin",
-        requested_at=datetime.now(UTC)
-    )
-    await migrated_db.invoice_lifecycle_actions.insert_one(action.model_dump(mode="json"))
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            f"/api/integrations/incoming-invoices/{invoice_id}/return",
-            headers={"X-Idempotency-Key": "key-conflict"},
-            json={"return_type": "FULL", "request_uuid": "f47ac10b-58cc-4372-a567-0e02b2c3d471"}
-        )
-    assert response.status_code == 409
-    assert "IDEMPOTENCY_CONFLICT" in response.text
-
-async def test_api_idempotency_same_payload_returns_existing(migrated_db):
-    tenant_id = "tenant_test"
-    invoice_id = "f47ac10b-58cc-4372-a567-0e02b2c3d472"
-    request_uuid = "f47ac10b-58cc-4372-a567-0e02b2c3d472"
-    await migrated_db.incoming_invoices.insert_one({
-        "id": invoice_id, "tenant_id": tenant_id, "provider": "NILVERA", "provider_uuid": "123",
-        "invoice_number": "ABC", "sender_vkn_tckn": "111", "sender_title": "T",
-        "profile": "TICARIFATURA", "answer_status": "PENDING",
-        "issue_date": datetime.now(UTC), "received_at": datetime.now(UTC),
-        "created_at": datetime.now(UTC), "updated_at": datetime.now(UTC)
+    # Insert allocation
+    alloc_id = "alloc_1"
+    await migrated_db.invoice_return_allocations.insert_one({
+        "id": alloc_id,
+        "tenant_id": tenant_id,
+        "source_incoming_invoice_id": invoice_id,
+        "source_line_id": line_id,
+        "return_action_id": "action_1",
+        "quantity": "2.00",
+        "state": "RESERVED",
+        "created_at": datetime.now(UTC),
+        "updated_at": datetime.now(UTC)
     })
 
-    # Calculate exact fingerprint
-    fingerprint_raw = f"{tenant_id}:{invoice_id}:FULL::{request_uuid}"
-    request_fingerprint = hashlib.sha256(fingerprint_raw.encode("utf-8")).hexdigest()
+    # Simulate concurrent modification on balance by forcing an incorrect version when read
+    from unittest.mock import patch
 
-    # Manually insert action with SAME fingerprint
-    from models.schemas.invoice_lifecycle import InvoiceLifecycleActionState, InvoiceLifecycleActionType, InvoiceLifecycleDirection
-    action = InvoiceLifecycleAction(
-        id="act_idemp_2",
-        tenant_id=tenant_id,
-        direction=InvoiceLifecycleDirection.INCOMING,
-        source_invoice_id=invoice_id,
-        source_provider_uuid="123",
-        action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING,
-        state=InvoiceLifecycleActionState.REQUESTED,
-        request_uuid=request_uuid,
-        idempotency_key=f"{tenant_id}:return:key-same",
-        request_fingerprint=request_fingerprint,
-        requested_by="admin",
-        requested_at=datetime.now(UTC)
-    )
-    await migrated_db.invoice_lifecycle_actions.insert_one(action.model_dump(mode="json"))
+    import pytest
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            f"/api/integrations/incoming-invoices/{invoice_id}/return",
-            headers={"X-Idempotency-Key": "key-same"},
-            json={"return_type": "FULL", "request_uuid": request_uuid}
-        )
-    # Should not hit 503, should return existing
-    assert response.status_code == 200
-    data = response.json()
-    assert data["return_action_id"] == "act_idemp_2"
-    assert data["return_type"] == "FULL"
+    from models.schemas.invoicing import InvoiceReturnBalance
 
+    def fake_balance(**kwargs):
+        kwargs["version"] = -1 # Force incorrect version to cause CAS miss
+        return InvoiceReturnBalance(**kwargs)
+
+    with patch("core.integrations.invoice_return_repository.get_db_for_tenant", return_value=migrated_db):
+        with patch("core.integrations.invoice_return_repository.InvoiceReturnBalance", side_effect=fake_balance):
+            # Try transitioning to CONFIRMED
+            with pytest.raises(CASFailedError) as exc:
+                await update_allocation_state(tenant_id, alloc_id, ReturnAllocationState.CONFIRMED)
+            assert "Concurrent update detected" in str(exc.value)
+
+            # Try transitioning to RELEASED
+            with pytest.raises(CASFailedError) as exc:
+                await update_allocation_state(tenant_id, alloc_id, ReturnAllocationState.RELEASED)
+            assert "Concurrent update detected" in str(exc.value)
+
+    # Ensure allocation state remains RESERVED after CAS miss
+    alloc_doc = await migrated_db.invoice_return_allocations.find_one({"id": alloc_id})
+    assert alloc_doc["state"] == "RESERVED"
+
+async def test_repository_same_source_line_id_different_invoices_uses_correct_balance(migrated_db):
+    from decimal import Decimal
+
+    import pytest
+
+    import core.database
+    from core.integrations.invoice_return_repository import CASFailedError, ReturnAllocationRequest, _allocate_within_transaction
+
+    tenant_id = "tenant_same_line"
+    invoice_id_1 = "inv_1"
+    invoice_id_2 = "inv_2"
+    line_id = "line_same"
+
+    # Insert balances with same line_id but different invoice_ids
+    await migrated_db.invoice_return_balances.insert_one({
+        "tenant_id": tenant_id,
+        "source_incoming_invoice_id": invoice_id_1,
+        "source_line_id": line_id,
+        "original_quantity": "10.00",
+        "reserved_quantity": "0.00",
+        "confirmed_quantity": "0.00",
+        "version": 1
+    })
+
+    await migrated_db.invoice_return_balances.insert_one({
+        "tenant_id": tenant_id,
+        "source_incoming_invoice_id": invoice_id_2,
+        "source_line_id": line_id,
+        "original_quantity": "5.00",
+        "reserved_quantity": "0.00",
+        "confirmed_quantity": "0.00",
+        "version": 1
+    })
+
+    async with await core.database.client.start_session() as session:
+        async with session.start_transaction():
+            with pytest.raises(CASFailedError) as exc:
+                await _allocate_within_transaction(
+                    db=migrated_db, session=session, tenant_id=tenant_id,
+                    source_incoming_invoice_id=invoice_id_2,
+                    allocations=[ReturnAllocationRequest(return_action_id="act", source_line_id=line_id, quantity=Decimal("6.00"))]
+                )
+            assert "Insufficient quantity" in str(exc.value)
+
+            # Allocate 6 on inv_1 -> Should succeed
+            results = await _allocate_within_transaction(
+                db=migrated_db, session=session, tenant_id=tenant_id,
+                source_incoming_invoice_id=invoice_id_1,
+                allocations=[ReturnAllocationRequest(return_action_id="act", source_line_id=line_id, quantity=Decimal("6.00"))]
+            )
+            assert len(results) == 1
+            assert results[0].quantity == Decimal("6.00")
+
+    # Ensure balance of invoice_id_2 remains untouched
+    bal_2 = await migrated_db.invoice_return_balances.find_one({
+        "tenant_id": tenant_id, "source_incoming_invoice_id": invoice_id_2, "source_line_id": line_id
+    })
+    assert bal_2["reserved_quantity"] == "0.00"

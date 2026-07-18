@@ -102,6 +102,7 @@ async def _allocate_within_transaction(
         update_res = await db.invoice_return_balances.update_one(
             {
                 "tenant_id": tenant_id,
+                "source_incoming_invoice_id": source_incoming_invoice_id,
                 "source_line_id": alloc_req.source_line_id,
                 "version": balance.version
             },
@@ -179,14 +180,24 @@ async def update_allocation_state(
             # Adjust balances if necessary
             if old_state in (ReturnAllocationState.RESERVED, ReturnAllocationState.PROVIDER_PENDING):
                 balance_doc = await db.invoice_return_balances.find_one(
-                    {"tenant_id": tenant_id, "source_line_id": allocation.source_line_id},
+                    {
+                        "tenant_id": tenant_id,
+                        "source_incoming_invoice_id": allocation.source_incoming_invoice_id,
+                        "source_line_id": allocation.source_line_id
+                    },
                     session=session
                 )
                 if balance_doc:
                     bal = InvoiceReturnBalance(**balance_doc)
+                    update_res = None
                     if new_state == ReturnAllocationState.CONFIRMED:
-                        await db.invoice_return_balances.update_one(
-                            {"tenant_id": tenant_id, "source_line_id": allocation.source_line_id, "version": bal.version},
+                        update_res = await db.invoice_return_balances.update_one(
+                            {
+                                "tenant_id": tenant_id,
+                                "source_incoming_invoice_id": allocation.source_incoming_invoice_id,
+                                "source_line_id": allocation.source_line_id,
+                                "version": bal.version
+                            },
                             {
                                 "$set": {
                                     "reserved_quantity": str(bal.reserved_quantity - allocation.quantity),
@@ -198,8 +209,13 @@ async def update_allocation_state(
                             session=session
                         )
                     elif new_state == ReturnAllocationState.RELEASED:
-                        await db.invoice_return_balances.update_one(
-                            {"tenant_id": tenant_id, "source_line_id": allocation.source_line_id, "version": bal.version},
+                        update_res = await db.invoice_return_balances.update_one(
+                            {
+                                "tenant_id": tenant_id,
+                                "source_incoming_invoice_id": allocation.source_incoming_invoice_id,
+                                "source_line_id": allocation.source_line_id,
+                                "version": bal.version
+                            },
                             {
                                 "$set": {
                                     "reserved_quantity": str(bal.reserved_quantity - allocation.quantity),
@@ -209,5 +225,8 @@ async def update_allocation_state(
                             },
                             session=session
                         )
+
+                    if update_res and update_res.modified_count != 1:
+                        raise CASFailedError("Concurrent update detected during allocation state transition")
 
             return allocation
