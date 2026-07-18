@@ -1,6 +1,7 @@
-import pytest
-import uuid
 import os
+import uuid
+
+import pytest
 
 try:
     from motor.motor_asyncio import AsyncIOMotorClient
@@ -42,12 +43,12 @@ async def live_test_db(monkeypatch):
 
 async def test_migration_v002_integration(live_test_db):
     from bootstrap.migrations.registry import discover_migrations
-    from bootstrap.migrations.runner import run_migrations, get_migration_status, MigrationError
+    from bootstrap.migrations.runner import get_migration_status, run_migrations
 
     # 1. discover_migrations() içinde V002 bulunuyor
     migrations = discover_migrations()
     assert any(m.version == "V002" for m in migrations)
-    
+
     v002_mig = next(m for m in migrations if m.version == "V002")
 
     # 6. Migration checksum ve version alanları geçerli
@@ -75,7 +76,7 @@ async def test_migration_v002_integration(live_test_db):
 
 async def test_migration_v002_rollback_on_error(live_test_db, monkeypatch):
     from bootstrap.migrations.registry import discover_migrations
-    from bootstrap.migrations.runner import run_migrations, MigrationError
+    from bootstrap.migrations.runner import MigrationError, run_migrations
 
     migrations = discover_migrations()
     v002_mig = next(m for m in migrations if m.version == "V002")
@@ -97,7 +98,43 @@ async def test_migration_v002_rollback_on_error(live_test_db, monkeypatch):
     indexes_after = await live_test_db.invoice_sync.index_information()
     assert "uq_invoice_sync_invoice_provider_kind" not in indexes_after
     assert "uq_invoice_sync_provider_request_uuid" not in indexes_after
-    
+
     from bootstrap.migrations.runner import get_migration_status
     status = await get_migration_status(live_test_db)
     assert any(f["version"] == "V002" and f["status"] == "rolled_back" for f in status["failed"])
+
+async def test_migration_v008_integration(live_test_db):
+    from bootstrap.migrations.registry import discover_migrations
+    from bootstrap.migrations.runner import run_migrations
+
+    migrations = discover_migrations()
+    v008_mig = next(m for m in migrations if m.version == "V008")
+
+    # Run V008 up
+    await run_migrations(live_test_db, migrations=[v008_mig])
+
+    indexes = await live_test_db.invoice_sync.index_information()
+    assert "ix_invoice_sync_reconciliation_poll_tenant" in indexes
+    assert "ix_invoice_sync_redispatch_tenant" in indexes
+
+    # Check partialFilterExpression
+    recon_idx = indexes["ix_invoice_sync_reconciliation_poll_tenant"]
+    assert "partialFilterExpression" in recon_idx
+    assert recon_idx["partialFilterExpression"]["state"] == "RECONCILIATION_REQUIRED"
+
+    safe_idx = indexes["ix_invoice_sync_redispatch_tenant"]
+    assert "partialFilterExpression" in safe_idx
+    assert safe_idx["partialFilterExpression"]["state"] == "SAFE_TO_RETRY"
+
+    # Run V008 down
+    await v008_mig.down(live_test_db)
+
+    indexes_after_down = await live_test_db.invoice_sync.index_information()
+    assert "ix_invoice_sync_reconciliation_poll_tenant" not in indexes_after_down
+    assert "ix_invoice_sync_redispatch_tenant" not in indexes_after_down
+    assert "_id_" in indexes_after_down # Check older indexes are preserved
+
+    # Run V008 up again (idempotent)
+    await v008_mig.up(live_test_db)
+    indexes_again = await live_test_db.invoice_sync.index_information()
+    assert "ix_invoice_sync_reconciliation_poll_tenant" in indexes_again

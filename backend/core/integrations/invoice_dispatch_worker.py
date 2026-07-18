@@ -101,6 +101,7 @@ class InvoiceDispatchWorker:
             while not self._stop.is_set():
                 try:
                     await self._recover_stuck()
+                    await self._claim_and_queue_safe_to_retry()
                     count = await self._process_batch()
                     if count == 0:
                         await asyncio.sleep(self.poll_interval)
@@ -146,6 +147,41 @@ class InvoiceDispatchWorker:
             logger.warning("Recovered %d stuck invoice sync records", result.modified_count)
         return result.modified_count
 
+    async def _claim_and_queue_safe_to_retry(self) -> int:
+        """Atomically transition SAFE_TO_RETRY records back to QUEUED."""
+        now = _utc_now()
+        sysdb = get_system_db()
+        processed = 0
+
+        for _ in range(self.batch_size):
+            if self._stop.is_set():
+                break
+
+            record = await sysdb.invoice_sync.find_one_and_update(
+                {
+                    "state": InvoiceSyncState.SAFE_TO_RETRY,
+                    "redispatch_count": {"$lt": 1}
+                },
+                {
+                    "$set": {
+                        "state": InvoiceSyncState.QUEUED,
+                        "queued_at": now,
+                        "updated_at": now,
+                        "next_retry_at": now,
+                    },
+                    "$inc": {"version": 1, "redispatch_count": 1}
+                },
+                sort=[("updated_at", 1)],
+                return_document=ReturnDocument.AFTER,
+                projection={"_id": 0, "id": 1, "tenant_id": 1},
+            )
+
+            if not record:
+                break
+            processed += 1
+
+        return processed
+
     async def _process_batch(self) -> int:
         """Claim and process up to batch_size invoice sync records."""
         processed = 0
@@ -168,7 +204,7 @@ class InvoiceDispatchWorker:
 
         record = await sysdb.invoice_sync.find_one_and_update(
             {
-                "state": {"$in": [InvoiceSyncState.PREPARED, InvoiceSyncState.QUEUED, InvoiceSyncState.RETRYABLE_ERROR]},
+                "state": {"$in": [InvoiceSyncState.PREPARED, InvoiceSyncState.QUEUED]},
                 "$and": [
                     {
                         "$or": [
