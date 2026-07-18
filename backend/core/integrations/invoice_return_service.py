@@ -1,15 +1,16 @@
 import logging
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Sequence
-from pydantic import BaseModel
-from datetime import datetime, UTC
 
-from core.tenant_db import get_db_for_tenant
+from pydantic import BaseModel
+
 from core.integrations.invoice_return_repository import (
     ReturnAllocationRequest,
     allocate_return_quantities,
     update_allocation_state,
 )
+from core.tenant_db import get_db_for_tenant
 from models.enums import ReturnAllocationState
 from models.schemas.incoming_invoice import IncomingInvoiceLine
 from models.schemas.invoicing import InvoiceReturnAllocation, InvoiceReturnBalance
@@ -32,21 +33,21 @@ async def initialize_balances_for_invoice(tenant_id: str, incoming_invoice_id: s
     This should be called during the ingestion of the incoming invoice.
     """
     db = get_db_for_tenant(tenant_id)
-    
+
     # Check if balances already exist
     existing_count = await db.invoice_return_balances.count_documents({
         "tenant_id": tenant_id,
         "source_incoming_invoice_id": incoming_invoice_id
     })
-    
+
     if existing_count > 0:
         return
-        
+
     lines_cursor = db.incoming_invoice_lines.find({
         "tenant_id": tenant_id,
         "incoming_invoice_id": incoming_invoice_id
     })
-    
+
     balances_to_insert = []
     async for line_doc in lines_cursor:
         line = IncomingInvoiceLine(**line_doc)
@@ -80,19 +81,19 @@ async def calculate_full_return_quantities(
     Calculates the maximum remaining returnable quantity for all lines of an incoming invoice.
     """
     db = get_db_for_tenant(tenant_id)
-    
+
     cursor = db.invoice_return_balances.find({
         "tenant_id": tenant_id,
         "source_incoming_invoice_id": incoming_invoice_id
     })
-    
+
     requests = []
     async for bal_doc in cursor:
         bal = InvoiceReturnBalance(**bal_doc)
         remaining = bal.original_quantity - (bal.reserved_quantity + bal.confirmed_quantity)
         if remaining > Decimal("0"):
             requests.append(ReturnQuantityRequest(source_line_id=bal.source_line_id, quantity=remaining))
-            
+
     return requests
 
 
@@ -117,7 +118,7 @@ async def process_return_request(
         requests_to_process = list(partial_requests)
     else:
         raise ReturnValidationError(f"Invalid return_type: {return_type}")
-        
+
     # Decimal validation
     for req in requests_to_process:
         if req.quantity <= Decimal("0"):
@@ -131,14 +132,14 @@ async def process_return_request(
         )
         for r in requests_to_process
     ]
-    
+
     # This will fail-closed if there is not enough balance or transaction fails
     allocations = await allocate_return_quantities(
         tenant_id=tenant_id,
         source_incoming_invoice_id=incoming_invoice_id,
         allocations=alloc_requests
     )
-    
+
     return allocations
 
 
@@ -152,7 +153,7 @@ async def handle_return_action_success(tenant_id: str, action_id: str) -> None:
         "return_action_id": action_id,
         "state": ReturnAllocationState.PROVIDER_PENDING
     })
-    
+
     async for alloc_doc in cursor:
         alloc = InvoiceReturnAllocation(**alloc_doc)
         await update_allocation_state(tenant_id, alloc.id, ReturnAllocationState.CONFIRMED)
@@ -168,7 +169,7 @@ async def handle_return_action_validation_failure(tenant_id: str, action_id: str
         "return_action_id": action_id,
         "state": ReturnAllocationState.PROVIDER_PENDING
     })
-    
+
     async for alloc_doc in cursor:
         alloc = InvoiceReturnAllocation(**alloc_doc)
         await update_allocation_state(tenant_id, alloc.id, ReturnAllocationState.RELEASED)
@@ -184,7 +185,7 @@ async def handle_return_action_unknown_failure(tenant_id: str, action_id: str) -
         "return_action_id": action_id,
         "state": ReturnAllocationState.PROVIDER_PENDING
     })
-    
+
     async for alloc_doc in cursor:
         alloc = InvoiceReturnAllocation(**alloc_doc)
         await update_allocation_state(tenant_id, alloc.id, ReturnAllocationState.RECONCILIATION_REQUIRED)

@@ -73,7 +73,7 @@ class F2CreateReturnModelsMigration(Migration):
 
     async def down(self, db: AsyncIOMotorDatabase) -> None:
         logger.info(f"Rolling back migration {self.version}")
-        
+
         collections_and_indexes = [
             ("incoming_invoice_lines", ["idx_incoming_lines_tenant_invoice_line_num", "idx_incoming_lines_tenant_provider_line"]),
             ("invoice_return_balances", ["idx_return_balances_tenant_invoice_line_unique"]),

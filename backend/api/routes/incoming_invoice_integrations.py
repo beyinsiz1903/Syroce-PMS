@@ -11,8 +11,8 @@ from pydantic import BaseModel
 
 from core.helpers import require_admin
 from core.integrations.incoming_invoice_repository import IncomingInvoiceRepository
-from core.integrations.invoice_return_service import ReturnQuantityRequest, process_return_request
 from core.integrations.invoice_lifecycle_repository import InvoiceLifecycleRepository
+from core.integrations.invoice_return_service import ReturnQuantityRequest, process_return_request
 from models.schemas import User
 from models.schemas.incoming_invoice import IncomingInvoiceProfile
 from models.schemas.invoice_lifecycle import (
@@ -160,7 +160,7 @@ async def create_incoming_invoice_return(
     user: User = Depends(require_admin),
 ) -> IncomingInvoiceReturnResponse:
     tenant_id = user.tenant_id
-    
+
     # 1. Validate UUID format for invoice_id
     try:
         uuid.UUID(invoice_id)
@@ -181,7 +181,7 @@ async def create_incoming_invoice_return(
     if payload.return_type == "PARTIAL":
         if not payload.lines or len(payload.lines) == 0:
             raise HTTPException(status_code=422, detail="PARTIAL return requires lines")
-            
+
         line_ids = set()
         for line in payload.lines:
             if line.quantity <= Decimal("0"):
@@ -189,7 +189,7 @@ async def create_incoming_invoice_return(
             if line.source_line_id in line_ids:
                 raise HTTPException(status_code=422, detail="Duplicate source_line_id in payload")
             line_ids.add(line.source_line_id)
-            
+
         # Optional: Validate lines belong to invoice (can be handled by service too, but good to check here)
 
     # 4. Idempotency Check
@@ -198,10 +198,10 @@ async def create_incoming_invoice_return(
     if payload.lines:
         sorted_lines = sorted(payload.lines, key=lambda x: x.source_line_id)
         lines_str = ",".join([f"{l.source_line_id}:{l.quantity}" for l in sorted_lines])
-    
+
     fingerprint_raw = f"{tenant_id}:{invoice_id}:{payload.return_type}:{lines_str}:{payload.request_uuid}"
     request_fingerprint = hashlib.sha256(fingerprint_raw.encode("utf-8")).hexdigest()
-    
+
     # Check if action already exists for this idempotency key
     idemp_key = f"{tenant_id}:return:{x_idempotency_key}"
     existing_action = await InvoiceLifecycleRepository.get_by_idempotency_key(tenant_id, idemp_key)
@@ -228,7 +228,7 @@ async def create_incoming_invoice_return(
 
     # --- Unreachable code below (Reserved for when contract is verified) ---
     action_id = str(uuid.uuid4())
-    
+
     try:
         allocations = await process_return_request(
             tenant_id=tenant_id,
@@ -238,9 +238,9 @@ async def create_incoming_invoice_return(
             partial_requests=payload.lines
         )
     except Exception as e:
-        from core.integrations.invoice_return_service import ReturnValidationError
         from core.integrations.invoice_return_repository import CASFailedError, PreconditionFailedError
-        
+        from core.integrations.invoice_return_service import ReturnValidationError
+
         if isinstance(e, ReturnValidationError):
             raise HTTPException(status_code=400, detail=str(e))
         elif isinstance(e, CASFailedError):

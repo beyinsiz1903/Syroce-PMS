@@ -42,7 +42,7 @@ async def allocate_return_quantities(
     fails with PreconditionFailedError.
     """
     db: AsyncIOMotorDatabase = get_db_for_tenant(tenant_id)
-    
+
     # Check if replica set (transactions) are supported
     # In a real environment, we'd check client status, but for Motor we try to start session.
     try:
@@ -84,12 +84,12 @@ async def _allocate_within_transaction(
             },
             session=session
         )
-        
+
         if not balance_doc:
             raise CASFailedError(f"Balance not found for line {alloc_req.source_line_id}")
-            
+
         balance = InvoiceReturnBalance(**balance_doc)
-        
+
         # 2. Check quantities
         total_used = balance.reserved_quantity + balance.confirmed_quantity
         if total_used + alloc_req.quantity > balance.original_quantity:
@@ -97,7 +97,7 @@ async def _allocate_within_transaction(
                 f"Insufficient quantity for line {alloc_req.source_line_id}. "
                 f"Requested: {alloc_req.quantity}, Available: {balance.original_quantity - total_used}"
             )
-            
+
         # 3. Update balance (CAS update with version)
         update_res = await db.invoice_return_balances.update_one(
             {
@@ -113,10 +113,10 @@ async def _allocate_within_transaction(
             },
             session=session
         )
-        
+
         if update_res.modified_count != 1:
             raise CASFailedError(f"Concurrent update detected for line {alloc_req.source_line_id}")
-            
+
         # 4. Create allocation record
         allocation = InvoiceReturnAllocation(
             id=f"alloc_{tenant_id}_{alloc_req.source_line_id}_{now.timestamp()}",
@@ -129,7 +129,7 @@ async def _allocate_within_transaction(
             created_at=now,
             updated_at=now
         )
-        
+
         await db.invoice_return_allocations.insert_one(
             allocation.model_dump(mode="json"),
             session=session
@@ -149,7 +149,7 @@ async def update_allocation_state(
     adjusts the balance accordingly.
     """
     db: AsyncIOMotorDatabase = get_db_for_tenant(tenant_id)
-    
+
     async with await core.database.client.start_session() as session:
         async with session.start_transaction():
             alloc_doc = await db.invoice_return_allocations.find_one(
@@ -158,15 +158,15 @@ async def update_allocation_state(
             )
             if not alloc_doc:
                 return None
-                
+
             allocation = InvoiceReturnAllocation(**alloc_doc)
             old_state = allocation.state
-            
+
             if old_state == new_state:
                 return allocation
-                
+
             now = datetime.now(UTC)
-            
+
             # Update allocation state
             await db.invoice_return_allocations.update_one(
                 {"tenant_id": tenant_id, "id": allocation_id},
@@ -175,7 +175,7 @@ async def update_allocation_state(
             )
             allocation.state = new_state
             allocation.updated_at = now
-            
+
             # Adjust balances if necessary
             if old_state in (ReturnAllocationState.RESERVED, ReturnAllocationState.PROVIDER_PENDING):
                 balance_doc = await db.invoice_return_balances.find_one(
@@ -209,5 +209,5 @@ async def update_allocation_state(
                             },
                             session=session
                         )
-            
+
             return allocation

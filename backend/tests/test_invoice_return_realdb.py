@@ -6,17 +6,12 @@ from decimal import Decimal
 import pytest
 
 from core.integrations.invoice_return_repository import (
-    CASFailedError,
     PreconditionFailedError,
-    ReturnAllocationRequest,
-    allocate_return_quantities,
 )
 from core.integrations.invoice_return_service import (
     ReturnQuantityRequest,
     calculate_full_return_quantities,
     handle_return_action_success,
-    handle_return_action_unknown_failure,
-    handle_return_action_validation_failure,
     initialize_balances_for_invoice,
     process_return_request,
 )
@@ -79,7 +74,7 @@ async def migrated_db(live_test_db):
 async def test_initialize_balances_and_full_return(migrated_db):
     tenant_id = "t1"
     invoice_id = "inv_1"
-    
+
     # 1. Insert incoming invoice lines
     lines = [
         {
@@ -119,21 +114,21 @@ async def test_initialize_balances_and_full_return(migrated_db):
             "version": 1
         }
     ]
-    
+
     await migrated_db.incoming_invoice_lines.insert_many(lines)
-    
+
     # 2. Initialize balances
     await initialize_balances_for_invoice(tenant_id, invoice_id)
-    
+
     # Check balances created
     balances = await migrated_db.invoice_return_balances.find({"tenant_id": tenant_id, "source_incoming_invoice_id": invoice_id}).to_list(None)
     assert len(balances) == 2
-    
+
     # 3. Calculate full returns
     full_reqs = await calculate_full_return_quantities(tenant_id, invoice_id)
     assert len(full_reqs) == 2
     assert {r.source_line_id: r.quantity for r in full_reqs} == {"line_1": Decimal("10.0"), "line_2": Decimal("5.0")}
-    
+
     # 4. Process full return
     action_id = "action_1"
     try:
@@ -149,7 +144,7 @@ async def test_initialize_balances_and_full_return(migrated_db):
 async def test_partial_return_and_state_transitions(migrated_db):
     tenant_id = "t2"
     invoice_id = "inv_2"
-    
+
     from bson.decimal128 import Decimal128
     line = {
         "id": "line_10",
@@ -171,35 +166,35 @@ async def test_partial_return_and_state_transitions(migrated_db):
     }
     await migrated_db.incoming_invoice_lines.insert_one(line)
     await initialize_balances_for_invoice(tenant_id, invoice_id)
-    
+
     action_id = "action_partial"
     requests = [ReturnQuantityRequest(source_line_id="line_10", quantity="40.0")]
-    
+
     try:
         allocations = await process_return_request(tenant_id, invoice_id, action_id, "PARTIAL", partial_requests=requests)
         assert len(allocations) == 1
         assert allocations[0].quantity == Decimal("40.0")
-        
+
         # Balance should be reserved
         bal = await migrated_db.invoice_return_balances.find_one({"source_line_id": "line_10"})
         # We need to manually convert Decimal128 back to Decimal to assert
         reserved = bal["reserved_quantity"].to_decimal() if isinstance(bal["reserved_quantity"], Decimal128) else Decimal(bal["reserved_quantity"])
         assert reserved == Decimal("40.0")
-        
+
         # Test transition to PENDING and then CONFIRMED
         await migrated_db.invoice_return_allocations.update_one({"id": allocations[0].id}, {"$set": {"state": "PROVIDER_PENDING"}})
-        
+
         await handle_return_action_success(tenant_id, action_id)
-        
+
         # Check balance after success
         bal2 = await migrated_db.invoice_return_balances.find_one({"source_line_id": "line_10"})
         confirmed = bal2["confirmed_quantity"].to_decimal() if isinstance(bal2["confirmed_quantity"], Decimal128) else Decimal(bal2["confirmed_quantity"])
         reserved2 = bal2["reserved_quantity"].to_decimal() if isinstance(bal2["reserved_quantity"], Decimal128) else Decimal(bal2["reserved_quantity"])
-        
+
         assert confirmed == Decimal("40.0")
         assert reserved2 == Decimal("0.0")
-        
-        
+
+
     except PreconditionFailedError:
         pytest.skip("MongoDB transactions not supported by test instance")
 
@@ -207,10 +202,12 @@ async def test_partial_return_and_state_transitions(migrated_db):
 # ==========================================
 # API Endpoint Tests
 # ==========================================
-from fastapi import FastAPI
-from httpx import AsyncClient, ASGITransport
-from api.routes.incoming_invoice_integrations import require_admin, router
 import hashlib
+
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+
+from api.routes.incoming_invoice_integrations import require_admin, router
 from models.schemas.invoice_lifecycle import InvoiceLifecycleAction
 
 app = FastAPI()
@@ -260,8 +257,6 @@ async def test_api_duplicate_source_line_returns_422(migrated_db):
     # Create fake invoice
     await migrated_db.invoices.insert_one({"id": invoice_id, "tenant_id": tenant_id})
     # For incoming invoice
-    from models.schemas.incoming_invoice import IncomingInvoice, IncomingInvoiceAnswerStatus, IncomingInvoiceProfile
-    from models.schemas.invoice_sync import InvoiceProvider
     await migrated_db.incoming_invoices.insert_one({
         "id": invoice_id, "tenant_id": tenant_id, "provider": "NILVERA", "provider_uuid": "123",
         "invoice_number": "ABC", "sender_vkn_tckn": "111", "sender_title": "T",
@@ -269,7 +264,7 @@ async def test_api_duplicate_source_line_returns_422(migrated_db):
         "issue_date": datetime.now(UTC), "received_at": datetime.now(UTC),
         "created_at": datetime.now(UTC), "updated_at": datetime.now(UTC)
     })
-    
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             f"/api/integrations/incoming-invoices/{invoice_id}/return",
@@ -296,7 +291,7 @@ async def test_api_provider_contract_unverified_returns_503(migrated_db):
         "issue_date": datetime.now(UTC), "received_at": datetime.now(UTC),
         "created_at": datetime.now(UTC), "updated_at": datetime.now(UTC)
     })
-    
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             f"/api/integrations/incoming-invoices/{invoice_id}/return",
@@ -306,11 +301,11 @@ async def test_api_provider_contract_unverified_returns_503(migrated_db):
     assert response.status_code == 503
     data = response.json()
     assert data["detail"]["code"] == "PROVIDER_CONTRACT_NOT_VERIFIED"
-    
+
     # Verify no action or allocation was saved to DB
     action_count = await migrated_db.invoice_lifecycle_actions.count_documents({"idempotency_key": f"{tenant_id}:return:key-503-test"})
     assert action_count == 0
-    
+
 async def test_api_idempotency_conflict_returns_409(migrated_db):
     tenant_id = "tenant_test"
     invoice_id = "f47ac10b-58cc-4372-a567-0e02b2c3d471"
@@ -321,7 +316,7 @@ async def test_api_idempotency_conflict_returns_409(migrated_db):
         "issue_date": datetime.now(UTC), "received_at": datetime.now(UTC),
         "created_at": datetime.now(UTC), "updated_at": datetime.now(UTC)
     })
-    
+
     # Manually insert action with DIFFERENT fingerprint
     from models.schemas.invoice_lifecycle import InvoiceLifecycleActionState, InvoiceLifecycleActionType, InvoiceLifecycleDirection
     action = InvoiceLifecycleAction(
@@ -339,7 +334,7 @@ async def test_api_idempotency_conflict_returns_409(migrated_db):
         requested_at=datetime.now(UTC)
     )
     await migrated_db.invoice_lifecycle_actions.insert_one(action.model_dump(mode="json"))
-    
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             f"/api/integrations/incoming-invoices/{invoice_id}/return",
@@ -360,11 +355,11 @@ async def test_api_idempotency_same_payload_returns_existing(migrated_db):
         "issue_date": datetime.now(UTC), "received_at": datetime.now(UTC),
         "created_at": datetime.now(UTC), "updated_at": datetime.now(UTC)
     })
-    
+
     # Calculate exact fingerprint
     fingerprint_raw = f"{tenant_id}:{invoice_id}:FULL::{request_uuid}"
     request_fingerprint = hashlib.sha256(fingerprint_raw.encode("utf-8")).hexdigest()
-    
+
     # Manually insert action with SAME fingerprint
     from models.schemas.invoice_lifecycle import InvoiceLifecycleActionState, InvoiceLifecycleActionType, InvoiceLifecycleDirection
     action = InvoiceLifecycleAction(
@@ -373,7 +368,7 @@ async def test_api_idempotency_same_payload_returns_existing(migrated_db):
         direction=InvoiceLifecycleDirection.INCOMING,
         source_invoice_id=invoice_id,
         source_provider_uuid="123",
-        action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING, 
+        action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING,
         state=InvoiceLifecycleActionState.REQUESTED,
         request_uuid=request_uuid,
         idempotency_key=f"{tenant_id}:return:key-same",
@@ -382,7 +377,7 @@ async def test_api_idempotency_same_payload_returns_existing(migrated_db):
         requested_at=datetime.now(UTC)
     )
     await migrated_db.invoice_lifecycle_actions.insert_one(action.model_dump(mode="json"))
-    
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             f"/api/integrations/incoming-invoices/{invoice_id}/return",
