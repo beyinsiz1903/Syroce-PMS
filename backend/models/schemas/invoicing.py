@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from models.enums import (
     InvoiceStatus,
+    ReturnAllocationState,
 )
 
 
@@ -113,6 +114,13 @@ class InvoiceCreate(BaseModel):
     payable_total: Decimal | None = None
     tax_data_complete: bool = False
 
+    # Return linkage fields
+    return_origin: Literal["INCOMING_PURCHASE", "OUTGOING_SALE", "MANUAL"] | None = None
+    source_incoming_invoice_id: str | None = None
+    source_incoming_provider_uuid: str | None = None
+    return_action_id: str | None = None
+    return_type: Literal["FULL", "PARTIAL"] | None = None
+
     @field_validator("customer_tax_id")
     @classmethod
     def _validate_tax_id(cls, v: str | None) -> str | None:
@@ -177,6 +185,13 @@ class Invoice(BaseModel):
     other_tax_total: Decimal | None = None
     payable_total: Decimal | None = None
     tax_data_complete: bool = False
+
+    # Return linkage fields
+    return_origin: Literal["INCOMING_PURCHASE", "OUTGOING_SALE", "MANUAL"] | None = None
+    source_incoming_invoice_id: str | None = None
+    source_incoming_provider_uuid: str | None = None
+    return_action_id: str | None = None
+    return_type: Literal["FULL", "PARTIAL"] | None = None
 
 
 def _validate_scale(val: Decimal, max_decimals: int, name: str) -> None:
@@ -288,3 +303,36 @@ def validate_invoice_tax_snapshot(invoice: Invoice | InvoiceCreate) -> bool:
         raise ValueError(f"payable_total mismatch. Expected {expected_payable}, got {invoice.payable_total}")
 
     return True
+
+
+class InvoiceReturnBalance(BaseModel):
+    tenant_id: str
+    source_incoming_invoice_id: str
+    source_line_id: str
+    original_quantity: Decimal
+    reserved_quantity: Decimal
+    confirmed_quantity: Decimal
+    version: int
+
+
+class InvoiceReturnAllocation(BaseModel):
+    id: str
+    tenant_id: str
+    source_incoming_invoice_id: str
+    source_line_id: str
+    return_action_id: str
+    quantity: Decimal
+    state: ReturnAllocationState
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReturnedLineReference(BaseModel):
+    source_line_id: str
+    source_line_number: int | None = None
+    returned_quantity: Decimal
+    unit_code: str
+    unit_price: Decimal
+    line_extension_amount: Decimal
+    kdv_rate: Decimal
+    kdv_amount: Decimal

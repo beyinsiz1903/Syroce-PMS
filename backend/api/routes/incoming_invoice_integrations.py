@@ -3,12 +3,15 @@
 import hashlib
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 
 from core.helpers import require_admin
 from core.integrations.incoming_invoice_repository import IncomingInvoiceRepository
+from core.integrations.invoice_return_service import ReturnQuantityRequest, process_return_request
 from core.integrations.invoice_lifecycle_repository import InvoiceLifecycleRepository
 from models.schemas import User
 from models.schemas.incoming_invoice import IncomingInvoiceProfile
@@ -132,4 +135,123 @@ def _map_to_response(action: InvoiceLifecycleAction) -> InvoiceLifecycleResponse
         reconciliation_reason=action.reconciliation_reason,
         requested_at=action.requested_at,
         succeeded_at=action.completed_at,
+    )
+
+
+class IncomingInvoiceReturnRequest(BaseModel):
+    return_type: Literal["FULL", "PARTIAL"]
+    lines: list[ReturnQuantityRequest] | None = None
+    request_uuid: str
+
+
+class IncomingInvoiceReturnResponse(BaseModel):
+    return_action_id: str | None = None
+    source_invoice_id: str
+    return_type: str
+    allocated_lines_count: int
+
+
+@router.post("/{invoice_id}/return", response_model=IncomingInvoiceReturnResponse)
+async def create_incoming_invoice_return(
+    request: Request,
+    invoice_id: str,
+    payload: IncomingInvoiceReturnRequest,
+    x_idempotency_key: str = Header(..., min_length=1),
+    user: User = Depends(require_admin),
+) -> IncomingInvoiceReturnResponse:
+    tenant_id = user.tenant_id
+    
+    # 1. Validate UUID format for invoice_id
+    try:
+        uuid.UUID(invoice_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid invoice_id format")
+
+    try:
+        uuid.UUID(payload.request_uuid)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid request_uuid format")
+
+    # 2. Check incoming invoice existence and tenant match
+    invoice = await IncomingInvoiceRepository.get_by_id(tenant_id, invoice_id)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # 3. Payload validation
+    if payload.return_type == "PARTIAL":
+        if not payload.lines or len(payload.lines) == 0:
+            raise HTTPException(status_code=422, detail="PARTIAL return requires lines")
+            
+        line_ids = set()
+        for line in payload.lines:
+            if line.quantity <= Decimal("0"):
+                raise HTTPException(status_code=422, detail="Return quantity must be greater than 0")
+            if line.source_line_id in line_ids:
+                raise HTTPException(status_code=422, detail="Duplicate source_line_id in payload")
+            line_ids.add(line.source_line_id)
+            
+        # Optional: Validate lines belong to invoice (can be handled by service too, but good to check here)
+
+    # 4. Idempotency Check
+    # Normalize payload for fingerprint (simplified)
+    lines_str = ""
+    if payload.lines:
+        sorted_lines = sorted(payload.lines, key=lambda x: x.source_line_id)
+        lines_str = ",".join([f"{l.source_line_id}:{l.quantity}" for l in sorted_lines])
+    
+    fingerprint_raw = f"{tenant_id}:{invoice_id}:{payload.return_type}:{lines_str}:{payload.request_uuid}"
+    request_fingerprint = hashlib.sha256(fingerprint_raw.encode("utf-8")).hexdigest()
+    
+    # Check if action already exists for this idempotency key
+    idemp_key = f"{tenant_id}:return:{x_idempotency_key}"
+    existing_action = await InvoiceLifecycleRepository.get_by_idempotency_key(tenant_id, idemp_key)
+    if existing_action:
+        if existing_action.request_fingerprint != request_fingerprint:
+            raise HTTPException(status_code=409, detail="IDEMPOTENCY_CONFLICT: Key used with different payload")
+        # Return existing result
+        return IncomingInvoiceReturnResponse(
+            return_action_id=existing_action.id,
+            source_invoice_id=existing_action.source_invoice_id,
+            return_type=payload.return_type,
+            allocated_lines_count=0  # Simplified for mock replay
+        )
+
+    # 5. Fail-Closed Option A: Provider Contract Not Verified
+    # Do not create allocation or action yet.
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "code": "PROVIDER_CONTRACT_NOT_VERIFIED",
+            "detail": "CreateReturn provider contract is not verified."
+        }
+    )
+
+    # --- Unreachable code below (Reserved for when contract is verified) ---
+    action_id = str(uuid.uuid4())
+    
+    try:
+        allocations = await process_return_request(
+            tenant_id=tenant_id,
+            incoming_invoice_id=invoice_id,
+            action_id=action_id,
+            return_type=payload.return_type,
+            partial_requests=payload.lines
+        )
+    except Exception as e:
+        from core.integrations.invoice_return_service import ReturnValidationError
+        from core.integrations.invoice_return_repository import CASFailedError, PreconditionFailedError
+        
+        if isinstance(e, ReturnValidationError):
+            raise HTTPException(status_code=400, detail=str(e))
+        elif isinstance(e, CASFailedError):
+            raise HTTPException(status_code=409, detail=f"CAS Conflict: {str(e)}")
+        elif isinstance(e, PreconditionFailedError):
+            raise HTTPException(status_code=412, detail=f"Precondition Failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal Server Error processing return")
+
+    return IncomingInvoiceReturnResponse(
+        return_action_id=action_id,
+        source_invoice_id=invoice_id,
+        return_type=payload.return_type,
+        allocated_lines_count=len(allocations)
     )
