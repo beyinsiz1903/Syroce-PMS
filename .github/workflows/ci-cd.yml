@@ -192,10 +192,6 @@ jobs:
             tests/test_audit_service_wiring.py \
             tests/test_hardening_multi_phase.py \
             tests/test_atomic_booking.py \
-            tests/battle/test_booking_integrity.py \
-            tests/battle/test_sprint2_hold_ooo.py \
-            tests/battle/test_regression_guards.py \
-            tests/battle/test_room_type_inventory.py \
             tests/test_safety_rebinding.py \
             tests/test_egress_ci_guard.py \
             tests/test_production_blockers.py \
@@ -241,6 +237,99 @@ jobs:
           path: |
             backend/test-results.xml
             backend/test-results-live-mongo.xml
+
+  # ============ BATTLE E2E TESTS (HARD GATE) ============
+  battle-e2e:
+    runs-on: ubuntu-latest
+    needs: backend-lint
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping:1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+          bash scripts/post_install.sh
+          pip install pytest pytest-asyncio httpx pytest-cov pytest-timeout
+
+      - name: Seed test database (hard gate)
+        run: |
+          cd backend
+          python scripts/create_test_user.py || python create_demo_users.py || { echo "::error::No seed script found — tests require a seeded database"; exit 1; }
+        env:
+          MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
+
+      - name: Start backend server
+        run: |
+          cd backend
+          uvicorn server:app --host 0.0.0.0 --port 8001 > battle-backend.log 2>&1 &
+          ready=0
+          for i in $(seq 1 30); do
+            if curl --fail --silent --show-error http://localhost:8001/health/ready >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::Backend did not become ready within 60 seconds"
+            cat battle-backend.log || true
+            exit 1
+          fi
+        env:
+          MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+          TESTING: "1"
+
+      - name: Run battle e2e tests
+        run: |
+          cd backend
+          python -m pytest tests/battle \
+            -v --tb=short -q --timeout=60 --junitxml=battle-e2e-results.xml
+        env:
+          MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+          VITE_BACKEND_URL: http://localhost:8001
+
+      - name: Upload test results and backend logs
+        uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: battle-e2e-results
+          path: |
+            backend/battle-e2e-results.xml
+            backend/battle-backend.log
 
   # ============ LOAD TESTS (HARD GATE) ============
   load-test:
@@ -499,7 +588,7 @@ jobs:
   # ============ DOCKER BUILD & PUSH ============
   docker-build:
     runs-on: ubuntu-latest
-    needs: [backend-test, load-test, frontend-build, security-scan]
+    needs: [backend-test, load-test, frontend-build, security-scan, battle-e2e]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'
     permissions:
       contents: read
