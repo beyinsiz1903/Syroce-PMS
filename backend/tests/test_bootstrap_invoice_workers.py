@@ -33,7 +33,7 @@ def mock_workers():
 
         m_recon.start = AsyncMock()
         m_recon.stop = AsyncMock()
-        
+
         m_status.start = AsyncMock()
         m_status.stop = AsyncMock()
 
