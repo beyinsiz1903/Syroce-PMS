@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 import jwt
 from fastapi import APIRouter, HTTPException, Request
 
-from core.tenant_db import get_system_db
 from core.security import JWT_ALGORITHM, JWT_SECRET
+from core.tenant_db import get_system_db
 
 logger = logging.getLogger(__name__)
 

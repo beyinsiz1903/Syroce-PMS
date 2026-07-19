@@ -7,8 +7,8 @@ import time as _time
 
 from fastapi import HTTPException, Request
 
-from core.tenant_db import get_system_db
 from core.secrets import get_secrets_manager
+from core.tenant_db import get_system_db
 
 logger = logging.getLogger(__name__)
 
