@@ -100,12 +100,6 @@ def env(monkeypatch):
         await callback(None)
     monkeypatch.setattr(mice_router, "with_resource_locks", _fake_locks)
 
-    # Patch audit module's _safe_get_db
-    try:
-        from core import audit as _audit
-        monkeypatch.setattr(_audit, "_safe_get_db", lambda: fake_db, raising=False)
-    except Exception:
-        pass
 
     app = FastAPI()
     app.include_router(mice_api_router)
