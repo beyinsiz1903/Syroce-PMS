@@ -58,6 +58,11 @@ class _Coll:
                 return _strip(d)
         return None
 
+    async def insert_one(self, doc):
+        self.docs.append(dict(doc))
+        from types import SimpleNamespace
+        return SimpleNamespace(inserted_id=doc.get("id"))
+
     async def update_one(self, flt, update, upsert=False):
         for d in self.docs:
             if _match(d, flt):
@@ -80,6 +85,8 @@ class _FakeDB:
     def __init__(self):
         self.bookings = _Coll()
         self.digital_keys = _Coll()
+        self.lockdown_state = _Coll()
+        self.physical_access_logs = _Coll()
 
     def __getitem__(self, name):
         return getattr(self, name)
@@ -92,7 +99,7 @@ SERVICE_KEY = "test-door-reader-key"
 @pytest.fixture(autouse=True)
 def _patch(monkeypatch):
     fake = _FakeDB()
-    monkeypatch.setattr(dr, "db", fake)
+    monkeypatch.setattr(dr, "get_system_db", lambda: fake)
     monkeypatch.setenv("DOOR_READER_SERVICE_KEY", SERVICE_KEY)
     return fake
 
