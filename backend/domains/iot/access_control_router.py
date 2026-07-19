@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 import jwt
 from fastapi import APIRouter, HTTPException, Request
 
-from core.database import _raw_db
 from core.security import JWT_ALGORITHM, JWT_SECRET
+from core.tenant_db import get_system_db
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ async def verify_qr_access(request: Request):
             return {"action": "deny", "reason": "invalid_payload"}
 
         # 3. Veritabanından Booking kontrolü
-        db = _raw_db
+        db = get_system_db()
         booking = await db.bookings.find_one({"id": booking_id})
 
         if not booking:
