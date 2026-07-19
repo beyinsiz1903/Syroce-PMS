@@ -19,40 +19,54 @@ class InvoiceStatusWorker:
         self._batch_size = batch_size
         self._poll_interval_sec = poll_interval_sec
         self._worker_id = f"status_worker_{uuid.uuid4().hex[:8]}"
-        self._running = False
         self._task: asyncio.Task | None = None
+        self._stop = asyncio.Event()
 
     async def start(self) -> None:
-        if self._running:
+        if self._task and not self._task.done():
             return
-        self._running = True
+        self._stop.clear()
         self._task = asyncio.create_task(self._run_loop(), name="invoice-status-worker")
-        logger.info(f"InvoiceStatusWorker started with ID {self._worker_id}")
+        logger.info("InvoiceStatusWorker started with ID %s", self._worker_id)
 
     async def stop(self) -> None:
-        self._running = False
+        self._stop.set()
         if self._task:
             try:
-                await asyncio.wait_for(self._task, timeout=10.0)
-            except (TimeoutError, asyncio.CancelledError):
+                await asyncio.wait_for(asyncio.shield(self._task), timeout=10.0)
+            except TimeoutError:
+                logger.warning("InvoiceStatusWorker drain timeout exceeded, cancelling task.")
                 self._task.cancel()
                 try:
                     await self._task
                 except asyncio.CancelledError:
                     pass
+            except asyncio.CancelledError:
+                pass
+            finally:
+                self._task = None
         logger.info("InvoiceStatusWorker stopped")
 
     async def _run_loop(self) -> None:
-        while self._running:
-            try:
-                processed = await self._process_batch()
-                if processed == 0:
-                    await asyncio.sleep(self._poll_interval_sec)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Error in InvoiceStatusWorker loop: {e}", exc_info=True)
-                await asyncio.sleep(self._poll_interval_sec)
+        try:
+            while not self._stop.is_set():
+                try:
+                    processed = await self._process_batch()
+                    if processed == 0:
+                        try:
+                            await asyncio.wait_for(self._stop.wait(), timeout=self._poll_interval_sec)
+                        except TimeoutError:
+                            pass
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.error("Error in InvoiceStatusWorker loop: %s", e, exc_info=True)
+                    try:
+                        await asyncio.wait_for(self._stop.wait(), timeout=self._poll_interval_sec)
+                    except TimeoutError:
+                        pass
+        except asyncio.CancelledError:
+            pass
 
     async def _process_batch(self) -> int:
         now = datetime.now(UTC)
