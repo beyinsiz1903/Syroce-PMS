@@ -32,13 +32,25 @@ def pytest_collection_modifyitems(config, items):
     try:
         from tests._quarantine.quarantine_manifest import QUARANTINED_TESTS
     except ImportError:
-        return
+        QUARANTINED_TESTS = {}
+    
+    try:
+        from tests.live_server_manifest import LIVE_SERVER_TESTS
+    except ImportError:
+        LIVE_SERVER_TESTS = set()
+
     for item in items:
         node_id = item.nodeid
+        
+        # Apply quarantine skips
         for q_id, reason in QUARANTINED_TESTS.items():
             if q_id in node_id:
                 item.add_marker(pytest.mark.skip(reason=reason))
                 break
+                
+        # Apply live_server marker
+        if any(live_file in node_id for live_file in LIVE_SERVER_TESTS):
+            item.add_marker(pytest.mark.live_server)
 
 BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
 
