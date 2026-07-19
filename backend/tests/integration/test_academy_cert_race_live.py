@@ -86,13 +86,25 @@ def _tenant() -> str:
     return f"t-acad-race-{uuid.uuid4().hex[:12]}"
 
 
-async def _purge(tenant_id: str) -> None:
+
+@pytest.fixture
+async def live_db(monkeypatch):
+    from motor.motor_asyncio import AsyncIOMotorClient
+    url = os.environ.get("MONGO_URL") or os.environ.get("MONGO_ATLAS_URI")
+    client = AsyncIOMotorClient(url)
+    db = client[os.environ.get("DB_NAME", "syroce_test")]
+    monkeypatch.setattr(academy, "_db", lambda: db)
+    yield db
+    client.close()
+
+async def _purge(tenant_id: str, db) -> None:
+
     """Remove every academy row this test wrote for ``tenant_id``.
 
     Runs even when the safeguard FAILS (both inserts succeed), so a regression
     can never leak duplicate certificate rows.
     """
-    db = academy._db()
+    
     flt = {"tenant_id": tenant_id}
     await db.academy_certificates.delete_many(flt)
     await db.academy_progress.delete_many(flt)
@@ -103,10 +115,11 @@ async def _purge(tenant_id: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_academy_indexes_are_built_unique():
+async def test_academy_indexes_are_built_unique(live_db):
+    db = live_db
     """phase-D's ``ensure_academy_indexes`` builds the cert/progress indexes as
     ``unique=True`` — the DB-level backstop the engine's idempotency relies on."""
-    db = academy._db()
+    
     # Run the SAME code path phase-D runs at boot (idempotent — safe to repeat).
     await ensure_academy_indexes(db)
 
@@ -132,7 +145,8 @@ async def test_academy_indexes_are_built_unique():
 
 
 @pytest.mark.asyncio
-async def test_concurrent_certificate_issuance_one_row_real_mongo():
+async def test_concurrent_certificate_issuance_one_row_real_mongo(live_db):
+    db = live_db
     """Two simultaneous passing issuances against real Mongo → exactly ONE row.
 
     The losing insert collides with the real unique index, raises
@@ -140,7 +154,7 @@ async def test_concurrent_certificate_issuance_one_row_real_mongo():
     winning certificate. This is the invariant the fake-collection unit test can
     only simulate.
     """
-    db = academy._db()
+    
     await ensure_academy_indexes(db)
     course = academy.get_course_raw(COURSE_ID)
     assert course is not None, f"course {COURSE_ID} must exist in the catalog"
@@ -161,16 +175,17 @@ async def test_concurrent_certificate_issuance_one_row_real_mongo():
         assert cert_a["id"] == cert_b["id"], (
             "concurrent callers must resolve to the SAME certificate id")
     finally:
-        await _purge(tenant_id)
+        await _purge(tenant_id, db)
 
 
 # ── 3. Sequential replay returns the original certificate ─────────────────
 
 
 @pytest.mark.asyncio
-async def test_certificate_reissue_is_idempotent_real_mongo():
+async def test_certificate_reissue_is_idempotent_real_mongo(live_db):
+    db = live_db
     """A later (higher-score) re-pass returns the original cert, never a new one."""
-    db = academy._db()
+    
     await ensure_academy_indexes(db)
     course = academy.get_course_raw(COURSE_ID)
     assert course is not None
@@ -189,4 +204,4 @@ async def test_certificate_reissue_is_idempotent_real_mongo():
             {"tenant_id": tenant_id, "user_id": user_id, "course_id": COURSE_ID})
         assert count == 1
     finally:
-        await _purge(tenant_id)
+        await _purge(tenant_id, db)
