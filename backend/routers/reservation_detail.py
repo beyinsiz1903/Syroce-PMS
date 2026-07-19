@@ -263,98 +263,98 @@ async def get_reservation_full_detail(
         if not booking:
             raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
 
-    # Fetch related data in parallel-like fashion
-    guest = None
-    if booking.get("guest_id"):
-        guest = await db.guests.find_one({"id": booking["guest_id"], "tenant_id": tid}, {"_id": 0})
+        # Fetch related data in parallel-like fashion
+        guest = None
+        if booking.get("guest_id"):
+            guest = await db.guests.find_one({"id": booking["guest_id"], "tenant_id": tid}, {"_id": 0})
 
-    room = None
-    if booking.get("room_id"):
-        room = await db.rooms.find_one({"id": booking["room_id"], "tenant_id": tid}, {"_id": 0})
+        room = None
+        if booking.get("room_id"):
+            room = await db.rooms.find_one({"id": booking["room_id"], "tenant_id": tid}, {"_id": 0})
 
-    # Folios
-    folios = []
-    async for f in db.folios.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
-        folios.append(f)
+        # Folios
+        folios = []
+        async for f in db.folios.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
+            folios.append(f)
 
-    # Charges per folio
-    charges = []
-    async for c in db.folio_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
-        charges.append(c)
+        # Charges per folio
+        charges = []
+        async for c in db.folio_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
+            charges.append(c)
 
-    # Payments per folio
-    payments = []
-    async for p in db.payments.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
-        payments.append(p)
+        # Payments per folio
+        payments = []
+        async for p in db.payments.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
+            payments.append(p)
 
-    # Extra charges
-    extra_charges = []
-    async for ec in db.extra_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
-        extra_charges.append(ec)
+        # Extra charges
+        extra_charges = []
+        async for ec in db.extra_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
+            extra_charges.append(ec)
 
-    # Notes
-    notes = []
-    async for n in db.reservation_notes.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
-        notes.append(n)
+        # Notes
+        notes = []
+        async for n in db.reservation_notes.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
+            notes.append(n)
 
-    # Activity log / history
-    history = []
-    async for h in db.reservation_activity_log.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
-        history.append(h)
+        # Activity log / history
+        history = []
+        async for h in db.reservation_activity_log.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
+            history.append(h)
 
-    # Room move history
-    room_moves = []
-    async for rm in db.room_move_history.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("moved_at", -1):
-        room_moves.append(rm)
+        # Room move history
+        room_moves = []
+        async for rm in db.room_move_history.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("moved_at", -1):
+            room_moves.append(rm)
 
-    # Daily rates
-    daily_rates = []
-    async for dr in db.daily_rates.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("date", 1):
-        daily_rates.append(dr)
+        # Daily rates
+        daily_rates = []
+        async for dr in db.daily_rates.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("date", 1):
+            daily_rates.append(dr)
 
-    # If no daily rates exist, generate from booking
-    if not daily_rates and booking.get("check_in") and booking.get("check_out"):
-        ci = booking["check_in"]
-        co = booking["check_out"]
-        if isinstance(ci, str):
-            ci = datetime.fromisoformat(ci.replace("Z", "+00:00")) if "T" in ci else datetime.strptime(ci[:10], "%Y-%m-%d")
-        if isinstance(co, str):
-            co = datetime.fromisoformat(co.replace("Z", "+00:00")) if "T" in co else datetime.strptime(co[:10], "%Y-%m-%d")
-        nights = max((co - ci).days, 1)
-        nightly_rate = round(booking.get("total_amount", 0) / nights, 2) if nights > 0 else 0
-        current = ci
-        for i in range(nights):
-            daily_rates.append(
-                {
-                    "date": current.strftime("%Y-%m-%d") if hasattr(current, "strftime") else str(current)[:10],
-                    "rate": nightly_rate,
-                    "generated": True,
-                }
-            )
-            current = current + timedelta(days=1)
+        # If no daily rates exist, generate from booking
+        if not daily_rates and booking.get("check_in") and booking.get("check_out"):
+            ci = booking["check_in"]
+            co = booking["check_out"]
+            if isinstance(ci, str):
+                ci = datetime.fromisoformat(ci.replace("Z", "+00:00")) if "T" in ci else datetime.strptime(ci[:10], "%Y-%m-%d")
+            if isinstance(co, str):
+                co = datetime.fromisoformat(co.replace("Z", "+00:00")) if "T" in co else datetime.strptime(co[:10], "%Y-%m-%d")
+            nights = max((co - ci).days, 1)
+            nightly_rate = round(booking.get("total_amount", 0) / nights, 2) if nights > 0 else 0
+            current = ci
+            for i in range(nights):
+                daily_rates.append(
+                    {
+                        "date": current.strftime("%Y-%m-%d") if hasattr(current, "strftime") else str(current)[:10],
+                        "rate": nightly_rate,
+                        "generated": True,
+                    }
+                )
+                current = current + timedelta(days=1)
 
-    # Guests associated with this booking
-    guests_list = []
-    if guest:
-        guests_list.append(guest)
-    # Also check for additional guests
-    async for ag in db.booking_guests.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
-        guests_list.append(ag)
+        # Guests associated with this booking
+        guests_list = []
+        if guest:
+            guests_list.append(guest)
+        # Also check for additional guests
+        async for ag in db.booking_guests.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
+            guests_list.append(ag)
 
-    # Company info
-    company = None
-    if booking.get("company_id"):
-        company = await db.companies.find_one({"id": booking["company_id"], "tenant_id": tid}, {"_id": 0})
+        # Company info
+        company = None
+        if booking.get("company_id"):
+            company = await db.companies.find_one({"id": booking["company_id"], "tenant_id": tid}, {"_id": 0})
 
-    # Communication logs
-    communication_logs = []
-    async for cl in db.communication_logs.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
-        communication_logs.append(cl)
+        # Communication logs
+        communication_logs = []
+        async for cl in db.communication_logs.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
+            communication_logs.append(cl)
 
-    # Deposits
-    deposits = []
-    async for dep in db.deposits.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
-        deposits.append(dep)
+        # Deposits
+        deposits = []
+        async for dep in db.deposits.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
+            deposits.append(dep)
 
     # Calculate totals
     total_charges = sum(c.get("total", c.get("amount", 0)) for c in charges if not c.get("voided"))
@@ -376,14 +376,14 @@ async def get_reservation_full_detail(
         pass
 
     if is_cross_tenant:
-        from core.audit import append_audit_log
         # Execute outside of the with block so it logs to the Super Admin's tenant
-        await append_audit_log(
-            event_type="super_admin_cross_tenant_access",
-            user_id=current_user.id,
-            resource=f"booking:{booking_id}",
-            details={"target_tenant": target_tenant}
-        )
+        await db.audit_logs.insert_one({
+            "event_type": "super_admin_cross_tenant_access",
+            "user_id": current_user.id,
+            "resource": f"booking:{booking_id}",
+            "target_tenant": target_tenant,
+            "tenant_id": current_user.tenant_id
+        })
 
     return {
         "booking": booking,
