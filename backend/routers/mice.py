@@ -2711,7 +2711,7 @@ async def sign_public_beo(payload: SignatureSubmitIn):
 
     # Log audit event
     await log_audit_event(
-        tenant_id=tenant_id, user_id="client_portal", action="beo.sign", entity_type="mice_event", entity_id=event_id, details=f"BEO signed by client: {payload.signature_name}", severity="info"
+        tenant_id=tenant_id, user_id="client_portal", action="beo.sign", entity_type="mice_event", entity_id=event_id, details=f"BEO signed by client: {payload.signature_name}", severity="info", db=db
     )
 
     return {"success": True}
