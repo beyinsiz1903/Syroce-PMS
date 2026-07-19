@@ -115,7 +115,7 @@ class FolioLedgerService:
             {"_id": 0},
         )
         if not folio:
-            raise ValueError(f"Folio not found")
+            raise ValueError("Folio not found")
         return folio
 
     async def _insert_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
