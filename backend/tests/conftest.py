@@ -71,6 +71,41 @@ def demo_auth_headers(demo_auth_token):
     return {"Authorization": f"Bearer {demo_auth_token}", "Content-Type": "application/json"}
 
 
+def _bind_test_database(database_module, raw_db):
+    """Bind a test DB while preserving the global proxy object's identity."""
+    from core.tenant_db import TenantAwareDBProxy
+
+    current_db = database_module.db
+
+    if isinstance(current_db, TenantAwareDBProxy):
+        previous_proxy_target = object.__getattribute__(current_db, "_db")
+        object.__setattr__(current_db, "_db", raw_db)
+        return current_db, previous_proxy_target
+
+    previous_proxy_target = None
+    database_module.db = TenantAwareDBProxy(raw_db)
+    return current_db, previous_proxy_target
+
+
+def _restore_test_database(
+    database_module,
+    *,
+    previous_db,
+    active_db,
+    previous_proxy_target,
+):
+    from core.tenant_db import TenantAwareDBProxy
+
+    if (
+        isinstance(active_db, TenantAwareDBProxy)
+        and previous_proxy_target is not None
+    ):
+        object.__setattr__(active_db, "_db", previous_proxy_target)
+        database_module.db = active_db
+    else:
+        database_module.db = previous_db
+
+
 @pytest.fixture(scope="session")
 def event_loop():
     """Create a single event loop for the entire test session.
@@ -87,11 +122,36 @@ def event_loop():
     load_dotenv(BACKEND_ROOT / '.env')
     mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017/hotel_pms')
     db_name = os.environ.get('DB_NAME', 'hotel_pms')
-    database.client = AsyncIOMotorClient(mongo_url)
-    database.db = database.client[db_name]
 
-    yield loop
-    loop.close()
+    previous_client = database.client
+    previous_raw_db = getattr(database, "_raw_db", None)
+    previous_db = database.db
+
+    client = AsyncIOMotorClient(mongo_url)
+    raw_db = client[db_name]
+
+    database.client = client
+    database._raw_db = raw_db
+
+    active_db, previous_proxy_target = _bind_test_database(
+        database,
+        raw_db,
+    )
+
+    try:
+        yield loop
+    finally:
+        client.close()
+        database.client = previous_client
+        database._raw_db = previous_raw_db
+        _restore_test_database(
+            database,
+            previous_db=previous_db,
+            active_db=active_db,
+            previous_proxy_target=previous_proxy_target,
+        )
+        asyncio.set_event_loop(None)
+        loop.close()
 
 
 # ── live_mongo no-false-green gate (Task #323) ───────────────────────────

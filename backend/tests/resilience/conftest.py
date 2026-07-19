@@ -49,9 +49,12 @@ def db(event_loop):
     Using _raw_db avoids TenantViolationError when STRICT_TENANT_MODE=true.
     """
     from core import database
-    from core.tenant_db import TenantAwareDBProxy
     from motor.motor_asyncio import AsyncIOMotorClient
     from dotenv import load_dotenv
+    from tests.conftest import (
+        _bind_test_database,
+        _restore_test_database,
+    )
 
     load_dotenv(BACKEND_ROOT / ".env")
     mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
@@ -66,7 +69,11 @@ def db(event_loop):
 
     database.client = client
     database._raw_db = raw_db
-    database.db = TenantAwareDBProxy(raw_db)
+
+    active_db, previous_proxy_target = _bind_test_database(
+        database,
+        raw_db,
+    )
 
     try:
         yield raw_db
@@ -74,7 +81,12 @@ def db(event_loop):
         client.close()
         database.client = previous_client
         database._raw_db = previous_raw_db
-        database.db = previous_db
+        _restore_test_database(
+            database,
+            previous_db=previous_db,
+            active_db=active_db,
+            previous_proxy_target=previous_proxy_target,
+        )
 
 
 # ── Cleanup ────────────────────────────────────────────────────────
