@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 _env_mode = (os.environ.get("ENVIRONMENT") or os.environ.get("APP_ENV") or os.environ.get("ENV") or "development").lower()
 COOKIE_SECURE = _env_mode != "development"
+REFRESH_COOKIE_PATH = "/api/auth/refresh-token"
 
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
@@ -298,7 +299,7 @@ def _build_token_response(user: User, tenant, response: Response = None) -> Toke
             secure=COOKIE_SECURE,
             samesite="none" if COOKIE_SECURE else "lax",
             max_age=REFRESH_TOKEN_EXPIRATION_DAYS * 86400,
-            path="/",
+            path=REFRESH_COOKIE_PATH,
         )
 
     return TokenResponse(
@@ -1377,6 +1378,8 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
         resp_data["refresh_token"] = new_refresh
         resp_data["refresh_expires_in"] = REFRESH_TOKEN_EXPIRATION_DAYS * 24 * 3600
 
+        response.delete_cookie("refresh_token", path="/", httponly=True, secure=COOKIE_SECURE, samesite="none" if COOKIE_SECURE else "lax")
+
         response.set_cookie(
             key="refresh_token",
             value=new_refresh,
@@ -1384,7 +1387,7 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
             secure=COOKIE_SECURE,
             samesite="none" if COOKIE_SECURE else "lax",
             max_age=REFRESH_TOKEN_EXPIRATION_DAYS * 86400,
-            path="/",
+            path=REFRESH_COOKIE_PATH,
         )
 
     return resp_data
@@ -1500,6 +1503,7 @@ async def logout(
     )
 
     response.delete_cookie("access_token", path="/", httponly=True, secure=COOKIE_SECURE, samesite="none" if COOKIE_SECURE else "lax")
+    response.delete_cookie("refresh_token", path=REFRESH_COOKIE_PATH, httponly=True, secure=COOKIE_SECURE, samesite="none" if COOKIE_SECURE else "lax")
     response.delete_cookie("refresh_token", path="/", httponly=True, secure=COOKIE_SECURE, samesite="none" if COOKIE_SECURE else "lax")
 
     return {"message": "Çıkış başarılı"}
