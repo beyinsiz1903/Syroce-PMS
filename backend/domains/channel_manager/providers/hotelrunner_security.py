@@ -7,8 +7,8 @@ import time as _time
 
 from fastapi import HTTPException, Request
 
-from core.database import _raw_db
 from core.secrets import get_secrets_manager
+from core.tenant_db import get_system_db
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +91,8 @@ async def _lookup_signing_connection(hr_id_hint: str) -> dict | None:
         return None
     query: dict = {"is_active": True, "hr_id": str(hr_id_hint)}
     try:
-        doc = await _raw_db.hotelrunner_connections.find_one(
+        system_db = get_system_db()
+        doc = await system_db.hotelrunner_connections.find_one(
             query,
             {"_id": 0, "tenant_id": 1, "hr_id": 1, "callback_secret": 1, "token": 1},
         )

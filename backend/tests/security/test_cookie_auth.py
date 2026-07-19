@@ -50,7 +50,8 @@ async def test_logout_clears_cookies():
             pass # We don't care if it errors after setting cookies. We just want to check cookies.
             
     # delete_cookie is called twice (access_token, refresh_token)
-    assert mock_response.delete_cookie.call_count == 2
+    # access_token(/), refresh_token(/api/auth/refresh-token), legacy refresh_token(/)
+    assert mock_response.delete_cookie.call_count == 3
     
     call_args_list = mock_response.delete_cookie.call_args_list
     
@@ -60,7 +61,7 @@ async def test_logout_clears_cookies():
     
     # check refresh_token
     refresh_cookie = [args[0][0] for args in call_args_list if args[0][0] == "refresh_token"]
-    assert len(refresh_cookie) == 1
+    assert len(refresh_cookie) == 2
 
 
 @pytest.mark.asyncio
