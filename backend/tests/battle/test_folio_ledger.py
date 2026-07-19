@@ -7,33 +7,71 @@ import os
 import uuid
 
 import httpx
+import jwt
 import pytest
+from motor.motor_asyncio import AsyncIOMotorClient
 
-from core.database import db
-from core.tenant_db import tenant_context
-
-TEST_TENANT = "demo-hotel"
 
 @pytest.fixture
-async def seed_folio():
-    created_folios = []
+def authenticated_tenant_id(auth_headers):
+    token = auth_headers["Authorization"].removeprefix("Bearer ").strip()
+    claims = jwt.decode(token, options={"verify_signature": False})
+
+    tenant_id = claims.get("tenant_id")
+    assert tenant_id, "Authenticated battle token has no tenant_id"
+
+    return tenant_id
+
+
+@pytest.fixture
+async def seed_folio(authenticated_tenant_id):
+    mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+    database_name = os.environ.get("DB_NAME", "hotel_pms")
+
+    client = AsyncIOMotorClient(mongo_url)
+    raw_db = client[database_name]
+    created_folios: list[str] = []
+
     async def _seed(folio_id: str, booking_id: str):
-        with tenant_context(TEST_TENANT):
-            await db.folios.insert_one({
+        await raw_db.folios.insert_one(
+            {
                 "id": folio_id,
-                "tenant_id": TEST_TENANT,
+                "tenant_id": authenticated_tenant_id,
                 "booking_id": booking_id,
                 "status": "open",
                 "balance": 0.0,
-                "property_id": "demo-property"
-            })
+                "property_id": "demo-property",
+            }
+        )
         created_folios.append(folio_id)
+
+        stored = await raw_db.folios.find_one(
+            {
+                "tenant_id": authenticated_tenant_id,
+                "id": folio_id,
+            }
+        )
+        assert stored is not None
+
         return folio_id
-    yield _seed
-    with tenant_context(TEST_TENANT):
+
+    try:
+        yield _seed
+    finally:
         if created_folios:
-            await db.folios.delete_many({"id": {"$in": created_folios}})
-            await db.folio_ledger.delete_many({"folio_id": {"$in": created_folios}})
+            await raw_db.folios.delete_many(
+                {
+                    "tenant_id": authenticated_tenant_id,
+                    "id": {"$in": created_folios},
+                }
+            )
+            await raw_db.folio_ledger.delete_many(
+                {
+                    "tenant_id": authenticated_tenant_id,
+                    "folio_id": {"$in": created_folios},
+                }
+            )
+        client.close()
 
 API_URL = os.environ.get("VITE_BACKEND_URL", "http://localhost:8001")
 
@@ -71,8 +109,8 @@ def test_booking_id():
 
 @pytest.mark.asyncio
 async def test_post_charge_creates_ledger_entry(auth_headers, test_folio_id, test_booking_id, seed_folio):
-    await seed_folio(test_folio_id, test_booking_id)
     """Posting a charge should create an immutable ledger entry."""
+    await seed_folio(test_folio_id, test_booking_id)
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
             f"{API_URL}/api/folio-ledger/{test_folio_id}/charge",
