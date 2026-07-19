@@ -377,13 +377,14 @@ async def get_reservation_full_detail(
 
     if is_cross_tenant:
         # Execute outside of the with block so it logs to the Super Admin's tenant
-        await db.audit_logs.insert_one({
-            "event_type": "super_admin_cross_tenant_access",
-            "user_id": current_user.id,
-            "resource": f"booking:{booking_id}",
-            "target_tenant": target_tenant,
-            "tenant_id": current_user.tenant_id
-        })
+        with tenant_context(current_user.tenant_id):
+            await db.audit_logs.insert_one({
+                "event_type": "super_admin_cross_tenant_access",
+                "user_id": current_user.id,
+                "resource": f"booking:{booking_id}",
+                "target_tenant": target_tenant,
+                "tenant_id": current_user.tenant_id
+            })
 
     return {
         "booking": booking,
