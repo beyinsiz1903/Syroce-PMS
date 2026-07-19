@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from core.database import db
+from core.tenant_db import tenant_context
 
 from ...infrastructure.repository import ChannelManagerRepository
 from .provider_harness import PROVIDER_PROFILES
@@ -46,160 +47,161 @@ class SandboxSimulationEngine:
         Run all scenarios for all specified providers.
         Returns a complete simulation report.
         """
-        run_id = f"sim-{uuid.uuid4().hex[:12]}"
-        providers = providers or list(PROVIDER_PROFILES.keys())
-        started_at = datetime.now(UTC).isoformat()
+        with tenant_context(tenant_id):
+            run_id = f"sim-{uuid.uuid4().hex[:12]}"
+            providers = providers or list(PROVIDER_PROFILES.keys())
+            started_at = datetime.now(UTC).isoformat()
 
-        logger.info("Starting sandbox simulation %s for providers: %s", run_id, providers)
+            logger.info("Starting sandbox simulation %s for providers: %s", run_id, providers)
 
-        # Create test fixtures for each provider
-        fixtures = {}
-        for provider in providers:
-            fixtures[provider] = await self._setup_provider_fixtures(
-                tenant_id,
-                property_id,
-                provider,
-                run_id,
-            )
-
-        # Run all scenarios per provider
-        all_results: dict[str, list[dict[str, Any]]] = {}
-        for provider in providers:
-            fix = fixtures[provider]
-            connector_id = fix["connector_id"]
-            sandbox_prop_id = fix["property_id"]
-            room_reverse = fix["room_reverse"]
-            rate_reverse = fix["rate_reverse"]
-
-            provider_results = []
-
-            # Scenario 1: Duplicate Delivery
-            try:
-                res = await run_duplicate_delivery(
+            # Create test fixtures for each provider
+            fixtures = {}
+            for provider in providers:
+                fixtures[provider] = await self._setup_provider_fixtures(
                     tenant_id,
-                    sandbox_prop_id,
-                    connector_id,
-                    run_id,
+                    property_id,
                     provider,
-                    room_reverse,
-                    rate_reverse,
-                    self._repo,
-                )
-                provider_results.append(res)
-            except Exception as e:
-                logger.error("Scenario duplicate_delivery failed for %s: %s", provider, e)
-                provider_results.append(
-                    {
-                        "scenario": "duplicate_delivery",
-                        "provider": provider,
-                        "passed": False,
-                        "error": str(e),
-                    }
-                )
-
-            # Scenario 2: Delayed ACK
-            try:
-                res = await run_delayed_ack(
-                    tenant_id,
-                    sandbox_prop_id,
-                    connector_id,
                     run_id,
-                    provider,
-                    room_reverse,
-                    rate_reverse,
-                    self._repo,
-                )
-                provider_results.append(res)
-            except Exception as e:
-                logger.error("Scenario delayed_ack failed for %s: %s", provider, e)
-                provider_results.append(
-                    {
-                        "scenario": "delayed_ack",
-                        "provider": provider,
-                        "passed": False,
-                        "error": str(e),
-                    }
                 )
 
-            # Scenario 3: Retry Storm
-            try:
-                res = await run_retry_storm(
-                    tenant_id,
-                    sandbox_prop_id,
-                    connector_id,
-                    run_id,
-                    provider,
-                    room_reverse,
-                    rate_reverse,
-                    self._repo,
-                )
-                provider_results.append(res)
-            except Exception as e:
-                logger.error("Scenario retry_storm failed for %s: %s", provider, e)
-                provider_results.append(
-                    {
-                        "scenario": "retry_storm",
-                        "provider": provider,
-                        "passed": False,
-                        "error": str(e),
-                    }
-                )
+            # Run all scenarios per provider
+            all_results: dict[str, list[dict[str, Any]]] = {}
+            for provider in providers:
+                fix = fixtures[provider]
+                connector_id = fix["connector_id"]
+                sandbox_prop_id = fix["property_id"]
+                room_reverse = fix["room_reverse"]
+                rate_reverse = fix["rate_reverse"]
 
-            # Scenario 4: Stale Provider State
-            try:
-                res = await run_stale_provider_state(
-                    tenant_id,
-                    sandbox_prop_id,
-                    connector_id,
-                    run_id,
-                    provider,
-                    self._repo,
-                )
-                provider_results.append(res)
-            except Exception as e:
-                logger.error("Scenario stale_provider_state failed for %s: %s", provider, e)
-                provider_results.append(
-                    {
-                        "scenario": "stale_provider_state",
-                        "provider": provider,
-                        "passed": False,
-                        "error": str(e),
-                    }
-                )
+                provider_results = []
 
-            # Scenario 5: Modify/Cancel Race
-            try:
-                res = await run_modify_cancel_race(
-                    tenant_id,
-                    sandbox_prop_id,
-                    connector_id,
-                    run_id,
-                    provider,
-                    room_reverse,
-                    rate_reverse,
-                    self._repo,
-                )
-                provider_results.append(res)
-            except Exception as e:
-                logger.error("Scenario modify_cancel_race failed for %s: %s", provider, e)
-                provider_results.append(
-                    {
-                        "scenario": "modify_cancel_race",
-                        "provider": provider,
-                        "passed": False,
-                        "error": str(e),
-                    }
-                )
+                # Scenario 1: Duplicate Delivery
+                try:
+                    res = await run_duplicate_delivery(
+                        tenant_id,
+                        sandbox_prop_id,
+                        connector_id,
+                        run_id,
+                        provider,
+                        room_reverse,
+                        rate_reverse,
+                        self._repo,
+                    )
+                    provider_results.append(res)
+                except Exception as e:
+                    logger.error("Scenario duplicate_delivery failed for %s: %s", provider, e)
+                    provider_results.append(
+                        {
+                            "scenario": "duplicate_delivery",
+                            "provider": provider,
+                            "passed": False,
+                            "error": str(e),
+                        }
+                    )
 
-            all_results[provider] = provider_results
+                # Scenario 2: Delayed ACK
+                try:
+                    res = await run_delayed_ack(
+                        tenant_id,
+                        sandbox_prop_id,
+                        connector_id,
+                        run_id,
+                        provider,
+                        room_reverse,
+                        rate_reverse,
+                        self._repo,
+                    )
+                    provider_results.append(res)
+                except Exception as e:
+                    logger.error("Scenario delayed_ack failed for %s: %s", provider, e)
+                    provider_results.append(
+                        {
+                            "scenario": "delayed_ack",
+                            "provider": provider,
+                            "passed": False,
+                            "error": str(e),
+                        }
+                    )
 
-        # Build report
-        completed_at = datetime.now(UTC).isoformat()
-        report = self._build_report(run_id, tenant_id, providers, all_results, started_at, completed_at, actor_id)
+                # Scenario 3: Retry Storm
+                try:
+                    res = await run_retry_storm(
+                        tenant_id,
+                        sandbox_prop_id,
+                        connector_id,
+                        run_id,
+                        provider,
+                        room_reverse,
+                        rate_reverse,
+                        self._repo,
+                    )
+                    provider_results.append(res)
+                except Exception as e:
+                    logger.error("Scenario retry_storm failed for %s: %s", provider, e)
+                    provider_results.append(
+                        {
+                            "scenario": "retry_storm",
+                            "provider": provider,
+                            "passed": False,
+                            "error": str(e),
+                        }
+                    )
 
-        # Persist report
-        await db[SANDBOX_RESULTS].insert_one({**report, "_persist": True})
-        logger.info("Sandbox simulation %s complete: %s", run_id, report["summary"])
+                # Scenario 4: Stale Provider State
+                try:
+                    res = await run_stale_provider_state(
+                        tenant_id,
+                        sandbox_prop_id,
+                        connector_id,
+                        run_id,
+                        provider,
+                        self._repo,
+                    )
+                    provider_results.append(res)
+                except Exception as e:
+                    logger.error("Scenario stale_provider_state failed for %s: %s", provider, e)
+                    provider_results.append(
+                        {
+                            "scenario": "stale_provider_state",
+                            "provider": provider,
+                            "passed": False,
+                            "error": str(e),
+                        }
+                    )
+
+                # Scenario 5: Modify/Cancel Race
+                try:
+                    res = await run_modify_cancel_race(
+                        tenant_id,
+                        sandbox_prop_id,
+                        connector_id,
+                        run_id,
+                        provider,
+                        room_reverse,
+                        rate_reverse,
+                        self._repo,
+                    )
+                    provider_results.append(res)
+                except Exception as e:
+                    logger.error("Scenario modify_cancel_race failed for %s: %s", provider, e)
+                    provider_results.append(
+                        {
+                            "scenario": "modify_cancel_race",
+                            "provider": provider,
+                            "passed": False,
+                            "error": str(e),
+                        }
+                    )
+
+                all_results[provider] = provider_results
+
+            # Build report
+            completed_at = datetime.now(UTC).isoformat()
+            report = self._build_report(run_id, tenant_id, providers, all_results, started_at, completed_at, actor_id)
+
+            # Persist report
+            await db[SANDBOX_RESULTS].insert_one({**report, "_persist": True})
+            logger.info("Sandbox simulation %s complete: %s", run_id, report["summary"])
 
         return report
 
@@ -209,15 +211,16 @@ class SandboxSimulationEngine:
         limit: int = 10,
     ) -> list[dict[str, Any]]:
         """Get recent simulation results."""
-        cursor = (
-            db[SANDBOX_RESULTS]
-            .find(
-                {"tenant_id": tenant_id},
-                {"_id": 0, "_persist": 0},
+        with tenant_context(tenant_id):
+            cursor = (
+                db[SANDBOX_RESULTS]
+                .find(
+                    {"tenant_id": tenant_id},
+                    {"_id": 0, "_persist": 0},
+                )
+                .sort("started_at", -1)
+                .limit(limit)
             )
-            .sort("started_at", -1)
-            .limit(limit)
-        )
         return await cursor.to_list(limit)
 
     async def get_simulation_result(
@@ -226,10 +229,11 @@ class SandboxSimulationEngine:
         run_id: str,
     ) -> dict[str, Any] | None:
         """Get a specific simulation result."""
-        return await db[SANDBOX_RESULTS].find_one(
-            {"tenant_id": tenant_id, "run_id": run_id},
-            {"_id": 0, "_persist": 0},
-        )
+        with tenant_context(tenant_id):
+                return await db[SANDBOX_RESULTS].find_one(
+                {"tenant_id": tenant_id, "run_id": run_id},
+                {"_id": 0, "_persist": 0},
+            )
 
     async def get_simulation_timeline(
         self,
@@ -237,14 +241,15 @@ class SandboxSimulationEngine:
         run_id: str,
     ) -> list[dict[str, Any]]:
         """Get the event timeline for a specific simulation run."""
-        cursor = (
-            db[SANDBOX_TIMELINE]
-            .find(
-                {"tenant_id": tenant_id, "run_id": run_id},
-                {"_id": 0},
+        with tenant_context(tenant_id):
+            cursor = (
+                db[SANDBOX_TIMELINE]
+                .find(
+                    {"tenant_id": tenant_id, "run_id": run_id},
+                    {"_id": 0},
+                )
+                .sort("timestamp", 1)
             )
-            .sort("timestamp", 1)
-        )
         return await cursor.to_list(500)
 
     # ─── Private Helpers ─────────────────────────────────────────────
@@ -371,29 +376,30 @@ class SandboxSimulationEngine:
 
     async def cleanup_sandbox_data(self, tenant_id: str, run_id: str):
         """Clean up sandbox data after a simulation run."""
-        await db[SANDBOX_CONNECTORS].delete_many(
-            {
-                "tenant_id": tenant_id,
-                "sandbox_run_id": run_id,
-            }
-        )
-        await db.bookings.delete_many(
-            {
-                "tenant_id": tenant_id,
-                "source": "ota_sandbox",
-                "created_by": "sandbox_simulation",
-            }
-        )
-        await db.cm_sync_snapshots.delete_many(
-            {
-                "tenant_id": tenant_id,
-                "source": "sandbox_simulation",
-            }
-        )
-        await db.room_type_inventory.delete_many(
-            {
-                "tenant_id": tenant_id,
-                "computation_source": "sandbox_simulation",
-            }
-        )
+        with tenant_context(tenant_id):
+            await db[SANDBOX_CONNECTORS].delete_many(
+                {
+                    "tenant_id": tenant_id,
+                    "sandbox_run_id": run_id,
+                }
+            )
+            await db.bookings.delete_many(
+                {
+                    "tenant_id": tenant_id,
+                    "source": "ota_sandbox",
+                    "created_by": "sandbox_simulation",
+                }
+            )
+            await db.cm_sync_snapshots.delete_many(
+                {
+                    "tenant_id": tenant_id,
+                    "source": "sandbox_simulation",
+                }
+            )
+            await db.room_type_inventory.delete_many(
+                {
+                    "tenant_id": tenant_id,
+                    "computation_source": "sandbox_simulation",
+                }
+            )
         logger.info("Cleaned up sandbox data for run %s", run_id)

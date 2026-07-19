@@ -4,13 +4,14 @@ Tests for Sandbox Simulation — Resilience Testing.
 Tests each scenario's core logic and the engine orchestration.
 Uses the actual MongoDB database to verify end-to-end behavior.
 """
-import pytest
 import asyncio
-import uuid
-from datetime import datetime, timezone
 
 # Adjust path for test runner
 import sys
+import uuid
+
+import pytest
+
 sys.path.insert(0, "/app/backend")
 
 
@@ -25,6 +26,7 @@ def event_loop():
 def db_connection(event_loop):
     """Initialize the database connection."""
     import os
+
     from motor.motor_asyncio import AsyncIOMotorClient
     mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
     db_name = os.environ.get("DB_NAME", "syroce_pms")
@@ -304,3 +306,39 @@ async def test_simulation_timeline(db_connection):
     event_types = {e["event"] for e in timeline}
     assert "scenario_start" in event_types
     assert "scenario_complete" in event_types
+
+@pytest.mark.asyncio
+async def test_engine_establishes_tenant_context_for_background_execution(db_connection):
+    """Engine must establish its own tenant context since it runs as a background task."""
+    from channel_manager.application.sandbox_simulation.engine import SandboxSimulationEngine
+    from core.tenant_db import _tenant_ctx
+
+    # Ensure no outer context exists
+    _tenant_ctx.set(None)
+
+    engine = SandboxSimulationEngine()
+    result = await engine.run_full_simulation(
+        tenant_id=TENANT_ID,
+        property_id=PROPERTY_ID,
+        providers=["hotelrunner"],
+        actor_id="test-actor",
+    )
+
+    assert result["summary"]["all_passed"] is True
+    assert result["tenant_id"] == TENANT_ID
+
+@pytest.mark.asyncio
+async def test_engine_establishes_tenant_context_for_cleanup(db_connection):
+    """Cleanup must also establish its own tenant context."""
+    from channel_manager.application.sandbox_simulation.engine import SandboxSimulationEngine
+    from core.tenant_db import _tenant_ctx
+
+    # Ensure no outer context exists
+    _tenant_ctx.set(None)
+
+    engine = SandboxSimulationEngine()
+    # If it fails to establish context, this will raise TenantViolationError
+    await engine.cleanup_sandbox_data(TENANT_ID, "dummy-run-id")
+
+    # Since it's an async task that returns nothing, reaching here means success
+    assert True
