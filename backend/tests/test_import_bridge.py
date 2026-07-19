@@ -46,8 +46,15 @@ async def _get_db():
 
 
 async def _cleanup(db):
-    for coll in [COLL_IMPORTED, COLL_BOOKINGS, COLL_LINEAGE, COLL_AUDIT]:
+    for coll in [
+        COLL_IMPORTED,
+        COLL_BOOKINGS,
+        COLL_LINEAGE,
+        COLL_AUDIT,
+        "outbox_events",
+    ]:
         await db[coll].delete_many({"tenant_id": TEST_TENANT})
+
     await db["room_mappings"].delete_many({"tenant_id": TEST_TENANT})
     await db["rate_plan_mappings"].delete_many({"tenant_id": TEST_TENANT})
 
