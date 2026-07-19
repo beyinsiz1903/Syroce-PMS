@@ -13,7 +13,7 @@ from core.tenant_db import TenantAwareDBProxy
 from models.schemas import User
 
 from routers.reservation_detail import get_reservation_full_detail
-from routers.folio_ledger import post_payment, ChargeRequest
+from routers.folio_ledger import post_payment, PaymentRequest
 from routers.pms_guests import update_guest
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.live_mongo]
@@ -98,7 +98,11 @@ async def test_reservation_full_detail_tenant_isolation(live_test_db):
 
 async def test_reservation_payment_tenant_isolation(live_test_db):
     """User B cannot post a payment to User A's folio (returns 404)."""
-    req = ChargeRequest(amount=100.0, description="Test", charge_code="PAYMENT", currency="TRY", tax_amount=0, payment_method="credit_card")
+    req = PaymentRequest(
+        amount=100.0,
+        payment_method="credit_card",
+        currency="TRY",
+    )
     from core.tenant_db import tenant_context
     with tenant_context(USER_B.tenant_id):
         with pytest.raises(HTTPException) as exc:
