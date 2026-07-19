@@ -67,7 +67,6 @@ async def live_test_db(monkeypatch):
     
     monkeypatch.setattr(core.database, "db", proxy_db)
     monkeypatch.setattr(routers.reservation_detail, "db", proxy_db)
-    monkeypatch.setattr(routers.folio_ledger, "db", proxy_db)
     monkeypatch.setattr(routers.pms_guests, "db", proxy_db)
     
     # FolioLedgerService stores db on init. We just mock its db.
