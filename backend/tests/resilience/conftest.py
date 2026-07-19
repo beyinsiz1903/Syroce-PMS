@@ -79,15 +79,7 @@ def db(event_loop):
 
 # ── Cleanup ────────────────────────────────────────────────────────
 
-@pytest.fixture(autouse=True)
-async def cleanup_chaos_data(db):
-    """Automatically clean up all chaos test data after each test.
-
-    Uses _raw_db directly to bypass TenantAwareDBProxy, since cleanup
-    is a system-level operation that targets test data across tenants.
-    """
-    yield
-    from core.database import _raw_db
+async def _cleanup_chaos_records(db) -> None:
     chaos_filter = {"tenant_id": {"$regex": f"^{CHAOS_TENANT_PREFIX}"}}
     collections_to_clean = [
         "cp_failures",
@@ -103,11 +95,22 @@ async def cleanup_chaos_data(db):
         "rate_plan_mappings",
         "rooms",
     ]
-    for coll_name in collections_to_clean:
+
+    for collection_name in collections_to_clean:
         try:
-            await _raw_db[coll_name].delete_many(chaos_filter)
+            await db[collection_name].delete_many(chaos_filter)
         except Exception:
             pass
+
+
+@pytest.fixture(autouse=True)
+async def cleanup_chaos_data(db):
+    """Clean resilience test records before and after every test."""
+    await _cleanup_chaos_records(db)
+    try:
+        yield
+    finally:
+        await _cleanup_chaos_records(db)
 
 
 # ── Service Instances ──────────────────────────────────────────────
