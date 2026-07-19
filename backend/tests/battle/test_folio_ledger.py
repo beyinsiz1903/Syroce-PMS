@@ -3,10 +3,75 @@ Battle Tests: Folio Ledger
 ===========================
 Tests for the immutable folio ledger: charges, payments, voids, transfers, reconciliation.
 """
-import pytest
-import httpx
 import os
 import uuid
+
+import httpx
+import jwt
+import pytest
+from motor.motor_asyncio import AsyncIOMotorClient
+
+
+@pytest.fixture
+def authenticated_tenant_id(auth_headers):
+    token = auth_headers["Authorization"].removeprefix("Bearer ").strip()
+    claims = jwt.decode(token, options={"verify_signature": False})
+
+    tenant_id = claims.get("tenant_id")
+    assert tenant_id, "Authenticated battle token has no tenant_id"
+
+    return tenant_id
+
+
+@pytest.fixture
+async def seed_folio(authenticated_tenant_id):
+    mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+    database_name = os.environ.get("DB_NAME", "hotel_pms")
+
+    client = AsyncIOMotorClient(mongo_url)
+    raw_db = client[database_name]
+    created_folios: list[str] = []
+
+    async def _seed(folio_id: str, booking_id: str):
+        await raw_db.folios.insert_one(
+            {
+                "id": folio_id,
+                "tenant_id": authenticated_tenant_id,
+                "booking_id": booking_id,
+                "status": "open",
+                "balance": 0.0,
+                "property_id": "demo-property",
+            }
+        )
+        created_folios.append(folio_id)
+
+        stored = await raw_db.folios.find_one(
+            {
+                "tenant_id": authenticated_tenant_id,
+                "id": folio_id,
+            }
+        )
+        assert stored is not None
+
+        return folio_id
+
+    try:
+        yield _seed
+    finally:
+        if created_folios:
+            await raw_db.folios.delete_many(
+                {
+                    "tenant_id": authenticated_tenant_id,
+                    "id": {"$in": created_folios},
+                }
+            )
+            await raw_db.folio_ledger.delete_many(
+                {
+                    "tenant_id": authenticated_tenant_id,
+                    "folio_id": {"$in": created_folios},
+                }
+            )
+        client.close()
 
 API_URL = os.environ.get("VITE_BACKEND_URL", "http://localhost:8001")
 
@@ -43,8 +108,9 @@ def test_booking_id():
 
 
 @pytest.mark.asyncio
-async def test_post_charge_creates_ledger_entry(auth_headers, test_folio_id, test_booking_id):
+async def test_post_charge_creates_ledger_entry(auth_headers, test_folio_id, test_booking_id, seed_folio):
     """Posting a charge should create an immutable ledger entry."""
+    await seed_folio(test_folio_id, test_booking_id)
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
             f"{API_URL}/api/folio-ledger/{test_folio_id}/charge",
@@ -64,11 +130,12 @@ async def test_post_charge_creates_ledger_entry(auth_headers, test_folio_id, tes
 
 
 @pytest.mark.asyncio
-async def test_post_payment_reduces_balance(auth_headers, test_folio_id, test_booking_id):
+async def test_post_payment_reduces_balance(auth_headers, test_folio_id, test_booking_id, seed_folio):
     """Posting a payment should reduce the folio balance."""
     async with httpx.AsyncClient(timeout=15) as client:
         # Post charge first
         folio_id = f"pay-test-{uuid.uuid4().hex[:8]}"
+        await seed_folio(folio_id, test_booking_id)
         charge_resp = await client.post(
             f"{API_URL}/api/folio-ledger/{folio_id}/charge",
             headers=auth_headers,
@@ -96,10 +163,11 @@ async def test_post_payment_reduces_balance(auth_headers, test_folio_id, test_bo
 
 
 @pytest.mark.asyncio
-async def test_void_entry_reverses_charge(auth_headers, test_booking_id):
+async def test_void_entry_reverses_charge(auth_headers, test_booking_id, seed_folio):
     """Voiding a charge should reverse it and update balance."""
     async with httpx.AsyncClient(timeout=15) as client:
         folio_id = f"void-test-{uuid.uuid4().hex[:8]}"
+        await seed_folio(folio_id, test_booking_id)
 
         # Post charge
         charge_resp = await client.post(
@@ -127,10 +195,11 @@ async def test_void_entry_reverses_charge(auth_headers, test_booking_id):
 
 
 @pytest.mark.asyncio
-async def test_double_void_rejected(auth_headers, test_booking_id):
+async def test_double_void_rejected(auth_headers, test_booking_id, seed_folio):
     """Voiding an already voided entry should be rejected."""
     async with httpx.AsyncClient(timeout=15) as client:
         folio_id = f"dvoid-test-{uuid.uuid4().hex[:8]}"
+        await seed_folio(folio_id, test_booking_id)
 
         charge_resp = await client.post(
             f"{API_URL}/api/folio-ledger/{folio_id}/charge",
@@ -161,11 +230,13 @@ async def test_double_void_rejected(auth_headers, test_booking_id):
 
 
 @pytest.mark.asyncio
-async def test_transfer_between_folios(auth_headers, test_booking_id):
+async def test_transfer_between_folios(auth_headers, test_booking_id, seed_folio):
     """Transferring between folios should create paired entries."""
     async with httpx.AsyncClient(timeout=15) as client:
         from_folio = f"xfer-from-{uuid.uuid4().hex[:8]}"
         to_folio = f"xfer-to-{uuid.uuid4().hex[:8]}"
+        await seed_folio(from_folio, test_booking_id)
+        await seed_folio(to_folio, test_booking_id)
 
         # Charge source folio
         await client.post(
@@ -208,11 +279,12 @@ async def test_transfer_between_folios(auth_headers, test_booking_id):
 
 
 @pytest.mark.asyncio
-async def test_idempotency_prevents_double_charge(auth_headers, test_booking_id):
+async def test_idempotency_prevents_double_charge(auth_headers, test_booking_id, seed_folio):
     """Same idempotency key should not create duplicate entries."""
     async with httpx.AsyncClient(timeout=15) as client:
         folio_id = f"idem-test-{uuid.uuid4().hex[:8]}"
         idem_key = f"idem-{uuid.uuid4().hex[:8]}"
+        await seed_folio(folio_id, test_booking_id)
 
         resp1 = await client.post(
             f"{API_URL}/api/folio-ledger/{folio_id}/charge",
@@ -262,10 +334,11 @@ async def test_reconciliation_run(auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_get_ledger_entries(auth_headers, test_booking_id):
+async def test_get_ledger_entries(auth_headers, test_booking_id, seed_folio):
     """Should return all entries in sequence order."""
     async with httpx.AsyncClient(timeout=15) as client:
         folio_id = f"ledger-view-{uuid.uuid4().hex[:8]}"
+        await seed_folio(folio_id, test_booking_id)
 
         # Create multiple entries
         await client.post(
