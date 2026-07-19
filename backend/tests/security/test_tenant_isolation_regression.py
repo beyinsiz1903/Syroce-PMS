@@ -13,7 +13,7 @@ from core.tenant_db import TenantAwareDBProxy
 from models.schemas import User
 
 from routers.reservation_detail import get_reservation_full_detail
-from routers.folio_ledger import post_payment, ChargeRequest
+from routers.folio_ledger import post_payment, PaymentRequest
 from routers.pms_guests import update_guest
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.live_mongo]
@@ -44,7 +44,7 @@ async def _mongo_or_skip():
     return client
 
 @pytest.fixture
-async def live_test_db(monkeypatch):
+async def live_test_db():
     client = await _mongo_or_skip()
     db_name = f"test_isolation_{uuid.uuid4().hex[:8]}"
     raw_db = client[db_name]
@@ -54,53 +54,69 @@ async def live_test_db(monkeypatch):
     await raw_db.guests.insert_one({"id": GUEST_A, "tenant_id": TENANT_A, "name": "Tenant A Guest"})
     await raw_db.folios.insert_one({"id": FOLIO_A, "tenant_id": TENANT_A, "balance": 100.0, "booking_id": BOOKING_A})
     
-    # We patch the GLOBAL db object in all relevant modules so they use our throwaway DB.
-    # Note: the endpoints use `from core.database import db` directly.
-    import core.database
-    import routers.reservation_detail
-    import routers.folio_ledger
-    import routers.pms_guests
-    import core.folio_ledger_service
+    import core.database as database
+    from core.tenant_db import TenantAwareDBProxy, clear_tenant_context
     
-    # Create the proxy wrapping our test raw_db
-    proxy_db = TenantAwareDBProxy(raw_db)
+    shared_proxy = database.db
+    if not isinstance(shared_proxy, TenantAwareDBProxy):
+        raise AssertionError(f"Expected TenantAwareDBProxy, got {type(shared_proxy).__name__}")
+        
+    previous_client = database.client
+    previous_raw_db = database._raw_db
+    previous_target = shared_proxy._db
     
-    monkeypatch.setattr(core.database, "db", proxy_db)
-    monkeypatch.setattr(routers.reservation_detail, "db", proxy_db)
-    monkeypatch.setattr(routers.folio_ledger, "db", proxy_db)
-    monkeypatch.setattr(routers.pms_guests, "db", proxy_db)
+    clear_tenant_context()
     
-    # FolioLedgerService stores db on init. We just mock its db.
-    monkeypatch.setattr(core.folio_ledger_service, "db", proxy_db)
+    database.client = client
+    database._raw_db = raw_db
+    shared_proxy._db = raw_db
     
-    yield raw_db
+    assert shared_proxy._db.name == raw_db.name
     
-    await client.drop_database(db_name)
-    client.close()
+    try:
+        yield raw_db
+    finally:
+        clear_tenant_context()
+        shared_proxy._db = previous_target
+        database._raw_db = previous_raw_db
+        database.client = previous_client
+        await client.drop_database(db_name)
+        client.close()
 
 async def test_reservation_full_detail_tenant_isolation(live_test_db):
     """User B cannot access User A's reservation (returns 404)."""
-    with pytest.raises(HTTPException) as exc:
-        await get_reservation_full_detail(booking_id=BOOKING_A, current_user=USER_B)
-    assert exc.value.status_code == 404
+    from core.tenant_db import tenant_context
+    with tenant_context(USER_B.tenant_id):
+        with pytest.raises(HTTPException) as exc:
+            await get_reservation_full_detail(booking_id=BOOKING_A, current_user=USER_B, target_tenant=None)
+        assert exc.value.status_code == 404
     
     # User A CAN access it
-    res = await get_reservation_full_detail(booking_id=BOOKING_A, current_user=USER_A)
-    assert res is not None
+    with tenant_context(USER_A.tenant_id):
+        res = await get_reservation_full_detail(booking_id=BOOKING_A, current_user=USER_A, target_tenant=None)
+        assert res is not None
 
 async def test_reservation_payment_tenant_isolation(live_test_db):
     """User B cannot post a payment to User A's folio (returns 404)."""
-    req = ChargeRequest(amount=100.0, description="Test", charge_code="PAYMENT", currency="TRY", tax_amount=0)
-    with pytest.raises(HTTPException) as exc:
-        await post_payment(folio_id=FOLIO_A, body=req, current_user=USER_B)
-    assert exc.value.status_code == 404
+    req = PaymentRequest(
+        amount=100.0,
+        payment_method="credit_card",
+        currency="TRY",
+    )
+    from core.tenant_db import tenant_context
+    with tenant_context(USER_B.tenant_id):
+        with pytest.raises(HTTPException) as exc:
+            await post_payment(folio_id=FOLIO_A, body=req, current_user=USER_B)
+        assert exc.value.status_code == 404
 
 async def test_guest_update_tenant_isolation(live_test_db):
     """User B cannot update User A's guest profile (returns 404)."""
     update_req = {"name": "Hacked"}
-    with pytest.raises(HTTPException) as exc:
-        await update_guest(guest_id=GUEST_A, data=update_req, current_user=USER_B)
-    assert exc.value.status_code == 404
+    from core.tenant_db import tenant_context
+    with tenant_context(USER_B.tenant_id):
+        with pytest.raises(HTTPException) as exc:
+            await update_guest(guest_id=GUEST_A, data=update_req, current_user=USER_B)
+        assert exc.value.status_code == 404
 
 @pytest.mark.asyncio
 async def test_super_admin_cross_tenant_access(live_test_db):
@@ -120,8 +136,10 @@ async def test_super_admin_cross_tenant_access(live_test_db):
     # To fix this, we will later modify the endpoint to check role and log audit.
     
     # Now pass the target_tenant explicitly (as the endpoint expects)
-    res = await get_reservation_full_detail(booking_id=BOOKING_B, current_user=SUPER_ADMIN_A, target_tenant=TENANT_B)
-    assert res is not None
+    from core.tenant_db import tenant_context
+    with tenant_context(SUPER_ADMIN_A.tenant_id):
+        res = await get_reservation_full_detail(booking_id=BOOKING_B, current_user=SUPER_ADMIN_A, target_tenant=TENANT_B)
+        assert res is not None
     
     # Verify audit log was written
     audit_log = await live_test_db.audit_logs.find_one({
@@ -135,20 +153,20 @@ async def test_super_admin_cross_tenant_access(live_test_db):
 @pytest.mark.asyncio
 async def test_invoice_sync_tenant_isolation(live_test_db):
     """Ensure that invoice_sync blocks cross-tenant access via TenantAwareDBProxy."""
-    from core.tenant_db import get_db, set_tenant_context, TenantViolationError
+    from core.tenant_db import get_db, tenant_context, TenantViolationError
 
     # We should have a tenant context
-    set_tenant_context(TENANT_A)
-    db = get_db()
-
-    # This should be allowed and scoped to TENANT_A
-    await db.invoice_sync.insert_one({"id": "disp_A", "tenant_id": TENANT_A, "state": "PREPARED"})
-
-    # Cannot insert for TENANT_B while in TENANT_A context
-    with pytest.raises(TenantViolationError):
-        await db.invoice_sync.insert_one({"id": "disp_B", "tenant_id": TENANT_B, "state": "PREPARED"})
-
-    # Reads should only return TENANT_A docs
-    docs = await db.invoice_sync.find({}).to_list(100)
-    assert len(docs) == 1
-    assert docs[0]["tenant_id"] == TENANT_A
+    with tenant_context(TENANT_A):
+        db = get_db()
+        
+        # This should be allowed and scoped to TENANT_A
+        await db.invoice_sync.insert_one({"id": "disp_A", "tenant_id": TENANT_A, "state": "PREPARED"})
+    
+        # Cannot insert for TENANT_B while in TENANT_A context
+        with pytest.raises(TenantViolationError):
+            await db.invoice_sync.insert_one({"id": "disp_B", "tenant_id": TENANT_B, "state": "PREPARED"})
+    
+        # Reads should only return TENANT_A docs
+        docs = await db.invoice_sync.find({}).to_list(100)
+        assert len(docs) == 1
+        assert docs[0]["tenant_id"] == TENANT_A
