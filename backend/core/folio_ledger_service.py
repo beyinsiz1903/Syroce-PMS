@@ -106,6 +106,18 @@ class FolioLedgerService:
         )
         return (last["sequence_number"] + 1) if last else 1
 
+    async def _require_folio(self, tenant_id: str, folio_id: str) -> dict[str, Any]:
+        folio = await db.folios.find_one(
+            {
+                "tenant_id": tenant_id,
+                "id": folio_id,
+            },
+            {"_id": 0},
+        )
+        if not folio:
+            raise ValueError(f"Folio not found")
+        return folio
+
     async def _insert_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
         try:
             await self.coll.insert_one(entry)
@@ -137,6 +149,7 @@ class FolioLedgerService:
         night_audit_run_id: str | None = None,
         metadata: dict | None = None,
     ) -> dict[str, Any]:
+        await self._require_folio(tenant_id, folio_id)
         now = datetime.now(UTC).isoformat()
         seq = await self._next_sequence(tenant_id, folio_id)
         entry = {
@@ -183,6 +196,7 @@ class FolioLedgerService:
         business_date: str | None = None,
         metadata: dict | None = None,
     ) -> dict[str, Any]:
+        await self._require_folio(tenant_id, folio_id)
         now = datetime.now(UTC).isoformat()
         seq = await self._next_sequence(tenant_id, folio_id)
         entry = {
@@ -233,6 +247,7 @@ class FolioLedgerService:
         Append-only adjustment entry. Pozitif tutar bakiyeyi artırır,
         negatif tutar misafir lehine kredit/indirim olarak düşer.
         """
+        await self._require_folio(tenant_id, folio_id)
         now = datetime.now(UTC).isoformat()
         seq = await self._next_sequence(tenant_id, folio_id)
         entry = {
@@ -274,6 +289,7 @@ class FolioLedgerService:
         reason: str,
         posted_by: str = "system",
     ) -> dict[str, Any]:
+        await self._require_folio(tenant_id, folio_id)
         original = await self.coll.find_one(
             {"id": entry_id, "tenant_id": tenant_id, "folio_id": folio_id},
             {"_id": 0},
@@ -337,6 +353,8 @@ class FolioLedgerService:
         idempotency_key: str | None = None,
         posted_by: str = "system",
     ) -> dict[str, Any]:
+        await self._require_folio(tenant_id, from_folio_id)
+        await self._require_folio(tenant_id, to_folio_id)
         now = datetime.now(UTC).isoformat()
         corr_id = str(uuid.uuid4())
         idem_key = idempotency_key or str(uuid.uuid4())
@@ -413,6 +431,7 @@ class FolioLedgerService:
                - SUM(payments + refunds + transfer_out)
                (void entries carry negative amounts that naturally cancel)
         """
+        await self._require_folio(tenant_id, folio_id)
         pipeline = [
             {"$match": {"tenant_id": tenant_id, "folio_id": folio_id}},
             {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
@@ -421,6 +440,7 @@ class FolioLedgerService:
         return round(result[0]["total"], 2) if result else 0.0
 
     async def get_ledger(self, tenant_id: str, folio_id: str) -> dict[str, Any]:
+        await self._require_folio(tenant_id, folio_id)
         entries = (
             await self.coll.find(
                 {"tenant_id": tenant_id, "folio_id": folio_id},
@@ -434,6 +454,7 @@ class FolioLedgerService:
 
     async def reconcile_folio(self, tenant_id: str, folio_id: str) -> dict[str, Any]:
         """Compare ledger balance vs stored folio balance."""
+        await self._require_folio(tenant_id, folio_id)
         ledger_balance = await self.compute_balance(tenant_id, folio_id)
         folio = await db.folios.find_one(
             {"id": folio_id, "tenant_id": tenant_id},

@@ -94,6 +94,8 @@ async def post_charge(
             metadata=body.metadata,
         )
         return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -121,6 +123,8 @@ async def post_payment(
             metadata=body.metadata,
         )
         return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -169,6 +173,8 @@ async def transfer(
             posted_by=current_user.id,
         )
         return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -176,13 +182,19 @@ async def transfer(
 @router.get("/{folio_id}/ledger")
 async def get_ledger(folio_id: str, current_user: User = Depends(get_current_user)):
     _enforce_perm(current_user.role, "view_folio")  # Bug CQ fix
-    return await ledger_service.get_ledger(current_user.tenant_id, folio_id)
+    try:
+        return await ledger_service.get_ledger(current_user.tenant_id, folio_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.get("/{folio_id}/reconcile")
 async def reconcile_folio(folio_id: str, current_user: User = Depends(get_current_user)):
     _enforce_perm(current_user.role, "view_folio")  # Bug CQ fix
-    return await ledger_service.reconcile_folio(current_user.tenant_id, folio_id)
+    try:
+        return await ledger_service.reconcile_folio(current_user.tenant_id, folio_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.post("/reconciliation/run")
