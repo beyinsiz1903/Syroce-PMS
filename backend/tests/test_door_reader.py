@@ -80,6 +80,7 @@ class _FakeDB:
     def __init__(self):
         self.bookings = _Coll()
         self.digital_keys = _Coll()
+        self.lockdown_state = _Coll()
 
     def __getitem__(self, name):
         return getattr(self, name)
@@ -92,7 +93,7 @@ SERVICE_KEY = "test-door-reader-key"
 @pytest.fixture(autouse=True)
 def _patch(monkeypatch):
     fake = _FakeDB()
-    monkeypatch.setattr(dr, "db", fake)
+    monkeypatch.setattr(dr, "get_system_db", lambda: fake)
     monkeypatch.setenv("DOOR_READER_SERVICE_KEY", SERVICE_KEY)
     return fake
 

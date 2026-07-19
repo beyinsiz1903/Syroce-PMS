@@ -22,6 +22,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from core.tenant_db import tenant_context, set_tenant_context
 
 
 pytestmark = pytest.mark.asyncio
@@ -69,6 +70,7 @@ async def _cleanup(tenant_id: str) -> None:
 async def isolated_tenant():
     """Yield a unique tenant_id and wipe its bookings + locks after the test."""
     tid = f"{TEST_TENANT_PREFIX}{_ts()}_{uuid.uuid4().hex[:8]}"
+    set_tenant_context(tid)
     yield tid
     try:
         await _cleanup(tid)
@@ -136,25 +138,27 @@ async def test_c_terminal_state_does_not_block(isolated_tenant, terminal_status)
     # For cancelled/no_show statuses, atomic_booking inserts without claiming
     # locks. For checked_out we must simulate the lifecycle: insert as
     # confirmed, then transition + release locks.
-    if terminal_status in ("cancelled", "no_show"):
-        first = _mk_booking_doc(tid, room_id, ci, co, status=terminal_status)
-        await create_booking_atomic(first)
-    else:
-        first = _mk_booking_doc(tid, room_id, ci, co, status="confirmed")
-        await create_booking_atomic(first)
-        await db.bookings.update_one(
-            {"id": first["id"], "tenant_id": tid},
-            {"$set": {"status": terminal_status}},
+    is_terminal = terminal_status in ("cancelled", "no_show")
+    with tenant_context(tid):
+        if is_terminal:
+            first = _mk_booking_doc(tid, room_id, ci, co, status=terminal_status)
+            await create_booking_atomic(first)
+        else:
+            first = _mk_booking_doc(tid, room_id, ci, co, status="confirmed")
+            await create_booking_atomic(first)
+            await db.bookings.update_one(
+                {"id": first["id"], "tenant_id": tid},
+                {"$set": {"status": terminal_status}},
+            )
+            await release_booking_nights(tid, first["id"], reason="test_setup")
+
+        # Fresh booking on same window must succeed.
+        fresh = _mk_booking_doc(tid, room_id, ci, co, status="confirmed")
+        await create_booking_atomic(fresh)
+
+        count = await db.bookings.count_documents(
+            {"tenant_id": tid, "room_id": room_id, "status": "confirmed"}
         )
-        await release_booking_nights(tid, first["id"], reason="test_setup")
-
-    # Fresh booking on same window must succeed.
-    fresh = _mk_booking_doc(tid, room_id, ci, co, status="confirmed")
-    await create_booking_atomic(fresh)
-
-    count = await db.bookings.count_documents(
-        {"tenant_id": tid, "room_id": room_id, "status": "confirmed"}
-    )
     assert count == 1
 
 
@@ -173,7 +177,8 @@ async def test_d_concurrent_parallel_inserts_exactly_one_wins(isolated_tenant):
 
     async def attempt(doc):
         try:
-            await create_booking_atomic(doc)
+            with tenant_context(tid):
+                await create_booking_atomic(doc)
             return ("ok", doc["id"])
         except BookingConflictError as e:
             return ("conflict", e.conflicting_booking_id)
@@ -200,24 +205,25 @@ async def test_e_overlap_helper_excludes_terminal_states(isolated_tenant):
     ci, co = "2030-10-01", "2030-10-05"
 
     # Seed two terminal bookings directly (bypassing atomic helper).
-    await db.bookings.insert_many([
-        _mk_booking_doc(tid, room_id, ci, co, status="cancelled"),
-        _mk_booking_doc(tid, room_id, ci, co, status="no_show"),
-        _mk_booking_doc(tid, room_id, ci, co, status="checked_out"),
-    ])
+    with tenant_context(tid):
+        await db.bookings.insert_many([
+            _mk_booking_doc(tid, room_id, ci, co, status="cancelled"),
+            _mk_booking_doc(tid, room_id, ci, co, status="no_show"),
+            _mk_booking_doc(tid, room_id, ci, co, status="checked_out"),
+        ])
 
-    # No active booking → helper returns None.
-    found = await _find_overlapping_active_booking(
-        tenant_id=tid, room_id=room_id, check_in=ci, check_out=co,
-    )
-    assert found is None, f"Terminal-state seed should not block: {found}"
+        # No active booking → helper returns None.
+        found = await _find_overlapping_active_booking(
+            tenant_id=tid, room_id=room_id, check_in=ci, check_out=co,
+        )
+        assert found is None, f"Terminal-state seed should not block: {found}"
 
-    # Add an active overlap → helper finds it.
-    active = _mk_booking_doc(tid, room_id, "2030-10-03", "2030-10-07", status="confirmed")
-    await db.bookings.insert_one(active)
-    found = await _find_overlapping_active_booking(
-        tenant_id=tid, room_id=room_id, check_in=ci, check_out=co,
-    )
+        # Add an active overlap → helper finds it.
+        active = _mk_booking_doc(tid, room_id, "2030-10-03", "2030-10-07", status="confirmed")
+        await db.bookings.insert_one(active)
+        found = await _find_overlapping_active_booking(
+            tenant_id=tid, room_id=room_id, check_in=ci, check_out=co,
+        )
     assert found is not None
     assert found["id"] == active["id"]
 
@@ -240,9 +246,11 @@ async def test_f_defense_in_depth_blocks_legacy_seed_overlap(isolated_tenant):
 
     # Simulate seed: direct insert, NO room_night_locks rows.
     seeded = _mk_booking_doc(tid, room_id, ci, co, status="checked_in")
-    await db.bookings.insert_one(seeded)
+    with tenant_context(tid):
+        await db.bookings.insert_one(seeded)
 
     fresh = _mk_booking_doc(tid, room_id, ci, co, status="confirmed")
     with pytest.raises(BookingConflictError) as exc:
-        await create_booking_atomic(fresh)
+        with tenant_context(tid):
+            await create_booking_atomic(fresh)
     assert exc.value.conflicting_booking_id == seeded["id"]
