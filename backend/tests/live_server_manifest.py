@@ -13,5 +13,6 @@ LIVE_SERVER_TESTS = {
     "tests/test_bug_fixes_cancel_availability.py",
     "tests/test_business_date_validation.py",
     "tests/test_calendar_features.py",
+    "tests/test_calendar_past_dates_and_guests_api.py",
     "tests/test_sandbox_simulation_api.py",
 }
