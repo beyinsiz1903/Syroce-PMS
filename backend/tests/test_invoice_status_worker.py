@@ -105,10 +105,10 @@ async def test_worker_start_stop(worker):
     assert worker._worker_id.startswith("status_worker_")
 
     await worker.start()
-    assert worker._running is True
+    assert worker._stop.is_set() is False
     assert worker._task is not None
     assert not worker._task.done()
 
     await worker.stop()
-    assert worker._running is False
-    assert worker._task.done()
+    assert worker._stop.is_set() is True
+    assert worker._task is None
