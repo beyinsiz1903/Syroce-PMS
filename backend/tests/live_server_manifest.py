@@ -27,5 +27,6 @@ LIVE_SERVER_TESTS = {
     "tests/test_cm_conflict_queue_api.py",
     "tests/test_connection_test_detailed.py",
     "tests/test_controlplane_api.py",
+    "tests/test_controlplane_ui_api.py",
     "tests/test_sandbox_simulation_api.py",
 }
