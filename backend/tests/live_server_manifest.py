@@ -24,5 +24,6 @@ LIVE_SERVER_TESTS = {
     "tests/test_checkout_balance_fix.py",
     "tests/test_ci_load_ruff_verification.py",
     "tests/test_cicd_pipeline_api.py",
+    "tests/test_cm_conflict_queue_api.py",
     "tests/test_sandbox_simulation_api.py",
 }
