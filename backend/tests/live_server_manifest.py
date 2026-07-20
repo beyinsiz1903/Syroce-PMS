@@ -11,5 +11,6 @@ LIVE_SERVER_TESTS = {
     "tests/test_banquet_competitor.py",
     "tests/test_booking_room_move_fix.py",
     "tests/test_bug_fixes_cancel_availability.py",
+    "tests/test_business_date_validation.py",
     "tests/test_sandbox_simulation_api.py",
 }
