@@ -49,7 +49,12 @@ def pytest_collection_modifyitems(config, items):
                 break
                 
         # Apply live_server marker
-        if any(live_file in node_id for live_file in LIVE_SERVER_TESTS):
+        try:
+            rel_path = str(item.path.relative_to(item.config.rootpath)).replace("\\\\", "/")
+        except ValueError:
+            rel_path = str(item.path).replace("\\\\", "/")
+            
+        if rel_path in LIVE_SERVER_TESTS:
             item.add_marker(pytest.mark.live_server)
 
 BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
