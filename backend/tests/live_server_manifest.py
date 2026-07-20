@@ -19,5 +19,6 @@ LIVE_SERVER_TESTS = {
     "tests/test_channel_health_dashboard_v2.py",
     "tests/test_channel_manager_v2.py",
     "tests/test_channel_manager_v2_phase6.py",
+    "tests/test_checkout_balance_fix.py",
     "tests/test_sandbox_simulation_api.py",
 }
