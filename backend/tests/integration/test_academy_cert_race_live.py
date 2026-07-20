@@ -51,8 +51,8 @@ import uuid
 
 import pytest
 
-from core import academy
 from bootstrap.phases.d_perf import ensure_academy_indexes
+from core import academy
 
 COURSE_ID = "reception-temelleri"
 
@@ -91,11 +91,14 @@ def _tenant() -> str:
 async def live_db(monkeypatch):
     from motor.motor_asyncio import AsyncIOMotorClient
     url = os.environ.get("MONGO_URL") or os.environ.get("MONGO_ATLAS_URI")
+    assert url, "Academy live test requires MONGO_URL or MONGO_ATLAS_URI"
     client = AsyncIOMotorClient(url)
     db = client[os.environ.get("DB_NAME", "syroce_test")]
     monkeypatch.setattr(academy, "_db", lambda: db)
-    yield db
-    client.close()
+    try:
+        yield db
+    finally:
+        client.close()
 
 async def _purge(tenant_id: str, db) -> None:
 
@@ -104,7 +107,7 @@ async def _purge(tenant_id: str, db) -> None:
     Runs even when the safeguard FAILS (both inserts succeed), so a regression
     can never leak duplicate certificate rows.
     """
-    
+
     flt = {"tenant_id": tenant_id}
     await db.academy_certificates.delete_many(flt)
     await db.academy_progress.delete_many(flt)
@@ -116,10 +119,9 @@ async def _purge(tenant_id: str, db) -> None:
 
 @pytest.mark.asyncio
 async def test_academy_indexes_are_built_unique(live_db):
-    db = live_db
     """phase-D's ``ensure_academy_indexes`` builds the cert/progress indexes as
     ``unique=True`` — the DB-level backstop the engine's idempotency relies on."""
-    
+    db = live_db
     # Run the SAME code path phase-D runs at boot (idempotent — safe to repeat).
     await ensure_academy_indexes(db)
 
@@ -146,7 +148,6 @@ async def test_academy_indexes_are_built_unique(live_db):
 
 @pytest.mark.asyncio
 async def test_concurrent_certificate_issuance_one_row_real_mongo(live_db):
-    db = live_db
     """Two simultaneous passing issuances against real Mongo → exactly ONE row.
 
     The losing insert collides with the real unique index, raises
@@ -154,7 +155,7 @@ async def test_concurrent_certificate_issuance_one_row_real_mongo(live_db):
     winning certificate. This is the invariant the fake-collection unit test can
     only simulate.
     """
-    
+    db = live_db
     await ensure_academy_indexes(db)
     course = academy.get_course_raw(COURSE_ID)
     assert course is not None, f"course {COURSE_ID} must exist in the catalog"
@@ -183,9 +184,8 @@ async def test_concurrent_certificate_issuance_one_row_real_mongo(live_db):
 
 @pytest.mark.asyncio
 async def test_certificate_reissue_is_idempotent_real_mongo(live_db):
-    db = live_db
     """A later (higher-score) re-pass returns the original cert, never a new one."""
-    
+    db = live_db
     await ensure_academy_indexes(db)
     course = academy.get_course_raw(COURSE_ID)
     assert course is not None
