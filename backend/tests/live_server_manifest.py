@@ -8,5 +8,6 @@ LIVE_SERVER_TESTS = {
     "tests/test_ari_push_engine_v2.py",
     "tests/test_b2b_api.py",
     "tests/test_b2b_webhooks.py",
+    "tests/test_banquet_competitor.py",
     "tests/test_sandbox_simulation_api.py",
 }
