@@ -30,5 +30,6 @@ LIVE_SERVER_TESTS = {
     "tests/test_controlplane_ui_api.py",
     "tests/test_create_reservation_bridge.py",
     "tests/test_create_room_block_bridge.py",
+    "tests/test_cross_tenant_isolation_e2e.py",
     "tests/test_sandbox_simulation_api.py",
 }
