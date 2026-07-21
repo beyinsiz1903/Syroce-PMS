@@ -274,7 +274,7 @@ def test_status_patch_dependency_rejects_guest_role():
 def _make_jwt(payload: dict) -> str:
     """Sign a JWT with the backend's JWT_SECRET so the WS auth path
     accepts it. Tests run in-process so the same secret is in scope."""
-    from jose import jwt
+    import jwt
     from core.security import JWT_ALGORITHM, JWT_SECRET
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 

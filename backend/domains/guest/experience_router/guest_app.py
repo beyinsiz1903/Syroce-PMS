@@ -741,7 +741,7 @@ async def _authenticate_ws_token(token: str | None) -> dict | None:
         token = token[7:]
 
     try:
-        from jose import jwt
+        import jwt
 
         from core.security import (
             JWT_ALGORITHM,
