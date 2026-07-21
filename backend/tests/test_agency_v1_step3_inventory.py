@@ -18,7 +18,8 @@ from core.atomic_booking import BookingConflictError
 
 @pytest.mark.asyncio
 async def test_claim_success_returns_booking(monkeypatch):
-    async def fake_create(doc):
+    async def fake_create(*, tenant_id, booking_doc):
+        doc = booking_doc
         return {**doc, "persisted": True}
 
     monkeypatch.setattr(atomic, "create_booking_atomic", fake_create)
@@ -29,7 +30,8 @@ async def test_claim_success_returns_booking(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_claim_conflict_maps_first_night(monkeypatch):
-    async def fake_create(doc):
+    async def fake_create(*, tenant_id, booking_doc):
+        doc = booking_doc
         raise BookingConflictError(
             "Night 2026-07-02 already booked",
             conflicting_booking_id="OTHER",
@@ -51,7 +53,8 @@ async def test_claim_conflict_maps_first_night(monkeypatch):
 async def test_claim_conflict_empty_nights_none_date(monkeypatch):
     """bookings-seviyesi overlap guard'i conflicting_nights=[] verebilir ->
     conflict_date None ama tip/booking surface edilir (fail-closed 409)."""
-    async def fake_create(doc):
+    async def fake_create(*, tenant_id, booking_doc):
+        doc = booking_doc
         raise BookingConflictError(
             "Room already booked",
             conflicting_booking_id="X",
@@ -68,7 +71,8 @@ async def test_claim_conflict_empty_nights_none_date(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ooo_conflict_type_preserved(monkeypatch):
-    async def fake_create(doc):
+    async def fake_create(*, tenant_id, booking_doc):
+        doc = booking_doc
         raise BookingConflictError(
             "Room OOO", conflict_type="ooo", conflicting_nights=["2026-07-05"]
         )

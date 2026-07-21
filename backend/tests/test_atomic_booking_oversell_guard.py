@@ -342,3 +342,7 @@ async def test_atomic_booking_rejects_missing_tenant():
 
     system_db = get_system_db()
     assert await system_db.bookings.count_documents({"id": booking["id"]}) == 0
+
+    assert await system_db.room_night_locks.count_documents(
+        {"booking_id": booking["id"]}
+    ) == 0

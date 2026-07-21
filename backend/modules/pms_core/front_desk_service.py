@@ -361,7 +361,8 @@ class FrontDeskService:
 
         try:
             await create_booking_atomic(
-                {
+                tenant_id=tenant_id,
+                booking_doc={
                     "id": booking_id,
                     "tenant_id": tenant_id,
                     "guest_id": guest_id,
