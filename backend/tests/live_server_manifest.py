@@ -168,4 +168,5 @@ LIVE_SERVER_TESTS = {
     "tests/test_rate_manager_notifications.py",
     "tests/test_reconciliation_engine.py",
     "tests/test_refactor_validation.py",
+    "tests/test_refactoring_verification.py",
 }
