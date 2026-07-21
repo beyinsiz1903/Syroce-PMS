@@ -44,6 +44,7 @@ from pymongo.errors import DuplicateKeyError
 
 from core.atomic_booking import _night_dates, release_booking_nights
 from core.database import db
+from core.tenant_db import tenant_context
 
 logger = logging.getLogger("channel_manager.unmatched_hold")
 
@@ -111,15 +112,16 @@ async def create_unmatched_reservation_hold(
     property_id = property_id or tenant_id
 
     # ── Idempotency: aktif bir tutma zaten var mi? ──────────────────
-    existing = await db.bookings.find_one(
-        {
-            "tenant_id": tenant_id,
-            "external_reservation_id": external_id,
-            "booking_source": UNMATCHED_HOLD_SOURCE,
-            "status": {"$ne": "cancelled"},
-        },
-        {"_id": 0, "id": 1},
-    )
+    with tenant_context(tenant_id):
+                existing = await db.bookings.find_one(
+                {
+                "tenant_id": tenant_id,
+                "external_reservation_id": external_id,
+                "booking_source": UNMATCHED_HOLD_SOURCE,
+                "status": {"$ne": "cancelled"},
+                },
+                {"_id": 0, "id": 1},
+                )
     if existing:
         # Tekrar teslimatlarda yeni alarm uretmiyoruz (idempotent).
         return {
@@ -173,7 +175,8 @@ async def create_unmatched_reservation_hold(
     }
 
     try:
-        await db.bookings.insert_one(hold_doc)
+        with tenant_context(tenant_id):
+                    await db.bookings.insert_one(hold_doc)
     except Exception as exc:
         logger.exception(
             "[UNMATCHED-HOLD] tutma booking insert basarisiz provider=%s ext=%s: %s",
@@ -210,7 +213,8 @@ async def create_unmatched_reservation_hold(
             "created_at": now,
         }
         try:
-            await db.room_night_locks.insert_one(lock_doc)
+            with tenant_context(tenant_id):
+                        await db.room_night_locks.insert_one(lock_doc)
             held.append(night)
         except DuplicateKeyError:
             # Idempotent: ayni sentinel oda+gece zaten kilitli.
@@ -268,15 +272,16 @@ async def release_unmatched_reservation_hold(
     if not tenant_id or not external_id:
         return {"released": False, "booking_id": None, "nights_released": 0}
 
-    hold = await db.bookings.find_one(
-        {
-            "tenant_id": tenant_id,
-            "external_reservation_id": external_id,
-            "booking_source": UNMATCHED_HOLD_SOURCE,
-            "status": {"$ne": "cancelled"},
-        },
-        {"_id": 0, "id": 1},
-    )
+    with tenant_context(tenant_id):
+                hold = await db.bookings.find_one(
+                {
+                "tenant_id": tenant_id,
+                "external_reservation_id": external_id,
+                "booking_source": UNMATCHED_HOLD_SOURCE,
+                "status": {"$ne": "cancelled"},
+                },
+                {"_id": 0, "id": 1},
+                )
     if not hold:
         return {"released": False, "booking_id": None, "nights_released": 0}
 
@@ -300,27 +305,30 @@ async def release_unmatched_reservation_hold(
         # Task #437: kilit serbest bırakılamadıysa hold booking'i SİLME — kilit
         # sahipsiz (orphan) kalmasın, boş oda yanlışlıkla 'dolu' görünmesin.
         # Sahibi kalan hold daha sonra script/tekrar deneme ile temizlenebilir.
-        await db.bookings.update_one(
-            {"id": booking_id, "tenant_id": tenant_id},
-            {"$set": {"action_needed": True, "updated_at": now}},
-        )
+        with tenant_context(tenant_id):
+                    await db.bookings.update_one(
+                    {"id": booking_id, "tenant_id": tenant_id},
+                    {"$set": {"action_needed": True, "updated_at": now}},
+                    )
     elif delete_hold:
-        await db.bookings.delete_one({"id": booking_id, "tenant_id": tenant_id})
+        with tenant_context(tenant_id):
+                    await db.bookings.delete_one({"id": booking_id, "tenant_id": tenant_id})
         deleted = True
     else:
-        await db.bookings.update_one(
-            {"id": booking_id, "tenant_id": tenant_id},
-            {
-                "$set": {
+        with tenant_context(tenant_id):
+                    await db.bookings.update_one(
+                    {"id": booking_id, "tenant_id": tenant_id},
+                    {
+                    "$set": {
                     "status": "cancelled",
                     "cancelled_at": now,
                     "cancelled_reason": reason,
                     "action_needed": False,
                     "is_inventory_hold": False,
                     "updated_at": now,
-                }
-            },
-        )
+                    }
+                    },
+                    )
 
     logger.info(
         "[UNMATCHED-HOLD] tutma serbest ext=%s booking=%s nights=%d delete=%s reason=%s",
@@ -364,32 +372,34 @@ async def _raise_unmatched_alarm(
         f"tutma olusturuldu. Lutfen oda tipi eslestirmesini tamamlayin."
     )
     try:
-        existing_notif = await db.notifications.find_one(
-            {
-                "tenant_id": tenant_id,
-                "dedup_key": dedup_key,
-            }
-        )
-        if not existing_notif:
-            await db.notifications.insert_one(
-                {
-                    "id": str(uuid.uuid4()),
+        with tenant_context(tenant_id):
+                    existing_notif = await db.notifications.find_one(
+                    {
                     "tenant_id": tenant_id,
-                    "user_id": None,
-                    "type": "channel_unmatched_reservation",
-                    "priority": "high",
-                    "category": "channel_manager",
-                    "title": ALARM_TITLE,
-                    "message": notif_message,
-                    "action_url": "/channel-manager",
-                    "booking_id": booking_id,
-                    "external_reservation_id": external_id,
-                    "provider": provider,
-                    "read": False,
                     "dedup_key": dedup_key,
-                    "created_at": now,
-                }
-            )
+                    }
+                    )
+        if not existing_notif:
+            with tenant_context(tenant_id):
+                        await db.notifications.insert_one(
+                        {
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": tenant_id,
+                        "user_id": None,
+                        "type": "channel_unmatched_reservation",
+                        "priority": "high",
+                        "category": "channel_manager",
+                        "title": ALARM_TITLE,
+                        "message": notif_message,
+                        "action_url": "/channel-manager",
+                        "booking_id": booking_id,
+                        "external_reservation_id": external_id,
+                        "provider": provider,
+                        "read": False,
+                        "dedup_key": dedup_key,
+                        "created_at": now,
+                        }
+                        )
             # ── 2. Tenant-scoped websocket bildirimi ────────────────
             # broadcast_notification KULLANILMAZ (global 'notifications'
             # odasina yayar -> cross-tenant PII sizintisi). Tenant-scoped
