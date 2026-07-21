@@ -204,6 +204,7 @@ def auth_headers():
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
+@pytest.mark.live_server
 @pytestmark_http
 class TestBuilderExcelExportRegression:
     """Integration: POST /api/reports/builder/export/excel — Task #246 case a,b."""
@@ -250,6 +251,7 @@ class TestBuilderExcelExportRegression:
         assert r.content.startswith(XLSX_MAGIC)
 
 
+@pytest.mark.live_server
 @pytestmark_http
 class TestCompanyAgingExcelRegression:
     """Integration: GET /api/reports/company-aging/excel — Task #246 case d."""
