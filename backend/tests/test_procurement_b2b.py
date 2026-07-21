@@ -52,7 +52,12 @@ class _MockCollection:
             if flt.get("tenant_id") is None or d.get("tenant_id") == flt.get("tenant_id") or d.get("tenant_id") == "unknown":
                 match = True
                 for k, v in flt.items():
-                    if k != "tenant_id" and k != "is_active" and d.get(k) != v:
+                    if k == "tenant_id":
+                        continue
+                    if isinstance(v, dict) and "$in" in v:
+                        if d.get(k) not in v["$in"]:
+                            match = False
+                    elif d.get(k) != v:
                         match = False
                 if match:
                     return dict(d)
@@ -64,7 +69,12 @@ class _MockCollection:
             if flt.get("tenant_id") is None or d.get("tenant_id") == flt.get("tenant_id") or d.get("tenant_id") == "unknown":
                 match = True
                 for k, v in flt.items():
-                    if k != "tenant_id" and k != "is_active" and d.get(k) != v:
+                    if k == "tenant_id":
+                        continue
+                    if isinstance(v, dict) and "$in" in v:
+                        if d.get(k) not in v["$in"]:
+                            match = False
+                    elif d.get(k) != v:
                         match = False
                 if match:
                     matching.append(dict(d))
