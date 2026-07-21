@@ -161,8 +161,10 @@ class TestAlignmentEndpoint:
     async def test_alignment_returns_required_fields(self):
         """Verify alignment response includes all required fields."""
         from controlplane.inventory_alignment import compute_inventory_alignment
+        from core.tenant_db import tenant_context
 
-        result = await compute_inventory_alignment()
+        with tenant_context("test_tenant"):
+            result = await compute_inventory_alignment(tenant_id="test_tenant")
 
         required_fields = [
             "alignment_status", "freshness", "drift_count",
