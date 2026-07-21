@@ -89,6 +89,7 @@ class TestReadmeFiles:
         assert 'React 19' in content, "Frontend README should mention React 19"
 
 
+@pytest.mark.live_server
 class TestBookingDateValidation:
     """Test past-date booking rejection and future-date booking success"""
     
@@ -200,6 +201,7 @@ class TestBookingDateValidation:
         assert 'id' in data, "Response should contain booking ID"
 
 
+@pytest.mark.live_server
 class TestLoginAndDashboard:
     """Test login flow and dashboard access"""
     
