@@ -441,7 +441,7 @@ async def test_small_json_error_is_parsed(config_override):
         with pytest.raises(NilveraValidationError) as exc:
             await http_client.get("/test")
         assert "Bad" in exc.value.sanitized_preview
-        assert exc.value.args == ("Nilvera provider request failed",)
+        assert exc.value.args == ("E-Belge entegratörü ile iletişimde bir sorun oluştu.",)
 
 @pytest.mark.asyncio
 async def test_small_html_error_returns_safe_typed_error(config_override):
@@ -538,7 +538,7 @@ def test_repr_never_contains_provider_message():
 
 def test_exception_args_contain_only_safe_static_message():
     err = NilveraApiError("Nilvera provider request failed", raw_response={"Message": "SECRET"})
-    assert err.args == ("Nilvera provider request failed",)
+    assert err.args == ("E-Belge entegratörü ile iletişimde bir sorun oluştu.",)
 
 @pytest.mark.asyncio
 async def test_client_parses_safe_message_for_exception(config_override):
@@ -548,7 +548,7 @@ async def test_client_parses_safe_message_for_exception(config_override):
         with pytest.raises(NilveraValidationError) as exc:
             await http_client.get("/test")
         assert "SECRET_PROVIDER_MESSAGE" not in str(exc.value)
-        assert exc.value.args == ("Nilvera provider request failed",)
+        assert exc.value.args == ("E-Belge entegratörü ile iletişimde bir sorun oluştu.",)
 
 # --- EGRESS ALLOWLIST & RESTRICTION TESTS ---
 
