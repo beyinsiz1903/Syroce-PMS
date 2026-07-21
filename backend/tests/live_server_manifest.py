@@ -169,4 +169,6 @@ LIVE_SERVER_TESTS = {
     "tests/test_reconciliation_engine.py",
     "tests/test_refactor_validation.py",
     "tests/test_refactoring_verification.py",
+    "tests/test_report_builder.py",
+    "tests/test_release_room_block_bridge.py",
 }
