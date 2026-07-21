@@ -40,7 +40,7 @@ class _Coll:
                 return {k: v for k, v in d.items()}
         return None
 
-    async def insert_one(self, doc):
+    async def insert_one(self, doc, session=None):
         self.insert_calls += 1
         if "_id" in doc:
             for d in self.docs:
@@ -49,7 +49,7 @@ class _Coll:
         self.docs.append(dict(doc))
         return SimpleNamespace(inserted_id=doc.get("_id", "x"))
 
-    async def update_one(self, flt, update, upsert=False):
+    async def update_one(self, flt, update, upsert=False, session=None):
         self.update_calls += 1
         for d in self.docs:
             if all(d.get(k) == v for k, v in flt.items()):
