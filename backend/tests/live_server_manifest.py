@@ -166,4 +166,5 @@ LIVE_SERVER_TESTS = {
     "tests/test_webhook_timeline_integration.py",
     "tests/test_rate_manager_bulk_update.py",
     "tests/test_rate_manager_notifications.py",
+    "tests/test_reconciliation_engine.py",
 }
