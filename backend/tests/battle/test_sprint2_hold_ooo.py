@@ -122,7 +122,7 @@ async def test_hold_blocks_regular_booking():
         "_version": 1,
     }
     with pytest.raises(BookingConflictError):
-        await create_booking_atomic(booking_doc)
+        await create_booking_atomic(tenant_id=TENANT_ID, booking_doc=booking_doc)
 
 
 # ── Hold Confirm Tests ───────────────────────────────────────────────
@@ -306,7 +306,7 @@ async def test_ooo_block_prevents_booking():
         "_version": 1,
     }
     with pytest.raises(BookingConflictError) as exc_info:
-        await create_booking_atomic(booking_doc)
+        await create_booking_atomic(tenant_id=TENANT_ID, booking_doc=booking_doc)
     assert exc_info.value.conflict_type == "oos"
 
 
@@ -345,5 +345,5 @@ async def test_ooo_release_frees_room():
         "guest_id": "guest-z",
         "_version": 1,
     }
-    result = await create_booking_atomic(booking_doc)
+    result = await create_booking_atomic(tenant_id=TENANT_ID, booking_doc=booking_doc)
     assert result["status"] == "confirmed"
