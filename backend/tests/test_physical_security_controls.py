@@ -141,7 +141,7 @@ class _FakeDB:
         self.bookings = _MockCollection("bookings", [{
             "id": _BOOKING_ID,
             "tenant_id": TENANT_ID,
-            "status": "in_house",
+            "status": "checked_in",
             "checked_in_at": "2026-06-20T14:00:00Z",
             "checked_out_at": None,
             "arrival_date": "2026-06-20",
@@ -162,6 +162,7 @@ def env(monkeypatch):
     fake_db = _FakeDB(token)
     monkeypatch.setattr(door_reader_router, "get_system_db", lambda: fake_db)
     monkeypatch.setattr(phys_security_router, "get_system_db", lambda: fake_db)
+    monkeypatch.setenv("DOOR_READER_SERVICE_KEY", "test_local_key")
 
     # Patch log_audit_event
     async def _fake_audit(tenant_id, user_id, action, entity_type, entity_id, details, severity="info", **kwargs):
@@ -264,11 +265,13 @@ def test_global_lockdown_fails_closed(env):
     # 2. Try to verify key (should fail-closed due to lockdown)
     verify_res = env.client.post(
         "/api/internal/door-reader/verify",
+        headers={"X-Door-Reader-Key": "test_local_key"},
         json={"token": env.token, "room_number": _ROOM_NUMBER, "device_id": "device-main-door"}
     )
     # verify_door_reader will check key first. Since key status is revoked, it fails at active key check
     assert verify_res.status_code == 200, verify_res.text
-    assert verify_res.json()["decision"] == "revoked"
+    assert verify_res.json()["access"] == "denied"
+    assert verify_res.json()["reason"] == "revoked"
 
     # Verify denied access log is recorded
     denied_log = list(env.db.physical_access_logs.docs.values())[-1]
