@@ -155,6 +155,7 @@ LIVE_SERVER_TESTS = {
     "tests/test_inventory_negative_stock_guard.py",
     "tests/test_mice_event_extras.py",
     "tests/test_mice_fnb_order_send.py",
+    "tests/test_pms_analytics_4features.py",
     "tests/test_user_provisioning_integration.py",
     "tests/test_user_provisioning_integration.py",
     "tests/test_user_provisioning_integration.py",
