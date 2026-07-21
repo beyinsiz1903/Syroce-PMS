@@ -487,7 +487,7 @@ async def auto_import_reservation_to_pms(
 
         # ── 6. Create booking via atomic core ────────────────────
         try:
-            await create_booking_atomic(booking_doc)
+            await create_booking_atomic(tenant_id=tenant_id, booking_doc=booking_doc)
         except BookingConflictError as e:
             await _mark_review(
                 imported_reservation_id,

@@ -124,7 +124,7 @@ async def _booking_pull_async(tenant_id: str):
                 from core.atomic_booking import BookingConflictError, assert_pending_assignment, create_booking_atomic
 
                 try:
-                    await create_booking_atomic(booking_payload)
+                    await create_booking_atomic(tenant_id=tenant_id, booking_doc=booking_payload)
                 except BookingConflictError:
                     booking_payload["room_id"] = None
                     booking_payload["allocation_source"] = "pending_assignment"

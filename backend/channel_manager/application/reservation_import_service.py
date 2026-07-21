@@ -622,7 +622,7 @@ class ReservationImportService:
         from core.atomic_booking import BookingConflictError, assert_pending_assignment, create_booking_atomic
 
         try:
-            await create_booking_atomic(booking)
+            await create_booking_atomic(tenant_id=tenant_id, booking_doc=booking)
         except BookingConflictError:
             logger.warning("OTA import conflict for %s, creating without room assignment", canonical.external_id)
             booking["room_id"] = None
