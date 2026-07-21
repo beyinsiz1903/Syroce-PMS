@@ -153,6 +153,8 @@ LIVE_SERVER_TESTS = {
     "tests/test_maintenance_workorder_create.py",
     "tests/test_hr_shifts_overnight.py",
     "tests/test_inventory_negative_stock_guard.py",
+    "tests/test_mice_event_extras.py",
+    "tests/test_mice_fnb_order_send.py",
     "tests/test_user_provisioning_integration.py",
     "tests/test_user_provisioning_integration.py",
     "tests/test_user_provisioning_integration.py",
