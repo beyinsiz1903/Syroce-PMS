@@ -21,10 +21,9 @@ import requests
 
 BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
 
-pytestmark = pytest.mark.skipif(
-    not BASE_URL,
-    reason="VITE_BACKEND_URL not set — integration tests require a running server",
-)
+pytestmark = [
+    pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
+]
 
 
 def _future_date(offset_days: int) -> str:
