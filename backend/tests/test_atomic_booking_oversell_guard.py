@@ -23,6 +23,12 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from core.atomic_booking import ensure_booking_indexes
+
+@pytest.fixture(autouse=True)
+async def _ensure_rnl_index(isolated_tenant):
+    await ensure_booking_indexes()
+
 
 pytestmark = pytest.mark.asyncio
 

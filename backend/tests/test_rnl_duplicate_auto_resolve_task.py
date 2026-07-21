@@ -23,11 +23,13 @@ def _ts() -> str:
 async def _cleanup(tenant_id: str) -> None:
     from core.database import db
     from core.tenant_db import audit_retention_context
-    await db.bookings.delete_many({"tenant_id": tenant_id})
-    await db.room_night_locks.delete_many({"tenant_id": tenant_id})
-    # audit_logs is append-only (Task #568); test teardown uses the sanctioned escape.
-    with audit_retention_context():
-        await db.audit_logs.delete_many({"tenant_id": tenant_id})
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+        await db.bookings.delete_many({"tenant_id": tenant_id})
+        await db.room_night_locks.delete_many({"tenant_id": tenant_id})
+        # audit_logs is append-only (Task #568); test teardown uses the sanctioned escape.
+        with audit_retention_context():
+            await db.audit_logs.delete_many({"tenant_id": tenant_id})
 
 
 async def _reset_alert_state() -> None:
@@ -35,8 +37,40 @@ async def _reset_alert_state() -> None:
     await db.rnl_duplicate_alert_state.delete_many({"state_key": "manual_required"})
 
 
+
+
 @pytest.fixture
-async def isolated_tenant():
+async def duplicate_lock_environment():
+    from core.tenant_db import get_system_db
+    from core.atomic_booking import ensure_booking_indexes
+    from pymongo.errors import OperationFailure
+    
+    system_db = get_system_db()
+    collection = system_db.room_night_locks
+
+    try:
+        await collection.drop_index("ux_room_night")
+    except OperationFailure as exc:
+        if exc.code != 27:  # IndexNotFound
+            raise
+
+    try:
+        yield
+    finally:
+        await ensure_booking_indexes()
+
+        indexes = [
+            index async for index in collection.list_indexes()
+        ]
+
+        assert any(
+            index.get("name") == "ux_room_night"
+            and index.get("unique") is True
+            for index in indexes
+        )
+
+@pytest.fixture
+async def isolated_tenant(duplicate_lock_environment):
     tid = f"{TEST_TENANT_PREFIX}{_ts()}_{uuid.uuid4().hex[:8]}"
     yield tid
     try:
@@ -59,12 +93,14 @@ async def _seed_lock(tenant_id, room_id, night, booking_id, lock_type="booking")
 
 async def _seed_booking(tenant_id, booking_id, status):
     from core.database import db
-    await db.bookings.insert_one({
-        "id": booking_id,
-        "tenant_id": tenant_id,
-        "status": status,
-        "created_at": datetime.now(UTC).isoformat(),
-    })
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+        await db.bookings.insert_one({
+            "id": booking_id,
+            "tenant_id": tenant_id,
+            "status": status,
+            "created_at": datetime.now(UTC).isoformat(),
+        })
 
 
 async def test_beat_task_resolves_auto_safe_and_rebuilds_index(isolated_tenant):
@@ -96,9 +132,11 @@ async def test_beat_task_resolves_auto_safe_and_rebuilds_index(isolated_tenant):
     assert len(remaining) == 1
     assert remaining[0]["booking_id"] == active_id
 
-    audit = await db.audit_logs.find_one(
-        {"tenant_id": tid, "action": "AUTO_RESOLVE_RNL_DUPLICATE"}
-    )
+    from core.tenant_db import tenant_context
+    with tenant_context(tid):
+        audit = await db.audit_logs.find_one(
+            {"tenant_id": tid, "action": "AUTO_RESOLVE_RNL_DUPLICATE"}
+        )
     assert audit is not None
     assert audit["user_id"] == "celery_beat"
 
@@ -310,12 +348,17 @@ async def test_beat_task_sets_active_since_on_first_detection_preserves_on_escal
         first_active_since = state1.get("active_since")
         assert first_active_since, "active_since must be set on first dispatch"
 
-        # Force escalation: bump alert count threshold by simulating a higher
-        # current count via state, then re-dispatch — active_since must stay.
-        await db.rnl_duplicate_alert_state.update_one(
-            {"state_key": "manual_required"},
-            {"$set": {"last_alert_count": 0}},  # large delta forces escalation
-        )
+
+        # Force escalation: seed 5 additional duplicate groups to reach the
+        # _RNL_ALERT_ESCALATION_DELTA threshold (5).
+        for i in range(5):
+            r = f"room_{uuid.uuid4().hex[:8]}"
+            b1, b2 = str(uuid.uuid4()), str(uuid.uuid4())
+            await _seed_booking(tid, b1, "confirmed")
+            await _seed_booking(tid, b2, "checked_in")
+            await _seed_lock(tid, r, night, b1)
+            await _seed_lock(tid, r, night, b2)
+
         with patch(
             "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
             new=AsyncMock(return_value={"dashboard": True}),
@@ -382,11 +425,17 @@ async def test_beat_task_broadcasts_socket_event_on_transitions(isolated_tenant)
             assert payload["manual_required_count"] >= 1
             assert mock_emit.await_args.kwargs.get("severity") == "high"
 
-        # Force escalation: zero last_alert_count to push delta above threshold.
-        await db.rnl_duplicate_alert_state.update_one(
-            {"state_key": "manual_required"},
-            {"$set": {"last_alert_count": 0}},
-        )
+
+        # Force escalation: seed 5 additional duplicate groups to reach the
+        # _RNL_ALERT_ESCALATION_DELTA threshold (5).
+        for i in range(5):
+            r = f"room_{uuid.uuid4().hex[:8]}"
+            b1, b2 = str(uuid.uuid4()), str(uuid.uuid4())
+            await _seed_booking(tid, b1, "confirmed")
+            await _seed_booking(tid, b2, "checked_in")
+            await _seed_lock(tid, r, night, b1)
+            await _seed_lock(tid, r, night, b2)
+
         with patch(
             "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
             new=AsyncMock(return_value={"dashboard": True}),
