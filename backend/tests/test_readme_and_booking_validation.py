@@ -14,12 +14,16 @@ from datetime import datetime, timedelta
 BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
 
 
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 class TestReadmeFiles:
     """Verify README files contain correct tech stack information"""
     
     def test_root_readme_exists_and_has_syroce_pms(self):
         """Root README.md should say 'Syroce PMS' not 'RoomOps'"""
-        readme_path = '/app/README.md'
+        readme_path = str(REPO_ROOT / 'README.md')
         assert os.path.exists(readme_path), "Root README.md should exist"
         
         with open(readme_path, 'r') as f:
@@ -32,59 +36,59 @@ class TestReadmeFiles:
         
     def test_root_readme_has_react_19(self):
         """Root README.md should mention React 19"""
-        with open('/app/README.md', 'r') as f:
+        with open(REPO_ROOT / 'README.md', 'r') as f:
             content = f.read()
         assert 'React' in content and '19' in content, "README should mention React 19"
         
     def test_root_readme_has_python_311(self):
         """Root README.md should mention Python 3.11+"""
-        with open('/app/README.md', 'r') as f:
+        with open(REPO_ROOT / 'README.md', 'r') as f:
             content = f.read()
         assert 'Python' in content and '3.11' in content, "README should mention Python 3.11+"
         
     def test_root_readme_has_node_20(self):
         """Root README.md should mention Node.js 20+"""
-        with open('/app/README.md', 'r') as f:
+        with open(REPO_ROOT / 'README.md', 'r') as f:
             content = f.read()
         assert 'Node' in content and '20' in content, "README should mention Node.js 20+"
         
     def test_root_readme_has_mongodb_70(self):
         """Root README.md should mention MongoDB 7.0+"""
-        with open('/app/README.md', 'r') as f:
+        with open(REPO_ROOT / 'README.md', 'r') as f:
             content = f.read()
         assert 'MongoDB' in content and '7.0' in content, "README should mention MongoDB 7.0+"
         
     def test_backend_readme_exists(self):
-        """Backend README.md should exist at /app/backend/README.md"""
-        readme_path = '/app/backend/README.md'
+        """Backend README.md should exist at backend/README.md"""
+        readme_path = str(REPO_ROOT / 'backend' / 'README.md')
         assert os.path.exists(readme_path), "Backend README.md should exist"
         
     def test_backend_readme_has_syroce_pms(self):
         """Backend README.md should say 'Syroce PMS'"""
-        with open('/app/backend/README.md', 'r') as f:
+        with open(REPO_ROOT / 'backend' / 'README.md', 'r') as f:
             content = f.read()
         assert 'Syroce PMS' in content, "Backend README should mention 'Syroce PMS'"
         
     def test_backend_readme_has_python_311(self):
         """Backend README.md should mention Python 3.11+"""
-        with open('/app/backend/README.md', 'r') as f:
+        with open(REPO_ROOT / 'backend' / 'README.md', 'r') as f:
             content = f.read()
         assert 'Python 3.11' in content, "Backend README should mention Python 3.11+"
         
     def test_backend_readme_has_mongodb_70(self):
         """Backend README.md should mention MongoDB 7.0+"""
-        with open('/app/backend/README.md', 'r') as f:
+        with open(REPO_ROOT / 'backend' / 'README.md', 'r') as f:
             content = f.read()
         assert 'MongoDB 7.0' in content, "Backend README should mention MongoDB 7.0+"
         
     def test_frontend_readme_exists(self):
         """Frontend README.md should exist"""
-        readme_path = '/app/frontend/README.md'
+        readme_path = str(REPO_ROOT / 'frontend' / 'README.md')
         assert os.path.exists(readme_path), "Frontend README.md should exist"
         
     def test_frontend_readme_has_react_19(self):
         """Frontend README.md should mention React 19"""
-        with open('/app/frontend/README.md', 'r') as f:
+        with open(REPO_ROOT / 'frontend' / 'README.md', 'r') as f:
             content = f.read()
         assert 'React 19' in content, "Frontend README should mention React 19"
 
