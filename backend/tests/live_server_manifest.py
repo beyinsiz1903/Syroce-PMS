@@ -137,4 +137,18 @@ LIVE_SERVER_TESTS = {
     "tests/test_provider_config_slack_trends.py",
     "tests/test_quick_booking.py",
     "tests/test_r881632298_bug_fixes.py",
+
+    # Tranche 36-39
+    "tests/test_atomic_booking.py",
+    "tests/test_catchup_dedup_counter.py",
+    "tests/test_hardening_comprehensive.py",
+    "tests/test_hardening_multi_phase.py",
+    "tests/test_monitoring_auth.py",
+    "tests/test_user_provisioning_integration.py",
+    "tests/test_tech_debt_weekly_proof_api.py",
+    "tests/test_tenant_isolation_api.py",
+    "tests/test_timeline_dashboard_api.py",
+    "tests/test_unified_rate_manager_api.py",
+    "tests/test_v2_new_endpoints_api.py",
+    "tests/test_webhook_timeline_integration.py",
 }
