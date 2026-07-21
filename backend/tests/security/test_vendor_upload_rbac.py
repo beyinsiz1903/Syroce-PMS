@@ -20,10 +20,11 @@ def mock_get_current_vendor(vendor_id="vendor_A"):
     return _mock
 
 @pytest.fixture(autouse=True)
-def clear_overrides():
-    app.dependency_overrides.clear()
+def isolated_dependency_overrides():
+    previous = app.dependency_overrides.copy()
     yield
     app.dependency_overrides.clear()
+    app.dependency_overrides.update(previous)
 
 def test_vendor_access_own_legacy_file():
     # Vendor accesses their own file via legacy path
