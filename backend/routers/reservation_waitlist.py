@@ -199,7 +199,7 @@ async def promote_waitlist_entry(
     from core.atomic_booking import BookingConflictError, create_booking_atomic
 
     try:
-        await create_booking_atomic(booking)
+        await create_booking_atomic(tenant_id=tenant_id, booking_doc=booking)
     except BookingConflictError as exc:
         raise HTTPException(status_code=409, detail=f"Oda çakışması: {exc}")
 

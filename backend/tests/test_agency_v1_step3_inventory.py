@@ -22,7 +22,7 @@ async def test_claim_success_returns_booking(monkeypatch):
         return {**doc, "persisted": True}
 
     monkeypatch.setattr(atomic, "create_booking_atomic", fake_create)
-    out = await inv.claim_reservation_inventory({"id": "B1", "tenant_id": "T-1"})
+    out = await inv.claim_reservation_inventory(tenant_id="T-1", booking_doc={"id": "B1", "tenant_id": "T-1"})
     assert out["persisted"] is True
     assert out["id"] == "B1"
 
@@ -39,7 +39,7 @@ async def test_claim_conflict_maps_first_night(monkeypatch):
 
     monkeypatch.setattr(atomic, "create_booking_atomic", fake_create)
     with pytest.raises(inv.InventoryConflict) as ei:
-        await inv.claim_reservation_inventory(
+        await inv.claim_reservation_inventory(tenant_id="T-1", booking_doc=
             {"id": "B2", "tenant_id": "T-1", "room_id": "R1"}
         )
     assert ei.value.conflict_date == "2026-07-02"  # ilk catisan gece
@@ -61,7 +61,7 @@ async def test_claim_conflict_empty_nights_none_date(monkeypatch):
 
     monkeypatch.setattr(atomic, "create_booking_atomic", fake_create)
     with pytest.raises(inv.InventoryConflict) as ei:
-        await inv.claim_reservation_inventory({"id": "B3", "tenant_id": "T-1"})
+        await inv.claim_reservation_inventory(tenant_id="T-1", booking_doc={"id": "B3", "tenant_id": "T-1"})
     assert ei.value.conflict_date is None
     assert ei.value.conflicting_booking_id == "X"
 
@@ -75,7 +75,7 @@ async def test_ooo_conflict_type_preserved(monkeypatch):
 
     monkeypatch.setattr(atomic, "create_booking_atomic", fake_create)
     with pytest.raises(inv.InventoryConflict) as ei:
-        await inv.claim_reservation_inventory({"id": "B4", "tenant_id": "T-1"})
+        await inv.claim_reservation_inventory(tenant_id="T-1", booking_doc={"id": "B4", "tenant_id": "T-1"})
     assert ei.value.conflict_type == "ooo"
     assert ei.value.conflict_date == "2026-07-05"
 

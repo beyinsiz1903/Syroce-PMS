@@ -290,7 +290,8 @@ async def create_walk_in_booking(data: dict, http_request: Request, current_user
 
     try:
         await create_booking_atomic(
-            {
+            tenant_id=current_user.tenant_id,
+            booking_doc={
                 "id": booking_id,
                 "tenant_id": current_user.tenant_id,
                 "guest_id": guest_id,

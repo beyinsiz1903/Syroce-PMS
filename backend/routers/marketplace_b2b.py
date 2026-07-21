@@ -843,7 +843,7 @@ async def agency_create_reservation(
         # double-book the same room across concurrent requests. Now routed
         # through create_booking_atomic.
         try:
-            booking_doc = await create_booking_atomic(booking_doc)
+            booking_doc = await create_booking_atomic(tenant_id=data.tenant_id, booking_doc=booking_doc)
         except BookingConflictError as conflict_err:
             raise HTTPException(status_code=409, detail=str(conflict_err))
 

@@ -927,7 +927,7 @@ async def create_multi_room_booking(
             from core.atomic_booking import BookingConflictError, create_booking_atomic
 
             try:
-                await create_booking_atomic(booking_dict)
+                await create_booking_atomic(tenant_id=current_user.tenant_id, booking_doc=booking_dict)
             except BookingConflictError as e:
                 await _rollback_group(reason="group_conflict_rollback")
                 # F8N — structured detail (mirrors create_reservation_service).
