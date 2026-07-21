@@ -147,7 +147,7 @@ class CreateReservationService:
             booking_dict['qr_code'] = generate_qr_code(qr_data)
             booking_dict['qr_code_data'] = qr_token
 
-            await self.repository.insert_booking(booking_dict)
+            await self.repository.insert_booking(tenant_id, booking_dict)
 
             folio_number = await generate_folio_number(tenant_context.tenant_id)
             folio = Folio(

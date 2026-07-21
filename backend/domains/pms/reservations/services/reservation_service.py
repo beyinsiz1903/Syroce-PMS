@@ -57,7 +57,7 @@ class ReservationService:
             "created_at": datetime.now(UTC).isoformat(),
             "updated_at": datetime.now(UTC).isoformat(),
         }
-        await ReservationRepository.insert(booking)
+        await ReservationRepository.insert(tenant_id, booking)
         return booking
 
     @staticmethod

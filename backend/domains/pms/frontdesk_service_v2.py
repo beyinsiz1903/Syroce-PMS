@@ -818,7 +818,7 @@ class FrontdeskServiceV2:
         from core.atomic_booking import BookingConflictError, create_booking_atomic
 
         try:
-            await create_booking_atomic(booking_doc)
+            await create_booking_atomic(tenant_id=ctx.tenant_id, booking_doc=booking_doc)
         except BookingConflictError as e:
             return ServiceResult.fail(str(e), "ROOM_CONFLICT")
 

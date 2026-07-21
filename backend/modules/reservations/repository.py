@@ -107,10 +107,10 @@ class ReservationsRepository:
             return False
         return True
 
-    async def insert_booking(self, booking_doc: dict[str, Any]) -> None:
+    async def insert_booking(self, tenant_id: str, booking_doc: dict[str, Any]) -> None:
         from core.atomic_booking import create_booking_atomic
 
-        await create_booking_atomic(booking_doc)
+        await create_booking_atomic(tenant_id=tenant_id, booking_doc=booking_doc)
 
     async def insert_rate_override_log(self, override_doc: dict[str, Any]) -> None:
         await db.rate_override_logs.insert_one(override_doc)
