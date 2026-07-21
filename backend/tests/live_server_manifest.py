@@ -165,4 +165,5 @@ LIVE_SERVER_TESTS = {
     "tests/test_v2_new_endpoints_api.py",
     "tests/test_webhook_timeline_integration.py",
     "tests/test_rate_manager_bulk_update.py",
+    "tests/test_rate_manager_notifications.py",
 }
