@@ -76,6 +76,10 @@ LIVE_SERVER_TESTS = {
     "tests/test_hrv2_dry_run.py",
     # Tranche 33
     "tests/test_hrv2_new_features.py",
+    "tests/test_hrv2_integration.py",
+
+
+
     "tests/test_hrv2_ops_dashboard.py",
     "tests/test_hrv2_shadow_automation.py",
     "tests/test_import_admin_api.py",
@@ -129,6 +133,7 @@ LIVE_SERVER_TESTS = {
     "tests/test_pms_finance_reports_routers.py",
     "tests/test_pms_hardening_api.py",
     "tests/test_pms_phase2_api.py",
+    "tests/test_portfolio_dashboard_api.py",
     "tests/test_production_golive_api.py",
     "tests/test_production_golive_deployment_api.py",
     "tests/test_production_golive_new_features.py",
@@ -144,6 +149,7 @@ LIVE_SERVER_TESTS = {
     "tests/test_hardening_comprehensive.py",
     "tests/test_hardening_multi_phase.py",
     "tests/test_monitoring_auth.py",
+    "tests/test_security_hardening_consolidated.py",
     "tests/test_user_provisioning_integration.py",
     "tests/test_tech_debt_weekly_proof_api.py",
     "tests/test_tenant_isolation_api.py",
