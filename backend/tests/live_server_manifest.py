@@ -158,11 +158,11 @@ LIVE_SERVER_TESTS = {
     "tests/test_legacy_hr_removal.py",
     "tests/test_pms_decomposition_stage3.py",
     "tests/test_user_provisioning_integration.py",
-    "tests/test_p6_readiness_rollout.py",
     "tests/test_tech_debt_weekly_proof_api.py",
     "tests/test_tenant_isolation_api.py",
     "tests/test_timeline_dashboard_api.py",
     "tests/test_unified_rate_manager_api.py",
     "tests/test_v2_new_endpoints_api.py",
     "tests/test_webhook_timeline_integration.py",
+    "tests/test_rate_manager_bulk_update.py",
 }
