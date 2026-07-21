@@ -34,7 +34,7 @@ from typing import Any
 from pymongo.errors import DuplicateKeyError
 
 from core.database import db
-from core.tenant_db import get_system_db, tenant_context
+from core.tenant_db import TenantViolationError, get_system_db, tenant_context
 
 logger = logging.getLogger("core.atomic_booking")
 
@@ -261,7 +261,11 @@ async def _find_overlapping_active_booking(
         return await db.bookings.find_one(query, {"_id": 0, "id": 1, "room_id": 1, "check_in": 1, "check_out": 1, "status": 1})
 
 
-async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
+async def create_booking_atomic(
+    *,
+    tenant_id: str,
+    booking_doc: dict[str, Any],
+) -> dict[str, Any]:
     """
     Atomically create a booking with room-night locking.
 
@@ -273,6 +277,18 @@ async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
     3. Insert the booking document.
     4. If booking insert fails → release all claimed nights.
     """
+
+    payload_tenant_id = booking_doc.get("tenant_id")
+
+    if not tenant_id:
+        raise TenantViolationError("Operation tenant is required")
+
+    if not payload_tenant_id:
+        raise TenantViolationError("Booking tenant is required")
+
+    if payload_tenant_id != tenant_id:
+        raise TenantViolationError("Booking tenant does not match operation tenant")
+
     # Encrypt PII fields before persistence
     try:
         from security.encrypted_lookup import encrypt_booking_doc

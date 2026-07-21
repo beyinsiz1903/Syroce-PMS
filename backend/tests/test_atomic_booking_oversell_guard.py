@@ -103,18 +103,18 @@ async def test_a_serial_overlap_rejects(isolated_tenant):
 
     first = _mk_booking_doc(tid, room_id, ci, co)
     with tenant_context(tid):
-        await create_booking_atomic(first)
+        await create_booking_atomic(tenant_id=isolated_tenant, booking_doc=first)
 
         # Identical window — must reject.
         second = _mk_booking_doc(tid, room_id, ci, co)
         with pytest.raises(BookingConflictError) as exc:
-            await create_booking_atomic(second)
+            await create_booking_atomic(tenant_id=isolated_tenant, booking_doc=second)
         assert exc.value.conflicting_booking_id is not None
 
         # Partial overlap (back half) — must also reject.
         third = _mk_booking_doc(tid, room_id, "2030-06-12", "2030-06-16")
         with pytest.raises(BookingConflictError):
-            await create_booking_atomic(third)
+            await create_booking_atomic(tenant_id=isolated_tenant, booking_doc=third)
 
 
 async def test_b_non_overlap_accepts(isolated_tenant):
@@ -129,8 +129,8 @@ async def test_b_non_overlap_accepts(isolated_tenant):
     first = _mk_booking_doc(tid, room_id, "2030-07-01", "2030-07-03")
     second = _mk_booking_doc(tid, room_id, "2030-07-03", "2030-07-05")
     with tenant_context(tid):
-        await create_booking_atomic(first)
-        await create_booking_atomic(second)  # must NOT raise
+        await create_booking_atomic(tenant_id=isolated_tenant, booking_doc=first)
+        await create_booking_atomic(tenant_id=isolated_tenant, booking_doc=second)  # must NOT raise
 
         from core.database import db
         count = await db.bookings.count_documents({"tenant_id": tid, "room_id": room_id})
@@ -155,10 +155,10 @@ async def test_c_terminal_state_does_not_block(isolated_tenant, terminal_status)
         # confirmed, then transition + release locks.
         if terminal_status in ("cancelled", "no_show"):
             first = _mk_booking_doc(tid, room_id, ci, co, status=terminal_status)
-            await create_booking_atomic(first)
+            await create_booking_atomic(tenant_id=isolated_tenant, booking_doc=first)
         else:
             first = _mk_booking_doc(tid, room_id, ci, co, status="confirmed")
-            await create_booking_atomic(first)
+            await create_booking_atomic(tenant_id=isolated_tenant, booking_doc=first)
             await db.bookings.update_one(
                 {"id": first["id"], "tenant_id": tid},
                 {"$set": {"status": terminal_status}},
@@ -167,7 +167,7 @@ async def test_c_terminal_state_does_not_block(isolated_tenant, terminal_status)
 
         # Fresh booking on same window must succeed.
         fresh = _mk_booking_doc(tid, room_id, ci, co, status="confirmed")
-        await create_booking_atomic(fresh)
+        await create_booking_atomic(tenant_id=isolated_tenant, booking_doc=fresh)
 
         count = await db.bookings.count_documents(
             {"tenant_id": tid, "room_id": room_id, "status": "confirmed"}
@@ -193,7 +193,7 @@ async def test_d_concurrent_parallel_inserts_exactly_one_wins(isolated_tenant):
     async def attempt(doc):
         with tenant_context(tid):
             try:
-                await create_booking_atomic(doc)
+                await create_booking_atomic(tenant_id=isolated_tenant, booking_doc=doc)
                 return ("ok", doc["id"])
             except BookingConflictError as e:
                 return ("conflict", e.conflicting_booking_id)
@@ -270,5 +270,75 @@ async def test_f_defense_in_depth_blocks_legacy_seed_overlap(isolated_tenant):
 
         fresh = _mk_booking_doc(tid, room_id, ci, co, status="confirmed")
         with pytest.raises(BookingConflictError) as exc:
-            await create_booking_atomic(fresh)
+            await create_booking_atomic(tenant_id=isolated_tenant, booking_doc=fresh)
     assert exc.value.conflicting_booking_id == seeded["id"]
+
+@pytest.mark.asyncio
+async def test_atomic_booking_rejects_mismatched_tenant():
+    """Spoofed tenant ID in booking payload must be rejected with no side effects."""
+    from core.tenant_db import TenantViolationError, get_system_db
+    from core.atomic_booking import create_booking_atomic
+    trusted_tenant = f"tenant_a_{uuid.uuid4().hex}"
+    spoofed_tenant = f"tenant_b_{uuid.uuid4().hex}"
+
+    booking = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": spoofed_tenant,
+        "room_id": "r1",
+        "status": "confirmed",
+        "check_in": "2026-06-01T14:00:00Z",
+        "check_out": "2026-06-03T10:00:00Z",
+        "allocation_source": "manual",
+    }
+
+    with pytest.raises(TenantViolationError, match="Booking tenant does not match operation tenant"):
+        await create_booking_atomic(
+            tenant_id=trusted_tenant,
+            booking_doc=booking,
+        )
+
+    system_db = get_system_db()
+
+    assert await system_db.bookings.count_documents(
+        {"id": booking["id"]}
+    ) == 0
+
+    assert await system_db.room_night_locks.count_documents(
+        {"booking_id": booking["id"]}
+    ) == 0
+
+    assert await system_db.audit_logs.count_documents(
+        {
+            "booking_id": booking["id"],
+            "action": {"$in": [
+                "BOOKING_CREATED",
+                "OVERBOOKING_ALERT",
+            ]},
+        }
+    ) == 0
+
+
+@pytest.mark.asyncio
+async def test_atomic_booking_rejects_missing_tenant():
+    """Missing tenant ID in booking payload must be rejected."""
+    from core.tenant_db import TenantViolationError, get_system_db
+    from core.atomic_booking import create_booking_atomic
+    trusted_tenant = f"tenant_a_{uuid.uuid4().hex}"
+
+    booking = {
+        "id": str(uuid.uuid4()),
+        "room_id": "r1",
+        "status": "confirmed",
+        "check_in": "2026-06-01T14:00:00Z",
+        "check_out": "2026-06-03T10:00:00Z",
+        "allocation_source": "manual",
+    }
+
+    with pytest.raises(TenantViolationError, match="Booking tenant is required"):
+        await create_booking_atomic(
+            tenant_id=trusted_tenant,
+            booking_doc=booking,
+        )
+
+    system_db = get_system_db()
+    assert await system_db.bookings.count_documents({"id": booking["id"]}) == 0

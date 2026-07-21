@@ -100,12 +100,12 @@ async def test_overbooking_blocked_emits_notification():
         co = ci + timedelta(days=2)
 
         first = _make_booking_doc(tenant_id=tenant_id, room_id=room_id, ci=ci, co=co, name="First")
-        await create_booking_atomic(first)
+        await create_booking_atomic(tenant_id=tenant_id, booking_doc=first)
         booking_ids.append(first["id"])
 
         second = _make_booking_doc(tenant_id=tenant_id, room_id=room_id, ci=ci, co=co, name="Second")
         with pytest.raises(BookingConflictError) as exc_info:
-            await create_booking_atomic(second)
+            await create_booking_atomic(tenant_id=tenant_id, booking_doc=second)
         booking_ids.append(second["id"])  # cleanup even though insert was blocked
         assert exc_info.value.conflict_type == "booking"
 
@@ -143,7 +143,7 @@ async def test_notification_failure_does_not_block_conflict_raise():
         co = ci + timedelta(days=2)
 
         first = _make_booking_doc(tenant_id=tenant_id, room_id=room_id, ci=ci, co=co, name="First")
-        await create_booking_atomic(first)
+        await create_booking_atomic(tenant_id=tenant_id, booking_doc=first)
         booking_ids.append(first["id"])
 
         boom = AsyncMock(side_effect=RuntimeError("simulated mongo down"))
@@ -152,7 +152,7 @@ async def test_notification_failure_does_not_block_conflict_raise():
         with patch.object(sys_db.notifications, "insert_one", boom):
             second = _make_booking_doc(tenant_id=tenant_id, room_id=room_id, ci=ci, co=co, name="Second")
             with pytest.raises(BookingConflictError):
-                await create_booking_atomic(second)
+                await create_booking_atomic(tenant_id=tenant_id, booking_doc=second)
             booking_ids.append(second["id"])
     finally:
         await _cleanup(tenant_id, room_id, booking_ids)
@@ -177,7 +177,7 @@ async def test_multi_night_conflict_reports_actual_failed_night():
         pre_ci = anchor + timedelta(days=1)
         pre_co = anchor + timedelta(days=2)
         pre = _make_booking_doc(tenant_id=tenant_id, room_id=room_id, ci=pre_ci, co=pre_co, name="Pre")
-        await create_booking_atomic(pre)
+        await create_booking_atomic(tenant_id=tenant_id, booking_doc=pre)
         booking_ids.append(pre["id"])
 
         # Conflicting attempt spans nights N, N+1, N+2 → first claims N OK, then N+1 conflicts
@@ -188,7 +188,7 @@ async def test_multi_night_conflict_reports_actual_failed_night():
             "core.atomic_booking._find_overlapping_active_booking",
             new=AsyncMock(return_value=None),
         ), pytest.raises(BookingConflictError) as exc_info:
-            await create_booking_atomic(attempt)
+            await create_booking_atomic(tenant_id=tenant_id, booking_doc=attempt)
         booking_ids.append(attempt["id"])
 
         expected_night = (anchor + timedelta(days=1)).date().isoformat()
@@ -249,7 +249,7 @@ async def test_ooo_block_conflict_emits_notification_with_ooo_type():
             "core.atomic_booking._find_overlapping_active_booking",
             new=AsyncMock(return_value=None),
         ), pytest.raises(BookingConflictError) as exc_info:
-            await create_booking_atomic(attempt)
+            await create_booking_atomic(tenant_id=tenant_id, booking_doc=attempt)
         booking_ids.append(attempt["id"])
         assert exc_info.value.conflict_type == "ooo"
 
@@ -285,7 +285,7 @@ async def test_alert_delivery_failure_does_not_block_conflict_raise():
         co = ci + timedelta(days=2)
 
         first = _make_booking_doc(tenant_id=tenant_id, room_id=room_id, ci=ci, co=co, name="First")
-        await create_booking_atomic(first)
+        await create_booking_atomic(tenant_id=tenant_id, booking_doc=first)
         booking_ids.append(first["id"])
 
         boom = AsyncMock(side_effect=RuntimeError("simulated provider 5xx"))
@@ -295,7 +295,7 @@ async def test_alert_delivery_failure_does_not_block_conflict_raise():
         ):
             second = _make_booking_doc(tenant_id=tenant_id, room_id=room_id, ci=ci, co=co, name="Second")
             with pytest.raises(BookingConflictError):
-                await create_booking_atomic(second)
+                await create_booking_atomic(tenant_id=tenant_id, booking_doc=second)
             booking_ids.append(second["id"])
 
         # The notification row should still have been written (delivery is the
