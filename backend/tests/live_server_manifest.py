@@ -178,4 +178,9 @@ LIVE_SERVER_TESTS = {
     "tests/test_rms_module_api.py",
     "tests/test_room_management_access.py",
     "tests/test_rooms_tab_quick_actions.py",
+    "tests/integration/test_crm_duplicate_race_live.py",
+    "tests/test_id_photo_admin_e2e.py",
+    "tests/test_p6_readiness_rollout.py",
+    "tests/test_production_hardening_v2.py",
+    "tests/test_production_hardening_v3.py",
 }
