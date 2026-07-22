@@ -30,22 +30,38 @@ def db_connection(event_loop):
     from motor.motor_asyncio import AsyncIOMotorClient
 
     import core.database as database_module
+    from channel_manager.application.sandbox_simulation import scenarios
+    from channel_manager.application.sandbox_simulation import engine
+    from channel_manager.infrastructure import indexes
+    from channel_manager.infrastructure import repository
 
     mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
     db_name = os.environ.get("DB_NAME", "syroce_pms")
 
-    previous_db = database_module.db
+    previous_database_db = database_module.db
+    previous_scenarios_db = scenarios.db
+    previous_engine_db = engine.db
+    previous_indexes_db = indexes.db
+    previous_repository_db = repository.db
+
     client = AsyncIOMotorClient(mongo_url)
     raw_db = client[db_name]
 
     database_module.db = raw_db
+    scenarios.db = raw_db
+    engine.db = raw_db
+    indexes.db = raw_db
+    repository.db = raw_db
 
     try:
         yield raw_db
     finally:
-        database_module.db = previous_db
+        repository.db = previous_repository_db
+        indexes.db = previous_indexes_db
+        engine.db = previous_engine_db
+        scenarios.db = previous_scenarios_db
+        database_module.db = previous_database_db
         client.close()
-
 
 TENANT_ID = "test-sandbox-tenant"
 PROPERTY_ID = "test-sandbox-property"
