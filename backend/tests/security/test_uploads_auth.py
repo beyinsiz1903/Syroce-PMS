@@ -66,3 +66,5 @@ def test_upload_super_admin_audit():
         call_args = mock_db.audit_logs.insert_one.call_args[0][0]
         assert call_args["action"] == "super_admin_file_access"
         assert call_args["target_tenant_id"] == "tenantA"
+
+    app.dependency_overrides.clear()
