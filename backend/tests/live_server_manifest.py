@@ -187,4 +187,9 @@ LIVE_SERVER_TESTS = {
     "tests/test_scheduler_activity_api.py",
     "tests/test_sec001_secrets_api.py",
     "tests/test_sec_sandbox_ops_api.py",
+    "tests/test_site_content.py",
+    "tests/test_semantic_read_contracts.py",
+    "tests/test_secret_rotation_api.py",
+    "tests/test_security_faz7.py",
+    "tests/test_session_calendar_bugs.py",
 }
