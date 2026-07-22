@@ -7,7 +7,11 @@ from routers.integration_rollout import router as rollout_router
 
 app = FastAPI()
 app.include_router(rollout_router)
-client = TestClient(app)
+
+@pytest.fixture
+def client():
+    with TestClient(app) as test_client:
+        yield test_client
 
 @pytest.fixture
 def override_deps():
@@ -26,7 +30,7 @@ def override_deps():
 @patch("routers.integration_rollout.get_masked_credentials")
 @patch("routers.integration_rollout.db")
 @pytest.mark.asyncio
-async def test_readiness_endpoint(mock_db, mock_creds, mock_config, override_deps):
+async def test_readiness_endpoint(mock_db, mock_creds, mock_config, override_deps, client):
     mock_config.return_value = {
         "finance_erp_enabled": False,
         "channel_ari_enabled": True,
@@ -61,7 +65,7 @@ async def test_readiness_endpoint(mock_db, mock_creds, mock_config, override_dep
 
 @patch("routers.integration_rollout.db")
 @pytest.mark.asyncio
-async def test_update_config_endpoint(mock_db, override_deps):
+async def test_update_config_endpoint(mock_db, override_deps, client):
     mock_db.tenant_settings.update_one = AsyncMock()
     
     payload = {

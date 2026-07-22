@@ -7,7 +7,11 @@ from models.schemas import User
 
 app = FastAPI()
 app.include_router(procurement_router)
-client = TestClient(app)
+
+@pytest.fixture
+def client():
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 @pytest.fixture
@@ -31,7 +35,7 @@ def override_deps():
 
 @patch("routers.procurement_b2b.get_system_db")
 @pytest.mark.asyncio
-async def test_get_proposals_permission_and_structure(mock_get_db, override_deps):
+async def test_get_proposals_permission_and_structure(mock_get_db, override_deps, client):
     from unittest.mock import MagicMock
     mock_db = MagicMock()
     mock_get_db.return_value = mock_db
@@ -95,7 +99,7 @@ async def test_get_proposals_permission_and_structure(mock_get_db, override_deps
 @patch("routers.procurement_b2b.place_order")
 @patch("routers.procurement_b2b.get_system_db")
 @pytest.mark.asyncio
-async def test_approve_orders_payload(mock_get_db, mock_place_order, override_deps):
+async def test_approve_orders_payload(mock_get_db, mock_place_order, override_deps, client):
     from unittest.mock import MagicMock
     mock_db = MagicMock()
     mock_get_db.return_value = mock_db
@@ -148,7 +152,7 @@ async def test_approve_orders_payload(mock_get_db, mock_place_order, override_de
 
 @patch("routers.procurement_b2b.get_system_db")
 @pytest.mark.asyncio
-async def test_get_proposals_malformed_db_data(mock_get_db, override_deps):
+async def test_get_proposals_malformed_db_data(mock_get_db, override_deps, client):
     from unittest.mock import MagicMock
     mock_db = MagicMock()
     mock_get_db.return_value = mock_db

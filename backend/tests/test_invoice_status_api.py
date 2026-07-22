@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -21,7 +23,10 @@ def mock_get_current_user():
 
 app.dependency_overrides[get_current_user] = mock_get_current_user
 
-client = TestClient(app)
+@pytest.fixture
+def client():
+    with TestClient(app) as test_client:
+        yield test_client
 
 def create_mock_sync(reconciliation_required=False, state=InvoiceSyncState.SUBMITTED):
     now = datetime.now(UTC)
@@ -42,7 +47,7 @@ def create_mock_sync(reconciliation_required=False, state=InvoiceSyncState.SUBMI
     )
 
 @patch("api.routes.invoice_integrations.InvoiceSyncRepository")
-def test_get_invoice_status(mock_repo):
+def test_get_invoice_status(mock_repo, client):
     mock_repo.get_by_id = AsyncMock(return_value=create_mock_sync())
 
     response = client.get("/api/integrations/invoices/sync-api-1/status")
@@ -52,7 +57,7 @@ def test_get_invoice_status(mock_repo):
     assert data["state"] == "SUBMITTED"
 
 @patch("api.routes.invoice_integrations.InvoiceSyncRepository")
-def test_get_invoice_status_not_found(mock_repo):
+def test_get_invoice_status_not_found(mock_repo, client):
     mock_repo.get_by_id = AsyncMock(return_value=None)
 
     response = client.get("/api/integrations/invoices/unknown-id/status")
@@ -61,7 +66,7 @@ def test_get_invoice_status_not_found(mock_repo):
 @patch("api.routes.invoice_integrations.InvoiceSyncRepository")
 @patch("api.routes.invoice_integrations.InvoiceStatusRepository")
 @patch("api.routes.invoice_integrations.event_bus")
-def test_reconcile_invoice_status_success(mock_event_bus, mock_status_repo, mock_sync_repo):
+def test_reconcile_invoice_status_success(mock_event_bus, mock_status_repo, mock_sync_repo, client):
     record = create_mock_sync(reconciliation_required=True)
     mock_sync_repo.get_by_id = AsyncMock(return_value=record)
     mock_status_repo.reconcile_status = AsyncMock(return_value=True)
@@ -83,7 +88,7 @@ def test_reconcile_invoice_status_success(mock_event_bus, mock_status_repo, mock
     assert mock_publish.called
 
 @patch("api.routes.invoice_integrations.InvoiceSyncRepository")
-def test_reconcile_invoice_status_not_required(mock_sync_repo):
+def test_reconcile_invoice_status_not_required(mock_sync_repo, client):
     record = create_mock_sync(reconciliation_required=False)
     mock_sync_repo.get_by_id = AsyncMock(return_value=record)
 
@@ -98,7 +103,7 @@ def test_reconcile_invoice_status_not_required(mock_sync_repo):
 
 @patch("api.routes.invoice_integrations.InvoiceSyncRepository")
 @patch("api.routes.invoice_integrations.get_db_for_tenant")
-def test_retry_invoice_status(mock_get_db, mock_sync_repo):
+def test_retry_invoice_status(mock_get_db, mock_sync_repo, client):
     record = create_mock_sync(state=InvoiceSyncState.SUBMITTED)
     mock_sync_repo.get_by_id = AsyncMock(return_value=record)
 
