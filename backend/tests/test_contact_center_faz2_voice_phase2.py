@@ -290,7 +290,15 @@ def test_guest_360_multiple_matches_masking(fake_db):
     assert "john@example.com" not in res_masked["guest"]["email"]
 
 
-def test_ivr_inbound_routing_and_gather(fake_db, sig_ok):
+class FixedDateTime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        fixed = cls(2026, 7, 22, 12, 0, 0)
+        return fixed if tz is None else fixed.replace(tzinfo=tz)
+
+def test_ivr_inbound_routing_and_gather(fake_db, sig_ok, monkeypatch):
+    monkeypatch.setattr(voice_router, "datetime", FixedDateTime)
+    
     fake_db.contact_center_voice_numbers.docs.append({
         "to_number": "+908503334455",
         "tenant_id": _TENANT
