@@ -192,4 +192,7 @@ LIVE_SERVER_TESTS = {
     "tests/test_secret_rotation_api.py",
     "tests/test_security_faz7.py",
     "tests/test_session_calendar_bugs.py",
+    "tests/test_sprint2_ops_timeline_api.py",
+    "tests/test_sprint3_encryption_management_api.py",
+    "tests/test_system_health_normalized_api.py",
 }
