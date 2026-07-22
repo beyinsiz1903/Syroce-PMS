@@ -32,6 +32,7 @@ from core.security import get_current_user
 from security.upload_validator import validate_document_bytes
 from shared_kernel.idempotency import begin_idempotency
 
+
 # GridFS bucket — personel belgeleri için (5MB üstü destek + memory verimi).
 # Eski kayıtlar `data_b64` alanı üzerinden okunmaya devam eder (geriye uyum).
 def _get_hr_docs_bucket():
