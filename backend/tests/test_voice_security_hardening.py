@@ -32,7 +32,11 @@ app.dependency_overrides[get_current_user] = lambda: mock_current_user
 app.dependency_overrides[require_module("contact_center")] = lambda: None
 app.dependency_overrides[require_op("manage_contact_center")] = lambda: None
 
-client = TestClient(app, raise_server_exceptions=True)
+@pytest.fixture
+def client():
+    with TestClient(app, raise_server_exceptions=True) as test_client:
+        yield test_client
+
 
 @pytest.fixture(autouse=True)
 def reset_user():
@@ -101,7 +105,7 @@ def mock_comms_provider(monkeypatch):
     )
     return mock_provider
 
-def test_transfer_live_call_not_found(mock_db):
+def test_transfer_live_call_not_found(mock_db, client):
     mock_db.contact_center_calls.find_one.return_value = None
     response = client.post(
         "/api/contact-center/voice/live/CA123/transfer",
@@ -110,7 +114,7 @@ def test_transfer_live_call_not_found(mock_db):
     assert response.status_code == 404
     assert "Aktif çağrı bulunamadı" in response.json()["detail"]
 
-def test_transfer_live_call_invalid_target(mock_db):
+def test_transfer_live_call_invalid_target(mock_db, client):
     mock_db.contact_center_calls.find_one.return_value = {
         "id": "c1",
         "provider_call_sid": "CA123",
@@ -124,7 +128,7 @@ def test_transfer_live_call_invalid_target(mock_db):
     assert response.status_code == 400
     assert "Geçersiz aktarım hedefi" in response.json()["detail"]
 
-def test_send_whatsapp_call_not_found(mock_db):
+def test_send_whatsapp_call_not_found(mock_db, client):
     mock_db.contact_center_calls.find_one.return_value = None
     response = client.post(
         "/api/contact-center/voice/live/CA123/whatsapp",
@@ -133,7 +137,7 @@ def test_send_whatsapp_call_not_found(mock_db):
     assert response.status_code == 404
     assert "Çağrı bulunamadı" in response.json()["detail"]
 
-def test_send_whatsapp_invalid_template(mock_db):
+def test_send_whatsapp_invalid_template(mock_db, client):
     mock_db.contact_center_calls.find_one.return_value = {
         "id": "c1",
         "provider_call_sid": "CA123",
@@ -147,7 +151,7 @@ def test_send_whatsapp_invalid_template(mock_db):
     assert response.status_code == 400
     assert "Geçersiz şablon ismi" in response.json()["detail"]
 
-def test_send_whatsapp_success(mock_db, mock_comms_provider, mock_audit_log):
+def test_send_whatsapp_success(mock_db, mock_comms_provider, mock_audit_log, client):
     mock_db.contact_center_calls.find_one.return_value = {
         "id": "c1",
         "provider_call_sid": "CA123",
@@ -173,7 +177,7 @@ def test_send_whatsapp_success(mock_db, mock_comms_provider, mock_audit_log):
     assert mock_comms_provider.send_whatsapp.call_args[1]["recipient"] == "+905555555555"
     mock_audit_log.assert_called_once()
 
-def test_recording_access_denied_for_non_owner_agent(mock_db, mock_audit_log):
+def test_recording_access_denied_for_non_owner_agent(mock_db, mock_audit_log, client):
     mock_db.contact_center_calls.find_one.return_value = {
         "id": "c1",
         "recording_ref": "some_ref",
@@ -194,7 +198,7 @@ def test_recording_access_denied_for_non_owner_agent(mock_db, mock_audit_log):
     assert response.status_code == 403
     assert "dinleme yetkiniz yok" in response.json()["detail"]
 
-def test_recording_access_allowed_for_supervisor(mock_db, monkeypatch, mock_audit_log):
+def test_recording_access_allowed_for_supervisor(mock_db, monkeypatch, mock_audit_log, client):
     mock_db.contact_center_calls.find_one.return_value = {
         "id": "c1",
         "recording_ref": "some_ref",
@@ -221,7 +225,7 @@ def test_recording_access_allowed_for_supervisor(mock_db, monkeypatch, mock_audi
     assert response.content == b"fake_audio_stream"
 
 
-def test_transfer_live_call_other_tenant(mock_db):
+def test_transfer_live_call_other_tenant(mock_db, client):
     mock_db.contact_center_calls.find_one.return_value = None
     response = client.post(
         "/api/contact-center/voice/live/CA123/transfer",
@@ -233,7 +237,7 @@ def test_transfer_live_call_other_tenant(mock_db):
     assert query["tenant_id"] == "t1"
 
 
-def test_send_whatsapp_other_tenant(mock_db):
+def test_send_whatsapp_other_tenant(mock_db, client):
     mock_db.contact_center_calls.find_one.return_value = None
     response = client.post(
         "/api/contact-center/voice/live/CA123/whatsapp",
@@ -245,19 +249,19 @@ def test_send_whatsapp_other_tenant(mock_db):
     assert query["tenant_id"] == "t1"
 
 
-def test_recording_access_other_tenant(mock_db, mock_audit_log):
+def test_recording_access_other_tenant(mock_db, mock_audit_log, client):
     mock_db.contact_center_calls.find_one.return_value = None
     response = client.get("/api/contact-center/calls/c1/recording")
     assert response.status_code == 404
 
 
-def test_guest_360_other_tenant(mock_db):
+def test_guest_360_other_tenant(mock_db, client):
     mock_db.contact_center_calls.find_one.return_value = None
     response = client.get("/api/contact-center/calls/c1/guest-360")
     assert response.status_code == 404
 
 
-def test_guest_360_no_match(mock_db, monkeypatch):
+def test_guest_360_no_match(mock_db, monkeypatch, client):
     mock_db.contact_center_calls.find_one.return_value = {
         "id": "c1",
         "tenant_id": "t1",
@@ -283,7 +287,7 @@ def test_guest_360_no_match(mock_db, monkeypatch):
     assert response.json()["guest"]["name"] == "Bilinmeyen Misafir"
 
 
-def test_guest_360_one_match(mock_db, monkeypatch):
+def test_guest_360_one_match(mock_db, monkeypatch, client):
     mock_db.contact_center_calls.find_one.return_value = {
         "id": "c1",
         "tenant_id": "t1",
@@ -328,7 +332,7 @@ def test_guest_360_one_match(mock_db, monkeypatch):
     assert data["bookings"][0]["room_id"] == "101"
 
 
-def test_guest_360_multiple_matches(mock_db, monkeypatch):
+def test_guest_360_multiple_matches(mock_db, monkeypatch, client):
     mock_db.contact_center_calls.find_one.return_value = {
         "id": "c1",
         "tenant_id": "t1",
@@ -361,7 +365,7 @@ def test_guest_360_multiple_matches(mock_db, monkeypatch):
     assert data["guest"]["vip"] is False
 
 
-def test_analytics_parent_child_dedup(mock_db):
+def test_analytics_parent_child_dedup(mock_db, client):
     mock_cursor = MagicMock()
     mock_cursor.to_list = AsyncMock(return_value=[
         {
@@ -398,7 +402,7 @@ def test_analytics_parent_child_dedup(mock_db):
     assert data["summary"]["answered_calls"] == 1
 
 
-def test_send_whatsapp_provider_call_sid_match_succeeds(mock_db, mock_comms_provider, mock_audit_log):
+def test_send_whatsapp_provider_call_sid_match_succeeds(mock_db, mock_comms_provider, mock_audit_log, client):
     mock_cursor = MagicMock()
     mock_cursor.to_list = AsyncMock(return_value=[
         {
@@ -424,7 +428,7 @@ def test_send_whatsapp_provider_call_sid_match_succeeds(mock_db, mock_comms_prov
     assert response.json()["status"] == "ok"
 
 
-def test_send_whatsapp_parent_call_sid_match_succeeds(mock_db, mock_comms_provider, mock_audit_log):
+def test_send_whatsapp_parent_call_sid_match_succeeds(mock_db, mock_comms_provider, mock_audit_log, client):
     mock_cursor = MagicMock()
     mock_cursor.to_list = AsyncMock(return_value=[
         {
@@ -450,7 +454,7 @@ def test_send_whatsapp_parent_call_sid_match_succeeds(mock_db, mock_comms_provid
     assert response.json()["status"] == "ok"
 
 
-def test_send_whatsapp_another_tenant_sid_returns_404(mock_db, mock_comms_provider):
+def test_send_whatsapp_another_tenant_sid_returns_404(mock_db, mock_comms_provider, client):
     mock_db.contact_center_calls.find_one.return_value = None
 
     response = client.post(
@@ -460,7 +464,7 @@ def test_send_whatsapp_another_tenant_sid_returns_404(mock_db, mock_comms_provid
     assert response.status_code == 404
 
 
-def test_send_whatsapp_prefer_leg_with_caller_id_enc(mock_db, mock_comms_provider, mock_audit_log):
+def test_send_whatsapp_prefer_leg_with_caller_id_enc(mock_db, mock_comms_provider, mock_audit_log, client):
     async def mock_find_one(query, *args, **kwargs):
         if "caller_id_enc" in query:
             return {
@@ -494,7 +498,7 @@ def test_send_whatsapp_prefer_leg_with_caller_id_enc(mock_db, mock_comms_provide
     mock_svc.decrypt_value.assert_called_with("encrypted_phone")
 
 
-def test_send_whatsapp_no_call_record_returns_404(mock_db):
+def test_send_whatsapp_no_call_record_returns_404(mock_db, client):
     mock_db.contact_center_calls.find_one.return_value = None
 
     response = client.post(
