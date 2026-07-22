@@ -105,74 +105,74 @@ def _build_client(monkeypatch, *, docs=None, cache=None) -> TestClient:
 
 
 def test_valid_code_returns_masked_summary(monkeypatch):
-    client = _build_client(monkeypatch)
-    r = client.get(f"/api/academy/verify/{VALID_CODE}")
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["valid"] is True
-    assert body["course_title"] == "Resepsiyon Temelleri"
-    assert body["department_label"] == "On Buro"
-    assert body["issued_at"] == "2026-06-20"
-    assert body["verification_code"] == VALID_CODE
-    # Recipient name is masked, never the raw full name.
-    assert body["recipient_name"] == "A*** Y***"
-    assert "Ayse" not in r.text
-    assert "Yilmaz" not in r.text
+    with _build_client(monkeypatch) as client:
+        r = client.get(f"/api/academy/verify/{VALID_CODE}")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["valid"] is True
+        assert body["course_title"] == "Resepsiyon Temelleri"
+        assert body["department_label"] == "On Buro"
+        assert body["issued_at"] == "2026-06-20"
+        assert body["verification_code"] == VALID_CODE
+        # Recipient name is masked, never the raw full name.
+        assert body["recipient_name"] == "A*** Y***"
+        assert "Ayse" not in r.text
+        assert "Yilmaz" not in r.text
 
 
 def test_valid_code_does_not_leak_internal_fields(monkeypatch):
-    client = _build_client(monkeypatch)
-    r = client.get(f"/api/academy/verify/{VALID_CODE}")
-    assert r.status_code == 200, r.text
-    body = r.json()
-    for field in _LEAK_FIELDS:
-        assert field not in body, f"public view leaked {field!r}"
-    # The exact public contract — nothing more.
-    assert set(body.keys()) == {
-        "valid", "verification_code", "course_title",
-        "department_label", "issued_at", "recipient_name",
-    }
-    # Defence in depth: sensitive values never appear in the raw payload.
-    assert "ayse@example.com" not in r.text
-    assert "92" not in r.text
+    with _build_client(monkeypatch) as client:
+        r = client.get(f"/api/academy/verify/{VALID_CODE}")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        for field in _LEAK_FIELDS:
+            assert field not in body, f"public view leaked {field!r}"
+        # The exact public contract — nothing more.
+        assert set(body.keys()) == {
+            "valid", "verification_code", "course_title",
+            "department_label", "issued_at", "recipient_name",
+        }
+        # Defence in depth: sensitive values never appear in the raw payload.
+        assert "ayse@example.com" not in r.text
+        assert "92" not in r.text
 
 
 def test_lowercase_code_is_normalised_and_matches(monkeypatch):
     """The endpoint upper-cases/strips the code before lookup, so a QR scanned
     into a lower-case URL still resolves."""
-    client = _build_client(monkeypatch)
-    r = client.get(f"/api/academy/verify/{VALID_CODE.lower()}")
-    assert r.status_code == 200, r.text
-    assert r.json()["valid"] is True
+    with _build_client(monkeypatch) as client:
+        r = client.get(f"/api/academy/verify/{VALID_CODE.lower()}")
+        assert r.status_code == 200, r.text
+        assert r.json()["valid"] is True
 
 
 # ── 2. Unknown / malformed code → uniform negative ────────────────────
 
 
 def test_unknown_but_wellformed_code_returns_uniform_negative(monkeypatch):
-    client = _build_client(monkeypatch)
-    r = client.get("/api/academy/verify/SYR-ACAD-AAAAAAAAAA")
-    assert r.status_code == 200, r.text
-    assert r.json() == {"valid": False}
+    with _build_client(monkeypatch) as client:
+        r = client.get("/api/academy/verify/SYR-ACAD-AAAAAAAAAA")
+        assert r.status_code == 200, r.text
+        assert r.json() == {"valid": False}
 
 
 def test_malformed_code_returns_same_uniform_negative(monkeypatch):
     """A malformed code is rejected pre-DB by the format regex, returning the
     identical negative as an unknown code — no format/existence oracle."""
-    client = _build_client(monkeypatch)
-    r = client.get("/api/academy/verify/not-a-real-code")
-    assert r.status_code == 200, r.text
-    assert r.json() == {"valid": False}
+    with _build_client(monkeypatch) as client:
+        r = client.get("/api/academy/verify/not-a-real-code")
+        assert r.status_code == 200, r.text
+        assert r.json() == {"valid": False}
 
 
 def test_negative_response_carries_no_pii(monkeypatch):
-    client = _build_client(monkeypatch)
-    for code in ("SYR-ACAD-AAAAAAAAAA", "garbage"):
-        r = client.get(f"/api/academy/verify/{code}")
-        body = r.json()
-        assert body == {"valid": False}
-        assert "recipient_name" not in body
-        assert "course_title" not in body
+    with _build_client(monkeypatch) as client:
+        for code in ("SYR-ACAD-AAAAAAAAAA", "garbage"):
+            r = client.get(f"/api/academy/verify/{code}")
+            body = r.json()
+            assert body == {"valid": False}
+            assert "recipient_name" not in body
+            assert "course_title" not in body
 
 
 # ── 3. Per-IP rate limiting ───────────────────────────────────────────
@@ -180,49 +180,49 @@ def test_negative_response_carries_no_pii(monkeypatch):
 
 def test_rate_limit_trips_after_budget_exceeded(monkeypatch):
     cache = _FakeCache()
-    client = _build_client(monkeypatch, cache=cache)
-    # _RL_MAX_HITS allowed requests succeed (200), the next one is 429.
-    for i in range(academy_public._RL_MAX_HITS):
-        r = client.get(f"/api/academy/verify/{VALID_CODE}")
-        assert r.status_code == 200, f"req #{i + 1}: {r.text}"
-    blocked = client.get(f"/api/academy/verify/{VALID_CODE}")
-    assert blocked.status_code == 429, blocked.text
-    # The 429 body must not leak certificate data.
-    assert "recipient_name" not in blocked.text
-    assert "Ayse" not in blocked.text
+    with _build_client(monkeypatch, cache=cache) as client:
+        # _RL_MAX_HITS allowed requests succeed (200), the next one is 429.
+        for i in range(academy_public._RL_MAX_HITS):
+            r = client.get(f"/api/academy/verify/{VALID_CODE}")
+            assert r.status_code == 200, f"req #{i + 1}: {r.text}"
+        blocked = client.get(f"/api/academy/verify/{VALID_CODE}")
+        assert blocked.status_code == 429, blocked.text
+        # The 429 body must not leak certificate data.
+        assert "recipient_name" not in blocked.text
+        assert "Ayse" not in blocked.text
 
 
 def test_rate_limit_is_per_ip(monkeypatch):
     """The counter is keyed on the client IP, so exhausting one IP must not
     block a different IP."""
     cache = _FakeCache()
-    client = _build_client(monkeypatch, cache=cache)
-    # Exhaust IP "1.1.1.1" via a trusted-proxy x-forwarded-for header.
-    monkeypatch.setattr(academy_public, "_is_trusted_proxy", lambda ip: True)
-    for _ in range(academy_public._RL_MAX_HITS):
-        client.get(f"/api/academy/verify/{VALID_CODE}",
-                   headers={"x-forwarded-for": "1.1.1.1"})
-    blocked = client.get(f"/api/academy/verify/{VALID_CODE}",
-                         headers={"x-forwarded-for": "1.1.1.1"})
-    assert blocked.status_code == 429
-    # A different IP still has its full budget.
-    other = client.get(f"/api/academy/verify/{VALID_CODE}",
-                       headers={"x-forwarded-for": "2.2.2.2"})
-    assert other.status_code == 200, other.text
-    # Two distinct per-IP counters exist.
-    keys = [k for k in cache.counts if k.startswith("academy:verify:rl:")]
-    assert any(k.endswith("1.1.1.1") for k in keys)
-    assert any(k.endswith("2.2.2.2") for k in keys)
+    with _build_client(monkeypatch, cache=cache) as client:
+        # Exhaust IP "1.1.1.1" via a trusted-proxy x-forwarded-for header.
+        monkeypatch.setattr(academy_public, "_is_trusted_proxy", lambda ip: True)
+        for _ in range(academy_public._RL_MAX_HITS):
+            client.get(f"/api/academy/verify/{VALID_CODE}",
+                       headers={"x-forwarded-for": "1.1.1.1"})
+        blocked = client.get(f"/api/academy/verify/{VALID_CODE}",
+                             headers={"x-forwarded-for": "1.1.1.1"})
+        assert blocked.status_code == 429
+        # A different IP still has its full budget.
+        other = client.get(f"/api/academy/verify/{VALID_CODE}",
+                           headers={"x-forwarded-for": "2.2.2.2"})
+        assert other.status_code == 200, other.text
+        # Two distinct per-IP counters exist.
+        keys = [k for k in cache.counts if k.startswith("academy:verify:rl:")]
+        assert any(k.endswith("1.1.1.1") for k in keys)
+        assert any(k.endswith("2.2.2.2") for k in keys)
 
 
 def test_rate_limit_fails_open_when_counter_unavailable(monkeypatch):
     """When the counter backend is down (incr_with_ttl → 0) verification, being
     read-only and low-risk, must keep serving (fail open)."""
     cache = _FakeCache(available=False)
-    client = _build_client(monkeypatch, cache=cache)
-    for _ in range(academy_public._RL_MAX_HITS + 5):
-        r = client.get(f"/api/academy/verify/{VALID_CODE}")
-        assert r.status_code == 200, r.text
+    with _build_client(monkeypatch, cache=cache) as client:
+        for _ in range(academy_public._RL_MAX_HITS + 5):
+            r = client.get(f"/api/academy/verify/{VALID_CODE}")
+            assert r.status_code == 200, r.text
 
 
 def test_rate_limit_checked_before_db_lookup(monkeypatch):
@@ -244,12 +244,11 @@ def test_rate_limit_checked_before_db_lookup(monkeypatch):
 
     app = FastAPI()
     app.include_router(public_router)
-    client = TestClient(app)
-
-    for _ in range(academy_public._RL_MAX_HITS):
-        client.get(f"/api/academy/verify/{VALID_CODE}")
-    db_hits_before_block = hits["n"]
-    blocked = client.get(f"/api/academy/verify/{VALID_CODE}")
-    assert blocked.status_code == 429
-    # The blocked request did not query the DB.
-    assert hits["n"] == db_hits_before_block
+    with TestClient(app) as client:
+        for _ in range(academy_public._RL_MAX_HITS):
+            client.get(f"/api/academy/verify/{VALID_CODE}")
+        db_hits_before_block = hits["n"]
+        blocked = client.get(f"/api/academy/verify/{VALID_CODE}")
+        assert blocked.status_code == 429
+        # The blocked request did not query the DB.
+        assert hits["n"] == db_hits_before_block
