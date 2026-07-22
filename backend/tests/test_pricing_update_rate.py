@@ -63,9 +63,9 @@ async def test_update_rate_invalid_rate_fails_closed():
 @pytest.mark.asyncio
 async def test_update_rate_no_provider_records_local_no_push(monkeypatch):
     svc = _svc()
-    import domains.channel_manager.unified_rate_manager_router as urm
+    import services.cm_provider as provider_svc
     monkeypatch.setattr(
-        urm, "_detect_active_provider",
+        provider_svc, "_detect_active_provider",
         AsyncMock(return_value={"provider": None, "configuration_error": "not_configured"}),
     )
     r = await svc.update_room_rate(
@@ -86,9 +86,9 @@ async def test_update_rate_no_provider_records_local_no_push(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_rate_with_provider_still_not_pushed(monkeypatch):
     svc = _svc()
-    import domains.channel_manager.unified_rate_manager_router as urm
+    import services.cm_provider as provider_svc
     monkeypatch.setattr(
-        urm, "_detect_active_provider",
+        provider_svc, "_detect_active_provider",
         AsyncMock(return_value={"provider": "exely", "configuration_error": None}),
     )
     r = await svc.update_room_rate(
