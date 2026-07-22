@@ -30,7 +30,7 @@ from pymongo.errors import DuplicateKeyError
 
 from core.database import db
 from core.entitlements.enforcement import get_tenant_limit
-from core.entitlements.quota import release_quota, reserve_quota
+from core.entitlements.quota import QuotaExceededException, release_quota, reserve_quota
 from core.pos_folio_consumer import _recalc_folio_balance
 from core.security import get_current_user
 from domains.pms.pos_extensions._idem import ensure_compound_unique
@@ -190,7 +190,12 @@ async def create_resource(
     doc_id = str(uuid.uuid4())
 
     # Quota reserve
-    await reserve_quota(tenant_id, "parking", limit_key, doc_id, limit_val)
+    try:
+        await reserve_quota(tenant_id, "parking", limit_key, doc_id, limit_val)
+    except QuotaExceededException as exc:
+        if idem_key:
+            await release_idempotency(db, lock_id=idem_key)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     doc = {
         "id": doc_id,
@@ -242,7 +247,10 @@ async def update_resource(
 
     if is_activating:
         limit_val = await get_tenant_limit(tenant_id, "parking", limit_key)
-        await reserve_quota(tenant_id, "parking", limit_key, resource_id, limit_val)
+        try:
+            await reserve_quota(tenant_id, "parking", limit_key, resource_id, limit_val)
+        except QuotaExceededException as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if "name" in updates and updates["name"]:
         updates["name"] = updates["name"].strip()
