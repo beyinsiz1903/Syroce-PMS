@@ -40,7 +40,7 @@ def event_loop():
 
 # ── Database Access ────────────────────────────────────────────────
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def db(event_loop):
     """Return raw (unproxied) DB for resilience tests.
 
