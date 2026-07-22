@@ -79,76 +79,76 @@ _VALID_MODIFY = {"schema_version": SCHEMA_VERSION, "special_requests": "geç gir
     ],
 )
 def test_endpoints_fail_closed_not_configured(method, path, body):
-    client = _make_client()
-    kwargs = {"headers": dict(_IDEMPOTENCY)}
-    if body is not None:
-        kwargs["json"] = body
-    resp = getattr(client, method)(path, **kwargs)
-    _assert_adr_error_envelope(resp, expected_status=503, expected_code="not_configured")
+    with _make_client() as client:
+        kwargs = {"headers": dict(_IDEMPOTENCY)}
+        if body is not None:
+            kwargs["json"] = body
+        resp = getattr(client, method)(path, **kwargs)
+        _assert_adr_error_envelope(resp, expected_status=503, expected_code="not_configured")
 
 
 # ── 2) Strict dogrulama -> 422 (handler'a ulasmadan) ─────────────
 
 
 def test_create_unknown_field_returns_422():
-    client = _make_client()
-    payload = _valid_create_payload()
-    payload["totally_unknown"] = "x"
-    resp = client.post("/api/agency/v1/reservations", json=payload, headers=_IDEMPOTENCY)
-    _assert_adr_error_envelope(resp, expected_status=422, expected_code="validation_error")
+    with _make_client() as client:
+        payload = _valid_create_payload()
+        payload["totally_unknown"] = "x"
+        resp = client.post("/api/agency/v1/reservations", json=payload, headers=_IDEMPOTENCY)
+        _assert_adr_error_envelope(resp, expected_status=422, expected_code="validation_error")
 
 
 def test_create_bad_date_returns_422():
-    client = _make_client()
-    payload = _valid_create_payload()
-    payload["departure_date"] = payload["arrival_date"]
-    resp = client.post("/api/agency/v1/reservations", json=payload, headers=_IDEMPOTENCY)
-    _assert_adr_error_envelope(resp, expected_status=422, expected_code="validation_error")
+    with _make_client() as client:
+        payload = _valid_create_payload()
+        payload["departure_date"] = payload["arrival_date"]
+        resp = client.post("/api/agency/v1/reservations", json=payload, headers=_IDEMPOTENCY)
+        _assert_adr_error_envelope(resp, expected_status=422, expected_code="validation_error")
 
 
 def test_create_missing_idempotency_key_returns_422():
-    client = _make_client()
-    resp = client.post("/api/agency/v1/reservations", json=_valid_create_payload())
-    _assert_adr_error_envelope(resp, expected_status=422, expected_code="validation_error")
+    with _make_client() as client:
+        resp = client.post("/api/agency/v1/reservations", json=_valid_create_payload())
+        _assert_adr_error_envelope(resp, expected_status=422, expected_code="validation_error")
 
 
 def test_create_missing_currency_returns_422():
-    client = _make_client()
-    payload = _valid_create_payload()
-    del payload["pricing"]["currency"]  # ADR: currency zorunlu
-    resp = client.post("/api/agency/v1/reservations", json=payload, headers=_IDEMPOTENCY)
-    _assert_adr_error_envelope(resp, expected_status=422, expected_code="validation_error")
+    with _make_client() as client:
+        payload = _valid_create_payload()
+        del payload["pricing"]["currency"]  # ADR: currency zorunlu
+        resp = client.post("/api/agency/v1/reservations", json=payload, headers=_IDEMPOTENCY)
+        _assert_adr_error_envelope(resp, expected_status=422, expected_code="validation_error")
 
 
 def test_availability_missing_required_query_returns_422():
-    client = _make_client()
-    resp = client.get("/api/agency/v1/availability?room_type_id=RT-1")
-    _assert_adr_error_envelope(resp, expected_status=422, expected_code="validation_error")
+    with _make_client() as client:
+        resp = client.get("/api/agency/v1/availability?room_type_id=RT-1")
+        _assert_adr_error_envelope(resp, expected_status=422, expected_code="validation_error")
 
 
 def test_availability_bad_date_pattern_returns_422():
-    client = _make_client()
-    resp = client.get(
-        "/api/agency/v1/availability"
-        "?room_type_id=RT-1&arrival_date=07-01-2026&departure_date=2026-07-03"
-    )
-    _assert_adr_error_envelope(resp, expected_status=422, expected_code="validation_error")
+    with _make_client() as client:
+        resp = client.get(
+            "/api/agency/v1/availability"
+            "?room_type_id=RT-1&arrival_date=07-01-2026&departure_date=2026-07-03"
+        )
+        _assert_adr_error_envelope(resp, expected_status=422, expected_code="validation_error")
 
 
 def test_modify_empty_body_returns_422():
-    client = _make_client()
-    resp = client.patch(
-        "/api/agency/v1/reservations/AG-123",
-        json={"schema_version": SCHEMA_VERSION},
-        headers=_IDEMPOTENCY,
-    )
-    _assert_adr_error_envelope(resp, expected_status=422, expected_code="validation_error")
+    with _make_client() as client:
+        resp = client.patch(
+            "/api/agency/v1/reservations/AG-123",
+            json={"schema_version": SCHEMA_VERSION},
+            headers=_IDEMPOTENCY,
+        )
+        _assert_adr_error_envelope(resp, expected_status=422, expected_code="validation_error")
 
 
 def test_delete_missing_idempotency_key_returns_422():
-    client = _make_client()
-    resp = client.delete("/api/agency/v1/reservations/AG-123")
-    _assert_adr_error_envelope(resp, expected_status=422, expected_code="validation_error")
+    with _make_client() as client:
+        resp = client.delete("/api/agency/v1/reservations/AG-123")
+        _assert_adr_error_envelope(resp, expected_status=422, expected_code="validation_error")
 
 
 # ── 3) Kapsam siniri: agency disi 422 davranisi DEGISMEZ ─────────
@@ -167,10 +167,10 @@ def test_non_agency_path_keeps_default_422_shape():
         return {"n": n}
 
     install_agency_validation_handler(app)
-    client = TestClient(app, raise_server_exceptions=True)
+    with TestClient(app, raise_server_exceptions=True) as client:
 
-    resp = client.get("/api/other")  # zorunlu query eksik
-    assert resp.status_code == 422
-    body = resp.json()
-    assert "detail" in body  # varsayilan FastAPI sekli korunur
-    assert "error_code" not in body  # agency zarfi DEGIL
+        resp = client.get("/api/other")  # zorunlu query eksik
+        assert resp.status_code == 422
+        body = resp.json()
+        assert "detail" in body  # varsayilan FastAPI sekli korunur
+        assert "error_code" not in body  # agency zarfi DEGIL
