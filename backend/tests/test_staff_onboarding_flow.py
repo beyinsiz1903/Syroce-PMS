@@ -144,8 +144,8 @@ def env(monkeypatch):
         return True
     app.dependency_overrides[require_op] = _fake_require_op
 
-    client = TestClient(app)
-    return SimpleNamespace(client=client, db=fake_db, app=app)
+    with TestClient(app) as client:
+        yield SimpleNamespace(client=client, db=fake_db, app=app)
 
 
 def test_staff_onboarding_full_workflow(env):
