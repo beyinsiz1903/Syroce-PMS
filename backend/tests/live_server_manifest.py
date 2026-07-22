@@ -183,4 +183,8 @@ LIVE_SERVER_TESTS = {
     "tests/test_p6_readiness_rollout.py",
     "tests/test_production_hardening_v2.py",
     "tests/test_production_hardening_v3.py",
+    "tests/test_router_modularization.py",
+    "tests/test_scheduler_activity_api.py",
+    "tests/test_sec001_secrets_api.py",
+    "tests/test_sec_sandbox_ops_api.py",
 }
