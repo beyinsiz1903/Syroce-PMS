@@ -174,4 +174,5 @@ LIVE_SERVER_TESTS = {
     "tests/test_reservation_detail_api.py",
     "tests/test_reservation_import_api.py",
     "tests/test_reservation_lifecycle_e2e.py",
+    "tests/test_reservation_noshow_e2e.py",
 }
