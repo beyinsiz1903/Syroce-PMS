@@ -199,7 +199,7 @@ def _patch(monkeypatch):
 
     utils_stub.generate_folio_number = _gen_folio_number
     utils_stub.calculate_folio_balance = _calc_balance
-    sys.modules["core.utils"] = utils_stub
+    monkeypatch.setitem(sys.modules, "core.utils", utils_stub)
 
     return fake_db
 
