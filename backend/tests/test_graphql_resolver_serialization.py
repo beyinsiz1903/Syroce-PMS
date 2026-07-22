@@ -130,7 +130,7 @@ class _FakeInfo:
 
 
 def _ctx(db: _FakeDB, *, cache: Any = None, mv: Any = None) -> _FakeInfo:
-    return _FakeInfo({"db": db, "cache": cache, "materialized_views": mv})
+    return _FakeInfo({"db": db, "cache": cache, "materialized_views": mv, "tenant_id": "t1"})
 
 
 # ── bookings resolver ─────────────────────────────────────────────────────

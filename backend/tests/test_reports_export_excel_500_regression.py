@@ -38,7 +38,7 @@ class TestCoerceExcelValueUnit:
     """Direct unit tests for `_coerce_excel_value` helper (Task #246 case c)."""
 
     def setup_method(self):
-        from backend.routers.report_builder import _coerce_excel_value  # type: ignore
+        from routers.report_builder import _coerce_excel_value  # type: ignore
         self.fn = _coerce_excel_value
 
     def test_none_to_empty(self):
@@ -154,7 +154,7 @@ class TestCoerceToDateUnit:
     """Direct unit tests for `_coerce_to_date` helper (Task #246 case e)."""
 
     def setup_method(self):
-        from backend.routers.departments.reports import _coerce_to_date  # type: ignore
+        from routers.departments.reports import _coerce_to_date  # type: ignore
         self.fn = _coerce_to_date
 
     def test_iso_string(self):

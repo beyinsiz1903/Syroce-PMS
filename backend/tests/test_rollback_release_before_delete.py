@@ -30,20 +30,27 @@ CHECK_IN = "2031-05-10"
 CHECK_OUT = "2031-05-12"  # 2 gece: 10, 11
 
 
-async def _cleanup():
-    await db.bookings.delete_many({"tenant_id": TEST_TENANT})
-    await db.room_night_locks.delete_many({"tenant_id": TEST_TENANT})
-    await db.folios.delete_many({"tenant_id": TEST_TENANT})
-    await db.guests.delete_many({"tenant_id": TEST_TENANT})
-    await db.rooms.delete_many({"tenant_id": TEST_TENANT})
-    await db.notifications.delete_many({"tenant_id": TEST_TENANT})
+from core.tenant_db import get_system_db
 
+async def _cleanup():
+    sys_db = get_system_db()
+    await sys_db.bookings.delete_many({"tenant_id": TEST_TENANT})
+    await sys_db.room_night_locks.delete_many({"tenant_id": TEST_TENANT})
+    await sys_db.folios.delete_many({"tenant_id": TEST_TENANT})
+    await sys_db.guests.delete_many({"tenant_id": TEST_TENANT})
+    await sys_db.rooms.delete_many({"tenant_id": TEST_TENANT})
+    await sys_db.notifications.delete_many({"tenant_id": TEST_TENANT})
+
+
+from core.tenant_db import set_tenant_context, clear_tenant_context
 
 @pytest.fixture(autouse=True)
 async def _around():
+    set_tenant_context(TEST_TENANT)
     await _cleanup()
     yield
     await _cleanup()
+    clear_tenant_context()
 
 
 class _StubRequest:

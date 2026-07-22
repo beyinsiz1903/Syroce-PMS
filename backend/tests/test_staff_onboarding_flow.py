@@ -53,12 +53,21 @@ class _FakeCursor:
     async def __anext__(self):
         try: return next(self._it)
         except StopIteration: raise StopAsyncIteration
+    async def to_list(self, length=None):
+        return self._docs
 
 
 class _MockCollection:
     def __init__(self, name, initial_docs=None):
         self.name = name
         self.docs = {d["id"]: dict(d) for d in (initial_docs or [])}
+
+    def find(self, flt, _proj=None):
+        res = []
+        for d in self.docs.values():
+            if d.get("tenant_id") == flt.get("tenant_id"):
+                res.append(dict(d))
+        return _FakeCursor(res)
 
     async def find_one(self, flt, _proj=None):
         for d in self.docs.values():
@@ -95,12 +104,15 @@ class _FakeDB:
         self.staff_members = _MockCollection("staff_members")
         self.staff_onboarding = _MockCollection("staff_onboarding")
         self.audit_logs = _MockCollection("audit_logs")
+        self.tenant_subscriptions = _MockCollection("tenant_subscriptions", [{"id": "sub1", "tenant_id": TENANT_ID, "status": "active", "product_key": "hr_basic"}])
 
 
 @pytest.fixture
 def env(monkeypatch):
     fake_db = _FakeDB()
     monkeypatch.setattr(hr_router, "db", fake_db)
+    import core.entitlements.enforcement as enf
+    monkeypatch.setattr(enf, "db", fake_db)
 
     # Patch _audit helper in HR router
     async def _fake_audit(user, action, entity_type, entity_id, details, **kwargs):

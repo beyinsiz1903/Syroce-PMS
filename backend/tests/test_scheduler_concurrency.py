@@ -131,9 +131,10 @@ async def test_scheduler_concurrency_long_cycle():
     assert len(pull_calls) == 1, "Scheduler 2 should not pull while Scheduler 1 is running"
     print("test_scheduler_concurrency_long_cycle PASSED")
 
-async def test_scheduler_concurrency_lock_release(mock_redis):
+async def test_scheduler_concurrency_lock_release():
     from infra.distributed_lock import DistributedLock, lock_manager
     print("Running test_scheduler_concurrency_lock_release...")
+    mock_redis = MockRedis()
     lock_manager.set_redis(mock_redis)
     os.environ["ENV"] = "test"
     scheduler = ReservationPullScheduler()

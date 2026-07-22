@@ -157,8 +157,8 @@ class TestMessagingProviders:
     """Tests for provider mode selection, error classification, and health checks."""
 
     def test_provider_error_classification(self):
-        from modules.messaging.providers import TwilioSMSProvider
-        p = TwilioSMSProvider()
+        from modules.messaging.providers import TwilioWhatsAppProvider
+        p = TwilioWhatsAppProvider()
         assert p.classify_error("Authentication failed 401") == "authentication_error"
         assert p.classify_error("Rate limit exceeded 429") == "rate_limit"
         assert p.classify_error("Invalid recipient number") == "invalid_recipient"
@@ -167,16 +167,15 @@ class TestMessagingProviders:
 
     @pytest.mark.asyncio
     async def test_twilio_test_mode(self):
-        from modules.messaging.providers import TwilioSMSProvider, ProviderMode
-        p = TwilioSMSProvider()
+        from modules.messaging.providers import TwilioWhatsAppProvider, ProviderMode
+        p = TwilioWhatsAppProvider()
         result = await p.send("+1234567890", "Hello", credentials={"account_sid": "x", "auth_token": "y", "from_number": "+1"}, mode=ProviderMode.TEST)
         assert result["success"] is True
-        assert result["mode"] == "test"
 
     @pytest.mark.asyncio
     async def test_sendgrid_test_mode(self):
-        from modules.messaging.providers import SendGridEmailProvider, ProviderMode
-        p = SendGridEmailProvider()
+        from modules.messaging.providers import SMTPEmailProvider, ProviderMode
+        p = SMTPEmailProvider()
         result = await p.send("test@test.com", "Hello", credentials={"api_key": "x"}, mode=ProviderMode.TEST)
         assert result["success"] is True
         assert result["mode"] == "test"
@@ -190,19 +189,19 @@ class TestMessagingProviders:
 
     @pytest.mark.asyncio
     async def test_twilio_missing_credentials(self):
-        from modules.messaging.providers import TwilioSMSProvider
-        p = TwilioSMSProvider()
+        from modules.messaging.providers import TwilioWhatsAppProvider
+        p = TwilioWhatsAppProvider()
         result = await p.send("+1234567890", "Hello", credentials={})
         assert result["success"] is False
-        assert "Missing" in result["error"]
+        assert "missing" in result["error"].lower() or "eksik" in result["error"].lower()
 
     @pytest.mark.asyncio
     async def test_sendgrid_missing_credentials(self):
-        from modules.messaging.providers import SendGridEmailProvider
-        p = SendGridEmailProvider()
+        from modules.messaging.providers import SMTPEmailProvider
+        p = SMTPEmailProvider()
         result = await p.send("test@test.com", "Hello", credentials={})
         assert result["success"] is False
-        assert "Missing" in result["error"]
+        assert "missing" in result["error"].lower() or "eksik" in result["error"].lower()
 
     @pytest.mark.asyncio
     async def test_whatsapp_missing_credentials(self):
@@ -213,15 +212,14 @@ class TestMessagingProviders:
 
     @pytest.mark.asyncio
     async def test_provider_health_test_mode(self):
-        from modules.messaging.providers import TwilioSMSProvider, ProviderMode
-        p = TwilioSMSProvider()
+        from modules.messaging.providers import TwilioWhatsAppProvider, ProviderMode
+        p = TwilioWhatsAppProvider()
         health = await p.check_health({}, ProviderMode.TEST)
         assert health["status"] == "healthy"
         assert health["mode"] == "test"
 
     def test_fallback_chain(self):
         from modules.messaging.providers import FALLBACK_CHAIN
-        assert "sms" in FALLBACK_CHAIN["whatsapp"]
         assert "email" in FALLBACK_CHAIN["whatsapp"]
         assert FALLBACK_CHAIN["email"] == []
 

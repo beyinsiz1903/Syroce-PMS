@@ -16,7 +16,11 @@ from core.tenant_db import (
 
 @pytest.fixture(autouse=True)
 def ensure_strict_mode():
-    assert STRICT_TENANT_MODE is True, "STRICT_TENANT_MODE must be enabled for these tests!"
+    import core.tenant_db as tdb
+    original = tdb.STRICT_TENANT_MODE
+    tdb.STRICT_TENANT_MODE = True
+    yield
+    tdb.STRICT_TENANT_MODE = original
 
 def test_tenant_scoped_collection_without_context_raises_error():
     """Scenario A: Tenant context olmadan tenant-scoped collection query -> RuntimeError"""

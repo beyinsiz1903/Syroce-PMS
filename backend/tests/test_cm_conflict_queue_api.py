@@ -67,7 +67,9 @@ async def _seed_pending_booking(tenant_id: str, *, anchor_days: int = 480) -> st
     bid = f"queue-test-{uuid.uuid4().hex[:10]}"
     ci = datetime.now(UTC) + timedelta(days=anchor_days)
     co = ci + timedelta(days=2)
-    await db.bookings.insert_one({
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+        await db.bookings.insert_one({
         "id": bid,
         "tenant_id": tenant_id,
         "room_id": None,
@@ -83,36 +85,46 @@ async def _seed_pending_booking(tenant_id: str, *, anchor_days: int = 480) -> st
         "currency": "TRY",
         "external_confirmation": f"EXT-{bid}",
         "created_at": datetime.now(UTC).isoformat(),
-    })
+        })
     return bid
 
 
 async def _seed_room(tenant_id: str) -> str:
     rid = f"queue-room-{uuid.uuid4().hex[:8]}"
-    await db.rooms.insert_one({
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+        await db.rooms.insert_one({
         "id": rid,
         "tenant_id": tenant_id,
         "room_number": f"QT{uuid.uuid4().hex[:4].upper()}",
         "room_type": "standard",
         "status": "available",
         "created_at": datetime.now(UTC).isoformat(),
-    })
+        })
     return rid
 
 
 async def _cleanup(tenant_id: str, booking_ids: list[str], room_ids: list[str]):
     if booking_ids:
-        await db.bookings.delete_many({"id": {"$in": booking_ids}, "tenant_id": tenant_id})
-        await db.room_night_locks.delete_many({
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            await db.bookings.delete_many({"id": {"$in": booking_ids}, "tenant_id": tenant_id})
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            await db.room_night_locks.delete_many({
             "tenant_id": tenant_id,
             "booking_id": {"$in": booking_ids},
-        })
-        await db.notifications.delete_many({
+            })
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            await db.notifications.delete_many({
             "tenant_id": tenant_id,
             "related_id": {"$in": booking_ids},
-        })
+            })
     if room_ids:
-        await db.rooms.delete_many({"id": {"$in": room_ids}, "tenant_id": tenant_id})
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            await db.rooms.delete_many({"id": {"$in": room_ids}, "tenant_id": tenant_id})
 
 
 async def test_list_and_count_surface_pending_bookings_for_tenant():
@@ -163,22 +175,28 @@ async def test_resolve_happy_path_assigns_room_and_promotes_allocation_source():
         assert body["room_id"] == rid
 
         # Booking promoted out of pending_assignment
-        booking = await db.bookings.find_one({"id": bid, "tenant_id": tenant_id}, {"_id": 0})
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            booking = await db.bookings.find_one({"id": bid, "tenant_id": tenant_id}, {"_id": 0})
         assert booking["room_id"] == rid
         assert booking["allocation_source"] == "front_desk_resolve"
 
         # Locks created for both nights of a 2-night stay
-        lock_count = await db.room_night_locks.count_documents({
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            lock_count = await db.room_night_locks.count_documents({
             "tenant_id": tenant_id, "room_id": rid, "booking_id": bid,
-        })
+            })
         assert lock_count == 2, f"Expected 2 night locks, got {lock_count}"
 
         # Notification written
-        notif = await db.notifications.find_one({
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            notif = await db.notifications.find_one({
             "tenant_id": tenant_id,
             "type": "overbooking_resolved",
             "related_id": bid,
-        })
+            })
         assert notif is not None
     finally:
         await _cleanup(tenant_id, [bid], [rid])
@@ -222,20 +240,24 @@ async def test_resolve_compensation_releases_partial_locks_on_mid_stay_conflict(
     rid = await _seed_room(tenant_id)
 
     # Plant a conflicting lock on the SECOND (last) night
-    pending = await db.bookings.find_one(
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+        pending = await db.bookings.find_one(
         {"id": bid, "tenant_id": tenant_id}, {"_id": 0, "check_in": 1, "check_out": 1},
-    )
+        )
     ci_date = datetime.fromisoformat(pending["check_in"].replace("Z", "+00:00")).date()
     second_night = (ci_date + timedelta(days=1)).isoformat()  # nights = [day0, day1]; conflict on day1
     blocker_id = f"queue-mid-blocker-{uuid.uuid4().hex[:8]}"
-    await db.room_night_locks.insert_one({
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+        await db.room_night_locks.insert_one({
         "tenant_id": tenant_id,
         "room_id": rid,
         "night_date": second_night,
         "booking_id": blocker_id,
         "lock_type": "booking",
         "created_at": datetime.now(UTC).isoformat(),
-    })
+        })
 
     try:
         async with httpx.AsyncClient(timeout=15) as c:
@@ -246,19 +268,25 @@ async def test_resolve_compensation_releases_partial_locks_on_mid_stay_conflict(
 
         # Compensation: NO partial locks for our booking remain on this room
         # (the first-night lock that WAS claimed must have been deleted)
-        leftover = await db.room_night_locks.count_documents({
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            leftover = await db.room_night_locks.count_documents({
             "tenant_id": tenant_id, "room_id": rid, "booking_id": bid,
-        })
+            })
         assert leftover == 0, "Mid-stay compensation failed — first night lock not released"
 
         # Booking still pending
-        booking = await db.bookings.find_one({"id": bid, "tenant_id": tenant_id}, {"_id": 0})
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            booking = await db.bookings.find_one({"id": bid, "tenant_id": tenant_id}, {"_id": 0})
         assert booking["room_id"] is None
         assert booking["allocation_source"] == "pending_assignment"
     finally:
-        await db.room_night_locks.delete_many({
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            await db.room_night_locks.delete_many({
             "tenant_id": tenant_id, "room_id": rid, "booking_id": blocker_id,
-        })
+            })
         await _cleanup(tenant_id, [bid], [rid])
 
 
@@ -276,21 +304,25 @@ async def test_bulk_resolve_partial_success_does_not_abort_batch():
     rid_fail = await _seed_room(tenant_id)
 
     # Plant blocker on the FIRST night of the failing booking's stay
-    pending = await db.bookings.find_one(
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+        pending = await db.bookings.find_one(
         {"id": bid_fail, "tenant_id": tenant_id}, {"_id": 0, "check_in": 1},
-    )
+        )
     first_night = (
         datetime.fromisoformat(pending["check_in"].replace("Z", "+00:00")).date().isoformat()
     )
     blocker_id = f"queue-bulk-blocker-{uuid.uuid4().hex[:8]}"
-    await db.room_night_locks.insert_one({
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+        await db.room_night_locks.insert_one({
         "tenant_id": tenant_id,
         "room_id": rid_fail,
         "night_date": first_night,
         "booking_id": blocker_id,
         "lock_type": "booking",
         "created_at": datetime.now(UTC).isoformat(),
-    })
+        })
 
     try:
         async with httpx.AsyncClient(timeout=20) as c:
@@ -315,22 +347,30 @@ async def test_bulk_resolve_partial_success_does_not_abort_batch():
         assert failed_rows[bid_fail]["conflicting_booking_id"] == blocker_id
 
         # Success row promoted, failure row still pending
-        ok_doc = await db.bookings.find_one({"id": bid_ok, "tenant_id": tenant_id}, {"_id": 0})
-        fail_doc = await db.bookings.find_one({"id": bid_fail, "tenant_id": tenant_id}, {"_id": 0})
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            ok_doc = await db.bookings.find_one({"id": bid_ok, "tenant_id": tenant_id}, {"_id": 0})
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            fail_doc = await db.bookings.find_one({"id": bid_fail, "tenant_id": tenant_id}, {"_id": 0})
         assert ok_doc["room_id"] == rid_ok
         assert ok_doc["allocation_source"] == "front_desk_resolve"
         assert fail_doc["room_id"] is None
         assert fail_doc["allocation_source"] == "pending_assignment"
 
         # No leftover locks for failed booking
-        leftover = await db.room_night_locks.count_documents({
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            leftover = await db.room_night_locks.count_documents({
             "tenant_id": tenant_id, "room_id": rid_fail, "booking_id": bid_fail,
-        })
+            })
         assert leftover == 0
     finally:
-        await db.room_night_locks.delete_many({
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            await db.room_night_locks.delete_many({
             "tenant_id": tenant_id, "room_id": rid_fail, "booking_id": blocker_id,
-        })
+            })
         await _cleanup(tenant_id, [bid_ok, bid_fail], [rid_ok, rid_fail])
 
 
@@ -364,7 +404,9 @@ async def test_bulk_resolve_invalid_room_id_reported_per_row():
         assert failed_rows[bid_bad]["error"] == "room_not_found"
 
         # bid_bad still pending (no claim attempted)
-        bad_doc = await db.bookings.find_one({"id": bid_bad, "tenant_id": tenant_id}, {"_id": 0})
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            bad_doc = await db.bookings.find_one({"id": bid_bad, "tenant_id": tenant_id}, {"_id": 0})
         assert bad_doc["room_id"] is None
     finally:
         await _cleanup(tenant_id, [bid_ok, bid_bad], [rid_ok])
@@ -378,19 +420,23 @@ async def test_resolve_returns_409_when_room_not_available():
     rid = await _seed_room(tenant_id)
 
     # Plant a conflicting lock on the FIRST night of the pending booking
-    pending = await db.bookings.find_one({"id": bid, "tenant_id": tenant_id}, {"_id": 0, "check_in": 1})
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+        pending = await db.bookings.find_one({"id": bid, "tenant_id": tenant_id}, {"_id": 0, "check_in": 1})
     first_night = (
         datetime.fromisoformat(pending["check_in"].replace("Z", "+00:00")).date().isoformat()
     )
     blocker_id = f"queue-blocker-{uuid.uuid4().hex[:8]}"
-    await db.room_night_locks.insert_one({
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+        await db.room_night_locks.insert_one({
         "tenant_id": tenant_id,
         "room_id": rid,
         "night_date": first_night,
         "booking_id": blocker_id,
         "lock_type": "booking",
         "created_at": datetime.now(UTC).isoformat(),
-    })
+        })
 
     try:
         async with httpx.AsyncClient(timeout=15) as c:
@@ -402,17 +448,23 @@ async def test_resolve_returns_409_when_room_not_available():
         assert detail["conflicting_booking_id"] == blocker_id
 
         # Pending booking unchanged
-        booking = await db.bookings.find_one({"id": bid, "tenant_id": tenant_id}, {"_id": 0})
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            booking = await db.bookings.find_one({"id": bid, "tenant_id": tenant_id}, {"_id": 0})
         assert booking["room_id"] is None
         assert booking["allocation_source"] == "pending_assignment"
 
         # No partial locks left behind for this booking on this room
-        leftover = await db.room_night_locks.count_documents({
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            leftover = await db.room_night_locks.count_documents({
             "tenant_id": tenant_id, "room_id": rid, "booking_id": bid,
-        })
+            })
         assert leftover == 0, "Partial-night locks should have been compensated on conflict"
     finally:
-        await db.room_night_locks.delete_many({
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            await db.room_night_locks.delete_many({
             "tenant_id": tenant_id, "room_id": rid, "booking_id": blocker_id,
-        })
+            })
         await _cleanup(tenant_id, [bid], [rid])

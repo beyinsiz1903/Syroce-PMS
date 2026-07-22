@@ -22,6 +22,7 @@ import httpx
 import pytest
 
 from core.database import db
+from core.tenant_db import tenant_context
 
 pytestmark = pytest.mark.asyncio
 
@@ -56,28 +57,46 @@ async def seeded():
     alert_id = f"hub-test-alert-{uuid.uuid4().hex[:10]}"
     task_id = f"hub-test-task-{uuid.uuid4().hex[:10]}"
 
-    await db.notifications.insert_one({
-        "id": notif_id, "tenant_id": tid, "user_id": user["id"],
-        "type": "info", "title": "Hub test notif", "message": "merge me",
-        "priority": "normal", "read": False, "created_at": _now(),
-    })
-    await db.alerts.insert_one({
-        "id": alert_id, "tenant_id": tid, "assigned_to": None,
-        "alert_type": "system", "priority": "high", "title": "Hub test alert",
-        "description": "merge me too", "status": "unread", "created_at": _now(),
-    })
-    await db.housekeeping_tasks.insert_one({
-        "id": task_id, "tenant_id": tid, "room_id": "r-test",
-        "room_number": "999", "task_type": "cleaning", "assigned_to": name,
-        "priority": "urgent", "status": "pending", "created_at": _now(),
-    })
+    with tenant_context(tid):
+        with tenant_context(tid):
+            with tenant_context(tid):
+                await db.notifications.insert_one({
+                "id": notif_id, "tenant_id": tid, "user_id": user["id"],
+                "type": "info", "title": "Hub test notif", "message": "merge me",
+                "priority": "normal", "read": False, "created_at": _now(),
+                })
+    with tenant_context(tid):
+        with tenant_context(tid):
+            with tenant_context(tid):
+                await db.alerts.insert_one({
+                "id": alert_id, "tenant_id": tid, "assigned_to": None,
+                "alert_type": "system", "priority": "high", "title": "Hub test alert",
+                "description": "merge me too", "status": "unread", "created_at": _now(),
+                })
+    with tenant_context(tid):
+        with tenant_context(tid):
+            with tenant_context(tid):
+                await db.housekeeping_tasks.insert_one({
+                "id": task_id, "tenant_id": tid, "room_id": "r-test",
+                "room_number": "999", "task_type": "cleaning", "assigned_to": name,
+                "priority": "urgent", "status": "pending", "created_at": _now(),
+                })
 
     yield {"tenant_id": tid, "name": name, "notif_id": notif_id,
            "alert_id": alert_id, "task_id": task_id}
 
-    await db.notifications.delete_one({"id": notif_id})
-    await db.alerts.delete_one({"id": alert_id})
-    await db.housekeeping_tasks.delete_one({"id": task_id})
+    with tenant_context(tenant_id):
+        with tenant_context(tenant_id):
+            with tenant_context(tenant_id):
+                await db.notifications.delete_one({"id": notif_id})
+    with tenant_context(tenant_id):
+        with tenant_context(tenant_id):
+            with tenant_context(tenant_id):
+                await db.alerts.delete_one({"id": alert_id})
+    with tenant_context(tenant_id):
+        with tenant_context(tenant_id):
+            with tenant_context(tenant_id):
+                await db.housekeeping_tasks.delete_one({"id": task_id})
 
 
 async def test_feed_merges_notifications_and_alerts(seeded):
@@ -103,8 +122,14 @@ async def test_feed_mark_read_routes_by_source(seeded):
                           json={"source": "alert", "id": seeded["alert_id"]})
     assert rn.status_code == 200, rn.text
     assert ra.status_code == 200, ra.text
-    notif = await db.notifications.find_one({"id": seeded["notif_id"]}, {"_id": 0})
-    alert = await db.alerts.find_one({"id": seeded["alert_id"]}, {"_id": 0})
+    with tenant_context(tenant_id):
+        with tenant_context(tenant_id):
+            with tenant_context(tenant_id):
+                notif = await db.notifications.find_one({"id": seeded["notif_id"]}, {"_id": 0})
+    with tenant_context(tenant_id):
+        with tenant_context(tenant_id):
+            with tenant_context(tenant_id):
+                alert = await db.alerts.find_one({"id": seeded["alert_id"]}, {"_id": 0})
     assert notif["read"] is True
     assert alert["status"] == "read"
 
@@ -166,14 +191,20 @@ async def seeded_pr():
     _, user = await _login()
     tid = user["tenant_id"]
     pr_id = f"hub-test-pr-{uuid.uuid4().hex[:10]}"
-    await db.proc_purchase_requests.insert_one({
-        "id": pr_id, "tenant_id": tid, "pr_no": "PR-HUBTEST",
-        "status": "submitted", "department": "kitchen",
-        "requester": "hub tester", "lines": [], "lines_total": 1234.0,
-        "created_at": _now(),
-    })
+    with tenant_context(tid):
+        with tenant_context(tid):
+            with tenant_context(tid):
+                await db.proc_purchase_requests.insert_one({
+                "id": pr_id, "tenant_id": tid, "pr_no": "PR-HUBTEST",
+                "status": "submitted", "department": "kitchen",
+                "requester": "hub tester", "lines": [], "lines_total": 1234.0,
+                "created_at": _now(),
+                })
     yield {"tenant_id": tid, "pr_id": pr_id}
-    await db.proc_purchase_requests.delete_one({"id": pr_id})
+    with tenant_context(tenant_id):
+        with tenant_context(tenant_id):
+            with tenant_context(tenant_id):
+                await db.proc_purchase_requests.delete_one({"id": pr_id})
 
 
 async def test_approvals_includes_submitted_procurement(seeded_pr):

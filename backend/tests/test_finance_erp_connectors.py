@@ -1,3 +1,4 @@
+import socket
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -10,6 +11,11 @@ from routers.finance.integrations import router as finance_router
 
 app = FastAPI()
 app.include_router(finance_router)
+
+@pytest.fixture(autouse=True)
+def mock_dns():
+    with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('8.8.8.8', 443))]):
+        yield
 
 @pytest.fixture
 def mock_user():
@@ -78,7 +84,7 @@ async def test_logo_sync_missing_credentials(mock_log, mock_payments, mock_invoi
     mock_log.assert_not_called()
 
 
-@patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.erp_connectors.logo.safe_post_async", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_tenant_rollout_config", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
@@ -105,7 +111,7 @@ async def test_logo_sync_connection_error(mock_log, mock_payments, mock_invoices
     assert log_arg["error_type"] == "connection_error"
 
 
-@patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.erp_connectors.netsis.safe_post_async", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_tenant_rollout_config", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
@@ -132,7 +138,7 @@ async def test_netsis_sync_timeout(mock_log, mock_payments, mock_invoices, mock_
     assert log_arg["error_type"] == "timeout"
 
 
-@patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.erp_connectors.logo.safe_post_async", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_tenant_rollout_config", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
@@ -170,7 +176,7 @@ async def test_logo_sync_success(mock_log, mock_payments, mock_invoices, mock_cr
     assert "X-Syroce-Sync-Id" in headers
 
 
-@patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.erp_connectors.logo.safe_post_async", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_tenant_rollout_config", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
@@ -202,7 +208,7 @@ async def test_logo_sync_success_both(mock_log, mock_payments, mock_invoices, mo
     assert args_list[1][0][0].endswith("/payments")
 
 
-@patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.erp_connectors.logo.safe_post_async", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_tenant_rollout_config", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
@@ -231,7 +237,7 @@ async def test_logo_sync_only_payments(mock_log, mock_payments, mock_invoices, m
     assert mock_post.call_args[0][0].endswith("/payments")
 
 
-@patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.erp_connectors.netsis.safe_post_async", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_tenant_rollout_config", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
@@ -258,7 +264,7 @@ async def test_netsis_sync_success_both(mock_log, mock_payments, mock_invoices, 
     assert args_list[1][0][0].endswith("/payments")
 
 
-@patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.erp_connectors.logo.safe_post_async", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_tenant_rollout_config", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)

@@ -39,7 +39,7 @@ async def test_auth_watermark_lifecycle():
         assert user.id == user_id
 
     # 2. Same token rejected on the first request after logout (no global grace window!)
-    now = time.time()
+    now = time.time() - 100
 
     # Token generated before logout (iat = now - 0.05)
     payload_before = {

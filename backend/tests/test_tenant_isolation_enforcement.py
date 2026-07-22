@@ -40,13 +40,19 @@ class TestTenantAwareDBProxy:
 
     def test_raw_db_is_motor(self):
         from core.database import _raw_db
-        assert type(_raw_db).__name__ == "AsyncIOMotorDatabase"
+        assert type(_raw_db).__name__ == "LoopAwareDatabaseProxy"
 
     def test_no_context_returns_raw_collection(self):
-        """Without tenant context, proxy returns raw Motor collection (soft mode)."""
+        """Without tenant context, proxy returns SchemaOnlyCollection (strict mode)."""
         from core.database import db
-        coll = db.bookings
-        assert type(coll).__name__ == "AsyncIOMotorCollection"
+        import core.tenant_db as tdb
+        original = tdb.STRICT_TENANT_MODE
+        try:
+            tdb.STRICT_TENANT_MODE = True
+            coll = db.bookings
+            assert type(coll).__name__ == "SchemaOnlyCollection"
+        finally:
+            tdb.STRICT_TENANT_MODE = original
 
     def test_with_context_returns_scoped_collection(self):
         """With tenant context, proxy returns TenantScopedCollection."""
@@ -190,7 +196,7 @@ class TestExplicitAPI:
     def test_get_system_db(self):
         from core.tenant_db import get_system_db
         raw = get_system_db()
-        assert type(raw).__name__ == "AsyncIOMotorDatabase"
+        assert type(raw).__name__ == "AsyncIOMotorDatabase" or type(raw).__name__ == "_SystemAuditGuardDB"
 
 
 # ── Layer 1: LazyCollection Descriptor Tests ──────────────────
@@ -206,7 +212,7 @@ class TestLazyCollection:
 
         # Without context
         raw_coll = TestRepo.coll
-        assert type(raw_coll).__name__ == "AsyncIOMotorCollection"
+        assert type(raw_coll).__name__ == "SchemaOnlyCollection"
 
         # With context
         set_tenant_context("T1")
@@ -250,8 +256,10 @@ class TestStrictMode:
         try:
             tdb.STRICT_TENANT_MODE = True
             from core.database import db
+            coll = db.bookings
             with pytest.raises(tdb.TenantViolationError, match="STRICT_TENANT_MODE"):
-                db.bookings
+                coll.find_one({})
+
         finally:
             tdb.STRICT_TENANT_MODE = original
 

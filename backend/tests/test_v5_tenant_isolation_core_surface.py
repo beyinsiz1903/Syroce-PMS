@@ -115,6 +115,7 @@ async def test_t01_folio_payment_dispatches_authenticated_tenant_not_body():
     )
 
     with patch.object(pms_hardening, "folio_svc", mock_folio), \
+         patch("routers.pms_hardening.get_current_tenant_id", return_value="tenant-A"), \
          patch.object(pms_hardening.perm_svc, "enforce_permission", _noop_enforce):
         with pytest.raises(HTTPException) as exc:
             await api_post_payment(req, current_user=user_a)
@@ -194,6 +195,7 @@ async def test_t03_checkin_dispatches_authenticated_tenant_not_body():
 
     with patch.object(pms_hardening, "front_desk", mock_fd), \
          patch.object(pms_hardening.perm_svc, "enforce_permission", _noop_enforce), \
+         patch("routers.pms_hardening.get_current_tenant_id", return_value="tenant-A"), \
          patch("routers.webhook_retry_service.schedule_emit_reservation_updated", mock_schedule):
         with pytest.raises(HTTPException) as exc:
             await api_check_in(req, current_user=user_a)
@@ -258,6 +260,7 @@ async def test_t05_checkout_dispatches_authenticated_tenant_not_body():
 
     with patch.object(pms_hardening, "front_desk", mock_fd), \
          patch.object(pms_hardening.perm_svc, "enforce_permission", _noop_enforce), \
+         patch("routers.pms_hardening.get_current_tenant_id", return_value="tenant-A"), \
          patch("routers.webhook_retry_service.schedule_emit_reservation_updated", mock_schedule), \
          patch("domains.pms.night_audit.router.invalidate_finance_cache", mock_invalidate):
         with pytest.raises(HTTPException) as exc:
@@ -293,6 +296,7 @@ async def test_t06_checkout_force_flag_does_not_bypass_tenant_scope():
 
     with patch.object(pms_hardening, "front_desk", mock_fd), \
          patch.object(pms_hardening.perm_svc, "enforce_permission", _noop_enforce), \
+         patch("routers.pms_hardening.get_current_tenant_id", return_value="tenant-A"), \
          patch("routers.webhook_retry_service.schedule_emit_reservation_updated", MagicMock()), \
          patch("domains.pms.night_audit.router.invalidate_finance_cache", MagicMock()):
         with pytest.raises(HTTPException):
