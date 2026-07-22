@@ -238,10 +238,9 @@ def test_status_patch_role_allowlist_excludes_guest_and_agency():
     assert UserRole.HOUSEKEEPING in _ROOM_SERVICE_STAFF_ROLES
 
 
-def test_status_patch_dependency_rejects_guest_role():
+@pytest.mark.asyncio
+async def test_status_patch_dependency_rejects_guest_role():
     """`require_role` dependency raises 403 for GUEST, passes for staff."""
-    import asyncio
-
     from fastapi import HTTPException
 
     from domains.guest.experience_router.guest_app import (
@@ -259,10 +258,10 @@ def test_status_patch_dependency_rejects_guest_role():
             self.tenant_id = "t1"
 
     with pytest.raises(HTTPException) as exc:
-        asyncio.get_event_loop().run_until_complete(dep(current_user=_U(UserRole.GUEST)))
+        await dep(current_user=_U(UserRole.GUEST))
     assert exc.value.status_code == 403
 
-    asyncio.get_event_loop().run_until_complete(dep(current_user=_U(UserRole.FRONT_DESK)))
+    await dep(current_user=_U(UserRole.FRONT_DESK))
 
 
 # ──────────────────────────────────────────────────────────────────────
