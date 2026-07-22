@@ -34,7 +34,8 @@ from shared_kernel.idempotency import begin_idempotency
 
 # GridFS bucket — personel belgeleri için (5MB üstü destek + memory verimi).
 # Eski kayıtlar `data_b64` alanı üzerinden okunmaya devam eder (geriye uyum).
-_hr_docs_bucket = AsyncIOMotorGridFSBucket(_raw_db, bucket_name="staff_docs")
+def _get_hr_docs_bucket():
+    return AsyncIOMotorGridFSBucket(_raw_db, bucket_name="staff_docs")
 from core.audit import log_audit_event  # v2 HR Foundation (Task #262)
 from models.schemas import User
 from modules.pms_core.role_permission_service import (  # v96 DW
@@ -5871,7 +5872,7 @@ async def upload_staff_document(
     safe_label = _sanitize_doc_filename(label) if label else safe_filename
 
     # GridFS'e yaz — büyük dosyalar memory'de tutulmaz, koleksiyon liste sorguları hızlı kalır.
-    gridfs_id = await _hr_docs_bucket.upload_from_stream(
+    gridfs_id = await _get_hr_docs_bucket().upload_from_stream(
         safe_filename,
         content,
         metadata={
@@ -5966,7 +5967,7 @@ async def download_staff_document(
         # Defense-in-depth: GridFS bucket tenant-aware proxy bypass'lı (_raw_db) olduğundan
         # metadata.tenant_id'yi tekrar doğrula. Meta kaydı zaten scoped ama belge bütünlüğü
         # için cross-check yapıyoruz.
-        gf_meta = await _hr_docs_bucket.find(
+        gf_meta = await _get_hr_docs_bucket().find(
             {
                 "_id": gridfs_oid,
                 "metadata.tenant_id": current_user.tenant_id,
@@ -5975,7 +5976,7 @@ async def download_staff_document(
         if not gf_meta:
             raise HTTPException(status_code=404, detail="Belge depolamada bulunamadı")
         try:
-            stream = await _hr_docs_bucket.open_download_stream(gridfs_oid)
+            stream = await _get_hr_docs_bucket().open_download_stream(gridfs_oid)
             raw = await stream.read()
         except Exception:
             raise HTTPException(status_code=404, detail="Belge depolamada bulunamadı")
@@ -6015,7 +6016,7 @@ async def delete_staff_document(
     # Önce GridFS chunk'larını temizle (varsa); sonra meta kaydını sil.
     if doc.get("gridfs_id"):
         try:
-            await _hr_docs_bucket.delete(ObjectId(doc["gridfs_id"]))
+            await _get_hr_docs_bucket().delete(ObjectId(doc["gridfs_id"]))
         except Exception:
             pass  # Çoktan silinmiş olabilir — meta silmeyi engellemesin.
     await db.staff_documents.delete_one(
