@@ -128,14 +128,13 @@ def test_cached_static_files_stamps_cache_control_on_200(tmp_path):
         _CachedStaticFiles(directory=str(js_dir), cache_control=immutable),
         name="js",
     )
-    client = TestClient(application)
+    with TestClient(application) as client:
+        ok = client.get("/js/app.hash123.js")
+        assert ok.status_code == 200
+        assert ok.headers["cache-control"] == immutable
 
-    ok = client.get("/js/app.hash123.js")
-    assert ok.status_code == 200
-    assert ok.headers["cache-control"] == immutable
-
-    # A missing chunk must 404 (no stale index.html / MIME trap) and must NOT
-    # inherit the immutable header.
-    missing = client.get("/js/does-not-exist.js")
-    assert missing.status_code == 404
-    assert "immutable" not in missing.headers.get("cache-control", "")
+        # A missing chunk must 404 (no stale index.html / MIME trap) and must NOT
+        # inherit the immutable header.
+        missing = client.get("/js/does-not-exist.js")
+        assert missing.status_code == 404
+        assert "immutable" not in missing.headers.get("cache-control", "")
