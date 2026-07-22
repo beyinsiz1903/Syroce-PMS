@@ -22,18 +22,29 @@ def event_loop():
     loop.close()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def db_connection(event_loop):
-    """Initialize the database connection."""
+    """Provide one isolated database connection for this test module."""
     import os
 
     from motor.motor_asyncio import AsyncIOMotorClient
+
+    import core.database as database_module
+
     mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
     db_name = os.environ.get("DB_NAME", "syroce_pms")
+
+    previous_db = database_module.db
     client = AsyncIOMotorClient(mongo_url)
-    import core.database as database_module
-    database_module.db = client[db_name]
-    return database_module.db
+    raw_db = client[db_name]
+
+    database_module.db = raw_db
+
+    try:
+        yield raw_db
+    finally:
+        database_module.db = previous_db
+        client.close()
 
 
 TENANT_ID = "test-sandbox-tenant"
