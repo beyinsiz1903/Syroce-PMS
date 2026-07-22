@@ -177,4 +177,5 @@ LIVE_SERVER_TESTS = {
     "tests/test_reservation_noshow_e2e.py",
     "tests/test_rms_module_api.py",
     "tests/test_room_management_access.py",
+    "tests/test_rooms_tab_quick_actions.py",
 }
