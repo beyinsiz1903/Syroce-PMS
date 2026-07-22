@@ -103,6 +103,7 @@ class TestCommonContracts:
 
 # ── Hardening endpoint tests (via service layer) ──
 
+@pytest.mark.live_server
 class TestCMHardeningEndpoints:
     def test_runtime_status(self, headers):
         r = httpx.get(f"{API_URL}/api/channel-manager/runtime/status", headers=headers)
@@ -142,6 +143,7 @@ class TestCMHardeningEndpoints:
         assert "providers" in r.json()
 
 
+@pytest.mark.live_server
 class TestWorkerHardeningEndpoints:
     def test_queues_health(self, headers):
         r = httpx.get(f"{API_URL}/api/workers/queues/health", headers=headers)
@@ -162,6 +164,7 @@ class TestWorkerHardeningEndpoints:
         assert r.status_code == 200
 
 
+@pytest.mark.live_server
 class TestSecurityHardeningEndpoints:
     def test_audit_status(self, headers):
         r = httpx.get(f"{API_URL}/api/security/audit/status", headers=headers)
@@ -188,6 +191,7 @@ class TestSecurityHardeningEndpoints:
         assert r.json()["all_patterns_working"] is True
 
 
+@pytest.mark.live_server
 class TestObservabilityEndpoints:
     def test_runtime_metrics(self, headers):
         r = httpx.get(f"{API_URL}/api/observability/runtime/metrics", headers=headers)
@@ -204,6 +208,7 @@ class TestObservabilityEndpoints:
 
 # ── Core PMS regression ──
 
+@pytest.mark.live_server
 class TestPMSRegression:
     def test_rooms_list(self, headers):
         r = httpx.get(f"{API_URL}/api/pms/rooms?limit=5", headers=headers)

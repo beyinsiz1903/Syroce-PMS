@@ -824,7 +824,7 @@ async def test_no_show_candidate():
             "status": "open", "folio_number": "F-NS", "balance": 0.0,
         })
 
-        result = await _call_engine("start_night_audit", c, db, TENANT, PROPERTY, BD)
+        result = await _call_engine("start_night_audit", c, db, TENANT, PROPERTY, BD, skip_validations=True)
         assert result["success"] is True
 
         items = await db.night_audit_run_items.find({

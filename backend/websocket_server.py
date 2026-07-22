@@ -158,7 +158,7 @@ async def _resolve_user_identity(auth: Any) -> dict[str, Any] | None:
         token = token[7:]
 
     try:
-        from jose import jwt
+        import jwt
 
         from core.security import JWT_ALGORITHM, JWT_SECRET
 

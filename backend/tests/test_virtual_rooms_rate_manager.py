@@ -13,6 +13,8 @@ import requests
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
+pytestmark = pytest.mark.live_server
+
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"

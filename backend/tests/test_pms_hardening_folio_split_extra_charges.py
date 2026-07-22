@@ -117,7 +117,7 @@ def fake_db(monkeypatch):
         return str(utils_stub._n)
 
     utils_stub.generate_folio_number = _gen_folio_number
-    sys.modules["core.utils"] = utils_stub
+    monkeypatch.setitem(sys.modules, "core.utils", utils_stub)
 
     async def _noop(*_a, **_kw):
         return None

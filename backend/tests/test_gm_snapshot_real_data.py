@@ -115,6 +115,7 @@ class _FakeDB:
         self.feedback = _FakeCollection(feedback)
         self.rooms = _FakeCollection(rooms)
         self.maintenance_tasks = _FakeCollection(maintenance_tasks)
+        self.tasks = _FakeCollection([])
 
 
 class _FakeUser:

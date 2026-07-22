@@ -141,7 +141,8 @@ async def compute_room_type_inventory(
         {"$match": {"tenant_id": tenant_id, "is_active": True}},
         {"$group": {"_id": "$room_type", "count": {"$sum": 1}, "room_ids": {"$push": "$id"}}},
     ]
-    room_groups = await db.rooms.aggregate(room_type_pipeline).to_list(200)
+    with tenant_context(tenant_id):
+        room_groups = await db.rooms.aggregate(room_type_pipeline).to_list(200)
 
     # Build room_id → room_type lookup for this tenant
     room_id_to_type: dict[str, str] = {}
@@ -167,7 +168,8 @@ async def compute_room_type_inventory(
             }
         },
     ]
-    lock_groups = await db.room_night_locks.aggregate(lock_pipeline).to_list(5000)
+    with tenant_context(tenant_id):
+        lock_groups = await db.room_night_locks.aggregate(lock_pipeline).to_list(5000)
 
     # Step 3: Aggregate by room type
     type_locks: dict[str, dict[str, int]] = {}
@@ -236,10 +238,12 @@ async def reconcile_date_range(
 
         for item in inventory:
             # Check for drift against existing record
-            existing = await db.room_type_inventory.find_one(
-                {"tenant_id": tenant_id, "room_type": item["room_type"], "date": date_str},
-                {"_id": 0, "sellable": 1, "locked_booking": 1},
-            )
+            from core.tenant_db import tenant_context
+            with tenant_context(tenant_id):
+                    existing = await db.room_type_inventory.find_one(
+                    {"tenant_id": tenant_id, "room_type": item["room_type"], "date": date_str},
+                    {"_id": 0, "sellable": 1, "locked_booking": 1},
+                    )
             if existing and existing.get("sellable") != item["sellable"]:
                 drift_count += 1
                 drifts.append(
@@ -252,11 +256,12 @@ async def reconcile_date_range(
                 )
 
             # Upsert
-            await db.room_type_inventory.update_one(
-                {"tenant_id": tenant_id, "room_type": item["room_type"], "date": date_str},
-                {"$set": item},
-                upsert=True,
-            )
+            with tenant_context(tenant_id):
+                    await db.room_type_inventory.update_one(
+                    {"tenant_id": tenant_id, "room_type": item["room_type"], "date": date_str},
+                    {"$set": item},
+                    upsert=True,
+                    )
             types_processed += 1
 
         dates_processed += 1
@@ -306,7 +311,8 @@ async def get_room_type_inventory(
     if room_type:
         query["room_type"] = room_type
 
-    results = await db.room_type_inventory.find(query, {"_id": 0}).to_list(200)
+    with tenant_context(tenant_id):
+            results = await db.room_type_inventory.find(query, {"_id": 0}).to_list(200)
 
     if not results:
         # Compute on-the-fly if materialized view is empty
@@ -314,11 +320,12 @@ async def get_room_type_inventory(
         # Store for future reads
         for item in results:
             try:
-                await db.room_type_inventory.update_one(
-                    {"tenant_id": tenant_id, "room_type": item["room_type"], "date": date},
-                    {"$set": item},
-                    upsert=True,
-                )
+                with tenant_context(tenant_id):
+                        await db.room_type_inventory.update_one(
+                        {"tenant_id": tenant_id, "room_type": item["room_type"], "date": date},
+                        {"$set": item},
+                        upsert=True,
+                        )
             except Exception:
                 pass
 
@@ -340,13 +347,14 @@ async def get_inventory_summary(
     start = datetime.fromisoformat(start_date).date()
     end = datetime.fromisoformat(end_date).date()
 
-    all_items = await db.room_type_inventory.find(
-        {
+    with tenant_context(tenant_id):
+            all_items = await db.room_type_inventory.find(
+            {
             "tenant_id": tenant_id,
             "date": {"$gte": start.isoformat(), "$lte": end.isoformat()},
-        },
-        {"_id": 0},
-    ).to_list(5000)
+            },
+            {"_id": 0},
+            ).to_list(5000)
 
     # Aggregate by room type
     type_summary: dict[str, dict[str, Any]] = {}

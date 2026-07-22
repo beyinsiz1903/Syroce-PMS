@@ -15,6 +15,8 @@ from datetime import datetime, timedelta
 
 BASE_URL = os.environ.get('VITE_BACKEND_URL', 'http://localhost:8001').rstrip('/')
 
+pytestmark = pytest.mark.live_server
+
 
 class TestAuthentication:
     """Test login and get auth token"""

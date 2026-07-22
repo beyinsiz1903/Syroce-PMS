@@ -302,7 +302,7 @@ async def test_dry_run_performs_crypto_roundtrip_verification():
 
     records = [
         {"collection": "provider_secrets", "doc": {
-            "id": "1", "tenant_id": "t1", "provider": "p1", "property_id": "prop1",
+            "_id": "1", "tenant_id": "t1", "provider": "p1", "property_id": "prop1",
             "encrypted_payload": {"key": "old_val"},
         }}
     ]
@@ -326,9 +326,9 @@ async def test_restore_readback_mismatch_is_fatal():
 
     mock_coll.replace_one.return_value.matched_count = 1
     # find_one returns a document that differs from what we wanted to restore
-    mock_coll.find_one.return_value = {"id": "1", "tenant_id": "t1", "data": "DIFFERENT"}
+    mock_coll.find_one.return_value = {"_id": "1", "tenant_id": "t1", "data": "DIFFERENT"}
 
-    doc = {"id": "1", "tenant_id": "t1", "provider": "p1", "property_id": "prop1", "data": "ORIGINAL"}
+    doc = {"_id": "1", "tenant_id": "t1", "provider": "p1", "property_id": "prop1", "data": "ORIGINAL"}
 
     with pytest.raises(RollbackVerificationError, match="Rollback read-back mismatch"):
         await restore_single_doc(mock_db, "provider_secrets", doc)
@@ -388,8 +388,8 @@ async def test_first_rollback_failure_does_not_stop_remaining_rollbacks():
     mock_svc.encrypt_dict.return_value = "new_payload"
 
     records = [
-        {"collection": "provider_secrets", "doc": {"id": "doc1", "tenant_id": "t1", "provider": "p1", "property_id": "prop1", "encrypted_payload": {"k": "v1"}}},
-        {"collection": "provider_secrets", "doc": {"id": "doc2", "tenant_id": "t1", "provider": "p1", "property_id": "prop1", "encrypted_payload": {"k": "v2"}}},
+        {"collection": "provider_secrets", "doc": {"_id": "doc1", "tenant_id": "t1", "provider": "p1", "property_id": "prop1", "encrypted_payload": {"k": "v1"}}},
+        {"collection": "provider_secrets", "doc": {"_id": "doc2", "tenant_id": "t1", "provider": "p1", "property_id": "prop1", "encrypted_payload": {"k": "v2"}}},
     ]
 
     with pytest.raises(RuntimeError, match="Aborting migration due to critical error"):
@@ -400,8 +400,8 @@ async def test_first_rollback_failure_does_not_stop_remaining_rollbacks():
 
     # doc2 rollback was first (in the rollback list)
     first_rb_filter = mock_coll.replace_one.call_args_list[0][0][0]
-    assert first_rb_filter["id"] == "doc2"
+    assert first_rb_filter["_id"] == "doc2"
 
     # doc1 rollback was second
     second_rb_filter = mock_coll.replace_one.call_args_list[1][0][0]
-    assert second_rb_filter["id"] == "doc1"
+    assert second_rb_filter["_id"] == "doc1"

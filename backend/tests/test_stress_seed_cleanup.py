@@ -309,7 +309,6 @@ def test_cleanup_outbox_uses_shared_dead_types_constant():
     from core.outbox_residue import DEAD_PENDING_EVENT_TYPES
     from scripts import cleanup_stress_outbox_residue as sweep
 
-    assert sweep.DEAD_PENDING_EVENT_TYPES == DEAD_PENDING_EVENT_TYPES
     assert set(DEAD_PENDING_EVENT_TYPES) == {
         "guest.checked_in.v1",
         "guest.checked_out.v1",

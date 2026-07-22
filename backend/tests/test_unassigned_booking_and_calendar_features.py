@@ -16,10 +16,10 @@ from typing import Dict, Any, Optional
 
 BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
 
-pytestmark = pytest.mark.skipif(
+pytestmark = [pytest.mark.live_server, pytest.mark.skipif(
     not BASE_URL,
     reason="VITE_BACKEND_URL not set - integration tests require a running server"
-)
+)]
 
 
 class TestAuthentication:

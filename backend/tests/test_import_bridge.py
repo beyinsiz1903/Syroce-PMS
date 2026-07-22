@@ -295,7 +295,7 @@ async def test_import_uses_atomic_booking_core():
 
         assert success is True
         mock_atomic.assert_called_once()
-        call_doc = mock_atomic.call_args[0][0]
+        call_doc = mock_atomic.call_args.kwargs['booking_doc']
         assert call_doc["tenant_id"] == TEST_TENANT
         assert call_doc["source"]["provider"] == TEST_PROVIDER
     finally:

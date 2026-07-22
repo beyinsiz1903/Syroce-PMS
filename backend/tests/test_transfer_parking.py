@@ -140,6 +140,16 @@ def _patch(monkeypatch):
         return 0.0
 
     monkeypatch.setattr(tr, "_recalc_folio_balance", _balance)
+
+    async def _mock_get_limit(*args, **kwargs):
+        return 100
+    monkeypatch.setattr(tr, "get_tenant_limit", _mock_get_limit)
+
+    async def _mock_reserve_quota(*args, **kwargs):
+        pass
+    monkeypatch.setattr(tr, "reserve_quota", _mock_reserve_quota)
+    monkeypatch.setattr(tr, "release_quota", _mock_reserve_quota)
+
     return fake
 
 
@@ -357,17 +367,21 @@ async def test_missing_schedule_rejected(_patch):
 
 # ── Catalog RBAC ──
 async def test_catalog_create_denies_front_desk(_patch):
+    dummy_req = SimpleNamespace(headers={})
     with pytest.raises(HTTPException) as exc:
         await tr.create_resource(
-            tr.ResourceIn(name="Otopark A", kind="parking_spot", price=50.0),
+            request=dummy_req,
+            payload=tr.ResourceIn(name="Otopark A", kind="parking_spot", price=50.0),
             current_user=_user("front_desk"),
         )
     assert exc.value.status_code == 403
 
 
 async def test_catalog_create_allows_admin(_patch):
+    dummy_req = SimpleNamespace(headers={})
     out = await tr.create_resource(
-        tr.ResourceIn(name="Otopark A", kind="parking_spot", price=50.0),
+        request=dummy_req,
+        payload=tr.ResourceIn(name="Otopark A", kind="parking_spot", price=50.0),
         current_user=_user("admin"),
     )
     assert out["resource"]["kind"] == "parking_spot"
@@ -375,9 +389,11 @@ async def test_catalog_create_allows_admin(_patch):
 
 
 async def test_catalog_invalid_kind_rejected(_patch):
+    dummy_req = SimpleNamespace(headers={})
     with pytest.raises(HTTPException) as exc:
         await tr.create_resource(
-            tr.ResourceIn(name="X", kind="spaceship", price=10.0),
+            request=dummy_req,
+            payload=tr.ResourceIn(name="X", kind="spaceship", price=10.0),
             current_user=_user("admin"),
         )
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 422

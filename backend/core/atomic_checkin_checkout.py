@@ -22,6 +22,7 @@ from pymongo.read_concern import ReadConcern
 from pymongo.write_concern import WriteConcern
 
 from core.database import client, db
+from core.tenant_db import tenant_context
 
 logger = logging.getLogger("core.atomic_checkin_checkout")
 
@@ -210,16 +211,17 @@ async def check_in_booking_atomic(
 
             return {"room_id": room_id, "room_number": room.get("room_number")}
 
-    if os.environ.get("MONGO_DISABLE_TRANSACTIONS") == "1":
-        txn_result = await _txn(None)
-    else:
-        async with await client.start_session() as session:
-            txn_result = await session.with_transaction(
-                _txn,
-                read_concern=ReadConcern("snapshot"),
-                write_concern=WriteConcern("majority"),
-                read_preference=ReadPreference.PRIMARY,
-            )
+    with tenant_context(tenant_id):
+        if os.environ.get("MONGO_DISABLE_TRANSACTIONS") == "1":
+            txn_result = await _txn(None)
+        else:
+            async with await client.start_session() as session:
+                txn_result = await session.with_transaction(
+                    _txn,
+                    read_concern=ReadConcern("snapshot"),
+                    write_concern=WriteConcern("majority"),
+                    read_preference=ReadPreference.PRIMARY,
+                )
 
     room_id = txn_result["room_id"]
     room_number = txn_result["room_number"]
@@ -446,16 +448,17 @@ async def check_out_booking_atomic(
 
             return {"room_id": room_id, "guest_id": booking.get("guest_id")}
 
-    if os.environ.get("MONGO_DISABLE_TRANSACTIONS") == "1":
-        txn_result = await _txn(None)
-    else:
-        async with await client.start_session() as session:
-            txn_result = await session.with_transaction(
-                _txn,
-                read_concern=ReadConcern("snapshot"),
-                write_concern=WriteConcern("majority"),
-                read_preference=ReadPreference.PRIMARY,
-            )
+    with tenant_context(tenant_id):
+        if os.environ.get("MONGO_DISABLE_TRANSACTIONS") == "1":
+            txn_result = await _txn(None)
+        else:
+            async with await client.start_session() as session:
+                txn_result = await session.with_transaction(
+                    _txn,
+                    read_concern=ReadConcern("snapshot"),
+                    write_concern=WriteConcern("majority"),
+                    read_preference=ReadPreference.PRIMARY,
+                )
 
     room_id = txn_result["room_id"]
     guest_id = txn_result["guest_id"]

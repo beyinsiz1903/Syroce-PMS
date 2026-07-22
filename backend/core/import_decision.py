@@ -97,12 +97,14 @@ async def check_booking_source_exists(
     external_reservation_id: str,
 ) -> str | None:
     """Check if a PMS booking already exists for this source."""
-    booking = await db.bookings.find_one(
-        {
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+            booking = await db.bookings.find_one(
+            {
             "tenant_id": tenant_id,
             "source.provider": provider,
             "source.external_reservation_id": external_reservation_id,
-        },
-        {"_id": 0, "id": 1},
-    )
+            },
+            {"_id": 0, "id": 1},
+            )
     return booking.get("id") if booking else None

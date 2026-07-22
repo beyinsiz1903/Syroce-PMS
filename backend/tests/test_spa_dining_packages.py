@@ -113,6 +113,9 @@ class _MockCollection:
             return SimpleNamespace(deleted_count=1)
         return SimpleNamespace(deleted_count=0)
 
+    async def create_index(self, keys, **kwargs):
+        return "mock_index"
+
 
 class _FakeDB:
     def __init__(self):

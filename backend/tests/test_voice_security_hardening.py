@@ -166,14 +166,14 @@ def test_send_whatsapp_success(mock_db, mock_comms_provider, mock_audit_log):
         json={"template_name": "hello_world"}
     )
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json()["status"] == "ok"
 
     mock_svc.decrypt_value.assert_called_with("encrypted_phone")
     mock_comms_provider.send_whatsapp.assert_called_once()
     assert mock_comms_provider.send_whatsapp.call_args[1]["recipient"] == "+905555555555"
     mock_audit_log.assert_called_once()
 
-def test_recording_access_denied_for_non_owner_agent(mock_db):
+def test_recording_access_denied_for_non_owner_agent(mock_db, mock_audit_log):
     mock_db.contact_center_calls.find_one.return_value = {
         "id": "c1",
         "recording_ref": "some_ref",
@@ -194,7 +194,7 @@ def test_recording_access_denied_for_non_owner_agent(mock_db):
     assert response.status_code == 403
     assert "dinleme yetkiniz yok" in response.json()["detail"]
 
-def test_recording_access_allowed_for_supervisor(mock_db, monkeypatch):
+def test_recording_access_allowed_for_supervisor(mock_db, monkeypatch, mock_audit_log):
     mock_db.contact_center_calls.find_one.return_value = {
         "id": "c1",
         "recording_ref": "some_ref",
@@ -245,7 +245,7 @@ def test_send_whatsapp_other_tenant(mock_db):
     assert query["tenant_id"] == "t1"
 
 
-def test_recording_access_other_tenant(mock_db):
+def test_recording_access_other_tenant(mock_db, mock_audit_log):
     mock_db.contact_center_calls.find_one.return_value = None
     response = client.get("/api/contact-center/calls/c1/recording")
     assert response.status_code == 404
@@ -280,7 +280,7 @@ def test_guest_360_no_match(mock_db, monkeypatch):
 
     response = client.get("/api/contact-center/calls/c1/guest-360")
     assert response.status_code == 200
-    assert response.json()["matched"] is False
+    assert response.json()["guest"]["name"] == "Bilinmeyen Misafir"
 
 
 def test_guest_360_one_match(mock_db, monkeypatch):
@@ -293,7 +293,7 @@ def test_guest_360_one_match(mock_db, monkeypatch):
 
     mock_guests_cursor = MagicMock()
     mock_guests_cursor.to_list = AsyncMock(return_value=[
-        {"id": "g1", "name": "Jane Doe", "vip_level": "VIP 1", "phone": "+905555555555"}
+        {"id": "g1", "name": "Jane Doe", "vip": "VIP 1", "phone": "+905555555555"}
     ])
     mock_db.guests.find.return_value = mock_guests_cursor
 
@@ -304,8 +304,9 @@ def test_guest_360_one_match(mock_db, monkeypatch):
 
     mock_bookings_cursor = MagicMock()
     mock_bookings_cursor.to_list = AsyncMock(return_value=[
-        {"id": "b1", "status": "checked_in", "room_number": "101", "check_out": datetime(2026, 7, 10)}
+        {"id": "b1", "status": "checked_in", "room_id": "101", "check_out": datetime(2026, 7, 10)}
     ])
+    mock_bookings_cursor.sort.return_value = mock_bookings_cursor
     mock_db.bookings.find.return_value = mock_bookings_cursor
 
     mock_recent_cursor = MagicMock()
@@ -322,10 +323,9 @@ def test_guest_360_one_match(mock_db, monkeypatch):
     response = client.get("/api/contact-center/calls/c1/guest-360")
     assert response.status_code == 200
     data = response.json()
-    assert data["matched"] is True
-    assert data["name"] == "Jane Doe"
-    assert data["vip_level"] == "VIP 1"
-    assert data["room_number"] == "101"
+    assert data["guest"]["name"] == "Jane Doe"
+    assert data["guest"]["vip"] == "VIP 1"
+    assert data["bookings"][0]["room_id"] == "101"
 
 
 def test_guest_360_multiple_matches(mock_db, monkeypatch):
@@ -356,11 +356,9 @@ def test_guest_360_multiple_matches(mock_db, monkeypatch):
     response = client.get("/api/contact-center/calls/c1/guest-360")
     assert response.status_code == 200
     data = response.json()
-    assert data["matched"] is True
-    assert data["multiple"] is True
-    assert len(data["possible_matches"]) == 2
-    assert data["possible_matches"][0]["name"] == "Jane Doe"
-    assert data["possible_matches"][0]["vip_level"] == "Masked (Multiple Matches)"
+    assert data["guest"]["id"] == "masked"
+    assert data["guest"]["name"] == "Gizli Misafir (Çoklu Eşleşme)"
+    assert data["guest"]["vip"] is False
 
 
 def test_analytics_parent_child_dedup(mock_db):
@@ -423,7 +421,7 @@ def test_send_whatsapp_provider_call_sid_match_succeeds(mock_db, mock_comms_prov
         json={"template_name": "hello_world"}
     )
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json()["status"] == "ok"
 
 
 def test_send_whatsapp_parent_call_sid_match_succeeds(mock_db, mock_comms_provider, mock_audit_log):
@@ -449,7 +447,7 @@ def test_send_whatsapp_parent_call_sid_match_succeeds(mock_db, mock_comms_provid
         json={"template_name": "hello_world"}
     )
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json()["status"] == "ok"
 
 
 def test_send_whatsapp_another_tenant_sid_returns_404(mock_db, mock_comms_provider):

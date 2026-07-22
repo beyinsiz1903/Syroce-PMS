@@ -456,6 +456,7 @@ class TestRolloutFramework:
     not BASE_URL,
     reason="VITE_BACKEND_URL not set — skipping live API tests"
 )
+@pytest.mark.live_server
 class TestAPIEndpoints:
     """Test the API endpoints via httpx."""
 

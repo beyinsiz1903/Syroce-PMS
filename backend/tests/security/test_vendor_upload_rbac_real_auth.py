@@ -33,10 +33,11 @@ def create_vendor_token(vendor_id="vendor_A"):
     return jwt.encode(payload, VENDOR_JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 @pytest.fixture(autouse=True)
-def clear_overrides():
-    app.dependency_overrides.clear()
+def isolated_dependency_overrides():
+    previous = app.dependency_overrides.copy()
     yield
     app.dependency_overrides.clear()
+    app.dependency_overrides.update(previous)
 
 @pytest.fixture
 def temp_vendor_file():

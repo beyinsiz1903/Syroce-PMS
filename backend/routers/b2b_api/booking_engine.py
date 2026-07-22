@@ -775,7 +775,7 @@ async def _b2b_create_reservation_impl(
         # v106 architect follow-up (race-safety): direct insert_one bypassed
         # the room_night_locks atomic guard → double-booking risk on B2B API
         # bookings. Now routed through create_booking_atomic.
-        booking_doc = await create_booking_atomic(booking_doc)
+        booking_doc = await create_booking_atomic(tenant_id=tenant_id, booking_doc=booking_doc)
     except GuardRejection as gr:
         await release_credit(credit_handle)
         await release_allotment(allot_handle)

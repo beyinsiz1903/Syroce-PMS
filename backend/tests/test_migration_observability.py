@@ -11,6 +11,7 @@ if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
     pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
 
 from core.database import db
+from core.tenant_db import tenant_context
 from shared_kernel.migration_observability import build_health_score, build_stale_pending_triage
 
 
@@ -41,39 +42,51 @@ class TestMigrationObservability:
         self.session.headers.update({'Authorization': f'Bearer {self.token}'})
         yield
         if self.created_outbox_event_ids:
-            db.delegate['outbox_events'].delete_many({'event_id': {'$in': self.created_outbox_event_ids}})
+            with tenant_context(tenant_id):
+                with tenant_context(tenant_id):
+                    with tenant_context(tenant_id):
+                        db.delegate['outbox_events'].delete_many({'event_id': {'$in': self.created_outbox_event_ids}})
         if self.created_audit_log_ids:
-            db.delegate['audit_logs'].delete_many({'id': {'$in': self.created_audit_log_ids}})
+            with tenant_context(tenant_id):
+                with tenant_context(tenant_id):
+                    with tenant_context(tenant_id):
+                        db.delegate['audit_logs'].delete_many({'id': {'$in': self.created_audit_log_ids}})
 
     def _insert_outbox_event(self, tenant_id: str, event_type: str, status: str = 'pending'):
         event_id = str(uuid.uuid4())
-        db.delegate['outbox_events'].insert_one({
-            'event_id': event_id,
-            'event_type': event_type,
-            'tenant_id': tenant_id,
-            'correlation_id': f'corr-{uuid.uuid4()}',
-            'payload': {'seed': True},
-            'status': status,
-            'created_at': datetime.now(timezone.utc).isoformat(),
-            'reservation_id': str(uuid.uuid4()),
-        })
+        with tenant_context(tenant_id):
+            with tenant_context(tenant_id):
+                with tenant_context(tenant_id):
+                    db.delegate['outbox_events'].insert_one({
+                    'event_id': event_id,
+                    'event_type': event_type,
+                    'tenant_id': tenant_id,
+                    'correlation_id': f'corr-{uuid.uuid4()}',
+                    'payload': {'seed': True},
+                    'status': status,
+                    'created_at': datetime.now(timezone.utc).isoformat(),
+                    'reservation_id': str(uuid.uuid4()),
+                    })
         self.created_outbox_event_ids.append(event_id)
         return event_id
 
     def _insert_audit_log(self, tenant_id: str, action: str, entity_id: str):
         audit_id = str(uuid.uuid4())
-        db.delegate['audit_logs'].insert_one({
-            'id': audit_id,
-            'actor_id': 'observer-test',
-            'tenant_id': tenant_id,
-            'property_id': tenant_id,
-            'entity_type': 'reservation',
-            'entity_id': entity_id,
-            'action': action,
-            'metadata': {'seed': True},
-            'correlation_id': f'corr-{uuid.uuid4()}',
-            'timestamp': datetime.now(timezone.utc).isoformat(),
-        })
+        with tenant_context(tenant_id):
+            with tenant_context(tenant_id):
+                with tenant_context(tenant_id):
+                    db.delegate['audit_logs'].insert_one({
+                    'id': audit_id,
+                    'actor_id': 'observer-test',
+                    'tenant_id': tenant_id,
+                    'property_id': tenant_id,
+                    'entity_type': 'reservation',
+                    'entity_id': entity_id,
+                    'action': action,
+                    'metadata': {'seed': True},
+                    'correlation_id': f'corr-{uuid.uuid4()}',
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                    })
         self.created_audit_log_ids.append(audit_id)
 
     def test_observability_endpoint_returns_expected_sections(self):

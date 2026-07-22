@@ -14,9 +14,16 @@ def mock_get_current_user(role="admin", tenant_id="tenantA"):
         return User(id="user123", tenant_id=tenant_id, email="test@hotel.com", name="Test", role=role, is_active=True)
     return _mock
 
-def test_upload_anonymous_blocked():
-    # Clear overrides to test anonymous
+@pytest.fixture(autouse=True)
+def isolated_dependency_overrides():
+    previous = app.dependency_overrides.copy()
+    yield
     app.dependency_overrides.clear()
+    app.dependency_overrides.update(previous)
+
+def test_upload_anonymous_blocked():
+    # Overrides are already isolated by the fixture; test anonymous explicitly
+    app.dependency_overrides.pop(get_optional_user, None)
     response = client.get("/api/uploads/tenantA/rooms/123/file.jpg")
     assert response.status_code == 401
 

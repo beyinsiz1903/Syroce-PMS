@@ -15,6 +15,15 @@ def reload_security_module():
     return sys.modules["core.security"]
 
 @pytest.fixture(autouse=True)
+def preserve_security_module():
+    original_module = sys.modules.get("core.security")
+    yield
+    if original_module is not None:
+        sys.modules["core.security"] = original_module
+    else:
+        sys.modules.pop("core.security", None)
+
+@pytest.fixture(autouse=True)
 def reset_jwt_secret():
     original = os.environ.get("JWT_SECRET")
     yield

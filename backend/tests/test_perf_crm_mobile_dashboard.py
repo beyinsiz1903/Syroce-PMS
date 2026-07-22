@@ -151,29 +151,31 @@ async def test_crm_customers_returning_and_new_filters(monkeypatch):
 
 async def test_crm_customers_unknown_type_matches_nothing(monkeypatch):
     # legacy: an unknown type filtered EVERY customer out -> empty -> sample data
+    # new: returns empty properly (no sample data)
     facet = [{"page": [], "stats": []}]
     fake_db = _patch_crm(monkeypatch, facet)
     res = await crm.get_sales_customers(customer_type="bogus", limit=10,
                                         credentials=None)
     assert {"$match": {"_id": {"$exists": False}}} in _facet_stage(fake_db)["page"]
-    # empty -> sample fallback (same shape/counts as legacy)
-    assert len(res["customers"]) == 2
-    assert res["count"] == 2
-    assert res["vip_count"] == 1
-    assert res["corporate_count"] == 1
+
+    assert len(res["customers"]) == 0
+    assert res["count"] == 0
+    assert res["vip_count"] == 0
+    assert res["corporate_count"] == 0
+    assert res["data_available"] is False
 
 
-async def test_crm_customers_empty_returns_sample(monkeypatch):
+async def test_crm_customers_empty_returns_empty(monkeypatch):
     facet = [{"page": [], "stats": [{"count": 0, "vip_count": 0,
                                      "corporate_count": 0}]}]
     fake_db = _patch_crm(monkeypatch, facet)
     res = await crm.get_sales_customers(customer_type=None, limit=50,
                                         credentials=None)
-    assert res["count"] == 2          # sample fallback len
-    assert res["vip_count"] == 1
-    assert res["corporate_count"] == 1
-    names = {c["guest_name"] for c in res["customers"]}
-    assert names == {"Ahmet Yılmaz", "Ayşe Demir"}
+    assert res["count"] == 0
+    assert res["vip_count"] == 0
+    assert res["corporate_count"] == 0
+    assert len(res["customers"]) == 0
+    assert res["data_available"] is False
 
 
 # --------------------------------------------------------------------------- #

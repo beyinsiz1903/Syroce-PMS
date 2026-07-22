@@ -846,7 +846,7 @@ async def agency_portal_create_reservation(
     # unique compound index on (tenant_id, room_id, night_date) prevents
     # concurrent agency requests from claiming the same room.
     try:
-        booking_doc = await create_booking_atomic(booking_doc)
+        booking_doc = await create_booking_atomic(tenant_id=current_user.tenant_id, booking_doc=booking_doc)
     except BookingConflictError as conflict_err:
         raise HTTPException(status_code=409, detail=str(conflict_err))
 

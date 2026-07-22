@@ -100,7 +100,7 @@ def _mock_db_with_user(target_doc: dict | None) -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_get_granted_permissions_returns_current_list_for_admin():
-    from domains.admin import router as admin_router
+    from domains.admin.router import users as admin_router
 
     target_doc = {
         "id": "user-fd-1", "tenant_id": "tenant-A",
@@ -124,7 +124,7 @@ async def test_get_granted_permissions_filters_legacy_unknown_perms():
     """Legacy/whitelist-dışı izinler GET cevabında sızdırılmamalı; aksi
     halde frontend toggle PATCH'e bunları geri taşır ve 400 alır
     (admin için fiili kilit)."""
-    from domains.admin import router as admin_router
+    from domains.admin.router import users as admin_router
 
     target_doc = {
         "id": "user-fd-1", "tenant_id": "tenant-A",
@@ -143,7 +143,7 @@ async def test_get_granted_permissions_filters_legacy_unknown_perms():
 
 @pytest.mark.asyncio
 async def test_get_granted_permissions_404_for_missing_user():
-    from domains.admin import router as admin_router
+    from domains.admin.router import users as admin_router
 
     mock_db = _mock_db_with_user(None)
     admin = _make_user(role=UserRole.ADMIN, tenant_id="tenant-A")
@@ -160,7 +160,7 @@ async def test_get_granted_permissions_404_for_missing_user():
 async def test_get_granted_permissions_blocks_admin_other_tenant():
     """ADMIN başka tenant'a okumaya da yazmaya da bakamasın — bilgi sızdırma
     olmasın diye 404 (aynı kod yolunu kullanır)."""
-    from domains.admin import router as admin_router
+    from domains.admin.router import users as admin_router
 
     target_doc = {
         "id": "user-x", "tenant_id": "tenant-B",
@@ -179,7 +179,7 @@ async def test_get_granted_permissions_blocks_admin_other_tenant():
 
 @pytest.mark.asyncio
 async def test_get_granted_permissions_blocks_non_admin_role():
-    from domains.admin import router as admin_router
+    from domains.admin.router import users as admin_router
 
     target_doc = {
         "id": "user-fd-2", "tenant_id": "tenant-A",
@@ -201,7 +201,7 @@ async def test_get_granted_permissions_blocks_non_admin_role():
 
 @pytest.mark.asyncio
 async def test_update_granted_permissions_writes_set_and_audit():
-    from domains.admin import router as admin_router
+    from domains.admin.router import users as admin_router
     from domains.admin.schemas import UpdateGrantedPermissionsRequest
 
     target_doc = {
@@ -238,7 +238,7 @@ async def test_update_granted_permissions_writes_set_and_audit():
 
 @pytest.mark.asyncio
 async def test_update_granted_permissions_rejects_non_whitelisted():
-    from domains.admin import router as admin_router
+    from domains.admin.router import users as admin_router
     from domains.admin.schemas import UpdateGrantedPermissionsRequest
 
     target_doc = {
@@ -260,7 +260,7 @@ async def test_update_granted_permissions_rejects_non_whitelisted():
 
 @pytest.mark.asyncio
 async def test_update_granted_permissions_blocks_admin_other_tenant():
-    from domains.admin import router as admin_router
+    from domains.admin.router import users as admin_router
     from domains.admin.schemas import UpdateGrantedPermissionsRequest
 
     target_doc = {
@@ -283,7 +283,7 @@ async def test_update_granted_permissions_blocks_admin_other_tenant():
 
 @pytest.mark.asyncio
 async def test_update_granted_permissions_dedupes_input():
-    from domains.admin import router as admin_router
+    from domains.admin.router import users as admin_router
     from domains.admin.schemas import UpdateGrantedPermissionsRequest
 
     target_doc = {
@@ -307,7 +307,7 @@ async def test_update_granted_permissions_dedupes_input():
 
 @pytest.mark.asyncio
 async def test_list_tenant_users_admin_returns_own_tenant_only():
-    from domains.admin import router as admin_router
+    from domains.admin.router import users as admin_router
 
     docs = [
         {"id": "u1", "tenant_id": "tenant-A", "name": "Bilge", "email": "b@x",
@@ -348,22 +348,29 @@ async def test_list_tenant_users_admin_returns_own_tenant_only():
 
 
 @pytest.mark.asyncio
-async def test_list_tenant_users_super_admin_requires_tenant_id():
-    from domains.admin import router as admin_router
+async def test_list_tenant_users_super_admin_defaults_to_own_tenant():
+    from domains.admin.router import users as admin_router
 
     mock_db = MagicMock()
+    # Async iterator mock for cursor
+    async def async_iter(*args, **kwargs):
+        yield {"id": "1", "email": "test@test.com", "name": "Test"}
+    mock_db.users.find.return_value.__aiter__ = async_iter
+
     sa = _make_user(role=UserRole.SUPER_ADMIN, tenant_id="tenant-A")
     with patch.object(admin_router, "db", mock_db):
-        with pytest.raises(HTTPException) as exc:
-            await admin_router.list_tenant_users(
+        with patch("domains.admin.router.users.decrypt_user_doc", return_value={"id": "1", "email": "test@test.com", "name": "Test"}):
+            result = await admin_router.list_tenant_users(
                 tenant_id=None, current_user=sa,
             )
-    assert exc.value.status_code == 400
+    assert result["tenant_id"] == "tenant-A"
+    assert len(result["users"]) == 1
+    mock_db.users.find.assert_called_once_with({"tenant_id": "tenant-A"})
 
 
 @pytest.mark.asyncio
 async def test_list_tenant_users_blocks_non_admin():
-    from domains.admin import router as admin_router
+    from domains.admin.router import users as admin_router
 
     mock_db = MagicMock()
     fd = _make_user(role=UserRole.FRONT_DESK, tenant_id="tenant-A")
@@ -377,7 +384,7 @@ async def test_list_tenant_users_blocks_non_admin():
 
 @pytest.mark.asyncio
 async def test_update_granted_permissions_super_admin_can_write_any_tenant():
-    from domains.admin import router as admin_router
+    from domains.admin.router import users as admin_router
     from domains.admin.schemas import UpdateGrantedPermissionsRequest
 
     target_doc = {

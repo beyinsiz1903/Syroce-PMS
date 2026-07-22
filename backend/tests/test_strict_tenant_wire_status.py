@@ -18,6 +18,8 @@ import subprocess
 import pytest
 import requests
 
+pytestmark = pytest.mark.live_server
+
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://test-api.syroce.local").rstrip("/")
 
 # Test credentials

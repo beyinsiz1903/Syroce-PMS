@@ -1,3 +1,5 @@
+import errno
+
 """Tests for StaticDisconnectSilencerMiddleware.
 
 The middleware must swallow ONLY the benign uvicorn client-disconnect
@@ -114,7 +116,7 @@ def test_swallows_oserror_eio_on_static_js():
     # the response has started (bytes were flushing) → benign peer-gone.
     before = get_static_disconnect_swallow_count()
     mw = StaticDisconnectSilencerMiddleware(
-        _app_start_then_raise(OSError(5, "Input/output error"))
+        _app_start_then_raise(OSError(errno.EIO, "Input/output error"))
     )
     _run(mw, _scope("GET", "/js/vendor-radix-abc.js"))  # must NOT raise
     assert get_static_disconnect_swallow_count() == before + 1
@@ -130,7 +132,7 @@ def test_swallows_broken_pipe_on_static_asset():
 
 def test_swallows_connection_reset_on_static_image():
     mw = StaticDisconnectSilencerMiddleware(
-        _app_start_then_raise(ConnectionResetError(104, "Connection reset by peer"))
+        _app_start_then_raise(ConnectionResetError(errno.ECONNRESET, "Connection reset by peer"))
     )
     _run(mw, _scope("GET", "/api/uploads/photo.png"))  # static by extension
 
@@ -139,7 +141,7 @@ def test_reraises_disconnect_oserror_before_response_started():
     # EIO BEFORE any bytes flush (failed open / first read) is a real disk/IO
     # fault, NOT a peer-gone write failure → must page even on a static path.
     mw = StaticDisconnectSilencerMiddleware(
-        _raising_app(OSError(5, "Input/output error"))
+        _raising_app(OSError(errno.EIO, "Input/output error"))
     )
     with pytest.raises(OSError):
         _run(mw, _scope("GET", "/js/index-abc123.js"))
@@ -166,7 +168,7 @@ def test_reraises_oserror_without_errno_on_static_path():
 def test_reraises_disconnect_oserror_on_api_path():
     # A peer-gone errno (response started) on a NON-static API path must page.
     mw = StaticDisconnectSilencerMiddleware(
-        _app_start_then_raise(OSError(5, "Input/output error"))
+        _app_start_then_raise(OSError(errno.EIO, "Input/output error"))
     )
     with pytest.raises(OSError):
         _run(mw, _scope("GET", "/api/pms/bookings"))
@@ -185,7 +187,7 @@ def test_contextvar_set_after_benign_swallow_in_same_context():
     # task/context immediately after the swallow.
     async def scenario():
         mw = StaticDisconnectSilencerMiddleware(
-            _app_start_then_raise(OSError(5, "Input/output error"))
+            _app_start_then_raise(OSError(errno.EIO, "Input/output error"))
         )
         await mw(_scope("GET", "/js/a.js"), _noop_receive, _noop_send)
         return benign_static_disconnect_in_flight()

@@ -82,7 +82,7 @@ class TestFrontDeskService:
 
     @pytest.mark.asyncio
     async def test_checkin_not_found(self):
-        with patch('modules.pms_core.front_desk_service.db') as mock_db:
+        with patch('core.atomic_checkin_checkout.db') as mock_db:
             mock_db.bookings.find_one = AsyncMock(return_value=None)
             result = await self.fd.check_in("t1", "b1", "u1", "Admin")
             assert result["success"] is False
@@ -90,7 +90,7 @@ class TestFrontDeskService:
 
     @pytest.mark.asyncio
     async def test_checkin_invalid_state(self):
-        with patch('modules.pms_core.front_desk_service.db') as mock_db:
+        with patch('core.atomic_checkin_checkout.db') as mock_db:
             mock_db.bookings.find_one = AsyncMock(return_value={
                 "id": "b1", "status": "checked_out", "room_id": "r1",
                 "check_in": "2026-03-12T14:00:00", "check_out": "2026-03-14T12:00:00"
@@ -100,7 +100,7 @@ class TestFrontDeskService:
 
     @pytest.mark.asyncio
     async def test_checkout_folio_blocker(self):
-        with patch('modules.pms_core.front_desk_service.db') as mock_db:
+        with patch('core.atomic_checkin_checkout.db') as mock_db:
             mock_db.bookings.find_one = AsyncMock(return_value={
                 "id": "b1", "status": "checked_in", "room_id": "r1"
             })

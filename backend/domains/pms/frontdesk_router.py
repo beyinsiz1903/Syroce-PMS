@@ -962,7 +962,7 @@ async def create_walk_in_booking(
             # Past this point a booking may be durably created; do NOT release the
             # idempotency slot on later failures (the room-night unique lock is the
             # duplicate backstop, and the slot's TTL frees a genuinely stuck key).
-            await create_booking_atomic(booking_dict)
+            await create_booking_atomic(tenant_id=current_user.tenant_id, booking_doc=booking_dict)
         except BookingConflictError as e:
             raise HTTPException(status_code=409, detail=str(e))
 

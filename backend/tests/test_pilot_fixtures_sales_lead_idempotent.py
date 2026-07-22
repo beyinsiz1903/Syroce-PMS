@@ -47,6 +47,7 @@ class _FakeDB:
         self.room_blocks = _FakeColl()
         self.kbs_reports = _FakeColl()
         self.mice_opportunities = _FakeColl()
+        self.payroll_runs = _FakeColl()
 
 
 @pytest.fixture

@@ -21,16 +21,48 @@ def _ts() -> str:
 
 async def _cleanup(tenant_id: str) -> None:
     from core.database import db
-    from core.tenant_db import audit_retention_context
-    await db.bookings.delete_many({"tenant_id": tenant_id})
-    await db.room_night_locks.delete_many({"tenant_id": tenant_id})
+    from core.tenant_db import audit_retention_context, tenant_context
+    with tenant_context(tenant_id):
+        await db.bookings.delete_many({"tenant_id": tenant_id})
+        await db.room_night_locks.delete_many({"tenant_id": tenant_id})
     # audit_logs is append-only (Task #568); test teardown uses the sanctioned escape.
     with audit_retention_context():
         await db.audit_logs.delete_many({"tenant_id": tenant_id})
 
 
+
 @pytest.fixture
-async def isolated_tenant():
+async def duplicate_lock_environment():
+    from core.tenant_db import get_system_db
+    from core.atomic_booking import ensure_booking_indexes
+    from pymongo.errors import OperationFailure
+    
+    system_db = get_system_db()
+    collection = system_db.room_night_locks
+
+    try:
+        await collection.drop_index("ux_room_night")
+    except OperationFailure as exc:
+        if exc.code != 27:  # IndexNotFound
+            raise
+
+    try:
+        yield
+    finally:
+        await ensure_booking_indexes()
+
+        indexes = [
+            index async for index in collection.list_indexes()
+        ]
+
+        assert any(
+            index.get("name") == "ux_room_night"
+            and index.get("unique") is True
+            for index in indexes
+        )
+
+@pytest.fixture
+async def isolated_tenant(duplicate_lock_environment):
     tid = f"{TEST_TENANT_PREFIX}{_ts()}_{uuid.uuid4().hex[:8]}"
     yield tid
     try:
@@ -41,24 +73,28 @@ async def isolated_tenant():
 
 async def _seed_lock(tenant_id, room_id, night, booking_id, lock_type="booking"):
     from core.database import db
-    await db.room_night_locks.insert_one({
-        "tenant_id": tenant_id,
-        "room_id": room_id,
-        "night_date": night,
-        "booking_id": booking_id,
-        "lock_type": lock_type,
-        "created_at": datetime.now(UTC).isoformat(),
-    })
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+        await db.room_night_locks.insert_one({
+            "tenant_id": tenant_id,
+            "room_id": room_id,
+            "night_date": night,
+            "booking_id": booking_id,
+            "lock_type": lock_type,
+            "created_at": datetime.now(UTC).isoformat(),
+        })
 
 
 async def _seed_booking(tenant_id, booking_id, status):
     from core.database import db
-    await db.bookings.insert_one({
-        "id": booking_id,
-        "tenant_id": tenant_id,
-        "status": status,
-        "created_at": datetime.now(UTC).isoformat(),
-    })
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+        await db.bookings.insert_one({
+            "id": booking_id,
+            "tenant_id": tenant_id,
+            "status": status,
+            "created_at": datetime.now(UTC).isoformat(),
+        })
 
 
 async def test_auto_safe_keeps_active_retires_terminal(isolated_tenant):
@@ -108,9 +144,11 @@ async def test_auto_safe_keeps_active_retires_terminal(isolated_tenant):
     assert len(remaining) == 1
     assert remaining[0]["booking_id"] == active_id
 
-    audit = await db.audit_logs.find_one(
-        {"tenant_id": tid, "action": "AUTO_RESOLVE_RNL_DUPLICATE"}
-    )
+    from core.tenant_db import tenant_context
+    with tenant_context(tid):
+        audit = await db.audit_logs.find_one(
+            {"tenant_id": tid, "action": "AUTO_RESOLVE_RNL_DUPLICATE"}
+        )
     assert audit is not None
     assert audit["changes"]["keep_booking_id"] == active_id
     assert cancelled_id in audit["changes"]["retire_booking_ids"]
@@ -211,9 +249,11 @@ async def test_manual_resolve_keeps_chosen_booking(isolated_tenant):
     assert len(remaining) == 1
     assert remaining[0]["booking_id"] == keep
 
-    audit = await db.audit_logs.find_one(
-        {"tenant_id": tid, "action": "MANUAL_RESOLVE_RNL_DUPLICATE"}
-    )
+    from core.tenant_db import tenant_context
+    with tenant_context(tid):
+        audit = await db.audit_logs.find_one(
+            {"tenant_id": tid, "action": "MANUAL_RESOLVE_RNL_DUPLICATE"}
+        )
     assert audit is not None
     assert audit["changes"]["keep_booking_id"] == keep
     assert retire in audit["changes"]["retire_booking_ids"]
@@ -258,9 +298,11 @@ async def test_manual_resolve_guards_reject_invalid_input(isolated_tenant):
     assert r3["applied"] is False
 
     # nothing deleted
-    cnt = await db.room_night_locks.count_documents(
-        {"tenant_id": tid, "room_id": room_id, "night_date": night}
-    )
+    from core.tenant_db import tenant_context
+    with tenant_context(tid):
+        cnt = await db.room_night_locks.count_documents(
+            {"tenant_id": tid, "room_id": room_id, "night_date": night}
+        )
     assert cnt == 2
 
 

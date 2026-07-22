@@ -249,7 +249,7 @@ async def upload_rooming_list(
             from core.atomic_booking import BookingConflictError, create_booking_atomic
 
             try:
-                await create_booking_atomic(booking)
+                await create_booking_atomic(tenant_id=current_user.tenant_id, booking_doc=booking)
             except BookingConflictError as e:
                 errors.append(f"Row {idx + 1}: {str(e)}")
                 continue
@@ -494,7 +494,7 @@ async def assign_group_rooms(
             already = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1})
         if already is None:
             try:
-                await create_booking_atomic(booking)
+                await create_booking_atomic(tenant_id=current_user.tenant_id, booking_doc=booking)
             except BookingConflictError as e:
                 # Release only while nothing durable has been written yet.
                 if not created_bookings:
@@ -639,7 +639,7 @@ async def use_block_room(
         from core.atomic_booking import BookingConflictError, create_booking_atomic
 
         try:
-            await create_booking_atomic(booking.copy())
+            await create_booking_atomic(tenant_id=current_user.tenant_id, booking_doc=booking.copy())
         except BookingConflictError as e:
             # Nothing durable yet (atomic insert failed) -> safe to release.
             await guard.release()

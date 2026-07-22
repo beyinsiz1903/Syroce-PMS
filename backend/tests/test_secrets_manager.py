@@ -238,6 +238,11 @@ async def test_local_health_check():
 # ── AWS Provider Tests (Mocked, sync-like) ───────────────────────────
 
 def _make_aws_provider():
+    import sys
+    sys.modules["boto3"] = MagicMock()
+    sys.modules["botocore"] = MagicMock()
+    sys.modules["botocore.config"] = MagicMock()
+
     with patch("boto3.client") as mock_boto:
         mock_client = MagicMock()
         mock_boto.return_value = mock_client

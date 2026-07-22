@@ -49,7 +49,7 @@ class _Coll:
         self.docs.append(dict(doc))
         return SimpleNamespace(inserted_id=doc.get("_id", "x"))
 
-    async def update_one(self, flt, update, upsert=False):
+    async def update_one(self, flt, update, upsert=False, **kwargs):
         for d in self.docs:
             if all(d.get(k) == v for k, v in flt.items()):
                 if "$set" in update:
@@ -267,21 +267,22 @@ async def test_payment_replay_with_same_key_returns_same_row(_patch, fake_user):
     assert _patch.payments.insert_calls == 1
 
 
-async def test_payment_no_key_creates_two_rows(_patch, fake_user):
+async def test_payment_no_key_short_window_dedup(_patch, fake_user):
     r1 = await folio_router.post_payment_to_folio(
         folio_id="F1",
         payment_data=_payment_payload(),
         request=_FakeRequest(),
         current_user=fake_user,
     )
-    r2 = await folio_router.post_payment_to_folio(
-        folio_id="F1",
-        payment_data=_payment_payload(),
-        request=_FakeRequest(),
-        current_user=fake_user,
-    )
-    assert r1.id != r2.id
-    assert _patch.payments.insert_calls == 2
+    with pytest.raises(HTTPException) as exc:
+        r2 = await folio_router.post_payment_to_folio(
+            folio_id="F1",
+            payment_data=_payment_payload(),
+            request=_FakeRequest(),
+            current_user=fake_user,
+        )
+    assert exc.value.status_code == 409
+    assert _patch.payments.insert_calls == 1
 
 
 async def test_charge_replay_with_x_prefixed_header(_patch, fake_user):

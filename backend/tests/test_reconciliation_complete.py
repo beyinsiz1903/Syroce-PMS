@@ -429,8 +429,7 @@ class TestCredentialVault:
 
     def test_mask_credentials(self):
         masked = CredentialVault.mask_credentials({"token": "abcdef123456", "hr_id": "999"})
-        assert masked["token"].startswith("abcd")
-        assert "****" in masked["token"]
+        assert masked["token"] == "********3456"
         assert masked["hr_id"] == "****"
 
     def test_encrypt_empty_value(self):

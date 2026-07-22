@@ -39,7 +39,7 @@ class _Coll:
                 return {k: v for k, v in d.items()}
         return None
 
-    async def insert_one(self, doc):
+    async def insert_one(self, doc, session=None):
         self.insert_calls += 1
         if "_id" in doc:
             for d in self.docs:
@@ -48,7 +48,7 @@ class _Coll:
         self.docs.append(dict(doc))
         return SimpleNamespace(inserted_id=doc.get("_id", "x"))
 
-    async def update_one(self, flt, update, upsert=False):
+    async def update_one(self, flt, update, upsert=False, session=None):
         self.update_calls += 1
         for d in self.docs:
             if all(d.get(k) == v for k, v in flt.items()):
@@ -57,7 +57,7 @@ class _Coll:
                 return SimpleNamespace(matched_count=1, modified_count=1)
         return SimpleNamespace(matched_count=0, modified_count=0)
 
-    async def delete_one(self, flt):
+    async def delete_one(self, flt, session=None):
         for i, d in enumerate(list(self.docs)):
             if all(d.get(k) == v for k, v in flt.items()):
                 self.docs.pop(i)
@@ -207,7 +207,7 @@ def _patch(monkeypatch):
 
     utils_stub.generate_folio_number = _gen_folio_number
     utils_stub.calculate_folio_balance = _calc_balance
-    sys.modules["core.utils"] = utils_stub
+    monkeypatch.setitem(sys.modules, "core.utils", utils_stub)
 
     return fake_db
 

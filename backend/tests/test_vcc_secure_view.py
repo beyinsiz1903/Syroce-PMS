@@ -17,6 +17,8 @@ import uuid
 
 BASE_URL = os.environ.get('VITE_BACKEND_URL', 'https://test-api.syroce.local')
 
+pytestmark = pytest.mark.live_server
+
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASSWORD = "demo123"

@@ -34,7 +34,7 @@ async def test_pilot_demo_seed_data_generation():
     # 2. Verify data counts
     tenant = await _raw_db.tenants.find_one({"_id": TENANT_ID})
     assert tenant is not None
-    assert tenant["name"] == "Syroce Demo Hotel"
+    assert tenant["name"] == "Syroce Pilot Demo Hotel"
 
     users_count = await _raw_db.users.count_documents({"tenant_id": TENANT_ID})
     assert users_count == 4  # GM, FrontDesk, Housekeeping, Finance

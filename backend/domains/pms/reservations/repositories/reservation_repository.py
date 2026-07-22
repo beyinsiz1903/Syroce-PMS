@@ -56,10 +56,10 @@ class ReservationRepository:
         return await cls.collection.count_documents(query)
 
     @classmethod
-    async def insert(cls, booking_dict: dict[str, Any]) -> None:
+    async def insert(cls, tenant_id: str, booking_dict: dict[str, Any]) -> None:
         from core.atomic_booking import create_booking_atomic
 
-        await create_booking_atomic(booking_dict)
+        await create_booking_atomic(tenant_id=tenant_id, booking_doc=booking_dict)
 
     @classmethod
     async def update(cls, tenant_id: str, booking_id: str, update_data: dict[str, Any]) -> bool:

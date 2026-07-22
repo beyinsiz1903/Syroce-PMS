@@ -558,7 +558,7 @@ async def b2b_upload_rooming_list(
         # bypassed atomic lock — concurrent group operators could over-pick
         # the same allocated room. Now routed through create_booking_atomic.
         try:
-            booking_doc = await create_booking_atomic(booking_doc)
+            booking_doc = await create_booking_atomic(tenant_id=tenant_id, booking_doc=booking_doc)
         except BookingConflictError as conflict_err:
             raise HTTPException(status_code=409, detail=str(conflict_err))
         created.append({"guest_name": entry.guest_name, "booking_id": booking_id, "confirmation_code": conf_code})

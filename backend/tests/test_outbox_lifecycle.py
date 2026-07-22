@@ -7,7 +7,7 @@ import pytest
 if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
     pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
 
-from core.database import db
+from core.tenant_db import get_system_db
 from shared_kernel.migration_observability import MigrationObservabilityService
 from shared_kernel.outbox_lifecycle import OutboxLifecycleWorker
 
@@ -40,18 +40,18 @@ def test_outbox_worker_processes_pending_event_to_processed():
     async def _run():
         tenant_id = f"tenant-{uuid.uuid4()}"
         event = _build_event(tenant_id=tenant_id, event_type="reservation.created.v1")
-        await db.outbox_events.insert_one(event)
+        await get_system_db().outbox_events.insert_one(event)
 
         worker = OutboxLifecycleWorker(batch_size=1, poll_interval_seconds=0.01, backoff_base_seconds=0.01, drain_pause_seconds=0)
         try:
             await worker.process_batch(limit=1)
-            stored = await db.outbox_events.find_one({"event_id": event["event_id"]}, {"_id": 0})
+            stored = await get_system_db().outbox_events.find_one({"event_id": event["event_id"]}, {"_id": 0})
             assert stored["status"] == "processed"
             assert stored["processed_at"]
             assert stored["attempt_count"] == 1
             assert stored.get("last_error") is None
         finally:
-            await db.outbox_events.delete_many({"tenant_id": tenant_id})
+            await get_system_db().outbox_events.delete_many({"tenant_id": tenant_id})
 
     run_async(_run())
 
@@ -64,21 +64,21 @@ def test_outbox_worker_retries_then_parks_forced_failure():
             event_type="folio.opened.v1",
             payload={"force_fail": True, "force_fail_message": "boom"},
         )
-        await db.outbox_events.insert_one(event)
+        await get_system_db().outbox_events.insert_one(event)
 
         worker = OutboxLifecycleWorker(batch_size=1, poll_interval_seconds=0.01, backoff_base_seconds=0, drain_pause_seconds=0, max_retries=3)
         try:
             await worker.process_batch(limit=1)
             await worker.process_batch(limit=1)
             await worker.process_batch(limit=1)
-            stored = await db.outbox_events.find_one({"event_id": event["event_id"]}, {"_id": 0})
+            stored = await get_system_db().outbox_events.find_one({"event_id": event["event_id"]}, {"_id": 0})
             assert stored["status"] == "parked"
             assert stored["retry_count"] == 3
             assert stored["parked_at"]
             assert stored["parked_reason"] == "retry_limit_exceeded"
             assert stored["last_error"] == "boom"
         finally:
-            await db.outbox_events.delete_many({"tenant_id": tenant_id})
+            await get_system_db().outbox_events.delete_many({"tenant_id": tenant_id})
 
     run_async(_run())
 
@@ -122,11 +122,14 @@ def test_migration_observability_exposes_lifecycle_counts_and_ages():
             ) | {"parked_at": now.isoformat(), "parked_reason": "retry_limit_exceeded", "last_error": "boom"},
         ]
 
-        await db.outbox_events.insert_many(docs)
+        await get_system_db().outbox_events.insert_many(docs)
 
         service = MigrationObservabilityService()
         try:
-            payload = await service.get_dashboard(tenant_id)
+            from core.tenant_db import tenant_context
+            with tenant_context(tenant_id):
+                payload = await service.get_dashboard(tenant_id)
+
             lifecycle = payload["outbox"]["lifecycle"]
             queue_depth = payload["outbox"]["queue_depth"]
             assert lifecycle["pending_count"] == 1
@@ -138,6 +141,6 @@ def test_migration_observability_exposes_lifecycle_counts_and_ages():
             assert lifecycle["oldest_failed_age_minutes"] is not None
             assert queue_depth["stale_pending"] == 1
         finally:
-            await db.outbox_events.delete_many({"tenant_id": tenant_id})
+            await get_system_db().outbox_events.delete_many({"tenant_id": tenant_id})
 
     run_async(_run())

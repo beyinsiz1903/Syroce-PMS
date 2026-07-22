@@ -19,16 +19,17 @@ from datetime import UTC, datetime, timedelta
 import jwt as pyjwt
 import pytest
 import requests
+
+pytestmark = pytest.mark.live_server
 from pymongo import MongoClient
 
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
 DB_NAME = os.environ.get("DB_NAME", "hotel_pms")
 BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
 
-pytestmark = pytest.mark.skipif(
-    not BASE_URL,
-    reason="VITE_BACKEND_URL not set — integration tests require a running server",
-)
+pytestmark = [pytest.mark.live_server, pytest.mark.skipif(
+    not BASE_URL, reason="Backend not available at " + BASE_URL,
+)]
 
 
 def _sync_db():

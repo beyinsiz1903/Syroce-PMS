@@ -201,15 +201,13 @@ def _build_audit_app(current_user: User) -> TestClient:
 
 
 def test_security_audit_logs_rejects_non_admin_user():
-    """A FRONT_DESK user must NOT be able to read tenant audit logs."""
-    from domains.admin import router as admin_router
+    """A non-ADMIN user (e.g., FRONT_DESK) must get 403 on this endpoint."""
+    from domains.admin.router import compliance as admin_compliance_router
 
     user = _make_user(role=UserRole.FRONT_DESK)
     mock_db = MagicMock()
-    mock_db.audit_logs = MagicMock()
-    mock_db.audit_logs.find = MagicMock()  # should not be called
 
-    with patch.object(admin_router, "db", mock_db):
+    with patch.object(admin_compliance_router, "db", mock_db):
         client = _build_audit_app(user)
         resp = client.get("/api/security/audit-logs")
 
@@ -300,7 +298,7 @@ async def test_recall_within_window_does_not_write_denial_audit():
 
 def test_security_audit_logs_allows_admin_user():
     """An ADMIN user must be able to read the tenant audit log."""
-    from domains.admin import router as admin_router
+    from domains.admin.router import compliance as admin_compliance_router
 
     user = _make_user(role=UserRole.ADMIN, user_id="admin-1")
 
@@ -321,7 +319,7 @@ def test_security_audit_logs_allows_admin_user():
     mock_db.audit_logs = MagicMock()
     mock_db.audit_logs.find = MagicMock(return_value=fake_cursor)
 
-    with patch.object(admin_router, "db", mock_db):
+    with patch.object(admin_compliance_router, "db", mock_db):
         client = _build_audit_app(user)
         resp = client.get("/api/security/audit-logs")
 

@@ -326,7 +326,7 @@ async def import_ota_reservation(
     from core.atomic_booking import BookingConflictError, create_booking_atomic
 
     try:
-        await create_booking_atomic(booking_dict)
+        await create_booking_atomic(tenant_id=current_user.tenant_id, booking_doc=booking_dict)
     except BookingConflictError as e:
         raise HTTPException(status_code=409, detail=str(e))
 

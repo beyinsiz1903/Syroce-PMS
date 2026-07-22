@@ -30,6 +30,10 @@ class _FakeKitchenColl:
         self.last_update = upd
         return SimpleNamespace(matched_count=self._matched, modified_count=self._matched)
 
+    async def find_one(self, filter, projection=None):
+        # We return None so that the 404 block is triggered as expected
+        return None
+
 
 class _FakeDB:
     def __init__(self, matched: int):

@@ -47,12 +47,13 @@ def _fake_db(*, configured=None, hr=False, exely=False, pc=None):
 
 def _detect(db, **kwargs):
     """Run the async detector against a fake db, restoring the global afterwards."""
-    original = urm.db
-    urm.db = db
+    import services.cm_provider as cm_provider
+    original = cm_provider.db
+    cm_provider.db = db
     try:
-        return asyncio.run(urm._detect_active_provider(TENANT, **kwargs))
+        return asyncio.run(cm_provider._detect_active_provider(TENANT, **kwargs))
     finally:
-        urm.db = original
+        cm_provider.db = original
 
 
 def test_null_single_autodetect_exely():

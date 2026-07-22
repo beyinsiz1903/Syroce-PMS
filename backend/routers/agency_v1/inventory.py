@@ -70,14 +70,14 @@ class DuplicateReservation(Exception):
         super().__init__(f"duplicate_reservation external_id={external_id}")
 
 
-async def claim_reservation_inventory(booking_doc: dict[str, Any]) -> dict[str, Any]:
+async def claim_reservation_inventory(*, tenant_id: str, booking_doc: dict[str, Any]) -> dict[str, Any]:
     """Atomik cok-geceli envanter claim (Karar 5). Basari -> persist edilen
     booking dokumani. Catisma -> InventoryConflict (conflict_date = ilk catisan
     gece). Atomiklik/compensation tamamen `create_booking_atomic`'te."""
     from core.atomic_booking import BookingConflictError, create_booking_atomic
 
     try:
-        return await create_booking_atomic(booking_doc)
+        return await create_booking_atomic(tenant_id=tenant_id, booking_doc=booking_doc)
     except BookingConflictError as exc:
         nights = exc.conflicting_nights or []
         conflict_date = nights[0] if nights else None

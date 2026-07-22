@@ -15,25 +15,51 @@ def anyio_backend():
     return "asyncio"
 
 
-async def _get_client_and_token():
+import pytest_asyncio
+
+from unittest.mock import patch
+from core.database import _raw_db
+
+@pytest_asyncio.fixture(scope="module")
+async def seed_test_user():
+    """Idempotent local test user seed for testing."""
+    import os
+    assert os.environ.get("TESTING") == "1", "Test DB seed aborted: TESTING is not 1"
+
+    from core.security import hash_password
+    test_user = {
+        "email": "demo@hotel.com",
+        "username": "demo",
+        "hashed_password": hash_password("demo123"),
+        "role": "admin",
+        "tenant_id": "test-tenant-123"
+    }
+    await _raw_db.users.update_one({"email": "demo@hotel.com"}, {"$set": test_user}, upsert=True)
+    try:
+        yield
+    finally:
+        await _raw_db.users.delete_one({"email": "demo@hotel.com"})
+
+@pytest_asyncio.fixture
+async def auth_client(seed_test_user):
     from server import app
     transport = ASGITransport(app=app)
-    client = AsyncClient(transport=transport, base_url="http://test")
-    resp = await client.post("/api/auth/login", json={
-        "email": "demo@hotel.com",
-        "password": "demo123"
-    })
-    token = resp.json().get("access_token")
-    headers = {"Authorization": f"Bearer {token}"}
-    return client, headers
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        with patch("security.auth_throttle.enforce", return_value=None):
+            resp = await client.post("/api/auth/login", json={
+                "email": "demo@hotel.com",
+                "password": "demo123"
+            })
+            token = resp.json().get("access_token")
+        client.headers = {"Authorization": f"Bearer {token}"}
+        yield client
 
 
 # ── Summary Endpoint ───────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_infra_summary():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/summary", headers=headers)
+async def test_infra_summary(auth_client):
+    resp = await auth_client.get("/api/infra/summary")
     assert resp.status_code == 200
     data = resp.json()
     assert "redis_cluster" in data
@@ -44,216 +70,198 @@ async def test_infra_summary():
     assert "observability" in data
     assert "scaling" in data
     assert "container" in data
-    await client.aclose()
+
 
 
 # ── Redis Endpoints ────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_redis_health():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/redis/health", headers=headers)
+async def test_redis_health(auth_client):
+    resp = await auth_client.get("/api/infra/redis/health")
     assert resp.status_code == 200
     data = resp.json()
     assert "status" in data
     assert "mode" in data
-    await client.aclose()
+
 
 
 @pytest.mark.asyncio
-async def test_redis_metrics():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/redis/metrics", headers=headers)
+async def test_redis_metrics(auth_client):
+    resp = await auth_client.get("/api/infra/redis/metrics")
     assert resp.status_code == 200
     data = resp.json()
     assert "connected" in data
-    await client.aclose()
+
 
 
 @pytest.mark.asyncio
-async def test_redis_locks():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/redis/locks", headers=headers)
+async def test_redis_locks(auth_client):
+    resp = await auth_client.get("/api/infra/redis/locks")
     assert resp.status_code == 200
     data = resp.json()
     assert "metrics" in data
     assert "active_locks" in data
-    await client.aclose()
+
 
 
 # ── Worker Endpoints ───────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_workers_summary():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/workers/summary", headers=headers)
+async def test_workers_summary(auth_client):
+    resp = await auth_client.get("/api/infra/workers/summary")
     assert resp.status_code == 200
     data = resp.json()
     assert "queues" in data
     assert "total_submitted" in data
-    await client.aclose()
+
 
 
 @pytest.mark.asyncio
-async def test_workers_queues():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/workers/queues", headers=headers)
+async def test_workers_queues(auth_client):
+    resp = await auth_client.get("/api/infra/workers/queues")
     assert resp.status_code == 200
     data = resp.json()
     assert "default" in data
     assert "ml" in data
-    await client.aclose()
 
-
-@pytest.mark.asyncio
-async def test_workers_failures():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/workers/failures", headers=headers)
-    assert resp.status_code == 200
-    assert isinstance(resp.json(), list)
-    await client.aclose()
 
 
 @pytest.mark.asyncio
-async def test_workers_stuck():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/workers/stuck", headers=headers)
+async def test_workers_failures(auth_client):
+    resp = await auth_client.get("/api/infra/workers/failures")
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
-    await client.aclose()
+
+
+
+@pytest.mark.asyncio
+async def test_workers_stuck(auth_client):
+    resp = await auth_client.get("/api/infra/workers/stuck")
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)
+
 
 
 # ── Secrets Endpoints ──────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_secrets_health():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/secrets/health", headers=headers)
+async def test_secrets_health(auth_client):
+    resp = await auth_client.get("/api/infra/secrets/health")
     assert resp.status_code == 200
     data = resp.json()
     assert data["provider"] == "env"
     assert data["status"] == "healthy"
-    await client.aclose()
+
 
 
 @pytest.mark.asyncio
-async def test_secrets_audit():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/secrets/audit", headers=headers)
+async def test_secrets_audit(auth_client):
+    resp = await auth_client.get("/api/infra/secrets/audit")
     assert resp.status_code == 200
     data = resp.json()
     assert "access_log" in data
     assert "metrics" in data
-    await client.aclose()
+
 
 
 # ── Backup Endpoints ───────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_backup_status():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/backup/status", headers=headers)
+async def test_backup_status(auth_client):
+    resp = await auth_client.get("/api/infra/backup/status")
     assert resp.status_code == 200
     data = resp.json()
     assert "enabled" in data
     assert "rpo_target" in data
     assert "critical_collections" in data
-    await client.aclose()
+
 
 
 @pytest.mark.asyncio
-async def test_backup_history():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/backup/history", headers=headers)
+async def test_backup_history(auth_client):
+    resp = await auth_client.get("/api/infra/backup/history")
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
-    await client.aclose()
+
 
 
 @pytest.mark.asyncio
-async def test_backup_trigger():
-    client, headers = await _get_client_and_token()
-    resp = await client.post("/api/infra/backup/trigger", headers=headers)
+async def test_backup_trigger(auth_client):
+    resp = await auth_client.post("/api/infra/backup/trigger")
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "backup_triggered"
-    await client.aclose()
+
 
 
 @pytest.mark.asyncio
-async def test_backup_cleanup():
-    client, headers = await _get_client_and_token()
-    resp = await client.post("/api/infra/backup/cleanup", headers=headers)
+async def test_backup_cleanup(auth_client):
+    resp = await auth_client.post("/api/infra/backup/cleanup")
     assert resp.status_code == 200
     data = resp.json()
     assert "removed" in data
-    await client.aclose()
+
 
 
 # ── Observability Endpoints ────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_observability_status():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/observability/status", headers=headers)
+async def test_observability_status(auth_client):
+    resp = await auth_client.get("/api/infra/observability/status")
     assert resp.status_code == 200
     data = resp.json()
     assert "otel" in data
     assert "sentry" in data
-    await client.aclose()
+
 
 
 @pytest.mark.asyncio
-async def test_observability_metrics():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/observability/metrics", headers=headers)
+async def test_observability_metrics(auth_client):
+    resp = await auth_client.get("/api/infra/observability/metrics")
     assert resp.status_code == 200
     data = resp.json()
     assert "latency" in data
     assert "counters" in data
-    await client.aclose()
+
 
 
 # ── Scaling Endpoints ──────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_scaling_summary():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/scaling/summary", headers=headers)
+async def test_scaling_summary(auth_client):
+    resp = await auth_client.get("/api/infra/scaling/summary")
     assert resp.status_code == 200
     data = resp.json()
     assert "scaling_mode" in data
     assert "total_instances" in data
-    await client.aclose()
+
 
 
 @pytest.mark.asyncio
-async def test_scaling_instances():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/scaling/instances", headers=headers)
+async def test_scaling_instances(auth_client):
+    resp = await auth_client.get("/api/infra/scaling/instances")
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
-    await client.aclose()
+
 
 
 @pytest.mark.asyncio
-async def test_stateless_check():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/scaling/stateless-check", headers=headers)
+async def test_stateless_check(auth_client):
+    resp = await auth_client.get("/api/infra/scaling/stateless-check")
     assert resp.status_code == 200
     data = resp.json()
     assert "ready_for_scaling" in data
     assert "checks" in data
-    await client.aclose()
+
 
 
 @pytest.mark.asyncio
-async def test_scaling_readiness_no_auth():
+async def test_scaling_readiness_no_auth(auth_client):
     """Readiness probe should work without auth for load balancers."""
     from server import app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/api/infra/scaling/readiness")
+        resp = await auth_client.get("/api/infra/scaling/readiness")
         assert resp.status_code == 200
         data = resp.json()
         assert data["ready"] is True
@@ -262,21 +270,20 @@ async def test_scaling_readiness_no_auth():
 # ── Container Endpoint ─────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_container_info():
-    client, headers = await _get_client_and_token()
-    resp = await client.get("/api/infra/container/info", headers=headers)
+async def test_container_info(auth_client):
+    resp = await auth_client.get("/api/infra/container/info")
     assert resp.status_code == 200
     data = resp.json()
     assert "is_containerized" in data
     assert "python_version" in data
     assert "environment_vars_present" in data
-    await client.aclose()
+
 
 
 # ── Auth Required ──────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_summary_requires_auth():
+async def test_summary_requires_auth(auth_client):
     from server import app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

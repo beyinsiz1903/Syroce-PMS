@@ -38,7 +38,7 @@ class TestCoerceExcelValueUnit:
     """Direct unit tests for `_coerce_excel_value` helper (Task #246 case c)."""
 
     def setup_method(self):
-        from backend.routers.report_builder import _coerce_excel_value  # type: ignore
+        from routers.report_builder import _coerce_excel_value  # type: ignore
         self.fn = _coerce_excel_value
 
     def test_none_to_empty(self):
@@ -154,7 +154,7 @@ class TestCoerceToDateUnit:
     """Direct unit tests for `_coerce_to_date` helper (Task #246 case e)."""
 
     def setup_method(self):
-        from backend.routers.departments.reports import _coerce_to_date  # type: ignore
+        from routers.departments.reports import _coerce_to_date  # type: ignore
         self.fn = _coerce_to_date
 
     def test_iso_string(self):
@@ -204,6 +204,7 @@ def auth_headers():
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
+@pytest.mark.live_server
 @pytestmark_http
 class TestBuilderExcelExportRegression:
     """Integration: POST /api/reports/builder/export/excel — Task #246 case a,b."""
@@ -250,6 +251,7 @@ class TestBuilderExcelExportRegression:
         assert r.content.startswith(XLSX_MAGIC)
 
 
+@pytest.mark.live_server
 @pytestmark_http
 class TestCompanyAgingExcelRegression:
     """Integration: GET /api/reports/company-aging/excel — Task #246 case d."""

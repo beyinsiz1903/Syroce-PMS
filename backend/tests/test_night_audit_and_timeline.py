@@ -1,3 +1,4 @@
+import uuid
 """
 Test Suite — Night Audit Core Business Logic, Audit Timeline API,
 Operational Metrics, and Module Boundary Imports.
@@ -74,7 +75,7 @@ async def _skip_if_atlas_cap_full(db):
 async def test_run_night_audit_basic(night_audit_svc, _skip_if_atlas_cap_full):
     """Night audit run should produce a summary with correct fields."""
     from common.context import OperationContext
-    ctx = OperationContext(tenant_id="test_na_basic", actor_id="test_user", actor_role="admin")
+    ctx = OperationContext(tenant_id=f"test_na_basic_{uuid.uuid4().hex}", actor_id="test_user", actor_role="admin")
     bd = (datetime.now(timezone.utc) + timedelta(days=100)).date().isoformat()
 
     result = await night_audit_svc.run_night_audit(ctx, business_date=bd, skip_validations=True, dry_run=True)
@@ -91,12 +92,13 @@ async def test_run_night_audit_basic(night_audit_svc, _skip_if_atlas_cap_full):
 async def test_run_night_audit_idempotency(night_audit_svc, db, _skip_if_atlas_cap_full):
     """Consecutive runs should be blocked without force_rerun."""
     from common.context import OperationContext
-    ctx = OperationContext(tenant_id="test_na_idem", actor_id="test_user", actor_role="admin")
+    tid = f"test_na_idem_{uuid.uuid4().hex}"
+    ctx = OperationContext(tenant_id=tid, actor_id="test_user", actor_role="admin")
     bd = (datetime.now(timezone.utc) + timedelta(days=200)).date().isoformat()
 
     # Cleanup
-    await db.night_audit_runs.delete_many({"tenant_id": "test_na_idem"})
-    await db.night_audit_locks.delete_many({"tenant_id": "test_na_idem"})
+    await db.night_audit_runs.delete_many({"tenant_id": tid})
+    await db.night_audit_locks.delete_many({"tenant_id": tid})
 
     r1 = await night_audit_svc.run_night_audit(ctx, business_date=bd, skip_validations=True)
     assert r1.ok is True
@@ -106,18 +108,19 @@ async def test_run_night_audit_idempotency(night_audit_svc, db, _skip_if_atlas_c
     assert r2.code == "ALREADY_COMPLETED"
 
     # Cleanup
-    await db.night_audit_runs.delete_many({"tenant_id": "test_na_idem"})
-    await db.night_audit_locks.delete_many({"tenant_id": "test_na_idem"})
+    await db.night_audit_runs.delete_many({"tenant_id": tid})
+    await db.night_audit_locks.delete_many({"tenant_id": tid})
 
 
 async def test_run_night_audit_force_rerun(night_audit_svc, db, _skip_if_atlas_cap_full):
     """Force rerun should bypass idempotency."""
     from common.context import OperationContext
-    ctx = OperationContext(tenant_id="test_na_rerun", actor_id="test_user", actor_role="admin")
+    tid = f"test_na_rerun_{uuid.uuid4().hex}"
+    ctx = OperationContext(tenant_id=tid, actor_id="test_user", actor_role="admin")
     bd = (datetime.now(timezone.utc) + timedelta(days=300)).date().isoformat()
 
-    await db.night_audit_runs.delete_many({"tenant_id": "test_na_rerun"})
-    await db.night_audit_locks.delete_many({"tenant_id": "test_na_rerun"})
+    await db.night_audit_runs.delete_many({"tenant_id": tid})
+    await db.night_audit_locks.delete_many({"tenant_id": tid})
 
     r1 = await night_audit_svc.run_night_audit(ctx, business_date=bd, skip_validations=True)
     assert r1.ok is True
@@ -126,8 +129,8 @@ async def test_run_night_audit_force_rerun(night_audit_svc, db, _skip_if_atlas_c
     assert r2.ok is True
     assert r2.data["is_rerun"] is True
 
-    await db.night_audit_runs.delete_many({"tenant_id": "test_na_rerun"})
-    await db.night_audit_locks.delete_many({"tenant_id": "test_na_rerun"})
+    await db.night_audit_runs.delete_many({"tenant_id": tid})
+    await db.night_audit_locks.delete_many({"tenant_id": tid})
 
 
 async def test_business_date_retrieval(night_audit_svc):
@@ -153,14 +156,15 @@ async def test_audit_history_retrieval(night_audit_svc):
 async def test_dry_run_no_db_mutations(night_audit_svc, db, _skip_if_atlas_cap_full):
     """Dry run should not persist anything to DB."""
     from common.context import OperationContext
-    ctx = OperationContext(tenant_id="test_na_dry", actor_id="test_user", actor_role="admin")
+    tid = f"test_na_dry_{uuid.uuid4().hex}"
+    ctx = OperationContext(tenant_id=tid, actor_id="test_user", actor_role="admin")
     bd = (datetime.now(timezone.utc) + timedelta(days=400)).date().isoformat()
 
     r = await night_audit_svc.run_night_audit(ctx, business_date=bd, skip_validations=True, dry_run=True)
     assert r.ok is True
 
     count = await db.night_audit_runs.count_documents({
-        "tenant_id": "test_na_dry", "business_date": bd,
+        "tenant_id": tid, "business_date": bd,
     })
     assert count == 0
 

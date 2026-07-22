@@ -1,3 +1,4 @@
+from unittest.mock import patch, AsyncMock
 """
 Test: Overbooking Alert Emission (CM-Hardening Turu #1a, May 2026)
 ==================================================================
@@ -43,30 +44,34 @@ def _iso(dt: datetime) -> str:
 
 async def _seed_room(tenant_id: str) -> str:
     room_id = f"alert-test-room-{uuid.uuid4().hex[:8]}"
-    await db.rooms.insert_one({
-        "id": room_id,
-        "tenant_id": tenant_id,
-        "room_number": f"AT{uuid.uuid4().hex[:4].upper()}",
-        "room_type": "standard",
-        "status": "available",
-        "created_at": datetime.now(UTC).isoformat(),
-    })
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+        await db.rooms.insert_one({
+            "id": room_id,
+            "tenant_id": tenant_id,
+            "room_number": f"AT{uuid.uuid4().hex[:4].upper()}",
+            "room_type": "standard",
+            "status": "available",
+            "created_at": datetime.now(UTC).isoformat(),
+        })
     return room_id
 
 
 async def _cleanup(tenant_id: str, room_id: str, booking_ids: list[str]):
-    await db.rooms.delete_one({"id": room_id, "tenant_id": tenant_id})
-    if booking_ids:
-        await db.bookings.delete_many({"id": {"$in": booking_ids}, "tenant_id": tenant_id})
-        await db.room_night_locks.delete_many({
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+        await db.rooms.delete_one({"id": room_id, "tenant_id": tenant_id})
+        if booking_ids:
+            await db.bookings.delete_many({"id": {"$in": booking_ids}, "tenant_id": tenant_id})
+            await db.room_night_locks.delete_many({
+                "tenant_id": tenant_id,
+                "booking_id": {"$in": booking_ids},
+            })
+        await db.notifications.delete_many({
             "tenant_id": tenant_id,
-            "booking_id": {"$in": booking_ids},
+            "type": "overbooking_risk",
+            "metadata.rejected_room_id": room_id,
         })
-    await db.notifications.delete_many({
-        "tenant_id": tenant_id,
-        "type": "overbooking_risk",
-        "metadata.rejected_room_id": room_id,
-    })
 
 
 def _make_booking_doc(*, tenant_id: str, room_id: str, ci: datetime, co: datetime, name: str) -> dict:
@@ -95,22 +100,24 @@ async def test_overbooking_blocked_emits_notification():
         co = ci + timedelta(days=2)
 
         first = _make_booking_doc(tenant_id=tenant_id, room_id=room_id, ci=ci, co=co, name="First")
-        await create_booking_atomic(first)
+        await create_booking_atomic(tenant_id=tenant_id, booking_doc=first)
         booking_ids.append(first["id"])
 
         second = _make_booking_doc(tenant_id=tenant_id, room_id=room_id, ci=ci, co=co, name="Second")
         with pytest.raises(BookingConflictError) as exc_info:
-            await create_booking_atomic(second)
+            await create_booking_atomic(tenant_id=tenant_id, booking_doc=second)
         booking_ids.append(second["id"])  # cleanup even though insert was blocked
         assert exc_info.value.conflict_type == "booking"
 
         # T1: notification row exists for the rejected attempt
         await asyncio.sleep(0.1)  # tiny grace for any pending awaits
-        notif = await db.notifications.find_one({
-            "tenant_id": tenant_id,
-            "type": "overbooking_risk",
-            "metadata.rejected_booking_id": second["id"],
-        })
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            notif = await db.notifications.find_one({
+                "tenant_id": tenant_id,
+                "type": "overbooking_risk",
+                "metadata.rejected_booking_id": second["id"],
+            })
         assert notif is not None, "Expected overbooking_risk notification not written"
 
         # T2: metadata carries conflict context
@@ -136,14 +143,16 @@ async def test_notification_failure_does_not_block_conflict_raise():
         co = ci + timedelta(days=2)
 
         first = _make_booking_doc(tenant_id=tenant_id, room_id=room_id, ci=ci, co=co, name="First")
-        await create_booking_atomic(first)
+        await create_booking_atomic(tenant_id=tenant_id, booking_doc=first)
         booking_ids.append(first["id"])
 
         boom = AsyncMock(side_effect=RuntimeError("simulated mongo down"))
-        with patch.object(db.notifications, "insert_one", boom):
+        from core.tenant_db import get_system_db
+        sys_db = get_system_db()
+        with patch.object(sys_db.notifications, "insert_one", boom):
             second = _make_booking_doc(tenant_id=tenant_id, room_id=room_id, ci=ci, co=co, name="Second")
             with pytest.raises(BookingConflictError):
-                await create_booking_atomic(second)
+                await create_booking_atomic(tenant_id=tenant_id, booking_doc=second)
             booking_ids.append(second["id"])
     finally:
         await _cleanup(tenant_id, room_id, booking_ids)
@@ -168,26 +177,31 @@ async def test_multi_night_conflict_reports_actual_failed_night():
         pre_ci = anchor + timedelta(days=1)
         pre_co = anchor + timedelta(days=2)
         pre = _make_booking_doc(tenant_id=tenant_id, room_id=room_id, ci=pre_ci, co=pre_co, name="Pre")
-        await create_booking_atomic(pre)
+        await create_booking_atomic(tenant_id=tenant_id, booking_doc=pre)
         booking_ids.append(pre["id"])
 
         # Conflicting attempt spans nights N, N+1, N+2 → first claims N OK, then N+1 conflicts
         att_ci = anchor
         att_co = anchor + timedelta(days=3)
         attempt = _make_booking_doc(tenant_id=tenant_id, room_id=room_id, ci=att_ci, co=att_co, name="Attempt")
-        with pytest.raises(BookingConflictError) as exc_info:
-            await create_booking_atomic(attempt)
+        with patch(
+            "core.atomic_booking._find_overlapping_active_booking",
+            new=AsyncMock(return_value=None),
+        ), pytest.raises(BookingConflictError) as exc_info:
+            await create_booking_atomic(tenant_id=tenant_id, booking_doc=attempt)
         booking_ids.append(attempt["id"])
 
         expected_night = (anchor + timedelta(days=1)).date().isoformat()
         assert exc_info.value.conflicting_nights == [expected_night]
 
         await asyncio.sleep(0.1)
-        notif = await db.notifications.find_one({
-            "tenant_id": tenant_id,
-            "type": "overbooking_risk",
-            "metadata.rejected_booking_id": attempt["id"],
-        })
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            notif = await db.notifications.find_one({
+                "tenant_id": tenant_id,
+                "type": "overbooking_risk",
+                "metadata.rejected_booking_id": attempt["id"],
+            })
         assert notif is not None, "Notification missing for multi-night conflict"
         assert notif["metadata"]["conflict_night"] == expected_night, (
             f"conflict_night should be the actual failing night ({expected_night}), "
@@ -214,14 +228,16 @@ async def test_ooo_block_conflict_emits_notification_with_ooo_type():
     ooo_booking_id = f"{OOO_PREFIX}alert-test-{uuid.uuid4().hex[:8]}"
 
     # Manually plant an OOO lock for one night (mirrors apply_room_block path)
-    await db.room_night_locks.insert_one({
-        "tenant_id": tenant_id,
-        "room_id": room_id,
-        "night_date": night_iso,
-        "booking_id": ooo_booking_id,
-        "lock_type": "ooo",
-        "created_at": datetime.now(UTC).isoformat(),
-    })
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+        await db.room_night_locks.insert_one({
+            "tenant_id": tenant_id,
+            "room_id": room_id,
+            "night_date": night_iso,
+            "booking_id": ooo_booking_id,
+            "lock_type": "ooo",
+            "created_at": datetime.now(UTC).isoformat(),
+        })
 
     try:
         attempt = _make_booking_doc(
@@ -229,17 +245,22 @@ async def test_ooo_block_conflict_emits_notification_with_ooo_type():
             ci=anchor, co=anchor + timedelta(days=1),
             name="OverlapsOOO",
         )
-        with pytest.raises(BookingConflictError) as exc_info:
-            await create_booking_atomic(attempt)
+        with patch(
+            "core.atomic_booking._find_overlapping_active_booking",
+            new=AsyncMock(return_value=None),
+        ), pytest.raises(BookingConflictError) as exc_info:
+            await create_booking_atomic(tenant_id=tenant_id, booking_doc=attempt)
         booking_ids.append(attempt["id"])
         assert exc_info.value.conflict_type == "ooo"
 
         await asyncio.sleep(0.1)
-        notif = await db.notifications.find_one({
-            "tenant_id": tenant_id,
-            "type": "overbooking_risk",
-            "metadata.rejected_booking_id": attempt["id"],
-        })
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            notif = await db.notifications.find_one({
+                "tenant_id": tenant_id,
+                "type": "overbooking_risk",
+                "metadata.rejected_booking_id": attempt["id"],
+            })
         assert notif is not None
         assert notif["metadata"]["conflict_type"] == "ooo"
         assert notif["metadata"]["conflicting_booking_id"] == ooo_booking_id
@@ -264,7 +285,7 @@ async def test_alert_delivery_failure_does_not_block_conflict_raise():
         co = ci + timedelta(days=2)
 
         first = _make_booking_doc(tenant_id=tenant_id, room_id=room_id, ci=ci, co=co, name="First")
-        await create_booking_atomic(first)
+        await create_booking_atomic(tenant_id=tenant_id, booking_doc=first)
         booking_ids.append(first["id"])
 
         boom = AsyncMock(side_effect=RuntimeError("simulated provider 5xx"))
@@ -274,16 +295,18 @@ async def test_alert_delivery_failure_does_not_block_conflict_raise():
         ):
             second = _make_booking_doc(tenant_id=tenant_id, room_id=room_id, ci=ci, co=co, name="Second")
             with pytest.raises(BookingConflictError):
-                await create_booking_atomic(second)
+                await create_booking_atomic(tenant_id=tenant_id, booking_doc=second)
             booking_ids.append(second["id"])
 
         # The notification row should still have been written (delivery is the
         # second of the two best-effort writes, not the first).
-        notif = await db.notifications.find_one({
-            "tenant_id": tenant_id,
-            "type": "overbooking_risk",
-            "metadata.rejected_booking_id": second["id"],
-        })
+        from core.tenant_db import tenant_context
+        with tenant_context(tenant_id):
+            notif = await db.notifications.find_one({
+                "tenant_id": tenant_id,
+                "type": "overbooking_risk",
+                "metadata.rejected_booking_id": second["id"],
+            })
         assert notif is not None, "Notification persistence is independent of delivery channel"
     finally:
         await _cleanup(tenant_id, room_id, booking_ids)

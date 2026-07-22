@@ -42,11 +42,11 @@ class _Coll:
                 return dict(d)
         return None
 
-    async def insert_one(self, doc):
+    async def insert_one(self, doc, session=None):
         self.docs.append(dict(doc))
         return SimpleNamespace(inserted_id="x")
 
-    async def update_one(self, flt, update, upsert=False):
+    async def update_one(self, flt, update, upsert=False, session=None):
         for d in self.docs:
             if self._match(d, flt):
                 if "$set" in update:
@@ -54,7 +54,7 @@ class _Coll:
                 return SimpleNamespace(matched_count=1, modified_count=1)
         return SimpleNamespace(matched_count=0, modified_count=0)
 
-    async def delete_one(self, flt):
+    async def delete_one(self, flt, session=None):
         for i, d in enumerate(list(self.docs)):
             if self._match(d, flt):
                 self.docs.pop(i)
@@ -153,7 +153,7 @@ def fake_db(monkeypatch):
 
     utils_stub.generate_folio_number = _gen_folio_number
     utils_stub.calculate_folio_balance = _calc_balance
-    sys.modules["core.utils"] = utils_stub
+    monkeypatch.setitem(sys.modules, "core.utils", utils_stub)
 
     async def _noop(*_a, **_kw):
         return None

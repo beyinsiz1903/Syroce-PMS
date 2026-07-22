@@ -9,6 +9,27 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from motor.motor_asyncio import AsyncIOMotorClient
+
+@pytest.fixture(autouse=True)
+async def stop_global_outbox_workers_for_isolation():
+    from shared_kernel.outbox_lifecycle import outbox_lifecycle_worker
+    from core.outbox_worker import outbox_ota_worker
+
+    workers = (
+        outbox_lifecycle_worker,
+        outbox_ota_worker,
+    )
+
+    running_before = []
+
+    for worker in workers:
+        task = getattr(worker, "_task", None)
+        if task is not None and not task.done():
+            running_before.append(worker)
+            await worker.stop()
+
+    yield
+
 from pymongo.errors import OperationFailure
 
 from core.outbox_service import (

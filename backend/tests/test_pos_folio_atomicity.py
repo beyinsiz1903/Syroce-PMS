@@ -224,11 +224,14 @@ class _Coll:
                 continue
             
             gid = {}
-            for k, v in group["_id"].items():
-                if v.startswith("$"):
-                    gid[k] = d.get(v[1:])
-                else:
-                    gid[k] = v
+            if isinstance(group["_id"], dict):
+                for k, v in group["_id"].items():
+                    if v.startswith("$"):
+                        gid[k] = d.get(v[1:])
+                    else:
+                        gid[k] = v
+            else:
+                gid = group["_id"]
                     
             gk = str(gid)
             if gk not in groups:
@@ -241,7 +244,21 @@ class _Coll:
             
             for k, v in group.items():
                 if k == "_id": continue
-                if "$sum" in v: groups[gk][k] += 1
+                if "$sum" in v:
+                    sum_val = v["$sum"]
+                    if isinstance(sum_val, dict) and "$ifNull" in sum_val:
+                        fields = sum_val["$ifNull"]
+                        val = d.get(fields[0][1:])
+                        if val is None and len(fields) > 1:
+                            if isinstance(fields[1], str) and fields[1].startswith("$"):
+                                val = d.get(fields[1][1:])
+                            else:
+                                val = fields[1]
+                        groups[gk][k] += float(val or 0)
+                    elif isinstance(sum_val, str) and sum_val.startswith("$"):
+                        groups[gk][k] += float(d.get(sum_val[1:], 0))
+                    else:
+                        groups[gk][k] += sum_val
                 if "$push" in v: groups[gk][k].append(d.get(v["$push"][1:]))
                 if "$addToSet" in v:
                     val = d.get(v["$addToSet"][1:])

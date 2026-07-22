@@ -29,14 +29,16 @@ def _ts() -> str:
 
 async def _cleanup(tenant_id: str) -> None:
     from core.database import db
-    await db.kbs_reports.delete_many({"tenant_id": tenant_id})
-    await db.kbs_alerts.delete_many({"tenant_id": tenant_id})
-    await db.kbs_alerts.delete_many({"tenant_id": "_system", "kind": "send_unconfigured"})
-    await db.bookings.delete_many({"tenant_id": tenant_id})
-    await db.guests.delete_many({"tenant_id": tenant_id})
-    await db.users.delete_many({"tenant_id": tenant_id})
-    await db.tenant_settings.delete_many({"tenant_id": tenant_id})
-    await db.kbs_sweep_state.delete_many({"tenant_id": tenant_id})
+    from core.tenant_db import get_system_db
+    sys_db = get_system_db()
+    await sys_db.kbs_reports.delete_many({"tenant_id": tenant_id})
+    await sys_db.kbs_alerts.delete_many({"tenant_id": tenant_id})
+    await sys_db.kbs_alerts.delete_many({"tenant_id": "_system", "kind": "send_unconfigured"})
+    await sys_db.bookings.delete_many({"tenant_id": tenant_id})
+    await sys_db.guests.delete_many({"tenant_id": tenant_id})
+    await sys_db.users.delete_many({"tenant_id": tenant_id})
+    await sys_db.tenant_settings.delete_many({"tenant_id": tenant_id})
+    await sys_db.kbs_sweep_state.delete_many({"tenant_id": tenant_id})
 
 
 @pytest.fixture
@@ -65,6 +67,7 @@ def _valid_payload(**over) -> dict:
 
 async def _seed_job(tenant_id, *, status="pending", payload=None, action="checkin", attempts=0):
     from core.database import db
+    from core.tenant_db import tenant_context
     job = {
         "_kind": QUEUE_KIND,
         "id": str(uuid.uuid4()),
@@ -78,10 +81,11 @@ async def _seed_job(tenant_id, *, status="pending", payload=None, action="checki
         "next_retry_at": None,
         "created_at": datetime.now(UTC).isoformat(),
     }
-    await db.bookings.insert_one({
-        "tenant_id": tenant_id, "id": job["booking_id"], "status": "checked_in",
-    })
-    await db.kbs_reports.insert_one(dict(job))
+    with tenant_context(tenant_id):
+        await db.bookings.insert_one({
+            "tenant_id": tenant_id, "id": job["booking_id"], "status": "checked_in",
+        })
+        await db.kbs_reports.insert_one(dict(job))
     return job
 
 
@@ -118,53 +122,59 @@ async def test_dispatch_active_kill_switch(monkeypatch):
 async def test_dispatch_inactive_alerts_when_pending(tenant, monkeypatch):
     """Kimlik bilgisi yok + bekleyen iş var → no-op + send_unconfigured alarmı."""
     from core.database import db
+    from core.tenant_db import get_system_db
+    sys_db = get_system_db()
     from core.kbs_dispatch import dispatch_pending_kbs_jobs
     monkeypatch.setenv("KBS_TEST_MODE", "0")
     monkeypatch.delenv("KBS_API_URL", raising=False)
     monkeypatch.delenv("KBS_API_TOKEN", raising=False)
     await _seed_job(tenant)
 
-    result = await dispatch_pending_kbs_jobs(db)
+    result = await dispatch_pending_kbs_jobs(sys_db)
 
     assert result["skipped"] == "inactive"
     assert result["pending"] >= 1
-    alert = await db.kbs_alerts.find_one({"kind": "send_unconfigured"})
+    alert = await sys_db.kbs_alerts.find_one({"kind": "send_unconfigured"})
     assert alert is not None
 
 
 async def test_dispatch_completes_in_test_mode(tenant, monkeypatch):
     """Test-mode aktif → iş done, TEST- referans, booking bayrağı + legacy report."""
     from core.database import db
+    from core.tenant_db import get_system_db
+    sys_db = get_system_db()
     from core.kbs_dispatch import dispatch_pending_kbs_jobs
     monkeypatch.setenv("KBS_TEST_MODE", "1")
     job = await _seed_job(tenant)
 
-    result = await dispatch_pending_kbs_jobs(db)
+    result = await dispatch_pending_kbs_jobs(sys_db)
 
     assert result["sent"] == 1
-    done = await db.kbs_reports.find_one({"_kind": QUEUE_KIND, "id": job["id"]})
+    done = await sys_db.kbs_reports.find_one({"_kind": QUEUE_KIND, "id": job["id"]})
     assert done["status"] == "done"
     assert done["kbs_reference"].startswith("TEST-")
     assert done.get("kbs_test") is True
-    booking = await db.bookings.find_one({"tenant_id": tenant, "id": job["booking_id"]})
+    booking = await sys_db.bookings.find_one({"tenant_id": tenant, "id": job["booking_id"]})
     assert booking["kbs_reported"] is True
-    report = await db.kbs_reports.find_one({"_kind": "report", "queue_job_id": job["id"]})
+    report = await sys_db.kbs_reports.find_one({"_kind": "report", "queue_job_id": job["id"]})
     assert report is not None and report["status"] == "submitted"
 
 
 async def test_dispatch_missing_data_dead_and_alert(tenant, monkeypatch):
     """Payload eksik → iş dead + missing_data alarmı, gönderim DENENMEZ."""
     from core.database import db
+    from core.tenant_db import get_system_db
+    sys_db = get_system_db()
     from core.kbs_dispatch import dispatch_pending_kbs_jobs
     monkeypatch.setenv("KBS_TEST_MODE", "1")
     job = await _seed_job(tenant, payload=_valid_payload(birth_date="", id_number=""))
 
-    result = await dispatch_pending_kbs_jobs(db)
+    result = await dispatch_pending_kbs_jobs(sys_db)
 
     assert result["missing_data"] == 1
-    dead = await db.kbs_reports.find_one({"_kind": QUEUE_KIND, "id": job["id"]})
+    dead = await sys_db.kbs_reports.find_one({"_kind": QUEUE_KIND, "id": job["id"]})
     assert dead["status"] == "dead"
-    alert = await db.kbs_alerts.find_one({"tenant_id": tenant, "kind": "missing_data"})
+    alert = await sys_db.kbs_alerts.find_one({"tenant_id": tenant, "kind": "missing_data"})
     assert alert is not None
     assert "birth_date" in alert["missing_fields"]
 
@@ -172,16 +182,18 @@ async def test_dispatch_missing_data_dead_and_alert(tenant, monkeypatch):
 async def test_dispatch_idempotent_no_double_send(tenant, monkeypatch):
     """Done iş ikinci koşuda yeniden claim edilmez."""
     from core.database import db
+    from core.tenant_db import get_system_db
+    sys_db = get_system_db()
     from core.kbs_dispatch import dispatch_pending_kbs_jobs
     monkeypatch.setenv("KBS_TEST_MODE", "1")
     await _seed_job(tenant)
 
-    first = await dispatch_pending_kbs_jobs(db)
-    second = await dispatch_pending_kbs_jobs(db)
+    first = await dispatch_pending_kbs_jobs(sys_db)
+    second = await dispatch_pending_kbs_jobs(sys_db)
 
     assert first["sent"] == 1
     assert second.get("sent", 0) == 0
-    assert await db.kbs_reports.count_documents(
+    assert await sys_db.kbs_reports.count_documents(
         {"_kind": QUEUE_KIND, "tenant_id": tenant, "status": "done"}
     ) == 1
 
@@ -191,32 +203,36 @@ async def test_dispatch_idempotent_no_double_send(tenant, monkeypatch):
 
 async def _seed_active_tenant(tenant_id, *, tz, check_in_day):
     from core.database import db
-    await db.users.insert_one({
-        "tenant_id": tenant_id, "id": str(uuid.uuid4()),
-        "email": f"u_{uuid.uuid4().hex[:6]}@example.com", "is_active": True,
-    })
-    await db.tenant_settings.update_one(
-        {"tenant_id": tenant_id}, {"$set": {"timezone": tz}}, upsert=True
-    )
-    booking_id = str(uuid.uuid4())
-    guest_id = str(uuid.uuid4())
-    await db.guests.insert_one({
-        "tenant_id": tenant_id, "id": guest_id,
-        "nationality": "TC", "id_number": "12345678901",
-        "birth_date": "1990-01-01",
-    })
-    await db.bookings.insert_one({
-        "tenant_id": tenant_id, "id": booking_id, "guest_id": guest_id,
-        "status": "checked_in", "guest_name": "Grace Hopper", "room_number": "201",
-        "check_in": f"{check_in_day}T12:00:00",
-        "check_out": f"{check_in_day}T23:00:00",
-        "guest_nationality": "TC",
-    })
+    from core.tenant_db import tenant_context
+    with tenant_context(tenant_id):
+        await db.users.insert_one({
+            "tenant_id": tenant_id, "id": str(uuid.uuid4()),
+            "email": f"u_{uuid.uuid4().hex[:6]}@example.com", "is_active": True,
+        })
+        await db.tenant_settings.update_one(
+            {"tenant_id": tenant_id}, {"$set": {"timezone": tz}}, upsert=True
+        )
+        booking_id = str(uuid.uuid4())
+        guest_id = str(uuid.uuid4())
+        await db.guests.insert_one({
+            "tenant_id": tenant_id, "id": guest_id,
+            "nationality": "TC", "id_number": "12345678901",
+            "birth_date": "1990-01-01",
+        })
+        await db.bookings.insert_one({
+            "tenant_id": tenant_id, "id": booking_id, "guest_id": guest_id,
+            "status": "checked_in", "guest_name": "Grace Hopper", "room_number": "201",
+            "check_in": f"{check_in_day}T12:00:00",
+            "check_out": f"{check_in_day}T23:00:00",
+            "guest_nationality": "TC",
+        })
     return booking_id
 
 
 async def test_nightly_sweep_enqueues_at_local_midnight(tenant, monkeypatch):
     from core.database import db
+    from core.tenant_db import get_system_db
+    sys_db = get_system_db()
     from celery_tasks import _kbs_nightly_sweep_dispatch_async
     monkeypatch.setenv("KBS_NIGHTLY_SWEEP", "1")
     monkeypatch.setenv("KBS_AUTO_ENQUEUE", "1")
@@ -235,7 +251,7 @@ async def test_nightly_sweep_enqueues_at_local_midnight(tenant, monkeypatch):
 
     assert result["success"] is True
     assert tenant in result["swept"]
-    job = await db.kbs_reports.find_one({
+    job = await sys_db.kbs_reports.find_one({
         "_kind": QUEUE_KIND, "tenant_id": tenant, "booking_id": booking_id,
         "action": "checkin",
     })
@@ -244,6 +260,8 @@ async def test_nightly_sweep_enqueues_at_local_midnight(tenant, monkeypatch):
 
 async def test_nightly_sweep_skips_when_not_midnight(tenant, monkeypatch):
     from core.database import db
+    from core.tenant_db import get_system_db
+    sys_db = get_system_db()
     from celery_tasks import _kbs_nightly_sweep_dispatch_async
     monkeypatch.setenv("KBS_NIGHTLY_SWEEP", "1")
 
@@ -259,7 +277,7 @@ async def test_nightly_sweep_skips_when_not_midnight(tenant, monkeypatch):
         result = await _kbs_nightly_sweep_dispatch_async()
 
     assert tenant not in result.get("swept", [])
-    assert await db.kbs_reports.count_documents(
+    assert await sys_db.kbs_reports.count_documents(
         {"_kind": QUEUE_KIND, "tenant_id": tenant}
     ) == 0
 
