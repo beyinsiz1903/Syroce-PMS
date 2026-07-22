@@ -110,49 +110,49 @@ def _build_client(monkeypatch, rows, cache):
 
 
 def test_valid_verify_returns_only_pii_safe_fields(monkeypatch):
-    client = _build_client(monkeypatch, [dict(_CERT_ROW)], _FakeCache())
-    r = client.get(f"/api/academy/verify/{VALID_CODE}")
-    assert r.status_code == 200, r.text
-    body = r.json()
+    with _build_client(monkeypatch, [dict(_CERT_ROW)], _FakeCache()) as client:
+        r = client.get(f"/api/academy/verify/{VALID_CODE}")
+        assert r.status_code == 200, r.text
+        body = r.json()
 
-    assert body["valid"] is True
-    # Exact field set — no extra keys leak now or after a refactor.
-    assert set(body.keys()) == _ALLOWED_FIELDS, body
-    for forbidden in _FORBIDDEN_FIELDS:
-        assert forbidden not in body, forbidden
+        assert body["valid"] is True
+        # Exact field set — no extra keys leak now or after a refactor.
+        assert set(body.keys()) == _ALLOWED_FIELDS, body
+        for forbidden in _FORBIDDEN_FIELDS:
+            assert forbidden not in body, forbidden
 
-    assert body["verification_code"] == VALID_CODE
-    assert body["course_title"] == "Resepsiyon Temelleri"
-    assert body["department_label"] == "Ön Büro"
-    assert body["issued_at"] == "2026-06-01"  # date-only, no time component
+        assert body["verification_code"] == VALID_CODE
+        assert body["course_title"] == "Resepsiyon Temelleri"
+        assert body["department_label"] == "Ön Büro"
+        assert body["issued_at"] == "2026-06-01"  # date-only, no time component
 
-    # Recipient name is masked: initials + asterisks, full name absent.
-    assert body["recipient_name"] == "J*** D***"
-    assert "John" not in r.text
-    assert "Doe" not in r.text
+        # Recipient name is masked: initials + asterisks, full name absent.
+        assert body["recipient_name"] == "J*** D***"
+        assert "John" not in r.text
+        assert "Doe" not in r.text
 
-    # Defence in depth: sensitive values never appear anywhere in the payload.
-    assert "john.doe@example.com" not in r.text
-    assert "95" not in r.text
-    assert "t1" not in r.text
-    assert "u1" not in r.text
+        # Defence in depth: sensitive values never appear anywhere in the payload.
+        assert "john.doe@example.com" not in r.text
+        assert "95" not in r.text
+        assert "t1" not in r.text
+        assert "u1" not in r.text
 
 
 # ── 2. No enumeration oracle: malformed == not-found ──────────────────
 
 
 def test_unknown_and_malformed_codes_return_identical_negative(monkeypatch):
-    client = _build_client(monkeypatch, [dict(_CERT_ROW)], _FakeCache())
+    with _build_client(monkeypatch, [dict(_CERT_ROW)], _FakeCache()) as client:
 
-    r_unknown = client.get(f"/api/academy/verify/{UNKNOWN_VALID_CODE}")
-    r_malformed = client.get(f"/api/academy/verify/{MALFORMED_CODE}")
+        r_unknown = client.get(f"/api/academy/verify/{UNKNOWN_VALID_CODE}")
+        r_malformed = client.get(f"/api/academy/verify/{MALFORMED_CODE}")
 
-    assert r_unknown.status_code == 200, r_unknown.text
-    assert r_malformed.status_code == 200, r_malformed.text
-    # Byte-identical negative response — no format/existence distinction.
-    assert r_unknown.json() == {"valid": False}
-    assert r_malformed.json() == {"valid": False}
-    assert r_unknown.json() == r_malformed.json()
+        assert r_unknown.status_code == 200, r_unknown.text
+        assert r_malformed.status_code == 200, r_malformed.text
+        # Byte-identical negative response — no format/existence distinction.
+        assert r_unknown.json() == {"valid": False}
+        assert r_malformed.json() == {"valid": False}
+        assert r_unknown.json() == r_malformed.json()
 
 
 def test_malformed_code_never_reads_db(monkeypatch):
@@ -171,12 +171,12 @@ def test_malformed_code_never_reads_db(monkeypatch):
 
     app = FastAPI()
     app.include_router(academy_public.router)
-    client = TestClient(app)
+    with TestClient(app) as client:
 
-    r = client.get(f"/api/academy/verify/{MALFORMED_CODE}")
-    assert r.status_code == 200
-    assert r.json() == {"valid": False}
-    assert reads == [], "malformed code must not hit the database"
+        r = client.get(f"/api/academy/verify/{MALFORMED_CODE}")
+        assert r.status_code == 200
+        assert r.json() == {"valid": False}
+        assert reads == [], "malformed code must not hit the database"
 
 
 # ── 3. Rate limit ─────────────────────────────────────────────────────
@@ -184,29 +184,29 @@ def test_malformed_code_never_reads_db(monkeypatch):
 
 def test_rate_limit_returns_429_once_exceeded(monkeypatch):
     cache = _FakeCache()
-    client = _build_client(monkeypatch, [dict(_CERT_ROW)], cache)
+    with _build_client(monkeypatch, [dict(_CERT_ROW)], cache) as client:
 
-    # The first _RL_MAX_HITS attempts are allowed (count <= max).
-    for i in range(academy_public._RL_MAX_HITS):
+        # The first _RL_MAX_HITS attempts are allowed (count <= max).
+        for i in range(academy_public._RL_MAX_HITS):
+            r = client.get(f"/api/academy/verify/{VALID_CODE}")
+            assert r.status_code == 200, f"attempt {i + 1}: {r.text}"
+
+        # The next attempt trips the limit.
         r = client.get(f"/api/academy/verify/{VALID_CODE}")
-        assert r.status_code == 200, f"attempt {i + 1}: {r.text}"
-
-    # The next attempt trips the limit.
-    r = client.get(f"/api/academy/verify/{VALID_CODE}")
-    assert r.status_code == 429, r.text
-    # A 429 must not leak certificate data.
-    assert "John" not in r.text
-    assert "verification_code" not in r.text
+        assert r.status_code == 429, r.text
+        # A 429 must not leak certificate data.
+        assert "John" not in r.text
+        assert "verification_code" not in r.text
 
 
 def test_rate_limit_fails_open_when_counter_unavailable(monkeypatch):
     """When the counter backend is down (incr returns 0) the read-only surface
     fails open — requests are still served rather than blanket-429'd."""
-    client = _build_client(monkeypatch, [dict(_CERT_ROW)],
-                           _FakeCache(return_zero=True))
-    for _ in range(academy_public._RL_MAX_HITS + 5):
-        r = client.get(f"/api/academy/verify/{VALID_CODE}")
-        assert r.status_code == 200, r.text
+    with _build_client(monkeypatch, [dict(_CERT_ROW)],
+                           _FakeCache(return_zero=True)) as client:
+        for _ in range(academy_public._RL_MAX_HITS + 5):
+            r = client.get(f"/api/academy/verify/{VALID_CODE}")
+            assert r.status_code == 200, r.text
 
 
 # ── 4. Engine helpers (route-independent unit guards) ─────────────────
