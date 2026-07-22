@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 # Normally we would import the FastAPI app here, but since we are just mocking the router logic
 # we can create a simple test app wrapper.
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -19,9 +20,12 @@ def mock_require_admin():
 
 app.dependency_overrides[require_admin] = mock_require_admin
 
-client = TestClient(app)
+@pytest.fixture
+def client():
+    with TestClient(app) as test_client:
+        yield test_client
 
-def test_answer_incoming_invoice_basic_rejection_denied():
+def test_answer_incoming_invoice_basic_rejection_denied(client):
     # Setup mock to return a BASIC invoice
     with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as mock_get:
         from datetime import UTC, datetime
@@ -54,7 +58,7 @@ def test_answer_incoming_invoice_basic_rejection_denied():
         assert response.status_code == 400
         assert "Cannot approve or reject a BASIC" in response.json()["detail"]
 
-def test_idempotency_same_uuid_diff_fingerprint():
+def test_idempotency_same_uuid_diff_fingerprint(client):
     # Mock get_by_idempotency_key to return an existing action
     with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as mock_get_inv:
         with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key") as mock_get_action:
@@ -105,7 +109,7 @@ def test_idempotency_same_uuid_diff_fingerprint():
             assert response.status_code == 409
             assert "IDEMPOTENCY_CONFLICT" in response.json()["detail"]
 
-def test_idempotency_same_uuid_same_fingerprint():
+def test_idempotency_same_uuid_same_fingerprint(client):
     # Mock get_by_idempotency_key to return an existing action WITH same fingerprint
     with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as mock_get_inv:
         with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key") as mock_get_action:
@@ -220,7 +224,7 @@ def test_real_user_tenant_is_used():
     # The return type or parameter annotation should indicate we rely on User
     assert sig.parameters["user"].annotation.__name__ == "User"
 
-def test_requested_by_uses_authenticated_user():
+def test_requested_by_uses_authenticated_user(client):
     # If we call it with a mock user, does it pass the user.id to requested_by?
     with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as mock_get_inv:
         with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key") as mock_get_action:
@@ -257,7 +261,7 @@ def test_router_uses_api_prefix():
     from api.routes.incoming_invoice_integrations import router
     assert router.prefix == "/api/integrations/incoming-invoices"
 
-def test_answered_invoice_does_not_create_second_action():
+def test_answered_invoice_does_not_create_second_action(client):
     with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as mock_get_inv:
         with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key") as mock_get_action:
             with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.has_active_action_for_invoice") as mock_has_active:
@@ -285,10 +289,10 @@ def test_answered_invoice_does_not_create_second_action():
                 assert response.status_code == 409
                 assert "INVOICE_ALREADY_ANSWERED" in response.json()["detail"]
 
-def test_conflicting_second_answer_returns_409():
-    test_answered_invoice_does_not_create_second_action()
+def test_conflicting_second_answer_returns_409(client):
+    test_answered_invoice_does_not_create_second_action(client)
 
-def test_guard_duplicate_returns_invoice_already_answered():
+def test_guard_duplicate_returns_invoice_already_answered(client):
     from models.schemas.invoice_lifecycle import ActionCreationResult
     with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as mock_get:
         mock_get.return_value = type("MockInv", (), {"answer_status": "PENDING", "profile": "COMMERCIAL", "provider_uuid": "123"})()
@@ -304,7 +308,7 @@ def test_guard_duplicate_returns_invoice_already_answered():
                     assert response.status_code == 409
                     assert "INVOICE_ALREADY_ANSWERED" in response.json()["detail"]
 
-def test_idempotency_duplicate_returns_idempotency_conflict():
+def test_idempotency_duplicate_returns_idempotency_conflict(client):
     from models.schemas.invoice_lifecycle import ActionCreationResult
     with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as mock_get:
         mock_get.return_value = type("MockInv", (), {"answer_status": "PENDING", "profile": "COMMERCIAL", "provider_uuid": "123"})()
