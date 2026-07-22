@@ -63,8 +63,10 @@ async def test_parking_spot_quota_exceeded_403(fake_user):
          m_limit.return_value = 50
          m_res.side_effect = QuotaExceededException("Quota exceeded")
 
-         with pytest.raises(QuotaExceededException):
+         with pytest.raises(HTTPException) as exc:
              await create_resource(request=req, payload=body, current_user=fake_user)
+         assert exc.value.status_code == 400
+         assert "Quota exceeded" in exc.value.detail
 
 @pytest.mark.asyncio
 async def test_parking_spot_insert_failure_rollback(fake_user):
@@ -110,8 +112,10 @@ async def test_transfer_vehicle_quota_exceeded_403(fake_user):
          m_limit.return_value = 2
          m_res.side_effect = QuotaExceededException("Quota exceeded")
 
-         with pytest.raises(QuotaExceededException):
+         with pytest.raises(HTTPException) as exc:
              await create_resource(request=req, payload=body, current_user=fake_user)
+         assert exc.value.status_code == 400
+         assert "Quota exceeded" in exc.value.detail
 
 @pytest.mark.asyncio
 async def test_iki_resource_type_kotasinin_bagimsizligi():
@@ -184,8 +188,10 @@ async def test_reactivation_quota_exceeded_db_unchanged(fake_user):
          m_limit.return_value = 50
          m_res.side_effect = QuotaExceededException("Limit dolu")
 
-         with pytest.raises(QuotaExceededException):
+         with pytest.raises(HTTPException) as exc:
              await update_resource(resource_id="res1", payload=body, current_user=fake_user)
+         assert exc.value.status_code == 400
+         assert "Limit dolu" in exc.value.detail
 
          m_db.transport_resources.update_one.assert_not_called()
 
