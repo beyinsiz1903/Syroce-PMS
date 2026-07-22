@@ -197,8 +197,8 @@ def env(monkeypatch):
         return True
     app.dependency_overrides[require_op] = _fake_require_op
 
-    client = TestClient(app)
-    return SimpleNamespace(client=client, db=fake_db, app=app, token=token)
+    with TestClient(app) as client:
+        yield SimpleNamespace(client=client, db=fake_db, app=app, token=token)
 
 
 def test_cctv_registration_and_listing(env):
