@@ -184,7 +184,7 @@ async def create_resource(
             return lock_doc["response"]
 
     limit_key = "transfer_vehicles" if payload.kind == _KIND_TRANSFER else "parking_spots"
-    limit_val = await get_tenant_limit(tenant_id, "parking", limit_key, default=0)
+    limit_val = await get_tenant_limit(tenant_id, "parking", limit_key)
 
     now = _now_iso()
     doc_id = str(uuid.uuid4())
@@ -241,7 +241,7 @@ async def update_resource(
     is_deactivating = "active" in updates and not updates["active"] and current_resource.get("active", True)
 
     if is_activating:
-        limit_val = await get_tenant_limit(tenant_id, "parking", limit_key, default=0)
+        limit_val = await get_tenant_limit(tenant_id, "parking", limit_key)
         await reserve_quota(tenant_id, "parking", limit_key, resource_id, limit_val)
 
     if "name" in updates and updates["name"]:
