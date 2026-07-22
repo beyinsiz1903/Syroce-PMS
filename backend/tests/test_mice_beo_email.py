@@ -133,8 +133,8 @@ def env(monkeypatch):
 
     app.dependency_overrides[get_current_user] = _admin_user
 
-    client = TestClient(app)
-    return SimpleNamespace(client=client, db=fake_db, sent=sent, app=app)
+    with TestClient(app) as client:
+        yield SimpleNamespace(client=client, db=fake_db, sent=sent, app=app)
 
 
 
