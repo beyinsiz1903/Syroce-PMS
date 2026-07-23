@@ -184,11 +184,6 @@ def env(monkeypatch):
         )
     app.dependency_overrides[get_current_user] = _admin_user
 
-    from modules.pms_core.role_permission_service import require_op
-    async def _fake_require_op(*args, **kwargs):
-        return True
-    app.dependency_overrides[require_op] = _fake_require_op
-
     client = TestClient(app)
     return SimpleNamespace(client=client, db=fake_db, app=app)
 
@@ -259,11 +254,9 @@ def test_cross_tenant_isolation(env):
 
 
 def test_guest_profile_analysis_unauthorized(env):
-    from modules.pms_core.role_permission_service import require_op
     from core.security import get_current_user
 
     # Store old overrides
-    old_require_op = env.app.dependency_overrides.get(require_op)
     old_current_user = env.app.dependency_overrides.get(get_current_user)
 
     # Set override for get_current_user to return a user with a non-admin role
@@ -275,8 +268,6 @@ def test_guest_profile_analysis_unauthorized(env):
         )
 
     env.app.dependency_overrides[get_current_user] = _low_perm_user
-    if require_op in env.app.dependency_overrides:
-        del env.app.dependency_overrides[require_op]
 
     try:
         r = env.client.get(f"/api/guest-relations/profiles/{_GUEST_ID}/analysis")
@@ -285,5 +276,3 @@ def test_guest_profile_analysis_unauthorized(env):
     finally:
         # Restore overrides
         env.app.dependency_overrides[get_current_user] = old_current_user
-        if old_require_op is not None:
-            env.app.dependency_overrides[require_op] = old_require_op
