@@ -3,12 +3,13 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from core.security import get_current_user
-from server import app
+from routers.mice import router as mice_router
+from routers.sales_catering import router as sales_catering_router
 
-client = TestClient(app, raise_server_exceptions=True)
 
 class FakeCursor:
     def __init__(self, items):
@@ -30,6 +31,22 @@ class FakeCursor:
         return self
     def limit(self, *args, **kwargs):
         return self
+
+
+@pytest.fixture
+def test_app():
+    app = FastAPI()
+    app.include_router(mice_router)
+    app.include_router(sales_catering_router)
+    yield app
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def client(test_app):
+    with TestClient(test_app) as test_client:
+        yield test_client
+
 
 @pytest.fixture(autouse=True)
 def mock_resource_locks():
@@ -93,7 +110,7 @@ def mock_quota():
         yield m_res, m_rel
 
 @pytest.fixture
-def override_auth_basic():
+def override_auth_basic(test_app):
     from models.schemas.identity import User
     async def override():
         return User(
@@ -108,13 +125,13 @@ def override_auth_basic():
             is_active=True,
             created_at=datetime.now(UTC)
         )
-    app.dependency_overrides[get_current_user] = override
+    test_app.dependency_overrides[get_current_user] = override
     yield
-    app.dependency_overrides.pop(get_current_user, None)
+    test_app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.fixture
-def override_auth_pro():
+def override_auth_pro(test_app):
     from models.schemas.identity import User
     async def override():
         return User(
@@ -129,9 +146,9 @@ def override_auth_pro():
             is_active=True,
             created_at=datetime.now(UTC)
         )
-    app.dependency_overrides[get_current_user] = override
+    test_app.dependency_overrides[get_current_user] = override
     yield
-    app.dependency_overrides.pop(get_current_user, None)
+    test_app.dependency_overrides.pop(get_current_user, None)
 
 @pytest.fixture
 def mock_feature():
@@ -141,7 +158,7 @@ def mock_feature():
         m.side_effect = fake_has_feature
         yield m
 
-def test_space_idempotency(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
+def test_space_idempotency(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota, client):
     from pymongo.errors import DuplicateKeyError
     m_res, m_rel = mock_quota
 
@@ -159,7 +176,7 @@ def test_space_idempotency(override_auth_basic, mock_db, mock_get_tenant_limit, 
 
     m_rel.assert_not_called()
 
-def test_event_insert_failure_rollback(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
+def test_event_insert_failure_rollback(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota, client):
     m_res, m_rel = mock_quota
 
     with patch("routers.mice.with_resource_locks") as m_lock:
@@ -175,7 +192,7 @@ def test_event_insert_failure_rollback(override_auth_basic, mock_db, mock_get_te
         m_rel.assert_called_once()
 
 
-def test_event_status_counted_to_uncounted_release(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
+def test_event_status_counted_to_uncounted_release(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota, client):
     m_res, m_rel = mock_quota
 
     async def fake_find_one(query, *args, **kwargs):
@@ -192,7 +209,7 @@ def test_event_status_counted_to_uncounted_release(override_auth_basic, mock_db,
     m_rel.assert_called_once()
     m_res.assert_not_called()
 
-def test_event_status_counted_to_uncounted_cancelled_release(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
+def test_event_status_counted_to_uncounted_cancelled_release(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota, client):
     m_res, m_rel = mock_quota
 
     async def fake_find_one(query, *args, **kwargs):
@@ -209,7 +226,7 @@ def test_event_status_counted_to_uncounted_cancelled_release(override_auth_basic
     m_rel.assert_called_once()
     m_res.assert_not_called()
 
-def test_event_status_counted_to_uncounted_lead_release(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
+def test_event_status_counted_to_uncounted_lead_release(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota, client):
     m_res, m_rel = mock_quota
 
     async def fake_find_one(query, *args, **kwargs):
@@ -226,7 +243,7 @@ def test_event_status_counted_to_uncounted_lead_release(override_auth_basic, moc
     m_rel.assert_called_once()
     m_res.assert_not_called()
 
-def test_basic_spaces_limit(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
+def test_basic_spaces_limit(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota, client):
     m_res, m_rel = mock_quota
 
     mock_get_tenant_limit.return_value = 2
@@ -244,7 +261,7 @@ def test_basic_spaces_limit(override_auth_basic, mock_db, mock_get_tenant_limit,
         assert getattr(e, "status_code", 403) == 403
     m_res.side_effect = None
 
-def test_pro_spaces_limit(override_auth_pro, mock_db, mock_get_tenant_limit, mock_quota):
+def test_pro_spaces_limit(override_auth_pro, mock_db, mock_get_tenant_limit, mock_quota, client):
     m_res, m_rel = mock_quota
 
     mock_get_tenant_limit.return_value = 10
@@ -252,7 +269,7 @@ def test_pro_spaces_limit(override_auth_pro, mock_db, mock_get_tenant_limit, moc
     assert res.status_code == 200
     m_res.assert_called_with('t1-pro', 'mice', 'spaces_limit', res.json()["id"], 10)
 
-def test_basic_events_limit(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota):
+def test_basic_events_limit(override_auth_basic, mock_db, mock_get_tenant_limit, mock_quota, client):
     m_res, m_rel = mock_quota
 
     mock_get_tenant_limit.return_value = 5
@@ -260,7 +277,7 @@ def test_basic_events_limit(override_auth_basic, mock_db, mock_get_tenant_limit,
     assert res.status_code == 200
     m_res.assert_called_with('t1', 'mice', 'concurrent_events', res.json()["id"], 5)
 
-def test_pro_events_limit(override_auth_pro, mock_db, mock_get_tenant_limit, mock_quota):
+def test_pro_events_limit(override_auth_pro, mock_db, mock_get_tenant_limit, mock_quota, client):
     m_res, m_rel = mock_quota
 
     mock_get_tenant_limit.return_value = 50
@@ -268,7 +285,7 @@ def test_pro_events_limit(override_auth_pro, mock_db, mock_get_tenant_limit, moc
     assert res.status_code == 200
     m_res.assert_called_with('t1-pro', 'mice', 'concurrent_events', res.json()["id"], 50)
 
-def test_proposals_feature_basic(override_auth_basic, mock_db, mock_feature):
+def test_proposals_feature_basic(override_auth_basic, mock_db, mock_feature, client):
     mock_feature.side_effect = None
     mock_feature.return_value = False
     try:
@@ -277,13 +294,13 @@ def test_proposals_feature_basic(override_auth_basic, mock_db, mock_feature):
     except Exception as e:
         assert getattr(e, "status_code", 403) == 403
 
-def test_proposals_feature_pro(override_auth_pro, mock_db, mock_feature):
+def test_proposals_feature_pro(override_auth_pro, mock_db, mock_feature, client):
     mock_feature.side_effect = None
     mock_feature.return_value = True
     res = client.get("/api/mice/sales/opportunities")
     assert res.status_code == 200
 
-def test_banquet_feature_basic(override_auth_basic, mock_db, mock_feature):
+def test_banquet_feature_basic(override_auth_basic, mock_db, mock_feature, client):
     mock_feature.side_effect = None
     mock_feature.return_value = False
     try:
@@ -292,7 +309,7 @@ def test_banquet_feature_basic(override_auth_basic, mock_db, mock_feature):
     except Exception as e:
         assert getattr(e, "status_code", 403) == 403
 
-def test_banquet_feature_pro(override_auth_pro, mock_db, mock_feature):
+def test_banquet_feature_pro(override_auth_pro, mock_db, mock_feature, client):
     mock_feature.side_effect = None
     mock_feature.return_value = True
     async def fake_find_one(*args, **kwargs):
@@ -301,7 +318,7 @@ def test_banquet_feature_pro(override_auth_pro, mock_db, mock_feature):
     res = client.get("/api/mice/events/123/beo")
     assert res.status_code == 200
 
-def test_space_delete_releases_quota(override_auth_basic, mock_db, mock_quota):
+def test_space_delete_releases_quota(override_auth_basic, mock_db, mock_quota, client):
     m_res, m_rel = mock_quota
     class FakeResult:
         deleted_count = 1
@@ -314,7 +331,7 @@ def test_space_delete_releases_quota(override_auth_basic, mock_db, mock_quota):
 # ── delete_event quota release tests ──────────────────────────────────────────
 
 
-def test_delete_event_active_status_releases_quota(override_auth_basic, mock_db, mock_quota):
+def test_delete_event_active_status_releases_quota(override_auth_basic, mock_db, mock_quota, client):
     """Aktif (tentative/definite/confirmed) event silinince concurrent_events kotası serbest bırakılmalı."""
     m_res, m_rel = mock_quota
 
@@ -334,7 +351,7 @@ def test_delete_event_active_status_releases_quota(override_auth_basic, mock_db,
         m_rel.assert_called_once_with("t1", "mice", "concurrent_events", "ev1")
 
 
-def test_delete_event_inactive_status_no_release(override_auth_basic, mock_db, mock_quota):
+def test_delete_event_inactive_status_no_release(override_auth_basic, mock_db, mock_quota, client):
     """Cancelled/completed event silinince release_quota ÇAĞRILMAMALI (zaten status geçişinde bırakıldı)."""
     m_res, m_rel = mock_quota
 
@@ -354,7 +371,7 @@ def test_delete_event_inactive_status_no_release(override_auth_basic, mock_db, m
         m_rel.assert_not_called()
 
 
-def test_delete_event_not_found_no_release(override_auth_basic, mock_db, mock_quota):
+def test_delete_event_not_found_no_release(override_auth_basic, mock_db, mock_quota, client):
     """Event bulunamazsa 404 dönmeli ve release_quota çağrılmamalı."""
     m_res, m_rel = mock_quota
 
@@ -370,7 +387,7 @@ def test_delete_event_not_found_no_release(override_auth_basic, mock_db, mock_qu
     m_rel.assert_not_called()
 
 
-def test_delete_event_before_none_no_release(override_auth_basic, mock_db, mock_quota):
+def test_delete_event_before_none_no_release(override_auth_basic, mock_db, mock_quota, client):
     """before=None (event DB'de yok ama delete_count=0) durumunda release olmamalı."""
     m_res, m_rel = mock_quota
 
@@ -387,7 +404,7 @@ def test_delete_event_before_none_no_release(override_auth_basic, mock_db, mock_
     m_rel.assert_not_called()
 
 
-def test_delete_event_tenant_isolation(override_auth_basic, mock_db, mock_quota):
+def test_delete_event_tenant_isolation(override_auth_basic, mock_db, mock_quota, client):
     """delete_event DB sorgusu tenant_id ile scope'lanmış olmalı."""
     m_res, m_rel = mock_quota
 
@@ -411,7 +428,12 @@ def test_delete_event_tenant_isolation(override_auth_basic, mock_db, mock_quota)
 # ── Additional delete_event edge-case tests ────────────────────────────────────
 
 
-def test_delete_event_db_failure_does_not_release(override_auth_basic, mock_db, mock_quota):
+def test_delete_event_db_failure_does_not_release(
+    test_app,
+    override_auth_basic,
+    mock_db,
+    mock_quota,
+):
     """delete_one DB exception → 500 döner; release_quota ÇAĞRILMAMALI.
 
     Quota must only be released if the delete actually succeeded.  A DB
@@ -422,10 +444,6 @@ def test_delete_event_db_failure_does_not_release(override_auth_basic, mock_db, 
     unhandled exception surfaces as a 500 HTTP response rather than a
     pytest exception propagation.
     """
-    from fastapi.testclient import TestClient as _TC
-
-    from server import app as _app
-
     m_res, m_rel = mock_quota
 
     mock_db.mice_events.find_one = AsyncMock(
@@ -433,15 +451,15 @@ def test_delete_event_db_failure_does_not_release(override_auth_basic, mock_db, 
     )
     mock_db.mice_events.delete_one = AsyncMock(side_effect=Exception("Mongo write error"))
 
-    _client = _TC(_app, raise_server_exceptions=False)
-    res = _client.delete("/api/mice/events/ev_db_err")
+    with TestClient(test_app, raise_server_exceptions=False) as error_client:
+        res = error_client.delete("/api/mice/events/ev_db_err")
 
     assert res.status_code == 500
     m_rel.assert_not_called()
 
 
 
-def test_delete_cancelled_event_does_not_release(override_auth_basic, mock_db, mock_quota):
+def test_delete_cancelled_event_does_not_release(override_auth_basic, mock_db, mock_quota, client):
     """Cancelled event silinince release_quota ÇAĞRILMAMALI (status geçişinde zaten yapıldı)."""
     m_res, m_rel = mock_quota
 
@@ -459,7 +477,7 @@ def test_delete_cancelled_event_does_not_release(override_auth_basic, mock_db, m
     m_rel.assert_not_called()
 
 
-def test_cancel_then_delete_does_not_double_release(override_auth_basic, mock_db, mock_quota):
+def test_cancel_then_delete_does_not_double_release(override_auth_basic, mock_db, mock_quota, client):
     """Status 'cancelled' → delete akışı: toplam 0 release (delete aşamasında).
 
     Bu test, status geçişi sırasında zaten release yapılmış bir event'in
@@ -484,7 +502,7 @@ def test_cancel_then_delete_does_not_double_release(override_auth_basic, mock_db
     m_rel.assert_not_called()
 
 
-def test_delete_event_uses_event_id_as_resource_id(override_auth_basic, mock_db, mock_quota):
+def test_delete_event_uses_event_id_as_resource_id(override_auth_basic, mock_db, mock_quota, client):
     """release_quota resource_id parametresi create sırasındaki event_id ile aynı olmalı.
 
     Quota ledger'i event_id key'i altında tutar; farklı bir resource_id ile
