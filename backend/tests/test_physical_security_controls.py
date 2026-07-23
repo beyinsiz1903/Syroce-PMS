@@ -191,11 +191,7 @@ def env(monkeypatch):
         )
     app.dependency_overrides[get_current_user] = _sec_user
 
-    # Override require_op
-    from modules.pms_core.role_permission_service import require_op
-    async def _fake_require_op(*args, **kwargs):
-        return True
-    app.dependency_overrides[require_op] = _fake_require_op
+
 
     with TestClient(app) as client:
         yield SimpleNamespace(client=client, db=fake_db, app=app, token=token)
