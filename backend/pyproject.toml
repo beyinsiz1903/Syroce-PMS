@@ -4,9 +4,15 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 norecursedirs = ["tests/_quarantine"]
 markers = [
+    "live_server: requires a running server or live external service",
+    "chaos_l1: level 1 chaos and resilience tests",
+    "chaos_l2: level 2 destructive or advanced chaos tests",
+    "unit: isolated tests without real external infrastructure",
+    "integration: tests combining multiple application components",
+    "e2e: end-to-end tests covering complete application flows",
+    "infra: tests depending on database, Redis, workers, schedulers, or infrastructure state",
+    "slow: tests classified as slow using measured runtime evidence",
     "ci_load: Fast load tests safe for CI (every PR)",
-    "chaos_l1: Level 1 unit chaos tests (fast, every PR)",
-    "chaos_l2: Level 2 integration resilience tests (nightly)",
     "chaos_l3: Level 3 end-to-end chaos flows (weekly)",
     "chaos_l4: Level 4 soak/burst tests (weekly/pre-pilot)",
     "chaos_crypto: Crypto-specific resilience tests",
@@ -14,7 +20,6 @@ markers = [
     "chaos_provider: Provider failure tests",
     "chaos_outbox: Outbox/worker resilience tests",
     "live_mongo: Tests that require a reachable real MongoDB; when REQUIRE_LIVE_MONGO=1 these must actually run (no skip-as-pass)",
-    "live_server: tests requiring an externally running backend or external system",
 ]
 
 [tool.ruff]
