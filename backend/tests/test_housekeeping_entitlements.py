@@ -1,13 +1,13 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from core.entitlements.quota import QuotaExceededException
 from core.security import get_current_user
-from server import app
+from routers.housekeeping import router as housekeeping_router
 
-client = TestClient(app, raise_server_exceptions=False)
 
 class FakeCursor:
     def __init__(self, items):
@@ -25,6 +25,21 @@ class FakeCursor:
         raise StopAsyncIteration
     async def to_list(self, length=None):
         return self.items
+
+
+@pytest.fixture
+def test_app():
+    app = FastAPI()
+    app.include_router(housekeeping_router)
+    yield app
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def client(test_app):
+    with TestClient(test_app, raise_server_exceptions=False) as test_client:
+        yield test_client
+
 
 @pytest.fixture
 def mock_db():
@@ -46,17 +61,18 @@ def mock_db():
         yield db
 
 @pytest.fixture
-def override_auth():
+def override_auth(test_app):
     def get_test_user():
         from models.schemas import User
         return User(id="user_1", tenant_id="tenant_1", name="Test User", role="admin", email="test@test.com")
-    app.dependency_overrides[get_current_user] = get_test_user
+    test_app.dependency_overrides[get_current_user] = get_test_user
     yield
-    app.dependency_overrides.pop(get_current_user, None)
+    test_app.dependency_overrides.pop(get_current_user, None)
 
 @pytest.fixture
 def mock_require_module():
-    with patch("routers.housekeeping.require_module_v99") as m_mod,          patch("routers.housekeeping.require_op") as m_op:
+    with patch("routers.housekeeping.require_module_v99") as m_mod, \
+         patch("routers.housekeeping.require_op") as m_op:
         def fake_dep(mod):
             async def dep(): return True
             return dep
@@ -67,8 +83,9 @@ def mock_require_module():
 
 # --- TESTS ---
 
-def test_hk_create_quota_exceeded(mock_db, override_auth, mock_require_module):
-    with patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit,          patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res:
+def test_hk_create_quota_exceeded(mock_db, override_auth, mock_require_module, client):
+    with patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
+         patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res:
 
         m_limit.return_value = 100
         m_res.side_effect = QuotaExceededException("Kota limiti asildi")
@@ -79,8 +96,10 @@ def test_hk_create_quota_exceeded(mock_db, override_auth, mock_require_module):
         assert "Kota limiti asildi" in res.json()["detail"]
 
 
-def test_hk_create_room_not_found_rollback(mock_db, override_auth, mock_require_module):
-    with patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit,          patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res,          patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
+def test_hk_create_room_not_found_rollback(mock_db, override_auth, mock_require_module, client):
+    with patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
+         patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res, \
+         patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
 
         m_limit.return_value = 100
         mock_db.rooms.find_one.return_value = None
@@ -93,8 +112,10 @@ def test_hk_create_room_not_found_rollback(mock_db, override_auth, mock_require_
         m_rel.assert_called_once()
 
 
-def test_hk_create_insert_failure_rollback(mock_db, override_auth, mock_require_module):
-    with patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit,          patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res,          patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
+def test_hk_create_insert_failure_rollback(mock_db, override_auth, mock_require_module, client):
+    with patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
+         patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res, \
+         patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
 
         m_limit.return_value = 100
         mock_db.housekeeping_tasks.insert_one.side_effect = Exception("DB Error")
@@ -107,8 +128,9 @@ def test_hk_create_insert_failure_rollback(mock_db, override_auth, mock_require_
         m_rel.assert_called_once()
 
 
-def test_hk_create_idempotency_replay(mock_db, override_auth, mock_require_module):
-    with patch("routers.housekeeping.claim_idempotency", new_callable=AsyncMock) as m_claim,          patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res:
+def test_hk_create_idempotency_replay(mock_db, override_auth, mock_require_module, client):
+    with patch("routers.housekeeping.claim_idempotency", new_callable=AsyncMock) as m_claim, \
+         patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res:
 
         m_claim.return_value = {"status": "replay", "response": {"success": True}}
 
@@ -119,8 +141,9 @@ def test_hk_create_idempotency_replay(mock_db, override_auth, mock_require_modul
         m_res.assert_not_called()
 
 
-def test_hk_create_idempotency_in_flight(mock_db, override_auth, mock_require_module):
-    with patch("routers.housekeeping.claim_idempotency", new_callable=AsyncMock) as m_claim,          patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res:
+def test_hk_create_idempotency_in_flight(mock_db, override_auth, mock_require_module, client):
+    with patch("routers.housekeeping.claim_idempotency", new_callable=AsyncMock) as m_claim, \
+         patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res:
 
         m_claim.return_value = {"status": "in_flight"}
 
@@ -131,8 +154,9 @@ def test_hk_create_idempotency_in_flight(mock_db, override_auth, mock_require_mo
         m_res.assert_not_called()
 
 
-def test_hk_update_pending_to_completed_release_once(mock_db, override_auth, mock_require_module):
-    with patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res,          patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
+def test_hk_update_pending_to_completed_release_once(mock_db, override_auth, mock_require_module, client):
+    with patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res, \
+         patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
 
         mock_db.housekeeping_tasks.find_one.return_value = {"id": "task_1", "status": "pending", "tenant_id": "tenant_1"}
 
@@ -142,8 +166,9 @@ def test_hk_update_pending_to_completed_release_once(mock_db, override_auth, moc
         m_rel.assert_called_once()
 
 
-def test_hk_update_in_progress_to_completed_release_once(mock_db, override_auth, mock_require_module):
-    with patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res,          patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
+def test_hk_update_in_progress_to_completed_release_once(mock_db, override_auth, mock_require_module, client):
+    with patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res, \
+         patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
 
         mock_db.housekeeping_tasks.find_one.return_value = {"id": "task_1", "status": "in_progress", "tenant_id": "tenant_1"}
 
@@ -153,8 +178,10 @@ def test_hk_update_in_progress_to_completed_release_once(mock_db, override_auth,
         m_rel.assert_called_once()
 
 
-def test_hk_update_completed_to_pending_reserve_once(mock_db, override_auth, mock_require_module):
-    with patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit,          patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res,          patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
+def test_hk_update_completed_to_pending_reserve_once(mock_db, override_auth, mock_require_module, client):
+    with patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
+         patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res, \
+         patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
 
         m_limit.return_value = 100
         mock_db.housekeeping_tasks.find_one.return_value = {"id": "task_1", "status": "completed", "tenant_id": "tenant_1"}
@@ -165,8 +192,10 @@ def test_hk_update_completed_to_pending_reserve_once(mock_db, override_auth, moc
         m_rel.assert_not_called()
 
 
-def test_hk_update_reactivation_db_failure_rollback(mock_db, override_auth, mock_require_module):
-    with patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit,          patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res,          patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
+def test_hk_update_reactivation_db_failure_rollback(mock_db, override_auth, mock_require_module, client):
+    with patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
+         patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res, \
+         patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
 
         m_limit.return_value = 100
         mock_db.housekeeping_tasks.find_one.return_value = {"id": "task_1", "status": "completed", "tenant_id": "tenant_1"}
@@ -178,8 +207,9 @@ def test_hk_update_reactivation_db_failure_rollback(mock_db, override_auth, mock
         m_rel.assert_called_once()
 
 
-def test_hk_update_pending_to_in_progress_no_quota_changes(mock_db, override_auth, mock_require_module):
-    with patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res,          patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
+def test_hk_update_pending_to_in_progress_no_quota_changes(mock_db, override_auth, mock_require_module, client):
+    with patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res, \
+         patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
 
         mock_db.housekeeping_tasks.find_one.return_value = {"id": "task_1", "status": "pending", "tenant_id": "tenant_1"}
 
@@ -189,8 +219,9 @@ def test_hk_update_pending_to_in_progress_no_quota_changes(mock_db, override_aut
         m_rel.assert_not_called()
 
 
-def test_hk_update_completed_to_completed_no_double_release(mock_db, override_auth, mock_require_module):
-    with patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res,          patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
+def test_hk_update_completed_to_completed_no_double_release(mock_db, override_auth, mock_require_module, client):
+    with patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res, \
+         patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
 
         mock_db.housekeeping_tasks.find_one.return_value = {"id": "task_1", "status": "completed", "tenant_id": "tenant_1"}
 
@@ -200,7 +231,7 @@ def test_hk_update_completed_to_completed_no_double_release(mock_db, override_au
         m_rel.assert_not_called()
 
 
-def test_hk_delete_pending_release_once(mock_db, override_auth, mock_require_module):
+def test_hk_delete_pending_release_once(mock_db, override_auth, mock_require_module, client):
     with patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
         mock_db.housekeeping_tasks.find_one.return_value = {"id": "task_1", "status": "pending", "tenant_id": "tenant_1"}
         mock_db.housekeeping_tasks.delete_one.return_value = MagicMock(deleted_count=1)
@@ -210,7 +241,7 @@ def test_hk_delete_pending_release_once(mock_db, override_auth, mock_require_mod
         m_rel.assert_called_once()
 
 
-def test_hk_delete_completed_release_not_called(mock_db, override_auth, mock_require_module):
+def test_hk_delete_completed_release_not_called(mock_db, override_auth, mock_require_module, client):
     with patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
         mock_db.housekeeping_tasks.find_one.return_value = {"id": "task_1", "status": "completed", "tenant_id": "tenant_1"}
         mock_db.housekeeping_tasks.delete_one.return_value = MagicMock(deleted_count=1)
@@ -220,7 +251,7 @@ def test_hk_delete_completed_release_not_called(mock_db, override_auth, mock_req
         m_rel.assert_not_called()
 
 
-def test_hk_delete_in_progress_409_release_not_called(mock_db, override_auth, mock_require_module):
+def test_hk_delete_in_progress_409_release_not_called(mock_db, override_auth, mock_require_module, client):
     with patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
         mock_db.housekeeping_tasks.find_one.return_value = {"id": "task_1", "status": "in_progress", "tenant_id": "tenant_1"}
         mock_db.housekeeping_tasks.delete_one.return_value = MagicMock(deleted_count=0)
@@ -230,12 +261,12 @@ def test_hk_delete_in_progress_409_release_not_called(mock_db, override_auth, mo
         m_rel.assert_not_called()
 
 
-def test_hk_tenant_isolation(mock_db, override_auth, mock_require_module):
+def test_hk_tenant_isolation(mock_db, override_auth, mock_require_module, client):
     # Just verify that find_one is called with tenant_id="tenant_1"
     client.delete("/api/housekeeping/tasks/task_1")
     mock_db.housekeeping_tasks.find_one.assert_any_call({"id": "task_1", "tenant_id": "tenant_1"})
 
-def test_hk_create_concurrent_same_idempotency_key(mock_db, override_auth, mock_require_module):
+def test_hk_create_concurrent_same_idempotency_key(mock_db, override_auth, mock_require_module, client):
     # This is basically the same as in-flight
     with patch("routers.housekeeping.claim_idempotency", new_callable=AsyncMock) as m_claim, \
          patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res:
@@ -252,7 +283,7 @@ def test_hk_create_concurrent_same_idempotency_key(mock_db, override_auth, mock_
 # ── /housekeeping/assign — quota + idempotency tests ──────────────────────────
 
 
-def test_assign_reserves_active_task_quota(mock_db, override_auth, mock_require_module):
+def test_assign_reserves_active_task_quota(mock_db, override_auth, mock_require_module, client):
     """/assign yeni aktif task oluşturduğu için insert öncesi reserve_quota çağrılmalı."""
     with patch("routers.housekeeping.begin_idempotency", new_callable=AsyncMock) as m_ib, \
          patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
@@ -275,7 +306,7 @@ def test_assign_reserves_active_task_quota(mock_db, override_auth, mock_require_
         assert args[2] == "active_tasks"
 
 
-def test_assign_quota_exceeded_returns_403(mock_db, override_auth, mock_require_module):
+def test_assign_quota_exceeded_returns_403(mock_db, override_auth, mock_require_module, client):
     """/assign kota doluysa 403 dönmeli ve insert çağrılmamalı."""
     with patch("routers.housekeeping.begin_idempotency", new_callable=AsyncMock) as m_ib, \
          patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
@@ -296,7 +327,7 @@ def test_assign_quota_exceeded_returns_403(mock_db, override_auth, mock_require_
         mock_guard.release.assert_called_once()
 
 
-def test_assign_insert_failure_rolls_back_quota(mock_db, override_auth, mock_require_module):
+def test_assign_insert_failure_rolls_back_quota(mock_db, override_auth, mock_require_module, client):
     """Insert başarısız olursa quota rollback yapılmalı."""
     with patch("routers.housekeeping.begin_idempotency", new_callable=AsyncMock) as m_ib, \
          patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
@@ -318,7 +349,7 @@ def test_assign_insert_failure_rolls_back_quota(mock_db, override_auth, mock_req
         m_rel.assert_called_once()
 
 
-def test_assign_idempotency_replay_no_double_reserve(mock_db, override_auth, mock_require_module):
+def test_assign_idempotency_replay_no_double_reserve(mock_db, override_auth, mock_require_module, client):
     """Idempotency replay: aynı anahtar tekrar geldiğinde quota reserve edilmemeli."""
     with patch("routers.housekeeping.begin_idempotency", new_callable=AsyncMock) as m_ib, \
          patch("routers.housekeeping.reserve_quota", new_callable=AsyncMock) as m_res:
@@ -373,7 +404,7 @@ async def test_assign_idempotency_in_flight_returns_409():
         assert exc.value.status_code == 409
 
 
-def test_assign_tenant_isolation(mock_db, override_auth, mock_require_module):
+def test_assign_tenant_isolation(mock_db, override_auth, mock_require_module, client):
     """/assign room lookup tenant_id ile scope'lanmış olmalı."""
     with patch("routers.housekeeping.begin_idempotency", new_callable=AsyncMock) as m_ib, \
          patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
@@ -392,7 +423,7 @@ def test_assign_tenant_isolation(mock_db, override_auth, mock_require_module):
         assert res.status_code == 404
         mock_db.rooms.find_one.assert_called_once_with({"id": "other_room", "tenant_id": "tenant_1"})
 
-def test_assign_insert_failure_releases_idempotency_lock(mock_db, override_auth, mock_require_module):
+def test_assign_insert_failure_releases_idempotency_lock(mock_db, override_auth, mock_require_module, client):
     """Insert hatası hem quota hem idempotency guard.release()'i tetiklemeli."""
     with patch("routers.housekeeping.begin_idempotency", new_callable=AsyncMock) as m_ib, \
          patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
@@ -418,7 +449,7 @@ def test_assign_insert_failure_releases_idempotency_lock(mock_db, override_auth,
         mock_guard.complete.assert_not_called()
 
 
-def test_assign_without_key_no_replay(mock_db, override_auth, mock_require_module):
+def test_assign_without_key_no_replay(mock_db, override_auth, mock_require_module, client):
     """Idempotency-Key header yoksa replay=None → her istek unique işlenir."""
     with patch("routers.housekeeping.begin_idempotency", new_callable=AsyncMock) as m_ib, \
          patch("routers.housekeeping.get_tenant_limit", new_callable=AsyncMock) as m_limit, \
@@ -440,7 +471,7 @@ def test_assign_without_key_no_replay(mock_db, override_auth, mock_require_modul
         mock_guard.release.assert_not_called()
 
 
-def test_complete_then_delete_no_double_release(mock_db, override_auth, mock_require_module):
+def test_complete_then_delete_no_double_release(mock_db, override_auth, mock_require_module, client):
     """Completed task silinince release_quota ÇAĞRILMAMALI (status geçişinde zaten serbest bırakıldı)."""
     with patch("routers.housekeeping.release_quota", new_callable=AsyncMock) as m_rel:
         mock_db.housekeeping_tasks.find_one.return_value = {
