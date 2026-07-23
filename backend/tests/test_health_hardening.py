@@ -1,17 +1,31 @@
-from fastapi import status
+import pytest
+from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
 from core.secrets.config import reset_config_cache
 from core.security import get_current_user
+from domains.contact_center.voice_router import public_router
+from health_check import health_router
 from models.enums import UserRole
 from models.schemas import User
-from server import app
-
-# Instantiate client globally to match test_uploads_auth.py and prevent loop mismatch errors
-client = TestClient(app)
 
 
-def test_health_check_dynamic_commit_sha(monkeypatch):
+@pytest.fixture
+def test_app():
+    app = FastAPI()
+    app.include_router(health_router)
+    app.include_router(public_router)
+    yield app
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def client(test_app):
+    with TestClient(test_app) as test_client:
+        yield test_client
+
+
+def test_health_check_dynamic_commit_sha(monkeypatch, client):
     monkeypatch.setenv("COMMIT_SHA", "dynamic_sha_12345")
     response = client.get("/api/health/")
     assert response.status_code == 200
@@ -19,7 +33,7 @@ def test_health_check_dynamic_commit_sha(monkeypatch):
     assert data["commit"] == "dynamic_sha_12345"
 
 
-def test_health_check_commit_sha_unknown(monkeypatch):
+def test_health_check_commit_sha_unknown(monkeypatch, client):
     monkeypatch.delenv("COMMIT_SHA", raising=False)
     response = client.get("/api/health/")
     assert response.status_code == 200
@@ -27,14 +41,14 @@ def test_health_check_commit_sha_unknown(monkeypatch):
     assert data["commit"] == "unknown"
 
 
-def test_debug_config_inaccessible_anonymously():
-    app.dependency_overrides.clear()
+def test_debug_config_inaccessible_anonymously(test_app, client):
+    test_app.dependency_overrides.clear()
     response = client.get("/api/voice/debug-config")
     # should return 401 unauthorized
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-def test_debug_config_returns_404_in_production(monkeypatch):
+def test_debug_config_returns_404_in_production(monkeypatch, test_app, client):
     # Emulate production env
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("SECRETS_PROVIDER", "env")
@@ -49,17 +63,17 @@ def test_debug_config_returns_404_in_production(monkeypatch):
             role=UserRole.SUPER_ADMIN,
         )
 
-    app.dependency_overrides[get_current_user] = mock_super_admin
+    test_app.dependency_overrides[get_current_user] = mock_super_admin
 
     try:
         response = client.get("/api/voice/debug-config")
         assert response.status_code == 404
     finally:
-        app.dependency_overrides.clear()
+        test_app.dependency_overrides.clear()
         reset_config_cache()
 
 
-def test_debug_config_returns_403_for_non_super_admin(monkeypatch):
+def test_debug_config_returns_403_for_non_super_admin(monkeypatch, test_app, client):
     # Emulate development env
     monkeypatch.setenv("APP_ENV", "development")
     reset_config_cache()
@@ -73,17 +87,17 @@ def test_debug_config_returns_403_for_non_super_admin(monkeypatch):
             role=UserRole.ADMIN,
         )
 
-    app.dependency_overrides[get_current_user] = mock_regular_user
+    test_app.dependency_overrides[get_current_user] = mock_regular_user
 
     try:
         response = client.get("/api/voice/debug-config")
         assert response.status_code == 403
     finally:
-        app.dependency_overrides.clear()
+        test_app.dependency_overrides.clear()
         reset_config_cache()
 
 
-def test_debug_config_returns_config_for_super_admin_in_dev(monkeypatch):
+def test_debug_config_returns_config_for_super_admin_in_dev(monkeypatch, test_app, client):
     # Emulate development env
     monkeypatch.setenv("APP_ENV", "development")
     reset_config_cache()
@@ -97,7 +111,7 @@ def test_debug_config_returns_config_for_super_admin_in_dev(monkeypatch):
             role=UserRole.SUPER_ADMIN,
         )
 
-    app.dependency_overrides[get_current_user] = mock_super_admin
+    test_app.dependency_overrides[get_current_user] = mock_super_admin
 
     try:
         response = client.get("/api/voice/debug-config")
@@ -106,5 +120,5 @@ def test_debug_config_returns_config_for_super_admin_in_dev(monkeypatch):
         assert "has_account_sid" in data
         assert "has_auth_token" in data
     finally:
-        app.dependency_overrides.clear()
+        test_app.dependency_overrides.clear()
         reset_config_cache()
