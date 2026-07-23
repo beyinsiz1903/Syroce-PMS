@@ -296,8 +296,7 @@ async function warmup(api) {
             console.log(`[stress-setup] warmup /health attempt=${attempt} err=${e.message}`);
         }
         if (attempt === 60) {
-            console.log(`[stress-setup] warmup /health gave up after 60 attempts (lastErr=${lastErr?.message})`);
-            return;
+            throw new Error(`[stress-setup] NO-GO: warmup /health gave up after 60 attempts (5 min). Target app is not live or suspended. (lastErr=${lastErr?.message})`);
         }
         await new Promise((res) => setTimeout(res, 5000));
     }
@@ -319,8 +318,7 @@ async function warmup(api) {
             console.log(`[stress-setup] warmup /health/ready attempt=${attempt} err=${e.message}`);
         }
         if (attempt === 120) {
-            console.log(`[stress-setup] warmup /health/ready gave up after 120 attempts (lastErr=${lastErr?.message})`);
-            return;
+            throw new Error(`[stress-setup] NO-GO: warmup /health/ready gave up after 120 attempts. Backend boot stuck? (lastErr=${lastErr?.message})`);
         }
         await new Promise((res) => setTimeout(res, 5000));
     }
@@ -341,7 +339,7 @@ async function warmup(api) {
         }
         if (attempt < 30) await new Promise((res) => setTimeout(res, 5000));
     }
-    console.log(`[stress-setup] warmup /api/health gave up after 30 attempts (lastErr=${lastErr?.message}) — login deneyecek`);
+    throw new Error(`[stress-setup] NO-GO: warmup /api/health gave up after 30 attempts. Routes failed to mount? (lastErr=${lastErr?.message})`);
 }
 
 async function safeJson(p) { try { return await p; } catch { return null; } }
