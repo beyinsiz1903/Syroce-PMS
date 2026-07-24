@@ -920,7 +920,7 @@ export const NAV_ITEMS = [
     moduleKey: "pms",
     tier: "enterprise",
     group: "enterprise",
-    navGroup: "advanced",
+    navGroup: "guest",
   },
   {
     key: "analitik_raporlar",
@@ -929,7 +929,7 @@ export const NAV_ITEMS = [
     moduleKey: "advanced_analytics",
     tier: "enterprise",
     group: "enterprise",
-    navGroup: "advanced",
+    navGroup: "reports",
   },
 
   // ──── INFRASTRUCTURE GROUP ─────────────────────────
