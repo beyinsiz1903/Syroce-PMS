@@ -114,6 +114,30 @@ jobs:
                       -exec grep -lE 'packages\.microsoft\.com' {} + 2>/dev/null | xargs -r sudo rm -f || true
                   cd frontend && yarn e2e:install
 
+            - name: Validate stress frontend origin
+              working-directory: frontend
+              env:
+                  E2E_FE_BASE_URL: ${{ secrets.STRESS_FE_BASE_URL }}
+              run: |
+                  python3 - <<'PY'
+                  import os
+                  from urllib.parse import urlsplit
+
+                  value = os.environ.get("E2E_FE_BASE_URL", "")
+                  parsed = urlsplit(value.strip())
+
+                  print("defined:", bool(value))
+                  print("exact_expected:", value == "https://pms.syroce.com")
+                  print("has_outer_whitespace:", value != value.strip())
+                  print("has_trailing_slash:", value.endswith("/"))
+                  print("scheme_https:", parsed.scheme == "https")
+                  print("host_matches:", parsed.hostname == "pms.syroce.com")
+                  print("port_absent:", parsed.port is None)
+                  print("path_empty:", parsed.path == "")
+                  print("query_empty:", parsed.query == "")
+                  print("fragment_empty:", parsed.fragment == "")
+                  PY
+
             - name: Run Gates and Database Seed
               env:
                   STRESS_SKIP_TEARDOWN: 'true'
