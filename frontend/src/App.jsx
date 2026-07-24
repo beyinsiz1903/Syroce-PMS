@@ -360,7 +360,7 @@ function App() {
                       element = (
                         <ModuleGuardedRoute
                           isAuthenticated={isAuthenticated}
-                          moduleEnabled={isSuperAdmin ? true : modules?.[rc.moduleKey]}
+                          moduleKey={rc.moduleKey}
                           strict={rc.strict}
                           element={<rc.component {...rc.props} />}
                           wrapLayout={rc.wrapLayout}
