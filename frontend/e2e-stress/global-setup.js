@@ -140,6 +140,7 @@ async function ensureSpaEntitlement(api, pilotToken, stressTid, stressToken) {
 
     // 1) Read current modules for the stress tenant (super-admin only endpoint).
     let currentModules = {};
+    let matchedTenant = null;
     const listResp = await api.get('/api/admin/tenants?limit=2000', {
         headers: { Authorization: `Bearer ${pilotToken}` },
         failOnStatusCode: false, timeout: 30_000,
@@ -147,13 +148,44 @@ async function ensureSpaEntitlement(api, pilotToken, stressTid, stressToken) {
     if (listResp && listResp.ok()) {
         const body = await listResp.json().catch(() => null);
         const tenants = Array.isArray(body) ? body : (body?.tenants || []);
-        const match = tenants.find((t) => t?.id === stressTid);
-        if (match && match.modules && typeof match.modules === 'object') {
-            currentModules = match.modules;
+        // E2E_STRESS_TENANT_ID may be the 6-digit hotel_id shown in the UI
+        // OR the internal UUID id. Normalise both sides to string to avoid
+        // type-coercion mismatches (e.g. number vs string in Mongo projection).
+        const normalised = String(stressTid ?? '').trim();
+        const matches = tenants.filter(
+            (t) =>
+                String(t?.id ?? '').trim() === normalised ||
+                String(t?.hotel_id ?? '').trim() === normalised,
+        );
+        
+        if (matches.length !== 1) {
+            throw new Error(
+                `[stress-setup] NO-GO: expected exactly one stress tenant match, found ${matches.length}`,
+            );
         }
-        out.found_tenant = !!match;
+        
+        matchedTenant = matches[0];
+        const resolvedId = String(matchedTenant?.id ?? '').trim();
+        
+        if (!resolvedId) {
+            throw new Error(
+                '[stress-setup] NO-GO: matched stress tenant has no internal id',
+            );
+        }
+        
+        out.resolved_uuid = resolvedId;
+        if (matchedTenant.modules && typeof matchedTenant.modules === 'object') {
+            currentModules = matchedTenant.modules;
+        }
+        out.found_tenant = true;
     } else {
         out.list_status = listResp?.status?.() ?? 0;
+        // List call itself failed (network / auth). We cannot safely resolve the
+        // UUID, so bail out immediately.
+        throw new Error(
+            `[stress-setup] NO-GO: could not fetch admin/tenants list ` +
+            `(HTTP ${out.list_status}). Cannot resolve stress tenant UUID for module grant.`,
+        );
     }
 
     const requiredModules = {
@@ -185,10 +217,15 @@ async function ensureSpaEntitlement(api, pilotToken, stressTid, stressToken) {
     const hasAll = Object.keys(requiredModules).every((m) => currentModules[m] === true);
     out.already_on = hasAll;
 
+    // patchId is always the resolved internal UUID.
+    // resolvedId is guaranteed to exist at this point (fail-closed above).
+    const patchId = out.resolved_uuid;
+    out.patch_id = patchId;
+
     // 2) Grant all required modules (merge — PATCH overwrites the entire modules map).
     if (!out.already_on) {
         const merged = { ...currentModules, ...requiredModules };
-        const patchResp = await api.patch(`/api/admin/tenants/${stressTid}/modules`, {
+        const patchResp = await api.patch(`/api/admin/tenants/${patchId}/modules`, {
             headers: { Authorization: `Bearer ${pilotToken}` },
             data: { modules: merged },
             failOnStatusCode: false, timeout: 30_000,
@@ -198,7 +235,8 @@ async function ensureSpaEntitlement(api, pilotToken, stressTid, stressToken) {
         if (!out.patched) {
             throw new Error(
                 `[stress-setup] NO-GO: failed to enable required modules for stress tenant ` +
-                `(PATCH /api/admin/tenants/${stressTid}/modules → ${out.patch_status}). ` +
+                `(PATCH /api/admin/tenants/<id>/modules → ${out.patch_status}). ` +
+                `tenant identifier resolved successfully but PATCH failed. ` +
                 `Manual fix: cd backend && STRESS_ENABLE_MODULES=pms,spa,mice,reports,invoices python -m scripts.enable_mice_for_stress`,
             );
         }
