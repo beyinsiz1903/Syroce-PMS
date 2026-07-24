@@ -841,7 +841,7 @@ export const NAV_ITEMS = [
     path: "/app/module-store",
     tier: "basic",
     group: "core",
-    navGroup: "management",
+    navGroup: "system",
   },
   {
     key: "pci_compliance",
@@ -849,7 +849,7 @@ export const NAV_ITEMS = [
     path: "/app/compliance/pci",
     tier: "basic",
     group: "core",
-    navGroup: "management",
+    navGroup: "system",
   },
   {
     key: "webhook_outbox_admin",
@@ -911,7 +911,7 @@ export const NAV_ITEMS = [
     moduleKey: "af_sadakat",
     tier: "basic",
     group: "core",
-    navGroup: "management",
+    navGroup: "guest",
   },
   {
     key: "messaging_dashboard",
