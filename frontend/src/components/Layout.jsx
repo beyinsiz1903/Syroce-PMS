@@ -96,6 +96,7 @@ const GROUP_ICONS = {
   backoffice: Briefcase,
   reports: BarChart3,
   system: SettingsIcon,
+  admin: Shield,
 };
 
 const TIER_CONFIG = {

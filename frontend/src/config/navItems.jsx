@@ -14,6 +14,7 @@ export const NAV_GROUPS = [
   { id: "backoffice", label: "Arka Ofis", icon: "Briefcase" },
   { id: "reports", label: "Raporlar", icon: "BarChart3" },
   { id: "system", label: "Kanallar & Sistem", icon: "Settings" },
+  { id: "admin", label: "Sistem Yönetimi", icon: "Shield" },
 ];
 
 export const NAV_ITEMS = [
