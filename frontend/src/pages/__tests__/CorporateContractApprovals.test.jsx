@@ -54,7 +54,9 @@ vi.mock('react-i18next', () => ({
 
 // Stable token so the component's Authorization header / fetch path resolve.
 beforeEach(() => {
-  localStorage.setItem('token', 'test-token');
+  if (typeof window !== 'undefined' && window.localStorage) {
+    window.localStorage.setItem('token', 'test-token');
+  }
   // The sonner mock is module-level; clear it so toast assertions don't see
   // calls leaked from a previous test (restoreAllMocks won't reset vi.mock fns).
   toast.success.mockClear();
@@ -65,7 +67,9 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  localStorage.clear();
+  if (typeof window !== 'undefined' && window.localStorage) {
+    window.localStorage.clear();
+  }
 });
 
 function mockContracts(contracts) {
