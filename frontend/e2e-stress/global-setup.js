@@ -147,9 +147,15 @@ async function ensureSpaEntitlement(api, pilotToken, stressTid, stressToken) {
     if (listResp && listResp.ok()) {
         const body = await listResp.json().catch(() => null);
         const tenants = Array.isArray(body) ? body : (body?.tenants || []);
-        const match = tenants.find((t) => t?.id === stressTid);
-        if (match && match.modules && typeof match.modules === 'object') {
-            currentModules = match.modules;
+        // E2E_STRESS_TENANT_ID may be the 6-digit hotel_id shown in the UI,
+        // OR the internal UUID id field. Match whichever is present.
+        const match = tenants.find((t) => t?.id === stressTid || t?.hotel_id === stressTid);
+        if (match) {
+            // Resolve to the real UUID id for the PATCH endpoint
+            out.resolved_uuid = match.id;
+            if (match.modules && typeof match.modules === 'object') {
+                currentModules = match.modules;
+            }
         }
         out.found_tenant = !!match;
     } else {
@@ -185,10 +191,13 @@ async function ensureSpaEntitlement(api, pilotToken, stressTid, stressToken) {
     const hasAll = Object.keys(requiredModules).every((m) => currentModules[m] === true);
     out.already_on = hasAll;
 
+    // Use resolved UUID for PATCH; fall back to stressTid if list lookup failed.
+    const patchId = out.resolved_uuid || stressTid;
+
     // 2) Grant all required modules (merge — PATCH overwrites the entire modules map).
     if (!out.already_on) {
         const merged = { ...currentModules, ...requiredModules };
-        const patchResp = await api.patch(`/api/admin/tenants/${stressTid}/modules`, {
+        const patchResp = await api.patch(`/api/admin/tenants/${patchId}/modules`, {
             headers: { Authorization: `Bearer ${pilotToken}` },
             data: { modules: merged },
             failOnStatusCode: false, timeout: 30_000,
@@ -198,7 +207,8 @@ async function ensureSpaEntitlement(api, pilotToken, stressTid, stressToken) {
         if (!out.patched) {
             throw new Error(
                 `[stress-setup] NO-GO: failed to enable required modules for stress tenant ` +
-                `(PATCH /api/admin/tenants/${stressTid}/modules → ${out.patch_status}). ` +
+                `(PATCH /api/admin/tenants/${patchId}/modules → ${out.patch_status}). ` +
+                `E2E_STRESS_TENANT_ID=${stressTid} resolved_uuid=${patchId}. ` +
                 `Manual fix: cd backend && STRESS_ENABLE_MODULES=pms,spa,mice,reports,invoices python -m scripts.enable_mice_for_stress`,
             );
         }
