@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,6 +32,7 @@ const monthAgoIso = () => { const d = new Date(); d.setDate(d.getDate() - 30); r
 
 const CashierTab = () => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [shift, setShift] = useState(null);
   const [shiftHistory, setShiftHistory] = useState([]);
   const [transactions, setTransactions] = useState([]);
@@ -468,6 +470,9 @@ const CashierTab = () => {
           )}
           <Button onClick={() => setShowPeriodReportDialog(true)} variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-50">
             <CalendarRange className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.donem_raporu')}
+          </Button>
+          <Button onClick={() => navigate('/folio-routing')} variant="outline" className="border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+            <ArrowRightLeft className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.folio_yonlendirme')}
           </Button>
           <Button variant="outline" onClick={() => { loadShift(); loadHistory(); }}>
             <RefreshCw className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.yenile')}
