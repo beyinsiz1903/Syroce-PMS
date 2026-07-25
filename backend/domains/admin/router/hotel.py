@@ -22,7 +22,6 @@ from core.security import (
     _is_super_admin,
     get_current_user,
 )
-from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 try:
     from cache_manager import cache as _cache_mgr

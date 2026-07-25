@@ -42,7 +42,6 @@ from core.security import (
 )
 from models.enums import UserRole
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 from security.encrypted_lookup import build_user_email_query, decrypt_user_doc
 
 # Bug AI mirror — precomputed bcrypt hash so verify_password burns equal
