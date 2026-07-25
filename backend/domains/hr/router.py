@@ -5875,7 +5875,7 @@ async def upload_staff_document(
     # GridFS'e yaz — büyük dosyalar memory'de tutulmaz, koleksiyon liste sorguları hızlı kalır.
     gridfs_id = await _get_hr_docs_bucket().upload_from_stream(
         safe_filename,
-        content,
+        io.BytesIO(content),
         metadata={
             "tenant_id": current_user.tenant_id,
             "staff_id": staff_id,

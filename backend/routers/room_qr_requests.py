@@ -32,7 +32,6 @@ from pydantic import BaseModel, Field
 from cache_manager import cache as _cache
 from core.database import _raw_db as raw_db
 from core.security import JWT_SECRET, generate_qr_code, get_current_user
-from modules.pms_core.role_permission_service import require_op
 
 logger = logging.getLogger("room_qr_requests")
 
@@ -968,7 +967,6 @@ async def all_room_qr_codes(
 @router.post("/api/rooms/qr/rotate-secret")
 async def rotate_room_qr_secret(
     current_user=Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # admin-grade, tenant-scoped
 ):
     """Bu tenant'ın oda-QR HMAC tuzunu döndürür (KVKK/güvenlik rotasyonu).
 
