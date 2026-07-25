@@ -508,6 +508,19 @@ def _stress_tid() -> str:
     return tid
 
 
+async def _resolve_stress_tid_async(tid: str) -> str:
+    """Resolve E2E_STRESS_TENANT_ID from a short hotel_id to its internal UUID."""
+    try:
+        from core.tenant_db import get_system_db
+        sysdb = get_system_db()
+        t = await sysdb.tenants.find_one({"$or": [{"id": tid}, {"hotel_id": tid}]})
+        if t and "id" in t:
+            return t["id"]
+    except Exception:
+        pass
+    return tid
+
+
 def _gates(target_tenant_id: str) -> dict[str, Any]:
     """Fail-closed gate stack. Returns gate-report dict on success;
     raises HTTPException on any failure."""
@@ -2457,6 +2470,7 @@ async def stress_seed(
     Chunked insert_many keeps memory + Atlas wire frame bounded."""
     gates = _gates(payload.target_tenant_id)
     stress_tid = _stress_tid()
+    stress_tid = await _resolve_stress_tid_async(stress_tid)
 
     # Task #167 — entitle the stress tenant for the `hidden_marketplace`
     # procurement write surface (PO create/cancel) so the marketplace deep
@@ -2987,6 +3001,7 @@ async def stress_seed_pending(
             detail=("E2E_EXTERNAL_DRY_RUN != 'true' (fail-closed). On-demand stress pending seed requires the dry-run stress posture."),
         )
     stress_tid = _stress_tid()
+    stress_tid = await _resolve_stress_tid_async(stress_tid)
     prefix = payload.data_prefix or f"E2E_STRESS_{int(time.time())}_"
     now = datetime.now(UTC)
 
@@ -3462,6 +3477,7 @@ async def stress_cleanup(
     audit_logs are NEVER deleted (KVKK retention)."""
     gates = _gates(payload.target_tenant_id)
     stress_tid = _stress_tid()
+    stress_tid = await _resolve_stress_tid_async(stress_tid)
 
     # Prefix-scope gate: require either an explicit prefix OR an explicit
     # full-wipe confirmation. Refuse to do an unbounded delete by accident.
@@ -3632,6 +3648,7 @@ async def stress_pos_load_cleanup(
     """
     gates = _gates(payload.target_tenant_id)
     stress_tid = _stress_tid()
+    stress_tid = await _resolve_stress_tid_async(stress_tid)
 
     prefix = (payload.data_prefix or "").strip()
     # Fail-closed: bos prefix asla kabul edilmez (sinirsiz silmeyi onler).
