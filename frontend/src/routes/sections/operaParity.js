@@ -7,9 +7,14 @@ import {
 // Opera-parity additions (Folio Routing, Block Mgmt, Activity Scheduler,
 // Loyalty, Forecast, Function Space, Trial Balance, Profile UDF, Catering,
 // Suite Connecting, Hurdle Rates).
-export function operaParityRoutes({ p }) {
+export function operaParityRoutes({ p, pm }) {
   return [
-    { path: "/folio-routing", ...p(FolioRoutingPage) },
+    {
+      path: "/folio-routing",
+      ...pm(FolioRoutingPage, "pms", undefined, { strict: true }),
+      wrapLayout: true,
+      layoutModule: "pms",
+    },
     { path: "/loyalty-admin", ...p(LoyaltyAdminPage) },
     { path: "/activities", ...p(ActivitySchedulerPage) },
     { path: "/block-management", ...p(BlockManagementPage), wrapLayout: true, layoutModule: "block_management" },
