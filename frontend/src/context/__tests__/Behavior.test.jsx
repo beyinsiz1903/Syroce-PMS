@@ -403,6 +403,25 @@ describe('Frontend Behavior Tests', () => {
     expect(route.layoutModule).toBe('mice');
   });
 
+  it('operaParity: /block-management is guarded under pms module entitlement', () => {
+    const mockP = (comp) => ({ component: comp, type: 'protected' });
+    const mockPm = (comp, key, extra, opts = {}) => ({
+      type: 'module',
+      moduleKey: key,
+      strict: !!opts.strict,
+      component: comp,
+    });
+    const routes = operaParityRoutes({ p: mockP, pm: mockPm });
+    const route = routes.find(r => r.path === '/block-management');
+    expect(route).toMatchObject({
+      type: 'module',
+      moduleKey: 'pms',
+      strict: true,
+      wrapLayout: true,
+      layoutModule: 'block_management',
+    });
+  });
+
   it('POSOutletManagement: used=limit -> Yeni Satış Noktası disabled', async () => {
     axios.get.mockImplementation((url) => {
       if (url === '/subscription/current') return Promise.resolve({

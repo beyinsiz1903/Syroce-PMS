@@ -17,7 +17,12 @@ export function operaParityRoutes({ p, pm }) {
     },
     { path: "/loyalty-admin", ...p(LoyaltyAdminPage) },
     { path: "/activities", ...p(ActivitySchedulerPage) },
-    { path: "/block-management", ...p(BlockManagementPage), wrapLayout: true, layoutModule: "block_management" },
+    {
+      path: "/block-management",
+      ...pm(BlockManagementPage, "pms", undefined, { strict: true }),
+      wrapLayout: true,
+      layoutModule: "block_management",
+    },
     {
       path: "/forecast-reports",
       ...pm(ForecastReportsPage, "basic_reporting", undefined, { strict: true }),

@@ -9,10 +9,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge';
 import { Users, Plus, Calendar, Home, Building2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import EmptyState from '@/components/EmptyState';
 
 const GroupReservations = () => {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const [groups, setGroups] = useState([]);
   const [blocks, setBlocks] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
@@ -181,7 +183,24 @@ const GroupReservations = () => {
 
       {/* Room Blocks */}
       <div>
-        <h2 className="text-xl font-bold mb-4">Room Blocks</h2>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+          <h2 className="text-xl font-bold">
+            {t("cm.pages_GroupReservations.room_blocks", "Room Blocks")}
+          </h2>
+
+          <Button
+            variant="outline"
+            onClick={() => navigate("/block-management")}
+            data-testid="btn-go-block-management"
+            className="w-full sm:w-auto"
+          >
+            <Building2 className="w-4 h-4 mr-2" />
+            {t(
+              "cm.pages_GroupReservations.gelismis_blok_yonetimi",
+              "Gelişmiş Blok Yönetimi"
+            )}
+          </Button>
+        </div>
         {blocks.length === 0 ? (
           <EmptyState
             icon={Building2}
