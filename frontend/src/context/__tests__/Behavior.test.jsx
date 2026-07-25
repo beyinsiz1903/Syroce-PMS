@@ -422,6 +422,44 @@ describe('Frontend Behavior Tests', () => {
     });
   });
 
+  it('operaParity: /profile-udf is guarded under pms module entitlement', () => {
+    const mockP = (comp) => ({ component: comp, type: 'protected' });
+    const mockPm = (comp, key, extra, opts = {}) => ({
+      type: 'module',
+      moduleKey: key,
+      strict: !!opts.strict,
+      component: comp,
+    });
+    const routes = operaParityRoutes({ p: mockP, pm: mockPm });
+    const route = routes.find(r => r.path === '/profile-udf');
+    expect(route).toMatchObject({
+      type: 'module',
+      moduleKey: 'pms',
+      strict: true,
+      wrapLayout: true,
+      layoutModule: 'pms',
+    });
+  });
+
+  it('operaParity: /suite-connecting is guarded under pms module entitlement', () => {
+    const mockP = (comp) => ({ component: comp, type: 'protected' });
+    const mockPm = (comp, key, extra, opts = {}) => ({
+      type: 'module',
+      moduleKey: key,
+      strict: !!opts.strict,
+      component: comp,
+    });
+    const routes = operaParityRoutes({ p: mockP, pm: mockPm });
+    const route = routes.find(r => r.path === '/suite-connecting');
+    expect(route).toMatchObject({
+      type: 'module',
+      moduleKey: 'pms',
+      strict: true,
+      wrapLayout: true,
+      layoutModule: 'settings',
+    });
+  });
+
   it('POSOutletManagement: used=limit -> Yeni Satış Noktası disabled', async () => {
     axios.get.mockImplementation((url) => {
       if (url === '/subscription/current') return Promise.resolve({

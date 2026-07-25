@@ -41,14 +41,24 @@ export function operaParityRoutes({ p, pm }) {
       wrapLayout: true,
       layoutModule: "reports_basic",
     },
-    { path: "/profile-udf", ...p(ProfileUdfPage) },
+    {
+      path: "/profile-udf",
+      ...pm(ProfileUdfPage, "pms", undefined, { strict: true }),
+      wrapLayout: true,
+      layoutModule: "pms",
+    },
     {
       path: "/catering",
       ...pm(CateringMenuPage, "mice", undefined, { strict: true }),
       wrapLayout: true,
       layoutModule: "mice",
     },
-    { path: "/suite-connecting", ...p(SuiteConnectingPage) },
+    {
+      path: "/suite-connecting",
+      ...pm(SuiteConnectingPage, "pms", undefined, { strict: true }),
+      wrapLayout: true,
+      layoutModule: "settings",
+    },
     { path: "/hurdle-rates", ...p(HurdleRatesPage) },
   ];
 }
