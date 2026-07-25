@@ -1164,7 +1164,7 @@ async def create_event(
     event_doc = {
         "id": event_id,
         "tenant_id": tenant_id,
-        **body.model_dump(mode="json", exclude={"space_bookings", "resources"}),
+        **body.model_dump(mode="json", exclude={"space_bookings", "resources", "client_request_id"}),
         "space_bookings": bookings,
         "resources": resources,
         "created_at": datetime.now(UTC).isoformat(),
