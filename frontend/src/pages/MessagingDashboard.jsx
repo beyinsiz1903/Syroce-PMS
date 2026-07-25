@@ -124,7 +124,7 @@ function SettingsTab({ onChanged }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const r = await safe(() => get('/api/messaging-center/settings'));
+    const r = await safe(() => get('/messaging-center/settings'));
     if (r.ok) {
       setSettings(r.data);
       if (r.data.email?.credentials) {
@@ -160,7 +160,7 @@ function SettingsTab({ onChanged }) {
 
   const saveEmail = async () => {
     setSaving(true);
-    const r = await safe(() => post('/api/messaging-center/settings/email', emailForm));
+    const r = await safe(() => post('/messaging-center/settings/email', emailForm));
     if (r.ok && r.data.success) {
       toast.success(`E-posta ayarları ${r.data.action === 'created' ? 'oluşturuldu' : 'güncellendi'}`);
       onChanged?.();
@@ -173,7 +173,7 @@ function SettingsTab({ onChanged }) {
 
   const saveWhatsApp = async () => {
     setSaving(true);
-    const r = await safe(() => post('/api/messaging-center/settings/whatsapp', waForm));
+    const r = await safe(() => post('/messaging-center/settings/whatsapp', waForm));
     if (r.ok && r.data.success) {
       toast.success(`WhatsApp ayarları ${r.data.action === 'created' ? 'oluşturuldu' : 'güncellendi'}`);
       onChanged?.();
@@ -185,7 +185,7 @@ function SettingsTab({ onChanged }) {
   };
 
   const testConnection = async () => {
-    const r = await safe(() => post('/api/messaging-center/settings/test-connection', {}));
+    const r = await safe(() => post('/messaging-center/settings/test-connection', {}));
     if (!r.ok) return;
     if (!r.data.results || r.data.results.length === 0) {
       // Bug #9 — silent failure
@@ -371,7 +371,7 @@ function TemplatesTab() {
   const load = useCallback(async () => {
     setLoading(true);
     const params = filterChannel !== 'all' ? `?channel=${filterChannel}` : '';
-    const r = await safe(() => get(`/api/messaging-center/templates${params}`));
+    const r = await safe(() => get(`/messaging-center/templates${params}`));
     if (r.ok) setTemplates(r.data.templates || []);
     setLoading(false);
   }, [filterChannel]);
@@ -381,7 +381,7 @@ function TemplatesTab() {
     if (!form.name?.trim()) { toast.error('Şablon adı gerekli'); return; }
     if (!form.body_template?.trim()) { toast.error('Mesaj içeriği gerekli'); return; }
     const vars = extractVariables(form.body_template);
-    const r = await safe(() => post('/api/messaging-center/templates', { ...form, variables: vars }));
+    const r = await safe(() => post('/messaging-center/templates', { ...form, variables: vars }));
     if (r.ok && r.data.id) {
       toast.success('Şablon oluşturuldu');
       setShowCreate(false);
@@ -394,7 +394,7 @@ function TemplatesTab() {
     if (!editTemplate) return;
     const vars = extractVariables(form.body_template);
     // Bug #10 — channel da gönderilsin, kullanıcı kanal değiştirebilsin.
-    const r = await safe(() => put(`/api/messaging-center/templates/${editTemplate.id}`, {
+    const r = await safe(() => put(`/messaging-center/templates/${editTemplate.id}`, {
       name: form.name,
       subject: form.subject,
       body_template: form.body_template,
@@ -411,7 +411,7 @@ function TemplatesTab() {
 
   const handleDelete = async (id) => {
     if (!await confirmDialog({ message: 'Bu şablonu silmek istediğinizden emin misiniz?' })) return;
-    const r = await safe(() => del(`/api/messaging-center/templates/${id}`));
+    const r = await safe(() => del(`/messaging-center/templates/${id}`));
     if (r.ok) { toast.success('Şablon silindi'); load(); }
   };
 
@@ -571,7 +571,7 @@ function SendTab() {
 
   useEffect(() => {
     (async () => {
-      const r = await safe(() => get('/api/messaging-center/templates'));
+      const r = await safe(() => get('/messaging-center/templates'));
       if (r.ok) setTemplates(r.data.templates || []);
     })();
   }, []);
@@ -619,7 +619,7 @@ function SendTab() {
       variables: Object.keys(variables).length > 0 ? variables : undefined,
       use_case: form.use_case || undefined,
     };
-    const r = await safe(() => post('/api/messaging-center/send', payload));
+    const r = await safe(() => post('/messaging-center/send', payload));
     if (r.ok && r.data.success) {
       toast.success(`Mesaj gönderildi (${form.channel})`);
       setForm((p) => ({ ...p, recipient: '', body: '', template_id: '', subject: '' }));
@@ -746,7 +746,7 @@ function DeliveryLogsTab() {
     if (filter !== 'all') params.set('status', filter);
     if (channelFilter !== 'all') params.set('channel', channelFilter);
     const q = params.toString() ? `?${params.toString()}` : '';
-    const r = await safe(() => get(`/api/messaging-center/delivery-logs${q}`));
+    const r = await safe(() => get(`/messaging-center/delivery-logs${q}`));
     if (r.ok) setLogs(r.data.logs || []);
     else setLogs([]);
     setLoading(false);
@@ -754,7 +754,7 @@ function DeliveryLogsTab() {
   useEffect(() => { load(); }, [load]);
 
   const retry = async (id) => {
-    const r = await safe(() => post(`/api/messaging-center/retry/${id}`, {}));
+    const r = await safe(() => post(`/messaging-center/retry/${id}`, {}));
     if (r.ok && r.data.success) toast.success('Yeniden gönderildi');
     else if (r.ok) toast.error(r.data.error || 'Yeniden gönderim hatası');
     load();
@@ -836,7 +836,7 @@ function MetricsTab() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const r = await safe(() => get('/api/messaging-center/metrics?days=30'));
+    const r = await safe(() => get('/messaging-center/metrics?days=30'));
     if (r.ok) setMetrics(r.data);
     setLoading(false);
   }, []);
@@ -932,8 +932,8 @@ function AutomationTab() {
   const load = useCallback(async () => {
     setLoading(true);
     const [rulesR, tmplR] = await Promise.all([
-      safe(() => get('/api/messaging-center/automation/rules')),
-      safe(() => get('/api/messaging-center/templates')),
+      safe(() => get('/messaging-center/automation/rules')),
+      safe(() => get('/messaging-center/templates')),
     ]);
     if (rulesR.ok) setRules(rulesR.data.rules || []);
     if (tmplR.ok) setTemplates(tmplR.data.templates || []);
@@ -950,29 +950,29 @@ function AutomationTab() {
   const handleCreate = async () => {
     if (!form.name?.trim()) { toast.error('Kural adı gerekli'); return; }
     if (!form.template_id) { toast.error('Şablon seçilmelidir'); return; }
-    const r = await safe(() => post('/api/messaging-center/automation/rules', form));
+    const r = await safe(() => post('/messaging-center/automation/rules', form));
     if (r.ok && r.data.id) { toast.success('Otomasyon kuralı oluşturuldu'); setShowCreate(false); load(); }
   };
 
   const handleUpdate = async () => {
     if (!editRule) return;
-    const r = await safe(() => put(`/api/messaging-center/automation/rules/${editRule.id}`, form));
+    const r = await safe(() => put(`/messaging-center/automation/rules/${editRule.id}`, form));
     if (r.ok) { toast.success('Kural güncellendi'); setEditRule(null); load(); }
   };
 
   const handleDelete = async (id) => {
     if (!await confirmDialog({ message: 'Bu kuralı silmek istediğinizden emin misiniz?' })) return;
-    const r = await safe(() => del(`/api/messaging-center/automation/rules/${id}`));
+    const r = await safe(() => del(`/messaging-center/automation/rules/${id}`));
     if (r.ok) { toast.success('Kural silindi'); load(); }
   };
 
   const toggleEnabled = async (rule) => {
-    await safe(() => put(`/api/messaging-center/automation/rules/${rule.id}`, { enabled: !rule.enabled }));
+    await safe(() => put(`/messaging-center/automation/rules/${rule.id}`, { enabled: !rule.enabled }));
     load();
   };
 
   const testRule = async (rule) => {
-    const r = await safe(() => post(`/api/messaging-center/automation/test/${rule.id}`, {}));
+    const r = await safe(() => post(`/messaging-center/automation/test/${rule.id}`, {}));
     if (r.ok && r.data.success) {
       toast.success(r.data.message || `Test tetiklendi: ${rule.name}`);
     } else if (r.ok) {
@@ -1154,7 +1154,7 @@ function SchedulerCard() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const r = await safe(() => get('/api/messaging-center/scheduler/status'));
+    const r = await safe(() => get('/messaging-center/scheduler/status'));
     if (r.ok) setStatus(r.data);
     setLoading(false);
   }, []);
@@ -1163,10 +1163,10 @@ function SchedulerCard() {
   const toggleScheduler = async () => {
     setActionLoading(true);
     if (status?.status === 'running') {
-      await safe(() => post('/api/messaging-center/scheduler/stop', {}));
+      await safe(() => post('/messaging-center/scheduler/stop', {}));
       toast.success('Zamanlayıcı durduruldu');
     } else {
-      await safe(() => post('/api/messaging-center/scheduler/start', {}));
+      await safe(() => post('/messaging-center/scheduler/start', {}));
       toast.success('Zamanlayıcı başlatıldı');
     }
     await load();
@@ -1175,7 +1175,7 @@ function SchedulerCard() {
 
   const runNow = async () => {
     setActionLoading(true);
-    const r = await safe(() => post('/api/messaging-center/scheduler/run-now', {}));
+    const r = await safe(() => post('/messaging-center/scheduler/run-now', {}));
     if (r.ok && r.data.success) {
       const x = r.data.result || {};
       toast.success(`Tarama tamamlandı: ${x.events_fired || 0} mesaj tetiklendi, ${x.bookings_scanned || 0} rezervasyon tarandı`);
@@ -1279,7 +1279,7 @@ function WhatsAppTemplateTab() {
       ? [{ type: 'body', parameters: params.map((t) => ({ type: 'text', text: t })) }]
       : [];
     setSending(true);
-    const r = await safe(() => post('/api/messaging-center/send-template', {
+    const r = await safe(() => post('/messaging-center/send-template', {
       recipient,
       template_name: templateName,
       language_code: languageCode,
@@ -1366,7 +1366,7 @@ function ActivityTab() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const r = await safe(() => get('/api/messaging-center/activity?limit=30'));
+    const r = await safe(() => get('/messaging-center/activity?limit=30'));
     if (r.ok) setActivities(r.data.activities || []);
     setLoading(false);
   }, []);
@@ -1461,9 +1461,9 @@ export default function MessagingDashboard() {
   useEffect(() => {
     // Auto-seed demo data on first load (only when truly empty)
     (async () => {
-      const r = await safe(() => get('/api/messaging-center/delivery-logs?limit=1'));
+      const r = await safe(() => get('/messaging-center/delivery-logs?limit=1'));
       if (r.ok && (!r.data.logs || r.data.logs.length === 0)) {
-        await safe(() => post('/api/messaging-center/seed-demo', {}));
+        await safe(() => post('/messaging-center/seed-demo', {}));
       }
     })();
   }, []);
