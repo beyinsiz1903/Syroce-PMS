@@ -24,7 +24,12 @@ export function operaParityRoutes({ p, pm }) {
       wrapLayout: true,
       layoutModule: "reports_basic",
     },
-    { path: "/function-space", ...p(FunctionSpacePage) },
+    {
+      path: "/function-space",
+      ...pm(FunctionSpacePage, "mice", undefined, { strict: true }),
+      wrapLayout: true,
+      layoutModule: "mice",
+    },
     {
       path: "/trial-balance",
       ...pm(TrialBalancePage, "reports", undefined, { strict: true }),
@@ -32,7 +37,12 @@ export function operaParityRoutes({ p, pm }) {
       layoutModule: "reports_basic",
     },
     { path: "/profile-udf", ...p(ProfileUdfPage) },
-    { path: "/catering", ...p(CateringMenuPage) },
+    {
+      path: "/catering",
+      ...pm(CateringMenuPage, "mice", undefined, { strict: true }),
+      wrapLayout: true,
+      layoutModule: "mice",
+    },
     { path: "/suite-connecting", ...p(SuiteConnectingPage) },
     { path: "/hurdle-rates", ...p(HurdleRatesPage) },
   ];

@@ -4923,6 +4923,10 @@
       "forecast_reports_desc": "Occupancy forecast, pickup and pace analysis",
       "trial_balance_desc": "Daily revenue, payment and balance checks"
     },
+    "pages_MicePage": {
+      "salon_planlama": "Function Space Setup",
+      "catering_yonetimi": "Catering Management"
+    },
     "components_PMSDateBadge": {
       "gun_sonu_islemini_baslat": "Gün sonu işlemini başlat"
     },

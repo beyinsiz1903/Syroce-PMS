@@ -4971,6 +4971,10 @@
       "forecast_reports_desc": "Doluluk tahmini, pickup ve pace analizi",
       "trial_balance_desc": "Günlük gelir, ödeme ve balans kontrolü"
     },
+    "pages_MicePage": {
+      "salon_planlama": "Salon Planlama",
+      "catering_yonetimi": "Catering Yönetimi"
+    },
     "components_PMSDateBadge": {
       "gun_sonu_islemini_baslat": "Gün sonu işlemini başlat"
     },

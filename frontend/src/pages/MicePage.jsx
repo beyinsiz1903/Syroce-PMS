@@ -29,6 +29,7 @@ import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
 import EmptyState from '@/components/EmptyState';
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { useEntitlements } from '@/context/EntitlementContext';
 const MicePage = ({
   user,
@@ -36,6 +37,7 @@ const MicePage = ({
   onLogout
 }) => {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const { entitlements, getQuotaUsage } = useEntitlements();
   const spacesLimit = entitlements?.mice?.limits?.spaces_limit ?? null;
   const spacesUsed = getQuotaUsage('mice', 'spaces_limit');
@@ -774,6 +776,14 @@ const MicePage = ({
         </TabsContent>
 
         <TabsContent value="spaces">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+            <p className="text-sm text-gray-500">
+              {t('cm.pages_MicePage.toplanti_salonlari_ve_etkinlik_alanlari', 'Banket ve toplantı salonları envanteri.')}
+            </p>
+            <Button size="sm" variant="outline" onClick={() => navigate('/function-space')} data-testid="btn-go-function-space" className="w-full sm:w-auto">
+              <Building2 className="w-4 h-4 mr-1.5" /> {t('cm.pages_MicePage.salon_planlama', 'Salon Planlama')}
+            </Button>
+          </div>
           {spaces.length === 0 && <EmptyState icon={Building2} title={t('emptyStates.mice.spacesTitle')} description={t('emptyStates.mice.spacesDesc')} />}
           <div className="grid md:grid-cols-2 gap-3">
             {spaces.map(s => <Card key={s.id}>
@@ -800,13 +810,18 @@ const MicePage = ({
         </TabsContent>
 
         <TabsContent value="menus">
-          <div className="flex justify-between items-center mb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
             <p className="text-sm text-gray-500">
               {t('cm.pages_MicePage.f_b_menuleri_av_ve_dekorasyon_paketleri_')}
             </p>
-            <Button size="sm" onClick={openNewMenu}>
-              <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_MicePage.yeni_menu_paket')}
-            </Button>
+            <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+              <Button size="sm" variant="outline" onClick={() => navigate('/catering')} data-testid="btn-go-catering" className="w-full sm:w-auto">
+                <UtensilsCrossed className="w-4 h-4 mr-1.5" /> {t('cm.pages_MicePage.catering_yonetimi', 'Catering Yönetimi')}
+              </Button>
+              <Button size="sm" onClick={openNewMenu} className="w-full sm:w-auto">
+                <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_MicePage.yeni_menu_paket')}
+              </Button>
+            </div>
           </div>
           {menus.length === 0 && <EmptyState icon={UtensilsCrossed} title={t('emptyStates.mice.menusTitle')} description={t('emptyStates.mice.menusDesc')} actionText={t('emptyStates.mice.menusAction')} onAction={openNewMenu} />}
           <div className="grid md:grid-cols-3 gap-3">
