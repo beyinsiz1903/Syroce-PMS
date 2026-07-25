@@ -22,7 +22,6 @@ from core.security import (
     _is_super_admin,
     get_current_user,
 )
-from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 try:
     from cache_manager import cache as _cache_mgr
@@ -244,7 +243,6 @@ router = APIRouter(prefix="/api", tags=["Admin / Operations"])
 async def update_hotel_info(
     payload: UpdateHotelInfoRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """Update hotel/tenant information (admin only)"""
     if not _is_super_admin(current_user) and current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
@@ -337,7 +335,6 @@ async def list_hotel_team(current_user: User = Depends(get_current_user)):
 async def add_team_member(
     payload: CreateTeamMemberRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """Add a new team member to the current hotel"""
     if not _is_super_admin(current_user) and current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
@@ -399,7 +396,6 @@ async def update_team_member_role(
     user_id: str,
     payload: UpdateTeamMemberRoleRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """Update a team member's role"""
     if not _is_super_admin(current_user) and current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
@@ -447,7 +443,6 @@ async def update_team_member_role(
 async def remove_team_member(
     user_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """Remove a team member"""
     if not _is_super_admin(current_user) and current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):

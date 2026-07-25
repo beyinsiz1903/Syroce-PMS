@@ -42,7 +42,6 @@ from core.security import (
 )
 from models.enums import UserRole
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_op  # v101 DW
 from security.encrypted_lookup import build_user_email_query, decrypt_user_doc
 
 # Bug AI mirror — precomputed bcrypt hash so verify_password burns equal
@@ -194,7 +193,6 @@ async def _get_agency_user_from_token(token: str) -> dict:
 async def create_agency(
     data: AgencyCreate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Yeni acente olustur."""
     _require_hotel_staff(current_user)
@@ -297,7 +295,6 @@ async def update_agency(
     agency_id: str,
     data: AgencyUpdate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Acente guncelle."""
     _require_hotel_staff(current_user)
@@ -352,7 +349,6 @@ async def delete_agency(
     agency_id: str,
     force: bool = Query(False, description="Aktif rezervasyon olsa bile devre disi birak"),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Acenteyi devre disi birak (soft delete).
 
@@ -402,7 +398,6 @@ async def create_agency_user(
     agency_id: str,
     data: AgencyUserCreate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Acente kullanicisi olustur."""
     _require_hotel_staff(current_user)
@@ -465,7 +460,6 @@ async def list_agency_users(agency_id: str, current_user: User = Depends(get_cur
 async def delete_agency_user(
     user_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Acente kullanicisini sil."""
     _require_hotel_staff(current_user)
