@@ -5873,9 +5873,8 @@ async def upload_staff_document(
     safe_label = _sanitize_doc_filename(label) if label else safe_filename
 
     # GridFS'e yaz — büyük dosyalar memory'de tutulmaz, koleksiyon liste sorguları hızlı kalır.
-    gridfs_id = await _get_hr_docs_bucket().upload_from_stream(
+    grid_in = _get_hr_docs_bucket().open_upload_stream(
         safe_filename,
-        io.BytesIO(content),
         metadata={
             "tenant_id": current_user.tenant_id,
             "staff_id": staff_id,
@@ -5883,6 +5882,10 @@ async def upload_staff_document(
             "content_type": verified_content_type,
         },
     )
+    await grid_in.write(content)
+    await grid_in.close()
+    gridfs_id = grid_in._id
+
     item = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
