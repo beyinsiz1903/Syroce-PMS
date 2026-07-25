@@ -24,7 +24,7 @@ const MessagingModuleAdvanced = () => {
   }, []);
   const fetchTemplates = async () => {
     try {
-      const response = await fetch(`/api/messaging-center/templates`, {
+      const response = await fetch(`/messaging-center/templates`, {
         headers: {},
         credentials: "include"
       });
