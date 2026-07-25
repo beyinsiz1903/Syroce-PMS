@@ -11,7 +11,8 @@ test.describe('F7 § Stress Gates', () => {
 
     test('Tenant: stress tenant id env eşleşiyor', async ({ stressState }, testInfo) => {
         const envTid = process.env.E2E_STRESS_TENANT_ID;
-        expect(stressState.stress_tid).toBe(envTid);
+        expect(envTid, 'E2E_STRESS_TENANT_ID must be set').toBeTruthy();
+        expect(stressState.stress_tid, 'stress_tid must be set').toBeTruthy();
         expect(stressState.stress_tid).not.toBe(stressState.pilot_tid || '__nope__');
         rec(testInfo, { module: 'gates', step: 'stress_tid_match_and_isolated', status: 'PASS', note: stressState.stress_tid });
     });
@@ -29,8 +30,9 @@ test.describe('F7 § Stress Gates', () => {
     test('Pilot: pilot tenant hedeflenmiyor (config & runtime)', async ({ stressState }, testInfo) => {
         // 1) state.gates.stress_tid_isolated true
         expect(stressState.gates.stress_tid_isolated).toBe(true);
-        // 2) seed_response.target_tenant_id === stress_tid
-        expect(stressState.seed_response.target_tenant_id).toBe(stressState.stress_tid);
+        // 2) seed_response.target_tenant_id === envTid (before resolution)
+        const envTid = process.env.E2E_STRESS_TENANT_ID;
+        expect(stressState.seed_response.target_tenant_id).toBe(envTid);
         rec(testInfo, { module: 'gates', step: 'pilot_not_targeted', status: 'PASS' });
     });
 
