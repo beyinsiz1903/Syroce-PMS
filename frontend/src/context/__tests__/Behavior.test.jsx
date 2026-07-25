@@ -216,6 +216,156 @@ describe('Frontend Behavior Tests', () => {
     expect(screen.getByTestId('dashboard')).toBeDefined();
   });
 
+  it('ModuleGuardedRoute: moduleKey present & enabled -> renders component', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url === '/subscription/current') return Promise.resolve({
+        data: { modules: { pms: true }, entitlements: { pms: { features: [], limits: {} } } }
+      });
+      return Promise.resolve({ data: [] });
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/pms-page']}>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <Routes>
+            <Route path="/app/dashboard" element={<div data-testid="dashboard">Dashboard</div>} />
+            <Route
+              path="/pms-page"
+              element={
+                <ModuleGuardedRoute
+                  isAuthenticated={true}
+                  moduleKey="pms"
+                  element={<div data-testid="pms-page">PMS Page</div>}
+                />
+              }
+            />
+          </Routes>
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+
+    expect(screen.queryByTestId('pms-page')).not.toBeNull();
+  });
+
+  it('ModuleGuardedRoute: moduleKey present & disabled -> redirects to dashboard', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url === '/subscription/current') return Promise.resolve({
+        data: { modules: { pms: false }, entitlements: {} }
+      });
+      return Promise.resolve({ data: [] });
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/pms-page']}>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <Routes>
+            <Route path="/app/dashboard" element={<div data-testid="dashboard">Dashboard</div>} />
+            <Route
+              path="/pms-page"
+              element={
+                <ModuleGuardedRoute
+                  isAuthenticated={true}
+                  moduleKey="pms"
+                  element={<div data-testid="pms-page">PMS Page</div>}
+                />
+              }
+            />
+          </Routes>
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+
+    expect(screen.queryByTestId('pms-page')).toBeNull();
+    expect(screen.getByTestId('dashboard')).toBeDefined();
+  });
+
+  it('ModuleGuardedRoute: not authenticated -> redirects to auth', async () => {
+    render(
+      <MemoryRouter initialEntries={['/pms-page']}>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <Routes>
+            <Route path="/auth" element={<div data-testid="auth">Auth Page</div>} />
+            <Route
+              path="/pms-page"
+              element={
+                <ModuleGuardedRoute
+                  isAuthenticated={false}
+                  moduleKey="pms"
+                  element={<div data-testid="pms-page">PMS Page</div>}
+                />
+              }
+            />
+          </Routes>
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+
+    expect(screen.queryByTestId('pms-page')).toBeNull();
+    expect(screen.getByTestId('auth')).toBeDefined();
+  });
+
+  it('ModuleGuardedRoute: super admin bypasses check', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url === '/subscription/current') return Promise.resolve({
+        data: { modules: { pms: false }, entitlements: {} }
+      });
+      return Promise.resolve({ data: [] });
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/pms-page']}>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={true}>
+          <Routes>
+            <Route
+              path="/pms-page"
+              element={
+                <ModuleGuardedRoute
+                  isAuthenticated={true}
+                  moduleKey="pms"
+                  element={<div data-testid="pms-page">PMS Page</div>}
+                />
+              }
+            />
+          </Routes>
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+
+    expect(screen.queryByTestId('pms-page')).not.toBeNull();
+  });
+
+  it('ModuleGuardedRoute: no moduleKey -> renders component', async () => {
+    render(
+      <MemoryRouter initialEntries={['/no-guard-page']}>
+        <EntitlementProvider currentTenantId="tenant-1" isSuperAdmin={false}>
+          <Routes>
+            <Route
+              path="/no-guard-page"
+              element={
+                <ModuleGuardedRoute
+                  isAuthenticated={true}
+                  element={<div data-testid="no-guard-page">No Guard Page</div>}
+                />
+              }
+            />
+          </Routes>
+        </EntitlementProvider>
+      </MemoryRouter>
+    );
+
+    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+
+    expect(screen.queryByTestId('no-guard-page')).not.toBeNull();
+  });
+
   it('POSOutletManagement: used=limit -> Yeni Satış Noktası disabled', async () => {
     axios.get.mockImplementation((url) => {
       if (url === '/subscription/current') return Promise.resolve({
