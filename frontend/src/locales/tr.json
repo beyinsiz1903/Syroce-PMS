@@ -6664,6 +6664,7 @@
       "dagitim_onizleme": "Dağıtım Önizleme"
     },
     "pages_GroupReservations": {
+      "room_blocks": "Oda Blokları",
       "gelismis_blok_yonetimi": "Gelişmiş Blok Yönetimi"
     },
     "pages_guest_RoomRequestPage": {

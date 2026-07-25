@@ -6616,6 +6616,7 @@
       "dagitim_onizleme": "Dağıtım Önizleme"
     },
     "pages_GroupReservations": {
+      "room_blocks": "Room Blocks",
       "gelismis_blok_yonetimi": "Advanced Block Management"
     },
     "pages_guest_RoomRequestPage": {
