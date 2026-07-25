@@ -11,6 +11,7 @@ import Layout from '../../components/Layout';
 import POSDashboard from '../../pages/POSDashboard';
 import SpaWellness from '../../pages/SpaWellness';
 import TransferParkingPage from '../../pages/TransferParkingPage';
+import { operaParityRoutes } from '../../routes/sections/operaParity';
 
 vi.mock('axios');
 
@@ -364,6 +365,32 @@ describe('Frontend Behavior Tests', () => {
     await act(async () => { await new Promise(r => setTimeout(r, 0)); });
 
     expect(screen.queryByTestId('no-guard-page')).not.toBeNull();
+  });
+
+  it('operaParity: /function-space is guarded under mice module entitlement', () => {
+    const mockP = (comp) => ({ component: comp, type: 'public' });
+    const mockPm = (comp, key, feat, opts) => ({ component: comp, type: 'module', moduleKey: key, options: opts });
+    const routes = operaParityRoutes({ p: mockP, pm: mockPm });
+    const route = routes.find(r => r.path === '/function-space');
+    expect(route).toBeDefined();
+    expect(route.type).toBe('module');
+    expect(route.moduleKey).toBe('mice');
+    expect(route.options?.strict).toBe(true);
+    expect(route.wrapLayout).toBe(true);
+    expect(route.layoutModule).toBe('mice');
+  });
+
+  it('operaParity: /catering is guarded under mice module entitlement', () => {
+    const mockP = (comp) => ({ component: comp, type: 'public' });
+    const mockPm = (comp, key, feat, opts) => ({ component: comp, type: 'module', moduleKey: key, options: opts });
+    const routes = operaParityRoutes({ p: mockP, pm: mockPm });
+    const route = routes.find(r => r.path === '/catering');
+    expect(route).toBeDefined();
+    expect(route.type).toBe('module');
+    expect(route.moduleKey).toBe('mice');
+    expect(route.options?.strict).toBe(true);
+    expect(route.wrapLayout).toBe(true);
+    expect(route.layoutModule).toBe('mice');
   });
 
   it('POSOutletManagement: used=limit -> Yeni Satış Noktası disabled', async () => {
