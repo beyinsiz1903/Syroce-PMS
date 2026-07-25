@@ -435,6 +435,10 @@ export default async function globalSetup() {
     if ((process.env.E2E_EXTERNAL_DRY_RUN || '').toLowerCase() !== 'true') {
         throw new Error('[stress-setup] NO-GO: E2E_EXTERNAL_DRY_RUN != "true" (fail-closed; harici servisler dry-run olmalı).');
     }
+    let STRESS_TID = process.env.E2E_STRESS_TENANT_ID;
+    if (!STRESS_TID) {
+        throw new Error('[stress-setup] NO-GO: E2E_STRESS_TENANT_ID gerekli.');
+    }
     if (PILOT_TID && STRESS_TID === PILOT_TID) {
         throw new Error('[stress-setup] NO-GO: STRESS_TENANT_ID eşittir PILOT_TENANT_ID — kesinlikle reddedildi.');
     }
@@ -534,6 +538,10 @@ export default async function globalSetup() {
         try {
             const seg = JSON.parse(Buffer.from(stressToken.split('.')[1], 'base64url').toString('utf8'));
             stressTokenTid = seg?.tenant_id ?? seg?.tid ?? 'absent';
+            if (stressTokenTid !== 'absent' && STRESS_TID !== stressTokenTid) {
+                console.log(`[stress-setup] 🔄 STRESS_TID (${STRESS_TID}) resolved to UUID: ${stressTokenTid}`);
+                STRESS_TID = stressTokenTid;
+            }
         } catch (_) { /* diagnostic only — never gates */ }
         const cqProbe = await api.get('/api/channel-manager/conflict-queue?limit=50', {
             headers: { Authorization: `Bearer ${stressToken}` },
