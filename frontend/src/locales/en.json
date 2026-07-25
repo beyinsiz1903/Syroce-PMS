@@ -6615,6 +6615,9 @@
       "referans_aciklama_b2973": "Referans / Açıklama",
       "dagitim_onizleme": "Dağıtım Önizleme"
     },
+    "pages_GroupReservations": {
+      "gelismis_blok_yonetimi": "Advanced Block Management"
+    },
     "pages_guest_RoomRequestPage": {
       "talep_acilamadi": "Talep açılamadı"
     },
