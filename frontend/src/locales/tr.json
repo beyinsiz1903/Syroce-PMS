@@ -4965,6 +4965,12 @@
       "giris_orj": "Giriş (orj)",
       "cikis_orj": "Çıkış (orj)"
     },
+    "pages_BasicReports": {
+      "forecast_reports": "Öngörü Raporları",
+      "trial_balance": "Mizan Raporu",
+      "forecast_reports_desc": "Doluluk tahmini, pickup ve pace analizi",
+      "trial_balance_desc": "Günlük gelir, ödeme ve balans kontrolü"
+    },
     "components_PMSDateBadge": {
       "gun_sonu_islemini_baslat": "Gün sonu işlemini başlat"
     },
