@@ -226,23 +226,11 @@ async def _get_qr_salt(tenant_id: str) -> str | None:
     Negatif sonuç (tuz yok) de cache'lenir (sentinel "") → her public taramada
     DB lookup yapılmaz. Rotation cache'i hemen günceller, eski tokenlar düşer.
     """
-    cache_key = f"{_QR_SALT_CACHE_PREFIX}:{tenant_id}"
-    try:
-        cached = _cache.get(cache_key)
-    except Exception:
-        cached = None
-    if cached is not None:
-        return cached or None  # "" sentinel → None
-    salt = ""
     try:
         doc = await raw_db[_QR_SALT_COLL].find_one({"tenant_id": tenant_id})
         salt = (doc or {}).get("salt") or ""
     except Exception:
         salt = ""
-    try:
-        _cache.set(cache_key, salt, ttl=_QR_SALT_CACHE_TTL)
-    except Exception:
-        pass
     return salt or None
 
 
@@ -993,9 +981,4 @@ async def rotate_room_qr_secret(
         },
         upsert=True,
     )
-    # Cache'i hemen güncelle → yeni tuz aynı instance'ta anında etkin.
-    try:
-        _cache.set(f"{_QR_SALT_CACHE_PREFIX}:{tenant_id}", new_salt, ttl=_QR_SALT_CACHE_TTL)
-    except Exception:
-        pass
     return {"tenant_id": tenant_id, "version": version, "rotated_at": now, "rotated": True}
