@@ -5885,7 +5885,7 @@ async def upload_staff_document(
     await grid_in.write(content)
     await grid_in.close()
     gridfs_id = grid_in._id
-    
+
     item = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
