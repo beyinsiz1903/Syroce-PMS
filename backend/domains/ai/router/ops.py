@@ -638,7 +638,7 @@ async def get_ai_llm_state(
     # Task #206 — diagnostics surface MUST be gated by E2E_AI_DRY_RUN=true.
     # Outside test mode the endpoint is fail-closed (503) so production
     # deployments cannot leak provider/env shape through this route.
-    e2e_dry_run = (_os.getenv("E2E_AI_DRY_RUN") or "").lower() in ("1", "true", "yes", "on")
+    e2e_dry_run = (_os.getenv("E2E_AI_DRY_RUN") or _os.getenv("E2E_EXTERNAL_DRY_RUN") or "").lower() in ("1", "true", "yes", "on")
     if not e2e_dry_run:
         raise HTTPException(status_code=503, detail="AI diagnostics disabled (E2E_AI_DRY_RUN not set)")
     svc = _AIService()
