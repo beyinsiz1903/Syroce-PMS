@@ -2935,7 +2935,7 @@ async def stress_seed(
 
     return {
         "success": True,
-        "target_tenant_id": stress_tid,
+        "target_tenant_id": payload.target_tenant_id,
         "data_prefix": prefix,
         "room_count": rc,
         "max_allowed_this_round": MAX_ROOMS_THIS_ROUND,
@@ -3038,7 +3038,7 @@ async def stress_seed_pending(
 
     return {
         "success": True,
-        "target_tenant_id": stress_tid,
+        "target_tenant_id": payload.target_tenant_id,
         "data_prefix": prefix,
         "requested": payload.count,
         "inserted": inserted,
@@ -3600,7 +3600,7 @@ async def stress_cleanup(
 
     return {
         "success": True,
-        "target_tenant_id": stress_tid,
+        "target_tenant_id": payload.target_tenant_id,
         "data_prefix": payload.data_prefix,
         "deleted_counts": deleted_counts,
         "audit_logs_retained": True,
@@ -3693,7 +3693,7 @@ async def stress_pos_load_cleanup(
 
     return {
         "success": True,
-        "target_tenant_id": stress_tid,
+        "target_tenant_id": payload.target_tenant_id,
         "data_prefix": prefix,
         "deleted_counts": deleted_counts,
         "audit_logs_retained": True,
