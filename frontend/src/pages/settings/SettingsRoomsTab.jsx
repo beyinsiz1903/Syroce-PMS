@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -22,6 +23,7 @@ import { confirmDialog } from '@/lib/dialogs';
 
 export default function SettingsRoomsTab({ loadRooms, roomsLoading, setShowBulkRoomsDialog, isSuperAdmin, setShowAddRoomDialog, roomsList, handleDeleteRoom }) {
     const { t } = useTranslation();
+    const navigate = useNavigate();
     return (
         <TabsContent value="rooms" className="space-y-4" data-testid="rooms-settings-content">
               <Card>
@@ -33,7 +35,10 @@ export default function SettingsRoomsTab({ loadRooms, roomsLoading, setShowBulkR
                       </CardTitle>
                       <CardDescription>Otel odalarını ekleyin, düzenleyin veya silin</CardDescription>
                     </div>
-                    <div className="flex gap-2 flex-wrap">
+                     <div className="flex gap-2 flex-wrap">
+                      <Button variant="outline" size="sm" onClick={() => navigate("/suite-connecting")} data-testid="btn-go-suite-connecting" disabled={!isSuperAdmin}>
+                        <DoorOpen className="w-4 h-4 mr-1.5" /> {t("cm.pages_SettingsRoomsTab.suite_connecting_tanimlari", "Suite / Connecting Tanımları")}
+                      </Button>
                       <Button variant="outline" size="sm" onClick={loadRooms} disabled={roomsLoading}>
                         <RefreshCw className={`w-4 h-4 mr-1.5 ${roomsLoading ? 'animate-spin' : ''}`} /> Yenile
                       </Button>

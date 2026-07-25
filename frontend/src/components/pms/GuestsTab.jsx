@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,7 @@ import { Plus, User, Search, Star, Phone, Mail, CreditCard, MapPin, Merge, Setti
 
 const GuestsTab = ({ guests, setOpenDialog, setSelectedGuest360, loadGuest360, setNewBooking }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const tc = (k) => t(`pmsComponents.guests.${k}`);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -60,6 +62,9 @@ const GuestsTab = ({ guests, setOpenDialog, setSelectedGuest360, loadGuest360, s
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-semibold" data-testid="guests-tab-title">{tc('title')} ({guests.length})</h2>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => navigate("/profile-udf")} data-testid="btn-go-profile-udf">
+            <Settings className="w-4 h-4 mr-2" /> {t("cm.components_pms_GuestsTab.profil_ozel_alanlari_udf", "Profil Özel Alanları (UDF)")}
+          </Button>
           <Button variant="outline" onClick={() => setShowMergeDialog(true)}>
             <Merge className="w-4 h-4 mr-2" /> {tc('mergeGuests')}
           </Button>

@@ -5163,6 +5163,9 @@
       "henuz_teklif_gecmisi_yok": "Henüz teklif geçmişi yok",
       "analiz_icin_yeterli_veri_yok": "Analiz için yeterli veri yok"
     },
+    "components_pms_GuestsTab": {
+      "profil_ozel_alanlari_udf": "Profil Özel Alanları (UDF)"
+    },
     "components_POSAutoPostSettings": {
       "pos_auto_post_zamanlamasi": "POS Auto-Post Zamanlaması",
       "pos_fislerinin_folio_ya_otomatik_aktarim": "POS fişlerinin folio'ya otomatik aktarım ayarları",
@@ -6666,6 +6669,9 @@
     "pages_GroupReservations": {
       "room_blocks": "Oda Blokları",
       "gelismis_blok_yonetimi": "Gelişmiş Blok Yönetimi"
+    },
+    "pages_SettingsRoomsTab": {
+      "suite_connecting_tanimlari": "Suite / Connecting Tanımları"
     },
     "pages_guest_RoomRequestPage": {
       "talep_acilamadi": "Talep açılamadı"
