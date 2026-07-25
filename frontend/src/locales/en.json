@@ -4917,6 +4917,12 @@
       "giris_orj": "Giriş (orj)",
       "cikis_orj": "Çıkış (orj)"
     },
+    "pages_BasicReports": {
+      "forecast_reports": "Forecast Reports",
+      "trial_balance": "Trial Balance",
+      "forecast_reports_desc": "Occupancy forecast, pickup and pace analysis",
+      "trial_balance_desc": "Daily revenue, payment and balance checks"
+    },
     "components_PMSDateBadge": {
       "gun_sonu_islemini_baslat": "Gün sonu işlemini başlat"
     },

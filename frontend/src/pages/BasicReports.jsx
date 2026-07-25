@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next';
 import CostAnalyticsView from '@/components/cost/CostAnalyticsView';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { BarChart3, DollarSign, BedDouble, Users, Globe, Hotel, CreditCard, Shield, FileText, Building2, Utensils, TrendingUp, AlertTriangle, ArrowLeftRight, Loader2, RefreshCw, ChevronRight, Star, LayoutDashboard, Calendar, CheckCircle2, Activity, ListChecks } from 'lucide-react';
+import { BarChart3, DollarSign, BedDouble, Users, Globe, Hotel, CreditCard, Shield, FileText, Building2, Utensils, TrendingUp, AlertTriangle, ArrowLeftRight, Loader2, RefreshCw, ChevronRight, Star, LayoutDashboard, Calendar, CheckCircle2, Activity, ListChecks, ClipboardCheck } from 'lucide-react';
+import ForecastReportsPage from './ForecastReportsPage';
+import TrialBalancePage from './TrialBalancePage';
 import { ROOM_STATUS_COLORS, ROOM_STATUS_LABELS, formatPercent } from './reports/ReportHelpers';
 import OverviewSection from './reports/OverviewSection';
 import RevenueSection from './reports/RevenueSection';
@@ -41,6 +43,11 @@ const REPORT_MENU = [{
   label: 'ADR & RevPAR',
   icon: TrendingUp,
   desc: 'Performans metrikleri'
+}, {
+  id: 'forecast_reports',
+  label: 'Öngörü Raporları',
+  icon: TrendingUp,
+  desc: 'Doluluk tahmini, pickup ve pace analizi'
 }, {
   id: 'period',
   label: 'Dönem Karşılaştırma',
@@ -125,6 +132,11 @@ const REPORT_MENU = [{
   icon: TrendingUp,
   desc: 'Kategoriye göre gider analizi'
 }, {
+  id: 'trial_balance',
+  label: 'Mizan Raporu',
+  icon: ClipboardCheck,
+  desc: 'Günlük gelir, ödeme ve balans kontrolü'
+}, {
   type: 'header',
   label: 'RESMİ RAPORLAR'
 }, {
@@ -154,7 +166,7 @@ const REPORT_MENU = [{
   icon: Utensils,
   desc: 'Yiyecek & içecek'
 }];
-const SELF_CONTAINED_SECTIONS = new Set(['expenses', 'official']);
+const SELF_CONTAINED_SECTIONS = new Set(['expenses', 'official', 'forecast_reports', 'trial_balance']);
 const BasicReports = ({
   user,
   tenant,
@@ -347,6 +359,8 @@ const BasicReports = ({
         return <RevenueSection data={data} s={s} pc={pc} roomTypeData={roomTypeData} />;
       case 'adr_revpar':
         return <AdrRevparSection data={data} s={s} pc={pc} />;
+      case 'forecast_reports':
+        return <div data-testid="section-forecast-reports"><ForecastReportsPage /></div>;
       case 'period':
         return <PeriodSection data={data} pc={pc} />;
       case 'occupancy':
@@ -371,6 +385,8 @@ const BasicReports = ({
         return <SourcesSection sourceData={sourceData} />;
       case 'payments':
         return <PaymentsSection payments={payments} paymentData={paymentData} />;
+      case 'trial_balance':
+        return <div data-testid="section-trial-balance"><TrialBalancePage /></div>;
       case 'official':
         return <OfficialSection officialDate={officialDate} setOfficialDate={setOfficialDate} officialRows={officialRows} officialLoading={officialLoading} officialError={officialError} officialSearch={officialSearch} setOfficialSearch={setOfficialSearch} fetchOfficialGuests={fetchOfficialGuests} handleOfficialExportCsv={handleOfficialExportCsv} handleOfficialPrint={handleOfficialPrint} filteredOfficialRows={filteredOfficialRows} officialTotalGuests={officialTotalGuests} officialTotalRevenue={officialTotalRevenue} />;
       case 'police':
@@ -409,7 +425,7 @@ const BasicReports = ({
             const isActive = activeSection === item.id;
             return <button key={item.id} onClick={() => setActiveSection(item.id)} className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-all text-[13px] ${isActive ? 'bg-sky-50 text-sky-700 font-semibold border-l-[3px] border-sky-600 pl-[9px]' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`} data-testid={`report-nav-${item.id}`}>
                   <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-sky-600' : 'text-gray-400'}`} />
-                  <span className="truncate">{item.label}</span>
+                  <span className="truncate">{t(`cm.pages_BasicReports.${item.id}`, item.label)}</span>
                 </button>;
           })}
           </nav>
@@ -428,7 +444,7 @@ const BasicReports = ({
               <span className="text-sm font-bold text-gray-900">Rapor Merkezi</span>
             </div>
             <select value={activeSection} onChange={e => setActiveSection(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" data-testid="mobile-report-selector">
-              {REPORT_MENU.filter(m => m.id).map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+              {REPORT_MENU.filter(m => m.id).map(m => <option key={m.id} value={m.id}>{t(`cm.pages_BasicReports.${m.id}`, m.label)}</option>)}
             </select>
           </div>
           <div className="p-4" data-testid="reports-mobile-content">{renderContent()}</div>
@@ -440,7 +456,7 @@ const BasicReports = ({
               <div className="flex items-center gap-2 text-xs text-gray-400">
                 <span>Raporlar</span>
                 <ChevronRight className="w-3 h-3" />
-                <span className="text-gray-700 font-medium">{currentMenuItem?.label || 'Genel Bakış'}</span>
+                <span className="text-gray-700 font-medium">{t(`cm.pages_BasicReports.${currentMenuItem?.id}`, currentMenuItem?.label || 'Genel Bakış')}</span>
               </div>
               <Button onClick={fetchData} variant="outline" size="sm" data-testid="refresh-reports-btn">
                 <RefreshCw className="w-3.5 h-3.5 mr-1.5" />Yenile
