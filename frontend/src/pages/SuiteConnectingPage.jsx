@@ -16,7 +16,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Plus, RefreshCw, Trash2, DoorOpen, Loader2, Link2 } from "lucide-react";
+import { Building2, Plus, RefreshCw, Trash2, DoorOpen, Loader2, Link2, Shield } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 
 /**
@@ -25,10 +25,14 @@ import { useTranslation } from 'react-i18next';
  * - Connecting: iki oda arası kapı bağlı çift.
  */
 
-export default function SuiteConnectingPage() {
+export default function SuiteConnectingPage({ user }) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const [tab, setTab] = useState("suites");
+
+  const uRoles = (user?.roles || []).map(r => r.toLowerCase());
+  const uRole = (user?.role || "").toLowerCase();
+  const isSuperAdmin = uRoles.includes("super_admin") || uRole === "super_admin" || uRole === "demo_manager_readonly";
 
   const [rooms, setRooms] = useState([]);
   const [suites, setSuites] = useState([]);
@@ -68,7 +72,21 @@ export default function SuiteConnectingPage() {
     finally { setLoading(false); }
   }, [handleErr]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => {
+    if (isSuperAdmin) {
+      loadAll();
+    }
+  }, [loadAll, isSuperAdmin]);
+
+  if (!isSuperAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[50vh] space-y-4">
+        <Shield className="w-16 h-16 text-rose-500" />
+        <h2 className="text-xl font-bold">Yetkisiz Erişim</h2>
+        <p className="text-slate-500">Bu sayfayı görüntülemek için süper-yönetici yetkisine sahip olmalısınız.</p>
+      </div>
+    );
+  }
 
   const roomLabel = (id) => {
     const r = rooms.find((x) => (x.id || x._id) === id);
