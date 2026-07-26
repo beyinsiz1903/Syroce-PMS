@@ -2105,6 +2105,71 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
     )
 
 
+def _build_pos_docs(stress_tid: str, prefix: str, now: datetime):
+    outlets_docs = []
+    now_iso = now.isoformat()
+    for i in range(2):
+        outlets_docs.append({
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "outlet_name": f"{prefix}POS_Outlet_{i+1}",
+            "outlet_type": "restaurant",
+            "location": "Lobby",
+            "capacity": 50,
+            "opening_hours": "08:00-23:00",
+            "status": "active",
+            "created_at": now_iso,
+            "stress_seed": True,
+            "stress_prefix": prefix,
+        })
+    return outlets_docs
+
+
+def _build_spa_docs(stress_tid: str, prefix: str, now: datetime):
+    services_docs = []
+    therapists_docs = []
+    rooms_docs = []
+    now_iso = now.isoformat()
+    
+    for i in range(2):
+        services_docs.append({
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "name": f"{prefix}Spa_Service_{i+1}",
+            "category": "massage",
+            "duration_minutes": 60,
+            "price": 100.0,
+            "currency": "EUR",
+            "active": True,
+            "created_at": now_iso,
+            "stress_seed": True,
+            "stress_prefix": prefix,
+        })
+        therapists_docs.append({
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "first_name": f"{prefix}Therapist",
+            "last_name": str(i+1),
+            "email": f"{prefix.lower()}therapist{i+1}@e2e-stress.example.com",
+            "active": True,
+            "created_at": now_iso,
+            "stress_seed": True,
+            "stress_prefix": prefix,
+        })
+        rooms_docs.append({
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "name": f"{prefix}Spa_Room_{i+1}",
+            "capacity": 1,
+            "active": True,
+            "created_at": now_iso,
+            "stress_seed": True,
+            "stress_prefix": prefix,
+        })
+        
+    return services_docs, therapists_docs, rooms_docs
+
+
 def _build_f8e_docs(stress_tid: str, prefix: str, now: datetime):
     """F8E — Finance / Cashier / Accounting seed factory.
 
@@ -2536,6 +2601,10 @@ async def stress_seed(
         hr_perf_template_docs,
         hr_leave_accrual_policy_docs,
     ) = _build_f8d_docs(stress_tid, prefix, now)
+    
+    pos_outlets_docs = _build_pos_docs(stress_tid, prefix, now)
+    spa_services_docs, spa_therapists_docs, spa_rooms_docs = _build_spa_docs(stress_tid, prefix, now)
+    
     # F8E: Finance / Cashier / Accounting surface (standalone —
     # cashier shift lifecycle + suppliers/expenses/invoices + bank
     # accounts + inventory + stock movements + cash_flow + city ledger).
@@ -2783,6 +2852,10 @@ async def stress_seed(
             "cash_flow": _chunked_insert(db.cash_flow, cash_flow_docs, INSERT_CHUNK_SIZE),
             "city_ledger_accounts": _chunked_insert(db.city_ledger_accounts, city_ledger_accounts_docs, INSERT_CHUNK_SIZE),
             "pending_bookings": _chunked_insert(db.bookings, pending_bookings_docs, INSERT_CHUNK_SIZE),
+            "pos_outlets": _chunked_insert(db.pos_outlets, pos_outlets_docs, INSERT_CHUNK_SIZE),
+            "spa_services": _chunked_insert(db.spa_services, spa_services_docs, INSERT_CHUNK_SIZE),
+            "spa_therapists": _chunked_insert(db.spa_therapists, spa_therapists_docs, INSERT_CHUNK_SIZE),
+            "spa_rooms": _chunked_insert(db.spa_rooms, spa_rooms_docs, INSERT_CHUNK_SIZE),
         }
 
         # Run all inserts in parallel
