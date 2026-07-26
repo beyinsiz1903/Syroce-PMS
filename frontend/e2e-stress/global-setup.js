@@ -453,12 +453,13 @@ export default async function globalSetup() {
 
     const authOnly = (process.env.STRESS_AUTH_ONLY || '').toLowerCase() === 'true';
     const dataPrefix = `E2E_STRESS_F7_${Date.now()}_`;
-    let seedBody = {};
+    let seedBody = null;
     let stressAfterSeed = null;
     let spaEntitlement = null;
     let pilotFixtures = null;
     let roleProvisioning = { staff_lowtrust: null, staff_housekeeping: null, agency_admin: null };
     let shardAdmins = { B: null, C: null, D: null, E: null };
+    const setupMode = authOnly ? 'auth_only' : 'seeded';
 
     if (!authOnly) {
     // 6) Seed 500 rooms
@@ -477,7 +478,7 @@ export default async function globalSetup() {
         const txt = await seedResp.text().catch(() => '');
         throw new Error(`[stress-setup] NO-GO: seed failed (${seedResp.status()}): ${txt.slice(0, 400)}`);
     }
-    const seedBody = await seedResp.json();
+    seedBody = await seedResp.json();
     if (!Array.isArray(seedBody.external_calls_made) || seedBody.external_calls_made.length !== 0) {
         throw new Error(`[stress-setup] NO-GO: external_calls_made not empty: ${JSON.stringify(seedBody.external_calls_made)}`);
     }
@@ -768,16 +769,17 @@ export default async function globalSetup() {
     // so the real partial-success contract runs deterministically without
     // fake-greening. Prefer the explicit pending_ids list; fall back to the
     // single pending_sample.id for backends predating the list field.
-    const _pv = seedBody.post_insert_verification || {};
+    const _pv = seedBody?.post_insert_verification || {};
     const seededPendingIds = (Array.isArray(_pv.pending_ids) && _pv.pending_ids.length)
         ? _pv.pending_ids
         : (_pv.pending_sample?.id ? [_pv.pending_sample.id] : []);
     fs.writeFileSync(STATE_FILE, JSON.stringify({
+        setup_mode: setupMode,
         base_url: baseURL,
         stress_tid: STRESS_TID,
         pilot_tid: PILOT_TID,
         room_count: ROOM_COUNT,
-        data_prefix: dataPrefix,
+        data_prefix: authOnly ? null : dataPrefix,
         seeded_pending_ids: seededPendingIds,
         seed_response: seedBody,
         pilot_baseline: pilotBaseline,

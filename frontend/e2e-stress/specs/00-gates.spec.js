@@ -29,7 +29,7 @@ test.describe('F7 § Stress Gates', () => {
 
     test.describe('Seed Response Assertions', () => {
         test.beforeEach(async ({ stressState }) => {
-            test.skip(!stressState.seed_response, 'STRESS_AUTH_ONLY veya cleanup anında seed_response yoktur');
+            test.skip(stressState.setup_mode !== 'seeded', `Seed assertions require seeded state; mode=${stressState.setup_mode}`);
         });
 
     test('Pilot: pilot tenant hedeflenmiyor (config & runtime)', async ({ stressState }, testInfo) => {
