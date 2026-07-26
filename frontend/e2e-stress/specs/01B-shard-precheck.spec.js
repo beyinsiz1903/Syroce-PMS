@@ -107,7 +107,7 @@ test.describe(`F7B § Shard Precheck [${PROFILE}]`, () => {
             // New additions
             await verifyEndpoint(request, token, '/api/mice/accounts', 1, 'MICE Parent Entities (Accounts)', stdExtract);
             await verifyEndpoint(request, token, '/api/pos/outlets', 1, 'POS Outlets / F&B Catalog', stdExtract);
-            await verifyEndpoint(request, token, '/api/accounting/inventory', 1, 'Inventory Catalog', stdExtract); // May be 0 if seed missing, but endpoint must be reachable
+            await verifyEndpoint(request, token, '/api/inventory/items', 1, 'Inventory Catalog', stdExtract); // May be 0 if seed missing, but endpoint must be reachable
         });
     }
 
