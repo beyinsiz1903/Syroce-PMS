@@ -44,11 +44,13 @@ test.describe('F7 § Stress Gates', () => {
     });
 
     test('Seed response: tenant_context kullanıldı', async ({ stressState }, testInfo) => {
+        test.skip(process.env.STRESS_AUTH_ONLY === 'true', 'STRESS_AUTH_ONLY modunda seed çalışmaz');
         expect(stressState.seed_response.tenant_context_used).toBe(true);
         rec(testInfo, { module: 'gates', step: 'tenant_context_used', status: 'PASS' });
     });
 
     test('Seed response: gates dict tüm kapı PASS', async ({ stressState }, testInfo) => {
+        test.skip(process.env.STRESS_AUTH_ONLY === 'true', 'STRESS_AUTH_ONLY modunda seed çalışmaz');
         const g = stressState.seed_response.gates || {};
         for (const k of ['env_stress_tid_present', 'target_matches_stress_tid', 'pilot_tid_not_targeted', 'destructive_stress_allowed']) {
             expect(g[k], `gate ${k}`).toBe(true);

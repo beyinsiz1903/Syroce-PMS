@@ -212,7 +212,7 @@ async function ensureSpaEntitlement(api, pilotToken, stressTid, stressToken) {
         revenue_management: true,
         advanced_analytics: true,
         spa: true,
-        mice: true
+        mice: true,
     };
     const hasAll = Object.keys(requiredModules).every((m) => currentModules[m] === true);
     out.already_on = hasAll;
@@ -451,8 +451,17 @@ export default async function globalSetup() {
     // 5) Stress baseline (seed öncesi — ideali tüm sayımlar 0 veya çok küçük)
     const stressBaseline = await snapshot(api, stressToken, 'stress-baseline');
 
-    // 6) Seed 500 rooms
+    const authOnly = (process.env.STRESS_AUTH_ONLY || '').toLowerCase() === 'true';
     const dataPrefix = `E2E_STRESS_F7_${Date.now()}_`;
+    let seedBody = {};
+    let stressAfterSeed = null;
+    let spaEntitlement = null;
+    let pilotFixtures = null;
+    let roleProvisioning = { staff_lowtrust: null, staff_housekeeping: null, agency_admin: null };
+    let shardAdmins = { B: null, C: null, D: null, E: null };
+
+    if (!authOnly) {
+    // 6) Seed 500 rooms
     // F8L v2 (Task #25) — synthetic pending_assignment bookings for spec 52B's
     // real-succeeded bulk-resolve coverage (1 consumed by test G, 1 spare for
     // re-runs / future expansion). Single-source the count so the request param
@@ -634,7 +643,6 @@ export default async function globalSetup() {
     // Self-heal the `spa` add-on so spec 98 (spa-wellness-operational) runs with
     // real data instead of catalog_probe SKIP. Real entitlement grant on the
     // throwaway stress tenant (NOT an RBAC weakening); fail-fast if still blocked.
-    let spaEntitlement = null;
     try {
         spaEntitlement = await ensureSpaEntitlement(api, pilotToken, STRESS_TID, stressToken);
         console.log(`[stress-setup] ✅ spa add-on entitlement ready: ${JSON.stringify(spaEntitlement)}`);
@@ -652,7 +660,6 @@ export default async function globalSetup() {
     // exercise real pilot ids (not BOGUS_UUID). Fail-soft: endpoint not
     // deployed yet → specs fall back to existing sampling probes +
     // sample-gap REVIEW (current behaviour preserved).
-    let pilotFixtures = null;
     if (PILOT_TID) {
         const pf = await api.post('/api/admin/pilot-fixtures/ensure', {
             headers: { Authorization: `Bearer ${pilotToken}` },
@@ -673,7 +680,6 @@ export default async function globalSetup() {
     // GERÇEK create endpoint'leri üzerinden stress tenant'ında düşük-güven
     // staff + agency_admin principal üret. Fail-soft: başarısızlık globalSetup'ı
     // NO-GO'ya düşürmez, token=null kalır (downstream spec honest SKIP eder).
-    let roleProvisioning = { staff_lowtrust: null, staff_housekeeping: null, agency_admin: null };
     try {
         const staff = await provisionLowTrustStaff(api, stressToken);
         const housekeeping = await provisionHousekeepingStaff(api, stressToken);
@@ -690,7 +696,6 @@ export default async function globalSetup() {
     }
 
     // Provision unique admin users/tokens for each shard (B, C, D, E) to ensure isolation.
-    let shardAdmins = { B: null, C: null, D: null, E: null };
     try {
         const b = await provisionShardAdmin(api, stressToken, 'B');
         const c = await provisionShardAdmin(api, stressToken, 'C');
@@ -720,6 +725,8 @@ export default async function globalSetup() {
     console.log(`[stress-setup] seed_summary: ${JSON.stringify(seedSummary)}`);
     if (!seedSummary.staff_pool_ok) {
         console.log(`[stress-setup] ⚠️ staff pool < 5 (=${staffSeeded}) — HR/shift/RBAC spec'leri yetersiz veri görebilir.`);
+    }
+
     }
 
     // 8) Persist

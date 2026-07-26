@@ -21,12 +21,52 @@ async function snapshot(api, token) {
 }
 
 export default async function globalTeardown() {
-    if (!fs.existsSync(STATE_FILE)) {
-        console.warn('[stress-teardown] state file not found — nothing to clean up.');
-        return;
+    const isFullWipe = (process.env.STRESS_FULL_WIPE || '').toLowerCase() === 'true';
+    let state = {};
+    let tokens = {};
+    let fallbackPilotToken = null;
+
+    if (!fs.existsSync(STATE_FILE) || !fs.existsSync(TOKEN_FILE)) {
+        console.warn('[stress-teardown] state/token file not found.');
+        if (!isFullWipe) {
+            console.warn('[stress-teardown] STRESS_FULL_WIPE=false — nothing to clean up.');
+            return;
+        }
+        console.log('[stress-teardown] STRESS_FULL_WIPE=true, falling back to direct login...');
+        
+        // Manual login for full wipe fallback
+        const baseUrl = process.env.E2E_BASE_URL;
+        const tenantId = process.env.E2E_STRESS_TENANT_ID;
+        const api = await request.newContext({ baseURL: baseUrl, ignoreHTTPSErrors: true });
+        
+        // Login as super admin (assuming the provided stress admin is super admin)
+        const loginR = await api.post('/api/auth/login', {
+            data: { email: process.env.E2E_STRESS_ADMIN_EMAIL, password: process.env.E2E_STRESS_ADMIN_PASSWORD }
+        });
+        if (!loginR.ok()) {
+            console.error('[stress-teardown] Fallback login failed:', loginR.status());
+            return;
+        }
+        const authData = await loginR.json();
+        
+        // Assume pilot tenant is 3
+        const tokenR = await api.post('/api/auth/token', {
+            headers: { Authorization: `Bearer ${authData.access_token}` },
+            data: { tenant_id: 3 }
+        });
+        if (!tokenR.ok()) {
+            console.error('[stress-teardown] Fallback token request failed:', tokenR.status());
+            return;
+        }
+        fallbackPilotToken = (await tokenR.json()).access_token;
+        
+        state = { base_url: baseUrl, data_prefix: "", stress_tid: parseInt(tenantId, 10) };
+        tokens = { pilot_token: fallbackPilotToken };
+        await api.dispose();
+    } else {
+        state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
+        tokens = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf-8'));
     }
-    const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
-    const tokens = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf-8'));
 
     // CI-observed: cleanup sweeps ~30 collections by prefix and takes ~54s on the
     // deploy Atlas tier (cost is index-less per-collection scans, not delete I/O).
@@ -35,13 +75,14 @@ export default async function globalTeardown() {
     // both cleanup posts ample headroom — the idempotency invariant is still
     // asserted below, it just no longer races a too-tight clock.
     const api = await request.newContext({ baseURL: state.base_url, ignoreHTTPSErrors: true, timeout: 200_000 });
-    const log = { started_at: new Date().toISOString(), data_prefix: state.data_prefix, steps: [] };
+    const prefix = isFullWipe ? "" : state.data_prefix;
+    const log = { started_at: new Date().toISOString(), data_prefix: prefix, is_full_wipe: isFullWipe, steps: [] };
 
     // NOTE: /api/admin/stress/* require_super_admin → pilot bearer kullanılır.
     // 1) cleanup #1
     const c1 = await api.post('/api/admin/stress/cleanup', {
         headers: { Authorization: `Bearer ${tokens.pilot_token}` },
-        data: { target_tenant_id: state.stress_tid, data_prefix: state.data_prefix },
+        data: { target_tenant_id: state.stress_tid, data_prefix: prefix, confirm_full_wipe: isFullWipe },
         failOnStatusCode: false,
         timeout: 180_000,
     });
@@ -57,7 +98,7 @@ export default async function globalTeardown() {
     // 2) cleanup #2 (idempotent — must return all-zero)
     const c2 = await api.post('/api/admin/stress/cleanup', {
         headers: { Authorization: `Bearer ${tokens.pilot_token}` },
-        data: { target_tenant_id: state.stress_tid, data_prefix: state.data_prefix },
+        data: { target_tenant_id: state.stress_tid, data_prefix: prefix, confirm_full_wipe: isFullWipe },
         failOnStatusCode: false,
         timeout: 180_000,
     });
