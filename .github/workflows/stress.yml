@@ -295,7 +295,7 @@ jobs:
     teardown:
         name: Stress Teardown & Cleanup
         needs: [setup, stress]
-        if: always() && needs.setup.result == 'success'
+        if: always()
         runs-on: ubuntu-latest
         timeout-minutes: 20
         steps:

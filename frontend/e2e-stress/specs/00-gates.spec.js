@@ -27,6 +27,9 @@ test.describe('F7 § Stress Gates', () => {
         rec(testInfo, { module: 'gates', step: 'external_dry_run_on', status: 'PASS' });
     });
 
+    test.describe('Seed Response Assertions', () => {
+        test.skip(process.env.STRESS_AUTH_ONLY === 'true', 'STRESS_AUTH_ONLY modunda seed çalışmaz');
+
     test('Pilot: pilot tenant hedeflenmiyor (config & runtime)', async ({ stressState }, testInfo) => {
         // 1) state.gates.stress_tid_isolated true
         expect(stressState.gates.stress_tid_isolated).toBe(true);
@@ -44,18 +47,18 @@ test.describe('F7 § Stress Gates', () => {
     });
 
     test('Seed response: tenant_context kullanıldı', async ({ stressState }, testInfo) => {
-        test.skip(process.env.STRESS_AUTH_ONLY === 'true', 'STRESS_AUTH_ONLY modunda seed çalışmaz');
         expect(stressState.seed_response.tenant_context_used).toBe(true);
         rec(testInfo, { module: 'gates', step: 'tenant_context_used', status: 'PASS' });
     });
 
     test('Seed response: gates dict tüm kapı PASS', async ({ stressState }, testInfo) => {
-        test.skip(process.env.STRESS_AUTH_ONLY === 'true', 'STRESS_AUTH_ONLY modunda seed çalışmaz');
         const g = stressState.seed_response.gates || {};
         for (const k of ['env_stress_tid_present', 'target_matches_stress_tid', 'pilot_tid_not_targeted', 'destructive_stress_allowed']) {
             expect(g[k], `gate ${k}`).toBe(true);
         }
         rec(testInfo, { module: 'gates', step: 'backend_gates_all_pass', status: 'PASS', note: JSON.stringify(g) });
+    });
+
     });
 
     test('System health: en az REVIEW seviyesinde (best-effort)', async ({ request, stressTokens }, testInfo) => {

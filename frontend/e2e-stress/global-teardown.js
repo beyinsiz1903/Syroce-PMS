@@ -34,33 +34,42 @@ export default async function globalTeardown() {
         }
         console.log('[stress-teardown] STRESS_FULL_WIPE=true, falling back to direct login...');
         
-        // Manual login for full wipe fallback
-        const baseUrl = process.env.E2E_BASE_URL;
-        const tenantId = process.env.E2E_STRESS_TENANT_ID;
+const baseUrl = process.env.E2E_BASE_URL;
+        const pilotEmail = process.env.E2E_ADMIN_EMAIL;
+        const pilotPassword = process.env.E2E_ADMIN_PASSWORD;
+        const pilotTenantId = process.env.PILOT_TENANT_ID;
+        const stressTenantId = process.env.E2E_STRESS_TENANT_ID;
+        
+        if (!pilotEmail || !pilotPassword || !pilotTenantId || !stressTenantId) {
+            throw new Error('[stress-teardown] full-wipe fallback env missing');
+        }
+        if (String(pilotTenantId) === String(stressTenantId)) {
+            throw new Error('[stress-teardown] pilot and stress tenant must differ');
+        }
+        if (process.env.E2E_ALLOW_DESTRUCTIVE_STRESS !== 'true') {
+            throw new Error('[stress-teardown] E2E_ALLOW_DESTRUCTIVE_STRESS is not true, refusing destructive full wipe');
+        }
+        
         const api = await request.newContext({ baseURL: baseUrl, ignoreHTTPSErrors: true });
         
-        // Login as super admin (assuming the provided stress admin is super admin)
         const loginR = await api.post('/api/auth/login', {
-            data: { email: process.env.E2E_STRESS_ADMIN_EMAIL, password: process.env.E2E_STRESS_ADMIN_PASSWORD }
+            data: { email: pilotEmail, password: pilotPassword }
         });
         if (!loginR.ok()) {
-            console.error('[stress-teardown] Fallback login failed:', loginR.status());
-            return;
+            throw new Error(`[stress-teardown] fallback super-admin login failed: status=${loginR.status()}`);
         }
         const authData = await loginR.json();
         
-        // Assume pilot tenant is 3
         const tokenR = await api.post('/api/auth/token', {
             headers: { Authorization: `Bearer ${authData.access_token}` },
-            data: { tenant_id: 3 }
+            data: { tenant_id: parseInt(pilotTenantId, 10) }
         });
         if (!tokenR.ok()) {
-            console.error('[stress-teardown] Fallback token request failed:', tokenR.status());
-            return;
+            throw new Error(`[stress-teardown] fallback token request failed: status=${tokenR.status()}`);
         }
         fallbackPilotToken = (await tokenR.json()).access_token;
         
-        state = { base_url: baseUrl, data_prefix: "", stress_tid: parseInt(tenantId, 10) };
+        state = { base_url: baseUrl, data_prefix: "", stress_tid: stressTenantId };
         tokens = { pilot_token: fallbackPilotToken };
         await api.dispose();
     } else {
