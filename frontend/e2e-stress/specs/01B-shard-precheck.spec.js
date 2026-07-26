@@ -49,14 +49,19 @@ async function verifyEndpoint(request, token, path, expectedMinCount, descriptio
     }
 
     const count = extractor(json);
-    if (!Number.isFinite(count)) {
+    const shape = diagnosticShape(json);
+    if (!Number.isFinite(count) || count < 0) {
         throw new Error(
             `[precheck] ${description} count extraction failed: ` +
-            `path=${path} shape=${JSON.stringify(diagnosticShape(json))}`,
+            `path=${path} count=${count} shape=${JSON.stringify(shape)}`,
         );
     }
 
-    expect(count, `[precheck] ${description}: path=${path} count=${count}`).toBeGreaterThanOrEqual(expectedMinCount);
+    expect(
+        count,
+        `[precheck] ${description}: path=${path} count=${count} ` +
+        `shape=${JSON.stringify(shape)}`,
+    ).toBeGreaterThanOrEqual(expectedMinCount);
 }
 
 
@@ -87,7 +92,7 @@ test.describe(`F7B § Shard Precheck [${PROFILE}]`, () => {
             // Staff service requests (source=staff)
             await verifyEndpoint(request, token, '/api/room-requests?source=staff&limit=1', 1, 'Staff Service Requests', (j) => j.items?.length ?? j.list?.length ?? (Array.isArray(j) ? j.length : -1));
             // Complaints
-            await verifyEndpoint(request, token, '/api/service/complaints?limit=1', 1, 'Complaints', (j) => j.complaints?.length ?? j.data?.length ?? j.items?.length ?? (Array.isArray(j) ? j.length : -1));
+            await verifyEndpoint(request, token, '/api/gm/complaints?limit=1', 1, 'Complaints', (j) => j.complaints?.length ?? j.data?.length ?? j.items?.length ?? (Array.isArray(j) ? j.length : -1));
             // Maintenance and Messaging readiness (expect reachable, so count=0 is fine)
             await verifyEndpoint(request, token, '/api/maintenance/work-orders?limit=1', 0, 'Maintenance Readiness', (j) => j.items?.length ?? j.data?.length ?? j.list?.length ?? (Array.isArray(j) ? j.length : 0));
             await verifyEndpoint(request, token, '/api/messaging/templates?limit=1', 0, 'Messaging Templates', (j) => j.items?.length ?? j.data?.length ?? j.list?.length ?? (Array.isArray(j) ? j.length : 0));
@@ -97,9 +102,23 @@ test.describe(`F7B § Shard Precheck [${PROFILE}]`, () => {
     if (PROFILE === 'mice_hr_finance') {
         test('MICE, HR, Spa auxiliary data (Fail-fast if missing)', async ({ request, stressTokens }) => {
             const token = stressTokens.stress_token;
-            const stdExtract = (j) => j.items?.length ?? j.data?.length ?? j.list?.length ?? j.staff?.length ?? (Array.isArray(j) ? j.length : -1);
-            await verifyEndpoint(request, token, '/api/hr/staff', 1, 'HR Staff', stdExtract);
-            await verifyEndpoint(request, token, '/api/hr/departments', 1, 'HR Departments', stdExtract);
+            
+            const hrStaffExtract = (j) =>
+                j.total ??
+                j.total_count ??
+                j.staff?.length ??
+                j.staff_members?.length ??
+                j.employees?.length ??
+                j.results?.length ??
+                j.items?.length ??
+                j.data?.length ??
+                j.list?.length ??
+                (Array.isArray(j) ? j.length : -1);
+            
+            const stdExtract = (j) => j.items?.length ?? j.data?.length ?? j.list?.length ?? (Array.isArray(j) ? j.length : -1);
+            
+            await verifyEndpoint(request, token, '/api/hr/staff', 1, 'HR Staff', hrStaffExtract);
+            await verifyEndpoint(request, token, '/api/hr/departments', 1, 'HR Departments', hrStaffExtract);
             await verifyEndpoint(request, token, '/api/spa/services', 1, 'Spa Services', (j) => j.services?.length ?? stdExtract(j));
             await verifyEndpoint(request, token, '/api/spa/therapists', 1, 'Spa Therapists', (j) => j.therapists?.length ?? stdExtract(j));
             await verifyEndpoint(request, token, '/api/spa/rooms', 1, 'Spa Rooms', (j) => j.rooms?.length ?? stdExtract(j));
