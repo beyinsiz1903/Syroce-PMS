@@ -21,6 +21,15 @@ async function snapshot(api, token) {
 }
 
 export default async function globalTeardown() {
+    if ((process.env.STRESS_SKIP_TEARDOWN || '').toLowerCase() === 'true') {
+        console.log('[stress-teardown] STRESS_SKIP_TEARDOWN=true — skipping teardown.');
+        return;
+    }
+    if ((process.env.STRESS_AUTH_ONLY || '').toLowerCase() === 'true') {
+        console.log('[stress-teardown] STRESS_AUTH_ONLY=true — skipping teardown.');
+        return;
+    }
+
     const isFullWipe = (process.env.STRESS_FULL_WIPE || '').toLowerCase() === 'true';
     let state = {};
     let tokens = {};
