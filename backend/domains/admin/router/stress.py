@@ -2488,7 +2488,10 @@ async def stress_seed(
         _sysdb = get_system_db()
         await _sysdb.tenants.update_one(
             {"id": stress_tid},
-            {"$set": {"features.hidden_marketplace": True}},
+            {"$set": {
+                "features.hidden_marketplace": True,
+                "features.pos_fnb": True
+            }},
         )
     except Exception as e:
         _stress_log.warning(
@@ -2751,7 +2754,7 @@ async def stress_seed(
             "housekeeping_tasks": _chunked_insert(db.housekeeping_tasks, hk_docs, INSERT_CHUNK_SIZE),
             "room_qr_requests": _chunked_insert(db.room_qr_requests, qr_docs, INSERT_CHUNK_SIZE),
             "service_complaints": _chunked_insert(db.service_complaints, complaint_docs, INSERT_CHUNK_SIZE),
-            "complaints": _chunked_insert(db.complaints, complaint_docs, INSERT_CHUNK_SIZE),
+            "complaints": _chunked_insert(db.complaints, [dict(c) for c in complaint_docs], INSERT_CHUNK_SIZE),
             "messages": _chunked_insert(db.messages, message_docs, INSERT_CHUNK_SIZE),
             "notifications": _chunked_insert(db.notifications, notif_docs, INSERT_CHUNK_SIZE),
             "messaging_delivery_logs": _chunked_insert(db.messaging_delivery_logs, delivery_log_docs, INSERT_CHUNK_SIZE),
