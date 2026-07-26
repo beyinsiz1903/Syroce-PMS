@@ -115,6 +115,15 @@ test.describe(`F7B § Shard Precheck [${PROFILE}]`, () => {
                 j.list?.length ??
                 (Array.isArray(j) ? j.length : -1);
             
+            const miceAccountsExtract = (j) =>
+                j.accounts?.length ??
+                j.total ??
+                j.total_count ??
+                j.items?.length ??
+                j.data?.length ??
+                j.list?.length ??
+                (Array.isArray(j) ? j.length : -1);
+            
             const stdExtract = (j) => j.items?.length ?? j.data?.length ?? j.list?.length ?? (Array.isArray(j) ? j.length : -1);
             
             await verifyEndpoint(request, token, '/api/hr/staff', 1, 'HR Staff', hrStaffExtract);
@@ -124,7 +133,7 @@ test.describe(`F7B § Shard Precheck [${PROFILE}]`, () => {
             await verifyEndpoint(request, token, '/api/spa/rooms', 1, 'Spa Rooms', (j) => j.rooms?.length ?? stdExtract(j));
             await verifyEndpoint(request, token, '/api/mice/events', 1, 'MICE Events', (j) => j.events?.length ?? stdExtract(j));
             // New additions
-            await verifyEndpoint(request, token, '/api/mice/accounts', 1, 'MICE Parent Entities (Accounts)', stdExtract);
+            await verifyEndpoint(request, token, '/api/mice/accounts', 1, 'MICE Parent Entities (Accounts)', miceAccountsExtract);
             await verifyEndpoint(request, token, '/api/pos/outlets', 1, 'POS Outlets / F&B Catalog', stdExtract);
             await verifyEndpoint(request, token, '/api/inventory/items', 1, 'Inventory Catalog', stdExtract); // May be 0 if seed missing, but endpoint must be reachable
         });

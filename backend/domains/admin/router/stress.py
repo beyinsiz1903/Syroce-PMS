@@ -157,6 +157,7 @@ STRESS_CLEANUP_INDEXED_COLLECTIONS = (
     "housekeeping_tasks",
     "room_qr_requests",
     "service_complaints",
+    "complaints",
     "messages",
     "notifications",
     # Proactively index remaining heavy collections to avoid delete timeouts
@@ -256,6 +257,7 @@ STRESS_COLLECTIONS = [
     # handles them (no extra code needed beyond inclusion here).
     "room_qr_requests",
     "service_complaints",
+    "complaints",
     "messages",
     "notifications",
     # Task #172: messaging activity-feed surface. /api/messaging-center/activity
@@ -2749,6 +2751,7 @@ async def stress_seed(
             "housekeeping_tasks": _chunked_insert(db.housekeeping_tasks, hk_docs, INSERT_CHUNK_SIZE),
             "room_qr_requests": _chunked_insert(db.room_qr_requests, qr_docs, INSERT_CHUNK_SIZE),
             "service_complaints": _chunked_insert(db.service_complaints, complaint_docs, INSERT_CHUNK_SIZE),
+            "complaints": _chunked_insert(db.complaints, complaint_docs, INSERT_CHUNK_SIZE),
             "messages": _chunked_insert(db.messages, message_docs, INSERT_CHUNK_SIZE),
             "notifications": _chunked_insert(db.notifications, notif_docs, INSERT_CHUNK_SIZE),
             "messaging_delivery_logs": _chunked_insert(db.messaging_delivery_logs, delivery_log_docs, INSERT_CHUNK_SIZE),
