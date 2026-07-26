@@ -27,6 +27,11 @@ test.describe('F7 § Stress Gates', () => {
         rec(testInfo, { module: 'gates', step: 'external_dry_run_on', status: 'PASS' });
     });
 
+    test.describe('Seed Response Assertions', () => {
+        test.beforeEach(async ({ stressState }) => {
+            test.skip(stressState.setup_mode !== 'seeded', `Seed assertions require seeded state; mode=${stressState.setup_mode}`);
+        });
+
     test('Pilot: pilot tenant hedeflenmiyor (config & runtime)', async ({ stressState }, testInfo) => {
         // 1) state.gates.stress_tid_isolated true
         expect(stressState.gates.stress_tid_isolated).toBe(true);
@@ -54,6 +59,8 @@ test.describe('F7 § Stress Gates', () => {
             expect(g[k], `gate ${k}`).toBe(true);
         }
         rec(testInfo, { module: 'gates', step: 'backend_gates_all_pass', status: 'PASS', note: JSON.stringify(g) });
+    });
+
     });
 
     test('System health: en az REVIEW seviyesinde (best-effort)', async ({ request, stressTokens }, testInfo) => {

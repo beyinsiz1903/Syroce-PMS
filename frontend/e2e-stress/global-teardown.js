@@ -21,12 +21,70 @@ async function snapshot(api, token) {
 }
 
 export default async function globalTeardown() {
-    if (!fs.existsSync(STATE_FILE)) {
-        console.warn('[stress-teardown] state file not found — nothing to clean up.');
+    if ((process.env.STRESS_SKIP_TEARDOWN || '').toLowerCase() === 'true') {
+        console.log('[stress-teardown] STRESS_SKIP_TEARDOWN=true — skipping teardown.');
         return;
     }
-    const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
-    const tokens = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf-8'));
+    if ((process.env.STRESS_AUTH_ONLY || '').toLowerCase() === 'true') {
+        console.log('[stress-teardown] STRESS_AUTH_ONLY=true — skipping teardown.');
+        return;
+    }
+
+    const isFullWipe = (process.env.STRESS_FULL_WIPE || '').toLowerCase() === 'true';
+    let state = {};
+    let tokens = {};
+    let fallbackPilotToken = null;
+
+    if (!fs.existsSync(STATE_FILE) || !fs.existsSync(TOKEN_FILE)) {
+        console.warn('[stress-teardown] state/token file not found.');
+        if (!isFullWipe) {
+            console.warn('[stress-teardown] STRESS_FULL_WIPE=false — nothing to clean up.');
+            return;
+        }
+        console.log('[stress-teardown] STRESS_FULL_WIPE=true, falling back to direct login...');
+        
+const baseUrl = process.env.E2E_BASE_URL;
+        const pilotEmail = process.env.E2E_ADMIN_EMAIL;
+        const pilotPassword = process.env.E2E_ADMIN_PASSWORD;
+        const pilotTenantId = process.env.PILOT_TENANT_ID;
+        const stressTenantId = process.env.E2E_STRESS_TENANT_ID;
+        
+        if (!pilotEmail || !pilotPassword || !pilotTenantId || !stressTenantId) {
+            throw new Error('[stress-teardown] full-wipe fallback env missing');
+        }
+        if (String(pilotTenantId) === String(stressTenantId)) {
+            throw new Error('[stress-teardown] pilot and stress tenant must differ');
+        }
+        if (process.env.E2E_ALLOW_DESTRUCTIVE_STRESS !== 'true') {
+            throw new Error('[stress-teardown] E2E_ALLOW_DESTRUCTIVE_STRESS is not true, refusing destructive full wipe');
+        }
+        
+        const api = await request.newContext({ baseURL: baseUrl, ignoreHTTPSErrors: true });
+        
+        const loginR = await api.post('/api/auth/login', {
+            data: { email: pilotEmail, password: pilotPassword }
+        });
+        if (!loginR.ok()) {
+            throw new Error(`[stress-teardown] fallback super-admin login failed: status=${loginR.status()}`);
+        }
+        const authData = await loginR.json();
+        
+        const tokenR = await api.post('/api/auth/token', {
+            headers: { Authorization: `Bearer ${authData.access_token}` },
+            data: { tenant_id: pilotTenantId }
+        });
+        if (!tokenR.ok()) {
+            throw new Error(`[stress-teardown] fallback token request failed: status=${tokenR.status()}`);
+        }
+        fallbackPilotToken = (await tokenR.json()).access_token;
+        
+        state = { base_url: baseUrl, data_prefix: "", stress_tid: stressTenantId };
+        tokens = { pilot_token: fallbackPilotToken };
+        await api.dispose();
+    } else {
+        state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
+        tokens = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf-8'));
+    }
 
     // CI-observed: cleanup sweeps ~30 collections by prefix and takes ~54s on the
     // deploy Atlas tier (cost is index-less per-collection scans, not delete I/O).
@@ -35,13 +93,14 @@ export default async function globalTeardown() {
     // both cleanup posts ample headroom — the idempotency invariant is still
     // asserted below, it just no longer races a too-tight clock.
     const api = await request.newContext({ baseURL: state.base_url, ignoreHTTPSErrors: true, timeout: 200_000 });
-    const log = { started_at: new Date().toISOString(), data_prefix: state.data_prefix, steps: [] };
+    const prefix = isFullWipe ? "" : state.data_prefix;
+    const log = { started_at: new Date().toISOString(), data_prefix: prefix, is_full_wipe: isFullWipe, steps: [] };
 
     // NOTE: /api/admin/stress/* require_super_admin → pilot bearer kullanılır.
     // 1) cleanup #1
     const c1 = await api.post('/api/admin/stress/cleanup', {
         headers: { Authorization: `Bearer ${tokens.pilot_token}` },
-        data: { target_tenant_id: state.stress_tid, data_prefix: state.data_prefix },
+        data: { target_tenant_id: state.stress_tid, data_prefix: prefix, confirm_full_wipe: isFullWipe },
         failOnStatusCode: false,
         timeout: 180_000,
     });
@@ -57,7 +116,7 @@ export default async function globalTeardown() {
     // 2) cleanup #2 (idempotent — must return all-zero)
     const c2 = await api.post('/api/admin/stress/cleanup', {
         headers: { Authorization: `Bearer ${tokens.pilot_token}` },
-        data: { target_tenant_id: state.stress_tid, data_prefix: state.data_prefix },
+        data: { target_tenant_id: state.stress_tid, data_prefix: prefix, confirm_full_wipe: isFullWipe },
         failOnStatusCode: false,
         timeout: 180_000,
     });
