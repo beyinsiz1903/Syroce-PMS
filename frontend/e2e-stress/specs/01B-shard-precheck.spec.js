@@ -38,7 +38,7 @@ async function verifyEndpoint(request, token, path, expectedMinCount, descriptio
     try {
         json = text ? JSON.parse(text) : {};
     } catch {
-        json = { raw: text.slice(0, 500) };
+        json = { parse_error: true };
     }
 
     if (!r.ok()) {
@@ -87,7 +87,7 @@ test.describe(`F7B § Shard Precheck [${PROFILE}]`, () => {
             // Staff service requests (source=staff)
             await verifyEndpoint(request, token, '/api/room-requests?source=staff&limit=1', 1, 'Staff Service Requests', (j) => j.items?.length ?? j.list?.length ?? (Array.isArray(j) ? j.length : -1));
             // Complaints
-            await verifyEndpoint(request, token, '/api/complaints/list?limit=1', 1, 'Complaints', (j) => j.data?.length ?? j.items?.length ?? (Array.isArray(j) ? j.length : -1));
+            await verifyEndpoint(request, token, '/api/service/complaints?limit=1', 1, 'Complaints', (j) => j.complaints?.length ?? j.data?.length ?? j.items?.length ?? (Array.isArray(j) ? j.length : -1));
             // Maintenance and Messaging readiness (expect reachable, so count=0 is fine)
             await verifyEndpoint(request, token, '/api/maintenance/work-orders?limit=1', 0, 'Maintenance Readiness', (j) => j.items?.length ?? j.data?.length ?? j.list?.length ?? (Array.isArray(j) ? j.length : 0));
             await verifyEndpoint(request, token, '/api/messaging/templates?limit=1', 0, 'Messaging Templates', (j) => j.items?.length ?? j.data?.length ?? j.list?.length ?? (Array.isArray(j) ? j.length : 0));
@@ -97,7 +97,7 @@ test.describe(`F7B § Shard Precheck [${PROFILE}]`, () => {
     if (PROFILE === 'mice_hr_finance') {
         test('MICE, HR, Spa auxiliary data (Fail-fast if missing)', async ({ request, stressTokens }) => {
             const token = stressTokens.stress_token;
-            const stdExtract = (j) => j.items?.length ?? j.data?.length ?? j.list?.length ?? (Array.isArray(j) ? j.length : -1);
+            const stdExtract = (j) => j.items?.length ?? j.data?.length ?? j.list?.length ?? j.staff?.length ?? (Array.isArray(j) ? j.length : -1);
             await verifyEndpoint(request, token, '/api/hr/staff', 1, 'HR Staff', stdExtract);
             await verifyEndpoint(request, token, '/api/hr/departments', 1, 'HR Departments', stdExtract);
             await verifyEndpoint(request, token, '/api/spa/services', 1, 'Spa Services', (j) => j.services?.length ?? stdExtract(j));
