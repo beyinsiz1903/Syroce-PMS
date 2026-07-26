@@ -319,6 +319,7 @@ jobs:
 
             - name: Download Auth State
               uses: actions/download-artifact@v5
+              continue-on-error: true
               with:
                   name: stress-auth
                   path: frontend/e2e-stress/.auth/
@@ -327,6 +328,7 @@ jobs:
               env:
                   STRESS_SKIP_SETUP: 'true'
                   STRESS_SKIP_TEARDOWN: 'false'
+                  STRESS_FULL_WIPE: 'true'
               run: |
                   cd frontend
                   yarn playwright test --config=playwright.stress.config.js e2e-stress/specs/00-gates.spec.js

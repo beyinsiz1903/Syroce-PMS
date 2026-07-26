@@ -62,7 +62,7 @@ const baseUrl = process.env.E2E_BASE_URL;
         
         const tokenR = await api.post('/api/auth/token', {
             headers: { Authorization: `Bearer ${authData.access_token}` },
-            data: { tenant_id: parseInt(pilotTenantId, 10) }
+            data: { tenant_id: pilotTenantId }
         });
         if (!tokenR.ok()) {
             throw new Error(`[stress-teardown] fallback token request failed: status=${tokenR.status()}`);
