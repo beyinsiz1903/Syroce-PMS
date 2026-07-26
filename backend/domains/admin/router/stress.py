@@ -2488,10 +2488,7 @@ async def stress_seed(
         _sysdb = get_system_db()
         await _sysdb.tenants.update_one(
             {"id": stress_tid},
-            {"$set": {
-                "features.hidden_marketplace": True,
-                "features.pos_fnb": True
-            }},
+            {"$set": {"features.hidden_marketplace": True}},
         )
     except Exception as e:
         _stress_log.warning(
