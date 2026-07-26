@@ -3,24 +3,60 @@ import { test, expect } from '../fixtures/stress-context.js';
 const ROOM_COUNT = parseInt(process.env.E2E_ROOM_COUNT || '500', 10);
 const PROFILE = process.env.STRESS_PRECHECK_PROFILE || 'unknown';
 
+function diagnosticShape(json) {
+    if (Array.isArray(json)) {
+        return { type: 'array', length: json.length };
+    }
+    if (!json || typeof json !== 'object') {
+        return { type: typeof json };
+    }
+    const summary = { type: 'object', keys: Object.keys(json).slice(0, 30) };
+    for (const key of ['total', 'total_count', 'count', 'page', 'limit', 'status', 'detail', 'message']) {
+        if (typeof json[key] === 'number' || typeof json[key] === 'boolean') {
+            summary[key] = json[key];
+        } else if (typeof json[key] === 'string') {
+            summary[key] = json[key].slice(0, 150);
+        }
+    }
+    for (const key of ['items', 'data', 'list', 'staff', 'complaints', 'services', 'rooms', 'events']) {
+        if (Array.isArray(json[key])) {
+            summary[`${key}_length`] = json[key].length;
+        }
+    }
+    return summary;
+}
+
 async function verifyEndpoint(request, token, path, expectedMinCount, description, extractor) {
     const r = await request.get(path, {
         headers: { Authorization: `Bearer ${token}` },
         failOnStatusCode: false,
         timeout: 30_000,
     });
-    expect(r.ok(), `Precheck failed: ${path} returned ${r.status()}`).toBeTruthy();
-    
-    const j = await r.json().catch(() => ({}));
-    
-    const count = extractor(j);
-    if (count === undefined || count === null || isNaN(count)) {
-        throw new Error(`[precheck] Could not determine count for ${path}. Extractor returned invalid value. Response keys: ${Object.keys(j)}`);
+
+    const text = await r.text();
+    let json = {};
+    try {
+        json = text ? JSON.parse(text) : {};
+    } catch {
+        json = { raw: text.slice(0, 500) };
     }
 
-    if (expectedMinCount > 0) {
-        expect(count, `Precheck missing auxiliary data for ${description} at ${path}`).toBeGreaterThanOrEqual(expectedMinCount);
+    if (!r.ok()) {
+        throw new Error(
+            `[precheck] ${description} failed: ` +
+            `path=${path} status=${r.status()} shape=${JSON.stringify(diagnosticShape(json))}`,
+        );
     }
+
+    const count = extractor(json);
+    if (!Number.isFinite(count)) {
+        throw new Error(
+            `[precheck] ${description} count extraction failed: ` +
+            `path=${path} shape=${JSON.stringify(diagnosticShape(json))}`,
+        );
+    }
+
+    expect(count, `[precheck] ${description}: path=${path} count=${count}`).toBeGreaterThanOrEqual(expectedMinCount);
 }
 
 
