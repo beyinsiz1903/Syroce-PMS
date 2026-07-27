@@ -6,8 +6,9 @@ name: Full Stress Suite (one-shot)
 # Kapsam:
 #   - Shard B (Front Office Core): Specs 00..09, 95, 99 — Reservation, room move, folio, night audit.
 #   - Shard C (Operations & Service): Specs 08, 08B, 10..13, 98-maintenance, 98-messaging — Housekeeping, complaints, messaging.
-#   - Shard D (MICE & Sales & HR & Finance): Specs 14..29, 32..35B, 37..39B, 70..72, 98-pos*, 98-rms*, 99-pos* — MICE, HR, Finance.
+#   - Shard D (MICE & Sales & HR & Finance): Specs 14..29, 32..35B, 37..39B, 70..72, 98-rms*, 99-pos* — MICE, HR, Finance.
 #   - Shard E (Security & Integrations): Specs 30, 31, 36, 40..45, 50..52B, 60..66, 96, 97, 98-auth*, 98-vcc*, 98B*, 98C*, 98D* — Security, cross-tenant isolation, CM.
+#   - Shard F (POS & F&B): Specs 98-pos* — POS outlets, KDS, inventory, lifecycle.
 
 on:
     schedule:
@@ -41,6 +42,9 @@ env:
     E2E_STRESS_ADMIN_EMAIL: ${{ secrets.STRESS_TENANT_ADMIN_EMAIL }}
     E2E_STRESS_ADMIN_PASSWORD: ${{ secrets.STRESS_TENANT_ADMIN_PASSWORD }}
     E2E_STRESS_TENANT_ID: ${{ secrets.STRESS_TENANT_ID }}
+    STRESS_POS_ADMIN_EMAIL: ${{ secrets.STRESS_POS_ADMIN_EMAIL }}
+    STRESS_POS_ADMIN_PASSWORD: ${{ secrets.STRESS_POS_ADMIN_PASSWORD }}
+    STRESS_POS_TENANT_ID: ${{ secrets.STRESS_POS_TENANT_ID }}
     PILOT_TENANT_ID: ${{ secrets.PILOT_TENANT_ID }}
     E2E_ALLOW_DESTRUCTIVE_STRESS: 'true'
     E2E_EXTERNAL_DRY_RUN: 'true'
@@ -65,7 +69,9 @@ jobs:
                   missing=()
                   for v in E2E_BASE_URL E2E_ADMIN_EMAIL E2E_ADMIN_PASSWORD \
                            E2E_STRESS_ADMIN_EMAIL E2E_STRESS_ADMIN_PASSWORD \
-                           E2E_STRESS_TENANT_ID PILOT_TENANT_ID; do
+                           E2E_STRESS_TENANT_ID PILOT_TENANT_ID \
+                           STRESS_POS_ADMIN_EMAIL STRESS_POS_ADMIN_PASSWORD \
+                           STRESS_POS_TENANT_ID; do
                       if [ -z "${!v}" ]; then missing+=("$v"); fi
                   done
                   if [ ${#missing[@]} -ne 0 ]; then
@@ -74,6 +80,14 @@ jobs:
                   fi
                   if [ "$E2E_STRESS_TENANT_ID" = "$PILOT_TENANT_ID" ]; then
                       echo "::error::E2E_STRESS_TENANT_ID == PILOT_TENANT_ID — fail-closed."
+                      exit 1
+                  fi
+                  if [ "$STRESS_POS_TENANT_ID" = "$PILOT_TENANT_ID" ]; then
+                      echo "::error::STRESS_POS_TENANT_ID == PILOT_TENANT_ID — fail-closed."
+                      exit 1
+                  fi
+                  if [ "$STRESS_POS_TENANT_ID" = "$E2E_STRESS_TENANT_ID" ]; then
+                      echo "::error::STRESS_POS_TENANT_ID == E2E_STRESS_TENANT_ID — tenant isolation required."
                       exit 1
                   fi
                   if ! echo "$E2E_BASE_URL" | grep -qE '^https?://[^[:space:]]+'; then
@@ -134,11 +148,15 @@ jobs:
         needs: setup
         runs-on: ubuntu-latest
         timeout-minutes: 45
+        env:
+            E2E_STRESS_ADMIN_EMAIL: ${{ matrix.is_pos == 'true' && secrets.STRESS_POS_ADMIN_EMAIL || secrets.STRESS_TENANT_ADMIN_EMAIL }}
+            E2E_STRESS_ADMIN_PASSWORD: ${{ matrix.is_pos == 'true' && secrets.STRESS_POS_ADMIN_PASSWORD || secrets.STRESS_TENANT_ADMIN_PASSWORD }}
+            E2E_STRESS_TENANT_ID: ${{ matrix.is_pos == 'true' && secrets.STRESS_POS_TENANT_ID || secrets.STRESS_TENANT_ID }}
         strategy:
             fail-fast: false
             max-parallel: 1
             matrix:
-                shard: [B, C, D, E]
+                shard: [B, C, D, E, F]
                 include:
                     - shard: B
                       name: "Front Office Core"
@@ -152,7 +170,7 @@ jobs:
                       precheck_profile: "operations"
                     - shard: D
                       name: "MICE & Sales & HR & Finance"
-                      spec_pattern: "e2e-stress/specs/14-*.spec.js e2e-stress/specs/15-*.spec.js e2e-stress/specs/16-*.spec.js e2e-stress/specs/17-*.spec.js e2e-stress/specs/18-*.spec.js e2e-stress/specs/19-*.spec.js e2e-stress/specs/20-*.spec.js e2e-stress/specs/21-*.spec.js e2e-stress/specs/22-*.spec.js e2e-stress/specs/23-*.spec.js e2e-stress/specs/24-*.spec.js e2e-stress/specs/25-*.spec.js e2e-stress/specs/26-*.spec.js e2e-stress/specs/27-*.spec.js e2e-stress/specs/28-*.spec.js e2e-stress/specs/29-*.spec.js e2e-stress/specs/32-*.spec.js e2e-stress/specs/33-*.spec.js e2e-stress/specs/33B-*.spec.js e2e-stress/specs/34-*.spec.js e2e-stress/specs/35-*.spec.js e2e-stress/specs/35B-*.spec.js e2e-stress/specs/37-*.spec.js e2e-stress/specs/38-*.spec.js e2e-stress/specs/38B-*.spec.js e2e-stress/specs/39-*.spec.js e2e-stress/specs/39B-*.spec.js e2e-stress/specs/70-*.spec.js e2e-stress/specs/71-*.spec.js e2e-stress/specs/72-*.spec.js e2e-stress/specs/98-mobile-cashier-surface.spec.js e2e-stress/specs/98-payment-pos-reconciliation-dryrun.spec.js e2e-stress/specs/98-pos-deep-lifecycle.spec.js e2e-stress/specs/98-pos-kds-inventory.spec.js e2e-stress/specs/98-efatura-earsiv-dryrun.spec.js e2e-stress/specs/98-konaklama-vergisi-dryrun.spec.js e2e-stress/specs/98-fnb-beo-generator.spec.js e2e-stress/specs/98-golf-operational.spec.js e2e-stress/specs/98-rms-revenue-deep.spec.js e2e-stress/specs/98-sales-basic-lifecycle.spec.js e2e-stress/specs/98-spa-wellness-operational.spec.js"
+                      spec_pattern: "e2e-stress/specs/14-*.spec.js e2e-stress/specs/15-*.spec.js e2e-stress/specs/16-*.spec.js e2e-stress/specs/17-*.spec.js e2e-stress/specs/18-*.spec.js e2e-stress/specs/19-*.spec.js e2e-stress/specs/20-*.spec.js e2e-stress/specs/21-*.spec.js e2e-stress/specs/22-*.spec.js e2e-stress/specs/23-*.spec.js e2e-stress/specs/24-*.spec.js e2e-stress/specs/25-*.spec.js e2e-stress/specs/26-*.spec.js e2e-stress/specs/27-*.spec.js e2e-stress/specs/28-*.spec.js e2e-stress/specs/29-*.spec.js e2e-stress/specs/32-*.spec.js e2e-stress/specs/33-*.spec.js e2e-stress/specs/33B-*.spec.js e2e-stress/specs/34-*.spec.js e2e-stress/specs/35-*.spec.js e2e-stress/specs/35B-*.spec.js e2e-stress/specs/37-*.spec.js e2e-stress/specs/38-*.spec.js e2e-stress/specs/38B-*.spec.js e2e-stress/specs/39-*.spec.js e2e-stress/specs/39B-*.spec.js e2e-stress/specs/70-*.spec.js e2e-stress/specs/71-*.spec.js e2e-stress/specs/72-*.spec.js e2e-stress/specs/98-mobile-cashier-surface.spec.js e2e-stress/specs/98-payment-pos-reconciliation-dryrun.spec.js e2e-stress/specs/98-efatura-earsiv-dryrun.spec.js e2e-stress/specs/98-konaklama-vergisi-dryrun.spec.js e2e-stress/specs/98-fnb-beo-generator.spec.js e2e-stress/specs/98-golf-operational.spec.js e2e-stress/specs/98-rms-revenue-deep.spec.js e2e-stress/specs/98-sales-basic-lifecycle.spec.js e2e-stress/specs/98-spa-wellness-operational.spec.js"
                       report_tag: "shard_d_mice_hr_finance"
                       precheck_profile: "mice_hr_finance"
                     - shard: E
@@ -160,6 +178,12 @@ jobs:
                       spec_pattern: "e2e-stress/specs/30-*.spec.js e2e-stress/specs/31-*.spec.js e2e-stress/specs/36-*.spec.js e2e-stress/specs/40-*.spec.js e2e-stress/specs/41-*.spec.js e2e-stress/specs/41B-*.spec.js e2e-stress/specs/42-*.spec.js e2e-stress/specs/43-*.spec.js e2e-stress/specs/44-*.spec.js e2e-stress/specs/45-*.spec.js e2e-stress/specs/50-*.spec.js e2e-stress/specs/51-*.spec.js e2e-stress/specs/52-*.spec.js e2e-stress/specs/52B-*.spec.js e2e-stress/specs/60-*.spec.js e2e-stress/specs/61-*.spec.js e2e-stress/specs/62-*.spec.js e2e-stress/specs/63-*.spec.js e2e-stress/specs/64-*.spec.js e2e-stress/specs/65-*.spec.js e2e-stress/specs/66-*.spec.js e2e-stress/specs/96-*.spec.js e2e-stress/specs/97-*.spec.js e2e-stress/specs/98-auth-token-lifecycle.spec.js e2e-stress/specs/98-vcc-pci-compliance.spec.js e2e-stress/specs/98B-websocket-tenant-isolation.spec.js e2e-stress/specs/98C-twofa-totp-lifecycle.spec.js e2e-stress/specs/98D-peer-login-throttle.spec.js"
                       report_tag: "shard_e_security_integrations"
                       precheck_profile: "security_integrations"
+                    - shard: F
+                      name: "POS & F&B"
+                      spec_pattern: "e2e-stress/specs/98-pos-deep-lifecycle.spec.js e2e-stress/specs/98-pos-kds-inventory.spec.js"
+                      report_tag: "shard_f_pos_fnb"
+                      precheck_profile: "pos_fnb"
+                      is_pos: "true"
         env:
             STRESS_SKIP_SETUP: 'true'
             STRESS_SKIP_TEARDOWN: 'true'
@@ -185,11 +209,29 @@ jobs:
                   cd frontend && yarn e2e:install
 
             - name: Download Auth State
+              if: matrix.is_pos != 'true'
               uses: actions/download-artifact@v5
               continue-on-error: true
               with:
                   name: stress-auth
                   path: frontend/e2e-stress/.auth/
+
+            - name: POS Auth Provisioning
+              if: matrix.is_pos == 'true'
+              env:
+                  STRESS_AUTH_ONLY: 'true'
+              run: |
+                  cd frontend
+                  yarn playwright test --config=playwright.stress.config.js --max-failures=1 e2e-stress/specs/00-gates.spec.js
+
+            - name: Upload POS Auth State
+              if: matrix.is_pos == 'true'
+              uses: actions/upload-artifact@v5
+              with:
+                  name: stress-auth-pos
+                  path: frontend/e2e-stress/.auth/
+                  include-hidden-files: true
+                  retention-days: 1
 
             - name: Shard Teardown (Pre-cleanup)
               env:
@@ -326,6 +368,49 @@ jobs:
 
             - name: Run Cleanup and Teardown
               env:
+                  STRESS_SKIP_SETUP: 'true'
+                  STRESS_SKIP_TEARDOWN: 'false'
+                  STRESS_FULL_WIPE: 'true'
+              run: |
+                  cd frontend
+                  yarn playwright test --config=playwright.stress.config.js e2e-stress/specs/00-gates.spec.js
+
+            - name: Reset Auth State for POS Cleanup
+              if: always()
+              run: |
+                  rm -rf frontend/e2e-stress/.auth
+                  mkdir -p frontend/e2e-stress/.auth
+
+            - name: Download POS Auth State
+              if: always()
+              uses: actions/download-artifact@v5
+              continue-on-error: true
+              with:
+                  name: stress-auth-pos
+                  path: frontend/e2e-stress/.auth/
+
+            - name: Ensure POS Auth State (Fallback)
+              if: always()
+              env:
+                  STRESS_AUTH_ONLY: 'true'
+                  E2E_STRESS_ADMIN_EMAIL: ${{ env.STRESS_POS_ADMIN_EMAIL }}
+                  E2E_STRESS_ADMIN_PASSWORD: ${{ env.STRESS_POS_ADMIN_PASSWORD }}
+                  E2E_STRESS_TENANT_ID: ${{ env.STRESS_POS_TENANT_ID }}
+              run: |
+                  if [ ! -s "frontend/e2e-stress/.auth/stress-state.json" ]; then
+                      echo "Auth state missing, provisioning POS auth now..."
+                      cd frontend
+                      yarn playwright test --config=playwright.stress.config.js e2e-stress/specs/00-gates.spec.js
+                  else
+                      echo "POS auth state exists."
+                  fi
+
+            - name: Run Cleanup and Teardown (POS Tenant)
+              if: always()
+              env:
+                  E2E_STRESS_ADMIN_EMAIL: ${{ env.STRESS_POS_ADMIN_EMAIL }}
+                  E2E_STRESS_ADMIN_PASSWORD: ${{ env.STRESS_POS_ADMIN_PASSWORD }}
+                  E2E_STRESS_TENANT_ID: ${{ env.STRESS_POS_TENANT_ID }}
                   STRESS_SKIP_SETUP: 'true'
                   STRESS_SKIP_TEARDOWN: 'false'
                   STRESS_FULL_WIPE: 'true'
