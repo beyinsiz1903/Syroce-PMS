@@ -148,10 +148,6 @@ jobs:
         needs: setup
         runs-on: ubuntu-latest
         timeout-minutes: 45
-        env:
-            E2E_STRESS_ADMIN_EMAIL: ${{ matrix.is_pos == 'true' && secrets.STRESS_POS_ADMIN_EMAIL || secrets.STRESS_TENANT_ADMIN_EMAIL }}
-            E2E_STRESS_ADMIN_PASSWORD: ${{ matrix.is_pos == 'true' && secrets.STRESS_POS_ADMIN_PASSWORD || secrets.STRESS_TENANT_ADMIN_PASSWORD }}
-            E2E_STRESS_TENANT_ID: ${{ matrix.is_pos == 'true' && secrets.STRESS_POS_TENANT_ID || secrets.STRESS_TENANT_ID }}
         strategy:
             fail-fast: false
             max-parallel: 1
@@ -185,6 +181,9 @@ jobs:
                       precheck_profile: "pos_fnb"
                       is_pos: "true"
         env:
+            E2E_STRESS_ADMIN_EMAIL: ${{ matrix.is_pos == 'true' && secrets.STRESS_POS_ADMIN_EMAIL || secrets.STRESS_TENANT_ADMIN_EMAIL }}
+            E2E_STRESS_ADMIN_PASSWORD: ${{ matrix.is_pos == 'true' && secrets.STRESS_POS_ADMIN_PASSWORD || secrets.STRESS_TENANT_ADMIN_PASSWORD }}
+            E2E_STRESS_TENANT_ID: ${{ matrix.is_pos == 'true' && secrets.STRESS_POS_TENANT_ID || secrets.STRESS_TENANT_ID }}
             STRESS_SKIP_SETUP: 'true'
             STRESS_SKIP_TEARDOWN: 'true'
             STRESS_REPORT_TAG: ${{ matrix.report_tag }}
