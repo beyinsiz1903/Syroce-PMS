@@ -97,6 +97,13 @@ async def main() -> int:
         menus_count = await db.mice_menus.count_documents({"tenant_id": tenant_id})
         spaces_count = await db.mice_spaces.count_documents({"tenant_id": tenant_id})
         print(f"mice data probe — events={events_count} menus={menus_count} spaces={spaces_count}")
+
+        from core.db import set_client
+        set_client(client)
+        from core.entitlements.enforcement import get_tenant_limit
+        effective_limit = await get_tenant_limit(tenant_id, "mice", "concurrent_events")
+        print(f"Verified effective mice.concurrent_events limit: {effective_limit}")
+
     return 0
 
 
