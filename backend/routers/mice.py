@@ -1261,6 +1261,18 @@ async def update_event(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v98 DW
 ) -> dict:
+    try:
+        return await _update_event_impl(event_id, body, current_user)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("BEO D_update HTTP 500 error. EventId: %s", event_id)
+        raise
+
+async def _update_event_impl(
+    event_id: str,
+    body: EventIn,
+    current_user: User,
+) -> dict:
     require_mice_ops(current_user)
     await _ensure_indexes()
     if body.status not in EVENT_STATUSES:
