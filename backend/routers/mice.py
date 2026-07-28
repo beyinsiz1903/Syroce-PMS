@@ -1351,9 +1351,7 @@ async def _update_event_impl(
         if not res.matched_count:
             raise HTTPException(404, "Etkinlik bulunamadı")
         after = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
-    state["before"], state["after"] = before, after
-    if body.status == "completed":
-        await _post_event_to_folio(tenant_id, after)
+        state["before"], state["after"] = before, after
 
     before, after = state["before"], state["after"]
     if after is None:
@@ -1361,6 +1359,10 @@ async def _update_event_impl(
             status_code=500,
             detail="Etkinlik güncelleme sonucu okunamadı.",
         )
+
+    if body.status == "completed":
+        await _post_event_to_folio(tenant_id, after)
+
     await log_audit_event(
         tenant_id=tenant_id,
         user_id=current_user.username,
