@@ -859,7 +859,7 @@ class EventIn(BaseModel):
 
 
 def _line_total(r: dict) -> float:
-    return float(r.get("unit_price", 0)) * float(r.get("quantity", 1))
+    return float(r.get("unit_price") or 0.0) * float(r.get("quantity") or 1.0)
 
 
 def _compute_totals(event: dict, spaces_by_id: dict[str, dict]) -> dict:
