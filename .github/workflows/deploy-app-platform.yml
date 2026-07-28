@@ -119,43 +119,77 @@ jobs:
       - name: Trigger App Platform Deployment
         env:
           DO_APP_ID: ${{ secrets.DO_APP_ID }}
+          GITHUB_SHA: ${{ github.sha }}
+          GHCR_REPO: ghcr.io/${{ env.IMAGE_PREFIX }}
         run: |
           set -euo pipefail
           echo "Fetching current App Spec..."
-          doctl apps get "$DO_APP_ID" --format json > /tmp/app.json
+          doctl apps spec get "$DO_APP_ID" --format json > /tmp/spec.json
           
-          # Check if the backend component uses an image registry
-          if jq -e '.[0].spec.services[]? | select(.name=="syroce-backend" or .name=="backend") | has("image")' /tmp/app.json > /dev/null; then
-            echo "App is image-based. Updating spec with new SHA tag (${{ github.sha }})..."
-            jq '.[0].spec | 
-              (if .services then .services |= map(if .name=="syroce-backend" or .name=="backend" or .name=="syroce-frontend" or .name=="frontend" then .image.tag="${{ github.sha }}" else . end) else . end) | 
-              (if .workers then .workers |= map(if .name=="syroce-worker" or .name=="worker" then .image.tag="${{ github.sha }}" else . end) else . end)' /tmp/app.json > /tmp/new_spec.json
+          # Verify image repositories if components are image-based
+          for COMP in "syroce-backend" "backend" "syroce-frontend" "frontend"; do
+            ACTUAL_REPO="$(
+              jq -r '
+                .services[]?
+                | select(.name=="'$COMP'")
+                | .image.repository // empty
+              ' /tmp/spec.json
+            )"
+            if [ -n "$ACTUAL_REPO" ]; then
+              EXPECTED_REPO="${GHCR_REPO}-${COMP#syroce-}"
+              if [[ "$ACTUAL_REPO" != *"$EXPECTED_REPO"* ]]; then
+                 echo "::error::Image repository mismatch for $COMP. Expected to contain: $EXPECTED_REPO, Actual: $ACTUAL_REPO"
+                 exit 1
+              fi
+            fi
+          done
+          
+          # Check if the app has any image-based components
+          if jq -e '(.services[]? | select(.image? != null)) or (.workers[]? | select(.image? != null))' /tmp/spec.json > /dev/null; then
+            echo "App contains image-based components. Updating spec with new SHA tag ($GITHUB_SHA)..."
+            jq --arg sha "${GITHUB_SHA}" '
+              if .services then
+                .services |= map(
+                  if (.image? != null) and
+                     (
+                       .name == "syroce-backend" or
+                       .name == "backend" or
+                       .name == "syroce-frontend" or
+                       .name == "frontend"
+                     )
+                  then .image.tag = $sha | del(.image.digest)
+                  else .
+                  end
+                )
+              else .
+              end
+              |
+              if .workers then
+                .workers |= map(
+                  if (.image? != null) and
+                     (.name == "syroce-worker" or .name == "worker")
+                  then .image.tag = $sha | del(.image.digest)
+                  else .
+                  end
+                )
+              else .
+              end
+            ' /tmp/spec.json > /tmp/new_spec.json
             
             echo "Triggering deployment by updating the App Spec..."
-            doctl apps update "$DO_APP_ID" --spec /tmp/new_spec.json
-            
-            # Apps update automatically triggers a deployment. We need to get the active deployment ID.
-            # However, doctl apps update doesn't return the deployment ID in a simple format, so we use create-deployment if we just want a reliable ID.
-            # Actually, doctl apps update returns the updated app which includes the in-progress deployment ID.
-            DEPLOYMENT_ID="$(doctl apps get "$DO_APP_ID" --format InProgressDeployment.ID --no-header)"
-            
-            # If no deployment is in progress immediately after update, we might need to trigger one, but usually it starts instantly.
-            if [ -z "$DEPLOYMENT_ID" ]; then
-              DEPLOYMENT_ID="$(doctl apps create-deployment "$DO_APP_ID" --format ID --no-header)"
-            fi
+            doctl apps update "$DO_APP_ID" --spec /tmp/new_spec.json --wait
           else
             echo "App is not image-based (likely GitHub source). Triggering standard deployment..."
-            DEPLOYMENT_ID="$(doctl apps create-deployment "$DO_APP_ID" --format ID --no-header)"
+            doctl apps create-deployment "$DO_APP_ID" --wait
           fi
+          
+          echo "Fetching Active Deployment ID..."
+          DEPLOYMENT_ID="$(doctl apps get "$DO_APP_ID" --format ActiveDeployment.ID --no-header)"
           
           test -n "$DEPLOYMENT_ID" || {
             echo "::error::Deployment ID alınamadı."
             exit 1
           }
-          
-          echo "Waiting for deployment $DEPLOYMENT_ID to complete..."
-          # Since doctl apps create-deployment --wait is not used above to unify logic, we wait explicitly
-          doctl apps get-deployment "$DO_APP_ID" "$DEPLOYMENT_ID" --wait
           
           STATUS="$(doctl apps get-deployment "$DO_APP_ID" "$DEPLOYMENT_ID" --format Phase --no-header)"
           
