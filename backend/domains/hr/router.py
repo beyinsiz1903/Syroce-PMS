@@ -3339,6 +3339,8 @@ async def get_system_users(
         employment_type=None,
         hire_date_from=None,
         hire_date_to=None,
+        page=1,
+        limit=50,
         current_user=current_user,
         _perm=None,
     )
