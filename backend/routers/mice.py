@@ -859,7 +859,12 @@ class EventIn(BaseModel):
 
 
 def _line_total(r: dict) -> float:
-    return float(r.get("unit_price") or 0.0) * float(r.get("quantity") or 1.0)
+    unit_price = r.get("unit_price")
+    quantity = r.get("quantity")
+
+    return float(0.0 if unit_price is None else unit_price) * float(
+        1.0 if quantity is None else quantity
+    )
 
 
 def _compute_totals(event: dict, spaces_by_id: dict[str, dict]) -> dict:
@@ -1107,7 +1112,7 @@ async def _expand_resource_prices(tenant_id: str, resources: list[dict], pax: in
                 elif menu.get("flat_price"):
                     line["unit_price"] = menu["flat_price"]
                     line["unit"] = "unit"
-                    line["quantity"] = max(1, line.get("quantity", 1))
+                    line["quantity"] = max(1, line.get("quantity") or 1)
                 line["name"] = line.get("name") or menu["name"]
                 line["type"] = menu.get("type", line.get("type", "fb"))
         out.append(line)
