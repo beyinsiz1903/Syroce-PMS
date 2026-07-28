@@ -264,7 +264,11 @@ jobs:
                   STRESS_SKIP_TEARDOWN: 'true'
               run: |
                   cd frontend
-                  yarn playwright test --config=playwright.stress.config.js ${{ matrix.spec_pattern }}
+                  TARGET_PATTERN="${{ github.event.inputs.spec_pattern }}"
+                  if [ -z "$TARGET_PATTERN" ]; then
+                    TARGET_PATTERN="${{ matrix.spec_pattern }}"
+                  fi
+                  yarn playwright test --config=playwright.stress.config.js $TARGET_PATTERN
 
             - name: Verify drill report verdict (hard-fail on NO-GO)
               id: verdict_check
