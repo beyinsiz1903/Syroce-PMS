@@ -136,8 +136,9 @@ jobs:
               ' /tmp/spec.json
             )"
             if [ -n "$ACTUAL_REPO" ]; then
-              EXPECTED_REPO="${GHCR_REPO}-${COMP#syroce-}"
-              if [[ "$ACTUAL_REPO" != *"$EXPECTED_REPO"* ]]; then
+              EXPECTED_REPO="syroce-${COMP#syroce-}"
+              ACTUAL_REPO_NAME="${ACTUAL_REPO##*/}"
+              if [[ "$ACTUAL_REPO_NAME" != "$EXPECTED_REPO" ]]; then
                  echo "::error::Image repository mismatch for $COMP. Expected to contain: $EXPECTED_REPO, Actual: $ACTUAL_REPO"
                  exit 1
               fi
@@ -153,8 +154,9 @@ jobs:
             ' /tmp/spec.json
           )"
           if [ -n "$ACTUAL_WORKER_REPO" ]; then
-            EXPECTED_WORKER_REPO="${GHCR_REPO}-worker"
-            if [[ "$ACTUAL_WORKER_REPO" != *"$EXPECTED_WORKER_REPO"* ]]; then
+            EXPECTED_WORKER_REPO="syroce-worker"
+            ACTUAL_WORKER_REPO_NAME="${ACTUAL_WORKER_REPO##*/}"
+            if [[ "$ACTUAL_WORKER_REPO_NAME" != "$EXPECTED_WORKER_REPO" ]]; then
                echo "::error::Worker image repository mismatch. Expected to contain: $EXPECTED_WORKER_REPO, Actual: $ACTUAL_WORKER_REPO"
                exit 1
             fi
