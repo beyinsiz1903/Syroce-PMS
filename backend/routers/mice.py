@@ -859,7 +859,7 @@ class EventIn(BaseModel):
 
 
 def _line_total(r: dict) -> float:
-    return float(r.get("unit_price", 0)) * float(r.get("quantity", 1))
+    return float(r.get("unit_price") or 0.0) * float(r.get("quantity") or 1.0)
 
 
 def _compute_totals(event: dict, spaces_by_id: dict[str, dict]) -> dict:
@@ -872,7 +872,7 @@ def _compute_totals(event: dict, spaces_by_id: dict[str, dict]) -> dict:
         s = datetime.fromisoformat(sb["starts_at"])
         e = datetime.fromisoformat(sb["ends_at"])
         hours = max(1.0, (e - s).total_seconds() / 3600.0)
-        space_total += float(sp.get("daily_rate", 0.0)) if hours >= 6 else float(sp.get("hourly_rate", 0.0)) * hours
+        space_total += float(sp.get("daily_rate") or 0.0) if hours >= 6 else float(sp.get("hourly_rate") or 0.0) * hours
     resources_total = sum(_line_total(r) for r in event.get("resources", []))
     return {
         "space_total": round(space_total, 2),
