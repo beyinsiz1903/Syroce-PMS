@@ -144,6 +144,22 @@ jobs:
             fi
           done
           
+          # Verify image repository for worker component
+          ACTUAL_WORKER_REPO="$(
+            jq -r '
+              .workers[]?
+              | select(.name=="syroce-worker" or .name=="worker")
+              | .image.repository // empty
+            ' /tmp/spec.json
+          )"
+          if [ -n "$ACTUAL_WORKER_REPO" ]; then
+            EXPECTED_WORKER_REPO="${GHCR_REPO}-worker"
+            if [[ "$ACTUAL_WORKER_REPO" != *"$EXPECTED_WORKER_REPO"* ]]; then
+               echo "::error::Worker image repository mismatch. Expected to contain: $EXPECTED_WORKER_REPO, Actual: $ACTUAL_WORKER_REPO"
+               exit 1
+            fi
+          fi
+          
           # Check if the app has any image-based components
           if jq -e '(.services[]? | select(.image? != null)) or (.workers[]? | select(.image? != null))' /tmp/spec.json > /dev/null; then
             echo "App contains image-based components. Updating spec with new SHA tag ($GITHUB_SHA)..."
