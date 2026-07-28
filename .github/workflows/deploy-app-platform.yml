@@ -117,29 +117,47 @@ jobs:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Trigger App Platform Deployment
+        env:
+          DO_APP_ID: ${{ secrets.DO_APP_ID }}
         run: |
           set -euo pipefail
-          echo "Triggering deployment for DO App..."
+          echo "Fetching current App Spec..."
+          doctl apps get "$DO_APP_ID" --format json > /tmp/app.json
           
-          DEPLOYMENT_ID="$(
-            doctl apps create-deployment ${{ secrets.DO_APP_ID }} \
-              --wait \
-              --format ID \
-              --no-header
-          )"
+          # Check if the backend component uses an image registry
+          if jq -e '.[0].spec.services[]? | select(.name=="syroce-backend" or .name=="backend") | has("image")' /tmp/app.json > /dev/null; then
+            echo "App is image-based. Updating spec with new SHA tag (${{ github.sha }})..."
+            jq '.[0].spec | 
+              (if .services then .services |= map(if .name=="syroce-backend" or .name=="backend" or .name=="syroce-frontend" or .name=="frontend" then .image.tag="${{ github.sha }}" else . end) else . end) | 
+              (if .workers then .workers |= map(if .name=="syroce-worker" or .name=="worker" then .image.tag="${{ github.sha }}" else . end) else . end)' /tmp/app.json > /tmp/new_spec.json
+            
+            echo "Triggering deployment by updating the App Spec..."
+            doctl apps update "$DO_APP_ID" --spec /tmp/new_spec.json
+            
+            # Apps update automatically triggers a deployment. We need to get the active deployment ID.
+            # However, doctl apps update doesn't return the deployment ID in a simple format, so we use create-deployment if we just want a reliable ID.
+            # Actually, doctl apps update returns the updated app which includes the in-progress deployment ID.
+            DEPLOYMENT_ID="$(doctl apps get "$DO_APP_ID" --format InProgressDeployment.ID --no-header)"
+            
+            # If no deployment is in progress immediately after update, we might need to trigger one, but usually it starts instantly.
+            if [ -z "$DEPLOYMENT_ID" ]; then
+              DEPLOYMENT_ID="$(doctl apps create-deployment "$DO_APP_ID" --format ID --no-header)"
+            fi
+          else
+            echo "App is not image-based (likely GitHub source). Triggering standard deployment..."
+            DEPLOYMENT_ID="$(doctl apps create-deployment "$DO_APP_ID" --format ID --no-header)"
+          fi
           
           test -n "$DEPLOYMENT_ID" || {
             echo "::error::Deployment ID alınamadı."
             exit 1
           }
           
-          STATUS="$(
-            doctl apps get-deployment \
-              ${{ secrets.DO_APP_ID }} \
-              "$DEPLOYMENT_ID" \
-              --format Phase \
-              --no-header
-          )"
+          echo "Waiting for deployment $DEPLOYMENT_ID to complete..."
+          # Since doctl apps create-deployment --wait is not used above to unify logic, we wait explicitly
+          doctl apps get-deployment "$DO_APP_ID" "$DEPLOYMENT_ID" --wait
+          
+          STATUS="$(doctl apps get-deployment "$DO_APP_ID" "$DEPLOYMENT_ID" --format Phase --no-header)"
           
           if [ "$STATUS" != "ACTIVE" ]; then
             echo "::error::Deployment ACTIVE olmadı. Phase: $STATUS"
@@ -165,8 +183,9 @@ jobs:
             echo "::error::APP_BASE_URL tanımlı değil."
             exit 1
           }
-          echo "Running smoke test on $APP_BASE_URL..."
+          BASE_URL="${APP_BASE_URL%/}"
+          echo "Running smoke test on $BASE_URL..."
           curl --fail --silent --show-error \
             --max-time 20 \
-            "${APP_BASE_URL}/api/health/live" >/dev/null
+            "${BASE_URL}/health/live" >/dev/null
           echo "Smoke test passed."
