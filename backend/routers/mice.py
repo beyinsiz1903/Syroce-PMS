@@ -1259,6 +1259,19 @@ async def create_event(
     event_doc.pop("_id", None)
     return event_doc
 
+@router.get("/events/{event_id}")
+async def get_event(
+    event_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    db = get_system_db()
+    ev = await db.mice_events.find_one(
+        {"id": event_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0}
+    )
+    if not ev:
+        raise HTTPException(404, "Etkinlik bulunamadı")
+    return ev
 @router.put("/events/{event_id}")
 async def update_event(
     event_id: str,
