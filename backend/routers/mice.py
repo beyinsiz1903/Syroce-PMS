@@ -1292,7 +1292,7 @@ async def _update_event_impl(
     resources = await _expand_resource_prices(tenant_id, [r.model_dump() for r in body.resources], body.expected_pax)
     spaces_by_id = {s["id"]: s async for s in db.mice_spaces.find({"tenant_id": tenant_id})}
     update = {
-        **body.model_dump(mode="json", exclude={"space_bookings", "resources"}),
+        **body.model_dump(mode="json", exclude={"space_bookings", "resources", "client_request_id"}),
         "start_date": body.start_date.isoformat(),
         "end_date": body.end_date.isoformat(),
         "space_bookings": bookings,
@@ -1335,6 +1335,8 @@ async def _update_event_impl(
         )
     except HTTPException:
         raise
+    except DuplicateKeyError:
+        raise HTTPException(409, "Bu referans numarası ile zaten bir etkinlik oluşturulmuş.")
     except Exception as exc:  # noqa: BLE001
         if not is_replica_set_unavailable(exc):
             raise
