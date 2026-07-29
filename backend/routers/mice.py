@@ -237,6 +237,7 @@ async def create_space(
     limit = await get_tenant_limit(current_user.tenant_id, "mice", "spaces_limit")
     if limit is not None:
         from core.entitlements.quota import QuotaExceededException
+
         try:
             await reserve_quota(current_user.tenant_id, "mice", "spaces_limit", resource_id, limit)
         except QuotaExceededException:
@@ -250,10 +251,7 @@ async def create_space(
         await db.mice_spaces.insert_one(doc)
     except DuplicateKeyError:
         if client_request_id:
-            existing = await db.mice_spaces.find_one({
-                "tenant_id": current_user.tenant_id,
-                "client_request_id": client_request_id
-            })
+            existing = await db.mice_spaces.find_one({"tenant_id": current_user.tenant_id, "client_request_id": client_request_id})
             if existing:
                 existing.pop("_id", None)
                 return existing
@@ -300,6 +298,7 @@ async def delete_space(
     res = await db.mice_spaces.delete_one({"id": space_id, "tenant_id": current_user.tenant_id})
     if res.deleted_count > 0:
         from core.entitlements.quota import release_quota
+
         await release_quota(current_user.tenant_id, "mice", "spaces_limit", space_id)
     _invalidate_mice_spaces_cache(current_user.tenant_id)
     return {"ok": True}
@@ -862,9 +861,7 @@ def _line_total(r: dict) -> float:
     unit_price = r.get("unit_price")
     quantity = r.get("quantity")
 
-    return float(0.0 if unit_price is None else unit_price) * float(
-        1.0 if quantity is None else quantity
-    )
+    return float(0.0 if unit_price is None else unit_price) * float(1.0 if quantity is None else quantity)
 
 
 def _compute_totals(event: dict, spaces_by_id: dict[str, dict]) -> dict:
@@ -1142,6 +1139,7 @@ async def create_event(
         limit = await get_tenant_limit(tenant_id, "mice", "concurrent_events")
         if limit is not None:
             from core.entitlements.quota import QuotaExceededException
+
             try:
                 await reserve_quota(tenant_id, "mice", "concurrent_events", resource_id, limit)
                 reserved = True
@@ -1209,10 +1207,7 @@ async def create_event(
         )
     except DuplicateKeyError:
         if client_request_id:
-            existing = await db.mice_events.find_one({
-                "tenant_id": tenant_id,
-                "client_request_id": client_request_id
-            })
+            existing = await db.mice_events.find_one({"tenant_id": tenant_id, "client_request_id": client_request_id})
             if existing:
                 existing.pop("_id", None)
                 return existing
@@ -1259,6 +1254,19 @@ async def create_event(
     event_doc.pop("_id", None)
     return event_doc
 
+
+@router.get("/events/{event_id}")
+async def get_event(
+    event_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    db = get_system_db()
+    ev = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if not ev:
+        raise HTTPException(404, "Etkinlik bulunamadı")
+    return ev
+
+
 @router.put("/events/{event_id}")
 async def update_event(
     event_id: str,
@@ -1270,8 +1278,10 @@ async def update_event(
         return await _update_event_impl(event_id, body, current_user)
     except Exception:
         import logging
+
         logging.getLogger(__name__).exception("BEO D_update HTTP 500 error. EventId: %s", event_id)
         raise
+
 
 async def _update_event_impl(
     event_id: str,
@@ -1442,6 +1452,7 @@ async def change_status(
         limit = await get_tenant_limit(tenant_id, "mice", "concurrent_events")
         if limit is not None:
             from core.entitlements.quota import QuotaExceededException
+
             try:
                 await reserve_quota(tenant_id, "mice", "concurrent_events", resource_id, limit)
                 reserved = True
@@ -1551,12 +1562,7 @@ async def _post_event_to_folio(tenant_id: str, event: dict) -> None:
     total = float((event.get("totals") or {}).get("grand_total", 0))
     if total <= 0 or not event.get("reservation_id"):
         return
-    existing = await db.folio_postings.find_one({
-        "tenant_id": tenant_id,
-        "reference": event["id"],
-        "source": "mice_module",
-        "posting_type": "CHARGE"
-    })
+    existing = await db.folio_postings.find_one({"tenant_id": tenant_id, "reference": event["id"], "source": "mice_module", "posting_type": "CHARGE"})
     if existing:
         return
     posting = {
@@ -1638,7 +1644,6 @@ async def delete_event(
     )
     _invalidate_mice_events_cache(current_user.tenant_id)
     return {"ok": True}
-
 
 
 # ── Function diary (calendar feed) ─────────────────────────────
@@ -2742,6 +2747,7 @@ async def sign_public_beo(payload: SignatureSubmitIn):
 
     return {"success": True}
 
+
 # ─────────────────────────────────────────────────────────────────────
 # MICE / BEO -> Folio İşleme
 # ─────────────────────────────────────────────────────────────────────
@@ -2776,19 +2782,9 @@ async def post_beo_to_folio(
             "total": amount,
             "timestamp": datetime.utcnow().isoformat(),
             "lines": [
-                {
-                    "account_code": "120",
-                    "debit": amount,
-                    "credit": 0.0,
-                    "description": "Alıcılar (Şirket/Folyo)"
-                },
-                {
-                    "account_code": "600",
-                    "debit": 0.0,
-                    "credit": amount,
-                    "description": "Yurtiçi Satışlar (Ziyafet/Etkinlik Geliri)"
-                }
-            ]
+                {"account_code": "120", "debit": amount, "credit": 0.0, "description": "Alıcılar (Şirket/Folyo)"},
+                {"account_code": "600", "debit": 0.0, "credit": amount, "description": "Yurtiçi Satışlar (Ziyafet/Etkinlik Geliri)"},
+            ],
         }
         gl_db["journals"].append(journal_entry)
         return {"status": "success", "message": f"{amount} TL tutarındaki etkinlik faturası şirket folyosuna işlendi (120/600)."}
