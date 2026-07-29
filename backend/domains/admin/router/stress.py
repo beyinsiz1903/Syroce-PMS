@@ -291,6 +291,7 @@ STRESS_COLLECTIONS = [
     "mice_opportunities",
     "mice_opportunity_activities",
     "mice_packages",
+    "entitlement_quota_usage",
     # F8D (2026-05-18): HR / Staff / Shift / Leave / Department surface.
     # All rows tagged `stress_seed=True` + `stress_prefix` → unified cleanup
     # loop reaches them with no additional logic. No external service risk:
@@ -3537,6 +3538,7 @@ async def stress_cleanup(
     # endpoint only soft-deletes (active:false). Tenant-scoped full-wipe here
     # mirrors the seed-time drain so teardown clears the residue and cleanup#2
     # stays idempotent (full collection already empty → deleted_count=0).
+    # Task #172 / F7: Channel Manager / ARI leaks...
     CURRENCY_RATES_TENANT_SCOPED = {
         "currency_rates",
         "performance_reviews",
@@ -3545,6 +3547,8 @@ async def stress_cleanup(
         "inventory_items",
         "hr_departments",
         "hr_positions",
+        "mice_events",
+        "entitlement_quota_usage",
     }
     with tenant_context(stress_tid):
         from core.database import db

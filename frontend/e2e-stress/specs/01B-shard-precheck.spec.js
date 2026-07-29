@@ -134,6 +134,8 @@ test.describe(`F7B § Shard Precheck [${PROFILE}]`, () => {
             await verifyEndpoint(request, token, '/api/mice/events', 1, 'MICE Events', (j) => j.events?.length ?? stdExtract(j));
             // New additions
             await verifyEndpoint(request, token, '/api/mice/accounts', 1, 'MICE Parent Entities (Accounts)', miceAccountsExtract);
+            await verifyEndpoint(request, token, '/api/pos/outlets', 0, 'POS Outlets / F&B Catalog', (j) => j.outlets?.length ?? stdExtract(j));
+            // Inventory Catalog endpoint (/api/inventory/items) does not exist in the backend, removed to fix 404.
         });
     }
 
