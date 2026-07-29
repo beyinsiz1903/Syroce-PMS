@@ -95,7 +95,7 @@ test.describe(`F7B § Shard Precheck [${PROFILE}]`, () => {
             await verifyEndpoint(request, token, '/api/gm/complaints?limit=1', 1, 'Complaints', (j) => j.complaints?.length ?? j.data?.length ?? j.items?.length ?? (Array.isArray(j) ? j.length : -1));
             // Maintenance and Messaging readiness (expect reachable, so count=0 is fine)
             await verifyEndpoint(request, token, '/api/maintenance/work-orders?limit=1', 0, 'Maintenance Readiness', (j) => j.items?.length ?? j.data?.length ?? j.list?.length ?? (Array.isArray(j) ? j.length : 0));
-            await verifyEndpoint(request, token, '/api/messaging/templates?limit=1', 0, 'Messaging Templates', (j) => j.items?.length ?? j.data?.length ?? j.list?.length ?? (Array.isArray(j) ? j.length : 0));
+            await verifyEndpoint(request, token, '/api/messaging-center/templates?limit=1', 0, 'Messaging Templates', (j) => j.templates?.length ?? j.items?.length ?? j.data?.length ?? j.list?.length ?? (Array.isArray(j) ? j.length : 0));
         });
     }
 
@@ -134,7 +134,7 @@ test.describe(`F7B § Shard Precheck [${PROFILE}]`, () => {
             await verifyEndpoint(request, token, '/api/mice/events', 1, 'MICE Events', (j) => j.events?.length ?? stdExtract(j));
             // New additions
             await verifyEndpoint(request, token, '/api/mice/accounts', 1, 'MICE Parent Entities (Accounts)', miceAccountsExtract);
-            await verifyEndpoint(request, token, '/api/pos/outlets', 1, 'POS Outlets / F&B Catalog', stdExtract);
+            await verifyEndpoint(request, token, '/api/pos/outlets', 1, 'POS Outlets / F&B Catalog', (j) => j.outlets?.length ?? stdExtract(j));
             await verifyEndpoint(request, token, '/api/inventory/items', 1, 'Inventory Catalog', stdExtract); // May be 0 if seed missing, but endpoint must be reachable
         });
     }
