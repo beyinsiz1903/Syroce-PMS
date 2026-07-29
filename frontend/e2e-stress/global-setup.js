@@ -213,6 +213,7 @@ async function ensureSpaEntitlement(api, pilotToken, stressTid, stressToken) {
         advanced_analytics: true,
         spa: true,
         mice: true,
+        pos_fnb: true,
     };
     const hasAll = Object.keys(requiredModules).every((m) => currentModules[m] === true);
     out.already_on = hasAll;
