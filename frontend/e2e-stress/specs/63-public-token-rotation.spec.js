@@ -50,12 +50,13 @@ test.describe('F8Q § 63 — Public QR token tamper/cross-tenant/expiry deep', (
     let stressTid = null;
     let stressRoomId = null;
     let stressRoomToken = null;
+    let canonicalTenantId = null;  // staff qr-code endpoint'inden alınan internal tenant_id
     let moduleBlocked = false;
     let blockedReason = null;
 
     test('Setup: prefix + pilot baseline + stress room harvest + module probe', async ({ request, stressTokens, stressState }, testInfo) => {
         prefix = stressState.data_prefix;
-        stressTid = stressState.stress_tenant_id || process.env.E2E_STRESS_TENANT_ID || null;
+        stressTid = stressState.stress_tid || process.env.E2E_STRESS_TENANT_ID || null;
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
 
         // Harvest a stress room ID — pms rooms list (bare array; items[] de
@@ -77,12 +78,18 @@ test.describe('F8Q § 63 — Public QR token tamper/cross-tenant/expiry deep', (
 
         // Harvest a VALID token via staff qr-code endpoint (gerçek token contract
         // doğrulaması + D rotation karşılaştırması için). Token döner ama tuz
-        // (server-side sır) dönmez.
+        // (server-side sır) dönmez. Response'daki tenant_id kanonik internal
+        // kimliği taşır — env dış ID'sinden bağımsız, HMAC ile tutarlı.
         if (stressRoomId) {
             const qr = await callTimed(request, 'get', `/api/rooms/${stressRoomId}/qr-code`,
                 undefined, stressTokens.stress_token);
             if (qr.ok && qr.body?.token) {
                 stressRoomToken = qr.body.token;
+                canonicalTenantId = qr.body.tenant_id || null;  // kanonik internal tenant kimliği
+                if (!canonicalTenantId) {
+                    recFinding(testInfo, 'P1', MOD, 'qr-code response missing canonical tenant_id',
+                        'Staff qr-code response token döndürdü ancak tenant_id eksik; rotation kontratı güvenilir biçimde doğrulanamaz.');
+                }
             } else if (qr.status === 401 || qr.status === 403) {
                 recFinding(testInfo, 'P2', MOD, 'staff qr-code perm-gated',
                     `GET /api/rooms/<room>/qr-code status=${qr.status} — valid-token harvest skip, tamper/rotation contract daralır.`);
@@ -90,7 +97,7 @@ test.describe('F8Q § 63 — Public QR token tamper/cross-tenant/expiry deep', (
         }
 
         rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
-            note: `prefix=${prefix} stress_tid=${stressTid?.slice(0, 8)} room=${stressRoomId?.slice(0, 8) || 'none'} valid_token=${stressRoomToken ? 'harvested' : 'none'} module_blocked=${moduleBlocked}` });
+            note: `prefix=${prefix} stress_tid=${stressTid?.slice(0, 8)} room=${stressRoomId?.slice(0, 8) || 'none'} valid_token=${stressRoomToken ? 'harvested' : 'none'} canonical_tid=${canonicalTenantId ? 'ok' : 'missing'} module_blocked=${moduleBlocked}` });
         expect(true).toBe(true);
     });
 
@@ -202,7 +209,19 @@ test.describe('F8Q § 63 — Public QR token tamper/cross-tenant/expiry deep', (
         // (tenant-scoped — yalnız çağıranın tenant'ı; pilot etkilenmez). Rotation
         // sonrası bu tenant'a ait eski tokenlar `_verify_token` HMAC mismatch ile
         // 403 reddedilir; yeni basılan token doğrulanır. Tuz ASLA yanıtta dönmez.
-        const base = stressRoomId ? `/api/public/room-qr/${stressTid}/${stressRoomId}` : null;
+        //
+        // canonicalTenantId: setup'ta staff qr-code endpoint'inden alındı.
+        // HMAC, bu internal ID üzerinden hesaplandığı için URL'de de bu kullanılmalı.
+        // stressTid (env dış ID) ile karıştırmak HMAC mismatch → her zaman 403 demektir.
+        const base = canonicalTenantId && stressRoomId
+            ? `/api/public/room-qr/${canonicalTenantId}/${stressRoomId}`
+            : null;
+
+        // Fail-closed: token harvest başarılıysa canonical tenant kimliği zorunlu.
+        // Yoksa base=null olur ve rotation kontratı sessizce atlanır (false-pass).
+        if (stressRoomToken) {
+            expect(canonicalTenantId, 'qr-code response must include canonical tenant_id').toBeTruthy();
+        }
 
         // 0) Positive contract: harvested valid token rotation ÖNCESİ 200 verir.
         let positiveOk = null;
@@ -243,11 +262,20 @@ test.describe('F8Q § 63 — Public QR token tamper/cross-tenant/expiry deep', (
         }
 
         // 3) Yeni token re-harvest → 200 (rotation yeni sırrı etkin kıldı).
+        // qr2.body.tenant_id == canonicalTenantId sağlanmalı (rotation tenant skop kontrolü).
         let newTokenOk = null;
         if (rotateOk && base && stressRoomId) {
             const qr2 = await callTimed(request, 'get', `/api/rooms/${stressRoomId}/qr-code`,
                 undefined, stressTokens.stress_token);
             if (qr2.ok && qr2.body?.token) {
+                // Rotation tenant skopunu doğrula: aynı tenant ID dönmeli (hard assert).
+                if (canonicalTenantId) {
+                    if (qr2.body.tenant_id !== canonicalTenantId) {
+                        recFinding(testInfo, 'P0', MOD, 'rotation tenant scope drift',
+                            `qr-code tenant_id rotasyon sonrası değişti — cross-tenant contamination riski.`);
+                    }
+                    expect(qr2.body.tenant_id, 'tenant_id must remain stable across rotation').toBe(canonicalTenantId);
+                }
                 const fresh = await callTimed(request, 'get', `${base}?t=${qr2.body.token}`, undefined, null);
                 newTokenOk = fresh.ok && fresh.status === 200;
                 if (newTokenOk === false) {
