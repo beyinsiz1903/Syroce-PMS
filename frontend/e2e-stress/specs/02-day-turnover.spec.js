@@ -172,12 +172,12 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
         });
         samples.push(r.ms);
         
-        if (r.ok && r.data) {
-            ok = r.data.success_count || 0;
-            fail = (r.data.total_count || target.length) - ok;
+        if (r.ok && r.body) {
+            ok = r.body.success_count || 0;
+            fail = (r.body.total_count || target.length) - ok;
             // Record inner failures if present
-            if (r.data.results) {
-                Object.values(r.data.results).forEach(res => {
+            if (r.body.results) {
+                Object.values(r.body.results).forEach(res => {
                     if (!res.success) {
                         const k = `err_${res.error ? res.error.substring(0,20) : (res.error_code || 'unknown')}`;
                         failModes[k] = (failModes[k] || 0) + 1;
