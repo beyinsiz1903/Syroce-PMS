@@ -26,14 +26,15 @@ def test_quick_id_token_validation():
     resp = client.get(f"/api/quick-id/precheckin/{too_long}/info")
     assert resp.status_code == 422
 
-    # slash/boşluk/nokta içeren token → 422, upstream çağrılmaz
-    # Note: / in path parameters without path converters results in 404
+    # slash içeren token → 404 (FastAPI routing fail before path validation)
     resp = client.get("/api/quick-id/precheckin/invalid/token/info")
     assert resp.status_code == 404
 
+    # nokta içeren token → 422
     resp = client.get("/api/quick-id/precheckin/invalid.token.123/info")
     assert resp.status_code == 422
     
+    # boşluk içeren token → 422
     resp = client.get("/api/quick-id/precheckin/invalid token 123/info")
     assert resp.status_code == 422
 
