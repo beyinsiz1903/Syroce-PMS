@@ -78,6 +78,16 @@ def _extract_signature_hints(request: Request, raw: bytes) -> tuple[str, str]:
                 tenant_hint = body.get("tenant_id") or ""
             if not hr_id_hint:
                 hr_id_hint = body.get("hr_id") or body.get("hotel_id") or body.get("property_id") or ""
+            if not hr_id_hint:
+                hotel = body.get("hotel")
+                if isinstance(hotel, dict):
+                    hr_id_hint = (
+                        hotel.get("hr_id")
+                        or hotel.get("hotel_id")
+                        or hotel.get("property_id")
+                        or hotel.get("id")
+                        or ""
+                    )
     except Exception:
         pass
     return str(tenant_hint), str(hr_id_hint)
