@@ -410,11 +410,13 @@ class FrontdeskServiceV2:
         # ── Atomicity with MongoDB Transaction ──
         # We wrap RNL deletion, booking update, and room update in a single transaction
         # to guarantee INV-1 (no partial checkouts) and ensure data consistency.
-        from pymongo.read_concern import ReadConcern
-        from pymongo.write_concern import WriteConcern
-        from pymongo.read_preferences import ReadPreference
-        from core.atomic_checkin_checkout import CheckOutError
         import os
+
+        from pymongo.read_concern import ReadConcern
+        from pymongo.read_preferences import ReadPreference
+        from pymongo.write_concern import WriteConcern
+
+        from core.atomic_checkin_checkout import CheckOutError
 
         checked_out_at = datetime.now(UTC)
         room_id = booking.get("room_id")
