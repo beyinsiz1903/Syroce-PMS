@@ -208,7 +208,6 @@ jobs:
                   cd frontend && yarn e2e:install
 
             - name: Download Auth State
-              if: matrix.is_pos != 'true'
               uses: actions/download-artifact@v5
               continue-on-error: true
               with:
