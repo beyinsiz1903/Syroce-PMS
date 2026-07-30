@@ -421,6 +421,16 @@ class FrontdeskServiceV2:
             },
         )
 
+        # Release Room Night Locks
+        # This is critical for same-day turnover (Walk-In or new Check-In)
+        # Terminal bookings (checked_out) must release their locks (INV-2/INV-5).
+        try:
+            await self._db.room_night_locks.delete_many(
+                {"booking_id": booking_id, "tenant_id": ctx.tenant_id}
+            )
+        except Exception as exc:
+            logger.warning("Failed to release room_night_locks for booking=%s: %s", booking_id, exc)
+
         room_id = booking.get("room_id")
         if room_id:
             await self._db.rooms.update_one(
