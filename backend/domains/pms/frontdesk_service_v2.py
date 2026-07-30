@@ -407,49 +407,99 @@ class FrontdeskServiceV2:
                     card_number=kc.get("card_number"),
                 )
 
-        # ── Release Room Night Locks (RNL) ──
-        # This is critical for same-day turnover (Walk-In or new Check-In)
-        # Terminal bookings (checked_out) must release their locks (INV-2/INV-5).
-        # We run this BEFORE the bookings update so that if it fails, the booking
-        # is not marked as checked_out and the operation can be retried safely.
-        res = await self._db.room_night_locks.delete_many(
-            {"booking_id": booking_id, "tenant_id": ctx.tenant_id}
-        )
-        logger.info("Checkout RNL release booking=%s deleted_count=%s", booking_id, res.deleted_count)
+        # ── Atomicity with MongoDB Transaction ──
+        # We wrap RNL deletion, booking update, and room update in a single transaction
+        # to guarantee INV-1 (no partial checkouts) and ensure data consistency.
+        from pymongo.read_concern import ReadConcern
+        from pymongo.write_concern import WriteConcern
+        from pymongo.read_preferences import ReadPreference
+        from core.atomic_checkin_checkout import CheckOutError
+        import os
 
         checked_out_at = datetime.now(UTC)
-        await self._db.bookings.update_one(
-            {"id": booking_id},
-            {
-                "$set": {
-                    "status": "checked_out",
-                    "checked_out_at": checked_out_at.isoformat(),
-                    "checked_out_by": ctx.actor_id,
-                    "force_checkout": force,
-                    "checkout_reason": reason,
-                }
-            },
-        )
-
         room_id = booking.get("room_id")
-        if room_id:
-            await self._db.rooms.update_one(
-                {"id": room_id},
-                {"$set": {"status": "dirty", "current_booking_id": None}},
+
+        async def _txn(session):
+            res = await self._db.room_night_locks.delete_many(
+                {"booking_id": booking_id, "tenant_id": ctx.tenant_id},
+                session=session
             )
-            # Auto-create departure clean HK task
-            hk_task = {
-                "id": str(uuid.uuid4()),
-                "tenant_id": ctx.tenant_id,
-                "room_id": room_id,
-                "task_type": "departure_clean",
-                "priority": "high",
-                "status": "new",
-                "notes": f"Departure clean - Booking {booking_id}",
-                "created_at": datetime.now(UTC).isoformat(),
-                "created_by": "system",
-            }
-            await self._db.housekeeping_tasks.insert_one(hk_task)
+            logger.info("Checkout RNL release booking=%s deleted_count=%s", booking_id, res.deleted_count)
+
+            booking_result = await self._db.bookings.update_one(
+                {
+                    "id": booking_id,
+                    "tenant_id": ctx.tenant_id,
+                    "status": "checked_in"
+                },
+                {
+                    "$set": {
+                        "status": "checked_out",
+                        "checked_out_at": checked_out_at.isoformat(),
+                        "checked_out_by": ctx.actor_id,
+                        "force_checkout": force,
+                        "checkout_reason": reason,
+                    }
+                },
+                session=session
+            )
+            if booking_result.matched_count != 1:
+                raise CheckOutError("Booking disappeared or already checked out during checkout")
+
+            if room_id:
+                room_result = await self._db.rooms.update_one(
+                    {"id": room_id, "tenant_id": ctx.tenant_id},
+                    {
+                        "$set": {
+                            "status": "dirty",
+                            "current_booking_id": None,
+                            "housekeeping_status": "dirty",
+                            "housekeeping_updated_at": checked_out_at.isoformat(),
+                            "housekeeping_updated_by": f"System (Check-out by {ctx.actor_id})",
+                        }
+                    },
+                    session=session
+                )
+                if room_result.matched_count != 1:
+                    raise CheckOutError("Room disappeared during checkout")
+
+                # Deduplicate checkout_cleaning task
+                existing_hk = await self._db.housekeeping_tasks.find_one(
+                    {
+                        "tenant_id": ctx.tenant_id,
+                        "booking_id": booking_id,
+                        "task_type": "checkout_cleaning",
+                        "status": {"$nin": ["cancelled"]},
+                    },
+                    {"_id": 0, "id": 1},
+                    session=session
+                )
+                if not existing_hk:
+                    hk_task = {
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": ctx.tenant_id,
+                        "booking_id": booking_id,
+                        "room_id": room_id,
+                        "task_type": "checkout_cleaning",
+                        "priority": "high",
+                        "status": "pending",
+                        "notes": f"Departure clean - Booking {booking_id}",
+                        "created_at": checked_out_at.isoformat(),
+                        "created_by": "system",
+                    }
+                    await self._db.housekeeping_tasks.insert_one(hk_task, session=session)
+
+        # Fallback for unit testing where ReplicaSet might not be available
+        if os.environ.get("MONGO_DISABLE_TRANSACTIONS") == "1":
+            await _txn(None)
+        else:
+            async with await self._db.client.start_session() as session:
+                await session.with_transaction(
+                    _txn,
+                    read_concern=ReadConcern("snapshot"),
+                    write_concern=WriteConcern("majority"),
+                    read_preference=ReadPreference.PRIMARY,
+                )
 
         return ServiceResult.success(
             {
