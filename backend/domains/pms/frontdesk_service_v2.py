@@ -407,6 +407,16 @@ class FrontdeskServiceV2:
                     card_number=kc.get("card_number"),
                 )
 
+        # ── Release Room Night Locks (RNL) ──
+        # This is critical for same-day turnover (Walk-In or new Check-In)
+        # Terminal bookings (checked_out) must release their locks (INV-2/INV-5).
+        # We run this BEFORE the bookings update so that if it fails, the booking
+        # is not marked as checked_out and the operation can be retried safely.
+        res = await self._db.room_night_locks.delete_many(
+            {"booking_id": booking_id, "tenant_id": ctx.tenant_id}
+        )
+        logger.info("Checkout RNL release booking=%s deleted_count=%s", booking_id, res.deleted_count)
+
         checked_out_at = datetime.now(UTC)
         await self._db.bookings.update_one(
             {"id": booking_id},
@@ -420,16 +430,6 @@ class FrontdeskServiceV2:
                 }
             },
         )
-
-        # Release Room Night Locks
-        # This is critical for same-day turnover (Walk-In or new Check-In)
-        # Terminal bookings (checked_out) must release their locks (INV-2/INV-5).
-        try:
-            await self._db.room_night_locks.delete_many(
-                {"booking_id": booking_id, "tenant_id": ctx.tenant_id}
-            )
-        except Exception as exc:
-            logger.warning("Failed to release room_night_locks for booking=%s: %s", booking_id, exc)
 
         room_id = booking.get("room_id")
         if room_id:
