@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
 from common.json_safe import json_safe
-from core.database import _raw_db, db
+from core.database import _raw_db, db, get_motor_database
 from core.entitlements.enforcement import get_tenant_limit, require_feature
 from core.entitlements.quota import QuotaExceededException, bootstrap_hr_active_employees, release_quota, reserve_quota
 from core.security import get_current_user
@@ -36,7 +36,7 @@ from shared_kernel.idempotency import begin_idempotency
 # GridFS bucket — personel belgeleri için (5MB üstü destek + memory verimi).
 # Eski kayıtlar `data_b64` alanı üzerinden okunmaya devam eder (geriye uyum).
 def _get_hr_docs_bucket():
-    return AsyncIOMotorGridFSBucket(_raw_db, bucket_name="staff_docs")
+    return AsyncIOMotorGridFSBucket(get_motor_database(), bucket_name="staff_docs")
 from core.audit import log_audit_event  # v2 HR Foundation (Task #262)
 from models.schemas import User
 from modules.pms_core.role_permission_service import (  # v96 DW

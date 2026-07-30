@@ -73,6 +73,11 @@ client = LoopAwareMongoClientProxy(
 # Raw database — use ONLY for system operations (startup, health, auth bootstrap)
 _raw_db = LoopAwareDatabaseProxy(client, db_name)
 
+def get_motor_database():
+    """Return the underlying AsyncIOMotorDatabase instance directly.
+    Required for strict type-checking components like Motor GridFSBucket."""
+    return client._get_current_client()[db_name]
+
 # Tenant-aware proxy — auto-injects tenant_id when context is available
 from core.tenant_db import TenantAwareDBProxy  # noqa: E402
 
