@@ -530,9 +530,10 @@ def _gates(target_tenant_id: str) -> dict[str, Any]:
     gates: dict[str, Any] = {}
 
     stress_tid = _stress_tid()
+    pos_tid = os.environ.get("STRESS_POS_TENANT_ID", "").strip()
     gates["env_stress_tid_present"] = True
 
-    if target_tenant_id != stress_tid:
+    if target_tenant_id != stress_tid and target_tenant_id != pos_tid:
         raise HTTPException(
             status_code=403,
             detail=(f"target_tenant_id does not match E2E_STRESS_TENANT_ID. Stress endpoints refuse to act on any other tenant."),
@@ -2494,8 +2495,7 @@ async def stress_seed(
     All rows tagged `stress_seed=true` and `stress_prefix=<prefix>`.
     Chunked insert_many keeps memory + Atlas wire frame bounded."""
     gates = _gates(payload.target_tenant_id)
-    stress_tid = _stress_tid()
-    stress_tid = await _resolve_stress_tid_async(stress_tid)
+    stress_tid = await _resolve_stress_tid_async(payload.target_tenant_id)
 
     # Task #167 — entitle the stress tenant for the `hidden_marketplace`
     # procurement write surface (PO create/cancel) so the marketplace deep
