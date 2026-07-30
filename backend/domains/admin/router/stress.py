@@ -531,12 +531,16 @@ def _gates(target_tenant_id: str) -> dict[str, Any]:
 
     stress_tid = _stress_tid()
     pos_tid = os.environ.get("STRESS_POS_TENANT_ID", "").strip()
-    gates["env_stress_tid_present"] = True
 
-    if target_tenant_id != stress_tid and target_tenant_id != pos_tid:
+    gates["env_stress_tid_present"] = True
+    allowed_tenant_ids = {stress_tid}
+    if pos_tid:
+        allowed_tenant_ids.add(pos_tid)
+
+    if not target_tenant_id or target_tenant_id not in allowed_tenant_ids:
         raise HTTPException(
             status_code=403,
-            detail=(f"target_tenant_id does not match E2E_STRESS_TENANT_ID. Stress endpoints refuse to act on any other tenant."),
+            detail="target_tenant_id is not an allowed stress tenant.",
         )
     gates["target_matches_stress_tid"] = True
 
