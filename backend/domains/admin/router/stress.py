@@ -2451,6 +2451,28 @@ def _build_f8e_docs(stress_tid: str, prefix: str, now: datetime):
     )
 
 
+def _build_pos_docs(stress_tid: str, prefix: str, now: datetime):
+    """F8Z - POS & F&B seed factory."""
+    outlet = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": stress_tid,
+        "name": f"{prefix}Main Restaurant",
+        "outlet_type": "restaurant",
+        "department": "FNB",
+        "location": "Lobby",
+        "capacity": 120,
+        "is_active": True,
+        "opening_time": "07:00",
+        "closing_time": "23:59",
+        "created_at": now,
+        "updated_at": now,
+        "stress_seed": True,
+        "stress_prefix": prefix,
+    }
+    return [outlet]
+
+
+
 async def _chunked_insert(collection, docs: list[dict], chunk_size: int) -> int:
     """Insert docs in chunks of `chunk_size`. Returns total insert count."""
     if not docs:
@@ -2549,6 +2571,8 @@ async def stress_seed(
             now,
         )
     )
+    # F8Z: POS / F&B
+    pos_outlets_docs = _build_pos_docs(stress_tid, prefix, now)
     # F8N (Wave 7): B2B Acente surface (standalone — `agencies` koleksiyonu).
     agency_docs = _build_agency_docs(stress_tid, prefix, now)
     factory_ms = round((time.perf_counter() - t_factory_start) * 1000, 1)
@@ -2787,6 +2811,7 @@ async def stress_seed(
             "cash_flow": _chunked_insert(db.cash_flow, cash_flow_docs, INSERT_CHUNK_SIZE),
             "city_ledger_accounts": _chunked_insert(db.city_ledger_accounts, city_ledger_accounts_docs, INSERT_CHUNK_SIZE),
             "pending_bookings": _chunked_insert(db.bookings, pending_bookings_docs, INSERT_CHUNK_SIZE),
+            "pos_outlets": _chunked_insert(db.pos_outlets, pos_outlets_docs, INSERT_CHUNK_SIZE),
         }
 
         # Run all inserts in parallel
