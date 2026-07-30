@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
 from common.json_safe import json_safe
-from core.database import _raw_db, db, get_motor_database
+from core.database import db, get_motor_database
 from core.entitlements.enforcement import get_tenant_limit, require_feature
 from core.entitlements.quota import QuotaExceededException, bootstrap_hr_active_employees, release_quota, reserve_quota
 from core.security import get_current_user
