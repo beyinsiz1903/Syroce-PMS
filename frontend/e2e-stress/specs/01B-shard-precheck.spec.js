@@ -145,4 +145,18 @@ test.describe(`F7B § Shard Precheck [${PROFILE}]`, () => {
             expect(stressTokens.stress_token).toBeTruthy();
         });
     }
+
+    if (PROFILE === 'pos_fnb') {
+        test('POS and F&B auxiliary data (Fail-fast if missing)', async ({ request, stressTokens }) => {
+            const token = stressTokens.stress_token;
+            const posExtract = (j) =>
+                j.outlets?.length ??
+                j.items?.length ??
+                j.data?.length ??
+                j.list?.length ??
+                (Array.isArray(j) ? j.length : -1);
+            
+            await verifyEndpoint(request, token, '/api/pos/outlets', 1, 'POS Outlets / F&B Catalog', posExtract);
+        });
+    }
 });

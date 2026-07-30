@@ -139,9 +139,10 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
         }
 
         // Login each created user → cache role token. Login fail per-user → drop from matrix.
+        const originUrl = new URL(process.env.E2E_BASE_URL || 'https://pms.syroce.com').origin;
         for (const u of createdUsers) {
             const r = await callTimed(request, 'post', '/api/auth/login',
-                { email: u.email, password: u.password }, '');
+                { email: u.email, password: u.password }, '', { headers: { 'Origin': originUrl } });
             if (r.ok && r.body?.access_token) {
                 roleTokens[u.role] = r.body.access_token;
             } else {
