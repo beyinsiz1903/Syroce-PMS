@@ -332,3 +332,35 @@ async def test_hotelrunner_webhook_csrf_exemption(monkeypatch):
     
     resp_webhook = await csrf_guard_middleware(req_webhook, mock_call_next)
     assert resp_webhook.status_code == 200, "CSRF guard blocked the specific webhook path"
+
+@pytest.mark.asyncio
+async def test_nested_hotel_id_extraction_and_bad_signature(monkeypatch):
+    """Test that hr_id_hint is correctly extracted from nested payload `hotel: {id: ...}`
+    and that a bad signature still correctly rejects the request with 401."""
+    monkeypatch.setenv("HOTELRUNNER_WEBHOOK_SECRET", "s3cr3t")
+    
+    async def _fake_lookup(hr_id_hint):
+        if hr_id_hint == "ornek-id":
+            return {"tenant_id": "tenant-A", "hr_id": "ornek-id"}
+        return None
+    monkeypatch.setattr(hs, "_lookup_signing_connection", _fake_lookup)
+
+    raw = b'{"hotel":{"id":"ornek-id"}}'
+    ts = str(int(time.time()))
+    headers = {
+        "X-HotelRunner-Signature": "sha256=invalid-signature",
+        "X-HotelRunner-Timestamp": ts,
+    }
+    
+    with pytest.raises(HTTPException) as ei:
+        await _verify_hotelrunner_callback(_FakeRequest(headers, raw))
+    assert ei.value.status_code == 401
+    
+    # Also verify that a valid signature works
+    headers_valid = {
+        "X-HotelRunner-Signature": f"sha256={_sign('s3cr3t', ts, raw)}",
+        "X-HotelRunner-Timestamp": ts,
+    }
+    req = _FakeRequest(headers_valid, raw)
+    await _verify_hotelrunner_callback(req)
+    assert _verified_tenant(req) == "tenant-A"

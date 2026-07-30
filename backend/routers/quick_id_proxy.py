@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Request
 from pydantic import BaseModel
 
 from core.database import _raw_db as raw_db
@@ -41,6 +41,8 @@ SETTINGS_COLL = "quick_id_settings"
 SETTINGS_DOC_ID = "global"
 
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+TOKEN_PATTERN = r"^[A-Za-z0-9_-]{16,128}$"
 
 
 def _is_safe_quickid_transport(url: str) -> bool:
@@ -642,7 +644,10 @@ def _client_ip(request) -> str:
 
 
 @public_router.get("/{token_id}/info")
-async def precheckin_info_public(token_id: str, request: Request):
+async def precheckin_info_public(
+    request: Request,
+    token_id: str = Path(..., pattern=TOKEN_PATTERN)
+):
     """QR ile ulaşılan token bilgisi (public)."""
     if not QUICKID_SERVICE_KEY:
         raise HTTPException(status_code=503, detail="Servis yapılandırılmamış")
@@ -668,7 +673,11 @@ async def precheckin_info_public(token_id: str, request: Request):
 
 
 @public_router.post("/{token_id}/scan")
-async def precheckin_scan_public(token_id: str, request: Request, payload: dict = Body(...)):
+async def precheckin_scan_public(
+    request: Request,
+    token_id: str = Path(..., pattern=TOKEN_PATTERN),
+    payload: dict = Body(...)
+):
     """Misafir kendi telefonundan kimlik tarar (public)."""
     # KVKK consent backend'de zorunlu — frontend kontrolüne ek katman
     if not payload.get("kvkk_consent"):
