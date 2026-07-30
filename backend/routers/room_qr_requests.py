@@ -910,6 +910,7 @@ async def room_qr_code(
     url = _guest_url_with_salt(request, tenant_id, room_id, salt, slug)
     png = generate_qr_code(url)
     return {
+        "tenant_id": tenant_id,  # kanonik internal tenant kimliği — public URL için kullan
         "room_id": room_id,
         "room_number": room.get("room_number"),
         "url": url,
