@@ -32,6 +32,9 @@ QUICKID_SERVICE_KEY = os.environ.get("QUICKID_SERVICE_KEY", "")
 # Demo mod yalnızca açıkça etkinleştirilmişse çalışır (fail-closed)
 QUICKID_DEMO_ENABLED = os.environ.get("ENABLE_QUICKID_DEMO", "").lower() in ("1", "true", "yes", "on")
 
+QUICKID_UPSTREAM_TIMEOUT = float(os.environ.get("QUICKID_UPSTREAM_TIMEOUT_SECONDS", "10.0"))
+QUICKID_SCAN_TIMEOUT = float(os.environ.get("QUICKID_SCAN_TIMEOUT_SECONDS", "60.0"))
+
 # Şifreleme anahtarları (öncelik: dedicated env > JWT_SECRET-türetilmiş).
 # Anahtar rotasyonu için OLD anahtar(lar) geçici olarak okumak için kullanılabilir.
 QUICKID_ENC_KEY = os.environ.get("QUICKID_SETTINGS_ENC_KEY", "").strip()
@@ -474,7 +477,7 @@ async def biometric_face_compare(
 
     api_keys = await _resolve_api_keys()
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=QUICKID_SCAN_TIMEOUT) as client:
             r = await client.post(
                 f"{QUICKID_URL}/api/biometric/face-compare",
                 json={"document_image_base64": doc_b64, "selfie_image_base64": selfie_b64},
@@ -485,6 +488,8 @@ async def biometric_face_compare(
                 detail = r.json().get("detail", "")
             except Exception:
                 detail = r.text
+            if r.status_code >= 500:
+                raise HTTPException(status_code=503, detail="Biyometrik servise ulaşılamıyor")
             raise HTTPException(status_code=r.status_code, detail=str(detail) or "Yüz eşleştirme hatası")
         return r.json()
     except httpx.RequestError as e:
@@ -502,7 +507,7 @@ async def biometric_liveness_challenge(current_user=Depends(get_current_user)):
             "type": "head_turn",
         }
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=QUICKID_UPSTREAM_TIMEOUT) as client:
             r = await client.get(
                 f"{QUICKID_URL}/api/biometric/liveness-challenge",
                 headers=_service_headers(current_user),
@@ -534,7 +539,7 @@ async def biometric_liveness_check(
         "session_id": payload.get("session_id", ""),
     }
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=QUICKID_SCAN_TIMEOUT) as client:
             r = await client.post(
                 f"{QUICKID_URL}/api/biometric/liveness-check",
                 json=body,
@@ -545,6 +550,8 @@ async def biometric_liveness_check(
                 detail = r.json().get("detail", "")
             except Exception:
                 detail = r.text
+            if r.status_code >= 500:
+                raise HTTPException(status_code=503, detail="Biyometrik servise ulaşılamıyor")
             raise HTTPException(status_code=r.status_code, detail=str(detail) or "Canlılık testi hatası")
         return r.json()
     except httpx.RequestError as e:
@@ -570,7 +577,7 @@ async def precheckin_create(
         "guest_name": payload.get("guest_name", ""),
     }
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=QUICKID_UPSTREAM_TIMEOUT) as client:
             r = await client.post(
                 f"{QUICKID_URL}/api/precheckin/create",
                 json=body,
@@ -581,6 +588,8 @@ async def precheckin_create(
                 detail = r.json().get("detail", "")
             except Exception:
                 detail = r.text
+            if r.status_code >= 500:
+                raise HTTPException(status_code=503, detail="Servise ulaşılamıyor")
             raise HTTPException(status_code=r.status_code, detail=str(detail) or "Token oluşturulamadı")
         return r.json()
     except httpx.RequestError as e:
@@ -654,7 +663,7 @@ async def precheckin_info_public(
     bucket = f"info:{_client_ip(request)}:{token_id}"
     _rl_check(bucket, _RL_INFO_LIMIT, _RL_INFO_WINDOW)
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=QUICKID_UPSTREAM_TIMEOUT) as client:
             r = await client.get(
                 f"{QUICKID_URL}/api/precheckin/{token_id}",
                 headers={"X-Service-Key": QUICKID_SERVICE_KEY, "X-Acting-User": "guest-public"},
@@ -665,6 +674,8 @@ async def precheckin_info_public(
                 detail = r.json().get("detail", "QR geçersiz")
             except Exception:
                 detail = "QR geçersiz"
+            if r.status_code >= 500:
+                raise HTTPException(status_code=503, detail="Servise ulaşılamıyor")
             raise HTTPException(status_code=r.status_code, detail=str(detail))
         _rl_record_attempt(bucket, success=True)
         return r.json()
@@ -705,7 +716,7 @@ async def precheckin_scan_public(
 
     body = {"image_base64": image_b64, "kvkk_consent": True}
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=QUICKID_SCAN_TIMEOUT) as client:
             r = await client.post(
                 f"{QUICKID_URL}/api/precheckin/{token_id}/scan",
                 json=body,
@@ -717,6 +728,8 @@ async def precheckin_scan_public(
                 detail = r.json().get("detail", "")
             except Exception:
                 detail = r.text
+            if r.status_code >= 500:
+                raise HTTPException(status_code=503, detail="Servise ulaşılamıyor")
             raise HTTPException(status_code=r.status_code, detail=str(detail) or "Tarama hatası")
         _rl_record_attempt(bucket, success=True)
         return r.json()
