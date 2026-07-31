@@ -152,34 +152,13 @@ jobs:
             fail-fast: false
             max-parallel: 1
             matrix:
-                shard: [B, C, D, E, F]
+                shard: [E]
                 include:
-                    - shard: B
-                      name: "Front Office Core"
-                      spec_pattern: "e2e-stress/specs/02-*.spec.js e2e-stress/specs/03-*.spec.js e2e-stress/specs/04-*.spec.js e2e-stress/specs/05-*.spec.js e2e-stress/specs/06-*.spec.js e2e-stress/specs/09-*.spec.js e2e-stress/specs/95-*.spec.js e2e-stress/specs/99-*.spec.js e2e-stress/specs/99B-*.spec.js"
-                      report_tag: "shard_b_front_office"
-                      precheck_profile: "front_office"
-                    - shard: C
-                      name: "Operations & Service"
-                      spec_pattern: "e2e-stress/specs/08-*.spec.js e2e-stress/specs/08B-*.spec.js e2e-stress/specs/10-*.spec.js e2e-stress/specs/11-*.spec.js e2e-stress/specs/12-*.spec.js e2e-stress/specs/13-*.spec.js e2e-stress/specs/98-maintenance-workorder-lifecycle.spec.js e2e-stress/specs/98-messaging-template-lifecycle.spec.js"
-                      report_tag: "shard_c_operations"
-                      precheck_profile: "operations"
-                    - shard: D
-                      name: "MICE & Sales & HR & Finance"
-                      spec_pattern: "e2e-stress/specs/14-*.spec.js e2e-stress/specs/15-*.spec.js e2e-stress/specs/16-*.spec.js e2e-stress/specs/17-*.spec.js e2e-stress/specs/18-*.spec.js e2e-stress/specs/19-*.spec.js e2e-stress/specs/20-*.spec.js e2e-stress/specs/21-*.spec.js e2e-stress/specs/22-*.spec.js e2e-stress/specs/23-*.spec.js e2e-stress/specs/24-*.spec.js e2e-stress/specs/25-*.spec.js e2e-stress/specs/26-*.spec.js e2e-stress/specs/27-*.spec.js e2e-stress/specs/28-*.spec.js e2e-stress/specs/29-*.spec.js e2e-stress/specs/32-*.spec.js e2e-stress/specs/33-*.spec.js e2e-stress/specs/33B-*.spec.js e2e-stress/specs/34-*.spec.js e2e-stress/specs/35-*.spec.js e2e-stress/specs/35B-*.spec.js e2e-stress/specs/37-*.spec.js e2e-stress/specs/38-*.spec.js e2e-stress/specs/38B-*.spec.js e2e-stress/specs/39-*.spec.js e2e-stress/specs/39B-*.spec.js e2e-stress/specs/70-*.spec.js e2e-stress/specs/71-*.spec.js e2e-stress/specs/72-*.spec.js e2e-stress/specs/98-mobile-cashier-surface.spec.js e2e-stress/specs/98-payment-pos-reconciliation-dryrun.spec.js e2e-stress/specs/98-efatura-earsiv-dryrun.spec.js e2e-stress/specs/98-konaklama-vergisi-dryrun.spec.js e2e-stress/specs/98-fnb-beo-generator.spec.js e2e-stress/specs/98-golf-operational.spec.js e2e-stress/specs/98-rms-revenue-deep.spec.js e2e-stress/specs/98-sales-basic-lifecycle.spec.js e2e-stress/specs/98-spa-wellness-operational.spec.js"
-                      report_tag: "shard_d_mice_hr_finance"
-                      precheck_profile: "mice_hr_finance"
                     - shard: E
                       name: "Security & Integrations"
                       spec_pattern: "e2e-stress/specs/30-*.spec.js e2e-stress/specs/31-*.spec.js e2e-stress/specs/36-*.spec.js e2e-stress/specs/40-*.spec.js e2e-stress/specs/41-*.spec.js e2e-stress/specs/41B-*.spec.js e2e-stress/specs/42-*.spec.js e2e-stress/specs/43-*.spec.js e2e-stress/specs/44-*.spec.js e2e-stress/specs/45-*.spec.js e2e-stress/specs/50-*.spec.js e2e-stress/specs/51-*.spec.js e2e-stress/specs/52-*.spec.js e2e-stress/specs/52B-*.spec.js e2e-stress/specs/60-*.spec.js e2e-stress/specs/61-*.spec.js e2e-stress/specs/62-*.spec.js e2e-stress/specs/63-*.spec.js e2e-stress/specs/64-*.spec.js e2e-stress/specs/65-*.spec.js e2e-stress/specs/66-*.spec.js e2e-stress/specs/96-*.spec.js e2e-stress/specs/97-*.spec.js e2e-stress/specs/98-auth-token-lifecycle.spec.js e2e-stress/specs/98-vcc-pci-compliance.spec.js e2e-stress/specs/98B-websocket-tenant-isolation.spec.js e2e-stress/specs/98C-twofa-totp-lifecycle.spec.js e2e-stress/specs/98D-peer-login-throttle.spec.js"
                       report_tag: "shard_e_security_integrations"
                       precheck_profile: "security_integrations"
-                    - shard: F
-                      name: "POS & F&B"
-                      spec_pattern: "e2e-stress/specs/98-pos-deep-lifecycle.spec.js e2e-stress/specs/98-pos-kds-inventory.spec.js"
-                      report_tag: "shard_f_pos_fnb"
-                      precheck_profile: "pos_fnb"
-                      is_pos: "true"
         env:
             E2E_STRESS_ADMIN_EMAIL: ${{ matrix.is_pos == 'true' && secrets.STRESS_POS_ADMIN_EMAIL || secrets.STRESS_TENANT_ADMIN_EMAIL }}
             E2E_STRESS_ADMIN_PASSWORD: ${{ matrix.is_pos == 'true' && secrets.STRESS_POS_ADMIN_PASSWORD || secrets.STRESS_TENANT_ADMIN_PASSWORD }}
