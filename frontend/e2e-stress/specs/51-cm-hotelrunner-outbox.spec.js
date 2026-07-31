@@ -392,15 +392,18 @@ test.describe('F8L § 51 — HotelRunner Webhook + Outbox', () => {
         // _verify_hotelrunner_signature mantığı).
         const crypto = await import('node:crypto');
         const ts = String(Math.floor(Date.now() / 1000));
-        const raw = JSON.stringify({
+        const seededHotelRunnerHrId = `${prefix || 'STRESS_'}HOTEL`;
+        const rawPayload = {
             tenant_id: stressTid,
-            hotel: { id: `${prefix || 'STRESS'}_HOTEL` },
+            hotel: { id: seededHotelRunnerHrId },
             reservation: {
                 hr_number: `${prefix || 'STRESS'}_SIGNED_${Date.now()}`,
                 state: 'new',
                 guest: { name: 'STRESS_SIGNED' },
             },
-        });
+        };
+        
+        const raw = JSON.stringify(rawPayload);
         const signed = `${ts}.`.concat(raw);
         const expected = crypto.createHmac('sha256', secret).update(signed).digest('hex');
         const r = await callWebhook(request, 'post', `${BASE}/callback`, {
