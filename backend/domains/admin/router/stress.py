@@ -3546,7 +3546,7 @@ async def stress_cleanup(
         flt["stress_prefix"] = payload.data_prefix
 
     deleted_counts: dict[str, int] = {}
-    
+
     try:
         from core.tenant_db import get_system_db
         _sysdb = get_system_db()
