@@ -2528,6 +2528,27 @@ async def stress_seed(
     prefix = payload.data_prefix or f"E2E_STRESS_{int(time.time())}_"
     now = datetime.now(UTC)
 
+    try:
+        from core.tenant_db import get_system_db
+        _sysdb = get_system_db()
+        await _sysdb.hotelrunner_connections.update_one(
+            {"tenant_id": stress_tid, "hr_id": f"{prefix}HOTEL"},
+            {"$set": {
+                "is_active": True,
+                "tenant_id": stress_tid,
+                "hr_id": f"{prefix}HOTEL",
+                "stress_seed": True,
+                "stress_prefix": prefix
+            }},
+            upsert=True,
+        )
+    except Exception as e:
+        _stress_log.warning(
+            "stress.seed hotelrunner_connections upsert failed for %s: %s",
+            stress_tid,
+            type(e).__name__,
+        )
+
     t_factory_start = time.perf_counter()
     (rooms_docs, guests_docs, bookings_docs, folios_docs, folio_charges_docs, payments_docs, rnl_docs, hk_docs) = _build_factory_docs(
         rc,
@@ -3525,6 +3546,16 @@ async def stress_cleanup(
         flt["stress_prefix"] = payload.data_prefix
 
     deleted_counts: dict[str, int] = {}
+    
+    try:
+        from core.tenant_db import get_system_db
+        _sysdb = get_system_db()
+        sys_res = await _sysdb.hotelrunner_connections.delete_many(flt)
+        if sys_res.deleted_count > 0:
+            deleted_counts["hotelrunner_connections"] = sys_res.deleted_count
+    except Exception as e:
+        _stress_log.warning("stress.cleanup system_db hotelrunner_connections delete failed for %s: %s", stress_tid, type(e).__name__)
+
     t_start = time.perf_counter()
     # F8E v2 tur-6 (2026-05-19) — currency_rates exception:
     # Backend POST /api/accounting/currency-rates writes only
