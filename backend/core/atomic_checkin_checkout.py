@@ -307,6 +307,12 @@ async def check_out_booking_atomic(
             room_id = booking.get("room_id")
 
             # ── 2. Folio balance validation ──
+            # NOTE: Balance is read from db.folio_ledger (canonical source) using the
+            # same aggregation as FolioLedgerService.compute_balance(), but with
+            # session=session so it participates in the atomic transaction.
+            # The old guard queried legacy folio_charges/payments collections which are
+            # no longer populated in the new ledger architecture, causing the guard to
+            # silently pass (balance always 0.0).
             if not force:
                 folios = await db.folios.find(
                     {"booking_id": booking_id, "tenant_id": tenant_id, "status": "open"},
@@ -315,23 +321,31 @@ async def check_out_booking_atomic(
                 ).to_list(10)
 
                 for folio in folios:
-                    charges = await db.folio_charges.find(
-                        {"folio_id": folio["id"], "tenant_id": tenant_id, "voided": False},
-                        {"_id": 0, "total": 1, "amount": 1},
+                    ledger_pipeline = [
+                        {
+                            "$match": {
+                                "tenant_id": tenant_id,
+                                "folio_id": folio["id"],
+                            }
+                        },
+                        {
+                            "$group": {
+                                "_id": None,
+                                "total": {"$sum": "$amount"},
+                            }
+                        },
+                    ]
+                    rows = await db.folio_ledger.aggregate(
+                        ledger_pipeline,
                         session=session,
-                    ).to_list(500)
-                    payments = await db.payments.find(
-                        {"folio_id": folio["id"], "tenant_id": tenant_id, "voided": False},
-                        {"_id": 0, "amount": 1},
-                        session=session,
-                    ).to_list(500)
-
-                    total_charges = sum(c.get("total", c.get("amount", 0)) for c in charges)
-                    total_payments = sum(p.get("amount", 0) for p in payments)
-                    balance = round(total_charges - total_payments, 2)
+                    ).to_list(1)
+                    balance = round(float(rows[0]["total"]), 2) if rows else 0.0
 
                     if balance > 0.01:
-                        raise CheckOutError(f"Folio {folio.get('folio_number')} has unpaid balance of {balance}. Use force=True to override.")
+                        raise CheckOutError(
+                            f"Folio {folio.get('folio_number')} has unpaid balance of "
+                            f"{balance}. Use force=True to override."
+                        )
 
             # ── 3. Update booking → checked_out ──
             booking_update = {
