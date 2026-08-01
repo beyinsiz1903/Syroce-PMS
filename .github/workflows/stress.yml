@@ -27,6 +27,22 @@ on:
                 description: 'Optional Playwright spec filter (relative to e2e-stress/, e.g. `specs/99-finance-folio-surface.spec.js`). Empty = full suite.'
                 required: false
                 default: ''
+            target_shard:
+                description: 'Target a specific matrix shard (all, B, C, D, E, F). Default: all'
+                required: false
+                default: 'all'
+                type: choice
+                options:
+                    - all
+                    - B
+                    - C
+                    - D
+                    - E
+                    - F
+            playwright_grep:
+                description: 'Safe Playwright grep pattern to append via bash array (e.g. `Signed valid-path`). Default: empty'
+                required: false
+                default: ''
 
 concurrency:
     group: stress-suite-one-shot
@@ -146,6 +162,7 @@ jobs:
     stress:
         name: Shard ${{ matrix.shard }} - ${{ matrix.name }}
         needs: setup
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.target_shard == 'all' || github.event.inputs.target_shard == matrix.shard || github.event.inputs.target_shard == '' }}
         runs-on: ubuntu-latest
         timeout-minutes: 45
         strategy:
@@ -271,13 +288,26 @@ jobs:
               env:
                   STRESS_SKIP_SETUP: 'true'
                   STRESS_SKIP_TEARDOWN: 'true'
+                  PLAYWRIGHT_GREP: ${{ github.event.inputs.playwright_grep }}
               run: |
                   cd frontend
                   TARGET_PATTERN="${{ github.event.inputs.spec_pattern }}"
                   if [ -z "$TARGET_PATTERN" ]; then
                     TARGET_PATTERN="${{ matrix.spec_pattern }}"
                   fi
-                  yarn playwright test --config=playwright.stress.config.js $TARGET_PATTERN
+                  
+                  args=(playwright test --config=playwright.stress.config.js)
+                  
+                  if [ -n "$TARGET_PATTERN" ]; then
+                      read -a pattern_args <<< "$TARGET_PATTERN"
+                      args+=("${pattern_args[@]}")
+                  fi
+                  
+                  if [ -n "$PLAYWRIGHT_GREP" ]; then
+                      args+=(--grep "$PLAYWRIGHT_GREP")
+                  fi
+                  
+                  yarn "${args[@]}" 
 
             - name: Verify drill report verdict (hard-fail on NO-GO)
               id: verdict_check
