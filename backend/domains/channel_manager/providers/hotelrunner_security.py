@@ -26,12 +26,15 @@ def _log_webhook_reject(reason: str, source_ip: str, tenant_hint: str, hr_id_hin
     Records the source IP, the rejection reason and the (untrusted) tenant /
     hr_id hint. Secret and signature material is NEVER logged.
     """
+    from core.masking import fingerprint_id
+    masked_tenant = fingerprint_id(tenant_hint)
+    masked_hr_id = fingerprint_id(hr_id_hint)
     logger.warning(
-        "[HR-WEBHOOK][SECURITY] reject reason=%s source_ip=%s tenant_hint=%s hr_id_hint=%s",
+        "[HR-WEBHOOK][SECURITY] reject reason=%s source_ip=%s tenant_fp=%s hr_fp=%s",
         reason,
         source_ip or "unknown",
-        tenant_hint or "-",
-        hr_id_hint or "-",
+        masked_tenant,
+        masked_hr_id,
     )
 
 
@@ -162,17 +165,36 @@ def _verified_tenant(request: Request) -> str:
 #    and validates the `{secret}` path parameter if HOTELRUNNER_CALLBACK_SECRET is set.
 
 async def _verify_hotelrunner_callback(request: Request) -> None:
+    req_id = request.scope.get("req_id", "unknown")
+    if not hasattr(request.state, "hr_diag"):
+        request.state.hr_diag = {}
+
+    t_start = _time.time()
+    request.state.hr_diag["request_received"] = t_start
+    import logging
+    _logger = logging.getLogger(__name__)
+    _logger.info(f"[DIAG] [{req_id}] HR webhook request received")
 
     sig_header = (request.headers.get("X-HotelRunner-Signature") or request.headers.get("X-Signature") or "").strip()
     source_ip = _source_ip(request)
+    t_body_start = _time.time()
     raw = await request.body()
+    request.state.hr_diag["body_read_complete"] = _time.time()
+    _logger.info(f"[DIAG] [{req_id}] Body read complete in {(_time.time() - t_body_start)*1000:.2f}ms")
+
+    t_sig_start = _time.time()
+    request.state.hr_diag["signature_verification_start"] = t_sig_start
     tenant_hint, hr_id_hint = _extract_signature_hints(request, raw)
 
     if not hr_id_hint:
         _log_webhook_reject("missing_headers", source_ip, tenant_hint, hr_id_hint)
         raise HTTPException(status_code=401, detail="Missing HotelRunner hr_id")
 
+    t_resolve_start = _time.time()
+    request.state.hr_diag["tenant_property_resolution_start"] = t_resolve_start
     conn = await _lookup_signing_connection(hr_id_hint)
+    request.state.hr_diag["tenant_property_resolution_end"] = _time.time()
+    _logger.info(f"[DIAG] [{req_id}] Tenant/property resolution took {(_time.time() - t_resolve_start)*1000:.2f}ms")
 
     if conn and not _hmac.compare_digest(str(conn["hr_id"]), str(hr_id_hint)):
         _log_webhook_reject("invalid_connection", source_ip, tenant_hint, hr_id_hint)
@@ -201,6 +223,15 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
         per_property_secret = await _load_webhook_secret(conn)
         active_secret = per_property_secret or global_secret
 
+        secret_source = "missing"
+        if per_property_secret:
+            secret_source = "tenant credentials"
+        elif global_secret:
+            secret_source = "env"
+
+        request.state.hr_diag["secret_source_type"] = secret_source
+        _logger.info(f"[DIAG] [{req_id}] Secret source type: {secret_source}")
+
         if not active_secret:
             raise HTTPException(
                 status_code=503,
@@ -215,6 +246,8 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
             raise HTTPException(status_code=401, detail="Invalid signature")
 
         _bind_verified_tenant(request, conn)
+        request.state.hr_diag["signature_verification_end"] = _time.time()
+        _logger.info(f"[DIAG] [{req_id}] Signature verification (HMAC) end in {(_time.time() - t_sig_start)*1000:.2f}ms")
         return
 
     # ── MODE 2: Official Callback Validation (Token + hr_id + callback_secret) ──
@@ -237,6 +270,14 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     connection_callback_secret = conn.get("callback_secret") if conn else None
 
     expected_secret = secret_manager_callback_secret or connection_callback_secret or global_callback_secret
+
+    secret_source = "missing"
+    if secret_manager_callback_secret or connection_callback_secret:
+        secret_source = "tenant credentials"
+    elif global_callback_secret:
+        secret_source = "env"
+    request.state.hr_diag["secret_source_type"] = secret_source
+    _logger.info(f"[DIAG] [{req_id}] Secret source type: {secret_source}")
 
     # P1 Fix: Fail closed in production if no secret is configured at all
     if _os.environ.get("APP_ENV") == "production" and not expected_secret:
@@ -300,6 +341,8 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Invalid HotelRunner token")
 
     _bind_verified_tenant(request, conn)
+    request.state.hr_diag["signature_verification_end"] = _time.time()
+    _logger.info(f"[DIAG] [{req_id}] Signature verification (Token) end in {(_time.time() - t_sig_start)*1000:.2f}ms")
 
 
 # ── Webhook Batch Processor ──────────────────────────────────────────
