@@ -76,7 +76,7 @@ def test_request_id_invalid(client, capture_logs, monkeypatch):
     headers2 = {
         "X-Request-ID": "A" * 65
     }
-    response2 = response = client.post("/api/channel-manager/hotelrunner/callback", headers=headers2, json={})
+    response2 = client.post("/api/channel-manager/hotelrunner/callback", headers=headers2, json={})
     assert response2.headers.get("X-Request-ID") != "A" * 65
     assert response2.headers.get("X-Request-ID").startswith("req-")
 
@@ -153,14 +153,12 @@ def test_hr_successful_callback_no_tenant_id_leak(client, capture_logs, monkeypa
     payload = {
         "state": "new",
         "hotel_id": "hr-123",
-        "reservations": [{"hr_number": "123"}]
+        "reservations": [{"hr_number": "SECRET-HR-NUMBER-LEAK-SENTINEL"}]
     }
 
     _ = client.post("/api/channel-manager/hotelrunner/callback", headers=headers, json=payload)
 
     logs = "\n".join(capture_logs.log_records)
-    print("LOGS:", logs)
-
     assert "tenant-id-full-uuid-123" not in logs
     from core.masking import fingerprint_id
     assert fingerprint_id("tenant-id-full-uuid-123") in logs
@@ -251,7 +249,7 @@ def test_hr_background_persistence_failure(client, capture_logs, monkeypatch):
     payload = {
         "state": "new",
         "hotel_id": "hr-123",
-        "reservations": [{"hr_number": "123"}]
+        "reservations": [{"hr_number": "SECRET-HR-NUMBER-LEAK-SENTINEL"}]
     }
 
     _ = client.post("/api/channel-manager/hotelrunner/callback", headers=headers, json=payload)
@@ -266,8 +264,8 @@ def test_hr_background_persistence_failure(client, capture_logs, monkeypatch):
     assert "elapsed_ms" in logs
 
     assert "Simulated persistence error" not in logs
-    # hr_number is "123" in this test
-    assert " 123" not in logs
+    # hr_number is "SECRET-HR-NUMBER-LEAK-SENTINEL" in this test
+    assert "SECRET-HR-NUMBER-LEAK-SENTINEL" not in logs
     assert "hr-123" not in logs
     assert "tenant-id-full-uuid-123" not in logs
 
