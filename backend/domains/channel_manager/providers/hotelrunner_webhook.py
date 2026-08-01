@@ -73,9 +73,15 @@ async def _process_webhook_batch(
                     logger.info(f"[DIAG] [{req_id}] persistence_success elapsed_ms={(time.time() - t_persist_start)*1000:.2f}")
                 except Exception as e:
                     logger.info(f"[DIAG] [{req_id}] persistence_failure exception_class={e.__class__.__name__} elapsed_ms={(time.time() - t_persist_start)*1000:.2f}")
-                    logger.error(f"[WEBHOOK] Error processing sub-reservation {sub_res.get('hr_number')}: {e}")
+                    from core.masking import fingerprint_id
+                    masked_tenant = fingerprint_id(tenant_id)
+                    masked_prop = fingerprint_id(property_id) if property_id else "none"
+                    logger.error(f"[WEBHOOK] [{req_id}] Error processing sub-reservation event={event_type} exception_class={e.__class__.__name__} elapsed_ms={(time.time() - t_persist_start)*1000:.2f} tenant_fp={masked_tenant} prop_fp={masked_prop}")
         except Exception as e:
-            logger.error(f"[WEBHOOK] Error processing {event_type}: {e}")
+            from core.masking import fingerprint_id
+            masked_tenant = fingerprint_id(tenant_id)
+            masked_prop = fingerprint_id(property_id) if property_id else "none"
+            logger.error(f"[WEBHOOK] [{req_id}] Error processing batch event={event_type} exception_class={e.__class__.__name__} tenant_fp={masked_tenant} prop_fp={masked_prop}")
     logger.info(f"[DIAG] [{req_id}] batch_end total_elapsed_ms={(time.time() - t_batch_start)*1000:.2f}")
 
 
@@ -149,7 +155,8 @@ async def _parse_payload(request: Request) -> dict:
             return json.loads(data_str)
         return await request.json()
     except Exception as e:
-        logger.error(f"[WEBHOOK] Payload parsing failed: {e}")
+        req_id = request.scope.get("req_id", "unknown")
+        logger.error(f"[WEBHOOK] [{req_id}] Payload parsing failed exception_class={e.__class__.__name__}")
         raise HTTPException(status_code=400, detail="Invalid payload format")
 
 
