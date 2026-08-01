@@ -141,7 +141,9 @@ register_middleware(app)
 # Additional CORS with explicit origins
 from datetime import UTC
 
-from starlette.middleware.cors import CORSMiddleware  # noqa: E402
+from starlette.middleware.cors import CORSMiddleware
+
+  # noqa: E402
 
 _cors_raw = os.environ.get("CORS_ORIGINS", "")
 _cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()] if _cors_raw else []

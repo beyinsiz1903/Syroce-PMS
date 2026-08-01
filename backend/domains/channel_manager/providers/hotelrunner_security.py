@@ -4,7 +4,6 @@ import json
 import logging
 import os as _os
 import time as _time
-import uuid
 
 from fastapi import HTTPException, Request
 
@@ -27,13 +26,15 @@ def _log_webhook_reject(reason: str, source_ip: str, tenant_hint: str, hr_id_hin
     Records the source IP, the rejection reason and the (untrusted) tenant /
     hr_id hint. Secret and signature material is NEVER logged.
     """
-    masked_tenant = (tenant_hint[:8] + "...") if tenant_hint and len(tenant_hint) > 8 else (tenant_hint or "-")
+    from core.masking import fingerprint_id
+    masked_tenant = fingerprint_id(tenant_hint)
+    masked_hr_id = fingerprint_id(hr_id_hint)
     logger.warning(
-        "[HR-WEBHOOK][SECURITY] reject reason=%s source_ip=%s tenant_hint=%s hr_id_hint=%s",
+        "[HR-WEBHOOK][SECURITY] reject reason=%s source_ip=%s tenant_fp=%s hr_fp=%s",
         reason,
         source_ip or "unknown",
         masked_tenant,
-        hr_id_hint or "-",
+        masked_hr_id,
     )
 
 
@@ -164,14 +165,10 @@ def _verified_tenant(request: Request) -> str:
 #    and validates the `{secret}` path parameter if HOTELRUNNER_CALLBACK_SECRET is set.
 
 async def _verify_hotelrunner_callback(request: Request) -> None:
-    req_id = request.headers.get("X-Request-ID")
-    if not req_id:
-        req_id = "hr-" + str(uuid.uuid4())[:8]
-    if not hasattr(request.state, "req_id"):
-        request.state.req_id = req_id
+    req_id = request.scope.get("req_id", "unknown")
     if not hasattr(request.state, "hr_diag"):
         request.state.hr_diag = {}
-    
+
     t_start = _time.time()
     request.state.hr_diag["request_received"] = t_start
     import logging
@@ -184,7 +181,7 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     raw = await request.body()
     request.state.hr_diag["body_read_complete"] = _time.time()
     _logger.info(f"[DIAG] [{req_id}] Body read complete in {(_time.time() - t_body_start)*1000:.2f}ms")
-    
+
     t_sig_start = _time.time()
     request.state.hr_diag["signature_verification_start"] = t_sig_start
     tenant_hint, hr_id_hint = _extract_signature_hints(request, raw)
@@ -225,13 +222,13 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
         global_secret = _os.environ.get("HOTELRUNNER_WEBHOOK_SECRET")
         per_property_secret = await _load_webhook_secret(conn)
         active_secret = per_property_secret or global_secret
-        
+
         secret_source = "missing"
         if per_property_secret:
             secret_source = "tenant credentials"
         elif global_secret:
             secret_source = "env"
-        
+
         request.state.hr_diag["secret_source_type"] = secret_source
         _logger.info(f"[DIAG] [{req_id}] Secret source type: {secret_source}")
 
@@ -273,7 +270,7 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     connection_callback_secret = conn.get("callback_secret") if conn else None
 
     expected_secret = secret_manager_callback_secret or connection_callback_secret or global_callback_secret
-    
+
     secret_source = "missing"
     if secret_manager_callback_secret or connection_callback_secret:
         secret_source = "tenant credentials"

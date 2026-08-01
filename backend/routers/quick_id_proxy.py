@@ -17,8 +17,7 @@ from urllib.parse import urlparse
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Request, Response
-import uuid
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Request
 from pydantic import BaseModel
 
 from core.database import _raw_db as raw_db
@@ -656,25 +655,21 @@ def _client_ip(request) -> str:
 @public_router.get("/{token_id}/info")
 async def precheckin_info_public(
     request: Request,
-    response: Response,
     token_id: str = Path(..., pattern=TOKEN_PATTERN)
 ):
     """QR ile ulaşılan token bilgisi (public)."""
     import time as _diag_time
     _t_start = _diag_time.time()
-    
-    req_id = request.headers.get("X-Request-ID")
-    if not req_id:
-        req_id = "qid-" + str(uuid.uuid4())[:8]
-    response.headers["X-Request-ID"] = req_id
+
+    req_id = request.scope.get("req_id", "unknown")
 
     logger.info(f"[DIAG] [{req_id}] QID info request received, token format validation passed")
-    
+
     if not QUICKID_SERVICE_KEY:
         logger.info(f"[DIAG] [{req_id}] upstream request attempted: false")
         logger.info(f"[DIAG] [{req_id}] QID final response status 503, total_duration={(_diag_time.time() - _t_start)*1000:.2f}ms")
         raise HTTPException(status_code=503, detail="Servis yapılandırılmamış")
-    
+
     bucket = f"info:{_client_ip(request)}:{token_id}"
     try:
         _rl_check(bucket, _RL_INFO_LIMIT, _RL_INFO_WINDOW)
@@ -682,10 +677,10 @@ async def precheckin_info_public(
         logger.info(f"[DIAG] [{req_id}] upstream request attempted: false")
         logger.info(f"[DIAG] [{req_id}] QID final response status {e.status_code}, total_duration={(_diag_time.time() - _t_start)*1000:.2f}ms")
         raise
-        
+
     upstream_host = urlparse(QUICKID_URL).hostname
     logger.info(f"[DIAG] [{req_id}] upstream request attempted: true, host: {upstream_host}")
-    
+
     t_upstream = _diag_time.time()
     try:
         async with httpx.AsyncClient(timeout=QUICKID_UPSTREAM_TIMEOUT) as client:
@@ -693,10 +688,10 @@ async def precheckin_info_public(
                 f"{QUICKID_URL}/api/precheckin/{token_id}",
                 headers={"X-Service-Key": QUICKID_SERVICE_KEY, "X-Acting-User": "guest-public"},
             )
-        
+
         up_dur = _diag_time.time() - t_upstream
         logger.info(f"[DIAG] [{req_id}] upstream status: {r.status_code}, upstream_duration={up_dur*1000:.2f}ms")
-        
+
         if r.status_code >= 400:
             _rl_record_attempt(bucket, success=False)
             try:
@@ -706,10 +701,10 @@ async def precheckin_info_public(
             if r.status_code >= 500:
                 logger.info(f"[DIAG] [{req_id}] QID final response status 503, total_duration={(_diag_time.time() - _t_start)*1000:.2f}ms")
                 raise HTTPException(status_code=503, detail="Servise ulaşılamıyor")
-            
+
             logger.info(f"[DIAG] [{req_id}] QID final response status {r.status_code}, total_duration={(_diag_time.time() - _t_start)*1000:.2f}ms")
             raise HTTPException(status_code=r.status_code, detail=str(detail))
-            
+
         _rl_record_attempt(bucket, success=True)
         logger.info(f"[DIAG] [{req_id}] QID final response status 200, total_duration={(_diag_time.time() - _t_start)*1000:.2f}ms")
         return r.json()

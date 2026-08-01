@@ -14,9 +14,9 @@ HotelRunner sends ALL events (new, modify, cancel) to one URL — auto-detected 
 
 import json
 import logging
+import time
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
-import time
 
 from core.database import db
 from core.security import get_current_user
@@ -60,18 +60,23 @@ async def _process_webhook_batch(
     """Background task: process webhook reservations through ingest pipeline.
     Multi-room reservations are exploded into per-room pipeline events.
     """
+    t_batch_start = time.time()
+    logger.info(f"[DIAG] [{req_id}] batch_start: processing {len(reservations)} reservations")
     for res in reservations:
         try:
             sub_reservations = explode_multi_room_reservation(res)
             for sub_res in sub_reservations:
+                t_persist_start = time.time()
                 try:
-                    t_persist_start = time.time()
+                    logger.info(f"[DIAG] [{req_id}] persistence_start")
                     await _persist_and_process(tenant_id, property_id, sub_res, event_type, source_ip)
-                    logger.info(f"[DIAG] [{req_id}] Outbox persistence took {(time.time() - t_persist_start)*1000:.2f}ms")
+                    logger.info(f"[DIAG] [{req_id}] persistence_success elapsed_ms={(time.time() - t_persist_start)*1000:.2f}")
                 except Exception as e:
+                    logger.info(f"[DIAG] [{req_id}] persistence_failure exception_class={e.__class__.__name__} elapsed_ms={(time.time() - t_persist_start)*1000:.2f}")
                     logger.error(f"[WEBHOOK] Error processing sub-reservation {sub_res.get('hr_number')}: {e}")
         except Exception as e:
             logger.error(f"[WEBHOOK] Error processing {event_type}: {e}")
+    logger.info(f"[DIAG] [{req_id}] batch_end total_elapsed_ms={(time.time() - t_batch_start)*1000:.2f}")
 
 
 def _detect_event_type(body: dict) -> str:
@@ -198,10 +203,12 @@ async def unified_callback(
             if "status" not in res:
                 res["status"] = "cancelled"
 
-    logger.info(f"[CALLBACK] Received {event_type}: {len(reservations)} reservation(s) from {source_ip}, tenant={tenant_id}")
+    from core.masking import fingerprint_id
+    masked_tenant = fingerprint_id(tenant_id)
+    logger.info(f"[CALLBACK] Received {event_type}: {len(reservations)} reservation(s) from {source_ip}, tenant_fp={masked_tenant}")
 
-    req_id = getattr(request.state, "req_id", "unknown")
-    t_dispatch_start = time.time()
+    req_id = request.scope.get("req_id", "unknown")
+    t_enqueue_start = time.time()
     background_tasks.add_task(
         _process_webhook_batch,
         tenant_id,
@@ -212,9 +219,8 @@ async def unified_callback(
         req_id,
     )
     request.state.hr_diag["dispatch_end"] = time.time()
-    logger.info(f"[DIAG] [{req_id}] Dispatch background task took {(request.state.hr_diag['dispatch_end'] - t_dispatch_start)*1000:.2f}ms")
-    
-    response.headers["X-Request-ID"] = req_id
+    logger.info(f"[DIAG] [{req_id}] background_task_enqueue_ms={(request.state.hr_diag['dispatch_end'] - t_enqueue_start)*1000:.2f}")
+
     total_duration = time.time() - request.state.hr_diag.get("request_received", time.time())
     logger.info(f"[DIAG] [{req_id}] Final response status 200, total duration {total_duration*1000:.2f}ms")
 
@@ -254,8 +260,8 @@ async def webhook_reservations(
     reservations = body.get("reservations", [body] if "hr_number" in body else [])
     source_ip = request.client.host if request.client else "unknown"
 
-    req_id = getattr(request.state, "req_id", "unknown")
-    t_dispatch_start = time.time()
+    req_id = request.scope.get("req_id", "unknown")
+    t_enqueue_start = time.time()
     background_tasks.add_task(
         _process_webhook_batch,
         tenant_id,
@@ -266,9 +272,8 @@ async def webhook_reservations(
         req_id,
     )
     request.state.hr_diag["dispatch_end"] = time.time()
-    logger.info(f"[DIAG] [{req_id}] Dispatch background task took {(request.state.hr_diag['dispatch_end'] - t_dispatch_start)*1000:.2f}ms")
+    logger.info(f"[DIAG] [{req_id}] background_task_enqueue_ms={(request.state.hr_diag['dispatch_end'] - t_enqueue_start)*1000:.2f}")
 
-    response.headers["X-Request-ID"] = req_id
     total_duration = time.time() - request.state.hr_diag.get("request_received", time.time())
     logger.info(f"[DIAG] [{req_id}] Final response status 200, total duration {total_duration*1000:.2f}ms")
 

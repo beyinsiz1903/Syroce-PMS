@@ -47,13 +47,20 @@ class RequestTracingMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Correlation ID from headers
+        # Correlation ID and Request ID from headers
+        import re
+
         raw_headers = scope.get("headers", [])
         correlation_id = None
+        req_id = None
         tenant_id = None
         for key, value in raw_headers:
             if key == b"x-correlation-id":
                 correlation_id = value.decode("latin-1")
+            elif key == b"x-request-id":
+                candidate = value.decode("latin-1")
+                if re.match(r"^[A-Za-z0-9._-]{1,64}$", candidate):
+                    req_id = candidate
             elif key == b"authorization":
                 try:
                     auth_val = value.decode("latin-1")
@@ -74,6 +81,11 @@ class RequestTracingMiddleware:
 
         if not correlation_id:
             correlation_id = str(uuid.uuid4())
+
+        if not req_id:
+            req_id = f"req-{str(uuid.uuid4())[:8]}"
+
+        scope["req_id"] = req_id
 
         # Start trace
         start_time = time.time()
@@ -100,6 +112,7 @@ class RequestTracingMiddleware:
                 status_code = message.get("status", 500)
                 headers = MutableHeaders(scope=message)
                 headers.append("X-Correlation-ID", correlation_id)
+                headers.append("X-Request-ID", req_id)
             await send(message)
 
         try:
