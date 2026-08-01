@@ -126,41 +126,32 @@ jobs:
           echo "Fetching current App Spec..."
           doctl apps spec get "$DO_APP_ID" --format json > /tmp/spec.json
           
-          # Verify image repositories if components are image-based
-          for COMP in "syroce-backend" "backend" "syroce-frontend" "frontend"; do
-            ACTUAL_REPO="$(
-              jq -r '
-                .services[]?
-                | select(.name=="'$COMP'")
-                | .image.repository // empty
-              ' /tmp/spec.json
-            )"
-            if [ -n "$ACTUAL_REPO" ]; then
-              EXPECTED_REPO="syroce-${COMP#syroce-}"
-              ACTUAL_REPO_NAME="${ACTUAL_REPO##*/}"
-              if [[ "$ACTUAL_REPO_NAME" != "$EXPECTED_REPO" ]]; then
-                 echo "::error::Image repository mismatch for $COMP. Expected to contain: $EXPECTED_REPO, Actual: $ACTUAL_REPO"
-                 exit 1
-              fi
-            fi
+          # Verify and check all expected components before mutation
+          echo "Verifying pre-mutation App Spec..."
+          for COMP in "backend" "frontend" "worker" "beat"; do
+             if [ "$COMP" == "backend" ]; then EXPECTED_REPO="syroce-backend"; LIST=".services[]?"; fi
+             if [ "$COMP" == "frontend" ]; then EXPECTED_REPO="syroce-frontend"; LIST=".services[]?"; fi
+             if [ "$COMP" == "worker" ]; then EXPECTED_REPO="syroce-worker"; LIST=".workers[]?"; fi
+             if [ "$COMP" == "beat" ]; then EXPECTED_REPO="syroce-worker"; LIST=".workers[]?"; fi
+             
+             COUNT=$(jq -r "[$LIST | select(.name==\"$COMP\")] | length" /tmp/spec.json)
+             if [ "$COUNT" -ne 1 ]; then
+                echo "::error::Component $COMP must exist exactly once, found $COUNT"
+                exit 1
+             fi
+             
+             ACTUAL_REPO=$(jq -r "$LIST | select(.name==\"$COMP\") | .image.repository // empty" /tmp/spec.json)
+             if [ -z "$ACTUAL_REPO" ]; then
+                echo "::error::Component $COMP is missing image repository"
+                exit 1
+             fi
+             
+             ACTUAL_REPO_NAME="${ACTUAL_REPO##*/}"
+             if [ "$ACTUAL_REPO_NAME" != "$EXPECTED_REPO" ]; then
+                echo "::error::Component $COMP repository mismatch. Expected: $EXPECTED_REPO, Actual: $ACTUAL_REPO_NAME"
+                exit 1
+             fi
           done
-          
-          # Verify image repository for worker component
-          ACTUAL_WORKER_REPO="$(
-            jq -r '
-              .workers[]?
-              | select(.name=="syroce-worker" or .name=="worker")
-              | .image.repository // empty
-            ' /tmp/spec.json
-          )"
-          if [ -n "$ACTUAL_WORKER_REPO" ]; then
-            EXPECTED_WORKER_REPO="syroce-worker"
-            ACTUAL_WORKER_REPO_NAME="${ACTUAL_WORKER_REPO##*/}"
-            if [[ "$ACTUAL_WORKER_REPO_NAME" != "$EXPECTED_WORKER_REPO" ]]; then
-               echo "::error::Worker image repository mismatch. Expected to contain: $EXPECTED_WORKER_REPO, Actual: $ACTUAL_WORKER_REPO"
-               exit 1
-            fi
-          fi
           
           # Check if the app has any image-based components
           if jq -e '(.services[]? | select(.image? != null)) or (.workers[]? | select(.image? != null))' /tmp/spec.json > /dev/null; then
@@ -168,13 +159,7 @@ jobs:
             jq --arg sha "${GITHUB_SHA}" '
               if .services then
                 .services |= map(
-                  if (.image? != null) and
-                     (
-                       .name == "syroce-backend" or
-                       .name == "backend" or
-                       .name == "syroce-frontend" or
-                       .name == "frontend"
-                     )
+                  if (.image? != null) and (.name == "backend" or .name == "frontend")
                   then .image.tag = $sha | del(.image.digest)
                   else .
                   end
@@ -184,8 +169,7 @@ jobs:
               |
               if .workers then
                 .workers |= map(
-                  if (.image? != null) and
-                     (.name == "syroce-worker" or .name == "worker")
+                  if (.image? != null) and (.name == "worker" or .name == "beat")
                   then .image.tag = $sha | del(.image.digest)
                   else .
                   end
@@ -193,6 +177,35 @@ jobs:
               else .
               end
             ' /tmp/spec.json > /tmp/new_spec.json
+            
+            echo "Verifying tags in /tmp/new_spec.json..."
+            for COMP in "backend" "frontend" "worker" "beat"; do
+               if [ "$COMP" == "backend" ] || [ "$COMP" == "frontend" ]; then LIST=".services[]?"; else LIST=".workers[]?"; fi
+               if [ "$COMP" == "backend" ]; then EXPECTED_REPO="syroce-backend"; fi
+               if [ "$COMP" == "frontend" ]; then EXPECTED_REPO="syroce-frontend"; fi
+               if [ "$COMP" == "worker" ]; then EXPECTED_REPO="syroce-worker"; fi
+               if [ "$COMP" == "beat" ]; then EXPECTED_REPO="syroce-worker"; fi
+               
+               COUNT=$(jq -r "[$LIST | select(.name==\"$COMP\")] | length" /tmp/new_spec.json)
+               if [ "$COUNT" -ne 1 ]; then
+                  echo "::error::Component $COMP missing or duplicated in new spec"
+                  exit 1
+               fi
+               
+               ACTUAL_REPO=$(jq -r "$LIST | select(.name==\"$COMP\") | .image.repository // empty" /tmp/new_spec.json)
+               ACTUAL_REPO_NAME="${ACTUAL_REPO##*/}"
+               if [ "$ACTUAL_REPO_NAME" != "$EXPECTED_REPO" ]; then
+                  echo "::error::Component $COMP repository changed in new spec! Expected: $EXPECTED_REPO"
+                  exit 1
+               fi
+               
+               TAG=$(jq -r "$LIST | select(.name==\"$COMP\") | .image.tag // empty" /tmp/new_spec.json)
+               if [ "$TAG" != "$GITHUB_SHA" ]; then
+                 echo "::error::Component $COMP tag ($TAG) does not match expected SHA ($GITHUB_SHA)"
+                 exit 1
+               fi
+            done
+            echo "Verification passed."
             
             echo "Triggering deployment by updating the App Spec..."
             doctl apps update "$DO_APP_ID" --spec /tmp/new_spec.json --wait
@@ -215,6 +228,37 @@ jobs:
             echo "::error::Deployment ACTIVE olmadı. Phase: $STATUS"
             exit 1
           fi
+          
+          echo "Fetching live App Spec for verification..."
+          doctl apps spec get "$DO_APP_ID" --format json > /tmp/live_spec.json
+          echo "Verifying live tags and repositories..."
+          for COMP in "backend" "frontend" "worker" "beat"; do
+             if [ "$COMP" == "backend" ] || [ "$COMP" == "frontend" ]; then LIST=".services[]?"; else LIST=".workers[]?"; fi
+             if [ "$COMP" == "backend" ]; then EXPECTED_REPO="syroce-backend"; fi
+             if [ "$COMP" == "frontend" ]; then EXPECTED_REPO="syroce-frontend"; fi
+             if [ "$COMP" == "worker" ]; then EXPECTED_REPO="syroce-worker"; fi
+             if [ "$COMP" == "beat" ]; then EXPECTED_REPO="syroce-worker"; fi
+             
+             COUNT=$(jq -r "[$LIST | select(.name==\"$COMP\")] | length" /tmp/live_spec.json)
+             if [ "$COUNT" -ne 1 ]; then
+                echo "::error::Live component $COMP missing or duplicated"
+                exit 1
+             fi
+             
+             ACTUAL_REPO=$(jq -r "$LIST | select(.name==\"$COMP\") | .image.repository // empty" /tmp/live_spec.json)
+             ACTUAL_REPO_NAME="${ACTUAL_REPO##*/}"
+             if [ "$ACTUAL_REPO_NAME" != "$EXPECTED_REPO" ]; then
+                echo "::error::Live component $COMP repository mismatch! Expected: $EXPECTED_REPO, Actual: $ACTUAL_REPO_NAME"
+                exit 1
+             fi
+             
+             TAG=$(jq -r "$LIST | select(.name==\"$COMP\") | .image.tag // empty" /tmp/live_spec.json)
+             if [ "$TAG" != "$GITHUB_SHA" ]; then
+               echo "::error::Live component $COMP tag ($TAG) does not match expected SHA ($GITHUB_SHA)"
+               exit 1
+             fi
+          done
+          echo "Live tag and repository verification passed."
           
           echo "Deployment completed successfully. (ID: $DEPLOYMENT_ID, Phase: $STATUS)"
           
