@@ -79,9 +79,12 @@ jobs:
             main_teardown_shard: ${{ steps.set-shards.outputs.main_teardown_shard }}
         steps:
             - id: set-shards
+              env:
+                  TARGET_SHARD: ${{ github.event.inputs.target_shard }}
+                  EVENT_NAME: ${{ github.event_name }}
               run: |
-                  TARGET="${{ github.event.inputs.target_shard }}"
-                  EVENT="${{ github.event_name }}"
+                  TARGET="$TARGET_SHARD"
+                  EVENT="$EVENT_NAME"
                   if [ "$EVENT" = "schedule" ] || [ -z "$TARGET" ] || [ "$TARGET" = "all" ]; then
                       echo 'shards=["B", "C", "D", "E", "F"]' >> $GITHUB_OUTPUT
                       echo 'main_teardown_shard=B' >> $GITHUB_OUTPUT
@@ -314,15 +317,20 @@ jobs:
                   STRESS_SKIP_SETUP: 'true'
                   STRESS_SKIP_TEARDOWN: 'true'
                   PLAYWRIGHT_GREP: ${{ github.event.inputs.playwright_grep }}
+                  SPEC_PATTERN_INPUT: ${{ github.event.inputs.spec_pattern }}
               run: |
                   cd frontend
-                  TARGET_PATTERN="${{ github.event.inputs.spec_pattern }}"
+                  TARGET_PATTERN="$SPEC_PATTERN_INPUT"
                   if [ -z "$TARGET_PATTERN" ]; then
                     TARGET_PATTERN="${{ matrix.spec_pattern }}"
                   fi
                   
                   args=(playwright test --config=playwright.stress.config.js)
                   
+                  if [[ \"$TARGET_PATTERN\" == *$'\n'* ]] || [[ \"$TARGET_PATTERN\" == *$'\r'* ]]; then
+                      echo "::error::Newline characters are not allowed"
+                      exit 1
+                  fi
                   if [ -n "$TARGET_PATTERN" ]; then
                       read -a pattern_args <<< "$TARGET_PATTERN"
                       for p in "${pattern_args[@]}"; do
