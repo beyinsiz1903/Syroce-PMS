@@ -15,7 +15,8 @@ HotelRunner sends ALL events (new, modify, cancel) to one URL — auto-detected 
 import json
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
+import time
 
 from core.database import db
 from core.security import get_current_user
@@ -54,6 +55,7 @@ async def _process_webhook_batch(
     reservations: list,
     event_type: str,
     source_ip: str = "system",
+    req_id: str = "unknown",
 ):
     """Background task: process webhook reservations through ingest pipeline.
     Multi-room reservations are exploded into per-room pipeline events.
@@ -63,7 +65,9 @@ async def _process_webhook_batch(
             sub_reservations = explode_multi_room_reservation(res)
             for sub_res in sub_reservations:
                 try:
+                    t_persist_start = time.time()
                     await _persist_and_process(tenant_id, property_id, sub_res, event_type, source_ip)
+                    logger.info(f"[DIAG] [{req_id}] Outbox persistence took {(time.time() - t_persist_start)*1000:.2f}ms")
                 except Exception as e:
                     logger.error(f"[WEBHOOK] Error processing sub-reservation {sub_res.get('hr_number')}: {e}")
         except Exception as e:
@@ -152,6 +156,7 @@ async def _parse_payload(request: Request) -> dict:
 async def unified_callback(
     request: Request,
     background_tasks: BackgroundTasks,
+    response: Response,
     _sig: None = Depends(_verify_hotelrunner_callback),
 ):
     """
@@ -195,6 +200,8 @@ async def unified_callback(
 
     logger.info(f"[CALLBACK] Received {event_type}: {len(reservations)} reservation(s) from {source_ip}, tenant={tenant_id}")
 
+    req_id = getattr(request.state, "req_id", "unknown")
+    t_dispatch_start = time.time()
     background_tasks.add_task(
         _process_webhook_batch,
         tenant_id,
@@ -202,7 +209,14 @@ async def unified_callback(
         reservations,
         event_type,
         source_ip,
+        req_id,
     )
+    request.state.hr_diag["dispatch_end"] = time.time()
+    logger.info(f"[DIAG] [{req_id}] Dispatch background task took {(request.state.hr_diag['dispatch_end'] - t_dispatch_start)*1000:.2f}ms")
+    
+    response.headers["X-Request-ID"] = req_id
+    total_duration = time.time() - request.state.hr_diag.get("request_received", time.time())
+    logger.info(f"[DIAG] [{req_id}] Final response status 200, total duration {total_duration*1000:.2f}ms")
 
     return {
         "status": "accepted",
@@ -220,6 +234,7 @@ async def unified_callback(
 async def webhook_reservations(
     request: Request,
     background_tasks: BackgroundTasks,
+    response: Response,
     _sig: None = Depends(_verify_hotelrunner_callback),
 ):
     """
@@ -239,6 +254,8 @@ async def webhook_reservations(
     reservations = body.get("reservations", [body] if "hr_number" in body else [])
     source_ip = request.client.host if request.client else "unknown"
 
+    req_id = getattr(request.state, "req_id", "unknown")
+    t_dispatch_start = time.time()
     background_tasks.add_task(
         _process_webhook_batch,
         tenant_id,
@@ -246,7 +263,14 @@ async def webhook_reservations(
         reservations,
         "reservation_create",
         source_ip,
+        req_id,
     )
+    request.state.hr_diag["dispatch_end"] = time.time()
+    logger.info(f"[DIAG] [{req_id}] Dispatch background task took {(request.state.hr_diag['dispatch_end'] - t_dispatch_start)*1000:.2f}ms")
+
+    response.headers["X-Request-ID"] = req_id
+    total_duration = time.time() - request.state.hr_diag.get("request_received", time.time())
+    logger.info(f"[DIAG] [{req_id}] Final response status 200, total duration {total_duration*1000:.2f}ms")
 
     return {
         "status": "accepted",
