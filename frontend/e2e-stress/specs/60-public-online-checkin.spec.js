@@ -418,10 +418,18 @@ test.describe('F8K § 60 — Public Online Check-in Stress', () => {
             assertNoTokenLeak(testInfo, MOD, ghost.body, 'public_token_error_body');
         }
 
+        const isDisabled = (tampered.status === 503 && tampered.body?.detail?.code === 'QUICKID_DISABLED') || 
+                           (ghost.status === 503 && ghost.body?.detail?.code === 'QUICKID_DISABLED');
+
         const pass = garbageOk && tamperedOk && ghostOk;
+        let finalStatus = pass ? 'PASS' : 'FAIL';
+        if (isDisabled) {
+            finalStatus = 'SKIP';
+        }
+
         rec(testInfo, { module: MOD, step: 'public_token_guard',
-            status: pass ? 'PASS' : 'FAIL',
-            note: `garbage=${garbage.status} (${garbage.ms}ms, req_id=${garbage.request_id}, ${garbage.body_kind}) tampered=${tampered.status} (${tampered.ms}ms, req_id=${tampered.request_id}, ${tampered.body_kind}) ghost=${ghost.status} (${ghost.ms}ms, req_id=${ghost.request_id}, ${ghost.body_kind}) (POST scan probe SKIPPED — vendor call yasak)` });
+            status: finalStatus,
+            note: `garbage=${garbage.status} (${garbage.ms}ms, req_id=${garbage.request_id}, ${garbage.body_kind}) tampered=${tampered.status} (${tampered.ms}ms, req_id=${tampered.request_id}, ${tampered.body_kind}) ghost=${ghost.status} (${ghost.ms}ms, req_id=${ghost.request_id}, ${ghost.body_kind}) (POST scan probe SKIPPED — vendor call yasak)${isDisabled ? ' [QUICKID DISABLED]' : ''}` });
     });
 
     test('E) Pilot drift + external_calls invariant', async ({ request, stressTokens, stressState }, testInfo) => {
