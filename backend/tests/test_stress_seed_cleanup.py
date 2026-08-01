@@ -81,6 +81,34 @@ def test_seed_rejects_when_destructive_flag_off(stress_client, monkeypatch):
     assert r.status_code == 403, r.text
     assert "E2E_ALLOW_DESTRUCTIVE_STRESS" in r.json()["detail"]
 
+def test_cleanup_collections_include_core(stress_client):
+    import domains.admin.router.stress as stress_mod
+    expected_core = [
+        "rooms",
+        "guests",
+        "bookings",
+        "pos_outlets",
+        "folios",
+        "folio_charges",
+        "payments",
+        "room_night_locks",
+        "housekeeping_tasks"
+    ]
+    cols = stress_mod.STRESS_COLLECTIONS
+    for c in expected_core:
+        assert c in cols, f"{c} missing from STRESS_COLLECTIONS"
+    
+    # Ordering assertions
+    assert cols.index("folio_charges") < cols.index("folios")
+    assert cols.index("payments") < cols.index("folios")
+    assert cols.index("room_night_locks") < cols.index("bookings")
+    assert cols.index("housekeeping_tasks") < cols.index("bookings")
+    assert cols.index("bookings") < cols.index("guests")
+    assert cols.index("bookings") < cols.index("rooms")
+    assert cols.index("pos_orders") < cols.index("pos_outlets")
+    assert cols.index("pos_transactions") < cols.index("pos_outlets")
+
+
 
 def test_seed_rejects_when_stress_tid_env_missing(stress_client, monkeypatch):
     monkeypatch.setenv("E2E_ALLOW_DESTRUCTIVE_STRESS", "true")
