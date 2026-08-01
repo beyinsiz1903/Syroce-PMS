@@ -150,11 +150,11 @@ STRESS_CLEANUP_INDEXED_COLLECTIONS = (
     "folio_charges",
     "payments",
     "folios",
+    "room_night_locks",
+    "housekeeping_tasks",
     "bookings",
     "guests",
     "rooms",
-    "room_night_locks",
-    "housekeeping_tasks",
     "room_qr_requests",
     "service_complaints",
     "complaints",
@@ -245,6 +245,9 @@ STRESS_COLLECTIONS = [
     "folios",
     "room_night_locks",
     "housekeeping_tasks",
+    "bookings",
+    "guests",
+    "rooms",
     # F8N (2026-05-30, Wave 7): B2B Acente seed — `agencies` koleksiyonu.
     # 41B B2B IDOR matrix spec'i stres tenant'ında `tenant_id===stressTid`
     # olan en az bir agency arar; yoksa `no_stress_agency_in_list` → P2 +

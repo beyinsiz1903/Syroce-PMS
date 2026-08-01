@@ -209,7 +209,6 @@ jobs:
 
             - name: Download Auth State
               uses: actions/download-artifact@v5
-              continue-on-error: true
               with:
                   name: stress-auth
                   path: frontend/e2e-stress/.auth/
@@ -236,6 +235,7 @@ jobs:
                   STRESS_SKIP_SETUP: 'true'
                   STRESS_SKIP_TEARDOWN: 'false'
                   STRESS_FULL_WIPE: 'true'
+                  STRESS_TEARDOWN_LOG_NAME: 'precleanup-shard-${{ matrix.shard }}.json'
               run: |
                   cd frontend
                   yarn playwright test --config=playwright.stress.config.js --max-failures=1 e2e-stress/specs/00-gates.spec.js
@@ -247,6 +247,16 @@ jobs:
               run: |
                   cd frontend
                   yarn playwright test --config=playwright.stress.config.js e2e-stress/specs/01-bulk-seed-500.spec.js
+
+            # If the seed job fails, this upload is skipped.
+            # This is intentional: if Shard B fails here, teardown job will fail-closed.
+            - name: Upload Seeded Auth State
+              uses: actions/upload-artifact@v5
+              with:
+                  name: stress-state-shard-${{ matrix.shard }}
+                  path: frontend/e2e-stress/.auth/
+                  include-hidden-files: true
+                  retention-days: 1
 
             - name: Shard seed integrity precheck
               env:
@@ -361,11 +371,14 @@ jobs:
                       -exec grep -lE 'packages\.microsoft\.com' {} + 2>/dev/null | xargs -r sudo rm -f || true
                   cd frontend && yarn e2e:install
 
-            - name: Download Auth State
+            - name: Download Seeded Auth State
               uses: actions/download-artifact@v5
-              continue-on-error: true
               with:
-                  name: stress-auth
+                  # Explicitly selecting Shard B's state for main teardown.
+                  # Shard B (Front Office Core) is a main-tenant shard that always runs.
+                  # Since all main-tenant shards share the same stress_tid and full wipe
+                  # ignores data_prefix, any main-tenant state is sufficient.
+                  name: stress-state-shard-B
                   path: frontend/e2e-stress/.auth/
 
             - name: Run Cleanup and Teardown
@@ -373,9 +386,13 @@ jobs:
                   STRESS_SKIP_SETUP: 'true'
                   STRESS_SKIP_TEARDOWN: 'false'
                   STRESS_FULL_WIPE: 'true'
+                  STRESS_TEARDOWN_LOG_NAME: 'teardown-main.json'
               run: |
                   cd frontend
                   yarn playwright test --config=playwright.stress.config.js e2e-stress/specs/00-gates.spec.js
+                  test -s e2e-stress/.auth/teardown-main.json
+                  mkdir -p e2e-stress/teardown-logs
+                  cp e2e-stress/.auth/teardown-main.json e2e-stress/teardown-logs/teardown-main.json
 
             - name: Reset Auth State for POS Cleanup
               if: always()
@@ -416,15 +433,20 @@ jobs:
                   STRESS_SKIP_SETUP: 'true'
                   STRESS_SKIP_TEARDOWN: 'false'
                   STRESS_FULL_WIPE: 'true'
+                  STRESS_TEARDOWN_LOG_NAME: 'teardown-pos.json'
               run: |
                   cd frontend
                   yarn playwright test --config=playwright.stress.config.js e2e-stress/specs/00-gates.spec.js
+                  test -s e2e-stress/.auth/teardown-pos.json
+                  mkdir -p e2e-stress/teardown-logs
+                  cp e2e-stress/.auth/teardown-pos.json e2e-stress/teardown-logs/teardown-pos.json
 
             - name: Upload Teardown Log
               if: always()
               uses: actions/upload-artifact@v5
               with:
-                  name: stress-teardown-log
-                  path: frontend/e2e-stress/.auth/teardown.json
+                  name: stress-teardown-logs
+                  path: frontend/e2e-stress/teardown-logs/teardown-*.json
                   retention-days: 14
-                  if-no-files-found: ignore
+                  if-no-files-found: error
+

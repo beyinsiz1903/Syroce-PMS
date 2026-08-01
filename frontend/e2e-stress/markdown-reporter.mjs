@@ -22,7 +22,8 @@ class StressReporter {
         this.results = [];
         this.startedAt = new Date();
         this.stateFile = path.join(__dirname, '.auth', 'stress-state.json');
-        this.teardownFile = path.join(__dirname, '.auth', 'teardown.json');
+        const teardownLogName = process.env.STRESS_TEARDOWN_LOG_NAME || 'teardown.json';
+        this.teardownFile = path.join(__dirname, '.auth', teardownLogName);
     }
     onTestEnd(test, result) {
         const annotations = result.annotations || [];
@@ -92,6 +93,22 @@ class StressReporter {
         let state = null, teardown = null;
         try { state = JSON.parse(fs.readFileSync(this.stateFile, 'utf-8')); } catch {}
         try { teardown = JSON.parse(fs.readFileSync(this.teardownFile, 'utf-8')); } catch {}
+
+        if (process.env.STRESS_SKIP_TEARDOWN === 'true') {
+            teardown = null;
+        } else if (teardown && state) {
+            const tTenant = teardown.stress_tid;
+            const sTenant = state.stress_tid;
+            const cleanupSteps = teardown.steps?.filter(s => s.name?.startsWith('cleanup'));
+            
+            if (!teardown.is_full_wipe && teardown.data_prefix !== state.data_prefix) {
+                teardown = null;
+            } else if (!tTenant || !sTenant || String(tTenant) !== String(sTenant)) {
+                teardown = null;
+            } else if (!cleanupSteps || cleanupSteps.length === 0 || !cleanupSteps[0].body) {
+                teardown = null;
+            }
+        }
 
         const failedTests = this.results.filter((r) => r.outcome === 'failed' || r.outcome === 'timedOut');
         const verdict = decideVerdict({ counters, failedTests, runResult, state, teardown, sevAgg });

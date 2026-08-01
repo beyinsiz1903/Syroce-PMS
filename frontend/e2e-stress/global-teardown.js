@@ -6,7 +6,8 @@ import path from 'node:path';
 const AUTH_DIR = path.join(process.cwd(), 'e2e-stress', '.auth');
 const STATE_FILE = path.join(AUTH_DIR, 'stress-state.json');
 const TOKEN_FILE = path.join(AUTH_DIR, 'stress-token.json');
-const TEARDOWN_LOG = path.join(AUTH_DIR, 'teardown.json');
+const TEARDOWN_LOG_NAME = process.env.STRESS_TEARDOWN_LOG_NAME || 'teardown.json';
+const TEARDOWN_LOG = path.join(AUTH_DIR, TEARDOWN_LOG_NAME);
 
 async function snapshot(api, token) {
     const headers = { Authorization: `Bearer ${token}` };
@@ -43,7 +44,7 @@ export default async function globalTeardown() {
         }
         console.log('[stress-teardown] STRESS_FULL_WIPE=true, falling back to direct login...');
         
-const baseUrl = process.env.E2E_BASE_URL;
+        const baseUrl = process.env.E2E_BASE_URL;
         const pilotEmail = process.env.E2E_ADMIN_EMAIL;
         const pilotPassword = process.env.E2E_ADMIN_PASSWORD;
         const pilotTenantId = process.env.PILOT_TENANT_ID;
@@ -94,7 +95,7 @@ const baseUrl = process.env.E2E_BASE_URL;
     // asserted below, it just no longer races a too-tight clock.
     const api = await request.newContext({ baseURL: state.base_url, ignoreHTTPSErrors: true, timeout: 200_000 });
     const prefix = isFullWipe ? "" : state.data_prefix;
-    const log = { started_at: new Date().toISOString(), data_prefix: prefix, is_full_wipe: isFullWipe, steps: [] };
+    const log = { started_at: new Date().toISOString(), stress_tid: state.stress_tid, data_prefix: prefix, is_full_wipe: isFullWipe, steps: [] };
 
     // NOTE: /api/admin/stress/* require_super_admin → pilot bearer kullanılır.
     // 1) cleanup #1
