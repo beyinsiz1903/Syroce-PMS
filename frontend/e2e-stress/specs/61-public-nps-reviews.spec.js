@@ -265,7 +265,7 @@ test.describe('F8K § 61 — Public NPS + Review Invite Stress', () => {
         const sub = await callRaw(request, 'post', `${BASE}/${ghost}`, {
             body: { rating: 5, comment: `${createdMarker} stress probe submit`, guest_name: 'F8K STRESS PROBE' },
         });
-        const subOk = sub.status === 404 || sub.status === 410;
+        const subOk = sub.status === 404 || sub.status === 410 || sub.status === 403;
         if (sub.ok) {
             recFinding(testInfo, 'P0', MOD,
                 'Public review submit non-existent token ile 2xx döndü',

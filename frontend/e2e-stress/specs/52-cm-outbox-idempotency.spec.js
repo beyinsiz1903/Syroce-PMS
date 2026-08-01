@@ -284,9 +284,10 @@ test.describe('F8L § 52 — Outbox Idempotency + Conflict Queue', () => {
         const crypto = await import('node:crypto');
         const ts = String(Math.floor(Date.now() / 1000));
         const stableId = `${prefix || 'STRESS'}_IDEMP_FIXED`;  // KEY: aynı id → aynı dedupe key
+        const seededHotelRunnerHrId = `${prefix || 'STRESS_'}HOTEL`;
         const raw = JSON.stringify({
             tenant_id: stressTid,
-            hotel: { id: `${prefix || 'STRESS'}_HOTEL` },
+            hotel: { id: seededHotelRunnerHrId },
             reservation: { hr_number: stableId, state: 'new', guest: { name: 'STRESS_IDEMP' } },
         });
         const signed = `${ts}.`.concat(raw);
