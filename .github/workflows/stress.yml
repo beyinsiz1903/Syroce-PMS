@@ -71,6 +71,32 @@ env:
     SLACK_WEBHOOK_URL: ${{ secrets.STRESS_SLACK_WEBHOOK_URL }}
 
 jobs:
+    plan:
+        name: Plan Matrix Shards
+        runs-on: ubuntu-latest
+        outputs:
+            shards: ${{ steps.set-shards.outputs.shards }}
+            main_teardown_shard: ${{ steps.set-shards.outputs.main_teardown_shard }}
+        steps:
+            - id: set-shards
+              run: |
+                  TARGET="${{ github.event.inputs.target_shard }}"
+                  EVENT="${{ github.event_name }}"
+                  if [ "$EVENT" = "schedule" ] || [ -z "$TARGET" ] || [ "$TARGET" = "all" ]; then
+                      echo 'shards=["B", "C", "D", "E", "F"]' >> $GITHUB_OUTPUT
+                      echo 'main_teardown_shard=B' >> $GITHUB_OUTPUT
+                  elif [[ "$TARGET" =~ ^[BCDEF]$ ]]; then
+                      echo "shards=[\"$TARGET\"]" >> $GITHUB_OUTPUT
+                      if [ "$TARGET" = "F" ]; then
+                          echo 'main_teardown_shard=NONE' >> $GITHUB_OUTPUT
+                      else
+                          echo "main_teardown_shard=$TARGET" >> $GITHUB_OUTPUT
+                      fi
+                  else
+                      echo "::error::Invalid target_shard"
+                      exit 1
+                  fi
+
     setup:
         name: Stress Setup & Seed
         runs-on: ubuntu-latest
@@ -161,15 +187,14 @@ jobs:
 
     stress:
         name: Shard ${{ matrix.shard }} - ${{ matrix.name }}
-        needs: setup
-        if: ${{ github.event_name == 'schedule' || github.event.inputs.target_shard == 'all' || github.event.inputs.target_shard == matrix.shard || github.event.inputs.target_shard == '' }}
+        needs: [setup, plan]
         runs-on: ubuntu-latest
         timeout-minutes: 45
         strategy:
             fail-fast: false
             max-parallel: 1
             matrix:
-                shard: [B, C, D, E, F]
+                shard: ${{ fromJSON(needs.plan.outputs.shards) }}
                 include:
                     - shard: B
                       name: "Front Office Core"
@@ -300,7 +325,21 @@ jobs:
                   
                   if [ -n "$TARGET_PATTERN" ]; then
                       read -a pattern_args <<< "$TARGET_PATTERN"
-                      args+=("${pattern_args[@]}")
+                      for p in "${pattern_args[@]}"; do
+                          if [[ "$p" == -* ]]; then
+                              echo "::error::spec_pattern elements cannot begin with a dash: $p"
+                              exit 1
+                          fi
+                          if [[ ! "$p" =~ ^e2e-stress/specs/ ]]; then
+                              echo "::error::spec_pattern must be inside e2e-stress/specs/: $p"
+                              exit 1
+                          fi
+                          if [[ ! "$p" =~ ^[a-zA-Z0-9_/\.\*\-]+$ ]]; then
+                              echo "::error::Invalid characters in spec_pattern: $p"
+                              exit 1
+                          fi
+                          args+=("$p")
+                      done
                   fi
                   
                   if [ -n "$PLAYWRIGHT_GREP" ]; then
@@ -378,7 +417,7 @@ jobs:
 
     teardown:
         name: Stress Teardown & Cleanup
-        needs: [setup, stress]
+        needs: [setup, stress, plan]
         if: always()
         runs-on: ubuntu-latest
         timeout-minutes: 20
@@ -402,16 +441,14 @@ jobs:
                   cd frontend && yarn e2e:install
 
             - name: Download Seeded Auth State
+              if: always() && needs.plan.outputs.main_teardown_shard != 'NONE'
               uses: actions/download-artifact@v5
               with:
-                  # Explicitly selecting Shard B's state for main teardown.
-                  # Shard B (Front Office Core) is a main-tenant shard that always runs.
-                  # Since all main-tenant shards share the same stress_tid and full wipe
-                  # ignores data_prefix, any main-tenant state is sufficient.
-                  name: stress-state-shard-B
+                  name: stress-state-shard-${{ needs.plan.outputs.main_teardown_shard }}
                   path: frontend/e2e-stress/.auth/
 
             - name: Run Cleanup and Teardown
+              if: always() && needs.plan.outputs.main_teardown_shard != 'NONE'
               env:
                   STRESS_SKIP_SETUP: 'true'
                   STRESS_SKIP_TEARDOWN: 'false'
