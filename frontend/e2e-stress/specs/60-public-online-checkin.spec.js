@@ -45,6 +45,18 @@ import {
 
 const MOD = 'public_checkin';
 
+function sanitizeRequestId(value) {
+    if (typeof value !== 'string') return 'absent';
+    const cleaned = value.replace(/[^a-zA-Z0-9-]/g, '').slice(0, 128);
+    return cleaned || 'absent';
+}
+
+function extractRequestId(hdrs) {
+    if (!hdrs) return 'absent';
+    const entry = Object.entries(hdrs).find(([k]) => k.toLowerCase() === 'x-request-id');
+    return sanitizeRequestId(entry?.[1]);
+}
+
 // Anonymous / custom-bearer call wrapper. callTimed otomatik Bearer ekler;
 // burada başlığı manuel kontrol etmeliyiz (no-token, garbage, tampered).
 // DİKKAT: multipart kullanıldığında Content-Type'ı Playwright'ın multipart
@@ -63,11 +75,24 @@ async function callRaw(request, method, urlPath, opts = {}) {
         timeout: opts.timeout ?? 30_000,
     }).catch((e) => ({ status: () => 0, ok: () => false, _err: e?.message }));
     const ms = Date.now() - t0;
+    
+    let hdrs = {};
+    try { hdrs = r.headers ? r.headers() : {}; } catch { /* ignore */ }
+    const requestId = extractRequestId(hdrs);
+    
     let bodyJson = null, bodyText = null;
     try { bodyText = r.text ? await r.text() : null; } catch { /* */ }
     try { bodyJson = bodyText && bodyText.trim().startsWith('{') ? JSON.parse(bodyText) : null; } catch { /* */ }
     const status = r.status?.() ?? 0;
-    return { status, ms, body: bodyJson, text: bodyText, ok: status >= 200 && status < 300 };
+    
+    let bodyKind = 'empty';
+    if (bodyText) {
+        if (bodyJson) bodyKind = 'json';
+        else if (bodyText.trim().toLowerCase().startsWith('<!doctype html') || bodyText.trim().toLowerCase().startsWith('<html')) bodyKind = 'html';
+        else bodyKind = 'text';
+    }
+    
+    return { status, ms, request_id: requestId, body_kind: bodyKind, body: bodyJson, text: bodyText, ok: status >= 200 && status < 300 };
 }
 
 const TAMPERED_JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4eHgiLCJleHAiOjB9.tampered_sig_invalid_xxxxxxxxxxxxxxxxxxxx';
@@ -360,12 +385,12 @@ test.describe('F8K § 60 — Public Online Check-in Stress', () => {
         if (garbage.status >= 500 && garbage.status !== 503) {
             recFinding(testInfo, 'P1', MOD,
                 'Public token garbage input 5xx storm',
-                `GET ${PUBLIC_BASE}/<garbage>/info status=${garbage.status} — backend input sanitization eksik.`);
+                `GET ${PUBLIC_BASE}/<garbage>/info status=${garbage.status} duration_ms=${garbage.ms} request_id=${garbage.request_id} body_kind=${garbage.body_kind} — backend input sanitization eksik.`);
         }
         if (garbage.ok) {
             recFinding(testInfo, 'P0', MOD,
                 'Public token garbage input 2xx',
-                `GET ${PUBLIC_BASE}/<garbage>/info status=${garbage.status} — token validation bypass.`);
+                `GET ${PUBLIC_BASE}/<garbage>/info status=${garbage.status} duration_ms=${garbage.ms} request_id=${garbage.request_id} body_kind=${garbage.body_kind} — token validation bypass.`);
         }
 
         // 2) Tampered (uzun rastgele) token → 404/400/503.
@@ -374,7 +399,7 @@ test.describe('F8K § 60 — Public Online Check-in Stress', () => {
         if (tampered.ok) {
             recFinding(testInfo, 'P0', MOD,
                 'Public token tampered input 2xx',
-                `GET ${PUBLIC_BASE}/<tampered>/info status=${tampered.status} — token bypass.`);
+                `GET ${PUBLIC_BASE}/<tampered>/info status=${tampered.status} duration_ms=${tampered.ms} request_id=${tampered.request_id} body_kind=${tampered.body_kind} — token bypass.`);
         }
 
         // 3) Valid-format hex (32-char) ama DB'de yok → upstream 404 → 400/404.
@@ -386,7 +411,7 @@ test.describe('F8K § 60 — Public Online Check-in Stress', () => {
         if (ghost.ok) {
             recFinding(testInfo, 'P0', MOD,
                 'Public token ghost (var-olmayan) input 2xx',
-                `GET ${PUBLIC_BASE}/<ghost>/info status=${ghost.status} — existence-disclosure veya tenant filter zayıf.`);
+                `GET ${PUBLIC_BASE}/<ghost>/info status=${ghost.status} duration_ms=${ghost.ms} request_id=${ghost.request_id} body_kind=${ghost.body_kind} — existence-disclosure veya tenant filter zayıf.`);
         }
         // PII / token leak guard error body'de.
         if (ghost.body) {
@@ -396,7 +421,7 @@ test.describe('F8K § 60 — Public Online Check-in Stress', () => {
         const pass = garbageOk && tamperedOk && ghostOk;
         rec(testInfo, { module: MOD, step: 'public_token_guard',
             status: pass ? 'PASS' : 'FAIL',
-            note: `garbage=${garbage.status} tampered=${tampered.status} ghost=${ghost.status} (POST scan probe SKIPPED — vendor call yasak)` });
+            note: `garbage=${garbage.status} (${garbage.ms}ms, req_id=${garbage.request_id}, ${garbage.body_kind}) tampered=${tampered.status} (${tampered.ms}ms, req_id=${tampered.request_id}, ${tampered.body_kind}) ghost=${ghost.status} (${ghost.ms}ms, req_id=${ghost.request_id}, ${ghost.body_kind}) (POST scan probe SKIPPED — vendor call yasak)` });
     });
 
     test('E) Pilot drift + external_calls invariant', async ({ request, stressTokens, stressState }, testInfo) => {
@@ -435,5 +460,36 @@ test.describe('F8K § 60 — Public Online Check-in Stress', () => {
                 }
             }
         } catch (_) { /* best-effort */ }
+    });
+
+    test('Z) Unit Validation — request ID sanitization and static checks', async ({ request }, testInfo) => {
+        expect(request).toBeDefined();
+        const createMock = (hdrs, textVal) => ({
+            get: async () => ({ status: () => 504, ok: () => false, headers: () => hdrs, text: async () => textVal })
+        });
+        
+        let r = await callRaw(createMock({ 'x-request-id': 'req-1' }, ''), 'get', '/');
+        expect(r.request_id).toBe('req-1');
+        
+        r = await callRaw(createMock({ 'X-Request-ID': 'Req-2' }, ''), 'get', '/');
+        expect(r.request_id).toBe('Req-2');
+        
+        r = await callRaw(createMock({}, ''), 'get', '/');
+        expect(r.request_id).toBe('absent');
+        
+        r = await callRaw(createMock({ 'x-request-id': '!@#$' }, ''), 'get', '/');
+        expect(r.request_id).toBe('absent');
+        
+        r = await callRaw(createMock({ 'x-request-id': 'A'.repeat(200) }, ''), 'get', '/');
+        expect(r.request_id).toBe('A'.repeat(128));
+        
+        r = await callRaw(createMock({}, '<!DOCTYPE html><html></html>'), 'get', '/');
+        expect(r.body_kind).toBe('html');
+        
+        const fs = await import('node:fs');
+        const fileContent = fs.readFileSync(testInfo.file, 'utf-8');
+        const block = fileContent.split('test(\'D) Public token guard')[1].split('test(\'E) Pilot drift')[0];
+        expect(block).not.toContain('r.text');
+        expect(block).not.toContain('body=');
     });
 });

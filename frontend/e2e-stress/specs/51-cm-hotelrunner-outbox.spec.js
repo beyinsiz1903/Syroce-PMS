@@ -50,6 +50,18 @@ import path from 'node:path';
 const MOD = 'cm_hotelrunner_webhook';
 const BASE = '/api/channel-manager/hotelrunner';
 
+function sanitizeRequestId(value) {
+    if (typeof value !== 'string') return 'absent';
+    const cleaned = value.replace(/[^a-zA-Z0-9-]/g, '').slice(0, 128);
+    return cleaned || 'absent';
+}
+
+function extractRequestId(hdrs) {
+    if (!hdrs) return 'absent';
+    const entry = Object.entries(hdrs).find(([k]) => k.toLowerCase() === 'x-request-id');
+    return sanitizeRequestId(entry?.[1]);
+}
+
 async function callWebhook(request, method, urlPath, opts = {}) {
     const headers = { 'Content-Type': opts.contentType || 'application/json', ...(opts.headers || {}) };
     const t0 = Date.now();
@@ -60,11 +72,25 @@ async function callWebhook(request, method, urlPath, opts = {}) {
         timeout: opts.timeout ?? 30_000,
     }).catch((e) => ({ status: () => 0, ok: () => false, _err: e?.message }));
     const ms = Date.now() - t0;
+    
+    let hdrs = {};
+    try { hdrs = r.headers ? r.headers() : {}; } catch { /* ignore */ }
+    const requestId = extractRequestId(hdrs);
+    const contentType = hdrs['content-type'] || '';
+    
     let bodyText = null, bodyJson = null;
     try { bodyText = r.text ? await r.text() : null; } catch { /* ignore */ }
-    try { bodyJson = bodyText && bodyText.trim().startsWith('{') ? JSON.parse(bodyText) : null; } catch {}
+    try { bodyJson = bodyText && bodyText.trim().startsWith('{') ? JSON.parse(bodyText) : null; } catch { /* ignore */ }
     const status = r.status?.() ?? 0;
-    return { status, ms, body: bodyJson, text: bodyText, ok: status >= 200 && status < 300 };
+    
+    let bodyKind = 'empty';
+    if (bodyText) {
+        if (bodyJson) bodyKind = 'json';
+        else if (bodyText.trim().toLowerCase().startsWith('<!doctype html') || bodyText.trim().toLowerCase().startsWith('<html')) bodyKind = 'html';
+        else bodyKind = 'text';
+    }
+    
+    return { status, ms, request_id: requestId, content_type: contentType, body_kind: bodyKind, body: bodyJson, text: bodyText, ok: status >= 200 && status < 300 };
 }
 
 function classifyMode(probeStatus) {
@@ -114,7 +140,7 @@ test.describe('F8L § 51 — HotelRunner Webhook + Outbox', () => {
         rec(testInfo, { module: MOD, step: 'sig_mode_classification',
             status: (authMode !== 'unknown') ? 'PASS' : 'REVIEW',
             endpoint: `POST ${BASE}/callback`, http: empty.status,
-            note: `auth_mode=${authMode} empty_probe_status=${empty.status}` });
+            note: `auth_mode=${authMode} empty_probe_status=${empty.status} duration_ms=${empty.ms} request_id=${empty.request_id} body_kind=${empty.body_kind}` });
 
         if (authMode === 'unknown') {
             moduleBlocked = true;
@@ -164,10 +190,10 @@ test.describe('F8L § 51 — HotelRunner Webhook + Outbox', () => {
             const r = await callWebhook(request, 'post', `${BASE}/callback`,
                 { body, headers: p.headers });
             if (r.status >= 200 && r.status < 300) {
-                accepted2xx.push({ name: p.name, status: r.status });
+                accepted2xx.push({ name: p.name, status: r.status, ms: r.ms, req_id: r.request_id, kind: r.body_kind });
             }
             if (!expected.has(r.status)) {
-                violations.push({ name: p.name, status: r.status, expected: [...expected] });
+                violations.push({ name: p.name, status: r.status, ms: r.ms, req_id: r.request_id, kind: r.body_kind, expected: [...expected] });
             }
         }
         const accepted2xxIsBypass = accepted2xx.length > 0 && authMode !== 'open_for_testing';
@@ -210,7 +236,7 @@ test.describe('F8L § 51 — HotelRunner Webhook + Outbox', () => {
         const results = [];
         for (const ep of endpoints) {
             const r = await callWebhook(request, 'post', ep, { body });
-            results.push({ ep: ep.replace(BASE, ''), status: r.status });
+            results.push({ ep: ep.replace(BASE, ''), status: r.status, ms: r.ms, req_id: r.request_id, kind: r.body_kind });
         }
         // Architect review fix #2: exact-status uniformity yerine mode-aware
         // status-class drift. Backend her endpoint'te validation order veya
@@ -280,7 +306,7 @@ test.describe('F8L § 51 — HotelRunner Webhook + Outbox', () => {
         rec(testInfo, { module: MOD, step: 'tenant_injection_probe',
             status: pass ? 'PASS' : 'FAIL',
             endpoint: `POST ${BASE}/callback`, http: r.status,
-            note: `auth_mode=${authMode} accepted_2xx=${accepted2xx} body=${(r.text || '').slice(0, 160)}` });
+            note: `auth_mode=${authMode} accepted_2xx=${accepted2xx} duration_ms=${r.ms} request_id=${r.request_id} body_kind=${r.body_kind}` });
         if (accepted2xx && authMode !== 'open_for_testing') {
             recFinding(testInfo, 'P0', MOD,
                 'HotelRunner webhook fail-closed/sig-required altında pilot_tid forge 2xx',
@@ -424,16 +450,16 @@ test.describe('F8L § 51 — HotelRunner Webhook + Outbox', () => {
         rec(testInfo, { module: MOD, step: 'signed_valid_path',
             status: isAcceptOrValid4xx ? 'PASS' : 'FAIL',
             endpoint: `POST ${BASE}/callback`, http: r.status,
-            note: `signed body, ts=${ts} sig_len=${expected.length} body=${(r.text || '').slice(0, 200)}` });
+            note: `signed request, ts=${ts} duration_ms=${r.ms} request_id=${r.request_id} body_kind=${r.body_kind}` });
         if (sigDenied) {
             recFinding(testInfo, 'P0', MOD,
                 'HotelRunner valid HMAC payload reddedildi — imza algoritması/secret mismatch',
-                `body=${(r.text || '').slice(0, 240)}. _verify_hotelrunner_signature beklenen format: HMAC-SHA256(secret, "{ts}.{raw}").hex. Backend implementation drift kontrol edilmeli.`);
+                `_verify_hotelrunner_signature beklenen format: HMAC-SHA256(secret, "{ts}.{raw}").hex. Backend implementation drift kontrol edilmeli. duration_ms=${r.ms} request_id=${r.request_id}`);
         }
         if (fiveXX) {
             recFinding(testInfo, 'P1', MOD,
                 'HotelRunner valid HMAC payload 5xx — backend resilience zayıf',
-                `status=${r.status} body=${(r.text || '').slice(0, 240)}.`);
+                `status=${r.status} duration_ms=${r.ms} request_id=${r.request_id} body_kind=${r.body_kind}.`);
         }
     });
 
@@ -443,5 +469,35 @@ test.describe('F8L § 51 — HotelRunner Webhook + Outbox', () => {
         await assertNoExternalCallsPostBatch(testInfo, MOD, 'cm_hotelrunner_webhook_done', stateBlob, request, stressTokens.pilot_token);
         rec(testInfo, { module: MOD, step: 'invariants_done', status: 'PASS', note: 'pilot_drift+external_calls verified' });
         expect(true).toBe(true);
+    });
+
+    test('Z) Unit Validation — request ID sanitization and static checks', async ({ request }, testInfo) => {
+        expect(request).toBeDefined();
+        const createMock = (hdrs, textVal) => ({
+            post: async () => ({ status: () => 504, ok: () => false, headers: () => hdrs, text: async () => textVal })
+        });
+        
+        let r = await callWebhook(createMock({ 'x-request-id': 'req-1' }, ''), 'post', '/');
+        expect(r.request_id).toBe('req-1');
+        
+        r = await callWebhook(createMock({ 'X-Request-ID': 'Req-2' }, ''), 'post', '/');
+        expect(r.request_id).toBe('Req-2');
+        
+        r = await callWebhook(createMock({}, ''), 'post', '/');
+        expect(r.request_id).toBe('absent');
+        
+        r = await callWebhook(createMock({ 'x-request-id': '!@#$' }, ''), 'post', '/');
+        expect(r.request_id).toBe('absent');
+        
+        r = await callWebhook(createMock({ 'x-request-id': 'A'.repeat(200) }, ''), 'post', '/');
+        expect(r.request_id).toBe('A'.repeat(128));
+        
+        r = await callWebhook(createMock({}, '<!DOCTYPE html><html></html>'), 'post', '/');
+        expect(r.body_kind).toBe('html');
+        
+        const fileContent = fs.readFileSync(testInfo.file, 'utf-8');
+        const block = fileContent.split('test(\'F) Signed valid-path')[1].split('test(\'E) external_calls')[0];
+        expect(block).not.toContain('r.text');
+        expect(block).not.toContain('body=');
     });
 });
