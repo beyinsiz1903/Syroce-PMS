@@ -36,14 +36,17 @@
 // module RBAC veya guest_app role veya super_admin geçer. Stress admin
 // (admin/super_admin) erişebilir; anonymous + garbage JWT → 401/403.
 import { test, expect, rec } from '../fixtures/stress-context.js';
-import { recFinding, markModuleStart, markModuleEnd } from '../core/reporter.js';
-import { callRaw } from '../core/network.js';
+
 
 function computeTokenGuardStatus(garbage, tampered, ghost) {
     const ALLOWED_REJECT = new Set([400, 401, 403, 404, 410, 422]);
     const garbageOk = garbage.status === 503 || ALLOWED_REJECT.has(garbage.status);
     const tamperedOk = tampered.status === 503 || ALLOWED_REJECT.has(tampered.status);
     const ghostOk = ghost.status === 503 || ALLOWED_REJECT.has(ghost.status);
+
+    const hasAnyDisabled = 
+        (tampered.status === 503 && tampered.body?.detail?.code === 'QUICKID_DISABLED') ||
+        (ghost.status === 503 && ghost.body?.detail?.code === 'QUICKID_DISABLED');
 
     const disabled = 
         garbage.status === 422 &&
@@ -54,7 +57,7 @@ function computeTokenGuardStatus(garbage, tampered, ghost) {
         ghost.body_kind === 'json' &&
         ghost.body?.detail?.code === 'QUICKID_DISABLED';
 
-    const pass = garbageOk && tamperedOk && ghostOk;
+    const pass = garbageOk && tamperedOk && ghostOk && !hasAnyDisabled;
     return {
         disabled,
         finalStatus: disabled ? 'SKIP' : (pass ? 'PASS' : 'FAIL')
