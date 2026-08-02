@@ -259,17 +259,17 @@ async def scan_id(
     if not image_b64:
         raise HTTPException(status_code=400, detail="image_base64 gerekli")
 
-    if not QUICKID_SERVICE_KEY:
-        if QUICKID_DEMO_ENABLED:
-            logger.warning("QUICKID_SERVICE_KEY ayarlı değil — demo mod (ENABLE_QUICKID_DEMO açık)")
-            return _demo_scan_result()
-        raise HTTPException(status_code=503, detail="Kimlik tarama servisi yapılandırılmamış (QUICKID_SERVICE_KEY eksik)")
-
     if not QUICKID_URL:
         raise HTTPException(
             status_code=503,
             detail={"code": "QUICKID_DISABLED", "message": "Quick-ID entegrasyonu devre dışı bırakılmış."}
         )
+
+    if not QUICKID_SERVICE_KEY:
+        if QUICKID_DEMO_ENABLED:
+            logger.warning("QUICKID_SERVICE_KEY ayarlı değil — demo mod (ENABLE_QUICKID_DEMO açık)")
+            return _demo_scan_result()
+        raise HTTPException(status_code=503, detail="Kimlik tarama servisi yapılandırılmamış (QUICKID_SERVICE_KEY eksik)")
 
     api_keys = await _resolve_api_keys()
     chosen_provider = payload.get("provider") or api_keys.get("preferred_provider")
@@ -482,13 +482,13 @@ async def biometric_face_compare(
     if not doc_b64 or not selfie_b64:
         raise HTTPException(status_code=400, detail="document_image_base64 ve selfie_image_base64 gerekli")
 
-    if not QUICKID_SERVICE_KEY:
-        raise HTTPException(status_code=503, detail="Biyometrik servis yapılandırılmamış")
     if not QUICKID_URL:
         raise HTTPException(
             status_code=503,
             detail={"code": "QUICKID_DISABLED", "message": "Quick-ID entegrasyonu devre dışı bırakılmış."}
         )
+    if not QUICKID_SERVICE_KEY:
+        raise HTTPException(status_code=503, detail="Biyometrik servis yapılandırılmamış")
 
     api_keys = await _resolve_api_keys()
     try:
@@ -549,13 +549,13 @@ async def biometric_liveness_check(
     if not image_b64:
         raise HTTPException(status_code=400, detail="image_base64 gerekli")
 
-    if not QUICKID_SERVICE_KEY:
-        raise HTTPException(status_code=503, detail="Biyometrik servis yapılandırılmamış")
     if not QUICKID_URL:
         raise HTTPException(
             status_code=503,
             detail={"code": "QUICKID_DISABLED", "message": "Quick-ID entegrasyonu devre dışı bırakılmış."}
         )
+    if not QUICKID_SERVICE_KEY:
+        raise HTTPException(status_code=503, detail="Biyometrik servis yapılandırılmamış")
 
     api_keys = await _resolve_api_keys()
     body = {
@@ -594,13 +594,13 @@ async def precheckin_create(
     """QR ön check-in tokenı oluştur.
     Body: { property_id, reservation_ref?, guest_name? }
     """
-    if not QUICKID_SERVICE_KEY:
-        raise HTTPException(status_code=503, detail="Quick-ID servis anahtarı tanımlı değil")
     if not QUICKID_URL:
         raise HTTPException(
             status_code=503,
             detail={"code": "QUICKID_DISABLED", "message": "Quick-ID entegrasyonu devre dışı bırakılmış."}
         )
+    if not QUICKID_SERVICE_KEY:
+        raise HTTPException(status_code=503, detail="Quick-ID servis anahtarı tanımlı değil")
     body = {
         "property_id": payload.get("property_id") or "default",
         "reservation_ref": payload.get("reservation_ref", ""),
@@ -695,6 +695,14 @@ async def precheckin_info_public(
 
     logger.info(f"[DIAG] [{req_id}] QID info request received, token format validation passed")
 
+    if not QUICKID_URL:
+        logger.info(f"[DIAG] [{req_id}] upstream request attempted: false (QUICKID_URL absent)")
+        logger.info(f"[DIAG] [{req_id}] QID final response status 503, total_duration={(_diag_time.time() - _t_start)*1000:.2f}ms")
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "QUICKID_DISABLED", "message": "Quick-ID entegrasyonu devre dışı bırakılmış."}
+        )
+
     if not QUICKID_SERVICE_KEY:
         logger.info(f"[DIAG] [{req_id}] upstream request attempted: false")
         logger.info(f"[DIAG] [{req_id}] QID final response status 503, total_duration={(_diag_time.time() - _t_start)*1000:.2f}ms")
@@ -707,14 +715,6 @@ async def precheckin_info_public(
         logger.info(f"[DIAG] [{req_id}] upstream request attempted: false")
         logger.info(f"[DIAG] [{req_id}] QID final response status {e.status_code}, total_duration={(_diag_time.time() - _t_start)*1000:.2f}ms")
         raise
-
-    if not QUICKID_URL:
-        logger.info(f"[DIAG] [{req_id}] upstream request attempted: false (QUICKID_URL absent)")
-        logger.info(f"[DIAG] [{req_id}] QID final response status 503, total_duration={(_diag_time.time() - _t_start)*1000:.2f}ms")
-        raise HTTPException(
-            status_code=503,
-            detail={"code": "QUICKID_DISABLED", "message": "Quick-ID entegrasyonu devre dışı bırakılmış."}
-        )
 
     upstream_host = urlparse(QUICKID_URL).hostname
     logger.info(f"[DIAG] [{req_id}] upstream request attempted: true, host: {upstream_host}")
@@ -766,13 +766,13 @@ async def precheckin_scan_public(
     image_b64 = payload.get("image_base64")
     if not image_b64:
         raise HTTPException(status_code=400, detail="image_base64 gerekli")
-    if not QUICKID_SERVICE_KEY:
-        raise HTTPException(status_code=503, detail="Servis yapılandırılmamış")
     if not QUICKID_URL:
         raise HTTPException(
             status_code=503,
             detail={"code": "QUICKID_DISABLED", "message": "Quick-ID entegrasyonu devre dışı bırakılmış."}
         )
+    if not QUICKID_SERVICE_KEY:
+        raise HTTPException(status_code=503, detail="Servis yapılandırılmamış")
     # Tarama maliyetli — sıkı limit
     bucket = f"scan:{_client_ip(request)}:{token_id}"
     _rl_check(bucket, _RL_SCAN_LIMIT, _RL_SCAN_WINDOW)
