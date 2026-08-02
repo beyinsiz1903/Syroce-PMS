@@ -36,6 +36,34 @@
 // module RBAC veya guest_app role veya super_admin geçer. Stress admin
 // (admin/super_admin) erişebilir; anonymous + garbage JWT → 401/403.
 import { test, expect, rec } from '../fixtures/stress-context.js';
+
+
+function computeTokenGuardStatus(garbage, tampered, ghost) {
+    const ALLOWED_REJECT = new Set([400, 401, 403, 404, 410, 422]);
+    const garbageOk = garbage.status === 503 || ALLOWED_REJECT.has(garbage.status);
+    const tamperedOk = tampered.status === 503 || ALLOWED_REJECT.has(tampered.status);
+    const ghostOk = ghost.status === 503 || ALLOWED_REJECT.has(ghost.status);
+
+    const hasAnyDisabled = 
+        (tampered.status === 503 && tampered.body?.detail?.code === 'QUICKID_DISABLED') ||
+        (ghost.status === 503 && ghost.body?.detail?.code === 'QUICKID_DISABLED');
+
+    const disabled = 
+        garbage.status === 422 &&
+        tampered.status === 503 &&
+        tampered.body_kind === 'json' &&
+        tampered.body?.detail?.code === 'QUICKID_DISABLED' &&
+        ghost.status === 503 &&
+        ghost.body_kind === 'json' &&
+        ghost.body?.detail?.code === 'QUICKID_DISABLED';
+
+    const pass = garbageOk && tamperedOk && ghostOk && !hasAnyDisabled;
+    return {
+        disabled,
+        finalStatus: disabled ? 'SKIP' : (pass ? 'PASS' : 'FAIL')
+    };
+}
+
 import {
     callTimed, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
@@ -418,10 +446,49 @@ test.describe('F8K § 60 — Public Online Check-in Stress', () => {
             assertNoTokenLeak(testInfo, MOD, ghost.body, 'public_token_error_body');
         }
 
-        const pass = garbageOk && tamperedOk && ghostOk;
+        const { disabled, finalStatus } = computeTokenGuardStatus(garbage, tampered, ghost);
+
         rec(testInfo, { module: MOD, step: 'public_token_guard',
-            status: pass ? 'PASS' : 'FAIL',
-            note: `garbage=${garbage.status} (${garbage.ms}ms, req_id=${garbage.request_id}, ${garbage.body_kind}) tampered=${tampered.status} (${tampered.ms}ms, req_id=${tampered.request_id}, ${tampered.body_kind}) ghost=${ghost.status} (${ghost.ms}ms, req_id=${ghost.request_id}, ${ghost.body_kind}) (POST scan probe SKIPPED — vendor call yasak)` });
+            status: finalStatus,
+            note: `garbage=${garbage.status} (${garbage.ms}ms, req_id=${garbage.request_id}, ${garbage.body_kind}) tampered=${tampered.status} (${tampered.ms}ms, req_id=${tampered.request_id}, ${tampered.body_kind}) ghost=${ghost.status} (${ghost.ms}ms, req_id=${ghost.request_id}, ${ghost.body_kind}) (POST scan probe SKIPPED — vendor call yasak)${disabled ? ' [QUICKID DISABLED]' : ''}` });
+    });
+
+    test('D2) Unit check for skip logic', () => {
+        // - garbage=422, tampered=disabled, ghost=disabled => SKIP
+        expect(computeTokenGuardStatus(
+            { status: 422 },
+            { status: 503, body_kind: 'json', body: { detail: { code: 'QUICKID_DISABLED' } } },
+            { status: 503, body_kind: 'json', body: { detail: { code: 'QUICKID_DISABLED' } } }
+        ).finalStatus).toBe('SKIP');
+
+        // - garbage=500, others disabled => FAIL
+        expect(computeTokenGuardStatus(
+            { status: 500 },
+            { status: 503, body_kind: 'json', body: { detail: { code: 'QUICKID_DISABLED' } } },
+            { status: 503, body_kind: 'json', body: { detail: { code: 'QUICKID_DISABLED' } } }
+        ).finalStatus).toBe('FAIL');
+
+        // - tampered=504 HTML, ghost=disabled => FAIL
+        expect(computeTokenGuardStatus(
+            { status: 422 },
+            { status: 504, body_kind: 'html' },
+            { status: 503, body_kind: 'json', body: { detail: { code: 'QUICKID_DISABLED' } } }
+        ).finalStatus).toBe('FAIL');
+
+        // - tampered=disabled, ghost=500 => FAIL
+        expect(computeTokenGuardStatus(
+            { status: 422 },
+            { status: 503, body_kind: 'json', body: { detail: { code: 'QUICKID_DISABLED' } } },
+            { status: 500 }
+        ).finalStatus).toBe('FAIL');
+
+        // - only one disabled response => FAIL
+        expect(computeTokenGuardStatus(
+            { status: 422 },
+            { status: 503, body_kind: 'json', body: { detail: { code: 'QUICKID_DISABLED' } } },
+            { status: 404 }
+        ).finalStatus).toBe('FAIL');
+
     });
 
     test('E) Pilot drift + external_calls invariant', async ({ request, stressTokens, stressState }, testInfo) => {

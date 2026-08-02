@@ -41,3 +41,28 @@ def test_quick_id_token_validation():
     # Aynı doğrulama /scan için geçerli
     resp = client.post("/api/quick-id/precheckin/123456789012345/scan", json={"kvkk_consent": True})
     assert resp.status_code == 422
+
+from unittest.mock import patch
+
+def test_quickid_disabled_precedence():
+    valid_uuid = "123e4567-e89b-12d3-a456-426614174000"
+    
+    # 1. Missing QUICKID_URL -> returns 503 QUICKID_DISABLED (0 upstream calls)
+    with patch("routers.quick_id_proxy.QUICKID_URL", ""), patch("routers.quick_id_proxy.QUICKID_SERVICE_KEY", "key"), patch("routers.quick_id_proxy.httpx.AsyncClient") as mock_client:
+        resp = client.get(f"/api/quick-id/precheckin/{valid_uuid}/info")
+        assert not mock_client.called, "AsyncClient should not even be instantiated"
+        assert resp.status_code == 503
+        assert resp.json()["detail"]["code"] == "QUICKID_DISABLED"
+        
+        # Also works when both URL and KEY are missing, URL check should win!
+        with patch("routers.quick_id_proxy.QUICKID_SERVICE_KEY", ""):
+            resp = client.get(f"/api/quick-id/precheckin/{valid_uuid}/info")
+            assert not mock_client.called, "AsyncClient should not even be instantiated"
+            assert resp.status_code == 503
+            assert resp.json()["detail"]["code"] == "QUICKID_DISABLED"
+
+    # 2. Garbage token -> returns 422 BEFORE disabled checks
+    with patch("routers.quick_id_proxy.QUICKID_URL", ""), patch("routers.quick_id_proxy.QUICKID_SERVICE_KEY", ""), patch("routers.quick_id_proxy.httpx.AsyncClient") as mock_client:
+        resp = client.get("/api/quick-id/precheckin/invalid token 123/info")
+        assert not mock_client.called, "AsyncClient should not even be instantiated"
+        assert resp.status_code == 422
