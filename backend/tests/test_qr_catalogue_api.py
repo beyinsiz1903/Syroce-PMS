@@ -118,22 +118,30 @@ def mock_session(monkeypatch):
     async def mock_verify(tenant_id, room_id, token):
         from fastapi import HTTPException
         if not token:
-            raise HTTPException(status_code=403, detail="Erişim engellendi")
+            raise HTTPException(status_code=401, detail="Yetkisiz: Misafir oturumu eksik")
         if token == "expired":
-            raise HTTPException(status_code=403, detail="Oturum süresi doldu")
+            raise HTTPException(status_code=401, detail="Yetkisiz: Oturum süresi dolmuş")
         if token == "revoked":
-            raise HTTPException(status_code=403, detail="Oturum iptal edildi")
+            raise HTTPException(status_code=401, detail="Yetkisiz: Oturum iptal edilmiş")
         if token == "checkout":
             raise HTTPException(status_code=403, detail="Misafir çıkış yapmış")
         if token == "room_moved":
             raise HTTPException(status_code=403, detail="Oda değiştirildi")
+        if token == "missing_prop":
+            return {"property_id": None, "id": "test_booking_123", "guest_id": "test_guest_123"}, {"id": "test_session_123", "token_hash": "mocked_token_hash", "session_hash": "mocked_session_hash"}
+        if token == "different_prop":
+            return {"property_id": "other_prop", "id": "test_booking_123", "guest_id": "test_guest_123"}, {"id": "test_session_123", "property_id": "other_prop", "token_hash": "mocked_token_hash", "session_hash": "mocked_session_hash"}
+        if token == "session_booking_mismatch":
+            # Session exists for this booking but different property scope
+            return {"property_id": TEST_PROPERTY, "id": "test_booking_123", "guest_id": "test_guest_123"}, {"id": "test_session_123", "property_id": "different_prop", "token_hash": "mocked_token_hash", "session_hash": "mocked_session_hash"}
+            
         if token != "valid_token":
-            raise HTTPException(status_code=403, detail="Geçersiz oturum")
+            raise HTTPException(status_code=401, detail="Yetkisiz: Geçersiz oturum")
             
         if tenant_id != TEST_TENANT or room_id != TEST_ROOM:
-            raise HTTPException(status_code=403, detail="Erişim engellendi")
+            raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
             
-        return {"property_id": TEST_PROPERTY}, {"session": "ok"}
+        return {"property_id": TEST_PROPERTY, "id": "test_booking_123", "guest_id": "test_guest_123"}, {"id": "test_session_123", "token_hash": "mocked_token_hash", "session_hash": "mocked_session_hash"}
         
     import routers.room_qr_requests
     monkeypatch.setattr(routers.room_qr_requests, "_verify_guest_session", mock_verify)
@@ -145,30 +153,43 @@ def test_api_session_security(mock_session, mock_db):
     # Missing session
     res = client.get(url)
     assert res.status_code == 403
+    assert res.json()["detail"] == "Hizmet şu anda kullanılamıyor"
     
     # Expired session
     res = client.get(url, headers={"X-Guest-Session": "expired"})
     assert res.status_code == 403
-    assert res.json()["detail"] == "Oturum süresi doldu"
+    assert res.json()["detail"] == "Hizmet şu anda kullanılamıyor"
     
     # Revoked session
     res = client.get(url, headers={"X-Guest-Session": "revoked"})
     assert res.status_code == 403
-    assert res.json()["detail"] == "Oturum iptal edildi"
+    assert res.json()["detail"] == "Hizmet şu anda kullanılamıyor"
 
     # Checkout session
     res = client.get(url, headers={"X-Guest-Session": "checkout"})
     assert res.status_code == 403
-    assert res.json()["detail"] == "Misafir çıkış yapmış"
+    assert res.json()["detail"] == "Hizmet şu anda kullanılamıyor"
     
     # Room-moved session
     res = client.get(url, headers={"X-Guest-Session": "room_moved"})
     assert res.status_code == 403
-    assert res.json()["detail"] == "Oda değiştirildi"
+    assert res.json()["detail"] == "Hizmet şu anda kullanılamıyor"
     
     # Wrong tenant/room scope mapping
     res2 = client.get(f"/api/public/room-qr/wrong_tenant/{TEST_ROOM}/catalogue", headers={"X-Guest-Session": "valid_token"})
     assert res2.status_code == 403
+    
+    # Scope: Missing property_id
+    res_miss = client.get(url, headers={"X-Guest-Session": "missing_prop"})
+    assert res_miss.status_code == 403
+    
+    # Scope: Different property_id (testing that route ignores any request-controlled property and uses booking's property, which is other_prop. We get 200 since it defaults to standard catalogue)
+    res_diff = client.get(url + "?property_id=hacked_prop", headers={"X-Guest-Session": "different_prop"})
+    assert res_diff.status_code == 200
+    
+    # Scope: Session/booking scope mismatch
+    res_mis = client.get(url, headers={"X-Guest-Session": "session_booking_mismatch"})
+    assert res_mis.status_code == 403
     
 def assert_privacy(data):
     """Recursively inspect data to ensure forbidden keys and concrete fixture values do not exist."""
@@ -176,7 +197,10 @@ def assert_privacy(data):
         "_id", "tenant_id", "property_id", "booking_id", "guest_id", "guest_name", 
         "guest_session_id", "token", "token_hash", "session_hash", "checkout_at", "occupancy"
     }
-    forbidden_values = {TEST_TENANT, TEST_PROPERTY, TEST_ROOM, "valid_token", "fake_id"}
+    forbidden_values = {
+        TEST_TENANT, TEST_PROPERTY, TEST_ROOM, "valid_token", "fake_id",
+        "test_booking_123", "test_guest_123", "test_session_123", "mocked_token_hash", "mocked_session_hash"
+    }
     
     if isinstance(data, dict):
         for k, v in data.items():
@@ -193,7 +217,7 @@ def assert_privacy(data):
 def test_api_modes_default(mock_session, mock_db):
     url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
     res = client.get(url, headers={"X-Guest-Session": "valid_token"})
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     data = res.json()
     assert data["catalogue_version"] == 1
     assert "departments" in data
@@ -224,6 +248,33 @@ def test_malformed_settings_fails_closed(mock_session, mock_db):
     res = client.get(url, headers={"X-Guest-Session": "valid_token"})
     assert res.status_code == 403
     assert res.json()["detail"] == "Hizmet şu anda kullanılamıyor"
+    assert_privacy(res.json())
+
+def test_settings_with_mongo_id_accepted(mock_session, mock_db):
+    async def setup():
+        await mock_db["guest_service_catalogue_settings"].insert_one({
+            "_id": "some_mongo_id", "tenant_id": TEST_TENANT, "property_id": TEST_PROPERTY, "mode": "default"
+        })
+    asyncio.run(setup())
+    
+    url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
+    res = client.get(url, headers={"X-Guest-Session": "valid_token"})
+    assert res.status_code == 200, res.text
+    assert_privacy(res.json())
+
+def test_settings_with_unknown_field_fails_closed(mock_session, mock_db):
+    async def setup():
+        await mock_db["guest_service_catalogue_settings"].insert_one({
+            "tenant_id": TEST_TENANT, "property_id": TEST_PROPERTY, "mode": "configured",
+            "unknown_extra_field": "hacker_data"
+        })
+    asyncio.run(setup())
+    
+    url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
+    res = client.get(url, headers={"X-Guest-Session": "valid_token"})
+    assert res.status_code == 403
+    assert res.json()["detail"] == "Hizmet şu anda kullanılamıyor"
+    assert_privacy(res.json())
 
 def test_no_settings_stored_records_returns_default(mock_session, mock_db):
     async def setup():
@@ -237,7 +288,7 @@ def test_no_settings_stored_records_returns_default(mock_session, mock_db):
     
     url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
     res = client.get(url, headers={"X-Guest-Session": "valid_token"})
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     data = res.json()
     dept_codes = [d["department_code"] for d in data["departments"]]
     assert "stored.dept" not in dept_codes # Should be default catalogue!
@@ -257,7 +308,7 @@ def test_mode_default_stored_records_returns_default(mock_session, mock_db):
     
     url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
     res = client.get(url, headers={"X-Guest-Session": "valid_token"})
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     data = res.json()
     dept_codes = [d["department_code"] for d in data["departments"]]
     assert "stored.dept" not in dept_codes # Should be default catalogue!
@@ -305,7 +356,7 @@ def test_api_service_filtering(mock_session, mock_db):
 
     url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
     res = client.get(url, headers={"X-Guest-Session": "valid_token"})
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     data = res.json()
     
     dept_codes = [d["department_code"] for d in data["departments"]]
@@ -347,7 +398,7 @@ def test_configured_department_with_zero_services_is_removed(mock_session, mock_
 
     url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
     res = client.get(url, headers={"X-Guest-Session": "valid_token"})
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     data = res.json()
     dept_codes = [d["department_code"] for d in data["departments"]]
     assert "usable.dept" in dept_codes
@@ -407,7 +458,7 @@ def test_deterministic_sorting(mock_session, mock_db):
 
     url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
     res = client.get(url, headers={"X-Guest-Session": "valid_token"})
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     data = res.json()
     dept_codes = [d["department_code"] for d in data["departments"]]
     assert dept_codes == ["a.dept", "b.dept"] # Alphabetical fallback
@@ -502,13 +553,60 @@ def test_time_injection_and_service_hours(mock_session, mock_db, monkeypatch):
         props = mock_db["properties"]
         props.data[0]["timezone"] = tz_val
     
+    # Boundary semantics tests (half-open range)
+    # normal: 10:00 to 18:00
+    # overnight: 20:00 to 04:00
+
+    # exact start (normal) -> inside (normal is open)
+    set_time(10, 0)
+    res_start = client.get(url, headers={"X-Guest-Session": "valid_token"})
+    codes_start = [s["service_code"] for s in res_start.json()["services"]]
+    assert "srv.normal" in codes_start
+
+    # exact end (normal) -> outside (half-open). Overnight starts at 20:00, so at 18:00 NO services are open.
+    set_time(18, 0)
+    res_end = client.get(url, headers={"X-Guest-Session": "valid_token"})
+    assert res_end.status_code == 403
+    assert res_end.json()["detail"] == "Hizmet şu anda kullanılamıyor"
+
+    # exact start (overnight) -> inside
+    set_time(20, 0)
+    res_ov_start = client.get(url, headers={"X-Guest-Session": "valid_token"})
+    codes_ov_start = [s["service_code"] for s in res_ov_start.json()["services"]]
+    assert "srv.overnight" in codes_ov_start
+
+    # exact end (overnight) -> outside (half-open). Normal starts at 10:00, so at 04:00 NO services are open.
+    set_time(4, 0)
+    res_ov_end = client.get(url, headers={"X-Guest-Session": "valid_token"})
+    assert res_ov_end.status_code == 403
+    assert res_ov_end.json()["detail"] == "Hizmet şu anda kullanılamıyor"
+    
     # Missing / Unknown Timezone -> fails closed
     asyncio.run(modify_tz("Invalid/Timezone"))
     set_time(12, 0)
     res = client.get(url, headers={"X-Guest-Session": "valid_token"})
-    # Since all services have service_hours, and timezone is invalid, ALL fail closed.
-    # So dept is empty and catalogue raises 403!
     assert res.status_code == 403
+
+    # Absent Timezone -> defaults to UTC, allows services according to UTC
+    async def remove_tz():
+        props = mock_db["properties"]
+        if "timezone" in props.data[0]:
+            del props.data[0]["timezone"]
+    
+    asyncio.run(remove_tz())
+    set_time(12, 0) # 12:00 UTC
+    res_absent = client.get(url, headers={"X-Guest-Session": "valid_token"})
+    assert res_absent.status_code == 200
+    data_absent = res_absent.json()
+    codes_absent = [s["service_code"] for s in data_absent["services"]]
+    assert "srv.normal" in codes_absent
+    assert "srv.overnight" not in codes_absent
+
+    # No services open (e.g. 19:00 UTC) -> 403
+    set_time(19, 0)
+    res_empty = client.get(url, headers={"X-Guest-Session": "valid_token"})
+    assert res_empty.status_code == 403
+    assert res_empty.json()["detail"] == "Hizmet şu anda kullanılamıyor"
 
 def test_schema_validations():
     # QuantityConfig bounds
@@ -570,6 +668,10 @@ def test_schema_validations():
 
 
 def test_ensure_indexes_exact(mock_db):
+    """
+    Proves exact create_index calls, key ordering and unique flags requested by application code.
+    This does NOT prove actual Mongo index installation, as it tests against the FakeAsyncCollection.
+    """
     from routers.room_qr_requests import _ensure_indexes
     async def _run():
         import routers.room_qr_requests

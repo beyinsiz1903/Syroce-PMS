@@ -784,8 +784,21 @@ async def public_get_catalogue(
 
     from models.schemas.qr_catalogue import GuestServiceCatalogueSettings, GuestServiceDepartment, GuestServiceItem
 
-    booking, guest_session = await _verify_guest_session(tenant_id, room_id, x_guest_session)
-    property_id = booking["property_id"]
+    try:
+        booking, guest_session = await _verify_guest_session(tenant_id, room_id, x_guest_session)
+        property_id = booking.get("property_id")
+        if not property_id:
+            raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+
+        session_prop = guest_session.get("property_id")
+        if session_prop and session_prop != property_id:
+            raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+
+    except HTTPException as e:
+        import traceback
+        traceback.print_exc()
+
+        raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
     raw_settings = await raw_db["guest_service_catalogue_settings"].find_one({"tenant_id": tenant_id, "property_id": property_id})
     mode = "default"
@@ -795,7 +808,7 @@ async def public_get_catalogue(
             settings_obj = GuestServiceCatalogueSettings.model_validate(raw_settings)
             mode = settings_obj.mode
         except ValidationError as e:
-            logger.warning(f"[room_qr] Catalogue settings validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
+            print("VALIDATION ERROR:", e); logger.warning(f"[room_qr] Catalogue settings validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
             raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
     if mode == "disabled":
@@ -852,9 +865,9 @@ async def public_get_catalogue(
             return False
 
         if start_t < end_t:
-            return start_t <= now_local <= end_t
+            return start_t <= now_local < end_t
         else:
-            return now_local >= start_t or now_local <= end_t
+            return now_local >= start_t or now_local < end_t
 
     if mode == "default":
         from domains.guest.qr_catalogue_defaults import get_default_catalogue
