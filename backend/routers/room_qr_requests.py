@@ -794,10 +794,7 @@ async def public_get_catalogue(
         if session_prop and session_prop != property_id:
             raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
-    except HTTPException as e:
-        import traceback
-        traceback.print_exc()
-
+    except HTTPException:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
     raw_settings = await raw_db["guest_service_catalogue_settings"].find_one({"tenant_id": tenant_id, "property_id": property_id})
@@ -808,7 +805,7 @@ async def public_get_catalogue(
             settings_obj = GuestServiceCatalogueSettings.model_validate(raw_settings)
             mode = settings_obj.mode
         except ValidationError as e:
-            print("VALIDATION ERROR:", e); logger.warning(f"[room_qr] Catalogue settings validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
+            logger.warning(f"[room_qr] Catalogue settings validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
             raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
     if mode == "disabled":
