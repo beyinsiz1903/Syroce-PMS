@@ -233,79 +233,88 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
             submission_group_id = res["submission_group_id"]
             submission_reference = res["submission_reference"]
 
-        await raw_db["guest_service_submissions"].update_one(
-            {
-                "tenant_id": tenant_id,
-                "property_id": property_id,
-                "booking_id": booking_id,
-                "submission_group_id": submission_group_id
-            },
-            {"$inc": {"attempt_count": 1}, "$set": {"updated_at": _utc_now()}}
-        )
+    upd_res = await raw_db["guest_service_submissions"].update_one(
+        {
+            "tenant_id": tenant_id,
+            "property_id": property_id,
+            "booking_id": booking_id,
+            "submission_group_id": submission_group_id
+        },
+        {"$inc": {"attempt_count": 1}, "$set": {"updated_at": _utc_now()}}
+    )
+    if upd_res.matched_count != 1:
+        raise HTTPException(status_code=503, detail="Sistem hatası")
 
-        docs_to_emit = []
-        created_count = 0
-        replayed_count = 0
+    docs_to_emit = []
+    created_count = 0
+    replayed_count = 0
 
-        # 4. Idempotent Insert Loop
-        for item_doc in prepared_items:
-            for attempt in range(3):
-                try:
-                    await raw_db["qr_requests"].insert_one(item_doc)
-                    docs_to_emit.append(item_doc)
-                    created_count += 1
+    # 4. Idempotent Insert Loop
+    for item_doc in prepared_items:
+        for attempt in range(3):
+            try:
+                await raw_db["qr_requests"].insert_one(item_doc)
+                docs_to_emit.append(item_doc)
+                created_count += 1
+                break
+            except DuplicateKeyError as e:
+                details = getattr(e, "details", None) or {}
+                key_pattern = details.get("keyPattern", {})
+
+                if "request_reference" in key_pattern:
+                    new_ref = generate_public_reference("REQ")
+                    item_doc["request_reference"] = new_ref
+
+                    # Update ledger so we know the new ref
+                    upd_res = await raw_db["guest_service_submissions"].update_one(
+                        {
+                            "tenant_id": tenant_id,
+                            "property_id": property_id,
+                            "booking_id": booking_id,
+                            "submission_group_id": submission_group_id,
+                            "prepared_items.service_code": item_doc["service_code"]
+                        },
+                        {"$set": {"prepared_items.$.request_reference": new_ref, "updated_at": _utc_now()}}
+                    )
+                    if upd_res.matched_count != 1:
+                        raise HTTPException(status_code=503, detail="Sistem hatası")
+                    reread = await raw_db["guest_service_submissions"].find_one({
+                        "tenant_id": tenant_id,
+                        "property_id": property_id,
+                        "booking_id": booking_id,
+                        "submission_group_id": submission_group_id
+                    })
+                    if not reread:
+                        raise HTTPException(status_code=503, detail="Sistem hatası")
+                    found = False
+                    for pi in reread.get("prepared_items", []):
+                        if pi["service_code"] == item_doc["service_code"]:
+                            item_doc = pi
+                            found = True
+                            break
+                    if not found:
+                        raise HTTPException(status_code=503, detail="Sistem hatası")
+                    continue
+
+                # If duplicate on submission_group_id + service_code, it's a replay
+                if "submission_group_id" in key_pattern and "service_code" in key_pattern:
+                    replayed_count += 1
                     break
-                except DuplicateKeyError as e:
-                    details = getattr(e, "details", None) or {}
-                    key_pattern = details.get("keyPattern", {})
 
-                    if "request_reference" in key_pattern:
-                        new_ref = generate_public_reference("REQ")
-                        item_doc["request_reference"] = new_ref
-
-                        # Update ledger so we know the new ref
-                        upd_res = await raw_db["guest_service_submissions"].update_one(
-                            {
-                                "tenant_id": tenant_id,
-                                "property_id": property_id,
-                                "booking_id": booking_id,
-                                "submission_group_id": submission_group_id,
-                                "prepared_items.service_code": item_doc["service_code"]
-                            },
-                            {"$set": {"prepared_items.$.request_reference": new_ref, "updated_at": _utc_now()}}
-                        )
-                        if upd_res.matched_count == 1:
-                            reread = await raw_db["guest_service_submissions"].find_one({
-                                "tenant_id": tenant_id,
-                                "property_id": property_id,
-                                "booking_id": booking_id,
-                                "submission_group_id": submission_group_id
-                            })
-                            if reread:
-                                for pi in reread.get("prepared_items", []):
-                                    if pi["service_code"] == item_doc["service_code"]:
-                                        item_doc = pi
-                                        break
-                        continue
-
-                    # If duplicate on submission_group_id + service_code, it's a replay
-                    if "submission_group_id" in key_pattern and "service_code" in key_pattern:
-                        replayed_count += 1
-                        break
-
-                    logger.error("Collision during qr_requests upsert: group=req_collision_unknown")
-                    raise HTTPException(status_code=503, detail="Sistem hatası")
-            else:
+                logger.error("Collision during qr_requests upsert: group=req_collision_unknown")
                 raise HTTPException(status_code=503, detail="Sistem hatası")
+        else:
+            raise HTTPException(status_code=503, detail="Sistem hatası")
 
     # 5. Convergence check
-    count_expected = len(prepared_items)
-    actual_count = await raw_db["qr_requests"].count_documents({
+    expected_set = {it["service_code"] for it in prepared_items}
+    actual_docs = await raw_db["qr_requests"].find({
         "tenant_id": tenant_id,
         "submission_group_id": submission_group_id
-    })
+    }).to_list(None)
+    actual_set = {d["service_code"] for d in actual_docs}
 
-    if actual_count == count_expected:
+    if expected_set == actual_set:
         upd_res = await raw_db["guest_service_submissions"].update_one(
             {
                 "tenant_id": tenant_id,

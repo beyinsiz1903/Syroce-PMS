@@ -176,19 +176,66 @@ def test_structured_response_no_pydantic_exposure():
 
         asyncio.run(run())
 
-@patch("domains.guest.qr_submission_service.compute_payload_fingerprint", return_value="fingerprint")
+
+
+import asyncio
+from unittest.mock import patch, MagicMock, AsyncMock
+from fastapi import HTTPException
+from pymongo.errors import DuplicateKeyError
+from domains.guest.qr_submission_service import handle_structured_submission
+
+
+class MockDuplicateKeyError(DuplicateKeyError):
+    def __init__(self, keyPattern):
+        super().__init__("dup")
+        self._details = {"keyPattern": keyPattern}
+
+    @property
+    def details(self):
+        return self._details
+
+class MockDB:
+    def __init__(self):
+        self.collections = {}
+
+    def get_collection(self, name):
+        if name not in self.collections:
+            coll = MagicMock()
+            coll.find_one = AsyncMock(return_value=None)
+            coll.find = MagicMock()
+            coll.find.return_value.to_list = AsyncMock(return_value=[])
+            coll.insert_one = AsyncMock()
+            coll.update_one = AsyncMock()
+            coll.find_one_and_update = AsyncMock()
+            self.collections[name] = coll
+        return self.collections[name]
+
+    def __getitem__(self, name):
+        return self.get_collection(name)
+
+@patch("domains.guest.qr_submission_service.compute_payload_fingerprint", return_value="fprint")
 @patch("domains.guest.qr_submission_service.raw_db")
 def test_unknown_duplicate_key_error_sanitized(mock_raw_db, mock_fingerprint):
-    from domains.guest.qr_submission_service import handle_structured_submission
-    from pymongo.errors import DuplicateKeyError
-    import asyncio
+    db = MockDB()
+    mock_raw_db.__getitem__.side_effect = db.__getitem__
 
-    mock_coll = MagicMock()
+    mock_coll = db["guest_service_submissions"]
     mock_coll.find_one = AsyncMock(return_value=None)
-    mock_coll.find_one_and_update = AsyncMock(side_effect=DuplicateKeyError("E11000 duplicate key error"))
-    mock_coll.update_one = AsyncMock()
-    mock_coll.insert_one = AsyncMock()
-    mock_raw_db.__getitem__.return_value = mock_coll
+    mock_coll.find_one_and_update = AsyncMock(return_value={
+        "_id": "test",
+        "payload_fingerprint": "fprint",
+        "prepared_items": [{"service_code": "a"}],
+        "submission_group_id": "G1",
+        "submission_reference": "R1"
+    })
+    mock_upd = MagicMock()
+    mock_upd.matched_count = 1
+    mock_coll.update_one = AsyncMock(return_value=mock_upd)
+
+    mock_qr = db["qr_requests"]
+    mock_qr.insert_one = AsyncMock(side_effect=DuplicateKeyError({"keyPattern": {"unknown": 1}}))
+    mock_qr.find = MagicMock()
+    mock_qr.find.return_value.to_list = AsyncMock(return_value=[{"service_code": "a"}])
 
     payload = MagicMock()
     payload.idempotency_key = "idem"
@@ -204,35 +251,38 @@ def test_unknown_duplicate_key_error_sanitized(mock_raw_db, mock_fingerprint):
             )
         except Exception as e:
             assert e.status_code == 503
-
-            assert e.status_code == 503
             assert e.detail == "Sistem hatası"
-
 
     asyncio.run(run())
 
-@patch("domains.guest.qr_submission_service.compute_payload_fingerprint", return_value="fingerprint")
+@patch("domains.guest.qr_submission_service.compute_payload_fingerprint", return_value="fprint")
 @patch("domains.guest.qr_submission_service.raw_db")
 def test_completion_matched_count_0(mock_raw_db, mock_fingerprint):
-    from domains.guest.qr_submission_service import handle_structured_submission
-    import asyncio
+    db = MockDB()
+    mock_raw_db.__getitem__.side_effect = db.__getitem__
 
-    mock_upd = MagicMock()
-    mock_upd.matched_count = 0
-
-    mock_coll = MagicMock()
+    mock_coll = db["guest_service_submissions"]
     mock_coll.find_one = AsyncMock(return_value=None)
     mock_coll.find_one_and_update = AsyncMock(return_value={
         "_id": "test",
-        "payload_fingerprint": "fingerprint",
+        "payload_fingerprint": "fprint",
         "prepared_items": [],
         "submission_group_id": "G1",
         "submission_reference": "R1"
     })
-    mock_coll.update_one = AsyncMock(return_value=mock_upd)
-    mock_coll.insert_one = AsyncMock()
-    mock_coll.count_documents = AsyncMock(return_value=1)
-    mock_raw_db.__getitem__.return_value = mock_coll
+
+    # matched_count = 0 for completion
+    mock_upd = MagicMock()
+    mock_upd.matched_count = 0
+    # For attempt_count increment, we need matched_count=1
+    mock_inc = MagicMock()
+    mock_inc.matched_count = 1
+    mock_coll.update_one = AsyncMock(side_effect=[mock_inc, mock_upd])
+
+    mock_qr = db["qr_requests"]
+    mock_qr.insert_one = AsyncMock()
+    mock_qr.find = MagicMock()
+    mock_qr.find.return_value.to_list = AsyncMock(return_value=[])
 
     payload = MagicMock()
     payload.idempotency_key = "idem"
@@ -251,33 +301,50 @@ def test_completion_matched_count_0(mock_raw_db, mock_fingerprint):
             assert "Talep işleme alınamadı" in e.detail
 
     asyncio.run(run())
-import pytest
-import asyncio
-from unittest.mock import patch, MagicMock, AsyncMock
-from fastapi import HTTPException
-from pymongo.errors import DuplicateKeyError
-
-from domains.guest.qr_submission_service import handle_structured_submission
 
 @patch("domains.guest.qr_submission_service.compute_payload_fingerprint", return_value="fprint")
 @patch("domains.guest.qr_submission_service.raw_db")
-def test_existing_matching_ledger_skips_catalogue(mock_raw_db, mock_fingerprint):
-    # existing matching ledger skips catalogue resolution
-    mock_coll = MagicMock()
-    mock_coll.find_one = AsyncMock(return_value={
-        "_id": "test",
-        "payload_fingerprint": "fprint",
-        "prepared_items": [{"service_code": "a"}],
-        "submission_group_id": "G1",
-        "submission_reference": "R1"
-    })
-    mock_coll.update_one = AsyncMock()
-    mock_coll.insert_one = AsyncMock()
-    mock_coll.count_documents = AsyncMock(return_value=1)
+def test_existing_ledger_partial_retry(mock_raw_db, mock_fingerprint):
+    db = MockDB()
+    mock_raw_db.__getitem__.side_effect = db.__getitem__
 
-    # We mock fetch_catalogue_data to raise exception if called, to prove it's skipped
+    mock_coll = db["guest_service_submissions"]
+    # Initial lookup returns pending ledger with a and b
+    mock_coll.find_one = AsyncMock(side_effect=[
+        {
+            "_id": "test",
+            "payload_fingerprint": "fprint",
+            "prepared_items": [{"service_code": "a"}, {"service_code": "b"}],
+            "submission_group_id": "G1",
+            "submission_reference": "R1",
+            "status": "pending"
+        },
+        # second find_one is for completion check
+        {
+            "_id": "test",
+            "status": "completed",
+            "completed_at": "now",
+            "prepared_items": [{"service_code": "a", "request_reference": "RR1"}, {"service_code": "b", "request_reference": "RR2"}]
+        }
+    ])
+
+    # Update mock returns matched_count=1
+    mock_upd = MagicMock()
+    mock_upd.matched_count = 1
+    mock_coll.update_one = AsyncMock(return_value=mock_upd)
+
+    mock_qr = db["qr_requests"]
+    # We simulate 'a' already exists -> DuplicateKeyError
+    async def mock_insert(doc):
+        if doc["service_code"] == "a":
+            raise MockDuplicateKeyError({"submission_group_id": 1, "service_code": 1})
+        return True
+    mock_qr.insert_one = AsyncMock(side_effect=mock_insert)
+
+    mock_qr.find = MagicMock()
+    mock_qr.find.return_value.to_list = AsyncMock(return_value=[{"service_code": "a"}, {"service_code": "b"}])
+
     with patch("domains.guest.qr_submission_service.fetch_catalogue_data", side_effect=Exception("Should not resolve catalogue!")):
-        mock_raw_db.__getitem__.return_value = mock_coll
         payload = MagicMock()
         payload.idempotency_key = "idem"
         payload.items = []
@@ -287,52 +354,82 @@ def test_existing_matching_ledger_skips_catalogue(mock_raw_db, mock_fingerprint)
             res = await handle_structured_submission("T", "P", "R", "B", "S", "1", payload, "Test", "123")
             assert res["success"] is True
             assert res["stats"]["created"] == 1
+            assert res["stats"]["replayed"] == 1
+            # docs_to_emit (notifications) should only contain 'b'
+            assert len(res["docs_to_emit"]) == 1
+            assert res["docs_to_emit"][0]["service_code"] == "b"
+
+            # verify attempt count was incremented
+            calls = mock_coll.update_one.call_args_list
+            assert any("$inc" in call[0][1] and call[0][1]["$inc"].get("attempt_count") == 1 for call in calls)
 
         asyncio.run(run())
 
 @patch("domains.guest.qr_submission_service.compute_payload_fingerprint", return_value="fprint")
 @patch("domains.guest.qr_submission_service.raw_db")
-def test_partial_replay_counts(mock_raw_db, mock_fingerprint):
-    # existing pending ledger completes missing items
-    # Ledger has 2 items. DB has 1.
-    mock_coll = MagicMock()
-    mock_coll.find_one = AsyncMock(return_value={
-        "_id": "test",
-        "payload_fingerprint": "fprint",
-        "prepared_items": [{"service_code": "a"}, {"service_code": "b"}],
-        "submission_group_id": "G1",
-        "submission_reference": "R1"
-    })
+def test_full_replay(mock_raw_db, mock_fingerprint):
+    db = MockDB()
+    mock_raw_db.__getitem__.side_effect = db.__getitem__
 
-    mock_coll.update_one = AsyncMock()
+    mock_coll = db["guest_service_submissions"]
+    # Initial lookup returns completed ledger with a and b
+    mock_coll.find_one = AsyncMock(side_effect=[
+        {
+            "_id": "test",
+            "payload_fingerprint": "fprint",
+            "prepared_items": [{"service_code": "a"}, {"service_code": "b"}],
+            "submission_group_id": "G1",
+            "submission_reference": "R1",
+            "status": "completed"
+        },
+        # second find_one is for completion check
+        {
+            "_id": "test",
+            "status": "completed",
+            "completed_at": "now",
+            "prepared_items": [{"service_code": "a", "request_reference": "RR1"}, {"service_code": "b", "request_reference": "RR2"}]
+        }
+    ])
 
-    async def mock_insert_one(doc):
-        if doc["service_code"] == "a":
-            e = DuplicateKeyError("dup")
-            e.details = {"keyPattern": {"submission_group_id": 1, "service_code": 1}}
-            raise e
-        return True
+    mock_upd = MagicMock()
+    mock_upd.matched_count = 1
+    mock_coll.update_one = AsyncMock(return_value=mock_upd)
 
-    mock_coll.insert_one = AsyncMock(side_effect=mock_insert_one)
-    mock_coll.count_documents = AsyncMock(return_value=2)
-    mock_raw_db.__getitem__.return_value = mock_coll
+    mock_qr = db["qr_requests"]
+    # Both a and b already exist
+    async def mock_insert(doc):
+        raise MockDuplicateKeyError({"submission_group_id": 1, "service_code": 1})
+    mock_qr.insert_one = AsyncMock(side_effect=mock_insert)
 
-    payload = MagicMock()
-    payload.idempotency_key = "idem"
-    payload.items = []
-    payload.language = "en"
+    mock_qr.find = MagicMock()
+    mock_qr.find.return_value.to_list = AsyncMock(return_value=[{"service_code": "a"}, {"service_code": "b"}])
 
-    async def run():
-        res = await handle_structured_submission("T", "P", "R", "B", "S", "1", payload, "Test", "123")
-        assert res["stats"]["created"] == 1
-        assert res["stats"]["replayed"] == 1
+    with patch("domains.guest.qr_submission_service.fetch_catalogue_data", side_effect=Exception("Should not resolve catalogue!")):
+        payload = MagicMock()
+        payload.idempotency_key = "idem"
+        payload.items = []
+        payload.language = "en"
 
-    asyncio.run(run())
+        async def run():
+            res = await handle_structured_submission("T", "P", "R", "B", "S", "1", payload, "Test", "123")
+            assert res["success"] is True
+            assert res["stats"]["created"] == 0
+            assert res["stats"]["replayed"] == 2
+            assert len(res["docs_to_emit"]) == 0
+
+            # verify attempt count was incremented
+            calls = mock_coll.update_one.call_args_list
+            assert any("$inc" in call[0][1] and call[0][1]["$inc"].get("attempt_count") == 1 for call in calls)
+
+        asyncio.run(run())
 
 @patch("domains.guest.qr_submission_service.compute_payload_fingerprint", return_value="fprint")
 @patch("domains.guest.qr_submission_service.raw_db")
 def test_duplicate_key_error_winner_reread(mock_raw_db, mock_fingerprint):
-    mock_coll = MagicMock()
+    db = MockDB()
+    mock_raw_db.__getitem__.side_effect = db.__getitem__
+
+    mock_coll = db["guest_service_submissions"]
     # first find_one (lookup) -> None
     # find_one_and_update -> DupKeyError
     # second find_one (reread) -> Returns winner
@@ -353,12 +450,16 @@ def test_duplicate_key_error_winner_reread(mock_raw_db, mock_fingerprint):
             "prepared_items": [{"service_code": "a", "request_reference": "RR"}]
         }
     ])
-    mock_coll.find_one_and_update = AsyncMock(side_effect=DuplicateKeyError("dup"))
+    mock_coll.find_one_and_update = AsyncMock(side_effect=DuplicateKeyError({"keyPattern": {"submission_group_id": 1, "service_code": 1}}))
 
-    mock_coll.update_one = AsyncMock()
-    mock_coll.insert_one = AsyncMock()
-    mock_coll.count_documents = AsyncMock(return_value=1)
-    mock_raw_db.__getitem__.return_value = mock_coll
+    mock_upd = MagicMock()
+    mock_upd.matched_count = 1
+    mock_coll.update_one = AsyncMock(return_value=mock_upd)
+
+    mock_qr = db["qr_requests"]
+    mock_qr.insert_one = AsyncMock()
+    mock_qr.find = MagicMock()
+    mock_qr.find.return_value.to_list = AsyncMock(return_value=[{"service_code": "a"}])
 
     payload = MagicMock()
     payload.idempotency_key = "idem"
@@ -374,12 +475,13 @@ def test_duplicate_key_error_winner_reread(mock_raw_db, mock_fingerprint):
 @patch("domains.guest.qr_submission_service.compute_payload_fingerprint", return_value="fprint")
 @patch("domains.guest.qr_submission_service.raw_db")
 def test_duplicate_key_error_winner_reread_unavailable(mock_raw_db, mock_fingerprint):
-    mock_coll = MagicMock()
+    db = MockDB()
+    mock_raw_db.__getitem__.side_effect = db.__getitem__
+
+    mock_coll = db["guest_service_submissions"]
     # lookup -> None, find_one_and_update -> DupKeyError, reread -> None (5 times)
     mock_coll.find_one = AsyncMock(return_value=None)
-    mock_coll.find_one_and_update = AsyncMock(side_effect=DuplicateKeyError("dup"))
-
-    mock_raw_db.__getitem__.return_value = mock_coll
+    mock_coll.find_one_and_update = AsyncMock(side_effect=DuplicateKeyError({"keyPattern": {"submission_group_id": 1, "service_code": 1}}))
 
     payload = MagicMock()
     payload.idempotency_key = "idem"
@@ -393,11 +495,13 @@ def test_duplicate_key_error_winner_reread_unavailable(mock_raw_db, mock_fingerp
 
     asyncio.run(run())
 
-
 @patch("domains.guest.qr_submission_service.compute_payload_fingerprint", return_value="fprint")
 @patch("domains.guest.qr_submission_service.raw_db")
 def test_conflicting_fingerprint_race(mock_raw_db, mock_fingerprint):
-    mock_coll = MagicMock()
+    db = MockDB()
+    mock_raw_db.__getitem__.side_effect = db.__getitem__
+
+    mock_coll = db["guest_service_submissions"]
     mock_coll.find_one = AsyncMock(side_effect=[
         None,
         {
@@ -408,9 +512,8 @@ def test_conflicting_fingerprint_race(mock_raw_db, mock_fingerprint):
             "submission_reference": "R1"
         }
     ])
-    mock_coll.find_one_and_update = AsyncMock(side_effect=DuplicateKeyError("dup"))
+    mock_coll.find_one_and_update = AsyncMock(side_effect=DuplicateKeyError({"keyPattern": {"submission_group_id": 1, "service_code": 1}}))
 
-    mock_raw_db.__getitem__.return_value = mock_coll
     payload = MagicMock()
     payload.idempotency_key = "idem"
 
