@@ -324,7 +324,11 @@ except ImportError:
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     import logging
-    logging.getLogger("uvicorn.error").error(f"Unhandled exception: {exc}", exc_info=True)
+    import uuid
+    error_id = str(uuid.uuid4())
+    logging.getLogger("uvicorn.error").error(
+        f"Unhandled application exception [error_id={error_id}] method={request.method} path={request.url.path}"
+    )
     from fastapi.responses import JSONResponse
     return JSONResponse(
         status_code=500,
