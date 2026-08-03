@@ -1,19 +1,19 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from models.schemas.qr_catalogue import (
+    AutoPriority,
+    EmptyConfig,
     GuestServiceDepartment,
     GuestServiceItem,
     InputType,
-    AutoPriority,
-    EmptyConfig,
     QuantityConfig,
-    DateConstraints,
     TimeConstraints,
 )
 
 # A stable, generic default catalogue for QR guest requests.
 # It is deep-copied at runtime to prevent accidental mutation.
 
-_NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+_NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
 DEFAULT_DEPARTMENTS = [
     GuestServiceDepartment(
@@ -126,7 +126,7 @@ DEFAULT_SERVICES = [
         tenant_id="default",
         property_id="default",
         department_code="technical",
-        service_code="technical.ac_not_cooling",
+        service_code="technical.ac_not_working",
         labels={"en": "Air conditioner not working", "tr": "Klima çalışmıyor"},
         icon="thermometer",
         input_type=InputType.one_tap,

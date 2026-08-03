@@ -773,22 +773,28 @@ async def public_get_catalogue(
     x_guest_session: str = Header(None)
 ):
     """Misafir için dinamik QR hizmet kataloğunu döndürür."""
+    import zoneinfo
+
+    from pydantic import ValidationError
+
+    from models.schemas.qr_catalogue import GuestServiceDepartment, GuestServiceItem
+
     booking, guest_session = await _verify_guest_session(tenant_id, room_id, x_guest_session)
     property_id = booking["property_id"]
-    
+
     settings = await raw_db["guest_service_catalogue_settings"].find_one({"tenant_id": tenant_id, "property_id": property_id})
     mode = settings.get("mode", "default") if settings else "default"
-    
+
     if mode == "disabled":
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
-        
+
     prop = await raw_db["properties"].find_one({"id": property_id, "tenant_id": tenant_id}) or {}
     prop_tz = prop.get("timezone", "UTC")
     prop_lang = prop.get("default_language", "en")
-    
+
     depts_out = []
     services_out = []
-    
+
     def process_lang(labels: dict | None) -> str:
         if not labels:
             return ""
@@ -820,7 +826,6 @@ async def public_get_catalogue(
         if start_str == end_str:
             return False
         try:
-            import zoneinfo
             import datetime as dt
             tz = zoneinfo.ZoneInfo(prop_tz)
             now_local = datetime.now(UTC).astimezone(tz).time()
@@ -828,8 +833,11 @@ async def public_get_catalogue(
             eh, em = map(int, end_str.split(":"))
             start_t = dt.time(sh, sm)
             end_t = dt.time(eh, em)
-        except Exception:
+        except zoneinfo.ZoneInfoNotFoundError:
             return False
+        except ValueError:
+            return False
+
         if start_t < end_t:
             return start_t <= now_local <= end_t
         else:
@@ -842,10 +850,10 @@ async def public_get_catalogue(
         services_out = default_cat["services"]
     else:
         # mode == "configured"
-        depts = await raw_db["guest_service_departments"].find({"tenant_id": tenant_id, "property_id": property_id}).to_list(length=None)
-        services = await raw_db["guest_service_items"].find({"tenant_id": tenant_id, "property_id": property_id}).to_list(length=None)
-        
-        if not depts and not services:
+        raw_depts = await raw_db["guest_service_departments"].find({"tenant_id": tenant_id, "property_id": property_id}).to_list(length=None)
+        raw_items = await raw_db["guest_service_items"].find({"tenant_id": tenant_id, "property_id": property_id}).to_list(length=None)
+
+        if not raw_depts and not raw_items:
             if settings is None:
                 from domains.guest.qr_catalogue_defaults import get_default_catalogue
                 default_cat = get_default_catalogue()
@@ -854,32 +862,40 @@ async def public_get_catalogue(
             else:
                 raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
         else:
-            depts_out = depts
-            services_out = services
-            
+            for rd in raw_depts:
+                rd.pop("_id", None)
+                try:
+                    depts_out.append(GuestServiceDepartment.model_validate(rd).model_dump())
+                except ValidationError as e:
+                    logger.warning(f"[room_qr] Catalogue record validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
+
+            for ri in raw_items:
+                ri.pop("_id", None)
+                try:
+                    services_out.append(GuestServiceItem.model_validate(ri).model_dump())
+                except ValidationError as e:
+                    logger.warning(f"[room_qr] Catalogue record validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
+
     if not depts_out and not services_out:
          raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
-         
+
     # Formatting and filtering
     depts_out.sort(key=lambda x: x.get("display_order", 0))
     enabled_dept_codes = set()
     formatted_depts = []
-    
+
     for d in depts_out:
         if not d.get("enabled", True):
             continue
         dept_code = d.get("department_code")
         if not dept_code:
             continue
-        try:
-            formatted_depts.append({
-                "department_code": dept_code,
-                "label": process_lang(d.get("labels")),
-                "icon": d.get("icon")
-            })
-            enabled_dept_codes.add(dept_code)
-        except Exception:
-            pass
+        formatted_depts.append({
+            "department_code": dept_code,
+            "label": process_lang(d.get("labels")),
+            "icon": d.get("icon")
+        })
+        enabled_dept_codes.add(dept_code)
 
     # Deterministic secondary sorting by service_code
     services_out.sort(key=lambda x: (x.get("display_order", 0), x.get("service_code", "")))
@@ -890,38 +906,35 @@ async def public_get_catalogue(
         dept_code = s.get("department_code")
         if dept_code not in enabled_dept_codes:
             continue
-            
+
         if not is_service_available(s.get("service_hours"), prop_tz):
             continue
-            
-        try:
-            config = s.get("input_config", {})
-            if s.get("input_type") in ("single_choice", "multi_choice"):
-                opts = config.get("options", [])
-                mapped_opts = []
-                for opt in opts:
-                    mapped_opts.append({
-                        "code": opt.get("code"),
-                        "label": process_lang(opt.get("labels"))
-                    })
-                config["options"] = mapped_opts
-                
-            formatted_services.append({
-                "service_code": s.get("service_code"),
-                "department_code": dept_code,
-                "label": process_lang(s.get("labels")),
-                "description": process_lang_dict(s.get("description")),
-                "icon": s.get("icon"),
-                "input_type": s.get("input_type"),
-                "input_config": config,
-                "auto_priority": s.get("auto_priority", "normal"),
-                "estimated_minutes": s.get("estimated_minutes", 0),
-                "is_chargeable": s.get("is_chargeable", False),
-                "charge_warning": process_lang_dict(s.get("charge_warning"))
-            })
-        except Exception:
-            pass
-            
+
+        config = s.get("input_config", {})
+        if s.get("input_type") in ("single_choice", "multi_choice"):
+            opts = config.get("options", [])
+            mapped_opts = []
+            for opt in opts:
+                mapped_opts.append({
+                    "code": opt.get("code"),
+                    "label": process_lang(opt.get("labels"))
+                })
+            config["options"] = mapped_opts
+
+        formatted_services.append({
+            "service_code": s.get("service_code"),
+            "department_code": dept_code,
+            "label": process_lang(s.get("labels")),
+            "description": process_lang_dict(s.get("description")),
+            "icon": s.get("icon"),
+            "input_type": s.get("input_type"),
+            "input_config": config,
+            "auto_priority": s.get("auto_priority", "normal"),
+            "estimated_minutes": s.get("estimated_minutes", 0),
+            "is_chargeable": s.get("is_chargeable", False),
+            "charge_warning": process_lang_dict(s.get("charge_warning"))
+        })
+
     if not formatted_depts and not formatted_services:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
