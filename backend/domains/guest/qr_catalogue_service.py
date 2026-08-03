@@ -15,6 +15,7 @@ def _utc_now():
     return dt.datetime.now(UTC)
 
 async def resolve_catalogue_mode(tenant_id: str, property_id: str) -> str:
+    print("RESOLVE DB DATA:", raw_db["guest_service_catalogue_settings"].data)
     raw_settings = await raw_db["guest_service_catalogue_settings"].find_one({"tenant_id": tenant_id, "property_id": property_id})
     mode = "default"
     if raw_settings:
@@ -37,9 +38,12 @@ def is_service_available(service_hours: dict | None, prop_tz: str) -> bool:
     if start_str == end_str:
         return False
 
+
     try:
         tz = zoneinfo.ZoneInfo(prop_tz)
         now_local = _utc_now().astimezone(tz).time()
+        print(f"DEBUG: prop_tz={prop_tz} _utc_now()={_utc_now()} _utc_now().astimezone(tz)={_utc_now().astimezone(tz)} now_local={now_local}")
+
         sh, sm = map(int, start_str.split(":"))
         eh, em = map(int, end_str.split(":"))
         start_t = dt.time(sh, sm)

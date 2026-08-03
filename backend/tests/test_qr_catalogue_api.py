@@ -32,10 +32,56 @@ class FakeAsyncCollection:
         self.indexes = {}
 
     async def insert_one(self, doc):
-        d = dict(doc)
-        if "_id" not in d:
-            d["_id"] = "fake_id"
-        self.data.append(d)
+        self.data.append(dict(doc))
+
+    async def find_one_and_update(self, query, update, upsert=False, return_document=None):
+        doc = await self.find_one(query)
+        if doc is None and upsert:
+            new_doc = query.copy()
+            new_doc.update(update.get("$setOnInsert", {}))
+            new_doc.update(update.get("$set", {}))
+            if "_id" not in new_doc:
+                new_doc["_id"] = "fake_id"
+            self.data.append(new_doc)
+            return new_doc
+        elif doc:
+            doc.update(update.get("$set", {}))
+            return doc
+        return None
+
+    async def count_documents(self, query):
+        print("DEBUG COUNT_DOCUMENTS QUERY:", query)
+        print("DEBUG COUNT_DOCUMENTS DATA:", self.data)
+        count = 0
+        for item in self.data:
+            match = True
+            for k, v in query.items():
+                if item.get(k) != v:
+                    match = False
+                    break
+            if match:
+                count += 1
+        return count
+
+    async def update_one(self, query, update):
+        class Result:
+            matched_count = 0
+            modified_count = 0
+        res = Result()
+
+        for item in self.data:
+            match = True
+            for k, v in query.items():
+                # For dot notation, just simple dict get is not enough, but our query doesn't use dot notation for top-level search here
+                if item.get(k) != v:
+                    match = False
+                    break
+            if match:
+                item.update(update.get("$set", {}))
+                res.matched_count = 1
+                res.modified_count = 1
+                break
+        return res
 
     async def insert_many(self, docs):
         for doc in docs:
@@ -91,7 +137,10 @@ def mock_db(monkeypatch):
     fake_depts = FakeAsyncCollection()
     fake_items = FakeAsyncCollection()
     fake_props = FakeAsyncCollection()
-    
+    fake_rooms = FakeAsyncCollection()
+    fake_submissions = FakeAsyncCollection()
+    fake_qr_requests = FakeAsyncCollection()
+
     # Pre-populate property
     asyncio.run(fake_props.insert_one({
         "id": TEST_PROPERTY,
@@ -108,8 +157,15 @@ def mock_db(monkeypatch):
     db["guest_service_departments"] = fake_depts
     db["guest_service_items"] = fake_items
     db["properties"] = fake_props
+    db["rooms"] = fake_rooms
+    db["guest_service_submissions"] = fake_submissions
+    db["qr_requests"] = fake_qr_requests
 
     monkeypatch.setattr(routers.room_qr_requests, "raw_db", db)
+    import domains.guest.qr_catalogue_service
+    monkeypatch.setattr(domains.guest.qr_catalogue_service, "raw_db", db)
+    import domains.guest.qr_submission_service
+    monkeypatch.setattr(domains.guest.qr_submission_service, "raw_db", db)
     return db
 
 @pytest.fixture
@@ -134,32 +190,30 @@ def mock_session(monkeypatch):
         if token == "session_booking_mismatch":
             # Session exists for this booking but different property scope
             return {"property_id": TEST_PROPERTY, "id": "test_booking_123", "guest_id": "test_guest_123"}, {"id": "test_session_123", "property_id": "different_prop", "token_hash": "mocked_token_hash", "session_hash": "mocked_session_hash"}
-            
+
         if token != "valid_token":
-            raise HTTPException(status_code=401, detail="Yetkisiz: Geçersiz oturum")
-            
+             raise HTTPException(status_code=401, detail="Yetkisiz: Geçersiz oturum")
         if tenant_id != TEST_TENANT or room_id != TEST_ROOM:
             raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
-            
-        return {"property_id": TEST_PROPERTY, "id": "test_booking_123", "guest_id": "test_guest_123"}, {"id": "test_session_123", "token_hash": "mocked_token_hash", "session_hash": "mocked_session_hash"}
-        
+        return {"property_id": TEST_PROPERTY, "id": "test_booking_123", "guest_id": "test_guest_123"}, {"id": "test_session_123", "property_id": TEST_PROPERTY, "token_hash": "mocked_token_hash", "session_hash": "mocked_session_hash"}
+
     import routers.room_qr_requests
     monkeypatch.setattr(routers.room_qr_requests, "_verify_guest_session", mock_verify)
 
 
 def test_api_session_security(mock_session, mock_db):
     url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
-    
+
     # Missing session
     res = client.get(url)
     assert res.status_code == 403
     assert res.json()["detail"] == "Hizmet şu anda kullanılamıyor"
-    
+
     # Expired session
     res = client.get(url, headers={"X-Guest-Session": "expired"})
     assert res.status_code == 403
     assert res.json()["detail"] == "Hizmet şu anda kullanılamıyor"
-    
+
     # Revoked session
     res = client.get(url, headers={"X-Guest-Session": "revoked"})
     assert res.status_code == 403
@@ -169,39 +223,39 @@ def test_api_session_security(mock_session, mock_db):
     res = client.get(url, headers={"X-Guest-Session": "checkout"})
     assert res.status_code == 403
     assert res.json()["detail"] == "Hizmet şu anda kullanılamıyor"
-    
+
     # Room-moved session
     res = client.get(url, headers={"X-Guest-Session": "room_moved"})
     assert res.status_code == 403
     assert res.json()["detail"] == "Hizmet şu anda kullanılamıyor"
-    
+
     # Wrong tenant/room scope mapping
     res2 = client.get(f"/api/public/room-qr/wrong_tenant/{TEST_ROOM}/catalogue", headers={"X-Guest-Session": "valid_token"})
     assert res2.status_code == 403
-    
+
     # Scope: Missing property_id
     res_miss = client.get(url, headers={"X-Guest-Session": "missing_prop"})
     assert res_miss.status_code == 403
-    
+
     # Scope: Different property_id (testing that route ignores any request-controlled property and uses booking's property, which is other_prop. We get 200 since it defaults to standard catalogue)
     res_diff = client.get(url + "?property_id=hacked_prop", headers={"X-Guest-Session": "different_prop"})
     assert res_diff.status_code == 200
-    
+
     # Scope: Session/booking scope mismatch
     res_mis = client.get(url, headers={"X-Guest-Session": "session_booking_mismatch"})
     assert res_mis.status_code == 403
-    
+
 def assert_privacy(data):
     """Recursively inspect data to ensure forbidden keys and concrete fixture values do not exist."""
     forbidden_keys = {
-        "_id", "tenant_id", "property_id", "booking_id", "guest_id", "guest_name", 
+        "_id", "tenant_id", "property_id", "booking_id", "guest_id", "guest_name",
         "guest_session_id", "token", "token_hash", "session_hash", "checkout_at", "occupancy"
     }
     forbidden_values = {
         TEST_TENANT, TEST_PROPERTY, TEST_ROOM, "valid_token", "fake_id",
         "test_booking_123", "test_guest_123", "test_session_123", "mocked_token_hash", "mocked_session_hash"
     }
-    
+
     if isinstance(data, dict):
         for k, v in data.items():
             if k in forbidden_keys:
@@ -230,20 +284,20 @@ def test_api_modes_disabled(mock_session, mock_db):
             "tenant_id": TEST_TENANT, "property_id": TEST_PROPERTY, "mode": "disabled"
         })
     asyncio.run(setup())
-    
+
     url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
     res = client.get(url, headers={"X-Guest-Session": "valid_token"})
     assert res.status_code == 403
     assert res.json()["detail"] == "Hizmet şu anda kullanılamıyor"
     assert_privacy(res.json())
-    
+
 def test_malformed_settings_fails_closed(mock_session, mock_db):
     async def setup():
         await mock_db["guest_service_catalogue_settings"].insert_one({
             "tenant_id": TEST_TENANT, "property_id": TEST_PROPERTY, "mode": "invalid_mode_here"
         })
     asyncio.run(setup())
-    
+
     url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
     res = client.get(url, headers={"X-Guest-Session": "valid_token"})
     assert res.status_code == 403
@@ -256,7 +310,7 @@ def test_settings_with_mongo_id_accepted(mock_session, mock_db):
             "_id": "some_mongo_id", "tenant_id": TEST_TENANT, "property_id": TEST_PROPERTY, "mode": "default"
         })
     asyncio.run(setup())
-    
+
     url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
     res = client.get(url, headers={"X-Guest-Session": "valid_token"})
     assert res.status_code == 200, res.text
@@ -269,7 +323,7 @@ def test_settings_with_unknown_field_fails_closed(mock_session, mock_db):
             "unknown_extra_field": "hacker_data"
         })
     asyncio.run(setup())
-    
+
     url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
     res = client.get(url, headers={"X-Guest-Session": "valid_token"})
     assert res.status_code == 403
@@ -285,7 +339,7 @@ def test_no_settings_stored_records_returns_default(mock_session, mock_db):
             "created_at": datetime.now(), "updated_at": datetime.now()
         })
     asyncio.run(setup())
-    
+
     url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
     res = client.get(url, headers={"X-Guest-Session": "valid_token"})
     assert res.status_code == 200, res.text
@@ -305,7 +359,7 @@ def test_mode_default_stored_records_returns_default(mock_session, mock_db):
             "created_at": datetime.now(), "updated_at": datetime.now()
         })
     asyncio.run(setup())
-    
+
     url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
     res = client.get(url, headers={"X-Guest-Session": "valid_token"})
     assert res.status_code == 200, res.text
@@ -358,11 +412,11 @@ def test_api_service_filtering(mock_session, mock_db):
     res = client.get(url, headers={"X-Guest-Session": "valid_token"})
     assert res.status_code == 200, res.text
     data = res.json()
-    
+
     dept_codes = [d["department_code"] for d in data["departments"]]
     assert "enabled.dept" in dept_codes
     assert "disabled.dept" not in dept_codes
-    
+
     srv_codes = [s["service_code"] for s in data["services"]]
     assert "srv.1" in srv_codes
     assert "srv.disabled" not in srv_codes
@@ -468,7 +522,7 @@ def test_deterministic_sorting(mock_session, mock_db):
 
 def test_time_injection_and_service_hours(mock_session, mock_db, monkeypatch):
     import datetime
-    
+
     class FrozenTime:
         def __init__(self, dt):
             self.dt = dt
@@ -480,13 +534,15 @@ def test_time_injection_and_service_hours(mock_session, mock_db, monkeypatch):
     def set_time(hour, minute):
         import zoneinfo
         dt = datetime.datetime.now(datetime.UTC).replace(hour=hour, minute=minute, second=0, microsecond=0)
-        
+
         def mock_utc_now():
             return FrozenTime(dt)
-            
+
         import routers.room_qr_requests
         monkeypatch.setattr(routers.room_qr_requests, "_utc_now", mock_utc_now)
-        
+        import domains.guest.qr_catalogue_service
+        monkeypatch.setattr(domains.guest.qr_catalogue_service, "_utc_now", mock_utc_now)
+
     async def setup():
         await mock_db["guest_service_catalogue_settings"].insert_one({
             "tenant_id": TEST_TENANT, "property_id": TEST_PROPERTY, "mode": "configured"
@@ -520,7 +576,7 @@ def test_time_injection_and_service_hours(mock_session, mock_db, monkeypatch):
             }
         ])
     asyncio.run(setup())
-    
+
     url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
 
     # Test at 12:00 UTC (Normal is inside, Overnight is outside)
@@ -552,7 +608,7 @@ def test_time_injection_and_service_hours(mock_session, mock_db, monkeypatch):
     async def modify_tz(tz_val):
         props = mock_db["properties"]
         props.data[0]["timezone"] = tz_val
-    
+
     # Boundary semantics tests (half-open range)
     # normal: 10:00 to 18:00
     # overnight: 20:00 to 04:00
@@ -580,7 +636,7 @@ def test_time_injection_and_service_hours(mock_session, mock_db, monkeypatch):
     res_ov_end = client.get(url, headers={"X-Guest-Session": "valid_token"})
     assert res_ov_end.status_code == 403
     assert res_ov_end.json()["detail"] == "Hizmet şu anda kullanılamıyor"
-    
+
     # Missing / Unknown Timezone -> fails closed
     asyncio.run(modify_tz("Invalid/Timezone"))
     set_time(12, 0)
@@ -592,7 +648,7 @@ def test_time_injection_and_service_hours(mock_session, mock_db, monkeypatch):
         props = mock_db["properties"]
         if "timezone" in props.data[0]:
             del props.data[0]["timezone"]
-    
+
     asyncio.run(remove_tz())
     set_time(12, 0) # 12:00 UTC
     res_absent = client.get(url, headers={"X-Guest-Session": "valid_token"})
@@ -639,7 +695,7 @@ def test_schema_validations():
             options=[ChoiceOption(code="opt1", labels={"en": "One"})],
             max_selections=2
         ) # max > len(options)
-        
+
     # Date/Time/DateTime Constraints
     with pytest.raises(ValidationError):
         DateConstraints(min_days_ahead=-1)
@@ -649,7 +705,7 @@ def test_schema_validations():
         TimeConstraints(interval_minutes=17) # 60 % 17 != 0
     with pytest.raises(ValidationError):
         DateTimeConstraints(min_days_ahead=5, max_days_ahead=2, interval_minutes=15) # min > max
-        
+
     # Multilingual validation
     with pytest.raises(ValidationError):
         GuestServiceDepartment(
@@ -661,7 +717,7 @@ def test_schema_validations():
             tenant_id="t", property_id="p", department_code="d",
             labels={"en": "   "}, icon="icon", created_at=datetime.now(), updated_at=datetime.now()
         )
-        
+
     # Settings Validation
     with pytest.raises(ValidationError):
         GuestServiceCatalogueSettings(tenant_id="t", property_id="p", mode="unknown_mode")
@@ -677,31 +733,76 @@ def test_ensure_indexes_exact(mock_db):
         import routers.room_qr_requests
         routers.room_qr_requests._INDEXES_READY = False
         await _ensure_indexes()
-        
+
         # Verify settings unique lookup
         settings_idx = await mock_db["guest_service_catalogue_settings"].index_information()
         assert "gsc_settings_lookup" in settings_idx
         assert settings_idx["gsc_settings_lookup"]["unique"] == True
         assert settings_idx["gsc_settings_lookup"]["key"] == [("tenant_id", 1), ("property_id", 1)]
-        
+
         # Verify department indexes
         dept_idx = await mock_db["guest_service_departments"].index_information()
         assert "gsc_dept_unique" in dept_idx
         assert dept_idx["gsc_dept_unique"]["unique"] == True
         assert dept_idx["gsc_dept_unique"]["key"] == [("tenant_id", 1), ("property_id", 1), ("department_code", 1)]
-        
+
         assert "gsc_dept_order" in dept_idx
         assert dept_idx["gsc_dept_order"].get("unique") is None # false
         assert dept_idx["gsc_dept_order"]["key"] == [("tenant_id", 1), ("property_id", 1), ("enabled", 1), ("display_order", 1)]
-        
+
         # Verify items indexes
         items_idx = await mock_db["guest_service_items"].index_information()
         assert "gsc_item_unique" in items_idx
         assert items_idx["gsc_item_unique"]["unique"] == True
         assert items_idx["gsc_item_unique"]["key"] == [("tenant_id", 1), ("property_id", 1), ("service_code", 1)]
-        
+
         assert "gsc_item_order" in items_idx
         assert items_idx["gsc_item_order"].get("unique") is None
         assert items_idx["gsc_item_order"]["key"] == [("tenant_id", 1), ("property_id", 1), ("department_code", 1), ("enabled", 1), ("display_order", 1)]
-        
+
     asyncio.run(_run())
+
+
+def test_get_and_post_catalogue_shared_dependency(mock_session, mock_db):
+    # This regression test proves GET and POST use the same shared DB/resolver dependency.
+    # It must fail if GET silently falls back to defaults while configured records exist in the injected db.
+    async def setup():
+        await mock_db["rooms"].insert_one({"id": TEST_ROOM, "tenant_id": TEST_TENANT, "property_id": TEST_PROPERTY})
+        await mock_db["guest_service_catalogue_settings"].insert_one({
+            "tenant_id": TEST_TENANT, "property_id": TEST_PROPERTY, "mode": "configured"
+        })
+        await mock_db["guest_service_departments"].insert_one({
+            "tenant_id": TEST_TENANT, "property_id": TEST_PROPERTY, "department_code": "shared.dept",
+            "labels": {"en": "Shared"}, "icon": "check", "enabled": True, "display_order": 1,
+            "created_at": datetime.now(), "updated_at": datetime.now()
+        })
+        await mock_db["guest_service_items"].insert_one({
+            "tenant_id": TEST_TENANT, "property_id": TEST_PROPERTY, "department_code": "shared.dept",
+            "service_code": "shared.srv", "labels": {"en": "Shared Service"}, "icon": "s1", "enabled": True,
+            "input_type": "one_tap", "input_config": {},
+            "display_order": 1, "created_at": datetime.now(), "updated_at": datetime.now()
+        })
+
+    import asyncio
+    asyncio.run(setup())
+
+    url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/catalogue"
+    res_get = client.get(url, headers={"X-Guest-Session": "valid_token"})
+    assert res_get.status_code == 200
+    data = res_get.json()
+    assert len(data["departments"]) == 1
+    assert data["departments"][0]["department_code"] == "shared.dept"
+
+    post_url = f"/api/public/room-qr/{TEST_TENANT}/{TEST_ROOM}/submit"
+    payload = {
+        "language": "en",
+        "idempotency_key": "test_idem_123",
+        "items": [
+            {
+                "service_code": "shared.srv",
+                "value": {}
+            }
+        ]
+    }
+    res_post = client.post(post_url, headers={"X-Guest-Session": "valid_token"}, json=payload)
+    assert res_post.status_code == 200, res_post.text

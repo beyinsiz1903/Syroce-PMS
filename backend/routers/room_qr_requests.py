@@ -386,6 +386,8 @@ async def _verify_guest_session(tenant_id: str, room_id: str, session_token: str
 
     # Verify room is still active to resolve property_id safely
     room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
+    print("POST ROOM:", room)
+    print("POST PROPS:", booking.get("property_id"), guest_session.get("property_id"))
     if not room or room.get("is_active") is False:
         raise HTTPException(status_code=410, detail="Oda kullanımda değil")
 
@@ -444,6 +446,8 @@ async def public_create_guest_session(
         raise HTTPException(status_code=403, detail="Geçersiz QR token")
 
     room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
+    print("POST ROOM:", room)
+    print("POST PROPS:", booking.get("property_id"), guest_session.get("property_id"))
     if not room or room.get("is_active") is False:
         raise HTTPException(status_code=410, detail="Oda kullanımda değil")
 
@@ -541,6 +545,8 @@ async def public_room_info(tenant_id: str, room_id: str, t: str = Query(...)):
         raise HTTPException(status_code=403, detail="Geçersiz QR token")
 
     room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
+    print("POST ROOM:", room)
+    print("POST PROPS:", booking.get("property_id"), guest_session.get("property_id"))
     if not room or room.get("is_active") is False:
         raise HTTPException(status_code=410, detail="Oda kullanımda değil")
 
@@ -582,6 +588,8 @@ async def public_submit_request(
         raise HTTPException(status_code=429, detail="Çok fazla talep — lütfen sonra deneyin")
     booking, guest_session = await _verify_guest_session(tenant_id, room_id, x_guest_session)
     room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
+    print("POST ROOM:", room)
+    print("POST PROPS:", booking.get("property_id"), guest_session.get("property_id"))
     if not room or room.get("is_active") is False:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
@@ -1044,6 +1052,8 @@ async def public_post_thread_message(
         raise HTTPException(status_code=422, detail="Mesaj boş olamaz")
 
     room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
+    print("POST ROOM:", room)
+    print("POST PROPS:", booking.get("property_id"), guest_session.get("property_id"))
     if not room:
         raise HTTPException(status_code=404, detail="Oda bulunamadı")
 
@@ -1284,6 +1294,8 @@ async def room_qr_code(
     """Oda için QR kod (URL + PNG base64)."""
     tenant_id = _tenant_of(current_user)
     room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
+    print("POST ROOM:", room)
+    print("POST PROPS:", booking.get("property_id"), guest_session.get("property_id"))
     if not room:
         raise HTTPException(status_code=404, detail="Oda bulunamadı")
 
