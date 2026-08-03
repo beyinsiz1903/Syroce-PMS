@@ -683,6 +683,7 @@ async def public_submit_request(
         await _gr.add_guest_message(
             tenant_id=tenant_id,
             room_id=room_id,
+            property_id=booking["property_id"],
             room_number=doc.get("room_number"),
             sender_type="guest",
             body=doc["description"],
@@ -817,6 +818,7 @@ async def public_post_thread_message(
     doc = await _gr.add_guest_message(
         tenant_id=tenant_id,
         room_id=room_id,
+        property_id=booking["property_id"],
         room_number=room.get("room_number"),
         sender_type="guest",
         body=text,
@@ -988,8 +990,17 @@ async def update_request(
     if payload.note:
         try:
             from domains.guest.messaging import guest_requests as _gr
+            property_id = doc.get("property_id")
+            if not property_id:
+                room = await raw_db["rooms"].find_one({"id": doc["room_id"], "tenant_id": tenant_id})
+                property_id = room.get("property_id") if room else None
+                
+            if not property_id:
+                raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+                
             await _gr.add_guest_message(
                 tenant_id=tenant_id,
+                property_id=property_id,
                 room_id=doc["room_id"],
                 room_number=doc.get("room_number"),
                 sender_type="staff",
