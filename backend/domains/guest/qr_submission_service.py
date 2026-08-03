@@ -22,10 +22,11 @@ def generate_public_reference(prefix="REQ"):
     return f"{prefix}-{suffix}"
 
 async def handle_structured_submission(tenant_id: str, property_id: str, room_id: str, booking_id: str, session_id: str, room_number: str, payload: StructuredRequestSubmit, guest_name: str | None, guest_phone: str | None):
-    service_codes = [it.service_code for it in payload.items]
-    if len(service_codes) != len(set(service_codes)):
-        # Provide privacy-safe message
-        raise HTTPException(status_code=400, detail="Mükerrer hizmet kodu tespit edildi")
+    seen_codes = set()
+    for it in payload.items:
+        if it.service_code in seen_codes:
+            raise HTTPException(status_code=422, detail="Geçersiz girdi")
+        seen_codes.add(it.service_code)
 
     fingerprint = compute_payload_fingerprint(payload.language, payload.items)
 
@@ -42,7 +43,9 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
             raise HTTPException(status_code=409, detail="Talep işleme alınamadı")
         prepared_items = ledger["prepared_items"]
         submission_group_id = ledger["submission_group_id"]
-        submission_reference = ledger.get("submission_reference", generate_public_reference("GSR"))
+        submission_reference = ledger.get("submission_reference")
+        if not submission_reference:
+            raise HTTPException(status_code=503, detail="Sistem hatası")
     else:
         # 2. Resolve & Validate against catalogue
         mode = await resolve_catalogue_mode(tenant_id, property_id)
@@ -211,7 +214,9 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
 
             prepared_items = res["prepared_items"]
             submission_group_id = res["submission_group_id"]
-            submission_reference = res["submission_reference"]
+            submission_reference = res.get("submission_reference")
+            if not submission_reference:
+                raise HTTPException(status_code=503, detail="Sistem hatası")
         except DuplicateKeyError:
             for _ in range(5):
                 res = await raw_db["guest_service_submissions"].find_one({
@@ -231,7 +236,9 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
 
             prepared_items = res["prepared_items"]
             submission_group_id = res["submission_group_id"]
-            submission_reference = res["submission_reference"]
+            submission_reference = res.get("submission_reference")
+            if not submission_reference:
+                raise HTTPException(status_code=503, detail="Sistem hatası")
 
     upd_res = await raw_db["guest_service_submissions"].update_one(
         {
@@ -308,13 +315,20 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
 
     # 5. Convergence check
     expected_set = {it["service_code"] for it in prepared_items}
+    expected_pairs = {(it["service_code"], it.get("request_reference")) for it in prepared_items}
     actual_docs = await raw_db["qr_requests"].find({
         "tenant_id": tenant_id,
         "submission_group_id": submission_group_id
     }).to_list(None)
     actual_set = {d["service_code"] for d in actual_docs}
+    actual_pairs = {(d["service_code"], d.get("request_reference")) for d in actual_docs}
 
-    if expected_set == actual_set:
+    if (
+        expected_set == actual_set and
+        len(actual_docs) == len(prepared_items) and
+        len(actual_docs) == len(actual_set) and
+        expected_pairs == actual_pairs
+    ):
         upd_res = await raw_db["guest_service_submissions"].update_one(
             {
                 "tenant_id": tenant_id,

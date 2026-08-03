@@ -525,3 +525,152 @@ def test_conflicting_fingerprint_race(mock_raw_db, mock_fingerprint):
             assert e.status_code == 409
 
     asyncio.run(run())
+
+
+def test_duplicate_service_error():
+    payload = StructuredRequestSubmit.model_validate({
+        "idempotency_key": "test",
+        "language": "en",
+        "items": [
+            {"service_code": "TOWEL", "value": None, "note": None},
+            {"service_code": "TOWEL", "value": None, "note": None}
+        ]
+    })
+
+    async def run():
+        try:
+            await handle_structured_submission(
+                tenant_id="T", property_id="P", room_id="R", booking_id="B",
+                session_id="S", room_number="1", payload=payload,
+                guest_name="Test", guest_phone="123"
+            )
+            assert False, "Should have raised exception"
+        except HTTPException as e:
+            assert e.status_code == 422
+            assert e.detail == "Geçersiz girdi"
+
+    asyncio.run(run())
+
+@patch("domains.guest.qr_submission_service.compute_payload_fingerprint", return_value="fprint")
+@patch("domains.guest.qr_submission_service.raw_db")
+def test_missing_submission_reference_503(mock_raw_db, mock_fingerprint):
+    db = MockDB()
+    mock_raw_db.__getitem__.side_effect = db.__getitem__
+
+    mock_coll = db["guest_service_submissions"]
+    mock_coll.find_one = AsyncMock(return_value={
+        "_id": "test",
+        "payload_fingerprint": "fprint",
+        "prepared_items": [{"service_code": "a"}],
+        "submission_group_id": "G1"
+    })
+
+    payload = MagicMock()
+    payload.idempotency_key = "idem"
+    payload.items = []
+    payload.language = "en"
+
+    async def run():
+        try:
+            await handle_structured_submission("T", "P", "R", "B", "S", "1", payload, "Test", "123")
+            assert False, "Should have raised exception"
+        except HTTPException as e:
+            assert e.status_code == 503
+            assert e.detail == "Sistem hatası"
+
+    asyncio.run(run())
+
+@patch("domains.guest.qr_submission_service.compute_payload_fingerprint", return_value="fprint")
+@patch("domains.guest.qr_submission_service.raw_db")
+def test_convergence_actual_contains_duplicates(mock_raw_db, mock_fingerprint):
+    db = MockDB()
+    mock_raw_db.__getitem__.side_effect = db.__getitem__
+
+    mock_coll = db["guest_service_submissions"]
+    mock_coll.find_one = AsyncMock(side_effect=[
+        {
+            "_id": "test",
+            "payload_fingerprint": "fprint",
+            "prepared_items": [{"service_code": "a"}, {"service_code": "b"}],
+            "submission_group_id": "G1",
+            "submission_reference": "R1",
+            "status": "pending"
+        },
+        None
+    ])
+
+    mock_upd = MagicMock()
+    mock_upd.matched_count = 1
+    mock_coll.update_one = AsyncMock(return_value=mock_upd)
+
+    mock_qr = db["qr_requests"]
+    mock_qr.insert_one = AsyncMock()
+    mock_qr.find = MagicMock()
+    mock_qr.find.return_value.to_list = AsyncMock(return_value=[
+        {"service_code": "a"}, {"service_code": "a"}, {"service_code": "b"}
+    ])
+
+    with patch("domains.guest.qr_submission_service.fetch_catalogue_data", side_effect=Exception("Should not resolve catalogue!")):
+        payload = MagicMock()
+        payload.idempotency_key = "idem"
+        payload.items = []
+        payload.language = "en"
+
+        async def run():
+            try:
+                await handle_structured_submission("T", "P", "R", "B", "S", "1", payload, "Test", "123")
+                assert False, "Should raise 503 due to convergence failure"
+            except HTTPException as e:
+                assert e.status_code == 503
+                calls = mock_coll.update_one.call_args_list
+                assert any("$set" in call[0][1] and call[0][1]["$set"].get("last_error_code") == "CONVERGENCE_MISS" for call in calls)
+
+        asyncio.run(run())
+
+
+@patch("domains.guest.qr_submission_service.compute_payload_fingerprint", return_value="fprint")
+@patch("domains.guest.qr_submission_service.raw_db")
+def test_convergence_actual_contains_different(mock_raw_db, mock_fingerprint):
+    db = MockDB()
+    mock_raw_db.__getitem__.side_effect = db.__getitem__
+
+    mock_coll = db["guest_service_submissions"]
+    mock_coll.find_one = AsyncMock(side_effect=[
+        {
+            "_id": "test",
+            "payload_fingerprint": "fprint",
+            "prepared_items": [{"service_code": "a"}, {"service_code": "b"}],
+            "submission_group_id": "G1",
+            "submission_reference": "R1",
+            "status": "pending"
+        },
+        None
+    ])
+
+    mock_upd = MagicMock()
+    mock_upd.matched_count = 1
+    mock_coll.update_one = AsyncMock(return_value=mock_upd)
+
+    mock_qr = db["qr_requests"]
+    mock_qr.insert_one = AsyncMock()
+    mock_qr.find = MagicMock()
+    mock_qr.find.return_value.to_list = AsyncMock(return_value=[
+        {"service_code": "a"}, {"service_code": "c"}
+    ])
+
+    with patch("domains.guest.qr_submission_service.fetch_catalogue_data", side_effect=Exception("Should not resolve catalogue!")):
+        payload = MagicMock()
+        payload.idempotency_key = "idem"
+        payload.items = []
+        payload.language = "en"
+
+        async def run():
+            try:
+                await handle_structured_submission("T", "P", "R", "B", "S", "1", payload, "Test", "123")
+                assert False, "Should raise 503 due to convergence failure"
+            except HTTPException as e:
+                assert e.status_code == 503
+                calls = mock_coll.update_one.call_args_list
+                assert any("$set" in call[0][1] and call[0][1]["$set"].get("last_error_code") == "CONVERGENCE_MISS" for call in calls)
+
+        asyncio.run(run())
