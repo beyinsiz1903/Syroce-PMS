@@ -26,7 +26,7 @@ import unicodedata
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Header
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from cache_manager import cache as _cache
@@ -158,13 +158,13 @@ async def _ensure_indexes() -> None:
         await raw_db[COLL].create_index([("tenant_id", 1), ("status", 1), ("created_at", -1)], name="rqr_tenant_status_created")
         await raw_db[COLL].create_index([("tenant_id", 1), ("department", 1), ("status", 1)], name="rqr_tenant_dept_status")
         await raw_db[COLL].create_index([("tenant_id", 1), ("room_id", 1)], name="rqr_tenant_room")
-        
+
         # Guest sessions indexes
         await raw_db["room_guest_sessions"].create_index("token_hash", unique=True, name="rgs_token_hash")
         await raw_db["room_guest_sessions"].create_index("expires_at", expireAfterSeconds=0, name="rgs_expires_at")
         await raw_db["room_guest_sessions"].create_index([("tenant_id", 1), ("property_id", 1), ("room_id", 1), ("booking_id", 1)], name="rgs_lookup")
         await raw_db["room_guest_sessions"].create_index("revoked_at", name="rgs_revoked_at")
-        
+
         _INDEXES_READY = True
     except Exception as e:
         # Atlas may reject new collections (cluster limit reached); we skip
@@ -369,25 +369,25 @@ async def _find_active_booking(tenant_id: str, room_id: str) -> dict | None:
 async def _verify_guest_session(tenant_id: str, room_id: str, session_token: str | None) -> tuple[dict, dict]:
     if not session_token:
         raise HTTPException(status_code=401, detail="Yetkisiz: Misafir oturumu eksik")
-    
+
     token_hash = hashlib.sha256(session_token.encode()).hexdigest()
-    
+
     # Verify room is still active to resolve property_id safely
     room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
     if not room or room.get("is_active") is False:
         raise HTTPException(status_code=410, detail="Oda kullanımda değil")
-        
+
     # Verify booking is still active
     booking = await _find_active_booking(tenant_id, room_id)
     if not booking:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
-        
+
     room_prop = room.get("property_id")
     booking_prop = booking.get("property_id")
     if not room_prop or not booking_prop or room_prop != booking_prop:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
     property_id = room_prop
-    
+
     # Check session exists with all strict mandatory fields
     session = await raw_db["room_guest_sessions"].find_one({
         "tenant_id": tenant_id,
@@ -396,14 +396,14 @@ async def _verify_guest_session(tenant_id: str, room_id: str, session_token: str
         "booking_id": booking["id"],
         "token_hash": token_hash,
     })
-    
+
     if not session:
         raise HTTPException(status_code=401, detail="Yetkisiz: Geçersiz oturum")
-        
+
     # Require mandatory fields exist
     if "expires_at" not in session or not session["expires_at"]:
         raise HTTPException(status_code=401, detail="Yetkisiz: Geçersiz oturum")
-        
+
     now = datetime.now(UTC)
     if session["expires_at"].tzinfo is None:
         session["expires_at"] = session["expires_at"].replace(tzinfo=UTC)
@@ -412,13 +412,13 @@ async def _verify_guest_session(tenant_id: str, room_id: str, session_token: str
         raise HTTPException(status_code=401, detail="Yetkisiz: Oturum süresi dolmuş")
     if session.get("revoked_at") is not None:
         raise HTTPException(status_code=401, detail="Yetkisiz: Oturum iptal edilmiş")
-        
+
     return booking, session
 
 @router.post("/api/public/room-qr/{tenant_id}/{room_id}/session")
 async def public_create_guest_session(
-    tenant_id: str, 
-    room_id: str, 
+    tenant_id: str,
+    room_id: str,
     request: Request,
     t: str = Query(...)
 ):
@@ -426,30 +426,30 @@ async def public_create_guest_session(
     client_ip = _client_ip(request)
     if not _rl_check(f"{tenant_id}:{room_id}:{client_ip}:session"):
         raise HTTPException(status_code=429, detail="Çok fazla deneme — lütfen sonra deneyin")
-        
+
     salt = await _get_qr_salt(tenant_id)
     if not _verify_token(tenant_id, room_id, t, salt):
         raise HTTPException(status_code=403, detail="Geçersiz QR token")
-        
+
     room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
     if not room or room.get("is_active") is False:
         raise HTTPException(status_code=410, detail="Oda kullanımda değil")
-        
+
     booking = await _find_active_booking(tenant_id, room_id)
     if not booking:
         # Do not leak occupancy. Just return generic 403.
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
-        
+
     room_prop = room.get("property_id")
     booking_prop = booking.get("property_id")
     if not room_prop or not booking_prop or room_prop != booking_prop:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
     property_id = room_prop
-        
+
     raw_token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
     now = datetime.now(UTC)
-    
+
     expires_at = now + timedelta(hours=24)
     departure_date = booking.get("departure_date") or booking.get("check_out")
     if departure_date:
@@ -460,13 +460,13 @@ async def public_create_guest_session(
                 import re
                 if re.match(r"^\d{4}-\d{2}-\d{2}$", departure_date_str):
                     is_date_only = True
-                
+
                 if is_date_only:
-                    from datetime import date
                     import zoneinfo
+                    from datetime import date
                     y, m, d = map(int, departure_date_str.split("-"))
                     dep_date = date(y, m, d)
-                    
+
                     prop = await raw_db["properties"].find_one({"id": property_id, "tenant_id": tenant_id}) or {}
                     checkout_time_str = prop.get("checkout_time", "12:00")
                     prop_tz_str = prop.get("timezone", "UTC")
@@ -474,12 +474,12 @@ async def public_create_guest_session(
                         tz = zoneinfo.ZoneInfo(prop_tz_str)
                     except Exception:
                         tz = UTC
-                        
+
                     try:
                         hh, mm = map(int, checkout_time_str.split(":"))
                     except Exception:
                         hh, mm = 12, 0
-                        
+
                     dep = datetime(dep_date.year, dep_date.month, dep_date.day, hh, mm, 0, tzinfo=tz).astimezone(UTC)
                 else:
                     dep = datetime.fromisoformat(departure_date_str.replace("Z", "+00:00"))
@@ -491,13 +491,13 @@ async def public_create_guest_session(
                     dep = dep.replace(tzinfo=UTC)
 
             expires_at = min(expires_at, dep)
-        except Exception as e:
+        except Exception:
             # If checkout/departure exists but cannot be safely parsed, fail closed
             raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
     else:
         # Policy: If no checkout datetime exists on the active booking, safely fallback to now + 24h
         pass
-            
+
     doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
@@ -510,7 +510,7 @@ async def public_create_guest_session(
         "revoked_at": None
     }
     await raw_db["room_guest_sessions"].insert_one(doc)
-    
+
     return {
         "session_token": raw_token,
         "expires_at": expires_at.isoformat()
@@ -775,9 +775,9 @@ async def public_get_thread(
 
     # Strict property and booking scoped query for guest isolation
     messages = await _gr.public_get_guest_thread(
-        tenant_id=tenant_id, 
-        property_id=booking["property_id"], 
-        room_id=room_id, 
+        tenant_id=tenant_id,
+        property_id=booking["property_id"],
+        room_id=room_id,
         booking_id=booking["id"]
     )
     return {"messages": _guest_facing_messages(messages)}
@@ -994,10 +994,10 @@ async def update_request(
             if not property_id:
                 room = await raw_db["rooms"].find_one({"id": doc["room_id"], "tenant_id": tenant_id})
                 property_id = room.get("property_id") if room else None
-                
+
             if not property_id:
                 raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
-                
+
             await _gr.add_guest_message(
                 tenant_id=tenant_id,
                 property_id=property_id,

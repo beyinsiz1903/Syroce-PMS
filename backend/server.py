@@ -313,7 +313,7 @@ from fastapi.responses import JSONResponse
 try:
     from domains.channel_manager.providers.exely.errors import ExelyError
 
-    
+
 
     @app.exception_handler(ExelyError)
     async def exely_error_handler(request: Request, exc: ExelyError):

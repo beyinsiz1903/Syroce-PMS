@@ -1,12 +1,13 @@
-import pytest
-import uuid
 import hashlib
 import logging
-from unittest.mock import MagicMock, AsyncMock, patch
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.testclient import TestClient
 from fastapi.responses import JSONResponse
+from fastapi.testclient import TestClient
+
 from routers.room_qr_requests import router
 
 # 3. Controlled JSON errors: application exception handler
@@ -45,15 +46,15 @@ def mock_db():
         if name not in mock_collections:
             mock_collections[name] = MagicMock()
         return mock_collections[name]
-        
+
     with patch("routers.room_qr_requests.raw_db") as db, \
          patch("domains.guest.messaging.guest_requests.raw_db") as gr_db, \
          patch("domains.guest.messaging.guest_requests_router.raw_db") as router_db:
-         
+
         db.__getitem__.side_effect = get_collection
         gr_db.__getitem__.side_effect = get_collection
         router_db.__getitem__.side_effect = get_collection
-        
+
         async def mock_rooms_find_one(query, *args, **kwargs):
             if query.get("id") == "r_missing_prop":
                 return {"id": "r_missing_prop", "is_active": True, "room_number": "999"}
@@ -62,12 +63,12 @@ def mock_db():
             if query.get("id") == "r_mismatch_prop":
                 return {"id": "r_mismatch_prop", "is_active": True, "property_id": "p_wrong"}
             return {"id": "r1", "is_active": True, "room_number": "101", "property_id": "p1"}
-            
+
         async def mock_bookings_find_one(query, *args, **kwargs):
             status = query.get("status", {}).get("$in", [])
             if "checked_in" not in status:
                 return None
-            
+
             room_id = query.get("room_id")
             if room_id == "r_empty":
                 return None
@@ -75,14 +76,14 @@ def mock_db():
                 return {"id": "b_mismatch", "property_id": "p1"}
             if room_id == "r_booking_missing_prop":
                 return {"id": "b_missing", "property_id": None}
-                
+
             return {
                 "id": "b1",
                 "guest_name": "Test Guest",
                 "property_id": "p1",
                 "check_out": "2026-08-04"
             }
-            
+
         async def mock_sessions_find_one(query, *args, **kwargs):
             token_hash = query.get("token_hash")
             booking_id = query.get("booking_id")
@@ -147,7 +148,7 @@ def mock_db():
             if token_hash == hashlib.sha256(b"cross_room").hexdigest():
                 if query.get("room_id") == "r1": return None
             return None
-            
+
         async def mock_properties_find_one(*args, **kwargs):
             return {"id": "p1", "tenant_id": "t1", "checkout_time": "11:30", "timezone": "Europe/Istanbul"}
 
@@ -185,10 +186,10 @@ def mock_db():
         db["properties"].find_one = AsyncMock(side_effect=mock_properties_find_one)
         db["room_qr_requests"].insert_one = AsyncMock()
         gr_db["guest_room_messages"].insert_one = AsyncMock()
-        
+
         # Patch the GR_COLL find for the new thread isolated queries
         gr_db["guest_room_messages"].find = MagicMock(side_effect=mock_messages_find)
-        
+
         yield db
 
 @pytest.fixture
@@ -221,7 +222,7 @@ def test_inactive_room(client, mock_db, mock_dependencies):
 # === Auth Failure Cases ===
 def test_valid_session_submission(client, mock_db, mock_dependencies):
     # No need to mock add_guest_message because it just errors if GR_COLL insert is missing, we can mock it
-    with patch("domains.guest.messaging.guest_requests.add_guest_message", new_callable=AsyncMock) as m_add:
+    with patch("domains.guest.messaging.guest_requests.add_guest_message", new_callable=AsyncMock) as _:
         r = client.post("/api/public/room-qr/t1/r1/submit", json={"category": "towels", "description": "Need towels"}, headers={"X-Guest-Session": "secret"})
         assert r.status_code == 200
 
@@ -289,7 +290,7 @@ def test_room_property_missing(client, mock_db, mock_dependencies):
 def test_booking_property_missing(client, mock_db, mock_dependencies):
     r = client.post("/api/public/room-qr/t1/r_booking_missing_prop/session?t=valid")
     assert r.status_code == 403
-    
+
 def test_room_booking_property_mismatch(client, mock_db, mock_dependencies):
     r = client.post("/api/public/room-qr/t1/r_mismatch_prop/session?t=valid")
     assert r.status_code == 403
@@ -300,7 +301,7 @@ def test_guest_and_staff_reply_visible(client, mock_db, mock_dependencies):
     r = client.get("/api/public/room-qr/t1/r1/thread", headers={"X-Guest-Session": "secret"})
     assert r.status_code == 200
     msgs = r.json()["messages"]
-    
+
     # We should see exactly 2 messages: "msg_b1_guest" and "msg_b1_staff"
     assert len(msgs) == 2
     ids = [m["id"] for m in msgs]
@@ -330,7 +331,6 @@ def test_later_booking_cannot_see_previous_thread(client, mock_db, mock_dependen
     assert r.status_code == 401
 
 # === Expiry Parsing & Logic Tests ===
-import zoneinfo
 
 @patch("routers.room_qr_requests.datetime")
 def test_expires_at_equals_actual_checkout_when_sooner_than_24h(m_dt, client, mock_db, mock_dependencies):
@@ -364,7 +364,7 @@ def test_configured_checkout_time_applied_to_date_only_istanbul(m_dt, client, mo
     m_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
     async def mock_b(*args, **kwargs): return {"id": "b1", "property_id": "p1", "check_out": "2026-08-03"}
     mock_db["bookings"].find_one.side_effect = mock_b
-    
+
     client.post("/api/public/room-qr/t1/r1/session?t=valid")
     doc = mock_db["room_guest_sessions"].insert_one.call_args[0][0]
     assert doc["expires_at"] == datetime(2026, 8, 3, 8, 30, 0, tzinfo=UTC)
@@ -391,7 +391,7 @@ def test_negative_offset_timezone_does_not_shift_calendar_date(m_dt, client, moc
     mock_db["bookings"].find_one.side_effect = mock_b
     async def mock_prop_negative(*args, **kwargs): return {"id": "p1", "tenant_id": "t1", "checkout_time": "10:00", "timezone": "America/New_York"}
     mock_db["properties"].find_one = AsyncMock(side_effect=mock_prop_negative)
-    
+
     client.post("/api/public/room-qr/t1/r1/session?t=valid")
     doc = mock_db["room_guest_sessions"].insert_one.call_args[0][0]
     assert doc["expires_at"] == datetime(2026, 8, 3, 14, 0, 0, tzinfo=UTC)
@@ -407,94 +407,97 @@ def test_logging_does_not_leak_secrets(client, mock_db, mock_dependencies, caplo
     caplog.set_level(logging.DEBUG)
     with patch("routers.room_qr_requests.raw_db") as db:
         db["room_guest_sessions"].find_one.side_effect = Exception("DB error occurred")
-        
+
         r = client.post("/api/public/room-qr/t1/r1/submit", json={"category": "towels", "description": "Need towels"}, headers={"X-Guest-Session": "super_secret_token_value_xyz"})
-        
+
         assert r.status_code == 500
         assert r.headers["content-type"] == "application/json"
         assert r.json()["detail"] == "Internal Server Error"
-        
+
         assert "super_secret_token_value_xyz" not in caplog.text
         assert hashlib.sha256(b"super_secret_token_value_xyz").hexdigest() not in caplog.text
 
 # === Staff Reply Compatibility Test ===
+
 from domains.guest.messaging.guest_requests_router import router as staff_router
-from fastapi import Depends
+
 app.include_router(staff_router)
 
 def test_integrated_guest_and_staff_reply(client, mock_db, mock_dependencies):
     # 1. Guest creates a message
     r = client.post("/api/public/room-qr/t1/r1/submit", json={"category": "towels", "description": "Need towels"}, headers={"X-Guest-Session": "secret"})
     assert r.status_code == 200
-    
+
     # Check that guest message insertion contains property_id
     args = mock_db["guest_room_messages"].insert_one.call_args[0][0]
     assert args["property_id"] == "p1"
     assert args["sender_type"] == "guest"
-    
+
     # 2. Mock auth dependency for staff endpoint
     from unittest.mock import patch
-    
+
     class FakeUser:
         tenant_id = "t1"
         id = "u1"
         name = "Admin"
-        
+
     # We must patch get_current_user in guest_requests_router
     with patch("domains.guest.messaging.guest_requests_router.get_current_user", return_value=FakeUser),          patch("domains.guest.messaging.guest_requests_router.require_auth", return_value=FakeUser, create=True):
         # We override dependency globally for this app
         app.dependency_overrides[staff_router.dependencies[0].dependency if staff_router.dependencies else lambda: None] = lambda: FakeUser()
-        
+
         # Staff replies
         async def mock_last_guest(*args, **kwargs):
             return {"booking_id": "b1", "room_number": "101", "property_id": "p1"}
         mock_db["guest_room_messages"].find_one = AsyncMock(side_effect=mock_last_guest)
-        
+
         # In reality, FastAPI dependency_overrides needs exact function matching. Let's just bypass HTTP for staff if it's too complex,
         # OR test the domain logic directly. Actually, the user asked for an endpoint/domain test.
-        from domains.guest.messaging.guest_requests_router import reply_guest_request_thread
         import asyncio
+
+        from domains.guest.messaging.guest_requests_router import reply_guest_request_thread
         class FakeBody:
             message = "Hello Guest"
-            
+
         asyncio.run(reply_guest_request_thread(
             room_id="r1",
             body=FakeBody(),
             current_user=FakeUser()
         ))
-        
+
         staff_args = mock_db["guest_room_messages"].insert_one.call_args[0][0]
         assert staff_args["property_id"] == "p1"
         assert staff_args["sender_type"] == "staff"
 
 def test_staff_reply_missing_property_fail_closed(client, mock_db, mock_dependencies):
-    from domains.guest.messaging.guest_requests_router import reply_guest_request_thread
     import asyncio
-    
+
+    from domains.guest.messaging.guest_requests_router import reply_guest_request_thread
+
     class FakeUser:
         tenant_id = "t1"
         id = "u1"
         name = "Admin"
-        
+
     class FakeBody:
         message = "Hello Guest"
-        
+
     # Missing property in both room and last message
     async def mock_last_guest(*args, **kwargs):
         return {"booking_id": "b1", "room_number": "101", "property_id": None}
     mock_db["guest_room_messages"].find_one = AsyncMock(side_effect=mock_last_guest)
-    
+
     async def mock_room_missing(*args, **kwargs):
         return {"id": "r1", "property_id": None}
     mock_db["rooms"].find_one = AsyncMock(side_effect=mock_room_missing)
-    
+
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(reply_guest_request_thread(
             room_id="r1",
             body=FakeBody(),
             current_user=FakeUser()
         ))
-        
+
     assert excinfo.value.status_code == 403
     assert excinfo.value.detail == "Hizmet şu anda kullanılamıyor"
 

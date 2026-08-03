@@ -372,7 +372,7 @@ async def public_get_guest_thread(
     }
     if since is not None:
         query["created_at"] = {"$gte": since}
-        
+
     msgs = []
     cursor = raw_db[GR_COLL].find(query).sort("created_at", 1).limit(int(limit))
     async for msg in cursor:
