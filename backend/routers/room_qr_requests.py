@@ -201,49 +201,9 @@ async def _ensure_indexes() -> None:
 
 
 
-# Kategori → Departman eşlemesi (DepartmentType enum değerleriyle uyumlu)
-CATEGORY_CATALOG = [
-    {"id": "cleaning", "department": "rooms", "icon": "sparkles", "default_priority": "normal"},
-    {"id": "towels", "department": "rooms", "icon": "shirt", "default_priority": "normal"},
-    {"id": "amenities", "department": "rooms", "icon": "package", "default_priority": "low"},
-    {"id": "maintenance", "department": "technical", "icon": "wrench", "default_priority": "normal"},
-    {"id": "wifi", "department": "technical", "icon": "wifi", "default_priority": "normal"},
-    {"id": "tv", "department": "technical", "icon": "tv", "default_priority": "low"},
-    {"id": "ac_heating", "department": "technical", "icon": "thermometer", "default_priority": "normal"},
-    {"id": "food_order", "department": "fnb", "icon": "utensils", "default_priority": "normal"},
-    {"id": "drinks", "department": "fnb", "icon": "wine", "default_priority": "normal"},
-    {"id": "minibar", "department": "minibar", "icon": "beer", "default_priority": "low"},
-    {"id": "laundry", "department": "laundry", "icon": "shirt", "default_priority": "normal"},
-    {"id": "transport", "department": "transportation", "icon": "car", "default_priority": "normal"},
-    {"id": "reception", "department": "other", "icon": "bell", "default_priority": "normal"},
-    {"id": "spa", "department": "spa", "icon": "heart", "default_priority": "low"},
-    {"id": "complaint", "department": "other", "icon": "alert", "default_priority": "high"},
-    {"id": "other", "department": "other", "icon": "message", "default_priority": "normal"},
-]
+from domains.guest.qr_constants import CATEGORY_CATALOG, CATEGORY_LABELS, CATEGORY_MAP, VALID_PRIORITIES
 
-CATEGORY_MAP = {c["id"]: c for c in CATEGORY_CATALOG}
 VALID_STATUSES = {"new", "assigned", "in_progress", "completed", "cancelled"}
-VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
-
-# Çoklu dil etiketleri (10 dil için başlangıç seti — eklenebilir)
-CATEGORY_LABELS = {
-    "cleaning": {"tr": "Oda Temizliği", "en": "Room Cleaning", "de": "Zimmerreinigung", "ru": "Уборка номера", "ar": "تنظيف الغرفة"},
-    "towels": {"tr": "Havlu / Çarşaf", "en": "Towels / Linens", "de": "Handtücher", "ru": "Полотенца", "ar": "مناشف"},
-    "amenities": {"tr": "Amenity (Sabun vb.)", "en": "Amenities", "de": "Pflegeprodukte", "ru": "Косметика", "ar": "مستلزمات"},
-    "maintenance": {"tr": "Arıza / Tamir", "en": "Maintenance", "de": "Wartung", "ru": "Ремонт", "ar": "صيانة"},
-    "wifi": {"tr": "İnternet / Wi-Fi", "en": "Internet / Wi-Fi", "de": "WLAN", "ru": "Wi-Fi", "ar": "واي فاي"},
-    "tv": {"tr": "Televizyon", "en": "Television", "de": "Fernseher", "ru": "Телевизор", "ar": "تلفاز"},
-    "ac_heating": {"tr": "Klima / Isıtma", "en": "AC / Heating", "de": "Klima / Heizung", "ru": "Кондиционер", "ar": "تكييف/تدفئة"},
-    "food_order": {"tr": "Oda Servisi (Yemek)", "en": "Room Service (Food)", "de": "Zimmerservice", "ru": "Обслуживание", "ar": "خدمة الغرف"},
-    "drinks": {"tr": "İçecek", "en": "Drinks", "de": "Getränke", "ru": "Напитки", "ar": "مشروبات"},
-    "minibar": {"tr": "Minibar", "en": "Minibar", "de": "Minibar", "ru": "Минибар", "ar": "ميني بار"},
-    "laundry": {"tr": "Çamaşır / Kuru Tem.", "en": "Laundry", "de": "Wäscherei", "ru": "Прачечная", "ar": "غسيل"},
-    "transport": {"tr": "Transfer / Ulaşım", "en": "Transport", "de": "Transport", "ru": "Транспорт", "ar": "نقل"},
-    "reception": {"tr": "Resepsiyon", "en": "Reception", "de": "Rezeption", "ru": "Стойка", "ar": "استقبال"},
-    "spa": {"tr": "SPA / Wellness", "en": "SPA / Wellness", "de": "SPA", "ru": "СПА", "ar": "سبا"},
-    "complaint": {"tr": "Şikayet / Geri Bildirim", "en": "Complaint / Feedback", "de": "Beschwerde", "ru": "Жалоба", "ar": "شكوى"},
-    "other": {"tr": "Diğer", "en": "Other", "de": "Andere", "ru": "Другое", "ar": "أخرى"},
-}
 
 
 # ── Per-tenant QR secret rotation (backward-compatible) ──────────────
@@ -597,9 +557,21 @@ async def public_submit_request(
     client_ip = _client_ip(request)
     if not _rl_check(f"{tenant_id}:{room_id}:{client_ip}:submit"):
         raise HTTPException(status_code=429, detail="Çok fazla talep — lütfen sonra deneyin")
-
     booking, guest_session = await _verify_guest_session(tenant_id, room_id, x_guest_session)
-    room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id}) or {}
+    room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
+    if not room or room.get("is_active") is False:
+        raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+
+    room_prop = room.get("property_id")
+    booking_prop = booking.get("property_id")
+    session_prop = guest_session.get("property_id")
+
+    if not booking_prop or not session_prop or not room_prop:
+        raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+
+    if booking_prop != session_prop or booking_prop != room_prop:
+        raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+
     room_number = room.get("room_number")
 
     if "items" in payload:

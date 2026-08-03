@@ -3,7 +3,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class StructuredItemValue(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    quantity: int | None = Field(None, ge=1, le=10)
+    quantity: int | None = Field(None, ge=1)
     selected_options: list[str] | None = Field(None, max_length=10)
     date_value: str | None = None
     time_value: str | None = None

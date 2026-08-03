@@ -158,7 +158,6 @@ def validate_input_value(input_type: str, input_config: dict, value_obj: dict | 
         if d < min_date or d > max_date:
             raise ValueError(f"Date must be between {min_date} and {max_date}")
         return {"date_value": d.isoformat()}
-
     if input_type == "time":
         time_val = value_obj.get("time_value")
         if not isinstance(time_val, str):
@@ -172,7 +171,40 @@ def validate_input_value(input_type: str, input_config: dict, value_obj: dict | 
         total_minutes = t.hour * 60 + t.minute
         if total_minutes % cfg.interval_minutes != 0:
             raise ValueError(f"Time must be in increments of {cfg.interval_minutes} minutes")
-        return {"time_value": t.strftime("%H:%M")}
+
+        # Resolve next occurrence
+        target_local_dt = dt.datetime.combine(now_local_date, t)
+        if target_local_dt < now_local.replace(tzinfo=None):
+            target_local_dt += dt.timedelta(days=1)
+
+        try:
+            _ = target_local_dt.replace(tzinfo=tz)
+            # Check for ambiguous/nonexistent times
+            # In Python 3.9+, zoneinfo handles fold automatically, but we can explicitly check if it's ambiguous
+            # using tz.utcoffset() matching trick or catching exceptions if we use dateutil, but with zoneinfo
+            # we can use fold=0 and fold=1. To reject ambiguous:
+            dt_fold_0 = target_local_dt.replace(tzinfo=tz, fold=0)
+            dt_fold_1 = target_local_dt.replace(tzinfo=tz, fold=1)
+            if dt_fold_0.astimezone(dt.UTC) != dt_fold_1.astimezone(dt.UTC):
+                raise ValueError("Ambiguous time due to daylight saving transition")
+
+            # If the time is nonexistent (e.g. spring forward gap), the UTC offset check or roundtrip might fail.
+            # Zoneinfo will push nonexistent times forward. Let's check by converting back to local.
+            roundtrip = dt_fold_0.astimezone(dt.UTC).astimezone(tz)
+            if roundtrip.time() != t:
+                raise ValueError("Nonexistent time due to daylight saving transition")
+        except Exception as e:
+            if isinstance(e, ValueError):
+                raise
+            raise ValueError("Invalid time resolution in timezone")
+
+        return {
+            "time_value": t.strftime("%H:%M"),
+            "submitted_local_time": t.strftime("%H:%M"),
+            "resolved_local_datetime": dt_fold_0.isoformat(),
+            "resolved_utc_datetime": dt_fold_0.astimezone(dt.UTC).isoformat(),
+            "timezone_snapshot": prop_tz
+        }
 
     if input_type == "datetime":
         dt_val = value_obj.get("datetime_value")
@@ -181,27 +213,51 @@ def validate_input_value(input_type: str, input_config: dict, value_obj: dict | 
         cfg = DateTimeConstraints.model_validate(input_config)
         try:
             val_dt = dt.datetime.fromisoformat(dt_val)
-            if val_dt.tzinfo is None:
-                val_dt = val_dt.replace(tzinfo=tz)
-            else:
-                val_dt = val_dt.astimezone(tz)
+            if val_dt.tzinfo is not None:
+                # convert to target tz and drop tzinfo for local processing
+                val_dt = val_dt.astimezone(tz).replace(tzinfo=None)
         except ValueError:
             raise ValueError("Invalid datetime format")
 
-        if val_dt < now_local:
+        target_local_dt = val_dt
+
+        try:
+            dt_fold_0 = target_local_dt.replace(tzinfo=tz, fold=0)
+            dt_fold_1 = target_local_dt.replace(tzinfo=tz, fold=1)
+            if dt_fold_0.astimezone(dt.UTC) != dt_fold_1.astimezone(dt.UTC):
+                raise ValueError("Ambiguous datetime due to daylight saving transition")
+
+            roundtrip = dt_fold_0.astimezone(dt.UTC).astimezone(tz)
+            if roundtrip.replace(tzinfo=None) != target_local_dt:
+                raise ValueError("Nonexistent datetime due to daylight saving transition")
+
+            resolved_dt_utc = dt_fold_0.astimezone(dt.UTC)
+        except Exception as e:
+            if isinstance(e, ValueError):
+                raise
+            raise ValueError("Invalid datetime resolution in timezone")
+
+        if dt_fold_0 < now_local:
             raise ValueError("Datetime cannot be in the past")
 
-        d = val_dt.date()
+        d = target_local_dt.date()
         min_date = now_local_date + dt.timedelta(days=cfg.min_days_ahead)
         max_date = now_local_date + dt.timedelta(days=cfg.max_days_ahead)
         if d < min_date or d > max_date:
             raise ValueError(f"Date must be between {min_date} and {max_date}")
 
-        t = val_dt.time()
+        t = target_local_dt.time()
         total_minutes = t.hour * 60 + t.minute
         if total_minutes % cfg.interval_minutes != 0:
             raise ValueError(f"Time must be in increments of {cfg.interval_minutes} minutes")
 
-        return {"datetime_value": val_dt.isoformat()}
+        return {
+            "datetime_value": dt_fold_0.isoformat(),
+            "submitted_local_datetime": target_local_dt.isoformat(),
+            "resolved_local_datetime": dt_fold_0.isoformat(),
+            "resolved_utc_datetime": resolved_dt_utc.isoformat(),
+            "timezone_snapshot": prop_tz
+        }
+
 
     raise ValueError("Unknown input_type")

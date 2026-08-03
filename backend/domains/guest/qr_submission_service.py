@@ -9,34 +9,26 @@ from pymongo.errors import DuplicateKeyError
 
 from core.database import _raw_db as raw_db
 from domains.guest.qr_catalogue_service import _utc_now, fetch_catalogue_data, is_service_available, resolve_catalogue_mode, validate_input_value
+from domains.guest.qr_constants import map_legacy_routing
 from domains.guest.qr_request_description import compute_payload_fingerprint, generate_deterministic_description
 from models.schemas.qr_catalogue_submission import StructuredRequestSubmit
-from routers.room_qr_requests import CATEGORY_MAP
 
 logger = logging.getLogger(__name__)
 
 def generate_public_reference(prefix="REQ"):
     chars = string.ascii_uppercase + string.digits
-    suffix = "".join(secrets.choice(chars) for _ in range(6))
+    suffix = "".join(secrets.choice(chars) for _ in range(8))
     return f"{prefix}-{suffix}"
-
-def map_legacy_routing(service_code: str, department_code: str):
-    if service_code in CATEGORY_MAP:
-        return service_code, CATEGORY_MAP[service_code]["department"]
-
-    legacy_depts = {c["department"] for c in CATEGORY_MAP.values()}
-    if department_code in legacy_depts:
-        return "other", department_code
-
-    return "other", "other"
 
 async def handle_structured_submission(tenant_id: str, property_id: str, room_id: str, booking_id: str, session_id: str, room_number: str, payload: StructuredRequestSubmit, guest_name: str | None, guest_phone: str | None):
     service_codes = [it.service_code for it in payload.items]
     if len(service_codes) != len(set(service_codes)):
+        # Provide privacy-safe message
         raise HTTPException(status_code=400, detail="Mükerrer hizmet kodu tespit edildi")
 
-    fingerprint = compute_payload_fingerprint(payload.language, payload.items)
+    fingerprint = compute_payload_fingerprint(payload)
 
+    # 1. Lookup existing ledger
     ledger = await raw_db["guest_service_submissions"].find_one({
         "tenant_id": tenant_id,
         "property_id": property_id,
@@ -46,11 +38,12 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
 
     if ledger:
         if ledger.get("payload_fingerprint") != fingerprint:
-            raise HTTPException(status_code=409, detail="Farklı bir talep aynı anahtarla gönderildi (Conflict)")
+            raise HTTPException(status_code=409, detail="Talep işleme alınamadı")
         prepared_items = ledger["prepared_items"]
         submission_group_id = ledger["submission_group_id"]
         submission_reference = ledger.get("submission_reference", generate_public_reference("GSR"))
     else:
+        # 2. Resolve & Validate against catalogue
         mode = await resolve_catalogue_mode(tenant_id, property_id)
         if mode == "disabled":
             raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
@@ -73,10 +66,10 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
         for it in payload.items:
             cat_item = services_map.get(it.service_code)
             if not cat_item or not cat_item.get("enabled", True):
-                raise HTTPException(status_code=400, detail=f"Geçersiz veya kullanılamayan hizmet: {it.service_code}")
+                raise HTTPException(status_code=400, detail="Talep işleme alınamadı")
 
             if not is_service_available(cat_item.get("service_hours"), prop_tz):
-                raise HTTPException(status_code=400, detail=f"Hizmet şu anda mesai dışı: {it.service_code}")
+                raise HTTPException(status_code=400, detail="Talep işleme alınamadı")
 
             val_obj = it.value.model_dump(exclude_none=True) if it.value else {}
             input_type = cat_item.get("input_type")
@@ -96,12 +89,13 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
 
             for k in val_obj.keys():
                 if k not in allowed_keys:
-                    raise HTTPException(status_code=400, detail=f"Geçersiz veri alanı bulundu: {k}")
+                    raise HTTPException(status_code=400, detail="Geçersiz veri alanı bulundu")
 
             try:
                 validated_val = validate_input_value(input_type, cat_item.get("input_config", {}), val_obj, prop_tz)
-            except ValueError as e:
-                raise HTTPException(status_code=422, detail=f"{it.service_code}: {str(e)}")
+            except ValueError:
+                # Mask schema error
+                raise HTTPException(status_code=422, detail="Geçersiz girdi")
 
             cat, dept = map_legacy_routing(cat_item["service_code"], cat_item["department_code"])
             title_label = cat_item.get("labels", {}).get(payload.language) or cat_item.get("labels", {}).get("tr", cat_item["service_code"])
@@ -118,9 +112,6 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
 
             req_ref = generate_public_reference("REQ")
             req_id = str(uuid.uuid4())
-
-            # Use original submitted time info in snapshot if time-related
-            snapshot_tz = prop_tz
 
             doc = {
                 "_id": req_id,
@@ -151,6 +142,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                     "service_code": cat_item["service_code"],
                     "department_code": cat_item["department_code"],
                     "labels": cat_item.get("labels", {}),
+                    "department_labels": cat_item.get("department_labels", {}),
                     "input_type": input_type,
                     "validated_value": validated_val,
                     "guest_note": it.note,
@@ -161,11 +153,21 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                     "charge_warning_snapshot": cat_item.get("charge_warning"),
                     "catalogue_version": cat_item.get("version", 1),
                     "catalogue_mode": mode,
-                    "timezone_snapshot": snapshot_tz
+                    "timezone_snapshot": prop_tz
                 }
             }
+
             if input_type in ("time", "datetime", "date") and "time_value" in val_obj:
                  doc["catalogue_snapshot"]["submitted_local_time"] = val_obj["time_value"]
+            if input_type in ("time", "datetime"):
+                if "submitted_local_time" in validated_val:
+                    doc["catalogue_snapshot"]["submitted_local_time"] = validated_val["submitted_local_time"]
+                if "submitted_local_datetime" in validated_val:
+                    doc["catalogue_snapshot"]["submitted_local_datetime"] = validated_val["submitted_local_datetime"]
+                if "resolved_local_datetime" in validated_val:
+                    doc["catalogue_snapshot"]["resolved_local_datetime"] = validated_val["resolved_local_datetime"]
+                if "resolved_utc_datetime" in validated_val:
+                    doc["catalogue_snapshot"]["resolved_utc_datetime"] = validated_val["resolved_utc_datetime"]
 
             prepared_items.append(doc)
             expected_codes.append(it.service_code)
@@ -190,27 +192,34 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
             "completed_at": None
         }
 
-        try:
-            res = await raw_db["guest_service_submissions"].find_one_and_update(
-                {
-                    "tenant_id": tenant_id,
-                    "property_id": property_id,
-                    "booking_id": booking_id,
-                    "idempotency_key": payload.idempotency_key
-                },
-                {"$setOnInsert": ledger_doc},
-                upsert=True,
-                return_document=ReturnDocument.AFTER
-            )
-            if res.get("payload_fingerprint") != fingerprint:
-                raise HTTPException(status_code=409, detail="Farklı bir talep aynı anahtarla gönderildi (Conflict)")
+        # 3. Write Ledger
+        for attempt in range(3):
+            try:
+                res = await raw_db["guest_service_submissions"].find_one_and_update(
+                    {
+                        "tenant_id": tenant_id,
+                        "property_id": property_id,
+                        "booking_id": booking_id,
+                        "idempotency_key": payload.idempotency_key
+                    },
+                    {"$setOnInsert": ledger_doc, "$set": {"updated_at": _utc_now()}},
+                    upsert=True,
+                    return_document=ReturnDocument.AFTER
+                )
+                if res.get("payload_fingerprint") != fingerprint:
+                    raise HTTPException(status_code=409, detail="Talep işleme alınamadı")
 
-            prepared_items = res["prepared_items"]
-            submission_group_id = res["submission_group_id"]
-            submission_reference = res["submission_reference"]
-        except DuplicateKeyError:
-            reread = None
-            for _ in range(3):
+                prepared_items = res["prepared_items"]
+                submission_group_id = res["submission_group_id"]
+                submission_reference = res["submission_reference"]
+                break
+            except DuplicateKeyError as e:
+                # Check which index collided
+                err_msg = str(e)
+                if "submission_reference" in err_msg:
+                    ledger_doc["submission_reference"] = generate_public_reference("GSR")
+                    continue
+                # If it's idempotency key, we just retry the read
                 reread = await raw_db["guest_service_submissions"].find_one({
                     "tenant_id": tenant_id,
                     "property_id": property_id,
@@ -218,21 +227,24 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                     "idempotency_key": payload.idempotency_key
                 })
                 if reread:
+                    if reread.get("payload_fingerprint") != fingerprint:
+                        raise HTTPException(status_code=409, detail="Talep işleme alınamadı")
+                    prepared_items = reread["prepared_items"]
+                    submission_group_id = reread["submission_group_id"]
+                    submission_reference = reread["submission_reference"]
                     break
+        else:
+            logger.error(f"Ledger upsert failed after retries for tenant={tenant_id} booking={booking_id}")
+            raise HTTPException(status_code=503, detail="Sistem hatası, lütfen tekrar deneyiniz")
 
-            if not reread:
-                logger.error(f"Failed to reread ledger after DuplicateKeyError for {payload.idempotency_key}")
-                raise HTTPException(status_code=503, detail="Sistem hatası, lütfen tekrar deneyiniz")
-
-            if reread.get("payload_fingerprint") != fingerprint:
-                raise HTTPException(status_code=409, detail="Farklı bir talep aynı anahtarla gönderildi (Conflict)")
-
-            prepared_items = reread["prepared_items"]
-            submission_group_id = reread["submission_group_id"]
-            submission_reference = reread["submission_reference"]
-
+    # 4. Upsert Items
     await raw_db["guest_service_submissions"].update_one(
-        {"submission_group_id": submission_group_id},
+        {
+            "tenant_id": tenant_id,
+            "property_id": property_id,
+            "booking_id": booking_id,
+            "submission_group_id": submission_group_id
+        },
         {
             "$inc": {"attempt_count": 1},
             "$set": {"updated_at": _utc_now()}
@@ -242,34 +254,51 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
     created_count = 0
     replayed_count = 0
     ref_list = []
-
     docs_to_emit = []
 
     for item_doc in prepared_items:
-        try:
-            upd = await raw_db["qr_requests"].update_one(
-                {
-                    "tenant_id": tenant_id,
-                    "submission_group_id": submission_group_id,
-                    "service_code": item_doc["service_code"]
-                },
-                {"$setOnInsert": item_doc},
-                upsert=True
-            )
-            if upd.upserted_id:
-                created_count += 1
-                docs_to_emit.append(item_doc)
-            else:
-                replayed_count += 1
+        for attempt in range(3):
+            try:
+                upd = await raw_db["qr_requests"].update_one(
+                    {
+                        "tenant_id": tenant_id,
+                        "submission_group_id": submission_group_id,
+                        "service_code": item_doc["service_code"]
+                    },
+                    {"$setOnInsert": item_doc},
+                    upsert=True
+                )
+                if upd.upserted_id:
+                    created_count += 1
+                    docs_to_emit.append(item_doc)
+                else:
+                    replayed_count += 1
 
-            ref_list.append({
-                "service_code": item_doc["service_code"],
-                "request_reference": item_doc["request_reference"]
-            })
-        except DuplicateKeyError:
-            logger.error("Collision during qr_requests upsert")
+                ref_list.append({
+                    "service_code": item_doc["service_code"],
+                    "request_reference": item_doc["request_reference"]
+                })
+                break
+            except DuplicateKeyError as e:
+                err_msg = str(e)
+                if "request_reference" in err_msg:
+                    item_doc["request_reference"] = generate_public_reference("REQ")
+                    # Update ledger so we know the new ref
+                    await raw_db["guest_service_submissions"].update_one(
+                        {
+                            "tenant_id": tenant_id,
+                            "submission_group_id": submission_group_id,
+                            "prepared_items.service_code": item_doc["service_code"]
+                        },
+                        {"$set": {"prepared_items.$.request_reference": item_doc["request_reference"]}}
+                    )
+                    continue
+                logger.error(f"Collision during qr_requests upsert for tenant={tenant_id} ref={item_doc['request_reference']}")
+                raise HTTPException(status_code=503, detail="Sistem hatası")
+        else:
             raise HTTPException(status_code=503, detail="Sistem hatası")
 
+    # 5. Convergence check
     count_expected = len(prepared_items)
     actual_count = await raw_db["qr_requests"].count_documents({
         "tenant_id": tenant_id,
@@ -278,17 +307,35 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
 
     if actual_count == count_expected:
         await raw_db["guest_service_submissions"].update_one(
-            {"submission_group_id": submission_group_id},
-            {"$set": {"status": "completed", "completed_at": _utc_now()}}
+            {
+                "tenant_id": tenant_id,
+                "property_id": property_id,
+                "booking_id": booking_id,
+                "submission_group_id": submission_group_id
+            },
+            {"$set": {"status": "completed", "completed_at": _utc_now(), "updated_at": _utc_now()}}
         )
 
-    return {
-        "success": True,
-        "submission_reference": submission_reference,
-        "request_references": ref_list,
-        "stats": {
-            "created": created_count,
-            "replayed": replayed_count
-        },
-        "docs_to_emit": docs_to_emit
-    }
+        return {
+            "success": True,
+            "submission_reference": submission_reference,
+            "request_references": ref_list,
+            "stats": {
+                "created": created_count,
+                "replayed": replayed_count
+            },
+            "docs_to_emit": docs_to_emit
+        }
+    else:
+        # Items are missing. Do not return success.
+        await raw_db["guest_service_submissions"].update_one(
+            {
+                "tenant_id": tenant_id,
+                "property_id": property_id,
+                "booking_id": booking_id,
+                "submission_group_id": submission_group_id
+            },
+            {"$set": {"status": "failed", "last_error_code": "CONVERGENCE_FAILURE", "updated_at": _utc_now()}}
+        )
+        logger.error(f"Ledger convergence failed for {submission_group_id}: expected {count_expected}, found {actual_count}")
+        raise HTTPException(status_code=503, detail="Talep işleme alınamadı, eksik kayıtlar var.")
