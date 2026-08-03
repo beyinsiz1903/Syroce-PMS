@@ -233,6 +233,7 @@ async def add_guest_message(
     category: str | None = None,
     department: str | None = None,
     priority: str | None = None,
+    guest_session_id: str | None = None,
 ) -> dict:
     """guest_room_messages koleksiyonuna tek mesaj ekler ve dokümanı döndürür."""
     now = datetime.now(UTC)
@@ -326,6 +327,7 @@ async def get_thread_messages(
     since: datetime | None = None,
     limit: int = 300,
     viewer_user_id: str | None = None,
+    guest_session_id: str | None = None,
 ) -> list[dict]:
     """Bir odanın mesaj thread'i (kronolojik).
 
