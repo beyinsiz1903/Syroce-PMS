@@ -132,11 +132,21 @@ async def reply_guest_request_thread(
     )
     if not last_guest:
         raise HTTPException(status_code=404, detail="Bu oda için talep bulunamadı")
+
+    room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": current_user.tenant_id})
+    property_id = room.get("property_id") if room else None
+    if not property_id:
+        property_id = last_guest.get("property_id")
+
+    if not property_id:
+        raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+
     booking_id = last_guest.get("booking_id")
     room_number = last_guest.get("room_number")
 
     doc = await gr.add_guest_message(
         tenant_id=current_user.tenant_id,
+        property_id=property_id,
         room_id=room_id,
         room_number=room_number,
         sender_type="staff",

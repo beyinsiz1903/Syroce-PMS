@@ -313,11 +313,27 @@ from fastapi.responses import JSONResponse
 try:
     from domains.channel_manager.providers.exely.errors import ExelyError
 
+
+
     @app.exception_handler(ExelyError)
     async def exely_error_handler(request: Request, exc: ExelyError):
         return JSONResponse(status_code=502, content={"detail": f"Exely provider error: {exc.message}"})
 except ImportError:
     pass
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import logging
+    import uuid
+    error_id = str(uuid.uuid4())
+    logging.getLogger("uvicorn.error").error(
+        f"Unhandled application exception [error_id={error_id}] method={request.method} path={request.url.path}"
+    )
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error"},
+    )
 
 # ── 422 validation handler: NaN/Infinity input echo'sunu temizle ───────
 # Pydantic 422 hatalarında payload input'u response'a yansıtılır;

@@ -26,7 +26,7 @@ import unicodedata
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from cache_manager import cache as _cache
@@ -158,6 +158,13 @@ async def _ensure_indexes() -> None:
         await raw_db[COLL].create_index([("tenant_id", 1), ("status", 1), ("created_at", -1)], name="rqr_tenant_status_created")
         await raw_db[COLL].create_index([("tenant_id", 1), ("department", 1), ("status", 1)], name="rqr_tenant_dept_status")
         await raw_db[COLL].create_index([("tenant_id", 1), ("room_id", 1)], name="rqr_tenant_room")
+
+        # Guest sessions indexes
+        await raw_db["room_guest_sessions"].create_index("token_hash", unique=True, name="rgs_token_hash")
+        await raw_db["room_guest_sessions"].create_index("expires_at", expireAfterSeconds=0, name="rgs_expires_at")
+        await raw_db["room_guest_sessions"].create_index([("tenant_id", 1), ("property_id", 1), ("room_id", 1), ("booking_id", 1)], name="rgs_lookup")
+        await raw_db["room_guest_sessions"].create_index("revoked_at", name="rgs_revoked_at")
+
         _INDEXES_READY = True
     except Exception as e:
         # Atlas may reject new collections (cluster limit reached); we skip
@@ -354,6 +361,161 @@ async def _find_active_booking(tenant_id: str, room_id: str) -> dict | None:
         return None
 
 
+
+# ═══════════════════════════════════════════════════════════════
+# GUEST SESSION MANAGEMENT (Phase 1 Security Hardening)
+# ═══════════════════════════════════════════════════════════════
+
+async def _verify_guest_session(tenant_id: str, room_id: str, session_token: str | None) -> tuple[dict, dict]:
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Yetkisiz: Misafir oturumu eksik")
+
+    token_hash = hashlib.sha256(session_token.encode()).hexdigest()
+
+    # Verify room is still active to resolve property_id safely
+    room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
+    if not room or room.get("is_active") is False:
+        raise HTTPException(status_code=410, detail="Oda kullanımda değil")
+
+    # Verify booking is still active
+    booking = await _find_active_booking(tenant_id, room_id)
+    if not booking:
+        raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+
+    room_prop = room.get("property_id")
+    booking_prop = booking.get("property_id")
+    if not room_prop or not booking_prop or room_prop != booking_prop:
+        raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+    property_id = room_prop
+
+    # Check session exists with all strict mandatory fields
+    session = await raw_db["room_guest_sessions"].find_one({
+        "tenant_id": tenant_id,
+        "property_id": property_id,
+        "room_id": room_id,
+        "booking_id": booking["id"],
+        "token_hash": token_hash,
+    })
+
+    if not session:
+        raise HTTPException(status_code=401, detail="Yetkisiz: Geçersiz oturum")
+
+    # Require mandatory fields exist
+    if "expires_at" not in session or not session["expires_at"]:
+        raise HTTPException(status_code=401, detail="Yetkisiz: Geçersiz oturum")
+
+    now = datetime.now(UTC)
+    if session["expires_at"].tzinfo is None:
+        session["expires_at"] = session["expires_at"].replace(tzinfo=UTC)
+
+    if session["expires_at"] < now:
+        raise HTTPException(status_code=401, detail="Yetkisiz: Oturum süresi dolmuş")
+    if session.get("revoked_at") is not None:
+        raise HTTPException(status_code=401, detail="Yetkisiz: Oturum iptal edilmiş")
+
+    return booking, session
+
+@router.post("/api/public/room-qr/{tenant_id}/{room_id}/session")
+async def public_create_guest_session(
+    tenant_id: str,
+    room_id: str,
+    request: Request,
+    t: str = Query(...)
+):
+    """Static QR okutulduktan sonra aktif rezervasyona bağlı kısa ömürlü session üretir."""
+    client_ip = _client_ip(request)
+    if not _rl_check(f"{tenant_id}:{room_id}:{client_ip}:session"):
+        raise HTTPException(status_code=429, detail="Çok fazla deneme — lütfen sonra deneyin")
+
+    salt = await _get_qr_salt(tenant_id)
+    if not _verify_token(tenant_id, room_id, t, salt):
+        raise HTTPException(status_code=403, detail="Geçersiz QR token")
+
+    room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
+    if not room or room.get("is_active") is False:
+        raise HTTPException(status_code=410, detail="Oda kullanımda değil")
+
+    booking = await _find_active_booking(tenant_id, room_id)
+    if not booking:
+        # Do not leak occupancy. Just return generic 403.
+        raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+
+    room_prop = room.get("property_id")
+    booking_prop = booking.get("property_id")
+    if not room_prop or not booking_prop or room_prop != booking_prop:
+        raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+    property_id = room_prop
+
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    now = datetime.now(UTC)
+
+    expires_at = now + timedelta(hours=24)
+    departure_date = booking.get("departure_date") or booking.get("check_out")
+    if departure_date:
+        try:
+            is_date_only = False
+            if isinstance(departure_date, str):
+                departure_date_str = departure_date.strip()
+                import re
+                if re.match(r"^\d{4}-\d{2}-\d{2}$", departure_date_str):
+                    is_date_only = True
+
+                if is_date_only:
+                    import zoneinfo
+                    from datetime import date
+                    y, m, d = map(int, departure_date_str.split("-"))
+                    dep_date = date(y, m, d)
+
+                    prop = await raw_db["properties"].find_one({"id": property_id, "tenant_id": tenant_id}) or {}
+                    checkout_time_str = prop.get("checkout_time", "12:00")
+                    prop_tz_str = prop.get("timezone", "UTC")
+                    try:
+                        tz = zoneinfo.ZoneInfo(prop_tz_str)
+                    except Exception:
+                        tz = UTC
+
+                    try:
+                        hh, mm = map(int, checkout_time_str.split(":"))
+                    except Exception:
+                        hh, mm = 12, 0
+
+                    dep = datetime(dep_date.year, dep_date.month, dep_date.day, hh, mm, 0, tzinfo=tz).astimezone(UTC)
+                else:
+                    dep = datetime.fromisoformat(departure_date_str.replace("Z", "+00:00"))
+                    if dep.tzinfo is None:
+                        dep = dep.replace(tzinfo=UTC)
+            else:
+                dep = departure_date
+                if dep.tzinfo is None:
+                    dep = dep.replace(tzinfo=UTC)
+
+            expires_at = min(expires_at, dep)
+        except Exception:
+            # If checkout/departure exists but cannot be safely parsed, fail closed
+            raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+    else:
+        # Policy: If no checkout datetime exists on the active booking, safely fallback to now + 24h
+        pass
+
+    doc = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "property_id": property_id,
+        "room_id": room_id,
+        "booking_id": booking["id"],
+        "token_hash": token_hash,
+        "created_at": now,
+        "expires_at": expires_at,
+        "revoked_at": None
+    }
+    await raw_db["room_guest_sessions"].insert_one(doc)
+
+    return {
+        "session_token": raw_token,
+        "expires_at": expires_at.isoformat()
+    }
+
 # ═══════════════════════════════════════════════════════════════
 # PUBLIC ENDPOINTS (misafir — auth yok)
 # ═══════════════════════════════════════════════════════════════
@@ -367,16 +529,10 @@ async def public_room_info(tenant_id: str, room_id: str, t: str = Query(...)):
         raise HTTPException(status_code=403, detail="Geçersiz QR token")
 
     room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
-    if not room:
-        raise HTTPException(status_code=404, detail="Oda bulunamadı")
+    if not room or room.get("is_active") is False:
+        raise HTTPException(status_code=410, detail="Oda kullanımda değil")
 
     tenant = await raw_db["tenants"].find_one({"id": tenant_id}) or {}
-    booking = await _find_active_booking(tenant_id, room_id)
-    # Misafir gizliliği — QR fiziksel olarak odadaysa "J*** D***" olarak maskelenir
-    guest_name_masked = None
-    if booking:
-        full = booking.get("guest_name") or booking.get("primary_guest_name")
-        guest_name_masked = _mask_name(full)
 
     return {
         "hotel_name": tenant.get("name") or tenant.get("display_name") or "Hotel",
@@ -384,7 +540,6 @@ async def public_room_info(tenant_id: str, room_id: str, t: str = Query(...)):
         "primary_color": tenant.get("primary_color") or "#0ea5e9",
         "room_number": room.get("room_number"),
         "room_type": room.get("room_type"),
-        "guest_name": guest_name_masked,
         "categories": [
             {
                 "id": c["id"],
@@ -413,29 +568,14 @@ async def public_submit_request(
     room_id: str,
     payload: PublicRequestSubmit,
     request: Request,
-    t: str = Query(...),
+    x_guest_session: str = Header(None)
 ):
-    """Misafir talep gönderir (giriş gerekmez)."""
-    # Rate limit BEFORE token verification. The public submit surface must not
-    # allow an unbounded burst against the HMAC-verify path: previously an
-    # invalid-token flood was rejected at `_verify_token` (403) WITHOUT ever
-    # incrementing the per-room+IP counter, so the throttle never tripped under
-    # a garbage-token burst (DoS sentinel observed no 429). Running `_rl_check`
-    # first bounds repeated invalid submits from the same room+IP to 20/10min.
-    # This does NOT weaken auth — the token is still verified below and an
-    # invalid token still yields 403; legit guests (valid token, <=20/10min)
-    # are unaffected. Redis-backed, shared across instances; fail-open on cache
-    # outage. IP is resolved via trusted-proxy aware `_client_ip`.
+    """Misafir talep gönderir (aktif rezervasyon gerektirir)."""
     client_ip = _client_ip(request)
-    # Key namespaced by tenant_id too: room_id is a UUID (cross-tenant collision
-    # is already astronomically unlikely) but tenant-scoping the bucket removes
-    # any theoretical cross-tenant contention behind a shared egress IP.
-    if not _rl_check(f"{tenant_id}:{room_id}:{client_ip}"):
+    if not _rl_check(f"{tenant_id}:{room_id}:{client_ip}:submit"):
         raise HTTPException(status_code=429, detail="Çok fazla talep — lütfen sonra deneyin")
 
-    salt = await _get_qr_salt(tenant_id)
-    if not _verify_token(tenant_id, room_id, t, salt):
-        raise HTTPException(status_code=403, detail="Geçersiz QR token")
+    booking, guest_session = await _verify_guest_session(tenant_id, room_id, x_guest_session)
 
     if payload.category not in CATEGORY_MAP:
         raise HTTPException(status_code=400, detail=f"Geçersiz kategori: {payload.category}")
@@ -444,11 +584,8 @@ async def public_submit_request(
         payload.priority = "normal"
 
     room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
-    if not room:
-        raise HTTPException(status_code=404, detail="Oda bulunamadı")
 
     cat = CATEGORY_MAP[payload.category]
-    booking = await _find_active_booking(tenant_id, room_id)
     now = datetime.now(UTC)
     title_label = CATEGORY_LABELS.get(payload.category, {}).get(payload.language, payload.category)
 
@@ -464,9 +601,10 @@ async def public_submit_request(
         "priority": payload.priority,
         "status": "new",
         "language": payload.language,
-        "guest_name": payload.guest_name or (booking.get("guest_name") if booking else None),
-        "guest_phone": payload.guest_phone or (booking.get("guest_phone") if booking else None),
-        "booking_id": booking.get("id") if booking else None,
+        "guest_name": payload.guest_name or booking.get("guest_name") or booking.get("primary_guest_name"),
+        "guest_phone": payload.guest_phone or booking.get("guest_phone"),
+        "booking_id": booking["id"],
+        "guest_session_id": guest_session["id"],
         "assigned_to": None,
         "created_at": now,
         "updated_at": now,
@@ -545,6 +683,7 @@ async def public_submit_request(
         await _gr.add_guest_message(
             tenant_id=tenant_id,
             room_id=room_id,
+            property_id=booking["property_id"],
             room_number=doc.get("room_number"),
             sender_type="guest",
             body=doc["description"],
@@ -554,6 +693,7 @@ async def public_submit_request(
             category=payload.category,
             department=doc["department"],
             priority=doc["priority"],
+            guest_session_id=guest_session["id"],
         )
         cat_label_tr = CATEGORY_LABELS.get(payload.category, {}).get("tr", payload.category)
         await _gr.notify_department(
@@ -626,26 +766,20 @@ def _guest_facing_messages(messages: list[dict]) -> list[dict]:
 async def public_get_thread(
     tenant_id: str,
     room_id: str,
-    t: str = Query(...),
+    x_guest_session: str = Header(None)
 ):
-    """Misafir kendi mesaj thread'ini görür.
-
-    BOOKING-SCOPED: aktif booking varsa yalnızca o booking'in mesajları döner
-    (oda QR token'ı kalıcı olduğundan eski misafirin mesajı yeni misafire
-    SIZMAZ). Aktif booking yoksa son 24s + booking'siz mesajlarla sınırlı.
-    """
-    salt = await _get_qr_salt(tenant_id)
-    if not _verify_token(tenant_id, room_id, t, salt):
-        raise HTTPException(status_code=403, detail="Geçersiz QR token")
+    """Misafir kendi mesaj thread'ini görür."""
+    booking, guest_session = await _verify_guest_session(tenant_id, room_id, x_guest_session)
 
     from domains.guest.messaging import guest_requests as _gr
 
-    booking = await _find_active_booking(tenant_id, room_id)
-    if booking and booking.get("id"):
-        messages = await _gr.get_thread_messages(tenant_id, room_id, booking_id=booking["id"])
-    else:
-        since = datetime.now(UTC) - timedelta(hours=_gr.GUEST_THREAD_FALLBACK_WINDOW_HOURS)
-        messages = await _gr.get_thread_messages(tenant_id, room_id, null_booking_only=True, since=since)
+    # Strict property and booking scoped query for guest isolation
+    messages = await _gr.public_get_guest_thread(
+        tenant_id=tenant_id,
+        property_id=booking["property_id"],
+        room_id=room_id,
+        booking_id=booking["id"]
+    )
     return {"messages": _guest_facing_messages(messages)}
 
 
@@ -684,6 +818,7 @@ async def public_post_thread_message(
     doc = await _gr.add_guest_message(
         tenant_id=tenant_id,
         room_id=room_id,
+        property_id=booking["property_id"],
         room_number=room.get("room_number"),
         sender_type="guest",
         body=text,
@@ -855,8 +990,17 @@ async def update_request(
     if payload.note:
         try:
             from domains.guest.messaging import guest_requests as _gr
+            property_id = doc.get("property_id")
+            if not property_id:
+                room = await raw_db["rooms"].find_one({"id": doc["room_id"], "tenant_id": tenant_id})
+                property_id = room.get("property_id") if room else None
+
+            if not property_id:
+                raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+
             await _gr.add_guest_message(
                 tenant_id=tenant_id,
+                property_id=property_id,
                 room_id=doc["room_id"],
                 room_number=doc.get("room_number"),
                 sender_type="staff",

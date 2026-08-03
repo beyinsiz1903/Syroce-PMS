@@ -35,7 +35,7 @@ const UI = {
         sent: "Talebiniz alındı!", sentDesc: "İlgili departmana iletildi, kısa sürede geri dönülecek.",
         newReq: "Yeni talep oluştur", name: "Adınız (opsiyonel)", phone: "Telefon (opsiyonel)",
         sending: "Gönderiliyor...", language: "Dil", back: "Geri", home: "Ana menü",
-        errorTitle: "Talep açılamadı",
+        errorTitle: "Talep açılamadı", unavailableTitle: "Hizmet Kullanılamıyor", unavailableDesc: "Bu oda için aktif bir konaklama bulunamadı veya oturumunuz sona erdi.",
         loadError: "Yükleme hatası", sendError: "Gönderim hatası",
         conversation: "Mesajlar", you: "Siz", team: "Otel Ekibi",
         replyPlaceholder: "Bir mesaj yazın...", send: "Gönder", noMessages: "Henüz mesaj yok." },
@@ -45,7 +45,7 @@ const UI = {
         sent: "Request received!", sentDesc: "It has been forwarded to the right team. We'll get back to you shortly.",
         newReq: "Make another request", name: "Your name (optional)", phone: "Phone (optional)",
         sending: "Sending...", language: "Language", back: "Back", home: "Main menu",
-        errorTitle: "Unable to open request",
+        errorTitle: "Unable to open request", unavailableTitle: "Service Unavailable", unavailableDesc: "No active stay found for this room or your session has expired.",
         loadError: "Loading error", sendError: "Sending error",
         conversation: "Messages", you: "You", team: "Hotel Team",
         replyPlaceholder: "Write a message...", send: "Send", noMessages: "No messages yet." },
@@ -55,7 +55,7 @@ const UI = {
         sent: "Anfrage erhalten!", sentDesc: "Wir haben sie an das Team weitergeleitet.",
         newReq: "Neue Anfrage", name: "Name (optional)", phone: "Telefon (optional)",
         sending: "Senden...", language: "Sprache", back: "Zurück", home: "Hauptmenü",
-        errorTitle: "Anfrage konnte nicht geöffnet werden",
+        errorTitle: "Anfrage konnte nicht geöffnet werden", unavailableTitle: "Dienst nicht verfügbar", unavailableDesc: "Für dieses Zimmer wurde kein aktiver Aufenthalt gefunden oder Ihre Sitzung ist abgelaufen.",
         loadError: "Ladefehler", sendError: "Sendefehler",
         conversation: "Nachrichten", you: "Sie", team: "Hotel-Team",
         replyPlaceholder: "Nachricht schreiben...", send: "Senden", noMessages: "Noch keine Nachrichten." },
@@ -65,7 +65,7 @@ const UI = {
         sent: "Запрос принят!", sentDesc: "Мы передали его в нужный отдел.",
         newReq: "Новый запрос", name: "Имя (необяз.)", phone: "Телефон (необяз.)",
         sending: "Отправка...", language: "Язык", back: "Назад", home: "Главное меню",
-        errorTitle: "Не удалось открыть запрос",
+        errorTitle: "Не удалось открыть запрос", unavailableTitle: "Услуга недоступна", unavailableDesc: "Активное проживание для этого номера не найдено или срок действия вашего сеанса истек.",
         loadError: "Ошибка загрузки", sendError: "Ошибка отправки",
         conversation: "Сообщения", you: "Вы", team: "Команда отеля",
         replyPlaceholder: "Напишите сообщение...", send: "Отправить", noMessages: "Сообщений пока нет." },
@@ -75,7 +75,7 @@ const UI = {
         sent: "تم استلام طلبك!", sentDesc: "تم تحويله إلى القسم المختص.",
         newReq: "طلب جديد", name: "الاسم (اختياري)", phone: "الهاتف (اختياري)",
         sending: "جارٍ الإرسال...", language: "اللغة", back: "رجوع", home: "القائمة الرئيسية",
-        errorTitle: "تعذّر فتح الطلب",
+        errorTitle: "تعذّر فتح الطلب", unavailableTitle: "الخدمة غير متوفرة", unavailableDesc: "لم يتم العثور على إقامة نشطة لهذه الغرفة أو انتهت صلاحية جلستك.",
         loadError: "خطأ في التحميل", sendError: "خطأ في الإرسال",
         conversation: "الرسائل", you: "أنت", team: "فريق الفندق",
         replyPlaceholder: "اكتب رسالة...", send: "إرسال", noMessages: "لا توجد رسائل بعد." },
@@ -115,7 +115,7 @@ function GuestThread({ tenantId, roomId, token, t, lang, rtl, accent, alwaysShow
     try {
       const r = await axios.get(
         `/public/room-qr/${tenantId}/${roomId}/thread`,
-        { params: { t: token } },
+        { headers: { "X-Guest-Session": token } },
       );
       if (!mountedRef.current) return;
       setMessages(r.data?.messages || []);
@@ -162,7 +162,7 @@ function GuestThread({ tenantId, roomId, token, t, lang, rtl, accent, alwaysShow
       await axios.post(
         `/public/room-qr/${tenantId}/${roomId}/thread/message`,
         { body: text },
-        { params: { t: token } },
+        { headers: { "X-Guest-Session": token } },
       );
       if (!mountedRef.current) return;
       setReply("");
@@ -255,7 +255,9 @@ export default function RoomRequestPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [unavailable, setUnavailable] = useState(false);
   const [meta, setMeta] = useState(null);
+  const [guestSession, setGuestSession] = useState(null);
   const [selectedDept, setSelectedDept] = useState(null);
   const [category, setCategory] = useState(null);
   const [description, setDescription] = useState("");
@@ -268,11 +270,27 @@ export default function RoomRequestPage() {
   useEffect(() => {
     const load = async () => {
       try {
+        // 1. Fetch public room info
         const r = await axios.get(`/public/room-qr/${tenantId}/${roomId}`, { params: { t: token } });
         setMeta(r.data);
-        if (r.data.guest_name) setName(r.data.guest_name);
+        
+        // 2. Exchange token for guest session
+        try {
+            const sessionRes = await axios.post(`/public/room-qr/${tenantId}/${roomId}/session`, null, { params: { t: token } });
+            setGuestSession(sessionRes.data.session_token);
+        } catch (sessionErr) {
+            if (sessionErr.response && (sessionErr.response.status === 403 || sessionErr.response.status === 410)) {
+                setUnavailable(true);
+            } else {
+                setError(sessionErr.response?.data?.detail || t.loadError);
+            }
+        }
       } catch (e) {
-        setError(e.response?.data?.detail || t.loadError);
+        if (e.response && e.response.status === 410) {
+            setUnavailable(true);
+        } else {
+            setError(e.response?.data?.detail || t.loadError);
+        }
       } finally {
         setLoading(false);
       }
@@ -281,7 +299,7 @@ export default function RoomRequestPage() {
   }, [tenantId, roomId]);
 
   const submit = async () => {
-    if (!category || submitting) return;
+    if (!category || submitting || !guestSession) return;
     setSubmitting(true);
     try {
       const selectedCat = meta.categories.find(c => c.id === category);
@@ -292,10 +310,15 @@ export default function RoomRequestPage() {
         category, description: finalDesc, priority, language: lang,
         guest_name: name.trim() || undefined,
         guest_phone: phone.trim() || undefined,
-      }, { params: { t: token } });
+      }, { headers: { "X-Guest-Session": guestSession } });
       setDone(true);
     } catch (e) {
-      alertDialog({ message: e.response?.data?.detail || t.sendError });
+      if (e.response && (e.response.status === 401 || e.response.status === 403)) {
+          setUnavailable(true);
+          setGuestSession(null);
+      } else {
+          alertDialog({ message: e.response?.data?.detail || t.sendError });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -314,6 +337,21 @@ export default function RoomRequestPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-200 dark:bg-none dark:bg-background">
         <Loader2 className="w-10 h-10 animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
+
+  if (unavailable) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
+        <Card className="max-w-md w-full">
+          <CardContent className="p-8 text-center">
+            <div className="flex justify-center mb-4"><AlertTriangle className="w-14 h-14 text-slate-400" /></div>
+            <h2 className="text-xl font-semibold mb-2">{t.unavailableTitle}</h2>
+            <p className="text-gray-600 text-sm">{t.unavailableDesc}</p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -492,7 +530,7 @@ export default function RoomRequestPage() {
         <GuestThread
           tenantId={tenantId}
           roomId={roomId}
-          token={token}
+          token={guestSession}
           t={t}
           lang={lang}
           rtl={rtl}

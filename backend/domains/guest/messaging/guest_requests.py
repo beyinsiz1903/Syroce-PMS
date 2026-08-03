@@ -226,6 +226,7 @@ async def add_guest_message(
     room_number: str | None,
     sender_type: str,
     body: str,
+    property_id: str | None = None,
     booking_id: str | None = None,
     sender_user_id: str | None = None,
     sender_name: str | None = None,
@@ -233,12 +234,14 @@ async def add_guest_message(
     category: str | None = None,
     department: str | None = None,
     priority: str | None = None,
+    guest_session_id: str | None = None,
 ) -> dict:
     """guest_room_messages koleksiyonuna tek mesaj ekler ve dokümanı döndürür."""
     now = datetime.now(UTC)
     doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
+        "property_id": property_id,
         "room_id": room_id,
         "room_number": room_number,
         "booking_id": booking_id,
@@ -326,6 +329,7 @@ async def get_thread_messages(
     since: datetime | None = None,
     limit: int = 300,
     viewer_user_id: str | None = None,
+    guest_session_id: str | None = None,
 ) -> list[dict]:
     """Bir odanın mesaj thread'i (kronolojik).
 
@@ -348,6 +352,32 @@ async def get_thread_messages(
         msgs.append(_serialize(msg, viewer_user_id=viewer_user_id))
     return msgs
 
+
+
+
+async def public_get_guest_thread(
+    tenant_id: str,
+    property_id: str,
+    room_id: str,
+    booking_id: str,
+    since: datetime | None = None,
+    limit: int = 300,
+) -> list[dict]:
+    """Misafir uygulaması için güvenli, mülk ve rezervasyon sınırlarına (strict scope) tamamen uyan mesaj sorgusu."""
+    query = {
+        "tenant_id": tenant_id,
+        "property_id": property_id,
+        "room_id": room_id,
+        "booking_id": booking_id,
+    }
+    if since is not None:
+        query["created_at"] = {"$gte": since}
+
+    msgs = []
+    cursor = raw_db[GR_COLL].find(query).sort("created_at", 1).limit(int(limit))
+    async for msg in cursor:
+        msgs.append(_serialize(msg))
+    return msgs
 
 async def mark_thread_read(tenant_id: str, room_id: str, user_id: str) -> int:
     """Odadaki tüm misafir mesajlarını bu personel için okundu işaretler."""
