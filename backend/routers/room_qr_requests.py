@@ -765,6 +765,11 @@ async def public_submit_request(
         "message": "Talebiniz alındı, ilgili departmana iletildi.",
     }
 
+
+def _utc_now():
+    from datetime import UTC, datetime
+    return datetime.now(UTC)
+
 @router.get("/api/public/room-qr/{tenant_id}/{room_id}/catalogue")
 async def public_get_catalogue(
     tenant_id: str,
@@ -777,13 +782,21 @@ async def public_get_catalogue(
 
     from pydantic import ValidationError
 
-    from models.schemas.qr_catalogue import GuestServiceDepartment, GuestServiceItem
+    from models.schemas.qr_catalogue import GuestServiceCatalogueSettings, GuestServiceDepartment, GuestServiceItem
 
     booking, guest_session = await _verify_guest_session(tenant_id, room_id, x_guest_session)
     property_id = booking["property_id"]
 
-    settings = await raw_db["guest_service_catalogue_settings"].find_one({"tenant_id": tenant_id, "property_id": property_id})
-    mode = settings.get("mode", "default") if settings else "default"
+    raw_settings = await raw_db["guest_service_catalogue_settings"].find_one({"tenant_id": tenant_id, "property_id": property_id})
+    mode = "default"
+    if raw_settings:
+        raw_settings.pop("_id", None)
+        try:
+            settings_obj = GuestServiceCatalogueSettings.model_validate(raw_settings)
+            mode = settings_obj.mode
+        except ValidationError as e:
+            logger.warning(f"[room_qr] Catalogue settings validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
+            raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
     if mode == "disabled":
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
@@ -828,7 +841,7 @@ async def public_get_catalogue(
         try:
             import datetime as dt
             tz = zoneinfo.ZoneInfo(prop_tz)
-            now_local = datetime.now(UTC).astimezone(tz).time()
+            now_local = _utc_now().astimezone(tz).time()
             sh, sm = map(int, start_str.split(":"))
             eh, em = map(int, end_str.split(":"))
             start_t = dt.time(sh, sm)
@@ -854,7 +867,7 @@ async def public_get_catalogue(
         raw_items = await raw_db["guest_service_items"].find({"tenant_id": tenant_id, "property_id": property_id}).to_list(length=None)
 
         if not raw_depts and not raw_items:
-            if settings is None:
+            if not raw_settings:
                 from domains.guest.qr_catalogue_defaults import get_default_catalogue
                 default_cat = get_default_catalogue()
                 depts_out = default_cat["departments"]
@@ -879,10 +892,12 @@ async def public_get_catalogue(
     if not depts_out and not services_out:
          raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
-    # Formatting and filtering
-    depts_out.sort(key=lambda x: x.get("display_order", 0))
+    # Deterministic secondary sorting
+    depts_out.sort(key=lambda x: (x.get("display_order", 0), x.get("department_code", "")))
+    services_out.sort(key=lambda x: (x.get("display_order", 0), x.get("service_code", "")))
+
     enabled_dept_codes = set()
-    formatted_depts = []
+    initial_depts = []
 
     for d in depts_out:
         if not d.get("enabled", True):
@@ -890,16 +905,17 @@ async def public_get_catalogue(
         dept_code = d.get("department_code")
         if not dept_code:
             continue
-        formatted_depts.append({
+        initial_depts.append({
             "department_code": dept_code,
+            "display_order": d.get("display_order", 0),
             "label": process_lang(d.get("labels")),
             "icon": d.get("icon")
         })
         enabled_dept_codes.add(dept_code)
 
-    # Deterministic secondary sorting by service_code
-    services_out.sort(key=lambda x: (x.get("display_order", 0), x.get("service_code", "")))
     formatted_services = []
+    used_dept_codes = set()
+
     for s in services_out:
         if not s.get("enabled", True):
             continue
@@ -934,6 +950,13 @@ async def public_get_catalogue(
             "is_chargeable": s.get("is_chargeable", False),
             "charge_warning": process_lang_dict(s.get("charge_warning"))
         })
+        used_dept_codes.add(dept_code)
+
+    formatted_depts = []
+    for d in initial_depts:
+        if d["department_code"] in used_dept_codes:
+            d.pop("display_order", None)
+            formatted_depts.append(d)
 
     if not formatted_depts and not formatted_services:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
@@ -942,7 +965,7 @@ async def public_get_catalogue(
         "catalogue_version": 1,
         "departments": formatted_depts,
         "services": formatted_services,
-        "server_timestamp": datetime.now(UTC).isoformat()
+        "server_timestamp": _utc_now().isoformat()
     }
 
 
