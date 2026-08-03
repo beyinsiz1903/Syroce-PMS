@@ -456,44 +456,39 @@ async def public_create_guest_session(
         try:
             is_date_only = False
             if isinstance(departure_date, str):
-                # Distinguish date-only from real midnight string
-                # ISO formats: YYYY-MM-DD or YYYY-MM-DDT00:00:00...
-                if len(departure_date.strip()) <= 10:
+                departure_date_str = departure_date.strip()
+                import re
+                if re.match(r"^\d{4}-\d{2}-\d{2}$", departure_date_str):
                     is_date_only = True
-                elif "T00:00:00" in departure_date and not "T00:00:01" in departure_date: # Rough check for padded 00:00
-                    # Often systems pad date-only to 00:00:00. In PMS context, actual checkout is rarely exactly 00:00:00.
-                    is_date_only = True
+                
+                if is_date_only:
+                    from datetime import date
+                    import zoneinfo
+                    y, m, d = map(int, departure_date_str.split("-"))
+                    dep_date = date(y, m, d)
                     
-                dep = datetime.fromisoformat(departure_date.replace("Z", "+00:00"))
+                    prop = await raw_db["properties"].find_one({"id": property_id, "tenant_id": tenant_id}) or {}
+                    checkout_time_str = prop.get("checkout_time", "12:00")
+                    prop_tz_str = prop.get("timezone", "UTC")
+                    try:
+                        tz = zoneinfo.ZoneInfo(prop_tz_str)
+                    except Exception:
+                        tz = UTC
+                        
+                    try:
+                        hh, mm = map(int, checkout_time_str.split(":"))
+                    except Exception:
+                        hh, mm = 12, 0
+                        
+                    dep = datetime(dep_date.year, dep_date.month, dep_date.day, hh, mm, 0, tzinfo=tz).astimezone(UTC)
+                else:
+                    dep = datetime.fromisoformat(departure_date_str.replace("Z", "+00:00"))
+                    if dep.tzinfo is None:
+                        dep = dep.replace(tzinfo=UTC)
             else:
                 dep = departure_date
-                # If it's a datetime object and hour is 0, it might be date only
-                if dep.hour == 0 and dep.minute == 0 and dep.second == 0:
-                    is_date_only = True
-
-            if dep.tzinfo is None:
-                dep = dep.replace(tzinfo=UTC)
-                
-            if is_date_only:
-                prop = await raw_db["properties"].find_one({"id": property_id, "tenant_id": tenant_id}) or {}
-                checkout_time_str = prop.get("checkout_time", "12:00")
-                
-                # Fetch property timezone or fallback to UTC
-                prop_tz_str = prop.get("timezone", "UTC")
-                try:
-                    import zoneinfo
-                    tz = zoneinfo.ZoneInfo(prop_tz_str)
-                except Exception:
-                    tz = UTC
-                
-                try:
-                    hh, mm = map(int, checkout_time_str.split(":"))
-                except Exception:
-                    hh, mm = 12, 0
-                
-                # Convert the date-only dep to property timezone, apply hours, then back to UTC
-                dep_local = dep.astimezone(tz).replace(hour=hh, minute=mm, second=0, microsecond=0)
-                dep = dep_local.astimezone(UTC)
+                if dep.tzinfo is None:
+                    dep = dep.replace(tzinfo=UTC)
 
             expires_at = min(expires_at, dep)
         except Exception as e:
@@ -777,8 +772,13 @@ async def public_get_thread(
 
     from domains.guest.messaging import guest_requests as _gr
 
-    # Scope strictly by booking_id for continuity, not guest_session_id, so staff replies are visible
-    messages = await _gr.get_thread_messages(tenant_id, room_id, booking_id=booking["id"])
+    # Strict property and booking scoped query for guest isolation
+    messages = await _gr.public_get_guest_thread(
+        tenant_id=tenant_id, 
+        property_id=booking["property_id"], 
+        room_id=room_id, 
+        booking_id=booking["id"]
+    )
     return {"messages": _guest_facing_messages(messages)}
 
 

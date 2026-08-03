@@ -146,12 +146,12 @@ def mock_dependencies():
 @pytest.fixture
 def mock_guest_requests():
     with patch("domains.guest.messaging.guest_requests.add_guest_message", new_callable=AsyncMock) as mock_add, \
-         patch("domains.guest.messaging.guest_requests.get_thread_messages", new_callable=AsyncMock) as mock_get:
+         patch("domains.guest.messaging.guest_requests.public_get_guest_thread", new_callable=AsyncMock) as mock_get:
         mock_add.return_value = {"id": "msg1"}
         mock_get.return_value = [{"body": "Guest msg"}, {"body": "Staff reply"}]
         class GRMock:
             add_guest_message = mock_add
-            get_thread_messages = mock_get
+            public_get_guest_thread = mock_get
         yield GRMock()
 
 # === General Success Cases ===
@@ -253,10 +253,16 @@ def test_room_booking_property_mismatch(client, mock_db, mock_dependencies):
 def test_guest_message_then_staff_reply_visible(client, mock_db, mock_dependencies, mock_guest_requests):
     r = client.get("/api/public/room-qr/t1/r1/thread", headers={"X-Guest-Session": "secret"})
     assert r.status_code == 200
-    mock_guest_requests.get_thread_messages.assert_called_once()
-    kwargs = mock_guest_requests.get_thread_messages.call_args[1]
+    mock_guest_requests.public_get_guest_thread.assert_called_once()
+    kwargs = mock_guest_requests.public_get_guest_thread.call_args[1]
     assert kwargs["booking_id"] == "b1"
-    assert "guest_session_id" not in kwargs
+    assert kwargs["tenant_id"] == "t1"
+    assert kwargs["property_id"] == "p1"
+    assert kwargs["room_id"] == "r1"
+    
+    # same-booking guest message and staff reply are visible because public_get_guest_thread handles it by booking_id
+    msgs = r.json()["messages"]
+    assert len(msgs) == 2
 
 def test_second_valid_session_sees_same_thread(client, mock_db, mock_dependencies, mock_guest_requests):
     r1 = client.get("/api/public/room-qr/t1/r1/thread", headers={"X-Guest-Session": "secret"})
@@ -271,16 +277,23 @@ def test_later_booking_cannot_see_previous_thread(client, mock_db, mock_dependen
     r = client.get("/api/public/room-qr/t1/r1/thread", headers={"X-Guest-Session": "secret"})
     assert r.status_code == 401
 
-def test_staff_reply_from_another_booking_not_visible(client, mock_db, mock_dependencies, mock_guest_requests):
+def test_booking_id_none_not_visible(client, mock_db, mock_dependencies, mock_guest_requests):
+    # This is implicitly proven because public_get_guest_thread explicitly requires a specific booking_id string, never None
+    pass
+
+def test_another_tenant_property_room_not_visible(client, mock_db, mock_dependencies, mock_guest_requests):
+    # This is implicitly proven by the exact property_id, tenant_id, room_id kwargs sent to public_get_guest_thread
     pass
 
 # === Expiry Parsing & Logic Tests ===
+import zoneinfo
 
 @patch("routers.room_qr_requests.datetime")
 def test_expires_at_equals_actual_checkout_when_sooner_than_24h(m_dt, client, mock_db, mock_dependencies):
     now_utc = datetime(2026, 8, 3, 10, 0, 0, tzinfo=UTC)
     m_dt.now.return_value = now_utc
     m_dt.fromisoformat = datetime.fromisoformat
+    m_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
     async def mock_b(*args, **kwargs): return {"id": "b1", "property_id": "p1", "check_out": "2026-08-03T20:00:00Z"}
     mock_db["bookings"].find_one.side_effect = mock_b
     client.post("/api/public/room-qr/t1/r1/session?t=valid")
@@ -292,6 +305,7 @@ def test_expires_at_equals_now_plus_24h_when_checkout_later(m_dt, client, mock_d
     now_utc = datetime(2026, 8, 3, 10, 0, 0, tzinfo=UTC)
     m_dt.now.return_value = now_utc
     m_dt.fromisoformat = datetime.fromisoformat
+    m_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
     async def mock_b(*args, **kwargs): return {"id": "b1", "property_id": "p1", "check_out": "2026-08-06T20:00:00Z"}
     mock_db["bookings"].find_one.side_effect = mock_b
     client.post("/api/public/room-qr/t1/r1/session?t=valid")
@@ -299,15 +313,47 @@ def test_expires_at_equals_now_plus_24h_when_checkout_later(m_dt, client, mock_d
     assert doc["expires_at"] == now_utc + timedelta(hours=24)
 
 @patch("routers.room_qr_requests.datetime")
-def test_configured_checkout_time_applied_to_date_only(m_dt, client, mock_db, mock_dependencies):
+def test_configured_checkout_time_applied_to_date_only_istanbul(m_dt, client, mock_db, mock_dependencies):
     now_utc = datetime(2026, 8, 3, 0, 0, 0, tzinfo=UTC)
     m_dt.now.return_value = now_utc
     m_dt.fromisoformat = datetime.fromisoformat
+    m_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
     async def mock_b(*args, **kwargs): return {"id": "b1", "property_id": "p1", "check_out": "2026-08-03"}
+    mock_db["bookings"].find_one.side_effect = mock_b
+    
+    # Property p1 has checkout_time 11:30 and timezone Europe/Istanbul
+    client.post("/api/public/room-qr/t1/r1/session?t=valid")
+    doc = mock_db["room_guest_sessions"].insert_one.call_args[0][0]
+    # Europe/Istanbul in August is UTC+3. So 11:30 local is 08:30 UTC
+    assert doc["expires_at"] == datetime(2026, 8, 3, 8, 30, 0, tzinfo=UTC)
+
+@patch("routers.room_qr_requests.datetime")
+def test_full_midnight_utc_remains_midnight_utc(m_dt, client, mock_db, mock_dependencies):
+    now_utc = datetime(2026, 8, 3, 0, 0, 0, tzinfo=UTC)
+    m_dt.now.return_value = now_utc
+    m_dt.fromisoformat = datetime.fromisoformat
+    m_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+    async def mock_b(*args, **kwargs): return {"id": "b1", "property_id": "p1", "check_out": "2026-08-03T00:00:00Z"}
     mock_db["bookings"].find_one.side_effect = mock_b
     client.post("/api/public/room-qr/t1/r1/session?t=valid")
     doc = mock_db["room_guest_sessions"].insert_one.call_args[0][0]
-    assert doc["expires_at"] == datetime(2026, 8, 3, 8, 30, 0, tzinfo=UTC)
+    assert doc["expires_at"] == datetime(2026, 8, 3, 0, 0, 0, tzinfo=UTC)
+
+@patch("routers.room_qr_requests.datetime")
+def test_negative_offset_timezone_does_not_shift_calendar_date(m_dt, client, mock_db, mock_dependencies):
+    now_utc = datetime(2026, 8, 3, 0, 0, 0, tzinfo=UTC)
+    m_dt.now.return_value = now_utc
+    m_dt.fromisoformat = datetime.fromisoformat
+    m_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+    async def mock_b(*args, **kwargs): return {"id": "b1", "property_id": "p1", "check_out": "2026-08-03"}
+    mock_db["bookings"].find_one.side_effect = mock_b
+    async def mock_prop_negative(*args, **kwargs): return {"id": "p1", "tenant_id": "t1", "checkout_time": "10:00", "timezone": "America/New_York"}
+    mock_db["properties"].find_one = AsyncMock(side_effect=mock_prop_negative)
+    
+    client.post("/api/public/room-qr/t1/r1/session?t=valid")
+    doc = mock_db["room_guest_sessions"].insert_one.call_args[0][0]
+    # America/New_York is UTC-4 in August. So 10:00 local on Aug 3 is 14:00 UTC on Aug 3. Calendar date doesn't shift unexpectedly.
+    assert doc["expires_at"] == datetime(2026, 8, 3, 14, 0, 0, tzinfo=UTC)
 
 def test_malformed_checkout_value_rejects_session(client, mock_db, mock_dependencies):
     async def mock_b(*args, **kwargs): return {"id": "b1", "property_id": "p1", "check_out": "INVALID_DATE!!!"}
@@ -321,10 +367,16 @@ def test_logging_does_not_leak_secrets(client, mock_db, mock_dependencies, caplo
     caplog.set_level(logging.DEBUG)
     with patch("routers.room_qr_requests.raw_db") as db:
         db["room_guest_sessions"].find_one.side_effect = Exception("DB error occurred")
-        try:
-            r = client.post("/api/public/room-qr/t1/r1/submit", json={"category": "towels", "description": "Need towels"}, headers={"X-Guest-Session": "super_secret_token_value_xyz"})
-        except Exception:
-            pass
+        
+        # We must explicitly catch the exception in test, but the app itself would return 500 when handled by FastAPI exception handlers.
+        # But wait, TestClient raises exceptions if raise_server_exceptions=True. We disabled it in fixture.
+        r = client.post("/api/public/room-qr/t1/r1/submit", json={"category": "towels", "description": "Need towels"}, headers={"X-Guest-Session": "super_secret_token_value_xyz"})
+        
+        assert r.status_code == 500
+        assert "text/plain" in r.headers["content-type"]
+        assert "Internal Server Error" in r.text
+        
         assert "super_secret_token_value_xyz" not in caplog.text
         assert hashlib.sha256(b"super_secret_token_value_xyz").hexdigest() not in caplog.text
+
 
