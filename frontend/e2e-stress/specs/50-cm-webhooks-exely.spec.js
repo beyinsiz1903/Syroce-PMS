@@ -435,8 +435,8 @@ test.describe('F8L § 50 — Exely Webhook Stress', () => {
             recFinding(testInfo, 'P1', MOD, 'Exely valid-payload r2 network error', `${e?.message}`);
             throw e;
         }
-        const s1 = (r1.status() === 504 && r1.headers()['x-do-orig-status'] === '503' ? 503 : r1.status());
-        const s2 = (r2.status() === 504 && r2.headers()['x-do-orig-status'] === '503' ? 503 : r2.status());
+        const s1 = r1.status();
+        const s2 = r2.status();
         const both2xx = (s1 >= 200 && s1 < 300) && (s2 >= 200 && s2 < 300);
         // Idempotency contract: aynı stableId ile 2 ingest → r2 status sınıfı r1
         // ile aynı (her ikisi 2xx kabul, dedupe sessizce çalışır) VEYA r2 conflict
@@ -494,7 +494,7 @@ test.describe('F8L § 50 — Exely Webhook Stress', () => {
             recFinding(testInfo, 'P1', MOD, 'Exely cancel r2 network error', `${e?.message}`);
             throw e;
         }
-        const s1 = (r1.status() === 504 && r1.headers()['x-do-orig-status'] === '503' ? 503 : r1.status()), s2 = (r2.status() === 504 && r2.headers()['x-do-orig-status'] === '503' ? 503 : r2.status());
+        const s1 = r1.status(), s2 = r2.status();
         const both2xx = (s1 >= 200 && s1 < 300) && (s2 >= 200 && s2 < 300);
         const idempotencyOk = both2xx || (s1 === s2);
         rec(testInfo, { module: MOD, step: 'cancel_idemp',

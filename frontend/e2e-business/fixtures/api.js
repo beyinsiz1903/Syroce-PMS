@@ -33,7 +33,7 @@ export async function makeApi(baseURL) {
 export async function safeGet(ctx, url, opts = {}) {
     try {
         const r = await ctx.get(url, { failOnStatusCode: false, ...opts });
-        return { status: (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()), ok: r.ok(), body: await r.text().catch(() => '') };
+        return { status: r.status(), ok: r.ok(), body: await r.text().catch(() => '') };
     } catch (e) {
         return { status: 0, ok: false, body: '', error: e.message };
     }
@@ -43,7 +43,7 @@ async function _parse(r) {
     const text = await r.text().catch(() => '');
     let json = null;
     try { json = text ? JSON.parse(text) : null; } catch { json = null; }
-    return { status: (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()), ok: r.ok(), body: text, json };
+    return { status: r.status(), ok: r.ok(), body: text, json };
 }
 
 export async function safePost(ctx, url, data, opts = {}) {

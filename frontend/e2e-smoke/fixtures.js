@@ -81,7 +81,7 @@ export function attachObservers(page) {
 
     page.on('response', (res) => {
         const url = res.url();
-        const status = (res.status() === 504 && res.headers()['x-do-orig-status'] === '503' ? 503 : res.status());
+        const status = res.status();
         if (status < 400) return;
         if (NETWORK_ERROR_ALLOWLIST.some((re) => re.test(url))) return;
         // 401/403 normal kabul: bazı endpoint'ler tenant/role'e bağlı.

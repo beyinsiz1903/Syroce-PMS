@@ -103,7 +103,7 @@ export async function fetchSingle(request, token, listPath) {
         : (j?.bookings || j?.rooms || j?.guests || j?.folios || j?.complaints
             || j?.messages || j?.conversations || j?.notifications
             || j?.items || j?.data || []);
-    return { http: (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()), list: Array.isArray(list) ? list : [], raw: j };
+    return { http: r.status(), list: Array.isArray(list) ? list : [], raw: j };
 }
 
 // Task #34 — Client-side pacer + 429-aware retry baked into the default
@@ -447,7 +447,7 @@ export async function assertNoExternalCallsPostBatch(testInfo, module, batchName
                 headers: { Authorization: `Bearer ${pilotToken}` },
                 failOnStatusCode: false, timeout: 10_000,
             });
-            endpointStatus = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
+            endpointStatus = r.status();
             if (r.ok()) {
                 runtimeBody = await r.json().catch(() => null);
                 if (Array.isArray(runtimeBody?.external_calls_made)) {
@@ -1119,7 +1119,7 @@ export async function withModuleProbe(request, token, endpoint, opts = {}) {
             failOnStatusCode: false,
             timeout,
         });
-        status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
+        status = r.status();
         try { body = await r.json(); } catch { body = null; }
     } catch (e) { err = String(e?.message || e); }
     const moduleBlocked = status === 403 || status === 404 || status === 0;
@@ -1172,13 +1172,13 @@ export async function snapshotAiCallCount(request, token) {
             headers: { Authorization: `Bearer ${token}` },
             failOnStatusCode: false, timeout: 10_000,
         });
-        if ((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) >= 200 && (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) < 300) {
+        if (r.status() >= 200 && r.status() < 300) {
             const body = await r.json().catch(() => null);
             if (body && typeof body.attempted_call_count === 'number') {
                 return { ok: true, count: body.attempted_call_count, body };
             }
         }
-        return { ok: false, count: null, body: null, status: (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) };
+        return { ok: false, count: null, body: null, status: r.status() };
     } catch (e) {
         return { ok: false, count: null, body: null, error: String(e?.message || e).slice(0, 80) };
     }
@@ -1207,7 +1207,7 @@ export async function assertNoVendorHttpCall(testInfo, module, request, token, b
             headers: { Authorization: `Bearer ${token}` },
             failOnStatusCode: false, timeout: 10_000,
         });
-        diagStatus = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
+        diagStatus = r.status();
         if (diagStatus >= 200 && diagStatus < 300) {
             try { llmState = await r.json(); } catch { llmState = null; }
         }
@@ -1361,8 +1361,8 @@ export async function snapshotPilotBookingFields(request, pilotToken, sampleSize
             headers: { Authorization: `Bearer ${pilotToken}` },
             failOnStatusCode: false, timeout: 15_000,
         });
-        if ((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) < 200 || (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) >= 300) {
-            return { ok: false, samples: [], total: 0, status: (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) };
+        if (r.status() < 200 || r.status() >= 300) {
+            return { ok: false, samples: [], total: 0, status: r.status() };
         }
         const body = await r.json().catch(() => null);
         const list = Array.isArray(body) ? body : (body?.bookings || body?.items || []);

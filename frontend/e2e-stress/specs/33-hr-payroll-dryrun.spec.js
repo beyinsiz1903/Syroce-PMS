@@ -162,9 +162,9 @@ test.describe('F8D-v2 § 33 — HR Payroll Dry-run', () => {
         recPerf(testInfo, MOD, 'export_csv', [ms], pass);
         rec(testInfo, { module: MOD, step: 'export_csv',
             status: pass ? 'PASS' : 'REVIEW',
-            endpoint: '/api/hr/payroll/export/csv', http: (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()),
-            note: `status=${(r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status())} ms=${ms} ct=${ct} cd=${cd.slice(0, 80)} body_len=${body.length} csv_marker=${looksLikeCsv}` });
-        if (!r.ok()) recFinding(testInfo, 'P2', MOD, 'Payroll CSV export non-2xx', `status=${(r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status())}`);
+            endpoint: '/api/hr/payroll/export/csv', http: r.status(),
+            note: `status=${r.status()} ms=${ms} ct=${ct} cd=${cd.slice(0, 80)} body_len=${body.length} csv_marker=${looksLikeCsv}` });
+        if (!r.ok()) recFinding(testInfo, 'P2', MOD, 'Payroll CSV export non-2xx', `status=${r.status()}`);
         // Token leak in CSV bytes
         if (r.ok() && /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/.test(body)) {
             recFinding(testInfo, 'P0', MOD, 'JWT leak inside payroll CSV stream',

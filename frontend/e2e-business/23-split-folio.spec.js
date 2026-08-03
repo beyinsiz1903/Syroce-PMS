@@ -188,13 +188,13 @@ async function setupSplitPanel(page, api, scope, testInfo, dates, guestName, reg
     const ensureResp = await ensureRespPromise;
     rec(testInfo, {
         module: M, scope, step: 'Folyo Böl → POST ensure-folio',
-        status: ensureResp && (ensureResp.status() === 504 && ensureResp.headers()['x-do-orig-status'] === '503' ? 503 : ensureResp.status()) === 200 ? PASS : FAIL,
+        status: ensureResp && ensureResp.status() === 200 ? PASS : FAIL,
         endpoint: `/api/pms/reservations/${bookingId}/ensure-folio`,
-        http: ensureResp ? (ensureResp.status() === 504 && ensureResp.headers()['x-do-orig-status'] === '503' ? 503 : ensureResp.status()) : null,
+        http: ensureResp ? ensureResp.status() : null,
         note: ensureResp ? '' : 'ensure-folio çağrılmadı',
     });
     expect(ensureResp, 'Folyo Böl ensure-folio çağırmadı').not.toBeNull();
-    expect((ensureResp.status() === 504 && ensureResp.headers()['x-do-orig-status'] === '503' ? 503 : ensureResp.status()), `ensure-folio beklenen 200 değil: ${(ensureResp.status() === 504 && ensureResp.headers()['x-do-orig-status'] === '503' ? 503 : ensureResp.status())}`).toBe(200);
+    expect(ensureResp.status(), `ensure-folio beklenen 200 değil: ${ensureResp.status()}`).toBe(200);
 
     // ── 10) Bölme paneli görünür (HARD) ──
     const panel = page.locator('[data-testid="split-folio-panel"]').first();
@@ -407,13 +407,13 @@ test.describe('Scope 5 — Folyo Böl (folio yok + masraf var)', () => {
             const ensureResp = await ensureRespPromise;
             rec(testInfo, {
                 module: M, scope: 5, step: 'Folyo Böl → POST ensure-folio',
-                status: ensureResp && (ensureResp.status() === 504 && ensureResp.headers()['x-do-orig-status'] === '503' ? 503 : ensureResp.status()) === 200 ? PASS : FAIL,
+                status: ensureResp && ensureResp.status() === 200 ? PASS : FAIL,
                 endpoint: `/api/pms/reservations/${bookingId}/ensure-folio`,
-                http: ensureResp ? (ensureResp.status() === 504 && ensureResp.headers()['x-do-orig-status'] === '503' ? 503 : ensureResp.status()) : null,
+                http: ensureResp ? ensureResp.status() : null,
                 note: ensureResp ? '' : 'ensure-folio çağrılmadı — regresyon (toast yoluna düşmüş olabilir)',
             });
             expect(ensureResp, 'Folyo Böl ensure-folio çağırmadı — eski "Bölünecek folyo bulunmuyor" regresyonu').not.toBeNull();
-            expect((ensureResp.status() === 504 && ensureResp.headers()['x-do-orig-status'] === '503' ? 503 : ensureResp.status()), `ensure-folio beklenen 200 değil: ${(ensureResp.status() === 504 && ensureResp.headers()['x-do-orig-status'] === '503' ? 503 : ensureResp.status())}`).toBe(200);
+            expect(ensureResp.status(), `ensure-folio beklenen 200 değil: ${ensureResp.status()}`).toBe(200);
 
             // ── 10) Bölme paneli görünür (HARD) ──
             const panel = page.locator('[data-testid="split-folio-panel"]').first();
@@ -492,16 +492,16 @@ test.describe('Scope 5 — Folyo Böl (folio yok + masraf var)', () => {
             const newFolioId = splitBody?.new_folio?.id;
             rec(testInfo, {
                 module: M, scope: 5, step: 'Bölmeyi Onayla → POST /pms-core/folio/split',
-                status: splitResp && (splitResp.status() === 504 && splitResp.headers()['x-do-orig-status'] === '503' ? 503 : splitResp.status()) === 200 && splitBody?.success
+                status: splitResp && splitResp.status() === 200 && splitBody?.success
                     && (splitBody?.transferred_charges || 0) >= 1 && newFolioId ? PASS : FAIL,
                 endpoint: '/api/pms-core/folio/split',
-                http: splitResp ? (splitResp.status() === 504 && splitResp.headers()['x-do-orig-status'] === '503' ? 503 : splitResp.status()) : null,
+                http: splitResp ? splitResp.status() : null,
                 note: splitResp
                     ? `success=${splitBody?.success} transferred=${splitBody?.transferred_charges} new_folio=${newFolioId || 'yok'}`
                     : 'split çağrılmadı — by_item Onayla yolu kırık',
             });
             expect(splitResp, 'Bölmeyi Onayla /pms-core/folio/split çağırmadı').not.toBeNull();
-            expect((splitResp.status() === 504 && splitResp.headers()['x-do-orig-status'] === '503' ? 503 : splitResp.status()), `folio/split beklenen 200 değil: ${(splitResp.status() === 504 && splitResp.headers()['x-do-orig-status'] === '503' ? 503 : splitResp.status())}`).toBe(200);
+            expect(splitResp.status(), `folio/split beklenen 200 değil: ${splitResp.status()}`).toBe(200);
             expect(splitBody?.success, `folio/split success!=true: ${JSON.stringify(splitBody)?.slice(0, 200)}`).toBe(true);
             expect(splitBody?.transferred_charges || 0, 'folio/split kalem aktarmadı (transferred_charges<1)').toBeGreaterThanOrEqual(1);
             expect(newFolioId, 'folio/split yeni hedef folio oluşturmadı (new_folio.id yok)').toBeTruthy();
@@ -643,16 +643,16 @@ test.describe('Scope 6 — Tutar tabanlı folyo bölme (Eşit / Özel)', () => {
                 .map(f => f.id).filter(Boolean);
             rec(testInfo, {
                 module: M, scope: 6, step: 'Bölmeyi Onayla → POST /pms-core/folio/split-by-amount (eşit)',
-                status: resp && (resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status()) === 200 && body?.success
+                status: resp && resp.status() === 200 && body?.success
                     && (body?.target_count || 0) >= 1 && transferred > 0 && newFolioIds.length >= 1 ? PASS : FAIL,
                 endpoint: '/api/pms-core/folio/split-by-amount',
-                http: resp ? (resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status()) : null,
+                http: resp ? resp.status() : null,
                 note: resp
                     ? `success=${body?.success} target_count=${body?.target_count} transferred=${transferred} new_folios=${newFolioIds.length}`
                     : 'split-by-amount çağrılmadı — Eşit Böl Onayla yolu kırık',
             });
             expect(resp, 'Bölmeyi Onayla split-by-amount çağırmadı').not.toBeNull();
-            expect((resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status()), `split-by-amount beklenen 200 değil: ${(resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status())}`).toBe(200);
+            expect(resp.status(), `split-by-amount beklenen 200 değil: ${resp.status()}`).toBe(200);
             expect(body?.success, `split-by-amount success!=true: ${JSON.stringify(body)?.slice(0, 200)}`).toBe(true);
             expect(body?.target_count || 0, 'Eşit böl yeni hedef folio açmadı (target_count<1)').toBeGreaterThanOrEqual(1);
             expect(transferred, 'Eşit böl tutar aktarmadı (transferred_amount<=0)').toBeGreaterThan(0);
@@ -779,17 +779,17 @@ test.describe('Scope 6 — Tutar tabanlı folyo bölme (Eşit / Özel)', () => {
                 .map(f => f.id).filter(Boolean);
             rec(testInfo, {
                 module: M, scope: 7, step: 'Bölmeyi Onayla → POST /pms-core/folio/split-by-amount (özel)',
-                status: resp && (resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status()) === 200 && body?.success
+                status: resp && resp.status() === 200 && body?.success
                     && (body?.target_count || 0) >= 1 && Math.abs(transferred - customAmount) <= 0.05
                     && newFolioIds.length >= 1 ? PASS : FAIL,
                 endpoint: '/api/pms-core/folio/split-by-amount',
-                http: resp ? (resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status()) : null,
+                http: resp ? resp.status() : null,
                 note: resp
                     ? `success=${body?.success} target_count=${body?.target_count} transferred=${transferred} (girilen ${customAmount}) new_folios=${newFolioIds.length}`
                     : 'split-by-amount çağrılmadı — Özel Tutar Onayla yolu kırık',
             });
             expect(resp, 'Bölmeyi Onayla split-by-amount çağırmadı').not.toBeNull();
-            expect((resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status()), `split-by-amount beklenen 200 değil: ${(resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status())}`).toBe(200);
+            expect(resp.status(), `split-by-amount beklenen 200 değil: ${resp.status()}`).toBe(200);
             expect(body?.success, `split-by-amount success!=true: ${JSON.stringify(body)?.slice(0, 200)}`).toBe(true);
             expect(body?.target_count || 0, 'Özel tutar yeni hedef folio açmadı (target_count<1)').toBeGreaterThanOrEqual(1);
             expect(Math.abs(transferred - customAmount), 'Aktarılan tutar girilen özel tutarla eşleşmiyor').toBeLessThanOrEqual(0.05);

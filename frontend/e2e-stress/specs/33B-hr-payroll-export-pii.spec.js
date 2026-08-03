@@ -72,7 +72,7 @@ test.describe('F8D-v3 § 33B — Payroll Export PII / Role Visibility', () => {
             failOnStatusCode: false,
         });
         const ms = Date.now() - t0;
-        const status = (rRaw.status() === 504 && rRaw.headers()['x-do-orig-status'] === '503' ? 503 : rRaw.status());
+        const status = rRaw.status();
         const ct = rRaw.headers()['content-type'] || '';
         const ctOk = ct.includes('application/json');
         let body = {};
@@ -133,7 +133,7 @@ test.describe('F8D-v3 § 33B — Payroll Export PII / Role Visibility', () => {
             failOnStatusCode: false,
         });
         const ms = Date.now() - t0;
-        const status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
+        const status = r.status();
         const ct = r.headers()['content-type'] || '';
         const text = await r.text();
         const ctOk = ct.includes('text/csv') || ct.includes('application/csv');
@@ -195,7 +195,7 @@ test.describe('F8D-v3 § 33B — Payroll Export PII / Role Visibility', () => {
             failOnStatusCode: false,
         });
         const ms = Date.now() - t0;
-        const status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
+        const status = r.status();
         const ct = r.headers()['content-type'] || '';
         const buf = await r.body();
         const ctOk = ct.includes('spreadsheet') || ct.includes('xlsx') || ct.includes('octet-stream');
@@ -221,12 +221,12 @@ test.describe('F8D-v3 § 33B — Payroll Export PII / Role Visibility', () => {
                 headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
                 failOnStatusCode: false,
             });
-            idorStatus = `real_${(realIdorR.status() === 504 && realIdorR.headers()['x-do-orig-status'] === '503' ? 503 : realIdorR.status())}`;
+            idorStatus = `real_${realIdorR.status()}`;
             const realIdorBody = await realIdorR.body();
             // Real IDOR evidence: 2xx + non-trivial XLSX body (>100 bytes).
-            realIdorEvidence = ((realIdorR.status() === 504 && realIdorR.headers()['x-do-orig-status'] === '503' ? 503 : realIdorR.status()) === 200 || (realIdorR.status() === 504 && realIdorR.headers()['x-do-orig-status'] === '503' ? 503 : realIdorR.status()) === 204)
+            realIdorEvidence = (realIdorR.status() === 200 || realIdorR.status() === 204)
                 && realIdorBody.length > 100;
-            idor_rejected = (realIdorR.status() === 504 && realIdorR.headers()['x-do-orig-status'] === '503' ? 503 : realIdorR.status()) === 403 || (realIdorR.status() === 504 && realIdorR.headers()['x-do-orig-status'] === '503' ? 503 : realIdorR.status()) === 404;
+            idor_rejected = realIdorR.status() === 403 || realIdorR.status() === 404;
         }
         // Fallback: bogus UUID (not-found contract).
         const bogusId = '00000000-0000-0000-0000-000000000000';
@@ -234,28 +234,28 @@ test.describe('F8D-v3 § 33B — Payroll Export PII / Role Visibility', () => {
             headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
             failOnStatusCode: false,
         });
-        const bogus_rejected = (bogusR.status() === 504 && bogusR.headers()['x-do-orig-status'] === '503' ? 503 : bogusR.status()) === 403 || (bogusR.status() === 504 && bogusR.headers()['x-do-orig-status'] === '503' ? 503 : bogusR.status()) === 404;
+        const bogus_rejected = bogusR.status() === 403 || bogusR.status() === 404;
 
         // Anonymous probe — no auth (must 401).
         const anonR = await request.get(`/api/hr/payroll/runs/${runId}/export.xlsx`, {
             failOnStatusCode: false,
         });
-        const anon_rejected = (anonR.status() === 504 && anonR.headers()['x-do-orig-status'] === '503' ? 503 : anonR.status()) === 401 || (anonR.status() === 504 && anonR.headers()['x-do-orig-status'] === '503' ? 503 : anonR.status()) === 403;
+        const anon_rejected = anonR.status() === 401 || anonR.status() === 403;
 
         const pass = (status === 200 || status === 204) && ctOk && sizeOk
             && idor_rejected && bogus_rejected && anon_rejected && !realIdorEvidence;
         recPerf(testInfo, MOD, 'xlsx_export', [ms], pass);
         rec(testInfo, { module: MOD, step: 'xlsx_export', status: pass ? 'PASS' : 'FAIL',
             endpoint: 'GET /api/hr/payroll/runs/{id}/export.xlsx',
-            note: `run_id=${String(runId).slice(0, 8)}.. status=${status} ct=${ct.slice(0, 40)} ct_ok=${ctOk} size=${buf.length} size_ok=${sizeOk} pilot_run_harvested=${!!pilotRunId} real_idor_status=${idorStatus} real_idor_evidence=${realIdorEvidence} idor_rejected=${idor_rejected} bogus_status=${(bogusR.status() === 504 && bogusR.headers()['x-do-orig-status'] === '503' ? 503 : bogusR.status())} bogus_rejected=${bogus_rejected} anon_status=${(anonR.status() === 504 && anonR.headers()['x-do-orig-status'] === '503' ? 503 : anonR.status())} anon_rejected=${anon_rejected}` });
+            note: `run_id=${String(runId).slice(0, 8)}.. status=${status} ct=${ct.slice(0, 40)} ct_ok=${ctOk} size=${buf.length} size_ok=${sizeOk} pilot_run_harvested=${!!pilotRunId} real_idor_status=${idorStatus} real_idor_evidence=${realIdorEvidence} idor_rejected=${idor_rejected} bogus_status=${bogusR.status()} bogus_rejected=${bogus_rejected} anon_status=${anonR.status()} anon_rejected=${anon_rejected}` });
         if (realIdorEvidence) recFinding(testInfo, 'P0', MOD, 'XLSX cross-tenant IDOR — pilot run_id downloaded by stress token',
             `pilot_run=${String(pilotRunId).slice(0, 8)}.. status=${idorStatus} body_size>100 — KATASTROFİK tenant isolation breach.`);
         else if (!idor_rejected && pilotRunId) recFinding(testInfo, 'P1', MOD, 'XLSX cross-tenant probe non-403/404',
             `status=${idorStatus} — beklenmeyen yüzey (body trivial, IDOR yok ama auth/scope contract drift).`);
         if (!bogus_rejected) recFinding(testInfo, 'P1', MOD, 'XLSX bogus UUID not-found drift',
-            `bogus_status=${(bogusR.status() === 504 && bogusR.headers()['x-do-orig-status'] === '503' ? 503 : bogusR.status())} — bilinmeyen run_id 2xx döndü.`);
+            `bogus_status=${bogusR.status()} — bilinmeyen run_id 2xx döndü.`);
         if (!anon_rejected) recFinding(testInfo, 'P0', MOD, 'XLSX anonymous download',
-            `anon_status=${(anonR.status() === 504 && anonR.headers()['x-do-orig-status'] === '503' ? 503 : anonR.status())} — auth gate ihlal.`);
+            `anon_status=${anonR.status()} — auth gate ihlal.`);
         if (!ctOk) recFinding(testInfo, 'P2', MOD, 'XLSX content-type drift',
             `ct=${ct}`);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'xlsx_export', stressState, request, stressTokens.pilot_token);

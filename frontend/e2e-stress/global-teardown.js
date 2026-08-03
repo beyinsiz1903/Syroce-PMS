@@ -17,7 +17,7 @@ async function snapshot(api, token) {
         const j = await r.json();
         const list = Array.isArray(j) ? j : (j?.bookings || j?.items || []);
         out.bookings = list.length;
-    } else { out.bookings_status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()); }
+    } else { out.bookings_status = r.status(); }
     return out;
 }
 
@@ -66,7 +66,7 @@ export default async function globalTeardown() {
             data: { email: pilotEmail, password: pilotPassword }
         });
         if (!loginR.ok()) {
-            throw new Error(`[stress-teardown] fallback super-admin login failed: status=${(loginR.status() === 504 && loginR.headers()['x-do-orig-status'] === '503' ? 503 : loginR.status())}`);
+            throw new Error(`[stress-teardown] fallback super-admin login failed: status=${loginR.status()}`);
         }
         const authData = await loginR.json();
         
@@ -75,7 +75,7 @@ export default async function globalTeardown() {
             data: { tenant_id: pilotTenantId }
         });
         if (!tokenR.ok()) {
-            throw new Error(`[stress-teardown] fallback token request failed: status=${(tokenR.status() === 504 && tokenR.headers()['x-do-orig-status'] === '503' ? 503 : tokenR.status())}`);
+            throw new Error(`[stress-teardown] fallback token request failed: status=${tokenR.status()}`);
         }
         fallbackPilotToken = (await tokenR.json()).access_token;
         
@@ -106,9 +106,9 @@ export default async function globalTeardown() {
         timeout: 180_000,
     });
     const c1body = c1.ok() ? await c1.json() : { error: await c1.text().catch(() => '') };
-    log.steps.push({ name: 'cleanup#1', status: (c1.status() === 504 && c1.headers()['x-do-orig-status'] === '503' ? 503 : c1.status()), body: c1body });
+    log.steps.push({ name: 'cleanup#1', status: c1.status(), body: c1body });
     if (!c1.ok()) {
-        console.error('[stress-teardown] ❌ P1: cleanup#1 failed:', (c1.status() === 504 && c1.headers()['x-do-orig-status'] === '503' ? 503 : c1.status()));
+        console.error('[stress-teardown] ❌ P1: cleanup#1 failed:', c1.status());
     } else {
         const total = Object.values(c1body.deleted_counts || {}).reduce((a, b) => a + b, 0);
         console.log(`[stress-teardown] ✅ cleanup#1 deleted_total=${total} ms=${c1body?.timing_ms?.cleanup}`);
@@ -130,7 +130,7 @@ export default async function globalTeardown() {
         && c2counts !== null
         && Object.keys(c2counts).length > 0
         && Object.values(c2counts).every((v) => v === 0);
-    log.steps.push({ name: 'cleanup#2_idempotent', status: (c2.status() === 504 && c2.headers()['x-do-orig-status'] === '503' ? 503 : c2.status()), idempotent, body: c2body });
+    log.steps.push({ name: 'cleanup#2_idempotent', status: c2.status(), idempotent, body: c2body });
     console.log(`[stress-teardown] ${idempotent ? '✅' : '❌ P1:'} cleanup#2 idempotent=${idempotent}`);
 
     // 3) Pilot diff (varsa)
@@ -149,8 +149,8 @@ export default async function globalTeardown() {
     // Hard-fail (non-zero exit via thrown error) on defense invariant violations.
     // Architect feedback: invariants must be enforced, not just reported.
     const violations = [];
-    if (!c1.ok()) violations.push(`cleanup#1 status=${(c1.status() === 504 && c1.headers()['x-do-orig-status'] === '503' ? 503 : c1.status())}`);
-    if (!idempotent) violations.push(`cleanup#2 NOT idempotent (status=${(c2.status() === 504 && c2.headers()['x-do-orig-status'] === '503' ? 503 : c2.status())} body=${JSON.stringify(c2body).slice(0, 300)})`);
+    if (!c1.ok()) violations.push(`cleanup#1 status=${c1.status()}`);
+    if (!idempotent) violations.push(`cleanup#2 NOT idempotent (status=${c2.status()} body=${JSON.stringify(c2body).slice(0, 300)})`);
     const driftStep = log.steps.find((s) => s.name === 'pilot_diff');
     if (driftStep && driftStep.drift !== 0) violations.push(`pilot_drift=${driftStep.drift} (must be 0)`);
     if (violations.length) {

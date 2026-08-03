@@ -80,14 +80,14 @@ test.describe('F8B § 10 — Room QR requests', () => {
                 if (m && it.room_id) tokenByRoom[it.room_id] = decodeURIComponent(m[1]);
             }
         } else {
-            bulkErr = `bulk_status=${(bulkR.status() === 504 && bulkR.headers()['x-do-orig-status'] === '503' ? 503 : bulkR.status())}`;
+            bulkErr = `bulk_status=${bulkR.status()}`;
         }
         if (Object.keys(tokenByRoom).length === 0) {
             rec(testInfo, { module: MOD, step: 'public_submit', status: 'FAIL',
                 endpoint: '/api/rooms/qr-codes/bulk',
                 note: `bulk token map boş — ${bulkErr || 'parse failed'}` });
             recFinding(testInfo, 'P1', MOD, 'QR bulk endpoint token map boş',
-                `bulk_status=${(bulkR.status() === 504 && bulkR.headers()['x-do-orig-status'] === '503' ? 503 : bulkR.status())} items_with_token=0 — URL'den token parse edilemedi.`);
+                `bulk_status=${bulkR.status()} items_with_token=0 — URL'den token parse edilemedi.`);
             expect(Object.keys(tokenByRoom).length, 'bulk token map > 0').toBeGreaterThan(0);
             return;
         }
@@ -112,7 +112,7 @@ test.describe('F8B § 10 — Room QR requests', () => {
                 failOnStatusCode: false, timeout: 15_000,
             });
             samples.push(Date.now() - t0);
-            const status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
+            const status = r.status();
             if (status === 200 || status === 201) ok++;
             else if (status === 429 || status === 503) { throttled++; fail++; } // Nginx limit_req returns 503
             else {
@@ -216,11 +216,11 @@ test.describe('F8B § 10 — Room QR requests', () => {
         // Bad token
         const badUrl = `/api/public/room-qr/${stressTid}/${room.id}?t=deadbeefxxxx`;
         const r1 = await request.get(badUrl, { failOnStatusCode: false, timeout: 10_000 });
-        const r1Status = (r1.status() === 504 && r1.headers()['x-do-orig-status'] === '503' ? 503 : r1.status());
+        const r1Status = r1.status();
         // Empty token (different from missing — backend requires `t` query param)
         const emptyUrl = `/api/public/room-qr/${stressTid}/${room.id}?t=`;
         const r2 = await request.get(emptyUrl, { failOnStatusCode: false, timeout: 10_000 });
-        const r2Status = (r2.status() === 504 && r2.headers()['x-do-orig-status'] === '503' ? 503 : r2.status());
+        const r2Status = r2.status();
         const guardOk = r1Status === 403 && (r2Status === 403 || r2Status === 422);
         rec(testInfo, { module: MOD, step: 'token_guard', status: guardOk ? 'PASS' : 'FAIL',
             endpoint: 'GET /api/public/room-qr/{tid}/{rid}',

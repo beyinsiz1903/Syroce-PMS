@@ -254,7 +254,7 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
         const ok = summaryR.ok();
         await ctx.close();
         rec(testInfo, { module: MOD, step: 'mobile_smoke', status: ok ? 'PASS' : 'REVIEW',
-            note: `mobile_ua + 390x844 viewport, summary status=${(summaryR.status() === 504 && summaryR.headers()['x-do-orig-status'] === '503' ? 503 : summaryR.status())} (UI render ayrı tur — bu sadece API contract sözleşmesi)` });
+            note: `mobile_ua + 390x844 viewport, summary status=${summaryR.status()} (UI render ayrı tur — bu sadece API contract sözleşmesi)` });
     });
 
     test('G) FE render TTI: /housekeeping desktop + mobile (real DOM, 50/200/500 row scaling)', async ({ browser, stressTokens, stressState }, testInfo) => {

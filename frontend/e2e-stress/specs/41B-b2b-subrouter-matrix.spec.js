@@ -552,7 +552,7 @@ test.describe('F8M v2 § 41B — B2B Sub-Router Matrix', () => {
                 headers: { Authorization: `Bearer ${tokenBlob.stress_token}` },
                 failOnStatusCode: false, timeout: 30_000,
             });
-            const status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
+            const status = r.status();
             await ctx.dispose();
             console.log(`[F8M v2 § 41B afterAll] cleanup DELETE: status=${status}`);
             const ok = (status >= 200 && status < 300) || status === 404;

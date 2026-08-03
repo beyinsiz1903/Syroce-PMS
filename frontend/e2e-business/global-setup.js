@@ -64,7 +64,7 @@ export default async function globalSetup() {
                 console.log('[global-setup] Bearer token cache yazıldı.');
             }
         } else {
-            console.warn(`[global-setup] /api/auth/login non-OK: ${(resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status())} (token cache atlandı)`);
+            console.warn(`[global-setup] /api/auth/login non-OK: ${resp.status()} (token cache atlandı)`);
         }
         await apiCtx.dispose();
     } catch (err) {

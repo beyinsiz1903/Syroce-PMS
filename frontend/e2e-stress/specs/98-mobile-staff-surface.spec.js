@@ -473,7 +473,7 @@ test.describe('F9C § 98 — Mobile Staff Surface', () => {
                 timeout: 10_000,
                 // Intentionally headerless — no Authorization header at all.
             });
-            status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
+            status = r.status();
             try { bodySnippet = (await r.text()).slice(0, 200); } catch { /* ignore */ }
         } catch (e) {
             recFinding(testInfo, 'P2', MOD, 'K_anon network error', String(e?.message || e).slice(0, 200));
@@ -620,7 +620,7 @@ test.describe('F9C § 98 — Mobile Staff Surface', () => {
                 try {
                     const r = await ctx.delete(`/api/pms/shift-handover/${id}`,
                         { timeout: 10_000, failOnStatusCode: false });
-                    if ((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) < 500) hvDeleted += 1;
+                    if (r.status() < 500) hvDeleted += 1;
                 } catch { /* idempotent best-effort */ }
             }
             let devUnreg = 0;
@@ -630,7 +630,7 @@ test.describe('F9C § 98 — Mobile Staff Surface', () => {
                         data: { device_id: did },
                         timeout: 10_000, failOnStatusCode: false,
                     });
-                    if ((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) < 500) devUnreg += 1;
+                    if (r.status() < 500) devUnreg += 1;
                 } catch { /* idempotent best-effort */ }
             }
             await ctx.dispose();

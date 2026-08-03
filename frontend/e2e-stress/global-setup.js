@@ -15,7 +15,7 @@ async function login(api, email, password) {
     const resp = await api.post('/api/auth/login', { data: { email, password }, headers: { Origin: process.env.E2E_FE_BASE_URL }, failOnStatusCode: false, timeout: 120_000 });
     if (!resp.ok()) {
         const txt = await resp.text().catch(() => '');
-        throw new Error(`[stress-setup] login failed (${(resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status())}): ${txt.slice(0, 200)}`);
+        throw new Error(`[stress-setup] login failed (${resp.status()}): ${txt.slice(0, 200)}`);
     }
     const body = await resp.json();
     return body?.access_token || body?.token;
@@ -29,9 +29,9 @@ async function login(api, email, password) {
 async function tryLogin(api, email, password, loginPath = '/api/auth/login') {
     try {
         const resp = await api.post(loginPath, { data: { email, password }, headers: { Origin: process.env.E2E_FE_BASE_URL }, failOnStatusCode: false, timeout: 60_000 });
-        if (!resp.ok()) return { token: null, status: (resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status()) };
+        if (!resp.ok()) return { token: null, status: resp.status() };
         const body = await resp.json().catch(() => ({}));
-        return { token: body?.access_token || body?.token || null, status: (resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status()) };
+        return { token: body?.access_token || body?.token || null, status: resp.status() };
     } catch (e) {
         return { token: null, status: 0, error: String(e?.message || e).slice(0, 120) };
     }
@@ -328,8 +328,8 @@ async function warmup(api) {
         try {
             const r = await api.get('/health', { failOnStatusCode: false, timeout: 30_000 });
             const ms = Date.now() - started;
-            console.log(`[stress-setup] warmup /health attempt=${attempt} status=${(r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status())} elapsed=${ms}ms`);
-            if ((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) === 200) break;
+            console.log(`[stress-setup] warmup /health attempt=${attempt} status=${r.status()} elapsed=${ms}ms`);
+            if (r.status() === 200) break;
         } catch (e) {
             lastErr = e;
             console.log(`[stress-setup] warmup /health attempt=${attempt} err=${e.message}`);
@@ -350,8 +350,8 @@ async function warmup(api) {
         try {
             const r = await api.get('/health/ready', { failOnStatusCode: false, timeout: 30_000 });
             const ms = Date.now() - started;
-            console.log(`[stress-setup] warmup /health/ready attempt=${attempt} status=${(r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status())} elapsed=${ms}ms`);
-            if ((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) === 200) break;
+            console.log(`[stress-setup] warmup /health/ready attempt=${attempt} status=${r.status()} elapsed=${ms}ms`);
+            if (r.status() === 200) break;
         } catch (e) {
             lastErr = e;
             console.log(`[stress-setup] warmup /health/ready attempt=${attempt} err=${e.message}`);
@@ -370,8 +370,8 @@ async function warmup(api) {
         try {
             const r = await api.get('/api/health', { failOnStatusCode: false, timeout: 30_000 });
             const ms = Date.now() - started;
-            console.log(`[stress-setup] warmup /api/health attempt=${attempt} status=${(r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status())} elapsed=${ms}ms`);
-            if ((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) === 200) return;
+            console.log(`[stress-setup] warmup /api/health attempt=${attempt} status=${r.status()} elapsed=${ms}ms`);
+            if (r.status() === 200) return;
         } catch (e) {
             lastErr = e;
             console.log(`[stress-setup] warmup /api/health attempt=${attempt} err=${e.message}`);
@@ -392,7 +392,7 @@ async function snapshot(api, token, tag) {
             const j = await r.json();
             const list = Array.isArray(j) ? j : (j?.bookings || j?.items || []);
             out.bookings = list.length;
-        } else { out.bookings_status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()); }
+        } else { out.bookings_status = r.status(); }
     } catch (e) { out.bookings_err = e.message; }
     try {
         const r = await api.get('/api/pms/rooms', { headers, failOnStatusCode: false, timeout: 15_000 });
@@ -400,7 +400,7 @@ async function snapshot(api, token, tag) {
             const j = await r.json();
             const list = Array.isArray(j) ? j : (j?.rooms || j?.items || []);
             out.rooms = list.length;
-        } else { out.rooms_status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()); }
+        } else { out.rooms_status = r.status(); }
     } catch (e) { out.rooms_err = e.message; }
     return out;
 }
@@ -477,7 +477,7 @@ export default async function globalSetup() {
     });
     if (!seedResp.ok()) {
         const txt = await seedResp.text().catch(() => '');
-        throw new Error(`[stress-setup] NO-GO: seed failed (${(seedResp.status() === 504 && seedResp.headers()['x-do-orig-status'] === '503' ? 503 : seedResp.status())}): ${txt.slice(0, 400)}`);
+        throw new Error(`[stress-setup] NO-GO: seed failed (${seedResp.status()}): ${txt.slice(0, 400)}`);
     }
     seedBody = await seedResp.json();
     if (!Array.isArray(seedBody.external_calls_made) || seedBody.external_calls_made.length !== 0) {
@@ -562,7 +562,7 @@ export default async function globalSetup() {
         if (!cqProbe.ok()) {
             const t = await cqProbe.text().catch(() => '');
             console.warn(
-                `[stress-setup] ⚠️ conflict-queue probe via stress_token non-2xx (${(cqProbe.status() === 504 && cqProbe.headers()['x-do-orig-status'] === '503' ? 503 : cqProbe.status())}): ` +
+                `[stress-setup] ⚠️ conflict-queue probe via stress_token non-2xx (${cqProbe.status()}): ` +
                 `${t.slice(0, 160)} — edit_booking RBAC / router deploy; spec 52B will SKIP its bulk-resolve ` +
                 `subgroup gracefully. stress_token.tenant_id=${stressTokenTid} E2E_STRESS_TENANT_ID=${STRESS_TID}`);
         } else {
@@ -625,7 +625,7 @@ export default async function globalSetup() {
             failOnStatusCode: false,
             timeout: 30_000,
         });
-        if ((probe.status() === 504 && probe.headers()['x-do-orig-status'] === '503' ? 503 : probe.status()) === 403) {
+        if (probe.status() === 403) {
             const txt = await probe.text().catch(() => '');
             let code = '';
             try { code = JSON.parse(txt)?.detail?.error_code || JSON.parse(txt)?.error_code || ''; } catch { /* noop */ }
@@ -638,7 +638,7 @@ export default async function globalSetup() {
                 );
             }
         }
-        console.log(`[stress-setup] ✅ mice add-on entitlement probe status=${(probe.status() === 504 && probe.headers()['x-do-orig-status'] === '503' ? 503 : probe.status())}`);
+        console.log(`[stress-setup] ✅ mice add-on entitlement probe status=${probe.status()}`);
     }
 
     // 7a-bis) Spa add-on entitlement provisioning — Task #166.
@@ -674,7 +674,7 @@ export default async function globalSetup() {
             console.log(`[stress-setup] ✅ Pilot fixtures ensured: block=${pilotFixtures?.block_id?.slice(0,8)} kbs_report=${pilotFixtures?.kbs_report_id?.slice(0,8)} sales_lead=${pilotFixtures?.sales_lead_id?.slice(0,8)} created=${JSON.stringify(pilotFixtures?.created)}`);
         } else {
             const txt = await pf.text().catch(() => '');
-            console.log(`[stress-setup] ⚠️ Pilot fixtures ensure non-2xx (${(pf.status() === 504 && pf.headers()['x-do-orig-status'] === '503' ? 503 : pf.status())}) — matrix spec will fall back to sampling. body=${txt.slice(0, 200)}`);
+            console.log(`[stress-setup] ⚠️ Pilot fixtures ensure non-2xx (${pf.status()}) — matrix spec will fall back to sampling. body=${txt.slice(0, 200)}`);
         }
     }
 

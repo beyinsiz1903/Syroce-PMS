@@ -85,7 +85,7 @@ test.describe.serial('Core PMS happy-path: booking → check-in → folio → ch
         });
         expect(
             loginRes.ok(),
-            `API login başarısız (${(loginRes.status() === 504 && loginRes.headers()['x-do-orig-status'] === '503' ? 503 : loginRes.status())}): ${await loginRes.text()}`
+            `API login başarısız (${loginRes.status()}): ${await loginRes.text()}`
         ).toBeTruthy();
         const body = await loginRes.json();
         token = body.access_token || body.token || '';
@@ -122,7 +122,7 @@ test.describe.serial('Core PMS happy-path: booking → check-in → folio → ch
         const res = await api.get('/api/pms/rooms');
         expect(
             res.ok(),
-            `rooms list başarısız (${(res.status() === 504 && res.headers()['x-do-orig-status'] === '503' ? 503 : res.status())}): ${await res.text()}`
+            `rooms list başarısız (${res.status()}): ${await res.text()}`
         ).toBeTruthy();
         const data = await res.json();
         const rooms = Array.isArray(data) ? data : data.rooms || data.items || [];
@@ -190,8 +190,8 @@ test.describe.serial('Core PMS happy-path: booking → check-in → folio → ch
                 roomId = candidateId;
                 break;
             }
-            lastErr = `${(res.status() === 504 && res.headers()['x-do-orig-status'] === '503' ? 503 : res.status())} ${await res.text()}`;
-            if ((res.status() === 504 && res.headers()['x-do-orig-status'] === '503' ? 503 : res.status()) !== 409) break; // sadece "oda dolu" için döngüde kal
+            lastErr = `${res.status()} ${await res.text()}`;
+            if (res.status() !== 409) break; // sadece "oda dolu" için döngüde kal
         }
         expect(bookingId, `Hiçbir aday odada rezervasyon açılamadı. Son hata: ${lastErr}`).toBeTruthy();
     });
@@ -202,7 +202,7 @@ test.describe.serial('Core PMS happy-path: booking → check-in → folio → ch
         });
         expect(
             res.ok(),
-            `check-in başarısız (${(res.status() === 504 && res.headers()['x-do-orig-status'] === '503' ? 503 : res.status())}): ${await res.text()}`
+            `check-in başarısız (${res.status()}): ${await res.text()}`
         ).toBeTruthy();
         const body = await res.json();
         expect(body.success, 'check-in success=true beklenir').toBeTruthy();
@@ -212,7 +212,7 @@ test.describe.serial('Core PMS happy-path: booking → check-in → folio → ch
         const res = await api.get(`/api/folio/booking/${bookingId}`);
         expect(
             res.ok(),
-            `folio list başarısız (${(res.status() === 504 && res.headers()['x-do-orig-status'] === '503' ? 503 : res.status())}): ${await res.text()}`
+            `folio list başarısız (${res.status()}): ${await res.text()}`
         ).toBeTruthy();
         const data = await res.json();
         const folios = Array.isArray(data) ? data : data.folios || data.items || [];
@@ -238,7 +238,7 @@ test.describe.serial('Core PMS happy-path: booking → check-in → folio → ch
         });
         expect(
             res.ok(),
-            `charge başarısız (${(res.status() === 504 && res.headers()['x-do-orig-status'] === '503' ? 503 : res.status())}): ${await res.text()}`
+            `charge başarısız (${res.status()}): ${await res.text()}`
         ).toBeTruthy();
     });
 
@@ -270,7 +270,7 @@ test.describe.serial('Core PMS happy-path: booking → check-in → folio → ch
         });
         expect(
             res.ok(),
-            `payment başarısız (${(res.status() === 504 && res.headers()['x-do-orig-status'] === '503' ? 503 : res.status())}): ${await res.text()}`
+            `payment başarısız (${res.status()}): ${await res.text()}`
         ).toBeTruthy();
     });
 
@@ -280,7 +280,7 @@ test.describe.serial('Core PMS happy-path: booking → check-in → folio → ch
         });
         expect(
             res.ok(),
-            `checkout başarısız (${(res.status() === 504 && res.headers()['x-do-orig-status'] === '503' ? 503 : res.status())}): ${await res.text()}`
+            `checkout başarısız (${res.status()}): ${await res.text()}`
         ).toBeTruthy();
         const body = await res.json();
         expect(body.success, 'checkout success=true beklenir').toBeTruthy();
@@ -308,7 +308,7 @@ test.describe.serial('Core PMS happy-path: booking → check-in → folio → ch
         // hard fail. (Geçici 5xx için Playwright retry zaten devrede.)
         expect(
             r.ok(),
-            `/full-detail erişilemedi veya booking yok (${(r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status())}): ${await r.text()}`
+            `/full-detail erişilemedi veya booking yok (${r.status()}): ${await r.text()}`
         ).toBeTruthy();
 
         const body = await r.json();

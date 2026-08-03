@@ -172,7 +172,7 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
                 }).catch(() => null);
                 if (r && r.ok()) { twofaEnabled = false; break; }
                 // Throttle backoff if 429 hit (SENSITIVE_AUTH_USER 5/900s).
-                if (r && (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) === 429) await new Promise((res) => setTimeout(res, 3000));
+                if (r && r.status() === 429) await new Promise((res) => setTimeout(res, 3000));
             }
             // Fallback chain: try EVERY remaining backup code (newest first).
             // Single-use semantics mean an already-consumed code is just a
@@ -185,7 +185,7 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
                         failOnStatusCode: false, timeout: 30_000,
                     }).catch(() => null);
                     if (r && r.ok()) { twofaEnabled = false; break; }
-                    if (r && (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) === 429) await new Promise((res) => setTimeout(res, 3000));
+                    if (r && r.status() === 429) await new Promise((res) => setTimeout(res, 3000));
                 }
             }
         } finally {
@@ -213,9 +213,9 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
 
         if (!createStaff.ok()) {
             moduleBlocked = true;
-            blockedReason = `temp_user_creation_failed_${(createStaff.status() === 504 && createStaff.headers()['x-do-orig-status'] === '503' ? 503 : createStaff.status())}`;
+            blockedReason = `temp_user_creation_failed_${createStaff.status()}`;
             recFinding(testInfo, 'P2', MOD, 'Temp user creation failed',
-                `status=${(createStaff.status() === 504 && createStaff.headers()['x-do-orig-status'] === '503' ? 503 : createStaff.status())} — A-G skipped.`);
+                `status=${createStaff.status()} — A-G skipped.`);
             rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
                 note: `module_blocked=true reason=${blockedReason}` });
             test.skip(true, 'Temporary user creation failed');

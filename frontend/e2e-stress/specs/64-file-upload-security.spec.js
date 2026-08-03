@@ -268,24 +268,24 @@ test.describe('F8S § 64 — File Upload Security', () => {
             headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
             failOnStatusCode: false, timeout: 15_000,
         });
-        const selfOk = (self.status() === 504 && self.headers()['x-do-orig-status'] === '503' ? 503 : self.status()) >= 200 && (self.status() === 504 && self.headers()['x-do-orig-status'] === '503' ? 503 : self.status()) < 300;
+        const selfOk = self.status() >= 200 && self.status() < 300;
         rec(testInfo, { module: MOD, step: 'hr_docs_self_download',
             status: selfOk ? 'PASS' : 'REVIEW',
-            note: `status=${(self.status() === 504 && self.headers()['x-do-orig-status'] === '503' ? 503 : self.status())} doc_id=${stressUploadedDocId}` });
+            note: `status=${self.status()} doc_id=${stressUploadedDocId}` });
 
         // Cross-tenant download attempt — stress doc ID + pilot token MUST 404.
         const xPilot = await request.get(`/api/hr/documents/${stressUploadedDocId}/download`, {
             headers: { Authorization: `Bearer ${stressTokens.pilot_token}` },
             failOnStatusCode: false, timeout: 15_000,
         });
-        const xRejected = (xPilot.status() === 504 && xPilot.headers()['x-do-orig-status'] === '503' ? 503 : xPilot.status()) === 404 || (xPilot.status() === 504 && xPilot.headers()['x-do-orig-status'] === '503' ? 503 : xPilot.status()) === 403;
+        const xRejected = xPilot.status() === 404 || xPilot.status() === 403;
         rec(testInfo, { module: MOD, step: 'hr_docs_xtenant_pilot_to_stress',
             status: xRejected ? 'PASS' : 'FAIL',
-            note: `pilot_token GET stress_doc → status=${(xPilot.status() === 504 && xPilot.headers()['x-do-orig-status'] === '503' ? 503 : xPilot.status())} expected=403/404` });
-        if ((xPilot.status() === 504 && xPilot.headers()['x-do-orig-status'] === '503' ? 503 : xPilot.status()) >= 200 && (xPilot.status() === 504 && xPilot.headers()['x-do-orig-status'] === '503' ? 503 : xPilot.status()) < 300) {
+            note: `pilot_token GET stress_doc → status=${xPilot.status()} expected=403/404` });
+        if (xPilot.status() >= 200 && xPilot.status() < 300) {
             recFinding(testInfo, 'P0', MOD,
                 'HR doc cross-tenant download — pilot token stress doc indirdi',
-                `doc_id=${stressUploadedDocId} status=${(xPilot.status() === 504 && xPilot.headers()['x-do-orig-status'] === '503' ? 503 : xPilot.status())}. tenant scope guard eksik.`);
+                `doc_id=${stressUploadedDocId} status=${xPilot.status()}. tenant scope guard eksik.`);
         }
 
         // Pilot doc ID varsa, stress token ile dene → 404 beklenir.
@@ -299,14 +299,14 @@ test.describe('F8S § 64 — File Upload Security', () => {
                     headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
                     failOnStatusCode: false, timeout: 15_000,
                 });
-                const sRejected = (xStress.status() === 504 && xStress.headers()['x-do-orig-status'] === '503' ? 503 : xStress.status()) === 404 || (xStress.status() === 504 && xStress.headers()['x-do-orig-status'] === '503' ? 503 : xStress.status()) === 403;
+                const sRejected = xStress.status() === 404 || xStress.status() === 403;
                 rec(testInfo, { module: MOD, step: 'hr_docs_xtenant_stress_to_pilot',
                     status: sRejected ? 'PASS' : 'FAIL',
-                    note: `stress_token GET pilot_doc → status=${(xStress.status() === 504 && xStress.headers()['x-do-orig-status'] === '503' ? 503 : xStress.status())} expected=403/404` });
-                if ((xStress.status() === 504 && xStress.headers()['x-do-orig-status'] === '503' ? 503 : xStress.status()) >= 200 && (xStress.status() === 504 && xStress.headers()['x-do-orig-status'] === '503' ? 503 : xStress.status()) < 300) {
+                    note: `stress_token GET pilot_doc → status=${xStress.status()} expected=403/404` });
+                if (xStress.status() >= 200 && xStress.status() < 300) {
                     recFinding(testInfo, 'P0', MOD,
                         'HR doc cross-tenant download — stress token pilot doc indirdi',
-                        `pilot_doc_id=${pdocId} status=${(xStress.status() === 504 && xStress.headers()['x-do-orig-status'] === '503' ? 503 : xStress.status())}. IDOR.`);
+                        `pilot_doc_id=${pdocId} status=${xStress.status()}. IDOR.`);
                 }
             }
         }
@@ -438,7 +438,7 @@ test.describe('F8S § 64 — File Upload Security', () => {
                     headers: { Authorization: `Bearer ${token}` },
                     failOnStatusCode: false, timeout: 10_000,
                 });
-                results.push({ id, status: (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) });
+                results.push({ id, status: r.status() });
             } catch (e) {
                 results.push({ id, error: String(e?.message || e).slice(0, 80) });
             }

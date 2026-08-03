@@ -950,7 +950,7 @@ test.describe('F9C § 98 — Messaging Template Lifecycle', () => {
                 timeout: 10_000,
                 // Intentionally headerless.
             });
-            status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
+            status = r.status();
             try { bodySnippet = (await r.text()).slice(0, 200); } catch { /* ignore */ }
         } catch (e) {
             recFinding(testInfo, 'P2', MOD, 'K_anon network error', String(e?.message || e).slice(0, 200));
@@ -1051,7 +1051,7 @@ test.describe('F9C § 98 — Messaging Template Lifecycle', () => {
                     const r = await ctx.delete(`${BASE}/templates/${id}`, {
                         timeout: 10_000, failOnStatusCode: false,
                     });
-                    const s = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
+                    const s = r.status();
                     if (s >= 200 && s < 300) deleted += 1;
                     else if (s === 404) already_gone += 1;
                 } catch { /* idempotent best-effort */ }
@@ -1066,7 +1066,7 @@ test.describe('F9C § 98 — Messaging Template Lifecycle', () => {
                     const r = await ctx.delete(`${BASE}/automation/rules/${id}`, {
                         timeout: 10_000, failOnStatusCode: false,
                     });
-                    const s = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
+                    const s = r.status();
                     if (s >= 200 && s < 300) rule_deleted += 1;
                     else if (s === 404) rule_already_gone += 1;
                 } catch { /* idempotent best-effort */ }

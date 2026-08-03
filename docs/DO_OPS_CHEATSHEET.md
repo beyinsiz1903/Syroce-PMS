@@ -496,9 +496,3 @@ KBS_AUTO_ENQUEUE=1       # check-in/out anında kuyruğa otomatik ekleme açık
 - **"Eklentiyi indir" çalışmıyor:** Buton backend `GET /api/kbs/extension/download`
   ucundan ZIP çeker (oturum gerektirir). 404 alıyorsanız sunucuda `extension/`
   klasörü dağıtılmamış demektir; repo'daki klasörü doğrudan kullanın.
-
-## HTTP 503 Rewrite
-**DigitalOcean App Platform rewrites intentional HTTP 503 responses to HTTP 504 at ingress.**
-- The original application status is preserved and exposed via the `x-do-orig-status: 503` header.
-- Frontend error handling logic must look for `504` combined with this header to properly identify intentional `503` Service Unavailable errors (e.g. backend warm-up) vs actual gateway timeouts.
-- Do NOT change backend application responses from 503 to 504. Keep returning 503.

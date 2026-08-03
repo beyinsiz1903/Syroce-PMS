@@ -554,7 +554,7 @@ test.describe('F9C § 98 — Marketplace Deep Lifecycle', () => {
                 timeout: 10_000,
                 // Intentionally headerless — no Authorization header at all.
             });
-            status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
+            status = r.status();
             try { bodySnippet = (await r.text()).slice(0, 200); } catch { /* ignore */ }
         } catch (e) {
             recFinding(testInfo, 'P2', MOD, 'K_anon network error', String(e?.message || e).slice(0, 200));
@@ -663,7 +663,7 @@ test.describe('F9C § 98 — Marketplace Deep Lifecycle', () => {
             try {
                 const r = await ctx.delete('/api/marketplace/v1/listings/me',
                     { timeout: 10_000, failOnStatusCode: false });
-                if ((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) < 500) listingOptedOut = true;
+                if (r.status() < 500) listingOptedOut = true;
             } catch { /* idempotent best-effort */ }
             // PO reject (idempotent — already-rejected returns 4xx, swallow).
             let posRejected = 0;
@@ -674,7 +674,7 @@ test.describe('F9C § 98 — Marketplace Deep Lifecycle', () => {
                         { data: { reason: 'F9C_MKT_cleanup' },
                           timeout: 10_000, failOnStatusCode: false },
                     );
-                    if ((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) < 500) posRejected += 1;
+                    if (r.status() < 500) posRejected += 1;
                 } catch { /* idempotent best-effort */ }
             }
             await ctx.dispose();

@@ -106,7 +106,7 @@ async function safeGet(request, path, { token } = {}) {
             failOnStatusCode: false,
             timeout: TIMEOUT_MS,
         });
-        const status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
+        const status = r.status();
         let bodySample = null;
         try {
             const txt = await r.text();

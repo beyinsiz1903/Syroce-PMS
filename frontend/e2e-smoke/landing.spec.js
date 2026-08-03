@@ -46,7 +46,7 @@ for (const vp of VIEWPORTS) {
         const resp = await page.goto(LANDING_PATH, { waitUntil: 'domcontentloaded', timeout: 30_000 });
         expect(resp, `${LANDING_PATH} did not return a response`).not.toBeNull();
         // SPA — usually 200/304. Anything ≥400 means the route is broken upstream.
-        expect((resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status()), `Unexpected HTTP status for ${LANDING_PATH}`).toBeLessThan(400);
+        expect(resp.status(), `Unexpected HTTP status for ${LANDING_PATH}`).toBeLessThan(400);
 
         await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
 

@@ -9,7 +9,7 @@ test.describe('Scope 18 — Güvenlik / izolasyon', () => {
         const targets = ['/api/admin/users', '/api/pms/bookings', '/api/audit/timeline', '/api/channel-manager/conflict-queue'];
         for (const ep of targets) {
             const r = await ctx.get(ep, { failOnStatusCode: false });
-            const status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
+            const status = r.status();
             // Architect bulgu #2: önceki kod "herhangi 4xx" → PASS yapıyordu;
             // 404 (eksik endpoint) auth bypass'ı maskeleyebilirdi. Şimdi katı:
             // sadece 401/403 → PASS, geri kalan her şey FAIL.

@@ -738,7 +738,7 @@ test.describe('F9D § 99 — Finance Folio & Guest-Purchase Surface', () => {
                 failOnStatusCode: false,
                 timeout: 10_000,
             });
-            status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
+            status = r.status();
             try { bodySnippet = (await r.text()).slice(0, 200); } catch { /* ignore */ }
         } catch (e) {
             recFinding(testInfo, 'P2', MOD, 'J_anon network error', String(e?.message || e).slice(0, 200));

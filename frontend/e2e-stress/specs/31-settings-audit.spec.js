@@ -323,7 +323,7 @@ test.describe('F8I § 31 — Settings + Audit', () => {
                 timeout: 30_000,
             });
             await ctx.dispose();
-            console.log(`[F8I § 31 afterAll] belt-and-suspenders restore: status=${(r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status())}`);
+            console.log(`[F8I § 31 afterAll] belt-and-suspenders restore: status=${r.status()}`);
         } catch (e) {
             console.log(`[F8I § 31 afterAll] restore failed: ${e.message}`);
         }

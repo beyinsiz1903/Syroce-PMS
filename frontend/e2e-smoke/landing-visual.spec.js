@@ -84,7 +84,7 @@ for (const width of MOBILE_WIDTHS) {
 
         const resp = await page.goto(LANDING_PATH, { waitUntil: 'domcontentloaded', timeout: 30_000 });
         expect(resp, `${LANDING_PATH} did not return a response`).not.toBeNull();
-        expect((resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status()), `Unexpected HTTP status for ${LANDING_PATH}`).toBeLessThan(400);
+        expect(resp.status(), `Unexpected HTTP status for ${LANDING_PATH}`).toBeLessThan(400);
 
         // Wait for the hero <h1> + hero image so the snapshot isn't taken
         // mid-load with a blank image placeholder.
