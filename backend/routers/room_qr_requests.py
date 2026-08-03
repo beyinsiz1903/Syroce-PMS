@@ -27,7 +27,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from cache_manager import cache as _cache
 from core.database import _raw_db as raw_db
@@ -196,6 +196,29 @@ async def _ensure_indexes() -> None:
             [("tenant_id", 1), ("property_id", 1), ("department_code", 1), ("enabled", 1), ("display_order", 1)],
             name="gsc_item_order"
         )
+        await raw_db["guest_service_submissions"].create_index(
+            [("tenant_id", 1), ("property_id", 1), ("booking_id", 1), ("idempotency_key", 1)],
+            unique=True,
+            name="gsc_ledger_unique"
+        )
+        await raw_db["guest_service_submissions"].create_index(
+            [("tenant_id", 1), ("submission_reference", 1)],
+            unique=True,
+            name="gsc_ledger_reference_unique"
+        )
+        await raw_db["qr_requests"].create_index(
+            [("tenant_id", 1), ("submission_group_id", 1), ("service_code", 1)],
+            unique=True,
+            partialFilterExpression={"submission_group_id": {"$exists": True}, "service_code": {"$exists": True}},
+            name="gsc_request_group_service_unique"
+        )
+        await raw_db["qr_requests"].create_index(
+            [("tenant_id", 1), ("request_reference", 1)],
+            unique=True,
+            partialFilterExpression={"request_reference": {"$exists": True}},
+            name="gsc_request_reference_unique"
+        )
+
     except Exception as e:
         logger.warning(f"[room_qr] Failed to create catalogue indexes: group=catalogue_indexes error_class={e.__class__.__name__}")
 
@@ -577,8 +600,8 @@ async def public_submit_request(
     if "items" in payload:
         try:
             struct_payload = StructuredRequestSubmit.model_validate(payload)
-        except ValidationError as e:
-            raise HTTPException(status_code=422, detail=e.errors())
+        except ValidationError:
+            raise HTTPException(status_code=422, detail="Geçersiz girdi")
 
         from domains.guest.qr_submission_service import handle_structured_submission
 
@@ -681,8 +704,8 @@ async def public_submit_request(
     else:
         try:
             legacy_payload = LegacyRequestSubmit.model_validate(payload)
-        except ValidationError as e:
-            raise HTTPException(status_code=422, detail=e.errors())
+        except ValidationError:
+            raise HTTPException(status_code=422, detail="Geçersiz girdi")
 
         payload_obj = legacy_payload
 
@@ -840,11 +863,8 @@ async def public_get_catalogue(
     x_guest_session: str = Header(None)
 ):
     """Misafir için dinamik QR hizmet kataloğunu döndürür."""
-    import zoneinfo
 
-    from pydantic import ValidationError
 
-    from models.schemas.qr_catalogue import GuestServiceCatalogueSettings, GuestServiceDepartment, GuestServiceItem
 
     try:
         booking, guest_session = await _verify_guest_session(tenant_id, room_id, x_guest_session)
@@ -858,18 +878,9 @@ async def public_get_catalogue(
 
     except HTTPException:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+    from domains.guest.qr_catalogue_service import fetch_catalogue_data, is_service_available, process_lang, resolve_catalogue_mode
 
-    raw_settings = await raw_db["guest_service_catalogue_settings"].find_one({"tenant_id": tenant_id, "property_id": property_id})
-    mode = "default"
-    if raw_settings:
-        raw_settings.pop("_id", None)
-        try:
-            settings_obj = GuestServiceCatalogueSettings.model_validate(raw_settings)
-            mode = settings_obj.mode
-        except ValidationError as e:
-            logger.warning(f"[room_qr] Catalogue settings validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
-            raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
-
+    mode = await resolve_catalogue_mode(tenant_id, property_id)
     if mode == "disabled":
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
@@ -877,96 +888,18 @@ async def public_get_catalogue(
     prop_tz = prop.get("timezone", "UTC")
     prop_lang = prop.get("default_language", "en")
 
-    depts_out = []
-    services_out = []
-
-    def process_lang(labels: dict | None) -> str:
-        if not labels:
-            return ""
-        if lang and labels.get(lang):
-            return labels[lang]
-        if prop_lang and labels.get(prop_lang):
-            return labels[prop_lang]
-        if labels.get("tr"):
-            return labels["tr"]
-        if labels.get("en"):
-            return labels["en"]
-        for k in sorted(labels.keys()):
-            if labels[k]:
-                return labels[k]
-        return ""
-
-    def process_lang_dict(data: dict | None) -> str | None:
-        if not data:
-            return None
-        return process_lang(data)
-
-    def is_service_available(service_hours: dict | None, prop_tz: str) -> bool:
-        if not service_hours:
-            return True
-        start_str = service_hours.get("start")
-        end_str = service_hours.get("end")
-        if not start_str or not end_str:
-            return True
-        if start_str == end_str:
-            return False
-        try:
-            import datetime as dt
-            tz = zoneinfo.ZoneInfo(prop_tz)
-            now_local = _utc_now().astimezone(tz).time()
-            sh, sm = map(int, start_str.split(":"))
-            eh, em = map(int, end_str.split(":"))
-            start_t = dt.time(sh, sm)
-            end_t = dt.time(eh, em)
-        except zoneinfo.ZoneInfoNotFoundError:
-            return False
-        except ValueError:
-            return False
-
-        if start_t < end_t:
-            return start_t <= now_local < end_t
-        else:
-            return now_local >= start_t or now_local < end_t
-
-    if mode == "default":
-        from domains.guest.qr_catalogue_defaults import get_default_catalogue
-        default_cat = get_default_catalogue()
-        depts_out = default_cat["departments"]
-        services_out = default_cat["services"]
-    else:
-        # mode == "configured"
-        raw_depts = await raw_db["guest_service_departments"].find({"tenant_id": tenant_id, "property_id": property_id}).to_list(length=None)
-        raw_items = await raw_db["guest_service_items"].find({"tenant_id": tenant_id, "property_id": property_id}).to_list(length=None)
-
-        if not raw_depts and not raw_items:
-            if not raw_settings:
-                from domains.guest.qr_catalogue_defaults import get_default_catalogue
-                default_cat = get_default_catalogue()
-                depts_out = default_cat["departments"]
-                services_out = default_cat["services"]
-            else:
-                raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
-        else:
-            for rd in raw_depts:
-                rd.pop("_id", None)
-                try:
-                    depts_out.append(GuestServiceDepartment.model_validate(rd).model_dump())
-                except ValidationError as e:
-                    logger.warning(f"[room_qr] Catalogue record validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
-
-            for ri in raw_items:
-                ri.pop("_id", None)
-                try:
-                    services_out.append(GuestServiceItem.model_validate(ri).model_dump())
-                except ValidationError as e:
-                    logger.warning(f"[room_qr] Catalogue record validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
+    depts_out, services_out = await fetch_catalogue_data(tenant_id, property_id, mode)
 
     if not depts_out and not services_out:
          raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
-    # Deterministic secondary sorting
-    depts_out.sort(key=lambda x: (x.get("display_order", 0), x.get("department_code", "")))
-    services_out.sort(key=lambda x: (x.get("display_order", 0), x.get("service_code", "")))
+    def local_process_lang(labels: dict | None) -> str:
+        return process_lang(labels, lang, prop_lang)
+
+    def local_process_lang_dict(data: dict | None) -> str | None:
+        if not data:
+            return None
+        return local_process_lang(data)
 
     enabled_dept_codes = set()
     initial_depts = []
@@ -980,7 +913,7 @@ async def public_get_catalogue(
         initial_depts.append({
             "department_code": dept_code,
             "display_order": d.get("display_order", 0),
-            "label": process_lang(d.get("labels")),
+            "label": local_process_lang(d.get("labels")),
             "icon": d.get("icon")
         })
         enabled_dept_codes.add(dept_code)
@@ -1005,22 +938,22 @@ async def public_get_catalogue(
             for opt in opts:
                 mapped_opts.append({
                     "code": opt.get("code"),
-                    "label": process_lang(opt.get("labels"))
+                    "label": local_process_lang(opt.get("labels"))
                 })
             config["options"] = mapped_opts
 
         formatted_services.append({
             "service_code": s.get("service_code"),
             "department_code": dept_code,
-            "label": process_lang(s.get("labels")),
-            "description": process_lang_dict(s.get("description")),
+            "label": local_process_lang(s.get("labels")),
+            "description": local_process_lang_dict(s.get("description")),
             "icon": s.get("icon"),
             "input_type": s.get("input_type"),
             "input_config": config,
             "auto_priority": s.get("auto_priority", "normal"),
             "estimated_minutes": s.get("estimated_minutes", 0),
             "is_chargeable": s.get("is_chargeable", False),
-            "charge_warning": process_lang_dict(s.get("charge_warning"))
+            "charge_warning": local_process_lang_dict(s.get("charge_warning"))
         })
         used_dept_codes.add(dept_code)
 
@@ -1039,6 +972,7 @@ async def public_get_catalogue(
         "services": formatted_services,
         "server_timestamp": _utc_now().isoformat()
     }
+
 
 
 # ═══════════════════════════════════════════════════════════════
