@@ -16,7 +16,7 @@ test.describe('Scope 9 — Misafir profili / CRM', () => {
             if (r?.ok()) {
                 const insp = await inspectPageContent(page);
                 if (!insp.has404 && !insp.empty) {
-                    rec(testInfo, { module: M, scope: 9, step: `Misafir sayfası bulundu`, status: PASS, endpoint: path, http: r.status() });
+                    rec(testInfo, { module: M, scope: 9, step: `Misafir sayfası bulundu`, status: PASS, endpoint: path, http: (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) });
                     opened = true;
                     break;
                 }

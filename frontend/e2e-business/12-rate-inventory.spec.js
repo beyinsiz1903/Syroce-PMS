@@ -13,7 +13,7 @@ test.describe('Scope 12 — Rate / Inventory / Availability', () => {
             const r = await page.goto(path, { waitUntil: 'networkidle' }).catch(() => null);
             const insp = await inspectPageContent(page);
             if (r?.ok() && !insp.empty && !insp.has500) {
-                rec(testInfo, { module: M, scope: 12, step: `Rate manager bulundu`, status: PASS, endpoint: path, http: r.status() });
+                rec(testInfo, { module: M, scope: 12, step: `Rate manager bulundu`, status: PASS, endpoint: path, http: (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) });
                 opened = true;
                 break;
             }

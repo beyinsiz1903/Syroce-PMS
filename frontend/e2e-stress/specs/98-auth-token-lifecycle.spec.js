@@ -119,9 +119,9 @@ test.describe('F8U § 98 — Auth Token Lifecycle', () => {
         
         if (!createStaff.ok()) {
             moduleBlocked = true;
-            blockedReason = `temp_user_creation_failed_${createStaff.status()}`;
+            blockedReason = `temp_user_creation_failed_${(createStaff.status() === 504 && createStaff.headers()['x-do-orig-status'] === '503' ? 503 : createStaff.status())}`;
             recFinding(testInfo, 'P2', MOD, 'Temp user creation failed',
-                `status=${createStaff.status()} — A-G skipped.`);
+                `status=${(createStaff.status() === 504 && createStaff.headers()['x-do-orig-status'] === '503' ? 503 : createStaff.status())} — A-G skipped.`);
             rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
                 note: `module_blocked=true reason=${blockedReason}` });
             test.skip(true, 'Temporary user creation failed');

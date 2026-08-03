@@ -78,13 +78,13 @@ async function inventorySnapshot(request, token) {
             headers: { Authorization: `Bearer ${token}` },
             failOnStatusCode: false, timeout: 10_000,
         });
-        if (r.status() < 200 || r.status() >= 300) {
-            return { ok: false, totalQty: null, itemCount: null, http: r.status() };
+        if ((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) < 200 || (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) >= 300) {
+            return { ok: false, totalQty: null, itemCount: null, http: (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) };
         }
         const body = await r.json().catch(() => null);
         const items = body?.items || [];
         const totalQty = items.reduce((s, it) => s + Number(it?.quantity || 0), 0);
-        return { ok: true, totalQty, itemCount: items.length, http: r.status() };
+        return { ok: true, totalQty, itemCount: items.length, http: (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) };
     } catch (e) {
         return { ok: false, totalQty: null, itemCount: null, error: String(e?.message || e).slice(0, 80) };
     }

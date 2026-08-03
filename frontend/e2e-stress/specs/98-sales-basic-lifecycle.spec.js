@@ -552,7 +552,7 @@ test.describe('F9C § 98 — Sales Basic Lifecycle', () => {
                 timeout: 10_000,
                 // Intentionally headerless — no Authorization header at all.
             });
-            status = r.status();
+            status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
             try { bodySnippet = (await r.text()).slice(0, 200); } catch { /* ignore */ }
         } catch (e) {
             recFinding(testInfo, 'P2', MOD, 'K_anon network error', String(e?.message || e).slice(0, 200));
@@ -655,7 +655,7 @@ test.describe('F9C § 98 — Sales Basic Lifecycle', () => {
                         `/api/sales/leads/${id}`,
                         { timeout: 10_000, failOnStatusCode: false },
                     );
-                    if (r.status() < 500) leadsDeleted += 1;
+                    if ((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) < 500) leadsDeleted += 1;
                 } catch { /* idempotent best-effort */ }
             }
             let oppsLost = 0;
@@ -670,7 +670,7 @@ test.describe('F9C § 98 — Sales Basic Lifecycle', () => {
                             failOnStatusCode: false,
                         },
                     );
-                    if (r.status() < 500) oppsLost += 1;
+                    if ((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) < 500) oppsLost += 1;
                 } catch { /* idempotent best-effort */ }
             }
             let packagesDeleted = 0;
@@ -680,7 +680,7 @@ test.describe('F9C § 98 — Sales Basic Lifecycle', () => {
                         `/api/mice/sales/packages/${id}`,
                         { timeout: 10_000, failOnStatusCode: false },
                     );
-                    if (r.status() < 500) packagesDeleted += 1;
+                    if ((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) < 500) packagesDeleted += 1;
                 } catch { /* idempotent best-effort */ }
             }
             await ctx.dispose();

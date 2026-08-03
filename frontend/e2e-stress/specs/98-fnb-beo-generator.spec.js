@@ -383,7 +383,7 @@ test.describe('F9C § 98 — F&B BEO Generator Lifecycle', () => {
             timeout: 30_000,
         });
         const ms = Date.now() - t0;
-        const status = resp.status();
+        const status = (resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status());
         recPerf(testInfo, MOD, 'E2_beo_pdf', [ms], status === 200);
         expect(status, `E2_beo_pdf 5xx status=${status}`).toBeLessThan(500);
         if (status !== 200) {
@@ -671,7 +671,7 @@ test.describe('F9C § 98 — F&B BEO Generator Lifecycle', () => {
                 timeout: 10_000,
                 // Intentionally headerless — no Authorization header at all.
             });
-            status = r.status();
+            status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
             try { bodySnippet = (await r.text()).slice(0, 200); } catch { /* ignore */ }
         } catch (e) {
             recFinding(testInfo, 'P2', MOD, 'K_anon network error', String(e?.message || e).slice(0, 200));
@@ -784,7 +784,7 @@ test.describe('F9C § 98 — F&B BEO Generator Lifecycle', () => {
                     failOnStatusCode: false,
                     timeout: 10_000,
                 });
-                const st = r.status();
+                const st = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
                 if (st >= 200 && st < 300) {
                     cancelled.push(id);
                 } else if (st === 409) {

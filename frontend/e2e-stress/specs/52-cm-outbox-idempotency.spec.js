@@ -334,8 +334,8 @@ test.describe('F8L § 52 — Outbox Idempotency + Conflict Queue', () => {
                 `Playwright request.post threw: ${e?.message}. Duplicate-dispatch assert edilemedi.`);
             throw e;
         }
-        const r1Status = r1.status();
-        const r2Status = r2.status();
+        const r1Status = (r1.status() === 504 && r1.headers()['x-do-orig-status'] === '503' ? 503 : r1.status());
+        const r2Status = (r2.status() === 504 && r2.headers()['x-do-orig-status'] === '503' ? 503 : r2.status());
         // Test integrity guard: r1/r2 hem 5xx ise backend down → integrity fail.
         // 2xx beklerdik (signed valid path); 4xx (tenant resolve fail vs.) test
         // edilebilir ama dedupe contract'ı sadece BOTH 2xx halinde anlamlı.

@@ -181,6 +181,16 @@ async function _attemptRefresh(retryCount = 0) {
 axios.interceptors.response.use(
   (response) => response,
   async (error) => {
+    // DigitalOcean App Platform ingress rewrites intentional 503 to 504.
+    // Recover the original 503 status if x-do-orig-status header is present.
+    if (
+      error.response?.status === 504 &&
+      error.response?.headers &&
+      error.response.headers['x-do-orig-status'] === '503'
+    ) {
+      error.response.status = 503;
+    }
+
     const original = error.config || {};
     if (
       error.response?.status === 401 &&

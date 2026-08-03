@@ -70,7 +70,7 @@ async function kvbDriftCount(request, pToken) {
     try {
         const r = await request.get(`${BASE}/declarations?limit=120`,
             { headers, failOnStatusCode: false, timeout: 10_000 });
-        declsHttp = r.status();
+        declsHttp = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
         if (is2xx(declsHttp)) {
             const body = await r.json().catch(() => null);
             decls = Number.isFinite(body?.count) ? body.count
@@ -80,7 +80,7 @@ async function kvbDriftCount(request, pToken) {
     try {
         const r = await request.get(`${BASE}/postings?limit=500`,
             { headers, failOnStatusCode: false, timeout: 10_000 });
-        postingsHttp = r.status();
+        postingsHttp = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
         if (is2xx(postingsHttp)) {
             const body = await r.json().catch(() => null);
             postings = Number.isFinite(body?.count) ? body.count

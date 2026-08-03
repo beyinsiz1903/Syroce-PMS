@@ -582,7 +582,7 @@ test.describe('F9C § 98 — Mobile Cashier Surface', () => {
                 failOnStatusCode: false,
                 timeout: 10_000,
             });
-            status = r.status();
+            status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
             try { bodySnippet = (await r.text()).slice(0, 200); } catch { /* ignore */ }
         } catch (e) {
             recFinding(testInfo, 'P2', MOD, 'K_anon network error', String(e?.message || e).slice(0, 200));
@@ -715,7 +715,7 @@ test.describe('F9C § 98 — Mobile Cashier Surface', () => {
                     headers: { 'X-Idempotency-Key': `${SUB_PREFIX}_cleanup_${Date.now()}_${cryptoRandomUUID()}` },
                     timeout: 10_000, failOnStatusCode: false,
                 });
-                closeStatus = r.status();
+                closeStatus = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
             } catch { /* idempotent best-effort */ }
             await ctx.dispose();
             cleanupRec.close_status = closeStatus;

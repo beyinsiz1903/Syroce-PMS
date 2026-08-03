@@ -23,7 +23,7 @@ export function attachObservers(page) {
         consoleErrors.push({ text, location: msg.location?.() });
     });
     page.on('response', (resp) => {
-        const status = resp.status();
+        const status = (resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status());
         if (status < 400) return;
         const url = resp.url();
         if (NETWORK_ERROR_ALLOWLIST.some((re) => re.test(url))) return;

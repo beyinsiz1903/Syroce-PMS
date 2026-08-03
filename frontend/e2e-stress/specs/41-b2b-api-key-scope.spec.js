@@ -604,7 +604,7 @@ test.describe('F8M § 41 — B2B API Key Scope', () => {
                 headers: { Authorization: `Bearer ${tokenBlob.stress_token}` },
                 failOnStatusCode: false, timeout: 30_000,
             });
-            const status = r.status();
+            const status = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
             await ctx.dispose();
             console.log(`[F8M § 41 afterAll] belt-and-suspenders DELETE: status=${status}`);
             // 2xx = silindi, 404 = zaten silinmiş (C revoke testinde) — her

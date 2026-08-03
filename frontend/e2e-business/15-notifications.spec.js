@@ -13,7 +13,7 @@ test.describe('Scope 15 — Bildirimler / mesajlar', () => {
             const r = await page.goto(p, { waitUntil: 'domcontentloaded' }).catch(() => null);
             const insp = await inspectPageContent(page);
             if (r?.ok() && !insp.has404 && !insp.empty) {
-                rec(testInfo, { module: M, scope: 15, step: `Bildirim sayfası: ${p}`, status: PASS, endpoint: p, http: r.status() });
+                rec(testInfo, { module: M, scope: 15, step: `Bildirim sayfası: ${p}`, status: PASS, endpoint: p, http: (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()) });
                 opened = true;
                 break;
             }

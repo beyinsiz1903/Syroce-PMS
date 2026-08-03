@@ -44,7 +44,7 @@ async function verifyEndpoint(request, token, path, expectedMinCount, descriptio
     if (!r.ok()) {
         throw new Error(
             `[precheck] ${description} failed: ` +
-            `path=${path} status=${r.status()} shape=${JSON.stringify(diagnosticShape(json))}`,
+            `path=${path} status=${(r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status())} shape=${JSON.stringify(diagnosticShape(json))}`,
         );
     }
 

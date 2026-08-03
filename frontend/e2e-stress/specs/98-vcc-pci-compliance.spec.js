@@ -226,7 +226,7 @@ test.describe.serial('F8AE VCC + PCI compliance stress', () => {
             const csvR = await request.get('/api/compliance/pci/report.csv', {
                 headers: { Authorization: `Bearer ${sToken}` }, failOnStatusCode: false,
             });
-            const csvHttp = csvR.status();
+            const csvHttp = (csvR.status() === 504 && csvR.headers()['x-do-orig-status'] === '503' ? 503 : csvR.status());
             summary.report_csv = { http: csvHttp };
             if (csvHttp >= 200 && csvHttp < 300) {
                 const text = await csvR.text();

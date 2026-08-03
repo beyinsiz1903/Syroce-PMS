@@ -85,7 +85,7 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
                     headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
                     failOnStatusCode: false, timeout: 30_000,
                 });
-                probeStatus = r.status();
+                probeStatus = (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status());
                 probeBody = await r.json().catch(() => null);
                 if (probeBody && typeof probeBody === 'object') {
                     probeKeys = Array.isArray(probeBody) ? ['<array>'] : Object.keys(probeBody);

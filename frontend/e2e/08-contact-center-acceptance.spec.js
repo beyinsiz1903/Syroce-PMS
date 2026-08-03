@@ -241,19 +241,19 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
         });
         
         // If it already exists (409), we ignore the error
-        if (numRes.status() !== 201 && numRes.status() !== 409) {
+        if ((numRes.status() === 504 && numRes.headers()['x-do-orig-status'] === '503' ? 503 : numRes.status()) !== 201 && (numRes.status() === 504 && numRes.headers()['x-do-orig-status'] === '503' ? 503 : numRes.status()) !== 409) {
             console.error('Failed to create voice number mapping:', await numRes.text());
         }
-        expect([201, 409]).toContain(numRes.status());
+        expect([201, 409]).toContain((numRes.status() === 504 && numRes.headers()['x-do-orig-status'] === '503' ? 503 : numRes.status()));
 
         let numberId = null;
-        if (numRes.status() === 201) {
+        if ((numRes.status() === 504 && numRes.headers()['x-do-orig-status'] === '503' ? 503 : numRes.status()) === 201) {
             const numBody = await numRes.json();
             numberId = numBody.id;
         } else {
             // Find existing number mapping ID to clean up later
             const listRes = await request.get('/api/contact-center/voice/numbers', { headers: headers });
-            expect(listRes.status()).toBe(200);
+            expect((listRes.status() === 504 && listRes.headers()['x-do-orig-status'] === '503' ? 503 : listRes.status())).toBe(200);
             const listBody = await listRes.json();
             const existing = listBody.numbers?.find(n => n.to_number === toNumber);
             if (existing) {
@@ -275,7 +275,7 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
             },
             headers: { 'Origin': 'http://localhost:3000' }
         });
-        expect(res1.status()).toBe(200);
+        expect((res1.status() === 504 && res1.headers()['x-do-orig-status'] === '503' ? 503 : res1.status())).toBe(200);
         const text1 = await res1.text();
         expect(text1).toContain('<Dial'); // Should initiate dial
 
@@ -289,7 +289,7 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
             },
             headers: { 'Origin': 'http://localhost:3000' }
         });
-        expect(res2.status()).toBe(200);
+        expect((res2.status() === 504 && res2.headers()['x-do-orig-status'] === '503' ? 503 : res2.status())).toBe(200);
         const text2 = await res2.text();
         expect(text2).toContain('<Hangup/>'); // Should drop the retry to prevent duplicate child legs
 
@@ -303,7 +303,7 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
             },
             headers: { 'Origin': 'http://localhost:3000' }
         });
-        expect(res3.status()).toBe(200);
+        expect((res3.status() === 504 && res3.headers()['x-do-orig-status'] === '503' ? 503 : res3.status())).toBe(200);
         const text3 = await res3.text();
         expect(text3).toContain('<Hangup/>'); // Should drop attempt-level duplicates
 
@@ -316,7 +316,7 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
             },
             headers: { 'Origin': 'http://localhost:3000' }
         });
-        expect([200, 204]).toContain(statusRes.status());
+        expect([200, 204]).toContain((statusRes.status() === 504 && statusRes.headers()['x-do-orig-status'] === '503' ? 503 : statusRes.status()));
 
         // C. WhatsApp status transition (queued -> sent -> delivered)
         // 1. Send WhatsApp message during the call
@@ -327,7 +327,7 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
             },
             headers: headers
         });
-        expect(waSendRes.status()).toBe(200);
+        expect((waSendRes.status() === 504 && waSendRes.headers()['x-do-orig-status'] === '503' ? 503 : waSendRes.status())).toBe(200);
         const waSendBody = await waSendRes.json();
         expect(waSendBody.status).toBe('ok');
         const msgSid = waSendBody.provider_message_id;
@@ -343,12 +343,12 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
                 },
                 headers: { 'Origin': 'http://localhost:3000' }
             });
-            expect(callbackRes.status()).toBe(204);
+            expect((callbackRes.status() === 504 && callbackRes.headers()['x-do-orig-status'] === '503' ? 503 : callbackRes.status())).toBe(204);
         }
 
         // 3. Verify call history via API
         const historyRes = await request.get('/api/contact-center/calls?reveal_phone=true', { headers: headers });
-        expect(historyRes.status()).toBe(200);
+        expect((historyRes.status() === 504 && historyRes.headers()['x-do-orig-status'] === '503' ? 503 : historyRes.status())).toBe(200);
         const historyBody = await historyRes.json();
         
         // Find our call by matching decrypted caller_phone
@@ -361,7 +361,7 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
         // D. Cleanup: Delete the registered number mapping
         if (numberId) {
             const delRes = await request.delete(`/api/contact-center/voice/numbers/${numberId}`, { headers: headers });
-            expect(delRes.status()).toBe(204);
+            expect((delRes.status() === 504 && delRes.headers()['x-do-orig-status'] === '503' ? 503 : delRes.status())).toBe(204);
         }
     });
 });

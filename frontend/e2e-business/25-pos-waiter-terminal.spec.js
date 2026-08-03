@@ -102,10 +102,10 @@ test.describe('Scope 25 — Garson terminali (POS) e2e akış', () => {
         const createOk = resp.ok() && body?.success === true && order?.adisyon_number != null;
         rec(testInfo, {
             module: M, scope: SCOPE, step: 'POST /api/pos/create-order başarılı',
-            status: createOk ? PASS : FAIL, endpoint: '/api/pos/create-order', http: resp.status(),
+            status: createOk ? PASS : FAIL, endpoint: '/api/pos/create-order', http: (resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status()),
             note: createOk ? `adisyon=${order.adisyon_number} business_date=${order.business_date}` : JSON.stringify(body).slice(0, 200),
         });
-        expect(createOk, `create-order başarısız: HTTP ${resp.status()} ${JSON.stringify(body).slice(0, 200)}`).toBe(true);
+        expect(createOk, `create-order başarısız: HTTP ${(resp.status() === 504 && resp.headers()['x-do-orig-status'] === '503' ? 503 : resp.status())} ${JSON.stringify(body).slice(0, 200)}`).toBe(true);
 
         // Terminal kayıt — temizleme uç noktası yok (nakit, folyosuz); recap'in
         // pending cleanup denememesi için cleanup:'manual'.

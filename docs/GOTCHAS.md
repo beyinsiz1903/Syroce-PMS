@@ -365,3 +365,10 @@ Run #167 pointer TASINMAZ; full stress KOSTURULMADI (operatör dispatch). Backen
 
 ### Minibar otomatik tüketim → folio (Kademe 1)
 - **Çift-faturalama zırhı (iki katman)** — `backend/domains/pms/minibar_router.py` `/api/minibar/consume`: (1) `source_minibar_log_id` retry'da deterministik olmalı (`_stable_log_id` = `uuid5(NS, "{tenant}:{idempotency_key}")`), yoksa random log_id mevcut `folio_charges` dedup index'ini `(tenant_id, source_minibar_log_id, line_no)` atlatır ve kısmi-başarı sonrası retry çift biler; (2) eşzamanlılık `minibar_consumptions` partial-unique `(tenant_id, idempotency_key)` (`ux_minibar_consumptions_idem`) ile DB-seviyesinde ayrılır (insert'te `DuplicateKeyError` → kazananın kaydını dön). Frontend (`MinibarPage.jsx`) idempotency_key'i `pendingKeyRef`'te tutar, başarıda temizler, hatada KORUR (Date.now() ile yeni key üretmez). Fail-closed: aktif (check-in) booking yoksa 409; açık guest folio yoksa kapalı folio'ya YAZMAZ → `minibar_late_charges` (pending_review). Balance: `pos_folio_consumer._recalc_folio_balance` (ASLA $inc). Stok: best-effort `inventory` optimistic-lock + `inventory_movements` (faturayı geri almaz). Test: `backend/tests/test_minibar_consume.py` (12). RBAC: consume staff rolleri, katalog admin seviyesi.
+
+## DigitalOcean App Platform HTTP 503 Rewrite
+**DigitalOcean App Platform rewrites intentional HTTP 503 responses to HTTP 504 at ingress.**
+- The original application status is preserved and exposed via the `x-do-orig-status: 503` header.
+- **Frontend / Axios**: The global Axios response interceptor (`frontend/src/config/axiosConfig.js`) automatically rewrites 504 to 503 if the `x-do-orig-status: 503` header is present. This ensures the frontend treats intentional service unavailability (like backend warm-up) as a temporary 503 rather than a timeout.
+- **E2E Tests**: Playwright scripts should accept 504 as 503 *only* when `x-do-orig-status` equals 503. A 504 without this header remains a real gateway timeout failure.
+- **Backend**: Do NOT change backend application responses from 503 to 504. Keep returning 503; the ingress handles the translation.

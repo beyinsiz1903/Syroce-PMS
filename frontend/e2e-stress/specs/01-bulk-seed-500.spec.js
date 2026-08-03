@@ -9,10 +9,10 @@ async function fetchListLen(request, token, p) {
         headers: { Authorization: `Bearer ${token}` },
         failOnStatusCode: false, timeout: 30_000,
     });
-    if (!r.ok()) return { http: r.status(), len: null };
+    if (!r.ok()) return { http: (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()), len: null };
     const j = await r.json().catch(() => ({}));
     const list = Array.isArray(j) ? j : (j?.rooms || j?.bookings || j?.guests || j?.folios || j?.items || []);
-    return { http: r.status(), len: Array.isArray(list) ? list.length : null, sample: Array.isArray(list) && list[0] ? Object.keys(list[0]).slice(0, 6) : null };
+    return { http: (r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()), len: Array.isArray(list) ? list.length : null, sample: Array.isArray(list) && list[0] ? Object.keys(list[0]).slice(0, 6) : null };
 }
 
 test.describe('F7 § Bulk Seed 500 — entity counts', () => {
@@ -172,7 +172,7 @@ test.describe('F7 § Bulk Seed 500 — entity counts', () => {
             headers: { Authorization: `Bearer ${stressTokens.pilot_token}` },
             failOnStatusCode: false, timeout: 10_000,
         });
-        expect(r.status(), '/api/outbox/status super_admin ile 200 dönmeli').toBe(200);
+        expect((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()), '/api/outbox/status super_admin ile 200 dönmeli').toBe(200);
         const j = await r.json();
         expect(typeof j.pending, 'pending numeric').toBe('number');
         expect(typeof j.failed, 'failed numeric').toBe('number');

@@ -91,7 +91,7 @@ test.describe('F7 § Stress Gates', () => {
             headers: { Authorization: `Bearer ${stressTokens.pilot_token}` },
             failOnStatusCode: false, timeout: 10_000,
         });
-        expect(r.status(), '/api/outbox/status super_admin ile 200 dönmeli').toBe(200);
+        expect((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()), '/api/outbox/status super_admin ile 200 dönmeli').toBe(200);
         const j = await r.json();
         expect(typeof j.pending, 'pending numeric').toBe('number');
         expect(typeof j.retry, 'retry numeric').toBe('number');
@@ -112,7 +112,7 @@ test.describe('F7 § Stress Gates', () => {
             headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
             failOnStatusCode: false, timeout: 10_000,
         });
-        expect(r.status(), 'runtime cockpit authenticated ile 200 dönmeli').toBe(200);
+        expect((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()), 'runtime cockpit authenticated ile 200 dönmeli').toBe(200);
         const j = await r.json();
         expect(j.health, 'health bloğu var').toBeTruthy();
         expect(j.flow, 'flow bloğu var').toBeTruthy();
@@ -132,7 +132,7 @@ test.describe('F7 § Stress Gates', () => {
             headers: { Authorization: `Bearer ${stressTokens.pilot_token}` },
             failOnStatusCode: false, timeout: 10_000,
         });
-        expect(r.status(), '/api/webhooks/status super_admin ile 200 dönmeli').toBe(200);
+        expect((r.status() === 504 && r.headers()['x-do-orig-status'] === '503' ? 503 : r.status()), '/api/webhooks/status super_admin ile 200 dönmeli').toBe(200);
         const j = await r.json();
         expect(typeof j.deliveries_pending, 'deliveries_pending numeric').toBe('number');
         expect(typeof j.dlq_pending, 'dlq_pending numeric').toBe('number');
