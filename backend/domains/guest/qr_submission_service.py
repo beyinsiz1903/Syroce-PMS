@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import secrets
 import string
@@ -212,8 +213,35 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
             submission_group_id = res["submission_group_id"]
             submission_reference = res["submission_reference"]
         except DuplicateKeyError:
-            # Should not happen because we do find_one_and_update
-            raise HTTPException(status_code=503, detail="Sistem hatası")
+            for _ in range(5):
+                res = await raw_db["guest_service_submissions"].find_one({
+                    "tenant_id": tenant_id,
+                    "property_id": property_id,
+                    "booking_id": booking_id,
+                    "idempotency_key": payload.idempotency_key
+                })
+                if res:
+                    break
+                await asyncio.sleep(0.05)
+            else:
+                raise HTTPException(status_code=503, detail="Sistem hatası")
+
+            if res.get("payload_fingerprint") != fingerprint:
+                raise HTTPException(status_code=409, detail="Talep işleme alınamadı")
+
+            prepared_items = res["prepared_items"]
+            submission_group_id = res["submission_group_id"]
+            submission_reference = res["submission_reference"]
+
+        await raw_db["guest_service_submissions"].update_one(
+            {
+                "tenant_id": tenant_id,
+                "property_id": property_id,
+                "booking_id": booking_id,
+                "submission_group_id": submission_group_id
+            },
+            {"$inc": {"attempt_count": 1}, "$set": {"updated_at": _utc_now()}}
+        )
 
         docs_to_emit = []
         created_count = 0
@@ -236,14 +264,28 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                         item_doc["request_reference"] = new_ref
 
                         # Update ledger so we know the new ref
-                        await raw_db["guest_service_submissions"].update_one(
+                        upd_res = await raw_db["guest_service_submissions"].update_one(
                             {
                                 "tenant_id": tenant_id,
+                                "property_id": property_id,
+                                "booking_id": booking_id,
                                 "submission_group_id": submission_group_id,
                                 "prepared_items.service_code": item_doc["service_code"]
                             },
-                            {"$set": {"prepared_items.$.request_reference": new_ref}}
+                            {"$set": {"prepared_items.$.request_reference": new_ref, "updated_at": _utc_now()}}
                         )
+                        if upd_res.matched_count == 1:
+                            reread = await raw_db["guest_service_submissions"].find_one({
+                                "tenant_id": tenant_id,
+                                "property_id": property_id,
+                                "booking_id": booking_id,
+                                "submission_group_id": submission_group_id
+                            })
+                            if reread:
+                                for pi in reread.get("prepared_items", []):
+                                    if pi["service_code"] == item_doc["service_code"]:
+                                        item_doc = pi
+                                        break
                         continue
 
                     # If duplicate on submission_group_id + service_code, it's a replay
@@ -277,6 +319,8 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
         if upd_res.matched_count == 1:
             reread = await raw_db["guest_service_submissions"].find_one({
                 "tenant_id": tenant_id,
+                "property_id": property_id,
+                "booking_id": booking_id,
                 "submission_group_id": submission_group_id
             })
             if reread and reread.get("status") == "completed" and reread.get("completed_at"):

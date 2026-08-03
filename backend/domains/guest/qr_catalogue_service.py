@@ -15,7 +15,6 @@ def _utc_now():
     return dt.datetime.now(UTC)
 
 async def resolve_catalogue_mode(tenant_id: str, property_id: str) -> str:
-    print("RESOLVE DB DATA:", raw_db["guest_service_catalogue_settings"].data)
     raw_settings = await raw_db["guest_service_catalogue_settings"].find_one({"tenant_id": tenant_id, "property_id": property_id})
     mode = "default"
     if raw_settings:
@@ -42,7 +41,6 @@ def is_service_available(service_hours: dict | None, prop_tz: str) -> bool:
     try:
         tz = zoneinfo.ZoneInfo(prop_tz)
         now_local = _utc_now().astimezone(tz).time()
-        print(f"DEBUG: prop_tz={prop_tz} _utc_now()={_utc_now()} _utc_now().astimezone(tz)={_utc_now().astimezone(tz)} now_local={now_local}")
 
         sh, sm = map(int, start_str.split(":"))
         eh, em = map(int, end_str.split(":"))
@@ -69,22 +67,21 @@ async def fetch_catalogue_data(tenant_id: str, property_id: str, mode: str) -> t
         raw_items = await raw_db["guest_service_items"].find({"tenant_id": tenant_id, "property_id": property_id}).to_list(length=None)
 
         if not raw_depts and not raw_items:
-            default_cat = get_default_catalogue()
-            depts_out = default_cat["departments"]
-            services_out = default_cat["services"]
-        else:
-            for rd in raw_depts:
-                rd.pop("_id", None)
-                try:
-                    depts_out.append(GuestServiceDepartment.model_validate(rd).model_dump())
-                except ValidationError as e:
-                    logger.warning(f"[room_qr] Catalogue record validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
-            for ri in raw_items:
-                ri.pop("_id", None)
-                try:
-                    services_out.append(GuestServiceItem.model_validate(ri).model_dump())
-                except ValidationError as e:
-                    logger.warning(f"[room_qr] Catalogue record validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
+            from fastapi import HTTPException
+            raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+
+        for rd in raw_depts:
+            rd.pop("_id", None)
+            try:
+                depts_out.append(GuestServiceDepartment.model_validate(rd).model_dump())
+            except ValidationError as e:
+                logger.warning(f"[room_qr] Catalogue record validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
+        for ri in raw_items:
+            ri.pop("_id", None)
+            try:
+                services_out.append(GuestServiceItem.model_validate(ri).model_dump())
+            except ValidationError as e:
+                logger.warning(f"[room_qr] Catalogue record validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
 
     depts_out.sort(key=lambda x: (x.get("display_order", 0), x.get("department_code", "")))
     services_out.sort(key=lambda x: (x.get("display_order", 0), x.get("service_code", "")))
