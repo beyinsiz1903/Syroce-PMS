@@ -582,20 +582,14 @@ async def public_room_info(tenant_id: str, room_id: str, t: str = Query(...)):
     }
 
 
-class PublicRequestSubmit(BaseModel):
-    category: str
-    description: str = Field(..., min_length=1, max_length=2000)
-    priority: str = "normal"
-    language: str = "tr"
-    guest_name: str | None = None
-    guest_phone: str | None = None
+from models.schemas.qr_catalogue_submission import LegacyRequestSubmit, StructuredRequestSubmit
 
 
 @router.post("/api/public/room-qr/{tenant_id}/{room_id}/submit")
 async def public_submit_request(
     tenant_id: str,
     room_id: str,
-    payload: PublicRequestSubmit,
+    payload: dict,
     request: Request,
     x_guest_session: str = Header(None)
 ):
@@ -605,166 +599,262 @@ async def public_submit_request(
         raise HTTPException(status_code=429, detail="Çok fazla talep — lütfen sonra deneyin")
 
     booking, guest_session = await _verify_guest_session(tenant_id, room_id, x_guest_session)
+    room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id}) or {}
+    room_number = room.get("room_number")
 
-    if payload.category not in CATEGORY_MAP:
-        raise HTTPException(status_code=400, detail=f"Geçersiz kategori: {payload.category}")
+    if "items" in payload:
+        try:
+            struct_payload = StructuredRequestSubmit.model_validate(payload)
+        except ValidationError as e:
+            raise HTTPException(status_code=422, detail=e.errors())
 
-    if payload.priority not in VALID_PRIORITIES:
-        payload.priority = "normal"
+        from domains.guest.qr_submission_service import handle_structured_submission
 
-    room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
+        guest_name = payload.get("guest_name") or booking.get("guest_name") or booking.get("primary_guest_name")
+        guest_phone = payload.get("guest_phone") or booking.get("guest_phone")
 
-    cat = CATEGORY_MAP[payload.category]
-    now = datetime.now(UTC)
-    title_label = CATEGORY_LABELS.get(payload.category, {}).get(payload.language, payload.category)
-
-    doc = {
-        "_id": str(uuid.uuid4()),
-        "tenant_id": tenant_id,
-        "room_id": room_id,
-        "room_number": room.get("room_number"),
-        "category": payload.category,
-        "department": cat["department"],
-        "title": f"{title_label} — Oda {room.get('room_number')}",
-        "description": payload.description.strip(),
-        "priority": payload.priority,
-        "status": "new",
-        "language": payload.language,
-        "guest_name": payload.guest_name or booking.get("guest_name") or booking.get("primary_guest_name"),
-        "guest_phone": payload.guest_phone or booking.get("guest_phone"),
-        "booking_id": booking["id"],
-        "guest_session_id": guest_session["id"],
-        "assigned_to": None,
-        "created_at": now,
-        "updated_at": now,
-        "completed_at": None,
-        "source": "qr",
-        "status_history": [{"status": "new", "by": "guest", "at": now, "note": "QR üzerinden gönderildi"}],
-    }
-    await raw_db[COLL].insert_one(doc)
-
-    # Şikayet kategorisi → service_complaints koleksiyonuna mirror et.
-    # Bu sayede misafirden gelen şikayetler "Şikayet Yönetimi" sayfasında
-    # SLA, eskalasyon, tazminat ve audit history ile birlikte yönetilebilir.
-    # Per-room/day kotası: aynı odadan aynı günde max N mirror; aşılırsa
-    # talep kaydı korunur ama şikayet boğulmaz.
-    if payload.category == "complaint":
-        quota_ok, quota_count = _complaint_quota_check(tenant_id, room_id)
-        if not quota_ok:
-            logger.warning(
-                "[room_qr] complaint mirror quota exceeded for room=%s (today=%d, limit=%d)",
-                room_id,
-                quota_count,
-                _COMPLAINT_QUOTA_PER_ROOM_DAY,
-            )
-        else:
-            try:
-                desc = payload.description.strip()
-                subject = desc[:80] + ("..." if len(desc) > 80 else "")
-                severity_map = {
-                    "urgent": "critical",
-                    "high": "high",
-                    "normal": "medium",
-                    "low": "low",
-                }
-                complaint_doc = {
-                    "id": str(uuid.uuid4()),
-                    "tenant_id": tenant_id,
-                    "source": "guest_qr",
-                    "qr_request_id": doc["_id"],
-                    "category": "service_recovery",
-                    "severity": severity_map.get(payload.priority, "medium"),
-                    "subject": subject,
-                    "description": desc,
-                    "guest_name": doc.get("guest_name"),
-                    "guest_phone": doc.get("guest_phone"),
-                    "room_id": room_id,
-                    "room_number": doc.get("room_number"),
-                    "booking_id": doc.get("booking_id"),
-                    "assigned_department": "front_office",
-                    "status": "open",
-                    "created_by": None,
-                    "created_at": now.isoformat(),
-                    "updated_at": now.isoformat(),
-                    "history": [
-                        {
-                            "action": "created",
-                            "actor_id": None,
-                            "actor_name": doc.get("guest_name") or "Misafir",
-                            "at": now.isoformat(),
-                            "notes": "Misafir tarafından oda QR üzerinden iletildi",
-                        }
-                    ],
-                }
-                await raw_db["service_complaints"].insert_one(complaint_doc)
-                logger.info(f"[room_qr] guest complaint mirrored: {complaint_doc['id']} (quota_today={quota_count}/{_COMPLAINT_QUOTA_PER_ROOM_DAY})")
-            except Exception as exc:
-                logger.warning(f"[room_qr] complaint mirror failed: {exc}")
-
-    # ── Misafir Talepleri sohbet entegrasyonu ──
-    # Talep, personel iç-sohbet widget'ında oda bazlı thread olarak görünür
-    # (PII içeren gövde yalnızca ACL-kısıtlı guest_room_messages'ta) ve ilgili
-    # iç-sohbet departmanına PII-içermeyen bir bildirim düşer. Best-effort:
-    # entegrasyon hata verse bile talep zaten kalıcı (yukarıda insert edildi).
-    try:
-        from domains.guest.messaging import guest_requests as _gr
-
-        await _gr.add_guest_message(
+        res = await handle_structured_submission(
             tenant_id=tenant_id,
+            property_id=booking.get("property_id"),
             room_id=room_id,
-            property_id=booking["property_id"],
-            room_number=doc.get("room_number"),
-            sender_type="guest",
-            body=doc["description"],
-            booking_id=doc.get("booking_id"),
-            sender_name=doc.get("guest_name") or "Misafir",
-            request_id=doc["_id"],
-            category=payload.category,
-            department=doc["department"],
-            priority=doc["priority"],
-            guest_session_id=guest_session["id"],
+            booking_id=booking["id"],
+            session_id=guest_session["id"],
+            room_number=room_number,
+            payload=struct_payload,
+            guest_name=guest_name,
+            guest_phone=guest_phone
         )
-        cat_label_tr = CATEGORY_LABELS.get(payload.category, {}).get("tr", payload.category)
-        await _gr.notify_department(
-            tenant_id=tenant_id,
-            room_number=doc.get("room_number"),
-            qr_department=doc["department"],
-            category_label=cat_label_tr,
-        )
-        await _gr.emit_guest_requests_ping(tenant_id, room_id)
-    except Exception as exc:
-        logger.warning("[room_qr] guest-requests chat entegrasyonu atlandı: %s", exc)
 
-    # WebSocket yayını (opsiyonel — varsa)
-    try:
-        from core.ws_rooms import tenant_broadcast_room
-        from websocket_server import sio  # type: ignore
+        docs_to_emit = res.pop("docs_to_emit", [])
 
-        # Task #367: route to the tenant broadcast room that authenticated
-        # sockets are auto-enrolled into at connect (pms:{tenant_id}), not the
-        # legacy hand-built `tenant:{id}` room that no client ever joins.
-        await sio.emit(
-            "room_request:new",
-            {
-                "id": doc["_id"],
-                "tenant_id": tenant_id,
-                "room_number": doc["room_number"],
-                "category": doc["category"],
-                "department": doc["department"],
-                "priority": doc["priority"],
-            },
-            room=tenant_broadcast_room(tenant_id),
-        )
-    except Exception as e:
-        logger.debug(f"WS emit atlandı: {e}")
+        for doc in docs_to_emit:
+            if doc["category"] == "complaint":
+                quota_ok, quota_count = _complaint_quota_check(tenant_id, room_id)
+                if not quota_ok:
+                    logger.warning("[room_qr] complaint mirror quota exceeded for room=%s", room_id)
+                else:
+                    try:
+                        desc = doc["description"].strip()
+                        subject = desc[:80] + ("..." if len(desc) > 80 else "")
+                        severity_map = {"urgent": "critical", "high": "high", "normal": "medium", "low": "low"}
+                        complaint_doc = {
+                            "id": str(uuid.uuid4()),
+                            "tenant_id": tenant_id,
+                            "source": "guest_qr",
+                            "qr_request_id": doc["_id"],
+                            "category": "service_recovery",
+                            "severity": severity_map.get(doc["priority"], "medium"),
+                            "subject": subject,
+                            "description": desc,
+                            "guest_name": doc.get("guest_name"),
+                            "guest_phone": doc.get("guest_phone"),
+                            "room_id": room_id,
+                            "room_number": doc.get("room_number"),
+                            "booking_id": doc.get("booking_id"),
+                            "assigned_department": "front_office",
+                            "status": "open",
+                            "created_by": None,
+                            "created_at": doc["created_at"].isoformat() if isinstance(doc["created_at"], datetime) else doc["created_at"],
+                            "updated_at": doc["updated_at"].isoformat() if isinstance(doc["updated_at"], datetime) else doc["updated_at"],
+                            "history": [{
+                                "action": "created",
+                                "actor_id": None,
+                                "actor_name": doc.get("guest_name") or "Misafir",
+                                "at": doc["created_at"].isoformat() if isinstance(doc["created_at"], datetime) else doc["created_at"],
+                                "notes": "Misafir tarafından oda QR üzerinden iletildi (Structured)"
+                            }]
+                        }
+                        await raw_db["service_complaints"].insert_one(complaint_doc)
+                    except Exception as exc:
+                        logger.warning(f"[room_qr] complaint mirror failed: {exc}")
 
-    return {
-        "success": True,
-        "request_id": doc["_id"],
-        "department": doc["department"],
-        "message": "Talebiniz alındı, ilgili departmana iletildi.",
-    }
+            try:
+                from domains.guest.messaging import guest_requests as _gr
+                await _gr.add_guest_message(
+                    tenant_id=tenant_id, room_id=room_id, property_id=booking.get("property_id"),
+                    room_number=doc.get("room_number"), sender_type="guest", body=doc["description"],
+                    booking_id=doc.get("booking_id"), sender_name=doc.get("guest_name") or "Misafir",
+                    request_id=doc["_id"], category=doc["category"], department=doc["department"],
+                    priority=doc["priority"], guest_session_id=guest_session["id"]
+                )
+                cat_label_tr = CATEGORY_LABELS.get(doc["category"], {}).get("tr", doc["category"])
+                await _gr.notify_department(
+                    tenant_id=tenant_id, room_number=doc.get("room_number"),
+                    qr_department=doc["department"], category_label=cat_label_tr
+                )
+                await _gr.emit_guest_requests_ping(tenant_id, room_id)
+            except Exception as exc:
+                logger.warning(f"[room_qr] guest-requests chat entegrasyonu atlandı: {exc}")
 
+            try:
+                from core.ws_rooms import tenant_broadcast_room
+                from websocket_server import sio  # type: ignore
+                await sio.emit(
+                    "room_request:new",
+                    {
+                        "id": doc["_id"],
+                        "tenant_id": tenant_id,
+                        "room_number": doc.get("room_number"),
+                        "category": doc["category"],
+                        "department": doc["department"],
+                        "priority": doc["priority"],
+                    },
+                    room=tenant_broadcast_room(tenant_id),
+                )
+            except Exception as e:
+                logger.debug(f"WS emit atlandı: {e}")
+
+        return res
+
+    else:
+        try:
+            legacy_payload = LegacyRequestSubmit.model_validate(payload)
+        except ValidationError as e:
+            raise HTTPException(status_code=422, detail=e.errors())
+
+        payload_obj = legacy_payload
+
+        if payload_obj.category not in CATEGORY_MAP:
+            raise HTTPException(status_code=400, detail=f"Geçersiz kategori: {payload_obj.category}")
+
+        if payload_obj.priority not in VALID_PRIORITIES:
+            payload_obj.priority = "normal"
+
+        cat = CATEGORY_MAP[payload_obj.category]
+        now = datetime.now(UTC)
+        title_label = CATEGORY_LABELS.get(payload_obj.category, {}).get(payload_obj.language, payload_obj.category)
+
+        doc = {
+            "_id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "room_id": room_id,
+            "room_number": room.get("room_number"),
+            "category": payload_obj.category,
+            "department": cat["department"],
+            "title": f"{title_label} — Oda {room.get('room_number')}",
+            "description": payload_obj.description.strip(),
+            "priority": payload_obj.priority,
+            "status": "new",
+            "language": payload_obj.language,
+            "guest_name": payload_obj.guest_name or booking.get("guest_name") or booking.get("primary_guest_name"),
+            "guest_phone": payload_obj.guest_phone or booking.get("guest_phone"),
+            "booking_id": booking["id"],
+            "guest_session_id": guest_session["id"],
+            "assigned_to": None,
+            "created_at": now,
+            "updated_at": now,
+            "completed_at": None,
+            "source": "qr",
+            "status_history": [{"status": "new", "by": "guest", "at": now, "note": "QR üzerinden gönderildi"}],
+        }
+        await raw_db[COLL].insert_one(doc)
+
+        if payload_obj.category == "complaint":
+            quota_ok, quota_count = _complaint_quota_check(tenant_id, room_id)
+            if not quota_ok:
+                logger.warning(
+                    "[room_qr] complaint mirror quota exceeded for room=%s (today=%d, limit=%d)",
+                    room_id,
+                    quota_count,
+                    _COMPLAINT_QUOTA_PER_ROOM_DAY,
+                )
+            else:
+                try:
+                    desc = payload_obj.description.strip()
+                    subject = desc[:80] + ("..." if len(desc) > 80 else "")
+                    severity_map = {
+                        "urgent": "critical",
+                        "high": "high",
+                        "normal": "medium",
+                        "low": "low",
+                    }
+                    complaint_doc = {
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": tenant_id,
+                        "source": "guest_qr",
+                        "qr_request_id": doc["_id"],
+                        "category": "service_recovery",
+                        "severity": severity_map.get(payload_obj.priority, "medium"),
+                        "subject": subject,
+                        "description": desc,
+                        "guest_name": doc.get("guest_name"),
+                        "guest_phone": doc.get("guest_phone"),
+                        "room_id": room_id,
+                        "room_number": doc.get("room_number"),
+                        "booking_id": doc.get("booking_id"),
+                        "assigned_department": "front_office",
+                        "status": "open",
+                        "created_by": None,
+                        "created_at": now.isoformat(),
+                        "updated_at": now.isoformat(),
+                        "history": [
+                            {
+                                "action": "created",
+                                "actor_id": None,
+                                "actor_name": doc.get("guest_name") or "Misafir",
+                                "at": now.isoformat(),
+                                "notes": "Misafir tarafından oda QR üzerinden iletildi",
+                            }
+                        ],
+                    }
+                    await raw_db["service_complaints"].insert_one(complaint_doc)
+                    logger.info(f"[room_qr] guest complaint mirrored: {complaint_doc['id']} (quota_today={quota_count}/{_COMPLAINT_QUOTA_PER_ROOM_DAY})")
+                except Exception as exc:
+                    logger.warning(f"[room_qr] complaint mirror failed: {exc}")
+
+        try:
+            from domains.guest.messaging import guest_requests as _gr
+            await _gr.add_guest_message(
+                tenant_id=tenant_id,
+                room_id=room_id,
+                property_id=booking["property_id"],
+                room_number=doc.get("room_number"),
+                sender_type="guest",
+                body=doc["description"],
+                booking_id=doc.get("booking_id"),
+                sender_name=doc.get("guest_name") or "Misafir",
+                request_id=doc["_id"],
+                category=payload_obj.category,
+                department=doc["department"],
+                priority=doc["priority"],
+                guest_session_id=guest_session["id"],
+            )
+            cat_label_tr = CATEGORY_LABELS.get(payload_obj.category, {}).get("tr", payload_obj.category)
+            await _gr.notify_department(
+                tenant_id=tenant_id,
+                room_number=doc.get("room_number"),
+                qr_department=doc["department"],
+                category_label=cat_label_tr,
+            )
+            await _gr.emit_guest_requests_ping(tenant_id, room_id)
+        except Exception as exc:
+            logger.warning("[room_qr] guest-requests chat entegrasyonu atlandı: %s", exc)
+
+        try:
+            from core.ws_rooms import tenant_broadcast_room
+            from websocket_server import sio  # type: ignore
+
+            await sio.emit(
+                "room_request:new",
+                {
+                    "id": doc["_id"],
+                    "tenant_id": tenant_id,
+                    "room_number": doc["room_number"],
+                    "category": doc["category"],
+                    "department": doc["department"],
+                    "priority": doc["priority"],
+                },
+                room=tenant_broadcast_room(tenant_id),
+            )
+        except Exception as e:
+            logger.debug(f"WS emit atlandı: {e}")
+
+        return {
+            "success": True,
+            "request_id": doc["_id"],
+            "department": doc["department"],
+            "message": "Talebiniz alındı, ilgili departmana iletildi.",
+        }
 
 def _utc_now():
     from datetime import UTC, datetime
