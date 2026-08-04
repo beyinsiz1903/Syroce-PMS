@@ -109,8 +109,8 @@ async def test_http_400_is_failure(sandbox_client):
     """Verify HTTP 400 (or 422) Validation Error is raised properly."""
     async with sandbox_client as client:
         with pytest.raises(NilveraValidationError) as exc_info:
-            # Send completely invalid payload
-            await client.post("/einvoice/Send/Model", json={"Invalid": "Payload"})
+            # Send invalid UUID to force a 400 Validation Error
+            await client.get("/einvoice/Sale/not-a-valid-uuid/Status")
         
         assert exc_info.value.http_status in (400, 422)
 
@@ -124,7 +124,7 @@ async def test_http_401_is_failure(monkeypatch, buyer_vkn):
     core.integrations.nilvera.config._config = None
     
     client = NilveraHttpClient(api_key="invalid_token")
-    assert client.base_url == "https://apitest.nilvera.com"
+    assert client._config.base_url == "https://apitest.nilvera.com"
     
     async with client as c:
         with pytest.raises(NilveraAuthError) as exc_info:
@@ -170,7 +170,7 @@ async def test_secret_redaction(monkeypatch, caplog, buyer_vkn, seller_vkn, api_
         async with client as c:
             with pytest.raises(NilveraAuthError) as exc_info:
                 # We inject VKNs into the payload to see if they leak on error
-                await c.post(f"/general/GlobalCompany/Check/TaxNumber/{buyer_vkn}", json={"seller": seller_vkn})
+                await c.get(f"/general/GlobalCompany/Check/TaxNumber/{buyer_vkn}?dummy_seller={seller_vkn}")
                 
             exc_str = str(exc_info.value)
             exc_repr = repr(exc_info.value)
@@ -253,7 +253,7 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
     
     async with sandbox_client as client:
         # 1. Submission
-        submit_res = await client.post("/einvoice/Send/Model", json=payload.model_dump(by_alias=True))
+        submit_res = await client.post("/einvoice/Send/Model", json=payload.model_dump(mode='json', by_alias=True))
         
         assert "UUID" in submit_res
         assert submit_res["UUID"] != ""
