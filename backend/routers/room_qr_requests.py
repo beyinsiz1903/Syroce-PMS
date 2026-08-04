@@ -27,7 +27,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from cache_manager import cache as _cache
 from core.database import _raw_db as raw_db
@@ -196,54 +196,37 @@ async def _ensure_indexes() -> None:
             [("tenant_id", 1), ("property_id", 1), ("department_code", 1), ("enabled", 1), ("display_order", 1)],
             name="gsc_item_order"
         )
+        await raw_db["guest_service_submissions"].create_index(
+            [("tenant_id", 1), ("property_id", 1), ("booking_id", 1), ("idempotency_key", 1)],
+            unique=True,
+            name="gsc_ledger_unique"
+        )
+        await raw_db["guest_service_submissions"].create_index(
+            [("tenant_id", 1), ("submission_reference", 1)],
+            unique=True,
+            name="gsc_ledger_reference_unique"
+        )
+        await raw_db["qr_requests"].create_index(
+            [("tenant_id", 1), ("submission_group_id", 1), ("service_code", 1)],
+            unique=True,
+            partialFilterExpression={"submission_group_id": {"$exists": True}, "service_code": {"$exists": True}},
+            name="gsc_request_group_service_unique"
+        )
+        await raw_db["qr_requests"].create_index(
+            [("tenant_id", 1), ("request_reference", 1)],
+            unique=True,
+            partialFilterExpression={"request_reference": {"$exists": True}},
+            name="gsc_request_reference_unique"
+        )
+
     except Exception as e:
         logger.warning(f"[room_qr] Failed to create catalogue indexes: group=catalogue_indexes error_class={e.__class__.__name__}")
 
 
 
-# Kategori → Departman eşlemesi (DepartmentType enum değerleriyle uyumlu)
-CATEGORY_CATALOG = [
-    {"id": "cleaning", "department": "rooms", "icon": "sparkles", "default_priority": "normal"},
-    {"id": "towels", "department": "rooms", "icon": "shirt", "default_priority": "normal"},
-    {"id": "amenities", "department": "rooms", "icon": "package", "default_priority": "low"},
-    {"id": "maintenance", "department": "technical", "icon": "wrench", "default_priority": "normal"},
-    {"id": "wifi", "department": "technical", "icon": "wifi", "default_priority": "normal"},
-    {"id": "tv", "department": "technical", "icon": "tv", "default_priority": "low"},
-    {"id": "ac_heating", "department": "technical", "icon": "thermometer", "default_priority": "normal"},
-    {"id": "food_order", "department": "fnb", "icon": "utensils", "default_priority": "normal"},
-    {"id": "drinks", "department": "fnb", "icon": "wine", "default_priority": "normal"},
-    {"id": "minibar", "department": "minibar", "icon": "beer", "default_priority": "low"},
-    {"id": "laundry", "department": "laundry", "icon": "shirt", "default_priority": "normal"},
-    {"id": "transport", "department": "transportation", "icon": "car", "default_priority": "normal"},
-    {"id": "reception", "department": "other", "icon": "bell", "default_priority": "normal"},
-    {"id": "spa", "department": "spa", "icon": "heart", "default_priority": "low"},
-    {"id": "complaint", "department": "other", "icon": "alert", "default_priority": "high"},
-    {"id": "other", "department": "other", "icon": "message", "default_priority": "normal"},
-]
+from domains.guest.qr_constants import CATEGORY_CATALOG, CATEGORY_LABELS, CATEGORY_MAP, VALID_PRIORITIES
 
-CATEGORY_MAP = {c["id"]: c for c in CATEGORY_CATALOG}
 VALID_STATUSES = {"new", "assigned", "in_progress", "completed", "cancelled"}
-VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
-
-# Çoklu dil etiketleri (10 dil için başlangıç seti — eklenebilir)
-CATEGORY_LABELS = {
-    "cleaning": {"tr": "Oda Temizliği", "en": "Room Cleaning", "de": "Zimmerreinigung", "ru": "Уборка номера", "ar": "تنظيف الغرفة"},
-    "towels": {"tr": "Havlu / Çarşaf", "en": "Towels / Linens", "de": "Handtücher", "ru": "Полотенца", "ar": "مناشف"},
-    "amenities": {"tr": "Amenity (Sabun vb.)", "en": "Amenities", "de": "Pflegeprodukte", "ru": "Косметика", "ar": "مستلزمات"},
-    "maintenance": {"tr": "Arıza / Tamir", "en": "Maintenance", "de": "Wartung", "ru": "Ремонт", "ar": "صيانة"},
-    "wifi": {"tr": "İnternet / Wi-Fi", "en": "Internet / Wi-Fi", "de": "WLAN", "ru": "Wi-Fi", "ar": "واي فاي"},
-    "tv": {"tr": "Televizyon", "en": "Television", "de": "Fernseher", "ru": "Телевизор", "ar": "تلفاز"},
-    "ac_heating": {"tr": "Klima / Isıtma", "en": "AC / Heating", "de": "Klima / Heizung", "ru": "Кондиционер", "ar": "تكييف/تدفئة"},
-    "food_order": {"tr": "Oda Servisi (Yemek)", "en": "Room Service (Food)", "de": "Zimmerservice", "ru": "Обслуживание", "ar": "خدمة الغرف"},
-    "drinks": {"tr": "İçecek", "en": "Drinks", "de": "Getränke", "ru": "Напитки", "ar": "مشروبات"},
-    "minibar": {"tr": "Minibar", "en": "Minibar", "de": "Minibar", "ru": "Минибар", "ar": "ميني بار"},
-    "laundry": {"tr": "Çamaşır / Kuru Tem.", "en": "Laundry", "de": "Wäscherei", "ru": "Прачечная", "ar": "غسيل"},
-    "transport": {"tr": "Transfer / Ulaşım", "en": "Transport", "de": "Transport", "ru": "Транспорт", "ar": "نقل"},
-    "reception": {"tr": "Resepsiyon", "en": "Reception", "de": "Rezeption", "ru": "Стойка", "ar": "استقبال"},
-    "spa": {"tr": "SPA / Wellness", "en": "SPA / Wellness", "de": "SPA", "ru": "СПА", "ar": "سبا"},
-    "complaint": {"tr": "Şikayet / Geri Bildirim", "en": "Complaint / Feedback", "de": "Beschwerde", "ru": "Жалоба", "ar": "شكوى"},
-    "other": {"tr": "Diğer", "en": "Other", "de": "Andere", "ru": "Другое", "ar": "أخرى"},
-}
 
 
 # ── Per-tenant QR secret rotation (backward-compatible) ──────────────
@@ -582,20 +565,14 @@ async def public_room_info(tenant_id: str, room_id: str, t: str = Query(...)):
     }
 
 
-class PublicRequestSubmit(BaseModel):
-    category: str
-    description: str = Field(..., min_length=1, max_length=2000)
-    priority: str = "normal"
-    language: str = "tr"
-    guest_name: str | None = None
-    guest_phone: str | None = None
+from models.schemas.qr_catalogue_submission import LegacyRequestSubmit, StructuredRequestSubmit
 
 
 @router.post("/api/public/room-qr/{tenant_id}/{room_id}/submit")
 async def public_submit_request(
     tenant_id: str,
     room_id: str,
-    payload: PublicRequestSubmit,
+    payload: dict,
     request: Request,
     x_guest_session: str = Header(None)
 ):
@@ -603,168 +580,276 @@ async def public_submit_request(
     client_ip = _client_ip(request)
     if not _rl_check(f"{tenant_id}:{room_id}:{client_ip}:submit"):
         raise HTTPException(status_code=429, detail="Çok fazla talep — lütfen sonra deneyin")
-
     booking, guest_session = await _verify_guest_session(tenant_id, room_id, x_guest_session)
-
-    if payload.category not in CATEGORY_MAP:
-        raise HTTPException(status_code=400, detail=f"Geçersiz kategori: {payload.category}")
-
-    if payload.priority not in VALID_PRIORITIES:
-        payload.priority = "normal"
-
     room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
+    if not room or room.get("is_active") is False:
+        raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
-    cat = CATEGORY_MAP[payload.category]
-    now = datetime.now(UTC)
-    title_label = CATEGORY_LABELS.get(payload.category, {}).get(payload.language, payload.category)
+    room_prop = room.get("property_id")
+    booking_prop = booking.get("property_id")
+    session_prop = guest_session.get("property_id")
 
-    doc = {
-        "_id": str(uuid.uuid4()),
-        "tenant_id": tenant_id,
-        "room_id": room_id,
-        "room_number": room.get("room_number"),
-        "category": payload.category,
-        "department": cat["department"],
-        "title": f"{title_label} — Oda {room.get('room_number')}",
-        "description": payload.description.strip(),
-        "priority": payload.priority,
-        "status": "new",
-        "language": payload.language,
-        "guest_name": payload.guest_name or booking.get("guest_name") or booking.get("primary_guest_name"),
-        "guest_phone": payload.guest_phone or booking.get("guest_phone"),
-        "booking_id": booking["id"],
-        "guest_session_id": guest_session["id"],
-        "assigned_to": None,
-        "created_at": now,
-        "updated_at": now,
-        "completed_at": None,
-        "source": "qr",
-        "status_history": [{"status": "new", "by": "guest", "at": now, "note": "QR üzerinden gönderildi"}],
-    }
-    await raw_db[COLL].insert_one(doc)
+    if not booking_prop or not session_prop or not room_prop:
+        raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
-    # Şikayet kategorisi → service_complaints koleksiyonuna mirror et.
-    # Bu sayede misafirden gelen şikayetler "Şikayet Yönetimi" sayfasında
-    # SLA, eskalasyon, tazminat ve audit history ile birlikte yönetilebilir.
-    # Per-room/day kotası: aynı odadan aynı günde max N mirror; aşılırsa
-    # talep kaydı korunur ama şikayet boğulmaz.
-    if payload.category == "complaint":
-        quota_ok, quota_count = _complaint_quota_check(tenant_id, room_id)
-        if not quota_ok:
-            logger.warning(
-                "[room_qr] complaint mirror quota exceeded for room=%s (today=%d, limit=%d)",
-                room_id,
-                quota_count,
-                _COMPLAINT_QUOTA_PER_ROOM_DAY,
-            )
-        else:
-            try:
-                desc = payload.description.strip()
-                subject = desc[:80] + ("..." if len(desc) > 80 else "")
-                severity_map = {
-                    "urgent": "critical",
-                    "high": "high",
-                    "normal": "medium",
-                    "low": "low",
-                }
-                complaint_doc = {
-                    "id": str(uuid.uuid4()),
-                    "tenant_id": tenant_id,
-                    "source": "guest_qr",
-                    "qr_request_id": doc["_id"],
-                    "category": "service_recovery",
-                    "severity": severity_map.get(payload.priority, "medium"),
-                    "subject": subject,
-                    "description": desc,
-                    "guest_name": doc.get("guest_name"),
-                    "guest_phone": doc.get("guest_phone"),
-                    "room_id": room_id,
-                    "room_number": doc.get("room_number"),
-                    "booking_id": doc.get("booking_id"),
-                    "assigned_department": "front_office",
-                    "status": "open",
-                    "created_by": None,
-                    "created_at": now.isoformat(),
-                    "updated_at": now.isoformat(),
-                    "history": [
-                        {
-                            "action": "created",
-                            "actor_id": None,
-                            "actor_name": doc.get("guest_name") or "Misafir",
-                            "at": now.isoformat(),
-                            "notes": "Misafir tarafından oda QR üzerinden iletildi",
-                        }
-                    ],
-                }
-                await raw_db["service_complaints"].insert_one(complaint_doc)
-                logger.info(f"[room_qr] guest complaint mirrored: {complaint_doc['id']} (quota_today={quota_count}/{_COMPLAINT_QUOTA_PER_ROOM_DAY})")
-            except Exception as exc:
-                logger.warning(f"[room_qr] complaint mirror failed: {exc}")
+    if booking_prop != session_prop or booking_prop != room_prop:
+        raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
-    # ── Misafir Talepleri sohbet entegrasyonu ──
-    # Talep, personel iç-sohbet widget'ında oda bazlı thread olarak görünür
-    # (PII içeren gövde yalnızca ACL-kısıtlı guest_room_messages'ta) ve ilgili
-    # iç-sohbet departmanına PII-içermeyen bir bildirim düşer. Best-effort:
-    # entegrasyon hata verse bile talep zaten kalıcı (yukarıda insert edildi).
-    try:
-        from domains.guest.messaging import guest_requests as _gr
+    room_number = room.get("room_number")
 
-        await _gr.add_guest_message(
+    if "items" in payload:
+        try:
+            struct_payload = StructuredRequestSubmit.model_validate(payload)
+        except ValidationError:
+            raise HTTPException(status_code=422, detail="Geçersiz girdi")
+
+        from domains.guest.qr_submission_service import handle_structured_submission
+
+        guest_name = payload.get("guest_name") or booking.get("guest_name") or booking.get("primary_guest_name")
+        guest_phone = payload.get("guest_phone") or booking.get("guest_phone")
+
+        res = await handle_structured_submission(
             tenant_id=tenant_id,
+            property_id=booking.get("property_id"),
             room_id=room_id,
-            property_id=booking["property_id"],
-            room_number=doc.get("room_number"),
-            sender_type="guest",
-            body=doc["description"],
-            booking_id=doc.get("booking_id"),
-            sender_name=doc.get("guest_name") or "Misafir",
-            request_id=doc["_id"],
-            category=payload.category,
-            department=doc["department"],
-            priority=doc["priority"],
-            guest_session_id=guest_session["id"],
+            booking_id=booking["id"],
+            session_id=guest_session["id"],
+            room_number=room_number,
+            payload=struct_payload,
+            guest_name=guest_name,
+            guest_phone=guest_phone
         )
-        cat_label_tr = CATEGORY_LABELS.get(payload.category, {}).get("tr", payload.category)
-        await _gr.notify_department(
-            tenant_id=tenant_id,
-            room_number=doc.get("room_number"),
-            qr_department=doc["department"],
-            category_label=cat_label_tr,
-        )
-        await _gr.emit_guest_requests_ping(tenant_id, room_id)
-    except Exception as exc:
-        logger.warning("[room_qr] guest-requests chat entegrasyonu atlandı: %s", exc)
 
-    # WebSocket yayını (opsiyonel — varsa)
-    try:
-        from core.ws_rooms import tenant_broadcast_room
-        from websocket_server import sio  # type: ignore
+        docs_to_emit = res.pop("docs_to_emit", [])
 
-        # Task #367: route to the tenant broadcast room that authenticated
-        # sockets are auto-enrolled into at connect (pms:{tenant_id}), not the
-        # legacy hand-built `tenant:{id}` room that no client ever joins.
-        await sio.emit(
-            "room_request:new",
-            {
-                "id": doc["_id"],
-                "tenant_id": tenant_id,
-                "room_number": doc["room_number"],
-                "category": doc["category"],
-                "department": doc["department"],
-                "priority": doc["priority"],
-            },
-            room=tenant_broadcast_room(tenant_id),
-        )
-    except Exception as e:
-        logger.debug(f"WS emit atlandı: {e}")
+        for doc in docs_to_emit:
+            if doc["category"] == "complaint":
+                quota_ok, quota_count = _complaint_quota_check(tenant_id, room_id)
+                if not quota_ok:
+                    logger.warning("[room_qr] complaint mirror quota exceeded for room=%s", room_id)
+                else:
+                    try:
+                        desc = doc["description"].strip()
+                        subject = desc[:80] + ("..." if len(desc) > 80 else "")
+                        severity_map = {"urgent": "critical", "high": "high", "normal": "medium", "low": "low"}
+                        complaint_doc = {
+                            "id": str(uuid.uuid4()),
+                            "tenant_id": tenant_id,
+                            "source": "guest_qr",
+                            "qr_request_id": doc["_id"],
+                            "category": "service_recovery",
+                            "severity": severity_map.get(doc["priority"], "medium"),
+                            "subject": subject,
+                            "description": desc,
+                            "guest_name": doc.get("guest_name"),
+                            "guest_phone": doc.get("guest_phone"),
+                            "room_id": room_id,
+                            "room_number": doc.get("room_number"),
+                            "booking_id": doc.get("booking_id"),
+                            "assigned_department": "front_office",
+                            "status": "open",
+                            "created_by": None,
+                            "created_at": doc["created_at"].isoformat() if isinstance(doc["created_at"], datetime) else doc["created_at"],
+                            "updated_at": doc["updated_at"].isoformat() if isinstance(doc["updated_at"], datetime) else doc["updated_at"],
+                            "history": [{
+                                "action": "created",
+                                "actor_id": None,
+                                "actor_name": doc.get("guest_name") or "Misafir",
+                                "at": doc["created_at"].isoformat() if isinstance(doc["created_at"], datetime) else doc["created_at"],
+                                "notes": "Misafir tarafından oda QR üzerinden iletildi (Structured)"
+                            }]
+                        }
+                        await raw_db["service_complaints"].insert_one(complaint_doc)
+                    except Exception as exc:
+                        logger.warning(f"[room_qr] complaint mirror failed: {exc}")
 
-    return {
-        "success": True,
-        "request_id": doc["_id"],
-        "department": doc["department"],
-        "message": "Talebiniz alındı, ilgili departmana iletildi.",
-    }
+            try:
+                from domains.guest.messaging import guest_requests as _gr
+                await _gr.add_guest_message(
+                    tenant_id=tenant_id, room_id=room_id, property_id=booking.get("property_id"),
+                    room_number=doc.get("room_number"), sender_type="guest", body=doc["description"],
+                    booking_id=doc.get("booking_id"), sender_name=doc.get("guest_name") or "Misafir",
+                    request_id=doc["_id"], category=doc["category"], department=doc["department"],
+                    priority=doc["priority"], guest_session_id=guest_session["id"]
+                )
+                cat_label_tr = CATEGORY_LABELS.get(doc["category"], {}).get("tr", doc["category"])
+                await _gr.notify_department(
+                    tenant_id=tenant_id, room_number=doc.get("room_number"),
+                    qr_department=doc["department"], category_label=cat_label_tr
+                )
+                await _gr.emit_guest_requests_ping(tenant_id, room_id)
+            except Exception as exc:
+                logger.warning(f"[room_qr] guest-requests chat entegrasyonu atlandı: {exc}")
 
+            try:
+                from core.ws_rooms import tenant_broadcast_room
+                from websocket_server import sio  # type: ignore
+                await sio.emit(
+                    "room_request:new",
+                    {
+                        "id": doc["_id"],
+                        "tenant_id": tenant_id,
+                        "room_number": doc.get("room_number"),
+                        "category": doc["category"],
+                        "department": doc["department"],
+                        "priority": doc["priority"],
+                    },
+                    room=tenant_broadcast_room(tenant_id),
+                )
+            except Exception as e:
+                logger.debug(f"WS emit atlandı: {e}")
+
+        return res
+
+    else:
+        try:
+            legacy_payload = LegacyRequestSubmit.model_validate(payload)
+        except ValidationError:
+            raise HTTPException(status_code=422, detail="Geçersiz girdi")
+
+        payload_obj = legacy_payload
+
+        if payload_obj.category not in CATEGORY_MAP:
+            raise HTTPException(status_code=400, detail=f"Geçersiz kategori: {payload_obj.category}")
+
+        if payload_obj.priority not in VALID_PRIORITIES:
+            payload_obj.priority = "normal"
+
+        cat = CATEGORY_MAP[payload_obj.category]
+        now = datetime.now(UTC)
+        title_label = CATEGORY_LABELS.get(payload_obj.category, {}).get(payload_obj.language, payload_obj.category)
+
+        doc = {
+            "_id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "room_id": room_id,
+            "room_number": room.get("room_number"),
+            "category": payload_obj.category,
+            "department": cat["department"],
+            "title": f"{title_label} — Oda {room.get('room_number')}",
+            "description": payload_obj.description.strip(),
+            "priority": payload_obj.priority,
+            "status": "new",
+            "language": payload_obj.language,
+            "guest_name": payload_obj.guest_name or booking.get("guest_name") or booking.get("primary_guest_name"),
+            "guest_phone": payload_obj.guest_phone or booking.get("guest_phone"),
+            "booking_id": booking["id"],
+            "guest_session_id": guest_session["id"],
+            "assigned_to": None,
+            "created_at": now,
+            "updated_at": now,
+            "completed_at": None,
+            "source": "qr",
+            "status_history": [{"status": "new", "by": "guest", "at": now, "note": "QR üzerinden gönderildi"}],
+        }
+        await raw_db[COLL].insert_one(doc)
+
+        if payload_obj.category == "complaint":
+            quota_ok, quota_count = _complaint_quota_check(tenant_id, room_id)
+            if not quota_ok:
+                logger.warning(
+                    "[room_qr] complaint mirror quota exceeded for room=%s (today=%d, limit=%d)",
+                    room_id,
+                    quota_count,
+                    _COMPLAINT_QUOTA_PER_ROOM_DAY,
+                )
+            else:
+                try:
+                    desc = payload_obj.description.strip()
+                    subject = desc[:80] + ("..." if len(desc) > 80 else "")
+                    severity_map = {
+                        "urgent": "critical",
+                        "high": "high",
+                        "normal": "medium",
+                        "low": "low",
+                    }
+                    complaint_doc = {
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": tenant_id,
+                        "source": "guest_qr",
+                        "qr_request_id": doc["_id"],
+                        "category": "service_recovery",
+                        "severity": severity_map.get(payload_obj.priority, "medium"),
+                        "subject": subject,
+                        "description": desc,
+                        "guest_name": doc.get("guest_name"),
+                        "guest_phone": doc.get("guest_phone"),
+                        "room_id": room_id,
+                        "room_number": doc.get("room_number"),
+                        "booking_id": doc.get("booking_id"),
+                        "assigned_department": "front_office",
+                        "status": "open",
+                        "created_by": None,
+                        "created_at": now.isoformat(),
+                        "updated_at": now.isoformat(),
+                        "history": [
+                            {
+                                "action": "created",
+                                "actor_id": None,
+                                "actor_name": doc.get("guest_name") or "Misafir",
+                                "at": now.isoformat(),
+                                "notes": "Misafir tarafından oda QR üzerinden iletildi",
+                            }
+                        ],
+                    }
+                    await raw_db["service_complaints"].insert_one(complaint_doc)
+                    logger.info(f"[room_qr] guest complaint mirrored: {complaint_doc['id']} (quota_today={quota_count}/{_COMPLAINT_QUOTA_PER_ROOM_DAY})")
+                except Exception as exc:
+                    logger.warning(f"[room_qr] complaint mirror failed: {exc}")
+
+        try:
+            from domains.guest.messaging import guest_requests as _gr
+            await _gr.add_guest_message(
+                tenant_id=tenant_id,
+                room_id=room_id,
+                property_id=booking["property_id"],
+                room_number=doc.get("room_number"),
+                sender_type="guest",
+                body=doc["description"],
+                booking_id=doc.get("booking_id"),
+                sender_name=doc.get("guest_name") or "Misafir",
+                request_id=doc["_id"],
+                category=payload_obj.category,
+                department=doc["department"],
+                priority=doc["priority"],
+                guest_session_id=guest_session["id"],
+            )
+            cat_label_tr = CATEGORY_LABELS.get(payload_obj.category, {}).get("tr", payload_obj.category)
+            await _gr.notify_department(
+                tenant_id=tenant_id,
+                room_number=doc.get("room_number"),
+                qr_department=doc["department"],
+                category_label=cat_label_tr,
+            )
+            await _gr.emit_guest_requests_ping(tenant_id, room_id)
+        except Exception as exc:
+            logger.warning("[room_qr] guest-requests chat entegrasyonu atlandı: %s", exc)
+
+        try:
+            from core.ws_rooms import tenant_broadcast_room
+            from websocket_server import sio  # type: ignore
+
+            await sio.emit(
+                "room_request:new",
+                {
+                    "id": doc["_id"],
+                    "tenant_id": tenant_id,
+                    "room_number": doc["room_number"],
+                    "category": doc["category"],
+                    "department": doc["department"],
+                    "priority": doc["priority"],
+                },
+                room=tenant_broadcast_room(tenant_id),
+            )
+        except Exception as e:
+            logger.debug(f"WS emit atlandı: {e}")
+
+        return {
+            "success": True,
+            "request_id": doc["_id"],
+            "department": doc["department"],
+            "message": "Talebiniz alındı, ilgili departmana iletildi.",
+        }
 
 def _utc_now():
     from datetime import UTC, datetime
@@ -778,11 +863,8 @@ async def public_get_catalogue(
     x_guest_session: str = Header(None)
 ):
     """Misafir için dinamik QR hizmet kataloğunu döndürür."""
-    import zoneinfo
 
-    from pydantic import ValidationError
 
-    from models.schemas.qr_catalogue import GuestServiceCatalogueSettings, GuestServiceDepartment, GuestServiceItem
 
     try:
         booking, guest_session = await _verify_guest_session(tenant_id, room_id, x_guest_session)
@@ -796,18 +878,9 @@ async def public_get_catalogue(
 
     except HTTPException:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+    from domains.guest.qr_catalogue_service import fetch_catalogue_data, is_service_available, process_lang, resolve_catalogue_mode
 
-    raw_settings = await raw_db["guest_service_catalogue_settings"].find_one({"tenant_id": tenant_id, "property_id": property_id})
-    mode = "default"
-    if raw_settings:
-        raw_settings.pop("_id", None)
-        try:
-            settings_obj = GuestServiceCatalogueSettings.model_validate(raw_settings)
-            mode = settings_obj.mode
-        except ValidationError as e:
-            logger.warning(f"[room_qr] Catalogue settings validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
-            raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
-
+    mode = await resolve_catalogue_mode(tenant_id, property_id)
     if mode == "disabled":
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
@@ -815,96 +888,18 @@ async def public_get_catalogue(
     prop_tz = prop.get("timezone", "UTC")
     prop_lang = prop.get("default_language", "en")
 
-    depts_out = []
-    services_out = []
-
-    def process_lang(labels: dict | None) -> str:
-        if not labels:
-            return ""
-        if lang and labels.get(lang):
-            return labels[lang]
-        if prop_lang and labels.get(prop_lang):
-            return labels[prop_lang]
-        if labels.get("tr"):
-            return labels["tr"]
-        if labels.get("en"):
-            return labels["en"]
-        for k in sorted(labels.keys()):
-            if labels[k]:
-                return labels[k]
-        return ""
-
-    def process_lang_dict(data: dict | None) -> str | None:
-        if not data:
-            return None
-        return process_lang(data)
-
-    def is_service_available(service_hours: dict | None, prop_tz: str) -> bool:
-        if not service_hours:
-            return True
-        start_str = service_hours.get("start")
-        end_str = service_hours.get("end")
-        if not start_str or not end_str:
-            return True
-        if start_str == end_str:
-            return False
-        try:
-            import datetime as dt
-            tz = zoneinfo.ZoneInfo(prop_tz)
-            now_local = _utc_now().astimezone(tz).time()
-            sh, sm = map(int, start_str.split(":"))
-            eh, em = map(int, end_str.split(":"))
-            start_t = dt.time(sh, sm)
-            end_t = dt.time(eh, em)
-        except zoneinfo.ZoneInfoNotFoundError:
-            return False
-        except ValueError:
-            return False
-
-        if start_t < end_t:
-            return start_t <= now_local < end_t
-        else:
-            return now_local >= start_t or now_local < end_t
-
-    if mode == "default":
-        from domains.guest.qr_catalogue_defaults import get_default_catalogue
-        default_cat = get_default_catalogue()
-        depts_out = default_cat["departments"]
-        services_out = default_cat["services"]
-    else:
-        # mode == "configured"
-        raw_depts = await raw_db["guest_service_departments"].find({"tenant_id": tenant_id, "property_id": property_id}).to_list(length=None)
-        raw_items = await raw_db["guest_service_items"].find({"tenant_id": tenant_id, "property_id": property_id}).to_list(length=None)
-
-        if not raw_depts and not raw_items:
-            if not raw_settings:
-                from domains.guest.qr_catalogue_defaults import get_default_catalogue
-                default_cat = get_default_catalogue()
-                depts_out = default_cat["departments"]
-                services_out = default_cat["services"]
-            else:
-                raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
-        else:
-            for rd in raw_depts:
-                rd.pop("_id", None)
-                try:
-                    depts_out.append(GuestServiceDepartment.model_validate(rd).model_dump())
-                except ValidationError as e:
-                    logger.warning(f"[room_qr] Catalogue record validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
-
-            for ri in raw_items:
-                ri.pop("_id", None)
-                try:
-                    services_out.append(GuestServiceItem.model_validate(ri).model_dump())
-                except ValidationError as e:
-                    logger.warning(f"[room_qr] Catalogue record validation failed: group=catalogue_parse_error error_class={e.__class__.__name__}")
+    depts_out, services_out = await fetch_catalogue_data(tenant_id, property_id, mode)
 
     if not depts_out and not services_out:
          raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
-    # Deterministic secondary sorting
-    depts_out.sort(key=lambda x: (x.get("display_order", 0), x.get("department_code", "")))
-    services_out.sort(key=lambda x: (x.get("display_order", 0), x.get("service_code", "")))
+    def local_process_lang(labels: dict | None) -> str:
+        return process_lang(labels, lang, prop_lang)
+
+    def local_process_lang_dict(data: dict | None) -> str | None:
+        if not data:
+            return None
+        return local_process_lang(data)
 
     enabled_dept_codes = set()
     initial_depts = []
@@ -918,7 +913,7 @@ async def public_get_catalogue(
         initial_depts.append({
             "department_code": dept_code,
             "display_order": d.get("display_order", 0),
-            "label": process_lang(d.get("labels")),
+            "label": local_process_lang(d.get("labels")),
             "icon": d.get("icon")
         })
         enabled_dept_codes.add(dept_code)
@@ -943,22 +938,22 @@ async def public_get_catalogue(
             for opt in opts:
                 mapped_opts.append({
                     "code": opt.get("code"),
-                    "label": process_lang(opt.get("labels"))
+                    "label": local_process_lang(opt.get("labels"))
                 })
             config["options"] = mapped_opts
 
         formatted_services.append({
             "service_code": s.get("service_code"),
             "department_code": dept_code,
-            "label": process_lang(s.get("labels")),
-            "description": process_lang_dict(s.get("description")),
+            "label": local_process_lang(s.get("labels")),
+            "description": local_process_lang_dict(s.get("description")),
             "icon": s.get("icon"),
             "input_type": s.get("input_type"),
             "input_config": config,
             "auto_priority": s.get("auto_priority", "normal"),
             "estimated_minutes": s.get("estimated_minutes", 0),
             "is_chargeable": s.get("is_chargeable", False),
-            "charge_warning": process_lang_dict(s.get("charge_warning"))
+            "charge_warning": local_process_lang_dict(s.get("charge_warning"))
         })
         used_dept_codes.add(dept_code)
 
@@ -977,6 +972,7 @@ async def public_get_catalogue(
         "services": formatted_services,
         "server_timestamp": _utc_now().isoformat()
     }
+
 
 
 # ═══════════════════════════════════════════════════════════════

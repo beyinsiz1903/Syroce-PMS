@@ -1,62 +1,46 @@
-# QR Guest Service Catalogue Architecture
+# Guest QR Catalogue Architecture
 
 ## Overview
-The QR Guest Service Catalogue provides a property-configurable, multilingual, and strict-typed service selection layer for guests. It operates alongside the existing mandatory free-text Room QR request flow.
+This document outlines the architecture for the Structured Guest Request Submission feature. We leverage a robust ledger-backed system to ensure idempotency, resolve payload concurrency cleanly (preventing duplicate processing of the same cart checkout), and handle retries effectively without duplicate internal side-effects.
 
-## 1. Data Models
-All catalogue configurations are stored in dedicated property-scoped MongoDB collections:
-- `guest_service_catalogue_settings`: Global settings per property (`tenant_id`, `property_id`, `mode`).
-- `guest_service_departments`: Configurable departments (e.g., Housekeeping, Technical).
-- `guest_service_items`: Specific service items mapped to departments.
+## Ledger Lifecycle
+The `guest_service_submissions` collection operates as the authoritative ledger for every QR request basket submission.
+It utilizes a UUID mapping to an idempotency key originating from the client, scoped by Tenant, Property, and Booking.
 
-### Immutable Identifiers
-The system exclusively relies on `department_code` and `service_code` for business logic and frontend mapping. These codes are immutable (`^[a-z0-9_]+(\.[a-z0-9_]+)*$`).
-**No internal Mongo `_id`s are exposed to the public QR endpoints.**
+- **pending**: The ledger is created before any underlying service documents (`qr_requests`) are upserted.
+- **completed**: The convergence checker verified that every single structured requested service was successfully successfully written to the database.
+- **failed**: Convergence check failed or an unrecoverable state occurred; the ledger may be retried.
 
-### Multilingual Validation
-Labels and descriptions are strictly validated:
-- Language keys must match `^[a-z]{2}(-[A-Z]{2})?$`.
-- Values are stripped of whitespace and must not be empty.
-- Length bounds: labels up to 100 characters, descriptions/warnings up to 500 characters.
+## Convergence vs. Basket Atomicity
+Since MongoDB transactions over sharded collections can be complicated and limit performance, we use **Convergence** rather than strict transactional basket atomicity.
+1. The server strictly validates the payload and computes a payload fingerprint.
+2. It attempts to create a ledger entry (`guest_service_submissions`) using a unique constraint `[tenant_id, property_id, booking_id, idempotency_key]`.
+3. If this ledger already exists (duplicate request due to network retry):
+   - If the fingerprint matches, it simply replays the execution to ensure all nested items were written.
+   - If the fingerprint differs, it rejects with a `409 Conflict`.
+4. Once the ledger is created, the item documents (`qr_requests`) are inserted iteratively using `upsert=True` to guarantee idempotency.
+5. Finally, the system counts the inserted documents. If all expected items are found, the ledger is marked `completed`. If not, a `503` error is returned, instructing the client to retry.
 
-The language resolution fallback is deterministic:
-1. `requested language` (e.g., from `lang` query param)
-2. `property default language`
-3. `"tr"`
-4. `"en"`
-5. First available non-empty label in alphabetical key order.
+## Identifiers
+- **internal**: UUIDv4 identifiers such as `submission_group_id` and `_id` in `qr_requests`. These are never returned publicly to guests.
+- **public**: Deterministic, masked identifiers.
+  - `submission_reference` (e.g. `GSR-XXXXX`) - Returned for the entire group.
+  - `request_reference` (e.g. `REQ-XXXXX`) - Returned per service item.
 
-## 2. API Design & Security
-The read-only public endpoint:
-`GET /api/public/room-qr/{tenant_id}/{room_id}/catalogue`
+## Database Indexes
+- **`guest_service_submissions`**
+  - `tenant_id`, `property_id`, `booking_id`, `idempotency_key` (UNIQUE) - Ensures idempotent race prevention.
+  - `tenant_id`, `submission_reference` (LOOKUP)
+- **`qr_requests`**
+  - `tenant_id`, `submission_group_id`, `service_code` (UNIQUE PARTIAL: `{submission_group_id: {$exists: true}, service_code: {$exists: true}}`) - Ensures no duplicate services within a submission group.
+  - `tenant_id`, `request_reference` (UNIQUE PARTIAL: `{request_reference: {$exists: true}}`) - Global public reference resolution.
 
-**Security Guarantees:**
-- Enforces strict `X-Guest-Session` validation.
-- Derives `property_id` and booking scope purely from the verified server-side session.
-- Exposes no booking, guest, or occupancy indicators in error responses or generic unavailable fallbacks.
-- Index creation and query errors emit sanitized warnings (`group=catalogue_indexes` / `group=catalogue_parse_error`) without logging raw document content, tenant or token data.
+## Notification Guarantee
+Notifications (WebSockets and Guest Chat) are **best-effort**.
+They are executed **after** persistence guarantees have successfully written the documents and completed the ledger. Notification failure logs a warning but never causes a `500` or rollback.
 
-## 3. Catalogue Modes and Fallbacks
-The system defines explicit mode precedence:
-1. **No settings / No records**: Dynamically serves the hardcoded safe template (`default`).
-2. **Mode = default**: Explicitly serves the default template, ignoring stored records.
-3. **Mode = configured**: Serves valid configured records. If records are partially invalid, they are excluded safely via Pydantic model validation. If no usable valid records remain, it fails closed to a generic unavailable response.
-4. **Mode = disabled**: Completely disables the catalogue with a generic unavailable response.
-
-### Default Template Isolation
-The `get_default_catalogue()` method always returns a deep-copy of the generic defaults to prevent in-memory cross-tenant contamination.
-
-## 4. Service Filtering Logic
-A service is returned to the guest only if all conditions are met:
-- The parent department is `enabled`.
-- The service itself is `enabled`.
-- The parent department explicitly exists in the property's catalogue response.
-- The `service_hours` constraint (if configured) allows requests at the current local time relative to the property's configured timezone. 
-**Timezone Policy:** If the timezone is malformed or invalid (e.g., cannot be parsed by `zoneinfo`), or if `start == end`, the service strictly fails closed and is hidden.
-
-## 5. Backward Compatibility (PR 1 constraints)
-Phase 1 introduces strictly the read-only core and data layer:
-- Validates code formats and database uniqueness. Update immutability is not yet enforced (planned for write API PR).
-- Existing `room_qr_requests` logic remains unchanged.
-- Submission pipelines remain identical.
-- Frontend retains its mandatory free-text department flow.
+## Error Contract & Public Visibility
+For security and privacy against probing:
+- Detailed schema violations are swallowed and masked as "Geçersiz girdi".
+- Requests for disabled services, unknown modes, or out-of-hours fallbacks return a generic "Talep işleme alınamadı".
+- Explicit `service_code` details are not exposed when a service is rejected.
