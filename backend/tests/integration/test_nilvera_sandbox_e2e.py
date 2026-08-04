@@ -7,6 +7,7 @@ from decimal import Decimal
 
 import httpx
 import pytest
+import pytest_asyncio
 
 from core.integrations.nilvera.client import NilveraHttpClient
 from core.integrations.nilvera.config import get_nilvera_config
@@ -68,7 +69,7 @@ def sandbox_client(api_key):
     return NilveraHttpClient(api_key=api_key)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def sandbox_buyer_alias(sandbox_client, buyer_vkn):
     """Dynamically queries the alias for the test buyer VKN."""
     async with sandbox_client as client:
@@ -163,35 +164,32 @@ async def test_secret_redaction(monkeypatch, caplog, buyer_vkn, seller_vkn, api_
     
     with caplog.at_level(logging.DEBUG):
         # We manually overwrite the token for this request so it fails but uses the real token format
-        client._api_key = f"{api_key}_invalidated" 
+        invalidated_key = f"{api_key}_invalidated"
+        client._api_key = invalidated_key
         
         async with client as c:
-            try:
+            with pytest.raises(NilveraAuthError) as exc_info:
                 # We inject VKNs into the payload to see if they leak on error
                 await c.post(f"/general/GlobalCompany/Check/TaxNumber/{buyer_vkn}", json={"seller": seller_vkn})
-            except Exception as e:
-                exc_str = str(e)
-                exc_repr = repr(e)
                 
-                # Check Exception messages
-                if api_key in exc_str or api_key in exc_repr:
-                    pytest.fail("API Key leaked in exception string/repr")
-                if buyer_vkn in exc_str or seller_vkn in exc_str:
-                    pytest.fail("VKN leaked in exception string/repr")
+            exc_str = str(exc_info.value)
+            exc_repr = repr(exc_info.value)
+            
+            # Check Exception messages
+            for sensitive in (api_key, invalidated_key, buyer_vkn, seller_vkn):
+                if sensitive in exc_str or sensitive in exc_repr:
+                    pytest.fail(f"Sensitive data leaked in exception string/repr")
                     
         # Check HTTP Client representation
         client_repr = repr(client)
-        if api_key in client_repr:
+        if api_key in client_repr or invalidated_key in client_repr:
             pytest.fail("API Key leaked in client repr")
             
         # Check caplog (HTTP debug logs, etc)
         text = caplog.text
-        if api_key in text:
-            pytest.fail("API Key leaked into logs")
-        if buyer_vkn in text:
-            pytest.fail("Buyer VKN leaked into logs (should be masked)")
-        if seller_vkn in text:
-            pytest.fail("Seller VKN leaked into logs (should be masked)")
+        for sensitive in (api_key, invalidated_key, buyer_vkn, seller_vkn):
+            if sensitive in text:
+                pytest.fail(f"Sensitive data leaked into logs (should be masked)")
 
 
 @pytest.mark.external
