@@ -1,6 +1,5 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel
 
@@ -21,13 +20,13 @@ class NilveraWorkerHealth(BaseModel):
     enabled: bool
     status: NilveraWorkerStatus
     task_alive: bool = False
-    started_at: Optional[datetime] = None
-    last_heartbeat_at: Optional[datetime] = None
-    last_success_at: Optional[datetime] = None
-    last_error_at: Optional[datetime] = None
-    last_error_code: Optional[str] = None
+    started_at: datetime | None = None
+    last_heartbeat_at: datetime | None = None
+    last_success_at: datetime | None = None
+    last_error_at: datetime | None = None
+    last_error_code: str | None = None
     processed_total: int = 0
     job_failed_total: int = 0
     loop_error_total: int = 0
     active_jobs: int = 0
-    degraded_reason: Optional[str] = None
+    degraded_reason: str | None = None

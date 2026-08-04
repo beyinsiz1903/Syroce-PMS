@@ -5,6 +5,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
+import pymongo.errors
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from core.integrations.invoice_lifecycle_service import InvoiceLifecycleService
@@ -48,6 +49,13 @@ class InvoiceLifecycleWorker(NilveraWorkerHealthMixin):
         self._stop_event.clear()
         self._mark_starting()
         self._task = asyncio.create_task(self._run_loop())
+
+        await asyncio.sleep(0)
+        if self._task.done():
+            self._record_loop_error("STARTUP_TASK_FAILED")
+            self._mark_failed("STARTUP_TASK_FAILED")
+            raise RuntimeError("NILVERA_WORKER_STARTUP_FAILED") from None
+
         self._mark_running()
         logger.info(f"InvoiceLifecycleWorker ({self._worker_id}) started.")
 
@@ -89,14 +97,16 @@ class InvoiceLifecycleWorker(NilveraWorkerHealthMixin):
                         await asyncio.sleep(0.5)
                 except asyncio.CancelledError:
                     raise
-                except Exception as e:
-                    self._record_job_error("TRANSIENT_LOOP_ERROR", fatal=False)
-                    logger.error(f"InvoiceLifecycleWorker loop error: {type(e).__name__}")
+                except (TimeoutError, pymongo.errors.PyMongoError) as exc:
+                    self._record_job_error("TRANSIENT_DEPENDENCY_ERROR", fatal=False)
+                    logger.warning(f"InvoiceLifecycleWorker transient loop error: {type(exc).__name__}")
                     await asyncio.sleep(self._poll_interval)
+                except Exception:
+                    raise
         except asyncio.CancelledError:
             pass
-        except Exception as e:
-            logger.error("InvoiceLifecycleWorker fatal outer loop error: %s", type(e).__name__, exc_info=True)
+        except Exception:
+            logger.error("NILVERA_WORKER_FATAL_ERROR worker=%s error_code=%s", self.worker_name, "FATAL_LOOP_ERROR")
             self._record_loop_error("FATAL_LOOP_ERROR")
             self._mark_failed("Worker loop crashed")
 

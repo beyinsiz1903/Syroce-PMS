@@ -17,9 +17,10 @@ import logging
 import os
 import socket
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
+import pymongo.errors
 from pymongo import ReturnDocument
 
 from core.integrations.invoice_dispatch_service import InvoiceDispatchService
@@ -74,6 +75,13 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
         self._stop_event.clear()
         self._mark_starting()
         self._task = asyncio.create_task(self._run(), name="invoice-dispatch-worker")
+
+        await asyncio.sleep(0)
+        if self._task.done():
+            self._record_loop_error("STARTUP_TASK_FAILED")
+            self._mark_failed("STARTUP_TASK_FAILED")
+            raise RuntimeError("NILVERA_WORKER_STARTUP_FAILED") from None
+
         self._mark_running()
         logger.info("Invoice Dispatch Worker started: %s", self.worker_id)
 
@@ -97,6 +105,22 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
                 self._mark_stopped()
         logger.info("Invoice Dispatch Worker stopped: %s", self.worker_id)
 
+    @property
+    def metrics(self) -> dict[str, Any]:
+        """Compatibility adapter for existing metric consumers."""
+        health = self.health
+        return {
+            "worker_id": self.worker_id,
+            "processed_total": health.processed_total,
+            "failed_total": health.job_failed_total,
+            "last_processed_at": (
+                health.last_success_at.isoformat()
+                if health.last_success_at
+                else None
+            ),
+            "running": health.task_alive,
+        }
+
     async def _run(self) -> None:
         try:
             while not self._stop_event.is_set():
@@ -109,8 +133,8 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
                         await asyncio.sleep(self.poll_interval)
                 except asyncio.CancelledError:
                     raise
-                except Exception as exc:
-                    self._record_job_error("TRANSIENT_LOOP_ERROR", fatal=False)
+                except (TimeoutError, pymongo.errors.PyMongoError) as exc:
+                    self._record_job_error("TRANSIENT_DEPENDENCY_ERROR", fatal=False)
                     _transient_tracker.log_exception(
                         logger,
                         exc,
@@ -119,12 +143,14 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
                         non_transient_msg="%s loop error: %s",
                     )
                     await asyncio.sleep(self.poll_interval)
+                except Exception:
+                    raise
                 else:
                     _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
         except asyncio.CancelledError:
             pass
-        except Exception as e:
-            logger.error("Invoice Dispatch Worker fatal outer loop error: %s", type(e).__name__, exc_info=True)
+        except Exception:
+            logger.error("NILVERA_WORKER_FATAL_ERROR worker=%s error_code=%s", self.worker_name, "FATAL_LOOP_ERROR")
             self._record_loop_error("FATAL_LOOP_ERROR")
             self._mark_failed("Worker loop crashed")
 

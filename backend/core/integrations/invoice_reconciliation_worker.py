@@ -12,6 +12,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pymongo.errors
 from pymongo import ReturnDocument
 
 from core.integrations.invoice_reconciliation_service import InvoiceReconciliationService
@@ -65,6 +66,13 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
         self._stop_event.clear()
         self._mark_starting()
         self._task = asyncio.create_task(self._run(), name="invoice-reconciliation-worker")
+
+        await asyncio.sleep(0)
+        if self._task.done():
+            self._record_loop_error("STARTUP_TASK_FAILED")
+            self._mark_failed("STARTUP_TASK_FAILED")
+            raise RuntimeError("NILVERA_WORKER_STARTUP_FAILED") from None
+
         self._mark_running()
         logger.info("Invoice Reconciliation Worker started: %s", self.worker_id)
 
@@ -97,8 +105,8 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
                         await asyncio.sleep(self.poll_interval)
                 except asyncio.CancelledError:
                     raise
-                except Exception as exc:
-                    self._record_job_error("TRANSIENT_LOOP_ERROR", fatal=False)
+                except (TimeoutError, pymongo.errors.PyMongoError) as exc:
+                    self._record_job_error("TRANSIENT_DEPENDENCY_ERROR", fatal=False)
                     _transient_tracker.log_exception(
                         logger,
                         exc,
@@ -107,12 +115,14 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
                         non_transient_msg="%s loop error: %s",
                     )
                     await asyncio.sleep(self.poll_interval)
+                except Exception:
+                    raise
                 else:
                     _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
         except asyncio.CancelledError:
             pass
-        except Exception as e:
-            logger.error("Invoice Reconciliation Worker fatal outer loop error: %s", type(e).__name__, exc_info=True)
+        except Exception:
+            logger.error("NILVERA_WORKER_FATAL_ERROR worker=%s error_code=%s", self.worker_name, "FATAL_LOOP_ERROR")
             self._record_loop_error("FATAL_LOOP_ERROR")
             self._mark_failed("Worker loop crashed")
 
