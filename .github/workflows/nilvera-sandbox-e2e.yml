@@ -1,0 +1,90 @@
+name: Nilvera Sandbox E2E
+
+on:
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+  MONGO_URL: mongodb://localhost:27017/hotel_pms_test
+  DB_NAME: hotel_pms_test
+  JWT_SECRET: ci-test-secret-key-do-not-use-in-production
+
+jobs:
+  nilvera-e2e:
+    name: Run Nilvera Sandbox E2E Tests
+    runs-on: ubuntu-latest
+    environment: nilvera-sandbox
+    concurrency:
+      group: nilvera-sandbox
+      cancel-in-progress: false
+    timeout-minutes: 10
+
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping:1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+          bash scripts/post_install.sh
+          pip install pytest pytest-asyncio httpx pytest-cov pytest-timeout
+
+      - name: Check for Required Secrets
+        id: check-key
+        run: |
+          if [ -z "${{ secrets.NILVERA_E2E_SANDBOX_KEY }}" ] || [ -z "${{ secrets.NILVERA_E2E_BUYER_VKN }}" ] || [ -z "${{ secrets.NILVERA_E2E_SELLER_VKN }}" ]; then
+            echo "::error::One or more required secrets (KEY, BUYER_VKN, SELLER_VKN) are missing in the nilvera-sandbox environment."
+            exit 1
+          fi
+          echo "secrets_exist=true" >> $GITHUB_OUTPUT
+
+      - name: Run Nilvera Sandbox E2E Tests
+        if: steps.check-key.outputs.secrets_exist == 'true'
+        env:
+          NILVERA_E2E_SANDBOX_KEY: ${{ secrets.NILVERA_E2E_SANDBOX_KEY }}
+          NILVERA_E2E_BUYER_VKN: ${{ secrets.NILVERA_E2E_BUYER_VKN }}
+          NILVERA_E2E_SELLER_VKN: ${{ secrets.NILVERA_E2E_SELLER_VKN }}
+          MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+        run: |
+          cd backend
+          python -m pytest tests/integration/test_nilvera_sandbox_e2e.py \
+            -m nilvera_sandbox \
+            -v --tb=short -q --timeout=300 \
+            --junitxml=nilvera-sandbox-results.xml
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v5
+        if: always() && steps.check-key.outputs.secrets_exist == 'true'
+        with:
+          name: nilvera-sandbox-results
+          path: backend/nilvera-sandbox-results.xml
