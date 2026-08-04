@@ -1,87 +1,16 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import axios from "axios";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { alertDialog } from '@/lib/dialogs';
-import {
-  Sparkles, Wrench, Wifi, Tv, Thermometer, Utensils, Wine, Beer, Shirt,
-  Car, Bell, Heart, Package, MessageSquare, CheckCircle2, Loader2, Hotel,
-  AlertTriangle,
-} from "lucide-react";
-
-const ICONS = {
-  sparkles: Sparkles, wrench: Wrench, wifi: Wifi, tv: Tv, thermometer: Thermometer,
-  utensils: Utensils, wine: Wine, beer: Beer, shirt: Shirt, car: Car, bell: Bell,
-  heart: Heart, package: Package, message: MessageSquare, alert: AlertTriangle,
-};
-
-const LANGS = [
-  { code: "tr", label: "Türkçe" },
-  { code: "en", label: "English" },
-  { code: "de", label: "Deutsch" },
-  { code: "ru", label: "Русский" },
-  { code: "ar", label: "العربية" },
-];
-
-const UI = {
-  tr: { title: "Oda Talebi", room: "Oda", welcome: "Hoş geldiniz", pick: "Ne için talep oluşturuyorsunuz?",
-        describe: "Detay / Açıklama", placeholder: "Kısaca talebinizi yazın...", priority: "Öncelik",
-        low: "Düşük", normal: "Normal", high: "Yüksek", urgent: "Acil", submit: "Talebi Gönder",
-        sent: "Talebiniz alındı!", sentDesc: "İlgili departmana iletildi, kısa sürede geri dönülecek.",
-        newReq: "Yeni talep oluştur", name: "Adınız (opsiyonel)", phone: "Telefon (opsiyonel)",
-        sending: "Gönderiliyor...", language: "Dil", back: "Geri", home: "Ana menü",
-        errorTitle: "Talep açılamadı", unavailableTitle: "Hizmet Kullanılamıyor", unavailableDesc: "Bu oda için aktif bir konaklama bulunamadı veya oturumunuz sona erdi.",
-        loadError: "Yükleme hatası", sendError: "Gönderim hatası",
-        conversation: "Mesajlar", you: "Siz", team: "Otel Ekibi",
-        replyPlaceholder: "Bir mesaj yazın...", send: "Gönder", noMessages: "Henüz mesaj yok." },
-  en: { title: "Room Request", room: "Room", welcome: "Welcome", pick: "What is your request about?",
-        describe: "Details", placeholder: "Briefly describe your request...", priority: "Priority",
-        low: "Low", normal: "Normal", high: "High", urgent: "Urgent", submit: "Submit Request",
-        sent: "Request received!", sentDesc: "It has been forwarded to the right team. We'll get back to you shortly.",
-        newReq: "Make another request", name: "Your name (optional)", phone: "Phone (optional)",
-        sending: "Sending...", language: "Language", back: "Back", home: "Main menu",
-        errorTitle: "Unable to open request", unavailableTitle: "Service Unavailable", unavailableDesc: "No active stay found for this room or your session has expired.",
-        loadError: "Loading error", sendError: "Sending error",
-        conversation: "Messages", you: "You", team: "Hotel Team",
-        replyPlaceholder: "Write a message...", send: "Send", noMessages: "No messages yet." },
-  de: { title: "Zimmeranfrage", room: "Zimmer", welcome: "Willkommen", pick: "Worum geht es?",
-        describe: "Beschreibung", placeholder: "Beschreiben Sie Ihre Anfrage...", priority: "Priorität",
-        low: "Niedrig", normal: "Normal", high: "Hoch", urgent: "Dringend", submit: "Anfrage senden",
-        sent: "Anfrage erhalten!", sentDesc: "Wir haben sie an das Team weitergeleitet.",
-        newReq: "Neue Anfrage", name: "Name (optional)", phone: "Telefon (optional)",
-        sending: "Senden...", language: "Sprache", back: "Zurück", home: "Hauptmenü",
-        errorTitle: "Anfrage konnte nicht geöffnet werden", unavailableTitle: "Dienst nicht verfügbar", unavailableDesc: "Für dieses Zimmer wurde kein aktiver Aufenthalt gefunden oder Ihre Sitzung ist abgelaufen.",
-        loadError: "Ladefehler", sendError: "Sendefehler",
-        conversation: "Nachrichten", you: "Sie", team: "Hotel-Team",
-        replyPlaceholder: "Nachricht schreiben...", send: "Senden", noMessages: "Noch keine Nachrichten." },
-  ru: { title: "Запрос из номера", room: "Номер", welcome: "Добро пожаловать", pick: "Что вас интересует?",
-        describe: "Описание", placeholder: "Опишите ваш запрос...", priority: "Приоритет",
-        low: "Низкий", normal: "Обычный", high: "Высокий", urgent: "Срочно", submit: "Отправить",
-        sent: "Запрос принят!", sentDesc: "Мы передали его в нужный отдел.",
-        newReq: "Новый запрос", name: "Имя (необяз.)", phone: "Телефон (необяз.)",
-        sending: "Отправка...", language: "Язык", back: "Назад", home: "Главное меню",
-        errorTitle: "Не удалось открыть запрос", unavailableTitle: "Услуга недоступна", unavailableDesc: "Активное проживание для этого номера не найдено или срок действия вашего сеанса истек.",
-        loadError: "Ошибка загрузки", sendError: "Ошибка отправки",
-        conversation: "Сообщения", you: "Вы", team: "Команда отеля",
-        replyPlaceholder: "Напишите сообщение...", send: "Отправить", noMessages: "Сообщений пока нет." },
-  ar: { title: "طلب من الغرفة", room: "غرفة", welcome: "أهلاً بك", pick: "ما هو طلبك؟",
-        describe: "التفاصيل", placeholder: "صف طلبك...", priority: "الأولوية",
-        low: "منخفض", normal: "عادي", high: "مرتفع", urgent: "عاجل", submit: "إرسال الطلب",
-        sent: "تم استلام طلبك!", sentDesc: "تم تحويله إلى القسم المختص.",
-        newReq: "طلب جديد", name: "الاسم (اختياري)", phone: "الهاتف (اختياري)",
-        sending: "جارٍ الإرسال...", language: "اللغة", back: "رجوع", home: "القائمة الرئيسية",
-        errorTitle: "تعذّر فتح الطلب", unavailableTitle: "الخدمة غير متوفرة", unavailableDesc: "لم يتم العثور على إقامة نشطة لهذه الغرفة أو انتهت صلاحية جلستك.",
-        loadError: "خطأ في التحميل", sendError: "خطأ في الإرسال",
-        conversation: "الرسائل", you: "أنت", team: "فريق الفندق",
-        replyPlaceholder: "اكتب رسالة...", send: "إرسال", noMessages: "لا توجد رسائل بعد." },
-};
-
-const LOCALE = { tr: "tr-TR", en: "en-US", de: "de-DE", ru: "ru-RU", ar: "ar" };
+import { Loader2, Hotel, AlertTriangle, CheckCircle2, Minus, Plus, MessageSquare } from "lucide-react";
+import { ICONS, LANGS, UI, LOCALE, DEPT_LABELS, DEPT_ICONS } from "./constants";
+import { useGuestCart } from "./hooks/useGuestCart";
 
 function fmtGuestTime(iso, lang) {
   if (!iso) return "";
@@ -94,15 +23,25 @@ function fmtGuestTime(iso, lang) {
   }
 }
 
-/**
- * Misafir tarafı iki yönlü thread — BOOKING-SCOPED (backend belirler).
- * Mesajlar 15s'de bir (sekme görünürken) tazelenir. Personel adı backend'de
- * "Otel Ekibi" olarak maskelenir; burada da sender_type'a göre etiketlenir.
- *
- * `alwaysShow` true ise (talep gönderildikten sonra) thread + yanıt kutusu
- * her zaman görünür; aksi halde yalnızca mevcut mesaj varsa render edilir
- * (ziyarette devam eden konuşma).
- */
+function getLocalDateString(offsetDays = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  const pad = n => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function getLabel(item, lang, fallbackCode) {
+  if (!item) return fallbackCode || "";
+  const labels = item.labels;
+  if (!labels || typeof labels !== "object") return fallbackCode || "";
+  if (labels[lang]) return labels[lang];
+  if (labels.en) return labels.en;
+  for (const key of Object.keys(labels)) {
+    if (labels[key]) return labels[key];
+  }
+  return fallbackCode || "";
+}
+
 function GuestThread({ tenantId, roomId, token, t, lang, rtl, accent, alwaysShow }) {
   const [messages, setMessages] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -120,11 +59,11 @@ function GuestThread({ tenantId, roomId, token, t, lang, rtl, accent, alwaysShow
       if (!mountedRef.current) return;
       setMessages(r.data?.messages || []);
     } catch {
-      /* thread opsiyonel — sessiz geç */
+      // thread optional
     } finally {
       if (mountedRef.current) setLoaded(true);
     }
-  }, [tenantId, roomId]);
+  }, [tenantId, roomId, token]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -228,124 +167,489 @@ function GuestThread({ tenantId, roomId, token, t, lang, rtl, accent, alwaysShow
   );
 }
 
-const DEPT_LABELS = {
-  tr: { rooms: "Kat Hizmetleri", technical: "Teknik Servis", fnb: "Restoran / Oda Servisi", laundry: "Çamaşırhane", transportation: "Ulaşım", spa: "SPA", other: "Resepsiyon / Diğer", minibar: "Minibar" },
-  en: { rooms: "Housekeeping", technical: "Maintenance", fnb: "Dining & Room Service", laundry: "Laundry", transportation: "Transportation", spa: "SPA", other: "Reception / Other", minibar: "Minibar" },
-  de: { rooms: "Zimmerreinigung", technical: "Wartung", fnb: "Restaurant", laundry: "Wäscherei", transportation: "Transport", spa: "SPA", other: "Rezeption / Andere", minibar: "Minibar" },
-  ru: { rooms: "Уборка", technical: "Ремонт", fnb: "Ресторан", laundry: "Прачечная", transportation: "Транспорт", spa: "СПА", other: "Ресепшн / Другое", minibar: "Минибар" },
-  ar: { rooms: "خدمة الغرف", technical: "صيانة", fnb: "مطعم", laundry: "غسيل", transportation: "نقل", spa: "سبا", other: "استقبال / أخرى", minibar: "ميني بار" },
-};
+// ----------------------------------------------------------------------
+// SERVICE INPUT COMPONENT
+// ----------------------------------------------------------------------
+function ServiceInput({ service, cartItem, onChange, t, accent, lang }) {
+  const type = service.input_type;
+  const config = service.input_config || {};
+  
+  if (type === "one_tap") {
+    const isSelected = !!cartItem;
+    return (
+      <Button 
+        variant={isSelected ? "destructive" : "outline"}
+        onClick={() => isSelected ? onChange(null) : onChange({ value: {} })}
+        className="w-full mt-2 min-h-[44px]"
+        style={isSelected ? {} : { color: accent, borderColor: accent }}
+      >
+        {isSelected ? t.remove : t.addMore}
+      </Button>
+    );
+  }
 
-const DEPT_ICONS = {
-  rooms: Sparkles, technical: Wrench, fnb: Utensils, laundry: Shirt,
-  transportation: Car, spa: Heart, other: Bell, minibar: Beer
-};
+  if (type === "quantity") {
+    const qty = cartItem?.value?.quantity;
+    const min = config.min ?? 1;
+    const max = config.max ?? 99;
+    const def = config.default ?? min;
+    const currentQty = qty === undefined ? 0 : qty;
+    
+    return (
+      <div className="mt-2 flex flex-col gap-2">
+        <div className="flex items-center justify-between bg-slate-50 rounded-lg p-1">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => {
+              if (currentQty === 0) return;
+              if (currentQty > min) {
+                 onChange({ value: { quantity: currentQty - 1 } });
+              }
+            }}
+            disabled={currentQty <= min}
+            className="h-8 w-8 min-w-[44px] min-h-[44px]"
+          >
+            <Minus className="w-4 h-4" />
+          </Button>
+          <span className="font-semibold text-base min-w-[32px] text-center" data-testid={`qty-${service.service_code}`}>{currentQty}</span>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => {
+               if (currentQty === 0) {
+                 onChange({ value: { quantity: def } });
+               } else if (currentQty < max) {
+                 onChange({ value: { quantity: currentQty + 1 } });
+               }
+            }}
+            disabled={currentQty >= max && currentQty > 0}
+            className="h-8 w-8 min-w-[44px] min-h-[44px]"
+            style={{ color: accent }}
+          >
+            <Plus className="w-4 h-4" />
+          </Button>
+        </div>
+        {cartItem && (
+          <Button variant="ghost" size="sm" onClick={() => onChange(null)} className="text-red-500 self-start p-0 h-auto min-h-[44px]">
+            {t.remove}
+          </Button>
+        )}
+      </div>
+    );
+  }
 
+  if (type === "single_choice") {
+    const opts = config.options || [];
+    const selected = cartItem?.value?.selected_options?.[0] || "";
+    return (
+      <div className="mt-2 flex flex-col gap-2">
+        <Select value={selected} onValueChange={(val) => onChange({ value: { selected_options: [val] } })}>
+          <SelectTrigger className="w-full min-h-[44px]"><SelectValue placeholder={t.selectOption} /></SelectTrigger>
+          <SelectContent>
+            {opts.map(o => (
+              <SelectItem key={o.code} value={o.code}>{getLabel(o, lang, o.code)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {cartItem && (
+          <Button variant="ghost" size="sm" onClick={() => onChange(null)} className="text-red-500 self-start p-0 h-auto min-h-[44px]">
+            {t.remove}
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  if (type === "multi_choice") {
+    const opts = config.options || [];
+    const selected = cartItem?.value?.selected_options || [];
+    const minSel = config.min_selections ?? 0;
+    const maxSel = config.max_selections ?? 99;
+
+    return (
+      <div className="mt-2 flex flex-col gap-2">
+        {opts.map(o => {
+          const checked = selected.includes(o.code);
+          const disabled = !checked && selected.length >= maxSel;
+          return (
+            <label key={o.code} className={`flex items-center gap-2 min-h-[44px] ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
+              <input 
+                type="checkbox" 
+                checked={checked} 
+                disabled={disabled}
+                onChange={(e) => {
+                  let newSel = e.target.checked ? [...selected, o.code] : selected.filter(x => x !== o.code);
+                  newSel = [...new Set(newSel)]; // ensure no duplicates
+                  
+                  // if min_selections > 0, we still allow UI removal but backend will reject if we submit below min
+                  // we will let the cart remove it entirely if length becomes 0 and min_selections is 0
+                  if (newSel.length === 0 && minSel === 0) onChange(null);
+                  else onChange({ value: { selected_options: newSel } });
+                }}
+                className="w-5 h-5 rounded border-slate-300"
+                style={{ accentColor: accent }}
+              />
+              <span className="text-sm">{getLabel(o, lang, o.code)}</span>
+            </label>
+          );
+        })}
+        {cartItem && minSel > 0 && selected.length < minSel && (
+           <span className="text-xs text-red-500">Lütfen en az {minSel} seçim yapın</span>
+        )}
+        {cartItem && (
+          <Button variant="ghost" size="sm" onClick={() => onChange(null)} className="text-red-500 self-start p-0 h-auto min-h-[44px]">
+            {t.remove}
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  if (type === "date" || type === "time" || type === "datetime") {
+    const key = `${type}_value`;
+    const val = cartItem?.value?.[key] || "";
+    
+    let inputType = "date";
+    let min = undefined;
+    let max = undefined;
+    let step = undefined;
+
+    if (type === "date" || type === "datetime") {
+      const minDays = config.min_days_ahead ?? 0;
+      const maxDays = config.max_days_ahead ?? 365;
+      
+      if (type === "date") {
+        inputType = "date";
+        min = getLocalDateString(minDays);
+        max = getLocalDateString(maxDays);
+      } else {
+        inputType = "datetime-local";
+        min = getLocalDateString(minDays) + "T00:00";
+        max = getLocalDateString(maxDays) + "T23:59";
+      }
+    }
+
+    if (type === "time") {
+      inputType = "time";
+    }
+
+    if (type === "time" || type === "datetime") {
+      if (config.interval_minutes) {
+        step = config.interval_minutes * 60;
+      }
+    }
+
+    return (
+      <div className="mt-2 flex flex-col gap-2">
+        <Input 
+          type={inputType}
+          value={val}
+          min={min}
+          max={max}
+          step={step}
+          onChange={(e) => {
+            if (!e.target.value) {
+               onChange(null);
+               return;
+            }
+            
+            const selectedVal = e.target.value;
+            if (min && selectedVal < min) return;
+            if (max && selectedVal > max) return;
+            
+            if ((type === "time" || type === "datetime") && config.interval_minutes) {
+               const timePart = type === "datetime" ? selectedVal.split('T')[1] : selectedVal;
+               if (timePart) {
+                  const [hh, mm] = timePart.split(':');
+                  const totalMins = parseInt(hh || 0) * 60 + parseInt(mm || 0);
+                  if (totalMins % config.interval_minutes !== 0) return;
+               }
+            }
+            
+            onChange({ value: { [key]: selectedVal } });
+          }}
+          className="min-h-[44px]"
+        />
+        {cartItem && (
+          <Button variant="ghost" size="sm" onClick={() => onChange(null)} className="text-red-500 self-start p-0 h-auto min-h-[44px]">
+            {t.remove}
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  return <div className="mt-2 text-xs text-red-500">{t.unsupportedInput}</div>;
+}
+
+
+// ----------------------------------------------------------------------
+// MAIN EXPORT
+// ----------------------------------------------------------------------
 export default function RoomRequestPage() {
   const { tenantId, roomId } = useParams();
   const [params] = useSearchParams();
   const token = params.get("t");
 
   const [lang, setLang] = useState(() => {
-    const nav = (navigator.language || "tr").slice(0, 2);
+    const nav = (typeof navigator !== "undefined" && navigator.language) ? navigator.language.slice(0, 2) : "tr";
     return UI[nav] ? nav : "tr";
   });
   const t = UI[lang] || UI.tr;
   const rtl = lang === "ar";
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [unavailable, setUnavailable] = useState(false);
+  // Core mode & views
+  const [mode, setMode] = useState("loading"); // loading, catalogue, legacy, unavailable, error
+  const [view, setView] = useState("departments"); // departments, services, review, success
+  
+  // Data
   const [meta, setMeta] = useState(null);
   const [guestSession, setGuestSession] = useState(null);
-  const [selectedDept, setSelectedDept] = useState(null);
-  const [category, setCategory] = useState(null);
-  const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState("normal");
+  const [catalogueData, setCatalogueData] = useState({ departments: [], services: [] });
+  const [selectedDeptCode, setSelectedDeptCode] = useState(null);
+
+  // Cart
+  const cartState = useGuestCart();
+
+  // Legacy fallback states
+  const [legacyCategory, setLegacyCategory] = useState(null);
+  const [legacyDescription, setLegacyDescription] = useState("");
+  const [legacyPriority, setLegacyPriority] = useState("normal");
+
+  // Shared form
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  
+  // Submit state
   const [submitting, setSubmitting] = useState(false);
-  const [done, setDone] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [successResponse, setSuccessResponse] = useState(null);
+  const submitGuard = useRef(false);
+
+  const loadData = useCallback(async () => {
+    setMode("loading");
+    try {
+      const metaRes = await axios.get(`/public/room-qr/${tenantId}/${roomId}`, { params: { t: token } });
+      setMeta(metaRes.data);
+
+      let sessionStr = null;
+      try {
+        const sessionRes = await axios.post(`/public/room-qr/${tenantId}/${roomId}/session`, null, { params: { t: token } });
+        sessionStr = sessionRes.data.session_token;
+        setGuestSession(sessionStr);
+      } catch (sessionErr) {
+        const status = sessionErr.response?.status;
+        if (status === 401 || status === 403 || status === 410) {
+          setMode("unavailable");
+          return;
+        } else if (status === 429) {
+          setSubmitError(t.rateLimit);
+          setMode("error");
+          return;
+        }
+        throw sessionErr; 
+      }
+
+      // Fetch catalogue
+      try {
+        const catRes = await axios.get(`/public/room-qr/${tenantId}/${roomId}/catalogue`, {
+          params: { lang },
+          headers: { "X-Guest-Session": sessionStr }
+        });
+        
+        if (catRes.status === 200) {
+          if (!catRes.data || !Array.isArray(catRes.data.departments) || !Array.isArray(catRes.data.services)) {
+             setSubmitError(t.loadError);
+             setMode("error");
+             return;
+          }
+          
+          let valid = true;
+          const deptCodes = new Set();
+          for (const d of catRes.data.departments) {
+             if (!d.department_code) valid = false;
+             deptCodes.add(d.department_code);
+          }
+          
+          const sCodes = new Set();
+          const SUPPORTED_TYPES = ["one_tap", "quantity", "single_choice", "multi_choice", "date", "time", "datetime"];
+          
+          for (const s of catRes.data.services) {
+             if (!s.service_code || sCodes.has(s.service_code)) valid = false;
+             sCodes.add(s.service_code);
+             if (!deptCodes.has(s.department_code)) valid = false;
+             if (!SUPPORTED_TYPES.includes(s.input_type)) valid = false;
+             if (s.input_config === null || typeof s.input_config !== "object" || Array.isArray(s.input_config)) valid = false;
+          }
+
+          if (!valid) {
+             setSubmitError(t.loadError);
+             setMode("error");
+             return;
+          }
+
+          setCatalogueData(catRes.data);
+          setMode("catalogue");
+        }
+      } catch (catErr) {
+        const status = catErr.response?.status;
+        if (status === 404) {
+          setMode("legacy");
+        } else if (status === 401 || status === 403) {
+          setMode("unavailable");
+        } else if (status === 429) {
+          setSubmitError(t.rateLimit);
+          setMode("error");
+        } else if (status >= 500 || !catErr.response) {
+          setSubmitError(t.networkError || "Network error");
+          setMode("error");
+        } else {
+          setSubmitError(t.loadError);
+          setMode("error");
+        }
+      }
+    } catch (e) {
+       const status = e.response?.status;
+       if (status === 401 || status === 403 || status === 410) {
+         setMode("unavailable");
+       } else if (status === 429) {
+         setSubmitError(t.rateLimit);
+         setMode("error");
+       } else {
+         setSubmitError(t.networkError || "Network error");
+         setMode("error");
+       }
+    }
+  }, [tenantId, roomId, token, lang, t]);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        // 1. Fetch public room info
-        const r = await axios.get(`/public/room-qr/${tenantId}/${roomId}`, { params: { t: token } });
-        setMeta(r.data);
-        
-        // 2. Exchange token for guest session
-        try {
-            const sessionRes = await axios.post(`/public/room-qr/${tenantId}/${roomId}/session`, null, { params: { t: token } });
-            setGuestSession(sessionRes.data.session_token);
-        } catch (sessionErr) {
-            if (sessionErr.response && (sessionErr.response.status === 403 || sessionErr.response.status === 410)) {
-                setUnavailable(true);
-            } else {
-                setError(sessionErr.response?.data?.detail || t.loadError);
-            }
-        }
-      } catch (e) {
-        if (e.response && e.response.status === 410) {
-            setUnavailable(true);
-        } else {
-            setError(e.response?.data?.detail || t.loadError);
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, [tenantId, roomId]);
+    loadData();
+  }, [loadData]);
 
-  const submit = async () => {
-    if (!category || submitting || !guestSession) return;
+  const submitLegacy = async () => {
+    if (!legacyCategory || submitting || !guestSession) return;
+    if (submitGuard.current) return;
+    submitGuard.current = true;
     setSubmitting(true);
+    setSubmitError("");
     try {
-      const selectedCat = meta.categories.find(c => c.id === category);
-      const catLabel = selectedCat?.labels[lang] || selectedCat?.labels.en || category;
-      const finalDesc = description.trim() || catLabel;
+      const selectedCat = meta.categories.find(c => c.id === legacyCategory);
+      const catLabel = selectedCat?.labels[lang] || selectedCat?.labels.en || legacyCategory;
+      const finalDesc = legacyDescription.trim() || catLabel;
 
       await axios.post(`/public/room-qr/${tenantId}/${roomId}/submit`, {
-        category, description: finalDesc, priority, language: lang,
+        category: legacyCategory, description: finalDesc, priority: legacyPriority, language: lang,
         guest_name: name.trim() || undefined,
         guest_phone: phone.trim() || undefined,
       }, { headers: { "X-Guest-Session": guestSession } });
-      setDone(true);
+      setView("success");
     } catch (e) {
-      if (e.response && (e.response.status === 401 || e.response.status === 403)) {
-          setUnavailable(true);
-          setGuestSession(null);
-      } else {
-          alertDialog({ message: e.response?.data?.detail || t.sendError });
-      }
+      handleSubmitError(e);
     } finally {
+      submitGuard.current = false;
       setSubmitting(false);
     }
   };
 
-  const resetForNew = () => {
-    setDone(false); setSelectedDept(null); setCategory(null); setDescription(""); setPriority("normal");
+  const submitStructured = async () => {
+    if (cartState.cart.length === 0 || submitting || !guestSession) return;
+    if (submitGuard.current) return;
+    
+    // Validate min_selections for multi_choice
+    for (const item of cartState.cart) {
+      const config = item.catalogueItem?.input_config || {};
+      if (item.input_type === "multi_choice" && config.min_selections > 0) {
+        const len = item.value?.selected_options?.length || 0;
+        if (len < config.min_selections) {
+          alertDialog({ message: `Lütfen ${getLabel(item.catalogueItem, lang, item.service_code)} için en az ${config.min_selections} seçim yapın.` });
+          return;
+        }
+      }
+    }
+    
+    submitGuard.current = true;
+    setSubmitting(true);
+    setSubmitError("");
+
+    let key, payload;
+    if (cartState.snapshot) {
+      key = cartState.snapshot.key;
+      payload = cartState.snapshot.payload;
+    } else {
+      key = cartState.generateIdempotencyKey();
+      payload = {
+        language: lang,
+        idempotency_key: key,
+        items: cartState.cart.map(c => {
+           const obj = { service_code: c.service_code };
+           if (c.value && Object.keys(c.value).length > 0) obj.value = c.value;
+           if (c.note?.trim()) obj.note = c.note.trim();
+           return obj;
+        })
+      };
+      cartState.setSnapshot({ key, payload });
+    }
+
+    try {
+      const res = await axios.post(`/public/room-qr/${tenantId}/${roomId}/submit`, payload, {
+        headers: { "X-Guest-Session": guestSession }
+      });
+      cartState.clearCart();
+      setSuccessResponse(res.data);
+      setView("success");
+    } catch (e) {
+      handleSubmitError(e);
+    } finally {
+      submitGuard.current = false;
+      setSubmitting(false);
+    }
   };
 
-  const goHome = () => {
-    setDone(false); setSelectedDept(null); setCategory(null); setDescription(""); setPriority("normal");
+  const handleSubmitError = (e) => {
+    const status = e.response?.status;
+    if (status === 401 || status === 403 || status === 410) {
+      setMode("unavailable");
+      setGuestSession(null);
+    } else if (status === 409) {
+      // 409 -> do not retry automatically, keep snapshot? Wait, cart edit clears it.
+      setSubmitError(t.conflictError);
+      alertDialog({ message: t.conflictError });
+    } else if (status === 429) {
+      setSubmitError(t.rateLimit);
+      alertDialog({ message: t.rateLimit });
+    } else {
+      const detail = e.response?.data?.detail || t.sendError;
+      setSubmitError(detail);
+      alertDialog({ message: detail });
+    }
+  };
+
+  const resetFlow = () => {
+    setView("departments");
+    setSelectedDeptCode(null);
+    setLegacyCategory(null);
+    setLegacyDescription("");
+    setLegacyPriority("normal");
+    setSubmitError("");
+    setSuccessResponse(null);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  if (loading) {
+  const accent = meta?.primary_color || "#0ea5e9";
+
+  if (mode === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-200 dark:bg-none dark:bg-background">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <Loader2 className="w-10 h-10 animate-spin text-slate-400" />
       </div>
     );
   }
 
-
-  if (unavailable) {
+  if (mode === "unavailable") {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
-        <Card className="max-w-md w-full">
+        <Card className="max-w-md w-full shadow-xl">
           <CardContent className="p-8 text-center">
             <div className="flex justify-center mb-4"><AlertTriangle className="w-14 h-14 text-slate-400" /></div>
             <h2 className="text-xl font-semibold mb-2">{t.unavailableTitle}</h2>
@@ -356,188 +660,320 @@ export default function RoomRequestPage() {
     );
   }
 
-  if (error) {
+  if (mode === "error") {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
-        <Card className="max-w-md w-full">
-          <CardContent className="p-8 text-center">
+        <Card className="max-w-md w-full shadow-xl">
+          <CardContent className="p-8 text-center space-y-4">
             <div className="flex justify-center mb-4"><AlertTriangle className="w-14 h-14 text-red-600" /></div>
             <h2 className="text-xl font-semibold mb-2">{t.errorTitle}</h2>
-            <p className="text-gray-600 text-sm">{error}</p>
+            <p className="text-gray-600 text-sm">{submitError || t.loadError}</p>
+            <Button onClick={loadData} className="w-full mt-4">{t.tryAgain}</Button>
           </CardContent>
         </Card>
       </div>
     );
   }
 
-  const accent = meta?.primary_color || "#0ea5e9";
-  const departments = [...new Set(meta.categories.map(c => c.department))];
-
-  return (
-    <div dir={rtl ? "rtl" : "ltr"} className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-200 dark:bg-none dark:bg-background pb-24">
-      {/* Header */}
-      <div className="text-white p-6 pb-10 rounded-b-3xl shadow-lg"
-           style={{ background: `linear-gradient(135deg, ${accent} 0%, ${accent}dd 100%)` }}>
-        <div className="max-w-2xl mx-auto">
-          <div className="flex justify-between items-start mb-4">
-            <div className="flex items-center gap-3">
-              {meta.hotel_logo ? (
-                <img src={meta.hotel_logo} alt="" className="w-12 h-12 rounded-xl bg-white/20 p-2" />
-              ) : (
-                <Hotel className="w-12 h-12 bg-white/20 p-2 rounded-xl" />
-              )}
-              <div>
-                <div className="text-xs opacity-80">{t.welcome}</div>
-                <div className="font-bold text-lg">{meta.hotel_name}</div>
-              </div>
+  const renderHeader = () => (
+    <div className="text-white p-6 pb-10 rounded-b-3xl shadow-lg"
+         style={{ background: `linear-gradient(135deg, ${accent} 0%, ${accent}dd 100%)` }}>
+      <div className="max-w-2xl mx-auto">
+        <div className="flex justify-between items-start mb-4">
+          <div className="flex items-center gap-3">
+            {meta.hotel_logo ? (
+              <img src={meta.hotel_logo} alt="" className="w-12 h-12 rounded-xl bg-white/20 p-2" />
+            ) : (
+              <Hotel className="w-12 h-12 bg-white/20 p-2 rounded-xl" />
+            )}
+            <div>
+              <div className="text-xs opacity-80">{t.welcome}</div>
+              <div className="font-bold text-lg">{meta.hotel_name}</div>
             </div>
-            <Select value={lang} onValueChange={setLang}>
-              <SelectTrigger className="w-28 bg-white/20 border-white/30 text-white">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {LANGS.map((l) => <SelectItem key={l.code} value={l.code}>{l.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
           </div>
-          <div className="bg-white/15 backdrop-blur p-4 rounded-2xl">
-            <div className="text-xs opacity-80 uppercase tracking-wide">{t.room}</div>
-            <div className="text-4xl font-bold">{meta.room_number}</div>
-            {meta.room_type && <div className="text-sm opacity-80 mt-1">{meta.room_type}</div>}
-          </div>
+          <Select value={lang} onValueChange={setLang}>
+            <SelectTrigger className="w-28 bg-white/20 border-white/30 text-white min-h-[44px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {LANGS.map((l) => <SelectItem key={l.code} value={l.code}>{l.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="bg-white/15 backdrop-blur p-4 rounded-2xl">
+          <div className="text-xs opacity-80 uppercase tracking-wide">{t.room}</div>
+          <div className="text-4xl font-bold">{meta.room_number}</div>
+          {meta.room_type && <div className="text-sm opacity-80 mt-1">{meta.room_type}</div>}
         </div>
       </div>
+    </div>
+  );
 
-      <div className="max-w-2xl mx-auto px-4 -mt-4">
-        {done ? (
+  if (view === "success") {
+    return (
+      <div dir={rtl ? "rtl" : "ltr"} className="min-h-screen bg-slate-50 pb-24">
+        {renderHeader()}
+        <div className="max-w-2xl mx-auto px-4 -mt-4">
           <Card className="shadow-xl">
             <CardContent className="p-10 text-center">
               <div className="w-20 h-20 mx-auto rounded-full bg-emerald-100 flex items-center justify-center mb-4">
                 <CheckCircle2 className="w-12 h-12 text-emerald-600" />
               </div>
               <h2 className="text-2xl font-bold mb-2">{t.sent}</h2>
-              <p className="text-gray-600 mb-6">{t.sentDesc}</p>
+              <p className="text-gray-600 mb-6">{mode === "catalogue" ? t.structuredSentDesc : t.sentDesc}</p>
+              
+              {successResponse && (
+                <div className="text-sm text-left bg-slate-100 p-4 rounded-lg mb-6 break-words" data-testid="success-refs">
+                  {successResponse.submission_reference && (
+                    <div className="font-semibold text-slate-700">Ref: {successResponse.submission_reference}</div>
+                  )}
+                  {Array.isArray(successResponse.request_references) && successResponse.request_references.map(r => (
+                    <div key={r.request_reference} className="text-slate-500 mt-1">
+                      {r.service_code}: {r.request_reference}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="space-y-3">
-                <Button onClick={resetForNew} className="w-full text-white" style={{ background: accent }}>{t.newReq}</Button>
-                <Button onClick={goHome} variant="outline" className="w-full">{t.home}</Button>
+                <Button onClick={resetFlow} className="w-full text-white min-h-[44px]" style={{ background: accent }}>{t.newReq}</Button>
               </div>
             </CardContent>
           </Card>
-        ) : !selectedDept ? (
+          <GuestThread tenantId={tenantId} roomId={roomId} token={guestSession} t={t} lang={lang} rtl={rtl} accent={accent} alwaysShow={true} />
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === "legacy") {
+    return (
+      <div dir={rtl ? "rtl" : "ltr"} className="min-h-screen bg-slate-50 pb-24">
+        {renderHeader()}
+        <div className="max-w-2xl mx-auto px-4 -mt-4">
+          {!selectedDeptCode ? (
+             <Card className="shadow-xl">
+               <CardHeader><CardTitle>{t.pick}</CardTitle></CardHeader>
+               <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                 {[...new Set(meta.categories.map(c => c.department))].map(dept => {
+                   const Icon = DEPT_ICONS[dept] || MessageSquare;
+                   const label = (DEPT_LABELS[lang] || DEPT_LABELS.tr)[dept] || dept;
+                   return (
+                     <button key={dept} onClick={() => setSelectedDeptCode(dept)} className="flex flex-col items-center gap-3 p-4 rounded-xl border-2 border-slate-200 hover:border-slate-400 min-h-[44px]">
+                       <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: `${accent}15`, color: accent }}>
+                         <Icon className="w-7 h-7" />
+                       </div>
+                       <span className="text-sm font-semibold text-center">{label}</span>
+                     </button>
+                   );
+                 })}
+               </CardContent>
+             </Card>
+          ) : !legacyCategory ? (
+             <Card className="shadow-xl">
+               <CardHeader className="flex flex-row items-center justify-between pb-2 border-b">
+                 <CardTitle className="text-lg">{(DEPT_LABELS[lang] || DEPT_LABELS.tr)[selectedDeptCode] || selectedDeptCode}</CardTitle>
+                 <Button variant="ghost" size="sm" onClick={() => setSelectedDeptCode(null)} className="min-h-[44px]">{t.back}</Button>
+               </CardHeader>
+               <CardContent className="grid grid-cols-2 gap-3 pt-4">
+                 {meta.categories.filter(c => c.department === selectedDeptCode).map(c => {
+                   const Icon = ICONS[c.icon] || MessageSquare;
+                   const label = c.labels[lang] || c.labels.en || c.id;
+                   return (
+                     <button key={c.id} onClick={() => { setLegacyCategory(c.id); setLegacyPriority(c.default_priority || "normal"); }} className="flex flex-col items-center gap-2 p-3 rounded-xl border-2 border-slate-100 min-h-[44px]">
+                       <div className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100"><Icon className="w-5 h-5 text-slate-600"/></div>
+                       <span className="text-sm font-medium text-center">{label}</span>
+                     </button>
+                   );
+                 })}
+               </CardContent>
+             </Card>
+          ) : (
+             <Card className="shadow-xl">
+               <CardHeader className="flex flex-row items-center justify-between">
+                 <CardTitle className="text-lg">{meta.categories.find(c => c.id === legacyCategory)?.labels[lang] || legacyCategory}</CardTitle>
+                 <Button variant="ghost" size="sm" onClick={() => setLegacyCategory(null)} className="min-h-[44px]">{t.back}</Button>
+               </CardHeader>
+               <CardContent className="space-y-4">
+                 <div>
+                   <Label>{t.describe}</Label>
+                   <Textarea value={legacyDescription} onChange={e => setLegacyDescription(e.target.value)} placeholder={t.placeholder} className="mt-1" />
+                 </div>
+                 <div>
+                   <Label>{t.priority}</Label>
+                   <Select value={legacyPriority} onValueChange={setLegacyPriority}>
+                     <SelectTrigger className="mt-1 min-h-[44px]"><SelectValue /></SelectTrigger>
+                     <SelectContent>
+                       <SelectItem value="low">{t.low}</SelectItem>
+                       <SelectItem value="normal">{t.normal}</SelectItem>
+                       <SelectItem value="high">{t.high}</SelectItem>
+                       <SelectItem value="urgent">{t.urgent}</SelectItem>
+                     </SelectContent>
+                   </Select>
+                 </div>
+                 <div className="grid grid-cols-2 gap-3">
+                   <div><Label>{t.name}</Label><Input value={name} onChange={e => setName(e.target.value)} className="min-h-[44px] mt-1" /></div>
+                   <div><Label>{t.phone}</Label><Input value={phone} onChange={e => setPhone(e.target.value)} className="min-h-[44px] mt-1" /></div>
+                 </div>
+                 <Button onClick={submitLegacy} disabled={submitting} className="w-full text-white min-h-[44px]" style={{ background: accent }}>
+                   {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}{submitting ? t.sending : t.submit}
+                 </Button>
+               </CardContent>
+             </Card>
+          )}
+          <GuestThread tenantId={tenantId} roomId={roomId} token={guestSession} t={t} lang={lang} rtl={rtl} accent={accent} alwaysShow={false} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div dir={rtl ? "rtl" : "ltr"} className="min-h-screen bg-slate-50 pb-32">
+      {renderHeader()}
+      <div className="max-w-2xl mx-auto px-4 -mt-4 relative">
+        {view === "departments" && (
           <Card className="shadow-xl">
-            <CardHeader>
-              <CardTitle>{t.pick}</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle>{t.pick}</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {departments.map((dept) => {
-                const Icon = DEPT_ICONS[dept] || MessageSquare;
-                const deptLabels = DEPT_LABELS[lang] || DEPT_LABELS.tr;
-                const label = deptLabels[dept] || dept;
+              {catalogueData.departments.map(dept => {
+                const Icon = ICONS[dept.icon] || MessageSquare;
                 return (
-                  <button
-                    key={dept}
-                    onClick={() => setSelectedDept(dept)}
-                    className="flex flex-col items-center gap-3 p-4 rounded-xl border-2 border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition-all active:scale-95"
-                  >
-                    <div className="w-14 h-14 rounded-full flex items-center justify-center"
-                         style={{ background: `${accent}15`, color: accent }}>
+                  <button key={dept.department_code} onClick={() => { setSelectedDeptCode(dept.department_code); setView("services"); }} className="flex flex-col items-center gap-3 p-4 rounded-xl border-2 border-slate-200 hover:border-slate-400 active:scale-95 transition-all min-h-[44px]" data-testid={`dept-${dept.department_code}`}>
+                    <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: `${accent}15`, color: accent }}>
                       <Icon className="w-7 h-7" />
                     </div>
-                    <span className="text-sm font-semibold text-center text-slate-800">{label}</span>
+                    <span className="text-sm font-semibold text-center">{getLabel(dept, lang, dept.department_code)}</span>
                   </button>
                 );
               })}
-            </CardContent>
-          </Card>
-        ) : !category ? (
-          <Card className="shadow-xl">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 border-b">
-              <CardTitle className="text-lg">
-                {(DEPT_LABELS[lang] || DEPT_LABELS.tr)[selectedDept] || selectedDept}
-              </CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => setSelectedDept(null)}>{t.back}</Button>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-3 pt-4">
-              {meta.categories.filter(c => c.department === selectedDept).map((c) => {
-                const Icon = ICONS[c.icon] || MessageSquare;
-                const label = c.labels[lang] || c.labels.en || c.id;
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => { setCategory(c.id); setPriority(c.default_priority || "normal"); }}
-                    className="flex flex-col items-center gap-2 p-3 rounded-xl border-2 border-slate-100 hover:border-slate-300 hover:bg-slate-50 transition-all active:scale-95"
-                  >
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-600">
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <span className="text-sm font-medium text-center text-slate-700">{label}</span>
-                  </button>
-                );
-              })}
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="shadow-xl">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg">
-                {meta.categories.find((c) => c.id === category)?.labels[lang] || category}
-              </CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => setCategory(null)}>{t.back}</Button>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label>{t.describe} <span className="text-xs text-gray-400 font-normal">(Opsiyonel)</span></Label>
-                <Textarea
-                  value={description} onChange={(e) => setDescription(e.target.value)}
-                  placeholder={t.placeholder} rows={3} className="mt-1"
-                />
-              </div>
-              <div>
-                <Label>{t.priority}</Label>
-                <Select value={priority} onValueChange={setPriority}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">{t.low}</SelectItem>
-                    <SelectItem value="normal">{t.normal}</SelectItem>
-                    <SelectItem value="high">{t.high}</SelectItem>
-                    <SelectItem value="urgent">{t.urgent}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>{t.name}</Label>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} className="mt-1" />
-                </div>
-                <div>
-                  <Label>{t.phone}</Label>
-                  <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="mt-1" />
-                </div>
-              </div>
-              <Button
-                onClick={submit}
-                disabled={submitting}
-                className="w-full text-white"
-                style={{ background: accent }}
-              >
-                {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                {submitting ? t.sending : t.submit}
-              </Button>
             </CardContent>
           </Card>
         )}
 
-        <GuestThread
-          tenantId={tenantId}
-          roomId={roomId}
-          token={guestSession}
-          t={t}
-          lang={lang}
-          rtl={rtl}
-          accent={accent}
-          alwaysShow={done}
-        />
+        {view === "services" && (
+          <Card className="shadow-xl">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 border-b">
+              <CardTitle className="text-lg">
+                {getLabel(catalogueData.departments.find(d => d.department_code === selectedDeptCode), lang, selectedDeptCode)}
+              </CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setView("departments")} className="min-h-[44px]">{t.back}</Button>
+            </CardHeader>
+            <CardContent className="pt-4 space-y-4">
+              {catalogueData.services.filter(s => s.department_code === selectedDeptCode).map(service => {
+                const Icon = ICONS[service.icon] || MessageSquare;
+                const cartItem = cartState.cart.find(c => c.service_code === service.service_code);
+                
+                return (
+                  <div key={service.service_code} className="flex flex-col p-4 rounded-xl border border-slate-200 bg-white" data-testid={`service-${service.service_code}`}>
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-slate-100 text-slate-600">
+                        <Icon className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-slate-800">{getLabel(service, lang, service.service_code)}</h4>
+                        {service.description && typeof service.description === "object" && <p className="text-xs text-slate-500 mt-1">{getLabel({labels: service.description}, lang, "")}</p>}
+                        {service.is_chargeable && (
+                           <p className="text-[10px] text-amber-600 font-medium bg-amber-50 inline-block px-1.5 py-0.5 rounded mt-1">
+                             {service.charge_warning && typeof service.charge_warning === "object" ? getLabel({labels: service.charge_warning}, lang, t.chargeWarning) : t.chargeWarning}
+                           </p>
+                        )}
+                      </div>
+                    </div>
+                    <ServiceInput 
+                      service={service} 
+                      cartItem={cartItem} 
+                      onChange={(updates) => {
+                         if (updates === null) {
+                            cartState.removeItem(service.service_code);
+                         } else {
+                            cartState.updateItem(service.service_code, { ...updates, input_type: service.input_type, department_code: service.department_code, catalogueItem: service });
+                         }
+                      }} 
+                      t={t} 
+                      accent={accent}
+                      lang={lang}
+                    />
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
+
+        {view === "review" && (
+          <Card className="shadow-xl">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 border-b">
+              <CardTitle className="text-lg">{t.reviewReq}</CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setView(selectedDeptCode ? "services" : "departments")} className="min-h-[44px]">{t.back}</Button>
+            </CardHeader>
+            <CardContent className="pt-4 space-y-4">
+              {cartState.cart.length === 0 ? (
+                <div className="text-center py-6 text-slate-500">{t.emptyCart}</div>
+              ) : (
+                <div className="space-y-4">
+                  {cartState.cart.map(c => {
+                     const service = catalogueData.services.find(s => s.service_code === c.service_code) || c.catalogueItem;
+                     const Icon = ICONS[service?.icon] || MessageSquare;
+                     return (
+                       <div key={c.service_code} className="p-3 border border-slate-200 rounded-xl bg-slate-50" data-testid={`review-item-${c.service_code}`}>
+                         <div className="flex items-center gap-3 mb-2">
+                           <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shrink-0">
+                             <Icon className="w-4 h-4 text-slate-600" />
+                           </div>
+                           <div className="flex-1 font-medium text-sm text-slate-800">{getLabel(service, lang, c.service_code)}</div>
+                         </div>
+                         <ServiceInput 
+                           service={service} 
+                           cartItem={c} 
+                           onChange={(updates) => {
+                             if (updates === null) cartState.removeItem(c.service_code);
+                             else cartState.updateItem(c.service_code, updates);
+                           }} 
+                           t={t} accent={accent} lang={lang}
+                         />
+                         <Input 
+                           value={c.note || ""} 
+                           onChange={(e) => cartState.updateItem(c.service_code, { note: e.target.value })}
+                           placeholder={t.addNote}
+                           className="mt-2 text-sm min-h-[44px]"
+                           data-testid={`note-${c.service_code}`}
+                         />
+                       </div>
+                     );
+                  })}
+
+                  {cartState.hasChargeable && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+                      <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                      <p className="text-sm text-amber-800">{t.chargeWarning}</p>
+                    </div>
+                  )}
+
+                  <Button onClick={submitStructured} disabled={submitting || cartState.cart.length === 0} className="w-full text-white min-h-[44px] mt-4" style={{ background: accent }} data-testid="button-structured-submit">
+                    {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}{submitting ? t.sending : t.submit}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        <GuestThread tenantId={tenantId} roomId={roomId} token={guestSession} t={t} lang={lang} rtl={rtl} accent={accent} alwaysShow={false} />
       </div>
+
+      {cartState.totalItems > 0 && view !== "review" && (
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] z-50 pb-[env(safe-area-bottom,16px)]" data-testid="sticky-cart">
+          <div className="max-w-2xl mx-auto flex items-center justify-between gap-4">
+             <div className="flex flex-col">
+               <span className="font-semibold text-slate-800">{cartState.totalItems} {t.items}</span>
+               {cartState.hasChargeable && <span className="text-xs text-amber-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> Ücretli</span>}
+             </div>
+             <Button onClick={() => setView("review")} className="flex-1 text-white min-h-[44px]" style={{ background: accent }}>
+               {t.reviewReq}
+             </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
