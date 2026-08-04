@@ -55,6 +55,7 @@ async def test_sandbox_host_is_forced():
     """Ensure we never hit production or localhost."""
     # Force test env explicitly
     os.environ["NILVERA_ENV"] = "test"
+    os.environ["NILVERA_ENABLED"] = "true"
     config = get_nilvera_config()
 
     # We enforce test environment in E2E
@@ -115,6 +116,10 @@ async def test_invoice_mapper_contract():
         buyer_city="Ankara",
         buyer_address="Test Alıcı Adres",
         payable_total=Decimal("120.00"),
+        line_extension_total=Decimal("100.00"),
+        kdv_total=Decimal("20.00"),
+        other_tax_total=Decimal("0.00"),
+        discount_total=Decimal("0.00"),
         items=[
             InvoiceItem(
                 description="Test Hizmeti",
@@ -124,6 +129,7 @@ async def test_invoice_mapper_contract():
                 unit_price=Decimal("100.00"),
                 tax_unit_price=Decimal("100.00"),
                 discount_amount=Decimal("0.0"),
+                line_extension_amount=Decimal("100.00"),
                 kdv_rate=Decimal("20.0"),
                 kdv_amount=Decimal("20.00"),
                 total=Decimal("120.00")
@@ -171,6 +177,10 @@ async def test_invoice_submission_contract(sandbox_client):
         buyer_city="Ankara",
         buyer_address="Test Alıcı Adres",
         payable_total=Decimal("120.00"),
+        line_extension_total=Decimal("100.00"),
+        kdv_total=Decimal("20.00"),
+        other_tax_total=Decimal("0.00"),
+        discount_total=Decimal("0.00"),
         items=[
             InvoiceItem(
                 description="Test Hizmeti Sandbox",
@@ -180,6 +190,7 @@ async def test_invoice_submission_contract(sandbox_client):
                 unit_price=Decimal("100.00"),
                 tax_unit_price=Decimal("100.00"),
                 discount_amount=Decimal("0.0"),
+                line_extension_amount=Decimal("100.00"),
                 kdv_rate=Decimal("20.0"),
                 kdv_amount=Decimal("20.00"),
                 total=Decimal("120.00")
@@ -232,6 +243,10 @@ async def test_status_polling_contract(sandbox_client):
         buyer_city="Ankara",
         buyer_address="Test Alıcı Adres",
         payable_total=Decimal("120.00"),
+        line_extension_total=Decimal("100.00"),
+        kdv_total=Decimal("20.00"),
+        other_tax_total=Decimal("0.00"),
+        discount_total=Decimal("0.00"),
         items=[
             InvoiceItem(
                 description="Test Hizmeti Polling Sandbox",
@@ -241,6 +256,7 @@ async def test_status_polling_contract(sandbox_client):
                 unit_price=Decimal("100.00"),
                 tax_unit_price=Decimal("100.00"),
                 discount_amount=Decimal("0.0"),
+                line_extension_amount=Decimal("100.00"),
                 kdv_rate=Decimal("20.0"),
                 kdv_amount=Decimal("20.00"),
                 total=Decimal("120.00")
