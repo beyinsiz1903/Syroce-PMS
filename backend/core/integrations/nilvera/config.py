@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class NilveraSettings(BaseModel):
     """Configuration for Nilvera integration."""
 
+    enabled: bool = Field(..., description="Strict global kill switch for Nilvera integration")
     env: Literal["test", "production"] = Field(default="test")
     timeout_ms: int = Field(default=30000, gt=0, le=120000)
     retry_max: int = Field(default=3, ge=0, le=5, description="Number of retries after the initial attempt. 3 means 4 total attempts.")
@@ -41,6 +42,20 @@ class NilveraEndpoints:
 _config: NilveraSettings | None = None
 
 
+def _parse_required_bool(name: str) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        raise ValueError(f"{name}_MISSING")
+
+    value = raw.strip().lower()
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+
+    raise ValueError(f"{name}_INVALID")
+
+
 def get_nilvera_config() -> NilveraSettings:
     """Lazy loader for config."""
     global _config
@@ -52,6 +67,7 @@ def get_nilvera_config() -> NilveraSettings:
             env_val = raw_env.strip().lower()
 
         _config = NilveraSettings(
+            enabled=_parse_required_bool("NILVERA_ENABLED"),
             env=env_val,
             timeout_ms=int(os.environ.get("NILVERA_TIMEOUT_MS", "30000")),
             retry_max=int(os.environ.get("NILVERA_RETRY_MAX", "3")),

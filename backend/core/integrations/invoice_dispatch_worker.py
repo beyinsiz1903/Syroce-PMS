@@ -36,7 +36,10 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-class InvoiceDispatchWorker:
+from core.integrations.nilvera.worker_health import NilveraWorkerHealthMixin
+
+
+class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
     """
     Background worker for processing pending invoice sync records to Nilvera.
     """
@@ -49,38 +52,35 @@ class InvoiceDispatchWorker:
         processing_timeout: int = 120,
         drain_pause: float = 0.2,
     ):
+        super().__init__(worker_name="invoice-dispatch-worker")
+        self.worker_id = f"inv-dispatch-{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+
         self.poll_interval = poll_interval
         self.batch_size = batch_size
         self.processing_timeout = processing_timeout
         self.drain_pause = drain_pause
-        self.worker_id = f"inv-dispatch-{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
-        self._task: asyncio.Task | None = None
-        self._stop = asyncio.Event()
-        # Metrics
-        self._processed_count = 0
-        self._failed_count = 0
-        self._last_processed_at: str | None = None
 
-    @property
-    def metrics(self) -> dict[str, Any]:
-        return {
-            "worker_id": self.worker_id,
-            "processed_total": self._processed_count,
-            "failed_total": self._failed_count,
-            "last_processed_at": self._last_processed_at,
-            "running": self._task is not None and not self._task.done(),
-        }
+        self._task: asyncio.Task | None = None
+        self._stop_event = asyncio.Event()
 
     async def start(self) -> None:
+        if not self.health.enabled:
+            logger.info(f"{self.worker_id} is disabled. Will not start.")
+            return
+
         if self._task and not self._task.done():
             return
-        self._stop.clear()
+
+        self._stop_event.clear()
+        self._mark_starting()
         self._task = asyncio.create_task(self._run(), name="invoice-dispatch-worker")
+        self._mark_running()
         logger.info("Invoice Dispatch Worker started: %s", self.worker_id)
 
     async def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
         if self._task:
+            self._mark_stopping()
             try:
                 await asyncio.wait_for(asyncio.shield(self._task), timeout=5.0)
             except TimeoutError:
@@ -94,12 +94,14 @@ class InvoiceDispatchWorker:
                 pass
             finally:
                 self._task = None
+                self._mark_stopped()
         logger.info("Invoice Dispatch Worker stopped: %s", self.worker_id)
 
     async def _run(self) -> None:
         try:
-            while not self._stop.is_set():
+            while not self._stop_event.is_set():
                 try:
+                    self._record_heartbeat()
                     await self._recover_stuck()
                     await self._claim_and_queue_safe_to_retry()
                     count = await self._process_batch()
@@ -108,6 +110,7 @@ class InvoiceDispatchWorker:
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
+                    self._record_job_error("TRANSIENT_LOOP_ERROR", fatal=False)
                     _transient_tracker.log_exception(
                         logger,
                         exc,
@@ -120,6 +123,10 @@ class InvoiceDispatchWorker:
                     _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
         except asyncio.CancelledError:
             pass
+        except Exception as e:
+            logger.error("Invoice Dispatch Worker fatal outer loop error: %s", type(e).__name__, exc_info=True)
+            self._record_loop_error("FATAL_LOOP_ERROR")
+            self._mark_failed("Worker loop crashed")
 
     async def _recover_stuck(self) -> int:
         """Recover records stuck in 'SENDING' state beyond their lease."""
@@ -154,7 +161,7 @@ class InvoiceDispatchWorker:
         processed = 0
 
         for _ in range(self.batch_size):
-            if self._stop.is_set():
+            if self._stop_event.is_set():
                 break
 
             record = await sysdb.invoice_sync.find_one_and_update(
@@ -186,7 +193,7 @@ class InvoiceDispatchWorker:
         """Claim and process up to batch_size invoice sync records."""
         processed = 0
         for _ in range(self.batch_size):
-            if self._stop.is_set():
+            if self._stop_event.is_set():
                 break
             record = await self._claim_record()
             if not record:
@@ -253,11 +260,10 @@ class InvoiceDispatchWorker:
             success = await InvoiceDispatchService.execute_dispatch(tenant_id, record_id, worker_id=self.worker_id)
 
             if success:
-                self._processed_count += 1
-                self._last_processed_at = _utc_now().isoformat()
+                self._record_success(1)
                 logger.info("Invoice dispatch worker success: %s for tenant %s", record_id, tenant_id)
             else:
-                self._failed_count += 1
+                self._record_job_error("DISPATCH_FAILED", fatal=False)
                 logger.warning("Invoice dispatch worker failed/retry: %s for tenant %s", record_id, tenant_id)
 
 

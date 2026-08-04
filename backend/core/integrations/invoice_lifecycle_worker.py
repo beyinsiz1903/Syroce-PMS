@@ -17,18 +17,26 @@ logger = logging.getLogger(__name__)
 _raw_db: AsyncIOMotorDatabase | None = None
 
 
-class InvoiceLifecycleWorker:
+from core.integrations.nilvera.worker_health import NilveraWorkerHealthMixin
+
+
+class InvoiceLifecycleWorker(NilveraWorkerHealthMixin):
     """Background worker that polls and executes deferred lifecycle actions."""
 
     def __init__(self, poll_interval_sec: int = 15, batch_size: int = 20):
+        super().__init__(worker_name="invoice-lifecycle-worker")
         self._poll_interval = poll_interval_sec
         self._batch_size = batch_size
         self._worker_id = f"lifecycle_worker_{uuid.uuid4()}"
         self._task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
 
-    def start(self) -> None:
+    async def start(self) -> None:
         """Starts the worker in the background."""
+        if not self.health.enabled:
+            logger.info(f"{self._worker_id} is disabled. Will not start.")
+            return
+
         global _raw_db
         if _raw_db is None:
             _raw_db = get_system_db()
@@ -38,7 +46,9 @@ class InvoiceLifecycleWorker:
             return
 
         self._stop_event.clear()
+        self._mark_starting()
         self._task = asyncio.create_task(self._run_loop())
+        self._mark_running()
         logger.info(f"InvoiceLifecycleWorker ({self._worker_id}) started.")
 
     async def stop(self) -> None:
@@ -46,6 +56,7 @@ class InvoiceLifecycleWorker:
         if not self._task:
             return
 
+        self._mark_stopping()
         logger.info(f"InvoiceLifecycleWorker ({self._worker_id}) stopping...")
         self._stop_event.set()
 
@@ -60,23 +71,34 @@ class InvoiceLifecycleWorker:
                 pass
         except asyncio.CancelledError:
             pass
+        finally:
+            self._task = None
+            self._mark_stopped()
 
-        self._task = None
         logger.info(f"InvoiceLifecycleWorker ({self._worker_id}) stopped.")
 
     async def _run_loop(self) -> None:
-        while not self._stop_event.is_set():
-            try:
-                processed = await self._process_batch()
-                if processed == 0:
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    self._record_heartbeat()
+                    processed = await self._process_batch()
+                    if processed == 0:
+                        await asyncio.sleep(self._poll_interval)
+                    else:
+                        await asyncio.sleep(0.5)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    self._record_job_error("TRANSIENT_LOOP_ERROR", fatal=False)
+                    logger.error(f"InvoiceLifecycleWorker loop error: {type(e).__name__}")
                     await asyncio.sleep(self._poll_interval)
-                else:
-                    await asyncio.sleep(0.5)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"InvoiceLifecycleWorker unhandled error: {e}")
-                await asyncio.sleep(self._poll_interval)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error("InvoiceLifecycleWorker fatal outer loop error: %s", type(e).__name__, exc_info=True)
+            self._record_loop_error("FATAL_LOOP_ERROR")
+            self._mark_failed("Worker loop crashed")
 
     async def _process_batch(self) -> int:
         now = datetime.now(UTC)
@@ -105,7 +127,11 @@ class InvoiceLifecycleWorker:
                 claimed_and_processed = await InvoiceLifecycleService.process_lifecycle_action(action.tenant_id, action.id, self._worker_id)
                 if claimed_and_processed:
                     processed += 1
+                    self._record_success(1)
             except Exception as e:
-                logger.error(f"Error processing lifecycle action {action.id}: {e}")
+                self._record_job_error("LIFECYCLE_PROCESS_FAILED", fatal=False)
+                logger.error(f"Error processing lifecycle action {action.id}: {type(e).__name__}")
 
         return processed
+
+invoice_lifecycle_worker = InvoiceLifecycleWorker()
