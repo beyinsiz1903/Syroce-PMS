@@ -12,12 +12,14 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pymongo.errors
 from pymongo import ReturnDocument
 
 from core.integrations.invoice_reconciliation_service import InvoiceReconciliationService
 from core.tenant_db import get_system_db, tenant_context
 from core.transient_db_guard import TransientFailureTracker
 from models.schemas.invoice_sync import InvoiceSyncState
+from models.schemas.nilvera_worker_health import NilveraWorkerErrorCode
 
 logger = logging.getLogger("core.integrations.invoice_reconciliation_worker")
 
@@ -28,7 +30,10 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-class InvoiceReconciliationWorker:
+from core.integrations.nilvera.worker_health import NilveraWorkerHealthMixin
+
+
+class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
     """
     Background worker for processing reconciliation for ambiguous dispatch attempts.
     Does NOT have POST access. Only read-only verification.
@@ -42,24 +47,40 @@ class InvoiceReconciliationWorker:
         processing_timeout: int = 120,
         drain_pause: float = 0.5,
     ):
+        super().__init__(worker_name="invoice-reconciliation-worker")
         self.poll_interval = poll_interval
         self.batch_size = batch_size
         self.processing_timeout = processing_timeout
         self.drain_pause = drain_pause
         self.worker_id = f"inv-recon-{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
         self._task: asyncio.Task | None = None
-        self._stop = asyncio.Event()
+        self._stop_event = asyncio.Event()
 
     async def start(self) -> None:
+        if not self.health.enabled:
+            logger.info(f"{self.worker_id} is disabled. Will not start.")
+            return
+
         if self._task and not self._task.done():
             return
-        self._stop.clear()
+
+        self._stop_event.clear()
+        self._mark_starting()
         self._task = asyncio.create_task(self._run(), name="invoice-reconciliation-worker")
+
+        await asyncio.sleep(0)
+        if self._task.done():
+            self._record_loop_error(NilveraWorkerErrorCode.STARTUP_TASK_FAILED)
+            self._mark_failed("STARTUP_TASK_FAILED")
+            raise RuntimeError("NILVERA_WORKER_STARTUP_FAILED") from None
+
+        self._mark_running()
         logger.info("Invoice Reconciliation Worker started: %s", self.worker_id)
 
     async def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
         if self._task:
+            self._mark_stopping()
             try:
                 await asyncio.wait_for(asyncio.shield(self._task), timeout=5.0)
             except TimeoutError:
@@ -71,19 +92,22 @@ class InvoiceReconciliationWorker:
                     pass
             finally:
                 self._task = None
+                self._mark_stopped()
         logger.info("Invoice Reconciliation Worker stopped: %s", self.worker_id)
 
     async def _run(self) -> None:
         try:
-            while not self._stop.is_set():
+            while not self._stop_event.is_set():
                 try:
+                    self._record_heartbeat()
                     await self._recover_stuck()
                     count = await self._process_batch()
                     if count == 0:
                         await asyncio.sleep(self.poll_interval)
                 except asyncio.CancelledError:
                     raise
-                except Exception as exc:
+                except (TimeoutError, pymongo.errors.PyMongoError) as exc:
+                    self._record_job_error(NilveraWorkerErrorCode.TRANSIENT_DEPENDENCY_ERROR)
                     _transient_tracker.log_exception(
                         logger,
                         exc,
@@ -92,10 +116,16 @@ class InvoiceReconciliationWorker:
                         non_transient_msg="%s loop error: %s",
                     )
                     await asyncio.sleep(self.poll_interval)
+                except Exception:
+                    raise
                 else:
                     _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
         except asyncio.CancelledError:
             pass
+        except Exception:
+            logger.error("NILVERA_WORKER_FATAL_ERROR worker=%s error_code=%s", self.worker_name, "FATAL_LOOP_ERROR")
+            self._record_loop_error(NilveraWorkerErrorCode.FATAL_LOOP_ERROR)
+            self._mark_failed("Worker loop crashed")
 
     async def _recover_stuck(self) -> int:
         """Recover records stuck in lease during reconciliation."""
@@ -121,7 +151,7 @@ class InvoiceReconciliationWorker:
     async def _process_batch(self) -> int:
         processed = 0
         for _ in range(self.batch_size):
-            if self._stop.is_set():
+            if self._stop_event.is_set():
                 break
             record = await self._claim_record()
             if not record:
@@ -191,6 +221,7 @@ class InvoiceReconciliationWorker:
             return
 
         with tenant_context(tenant_id):
+            from core.integrations.nilvera.config import get_nilvera_tenant_config
             nilvera_cfg = await get_nilvera_tenant_config(tenant_id, decrypt_api_key=True)
             reader = None
             if nilvera_cfg.get("enabled") and nilvera_cfg.get("api_key"):
@@ -210,13 +241,18 @@ class InvoiceReconciliationWorker:
 
                 reader = NilveraReadClient(nilvera_cfg["api_key"])
 
-            await InvoiceReconciliationService.execute_reconciliation(
-                tenant_id,
-                record_id,
-                expected_version=expected_version,
-                worker_id=self.worker_id,
-                reader=reader
-            )
+            try:
+                await InvoiceReconciliationService.execute_reconciliation(
+                    tenant_id,
+                    record_id,
+                    expected_version=expected_version,
+                    worker_id=self.worker_id,
+                    reader=reader
+                )
+                self._record_success(1)
+            except Exception as e:
+                self._record_job_error(NilveraWorkerErrorCode.RECONCILIATION_FAILED)
+                logger.error("Error reconciling local dispatch %s: %s", record_id, type(e).__name__)
 
             # Release lease always after processing
             sysdb = get_system_db()

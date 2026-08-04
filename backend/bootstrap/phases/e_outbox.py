@@ -66,48 +66,53 @@ async def phase_e_outbox_and_eventbus(app):
     except Exception as e:
         logger.warning(f"Af-sadakat outbound dispatcher warning: {e}")
 
-    # Nilvera Dispatch Worker
+    # Nilvera Workers Startup
+    from core.integrations.nilvera.config import get_nilvera_config
+
     try:
         from core.integrations.invoice_dispatch_worker import invoice_dispatch_worker
-
-        await invoice_dispatch_worker.start()
-        app.state.invoice_dispatch_worker = invoice_dispatch_worker
-        logger.info("✅ Nilvera Invoice Dispatch Worker started")
-    except Exception as e:
-        logger.error(f"❌ Nilvera Invoice Dispatch Worker failed to start: {e}")
-        raise
-
-    # Nilvera Status Worker
-    try:
+        from core.integrations.invoice_lifecycle_worker import invoice_lifecycle_worker
+        from core.integrations.invoice_reconciliation_worker import invoice_reconciliation_worker
         from core.integrations.invoice_status_worker import invoice_status_worker
 
-        await invoice_status_worker.start()
+        nilvera_workers = [
+            invoice_dispatch_worker,
+            invoice_status_worker,
+            invoice_reconciliation_worker,
+            invoice_lifecycle_worker
+        ]
+
+        cfg = get_nilvera_config()
+        if cfg.enabled:
+            started_workers = []
+            try:
+                for worker in nilvera_workers:
+                    worker.configure(enabled=True)
+                    await worker.start()
+                    started_workers.append(worker)
+                logger.info("✅ All Nilvera Workers started successfully")
+            except Exception as e:
+                logger.error(f"❌ Nilvera Worker startup failed: {type(e).__name__}")
+                # Atomic Rollback
+                for worker in reversed(started_workers):
+                    try:
+                        await worker.stop()
+                    except Exception:
+                        logger.error("NILVERA_WORKER_STARTUP_ROLLBACK_FAILED")
+                raise
+        else:
+            for worker in nilvera_workers:
+                worker.configure(enabled=False)
+            logger.info("Nilvera Workers are DISABLED by configuration.")
+
+        app.state.invoice_dispatch_worker = invoice_dispatch_worker
         app.state.invoice_status_worker = invoice_status_worker
-        logger.info("✅ Nilvera Invoice Status Worker started")
-    except Exception as e:
-        logger.error(f"❌ Nilvera Invoice Status Worker failed to start: {e}. Application running in DEGRADED mode for this worker.")
-
-    # Nilvera Reconciliation Worker
-    try:
-        from core.integrations.invoice_reconciliation_worker import invoice_reconciliation_worker
-
-        await invoice_reconciliation_worker.start()
         app.state.invoice_reconciliation_worker = invoice_reconciliation_worker
-        logger.info("✅ Nilvera Invoice Reconciliation Worker started")
-    except Exception as e:
-        logger.error(f"❌ Nilvera Invoice Reconciliation Worker failed to start: {e}")
-        raise
-
-    # Nilvera Invoice Lifecycle Worker
-    try:
-        from core.integrations.invoice_lifecycle_worker import InvoiceLifecycleWorker
-
-        invoice_lifecycle_worker = InvoiceLifecycleWorker()
-        invoice_lifecycle_worker.start()
         app.state.invoice_lifecycle_worker = invoice_lifecycle_worker
-        logger.info("✅ Nilvera Invoice Lifecycle Worker started")
     except Exception as e:
-        logger.error(f"❌ Nilvera Invoice Lifecycle Worker failed to start: {e}. Application running in DEGRADED mode for this worker.")
+        if type(e).__name__ != "ValueError":  # Config parsing error usually raises ValueError
+            logger.error(f"❌ Failed to initialize Nilvera integration: {type(e).__name__}")
+        raise
 
     # Channel Manager v2 indexes
     try:
