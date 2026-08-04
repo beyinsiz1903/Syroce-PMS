@@ -109,8 +109,8 @@ async def test_http_400_is_failure(sandbox_client):
     """Verify HTTP 400 (or 422) Validation Error is raised properly."""
     async with sandbox_client as client:
         with pytest.raises(NilveraValidationError) as exc_info:
-            # Send invalid UUID to force a 400 Validation Error
-            await client.get("/einvoice/Sale/not-a-valid-uuid/Status")
+            # Send invalid TaxNumber to force a 400 Validation Error
+            await client.get("/general/GlobalCompany/Check/TaxNumber/invalid-tax-number")
         
         assert exc_info.value.http_status in (400, 422)
 
@@ -162,7 +162,7 @@ async def test_secret_redaction(monkeypatch, caplog, buyer_vkn, seller_vkn, api_
     # We will force a 401 to ensure the request is logged and the exception is raised
     client = NilveraHttpClient(api_key=api_key)
     
-    with caplog.at_level(logging.DEBUG):
+    with caplog.at_level(logging.DEBUG, logger="core.integrations.nilvera"):
         # We manually overwrite the token for this request so it fails but uses the real token format
         invalidated_key = f"{api_key}_invalidated"
         client._api_key = invalidated_key
