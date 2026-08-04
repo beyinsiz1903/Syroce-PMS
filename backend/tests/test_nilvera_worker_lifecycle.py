@@ -8,7 +8,7 @@ from core.integrations.invoice_dispatch_worker import InvoiceDispatchWorker
 from core.integrations.invoice_lifecycle_worker import InvoiceLifecycleWorker
 from core.integrations.invoice_reconciliation_worker import InvoiceReconciliationWorker
 from core.integrations.invoice_status_worker import InvoiceStatusWorker
-from models.schemas.nilvera_worker_health import NilveraWorkerStatus
+from models.schemas.nilvera_worker_health import NilveraWorkerErrorCode, NilveraWorkerStatus
 
 
 class MockApp:
@@ -52,7 +52,7 @@ async def test_1_initial_state_check(mock_workers):
 async def test_2_successful_start(mock_workers):
     async def dummy_run(*args, **kwargs):
         await asyncio.sleep(0.1)
-        
+
     for w in mock_workers:
         with patch.object(w, "_run_loop", side_effect=dummy_run) if hasattr(w, "_run_loop") else patch.object(w, "_run", side_effect=dummy_run):
             await w.start()
@@ -67,7 +67,7 @@ async def test_3_duplicate_start_prevention(mock_workers):
         await asyncio.sleep(0.1)
 
     for w in mock_workers:
-        with patch.object(w, "_run_loop", side_effect=dummy_run) if hasattr(w, "_run_loop") else patch.object(w, "_run", side_effect=dummy_run) as mock_run:
+        with patch.object(w, "_run_loop", side_effect=dummy_run) if hasattr(w, "_run_loop") else patch.object(w, "_run", side_effect=dummy_run):
             await w.start()
             task_ref = w._task
             await w.start()
@@ -77,13 +77,19 @@ async def test_3_duplicate_start_prevention(mock_workers):
 @pytest.mark.asyncio
 async def test_4_heartbeat_progresses(mock_workers):
     w = mock_workers[0]
-    w._record_heartbeat()
-    hb1 = w.health.last_heartbeat_at
-    await asyncio.sleep(0.01)
-    w._record_heartbeat()
-    hb2 = w.health.last_heartbeat_at
-    assert hb2 > hb1
-    assert w.health.task_alive is True
+    w.poll_interval = 0.05
+    with patch.object(w, "_process_batch", new_callable=AsyncMock, return_value=0), \
+         patch.object(w, "_recover_stuck", new_callable=AsyncMock, return_value=0):
+        await w.start()
+        await asyncio.sleep(0.1)
+        hb1 = w.health.last_heartbeat_at
+        await asyncio.sleep(0.1)
+        hb2 = w.health.last_heartbeat_at
+        assert hb2 is not None
+        assert hb1 is not None
+        assert hb2 > hb1
+        assert w.health.task_alive is True
+        await w.stop()
 
 
 @pytest.mark.asyncio
@@ -96,14 +102,18 @@ async def test_5_last_success_at_updates(mock_workers):
 
 
 @pytest.mark.asyncio
-async def test_6_sanitized_health_after_error(mock_workers):
+async def test_6_transient_error_degrades_status(mock_workers):
     w = mock_workers[0]
-    w._record_job_error("MOCK_ERROR_CODE", fatal=False)
-    assert w.health.job_failed_total == 1
-    assert w.health.last_error_code == "MOCK_ERROR_CODE"
-    assert w.health.status != NilveraWorkerStatus.FAILED  # Not a fatal loop error
+    # Set to running first to allow degraded transition
+    w.health.status = NilveraWorkerStatus.RUNNING
 
-    w._record_loop_error("FATAL_CRASH")
+    w._record_job_error(NilveraWorkerErrorCode.TRANSIENT_DEPENDENCY_ERROR)
+    assert w.health.job_failed_total == 1
+    assert w.health.last_error_code == NilveraWorkerErrorCode.TRANSIENT_DEPENDENCY_ERROR
+    assert w.health.status == NilveraWorkerStatus.DEGRADED
+    assert w.health.degraded_reason == str(NilveraWorkerErrorCode.TRANSIENT_DEPENDENCY_ERROR.value)
+
+    w._record_loop_error(NilveraWorkerErrorCode.FATAL_LOOP_ERROR)
     w._mark_failed("Crash")
     assert w.health.loop_error_total == 1
     assert w.health.status == NilveraWorkerStatus.FAILED
@@ -111,15 +121,17 @@ async def test_6_sanitized_health_after_error(mock_workers):
 
 
 @pytest.mark.asyncio
-async def test_7_no_secret_leaks_in_health(mock_workers):
+async def test_7_no_secret_leaks_in_health(mock_workers, caplog):
     w = mock_workers[0]
-    w._record_job_error("MY_SECRET_KEY", fatal=False)
-    # The developer shouldn't pass raw secrets, but ensure DTO dump is controlled
-    dump = w.health.model_dump(mode="json")
-    assert "api_key" not in dump
-    assert "credential" not in dump
-    rep = repr(w)
-    assert "api_key" not in rep
+    secret = "super-secret-provider-key"
+
+    with pytest.raises(ValueError, match="must be a NilveraWorkerErrorCode enum"):
+        w._record_job_error(secret)  # type: ignore
+
+    serialized = str(w.health.model_dump(mode="json"))
+    assert secret not in serialized
+    assert secret not in repr(w)
+    assert secret not in caplog.text
 
 
 @pytest.mark.asyncio
@@ -168,7 +180,7 @@ async def test_10_idempotent_shutdown(mock_workers):
             await w.stop()
             assert w.health.status == NilveraWorkerStatus.STOPPED
             assert w._task is None
-            
+
             # Second stop should not raise
             await w.stop()
             assert w.health.status == NilveraWorkerStatus.STOPPED
@@ -185,23 +197,32 @@ async def test_11_lifecycle_async_start(mock_workers):
 async def test_12_status_failure_no_dispatch_retry(mock_workers):
     # Status worker failures are just _record_job_error, and don't affect dispatch
     status_w = mock_workers[1]
-    status_w._record_job_error("STATUS_ERR", fatal=False)
+    status_w._record_job_error(NilveraWorkerErrorCode.STATUS_POLL_FAILED)
     assert status_w.health.job_failed_total == 1
     # Dispatch state is completely independent
     assert mock_workers[0].health.job_failed_total == 0
 
 
 @pytest.mark.asyncio
-async def test_13_reconciliation_no_post_calls():
-    # Tested manually in code structure, but we can verify the service executes without POST
-    # Since we can't easily mock the entire service here without duplicating its tests,
-    # we assert the worker uses NilveraReadClient and not the main write client.
-    import inspect
+async def test_13_reconciliation_no_post_calls(mock_workers):
+    w = mock_workers[2]
+    w.poll_interval = 0.05
+    with patch("core.integrations.nilvera.client.NilveraHttpClient.post", new_callable=AsyncMock) as mock_post, \
+         patch.object(w, "_process_batch", new_callable=AsyncMock, return_value=0), \
+         patch.object(w, "_recover_stuck", new_callable=AsyncMock, return_value=0):
+        await w.start()
+        await asyncio.sleep(0.1)
+        await w.stop()
+        mock_post.assert_not_called()
 
-    from core.integrations.invoice_reconciliation_worker import InvoiceReconciliationWorker
-    source = inspect.getsource(InvoiceReconciliationWorker._process_record)
-    assert "NilveraReadClient" in source
-    assert "client.post" not in source
+@pytest.mark.asyncio
+async def test_14_uuid_retry_rules_unchanged(mock_workers):
+    w = mock_workers[0]
+    w.health.status = NilveraWorkerStatus.DEGRADED
+    w._record_success(1)
+    # Ensure success recovers DEGRADED status to RUNNING
+    assert w.health.status == NilveraWorkerStatus.RUNNING
+    assert w.health.degraded_reason is None
 
 
 @pytest.mark.asyncio

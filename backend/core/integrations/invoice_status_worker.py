@@ -10,6 +10,7 @@ import pymongo.errors
 from core.database import _raw_db
 from core.integrations.invoice_status_service import InvoiceStatusService
 from models.schemas.invoice_sync import InvoiceSync, InvoiceSyncState
+from models.schemas.nilvera_worker_health import NilveraWorkerErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class InvoiceStatusWorker(NilveraWorkerHealthMixin):
 
         await asyncio.sleep(0)
         if self._task.done():
-            self._record_loop_error("STARTUP_TASK_FAILED")
+            self._record_loop_error(NilveraWorkerErrorCode.STARTUP_TASK_FAILED)
             self._mark_failed("STARTUP_TASK_FAILED")
             raise RuntimeError("NILVERA_WORKER_STARTUP_FAILED") from None
 
@@ -85,7 +86,7 @@ class InvoiceStatusWorker(NilveraWorkerHealthMixin):
                 except asyncio.CancelledError:
                     raise
                 except (TimeoutError, pymongo.errors.PyMongoError) as exc:
-                    self._record_job_error("TRANSIENT_DEPENDENCY_ERROR", fatal=False)
+                    self._record_job_error(NilveraWorkerErrorCode.TRANSIENT_DEPENDENCY_ERROR)
                     logger.warning("InvoiceStatusWorker transient loop error: %s", type(exc).__name__)
                     try:
                         await asyncio.wait_for(self._stop_event.wait(), timeout=self._poll_interval_sec)
@@ -97,7 +98,7 @@ class InvoiceStatusWorker(NilveraWorkerHealthMixin):
             pass
         except Exception:
             logger.error("NILVERA_WORKER_FATAL_ERROR worker=%s error_code=%s", self.worker_name, "FATAL_LOOP_ERROR")
-            self._record_loop_error("FATAL_LOOP_ERROR")
+            self._record_loop_error(NilveraWorkerErrorCode.FATAL_LOOP_ERROR)
             self._mark_failed("Worker loop crashed")
 
     async def _process_batch(self) -> int:
@@ -130,7 +131,7 @@ class InvoiceStatusWorker(NilveraWorkerHealthMixin):
                     processed += 1
                     self._record_success(1)
             except Exception as e:
-                self._record_job_error("STATUS_POLL_FAILED", fatal=False)
+                self._record_job_error(NilveraWorkerErrorCode.STATUS_POLL_FAILED)
                 logger.error(f"Error processing status for dispatch {record.id}: {type(e).__name__}")
 
         return processed

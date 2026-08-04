@@ -1,7 +1,11 @@
 import logging
 from datetime import UTC, datetime
 
-from models.schemas.nilvera_worker_health import NilveraWorkerHealth, NilveraWorkerStatus
+from models.schemas.nilvera_worker_health import (
+    NilveraWorkerErrorCode,
+    NilveraWorkerHealth,
+    NilveraWorkerStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,20 +74,32 @@ class NilveraWorkerHealthMixin:
         self._health_state.task_alive = True
 
     def _record_success(self, jobs_processed: int = 1) -> None:
-        """Record successful processing of a job."""
-        self._health_state.last_success_at = _utc_now()
+        """Mark a successful cycle/job."""
         self._health_state.processed_total += jobs_processed
+        self._health_state.last_success_at = _utc_now()
 
-    def _record_job_error(self, code: str, *, fatal: bool = False) -> None:
-        """Record a controlled, sanitized error during job processing."""
+        if self._health_state.status == NilveraWorkerStatus.DEGRADED:
+            self._health_state.status = NilveraWorkerStatus.RUNNING
+            self._health_state.degraded_reason = None
+
+    def _record_job_error(self, code: NilveraWorkerErrorCode) -> None:
+        """Record a non-fatal business logic or transient dependency error. Transitions to DEGRADED."""
+        if not isinstance(code, NilveraWorkerErrorCode):
+            raise ValueError(f"Error code must be a NilveraWorkerErrorCode enum, got {type(code)}")
+
         self._health_state.last_error_at = _utc_now()
         self._health_state.last_error_code = code
         self._health_state.job_failed_total += 1
-        if fatal:
-            self._health_state.status = NilveraWorkerStatus.DEGRADED
 
-    def _record_loop_error(self, code: str) -> None:
-        """Record an unhandled outer loop crash."""
+        if self._health_state.status == NilveraWorkerStatus.RUNNING:
+            self._health_state.status = NilveraWorkerStatus.DEGRADED
+            self._health_state.degraded_reason = str(code.value)
+
+    def _record_loop_error(self, code: NilveraWorkerErrorCode) -> None:
+        """Record a fatal loop crash."""
+        if not isinstance(code, NilveraWorkerErrorCode):
+            raise ValueError(f"Error code must be a NilveraWorkerErrorCode enum, got {type(code)}")
+
         self._health_state.last_error_at = _utc_now()
         self._health_state.last_error_code = code
         self._health_state.loop_error_total += 1

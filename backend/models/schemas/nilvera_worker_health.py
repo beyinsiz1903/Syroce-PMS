@@ -14,6 +14,16 @@ class NilveraWorkerStatus(str, Enum):
     FAILED = "FAILED"
 
 
+class NilveraWorkerErrorCode(str, Enum):
+    TRANSIENT_DEPENDENCY_ERROR = "TRANSIENT_DEPENDENCY_ERROR"
+    DISPATCH_FAILED = "DISPATCH_FAILED"
+    STATUS_POLL_FAILED = "STATUS_POLL_FAILED"
+    RECONCILIATION_FAILED = "RECONCILIATION_FAILED"
+    LIFECYCLE_PROCESS_FAILED = "LIFECYCLE_PROCESS_FAILED"
+    STARTUP_TASK_FAILED = "STARTUP_TASK_FAILED"
+    FATAL_LOOP_ERROR = "FATAL_LOOP_ERROR"
+
+
 class NilveraWorkerHealth(BaseModel):
     """Standardized health reporting model for all Nilvera background workers."""
     worker_name: str
@@ -24,7 +34,7 @@ class NilveraWorkerHealth(BaseModel):
     last_heartbeat_at: datetime | None = None
     last_success_at: datetime | None = None
     last_error_at: datetime | None = None
-    last_error_code: str | None = None
+    last_error_code: NilveraWorkerErrorCode | None = None
     processed_total: int = 0
     job_failed_total: int = 0
     loop_error_total: int = 0

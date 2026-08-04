@@ -19,6 +19,7 @@ from core.integrations.invoice_reconciliation_service import InvoiceReconciliati
 from core.tenant_db import get_system_db, tenant_context
 from core.transient_db_guard import TransientFailureTracker
 from models.schemas.invoice_sync import InvoiceSyncState
+from models.schemas.nilvera_worker_health import NilveraWorkerErrorCode
 
 logger = logging.getLogger("core.integrations.invoice_reconciliation_worker")
 
@@ -69,7 +70,7 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
 
         await asyncio.sleep(0)
         if self._task.done():
-            self._record_loop_error("STARTUP_TASK_FAILED")
+            self._record_loop_error(NilveraWorkerErrorCode.STARTUP_TASK_FAILED)
             self._mark_failed("STARTUP_TASK_FAILED")
             raise RuntimeError("NILVERA_WORKER_STARTUP_FAILED") from None
 
@@ -106,7 +107,7 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
                 except asyncio.CancelledError:
                     raise
                 except (TimeoutError, pymongo.errors.PyMongoError) as exc:
-                    self._record_job_error("TRANSIENT_DEPENDENCY_ERROR", fatal=False)
+                    self._record_job_error(NilveraWorkerErrorCode.TRANSIENT_DEPENDENCY_ERROR)
                     _transient_tracker.log_exception(
                         logger,
                         exc,
@@ -123,7 +124,7 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
             pass
         except Exception:
             logger.error("NILVERA_WORKER_FATAL_ERROR worker=%s error_code=%s", self.worker_name, "FATAL_LOOP_ERROR")
-            self._record_loop_error("FATAL_LOOP_ERROR")
+            self._record_loop_error(NilveraWorkerErrorCode.FATAL_LOOP_ERROR)
             self._mark_failed("Worker loop crashed")
 
     async def _recover_stuck(self) -> int:
@@ -220,6 +221,7 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
             return
 
         with tenant_context(tenant_id):
+            from core.integrations.nilvera.config import get_nilvera_tenant_config
             nilvera_cfg = await get_nilvera_tenant_config(tenant_id, decrypt_api_key=True)
             reader = None
             if nilvera_cfg.get("enabled") and nilvera_cfg.get("api_key"):
@@ -249,8 +251,8 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
                 )
                 self._record_success(1)
             except Exception as e:
-                self._record_job_error("RECONCILIATION_FAILED", fatal=False)
-                logger.error(f"Error processing reconciliation for record {record_id}: {type(e).__name__}")
+                self._record_job_error(NilveraWorkerErrorCode.RECONCILIATION_FAILED)
+                logger.error("Error reconciling local dispatch %s: %s", record_id, type(e).__name__)
 
             # Release lease always after processing
             sysdb = get_system_db()

@@ -11,6 +11,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from core.integrations.invoice_lifecycle_service import InvoiceLifecycleService
 from core.tenant_db import get_system_db
 from models.schemas.invoice_lifecycle import InvoiceLifecycleAction, InvoiceLifecycleActionState
+from models.schemas.nilvera_worker_health import NilveraWorkerErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class InvoiceLifecycleWorker(NilveraWorkerHealthMixin):
 
         await asyncio.sleep(0)
         if self._task.done():
-            self._record_loop_error("STARTUP_TASK_FAILED")
+            self._record_loop_error(NilveraWorkerErrorCode.STARTUP_TASK_FAILED)
             self._mark_failed("STARTUP_TASK_FAILED")
             raise RuntimeError("NILVERA_WORKER_STARTUP_FAILED") from None
 
@@ -98,7 +99,7 @@ class InvoiceLifecycleWorker(NilveraWorkerHealthMixin):
                 except asyncio.CancelledError:
                     raise
                 except (TimeoutError, pymongo.errors.PyMongoError) as exc:
-                    self._record_job_error("TRANSIENT_DEPENDENCY_ERROR", fatal=False)
+                    self._record_job_error(NilveraWorkerErrorCode.TRANSIENT_DEPENDENCY_ERROR)
                     logger.warning(f"InvoiceLifecycleWorker transient loop error: {type(exc).__name__}")
                     await asyncio.sleep(self._poll_interval)
                 except Exception:
@@ -107,7 +108,7 @@ class InvoiceLifecycleWorker(NilveraWorkerHealthMixin):
             pass
         except Exception:
             logger.error("NILVERA_WORKER_FATAL_ERROR worker=%s error_code=%s", self.worker_name, "FATAL_LOOP_ERROR")
-            self._record_loop_error("FATAL_LOOP_ERROR")
+            self._record_loop_error(NilveraWorkerErrorCode.FATAL_LOOP_ERROR)
             self._mark_failed("Worker loop crashed")
 
     async def _process_batch(self) -> int:
@@ -139,8 +140,8 @@ class InvoiceLifecycleWorker(NilveraWorkerHealthMixin):
                     processed += 1
                     self._record_success(1)
             except Exception as e:
-                self._record_job_error("LIFECYCLE_PROCESS_FAILED", fatal=False)
-                logger.error(f"Error processing lifecycle action {action.id}: {type(e).__name__}")
+                self._record_job_error(NilveraWorkerErrorCode.LIFECYCLE_PROCESS_FAILED)
+                logger.error(f"Error processing lifecycle sync for {action.id}: {type(e).__name__}")
 
         return processed
 

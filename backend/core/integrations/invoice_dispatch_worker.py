@@ -27,6 +27,7 @@ from core.integrations.invoice_dispatch_service import InvoiceDispatchService
 from core.tenant_db import get_system_db, tenant_context
 from core.transient_db_guard import TransientFailureTracker
 from models.schemas.invoice_sync import InvoiceSyncState
+from models.schemas.nilvera_worker_health import NilveraWorkerErrorCode
 
 logger = logging.getLogger("core.integrations.invoice_dispatch_worker")
 
@@ -78,7 +79,7 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
 
         await asyncio.sleep(0)
         if self._task.done():
-            self._record_loop_error("STARTUP_TASK_FAILED")
+            self._record_loop_error(NilveraWorkerErrorCode.STARTUP_TASK_FAILED)
             self._mark_failed("STARTUP_TASK_FAILED")
             raise RuntimeError("NILVERA_WORKER_STARTUP_FAILED") from None
 
@@ -134,7 +135,7 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
                 except asyncio.CancelledError:
                     raise
                 except (TimeoutError, pymongo.errors.PyMongoError) as exc:
-                    self._record_job_error("TRANSIENT_DEPENDENCY_ERROR", fatal=False)
+                    self._record_job_error(NilveraWorkerErrorCode.TRANSIENT_DEPENDENCY_ERROR)
                     _transient_tracker.log_exception(
                         logger,
                         exc,
@@ -151,7 +152,7 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
             pass
         except Exception:
             logger.error("NILVERA_WORKER_FATAL_ERROR worker=%s error_code=%s", self.worker_name, "FATAL_LOOP_ERROR")
-            self._record_loop_error("FATAL_LOOP_ERROR")
+            self._record_loop_error(NilveraWorkerErrorCode.FATAL_LOOP_ERROR)
             self._mark_failed("Worker loop crashed")
 
     async def _recover_stuck(self) -> int:
@@ -289,7 +290,7 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
                 self._record_success(1)
                 logger.info("Invoice dispatch worker success: %s for tenant %s", record_id, tenant_id)
             else:
-                self._record_job_error("DISPATCH_FAILED", fatal=False)
+                self._record_job_error(NilveraWorkerErrorCode.DISPATCH_FAILED)
                 logger.warning("Invoice dispatch worker failed/retry: %s for tenant %s", record_id, tenant_id)
 
 
