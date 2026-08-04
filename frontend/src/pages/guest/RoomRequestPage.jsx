@@ -23,6 +23,13 @@ function fmtGuestTime(iso, lang) {
   }
 }
 
+function getLocalDateString(offsetDays = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  const pad = n => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function getLabel(item, lang, fallbackCode) {
   if (!item) return fallbackCode || "";
   const labels = item.labels;
@@ -182,45 +189,52 @@ function ServiceInput({ service, cartItem, onChange, t, accent, lang }) {
   }
 
   if (type === "quantity") {
-    const qty = cartItem?.value?.quantity || 0;
+    const qty = cartItem?.value?.quantity;
     const min = config.min ?? 1;
     const max = config.max ?? 99;
     const def = config.default ?? min;
+    const currentQty = qty === undefined ? 0 : qty;
     
     return (
-      <div className="flex items-center justify-between mt-2 bg-slate-50 rounded-lg p-1">
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={() => {
-            if (qty <= min) {
-               onChange(null);
-            } else {
-               onChange({ value: { quantity: qty - 1 } });
-            }
-          }}
-          disabled={qty === 0}
-          className="h-8 w-8 min-w-[44px] min-h-[44px]"
-        >
-          <Minus className="w-4 h-4" />
-        </Button>
-        <span className="font-semibold text-base min-w-[32px] text-center" data-testid={`qty-${service.service_code}`}>{qty}</span>
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={() => {
-             if (qty === 0) {
-               onChange({ value: { quantity: def } });
-             } else if (qty < max) {
-               onChange({ value: { quantity: qty + 1 } });
-             }
-          }}
-          disabled={qty >= max && qty > 0}
-          className="h-8 w-8 min-w-[44px] min-h-[44px]"
-          style={{ color: accent }}
-        >
-          <Plus className="w-4 h-4" />
-        </Button>
+      <div className="mt-2 flex flex-col gap-2">
+        <div className="flex items-center justify-between bg-slate-50 rounded-lg p-1">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => {
+              if (currentQty === 0) return;
+              if (currentQty > min) {
+                 onChange({ value: { quantity: currentQty - 1 } });
+              }
+            }}
+            disabled={currentQty <= min}
+            className="h-8 w-8 min-w-[44px] min-h-[44px]"
+          >
+            <Minus className="w-4 h-4" />
+          </Button>
+          <span className="font-semibold text-base min-w-[32px] text-center" data-testid={`qty-${service.service_code}`}>{currentQty}</span>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => {
+               if (currentQty === 0) {
+                 onChange({ value: { quantity: def } });
+               } else if (currentQty < max) {
+                 onChange({ value: { quantity: currentQty + 1 } });
+               }
+            }}
+            disabled={currentQty >= max && currentQty > 0}
+            className="h-8 w-8 min-w-[44px] min-h-[44px]"
+            style={{ color: accent }}
+          >
+            <Plus className="w-4 h-4" />
+          </Button>
+        </div>
+        {cartItem && (
+          <Button variant="ghost" size="sm" onClick={() => onChange(null)} className="text-red-500 self-start p-0 h-auto min-h-[44px]">
+            {t.remove}
+          </Button>
+        )}
       </div>
     );
   }
@@ -295,21 +309,65 @@ function ServiceInput({ service, cartItem, onChange, t, accent, lang }) {
   if (type === "date" || type === "time" || type === "datetime") {
     const key = `${type}_value`;
     const val = cartItem?.value?.[key] || "";
+    
     let inputType = "date";
-    if (type === "time") inputType = "time";
-    if (type === "datetime") inputType = "datetime-local";
+    let min = undefined;
+    let max = undefined;
+    let step = undefined;
+
+    if (type === "date" || type === "datetime") {
+      const minDays = config.min_days_ahead ?? 0;
+      const maxDays = config.max_days_ahead ?? 365;
+      
+      if (type === "date") {
+        inputType = "date";
+        min = getLocalDateString(minDays);
+        max = getLocalDateString(maxDays);
+      } else {
+        inputType = "datetime-local";
+        min = getLocalDateString(minDays) + "T00:00";
+        max = getLocalDateString(maxDays) + "T23:59";
+      }
+    }
+
+    if (type === "time") {
+      inputType = "time";
+    }
+
+    if (type === "time" || type === "datetime") {
+      if (config.interval_minutes) {
+        step = config.interval_minutes * 60;
+      }
+    }
 
     return (
       <div className="mt-2 flex flex-col gap-2">
         <Input 
           type={inputType}
           value={val}
-          min={config.min_date || config.min_time}
-          max={config.max_date || config.max_time}
-          step={config.step}
+          min={min}
+          max={max}
+          step={step}
           onChange={(e) => {
-            if (!e.target.value) onChange(null);
-            else onChange({ value: { [key]: e.target.value } });
+            if (!e.target.value) {
+               onChange(null);
+               return;
+            }
+            
+            const selectedVal = e.target.value;
+            if (min && selectedVal < min) return;
+            if (max && selectedVal > max) return;
+            
+            if ((type === "time" || type === "datetime") && config.interval_minutes) {
+               const timePart = type === "datetime" ? selectedVal.split('T')[1] : selectedVal;
+               if (timePart) {
+                  const [hh, mm] = timePart.split(':');
+                  const totalMins = parseInt(hh || 0) * 60 + parseInt(mm || 0);
+                  if (totalMins % config.interval_minutes !== 0) return;
+               }
+            }
+            
+            onChange({ value: { [key]: selectedVal } });
           }}
           className="min-h-[44px]"
         />
@@ -406,6 +464,31 @@ export default function RoomRequestPage() {
              setMode("error");
              return;
           }
+          
+          let valid = true;
+          const deptCodes = new Set();
+          for (const d of catRes.data.departments) {
+             if (!d.department_code) valid = false;
+             deptCodes.add(d.department_code);
+          }
+          
+          const sCodes = new Set();
+          const SUPPORTED_TYPES = ["one_tap", "quantity", "single_choice", "multi_choice", "date", "time", "datetime"];
+          
+          for (const s of catRes.data.services) {
+             if (!s.service_code || sCodes.has(s.service_code)) valid = false;
+             sCodes.add(s.service_code);
+             if (!deptCodes.has(s.department_code)) valid = false;
+             if (!SUPPORTED_TYPES.includes(s.input_type)) valid = false;
+             if (s.input_config === null || typeof s.input_config !== "object" || Array.isArray(s.input_config)) valid = false;
+          }
+
+          if (!valid) {
+             setSubmitError(t.loadError);
+             setMode("error");
+             return;
+          }
+
           setCatalogueData(catRes.data);
           setMode("catalogue");
         }

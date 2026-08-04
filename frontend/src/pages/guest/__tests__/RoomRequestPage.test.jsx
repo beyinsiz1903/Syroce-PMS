@@ -36,13 +36,20 @@ const mockCatalogue = {
   ],
   services: [
     { service_code: "TOWEL", department_code: "rooms", labels: { en: "Towel" }, input_type: "quantity", is_chargeable: false, input_config: { min: 2, max: 5, default: 3 } },
-    { service_code: "WATER", department_code: "fnb", labels: { en: "Water" }, input_type: "one_tap", is_chargeable: true, charge_warning: { en: "Extra charge" } },
-    { service_code: "WAKEUP", department_code: "rooms", labels: { en: "Wake Up" }, input_type: "time", input_config: { min_time: "08:00", max_time: "10:00" } },
+    { service_code: "WATER", department_code: "fnb", labels: { en: "Water" }, input_type: "one_tap", is_chargeable: true, charge_warning: { en: "Extra charge" }, input_config: {} },
+    { service_code: "WAKEUP", department_code: "rooms", labels: { en: "Wake Up" }, input_type: "time", input_config: { interval_minutes: 15 } },
     { service_code: "PIZZA", department_code: "fnb", labels: { en: "Pizza" }, input_type: "single_choice", input_config: { options: [{code: "large", labels: { en: "Large", tr: "Büyük" }}] } },
     { service_code: "BURGER", department_code: "fnb", labels: { en: "Burger" }, input_type: "multi_choice", input_config: { min_selections: 1, max_selections: 2, options: [{code: "cheese", labels: { en: "Cheese" }}, {code: "bacon", labels: { en: "Bacon" }}, {code: "tomato", labels: { en: "Tomato" }}] } },
-    { service_code: "MEETING", department_code: "rooms", labels: { en: "Meeting" }, input_type: "date" },
-    { service_code: "EVENT", department_code: "rooms", labels: { en: "Event" }, input_type: "datetime" }
+    { service_code: "MEETING", department_code: "rooms", labels: { en: "Meeting" }, input_type: "date", input_config: { min_days_ahead: 1, max_days_ahead: 7 } },
+    { service_code: "EVENT", department_code: "rooms", labels: { en: "Event" }, input_type: "datetime", input_config: { min_days_ahead: 0, max_days_ahead: 30, interval_minutes: 30 } }
   ]
+};
+
+const getLocalDateString = (offsetDays = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  const pad = n => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
 describe('RoomRequestPage', () => {
@@ -197,29 +204,70 @@ describe('RoomRequestPage', () => {
     fireEvent.click(screen.getByTestId("dept-rooms"));
     
     await waitFor(() => screen.getByTestId("service-TOWEL"));
-    const towelPlusBtn = screen.getByTestId("service-TOWEL").querySelectorAll("button")[1];
-    const towelMinusBtn = screen.getByTestId("service-TOWEL").querySelectorAll("button")[0];
+    const getTowelBtns = () => screen.getByTestId("service-TOWEL").querySelectorAll("button");
     
     // Default is 3
-    fireEvent.click(towelPlusBtn);
+    fireEvent.click(getTowelBtns()[1]);
     expect(screen.getByTestId("qty-TOWEL")).toHaveTextContent("3");
     
     // Add to 5 (max)
-    fireEvent.click(towelPlusBtn);
-    fireEvent.click(towelPlusBtn);
+    fireEvent.click(getTowelBtns()[1]);
+    fireEvent.click(getTowelBtns()[1]);
     expect(screen.getByTestId("qty-TOWEL")).toHaveTextContent("5");
     
     // Should not exceed 5
-    expect(towelPlusBtn).toBeDisabled();
+    expect(getTowelBtns()[1]).toBeDisabled();
     
     // Subtract to 2 (min)
-    fireEvent.click(towelMinusBtn);
-    fireEvent.click(towelMinusBtn);
-    fireEvent.click(towelMinusBtn);
+    fireEvent.click(getTowelBtns()[0]);
+    fireEvent.click(getTowelBtns()[0]);
+    fireEvent.click(getTowelBtns()[0]);
     expect(screen.getByTestId("qty-TOWEL")).toHaveTextContent("2");
     
-    // Subtract below min removes item entirely
-    fireEvent.click(towelMinusBtn);
+    // Subtract below min is disabled
+    expect(getTowelBtns()[0]).toBeDisabled();
+    
+    // Test exact payload submission
+    fireEvent.click(screen.getByText("Review Request"));
+    await waitFor(() => screen.getByText("Submit Request"));
+    
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/submit')) return Promise.resolve({ data: {} });
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+    
+    fireEvent.click(screen.getByText("Submit Request"));
+    await waitFor(() => {
+      expect(axios.post).toHaveBeenCalledWith(
+        expect.stringContaining("/submit"),
+        expect.objectContaining({
+          items: [
+            {
+              service_code: "TOWEL",
+              value: { quantity: 2 }
+            }
+          ]
+        }),
+        expect.anything()
+      );
+    });
+  });
+
+  it('explicit remove action', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-rooms"));
+    fireEvent.click(screen.getByTestId("dept-rooms"));
+    await waitFor(() => screen.getByTestId("service-TOWEL"));
+    
+    // Add item
+    fireEvent.click(screen.getByTestId("service-TOWEL").querySelectorAll("button")[1]);
+    expect(screen.getByTestId("qty-TOWEL")).toHaveTextContent("3");
+    
+    // Click explicit remove button (should be the third button since [-, +, Remove])
+    const removeBtn = screen.getByTestId("service-TOWEL").querySelector("button.text-red-500");
+    fireEvent.click(removeBtn);
+    
+    // qty should revert to 0
     expect(screen.getByTestId("qty-TOWEL")).toHaveTextContent("0");
   });
 
@@ -304,14 +352,29 @@ describe('RoomRequestPage', () => {
     });
   });
 
-  it('date payload', async () => {
+  it('date payload and outside range blocked', async () => {
     setupCatalogue();
     await waitFor(() => screen.getByTestId("dept-rooms"));
     fireEvent.click(screen.getByTestId("dept-rooms"));
     
     await waitFor(() => screen.getByTestId("service-MEETING"));
     const dateInput = screen.getByTestId("service-MEETING").querySelector('input[type="date"]');
-    fireEvent.change(dateInput, { target: { value: "2026-10-10" } });
+    
+    const validDate = getLocalDateString(3); // within 1 to 7 days
+    const invalidDateBefore = getLocalDateString(0); // too early
+    const invalidDateAfter = getLocalDateString(8); // too late
+    
+    // Set invalid date before
+    fireEvent.change(dateInput, { target: { value: invalidDateBefore } });
+    // Still empty or not added to cart, cart count is 0
+    expect(screen.queryByTestId("sticky-cart")).not.toBeInTheDocument();
+    
+    // Set invalid date after
+    fireEvent.change(dateInput, { target: { value: invalidDateAfter } });
+    expect(screen.queryByTestId("sticky-cart")).not.toBeInTheDocument();
+    
+    // Set valid date
+    fireEvent.change(dateInput, { target: { value: validDate } });
     
     fireEvent.click(screen.getByText("Review Request"));
     await waitFor(() => screen.getByText("Submit Request"));
@@ -326,21 +389,28 @@ describe('RoomRequestPage', () => {
       expect(axios.post).toHaveBeenCalledWith(
         expect.stringContaining("/submit"),
         expect.objectContaining({
-          items: [ { service_code: "MEETING", value: { date_value: "2026-10-10" } } ]
+          items: [ { service_code: "MEETING", value: { date_value: validDate } } ]
         }),
         expect.anything()
       );
     });
   });
 
-  it('time payload', async () => {
+  it('time payload mapped to step and invalid interval blocked', async () => {
     setupCatalogue();
     await waitFor(() => screen.getByTestId("dept-rooms"));
     fireEvent.click(screen.getByTestId("dept-rooms"));
     
     await waitFor(() => screen.getByTestId("service-WAKEUP"));
     const timeInput = screen.getByTestId("service-WAKEUP").querySelector('input[type="time"]');
-    fireEvent.change(timeInput, { target: { value: "09:00" } });
+    expect(timeInput).toHaveAttribute("step", "900"); // 15 min * 60
+    
+    // invalid interval (09:05)
+    fireEvent.change(timeInput, { target: { value: "09:05" } });
+    expect(screen.queryByTestId("sticky-cart")).not.toBeInTheDocument();
+    
+    // valid interval (09:15)
+    fireEvent.change(timeInput, { target: { value: "09:15" } });
     
     fireEvent.click(screen.getByText("Review Request"));
     await waitFor(() => screen.getByText("Submit Request"));
@@ -355,21 +425,36 @@ describe('RoomRequestPage', () => {
       expect(axios.post).toHaveBeenCalledWith(
         expect.stringContaining("/submit"),
         expect.objectContaining({
-          items: [ { service_code: "WAKEUP", value: { time_value: "09:00" } } ]
+          items: [ { service_code: "WAKEUP", value: { time_value: "09:15" } } ]
         }),
         expect.anything()
       );
     });
   });
 
-  it('datetime payload', async () => {
+  it('datetime payload bounds and interval step', async () => {
     setupCatalogue();
     await waitFor(() => screen.getByTestId("dept-rooms"));
     fireEvent.click(screen.getByTestId("dept-rooms"));
     
     await waitFor(() => screen.getByTestId("service-EVENT"));
     const dtInput = screen.getByTestId("service-EVENT").querySelector('input[type="datetime-local"]');
-    fireEvent.change(dtInput, { target: { value: "2026-10-10T09:00" } });
+    expect(dtInput).toHaveAttribute("step", "1800"); // 30 min * 60
+    
+    const validDT = getLocalDateString(1) + "T10:30"; // valid date and 30m interval
+    const invalidDT_Interval = getLocalDateString(1) + "T10:15"; // invalid interval
+    const invalidDT_Before = getLocalDateString(-1) + "T10:30"; // invalid date
+    
+    // Test interval
+    fireEvent.change(dtInput, { target: { value: invalidDT_Interval } });
+    expect(screen.queryByTestId("sticky-cart")).not.toBeInTheDocument();
+    
+    // Test bounds
+    fireEvent.change(dtInput, { target: { value: invalidDT_Before } });
+    expect(screen.queryByTestId("sticky-cart")).not.toBeInTheDocument();
+    
+    // Valid
+    fireEvent.change(dtInput, { target: { value: validDT } });
     
     fireEvent.click(screen.getByText("Review Request"));
     await waitFor(() => screen.getByText("Submit Request"));
@@ -384,7 +469,7 @@ describe('RoomRequestPage', () => {
       expect(axios.post).toHaveBeenCalledWith(
         expect.stringContaining("/submit"),
         expect.objectContaining({
-          items: [ { service_code: "EVENT", value: { datetime_value: "2026-10-10T09:00" } } ]
+          items: [ { service_code: "EVENT", value: { datetime_value: validDT } } ]
         }),
         expect.anything()
       );
@@ -394,7 +479,7 @@ describe('RoomRequestPage', () => {
   it('max 10 unique services', async () => {
     const largeCatalogue = { departments: [{department_code: "d1", labels: {en: "d1"}}], services: [] };
     for (let i = 0; i < 15; i++) {
-      largeCatalogue.services.push({ service_code: `S${i}`, department_code: "d1", input_type: "one_tap" });
+      largeCatalogue.services.push({ service_code: `S${i}`, department_code: "d1", input_type: "one_tap", input_config: {} });
     }
     axios.get.mockImplementation((url) => {
       if (url.includes('/catalogue')) return Promise.resolve({ data: largeCatalogue, status: 200 });
@@ -700,4 +785,51 @@ describe('RoomRequestPage', () => {
     });
   });
 
+  it('malformed department record', async () => {
+    const badCatalogue = {
+      departments: [{ department_code: "", labels: { en: "Bad" } }],
+      services: []
+    };
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/catalogue')) return Promise.resolve({ data: badCatalogue, status: 200 });
+      if (url.includes('/room-qr/tenant1/room1')) return Promise.resolve({ data: mockMeta });
+      return Promise.reject();
+    });
+    axios.post.mockResolvedValue({ data: { session_token: "guest123" } });
+    renderComponent();
+    await waitFor(() => expect(screen.getByText("Unable to open request")).toBeInTheDocument());
+  });
+
+  it('malformed service record', async () => {
+    const badCatalogue = {
+      departments: [{ department_code: "rooms", labels: { en: "Rooms" } }],
+      services: [{ service_code: "S1", department_code: "invalid_dept", input_type: "one_tap", input_config: {} }]
+    };
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/catalogue')) return Promise.resolve({ data: badCatalogue, status: 200 });
+      if (url.includes('/room-qr/tenant1/room1')) return Promise.resolve({ data: mockMeta });
+      return Promise.reject();
+    });
+    axios.post.mockResolvedValue({ data: { session_token: "guest123" } });
+    renderComponent();
+    await waitFor(() => expect(screen.getByText("Unable to open request")).toBeInTheDocument());
+  });
+
+  it('duplicate service_code response', async () => {
+    const badCatalogue = {
+      departments: [{ department_code: "rooms", labels: { en: "Rooms" } }],
+      services: [
+        { service_code: "S1", department_code: "rooms", input_type: "one_tap", input_config: {} },
+        { service_code: "S1", department_code: "rooms", input_type: "quantity", input_config: {} }
+      ]
+    };
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/catalogue')) return Promise.resolve({ data: badCatalogue, status: 200 });
+      if (url.includes('/room-qr/tenant1/room1')) return Promise.resolve({ data: mockMeta });
+      return Promise.reject();
+    });
+    axios.post.mockResolvedValue({ data: { session_token: "guest123" } });
+    renderComponent();
+    await waitFor(() => expect(screen.getByText("Unable to open request")).toBeInTheDocument());
+  });
 });
