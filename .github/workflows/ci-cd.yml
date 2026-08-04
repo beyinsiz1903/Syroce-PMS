@@ -15,6 +15,7 @@ env:
   JWT_SECRET: ci-test-secret-key-do-not-use-in-production
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ${{ github.repository_owner }}/syroce
+  NILVERA_ENABLED: "false"
 
 jobs:
   # ============ LOCKFILE HOST GUARD (HARD GATE) ============

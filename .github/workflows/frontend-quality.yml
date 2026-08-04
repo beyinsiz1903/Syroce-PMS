@@ -8,6 +8,7 @@ on:
 
 env:
     NODE_VERSION: '22'
+    NILVERA_ENABLED: "false"
 
 jobs:
     # ============ THEME REGRESSION GUARD (HARD GATE) ============
