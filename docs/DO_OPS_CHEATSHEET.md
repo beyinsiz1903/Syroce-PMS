@@ -72,7 +72,6 @@ python backend/scripts/verify_atlas_backup.py --max-age-hours 26
 | ---------------- | ---------------------------------------- |
 | Backend API      | Backend env-var değişti / 500 spike      |
 | Mobile Web       | Frontend env-var değişti                 |
-| Quick-ID API     | QuickID 503 / KVKK alert                 |
 | Start application| Frontend dev-server donuk                |
 
 **Komut (DigitalOcean Shell):** üst-sağ "Restart" butonu, veya:
@@ -132,7 +131,6 @@ Pilotta sık değişen secret'ler:
 | 401/403 spike                        | JWT_SECRET değişti mi? Workflow restart      | secret panel        |
 | ChunkLoadError surge (frontend)      | Yeni deploy oldu mu? Cache invalidate gerek  | hard-refresh prompt |
 | Ödeme webhook'ları kaybolmuş         | `/api/health` + outbox `pending` count       | retry processor     |
-| QuickID 503                          | Quick-ID API workflow log                    | restart + KVKK alert|
 | Sentry'de PII leak şüphesi           | Event'i aç, scrub pattern eksik mi tespit    | docs/SENTRY...md §5 |
 
 **Karar matrisi (5 dakikalık kural):**
@@ -279,6 +277,14 @@ bash deploy/smoke.sh
 - **Shell**: workspace shell zaten `/home/runner/workspace` (cd gerekmez)
 - **Preview**: iframe proxy (mTLS) — `https://<port>-<dev-domain>` formatı
 - **Production**: `.syroce.com` veya custom domain (post-publish)
+- **Ingress 503 Rewrite**:
+  - DigitalOcean App Platform ingress may expose an upstream application 503 as external HTTP 504.
+  - Treat 504 as the original application 503 only when: `x-do-orig-status: 503` is present.
+  - A generic 504 without that header remains a real gateway timeout.
+  - Do not mutate Axios/global response status.
+  - Browser JavaScript visibility depends on CORS exposed headers.
+  - Backend/local tests must continue to assert the real 503.
+  - Production E2E may normalize 504 to 503 only inside a focused test helper and only when the exact header is present.
 - **Code execution sandbox** (Agent only): `database`, `query-integration-data`,
   `web-search` skill'leri için — operatör bunları kullanmaz, agent kullanır
 
