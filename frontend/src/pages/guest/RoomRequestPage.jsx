@@ -23,6 +23,18 @@ function fmtGuestTime(iso, lang) {
   }
 }
 
+function getLabel(item, lang, fallbackCode) {
+  if (!item) return fallbackCode || "";
+  const labels = item.labels;
+  if (!labels || typeof labels !== "object") return fallbackCode || "";
+  if (labels[lang]) return labels[lang];
+  if (labels.en) return labels.en;
+  for (const key of Object.keys(labels)) {
+    if (labels[key]) return labels[key];
+  }
+  return fallbackCode || "";
+}
+
 function GuestThread({ tenantId, roomId, token, t, lang, rtl, accent, alwaysShow }) {
   const [messages, setMessages] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -151,16 +163,17 @@ function GuestThread({ tenantId, roomId, token, t, lang, rtl, accent, alwaysShow
 // ----------------------------------------------------------------------
 // SERVICE INPUT COMPONENT
 // ----------------------------------------------------------------------
-function ServiceInput({ service, cartItem, onChange, t, accent }) {
+function ServiceInput({ service, cartItem, onChange, t, accent, lang }) {
   const type = service.input_type;
+  const config = service.input_config || {};
   
   if (type === "one_tap") {
     const isSelected = !!cartItem;
     return (
       <Button 
         variant={isSelected ? "destructive" : "outline"}
-        onClick={() => isSelected ? onChange(null) : onChange({})}
-        className="w-full mt-2"
+        onClick={() => isSelected ? onChange(null) : onChange({ value: {} })}
+        className="w-full mt-2 min-h-[44px]"
         style={isSelected ? {} : { color: accent, borderColor: accent }}
       >
         {isSelected ? t.remove : t.addMore}
@@ -170,12 +183,22 @@ function ServiceInput({ service, cartItem, onChange, t, accent }) {
 
   if (type === "quantity") {
     const qty = cartItem?.value?.quantity || 0;
+    const min = config.min ?? 1;
+    const max = config.max ?? 99;
+    const def = config.default ?? min;
+    
     return (
       <div className="flex items-center justify-between mt-2 bg-slate-50 rounded-lg p-1">
         <Button 
           variant="ghost" 
           size="icon" 
-          onClick={() => onChange({ value: { quantity: qty - 1 } })}
+          onClick={() => {
+            if (qty <= min) {
+               onChange(null);
+            } else {
+               onChange({ value: { quantity: qty - 1 } });
+            }
+          }}
           disabled={qty === 0}
           className="h-8 w-8 min-w-[44px] min-h-[44px]"
         >
@@ -185,7 +208,14 @@ function ServiceInput({ service, cartItem, onChange, t, accent }) {
         <Button 
           variant="ghost" 
           size="icon" 
-          onClick={() => onChange({ value: { quantity: qty + 1 } })}
+          onClick={() => {
+             if (qty === 0) {
+               onChange({ value: { quantity: def } });
+             } else if (qty < max) {
+               onChange({ value: { quantity: qty + 1 } });
+             }
+          }}
+          disabled={qty >= max && qty > 0}
           className="h-8 w-8 min-w-[44px] min-h-[44px]"
           style={{ color: accent }}
         >
@@ -196,7 +226,7 @@ function ServiceInput({ service, cartItem, onChange, t, accent }) {
   }
 
   if (type === "single_choice") {
-    const opts = service.input_config?.options || [];
+    const opts = config.options || [];
     const selected = cartItem?.value?.selected_options?.[0] || "";
     return (
       <div className="mt-2 flex flex-col gap-2">
@@ -204,7 +234,7 @@ function ServiceInput({ service, cartItem, onChange, t, accent }) {
           <SelectTrigger className="w-full min-h-[44px]"><SelectValue placeholder={t.selectOption} /></SelectTrigger>
           <SelectContent>
             {opts.map(o => (
-              <SelectItem key={o.code} value={o.code}>{o.label || o.code}</SelectItem>
+              <SelectItem key={o.code} value={o.code}>{getLabel(o, lang, o.code)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -218,29 +248,46 @@ function ServiceInput({ service, cartItem, onChange, t, accent }) {
   }
 
   if (type === "multi_choice") {
-    const opts = service.input_config?.options || [];
+    const opts = config.options || [];
     const selected = cartItem?.value?.selected_options || [];
+    const minSel = config.min_selections ?? 0;
+    const maxSel = config.max_selections ?? 99;
+
     return (
       <div className="mt-2 flex flex-col gap-2">
         {opts.map(o => {
           const checked = selected.includes(o.code);
+          const disabled = !checked && selected.length >= maxSel;
           return (
-            <label key={o.code} className="flex items-center gap-2 min-h-[44px] cursor-pointer">
+            <label key={o.code} className={`flex items-center gap-2 min-h-[44px] ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
               <input 
                 type="checkbox" 
                 checked={checked} 
+                disabled={disabled}
                 onChange={(e) => {
-                  const newSel = e.target.checked ? [...selected, o.code] : selected.filter(x => x !== o.code);
-                  if (newSel.length === 0) onChange(null);
+                  let newSel = e.target.checked ? [...selected, o.code] : selected.filter(x => x !== o.code);
+                  newSel = [...new Set(newSel)]; // ensure no duplicates
+                  
+                  // if min_selections > 0, we still allow UI removal but backend will reject if we submit below min
+                  // we will let the cart remove it entirely if length becomes 0 and min_selections is 0
+                  if (newSel.length === 0 && minSel === 0) onChange(null);
                   else onChange({ value: { selected_options: newSel } });
                 }}
                 className="w-5 h-5 rounded border-slate-300"
                 style={{ accentColor: accent }}
               />
-              <span className="text-sm">{o.label || o.code}</span>
+              <span className="text-sm">{getLabel(o, lang, o.code)}</span>
             </label>
           );
         })}
+        {cartItem && minSel > 0 && selected.length < minSel && (
+           <span className="text-xs text-red-500">Lütfen en az {minSel} seçim yapın</span>
+        )}
+        {cartItem && (
+          <Button variant="ghost" size="sm" onClick={() => onChange(null)} className="text-red-500 self-start p-0 h-auto min-h-[44px]">
+            {t.remove}
+          </Button>
+        )}
       </div>
     );
   }
@@ -257,6 +304,9 @@ function ServiceInput({ service, cartItem, onChange, t, accent }) {
         <Input 
           type={inputType}
           value={val}
+          min={config.min_date || config.min_time}
+          max={config.max_date || config.max_time}
+          step={config.step}
           onChange={(e) => {
             if (!e.target.value) onChange(null);
             else onChange({ value: { [key]: e.target.value } });
@@ -285,7 +335,7 @@ export default function RoomRequestPage() {
   const token = params.get("t");
 
   const [lang, setLang] = useState(() => {
-    const nav = (navigator.language || "tr").slice(0, 2);
+    const nav = (typeof navigator !== "undefined" && navigator.language) ? navigator.language.slice(0, 2) : "tr";
     return UI[nav] ? nav : "tr";
   });
   const t = UI[lang] || UI.tr;
@@ -312,8 +362,12 @@ export default function RoomRequestPage() {
   // Shared form
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  
+  // Submit state
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [successResponse, setSuccessResponse] = useState(null);
+  const submitGuard = useRef(false);
 
   const loadData = useCallback(async () => {
     setMode("loading");
@@ -347,8 +401,10 @@ export default function RoomRequestPage() {
         });
         
         if (catRes.status === 200) {
-          if (!catRes.data?.departments || !catRes.data?.services) {
-             throw new Error("Malformed catalogue");
+          if (!catRes.data || !Array.isArray(catRes.data.departments) || !Array.isArray(catRes.data.services)) {
+             setSubmitError(t.loadError);
+             setMode("error");
+             return;
           }
           setCatalogueData(catRes.data);
           setMode("catalogue");
@@ -356,7 +412,6 @@ export default function RoomRequestPage() {
       } catch (catErr) {
         const status = catErr.response?.status;
         if (status === 404) {
-          // Exact 404 means dynamic catalogue endpoint not implemented/available => fallback to legacy
           setMode("legacy");
         } else if (status === 401 || status === 403) {
           setMode("unavailable");
@@ -367,12 +422,10 @@ export default function RoomRequestPage() {
           setSubmitError(t.networkError || "Network error");
           setMode("error");
         } else {
-          // Malformed 200 or other errors
           setSubmitError(t.loadError);
           setMode("error");
         }
       }
-
     } catch (e) {
        const status = e.response?.status;
        if (status === 401 || status === 403 || status === 410) {
@@ -393,6 +446,8 @@ export default function RoomRequestPage() {
 
   const submitLegacy = async () => {
     if (!legacyCategory || submitting || !guestSession) return;
+    if (submitGuard.current) return;
+    submitGuard.current = true;
     setSubmitting(true);
     setSubmitError("");
     try {
@@ -409,42 +464,61 @@ export default function RoomRequestPage() {
     } catch (e) {
       handleSubmitError(e);
     } finally {
+      submitGuard.current = false;
       setSubmitting(false);
     }
   };
 
   const submitStructured = async () => {
     if (cartState.cart.length === 0 || submitting || !guestSession) return;
+    if (submitGuard.current) return;
+    
+    // Validate min_selections for multi_choice
+    for (const item of cartState.cart) {
+      const config = item.catalogueItem?.input_config || {};
+      if (item.input_type === "multi_choice" && config.min_selections > 0) {
+        const len = item.value?.selected_options?.length || 0;
+        if (len < config.min_selections) {
+          alertDialog({ message: `Lütfen ${getLabel(item.catalogueItem, lang, item.service_code)} için en az ${config.min_selections} seçim yapın.` });
+          return;
+        }
+      }
+    }
+    
+    submitGuard.current = true;
     setSubmitting(true);
     setSubmitError("");
 
-    const key = cartState.getOrGenerateKey();
-    const payloadItems = cartState.cart.map(c => {
-      return {
-        service_code: c.service_code,
-        value: c.value,
-        note: c.note?.trim() || undefined
+    let key, payload;
+    if (cartState.snapshot) {
+      key = cartState.snapshot.key;
+      payload = cartState.snapshot.payload;
+    } else {
+      key = cartState.generateIdempotencyKey();
+      payload = {
+        language: lang,
+        idempotency_key: key,
+        items: cartState.cart.map(c => {
+           const obj = { service_code: c.service_code };
+           if (c.value && Object.keys(c.value).length > 0) obj.value = c.value;
+           if (c.note?.trim()) obj.note = c.note.trim();
+           return obj;
+        })
       };
-    });
-
-    const payload = {
-      language: lang,
-      idempotency_key: key,
-      items: payloadItems
-    };
-
-    if (name.trim()) payload.guest_name = name.trim();
-    if (phone.trim()) payload.guest_phone = phone.trim();
+      cartState.setSnapshot({ key, payload });
+    }
 
     try {
-      await axios.post(`/public/room-qr/${tenantId}/${roomId}/submit`, payload, {
+      const res = await axios.post(`/public/room-qr/${tenantId}/${roomId}/submit`, payload, {
         headers: { "X-Guest-Session": guestSession }
       });
       cartState.clearCart();
+      setSuccessResponse(res.data);
       setView("success");
     } catch (e) {
       handleSubmitError(e);
     } finally {
+      submitGuard.current = false;
       setSubmitting(false);
     }
   };
@@ -455,6 +529,7 @@ export default function RoomRequestPage() {
       setMode("unavailable");
       setGuestSession(null);
     } else if (status === 409) {
+      // 409 -> do not retry automatically, keep snapshot? Wait, cart edit clears it.
       setSubmitError(t.conflictError);
       alertDialog({ message: t.conflictError });
     } else if (status === 429) {
@@ -474,6 +549,7 @@ export default function RoomRequestPage() {
     setLegacyDescription("");
     setLegacyPriority("normal");
     setSubmitError("");
+    setSuccessResponse(null);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -516,7 +592,6 @@ export default function RoomRequestPage() {
     );
   }
 
-  // Common Header
   const renderHeader = () => (
     <div className="text-white p-6 pb-10 rounded-b-3xl shadow-lg"
          style={{ background: `linear-gradient(135deg, ${accent} 0%, ${accent}dd 100%)` }}>
@@ -551,7 +626,6 @@ export default function RoomRequestPage() {
     </div>
   );
 
-  // Success View (Shared)
   if (view === "success") {
     return (
       <div dir={rtl ? "rtl" : "ltr"} className="min-h-screen bg-slate-50 pb-24">
@@ -564,6 +638,20 @@ export default function RoomRequestPage() {
               </div>
               <h2 className="text-2xl font-bold mb-2">{t.sent}</h2>
               <p className="text-gray-600 mb-6">{mode === "catalogue" ? t.structuredSentDesc : t.sentDesc}</p>
+              
+              {successResponse && (
+                <div className="text-sm text-left bg-slate-100 p-4 rounded-lg mb-6 break-words" data-testid="success-refs">
+                  {successResponse.submission_reference && (
+                    <div className="font-semibold text-slate-700">Ref: {successResponse.submission_reference}</div>
+                  )}
+                  {Array.isArray(successResponse.request_references) && successResponse.request_references.map(r => (
+                    <div key={r.request_reference} className="text-slate-500 mt-1">
+                      {r.service_code}: {r.request_reference}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="space-y-3">
                 <Button onClick={resetFlow} className="w-full text-white min-h-[44px]" style={{ background: accent }}>{t.newReq}</Button>
               </div>
@@ -575,7 +663,6 @@ export default function RoomRequestPage() {
     );
   }
 
-  // Legacy Mode Rendering
   if (mode === "legacy") {
     return (
       <div dir={rtl ? "rtl" : "ltr"} className="min-h-screen bg-slate-50 pb-24">
@@ -657,7 +744,6 @@ export default function RoomRequestPage() {
     );
   }
 
-  // Catalogue Mode Rendering
   return (
     <div dir={rtl ? "rtl" : "ltr"} className="min-h-screen bg-slate-50 pb-32">
       {renderHeader()}
@@ -673,7 +759,7 @@ export default function RoomRequestPage() {
                     <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: `${accent}15`, color: accent }}>
                       <Icon className="w-7 h-7" />
                     </div>
-                    <span className="text-sm font-semibold text-center">{dept.label}</span>
+                    <span className="text-sm font-semibold text-center">{getLabel(dept, lang, dept.department_code)}</span>
                   </button>
                 );
               })}
@@ -685,7 +771,7 @@ export default function RoomRequestPage() {
           <Card className="shadow-xl">
             <CardHeader className="flex flex-row items-center justify-between pb-2 border-b">
               <CardTitle className="text-lg">
-                {catalogueData.departments.find(d => d.department_code === selectedDeptCode)?.label || selectedDeptCode}
+                {getLabel(catalogueData.departments.find(d => d.department_code === selectedDeptCode), lang, selectedDeptCode)}
               </CardTitle>
               <Button variant="ghost" size="sm" onClick={() => setView("departments")} className="min-h-[44px]">{t.back}</Button>
             </CardHeader>
@@ -701,11 +787,11 @@ export default function RoomRequestPage() {
                         <Icon className="w-5 h-5" />
                       </div>
                       <div className="flex-1">
-                        <h4 className="font-semibold text-slate-800">{service.label}</h4>
-                        {service.description && <p className="text-xs text-slate-500 mt-1">{service.description}</p>}
+                        <h4 className="font-semibold text-slate-800">{getLabel(service, lang, service.service_code)}</h4>
+                        {service.description && typeof service.description === "object" && <p className="text-xs text-slate-500 mt-1">{getLabel({labels: service.description}, lang, "")}</p>}
                         {service.is_chargeable && (
                            <p className="text-[10px] text-amber-600 font-medium bg-amber-50 inline-block px-1.5 py-0.5 rounded mt-1">
-                             {service.charge_warning || t.chargeWarning}
+                             {service.charge_warning && typeof service.charge_warning === "object" ? getLabel({labels: service.charge_warning}, lang, t.chargeWarning) : t.chargeWarning}
                            </p>
                         )}
                       </div>
@@ -722,6 +808,7 @@ export default function RoomRequestPage() {
                       }} 
                       t={t} 
                       accent={accent}
+                      lang={lang}
                     />
                   </div>
                 );
@@ -750,7 +837,7 @@ export default function RoomRequestPage() {
                            <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shrink-0">
                              <Icon className="w-4 h-4 text-slate-600" />
                            </div>
-                           <div className="flex-1 font-medium text-sm text-slate-800">{service?.label || c.service_code}</div>
+                           <div className="flex-1 font-medium text-sm text-slate-800">{getLabel(service, lang, c.service_code)}</div>
                          </div>
                          <ServiceInput 
                            service={service} 
@@ -759,13 +846,14 @@ export default function RoomRequestPage() {
                              if (updates === null) cartState.removeItem(c.service_code);
                              else cartState.updateItem(c.service_code, updates);
                            }} 
-                           t={t} accent={accent} 
+                           t={t} accent={accent} lang={lang}
                          />
                          <Input 
                            value={c.note || ""} 
                            onChange={(e) => cartState.updateItem(c.service_code, { note: e.target.value })}
                            placeholder={t.addNote}
                            className="mt-2 text-sm min-h-[44px]"
+                           data-testid={`note-${c.service_code}`}
                          />
                        </div>
                      );
@@ -778,12 +866,7 @@ export default function RoomRequestPage() {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-3 pt-2">
-                     <div><Label>{t.name}</Label><Input value={name} onChange={e => setName(e.target.value)} className="min-h-[44px] mt-1" /></div>
-                     <div><Label>{t.phone}</Label><Input value={phone} onChange={e => setPhone(e.target.value)} className="min-h-[44px] mt-1" /></div>
-                  </div>
-
-                  <Button onClick={submitStructured} disabled={submitting || cartState.cart.length === 0} className="w-full text-white min-h-[44px] mt-4" style={{ background: accent }}>
+                  <Button onClick={submitStructured} disabled={submitting || cartState.cart.length === 0} className="w-full text-white min-h-[44px] mt-4" style={{ background: accent }} data-testid="button-structured-submit">
                     {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}{submitting ? t.sending : t.submit}
                   </Button>
                 </div>
@@ -795,9 +878,8 @@ export default function RoomRequestPage() {
         <GuestThread tenantId={tenantId} roomId={roomId} token={guestSession} t={t} lang={lang} rtl={rtl} accent={accent} alwaysShow={false} />
       </div>
 
-      {/* Sticky Cart Summary */}
       {cartState.totalItems > 0 && view !== "review" && (
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] z-50 pb-[env(safe-area-inset-bottom,16px)]" data-testid="sticky-cart">
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] z-50 pb-[env(safe-area-bottom,16px)]" data-testid="sticky-cart">
           <div className="max-w-2xl mx-auto flex items-center justify-between gap-4">
              <div className="flex flex-col">
                <span className="font-semibold text-slate-800">{cartState.totalItems} {t.items}</span>

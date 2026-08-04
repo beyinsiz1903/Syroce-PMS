@@ -31,24 +31,28 @@ const mockMeta = {
 
 const mockCatalogue = {
   departments: [
-    { department_code: "rooms", label: "Housekeeping", icon: "sparkles" },
-    { department_code: "fnb", label: "Food", icon: "utensils" }
+    { department_code: "rooms", labels: { en: "Housekeeping" }, icon: "sparkles" },
+    { department_code: "fnb", labels: { en: "Food" }, icon: "utensils" }
   ],
   services: [
-    { service_code: "TOWEL", department_code: "rooms", label: "Towel", input_type: "quantity", is_chargeable: false },
-    { service_code: "WATER", department_code: "fnb", label: "Water", input_type: "one_tap", is_chargeable: true, charge_warning: "Extra charge" },
-    { service_code: "WAKEUP", department_code: "rooms", label: "Wake Up", input_type: "time" },
-    { service_code: "PIZZA", department_code: "fnb", label: "Pizza", input_type: "single_choice", input_config: { options: [{code: "large", label: "Large"}] } },
-    { service_code: "BURGER", department_code: "fnb", label: "Burger", input_type: "multi_choice", input_config: { options: [{code: "cheese", label: "Cheese"}, {code: "bacon", label: "Bacon"}] } },
+    { service_code: "TOWEL", department_code: "rooms", labels: { en: "Towel" }, input_type: "quantity", is_chargeable: false, input_config: { min: 2, max: 5, default: 3 } },
+    { service_code: "WATER", department_code: "fnb", labels: { en: "Water" }, input_type: "one_tap", is_chargeable: true, charge_warning: { en: "Extra charge" } },
+    { service_code: "WAKEUP", department_code: "rooms", labels: { en: "Wake Up" }, input_type: "time", input_config: { min_time: "08:00", max_time: "10:00" } },
+    { service_code: "PIZZA", department_code: "fnb", labels: { en: "Pizza" }, input_type: "single_choice", input_config: { options: [{code: "large", labels: { en: "Large", tr: "Büyük" }}] } },
+    { service_code: "BURGER", department_code: "fnb", labels: { en: "Burger" }, input_type: "multi_choice", input_config: { min_selections: 1, max_selections: 2, options: [{code: "cheese", labels: { en: "Cheese" }}, {code: "bacon", labels: { en: "Bacon" }}, {code: "tomato", labels: { en: "Tomato" }}] } },
+    { service_code: "MEETING", department_code: "rooms", labels: { en: "Meeting" }, input_type: "date" },
+    { service_code: "EVENT", department_code: "rooms", labels: { en: "Event" }, input_type: "datetime" }
   ]
 };
 
 describe('RoomRequestPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    Object.defineProperty(navigator, 'language', { value: 'tr-TR', configurable: true });
+    Object.defineProperty(navigator, 'language', { value: 'en-US', configurable: true });
+    window.HTMLElement.prototype.scrollIntoView = vi.fn();
   });
 
+  // Basic rendering
   it('renders loading initially', () => {
     axios.get.mockImplementation(() => new Promise(() => {}));
     axios.post.mockImplementation(() => new Promise(() => {}));
@@ -56,7 +60,8 @@ describe('RoomRequestPage', () => {
     expect(document.querySelector('.animate-spin')).toBeInTheDocument();
   });
 
-  it('exact 404 catalogue falls back to legacy mode', async () => {
+  // Fallbacks
+  it('exact 404 legacy fallback', async () => {
     axios.get.mockImplementation((url) => {
       if (url.includes('/catalogue')) return Promise.reject({ response: { status: 404 } });
       if (url.includes('/room-qr/tenant1/room1')) return Promise.resolve({ data: mockMeta });
@@ -66,13 +71,11 @@ describe('RoomRequestPage', () => {
     
     renderComponent();
     await waitFor(() => {
-      expect(screen.getByText("Ne için talep oluşturuyorsunuz?")).toBeInTheDocument();
-      // Legacy department buttons
-      expect(screen.getByText("Kat Hizmetleri")).toBeInTheDocument(); // from translated DEPT_LABELS
+      expect(screen.getByText("What is your request about?")).toBeInTheDocument(); // UI.en
     });
   });
 
-  it('403 catalogue shows unavailable, not legacy UI', async () => {
+  it('403 no legacy', async () => {
     axios.get.mockImplementation((url) => {
       if (url.includes('/catalogue')) return Promise.reject({ response: { status: 403 } });
       if (url.includes('/room-qr/tenant1/room1')) return Promise.resolve({ data: mockMeta });
@@ -82,12 +85,102 @@ describe('RoomRequestPage', () => {
     
     renderComponent();
     await waitFor(() => {
-      expect(screen.getByText("Hizmet Kullanılamıyor")).toBeInTheDocument();
-      expect(screen.queryByText("Ne için talep oluşturuyorsunuz?")).not.toBeInTheDocument();
+      expect(screen.getByText("Service Unavailable")).toBeInTheDocument();
+      expect(screen.queryByText("What do you need?")).not.toBeInTheDocument();
     });
   });
 
-  it('valid catalogue renders departments', async () => {
+  it('500 no legacy', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/catalogue')) return Promise.reject({ response: { status: 500 } });
+      if (url.includes('/room-qr/tenant1/room1')) return Promise.resolve({ data: mockMeta });
+      return Promise.reject();
+    });
+    axios.post.mockResolvedValue({ data: { session_token: "guest123" } });
+    
+    renderComponent();
+    await waitFor(() => {
+      expect(screen.getByText("Unable to open request")).toBeInTheDocument();
+    });
+  });
+
+  it('network failure no legacy', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/catalogue')) return Promise.reject(new Error("Network Error"));
+      if (url.includes('/room-qr/tenant1/room1')) return Promise.resolve({ data: mockMeta });
+      return Promise.reject();
+    });
+    axios.post.mockResolvedValue({ data: { session_token: "guest123" } });
+    
+    renderComponent();
+    await waitFor(() => {
+      expect(screen.getByText("Unable to open request")).toBeInTheDocument();
+    });
+  });
+
+  it('malformed 200 no legacy', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/catalogue')) return Promise.resolve({ data: { bad: "data" }, status: 200 });
+      if (url.includes('/room-qr/tenant1/room1')) return Promise.resolve({ data: mockMeta });
+      return Promise.reject();
+    });
+    axios.post.mockResolvedValue({ data: { session_token: "guest123" } });
+    
+    renderComponent();
+    await waitFor(() => {
+      expect(screen.getByText("Unable to open request")).toBeInTheDocument();
+    });
+  });
+
+  it('legacy payload regression', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/catalogue')) return Promise.reject({ response: { status: 404 } });
+      if (url.includes('/room-qr/tenant1/room1')) return Promise.resolve({ data: mockMeta });
+      return Promise.reject();
+    });
+    axios.post.mockResolvedValue({ data: { session_token: "guest123" } });
+    
+    renderComponent();
+    await waitFor(() => screen.getByText("Housekeeping"));
+    fireEvent.click(screen.getByText("Housekeeping"));
+    await waitFor(() => screen.getByText("legacy1"));
+    fireEvent.click(screen.getByText("legacy1"));
+    await waitFor(() => screen.getByText("Submit Request"));
+    
+    axios.post.mockImplementation((url, data) => {
+      if (url.includes('/submit')) {
+        return Promise.resolve({ data: {} });
+      }
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+    
+    fireEvent.click(screen.getByText("Submit Request"));
+    await waitFor(() => {
+      expect(axios.post).toHaveBeenCalledWith(
+        expect.stringContaining("/submit"),
+        expect.objectContaining({
+          category: "legacy1",
+          priority: "normal"
+        }),
+        expect.objectContaining({ headers: { "X-Guest-Session": "guest123" } })
+      );
+    });
+  });
+
+  it('guest thread regression', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/thread')) return Promise.resolve({ data: { messages: [{ id: "m1", body: "Hello", sender_type: "team", created_at: "2026-01-01T10:00:00Z" }] } });
+      if (url.includes('/catalogue')) return Promise.reject({ response: { status: 404 } });
+      if (url.includes('/room-qr/tenant1/room1')) return Promise.resolve({ data: mockMeta });
+      return Promise.reject({ response: { status: 404 } });
+    });
+    axios.post.mockResolvedValue({ data: { session_token: "guest123" } });
+    renderComponent();
+    await waitFor(() => expect(screen.getByText("Hello")).toBeInTheDocument(), { timeout: 3000 });
+  });
+
+  // Valid Catalogue Scenarios
+  const setupCatalogue = () => {
     axios.get.mockImplementation((url) => {
       if (url.includes('/catalogue')) return Promise.resolve({ data: mockCatalogue, status: 200 });
       if (url.includes('/room-qr/tenant1/room1')) return Promise.resolve({ data: mockMeta });
@@ -95,93 +188,516 @@ describe('RoomRequestPage', () => {
       return Promise.reject();
     });
     axios.post.mockResolvedValue({ data: { session_token: "guest123" } });
-
     renderComponent();
-    await waitFor(() => {
-      expect(screen.getByText("Housekeeping")).toBeInTheDocument();
-      expect(screen.getByText("Food")).toBeInTheDocument();
-    });
-  });
+  };
 
-  it('selecting a department renders its services', async () => {
-    axios.get.mockImplementation((url) => {
-      if (url.includes('/catalogue')) return Promise.resolve({ data: mockCatalogue, status: 200 });
-      if (url.includes('/room-qr/tenant1/room1')) return Promise.resolve({ data: mockMeta });
-      return Promise.reject();
-    });
-    axios.post.mockResolvedValue({ data: { session_token: "guest123" } });
-
-    renderComponent();
-    await waitFor(() => screen.getByTestId("dept-rooms"));
-    
-    fireEvent.click(screen.getByTestId("dept-rooms"));
-    
-    await waitFor(() => {
-      expect(screen.getByTestId("service-TOWEL")).toBeInTheDocument();
-      expect(screen.getByTestId("service-WAKEUP")).toBeInTheDocument();
-      // food items should not be visible
-      expect(screen.queryByTestId("service-WATER")).not.toBeInTheDocument();
-    });
-  });
-
-  it('adds items to cart and submits structured payload', async () => {
-    axios.get.mockImplementation((url) => {
-      if (url.includes('/catalogue')) return Promise.resolve({ data: mockCatalogue, status: 200 });
-      if (url.includes('/room-qr/tenant1/room1')) return Promise.resolve({ data: mockMeta });
-      return Promise.reject();
-    });
-    axios.post.mockResolvedValue({ data: { session_token: "guest123" } });
-
-    renderComponent();
-    
-    // Select rooms
+  it('quantity default/min/max and exact payload', async () => {
+    setupCatalogue();
     await waitFor(() => screen.getByTestId("dept-rooms"));
     fireEvent.click(screen.getByTestId("dept-rooms"));
     
-    // Increase towel quantity
     await waitFor(() => screen.getByTestId("service-TOWEL"));
-    const towelAddBtn = screen.getByTestId("service-TOWEL").querySelectorAll("button")[1]; // + button
-    fireEvent.click(towelAddBtn);
-    fireEvent.click(towelAddBtn); // qty 2
-
-    // Check sticky cart
-    await waitFor(() => {
-      expect(screen.getByTestId("sticky-cart")).toHaveTextContent("2 seçim");
-    });
+    const towelPlusBtn = screen.getByTestId("service-TOWEL").querySelectorAll("button")[1];
+    const towelMinusBtn = screen.getByTestId("service-TOWEL").querySelectorAll("button")[0];
     
-    // Go to review
-    fireEvent.click(screen.getByText("Talebi İncele"));
+    // Default is 3
+    fireEvent.click(towelPlusBtn);
+    expect(screen.getByTestId("qty-TOWEL")).toHaveTextContent("3");
     
-    await waitFor(() => {
-      expect(screen.getByTestId("review-item-TOWEL")).toBeInTheDocument();
-    });
+    // Add to 5 (max)
+    fireEvent.click(towelPlusBtn);
+    fireEvent.click(towelPlusBtn);
+    expect(screen.getByTestId("qty-TOWEL")).toHaveTextContent("5");
+    
+    // Should not exceed 5
+    expect(towelPlusBtn).toBeDisabled();
+    
+    // Subtract to 2 (min)
+    fireEvent.click(towelMinusBtn);
+    fireEvent.click(towelMinusBtn);
+    fireEvent.click(towelMinusBtn);
+    expect(screen.getByTestId("qty-TOWEL")).toHaveTextContent("2");
+    
+    // Subtract below min removes item entirely
+    fireEvent.click(towelMinusBtn);
+    expect(screen.getByTestId("qty-TOWEL")).toHaveTextContent("0");
+  });
 
-    // Mock submit
-    axios.post.mockImplementation((url, data) => {
-      if (url.includes('/submit')) {
-        return Promise.resolve({ data: {} });
-      }
+  it('single_choice localized option and payload', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-fnb"));
+    fireEvent.click(screen.getByTestId("dept-fnb"));
+    
+    await waitFor(() => screen.getByTestId("service-PIZZA"));
+    // Since language is 'en', we expect 'Large' not 'Büyük'
+    expect(screen.getByText("Select an option")).toBeInTheDocument();
+    
+    fireEvent.click(screen.getByText("Select an option"));
+    await waitFor(() => screen.getByText("Large"));
+    fireEvent.click(screen.getByText("Large"));
+    
+    // Submit
+    fireEvent.click(screen.getByText("Review Request"));
+    await waitFor(() => screen.getByText("Submit Request"));
+    
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/submit')) return Promise.resolve({ data: {} });
       return Promise.resolve({ data: { session_token: "guest123" } });
     });
-
-    fireEvent.click(screen.getByText("Talebi Gönder"));
     
+    fireEvent.click(screen.getByText("Submit Request"));
     await waitFor(() => {
       expect(axios.post).toHaveBeenCalledWith(
         expect.stringContaining("/submit"),
         expect.objectContaining({
-          language: "tr",
           items: [
             {
-              service_code: "TOWEL",
-              value: { quantity: 2 },
-              note: undefined
+              service_code: "PIZZA",
+              value: { selected_options: ["large"] }
             }
-          ],
-          idempotency_key: expect.any(String)
+          ]
         }),
-        expect.objectContaining({ headers: { "X-Guest-Session": "guest123" } })
+        expect.anything()
       );
     });
   });
+
+  it('multi_choice min/max and duplicate prevention', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-fnb"));
+    fireEvent.click(screen.getByTestId("dept-fnb"));
+    
+    await waitFor(() => screen.getByTestId("service-BURGER"));
+    const cheeseInput = screen.getByLabelText("Cheese");
+    const baconInput = screen.getByLabelText("Bacon");
+    const tomatoInput = screen.getByLabelText("Tomato");
+    
+    fireEvent.click(cheeseInput);
+    fireEvent.click(baconInput);
+    
+    // Max is 2, tomato should be disabled
+    expect(tomatoInput).toBeDisabled();
+    
+    // Submit
+    fireEvent.click(screen.getByText("Review Request"));
+    await waitFor(() => screen.getByText("Submit Request"));
+    
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/submit')) return Promise.resolve({ data: {} });
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+    
+    fireEvent.click(screen.getByText("Submit Request"));
+    await waitFor(() => {
+      expect(axios.post).toHaveBeenCalledWith(
+        expect.stringContaining("/submit"),
+        expect.objectContaining({
+          items: [
+            {
+              service_code: "BURGER",
+              value: { selected_options: ["cheese", "bacon"] }
+            }
+          ]
+        }),
+        expect.anything()
+      );
+    });
+  });
+
+  it('date payload', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-rooms"));
+    fireEvent.click(screen.getByTestId("dept-rooms"));
+    
+    await waitFor(() => screen.getByTestId("service-MEETING"));
+    const dateInput = screen.getByTestId("service-MEETING").querySelector('input[type="date"]');
+    fireEvent.change(dateInput, { target: { value: "2026-10-10" } });
+    
+    fireEvent.click(screen.getByText("Review Request"));
+    await waitFor(() => screen.getByText("Submit Request"));
+    
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/submit')) return Promise.resolve({ data: {} });
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+    
+    fireEvent.click(screen.getByText("Submit Request"));
+    await waitFor(() => {
+      expect(axios.post).toHaveBeenCalledWith(
+        expect.stringContaining("/submit"),
+        expect.objectContaining({
+          items: [ { service_code: "MEETING", value: { date_value: "2026-10-10" } } ]
+        }),
+        expect.anything()
+      );
+    });
+  });
+
+  it('time payload', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-rooms"));
+    fireEvent.click(screen.getByTestId("dept-rooms"));
+    
+    await waitFor(() => screen.getByTestId("service-WAKEUP"));
+    const timeInput = screen.getByTestId("service-WAKEUP").querySelector('input[type="time"]');
+    fireEvent.change(timeInput, { target: { value: "09:00" } });
+    
+    fireEvent.click(screen.getByText("Review Request"));
+    await waitFor(() => screen.getByText("Submit Request"));
+    
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/submit')) return Promise.resolve({ data: {} });
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+    
+    fireEvent.click(screen.getByText("Submit Request"));
+    await waitFor(() => {
+      expect(axios.post).toHaveBeenCalledWith(
+        expect.stringContaining("/submit"),
+        expect.objectContaining({
+          items: [ { service_code: "WAKEUP", value: { time_value: "09:00" } } ]
+        }),
+        expect.anything()
+      );
+    });
+  });
+
+  it('datetime payload', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-rooms"));
+    fireEvent.click(screen.getByTestId("dept-rooms"));
+    
+    await waitFor(() => screen.getByTestId("service-EVENT"));
+    const dtInput = screen.getByTestId("service-EVENT").querySelector('input[type="datetime-local"]');
+    fireEvent.change(dtInput, { target: { value: "2026-10-10T09:00" } });
+    
+    fireEvent.click(screen.getByText("Review Request"));
+    await waitFor(() => screen.getByText("Submit Request"));
+    
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/submit')) return Promise.resolve({ data: {} });
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+    
+    fireEvent.click(screen.getByText("Submit Request"));
+    await waitFor(() => {
+      expect(axios.post).toHaveBeenCalledWith(
+        expect.stringContaining("/submit"),
+        expect.objectContaining({
+          items: [ { service_code: "EVENT", value: { datetime_value: "2026-10-10T09:00" } } ]
+        }),
+        expect.anything()
+      );
+    });
+  });
+
+  it('max 10 unique services', async () => {
+    const largeCatalogue = { departments: [{department_code: "d1", labels: {en: "d1"}}], services: [] };
+    for (let i = 0; i < 15; i++) {
+      largeCatalogue.services.push({ service_code: `S${i}`, department_code: "d1", input_type: "one_tap" });
+    }
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/catalogue')) return Promise.resolve({ data: largeCatalogue, status: 200 });
+      if (url.includes('/room-qr/tenant1/room1')) return Promise.resolve({ data: mockMeta });
+      return Promise.reject();
+    });
+    axios.post.mockResolvedValue({ data: { session_token: "guest123" } });
+    renderComponent();
+    
+    await waitFor(() => screen.getByTestId("dept-d1"));
+    fireEvent.click(screen.getByTestId("dept-d1"));
+    
+    await waitFor(() => screen.getByTestId("service-S0"));
+    for (let i = 0; i < 12; i++) {
+      const btn = screen.getByTestId(`service-S${i}`).querySelector("button");
+      fireEvent.click(btn);
+    }
+    
+    expect(screen.getByTestId("sticky-cart")).toHaveTextContent("10 items");
+  });
+
+  it('duplicate service_code updates existing item', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-rooms"));
+    fireEvent.click(screen.getByTestId("dept-rooms"));
+    
+    await waitFor(() => screen.getByTestId("service-TOWEL"));
+    const towelPlusBtn = screen.getByTestId("service-TOWEL").querySelectorAll("button")[1];
+    fireEvent.click(towelPlusBtn);
+    fireEvent.click(towelPlusBtn);
+    
+    expect(screen.getByTestId("sticky-cart")).toHaveTextContent("4 items"); // min 2, +1 = 3, +1 = 4
+  });
+
+  it('per-item note trimming', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-fnb"));
+    fireEvent.click(screen.getByTestId("dept-fnb"));
+    
+    await waitFor(() => screen.getByTestId("service-WATER"));
+    fireEvent.click(screen.getByTestId("service-WATER").querySelector("button"));
+    
+    fireEvent.click(screen.getByText("Review Request"));
+    await waitFor(() => screen.getByTestId("note-WATER"));
+    
+    fireEvent.change(screen.getByTestId("note-WATER"), { target: { value: "  Cold please  " } });
+    
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/submit')) return Promise.resolve({ data: {} });
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+    
+    fireEvent.click(screen.getByText("Submit Request"));
+    await waitFor(() => {
+      expect(axios.post).toHaveBeenCalledWith(
+        expect.stringContaining("/submit"),
+        expect.objectContaining({
+          items: [ { service_code: "WATER", note: "Cold please" } ]
+        }),
+        expect.anything()
+      );
+    });
+  });
+
+  it('chargeable warning', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-fnb"));
+    fireEvent.click(screen.getByTestId("dept-fnb"));
+    
+    await waitFor(() => screen.getByTestId("service-WATER"));
+    expect(screen.getByText("Extra charge")).toBeInTheDocument();
+    
+    fireEvent.click(screen.getByTestId("service-WATER").querySelector("button"));
+    fireEvent.click(screen.getByText("Review Request"));
+    
+    await waitFor(() => {
+      expect(screen.getByText("This service may be subject to an additional charge.")).toBeInTheDocument();
+    });
+  });
+
+  it('structured payload allowlist', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-fnb"));
+    fireEvent.click(screen.getByTestId("dept-fnb"));
+    
+    await waitFor(() => screen.getByTestId("service-WATER"));
+    fireEvent.click(screen.getByTestId("service-WATER").querySelector("button"));
+    
+    fireEvent.click(screen.getByText("Review Request"));
+    await waitFor(() => screen.getByText("Submit Request"));
+    
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/submit')) return Promise.resolve({ data: {} });
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+    
+    fireEvent.click(screen.getByText("Submit Request"));
+    await waitFor(() => {
+      const call = axios.post.mock.calls.find(c => c[0].includes('/submit'));
+      const payload = call[1];
+      expect(Object.keys(payload)).toEqual(expect.arrayContaining(["language", "idempotency_key", "items"]));
+      expect(payload).not.toHaveProperty("guest_name");
+      expect(payload).not.toHaveProperty("guest_phone");
+      expect(payload).not.toHaveProperty("priority");
+      expect(payload).not.toHaveProperty("category");
+      
+      const item = payload.items[0];
+      expect(item).not.toHaveProperty("is_chargeable");
+      expect(item).not.toHaveProperty("labels");
+      expect(item).not.toHaveProperty("catalogueItem");
+    });
+  });
+
+  it('guest token only in X-Guest-Session', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-fnb"));
+    fireEvent.click(screen.getByTestId("dept-fnb"));
+    
+    await waitFor(() => screen.getByTestId("service-WATER"));
+    fireEvent.click(screen.getByTestId("service-WATER").querySelector("button"));
+    
+    fireEvent.click(screen.getByText("Review Request"));
+    await waitFor(() => screen.getByText("Submit Request"));
+    
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/submit')) return Promise.resolve({ data: {} });
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+    
+    fireEvent.click(screen.getByText("Submit Request"));
+    await waitFor(() => {
+      const call = axios.post.mock.calls.find(c => c[0].includes('/submit'));
+      expect(call[1]).not.toHaveProperty("token");
+      expect(call[1]).not.toHaveProperty("t");
+      expect(call[2].headers).toHaveProperty("X-Guest-Session", "guest123");
+    });
+  });
+
+  it('retry preserves exact key and payload', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-fnb"));
+    fireEvent.click(screen.getByTestId("dept-fnb"));
+    
+    await waitFor(() => screen.getByTestId("service-WATER"));
+    fireEvent.click(screen.getByTestId("service-WATER").querySelector("button"));
+    
+    fireEvent.click(screen.getByText("Review Request"));
+    await waitFor(() => screen.getByText("Submit Request"));
+    
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/submit')) return Promise.reject({ response: { status: 500, data: { detail: "Failed" } } });
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+    
+    fireEvent.click(screen.getByText("Submit Request"));
+    
+    await waitFor(() => {
+      expect(dialogs.alertDialog).toHaveBeenCalledWith({ message: "Failed" });
+    });
+    
+    const call1 = axios.post.mock.calls.find(c => c[0].includes('/submit'));
+    const key1 = call1[1].idempotency_key;
+    
+    // Setup for success on second try
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/submit')) return Promise.resolve({ data: {} });
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+    
+    fireEvent.click(screen.getByText("Submit Request"));
+    
+    await waitFor(() => {
+      const calls = axios.post.mock.calls.filter(c => c[0].includes('/submit'));
+      expect(calls.length).toBe(2);
+      expect(calls[1][1].idempotency_key).toBe(key1);
+    });
+  });
+
+  it('cart edit invalidates old snapshot', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-fnb"));
+    fireEvent.click(screen.getByTestId("dept-fnb"));
+    
+    await waitFor(() => screen.getByTestId("service-WATER"));
+    fireEvent.click(screen.getByTestId("service-WATER").querySelector("button"));
+    
+    fireEvent.click(screen.getByText("Review Request"));
+    await waitFor(() => screen.getByText("Submit Request"));
+    
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/submit')) return Promise.reject({ response: { status: 500, data: { detail: "Failed" } } });
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+    
+    fireEvent.click(screen.getByText("Submit Request"));
+    
+    await waitFor(() => {
+      expect(dialogs.alertDialog).toHaveBeenCalledWith({ message: "Failed" });
+    });
+    
+    const call1 = axios.post.mock.calls.find(c => c[0].includes('/submit'));
+    const key1 = call1[1].idempotency_key;
+    
+    // User goes back, edits cart
+    fireEvent.click(screen.getByText("Back"));
+    await waitFor(() => screen.getByTestId("service-WATER"));
+    fireEvent.click(screen.getByTestId("service-WATER").querySelector("button")); // removes
+    
+    // Add something else
+    await waitFor(() => screen.getByTestId("service-PIZZA"));
+    fireEvent.click(screen.getByText("Select an option"));
+    await waitFor(() => screen.getByText("Large"));
+    fireEvent.click(screen.getByText("Large"));
+    
+    fireEvent.click(screen.getByText("Review Request"));
+    await waitFor(() => screen.getByText("Submit Request"));
+    
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/submit')) return Promise.resolve({ data: {} });
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+    
+    fireEvent.click(screen.getByText("Submit Request"));
+    
+    await waitFor(() => {
+      const calls = axios.post.mock.calls.filter(c => c[0].includes('/submit'));
+      expect(calls.length).toBe(2);
+      expect(calls[1][1].idempotency_key).not.toBe(key1);
+    });
+  });
+
+  it('same-tick double-click sends once', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-fnb"));
+    fireEvent.click(screen.getByTestId("dept-fnb"));
+    
+    await waitFor(() => screen.getByTestId("service-WATER"));
+    fireEvent.click(screen.getByTestId("service-WATER").querySelector("button"));
+    
+    fireEvent.click(screen.getByText("Review Request"));
+    await waitFor(() => screen.getByText("Submit Request"));
+    
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/submit')) return Promise.resolve({ data: {} });
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+    
+    const submitBtn = screen.getByText("Submit Request");
+    // Fire double click in same tick
+    fireEvent.click(submitBtn);
+    fireEvent.click(submitBtn);
+    
+    await waitFor(() => {
+      const calls = axios.post.mock.calls.filter(c => c[0].includes('/submit'));
+      expect(calls.length).toBe(1);
+    });
+  });
+
+  it('409 behavior', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-fnb"));
+    fireEvent.click(screen.getByTestId("dept-fnb"));
+    
+    await waitFor(() => screen.getByTestId("service-WATER"));
+    fireEvent.click(screen.getByTestId("service-WATER").querySelector("button"));
+    
+    fireEvent.click(screen.getByText("Review Request"));
+    await waitFor(() => screen.getByText("Submit Request"));
+    
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/submit')) return Promise.reject({ response: { status: 409, data: { detail: "Conflict" } } });
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+    
+    fireEvent.click(screen.getByText("Submit Request"));
+    
+    await waitFor(() => {
+      expect(dialogs.alertDialog).toHaveBeenCalledWith({ message: "Your request may have already been processed or updated. Please try again." });
+    });
+  });
+
+  it('success public references', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-fnb"));
+    fireEvent.click(screen.getByTestId("dept-fnb"));
+    
+    await waitFor(() => screen.getByTestId("service-WATER"));
+    fireEvent.click(screen.getByTestId("service-WATER").querySelector("button"));
+    
+    fireEvent.click(screen.getByText("Review Request"));
+    await waitFor(() => screen.getByText("Submit Request"));
+    
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/submit')) return Promise.resolve({ data: { submission_reference: "SUB123", request_references: [{ service_code: "WATER", request_reference: "REQ999" }] } });
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+    
+    fireEvent.click(screen.getByText("Submit Request"));
+    
+    await waitFor(() => {
+      expect(screen.getByTestId("success-refs")).toHaveTextContent("Ref: SUB123");
+      expect(screen.getByTestId("success-refs")).toHaveTextContent("WATER: REQ999");
+    });
+  });
+
 });
