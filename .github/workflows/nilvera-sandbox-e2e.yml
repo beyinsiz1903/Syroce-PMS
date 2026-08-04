@@ -56,17 +56,18 @@ jobs:
           bash scripts/post_install.sh
           pip install pytest pytest-asyncio httpx pytest-cov pytest-timeout
 
-      - name: Check for Required Secrets
+      - name: Check for NILVERA_E2E_SANDBOX_KEY
         id: check-key
         run: |
-          if [ -z "${{ secrets.NILVERA_E2E_SANDBOX_KEY }}" ] || [ -z "${{ secrets.NILVERA_E2E_BUYER_VKN }}" ] || [ -z "${{ secrets.NILVERA_E2E_SELLER_VKN }}" ]; then
-            echo "::error::One or more required secrets (KEY, BUYER_VKN, SELLER_VKN) are missing in the nilvera-sandbox environment."
-            exit 1
+          if [ -z "${{ secrets.NILVERA_E2E_SANDBOX_KEY }}" ]; then
+            echo "::notice::NILVERA_E2E_SANDBOX_KEY is not set in this environment. Tests will be skipped."
+            echo "key_exists=false" >> $GITHUB_OUTPUT
+          else
+            echo "key_exists=true" >> $GITHUB_OUTPUT
           fi
-          echo "secrets_exist=true" >> $GITHUB_OUTPUT
 
       - name: Run Nilvera Sandbox E2E Tests
-        if: steps.check-key.outputs.secrets_exist == 'true'
+        if: steps.check-key.outputs.key_exists == 'true'
         env:
           NILVERA_E2E_SANDBOX_KEY: ${{ secrets.NILVERA_E2E_SANDBOX_KEY }}
           NILVERA_E2E_BUYER_VKN: ${{ secrets.NILVERA_E2E_BUYER_VKN }}
@@ -84,7 +85,7 @@ jobs:
 
       - name: Upload Test Results
         uses: actions/upload-artifact@v5
-        if: always() && steps.check-key.outputs.secrets_exist == 'true'
+        if: always() && steps.check-key.outputs.key_exists == 'true'
         with:
           name: nilvera-sandbox-results
           path: backend/nilvera-sandbox-results.xml
