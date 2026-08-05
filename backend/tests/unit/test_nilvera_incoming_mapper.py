@@ -223,3 +223,12 @@ def test_map_page_fails_on_timezone_naive_issue_date():
     }
     with pytest.raises(NilveraValidationError, match="invalid IssueDate format"):
         NilveraIncomingMapper.map_page(payload, page=1, page_size=100)
+
+
+def test_map_page_fails_when_data_is_missing():
+    with pytest.raises(NilveraValidationError, match="missing Data"):
+        NilveraIncomingMapper.map_page(
+            {"TotalCount": 0, "TotalPages": 0},
+            page=1,
+            page_size=100,
+        )

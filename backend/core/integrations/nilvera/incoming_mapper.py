@@ -1,3 +1,4 @@
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -45,7 +46,7 @@ class NilveraIncomingMapper:
         try:
             value = int(raw_value)
         except (TypeError, ValueError):
-            raise NilveraValidationError(f"Incoming invoice response has invalid {field_name}")
+            raise NilveraValidationError(f"Incoming invoice response has invalid {field_name}") from None
 
         if value < 0:
             raise NilveraValidationError(f"Incoming invoice response has invalid {field_name}")
@@ -73,9 +74,10 @@ class NilveraIncomingMapper:
 
         total_pages = cls._parse_non_negative_int(payload, "TotalPages", default=0)
 
-        data_list = payload.get("Data")
-        if data_list is None:
-            data_list = []
+        if "Data" not in payload:
+            raise NilveraValidationError("Incoming invoice response is missing Data")
+
+        data_list = payload["Data"]
         if not isinstance(data_list, list):
             raise NilveraValidationError("'Data' field is not a list in incoming invoices response")
 
@@ -99,13 +101,11 @@ class NilveraIncomingMapper:
         if not uuid_str:
             raise NilveraValidationError("Incoming invoice is missing UUID")
 
-        import uuid
-
         try:
             parsed_uuid = uuid.UUID(str(uuid_str))
             provider_uuid = str(parsed_uuid)
         except (ValueError, TypeError, AttributeError):
-            raise NilveraValidationError("Incoming invoice has invalid UUID format")
+            raise NilveraValidationError("Incoming invoice has invalid UUID format") from None
 
         invoice_number = item.get("InvoiceNumber")
         if not invoice_number:
