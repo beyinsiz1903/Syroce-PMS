@@ -166,6 +166,7 @@ class Invoice(BaseModel):
     buyer_legal_name: str | None = None
     buyer_address: str | None = None
     buyer_city: str | None = None
+    buyer_district: str | None = None
     buyer_country_code: str | None = None
     buyer_country_name: str | None = None
     buyer_tax_office: str | None = None

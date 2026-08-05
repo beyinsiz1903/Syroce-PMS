@@ -110,10 +110,10 @@ async def test_http_400_is_failure(sandbox_client):
     """Verify HTTP 400 (or 422) Validation Error is raised properly."""
     async with sandbox_client as client:
         with pytest.raises(NilveraApiError) as exc_info:
-            # Send empty POST payload which could cause a 400 or 500
+            # Send empty POST payload which should cause a validation error (400 or 422)
             await client.post("/einvoice/Send/Model", json={})
         
-        assert exc_info.value.http_status in (400, 422, 500)
+        assert exc_info.value.http_status in (400, 422)
 
 
 @pytest.mark.external
@@ -204,10 +204,11 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
     seller = SellerSnapshot(
         tax_number=seller_vkn,
         name="TEST KURUM 1",
-        tax_office="TEST VD",
-        country="Türkiye",
-        city="İstanbul",
-        address="Test Mah. Test Sok. No:1"
+        tax_office="GELİR İDARESİ",
+        country="TÜRKİYE",
+        city="ANKARA",
+        district="ÇANKAYA",
+        address="Çankaya Mah. Ankara Bulvarı No:1",
     )
     
     seq = str(uuid.uuid4().int)[:9].zfill(9)
@@ -222,12 +223,14 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
         profile="TICARIFATURA",
         series="TST",
         currency="TRY",
+        exchange_rate=Decimal("1.0"),
         issue_date=datetime.now(UTC),
         buyer_tax_number=buyer_vkn,
         buyer_legal_name="TEST KURUM 2",
-        buyer_country_name="Türkiye",
-        buyer_city="Ankara",
-        buyer_address="Test Alıcı Adres",
+        buyer_country_name="TÜRKİYE",
+        buyer_city="İSTANBUL",
+        buyer_district="ŞİŞLİ",
+        buyer_address="Şişli Merkez Cad.",
         payable_total=Decimal("120.00"),
         line_extension_total=Decimal("100.00"),
         kdv_total=Decimal("20.00"),
@@ -255,11 +258,11 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
     async with sandbox_client as client:
         try:
             submit_res = await client.post("/einvoice/Send/Model", json=payload.model_dump(mode='json', by_alias=True))
-        except NilveraValidationError as e:
+        except NilveraApiError as e:
             raw = getattr(e, 'sanitized_preview', str(e))
             detail = getattr(e, 'sanitized_detail', "")
             desc = getattr(e, 'sanitized_description', "")
-            pytest.fail(f"Invoice submission failed with 400 Validation Error. API Response: {raw} | Desc: {desc} | Detail: {detail}")
+            pytest.fail(f"Invoice submission failed with {e.http_status} Error. API Response: {raw} | Desc: {desc} | Detail: {detail}")
         
         assert "UUID" in submit_res
         assert submit_res["UUID"] != ""
@@ -304,8 +307,6 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
                 pytest.fail(f"Received UNKNOWN status from provider: {raw_status} (Code: {raw_code}). Full response: {status_res}")
         
         if not terminal_status_reached:
-            # Sandbox can be slow; if it successfully stayed PENDING without crashing, 
-            # we consider the contract test successful.
-            return
+            pytest.fail("Timeout: Status remained PENDING after maximum polling attempts")
             
         assert final_outcome in (ProviderInvoiceOutcome.ACCEPTED, ProviderInvoiceOutcome.REJECTED)
