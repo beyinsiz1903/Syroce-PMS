@@ -126,3 +126,21 @@ def test_invalid_decimal_reports_only_safe_lexical_form(raw_value, lexical_form)
     message = str(exc_info.value)
     assert f"lexical_form={lexical_form}" in message
     assert raw_value not in message
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "numeric_form"),
+    [
+        ("NaN", "non_finite"),
+        ("-1.00", "negative"),
+    ],
+)
+def test_invalid_decimal_reports_only_safe_numeric_form(raw_value, numeric_form):
+    content = _invoice_xml().replace(b">20.00</cbc:TaxAmount>", f">{raw_value}</cbc:TaxAmount>".encode(), 1)
+
+    with pytest.raises(NilveraValidationError) as exc_info:
+        NilveraIncomingXmlMapper.map_document(content)
+
+    message = str(exc_info.value)
+    assert f"numeric_form={numeric_form}" in message
+    assert raw_value not in message

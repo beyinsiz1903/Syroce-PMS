@@ -68,8 +68,10 @@ class NilveraIncomingXmlMapper:
         except (InvalidOperation, TypeError):
             lexical_form = cls._decimal_lexical_form(raw)
             raise NilveraValidationError(f"Incoming invoice XML has invalid {field_name} (lexical_form={lexical_form})") from None
-        if not value.is_finite() or value < 0:
-            raise NilveraValidationError(f"Incoming invoice XML has invalid {field_name}")
+        if not value.is_finite():
+            raise NilveraValidationError(f"Incoming invoice XML has invalid {field_name} (numeric_form=non_finite)")
+        if value < 0:
+            raise NilveraValidationError(f"Incoming invoice XML has invalid {field_name} (numeric_form=negative)")
         return value
 
     @staticmethod
