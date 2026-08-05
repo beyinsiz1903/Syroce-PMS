@@ -12,6 +12,7 @@ import pytest_asyncio
 from core.integrations.nilvera.client import NilveraHttpClient
 from core.integrations.nilvera.config import get_nilvera_config
 from core.integrations.nilvera.errors import (
+    NilveraApiError,
     NilveraAuthError,
     NilveraServerError,
     NilveraValidationError,
@@ -295,7 +296,7 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
                 break
             
             if outcome == ProviderInvoiceOutcome.UNKNOWN:
-                pytest.fail(f"Received UNKNOWN status from provider: {raw_status} (Code: {raw_code})")
+                pytest.fail(f"Received UNKNOWN status from provider: {raw_status} (Code: {raw_code}). Full response: {status_res}")
         
         if not terminal_status_reached:
             pytest.fail("Timeout: Status remained PENDING after maximum polling attempts")
