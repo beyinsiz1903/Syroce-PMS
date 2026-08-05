@@ -5,7 +5,7 @@ import pytest
 
 from core.integrations.nilvera.client import NilveraHttpClient
 from core.integrations.nilvera.document_service import NilveraDocumentService
-from core.integrations.nilvera.errors import NilveraValidationError
+from core.integrations.nilvera.errors import NilveraValidationError, NilveraApiError, NilveraAuthError, NilveraNotFoundError
 
 
 @pytest.fixture
@@ -27,7 +27,9 @@ def test_uuid_validation(doc_service):
         doc_service._validate_uuid("invalid-uuid")
 
     valid_uuid = str(uuid.uuid4())
-    assert doc_service._validate_uuid(valid_uuid) == valid_uuid
+    # Should maintain canonical format (lowercase, with dashes)
+    upper_uuid = valid_uuid.upper()
+    assert doc_service._validate_uuid(upper_uuid) == valid_uuid
 
 
 def test_pdf_content_validation(doc_service):
@@ -37,8 +39,12 @@ def test_pdf_content_validation(doc_service):
     with pytest.raises(NilveraValidationError, match="missing magic bytes"):
         doc_service._validate_pdf_content(b"<html></html>")
 
-    # Should pass
+    # Should pass normal
     doc_service._validate_pdf_content(b"%PDF-1.4\ncontent")
+    
+    # Should pass with BOM or whitespaces
+    doc_service._validate_pdf_content(b"\xef\xbb\xbf%PDF-1.4\ncontent")
+    doc_service._validate_pdf_content(b" \t\r\n%PDF-1.4\ncontent")
 
 
 def test_xml_content_validation(doc_service):
@@ -48,11 +54,16 @@ def test_xml_content_validation(doc_service):
     with pytest.raises(NilveraValidationError, match="parsing failed"):
         doc_service._validate_xml_content(b"not xml")
 
-    with pytest.raises(NilveraValidationError, match="Expected Invoice root"):
-        doc_service._validate_xml_content(b"<NotInvoice></NotInvoice>")
+    with pytest.raises(NilveraValidationError, match="Unexpected UBL document root"):
+        doc_service._validate_xml_content(b"<DespatchAdvice></DespatchAdvice>")
+
+    with pytest.raises(NilveraValidationError, match="Unexpected UBL Invoice namespace"):
+        doc_service._validate_xml_content(b"<Invoice></Invoice>")
+
+    with pytest.raises(NilveraValidationError, match="Unexpected UBL Invoice namespace"):
+        doc_service._validate_xml_content(b"<?xml version=\"1.0\"?><Invoice xmlns=\"wrong:namespace\"></Invoice>")
 
     # Should pass
-    doc_service._validate_xml_content(b"<Invoice></Invoice>")
     doc_service._validate_xml_content(b"<?xml version=\"1.0\"?><Invoice xmlns=\"urn:oasis:names:specification:ubl:schema:xsd:Invoice-2\"></Invoice>")
 
 
@@ -62,7 +73,6 @@ async def test_download_sale_pdf(doc_service, mock_http_client):
     invoice_uuid = str(uuid.uuid4())
     
     res = await doc_service.download_sale_pdf(invoice_uuid)
-    
     assert res == b"%PDF-content"
     mock_http_client.get_binary.assert_called_once_with(
         path=f"/einvoice/Sale/{invoice_uuid}/pdf",
@@ -71,14 +81,63 @@ async def test_download_sale_pdf(doc_service, mock_http_client):
 
 
 @pytest.mark.asyncio
+async def test_download_sale_xml(doc_service, mock_http_client):
+    mock_http_client.get_binary.return_value = b"<?xml version=\"1.0\"?><Invoice xmlns=\"urn:oasis:names:specification:ubl:schema:xsd:Invoice-2\"></Invoice>"
+    invoice_uuid = str(uuid.uuid4())
+    
+    res = await doc_service.download_sale_xml(invoice_uuid)
+    assert res.startswith(b"<?xml")
+    mock_http_client.get_binary.assert_called_once_with(
+        path=f"/einvoice/Sale/{invoice_uuid}/xml",
+        expected_content_types=["application/xml", "text/xml", "application/octet-stream"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_download_purchase_pdf(doc_service, mock_http_client):
+    mock_http_client.get_binary.return_value = b"%PDF-content"
+    invoice_uuid = str(uuid.uuid4())
+    
+    res = await doc_service.download_purchase_pdf(invoice_uuid)
+    assert res == b"%PDF-content"
+    mock_http_client.get_binary.assert_called_once_with(
+        path=f"/einvoice/Purchase/{invoice_uuid}/pdf",
+        expected_content_types=["application/pdf", "application/octet-stream"]
+    )
+
+
+@pytest.mark.asyncio
 async def test_download_purchase_xml(doc_service, mock_http_client):
-    mock_http_client.get_binary.return_value = b"<Invoice></Invoice>"
+    mock_http_client.get_binary.return_value = b"<?xml version=\"1.0\"?><Invoice xmlns=\"urn:oasis:names:specification:ubl:schema:xsd:Invoice-2\"></Invoice>"
     invoice_uuid = str(uuid.uuid4())
     
     res = await doc_service.download_purchase_xml(invoice_uuid)
-    
-    assert res == b"<Invoice></Invoice>"
+    assert b"Invoice" in res
     mock_http_client.get_binary.assert_called_once_with(
         path=f"/einvoice/Purchase/{invoice_uuid}/xml",
         expected_content_types=["application/xml", "text/xml", "application/octet-stream"]
     )
+
+
+@pytest.mark.asyncio
+async def test_download_fails_closed_on_http_errors(doc_service, mock_http_client):
+    mock_http_client.get_binary.side_effect = NilveraAuthError("401 Unauthorized")
+    with pytest.raises(NilveraAuthError):
+        await doc_service.download_sale_pdf(str(uuid.uuid4()))
+        
+    mock_http_client.get_binary.side_effect = NilveraNotFoundError("404 Not Found")
+    with pytest.raises(NilveraNotFoundError):
+        await doc_service.download_sale_pdf(str(uuid.uuid4()))
+        
+    mock_http_client.get_binary.side_effect = NilveraApiError("500 Server Error")
+    with pytest.raises(NilveraApiError):
+        await doc_service.download_sale_pdf(str(uuid.uuid4()))
+
+
+@pytest.mark.asyncio
+async def test_download_pdf_validates_octet_stream_magic_bytes(doc_service, mock_http_client):
+    # Simulate client returning octet-stream but content is invalid HTML instead of PDF
+    mock_http_client.get_binary.return_value = b"<html>Not a PDF</html>"
+    
+    with pytest.raises(NilveraValidationError, match="missing magic bytes"):
+        await doc_service.download_sale_pdf(str(uuid.uuid4()))

@@ -1,5 +1,5 @@
 import uuid
-import xml.etree.ElementTree as ET
+from defusedxml import ElementTree as ET
 from typing import Literal
 
 from core.integrations.nilvera.client import NilveraHttpClient
@@ -25,30 +25,34 @@ class NilveraDocumentService:
     def _validate_pdf_content(content: bytes) -> None:
         if not content:
             raise NilveraValidationError("Empty binary response for PDF")
-        
-        # Check magic bytes
-        if not content.startswith(b"%PDF-"):
+
+        # Check magic bytes (ignoring potential BOM or whitespace)
+        if not content.lstrip(b"\xef\xbb\xbf \t\r\n").startswith(b"%PDF-"):
             raise NilveraValidationError("Invalid PDF document: missing magic bytes")
 
     @staticmethod
     def _validate_xml_content(content: bytes) -> None:
         if not content:
             raise NilveraValidationError("Empty binary response for XML")
-        
+
         try:
-            # We don't use full schema validation here, just check if it's parsable XML
-            # and loosely verify if it looks like an invoice structure.
             root = ET.fromstring(content)
-            
-            # Simple heuristic to ensure it is somewhat related to UBL / Invoice
-            tag_name = root.tag.lower()
-            # Handle namespace, e.g. {urn:oasis:names:...}Invoice -> invoice
-            if "}" in tag_name:
-                tag_name = tag_name.split("}", 1)[1]
-            if tag_name not in ("invoice", "despatchadvice"):
-                raise NilveraValidationError(f"Invalid XML document: Expected Invoice root, got {root.tag}")
-        except ET.ParseError as e:
-            raise NilveraValidationError("Invalid XML document: parsing failed") from e
+
+            tag = root.tag
+            if "}" in tag:
+                namespace, local_name = tag.split("}", 1)
+                namespace = namespace.strip("{")
+            else:
+                namespace, local_name = None, tag
+
+            if local_name != "Invoice":
+                raise NilveraValidationError(f"Unexpected UBL document root: {local_name}")
+
+            if namespace != "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2":
+                raise NilveraValidationError(f"Unexpected UBL Invoice namespace: {namespace}")
+
+        except ET.ParseError:
+            raise NilveraValidationError("Invalid XML document: parsing failed") from None
 
     async def _download_document(
         self,
@@ -57,10 +61,10 @@ class NilveraDocumentService:
         direction: Literal["Sale", "Purchase"],
     ) -> bytes:
         clean_uuid = self._validate_uuid(invoice_uuid)
-        
+
         # Endpoint construction based on official Nilvera structure
         path = f"/einvoice/{direction}/{clean_uuid}/{doc_type}"
-        
+
         expected_types = []
         if doc_type == "pdf":
             expected_types = ["application/pdf", "application/octet-stream"]
@@ -76,7 +80,7 @@ class NilveraDocumentService:
             self._validate_pdf_content(content)
         elif doc_type == "xml":
             self._validate_xml_content(content)
-            
+
         return content
 
     async def download_sale_pdf(self, invoice_uuid: str) -> bytes:
