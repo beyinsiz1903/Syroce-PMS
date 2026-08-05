@@ -84,3 +84,86 @@ async def test_fetch_incoming_invoices_fails_if_invalid_page_size(incoming_servi
     end = datetime(2023, 10, 2, tzinfo=UTC)
     with pytest.raises(NilveraValidationError, match="page_size must be between 1 and 100"):
         await incoming_service.fetch_incoming_invoices(start, end, page=1, page_size=101)
+
+
+@pytest.mark.asyncio
+async def test_fetch_incoming_invoice_detail_uses_canonical_uuid(
+    incoming_service,
+    mock_http_client,
+):
+    provider_uuid = "123E4567-E89B-12D3-A456-426614174000"
+    mock_http_client.get.return_value = {
+        "UUID": provider_uuid,
+        "InvoiceType": "SATIS",
+        "InvoiceProfile": "TICARIFATURA",
+        "InvoiceNumber": "TEST-INVOICE",
+        "SendDate": "2023-10-01T12:05:00Z",
+        "IssueDate": "2023-10-01T12:00:00Z",
+        "CurrencyCode": "TRY",
+        "NumberOfItems": 1,
+        "InvoiceAmount": 100,
+        "TaxAmount": 20,
+        "AnswerCode": "unknown",
+    }
+
+    detail = await incoming_service.fetch_incoming_invoice_detail(provider_uuid)
+
+    assert detail.provider_uuid == provider_uuid.lower()
+    mock_http_client.get.assert_awaited_once_with(f"/einvoice/Purchase/{provider_uuid.lower()}/Details")
+
+
+@pytest.mark.asyncio
+async def test_fetch_incoming_invoice_detail_rejects_uuid_mismatch(
+    incoming_service,
+    mock_http_client,
+):
+    requested_uuid = "123e4567-e89b-12d3-a456-426614174000"
+    mock_http_client.get.return_value = {
+        "UUID": "123e4567-e89b-12d3-a456-426614174001",
+        "InvoiceType": "SATIS",
+        "InvoiceProfile": "TICARIFATURA",
+        "InvoiceNumber": "TEST-INVOICE",
+        "SendDate": "2023-10-01T12:05:00Z",
+        "IssueDate": "2023-10-01T12:00:00Z",
+        "CurrencyCode": "TRY",
+        "NumberOfItems": 1,
+        "InvoiceAmount": 100,
+        "TaxAmount": 20,
+        "AnswerCode": "unknown",
+    }
+
+    with pytest.raises(NilveraValidationError, match="UUID mismatch"):
+        await incoming_service.fetch_incoming_invoice_detail(requested_uuid)
+
+
+@pytest.mark.asyncio
+async def test_fetch_incoming_invoice_status_uses_documented_endpoint(
+    incoming_service,
+    mock_http_client,
+):
+    provider_uuid = "123e4567-e89b-12d3-a456-426614174000"
+    mock_http_client.get.return_value = {
+        "InvoiceProfile": "TICARIFATURA",
+        "IssueDate": "2023-10-01T12:00:00Z",
+        "Answer": {"AnswerCode": "unknown"},
+        "InvoiceStatus": {"Code": "Success"},
+        "EnvelopeInfo": {"GIBCode": 1200, "CreatedDate": "2023-10-01T12:06:00Z"},
+    }
+
+    status = await incoming_service.fetch_incoming_invoice_status(provider_uuid)
+
+    assert status.status_code == "Success"
+    mock_http_client.get.assert_awaited_once_with(f"/einvoice/Purchase/{provider_uuid}/Status")
+
+
+@pytest.mark.asyncio
+async def test_incoming_read_methods_reject_invalid_uuid_without_http_call(
+    incoming_service,
+    mock_http_client,
+):
+    with pytest.raises(NilveraValidationError, match="UUID is invalid"):
+        await incoming_service.fetch_incoming_invoice_detail("not-a-uuid")
+    with pytest.raises(NilveraValidationError, match="UUID is invalid"):
+        await incoming_service.fetch_incoming_invoice_status("not-a-uuid")
+
+    mock_http_client.get.assert_not_awaited()

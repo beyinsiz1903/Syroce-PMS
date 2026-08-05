@@ -26,6 +26,7 @@ class NilveraSettings(BaseModel):
 
 class NilveraEndpoints:
     """Official Nilvera API endpoints (V1)."""
+
     # Company / Taxpayer lookups
     CHECK_TAX_NUMBER = "/general/GlobalCompany/Check/TaxNumber/{tax_number}"
     GET_CUSTOMER_INFO = "/general/GlobalCompany/GetGlobalCustomerInfo/{tax_number}"
@@ -36,6 +37,9 @@ class NilveraEndpoints:
     GET_SALE_INVOICE_DETAIL = "/einvoice/Sale/{uuid}/Details"
 
     # E-Invoice Purchase (Incoming)
+    LIST_PURCHASE_INVOICES = "/einvoice/Purchase"
+    GET_PURCHASE_INVOICE_DETAIL = "/einvoice/Purchase/{uuid}/Details"
+    GET_PURCHASE_INVOICE_STATUS = "/einvoice/Purchase/{uuid}/Status"
     SEND_ANSWER = "/einvoice/Purchase/SendAnswer"
 
 

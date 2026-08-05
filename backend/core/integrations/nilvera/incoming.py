@@ -1,13 +1,27 @@
+import uuid
 from datetime import datetime, timedelta
 
 from core.integrations.nilvera.client import NilveraHttpClient
+from core.integrations.nilvera.config import NilveraEndpoints
 from core.integrations.nilvera.errors import NilveraValidationError
-from core.integrations.nilvera.incoming_mapper import IncomingInvoicePage, NilveraIncomingMapper
+from core.integrations.nilvera.incoming_mapper import (
+    IncomingInvoiceDetail,
+    IncomingInvoicePage,
+    IncomingInvoiceStatus,
+    NilveraIncomingMapper,
+)
 
 
 class NilveraIncomingService:
     def __init__(self, client: NilveraHttpClient):
         self._client = client
+
+    @staticmethod
+    def _validate_provider_uuid(provider_uuid: str) -> str:
+        try:
+            return str(uuid.UUID(provider_uuid))
+        except (AttributeError, TypeError, ValueError):
+            raise NilveraValidationError("Incoming invoice UUID is invalid") from None
 
     async def fetch_incoming_invoices(
         self,
@@ -49,7 +63,29 @@ class NilveraIncomingService:
         }
 
         # Do not log the raw response or its JSON payload to avoid PII leaks
-        response_json = await self._client.get("/einvoice/Purchase", params=query_params)
+        response_json = await self._client.get(
+            NilveraEndpoints.LIST_PURCHASE_INVOICES,
+            params=query_params,
+        )
 
         # Delegate parsing and fail-closed security to the offline mapper
         return NilveraIncomingMapper.map_page(response_json, page=page, page_size=page_size)
+
+    async def fetch_incoming_invoice_detail(
+        self,
+        provider_uuid: str,
+    ) -> IncomingInvoiceDetail:
+        normalized_uuid = self._validate_provider_uuid(provider_uuid)
+        payload = await self._client.get(NilveraEndpoints.GET_PURCHASE_INVOICE_DETAIL.format(uuid=normalized_uuid))
+        detail = NilveraIncomingMapper.map_detail(payload)
+        if detail.provider_uuid != normalized_uuid:
+            raise NilveraValidationError("Incoming invoice detail UUID mismatch")
+        return detail
+
+    async def fetch_incoming_invoice_status(
+        self,
+        provider_uuid: str,
+    ) -> IncomingInvoiceStatus:
+        normalized_uuid = self._validate_provider_uuid(provider_uuid)
+        payload = await self._client.get(NilveraEndpoints.GET_PURCHASE_INVOICE_STATUS.format(uuid=normalized_uuid))
+        return NilveraIncomingMapper.map_status(payload)

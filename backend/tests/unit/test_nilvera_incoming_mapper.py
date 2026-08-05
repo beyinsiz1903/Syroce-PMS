@@ -297,3 +297,129 @@ def test_map_page_fails_when_data_is_missing():
             page=1,
             page_size=100,
         )
+
+
+def _incoming_detail_payload() -> dict:
+    return {
+        "UUID": "123e4567-e89b-12d3-a456-426614174000",
+        "InvoiceType": "SATIS",
+        "InvoiceProfile": "TICARIFATURA",
+        "InvoiceNumber": "TEST-INVOICE",
+        "SendDate": "2023-10-01T12:05:00Z",
+        "IssueDate": "2023-10-01T12:00:00Z",
+        "CurrencyCode": "TRY",
+        "NumberOfItems": 2,
+        "InvoiceAmount": "120.00",
+        "TaxAmount": "20.00",
+        "AnswerCode": "unknown",
+    }
+
+
+def _incoming_status_payload() -> dict:
+    return {
+        "InvoiceProfile": "TICARIFATURA",
+        "IssueDate": "2023-10-01T12:00:00Z",
+        "Answer": {"AnswerCode": "unknown"},
+        "InvoiceStatus": {"Code": "Success"},
+        "EnvelopeInfo": {
+            "GIBCode": 1200,
+            "CreatedDate": "2023-10-01T12:06:00Z",
+        },
+    }
+
+
+def test_map_incoming_detail_contract():
+    detail = NilveraIncomingMapper.map_detail(_incoming_detail_payload())
+
+    assert detail.provider_uuid == "123e4567-e89b-12d3-a456-426614174000"
+    assert detail.invoice_profile == "TICARIFATURA"
+    assert detail.issue_date == datetime(2023, 10, 1, 12, tzinfo=UTC)
+    assert detail.issue_date_timezone_assumed is False
+    assert detail.invoice_amount == Decimal("120.00")
+    assert detail.tax_amount == Decimal("20.00")
+
+
+def test_map_incoming_status_contract():
+    status = NilveraIncomingMapper.map_status(_incoming_status_payload())
+
+    assert status.invoice_profile == "TICARIFATURA"
+    assert status.issue_date == datetime(2023, 10, 1, 12, tzinfo=UTC)
+    assert status.answer_code == "unknown"
+    assert status.status_code == "Success"
+    assert status.gib_code == "1200"
+
+
+def test_map_incoming_status_allows_unanswered_invoice():
+    payload = _incoming_status_payload()
+    payload["Answer"] = None
+
+    status = NilveraIncomingMapper.map_status(payload)
+
+    assert status.answer_code is None
+    assert status.status_code == "Success"
+
+
+def test_map_incoming_status_rejects_invalid_answer_type():
+    payload = _incoming_status_payload()
+    payload["Answer"] = "unexpected"
+
+    with pytest.raises(NilveraValidationError, match="invalid Answer"):
+        NilveraIncomingMapper.map_status(payload)
+
+
+@pytest.mark.parametrize("mapper_name", ["map_detail", "map_status"])
+def test_only_issue_date_may_assume_europe_istanbul(mapper_name):
+    payload = _incoming_detail_payload() if mapper_name == "map_detail" else _incoming_status_payload()
+    payload["IssueDate"] = "2023-10-01T12:00:00"
+
+    mapped = getattr(NilveraIncomingMapper, mapper_name)(payload)
+
+    assert mapped.issue_date_timezone_assumed is True
+    assert str(mapped.issue_date.tzinfo) == "Europe/Istanbul"
+
+
+def test_non_issue_date_fields_are_not_used_as_date_fallbacks():
+    detail_payload = _incoming_detail_payload()
+    detail_payload["SendDate"] = "provider-specific-date"
+    status_payload = _incoming_status_payload()
+    status_payload["EnvelopeInfo"]["CreatedDate"] = "provider-specific-date"
+
+    detail = NilveraIncomingMapper.map_detail(detail_payload)
+    status = NilveraIncomingMapper.map_status(status_payload)
+
+    assert detail.issue_date == datetime(2023, 10, 1, 12, tzinfo=UTC)
+    assert status.issue_date == datetime(2023, 10, 1, 12, tzinfo=UTC)
+    assert not hasattr(detail, "send_date")
+    assert not hasattr(status, "envelope_created_date")
+
+
+@pytest.mark.parametrize(
+    ("field_name", "invalid_value"),
+    [
+        ("UUID", "not-a-uuid"),
+        ("NumberOfItems", -1),
+        ("InvoiceAmount", "Infinity"),
+        ("TaxAmount", -1),
+    ],
+)
+def test_detail_rejects_invalid_contract_fields_without_echoing_values(
+    field_name,
+    invalid_value,
+):
+    payload = _incoming_detail_payload()
+    payload[field_name] = invalid_value
+
+    with pytest.raises(NilveraValidationError) as exc_info:
+        NilveraIncomingMapper.map_detail(payload)
+
+    assert str(invalid_value) not in str(exc_info.value)
+    assert field_name in str(exc_info.value)
+
+
+@pytest.mark.parametrize("missing_object", ["InvoiceStatus", "EnvelopeInfo"])
+def test_status_requires_documented_nested_objects(missing_object):
+    payload = _incoming_status_payload()
+    payload.pop(missing_object)
+
+    with pytest.raises(NilveraValidationError, match=f"invalid {missing_object}"):
+        NilveraIncomingMapper.map_status(payload)

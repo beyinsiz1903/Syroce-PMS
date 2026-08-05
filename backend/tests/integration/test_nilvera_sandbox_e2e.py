@@ -17,6 +17,7 @@ from core.integrations.nilvera.errors import (
     NilveraAuthError,
     NilveraServerError,
 )
+from core.integrations.nilvera.incoming import NilveraIncomingService
 from core.integrations.nilvera.mapper import NilveraInvoiceMapper, SellerSnapshot
 from core.integrations.nilvera.status_mapper import ProviderInvoiceOutcome, map_nilvera_status
 from core.integrations.nilvera.taxpayer import NilveraTaxpayerService
@@ -338,42 +339,40 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
 @pytest.mark.external
 async def test_sandbox_incoming_invoice_discovery(sandbox_client):
     """
-    Test GET /einvoice/Purchase to discover the structure and ensure HTTP 200.
+    Verify incoming list, detail, status, PDF and XML read contracts without
+    exposing provider payloads or invoice identifiers in failure output.
     """
     from datetime import timedelta
 
     end_date = datetime.now(UTC)
-    start_date = end_date - timedelta(days=7)
-
-    query_params = {
-        "StartDate": start_date.isoformat(),
-        "EndDate": end_date.isoformat(),
-        "Page": "1",
-        "PageSize": "5",
-    }
+    start_date = end_date - timedelta(days=31)
 
     async with sandbox_client as client:
-        response_json = await client.get("/einvoice/Purchase", params=query_params)
+        incoming_service = NilveraIncomingService(client)
+        page = await incoming_service.fetch_incoming_invoices(
+            start_date,
+            end_date,
+            page=1,
+            page_size=5,
+        )
+        if not page.items:
+            pytest.fail("Incoming read contracts could not be verified because the configured Sandbox tenant has no invoice in the 31-day window")
 
-        # Verify basic expected top-level schema structure
-        if not isinstance(response_json, dict):
-            pytest.fail(f"Incoming invoice endpoint returned an invalid response type: {type(response_json).__name__}")
+        provider_uuid = page.items[0].provider_uuid
+        detail = await incoming_service.fetch_incoming_invoice_detail(provider_uuid)
+        status = await incoming_service.fetch_incoming_invoice_status(provider_uuid)
 
-        # Officially we expect "Content", fail if absent or mis-cased
-        if "Content" not in response_json:
-            pytest.fail("Incoming invoice response is missing the Content field")
+        if detail.provider_uuid != provider_uuid:
+            pytest.fail("Incoming detail returned a different document identity")
+        if detail.issue_date.tzinfo is None or status.issue_date.tzinfo is None:
+            pytest.fail("Incoming detail or status returned a naive IssueDate")
+        if not status.status_code:
+            pytest.fail("Incoming status response is missing its status code")
 
-        content = response_json["Content"]
-        if not isinstance(content, list):
-            pytest.fail(f"Incoming invoice Content has an invalid type: {type(content).__name__}")
-
-        from core.integrations.nilvera.incoming_mapper import IncomingInvoicePage, NilveraIncomingMapper
-
-        page = NilveraIncomingMapper.map_page(response_json, page=1, page_size=5)
-
-        if not isinstance(page, IncomingInvoicePage):
-            pytest.fail("Incoming invoice mapper returned an invalid page type")
-        if len(page.items) != len(content):
-            pytest.fail("Incoming invoice mapper returned an unexpected item count")
-        if any(item.issue_date.tzinfo is None for item in page.items):
-            pytest.fail("Incoming invoice mapper returned a naive IssueDate")
+        doc_service = NilveraDocumentService(client)
+        purchase_pdf = await doc_service.download_purchase_pdf(provider_uuid)
+        purchase_xml = await doc_service.download_purchase_xml(provider_uuid)
+        if not purchase_pdf.startswith(b"%PDF-"):
+            pytest.fail("Incoming PDF document has an invalid signature")
+        if b"Invoice" not in purchase_xml and b"invoice" not in purchase_xml:
+            pytest.fail("Incoming XML document does not contain an invoice root")
