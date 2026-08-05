@@ -45,7 +45,8 @@ async def initialize_balances_for_invoice(tenant_id: str, incoming_invoice_id: s
 
     lines_cursor = db.incoming_invoice_lines.find({
         "tenant_id": tenant_id,
-        "incoming_invoice_id": incoming_invoice_id
+        "incoming_invoice_id": incoming_invoice_id,
+        "active": {"$ne": False},
     })
 
     balances_to_insert = []

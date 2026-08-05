@@ -21,6 +21,17 @@ class IncomingInvoiceAnswerStatus(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
+class IncomingInvoiceProviderStatus(StrEnum):
+    UNKNOWN = "UNKNOWN"
+    WAITING = "WAITING"
+    SUCCEED = "SUCCEED"
+    ERROR = "ERROR"
+
+
+class IncomingTaxDetail(TaxDetail):
+    is_deduction: bool = False
+
+
 class IncomingInvoice(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -36,10 +47,13 @@ class IncomingInvoice(BaseModel):
     sender_title: str
     profile: IncomingInvoiceProfile
     answer_status: IncomingInvoiceAnswerStatus
+    provider_status: IncomingInvoiceProviderStatus = IncomingInvoiceProviderStatus.UNKNOWN
+    provider_gib_code: str | None = None
     issue_date: datetime
+    issue_date_timezone_assumed: bool = False
     received_at: datetime
 
-    payable_amount: float | None = None
+    payable_amount: Decimal | None = None
     currency: str | None = None
 
     created_at: datetime
@@ -65,9 +79,10 @@ class IncomingInvoiceLine(BaseModel):
 
     kdv_rate: Decimal
     kdv_amount: Decimal
-    other_taxes: list[TaxDetail] = Field(default_factory=list)
+    other_taxes: list[IncomingTaxDetail] = Field(default_factory=list)
 
     currency: str
+    active: bool = True
     created_at: datetime
     updated_at: datetime
     version: int = 1

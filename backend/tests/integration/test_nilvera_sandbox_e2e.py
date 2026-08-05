@@ -9,6 +9,7 @@ import httpx
 import pytest
 import pytest_asyncio
 
+from core.integrations.incoming_invoice_sync_service import IncomingInvoiceSyncService
 from core.integrations.nilvera.client import NilveraHttpClient
 from core.integrations.nilvera.config import get_nilvera_config
 from core.integrations.nilvera.document_service import NilveraDocumentService
@@ -376,3 +377,64 @@ async def test_sandbox_incoming_invoice_discovery(sandbox_client):
             pytest.fail("Incoming PDF document has an invalid signature")
         if b"Invoice" not in purchase_xml and b"invoice" not in purchase_xml:
             pytest.fail("Incoming XML document does not contain an invoice root")
+
+
+@pytest.mark.external
+async def test_sandbox_incoming_invoice_sync_is_idempotent(sandbox_client):
+    """Persist real Sandbox reads twice in an isolated local tenant."""
+    from datetime import timedelta
+
+    mongo_url = os.environ.get("MONGO_URL", "")
+    if "localhost" not in mongo_url and "127.0.0.1" not in mongo_url:
+        pytest.fail("Incoming persistence E2E requires the isolated local Mongo service")
+
+    from bootstrap.migrations.versions.v005_incoming_invoice_lifecycle import MIGRATION as v005
+    from bootstrap.migrations.versions.v007_f2_create_return_models import MIGRATION as v007
+    from bootstrap.migrations.versions.v009_incoming_invoice_sync import MIGRATION as v009
+    from core.database import _raw_db
+    from core.tenant_db import get_db_for_tenant
+
+    await v005.up(_raw_db)
+    await v007.up(_raw_db)
+    await v009.up(_raw_db)
+
+    tenant_id = f"nilvera-sandbox-e2e-{uuid.uuid4().hex}"
+    tenant_db = get_db_for_tenant(tenant_id)
+    end_date = datetime.now(UTC)
+    start_date = end_date - timedelta(days=31)
+    try:
+        async with sandbox_client as client:
+            first = await IncomingInvoiceSyncService.sync_tenant(
+                tenant_id,
+                start_date,
+                end_date,
+                client=client,
+            )
+            second = await IncomingInvoiceSyncService.sync_tenant(
+                tenant_id,
+                start_date,
+                end_date,
+                client=client,
+            )
+
+        if first.invoices_seen == 0:
+            pytest.fail("Incoming persistence could not be verified because no Sandbox invoice was available")
+        if first.unknown_invoices or first.pending_invoices or first.provider_error_invoices:
+            pytest.fail("Incoming persistence encountered a non-success provider status")
+        if second.invoices_created or second.invoices_changed:
+            pytest.fail("The second incoming synchronization changed an unchanged invoice")
+        if second.lines_created or second.lines_changed or second.lines_deactivated:
+            pytest.fail("The second incoming synchronization changed unchanged invoice lines")
+
+        invoice_count = await tenant_db.incoming_invoices.count_documents({})
+        line_count = await tenant_db.incoming_invoice_lines.count_documents(
+            {"active": {"$ne": False}}
+        )
+        if invoice_count != first.invoices_seen:
+            pytest.fail("Incoming synchronization did not persist exactly one record per provider invoice")
+        if line_count == 0:
+            pytest.fail("Incoming synchronization did not persist invoice lines")
+    finally:
+        await tenant_db.incoming_invoice_lines.delete_many({})
+        await tenant_db.incoming_invoices.delete_many({})
+        await tenant_db.incoming_invoice_sync_state.delete_many({})

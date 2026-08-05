@@ -70,6 +70,7 @@ async def phase_e_outbox_and_eventbus(app):
     from core.integrations.nilvera.config import get_nilvera_config
 
     try:
+        from core.integrations.incoming_invoice_sync_worker import incoming_invoice_sync_worker
         from core.integrations.invoice_dispatch_worker import invoice_dispatch_worker
         from core.integrations.invoice_lifecycle_worker import invoice_lifecycle_worker
         from core.integrations.invoice_reconciliation_worker import invoice_reconciliation_worker
@@ -79,7 +80,8 @@ async def phase_e_outbox_and_eventbus(app):
             invoice_dispatch_worker,
             invoice_status_worker,
             invoice_reconciliation_worker,
-            invoice_lifecycle_worker
+            invoice_lifecycle_worker,
+            incoming_invoice_sync_worker,
         ]
 
         cfg = get_nilvera_config()
@@ -109,6 +111,7 @@ async def phase_e_outbox_and_eventbus(app):
         app.state.invoice_status_worker = invoice_status_worker
         app.state.invoice_reconciliation_worker = invoice_reconciliation_worker
         app.state.invoice_lifecycle_worker = invoice_lifecycle_worker
+        app.state.incoming_invoice_sync_worker = incoming_invoice_sync_worker
     except Exception as e:
         if type(e).__name__ != "ValueError":  # Config parsing error usually raises ValueError
             logger.error(f"❌ Failed to initialize Nilvera integration: {type(e).__name__}")

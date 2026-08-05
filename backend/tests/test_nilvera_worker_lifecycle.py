@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from bootstrap.phases.e_outbox import phase_e_outbox_and_eventbus
+from core.integrations.incoming_invoice_sync_worker import IncomingInvoiceSyncWorker
 from core.integrations.invoice_dispatch_worker import InvoiceDispatchWorker
 from core.integrations.invoice_lifecycle_worker import InvoiceLifecycleWorker
 from core.integrations.invoice_reconciliation_worker import InvoiceReconciliationWorker
@@ -22,17 +23,19 @@ def mock_workers():
     status = InvoiceStatusWorker()
     recon = InvoiceReconciliationWorker()
     lifecycle = InvoiceLifecycleWorker()
+    incoming = IncomingInvoiceSyncWorker()
 
     # Configure all to enabled by default for tests
     dispatch.configure(enabled=True)
     status.configure(enabled=True)
     recon.configure(enabled=True)
     lifecycle.configure(enabled=True)
+    incoming.configure(enabled=True)
 
-    yield [dispatch, status, recon, lifecycle]
+    yield [dispatch, status, recon, lifecycle, incoming]
 
     # Cleanup tasks
-    for w in [dispatch, status, recon, lifecycle]:
+    for w in [dispatch, status, recon, lifecycle, incoming]:
         w._stop_event.set()
         if w._task:
             w._task.cancel()
