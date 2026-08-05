@@ -53,7 +53,7 @@ def test_xml_content_validation(doc_service):
     with pytest.raises(NilveraValidationError, match="Empty binary response"):
         doc_service._validate_xml_content(b"")
 
-    with pytest.raises(NilveraValidationError, match="parsing failed"):
+    with pytest.raises(NilveraValidationError, match="parsing failed. Snippet:"):
         doc_service._validate_xml_content(b"not xml")
 
     with pytest.raises(NilveraValidationError, match="Unexpected UBL document root"):

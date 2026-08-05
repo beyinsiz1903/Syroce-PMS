@@ -53,7 +53,8 @@ class NilveraDocumentService:
                 raise NilveraValidationError(f"Unexpected UBL Invoice namespace: {namespace}")
 
         except ET.ParseError:
-            raise NilveraValidationError("Invalid XML document: parsing failed") from None
+            snippet = repr(content[:100])
+            raise NilveraValidationError(f"Invalid XML document: parsing failed. Snippet: {snippet}") from None
 
     async def _download_document(
         self,
