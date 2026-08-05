@@ -45,7 +45,7 @@ class NilveraIncomingService:
             "StartDate": start_date_str,
             "EndDate": end_date_str,
             "Page": str(page),
-            "Take": str(page_size),
+            "PageSize": str(page_size),
         }
 
         # Do not log the raw response or its JSON payload to avoid PII leaks

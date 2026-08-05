@@ -37,9 +37,19 @@ class NilveraIncomingMapper:
         if not isinstance(payload, dict):
             raise NilveraValidationError("Payload is not a JSON object")
 
-        # Fallback to standard pagination metadata if strictly typed
-        total_count = payload.get("TotalCount") or payload.get("Total") or 0
-        total_pages = payload.get("TotalPages") or 0
+        try:
+            total_count = int(payload.get("TotalCount") or payload.get("Total") or 0)
+            if total_count < 0:
+                total_count = 0
+        except (ValueError, TypeError):
+            total_count = 0
+
+        try:
+            total_pages = int(payload.get("TotalPages") or 0)
+            if total_pages < 0:
+                total_pages = 0
+        except (ValueError, TypeError):
+            total_pages = 0
 
         data_list = payload.get("Data", [])
         if not isinstance(data_list, list):
@@ -61,9 +71,17 @@ class NilveraIncomingMapper:
 
     @classmethod
     def _map_item(cls, item: dict) -> IncomingInvoiceSummary:
-        uuid = item.get("UUID") or item.get("Id")
-        if not uuid:
+        uuid_str = item.get("UUID") or item.get("Id")
+        if not uuid_str:
             raise NilveraValidationError("Incoming invoice is missing UUID")
+
+        import uuid
+
+        try:
+            parsed_uuid = uuid.UUID(str(uuid_str))
+            provider_uuid = str(parsed_uuid)
+        except (ValueError, TypeError, AttributeError):
+            raise NilveraValidationError("Incoming invoice has invalid UUID format")
 
         invoice_number = item.get("InvoiceNumber")
         if not invoice_number:
@@ -88,7 +106,13 @@ class NilveraIncomingMapper:
 
         try:
             payable_amount = Decimal(str(raw_amount))
+            if not payable_amount.is_finite():
+                raise NilveraValidationError("Incoming invoice has invalid PayableAmount format")
+            if payable_amount < 0:
+                raise NilveraValidationError("Incoming invoice has invalid PayableAmount")
         except Exception as e:
+            if isinstance(e, NilveraValidationError):
+                raise
             raise NilveraValidationError("Incoming invoice has invalid PayableAmount format") from e
 
         currency = item.get("Currency")
@@ -96,7 +120,7 @@ class NilveraIncomingMapper:
             raise NilveraValidationError("Incoming invoice is missing Currency")
 
         return IncomingInvoiceSummary(
-            provider_uuid=str(uuid),
+            provider_uuid=provider_uuid,
             invoice_number=str(invoice_number),
             issue_date=issue_date,
             payable_amount=payable_amount,

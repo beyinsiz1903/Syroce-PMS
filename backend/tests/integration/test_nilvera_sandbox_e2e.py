@@ -329,7 +329,6 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
 
 
 @pytest.mark.external
-@pytest.mark.side_effect
 async def test_sandbox_incoming_invoice_discovery(sandbox_client):
     """
     Test GET /einvoice/Purchase to discover the structure and ensure HTTP 200.
@@ -343,7 +342,7 @@ async def test_sandbox_incoming_invoice_discovery(sandbox_client):
         "StartDate": start_date.isoformat(),
         "EndDate": end_date.isoformat(),
         "Page": "1",
-        "Take": "5",
+        "PageSize": "5",
     }
 
     async with sandbox_client as client:
@@ -357,3 +356,8 @@ async def test_sandbox_incoming_invoice_discovery(sandbox_client):
 
         data = response_json.get("Data", response_json.get("data", []))
         assert isinstance(data, list)
+
+        from core.integrations.nilvera.incoming_mapper import IncomingInvoicePage, NilveraIncomingMapper
+
+        page = NilveraIncomingMapper.map_page(response_json, page=1, page_size=5)
+        assert isinstance(page, IncomingInvoicePage)

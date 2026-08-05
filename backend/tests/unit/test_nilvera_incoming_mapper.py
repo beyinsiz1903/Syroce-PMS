@@ -131,3 +131,58 @@ def test_map_page_strips_pii_from_errors():
     assert "9999999999" not in err_str
     assert "1000000.50" not in err_str
     assert "invalid IssueDate" in err_str
+
+
+def test_map_page_fails_on_invalid_uuid_format():
+    payload = {
+        "Data": [
+            {
+                "UUID": "invalid-uuid",
+                "InvoiceNumber": "ABC2023000000001",
+                "IssueDate": "2023-10-01T12:00:00.000Z",
+                "PayableAmount": 100.50,
+                "Currency": "TRY",
+            }
+        ]
+    }
+    with pytest.raises(NilveraValidationError, match="invalid UUID format"):
+        NilveraIncomingMapper.map_page(payload, page=1, page_size=100)
+
+
+def test_map_page_fails_on_negative_amount():
+    payload = {
+        "Data": [
+            {
+                "UUID": "123e4567-e89b-12d3-a456-426614174000",
+                "InvoiceNumber": "ABC2023000000001",
+                "IssueDate": "2023-10-01T12:00:00.000Z",
+                "PayableAmount": -100.50,
+                "Currency": "TRY",
+            }
+        ]
+    }
+    with pytest.raises(NilveraValidationError, match="invalid PayableAmount"):
+        NilveraIncomingMapper.map_page(payload, page=1, page_size=100)
+
+
+def test_map_page_fails_on_infinite_amount():
+    payload = {
+        "Data": [
+            {
+                "UUID": "123e4567-e89b-12d3-a456-426614174000",
+                "InvoiceNumber": "ABC2023000000001",
+                "IssueDate": "2023-10-01T12:00:00.000Z",
+                "PayableAmount": "Infinity",
+                "Currency": "TRY",
+            }
+        ]
+    }
+    with pytest.raises(NilveraValidationError, match="invalid PayableAmount format"):
+        NilveraIncomingMapper.map_page(payload, page=1, page_size=100)
+
+
+def test_map_page_handles_invalid_pagination_metadata():
+    payload = {"TotalCount": "invalid", "TotalPages": -5, "Data": []}
+    page = NilveraIncomingMapper.map_page(payload, page=1, page_size=100)
+    assert page.total_count == 0
+    assert page.total_pages == 0

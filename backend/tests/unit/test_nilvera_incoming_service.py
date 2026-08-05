@@ -41,7 +41,7 @@ async def test_fetch_incoming_invoices_success(incoming_service, mock_http_clien
             "StartDate": "2023-10-01T00:00:00+00:00",
             "EndDate": "2023-10-31T00:00:00+00:00",
             "Page": "2",
-            "Take": "50",
+            "PageSize": "50",
         },
     )
 
