@@ -110,14 +110,16 @@ class NilveraIncomingMapper:
             return None, False
         if not required and isinstance(raw_value, str) and not raw_value.strip():
             return None, False
-        if not isinstance(raw_value, str) or not raw_value.strip():
+        if not isinstance(raw_value, str):
+            raise NilveraValidationError(f"Incoming invoice response has invalid {field_name} type")
+        if not raw_value.strip():
             raise NilveraValidationError(f"Incoming invoice response has invalid {field_name}")
 
         normalized = f"{raw_value[:-1]}+00:00" if raw_value.endswith("Z") else raw_value
         try:
             parsed = datetime.fromisoformat(normalized)
         except ValueError:
-            raise NilveraValidationError(f"Incoming invoice response has invalid {field_name}") from None
+            raise NilveraValidationError(f"Incoming invoice response has unsupported {field_name} format") from None
 
         if parsed.tzinfo is None:
             if assume_istanbul_for_naive_issue_date and field_name == "IssueDate":
