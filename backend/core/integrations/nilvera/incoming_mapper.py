@@ -51,7 +51,7 @@ class IncomingInvoiceStatus:
     invoice_profile: str
     issue_date: datetime
     issue_date_timezone_assumed: bool
-    answer_code: str
+    answer_code: str | None
     status_code: str
     gib_code: str | None
 
@@ -283,7 +283,9 @@ class NilveraIncomingMapper:
         if not isinstance(payload, dict):
             raise NilveraValidationError("Incoming invoice status is not a JSON object")
 
-        answer = cls._require_object(payload, "Answer")
+        answer = payload.get("Answer")
+        if answer is not None and not isinstance(answer, dict):
+            raise NilveraValidationError("Incoming invoice response has invalid Answer")
         invoice_status = cls._require_object(payload, "InvoiceStatus")
         envelope_info = cls._require_object(payload, "EnvelopeInfo")
         issue_date, issue_date_assumed = cls._parse_issue_date(payload)
@@ -293,7 +295,7 @@ class NilveraIncomingMapper:
             invoice_profile=cls._require_string(payload, "InvoiceProfile"),
             issue_date=issue_date,
             issue_date_timezone_assumed=issue_date_assumed,
-            answer_code=cls._require_string(answer, "AnswerCode"),
+            answer_code=(cls._require_string(answer, "AnswerCode") if answer is not None else None),
             status_code=cls._require_string(invoice_status, "Code"),
             gib_code=str(gib_code) if gib_code is not None else None,
         )

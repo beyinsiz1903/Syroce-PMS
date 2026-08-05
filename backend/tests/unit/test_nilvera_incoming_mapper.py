@@ -349,6 +349,24 @@ def test_map_incoming_status_contract():
     assert status.gib_code == "1200"
 
 
+def test_map_incoming_status_allows_unanswered_invoice():
+    payload = _incoming_status_payload()
+    payload["Answer"] = None
+
+    status = NilveraIncomingMapper.map_status(payload)
+
+    assert status.answer_code is None
+    assert status.status_code == "Success"
+
+
+def test_map_incoming_status_rejects_invalid_answer_type():
+    payload = _incoming_status_payload()
+    payload["Answer"] = "unexpected"
+
+    with pytest.raises(NilveraValidationError, match="invalid Answer"):
+        NilveraIncomingMapper.map_status(payload)
+
+
 @pytest.mark.parametrize("mapper_name", ["map_detail", "map_status"])
 def test_only_issue_date_may_assume_europe_istanbul(mapper_name):
     payload = _incoming_detail_payload() if mapper_name == "map_detail" else _incoming_status_payload()
@@ -398,7 +416,7 @@ def test_detail_rejects_invalid_contract_fields_without_echoing_values(
     assert field_name in str(exc_info.value)
 
 
-@pytest.mark.parametrize("missing_object", ["Answer", "InvoiceStatus", "EnvelopeInfo"])
+@pytest.mark.parametrize("missing_object", ["InvoiceStatus", "EnvelopeInfo"])
 def test_status_requires_documented_nested_objects(missing_object):
     payload = _incoming_status_payload()
     payload.pop(missing_object)
