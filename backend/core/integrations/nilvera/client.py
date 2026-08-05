@@ -33,9 +33,7 @@ class NilveraHttpClient:
 
     async def __aenter__(self) -> "NilveraHttpClient":
         if self._injected_client is None:
-            self._owned_client = httpx.AsyncClient(
-                base_url=self._config.base_url, timeout=httpx.Timeout(self._config.timeout_ms / 1000.0)
-            )
+            self._owned_client = httpx.AsyncClient(base_url=self._config.base_url, timeout=httpx.Timeout(self._config.timeout_ms / 1000.0))
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -48,15 +46,14 @@ class NilveraHttpClient:
             return self._injected_client
         if self._owned_client and not self._owned_client.is_closed:
             return self._owned_client
-        raise RuntimeError(
-            "NilveraHttpClient must be used as an async context manager or instantiated with an open httpx.AsyncClient."
-        )
+        raise RuntimeError("NilveraHttpClient must be used as an async context manager or instantiated with an open httpx.AsyncClient.")
 
     def _parse_error_response(self, status_code: int, text_content: str, headers: httpx.Headers, correlation_id: str | None) -> NilveraApiError:
         """Safely parse error response without crashing on HTML."""
         data = {}
         if "application/json" in headers.get("Content-Type", "").lower():
             import json
+
             try:
                 data = json.loads(text_content)
             except ValueError:
@@ -109,9 +106,7 @@ class NilveraHttpClient:
         content_length = response.headers.get("Content-Length")
         if content_length and int(content_length) > max_bytes:
             await response.aclose()
-            raise NilveraResponseSizeError(
-                f"Response size {content_length} exceeds limit", correlation_id=correlation_id
-            )
+            raise NilveraResponseSizeError(f"Response size {content_length} exceeds limit", correlation_id=correlation_id)
 
         body = bytearray()
         try:
@@ -165,9 +160,7 @@ class NilveraHttpClient:
                     finally:
                         await response.aclose()
 
-                    error_obj = self._parse_error_response(
-                        response.status_code, text_content, response.headers, correlation_id
-                    )
+                    error_obj = self._parse_error_response(response.status_code, text_content, response.headers, correlation_id)
 
                     if isinstance(error_obj, NilveraRateLimitError) and is_retryable and attempts <= max_attempts:
                         retry_after = response.headers.get("Retry-After")
@@ -214,6 +207,7 @@ class NilveraHttpClient:
         if ct != "application/json" and not (ct.startswith("application/") and ct.endswith("+json")):
             raise NilveraValidationError(f"Expected JSON, got {content_type}", correlation_id=correlation_id)
         import json
+
         try:
             return json.loads(response.content)
         except ValueError as e:
@@ -231,18 +225,20 @@ class NilveraHttpClient:
 
         content_type = response.headers.get("Content-Type", "").split(";")[0].lower().strip()
         if expected_content_types and content_type not in [t.lower() for t in expected_content_types]:
-            raise NilveraValidationError(f"Unexpected content type: {content_type}", correlation_id=correlation_id)
+            raise NilveraValidationError(
+                f"Unexpected content type: {content_type}, Body snippet: {response.text[:500]}", 
+                correlation_id=correlation_id
+            )
 
         content = response.content
         if not content:
             raise NilveraValidationError("Empty binary response", correlation_id=correlation_id)
         return content
 
-    async def post(
-        self, path: str, json: dict[str, Any], correlation_id: str | None = None, retryable: bool = False, **kwargs: Any
-    ) -> dict[str, Any]:
+    async def post(self, path: str, json: dict[str, Any], correlation_id: str | None = None, retryable: bool = False, **kwargs: Any) -> dict[str, Any]:
         response = await self._request("POST", path, json=json, correlation_id=correlation_id, retryable=retryable, stream=False, **kwargs)
         import json as json_mod
+
         try:
             return json_mod.loads(response.content)
         except ValueError as e:
@@ -258,6 +254,7 @@ class NilveraHttpClient:
     ) -> dict[str, Any]:
         response = await self._request("PUT", path, json=json, correlation_id=correlation_id, retryable=retryable, stream=False, **kwargs)
         import json as json_mod
+
         try:
             return json_mod.loads(response.content)
         except ValueError as e:
