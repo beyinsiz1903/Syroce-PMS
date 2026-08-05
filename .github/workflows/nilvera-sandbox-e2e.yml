@@ -2,6 +2,12 @@ name: Nilvera Sandbox E2E
 
 on:
   workflow_dispatch:
+    inputs:
+      run_incoming_answer:
+        description: Run the explicitly approved incoming invoice answer write test
+        required: true
+        default: false
+        type: boolean
 
 env:
   PYTHON_VERSION: '3.11'
@@ -71,6 +77,7 @@ jobs:
           NILVERA_E2E_SANDBOX_KEY: ${{ secrets.NILVERA_E2E_SANDBOX_KEY }}
           NILVERA_E2E_BUYER_VKN: ${{ secrets.NILVERA_E2E_BUYER_VKN }}
           NILVERA_E2E_SELLER_VKN: ${{ secrets.NILVERA_E2E_SELLER_VKN }}
+          NILVERA_E2E_INCOMING_ANSWER_ALLOWED: ${{ inputs.run_incoming_answer }}
           MONGO_URL: ${{ env.MONGO_URL }}
           DB_NAME: ${{ env.DB_NAME }}
           REDIS_URL: redis://localhost:6379/0

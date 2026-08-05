@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import httpx
@@ -19,6 +19,11 @@ from core.integrations.nilvera.errors import (
     NilveraServerError,
 )
 from core.integrations.nilvera.incoming import NilveraIncomingService
+from core.integrations.nilvera.incoming_answer import (
+    NilveraIncomingAnswerDecision,
+    NilveraIncomingAnswerService,
+    NilveraIncomingAnswerState,
+)
 from core.integrations.nilvera.mapper import NilveraInvoiceMapper, SellerSnapshot
 from core.integrations.nilvera.status_mapper import ProviderInvoiceOutcome, map_nilvera_status
 from core.integrations.nilvera.taxpayer import NilveraTaxpayerService
@@ -338,6 +343,80 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
 
 
 @pytest.mark.external
+@pytest.mark.side_effect
+async def test_sandbox_incoming_commercial_invoice_answer_contract(sandbox_client):
+    """Approve only a test-generated commercial invoice after explicit authorization."""
+    if os.environ.get("NILVERA_E2E_INCOMING_ANSWER_ALLOWED", "false").lower() != "true":
+        pytest.skip("Incoming invoice answer write test requires explicit Sandbox authorization")
+
+    def fail_safely(operation: str, exc: Exception) -> None:
+        http_status = exc.http_status if isinstance(exc, NilveraApiError) else None
+        retryable = exc.retryable if isinstance(exc, NilveraApiError) else None
+        pytest.fail(f"Incoming answer {operation} failed (error_type={type(exc).__name__}, http_status={http_status}, retryable={retryable})")
+
+    end_date = datetime.now(UTC)
+    start_date = end_date - timedelta(days=31)
+    provider_uuid = None
+
+    async with sandbox_client as client:
+        incoming_service = NilveraIncomingService(client)
+        for _ in range(12):
+            try:
+                page = await incoming_service.fetch_incoming_invoices(
+                    start_date,
+                    end_date,
+                    page=1,
+                    page_size=100,
+                )
+            except Exception as exc:
+                fail_safely("candidate discovery", exc)
+            for summary in page.items:
+                normalized_answer = "".join(character for character in (summary.answer_code or "").lower() if character.isalnum())
+                if not summary.invoice_number.startswith("TST2026"):
+                    continue
+                if normalized_answer not in {"", "unknown", "waitingforapproval"}:
+                    continue
+                try:
+                    detail = await incoming_service.fetch_incoming_invoice_detail(summary.provider_uuid)
+                except Exception as exc:
+                    fail_safely("candidate detail query", exc)
+                if detail.invoice_profile == "TICARIFATURA":
+                    provider_uuid = summary.provider_uuid
+                    break
+            if provider_uuid is not None:
+                break
+            await asyncio.sleep(5)
+
+        if provider_uuid is None:
+            pytest.fail("No pending test-generated commercial invoice was available for the approved write test")
+
+        answer_service = NilveraIncomingAnswerService(client)
+        try:
+            await answer_service.send_answer(
+                provider_uuid,
+                NilveraIncomingAnswerDecision.APPROVED,
+            )
+        except Exception as exc:
+            fail_safely("write", exc)
+
+        for delay in [1, 2, 4, 5, 5, 5, 5, 5, 5, 5]:
+            await asyncio.sleep(delay)
+            try:
+                state = await answer_service.fetch_answer_state(provider_uuid)
+            except Exception as exc:
+                fail_safely("status query", exc)
+            if state == NilveraIncomingAnswerState.APPROVED:
+                return
+            if state in {
+                NilveraIncomingAnswerState.REJECTED,
+                NilveraIncomingAnswerState.ANSWERED_AUTOMATICALLY,
+            }:
+                pytest.fail("Incoming invoice answer reached a conflicting terminal state")
+
+    pytest.fail("Incoming invoice answer remained pending after the verification window")
+
+
+@pytest.mark.external
 async def test_sandbox_incoming_invoice_discovery(sandbox_client):
     """
     Verify incoming list, detail, status, PDF and XML read contracts without
@@ -427,9 +506,7 @@ async def test_sandbox_incoming_invoice_sync_is_idempotent(sandbox_client):
             pytest.fail("The second incoming synchronization changed unchanged invoice lines")
 
         invoice_count = await tenant_db.incoming_invoices.count_documents({})
-        line_count = await tenant_db.incoming_invoice_lines.count_documents(
-            {"active": {"$ne": False}}
-        )
+        line_count = await tenant_db.incoming_invoice_lines.count_documents({"active": {"$ne": False}})
         if invoice_count != first.invoices_seen:
             pytest.fail("Incoming synchronization did not persist exactly one record per provider invoice")
         if line_count == 0:

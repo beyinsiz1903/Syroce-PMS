@@ -28,7 +28,10 @@ class IncomingInvoiceAnswerAtomicityMigration(Migration):
             await db.invoice_lifecycle_actions.create_indexes([index])
             logger.info("Successfully created partial unique index on tenant_id + answer_guard_key.")
         except pymongo.errors.OperationFailure as e:
-            logger.error(f"Failed to create index in V006: {e}")
+            logger.error(
+                "Failed to create index in V006 error_type=%s",
+                type(e).__name__,
+            )
             raise
 
     async def down(self, db: AsyncIOMotorDatabase) -> None:
@@ -41,7 +44,11 @@ class IncomingInvoiceAnswerAtomicityMigration(Migration):
             if e.code == 27:
                 logger.warning("Index idx_lifecycle_actions_tenant_answer_guard_unique not found. Skipping drop.")
             else:
-                logger.error(f"Failed to drop index in V006: {e}")
+                logger.error(
+                    "Failed to drop index in V006 error_type=%s",
+                    type(e).__name__,
+                )
                 raise
+
 
 MIGRATION = IncomingInvoiceAnswerAtomicityMigration()
