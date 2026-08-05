@@ -355,10 +355,8 @@ async def test_sandbox_incoming_invoice_discovery(sandbox_client):
         assert "Content" in response_json, "Response missing 'Content' field"
         assert isinstance(response_json["Content"], list)
 
-        import json
-        print(f"\n[DEBUG] Sandbox E2E First Item Payload:\n{json.dumps(response_json['Content'][0], indent=2)}\n")
-
         from core.integrations.nilvera.incoming_mapper import IncomingInvoicePage, NilveraIncomingMapper
+
         page = NilveraIncomingMapper.map_page(response_json, page=1, page_size=5)
 
         assert isinstance(page, IncomingInvoicePage)
