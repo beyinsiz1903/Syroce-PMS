@@ -63,6 +63,7 @@ def map_nilvera_status(raw_status: str | None, raw_code: str | None) -> Provider
         "kabul edildi",
         "accepted",
         "success",
+        "succeed",
     }
 
     rejected_statuses = {

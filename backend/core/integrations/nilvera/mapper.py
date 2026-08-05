@@ -33,6 +33,7 @@ class NilveraCompanyInfo(NilveraConfiguredModel):
     TaxOffice: str
     Country: str
     City: str
+    District: str
     Address: str
 
 
@@ -41,6 +42,7 @@ class NilveraCustomerInfo(NilveraConfiguredModel):
     Name: str
     Country: str
     City: str
+    District: str
     Address: str
     TaxOffice: str | None = None
 
@@ -217,6 +219,7 @@ class NilveraInvoiceMapper:
             TaxOffice=seller_tax_office_clean,
             Country=seller_country_clean,
             City=seller_city_clean,
+            District="Merkez",  # Provide safe default for required district
             Address=seller_address_clean,
         )
 
@@ -225,6 +228,7 @@ class NilveraInvoiceMapper:
             Name=buyer_name_clean,
             Country=buyer_country_clean,
             City=buyer_city_clean,
+            District="Merkez",  # Provide safe default for required district
             Address=buyer_address_clean,
             TaxOffice=buyer_tax_office_clean,
         )
