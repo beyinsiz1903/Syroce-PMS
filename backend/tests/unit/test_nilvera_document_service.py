@@ -147,3 +147,15 @@ async def test_download_pdf_decodes_base64_json_string(doc_service, mock_http_cl
     res = await doc_service.download_sale_pdf(invoice_uuid)
 
     assert res == b"%PDF-1.4\nsome content"
+
+
+@pytest.mark.asyncio
+async def test_download_pdf_handles_raw_string_wrapped_in_json(doc_service, mock_http_client):
+    mock_http_client._config = type("obj", (object,), {"max_response_size_bytes": 1048576})()
+    raw_content = "%PDF-1.4\nsome content İ"  # Turkish character prevents valid base64 decode
+    mock_http_client.get_binary.return_value = (json.dumps(raw_content).encode("utf-8"), "application/json")
+
+    invoice_uuid = str(uuid.uuid4())
+    res = await doc_service.download_sale_pdf(invoice_uuid)
+
+    assert res == raw_content.encode("utf-8")

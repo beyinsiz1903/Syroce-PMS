@@ -81,19 +81,25 @@ class NilveraDocumentService:
 
         if content_type == "application/json":
             try:
-                base64_str = json.loads(content)
-                if not isinstance(base64_str, str):
-                    raise NilveraValidationError("Expected base64 string in JSON response for binary endpoint")
-
-                decoded_content = base64.b64decode(base64_str, validate=True)
-
-                # Enforce size limit after decode
+                parsed_str = json.loads(content)
+                if not isinstance(parsed_str, str):
+                    raise NilveraValidationError("Expected string in JSON response for binary endpoint")
+                
+                try:
+                    # Attempt strict base64 decoding first
+                    decoded_content = base64.b64decode(parsed_str, validate=True)
+                except ValueError:
+                    # Nilvera Sandbox sometimes returns raw XML/PDF as a JSON string instead of base64.
+                    # This triggers ValueError (e.g., due to Turkish characters like 'İ' which are not base64).
+                    decoded_content = parsed_str.encode("utf-8")
+                
+                # Enforce size limit after decode/encode
                 if len(decoded_content) > self._client._config.max_response_size_bytes:
-                    raise NilveraValidationError("Decoded base64 document exceeds maximum response size limit")
-
+                    raise NilveraValidationError("Decoded document exceeds maximum response size limit")
+                
                 content = decoded_content
             except (json.JSONDecodeError, ValueError) as e:
-                raise NilveraValidationError("Failed to decode base64 JSON response") from e
+                raise NilveraValidationError("Failed to decode JSON response") from e
 
         if doc_type == "pdf":
             self._validate_pdf_content(content)
