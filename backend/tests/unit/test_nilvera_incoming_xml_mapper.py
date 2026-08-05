@@ -106,3 +106,23 @@ def test_derives_missing_tax_rate_from_explicit_tax_amounts():
     result = NilveraIncomingXmlMapper.map_document(content)
 
     assert result.lines[0].kdv_rate == Decimal("20.00")
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "lexical_form"),
+    [
+        ("20,00", "comma_separator"),
+        ("1.000,00", "mixed_separators"),
+        ("20 00", "embedded_whitespace"),
+        ("not-a-number", "non_decimal"),
+    ],
+)
+def test_invalid_decimal_reports_only_safe_lexical_form(raw_value, lexical_form):
+    content = _invoice_xml().replace(b">20.00</cbc:TaxAmount>", f">{raw_value}</cbc:TaxAmount>".encode(), 1)
+
+    with pytest.raises(NilveraValidationError) as exc_info:
+        NilveraIncomingXmlMapper.map_document(content)
+
+    message = str(exc_info.value)
+    assert f"lexical_form={lexical_form}" in message
+    assert raw_value not in message

@@ -66,10 +66,21 @@ class NilveraIncomingXmlMapper:
         try:
             value = Decimal(raw)
         except (InvalidOperation, TypeError):
-            raise NilveraValidationError(f"Incoming invoice XML has invalid {field_name}") from None
+            lexical_form = cls._decimal_lexical_form(raw)
+            raise NilveraValidationError(f"Incoming invoice XML has invalid {field_name} (lexical_form={lexical_form})") from None
         if not value.is_finite() or value < 0:
             raise NilveraValidationError(f"Incoming invoice XML has invalid {field_name}")
         return value
+
+    @staticmethod
+    def _decimal_lexical_form(raw: str) -> str:
+        if "," in raw and "." in raw:
+            return "mixed_separators"
+        if "," in raw:
+            return "comma_separator"
+        if any(character.isspace() for character in raw):
+            return "embedded_whitespace"
+        return "non_decimal"
 
     @classmethod
     def _currency(cls, parent, path: str, field_name: str) -> str:
