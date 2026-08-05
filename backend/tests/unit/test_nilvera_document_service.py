@@ -159,3 +159,36 @@ async def test_download_pdf_handles_raw_string_wrapped_in_json(doc_service, mock
     res = await doc_service.download_sale_pdf(invoice_uuid)
 
     assert res == raw_content.encode("utf-8")
+
+
+@pytest.mark.asyncio
+async def test_download_xml_handles_raw_string_wrapped_in_json(
+    doc_service,
+    mock_http_client,
+):
+    raw_xml = '<?xml version="1.0" encoding="UTF-8"?><Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"><Note>İade açıklaması</Note></Invoice>'
+
+    mock_http_client._config = type("obj", (object,), {"max_response_size_bytes": 1048576})()
+    mock_http_client.get_binary.return_value = (
+        json.dumps(raw_xml).encode("utf-8"),
+        "application/json",
+    )
+
+    result = await doc_service.download_sale_xml(str(uuid.uuid4()))
+
+    assert result == raw_xml.encode("utf-8")
+
+
+@pytest.mark.asyncio
+async def test_json_raw_string_that_is_not_expected_document_fails(
+    doc_service,
+    mock_http_client,
+):
+    mock_http_client._config = type("obj", (object,), {"max_response_size_bytes": 1048576})()
+    mock_http_client.get_binary.return_value = (
+        json.dumps("rastgele cevap İ").encode("utf-8"),
+        "application/json",
+    )
+
+    with pytest.raises(NilveraValidationError):
+        await doc_service.download_sale_xml(str(uuid.uuid4()))
