@@ -377,6 +377,19 @@ def test_detail_rejects_naive_send_date_without_timezone_fallback():
         NilveraIncomingMapper.map_detail(payload)
 
 
+@pytest.mark.parametrize("missing_value", [None, "", "   "])
+def test_optional_send_date_may_be_absent_without_issue_date_fallback(
+    missing_value,
+):
+    payload = _incoming_detail_payload()
+    payload["SendDate"] = missing_value
+
+    detail = NilveraIncomingMapper.map_detail(payload)
+
+    assert detail.send_date is None
+    assert detail.issue_date == datetime(2023, 10, 1, 12, tzinfo=UTC)
+
+
 def test_status_rejects_naive_envelope_date_without_timezone_fallback():
     payload = _incoming_status_payload()
     payload["EnvelopeInfo"]["CreatedDate"] = "2023-10-01T12:06:00"

@@ -108,6 +108,8 @@ class NilveraIncomingMapper:
         raw_value: Any = payload.get(field_name)
         if raw_value is None and not required:
             return None, False
+        if not required and isinstance(raw_value, str) and not raw_value.strip():
+            return None, False
         if not isinstance(raw_value, str) or not raw_value.strip():
             raise NilveraValidationError(f"Incoming invoice response has invalid {field_name}")
 
