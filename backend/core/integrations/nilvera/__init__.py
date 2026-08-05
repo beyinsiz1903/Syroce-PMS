@@ -3,6 +3,7 @@
 from .alias import resolve_receiver_alias
 from .client import NilveraHttpClient
 from .config import NilveraSettings, get_nilvera_config
+from .document_service import NilveraDocumentService
 from .errors import (
     NilveraApiError,
     NilveraAuthError,
@@ -32,8 +33,9 @@ __all__ = [
     "NilveraTimeoutError",
     "NilveraValidationError",
     "NilveraHttpClient",
-    "NilveraSeriesService",
-    "NilveraSeriesPage",
-    "NilveraSeriesItem",
     "NilveraSeriesDetail",
+    "NilveraSeriesItem",
+    "NilveraSeriesPage",
+    "NilveraSeriesService",
+    "NilveraDocumentService",
 ]
