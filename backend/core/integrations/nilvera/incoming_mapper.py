@@ -74,12 +74,12 @@ class NilveraIncomingMapper:
 
         total_pages = cls._parse_non_negative_int(payload, "TotalPages", default=0)
 
-        if "Data" not in payload:
-            raise NilveraValidationError("Incoming invoice response is missing Data")
+        if "Content" not in payload:
+            raise NilveraValidationError("Incoming invoice response is missing Content")
 
-        data_list = payload["Data"]
+        data_list = payload["Content"]
         if not isinstance(data_list, list):
-            raise NilveraValidationError("'Data' field is not a list in incoming invoices response")
+            raise NilveraValidationError("'Content' field is not a list in incoming invoices response")
 
         items = []
         for index, item in enumerate(data_list):

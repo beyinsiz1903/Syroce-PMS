@@ -11,7 +11,7 @@ def test_map_page_success():
     payload = {
         "TotalCount": 1,
         "TotalPages": 1,
-        "Data": [
+        "Content": [
             {
                 "UUID": "123e4567-e89b-12d3-a456-426614174000",
                 "InvoiceNumber": "ABC2023000000001",
@@ -49,7 +49,7 @@ def test_map_page_success():
 
 def test_map_page_fails_on_missing_uuid():
     payload = {
-        "Data": [
+        "Content": [
             {
                 "InvoiceNumber": "ABC2023000000001",
                 "IssueDate": "2023-10-01T12:00:00.000Z",
@@ -64,7 +64,7 @@ def test_map_page_fails_on_missing_uuid():
 
 def test_map_page_fails_on_missing_invoice_number():
     payload = {
-        "Data": [
+        "Content": [
             {
                 "UUID": "123e4567-e89b-12d3-a456-426614174000",
                 "IssueDate": "2023-10-01T12:00:00.000Z",
@@ -79,7 +79,7 @@ def test_map_page_fails_on_missing_invoice_number():
 
 def test_map_page_fails_on_invalid_amount():
     payload = {
-        "Data": [
+        "Content": [
             {
                 "UUID": "123e4567-e89b-12d3-a456-426614174000",
                 "InvoiceNumber": "ABC2023000000001",
@@ -95,7 +95,7 @@ def test_map_page_fails_on_invalid_amount():
 
 def test_map_page_fails_on_missing_currency():
     payload = {
-        "Data": [
+        "Content": [
             {
                 "UUID": "123e4567-e89b-12d3-a456-426614174000",
                 "InvoiceNumber": "ABC2023000000001",
@@ -111,7 +111,7 @@ def test_map_page_fails_on_missing_currency():
 def test_map_page_strips_pii_from_errors():
     """Ensure error messages do not leak PII like names or exact amounts."""
     payload = {
-        "Data": [
+        "Content": [
             {
                 "UUID": "123e4567-e89b-12d3-a456-426614174000",
                 "InvoiceNumber": "ABC2023000000001",
@@ -135,7 +135,7 @@ def test_map_page_strips_pii_from_errors():
 
 def test_map_page_fails_on_invalid_uuid_format():
     payload = {
-        "Data": [
+        "Content": [
             {
                 "UUID": "invalid-uuid",
                 "InvoiceNumber": "ABC2023000000001",
@@ -151,7 +151,7 @@ def test_map_page_fails_on_invalid_uuid_format():
 
 def test_map_page_fails_on_negative_amount():
     payload = {
-        "Data": [
+        "Content": [
             {
                 "UUID": "123e4567-e89b-12d3-a456-426614174000",
                 "InvoiceNumber": "ABC2023000000001",
@@ -167,7 +167,7 @@ def test_map_page_fails_on_negative_amount():
 
 def test_map_page_fails_on_infinite_amount():
     payload = {
-        "Data": [
+        "Content": [
             {
                 "UUID": "123e4567-e89b-12d3-a456-426614174000",
                 "InvoiceNumber": "ABC2023000000001",
@@ -182,20 +182,20 @@ def test_map_page_fails_on_infinite_amount():
 
 
 def test_map_page_handles_invalid_pagination_metadata():
-    payload = {"TotalCount": "invalid", "TotalPages": -5, "Data": []}
+    payload = {"TotalCount": "invalid", "TotalPages": -5, "Content": []}
     with pytest.raises(NilveraValidationError, match="invalid TotalCount"):
         NilveraIncomingMapper.map_page(payload, page=1, page_size=100)
 
 
 def test_map_page_fails_on_negative_total_pages():
-    payload = {"TotalCount": 10, "TotalPages": -5, "Data": []}
+    payload = {"TotalCount": 10, "TotalPages": -5, "Content": []}
     with pytest.raises(NilveraValidationError, match="invalid TotalPages"):
         NilveraIncomingMapper.map_page(payload, page=1, page_size=100)
 
 
 def test_map_page_fails_on_non_string_issue_date():
     payload = {
-        "Data": [
+        "Content": [
             {
                 "UUID": "123e4567-e89b-12d3-a456-426614174000",
                 "InvoiceNumber": "ABC2023000000001",
@@ -211,7 +211,7 @@ def test_map_page_fails_on_non_string_issue_date():
 
 def test_map_page_fails_on_timezone_naive_issue_date():
     payload = {
-        "Data": [
+        "Content": [
             {
                 "UUID": "123e4567-e89b-12d3-a456-426614174000",
                 "InvoiceNumber": "ABC2023000000001",
@@ -226,7 +226,7 @@ def test_map_page_fails_on_timezone_naive_issue_date():
 
 
 def test_map_page_fails_when_data_is_missing():
-    with pytest.raises(NilveraValidationError, match="missing Data"):
+    with pytest.raises(NilveraValidationError, match="missing Content"):
         NilveraIncomingMapper.map_page(
             {"TotalCount": 0, "TotalPages": 0},
             page=1,

@@ -14,7 +14,7 @@ def mock_http_client():
     client.get.return_value = {
         "TotalCount": 0,
         "TotalPages": 0,
-        "Data": [],
+        "Content": [],
     }
     return client
 
