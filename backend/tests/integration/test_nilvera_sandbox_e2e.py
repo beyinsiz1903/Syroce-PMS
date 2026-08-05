@@ -84,7 +84,8 @@ async def sandbox_buyer_alias(sandbox_client, buyer_vkn):
             # Fallback to any PK alias if defaultpk isn't there
             pk_aliases = [a for a in result.aliases if "pk" in a.lower()]
 
-        assert len(pk_aliases) > 0, f"No valid PK alias found for {buyer_vkn}. Aliases: {result.aliases}"
+        if not pk_aliases:
+            pytest.fail("No valid PK alias found for configured sandbox buyer")
         return pk_aliases[0]
 
 
@@ -94,16 +95,18 @@ async def test_taxpayer_query_contract(sandbox_client, buyer_vkn):
     async with sandbox_client as client:
         service = NilveraTaxpayerService(client)
         result = await service.check_taxpayer(buyer_vkn)
-        assert result.tax_number == buyer_vkn
-        assert isinstance(result.is_e_invoice_user, bool)
+        if result.tax_number != buyer_vkn:
+            pytest.fail("Taxpayer query returned an unexpected tax identity")
+        if not isinstance(result.is_e_invoice_user, bool):
+            pytest.fail("Taxpayer query returned an invalid user-status type")
 
 
 @pytest.mark.external
 async def test_alias_query_contract(sandbox_client, buyer_vkn, sandbox_buyer_alias):
     """Test alias query and verify a valid alias is retrieved."""
     # Since sandbox_buyer_alias uses the API to fetch it, if it succeeds, the contract is working.
-    assert "urn:mail:" in sandbox_buyer_alias
-    assert "@" in sandbox_buyer_alias
+    if "urn:mail:" not in sandbox_buyer_alias or "@" not in sandbox_buyer_alias:
+        pytest.fail("Sandbox buyer alias has an invalid format")
 
 
 @pytest.mark.external
@@ -262,14 +265,14 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
         try:
             submit_res = await client.post("/einvoice/Send/Model", json=payload.model_dump(mode="json", by_alias=True))
         except NilveraApiError as e:
-            raw = getattr(e, "sanitized_preview", str(e))
-            detail = getattr(e, "sanitized_detail", "")
-            desc = getattr(e, "sanitized_description", "")
-            pytest.fail(f"Invoice submission failed with {e.http_status} Error. API Response: {raw} | Desc: {desc} | Detail: {detail}")
+            pytest.fail(f"Invoice submission failed (error_type={type(e).__name__}, http_status={e.http_status}, retryable={e.retryable})")
 
-        assert "UUID" in submit_res
-        assert submit_res["UUID"] != ""
-        doc_uuid = submit_res["UUID"]
+        if not isinstance(submit_res, dict):
+            pytest.fail(f"Invoice submission returned an invalid response type: {type(submit_res).__name__}")
+
+        doc_uuid = submit_res.get("UUID")
+        if not isinstance(doc_uuid, str) or not doc_uuid:
+            pytest.fail("Invoice submission response is missing a document UUID")
 
         # 2. Polling config: 1, 2, 4, 5, 5... (max 30 attempts, ~140 seconds total)
         backoffs = [1, 2, 4] + [5] * 27
@@ -307,7 +310,7 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
                 break
 
             if outcome == ProviderInvoiceOutcome.UNKNOWN:
-                pytest.fail(f"Received UNKNOWN status from provider: {raw_status} (Code: {raw_code}). Full response: {status_res}")
+                pytest.fail(f"Provider status mapping returned UNKNOWN (response_type={type(status_res).__name__})")
 
         if not terminal_status_reached:
             pytest.fail("Timeout: Status remained PENDING after maximum polling attempts")
@@ -320,9 +323,57 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
         doc_service = NilveraDocumentService(client)
 
         pdf_content = await doc_service.download_sale_pdf(doc_uuid)
-        assert len(pdf_content) > 0
-        assert pdf_content.startswith(b"%PDF-")
+        if not pdf_content:
+            pytest.fail("Downloaded PDF document is empty")
+        if not pdf_content.startswith(b"%PDF-"):
+            pytest.fail("Downloaded PDF document has an invalid signature")
 
         xml_content = await doc_service.download_sale_xml(doc_uuid)
-        assert len(xml_content) > 0
-        assert b"Invoice" in xml_content or b"invoice" in xml_content
+        if not xml_content:
+            pytest.fail("Downloaded XML document is empty")
+        if b"Invoice" not in xml_content and b"invoice" not in xml_content:
+            pytest.fail("Downloaded XML document does not contain an invoice root")
+
+
+@pytest.mark.external
+async def test_sandbox_incoming_invoice_discovery(sandbox_client):
+    """
+    Test GET /einvoice/Purchase to discover the structure and ensure HTTP 200.
+    """
+    from datetime import timedelta
+
+    end_date = datetime.now(UTC)
+    start_date = end_date - timedelta(days=7)
+
+    query_params = {
+        "StartDate": start_date.isoformat(),
+        "EndDate": end_date.isoformat(),
+        "Page": "1",
+        "PageSize": "5",
+    }
+
+    async with sandbox_client as client:
+        response_json = await client.get("/einvoice/Purchase", params=query_params)
+
+        # Verify basic expected top-level schema structure
+        if not isinstance(response_json, dict):
+            pytest.fail(f"Incoming invoice endpoint returned an invalid response type: {type(response_json).__name__}")
+
+        # Officially we expect "Content", fail if absent or mis-cased
+        if "Content" not in response_json:
+            pytest.fail("Incoming invoice response is missing the Content field")
+
+        content = response_json["Content"]
+        if not isinstance(content, list):
+            pytest.fail(f"Incoming invoice Content has an invalid type: {type(content).__name__}")
+
+        from core.integrations.nilvera.incoming_mapper import IncomingInvoicePage, NilveraIncomingMapper
+
+        page = NilveraIncomingMapper.map_page(response_json, page=1, page_size=5)
+
+        if not isinstance(page, IncomingInvoicePage):
+            pytest.fail("Incoming invoice mapper returned an invalid page type")
+        if len(page.items) != len(content):
+            pytest.fail("Incoming invoice mapper returned an unexpected item count")
+        if any(item.issue_date.tzinfo is None for item in page.items):
+            pytest.fail("Incoming invoice mapper returned a naive IssueDate")
