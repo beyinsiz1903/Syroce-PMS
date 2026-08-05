@@ -84,7 +84,12 @@ jobs:
           JWT_SECRET: ${{ env.JWT_SECRET }}
         run: |
           cd backend
-          python -m pytest tests/integration/test_nilvera_sandbox_e2e.py \
+          if [ "${NILVERA_E2E_INCOMING_ANSWER_ALLOWED}" = "true" ]; then
+            TEST_TARGET="tests/integration/test_nilvera_sandbox_e2e.py::test_sandbox_incoming_commercial_invoice_answer_contract"
+          else
+            TEST_TARGET="tests/integration/test_nilvera_sandbox_e2e.py"
+          fi
+          python -m pytest "${TEST_TARGET}" \
             -m nilvera_sandbox \
             -v --tb=short -q --timeout=300 \
             --junitxml=nilvera-sandbox-results.xml
