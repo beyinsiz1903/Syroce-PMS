@@ -220,20 +220,17 @@ class NilveraHttpClient:
         correlation_id: str | None = None,
         retryable: bool | None = None,
         **kwargs: Any,
-    ) -> bytes:
+    ) -> tuple[bytes, str]:
         response = await self._request("GET", path, correlation_id=correlation_id, retryable=retryable, stream=False, **kwargs)
 
         content_type = response.headers.get("Content-Type", "").split(";")[0].lower().strip()
         if expected_content_types and content_type not in [t.lower() for t in expected_content_types]:
-            raise NilveraValidationError(
-                f"Unexpected content type: {content_type}, Body snippet: {response.text[:500]}", 
-                correlation_id=correlation_id
-            )
+            raise NilveraValidationError(f"Unexpected content type: {content_type}", correlation_id=correlation_id)
 
         content = response.content
         if not content:
             raise NilveraValidationError("Empty binary response", correlation_id=correlation_id)
-        return content
+        return content, content_type
 
     async def post(self, path: str, json: dict[str, Any], correlation_id: str | None = None, retryable: bool = False, **kwargs: Any) -> dict[str, Any]:
         response = await self._request("POST", path, json=json, correlation_id=correlation_id, retryable=retryable, stream=False, **kwargs)

@@ -1,3 +1,5 @@
+import base64
+import json
 import uuid
 from typing import Literal
 
@@ -53,8 +55,7 @@ class NilveraDocumentService:
                 raise NilveraValidationError(f"Unexpected UBL Invoice namespace: {namespace}")
 
         except ET.ParseError:
-            snippet = repr(content[:100])
-            raise NilveraValidationError(f"Invalid XML document: parsing failed. Snippet: {snippet}") from None
+            raise NilveraValidationError("Invalid XML document: parsing failed") from None
 
     async def _download_document(
         self,
@@ -73,21 +74,26 @@ class NilveraDocumentService:
         elif doc_type == "xml":
             expected_types = ["application/xml", "text/xml", "application/octet-stream", "application/json"]
 
-        content = await self._client.get_binary(
+        content, content_type = await self._client.get_binary(
             path=path,
             expected_content_types=expected_types,
         )
 
-        # If Nilvera returns the binary as a base64-encoded JSON string
-        if content.startswith(b'"') and content.endswith(b'"'):
-            import json
-            import base64
+        if content_type == "application/json":
             try:
                 base64_str = json.loads(content)
-                if isinstance(base64_str, str):
-                    content = base64.b64decode(base64_str)
-            except (json.JSONDecodeError, ValueError):
-                pass
+                if not isinstance(base64_str, str):
+                    raise NilveraValidationError("Expected base64 string in JSON response for binary endpoint")
+
+                decoded_content = base64.b64decode(base64_str, validate=True)
+
+                # Enforce size limit after decode
+                if len(decoded_content) > self._client._config.max_response_size_bytes:
+                    raise NilveraValidationError("Decoded base64 document exceeds maximum response size limit")
+
+                content = decoded_content
+            except (json.JSONDecodeError, ValueError) as e:
+                raise NilveraValidationError("Failed to decode base64 JSON response") from e
 
         if doc_type == "pdf":
             self._validate_pdf_content(content)
