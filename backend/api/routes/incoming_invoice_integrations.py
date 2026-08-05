@@ -2,25 +2,33 @@
 
 import hashlib
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field, model_validator
 
 from core.helpers import require_admin
 from core.integrations.incoming_invoice_repository import IncomingInvoiceRepository
+from core.integrations.incoming_invoice_sync_service import IncomingInvoiceSyncService
 from core.integrations.invoice_lifecycle_repository import InvoiceLifecycleRepository
 from core.integrations.invoice_return_service import ReturnQuantityRequest
+from core.integrations.nilvera.errors import NilveraApiError
 from models.schemas import User
-from models.schemas.incoming_invoice import IncomingInvoiceProfile
+from models.schemas.incoming_invoice import (
+    IncomingInvoiceAnswerStatus,
+    IncomingInvoiceLine,
+    IncomingInvoiceProfile,
+    IncomingInvoiceProviderStatus,
+)
 from models.schemas.invoice_lifecycle import (
     InvoiceLifecycleAction,
     InvoiceLifecycleActionState,
     InvoiceLifecycleActionType,
     InvoiceLifecycleDirection,
 )
+from models.schemas.invoicing import TaxDetail
 
 router = APIRouter(
     prefix="/api/integrations/incoming-invoices",
@@ -44,6 +52,190 @@ class InvoiceLifecycleResponse(BaseModel):
     reconciliation_reason: str | None = None
     requested_at: datetime
     succeeded_at: datetime | None = None
+
+
+class IncomingInvoiceResponse(BaseModel):
+    id: str
+    provider_uuid: str
+    invoice_number: str
+    sender_vkn_tckn: str
+    sender_title: str
+    profile: IncomingInvoiceProfile
+    answer_status: IncomingInvoiceAnswerStatus
+    provider_status: IncomingInvoiceProviderStatus
+    provider_gib_code: str | None
+    issue_date: datetime
+    issue_date_timezone_assumed: bool
+    received_at: datetime
+    payable_amount: Decimal | None
+    currency: str | None
+    updated_at: datetime
+
+
+class IncomingInvoiceListResponse(BaseModel):
+    items: list[IncomingInvoiceResponse]
+    total: int
+    offset: int
+    limit: int
+
+
+class IncomingInvoiceLineResponse(BaseModel):
+    id: str
+    provider_line_id: str | None
+    line_number: int
+    name: str
+    quantity: Decimal
+    unit_code: str
+    unit_price: Decimal
+    discount_amount: Decimal
+    line_extension_amount: Decimal
+    kdv_rate: Decimal
+    kdv_amount: Decimal
+    other_taxes: list[TaxDetail]
+    currency: str
+
+
+class IncomingInvoiceDetailResponse(IncomingInvoiceResponse):
+    lines: list[IncomingInvoiceLineResponse]
+
+
+class IncomingInvoiceSyncRequest(BaseModel):
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_range(self):
+        if self.start_date is not None and self.start_date.tzinfo is None:
+            raise ValueError("start_date must be timezone-aware")
+        if self.end_date is not None and self.end_date.tzinfo is None:
+            raise ValueError("end_date must be timezone-aware")
+        if self.start_date is not None and self.end_date is not None:
+            if self.start_date > self.end_date:
+                raise ValueError("start_date cannot be after end_date")
+            if self.end_date - self.start_date > timedelta(days=31):
+                raise ValueError("Date range cannot exceed 31 days")
+        return self
+
+
+class IncomingInvoiceSyncResponse(BaseModel):
+    invoices_seen: int = Field(ge=0)
+    invoices_created: int = Field(ge=0)
+    invoices_changed: int = Field(ge=0)
+    lines_created: int = Field(ge=0)
+    lines_changed: int = Field(ge=0)
+    lines_deactivated: int = Field(ge=0)
+    unknown_invoices: int = Field(ge=0)
+    pending_invoices: int = Field(ge=0)
+    provider_error_invoices: int = Field(ge=0)
+
+
+def _invoice_response(invoice) -> IncomingInvoiceResponse:
+    return IncomingInvoiceResponse(
+        id=invoice.id,
+        provider_uuid=invoice.provider_uuid,
+        invoice_number=invoice.invoice_number,
+        sender_vkn_tckn=invoice.sender_vkn_tckn,
+        sender_title=invoice.sender_title,
+        profile=invoice.profile,
+        answer_status=invoice.answer_status,
+        provider_status=invoice.provider_status,
+        provider_gib_code=invoice.provider_gib_code,
+        issue_date=invoice.issue_date,
+        issue_date_timezone_assumed=invoice.issue_date_timezone_assumed,
+        received_at=invoice.received_at,
+        payable_amount=invoice.payable_amount,
+        currency=invoice.currency,
+        updated_at=invoice.updated_at,
+    )
+
+
+def _line_response(line: IncomingInvoiceLine) -> IncomingInvoiceLineResponse:
+    return IncomingInvoiceLineResponse(
+        id=line.id,
+        provider_line_id=line.provider_line_id,
+        line_number=line.line_number,
+        name=line.name,
+        quantity=line.quantity,
+        unit_code=line.unit_code,
+        unit_price=line.unit_price,
+        discount_amount=line.discount_amount,
+        line_extension_amount=line.line_extension_amount,
+        kdv_rate=line.kdv_rate,
+        kdv_amount=line.kdv_amount,
+        other_taxes=line.other_taxes,
+        currency=line.currency,
+    )
+
+
+@router.get("", response_model=IncomingInvoiceListResponse)
+async def list_incoming_invoices(
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    profile: IncomingInvoiceProfile | None = None,
+    answer_status: IncomingInvoiceAnswerStatus | None = None,
+    provider_status: IncomingInvoiceProviderStatus | None = None,
+    user: User = Depends(require_admin),
+) -> IncomingInvoiceListResponse:
+    invoices, total = await IncomingInvoiceRepository.list_invoices(
+        user.tenant_id,
+        offset=offset,
+        limit=limit,
+        profile=profile,
+        answer_status=answer_status,
+        provider_status=provider_status,
+    )
+    return IncomingInvoiceListResponse(
+        items=[_invoice_response(invoice) for invoice in invoices],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.post("/sync", response_model=IncomingInvoiceSyncResponse)
+async def sync_incoming_invoices(
+    payload: IncomingInvoiceSyncRequest,
+    user: User = Depends(require_admin),
+) -> IncomingInvoiceSyncResponse:
+    end_date = payload.end_date or datetime.now(UTC)
+    start_date = payload.start_date or end_date - timedelta(days=31)
+    if start_date > end_date or end_date - start_date > timedelta(days=31):
+        raise HTTPException(status_code=422, detail="Invalid incoming invoice sync date range")
+    try:
+        result = await IncomingInvoiceSyncService.sync_tenant(
+            user.tenant_id,
+            start_date,
+            end_date,
+        )
+    except NilveraApiError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": exc.safe_code, "detail": exc.safe_user_message},
+        ) from None
+    except RuntimeError:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "NILVERA_INCOMING_SYNC_UNAVAILABLE",
+                "detail": "Incoming invoice synchronization is unavailable.",
+            },
+        ) from None
+    return IncomingInvoiceSyncResponse(**result.__dict__)
+
+
+@router.get("/{invoice_id}", response_model=IncomingInvoiceDetailResponse)
+async def get_incoming_invoice(
+    invoice_id: str,
+    user: User = Depends(require_admin),
+) -> IncomingInvoiceDetailResponse:
+    invoice = await IncomingInvoiceRepository.get_by_id(user.tenant_id, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    lines = await IncomingInvoiceRepository.list_lines(user.tenant_id, invoice.id)
+    return IncomingInvoiceDetailResponse(
+        **_invoice_response(invoice).model_dump(),
+        lines=[_line_response(line) for line in lines],
+    )
 
 
 @router.post("/{invoice_id}/answer", response_model=InvoiceLifecycleResponse)
