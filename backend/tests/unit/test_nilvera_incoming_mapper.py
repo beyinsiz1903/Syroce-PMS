@@ -17,7 +17,7 @@ def test_map_page_success():
                 "InvoiceNumber": "ABC2023000000001",
                 "IssueDate": "2023-10-01T12:00:00.000Z",
                 "PayableAmount": 100.50,
-                "Currency": "TRY",
+                "CurrencyCode": "TRY",
                 "StatusCode": "PENDING",
                 "AnswerCode": "NONE",
                 "SenderTaxNumber": "1234567890",
@@ -54,7 +54,7 @@ def test_map_page_fails_on_missing_uuid():
                 "InvoiceNumber": "ABC2023000000001",
                 "IssueDate": "2023-10-01T12:00:00.000Z",
                 "PayableAmount": 100.50,
-                "Currency": "TRY",
+                "CurrencyCode": "TRY",
             }
         ]
     }
@@ -69,7 +69,7 @@ def test_map_page_fails_on_missing_invoice_number():
                 "UUID": "123e4567-e89b-12d3-a456-426614174000",
                 "IssueDate": "2023-10-01T12:00:00.000Z",
                 "PayableAmount": 100.50,
-                "Currency": "TRY",
+                "CurrencyCode": "TRY",
             }
         ]
     }
@@ -85,7 +85,7 @@ def test_map_page_fails_on_invalid_amount():
                 "InvoiceNumber": "ABC2023000000001",
                 "IssueDate": "2023-10-01T12:00:00.000Z",
                 "PayableAmount": "invalid-amount",
-                "Currency": "TRY",
+                "CurrencyCode": "TRY",
             }
         ]
     }
@@ -117,7 +117,7 @@ def test_map_page_strips_pii_from_errors():
                 "InvoiceNumber": "ABC2023000000001",
                 "IssueDate": "INVALID-DATE",
                 "PayableAmount": 1000000.50,
-                "Currency": "TRY",
+                "CurrencyCode": "TRY",
                 "SenderName": "SECRET PII NAME",
                 "SenderTaxNumber": "9999999999",
             }
@@ -141,7 +141,7 @@ def test_map_page_fails_on_invalid_uuid_format():
                 "InvoiceNumber": "ABC2023000000001",
                 "IssueDate": "2023-10-01T12:00:00.000Z",
                 "PayableAmount": 100.50,
-                "Currency": "TRY",
+                "CurrencyCode": "TRY",
             }
         ]
     }
@@ -157,7 +157,7 @@ def test_map_page_fails_on_negative_amount():
                 "InvoiceNumber": "ABC2023000000001",
                 "IssueDate": "2023-10-01T12:00:00.000Z",
                 "PayableAmount": -100.50,
-                "Currency": "TRY",
+                "CurrencyCode": "TRY",
             }
         ]
     }
@@ -173,7 +173,7 @@ def test_map_page_fails_on_infinite_amount():
                 "InvoiceNumber": "ABC2023000000001",
                 "IssueDate": "2023-10-01T12:00:00.000Z",
                 "PayableAmount": "Infinity",
-                "Currency": "TRY",
+                "CurrencyCode": "TRY",
             }
         ]
     }
@@ -201,7 +201,7 @@ def test_map_page_fails_on_non_string_issue_date():
                 "InvoiceNumber": "ABC2023000000001",
                 "IssueDate": 1234567890,
                 "PayableAmount": 100.50,
-                "Currency": "TRY",
+                "CurrencyCode": "TRY",
             }
         ]
     }
@@ -219,7 +219,7 @@ def test_naive_issue_date_is_assumed_europe_istanbul():
                 "InvoiceNumber": "ABC2023000000001",
                 "IssueDate": "2023-10-01T12:00:00",
                 "PayableAmount": 100.50,
-                "Currency": "TRY",
+                "CurrencyCode": "TRY",
             }
         ],
     }
@@ -242,7 +242,7 @@ def test_offset_issue_date_preserves_provider_offset():
                 "InvoiceNumber": "ABC2023000000001",
                 "IssueDate": "2023-10-01T12:00:00+02:00",
                 "PayableAmount": 100.50,
-                "Currency": "TRY",
+                "CurrencyCode": "TRY",
             }
         ],
     }
@@ -263,7 +263,7 @@ def test_utc_issue_date_preserves_utc():
                 "InvoiceNumber": "ABC2023000000001",
                 "IssueDate": "2023-10-01T12:00:00Z",
                 "PayableAmount": 100.50,
-                "Currency": "TRY",
+                "CurrencyCode": "TRY",
             }
         ],
     }
@@ -282,7 +282,7 @@ def test_invalid_issue_date_still_fails():
                 "InvoiceNumber": "ABC2023000000001",
                 "IssueDate": "invalid-date",
                 "PayableAmount": 100.50,
-                "Currency": "TRY",
+                "CurrencyCode": "TRY",
             }
         ]
     }

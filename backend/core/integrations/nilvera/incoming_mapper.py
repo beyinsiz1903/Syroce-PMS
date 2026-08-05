@@ -153,7 +153,7 @@ class NilveraIncomingMapper:
                 raise
             raise NilveraValidationError("Incoming invoice has invalid PayableAmount format") from e
 
-        currency = item.get("Currency")
+        currency = item.get("CurrencyCode") or item.get("Currency")
         if not currency:
             raise NilveraValidationError("Incoming invoice is missing Currency")
 
