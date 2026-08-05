@@ -109,8 +109,8 @@ async def test_http_400_is_failure(sandbox_client):
     """Verify HTTP 400 (or 422) Validation Error is raised properly."""
     async with sandbox_client as client:
         with pytest.raises(NilveraValidationError) as exc_info:
-            # Send invalid TaxNumber to force a 400 Validation Error
-            await client.get("/general/GlobalCompany/Check/TaxNumber/invalid-tax-number")
+            # Send empty POST payload to force a 400 Validation Error
+            await client.post("/einvoice/Send/Model", json={})
         
         assert exc_info.value.http_status in (400, 422)
 
@@ -252,8 +252,11 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
     payload = NilveraInvoiceMapper.map_to_nilvera(invoice, seller, sandbox_buyer_alias, request_uuid)
     
     async with sandbox_client as client:
-        # 1. Submission
-        submit_res = await client.post("/einvoice/Send/Model", json=payload.model_dump(mode='json', by_alias=True))
+        try:
+            submit_res = await client.post("/einvoice/Send/Model", json=payload.model_dump(mode='json', by_alias=True))
+        except NilveraValidationError as e:
+            raw = getattr(e, 'raw_response', str(e))
+            pytest.fail(f"Invoice submission failed with 400 Validation Error. API Response: {raw}")
         
         assert "UUID" in submit_res
         assert submit_res["UUID"] != ""
