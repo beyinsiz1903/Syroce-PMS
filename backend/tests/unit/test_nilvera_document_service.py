@@ -1,3 +1,5 @@
+import base64
+import json
 import uuid
 from unittest.mock import AsyncMock
 
@@ -76,7 +78,7 @@ async def test_download_sale_pdf(doc_service, mock_http_client):
     assert res == b"%PDF-content"
     mock_http_client.get_binary.assert_called_once_with(
         path=f"/einvoice/Sale/{invoice_uuid}/pdf",
-        expected_content_types=["application/pdf", "application/octet-stream"]
+        expected_content_types=["application/pdf", "application/octet-stream", "application/json"]
     )
 
 
@@ -89,7 +91,7 @@ async def test_download_sale_xml(doc_service, mock_http_client):
     assert res.startswith(b"<?xml")
     mock_http_client.get_binary.assert_called_once_with(
         path=f"/einvoice/Sale/{invoice_uuid}/xml",
-        expected_content_types=["application/xml", "text/xml", "application/octet-stream"]
+        expected_content_types=["application/xml", "text/xml", "application/octet-stream", "application/json"]
     )
 
 
@@ -102,7 +104,7 @@ async def test_download_purchase_pdf(doc_service, mock_http_client):
     assert res == b"%PDF-content"
     mock_http_client.get_binary.assert_called_once_with(
         path=f"/einvoice/Purchase/{invoice_uuid}/pdf",
-        expected_content_types=["application/pdf", "application/octet-stream"]
+        expected_content_types=["application/pdf", "application/octet-stream", "application/json"]
     )
 
 
@@ -115,7 +117,7 @@ async def test_download_purchase_xml(doc_service, mock_http_client):
     assert b"Invoice" in res
     mock_http_client.get_binary.assert_called_once_with(
         path=f"/einvoice/Purchase/{invoice_uuid}/xml",
-        expected_content_types=["application/xml", "text/xml", "application/octet-stream"]
+        expected_content_types=["application/xml", "text/xml", "application/octet-stream", "application/json"]
     )
 
 
@@ -141,3 +143,14 @@ async def test_download_pdf_validates_octet_stream_magic_bytes(doc_service, mock
     
     with pytest.raises(NilveraValidationError, match="missing magic bytes"):
         await doc_service.download_sale_pdf(str(uuid.uuid4()))
+
+
+@pytest.mark.asyncio
+async def test_download_pdf_decodes_base64_json_string(doc_service, mock_http_client):
+    valid_pdf_b64 = base64.b64encode(b"%PDF-1.4\nsome content").decode("utf-8")
+    mock_http_client.get_binary.return_value = json.dumps(valid_pdf_b64).encode("utf-8")
+    
+    invoice_uuid = str(uuid.uuid4())
+    res = await doc_service.download_sale_pdf(invoice_uuid)
+    
+    assert res == b"%PDF-1.4\nsome content"

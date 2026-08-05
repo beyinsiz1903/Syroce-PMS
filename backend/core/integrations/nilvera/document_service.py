@@ -68,14 +68,25 @@ class NilveraDocumentService:
 
         expected_types = []
         if doc_type == "pdf":
-            expected_types = ["application/pdf", "application/octet-stream"]
+            expected_types = ["application/pdf", "application/octet-stream", "application/json"]
         elif doc_type == "xml":
-            expected_types = ["application/xml", "text/xml", "application/octet-stream"]
+            expected_types = ["application/xml", "text/xml", "application/octet-stream", "application/json"]
 
         content = await self._client.get_binary(
             path=path,
             expected_content_types=expected_types,
         )
+
+        # If Nilvera returns the binary as a base64-encoded JSON string
+        if content.startswith(b'"') and content.endswith(b'"'):
+            import json
+            import base64
+            try:
+                base64_str = json.loads(content)
+                if isinstance(base64_str, str):
+                    content = base64.b64decode(base64_str)
+            except (json.JSONDecodeError, ValueError):
+                pass
 
         if doc_type == "pdf":
             self._validate_pdf_content(content)
