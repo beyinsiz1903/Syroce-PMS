@@ -115,7 +115,10 @@ async def shutdown_all(app):
         try:
             await incoming_sync_worker.stop()
         except Exception as e:
-            logger.warning(f"Nilvera Incoming Sync Worker shutdown warning: {e}")
+            logger.warning(
+                "Nilvera Incoming Sync Worker shutdown warning error_type=%s",
+                type(e).__name__,
+            )
 
     # Outbox lifecycle worker
     worker = getattr(app.state, "outbox_lifecycle_worker", None)
