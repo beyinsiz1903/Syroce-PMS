@@ -216,7 +216,8 @@ class NilveraIncomingXmlMapper:
         vat_rates: set[Decimal] = set()
         for subtotal in element.findall("cac:TaxTotal/cac:TaxSubtotal", cls._NS):
             tax_code = cls._text(subtotal, "cac:TaxCategory/cac:TaxScheme/cbc:TaxTypeCode", "tax code")
-            tax_amount = cls._decimal(subtotal, "cbc:TaxAmount", "tax amount")
+            tax_kind = "VAT" if tax_code == "0015" else "other"
+            tax_amount = cls._decimal(subtotal, "cbc:TaxAmount", f"{tax_kind} tax amount")
             tax_currency = cls._currency(subtotal, "cbc:TaxAmount", "tax amount")
             if tax_currency != line_currency:
                 raise NilveraValidationError("Incoming invoice XML tax currency does not match")

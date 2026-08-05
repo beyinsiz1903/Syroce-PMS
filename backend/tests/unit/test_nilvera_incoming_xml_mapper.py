@@ -144,3 +144,14 @@ def test_invalid_decimal_reports_only_safe_numeric_form(raw_value, numeric_form)
     message = str(exc_info.value)
     assert f"numeric_form={numeric_form}" in message
     assert raw_value not in message
+
+
+def test_invalid_tax_amount_reports_only_safe_tax_kind():
+    content = _invoice_xml().replace(b">20.00</cbc:TaxAmount>", b">-1.00</cbc:TaxAmount>", 1)
+
+    with pytest.raises(NilveraValidationError) as exc_info:
+        NilveraIncomingXmlMapper.map_document(content)
+
+    message = str(exc_info.value)
+    assert "invalid VAT tax amount" in message
+    assert "-1.00" not in message
