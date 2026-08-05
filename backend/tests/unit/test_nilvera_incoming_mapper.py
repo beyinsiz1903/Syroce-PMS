@@ -335,7 +335,6 @@ def test_map_incoming_detail_contract():
     assert detail.invoice_profile == "TICARIFATURA"
     assert detail.issue_date == datetime(2023, 10, 1, 12, tzinfo=UTC)
     assert detail.issue_date_timezone_assumed is False
-    assert detail.send_date == datetime(2023, 10, 1, 12, 5, tzinfo=UTC)
     assert detail.invoice_amount == Decimal("120.00")
     assert detail.tax_amount == Decimal("20.00")
 
@@ -348,14 +347,6 @@ def test_map_incoming_status_contract():
     assert status.answer_code == "unknown"
     assert status.status_code == "Success"
     assert status.gib_code == "1200"
-    assert status.envelope_created_date == datetime(
-        2023,
-        10,
-        1,
-        12,
-        6,
-        tzinfo=UTC,
-    )
 
 
 @pytest.mark.parametrize("mapper_name", ["map_detail", "map_status"])
@@ -369,62 +360,19 @@ def test_only_issue_date_may_assume_europe_istanbul(mapper_name):
     assert str(mapped.issue_date.tzinfo) == "Europe/Istanbul"
 
 
-def test_detail_rejects_naive_send_date_without_timezone_fallback():
-    payload = _incoming_detail_payload()
-    payload["SendDate"] = "2023-10-01T12:05:00"
+def test_non_issue_date_fields_are_not_used_as_date_fallbacks():
+    detail_payload = _incoming_detail_payload()
+    detail_payload["SendDate"] = "provider-specific-date"
+    status_payload = _incoming_status_payload()
+    status_payload["EnvelopeInfo"]["CreatedDate"] = "provider-specific-date"
 
-    with pytest.raises(NilveraValidationError, match="timezone-naive SendDate"):
-        NilveraIncomingMapper.map_detail(payload)
+    detail = NilveraIncomingMapper.map_detail(detail_payload)
+    status = NilveraIncomingMapper.map_status(status_payload)
 
-
-@pytest.mark.parametrize("missing_value", [None, "", "   "])
-def test_optional_send_date_may_be_absent_without_issue_date_fallback(
-    missing_value,
-):
-    payload = _incoming_detail_payload()
-    payload["SendDate"] = missing_value
-
-    detail = NilveraIncomingMapper.map_detail(payload)
-
-    assert detail.send_date is None
     assert detail.issue_date == datetime(2023, 10, 1, 12, tzinfo=UTC)
-
-
-def test_optional_send_date_rejects_unsupported_format_without_echoing_value():
-    payload = _incoming_detail_payload()
-    payload["SendDate"] = "provider-specific-date"
-
-    with pytest.raises(
-        NilveraValidationError,
-        match="unsupported SendDate format",
-    ) as exc_info:
-        NilveraIncomingMapper.map_detail(payload)
-
-    assert "provider-specific-date" not in str(exc_info.value)
-
-
-def test_optional_send_date_rejects_invalid_type_without_echoing_value():
-    payload = _incoming_detail_payload()
-    payload["SendDate"] = 123456
-
-    with pytest.raises(
-        NilveraValidationError,
-        match="invalid SendDate type",
-    ) as exc_info:
-        NilveraIncomingMapper.map_detail(payload)
-
-    assert "123456" not in str(exc_info.value)
-
-
-def test_status_rejects_naive_envelope_date_without_timezone_fallback():
-    payload = _incoming_status_payload()
-    payload["EnvelopeInfo"]["CreatedDate"] = "2023-10-01T12:06:00"
-
-    with pytest.raises(
-        NilveraValidationError,
-        match="timezone-naive CreatedDate",
-    ):
-        NilveraIncomingMapper.map_status(payload)
+    assert status.issue_date == datetime(2023, 10, 1, 12, tzinfo=UTC)
+    assert not hasattr(detail, "send_date")
+    assert not hasattr(status, "envelope_created_date")
 
 
 @pytest.mark.parametrize(

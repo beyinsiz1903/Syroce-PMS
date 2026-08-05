@@ -2,7 +2,6 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
 from zoneinfo import ZoneInfo
 
 from core.integrations.nilvera.errors import NilveraValidationError
@@ -40,7 +39,6 @@ class IncomingInvoiceDetail:
     invoice_number: str
     issue_date: datetime
     issue_date_timezone_assumed: bool
-    send_date: datetime | None
     currency: str
     number_of_items: int
     invoice_amount: Decimal
@@ -56,7 +54,6 @@ class IncomingInvoiceStatus:
     answer_code: str
     status_code: str
     gib_code: str | None
-    envelope_created_date: datetime | None
 
 
 class NilveraIncomingMapper:
@@ -97,19 +94,12 @@ class NilveraIncomingMapper:
         return value
 
     @classmethod
-    def _parse_datetime(
+    def _parse_issue_date(
         cls,
         payload: dict,
-        field_name: str,
-        *,
-        required: bool = True,
-        assume_istanbul_for_naive_issue_date: bool = False,
-    ) -> tuple[datetime | None, bool]:
-        raw_value: Any = payload.get(field_name)
-        if raw_value is None and not required:
-            return None, False
-        if not required and isinstance(raw_value, str) and not raw_value.strip():
-            return None, False
+    ) -> tuple[datetime, bool]:
+        field_name = "IssueDate"
+        raw_value = payload.get(field_name)
         if not isinstance(raw_value, str):
             raise NilveraValidationError(f"Incoming invoice response has invalid {field_name} type")
         if not raw_value.strip():
@@ -122,9 +112,7 @@ class NilveraIncomingMapper:
             raise NilveraValidationError(f"Incoming invoice response has unsupported {field_name} format") from None
 
         if parsed.tzinfo is None:
-            if assume_istanbul_for_naive_issue_date and field_name == "IssueDate":
-                return parsed.replace(tzinfo=cls._ISTANBUL), True
-            raise NilveraValidationError(f"Incoming invoice response has timezone-naive {field_name}")
+            return parsed.replace(tzinfo=cls._ISTANBUL), True
 
         return parsed, False
 
@@ -273,12 +261,7 @@ class NilveraIncomingMapper:
         if not isinstance(payload, dict):
             raise NilveraValidationError("Incoming invoice detail is not a JSON object")
 
-        issue_date, issue_date_assumed = cls._parse_datetime(
-            payload,
-            "IssueDate",
-            assume_istanbul_for_naive_issue_date=True,
-        )
-        send_date, _ = cls._parse_datetime(payload, "SendDate", required=False)
+        issue_date, issue_date_assumed = cls._parse_issue_date(payload)
 
         return IncomingInvoiceDetail(
             provider_uuid=cls._parse_uuid(payload, "UUID"),
@@ -287,7 +270,6 @@ class NilveraIncomingMapper:
             invoice_number=cls._require_string(payload, "InvoiceNumber"),
             issue_date=issue_date,
             issue_date_timezone_assumed=issue_date_assumed,
-            send_date=send_date,
             currency=cls._require_string(payload, "CurrencyCode"),
             number_of_items=cls._parse_non_negative_int(payload, "NumberOfItems"),
             invoice_amount=cls._parse_decimal(payload, "InvoiceAmount"),
@@ -304,16 +286,7 @@ class NilveraIncomingMapper:
         answer = cls._require_object(payload, "Answer")
         invoice_status = cls._require_object(payload, "InvoiceStatus")
         envelope_info = cls._require_object(payload, "EnvelopeInfo")
-        issue_date, issue_date_assumed = cls._parse_datetime(
-            payload,
-            "IssueDate",
-            assume_istanbul_for_naive_issue_date=True,
-        )
-        envelope_created_date, _ = cls._parse_datetime(
-            envelope_info,
-            "CreatedDate",
-            required=False,
-        )
+        issue_date, issue_date_assumed = cls._parse_issue_date(payload)
 
         gib_code = envelope_info.get("GIBCode")
         return IncomingInvoiceStatus(
@@ -323,5 +296,4 @@ class NilveraIncomingMapper:
             answer_code=cls._require_string(answer, "AnswerCode"),
             status_code=cls._require_string(invoice_status, "Code"),
             gib_code=str(gib_code) if gib_code is not None else None,
-            envelope_created_date=envelope_created_date,
         )
