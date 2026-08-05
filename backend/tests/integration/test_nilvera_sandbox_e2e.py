@@ -4,12 +4,16 @@ import os
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 import pytest_asyncio
 
+from core.integrations.incoming_invoice_repository import IncomingInvoiceRepository
 from core.integrations.incoming_invoice_sync_service import IncomingInvoiceSyncService
+from core.integrations.invoice_lifecycle_repository import InvoiceLifecycleRepository
+from core.integrations.invoice_lifecycle_service import InvoiceLifecycleService
 from core.integrations.nilvera.client import NilveraHttpClient
 from core.integrations.nilvera.config import get_nilvera_config
 from core.integrations.nilvera.document_service import NilveraDocumentService
@@ -20,13 +24,24 @@ from core.integrations.nilvera.errors import (
 )
 from core.integrations.nilvera.incoming import NilveraIncomingService
 from core.integrations.nilvera.incoming_answer import (
-    NilveraIncomingAnswerDecision,
     NilveraIncomingAnswerService,
     NilveraIncomingAnswerState,
 )
 from core.integrations.nilvera.mapper import NilveraInvoiceMapper, SellerSnapshot
 from core.integrations.nilvera.status_mapper import ProviderInvoiceOutcome, map_nilvera_status
 from core.integrations.nilvera.taxpayer import NilveraTaxpayerService
+from models.schemas.incoming_invoice import (
+    IncomingInvoiceAnswerStatus,
+    IncomingInvoiceProfile,
+    IncomingInvoiceProviderStatus,
+)
+from models.schemas.invoice_lifecycle import (
+    ActionCreationResult,
+    InvoiceLifecycleAction,
+    InvoiceLifecycleActionState,
+    InvoiceLifecycleActionType,
+    InvoiceLifecycleDirection,
+)
 from models.schemas.invoicing import Invoice, InvoiceItem
 
 # Mark all tests in this file as nilvera_sandbox
@@ -344,8 +359,8 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
 
 @pytest.mark.external
 @pytest.mark.side_effect
-async def test_sandbox_incoming_commercial_invoice_answer_contract(sandbox_client):
-    """Approve only a test-generated commercial invoice after explicit authorization."""
+async def test_sandbox_incoming_commercial_invoice_answer_contract(sandbox_client, record_property):
+    """Approve one test invoice through the persisted lifecycle after authorization."""
     if os.environ.get("NILVERA_E2E_INCOMING_ANSWER_ALLOWED", "false").lower() != "true":
         pytest.skip("Incoming invoice answer write test requires explicit Sandbox authorization")
 
@@ -354,66 +369,188 @@ async def test_sandbox_incoming_commercial_invoice_answer_contract(sandbox_clien
         retryable = exc.retryable if isinstance(exc, NilveraApiError) else None
         pytest.fail(f"Incoming answer {operation} failed (error_type={type(exc).__name__}, http_status={http_status}, retryable={retryable})")
 
+    mongo_url = os.environ.get("MONGO_URL", "")
+    if "localhost" not in mongo_url and "127.0.0.1" not in mongo_url:
+        pytest.fail("Incoming answer lifecycle E2E requires the isolated local Mongo service")
+
+    from bootstrap.migrations.versions.v005_incoming_invoice_lifecycle import MIGRATION as v005
+    from bootstrap.migrations.versions.v006_incoming_invoice_answer_atomicity import MIGRATION as v006
+    from bootstrap.migrations.versions.v007_f2_create_return_models import MIGRATION as v007
+    from bootstrap.migrations.versions.v009_incoming_invoice_sync import MIGRATION as v009
+    from core.database import _raw_db
+    from core.tenant_db import get_db_for_tenant
+
+    await v005.up(_raw_db)
+    await v006.up(_raw_db)
+    await v007.up(_raw_db)
+    await v009.up(_raw_db)
+
+    tenant_id = f"nilvera-answer-e2e-{uuid.uuid4().hex}"
+    tenant_db = get_db_for_tenant(tenant_id)
     end_date = datetime.now(UTC)
     start_date = end_date - timedelta(days=31)
     provider_uuid = None
+    provider_write_count = 0
+    provider_state = NilveraIncomingAnswerState.UNKNOWN
+    lifecycle_state: InvoiceLifecycleActionState | None = None
 
-    async with sandbox_client as client:
-        incoming_service = NilveraIncomingService(client)
-        for _ in range(12):
+    class BorrowedClientContext:
+        def __init__(self, client):
+            self.client = client
+
+        async def __aenter__(self):
+            return self.client
+
+        async def __aexit__(self, exc_type, exc_value, traceback):
+            return None
+
+    try:
+        async with sandbox_client as client:
+            incoming_service = NilveraIncomingService(client)
+            for _ in range(12):
+                try:
+                    page = await incoming_service.fetch_incoming_invoices(
+                        start_date,
+                        end_date,
+                        page=1,
+                        page_size=100,
+                    )
+                except Exception as exc:
+                    fail_safely("candidate discovery", exc)
+                for summary in page.items:
+                    normalized_answer = "".join(character for character in (summary.answer_code or "").lower() if character.isalnum())
+                    normalized_status = "".join(character for character in (summary.status_code or "").upper() if character.isalnum())
+                    if not summary.invoice_number.startswith(f"TST{end_date.year}"):
+                        continue
+                    if normalized_answer not in {"", "waitingforapproval"}:
+                        continue
+                    if normalized_status not in {"SUCCEED", "SUCCESS"}:
+                        continue
+                    try:
+                        detail = await incoming_service.fetch_incoming_invoice_detail(summary.provider_uuid)
+                        status = await incoming_service.fetch_incoming_invoice_status(summary.provider_uuid)
+                    except Exception as exc:
+                        fail_safely("candidate verification", exc)
+                    if detail.invoice_profile != "TICARIFATURA":
+                        continue
+                    verified_answer = "".join(character for character in (status.answer_code or "").lower() if character.isalnum())
+                    verified_status = "".join(character for character in status.status_code.upper() if character.isalnum())
+                    if verified_answer in {"", "waitingforapproval"} and verified_status in {"SUCCEED", "SUCCESS"}:
+                        provider_uuid = summary.provider_uuid
+                        break
+                if provider_uuid is not None:
+                    break
+                await asyncio.sleep(5)
+
+            if provider_uuid is None:
+                pytest.fail("BLOCKED_NO_ELIGIBLE_TEST_INVOICE")
+
             try:
-                page = await incoming_service.fetch_incoming_invoices(
+                await IncomingInvoiceSyncService.sync_tenant(
+                    tenant_id,
                     start_date,
                     end_date,
-                    page=1,
-                    page_size=100,
+                    client=client,
                 )
             except Exception as exc:
-                fail_safely("candidate discovery", exc)
-            for summary in page.items:
-                normalized_answer = "".join(character for character in (summary.answer_code or "").lower() if character.isalnum())
-                if not summary.invoice_number.startswith("TST2026"):
-                    continue
-                if normalized_answer not in {"", "unknown", "waitingforapproval"}:
-                    continue
-                try:
-                    detail = await incoming_service.fetch_incoming_invoice_detail(summary.provider_uuid)
-                except Exception as exc:
-                    fail_safely("candidate detail query", exc)
-                if detail.invoice_profile == "TICARIFATURA":
-                    provider_uuid = summary.provider_uuid
-                    break
-            if provider_uuid is not None:
-                break
-            await asyncio.sleep(5)
+                fail_safely("local synchronization", exc)
 
-        if provider_uuid is None:
-            pytest.fail("No pending test-generated commercial invoice was available for the approved write test")
+            invoice = await IncomingInvoiceRepository.get_by_provider_uuid(tenant_id, provider_uuid)
+            if invoice is None:
+                pytest.fail("Eligible Sandbox invoice was not persisted locally")
+            if invoice.profile != IncomingInvoiceProfile.COMMERCIAL:
+                pytest.fail("Eligible Sandbox invoice has an invalid local profile")
+            if invoice.answer_status != IncomingInvoiceAnswerStatus.PENDING:
+                pytest.fail("Eligible Sandbox invoice is not locally pending")
+            if invoice.provider_status != IncomingInvoiceProviderStatus.SUCCEED:
+                pytest.fail("Eligible Sandbox invoice is not locally provider-ready")
 
-        answer_service = NilveraIncomingAnswerService(client)
-        try:
-            await answer_service.send_answer(
-                provider_uuid,
-                NilveraIncomingAnswerDecision.APPROVED,
+            action = InvoiceLifecycleAction(
+                id=str(uuid.uuid4()),
+                tenant_id=tenant_id,
+                direction=InvoiceLifecycleDirection.INCOMING,
+                source_invoice_id=invoice.id,
+                source_provider_uuid=provider_uuid,
+                action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING,
+                state=InvoiceLifecycleActionState.REQUESTED,
+                request_uuid=str(uuid.uuid4()),
+                idempotency_key=f"{tenant_id}:sandbox-answer:{invoice.id}",
+                request_fingerprint="sandbox-incoming-approve-v1",
+                answer_guard_key=invoice.id,
+                requested_by="sandbox-e2e",
+                requested_at=datetime.now(UTC),
             )
-        except Exception as exc:
-            fail_safely("write", exc)
+            if await InvoiceLifecycleRepository.create_action(action) != ActionCreationResult.SUCCESS:
+                pytest.fail("Sandbox lifecycle action could not be created")
 
-        for delay in [1, 2, 4, 5, 5, 5, 5, 5, 5, 5]:
-            await asyncio.sleep(delay)
+            borrowed_context = BorrowedClientContext(client)
+            with (
+                patch.object(client, "post", wraps=client.post) as provider_post,
+                patch(
+                    "core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config",
+                    new=AsyncMock(return_value={"enabled": True, "api_key": "sandbox-e2e-present"}),
+                ),
+                patch(
+                    "core.integrations.invoice_lifecycle_service.NilveraHttpClient",
+                    return_value=borrowed_context,
+                ),
+                patch(
+                    "core.integrations.invoice_lifecycle_service.event_bus.publish",
+                    new=AsyncMock(return_value={}),
+                ),
+                patch(
+                    "core.integrations.invoice_lifecycle_service.STATUS_POLL_DELAYS",
+                    (1, 2, 4, 5, 5),
+                ),
+            ):
+                for delay in (0, 1.5, 2.5, 4.5, 5.5, 5.5):
+                    if delay:
+                        await asyncio.sleep(delay)
+                    try:
+                        await InvoiceLifecycleService.process_lifecycle_action(
+                            tenant_id,
+                            action.id,
+                            "sandbox-e2e-worker",
+                        )
+                        persisted_action = await InvoiceLifecycleRepository.get_by_id(tenant_id, action.id)
+                    except Exception as exc:
+                        provider_write_count = provider_post.await_count
+                        pytest.fail(f"Incoming answer lifecycle processing failed (error_type={type(exc).__name__}, write_count={provider_write_count})")
+                    if persisted_action is None:
+                        pytest.fail("Sandbox lifecycle action disappeared during processing")
+                    lifecycle_state = persisted_action.state
+                    if lifecycle_state in {
+                        InvoiceLifecycleActionState.SUCCEEDED,
+                        InvoiceLifecycleActionState.FAILED,
+                        InvoiceLifecycleActionState.RECONCILIATION_REQUIRED,
+                    }:
+                        break
+                provider_write_count = provider_post.await_count
+
             try:
-                state = await answer_service.fetch_answer_state(provider_uuid)
+                provider_state = await NilveraIncomingAnswerService(client).fetch_answer_state(provider_uuid)
             except Exception as exc:
-                fail_safely("status query", exc)
-            if state == NilveraIncomingAnswerState.APPROVED:
-                return
-            if state in {
-                NilveraIncomingAnswerState.REJECTED,
-                NilveraIncomingAnswerState.ANSWERED_AUTOMATICALLY,
-            }:
-                pytest.fail("Incoming invoice answer reached a conflicting terminal state")
+                fail_safely("final provider status query", exc)
 
-    pytest.fail("Incoming invoice answer remained pending after the verification window")
+            persisted_invoice = await IncomingInvoiceRepository.get_by_id(tenant_id, invoice.id)
+            if provider_write_count != 1:
+                pytest.fail(f"Incoming answer provider write count is invalid (write_count={provider_write_count})")
+            if provider_state != NilveraIncomingAnswerState.APPROVED:
+                pytest.fail(f"Incoming answer provider state is not approved (state={provider_state.value})")
+            if lifecycle_state != InvoiceLifecycleActionState.SUCCEEDED:
+                safe_state = lifecycle_state.value if lifecycle_state is not None else "MISSING"
+                pytest.fail(f"Incoming answer lifecycle state is not successful (state={safe_state})")
+            if persisted_invoice is None or persisted_invoice.answer_status != IncomingInvoiceAnswerStatus.APPROVED:
+                pytest.fail("Incoming answer local invoice state is not approved")
+
+            record_property("provider_write_count", str(provider_write_count))
+            record_property("provider_answer_state", provider_state.value)
+            record_property("lifecycle_state", lifecycle_state.value)
+    finally:
+        await tenant_db.invoice_lifecycle_actions.delete_many({})
+        await tenant_db.incoming_invoice_lines.delete_many({})
+        await tenant_db.incoming_invoices.delete_many({})
+        await tenant_db.incoming_invoice_sync_state.delete_many({})
 
 
 @pytest.mark.external

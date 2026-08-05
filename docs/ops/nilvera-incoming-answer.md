@@ -23,6 +23,6 @@ Provider reference: <https://developer.nilvera.com/en/api/e-invoice-api/incoming
 
 ## Sandbox Verification
 
-The Sandbox workflow input `run_incoming_answer` defaults to `false`. The write test runs only when it is explicitly set to `true` after approval. It approves only a pending, commercial invoice whose number uses the Sandbox suite's reserved test prefix. Missing candidates, provider errors, timeouts, unsupported responses, pending exhaustion, and conflicting terminal states fail the test.
+The Sandbox workflow input `run_incoming_answer` defaults to `false`. The write test runs only when it is explicitly set to `true` after approval. It approves only one provider-ready, pending commercial invoice whose number uses the Sandbox suite's reserved test prefix. The test creates an isolated local lifecycle action, persists the provider-attempt marker before the write, and asserts exactly one provider write. Success requires the final provider answer, lifecycle action, and local invoice answer to be `APPROVED`/`SUCCEEDED`; these non-sensitive values and the write count are stored in the JUnit artifact. Missing candidates, provider errors, timeouts, unsupported responses, pending exhaustion, and conflicting terminal states fail the test.
 
 Production credentials, production tenants, and production deployment are outside this procedure.
