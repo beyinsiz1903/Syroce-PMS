@@ -258,11 +258,11 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
     async with sandbox_client as client:
         try:
             submit_res = await client.post("/einvoice/Send/Model", json=payload.model_dump(mode='json', by_alias=True))
-        except NilveraValidationError as e:
+        except NilveraApiError as e:
             raw = getattr(e, 'sanitized_preview', str(e))
             detail = getattr(e, 'sanitized_detail', "")
             desc = getattr(e, 'sanitized_description', "")
-            pytest.fail(f"Invoice submission failed with 400 Validation Error. API Response: {raw} | Desc: {desc} | Detail: {detail}")
+            pytest.fail(f"Invoice submission failed with {e.http_status} Error. API Response: {raw} | Desc: {desc} | Detail: {detail}")
         
         assert "UUID" in submit_res
         assert submit_res["UUID"] != ""
