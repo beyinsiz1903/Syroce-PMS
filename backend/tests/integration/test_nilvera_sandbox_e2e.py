@@ -265,8 +265,8 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
         assert submit_res["UUID"] != ""
         doc_uuid = submit_res["UUID"]
         
-        # 2. Polling config: 1, 2, 4, 5, 5... (max 12 attempts)
-        backoffs = [1, 2, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5]
+        # 2. Polling config: 1, 2, 4, 5, 5... (max 20 attempts, ~90 seconds total)
+        backoffs = [1, 2, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
         
         terminal_status_reached = False
         final_outcome = None
