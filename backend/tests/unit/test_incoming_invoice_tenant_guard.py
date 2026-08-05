@@ -13,7 +13,12 @@ from core.tenant_db import (
 
 @pytest.mark.parametrize(
     "collection_name",
-    ("incoming_invoices", "incoming_invoice_lines", "incoming_invoice_sync_state"),
+    (
+        "incoming_invoices",
+        "incoming_invoice_lines",
+        "incoming_invoice_sync_state",
+        "invoice_lifecycle_actions",
+    ),
 )
 def test_incoming_invoice_collections_require_tenant_context(collection_name):
     clear_tenant_context()

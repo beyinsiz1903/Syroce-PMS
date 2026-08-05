@@ -204,10 +204,14 @@ jobs:
             tests/test_route_shadowing.py \
             tests/test_hr_shifts_overnight.py \
             tests/unit/test_nilvera_incoming_xml_mapper.py \
+            tests/unit/test_nilvera_incoming_answer.py \
             tests/unit/test_incoming_invoice_sync_service.py \
             tests/unit/test_incoming_invoice_sync_worker.py \
             tests/unit/test_incoming_invoice_tenant_guard.py \
             tests/test_incoming_invoice_sync_api.py \
+            tests/test_invoice_lifecycle_api.py \
+            tests/test_invoice_lifecycle_service.py \
+            tests/test_invoice_lifecycle_worker.py \
             tests/test_bootstrap_invoice_workers.py \
             tests/test_nilvera_worker_lifecycle.py \
             tests/integration/test_academy_cert_race_live.py \
@@ -330,6 +334,8 @@ jobs:
           python -m pytest \
             tests/test_feedback_reporting_unified_live.py \
             tests/test_incoming_invoice_sync_repository_realdb.py \
+            tests/test_invoice_lifecycle_repository_realdb.py \
+            tests/test_invoice_lifecycle_migration.py \
             -m live_mongo --strict-markers -v --tb=short -q --timeout=60 \
             --junitxml=test-results-live-mongo.xml
         env:

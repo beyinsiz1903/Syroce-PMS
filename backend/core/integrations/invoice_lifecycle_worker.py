@@ -36,7 +36,7 @@ class InvoiceLifecycleWorker(NilveraWorkerHealthMixin):
     async def start(self) -> None:
         """Starts the worker in the background."""
         if not self.health.enabled:
-            logger.info(f"{self._worker_id} is disabled. Will not start.")
+            logger.info("Invoice lifecycle worker is disabled")
             return
 
         global _raw_db
@@ -44,7 +44,7 @@ class InvoiceLifecycleWorker(NilveraWorkerHealthMixin):
             _raw_db = get_system_db()
 
         if self._task and not self._task.done():
-            logger.warning("InvoiceLifecycleWorker is already running.")
+            logger.warning("Invoice lifecycle worker is already running")
             return
 
         self._stop_event.clear()
@@ -58,7 +58,7 @@ class InvoiceLifecycleWorker(NilveraWorkerHealthMixin):
             raise RuntimeError("NILVERA_WORKER_STARTUP_FAILED") from None
 
         self._mark_running()
-        logger.info(f"InvoiceLifecycleWorker ({self._worker_id}) started.")
+        logger.info("Invoice lifecycle worker started")
 
     async def stop(self) -> None:
         """Gracefully stops the worker."""
@@ -66,13 +66,13 @@ class InvoiceLifecycleWorker(NilveraWorkerHealthMixin):
             return
 
         self._mark_stopping()
-        logger.info(f"InvoiceLifecycleWorker ({self._worker_id}) stopping...")
+        logger.info("Invoice lifecycle worker stopping")
         self._stop_event.set()
 
         try:
             await asyncio.wait_for(self._task, timeout=10.0)
         except TimeoutError:
-            logger.warning(f"InvoiceLifecycleWorker ({self._worker_id}) did not shut down gracefully in time. Forcing.")
+            logger.warning("Invoice lifecycle worker stop timed out")
             self._task.cancel()
             try:
                 await self._task
@@ -84,7 +84,7 @@ class InvoiceLifecycleWorker(NilveraWorkerHealthMixin):
             self._task = None
             self._mark_stopped()
 
-        logger.info(f"InvoiceLifecycleWorker ({self._worker_id}) stopped.")
+        logger.info("Invoice lifecycle worker stopped")
 
     async def _run_loop(self) -> None:
         try:
@@ -100,7 +100,10 @@ class InvoiceLifecycleWorker(NilveraWorkerHealthMixin):
                     raise
                 except (TimeoutError, pymongo.errors.PyMongoError) as exc:
                     self._record_job_error(NilveraWorkerErrorCode.TRANSIENT_DEPENDENCY_ERROR)
-                    logger.warning(f"InvoiceLifecycleWorker transient loop error: {type(exc).__name__}")
+                    logger.warning(
+                        "Invoice lifecycle worker transient dependency error error_type=%s",
+                        type(exc).__name__,
+                    )
                     await asyncio.sleep(self._poll_interval)
                 except Exception:
                     raise
@@ -114,11 +117,18 @@ class InvoiceLifecycleWorker(NilveraWorkerHealthMixin):
     async def _process_batch(self) -> int:
         now = datetime.now(UTC)
 
-        # Only process REQUESTED or RETRY_SCHEDULED records that are due
+        # Provider-pending actions are verification-only and never repeat the write.
         cursor = (
             _raw_db.invoice_lifecycle_actions.find(
                 {
-                    "state": {"$in": [InvoiceLifecycleActionState.REQUESTED.value, InvoiceLifecycleActionState.RETRY_SCHEDULED.value]},
+                    "state": {
+                        "$in": [
+                            InvoiceLifecycleActionState.REQUESTED.value,
+                            InvoiceLifecycleActionState.PROCESSING.value,
+                            InvoiceLifecycleActionState.RETRY_SCHEDULED.value,
+                            InvoiceLifecycleActionState.PROVIDER_PENDING.value,
+                        ]
+                    },
                     "$or": [{"next_attempt_at": None}, {"next_attempt_at": {"$lte": now}}],
                     "$and": [{"$or": [{"lifecycle_lease_owner": None}, {"lifecycle_lease_expires_at": {"$lte": now}}]}],
                 }
@@ -139,10 +149,14 @@ class InvoiceLifecycleWorker(NilveraWorkerHealthMixin):
                 if claimed_and_processed:
                     processed += 1
                     self._record_success(1)
-            except Exception as e:
+            except Exception as exc:
                 self._record_job_error(NilveraWorkerErrorCode.LIFECYCLE_PROCESS_FAILED)
-                logger.error(f"Error processing lifecycle sync for {action.id}: {type(e).__name__}")
+                logger.error(
+                    "Invoice lifecycle action processing failed error_type=%s",
+                    type(exc).__name__,
+                )
 
         return processed
+
 
 invoice_lifecycle_worker = InvoiceLifecycleWorker()

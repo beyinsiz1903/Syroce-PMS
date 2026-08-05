@@ -1,184 +1,440 @@
-from unittest.mock import patch
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from models.schemas.invoice_lifecycle import InvoiceLifecycleAction, InvoiceLifecycleActionState, InvoiceLifecycleActionType, InvoiceLifecycleDirection
+from core.integrations.invoice_lifecycle_service import (
+    InvoiceLifecycleService,
+    _get_next_poll_delay,
+)
+from core.integrations.nilvera.errors import (
+    NilveraBusinessRuleError,
+    NilveraTimeoutError,
+)
+from core.integrations.nilvera.incoming_answer import NilveraIncomingAnswerState
+from models.schemas.invoice_lifecycle import (
+    InvoiceLifecycleAction,
+    InvoiceLifecycleActionState,
+    InvoiceLifecycleActionType,
+    InvoiceLifecycleDirection,
+)
+
+PROVIDER_UUID = "11112222-3333-4444-5555-666677778888"
 
 
-@pytest.fixture
-def mock_service():
-    with patch("core.integrations.invoice_lifecycle_service.InvoiceLifecycleService._execute_send_answer") as mock:
-        yield mock
+def _action(**updates) -> InvoiceLifecycleAction:
+    values = {
+        "id": "action-id",
+        "tenant_id": "tenant-id",
+        "direction": InvoiceLifecycleDirection.INCOMING,
+        "source_invoice_id": "invoice-id",
+        "source_provider_uuid": PROVIDER_UUID,
+        "action_type": InvoiceLifecycleActionType.ACCEPT_INCOMING,
+        "state": InvoiceLifecycleActionState.PROCESSING,
+        "request_uuid": "request-id",
+        "idempotency_key": "idempotency-key",
+        "request_fingerprint": "fingerprint",
+        "requested_by": "admin-id",
+        "requested_at": datetime.now(UTC),
+    }
+    values.update(updates)
+    return InvoiceLifecycleAction(**values)
+
+
+def _provider_context(answer_state=NilveraIncomingAnswerState.APPROVED):
+    client = MagicMock()
+    client_context = MagicMock()
+    client_context.__aenter__ = AsyncMock(return_value=client)
+    client_context.__aexit__ = AsyncMock(return_value=None)
+    answer_service = MagicMock()
+    answer_service.send_answer = AsyncMock(return_value=None)
+    answer_service.fetch_answer_state = AsyncMock(return_value=answer_state)
+    return client_context, answer_service
 
 
 @pytest.mark.asyncio
-async def test_process_claimed_action_invalid_uuid():
-    from core.integrations.invoice_lifecycle_service import InvoiceLifecycleService
+async def test_invalid_provider_uuid_fails_without_provider_call():
+    action = _action(source_provider_uuid="sensitive-invalid-provider-identity")
+    with (
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result",
+            new=AsyncMock(return_value=True),
+        ) as update,
+        patch(
+            "core.integrations.invoice_lifecycle_service.event_bus.publish",
+            new=AsyncMock(),
+        ),
+        patch("core.integrations.invoice_lifecycle_service.NilveraHttpClient") as client_class,
+    ):
+        await InvoiceLifecycleService._process_claimed_action(action, "worker-id")
 
-    action = InvoiceLifecycleAction(
-        id="act_1",
-        tenant_id="tenant_1",
-        direction=InvoiceLifecycleDirection.INCOMING,
-        source_invoice_id="inv_1",
-        source_provider_uuid="invalid-uuid",
-        action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING,
-        state=InvoiceLifecycleActionState.PROCESSING,
-        request_uuid="123",
-        idempotency_key="key",
-        request_fingerprint="fingerprint",
-        requested_by="admin",
-        requested_at="2023-01-01T00:00:00Z"
+    client_class.assert_not_called()
+    fields = update.await_args.args[3]
+    assert fields["state"] == InvoiceLifecycleActionState.FAILED.value
+    assert fields["last_error_code"] == "INVALID_PROVIDER_UUID"
+    assert update.await_args.args[4] == {"answer_guard_key": ""}
+
+
+@pytest.mark.asyncio
+async def test_missing_credentials_schedules_retry_without_provider_attempt():
+    action = _action()
+    with (
+        patch(
+            "core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config",
+            new=AsyncMock(return_value={"enabled": False}),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result",
+            new=AsyncMock(return_value=True),
+        ) as update,
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.mark_provider_attempt_started",
+            new=AsyncMock(),
+        ) as mark_attempt,
+    ):
+        await InvoiceLifecycleService._process_claimed_action(action, "worker-id")
+
+    mark_attempt.assert_not_awaited()
+    fields = update.await_args.args[3]
+    assert fields["state"] == InvoiceLifecycleActionState.RETRY_SCHEDULED.value
+    assert fields["last_error_code"] == "TENANT_CREDENTIAL_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_invalid_tenant_configuration_schedules_retry_without_provider_attempt():
+    action = _action()
+    with (
+        patch(
+            "core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result",
+            new=AsyncMock(return_value=True),
+        ) as update,
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.mark_provider_attempt_started",
+            new=AsyncMock(),
+        ) as mark_attempt,
+    ):
+        await InvoiceLifecycleService._process_claimed_action(action, "worker-id")
+
+    mark_attempt.assert_not_awaited()
+    fields = update.await_args.args[3]
+    assert fields["state"] == InvoiceLifecycleActionState.RETRY_SCHEDULED.value
+    assert fields["last_error_code"] == "TENANT_CONFIGURATION_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_success_requires_provider_status_and_local_update():
+    action = _action()
+    client_context, answer_service = _provider_context()
+    with (
+        patch(
+            "core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config",
+            new=AsyncMock(return_value={"enabled": True, "api_key": "test-key"}),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraHttpClient",
+            return_value=client_context,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraIncomingAnswerService",
+            return_value=answer_service,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.mark_provider_attempt_started",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.mark_provider_request_accepted",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.IncomingInvoiceRepository.update_answer_status",
+            new=AsyncMock(return_value=True),
+        ) as update_invoice,
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result",
+            new=AsyncMock(return_value=True),
+        ) as update_action,
+        patch(
+            "core.integrations.invoice_lifecycle_service.event_bus.publish",
+            new=AsyncMock(),
+        ) as publish,
+    ):
+        await InvoiceLifecycleService._process_claimed_action(action, "worker-id")
+
+    answer_service.send_answer.assert_awaited_once()
+    answer_service.fetch_answer_state.assert_awaited_once_with(PROVIDER_UUID)
+    update_invoice.assert_awaited_once()
+    assert update_action.await_args.args[3]["state"] == InvoiceLifecycleActionState.SUCCEEDED.value
+    publish.assert_awaited_once_with(
+        "tenant-id",
+        "invoice.lifecycle.accept_incoming.completed",
+        {
+            "action_id": "action-id",
+            "source_invoice_id": "invoice-id",
+        },
     )
 
-    with patch("core.integrations.invoice_lifecycle_repository.InvoiceLifecycleRepository.update_action_result") as mock_update:
-        await InvoiceLifecycleService._process_claimed_action(action, "worker_1")
 
-        mock_update.assert_called_once()
-        args, kwargs = mock_update.call_args
-        assert args[0] == "tenant_1"
-        assert args[1] == "act_1"
-        assert args[2] == "worker_1"
-        assert kwargs["update_fields"]["state"] == InvoiceLifecycleActionState.FAILED.value
-        assert kwargs["update_fields"]["reconciliation_reason"] == "INVALID_PROVIDER_UUID"
+@pytest.mark.asyncio
+async def test_completion_event_failure_does_not_change_provider_success(caplog):
+    action = _action(provider_attempted_at=datetime.now(UTC))
+    client_context, answer_service = _provider_context()
+    with (
+        patch(
+            "core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config",
+            new=AsyncMock(return_value={"enabled": True, "api_key": "test-key"}),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraHttpClient",
+            return_value=client_context,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraIncomingAnswerService",
+            return_value=answer_service,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.IncomingInvoiceRepository.update_answer_status",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result",
+            new=AsyncMock(return_value=True),
+        ) as update_action,
+        patch(
+            "core.integrations.invoice_lifecycle_service.event_bus.publish",
+            new=AsyncMock(side_effect=RuntimeError("sensitive event detail")),
+        ),
+        caplog.at_level(
+            "WARNING",
+            logger="core.integrations.invoice_lifecycle_service",
+        ),
+    ):
+        await InvoiceLifecycleService._process_claimed_action(action, "worker-id")
 
-async def test_timeout_requires_reconciliation_without_retry():
-    from core.integrations.invoice_lifecycle_service import InvoiceLifecycleService
-    with patch("core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.claim_action_lease") as mock_claim:
-        with patch("core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config") as mock_creds:
-            with patch("core.integrations.invoice_lifecycle_service.NilveraHttpClient.post") as mock_post:
-                with patch("core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result") as mock_update:
-                    from datetime import UTC, datetime
+    assert update_action.await_args.args[3]["state"] == InvoiceLifecycleActionState.SUCCEEDED.value
+    assert "error_type=RuntimeError" in caplog.text
+    assert "sensitive event detail" not in caplog.text
 
-                    from models.schemas.invoice_lifecycle import InvoiceLifecycleAction, InvoiceLifecycleActionState, InvoiceLifecycleActionType, InvoiceLifecycleDirection
 
-                    mock_action = InvoiceLifecycleAction(
-                        id="act_to", tenant_id="t_to", direction=InvoiceLifecycleDirection.INCOMING,
-                        source_invoice_id="inv_to", source_provider_uuid="11112222-3333-4444-5555-666677778888",
-                        action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING, state=InvoiceLifecycleActionState.REQUESTED,
-                        request_uuid="r_to", idempotency_key="k_to", request_fingerprint="f_to",
-                        requested_by="admin", requested_at=datetime.now(UTC)
-                    )
-                    mock_claim.return_value = mock_action
-                    mock_creds.return_value = {"enabled": True, "api_key": "secret"}
-                    mock_post.side_effect = TimeoutError("Timeout")
+@pytest.mark.asyncio
+async def test_existing_provider_attempt_verifies_without_repeating_write():
+    action = _action(provider_attempted_at=datetime.now(UTC))
+    client_context, answer_service = _provider_context()
+    with (
+        patch(
+            "core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config",
+            new=AsyncMock(return_value={"enabled": True, "api_key": "test-key"}),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraHttpClient",
+            return_value=client_context,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraIncomingAnswerService",
+            return_value=answer_service,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.mark_provider_attempt_started",
+            new=AsyncMock(),
+        ) as mark_attempt,
+        patch(
+            "core.integrations.invoice_lifecycle_service.IncomingInvoiceRepository.update_answer_status",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.event_bus.publish",
+            new=AsyncMock(),
+        ),
+    ):
+        await InvoiceLifecycleService._process_claimed_action(action, "worker-id")
 
-                    await InvoiceLifecycleService.process_lifecycle_action("t_to", "act_to", "worker")
+    mark_attempt.assert_not_awaited()
+    answer_service.send_answer.assert_not_awaited()
+    answer_service.fetch_answer_state.assert_awaited_once()
 
-                    mock_update.assert_called_once()
-                    args = mock_update.call_args[0]
-                    assert args[3]["state"] == InvoiceLifecycleActionState.RECONCILIATION_REQUIRED.value
-                    assert args[3]["reconciliation_required"] is True
 
-async def test_rate_limit_requires_reconciliation_without_retry():
-    from core.integrations.invoice_lifecycle_service import InvoiceLifecycleService
-    with patch("core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.claim_action_lease") as mock_claim:
-        with patch("core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config") as mock_creds:
-            with patch("core.integrations.invoice_lifecycle_service.NilveraHttpClient.post") as mock_post:
-                with patch("core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result") as mock_update:
-                    from datetime import UTC, datetime
+@pytest.mark.asyncio
+async def test_timeout_moves_to_verification_without_retrying_write():
+    action = _action()
+    client_context, answer_service = _provider_context()
+    answer_service.send_answer.side_effect = NilveraTimeoutError("safe timeout")
+    with (
+        patch(
+            "core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config",
+            new=AsyncMock(return_value={"enabled": True, "api_key": "test-key"}),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraHttpClient",
+            return_value=client_context,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraIncomingAnswerService",
+            return_value=answer_service,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.mark_provider_attempt_started",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result",
+            new=AsyncMock(return_value=True),
+        ) as update,
+    ):
+        await InvoiceLifecycleService._process_claimed_action(action, "worker-id")
 
-                    from models.schemas.invoice_lifecycle import InvoiceLifecycleAction, InvoiceLifecycleActionState, InvoiceLifecycleActionType, InvoiceLifecycleDirection
+    answer_service.send_answer.assert_awaited_once()
+    answer_service.fetch_answer_state.assert_not_awaited()
+    fields = update.await_args.args[3]
+    assert fields["state"] == InvoiceLifecycleActionState.PROVIDER_PENDING.value
+    assert fields["last_error_code"] == "NILVERA_TIMEOUT"
 
-                    mock_action = InvoiceLifecycleAction(
-                        id="act_429", tenant_id="t_429", direction=InvoiceLifecycleDirection.INCOMING,
-                        source_invoice_id="inv_429", source_provider_uuid="11112222-3333-4444-5555-666677778888",
-                        action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING, state=InvoiceLifecycleActionState.REQUESTED,
-                        request_uuid="r_429", idempotency_key="k_429", request_fingerprint="f_429",
-                        requested_by="admin", requested_at=datetime.now(UTC)
-                    )
-                    mock_claim.return_value = mock_action
-                    mock_creds.return_value = {"enabled": True, "api_key": "secret"}
 
-                    # Instead of fastapi HTTPException which service might not catch correctly if it doesn't import it,
-                    # service actually catches Exception e and sets RECONCILIATION_REQUIRED
-                    mock_post.side_effect = Exception("Rate limit / 429")
+@pytest.mark.asyncio
+async def test_business_rule_failure_releases_answer_guard():
+    action = _action()
+    client_context, answer_service = _provider_context()
+    answer_service.send_answer.side_effect = NilveraBusinessRuleError(
+        "safe business rule",
+        http_status=422,
+    )
+    with (
+        patch(
+            "core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config",
+            new=AsyncMock(return_value={"enabled": True, "api_key": "test-key"}),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraHttpClient",
+            return_value=client_context,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraIncomingAnswerService",
+            return_value=answer_service,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.mark_provider_attempt_started",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result",
+            new=AsyncMock(return_value=True),
+        ) as update,
+        patch(
+            "core.integrations.invoice_lifecycle_service.event_bus.publish",
+            new=AsyncMock(),
+        ),
+    ):
+        await InvoiceLifecycleService._process_claimed_action(action, "worker-id")
 
-                    await InvoiceLifecycleService.process_lifecycle_action("t_429", "act_429", "worker")
+    assert update.await_args.args[3]["state"] == InvoiceLifecycleActionState.FAILED.value
+    assert update.await_args.args[4] == {"answer_guard_key": ""}
 
-                    mock_update.assert_called_once()
-                    args = mock_update.call_args[0]
-                    assert args[3]["state"] == InvoiceLifecycleActionState.RECONCILIATION_REQUIRED.value
-                    assert args[3]["reconciliation_required"] is True
 
-async def test_server_error_requires_reconciliation_without_retry():
-    from core.integrations.invoice_lifecycle_service import InvoiceLifecycleService
-    with patch("core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.claim_action_lease") as mock_claim:
-        with patch("core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config") as mock_creds:
-            with patch("core.integrations.invoice_lifecycle_service.NilveraHttpClient.post") as mock_post:
-                with patch("core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result") as mock_update:
-                    from datetime import UTC, datetime
+@pytest.mark.asyncio
+async def test_pending_status_exhaustion_requires_reconciliation():
+    action = _action(
+        provider_attempted_at=datetime.now(UTC),
+        verification_attempt_count=5,
+    )
+    client_context, answer_service = _provider_context(NilveraIncomingAnswerState.WAITING)
+    with (
+        patch(
+            "core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config",
+            new=AsyncMock(return_value={"enabled": True, "api_key": "test-key"}),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraHttpClient",
+            return_value=client_context,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraIncomingAnswerService",
+            return_value=answer_service,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result",
+            new=AsyncMock(return_value=True),
+        ) as update,
+        patch(
+            "core.integrations.invoice_lifecycle_service.event_bus.publish",
+            new=AsyncMock(),
+        ),
+    ):
+        await InvoiceLifecycleService._process_claimed_action(action, "worker-id")
 
-                    from models.schemas.invoice_lifecycle import InvoiceLifecycleAction, InvoiceLifecycleActionState, InvoiceLifecycleActionType, InvoiceLifecycleDirection
+    fields = update.await_args.args[3]
+    assert fields["state"] == InvoiceLifecycleActionState.RECONCILIATION_REQUIRED.value
+    assert fields["last_error_code"] == "ANSWER_VERIFICATION_EXHAUSTED"
 
-                    mock_action = InvoiceLifecycleAction(
-                        id="act_500", tenant_id="t_500", direction=InvoiceLifecycleDirection.INCOMING,
-                        source_invoice_id="inv_500", source_provider_uuid="11112222-3333-4444-5555-666677778888",
-                        action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING, state=InvoiceLifecycleActionState.REQUESTED,
-                        request_uuid="r_500", idempotency_key="k_500", request_fingerprint="f_500",
-                        requested_by="admin", requested_at=datetime.now(UTC)
-                    )
-                    mock_claim.return_value = mock_action
-                    mock_creds.return_value = {"enabled": True, "api_key": "secret"}
-                    mock_post.side_effect = Exception("Internal Server Error")
 
-                    await InvoiceLifecycleService.process_lifecycle_action("t_500", "act_500", "worker")
+@pytest.mark.asyncio
+async def test_opposite_terminal_status_requires_reconciliation():
+    action = _action(provider_attempted_at=datetime.now(UTC))
+    client_context, answer_service = _provider_context(NilveraIncomingAnswerState.REJECTED)
+    with (
+        patch(
+            "core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config",
+            new=AsyncMock(return_value={"enabled": True, "api_key": "test-key"}),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraHttpClient",
+            return_value=client_context,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraIncomingAnswerService",
+            return_value=answer_service,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result",
+            new=AsyncMock(return_value=True),
+        ) as update,
+        patch(
+            "core.integrations.invoice_lifecycle_service.event_bus.publish",
+            new=AsyncMock(),
+        ),
+    ):
+        await InvoiceLifecycleService._process_claimed_action(action, "worker-id")
 
-                    mock_update.assert_called_once()
-                    args = mock_update.call_args[0]
-                    assert args[3]["state"] == InvoiceLifecycleActionState.RECONCILIATION_REQUIRED.value
-                    assert args[3]["reconciliation_required"] is True
+    fields = update.await_args.args[3]
+    assert fields["state"] == InvoiceLifecycleActionState.RECONCILIATION_REQUIRED.value
+    assert fields["last_error_code"] == "ANSWER_STATUS_MISMATCH"
 
-async def test_conflict_requires_reconciliation_without_retry():
-    from core.integrations.invoice_lifecycle_service import InvoiceLifecycleService
-    with patch("core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.claim_action_lease") as mock_claim:
-        with patch("core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config") as mock_creds:
-            with patch("core.integrations.invoice_lifecycle_service.NilveraHttpClient.post") as mock_post:
-                with patch("core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result") as mock_update:
-                    from datetime import UTC, datetime
 
-                    from models.schemas.invoice_lifecycle import InvoiceLifecycleAction, InvoiceLifecycleActionState, InvoiceLifecycleActionType, InvoiceLifecycleDirection
+@pytest.mark.asyncio
+async def test_lost_lease_before_write_prevents_provider_call():
+    action = _action()
+    client_context, answer_service = _provider_context()
+    with (
+        patch(
+            "core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config",
+            new=AsyncMock(return_value={"enabled": True, "api_key": "test-key"}),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraHttpClient",
+            return_value=client_context,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraIncomingAnswerService",
+            return_value=answer_service,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.mark_provider_attempt_started",
+            new=AsyncMock(return_value=False),
+        ),
+    ):
+        await InvoiceLifecycleService._process_claimed_action(action, "worker-id")
 
-                    mock_action = InvoiceLifecycleAction(
-                        id="act_409", tenant_id="t_409", direction=InvoiceLifecycleDirection.INCOMING,
-                        source_invoice_id="inv_409", source_provider_uuid="11112222-3333-4444-5555-666677778888",
-                        action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING, state=InvoiceLifecycleActionState.REQUESTED,
-                        request_uuid="r_409", idempotency_key="k_409", request_fingerprint="f_409",
-                        requested_by="admin", requested_at=datetime.now(UTC)
-                    )
-                    mock_claim.return_value = mock_action
-                    mock_creds.return_value = {"enabled": True, "api_key": "secret"}
-                    mock_post.side_effect = Exception("Conflict")
+    answer_service.send_answer.assert_not_awaited()
 
-                    await InvoiceLifecycleService.process_lifecycle_action("t_409", "act_409", "worker")
 
-                    mock_update.assert_called_once()
-                    args = mock_update.call_args[0]
-                    assert args[3]["state"] == InvoiceLifecycleActionState.RECONCILIATION_REQUIRED.value
-                    assert args[3]["reconciliation_required"] is True
-
-async def test_missing_credentials_skips_provider_call():
-    from core.integrations.invoice_lifecycle_service import InvoiceLifecycleService
-    with patch("core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.claim_action_lease") as mock_claim:
-        with patch("core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config") as mock_creds:
-            with patch("core.integrations.invoice_lifecycle_service.NilveraHttpClient.post") as mock_post:
-                with patch("core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result") as mock_update:
-                    from datetime import UTC, datetime
-
-                    from models.schemas.invoice_lifecycle import InvoiceLifecycleAction, InvoiceLifecycleActionState, InvoiceLifecycleActionType, InvoiceLifecycleDirection
-
-                    mock_action = InvoiceLifecycleAction(
-                        id="act_cred", tenant_id="t_cred", direction=InvoiceLifecycleDirection.INCOMING,
-                        source_invoice_id="inv_cred", source_provider_uuid="11112222-3333-4444-5555-666677778888",
-                        action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING, state=InvoiceLifecycleActionState.REQUESTED,
-                        request_uuid="r_cred", idempotency_key="k_cred", request_fingerprint="f_cred",
-                        requested_by="admin", requested_at=datetime.now(UTC)
-                    )
-                    mock_claim.return_value = mock_action
-                    mock_creds.return_value = {"enabled": False} # MISSING/DISABLED CREDENTIALS
-
-                    await InvoiceLifecycleService.process_lifecycle_action("t_cred", "act_cred", "worker")
-
-                    mock_post.assert_not_called()
-                    mock_update.assert_called_once()
-                    args = mock_update.call_args[0]
-                    assert args[3]["state"] == InvoiceLifecycleActionState.RETRY_SCHEDULED.value
+def test_poll_delay_is_bounded():
+    assert _get_next_poll_delay(-1) == 30
+    assert _get_next_poll_delay(0) == 30
+    assert _get_next_poll_delay(4) == 900
+    assert _get_next_poll_delay(99) == 900
