@@ -326,3 +326,34 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
         xml_content = await doc_service.download_sale_xml(doc_uuid)
         assert len(xml_content) > 0
         assert b"Invoice" in xml_content or b"invoice" in xml_content
+
+
+@pytest.mark.external
+@pytest.mark.side_effect
+async def test_sandbox_incoming_invoice_discovery(sandbox_client):
+    """
+    Test GET /einvoice/Purchase to discover the structure and ensure HTTP 200.
+    """
+    from datetime import timedelta
+
+    end_date = datetime.now(UTC)
+    start_date = end_date - timedelta(days=7)
+
+    query_params = {
+        "StartDate": start_date.isoformat(),
+        "EndDate": end_date.isoformat(),
+        "Page": "1",
+        "Take": "5",
+    }
+
+    async with sandbox_client as client:
+        response_json = await client.get("/einvoice/Purchase", params=query_params)
+
+        # Verify basic expected top-level schema structure
+        assert isinstance(response_json, dict)
+
+        # Commonly these APIs return TotalCount and Data
+        assert "Data" in response_json or "data" in response_json
+
+        data = response_json.get("Data", response_json.get("data", []))
+        assert isinstance(data, list)
