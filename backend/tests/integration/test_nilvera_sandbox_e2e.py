@@ -361,3 +361,4 @@ async def test_sandbox_incoming_invoice_discovery(sandbox_client):
 
         assert isinstance(page, IncomingInvoicePage)
         assert len(page.items) == len(response_json["Content"])
+        assert all(item.issue_date.tzinfo is not None for item in page.items)

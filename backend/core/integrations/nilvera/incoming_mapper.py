@@ -2,6 +2,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from core.integrations.nilvera.errors import NilveraValidationError
 
@@ -11,6 +12,8 @@ class IncomingInvoiceSummary:
     provider_uuid: str
     invoice_number: str
     issue_date: datetime
+    provider_issue_date_raw: str
+    timezone_assumed: bool
     payable_amount: Decimal
     currency: str
     status_code: str | None
@@ -122,10 +125,16 @@ class NilveraIncomingMapper:
             # Nilvera typically uses ISO8601 with or without microseconds/Z
             # Example: 2026-08-01T12:00:00.000Z or similar.
             if raw_issue_date.endswith("Z"):
-                raw_issue_date = raw_issue_date.replace("Z", "+00:00")
-            issue_date = datetime.fromisoformat(raw_issue_date)
+                issue_date_str = raw_issue_date.replace("Z", "+00:00")
+            else:
+                issue_date_str = raw_issue_date
+
+            issue_date = datetime.fromisoformat(issue_date_str)
+            timezone_assumed = False
+
             if issue_date.tzinfo is None:
-                raise NilveraValidationError("Incoming invoice has invalid IssueDate format")
+                issue_date = issue_date.replace(tzinfo=ZoneInfo("Europe/Istanbul"))
+                timezone_assumed = True
         except ValueError as e:
             raise NilveraValidationError("Incoming invoice has invalid IssueDate format") from e
 
@@ -152,6 +161,8 @@ class NilveraIncomingMapper:
             provider_uuid=provider_uuid,
             invoice_number=str(invoice_number),
             issue_date=issue_date,
+            provider_issue_date_raw=raw_issue_date,
+            timezone_assumed=timezone_assumed,
             payable_amount=payable_amount,
             currency=str(currency),
             status_code=str(item.get("StatusCode")) if item.get("StatusCode") else None,

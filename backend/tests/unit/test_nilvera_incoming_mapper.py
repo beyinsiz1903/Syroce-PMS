@@ -209,13 +209,78 @@ def test_map_page_fails_on_non_string_issue_date():
         NilveraIncomingMapper.map_page(payload, page=1, page_size=100)
 
 
-def test_map_page_fails_on_timezone_naive_issue_date():
+def test_naive_issue_date_is_assumed_europe_istanbul():
     payload = {
+        "TotalCount": 1,
+        "TotalPages": 1,
         "Content": [
             {
                 "UUID": "123e4567-e89b-12d3-a456-426614174000",
                 "InvoiceNumber": "ABC2023000000001",
                 "IssueDate": "2023-10-01T12:00:00",
+                "PayableAmount": 100.50,
+                "Currency": "TRY",
+            }
+        ],
+    }
+    page = NilveraIncomingMapper.map_page(payload, page=1, page_size=100)
+    assert len(page.items) == 1
+    item = page.items[0]
+    assert item.issue_date.tzinfo is not None
+    assert str(item.issue_date.tzinfo) == "Europe/Istanbul"
+    assert item.timezone_assumed is True
+    assert item.provider_issue_date_raw == "2023-10-01T12:00:00"
+
+
+def test_offset_issue_date_preserves_provider_offset():
+    payload = {
+        "TotalCount": 1,
+        "TotalPages": 1,
+        "Content": [
+            {
+                "UUID": "123e4567-e89b-12d3-a456-426614174000",
+                "InvoiceNumber": "ABC2023000000001",
+                "IssueDate": "2023-10-01T12:00:00+02:00",
+                "PayableAmount": 100.50,
+                "Currency": "TRY",
+            }
+        ],
+    }
+    page = NilveraIncomingMapper.map_page(payload, page=1, page_size=100)
+    item = page.items[0]
+    assert item.issue_date.tzinfo is not None
+    assert item.timezone_assumed is False
+    assert item.provider_issue_date_raw == "2023-10-01T12:00:00+02:00"
+
+
+def test_utc_issue_date_preserves_utc():
+    payload = {
+        "TotalCount": 1,
+        "TotalPages": 1,
+        "Content": [
+            {
+                "UUID": "123e4567-e89b-12d3-a456-426614174000",
+                "InvoiceNumber": "ABC2023000000001",
+                "IssueDate": "2023-10-01T12:00:00Z",
+                "PayableAmount": 100.50,
+                "Currency": "TRY",
+            }
+        ],
+    }
+    page = NilveraIncomingMapper.map_page(payload, page=1, page_size=100)
+    item = page.items[0]
+    assert item.issue_date.tzinfo is not None
+    assert item.timezone_assumed is False
+    assert item.provider_issue_date_raw == "2023-10-01T12:00:00Z"
+
+
+def test_invalid_issue_date_still_fails():
+    payload = {
+        "Content": [
+            {
+                "UUID": "123e4567-e89b-12d3-a456-426614174000",
+                "InvoiceNumber": "ABC2023000000001",
+                "IssueDate": "invalid-date",
                 "PayableAmount": 100.50,
                 "Currency": "TRY",
             }
