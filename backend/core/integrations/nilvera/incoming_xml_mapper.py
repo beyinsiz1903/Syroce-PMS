@@ -53,7 +53,16 @@ class NilveraIncomingXmlMapper:
 
     @classmethod
     def _decimal(cls, parent, path: str, field_name: str) -> Decimal:
-        raw = cls._text(parent, path, field_name)
+        value = cls._optional_decimal(parent, path, field_name)
+        if value is None:
+            raise NilveraValidationError(f"Incoming invoice XML is missing {field_name}")
+        return value
+
+    @classmethod
+    def _optional_decimal(cls, parent, path: str, field_name: str) -> Decimal | None:
+        raw = cls._text(parent, path, field_name, required=False)
+        if raw is None:
+            return None
         try:
             value = Decimal(raw)
         except (InvalidOperation, TypeError):
@@ -194,11 +203,23 @@ class NilveraIncomingXmlMapper:
         vat_rates: set[Decimal] = set()
         for subtotal in element.findall("cac:TaxTotal/cac:TaxSubtotal", cls._NS):
             tax_code = cls._text(subtotal, "cac:TaxCategory/cac:TaxScheme/cbc:TaxTypeCode", "tax code")
-            rate = cls._decimal(subtotal, "cac:TaxCategory/cbc:Percent", "tax rate")
             tax_amount = cls._decimal(subtotal, "cbc:TaxAmount", "tax amount")
             tax_currency = cls._currency(subtotal, "cbc:TaxAmount", "tax amount")
             if tax_currency != line_currency:
                 raise NilveraValidationError("Incoming invoice XML tax currency does not match")
+            taxable_amount = cls._optional_decimal(subtotal, "cbc:TaxableAmount", "taxable amount")
+            rate = cls._optional_decimal(
+                subtotal,
+                "cac:TaxCategory/cbc:Percent",
+                "tax rate",
+            )
+            if rate is None:
+                if tax_amount == 0:
+                    rate = Decimal("0")
+                elif taxable_amount is not None and taxable_amount > 0:
+                    rate = (tax_amount * Decimal("100") / taxable_amount).quantize(Decimal("0.01"))
+                else:
+                    raise NilveraValidationError("Incoming invoice XML is missing tax rate")
 
             if tax_code == "0015":
                 vat_rates.add(rate)
@@ -206,7 +227,8 @@ class NilveraIncomingXmlMapper:
                 kdv_amount += tax_amount
                 continue
 
-            taxable_amount = cls._decimal(subtotal, "cbc:TaxableAmount", "taxable amount")
+            if taxable_amount is None:
+                raise NilveraValidationError("Incoming invoice XML is missing taxable amount")
             tax_name = (
                 cls._text(
                     subtotal,

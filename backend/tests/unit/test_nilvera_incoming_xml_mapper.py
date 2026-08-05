@@ -99,3 +99,10 @@ def test_rejects_currency_mismatch():
     )
     with pytest.raises(NilveraValidationError, match="currencies do not match"):
         NilveraIncomingXmlMapper.map_document(content)
+
+
+def test_derives_missing_tax_rate_from_explicit_tax_amounts():
+    content = _invoice_xml().replace(b"<cbc:Percent>20</cbc:Percent>", b"", 1)
+    result = NilveraIncomingXmlMapper.map_document(content)
+
+    assert result.lines[0].kdv_rate == Decimal("20.00")
