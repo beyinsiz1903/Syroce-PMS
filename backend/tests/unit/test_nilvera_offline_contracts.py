@@ -32,6 +32,7 @@ def test_invoice_mapper_contract():
         tax_office="TEST VD",
         country="Türkiye",
         city="İstanbul",
+        district="Şişli",
         address="Test Mah. Test Sok. No:1"
     )
 
@@ -49,6 +50,7 @@ def test_invoice_mapper_contract():
         buyer_legal_name="TEST KURUM 2",
         buyer_country_name="Türkiye",
         buyer_city="Ankara",
+        buyer_district="Çankaya",
         buyer_address="Test Alıcı Adres",
         payable_total=Decimal("120.00"),
         line_extension_total=Decimal("100.00"),

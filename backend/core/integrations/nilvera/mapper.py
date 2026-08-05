@@ -79,6 +79,7 @@ class SellerSnapshot(BaseModel):
     tax_office: str | None = None
     country: str | None = None
     city: str | None = None
+    district: str | None = None
     address: str | None = None
 
 
@@ -132,6 +133,7 @@ class NilveraInvoiceMapper:
         seller_tax_office_clean = _validate_text(seller.tax_office, "Seller tax office is missing", "E_INVOICE_SELLER_TAX_OFFICE_REQUIRED")
         seller_country_clean = _validate_text(seller.country, "Seller country is missing", "E_INVOICE_SELLER_COUNTRY_REQUIRED")
         seller_city_clean = _validate_text(seller.city, "Seller city is missing", "E_INVOICE_SELLER_CITY_REQUIRED")
+        seller_district_clean = _validate_text(seller.district, "Seller district is missing", "E_INVOICE_SELLER_DISTRICT_REQUIRED")
         seller_address_clean = _validate_text(seller.address, "Seller address is missing", "E_INVOICE_SELLER_ADDRESS_REQUIRED")
 
         # 6. Buyer Identity and Address
@@ -142,6 +144,7 @@ class NilveraInvoiceMapper:
         buyer_name_clean = _validate_text(invoice.buyer_legal_name, "Buyer legal name is missing", "E_INVOICE_BUYER_NAME_REQUIRED")
         buyer_country_clean = _validate_text(invoice.buyer_country_name, "Buyer country is missing", "E_INVOICE_BUYER_COUNTRY_REQUIRED")
         buyer_city_clean = _validate_text(invoice.buyer_city, "Buyer city is missing", "E_INVOICE_BUYER_CITY_REQUIRED")
+        buyer_district_clean = _validate_text(invoice.buyer_district, "Buyer district is missing", "E_INVOICE_BUYER_DISTRICT_REQUIRED")
         buyer_address_clean = _validate_text(invoice.buyer_address, "Buyer address is missing", "E_INVOICE_BUYER_ADDRESS_REQUIRED")
 
         buyer_tax_office_clean = invoice.buyer_tax_office.strip() if invoice.buyer_tax_office and invoice.buyer_tax_office.strip() else None
@@ -219,7 +222,7 @@ class NilveraInvoiceMapper:
             TaxOffice=seller_tax_office_clean,
             Country=seller_country_clean,
             City=seller_city_clean,
-            District="Merkez",  # Provide safe default for required district
+            District=seller_district_clean,
             Address=seller_address_clean,
         )
 
@@ -228,7 +231,7 @@ class NilveraInvoiceMapper:
             Name=buyer_name_clean,
             Country=buyer_country_clean,
             City=buyer_city_clean,
-            District="Merkez",  # Provide safe default for required district
+            District=buyer_district_clean,
             Address=buyer_address_clean,
             TaxOffice=buyer_tax_office_clean,
         )
