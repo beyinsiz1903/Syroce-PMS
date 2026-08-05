@@ -17,6 +17,7 @@ from core.integrations.nilvera.errors import (
     NilveraServerError,
     NilveraValidationError,
 )
+from core.integrations.nilvera.document_service import NilveraDocumentService
 from core.integrations.nilvera.mapper import NilveraInvoiceMapper, SellerSnapshot
 from core.integrations.nilvera.status_mapper import ProviderInvoiceOutcome, map_nilvera_status
 from core.integrations.nilvera.taxpayer import NilveraTaxpayerService
@@ -310,3 +311,17 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
             pytest.fail("Timeout: Status remained PENDING after maximum polling attempts")
             
         assert final_outcome in (ProviderInvoiceOutcome.ACCEPTED, ProviderInvoiceOutcome.REJECTED)
+
+        # ---------------------------------------------------------
+        # Document Download Verification
+        # ---------------------------------------------------------
+        doc_service = NilveraDocumentService(client)
+        
+        pdf_content = await doc_service.download_sale_pdf(doc_uuid)
+        assert len(pdf_content) > 0
+        assert pdf_content.startswith(b"%PDF-")
+        
+        xml_content = await doc_service.download_sale_xml(doc_uuid)
+        assert len(xml_content) > 0
+        assert b"Invoice" in xml_content or b"invoice" in xml_content
+
