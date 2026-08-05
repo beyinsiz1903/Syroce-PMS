@@ -183,6 +183,43 @@ def test_map_page_fails_on_infinite_amount():
 
 def test_map_page_handles_invalid_pagination_metadata():
     payload = {"TotalCount": "invalid", "TotalPages": -5, "Data": []}
-    page = NilveraIncomingMapper.map_page(payload, page=1, page_size=100)
-    assert page.total_count == 0
-    assert page.total_pages == 0
+    with pytest.raises(NilveraValidationError, match="invalid TotalCount"):
+        NilveraIncomingMapper.map_page(payload, page=1, page_size=100)
+
+
+def test_map_page_fails_on_negative_total_pages():
+    payload = {"TotalCount": 10, "TotalPages": -5, "Data": []}
+    with pytest.raises(NilveraValidationError, match="invalid TotalPages"):
+        NilveraIncomingMapper.map_page(payload, page=1, page_size=100)
+
+
+def test_map_page_fails_on_non_string_issue_date():
+    payload = {
+        "Data": [
+            {
+                "UUID": "123e4567-e89b-12d3-a456-426614174000",
+                "InvoiceNumber": "ABC2023000000001",
+                "IssueDate": 1234567890,
+                "PayableAmount": 100.50,
+                "Currency": "TRY",
+            }
+        ]
+    }
+    with pytest.raises(NilveraValidationError, match="invalid IssueDate format"):
+        NilveraIncomingMapper.map_page(payload, page=1, page_size=100)
+
+
+def test_map_page_fails_on_timezone_naive_issue_date():
+    payload = {
+        "Data": [
+            {
+                "UUID": "123e4567-e89b-12d3-a456-426614174000",
+                "InvoiceNumber": "ABC2023000000001",
+                "IssueDate": "2023-10-01T12:00:00",
+                "PayableAmount": 100.50,
+                "Currency": "TRY",
+            }
+        ]
+    }
+    with pytest.raises(NilveraValidationError, match="invalid IssueDate format"):
+        NilveraIncomingMapper.map_page(payload, page=1, page_size=100)

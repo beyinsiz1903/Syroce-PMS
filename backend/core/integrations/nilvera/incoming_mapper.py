@@ -28,6 +28,30 @@ class IncomingInvoicePage:
 
 
 class NilveraIncomingMapper:
+    @staticmethod
+    def _parse_non_negative_int(
+        payload: dict,
+        field_name: str,
+        *,
+        default: int | None = None,
+    ) -> int:
+        raw_value = payload.get(field_name)
+
+        if raw_value is None:
+            if default is not None:
+                return default
+            raise NilveraValidationError(f"Incoming invoice response is missing {field_name}")
+
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            raise NilveraValidationError(f"Incoming invoice response has invalid {field_name}")
+
+        if value < 0:
+            raise NilveraValidationError(f"Incoming invoice response has invalid {field_name}")
+
+        return value
+
     @classmethod
     def map_page(cls, payload: dict, page: int, page_size: int) -> IncomingInvoicePage:
         """
@@ -37,21 +61,21 @@ class NilveraIncomingMapper:
         if not isinstance(payload, dict):
             raise NilveraValidationError("Payload is not a JSON object")
 
-        try:
-            total_count = int(payload.get("TotalCount") or payload.get("Total") or 0)
-            if total_count < 0:
-                total_count = 0
-        except (ValueError, TypeError):
+        # Fail closed on invalid pagination metadata
+        # Sandbox might use TotalCount or Total
+        total_count = None
+        if "TotalCount" in payload:
+            total_count = cls._parse_non_negative_int(payload, "TotalCount")
+        elif "Total" in payload:
+            total_count = cls._parse_non_negative_int(payload, "Total")
+        else:
             total_count = 0
 
-        try:
-            total_pages = int(payload.get("TotalPages") or 0)
-            if total_pages < 0:
-                total_pages = 0
-        except (ValueError, TypeError):
-            total_pages = 0
+        total_pages = cls._parse_non_negative_int(payload, "TotalPages", default=0)
 
-        data_list = payload.get("Data", [])
+        data_list = payload.get("Data")
+        if data_list is None:
+            data_list = []
         if not isinstance(data_list, list):
             raise NilveraValidationError("'Data' field is not a list in incoming invoices response")
 
@@ -91,12 +115,17 @@ class NilveraIncomingMapper:
         if not raw_issue_date:
             raise NilveraValidationError("Incoming invoice is missing IssueDate")
 
+        if not isinstance(raw_issue_date, str):
+            raise NilveraValidationError("Incoming invoice has invalid IssueDate format")
+
         try:
             # Nilvera typically uses ISO8601 with or without microseconds/Z
             # Example: 2026-08-01T12:00:00.000Z or similar.
             if raw_issue_date.endswith("Z"):
                 raw_issue_date = raw_issue_date.replace("Z", "+00:00")
             issue_date = datetime.fromisoformat(raw_issue_date)
+            if issue_date.tzinfo is None:
+                raise NilveraValidationError("Incoming invoice has invalid IssueDate format")
         except ValueError as e:
             raise NilveraValidationError("Incoming invoice has invalid IssueDate format") from e
 

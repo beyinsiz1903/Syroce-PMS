@@ -351,13 +351,13 @@ async def test_sandbox_incoming_invoice_discovery(sandbox_client):
         # Verify basic expected top-level schema structure
         assert isinstance(response_json, dict)
 
-        # Commonly these APIs return TotalCount and Data
-        assert "Data" in response_json or "data" in response_json
-
-        data = response_json.get("Data", response_json.get("data", []))
-        assert isinstance(data, list)
+        # Officially we expect "Data", fail if absent or mis-cased
+        assert "Data" in response_json, "Response missing 'Data' field"
+        assert isinstance(response_json["Data"], list)
 
         from core.integrations.nilvera.incoming_mapper import IncomingInvoicePage, NilveraIncomingMapper
 
         page = NilveraIncomingMapper.map_page(response_json, page=1, page_size=5)
+
         assert isinstance(page, IncomingInvoicePage)
+        assert len(page.items) == len(response_json["Data"])
