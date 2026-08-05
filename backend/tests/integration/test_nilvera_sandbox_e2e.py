@@ -221,7 +221,7 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
         invoice_number=inv_no,
         invoice_type="SATIS",
         profile="TICARIFATURA",
-        series="GIB",
+        series="TST",
         currency="TRY",
         exchange_rate=Decimal("1.0"),
         issue_date=datetime.now(UTC),
