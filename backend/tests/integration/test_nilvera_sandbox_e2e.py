@@ -280,13 +280,18 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
                 pytest.fail("Status polling timed out")
             
             if isinstance(status_res, list) and len(status_res) > 0:
-                raw_status = status_res[0].get("Status")
-                raw_code = str(status_res[0].get("StatusCode", ""))
+                item = status_res[0]
             elif isinstance(status_res, dict):
-                raw_status = status_res.get("Status")
-                raw_code = str(status_res.get("StatusCode", ""))
+                item = status_res
             else:
                 pytest.fail("Unexpected response schema from Status endpoint")
+                
+            if "InvoiceStatus" in item:
+                raw_status = item["InvoiceStatus"].get("Code")
+                raw_code = str(item.get("EnvelopeInfo", {}).get("GIBCode", item["InvoiceStatus"].get("Description", "")))
+            else:
+                raw_status = item.get("Status")
+                raw_code = str(item.get("StatusCode", ""))
                 
             outcome = map_nilvera_status(raw_status, raw_code)
             
