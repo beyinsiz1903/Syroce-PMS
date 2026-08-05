@@ -6,7 +6,7 @@ from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
 
 from core.integrations.nilvera.errors import NilveraValidationError
-from models.schemas.invoicing import TaxDetail
+from models.schemas.incoming_invoice import IncomingTaxDetail
 
 
 @dataclass(frozen=True)
@@ -21,7 +21,7 @@ class IncomingInvoiceXmlLine:
     line_extension_amount: Decimal
     kdv_rate: Decimal
     kdv_amount: Decimal
-    other_taxes: tuple[TaxDetail, ...]
+    other_taxes: tuple[IncomingTaxDetail, ...]
     currency: str
 
 
@@ -52,14 +52,21 @@ class NilveraIncomingXmlMapper:
         return value
 
     @classmethod
-    def _decimal(cls, parent, path: str, field_name: str) -> Decimal:
-        value = cls._optional_decimal(parent, path, field_name)
+    def _decimal(cls, parent, path: str, field_name: str, *, allow_negative: bool = False) -> Decimal:
+        value = cls._optional_decimal(parent, path, field_name, allow_negative=allow_negative)
         if value is None:
             raise NilveraValidationError(f"Incoming invoice XML is missing {field_name}")
         return value
 
     @classmethod
-    def _optional_decimal(cls, parent, path: str, field_name: str) -> Decimal | None:
+    def _optional_decimal(
+        cls,
+        parent,
+        path: str,
+        field_name: str,
+        *,
+        allow_negative: bool = False,
+    ) -> Decimal | None:
         raw = cls._text(parent, path, field_name, required=False)
         if raw is None:
             return None
@@ -70,7 +77,7 @@ class NilveraIncomingXmlMapper:
             raise NilveraValidationError(f"Incoming invoice XML has invalid {field_name} (lexical_form={lexical_form})") from None
         if not value.is_finite():
             raise NilveraValidationError(f"Incoming invoice XML has invalid {field_name} (numeric_form=non_finite)")
-        if value < 0:
+        if value < 0 and not allow_negative:
             raise NilveraValidationError(f"Incoming invoice XML has invalid {field_name} (numeric_form=negative)")
         return value
 
@@ -212,12 +219,17 @@ class NilveraIncomingXmlMapper:
 
         kdv_rate = Decimal("0")
         kdv_amount = Decimal("0")
-        other_taxes: list[TaxDetail] = []
+        other_taxes: list[IncomingTaxDetail] = []
         vat_rates: set[Decimal] = set()
         for subtotal in element.findall("cac:TaxTotal/cac:TaxSubtotal", cls._NS):
             tax_code = cls._text(subtotal, "cac:TaxCategory/cac:TaxScheme/cbc:TaxTypeCode", "tax code")
             tax_kind = "VAT" if tax_code == "0015" else "other"
-            tax_amount = cls._decimal(subtotal, "cbc:TaxAmount", f"{tax_kind} tax amount")
+            tax_amount = cls._decimal(
+                subtotal,
+                "cbc:TaxAmount",
+                f"{tax_kind} tax amount",
+                allow_negative=True,
+            )
             tax_currency = cls._currency(subtotal, "cbc:TaxAmount", "tax amount")
             if tax_currency != line_currency:
                 raise NilveraValidationError("Incoming invoice XML tax currency does not match")
@@ -231,7 +243,7 @@ class NilveraIncomingXmlMapper:
                 if tax_amount == 0:
                     rate = Decimal("0")
                 elif taxable_amount is not None and taxable_amount > 0:
-                    rate = (tax_amount * Decimal("100") / taxable_amount).quantize(Decimal("0.01"))
+                    rate = (abs(tax_amount) * Decimal("100") / taxable_amount).quantize(Decimal("0.01"))
                 else:
                     raise NilveraValidationError("Incoming invoice XML is missing tax rate")
 
@@ -267,12 +279,13 @@ class NilveraIncomingXmlMapper:
             if bool(exemption_code) != bool(exemption_reason):
                 exemption_code = exemption_reason = None
             other_taxes.append(
-                TaxDetail(
+                IncomingTaxDetail(
                     tax_code=tax_code,
                     tax_name=tax_name,
                     rate=rate,
                     taxable_amount=taxable_amount,
-                    amount=tax_amount,
+                    amount=abs(tax_amount),
+                    is_deduction=tax_amount < 0,
                     exemption_code=exemption_code,
                     exemption_reason=exemption_reason,
                 )

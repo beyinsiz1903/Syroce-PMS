@@ -73,6 +73,7 @@ def test_maps_ubl_invoice_lines_without_parsing_other_dates():
     assert line.currency == "TRY"
     assert len(line.other_taxes) == 1
     assert line.other_taxes[0].tax_code == "9999"
+    assert line.other_taxes[0].is_deduction is False
 
 
 def test_rejects_invalid_uuid_without_exposing_value():
@@ -132,7 +133,6 @@ def test_invalid_decimal_reports_only_safe_lexical_form(raw_value, lexical_form)
     ("raw_value", "numeric_form"),
     [
         ("NaN", "non_finite"),
-        ("-1.00", "negative"),
     ],
 )
 def test_invalid_decimal_reports_only_safe_numeric_form(raw_value, numeric_form):
@@ -146,12 +146,25 @@ def test_invalid_decimal_reports_only_safe_numeric_form(raw_value, numeric_form)
     assert raw_value not in message
 
 
-def test_invalid_tax_amount_reports_only_safe_tax_kind():
-    content = _invoice_xml().replace(b">20.00</cbc:TaxAmount>", b">-1.00</cbc:TaxAmount>", 1)
+def test_maps_negative_other_tax_amount_as_explicit_deduction():
+    content = _invoice_xml().replace(b">1.00</cbc:TaxAmount>", b">-1.00</cbc:TaxAmount>", 1)
+    result = NilveraIncomingXmlMapper.map_document(content)
+
+    tax = result.lines[0].other_taxes[0]
+    assert tax.amount == Decimal("1.00")
+    assert tax.is_deduction is True
+
+
+def test_rejects_negative_non_tax_amount_without_exposing_value():
+    content = _invoice_xml().replace(
+        b'<cbc:LineExtensionAmount currencyID="TRY">100.00',
+        b'<cbc:LineExtensionAmount currencyID="TRY">-1.00',
+        1,
+    )
 
     with pytest.raises(NilveraValidationError) as exc_info:
         NilveraIncomingXmlMapper.map_document(content)
 
     message = str(exc_info.value)
-    assert "invalid VAT tax amount" in message
+    assert "numeric_form=negative" in message
     assert "-1.00" not in message
