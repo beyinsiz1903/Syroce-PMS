@@ -224,7 +224,7 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
         series="GIB",
         currency="TRY",
         exchange_rate=Decimal("1.0"),
-        issue_date=datetime.now(timezone.utc),
+        issue_date=datetime.now(UTC),
         buyer_tax_number=buyer_vkn,
         buyer_legal_name="TEST KURUM 2",
         buyer_country_name="TÜRKİYE",
