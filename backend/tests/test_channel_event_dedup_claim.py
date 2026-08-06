@@ -27,7 +27,10 @@ import uuid
 
 from core.database import db
 from domains.channel_manager import unified_repository as repo
-from domains.channel_manager.data_model import COLL_CHANNEL_EVENT_DEDUP
+from domains.channel_manager.data_model import (
+    COLL_CHANNEL_EVENT_DEDUP,
+    COLL_RAW_CHANNEL_EVENTS,
+)
 
 
 def _key(tenant_id: str, provider: str, peid: str) -> str:
@@ -85,3 +88,42 @@ async def test_empty_provider_event_id_fail_open():
         assert cnt == 0
     finally:
         await _cleanup(tenant_id)
+
+
+async def test_failed_event_replay_claim_has_single_winner():
+    tenant_id = f"t-replay-{uuid.uuid4().hex[:12]}"
+    provider = "hotelrunner"
+    peid = f"evt-{uuid.uuid4().hex[:12]}"
+    event_id = f"raw-{uuid.uuid4().hex[:12]}"
+    try:
+        await db[COLL_RAW_CHANNEL_EVENTS].insert_one(
+            {
+                "id": event_id,
+                "tenant_id": tenant_id,
+                "provider": provider,
+                "provider_event_id": peid,
+                "processing_status": "failed",
+            }
+        )
+
+        claims = await asyncio.gather(
+            *[
+                repo.claim_failed_provider_event_for_replay(
+                    tenant_id,
+                    provider,
+                    peid,
+                )
+                for _ in range(8)
+            ]
+        )
+
+        winners = [claim for claim in claims if claim is not None]
+        assert len(winners) == 1
+        assert winners[0]["id"] == event_id
+        stored = await db[COLL_RAW_CHANNEL_EVENTS].find_one(
+            {"id": event_id},
+            {"_id": 0, "processing_status": 1},
+        )
+        assert stored == {"processing_status": "pending"}
+    finally:
+        await db[COLL_RAW_CHANNEL_EVENTS].delete_many({"tenant_id": tenant_id})

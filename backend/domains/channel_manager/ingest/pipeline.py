@@ -107,6 +107,7 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
     existing_lineage = None
     correlation_id = event.get("correlation_id", "")
     ext_res_id = event.get("external_reservation_id", "")
+    replay_of_failed = bool(event.get("replay_of_failed"))
 
     # Ensure tenant context is set for strict mode
     from core.tenant_db import set_tenant_context
@@ -116,7 +117,7 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
     try:
         # ── Stage 2: Duplicate Detection ──────────────────────────
         provider_event_id = event.get("provider_event_id", "")
-        if provider_event_id:
+        if provider_event_id and not replay_of_failed:
             is_dup = await repo.check_provider_event_exists(
                 tenant_id,
                 provider,
@@ -149,7 +150,7 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
 
         # ── Stage 3: Payload Hash Check ───────────────────────────
         payload_hash = event.get("payload_hash", "")
-        if payload_hash and ext_res_id:
+        if payload_hash and ext_res_id and not replay_of_failed:
             hash_exists = await repo.check_payload_hash_exists(
                 tenant_id,
                 provider,
@@ -190,7 +191,7 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
                 ext_res_id,
             )
 
-        if existing_lineage and incoming_version:
+        if existing_lineage and incoming_version and not replay_of_failed:
             existing_version = existing_lineage.get("provider_version", "")
             if existing_version and incoming_version <= existing_version:
                 result.decision = IngestDecision.SKIP
@@ -352,23 +353,16 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
             result.status = "processed"
 
             # ── DATA-001: Trigger import bridge for new reservations ──
-            try:
-                await _trigger_import_bridge(
-                    tenant_id,
-                    property_id,
-                    provider,
-                    lineage_id,
-                    canonical,
-                    room_mapping,
-                    rate_mapping,
-                    event.get("connection_id", ""),
-                )
-            except Exception as e:
-                logger.warning(
-                    "[%s] Import bridge trigger failed (non-blocking): %s",
-                    event["id"],
-                    e,
-                )
+            await _trigger_import_bridge(
+                tenant_id,
+                property_id,
+                provider,
+                lineage_id,
+                canonical,
+                room_mapping,
+                rate_mapping,
+                event.get("connection_id", ""),
+            )
 
         elif decision == IngestDecision.UPDATE:
             lineage_id = await _update_lineage(
@@ -386,10 +380,12 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
                 lineage_id = await _cancel_lineage(existing_lineage, canonical)
                 result.lineage_id = lineage_id
                 # Also propagate cancellation to bookings and imported_reservations
-                try:
-                    await _propagate_cancellation_to_booking(tenant_id, ext_res_id)
-                except Exception as e:
-                    logger.warning("[%s] Booking cancellation propagation failed: %s", event["id"], e)
+                cancellation_durable = await _propagate_cancellation_to_booking(
+                    tenant_id,
+                    ext_res_id,
+                )
+                if not cancellation_durable:
+                    raise RuntimeError("PMS_CANCELLATION_NOT_DURABLE")
             else:
                 case_id = await _create_recon_case(
                     tenant_id,
@@ -401,12 +397,46 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
                     ext_res_id,
                 )
                 result.case_id = case_id
-            result.status = "processed"
+            result.status = "processed" if existing_lineage else "failed"
 
         elif decision == IngestDecision.SKIP:
+            if provider == ConnectorProvider.HOTELRUNNER and existing_lineage:
+                await _trigger_import_bridge(
+                    tenant_id,
+                    property_id,
+                    provider,
+                    existing_lineage["id"],
+                    canonical,
+                    room_mapping,
+                    rate_mapping,
+                    event.get("connection_id", ""),
+                )
             result.status = "processed"
 
         elif decision == IngestDecision.PENDING_MAPPING:
+            lineage_id = existing_lineage.get("id") if existing_lineage else None
+            if not lineage_id:
+                lineage_id = await _create_lineage(
+                    tenant_id,
+                    property_id,
+                    provider,
+                    canonical,
+                    canonical_hash,
+                    received_via,
+                    mutation_type,
+                )
+            result.lineage_id = lineage_id
+
+            hold_durable = await _persist_mapping_hold(
+                tenant_id=tenant_id,
+                property_id=property_id,
+                provider=provider,
+                lineage_id=lineage_id,
+                canonical=canonical,
+                room_mapping=room_mapping,
+                rate_mapping=rate_mapping,
+                connector_id=event.get("connection_id", ""),
+            )
             case_id = await _create_recon_case(
                 tenant_id,
                 property_id,
@@ -419,6 +449,8 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
             )
             result.case_id = case_id
             result.status = "failed"
+            if not hold_durable:
+                raise RuntimeError("MAPPING_HOLD_OR_ALARM_NOT_DURABLE")
 
         elif decision == IngestDecision.MANUAL_REVIEW:
             case_id = await _create_recon_case(
@@ -649,7 +681,7 @@ async def _cancel_lineage(existing: dict, canonical: dict) -> str:
     return await repo.upsert_reservation_lineage(existing)
 
 
-async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) -> None:
+async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) -> bool:
     """Propagate cancellation from lineage to bookings and imported_reservations collections."""
     now = _now()
 
@@ -672,13 +704,21 @@ async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) ->
 
     # Get booking info before cancelling (for notification)
     booking = await db.bookings.find_one(
-        {"tenant_id": tenant_id, "external_reservation_id": ext_res_id},
+        {
+            "tenant_id": tenant_id,
+            "external_reservation_id": ext_res_id,
+            "booking_source": {"$ne": "ota_unmatched_hold"},
+        },
         {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "check_out": 1, "status": 1},
     )
 
     # Update booking status to cancelled
     result = await db.bookings.update_one(
-        {"tenant_id": tenant_id, "external_reservation_id": ext_res_id},
+        {
+            "tenant_id": tenant_id,
+            "external_reservation_id": ext_res_id,
+            "booking_source": {"$ne": "ota_unmatched_hold"},
+        },
         {"$set": {"status": "cancelled", "updated_at": now, "cancelled_at": now}},
     )
     if result.modified_count > 0:
@@ -723,6 +763,16 @@ async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) ->
         {"tenant_id": tenant_id, "external_reservation_id": ext_res_id},
         {"$set": {"status": "cancelled", "updated_at": now}},
     )
+    durable_booking = await db.bookings.find_one(
+        {
+            "tenant_id": tenant_id,
+            "external_reservation_id": ext_res_id,
+            "booking_source": {"$ne": "ota_unmatched_hold"},
+            "status": "cancelled",
+        },
+        {"_id": 0, "id": 1},
+    )
+    return durable_booking is not None
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -804,6 +854,52 @@ async def _trigger_import_bridge(
         import_status,
         review_reason,
     )
+
+
+async def _persist_mapping_hold(
+    *,
+    tenant_id: str,
+    property_id: str,
+    provider: str,
+    lineage_id: str,
+    canonical: dict[str, Any],
+    room_mapping,
+    rate_mapping,
+    connector_id: str,
+) -> bool:
+    """Persist the review record, inventory hold, and tenant alarm."""
+    await _trigger_import_bridge(
+        tenant_id,
+        property_id,
+        provider,
+        lineage_id,
+        canonical,
+        room_mapping,
+        rate_mapping,
+        connector_id,
+    )
+
+    from domains.channel_manager.providers.unmatched_hold import (
+        create_unmatched_reservation_hold,
+    )
+
+    hold = await create_unmatched_reservation_hold(
+        provider=provider,
+        tenant_id=tenant_id,
+        external_id=canonical.get("external_reservation_id", ""),
+        check_in=canonical.get("check_in", ""),
+        check_out=canonical.get("check_out", ""),
+        guest_name=canonical.get("guest_name", ""),
+        room_type_code=canonical.get("room_type_code", ""),
+        rate_plan_code=canonical.get("rate_plan_code", ""),
+        total_amount=float(canonical.get("total_amount", 0) or 0),
+        currency=canonical.get("currency", "TRY"),
+        adults=canonical.get("adults", 1) or 1,
+        children=canonical.get("children", 0) or 0,
+        channel=canonical.get("source_system", "") or provider,
+        property_id=property_id,
+    )
+    return bool(hold.get("booking_id") and hold.get("alarm_raised"))
 
 
 async def _create_recon_case(

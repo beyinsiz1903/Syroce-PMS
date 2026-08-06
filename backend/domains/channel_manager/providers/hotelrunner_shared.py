@@ -212,11 +212,22 @@ async def _persist_and_process(
             identity["provider_event_id"],
         )
         if existing:
+            if (
+                existing.get("processing_status") == "failed"
+                and existing.get("decision_result") != "pending_mapping"
+            ):
+                replay_event = await repo.claim_failed_provider_event_for_replay(
+                    tenant_id,
+                    "hotelrunner",
+                    identity["provider_event_id"],
+                )
+                if replay_event:
+                    logger.info("[CATCHUP-REPLAY] Atomically replaying failed event")
+                    return await process_event(replay_event)
+
             logger.info(
-                f"[CATCHUP-DEDUP] skip insert: provider_event_id="
-                f"{identity['provider_event_id']} already recorded "
-                f"(status={existing.get('processing_status')}, "
-                f"decision={existing.get('decision_result')})"
+                "[CATCHUP-DEDUP] Existing event retained status=%s",
+                existing.get("processing_status"),
             )
             try:
                 from domains.channel_manager.monitoring.dedup_counter import record_skip

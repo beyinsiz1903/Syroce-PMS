@@ -13,6 +13,8 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from pymongo import ReturnDocument
+
 from core.database import db
 
 from .data_model import (
@@ -377,6 +379,31 @@ async def check_provider_event_recorded(
             "provider_event_id": provider_event_id,
         },
         {"_id": 0, "id": 1, "processing_status": 1, "decision_result": 1},
+    )
+
+
+async def claim_failed_provider_event_for_replay(
+    tenant_id: str,
+    provider: str,
+    provider_event_id: str,
+) -> dict | None:
+    """Atomically claim one failed raw event for an idempotent replay."""
+    return await db[COLL_RAW_CHANNEL_EVENTS].find_one_and_update(
+        {
+            "tenant_id": tenant_id,
+            "provider": provider,
+            "provider_event_id": provider_event_id,
+            "processing_status": "failed",
+        },
+        {
+            "$set": {
+                "processing_status": "pending",
+                "replay_claimed_at": _now(),
+                "replay_of_failed": True,
+            }
+        },
+        return_document=ReturnDocument.AFTER,
+        projection=_NO_ID,
     )
 
 

@@ -14,9 +14,9 @@ was re-inserted on every catchup cycle because the downstream pipeline's
 `raw_channel_events` rows and triggered a `critical` health alert.
 
 The pre-insert guard in `_persist_and_process` calls
-`unified_repository.check_provider_event_recorded` and, if any row already
-exists for the (tenant, provider, provider_event_id) triple, returns a
-SKIP/`duplicate` PipelineResult without inserting a second row.
+`unified_repository.check_provider_event_recorded`. Durable rows return a
+SKIP/`duplicate` result; failed rows are atomically replayed in place so the
+same raw event can recover without inserting a second row.
 
 These tests pin that behavior down so a future refactor of the ingest
 pipeline cannot silently regress it.
@@ -50,7 +50,6 @@ from domains.channel_manager.data_model import (
 from domains.channel_manager.providers.hotelrunner_shared import (
     _persist_and_process,
 )
-
 
 PROPERTY_ID = "prop-test-dedup"
 
@@ -110,7 +109,14 @@ async def _delete_tenant_artifacts(tenant_id: str) -> None:
             await db[coll].delete_many({"tenant_id": tenant_id})
         except Exception:
             pass
-    for extra_coll in ("webhook_raw_payloads", "event_timeline"):
+    for extra_coll in (
+        "webhook_raw_payloads",
+        "event_timeline",
+        "imported_reservations",
+        "bookings",
+        "room_night_locks",
+        "notifications",
+    ):
         try:
             await db[extra_coll].delete_many({"tenant_id": tenant_id})
         except Exception:
@@ -140,8 +146,14 @@ async def test_same_provider_event_id_does_not_insert_twice(tenant_id):
     payload = _make_payload(hr_number, last_mod)
     expected_pe_id = f"{hr_number}_reservation_create_{last_mod}"
 
-    first = await _persist_and_process(
-        tenant_id, PROPERTY_ID, payload, "reservation_create",
+    await db[COLL_RAW_CHANNEL_EVENTS].insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "provider": "hotelrunner",
+            "provider_event_id": expected_pe_id,
+            "processing_status": "processed",
+        }
     )
     second = await _persist_and_process(
         tenant_id, PROPERTY_ID, payload, "reservation_create",
@@ -162,7 +174,7 @@ async def test_same_provider_event_id_does_not_insert_twice(tenant_id):
     assert count == 1, (
         f"expected exactly 1 raw_channel_events row for "
         f"provider_event_id={expected_pe_id}, found {count}. "
-        f"first decision={first.decision!r} status={first.status!r}"
+        f"second decision={second.decision!r} status={second.status!r}"
     )
 
 
@@ -204,10 +216,10 @@ async def test_different_provider_event_ids_each_create_a_row(tenant_id):
 
 
 # ══════════════════════════════════════════════════════════════════════
-# Scenario 3 — historical bug: first event ends 'failed', second still skipped
+# Scenario 3 — mapping failure is retained for controlled replay
 # ══════════════════════════════════════════════════════════════════════
 
-async def test_failed_first_event_still_blocks_second_insert(tenant_id):
+async def test_failed_mapping_event_is_retained_for_controlled_replay(tenant_id):
     """
     This is the exact regression we are guarding against:
       1. First catchup pass ingests an event that finalizes with
@@ -218,8 +230,8 @@ async def test_failed_first_event_still_blocks_second_insert(tenant_id):
          (which only matches 'processed'/'duplicate') would let the
          second insert through, and the failed-event count would grow
          unbounded — exactly the 8000+ row pile-up we previously fixed.
-      4. With the guard, the second call must short-circuit to
-         duplicate/skip, and the DB row count stays at 1.
+      4. With the guard, the second call preserves the mapping hold/alarm
+         for the controlled import replay and the DB row count stays at 1.
     """
     last_mod = datetime.now(UTC).isoformat()
     hr_number = f"HR-DEDUP-FAIL-{uuid.uuid4().hex[:8]}"
@@ -261,11 +273,11 @@ async def test_failed_first_event_still_blocks_second_insert(tenant_id):
     )
 
     assert second.decision == "skip", (
-        f"second call must be skipped by the guard, got "
+        f"second call must retain the recorded mapping decision, got "
         f"decision={second.decision!r} reason={second.reason!r}"
     )
     assert second.status == "duplicate", (
-        f"second call status must be 'duplicate', got {second.status!r}"
+        f"mapping redelivery must be duplicate until controlled replay, got {second.status!r}"
     )
 
     count = await _count_raw_events(tenant_id, expected_pe_id)
@@ -273,3 +285,15 @@ async def test_failed_first_event_still_blocks_second_insert(tenant_id):
         f"REGRESSION: failed event was re-inserted by catchup. "
         f"Expected 1 row for provider_event_id={expected_pe_id}, found {count}."
     )
+    hold_count = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "external_reservation_id": hr_number,
+            "booking_source": "ota_unmatched_hold",
+        }
+    )
+    alarm_count = await db.notifications.count_documents(
+        {"tenant_id": tenant_id, "dedup_key": f"unmatched_mapping_{hr_number}"}
+    )
+    assert hold_count == 1
+    assert alarm_count == 1

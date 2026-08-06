@@ -18,8 +18,8 @@ from fastapi import HTTPException
 
 import domains.channel_manager.providers.hotelrunner_security as hs
 from domains.channel_manager.providers.hotelrunner_security import (
-    _verify_hotelrunner_callback,
     _verified_tenant,
+    _verify_hotelrunner_callback,
 )
 
 
@@ -37,6 +37,7 @@ class _FakeRequest:
         self._body = body_bytes
         self.query_params = _FakeQueryParams(query_params or {})
         self.path_params = {}
+        self.scope = {"type": "http", "req_id": "test-request"}
         self.client = SimpleNamespace(host=client_host or "127.0.0.1")
         # request.state always available so tenant binding can be asserted.
         self.state = SimpleNamespace()
@@ -53,11 +54,11 @@ def _sign(secret, ts, raw):
 async def test_secret_unset_fail_closed(monkeypatch):
     monkeypatch.delenv("HOTELRUNNER_WEBHOOK_SECRET", raising=False)
     monkeypatch.delenv("ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK", raising=False)
-    
+
     async def _fake_lookup(hr_id_hint):
         return {"tenant_id": "tenant-A", "hr_id": "mock-hr-id"}
     monkeypatch.setattr(hs, "_lookup_signing_connection", _fake_lookup)
-    
+
     with pytest.raises(HTTPException) as ei:
         await _verify_hotelrunner_callback(_FakeRequest({"X-HotelRunner-Signature": "invalid", "X-HotelRunner-Timestamp": str(int(time.time()))}, b'{"hr_id": "mock-hr-id"}'))
     assert ei.value.status_code == 503
@@ -70,11 +71,11 @@ async def test_valid_signature_allows(monkeypatch):
     monkeypatch.setenv("HOTELRUNNER_WEBHOOK_SECRET", secret)
     raw = b'{"event":"new","hr_id":"mock-hr-id"}'
     ts = str(int(time.time()))
-    
+
     async def _fake_lookup(hr_id_hint):
         return {"tenant_id": "tenant-A", "hr_id": "mock-hr-id"}
     monkeypatch.setattr(hs, "_lookup_signing_connection", _fake_lookup)
-    
+
     headers = {
         "X-HotelRunner-Signature": f"sha256={_sign(secret, ts, raw)}",
         "X-HotelRunner-Timestamp": ts,
@@ -251,19 +252,19 @@ async def test_webhook_official_production_secrets_manager_path(monkeypatch):
     """Production path test: APP_ENV=production, connection.token is absent, token is loaded from SecretsManager"""
     monkeypatch.setenv("APP_ENV", "production")
     conn = {"tenant_id": "tenant-prod", "hr_id": "hotel-prod"}
-    
+
     async def _fake_lookup(hr_id_hint):
         return conn if hr_id_hint == "hotel-prod" else None
-        
+
     class FakeSecretsManager:
         async def get_provider_credentials(self, tenant_id, provider, property_id, actor="system"):
             if tenant_id == "tenant-prod":
                 return {"token": "prod-sm-token", "callback_secret": "prod-callback-secret"}
             return None
-            
+
     monkeypatch.setattr(hs, "_lookup_signing_connection", _fake_lookup)
     monkeypatch.setattr(hs, "get_secrets_manager", lambda: FakeSecretsManager())
-    
+
     # Test 1: Success with correct token and secret
     raw = b'{"hr_id": "hotel-prod"}'
     headers = {"Content-Type": "application/json"}
@@ -271,24 +272,24 @@ async def test_webhook_official_production_secrets_manager_path(monkeypatch):
     # Need to simulate the URL path matching the secret
     req.path_params = {"secret": "prod-callback-secret"}
     req.url = SimpleNamespace(path="/api/channel-manager/hotelrunner/webhooks/reservations/prod-callback-secret")
-    
+
     await _verify_hotelrunner_callback(req)
     assert _verified_tenant(req) == "tenant-prod"
-    
+
     # Test 2: Invalid token -> 401
     req_bad_token = _FakeRequest(headers, raw, query_params={"token": "wrong-token"})
     req_bad_token.path_params = {"secret": "prod-callback-secret"}
     req_bad_token.url = SimpleNamespace(path="/api/channel-manager/hotelrunner/webhooks/reservations/prod-callback-secret")
-    
+
     with pytest.raises(HTTPException) as ei:
         await _verify_hotelrunner_callback(req_bad_token)
     assert ei.value.status_code == 401
-    
+
     # Test 3: Missing or wrong callback path secret -> 401
     req_no_secret = _FakeRequest(headers, raw, query_params={"token": "prod-sm-token"})
     req_no_secret.path_params = {}
     req_no_secret.url = SimpleNamespace(path="/api/channel-manager/hotelrunner/webhooks/reservations/")
-    
+
     with pytest.raises(HTTPException) as ei:
         await _verify_hotelrunner_callback(req_no_secret)
     assert ei.value.status_code == 401
@@ -298,7 +299,7 @@ async def test_webhook_official_production_secrets_manager_path(monkeypatch):
         async def get_provider_credentials(self, *args, **kwargs):
             return None
     monkeypatch.setattr(hs, "get_secrets_manager", lambda: FakeEmptySecretsManager())
-    
+
     with pytest.raises(HTTPException) as ei:
         await _verify_hotelrunner_callback(req)
     assert ei.value.status_code == 503
@@ -308,28 +309,28 @@ async def test_webhook_official_production_secrets_manager_path(monkeypatch):
 async def test_hotelrunner_webhook_csrf_exemption(monkeypatch):
     """Ensure HotelRunner webhook endpoints bypass CSRF check."""
     from security.csrf_guard import csrf_guard_middleware
-    
+
     # Simulate a POST request without Origin/Referer (which would normally trigger 403 CSRF)
     headers = {}
-    
+
     # 1. Test unified callback path
     req_callback = _FakeRequest(headers, b"{}")
     req_callback.method = "POST"
     req_callback.url = SimpleNamespace(path="/api/channel-manager/hotelrunner/callback/secret123")
-    
+
     # Mock call_next to just return 200 (meaning it bypassed CSRF)
     async def mock_call_next(req):
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=200, content={"success": True})
-        
+
     resp_callback = await csrf_guard_middleware(req_callback, mock_call_next)
     assert resp_callback.status_code == 200, "CSRF guard blocked the unified callback path"
-    
+
     # 2. Test specific webhook path
     req_webhook = _FakeRequest(headers, b"{}")
     req_webhook.method = "POST"
     req_webhook.url = SimpleNamespace(path="/api/channel-manager/hotelrunner/webhooks/reservations/secret123")
-    
+
     resp_webhook = await csrf_guard_middleware(req_webhook, mock_call_next)
     assert resp_webhook.status_code == 200, "CSRF guard blocked the specific webhook path"
 
@@ -338,7 +339,7 @@ async def test_nested_hotel_id_extraction_and_bad_signature(monkeypatch):
     """Test that hr_id_hint is correctly extracted from nested payload `hotel: {id: ...}`
     and that a bad signature still correctly rejects the request with 401."""
     monkeypatch.setenv("HOTELRUNNER_WEBHOOK_SECRET", "s3cr3t")
-    
+
     async def _fake_lookup(hr_id_hint):
         if hr_id_hint == "ornek-id":
             return {"tenant_id": "tenant-A", "hr_id": "ornek-id"}
@@ -351,11 +352,11 @@ async def test_nested_hotel_id_extraction_and_bad_signature(monkeypatch):
         "X-HotelRunner-Signature": "sha256=invalid-signature",
         "X-HotelRunner-Timestamp": ts,
     }
-    
+
     with pytest.raises(HTTPException) as ei:
         await _verify_hotelrunner_callback(_FakeRequest(headers, raw))
     assert ei.value.status_code == 401
-    
+
     # Also verify that a valid signature works
     headers_valid = {
         "X-HotelRunner-Signature": f"sha256={_sign('s3cr3t', ts, raw)}",

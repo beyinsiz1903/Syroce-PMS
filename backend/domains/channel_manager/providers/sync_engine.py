@@ -22,6 +22,10 @@ from domains.channel_manager.providers.hotelrunner_shared import (
 
 logger = logging.getLogger(__name__)
 
+_PMS_DURABLE = "durable"
+_PMS_PENDING = "pending"
+_PMS_FAILED = "failed"
+
 
 async def run_phase_a(
     tenant_id: str,
@@ -33,62 +37,107 @@ async def run_phase_a(
     page = 1
     total_pages = 1
 
-    while page <= total_pages:
-        result = await provider.get_reservations(
-            undelivered=True,
-            per_page=50,
-            page=page,
-        )
-        if not result["success"]:
-            error_msg = result.get("error", "")
-            logger.error(f"[PULL] Failed for tenant {tenant_id} page {page}: {error_msg}")
-            is_rate_limited = "429" in str(error_msg) or "rate limit" in str(error_msg).lower()
-            if page == 1:
-                await log_pull(tenant_id, "failed", 0, error_msg)
-                return {"success": False, "error": error_msg, "rate_limited": is_rate_limited}
-            break
+    try:
+        while page <= total_pages:
+            result = await provider.get_reservations(
+                undelivered=True,
+                per_page=50,
+                page=page,
+            )
+            if not result.get("success"):
+                error_text = str(result.get("error", ""))
+                is_rate_limited = "429" in error_text or "rate limit" in error_text.lower()
+                logger.error("[PULL-A] Provider page fetch failed; no delivery ACKs sent")
+                await log_pull(tenant_id, "failed", 0, "PROVIDER_PULL_FAILED")
+                return {
+                    "success": False,
+                    "error": "PROVIDER_PULL_FAILED",
+                    "rate_limited": is_rate_limited,
+                    "fired": 0,
+                }
 
-        page_reservations = result["data"].get("reservations", [])
-        all_reservations.extend(page_reservations)
-        total_pages = result["data"].get("pages", 1)
-        page += 1
+            data = result.get("data")
+            if not isinstance(data, dict):
+                logger.error("[PULL-A] Provider response parse failed; no delivery ACKs sent")
+                await log_pull(tenant_id, "failed", 0, "PROVIDER_RESPONSE_INVALID")
+                return {"success": False, "error": "PROVIDER_RESPONSE_INVALID", "fired": 0}
+
+            page_reservations = data.get("reservations", [])
+            if not isinstance(page_reservations, list):
+                logger.error("[PULL-A] Provider reservation list is invalid; no delivery ACKs sent")
+                await log_pull(tenant_id, "failed", 0, "PROVIDER_RESPONSE_INVALID")
+                return {"success": False, "error": "PROVIDER_RESPONSE_INVALID", "fired": 0}
+            all_reservations.extend(page_reservations)
+            total_pages = data.get("pages", 1)
+            if not isinstance(total_pages, int) or total_pages < 1:
+                logger.error("[PULL-A] Provider pagination is invalid; no delivery ACKs sent")
+                await log_pull(tenant_id, "failed", 0, "PROVIDER_RESPONSE_INVALID")
+                return {"success": False, "error": "PROVIDER_RESPONSE_INVALID", "fired": 0}
+            page += 1
+    except Exception as exc:
+        logger.error(
+            "[PULL-A] Provider page fetch raised %s; no delivery ACKs sent",
+            type(exc).__name__,
+        )
+        await log_pull(tenant_id, "failed", 0, "PROVIDER_PULL_EXCEPTION")
+        return {"success": False, "error": "PROVIDER_PULL_EXCEPTION", "fired": 0}
 
     processed = 0
-    fire_uids = []
+    pending = 0
+    failed = 0
+    fire_uids: list[str] = []
+    seen_uids: set[str] = set()
 
     for res in all_reservations:
         try:
-            hr_state_phase_a = res.get("state", "unknown")
-            hr_number_phase_a = res.get("hr_number", "?")
-            logger.info(f"[PULL-PHASE-A] Processing {hr_number_phase_a}: state={hr_state_phase_a}")
-
             sub_reservations = explode_multi_room_reservation(res)
-            rooms_count = len(res.get("rooms", []) or [])
-            if rooms_count > 1:
-                logger.info(f"[PULL] Multi-room reservation {res.get('hr_number')}: {rooms_count} rooms -> {len(sub_reservations)} sub-reservations")
-
+            reservation_durable = bool(sub_reservations)
             for sub_res in sub_reservations:
                 try:
                     sub_state_a = (sub_res.get("state") or "").lower()
                     is_cancel_a = sub_state_a in ("cancelled", "canceled") or sub_res.get("_room_cancelled") or bool(sub_res.get("cancel_reason"))
                     evt_type_a = "reservation_cancel_pull" if is_cancel_a else "reservation_pull"
-                    await _persist_and_process(
+                    pipeline_result = await _persist_and_process(
                         tenant_id,
                         _resolve_property_id(sub_res),
                         sub_res,
                         evt_type_a,
                     )
-                    processed += 1
-                    if is_cancel_a:
-                        logger.info(f"[PULL-A] Cancellation in undelivered: {sub_res.get('hr_number')}")
-                except Exception as e:
-                    logger.error(f"[PULL] Error processing sub-reservation {sub_res.get('hr_number')}: {e}")
+                    durability = await _ensure_durable_pms_result(
+                        tenant_id,
+                        sub_res,
+                        pipeline_result,
+                        is_cancellation=bool(is_cancel_a),
+                    )
+                    if durability == _PMS_DURABLE:
+                        processed += 1
+                    elif durability == _PMS_PENDING:
+                        pending += 1
+                        reservation_durable = False
+                    else:
+                        failed += 1
+                        reservation_durable = False
+                except Exception as exc:
+                    failed += 1
+                    reservation_durable = False
+                    logger.error(
+                        "[PULL-A] PMS processing raised %s; delivery ACK withheld",
+                        type(exc).__name__,
+                    )
 
             msg_uid = res.get("message_uid") or res.get("ruid") or res.get("uid")
-            if msg_uid:
+            if reservation_durable and msg_uid and msg_uid not in seen_uids:
+                seen_uids.add(msg_uid)
                 fire_uids.append(msg_uid)
-        except Exception as e:
-            logger.error(f"[PULL] Error processing reservation: {e}")
+            elif reservation_durable and not msg_uid:
+                failed += 1
+                logger.error("[PULL-A] Durable reservation has no delivery UID; ACK withheld")
+        except Exception as exc:
+            failed += 1
+            logger.error(
+                "[PULL-A] Reservation processing raised %s; delivery ACK withheld",
+                type(exc).__name__,
+            )
 
     fired = 0
     for uid in fire_uids:
@@ -96,19 +145,110 @@ async def run_phase_a(
             fire_result = await provider.confirm_delivery(message_uid=uid)
             if fire_result.success:
                 fired += 1
-                logger.info(f"[PULL] Fired reservation uid={uid}")
             else:
-                logger.warning(f"[PULL] Fire failed for uid={uid}: {fire_result.error}")
-        except Exception as e:
-            logger.error(f"[PULL] Fire error for uid={uid}: {e}")
+                failed += 1
+                logger.warning("[PULL-A] Delivery ACK rejected by provider")
+        except Exception as exc:
+            failed += 1
+            logger.error("[PULL-A] Delivery ACK raised %s", type(exc).__name__)
 
     return {
-        "success": True,
+        "success": failed == 0 and pending == 0 and fired == len(fire_uids),
         "all_reservations": all_reservations,
         "processed": processed,
         "fired": fired,
+        "pending": pending,
+        "failed": failed,
         "pages": total_pages,
     }
+
+
+async def _ensure_durable_pms_result(
+    tenant_id: str,
+    payload: dict[str, Any],
+    pipeline_result,
+    *,
+    is_cancellation: bool,
+) -> str:
+    """Return durable only after the PMS booking state can be read back."""
+    pipeline_status = getattr(pipeline_result, "status", "failed")
+    if pipeline_status in {"pending", "retry_later"}:
+        return _PMS_PENDING
+    if pipeline_status == "failed":
+        return _PMS_FAILED
+
+    external_id = str(payload.get("hr_number") or "").strip()
+    if not external_id:
+        return _PMS_FAILED
+
+    booking_query = {
+        "tenant_id": tenant_id,
+        "external_reservation_id": external_id,
+        "booking_source": {"$ne": "ota_unmatched_hold"},
+    }
+    booking = await db.bookings.find_one(booking_query, {"_id": 0, "status": 1})
+
+    if not booking and (
+        getattr(pipeline_result, "status", "") == "duplicate"
+        or getattr(pipeline_result, "decision", "") == "skip"
+    ):
+        from core.import_bridge_service import replay_reviewed_mapping_import
+
+        replay_result = await replay_reviewed_mapping_import(
+            tenant_id=tenant_id,
+            provider="hotelrunner",
+            external_reservation_id=external_id,
+        )
+        if replay_result["status"] == "pending":
+            return _PMS_PENDING
+        if replay_result["status"] == "failed":
+            return _PMS_FAILED
+        booking = await db.bookings.find_one(booking_query, {"_id": 0, "status": 1})
+
+    if booking:
+        hr_state = "cancelled" if is_cancellation else (payload.get("state") or "confirmed")
+        await sync_reservation_update(
+            tenant_id,
+            external_id,
+            payload,
+            hr_state,
+            str(payload.get("updated_at") or ""),
+        )
+        if not is_cancellation:
+            from domains.channel_manager.providers.unmatched_hold import (
+                release_unmatched_reservation_hold,
+            )
+
+            release_result = await release_unmatched_reservation_hold(
+                tenant_id=tenant_id,
+                external_id=external_id,
+                reason="mapping_resolved",
+                delete_hold=True,
+            )
+            if release_result.get("booking_id") and not release_result.get("released"):
+                return _PMS_FAILED
+        booking = await db.bookings.find_one(booking_query, {"_id": 0, "status": 1})
+        if not booking:
+            return _PMS_FAILED
+        if is_cancellation:
+            return _PMS_DURABLE if booking.get("status") == "cancelled" else _PMS_FAILED
+        return _PMS_FAILED if booking.get("status") == "cancelled" else _PMS_DURABLE
+
+    import_record = await db.imported_reservations.find_one(
+        {
+            "tenant_id": tenant_id,
+            "provider": "hotelrunner",
+            "external_reservation_id": external_id,
+        },
+        {"_id": 0, "import_status": 1},
+    )
+    if import_record and import_record.get("import_status") in {
+        "pending_auto_import",
+        "processing",
+        "retry",
+    }:
+        return _PMS_PENDING
+    return _PMS_FAILED
 
 
 async def run_phase_a5(
@@ -358,17 +498,21 @@ async def sync_reservation_update(
     hr_updated_at: str,
 ) -> bool:
     booking = await db.bookings.find_one(
-        {"tenant_id": tenant_id, "external_reservation_id": ext_reservation_id},
+        {
+            "tenant_id": tenant_id,
+            "external_reservation_id": ext_reservation_id,
+            "booking_source": {"$ne": "ota_unmatched_hold"},
+        },
         {"_id": 0},
     )
     if not booking:
-        logger.warning(f"[PULL-SYNC] Booking not found for {ext_reservation_id}")
+        logger.warning("[PULL-SYNC] Durable PMS booking not found")
         return False
 
     existing_sync_ts = booking.get("last_synced_from_provider_at", "")
     if existing_sync_ts and hr_updated_at and hr_updated_at <= existing_sync_ts:
-        logger.debug(f"[PULL-SYNC] {ext_reservation_id}: skipping stale update (hr={hr_updated_at} <= existing={existing_sync_ts})")
-        return False
+        logger.debug("[PULL-SYNC] Provider update already applied or superseded")
+        return True
 
     rooms = hr_payload.get("rooms") or []
     room = rooms[0] if rooms else {}
@@ -380,7 +524,6 @@ async def sync_reservation_update(
 
     if guest_name_hr and guest_name_hr != booking.get("guest_name", ""):
         updates["guest_name"] = guest_name_hr
-        logger.info(f"[PULL-SYNC] {ext_reservation_id}: guest name '{booking.get('guest_name')}' -> '{guest_name_hr}'")
 
     checkin = hr_payload.get("checkin_date") or (room.get("checkin_date") if room else "")
     checkout = hr_payload.get("checkout_date") or (room.get("checkout_date") if room else "")
@@ -407,7 +550,6 @@ async def sync_reservation_update(
             if new_room_type != booking.get("room_type", ""):
                 updates["room_type"] = new_room_type
                 updates["room_type_id"] = new_room_type_id
-                logger.info(f"[PULL-SYNC] {ext_reservation_id}: room type '{booking.get('room_type')}' -> '{new_room_type}'")
 
     total = float(hr_payload.get("total", 0) or 0)
     if room:
@@ -425,23 +567,42 @@ async def sync_reservation_update(
     mapped_status = hr_status_map.get(hr_state, hr_state)
     if mapped_status != booking.get("status", ""):
         updates["status"] = mapped_status
-        logger.info(f"[PULL-SYNC] {ext_reservation_id}: status '{booking.get('status')}' -> '{mapped_status}'")
         if mapped_status == "cancelled":
             updates["cancelled_at"] = datetime.now(UTC).isoformat()
             cancel_reason = hr_payload.get("cancel_reason") or "Provider cancellation"
             updates["cancellation_reason"] = cancel_reason
-            logger.info(f"[PULL-SYNC] {ext_reservation_id}: cancellation_reason='{cancel_reason}'")
 
     if not updates:
-        return False
+        if hr_updated_at:
+            now = datetime.now(UTC).isoformat()
+            result = await db.bookings.update_one(
+                {
+                    "tenant_id": tenant_id,
+                    "external_reservation_id": ext_reservation_id,
+                    "booking_source": {"$ne": "ota_unmatched_hold"},
+                },
+                {"$set": {"last_synced_from_provider_at": hr_updated_at, "updated_at": now}},
+            )
+            await db.imported_reservations.update_one(
+                {"tenant_id": tenant_id, "external_reservation_id": ext_reservation_id},
+                {"$set": {"provider_updated_at": hr_updated_at, "updated_at": now}},
+            )
+            return bool(getattr(result, "matched_count", 1))
+        return True
 
     updates["updated_at"] = datetime.now(UTC).isoformat()
     updates["last_synced_from_provider_at"] = hr_updated_at
 
-    await db.bookings.update_one(
-        {"tenant_id": tenant_id, "external_reservation_id": ext_reservation_id},
+    booking_update = await db.bookings.update_one(
+        {
+            "tenant_id": tenant_id,
+            "external_reservation_id": ext_reservation_id,
+            "booking_source": {"$ne": "ota_unmatched_hold"},
+        },
         {"$set": updates},
     )
+    if not getattr(booking_update, "matched_count", 1):
+        return False
 
     imported_update = {
         "provider_updated_at": hr_updated_at,
@@ -486,7 +647,7 @@ async def sync_reservation_update(
         },
     )
 
-    logger.info(f"[PULL-SYNC] {ext_reservation_id}: updated fields={list(updates.keys())}")
+    logger.info("[PULL-SYNC] Durable PMS update completed fields=%s", list(updates.keys()))
 
     try:
         notifications_to_create = []
@@ -549,8 +710,8 @@ async def sync_reservation_update(
                     **notif_data,
                 }
             )
-    except Exception as e:
-        logger.error(f"[PULL-SYNC] Notification creation error for {ext_reservation_id}: {e}")
+    except Exception as exc:
+        logger.error("[PULL-SYNC] Notification creation raised %s", type(exc).__name__)
 
     return True
 
