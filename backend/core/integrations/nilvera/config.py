@@ -34,6 +34,7 @@ class NilveraEndpoints:
 
     # E-Invoice
     SEND_INVOICE_MODEL = "/einvoice/Send/Model"
+    LIST_SALE_INVOICES = "/einvoice/Sale"
     GET_SALE_INVOICE_STATUS = "/einvoice/Sale/{uuid}/Status"
     GET_SALE_INVOICE_DETAIL = "/einvoice/Sale/{uuid}/Details"
 

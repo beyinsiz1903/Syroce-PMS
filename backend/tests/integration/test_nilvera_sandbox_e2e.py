@@ -424,6 +424,16 @@ async def test_sandbox_prepare_incoming_commercial_invoice_fixture(record_proper
             )
         except SandboxFixtureError as exc:
             record_property("provider_write_count", str(exc.provider_write_count))
+            safe_metadata = {
+                "failure_stage": exc.failure_stage,
+                "http_status_class": exc.http_status_class,
+                "provider_code": exc.provider_code,
+                "exception_type": exc.exception_type,
+                "write_disposition": exc.write_disposition,
+            }
+            for name, value in safe_metadata.items():
+                if value is not None:
+                    record_property(name, value)
             pytest.fail(exc.safe_code, pytrace=False)
 
     record_property("correlation_label", result.correlation_label)

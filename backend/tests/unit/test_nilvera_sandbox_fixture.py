@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -6,16 +7,21 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from core.integrations.nilvera.config import NilveraEndpoints
-from core.integrations.nilvera.errors import NilveraTimeoutError
+from core.integrations.nilvera.errors import NilveraApiError, NilveraServerError, NilveraTimeoutError, NilveraValidationError
 from core.integrations.nilvera.status_mapper import ProviderInvoiceOutcome
 from scripts.nilvera_sandbox_selector import INCOMING_FIXTURE_TARGET, select_test_target
 from tests.nilvera_sandbox_fixture import (
+    AMBIGUOUS_WRITE,
+    DEFINITIVE_REJECTION,
+    FOUND,
+    NOT_FOUND_OR_NOT_VISIBLE,
     SandboxFixtureBlocked,
     SandboxFixtureFailed,
     build_fixture_identity,
     build_fixture_payload,
     fixture_correlation_label,
     prepare_incoming_commercial_fixture,
+    reconcile_incoming_commercial_fixture,
 )
 
 SENDER_KEY = "sender-sandbox-key-value"
@@ -54,6 +60,11 @@ def test_fixture_identity_is_transferred_to_invoice_serie_or_number():
     assert identity.startswith("TST2026")
     assert payload.EInvoice.InvoiceInfo.InvoiceSerieOrNumber == identity
     assert payload.EInvoice.InvoiceInfo.InvoiceSerieOrNumber != "LOCAL_VALUE_MUST_NOT_BE_USED"
+    assert payload.EInvoice.InvoiceInfo.LineExtensionAmount == Decimal("1.00")
+    assert payload.EInvoice.InvoiceInfo.GeneralKDV20Total == Decimal("0.20")
+    assert payload.EInvoice.InvoiceInfo.GeneralAllowanceTotal == Decimal("0.00")
+    assert payload.EInvoice.InvoiceInfo.PayableAmount == Decimal("1.20")
+    assert payload.EInvoice.InvoiceInfo.KdvTotal == Decimal("0.20")
     assert fixture_correlation_label(identity, HMAC_KEY) != identity
     assert len(fixture_correlation_label(identity, HMAC_KEY)) == 12
 
@@ -101,7 +112,13 @@ def _incoming_service(*, visible: bool):
     items = (SimpleNamespace(invoice_number=identity, provider_uuid=PROVIDER_UUID),) if visible else ()
     return SimpleNamespace(
         fetch_incoming_invoices=AsyncMock(return_value=SimpleNamespace(items=items)),
-        fetch_incoming_invoice_detail=AsyncMock(return_value=SimpleNamespace(invoice_profile="TICARIFATURA", invoice_type="SATIS")),
+        fetch_incoming_invoice_detail=AsyncMock(
+            return_value=SimpleNamespace(
+                invoice_number=identity,
+                invoice_profile="TICARIFATURA",
+                invoice_type="SATIS",
+            )
+        ),
         fetch_incoming_invoice_status=AsyncMock(return_value=SimpleNamespace(status_code="SUCCEED")),
     )
 
@@ -159,6 +176,101 @@ async def test_fixture_timeout_does_not_retry_provider_write():
         )
 
     assert exc_info.value.provider_write_count == 1
+    assert exc_info.value.failure_stage == "SEND_MODEL"
+    assert exc_info.value.http_status_class is None
+    assert exc_info.value.exception_type == "NilveraTimeoutError"
+    assert exc_info.value.write_disposition == AMBIGUOUS_WRITE
+    sender_client.post.assert_awaited_once()
+
+
+async def test_fixture_validation_rejection_is_definitive_and_sanitized():
+    error = NilveraValidationError(
+        "provider rejected fixture",
+        http_status=400,
+        provider_code="MODEL_VALIDATION_FAILED",
+    )
+    sender_client, receiver_client = _clients(post_side_effect=error)
+
+    with pytest.raises(SandboxFixtureFailed, match="FIXTURE_VALIDATION_REJECTED") as exc_info:
+        await prepare_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            buyer_alias="urn:mail:defaultpk@sandbox.invalid",
+            now=NOW,
+            sleeper=AsyncMock(),
+        )
+
+    assert exc_info.value.provider_write_count == 1
+    assert exc_info.value.failure_stage == "SEND_MODEL"
+    assert exc_info.value.http_status_class == "4xx"
+    assert exc_info.value.provider_code == "MODEL_VALIDATION_FAILED"
+    assert exc_info.value.exception_type == "NilveraValidationError"
+    assert exc_info.value.write_disposition == DEFINITIVE_REJECTION
+    sender_client.post.assert_awaited_once()
+
+
+async def test_fixture_drops_unsafe_provider_code_from_diagnostics():
+    error = NilveraValidationError(
+        "provider rejected fixture",
+        http_status=422,
+        provider_code="unsafe provider detail",
+    )
+    sender_client, receiver_client = _clients(post_side_effect=error)
+
+    with pytest.raises(SandboxFixtureFailed) as exc_info:
+        await prepare_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            buyer_alias="urn:mail:defaultpk@sandbox.invalid",
+            now=NOW,
+            sleeper=AsyncMock(),
+        )
+
+    assert exc_info.value.provider_code is None
+    assert exc_info.value.http_status_class == "4xx"
+
+
+@pytest.mark.parametrize(
+    "error, expected_type, expected_status_class",
+    [
+        (NilveraServerError("provider unavailable", http_status=500), "NilveraServerError", "5xx"),
+        (NilveraApiError("invalid response"), "NilveraApiError", None),
+    ],
+)
+async def test_fixture_ambiguous_send_failure_does_not_retry(error, expected_type, expected_status_class):
+    sender_client, receiver_client = _clients(post_side_effect=error)
+
+    with pytest.raises(SandboxFixtureBlocked, match="BLOCKED_FIXTURE_WRITE_OUTCOME_UNKNOWN") as exc_info:
+        await prepare_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            buyer_alias="urn:mail:defaultpk@sandbox.invalid",
+            now=NOW,
+            sleeper=AsyncMock(),
+        )
+
+    assert exc_info.value.provider_write_count == 1
+    assert exc_info.value.http_status_class == expected_status_class
+    assert exc_info.value.exception_type == expected_type
+    assert exc_info.value.write_disposition == AMBIGUOUS_WRITE
     sender_client.post.assert_awaited_once()
 
 
@@ -189,3 +301,88 @@ async def test_fixture_not_visible_on_receiver_is_blocked():
         await _prepare(visible=False)
 
     assert exc_info.value.provider_write_count == 1
+
+
+async def test_read_only_reconciliation_finds_exact_outgoing_and_incoming_fixture():
+    identity = build_fixture_identity(year=NOW.year, run_id=RUN_ID, hmac_key=HMAC_KEY)
+
+    async def sender_get(path, **kwargs):
+        if path == NilveraEndpoints.LIST_SALE_INVOICES:
+            return {"Content": [{"UUID": PROVIDER_UUID, "InvoiceNumber": identity}]}
+        if path == NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=PROVIDER_UUID):
+            return {"Status": "SUCCESS"}
+        if path == NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=PROVIDER_UUID):
+            return {
+                "InvoiceNumber": identity,
+                "InvoiceProfile": "TICARIFATURA",
+                "InvoiceType": "SATIS",
+            }
+        raise AssertionError("unexpected sender read")
+
+    receiver_get = AsyncMock(return_value={"Content": [{"UUID": PROVIDER_UUID, "InvoiceNumber": identity}]})
+    sender_client = SimpleNamespace(get=AsyncMock(side_effect=sender_get))
+    receiver_client = SimpleNamespace(get=receiver_get)
+    incoming_service = _incoming_service(visible=True)
+
+    with patch("tests.nilvera_sandbox_fixture.NilveraIncomingService", return_value=incoming_service):
+        result = await reconcile_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            reference_time=NOW,
+        )
+
+    assert result.outgoing_result == FOUND
+    assert result.outgoing_outcome == ProviderInvoiceOutcome.ACCEPTED
+    assert result.outgoing_detail_match is True
+    assert result.receiver_visibility == FOUND
+    assert result.receiver_detail_match is True
+    assert result.receiver_status_ready is True
+    assert not hasattr(sender_client, "post")
+    assert not hasattr(receiver_client, "post")
+
+
+async def test_read_only_reconciliation_reports_not_found_without_claiming_absence():
+    sender_client = SimpleNamespace(get=AsyncMock(return_value={"Content": []}))
+    receiver_client = SimpleNamespace(get=AsyncMock(return_value={"Content": []}))
+
+    result = await reconcile_incoming_commercial_fixture(
+        sender_client=sender_client,
+        receiver_client=receiver_client,
+        hmac_key=HMAC_KEY,
+        run_id=RUN_ID,
+        reference_time=NOW,
+    )
+
+    assert result.outgoing_result == NOT_FOUND_OR_NOT_VISIBLE
+    assert result.outgoing_outcome is None
+    assert result.receiver_visibility == NOT_FOUND_OR_NOT_VISIBLE
+    assert result.receiver_status_ready is None
+    assert sender_client.get.await_count == 1
+    assert receiver_client.get.await_count == 1
+
+
+async def test_read_only_reconciliation_stops_on_multiple_exact_matches():
+    identity = build_fixture_identity(year=NOW.year, run_id=RUN_ID, hmac_key=HMAC_KEY)
+    second_uuid = "223e4567-e89b-12d3-a456-426614174000"
+    sender_client = SimpleNamespace(
+        get=AsyncMock(
+            return_value={
+                "Content": [
+                    {"UUID": PROVIDER_UUID, "InvoiceNumber": identity},
+                    {"UUID": second_uuid, "InvoiceNumber": identity},
+                ]
+            }
+        )
+    )
+    receiver_client = SimpleNamespace(get=AsyncMock(return_value={"Content": []}))
+
+    with pytest.raises(SandboxFixtureBlocked, match="CONFLICT_FIXTURE_RECONCILIATION"):
+        await reconcile_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            reference_time=NOW,
+        )

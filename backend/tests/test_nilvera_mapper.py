@@ -32,6 +32,7 @@ def create_valid_invoice(currency="TRY", exchange_rate=None) -> Invoice:
         buyer_legal_name="Test Buyer",
         buyer_country_name="Türkiye",
         buyer_city="İstanbul",
+        buyer_district="Beyoğlu",
         buyer_address="Test Mah.",
         buyer_tax_office="Beyoğlu",
         currency=currency,
@@ -68,6 +69,7 @@ def create_valid_seller() -> SellerSnapshot:
         tax_office="Kadıköy",
         country="Türkiye",
         city="İstanbul",
+        district="Kadıköy",
         address="Seller Mah.",
     )
 
@@ -92,6 +94,11 @@ def test_successful_mapping_and_decimal_types():
 
     # Financial fields should be Decimal in typed model
     assert isinstance(payload.EInvoice.InvoiceInfo.PayableAmount, Decimal)
+    assert payload.EInvoice.InvoiceInfo.LineExtensionAmount == Decimal("100.00")
+    assert payload.EInvoice.InvoiceInfo.GeneralKDV20Total == Decimal("20.00")
+    assert payload.EInvoice.InvoiceInfo.GeneralKDV18Total == Decimal("0")
+    assert payload.EInvoice.InvoiceInfo.GeneralAllowanceTotal == Decimal("0")
+    assert payload.EInvoice.InvoiceInfo.KdvTotal == Decimal("20.00")
     assert isinstance(payload.EInvoice.InvoiceLines[0].KDVTotal, Decimal)
     assert isinstance(payload.EInvoice.InvoiceLines[0].Quantity, Decimal)
     assert isinstance(payload.EInvoice.InvoiceInfo.IssueDate, datetime)
@@ -104,6 +111,9 @@ def test_successful_mapping_and_decimal_types():
     info = dump["EInvoice"]["InvoiceInfo"]
     lines = dump["EInvoice"]["InvoiceLines"]
     assert isinstance(info["PayableAmount"], Decimal)
+    assert isinstance(info["LineExtensionAmount"], Decimal)
+    assert isinstance(info["GeneralKDV20Total"], Decimal)
+    assert isinstance(info["KdvTotal"], Decimal)
     assert isinstance(lines[0]["KDVTotal"], Decimal)
     assert isinstance(lines[0]["Price"], Decimal)
     assert isinstance(info["IssueDate"], datetime)
@@ -385,6 +395,9 @@ def test_kdv_rate_18_success():
     )
     assert payload.EInvoice.InvoiceLines[0].KDVPercent == Decimal("18")
     assert payload.EInvoice.InvoiceLines[0].KDVTotal == Decimal("18.00")
+    assert payload.EInvoice.InvoiceInfo.GeneralKDV18Total == Decimal("18.00")
+    assert payload.EInvoice.InvoiceInfo.GeneralKDV20Total == Decimal("0")
+    assert payload.EInvoice.InvoiceInfo.KdvTotal == Decimal("18.00")
 
 
 def test_other_taxes_unsupported():
