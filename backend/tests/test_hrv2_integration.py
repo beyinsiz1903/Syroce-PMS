@@ -151,8 +151,8 @@ class TestIngestFlow:
 class TestARIPush:
     @pytest.mark.asyncio
     async def test_push_shadow_mode(self, service):
-        """ARI push in shadow mode should be skipped gracefully."""
-        # Default: shadow_mode=True → push skipped
+        """Shadow mode must not report a provider write as successful."""
         result = await service.push_ari("STD", "2026-04-10", "2026-04-15", availability=5)
-        assert result["success"]
-        assert result.get("shadow_mode") or result.get("data") is not None
+        assert result["success"] is False
+        assert result["delivery_state"] == "blocked"
+        assert result["provider_write_count"] == 0

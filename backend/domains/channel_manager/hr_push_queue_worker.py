@@ -28,7 +28,6 @@ _transient_tracker = TransientFailureTracker("HR-QUEUE")
 
 QUEUE_CHECK_INTERVAL = 120  # seconds between queue checks
 INTER_PUSH_DELAY = 13.0  # seconds between individual pushes (5 req/min limit → 12s min)
-MAX_QUEUE_RETRIES = 10  # max retries before marking as permanently failed
 DEFAULT_RATE_LIMIT_COOLDOWN = 65  # seconds — default cooldown when 429 hits (slightly > Retry-After)
 MAX_AUTO_RETRIES = 5  # max consecutive auto-retries before stopping
 
@@ -56,7 +55,7 @@ def set_cooldown(tenant_id: str, seconds: int):
     """Set rate limit cooldown for a tenant."""
     until = datetime.now(UTC) + timedelta(seconds=seconds)
     _tenant_cooldowns[tenant_id] = until.isoformat()
-    logger.info("[HR-QUEUE] Cooldown set for tenant %s: %ds (until %s)", tenant_id, seconds, until.isoformat())
+    logger.info("[HR-QUEUE] Cooldown set: seconds=%d", seconds)
 
 
 def clear_cooldown(tenant_id: str):
@@ -79,6 +78,9 @@ async def enqueue_failed_push(
     avail=None,
     stop=None,
     minstay=None,
+    maxstay=None,
+    cta=None,
+    ctd=None,
     days=None,
     error: str = "",
     retry_after_seconds: int = DEFAULT_RATE_LIMIT_COOLDOWN,
@@ -113,11 +115,17 @@ async def enqueue_failed_push(
             update_fields["stop"] = stop
         if minstay is not None:
             update_fields["minstay"] = minstay
+        if maxstay is not None:
+            update_fields["maxstay"] = maxstay
+        if cta is not None:
+            update_fields["cta"] = cta
+        if ctd is not None:
+            update_fields["ctd"] = ctd
         await db.hr_push_queue.update_one(
             {"id": existing["id"]},
             {"$set": update_fields},
         )
-        logger.info("[HR-QUEUE] Merged into existing queue item %s for %s", existing["id"], room_type_code)
+        logger.info("[HR-QUEUE] Merged into existing queue item")
         return existing["id"]
 
     item_id = str(uuid.uuid4())[:12]
@@ -131,6 +139,9 @@ async def enqueue_failed_push(
         "avail": avail,
         "stop": stop,
         "minstay": minstay,
+        "maxstay": maxstay,
+        "cta": cta,
+        "ctd": ctd,
         "days": days,
         "status": "pending",
         "retry_count": 0,
@@ -141,7 +152,7 @@ async def enqueue_failed_push(
         "completed_at": None,
     }
     await db.hr_push_queue.insert_one(doc)
-    logger.info("[HR-QUEUE] Enqueued push for %s (%s to %s) — id=%s, next_retry_at=%s", room_type_code, start_date, end_date, item_id, next_retry_at)
+    logger.info("[HR-QUEUE] Delivery queued")
     return item_id
 
 
@@ -152,7 +163,7 @@ async def schedule_auto_retry(tenant_id: str, delay_seconds: int):
     """
     count = _auto_retry_counts.get(tenant_id, 0)
     if count >= MAX_AUTO_RETRIES:
-        logger.warning("[HR-QUEUE] Max auto-retries (%d) reached for tenant %s — stopping auto-retry. Manual retry required.", MAX_AUTO_RETRIES, tenant_id)
+        logger.warning("[HR-QUEUE] Max auto-retries reached: count=%d", MAX_AUTO_RETRIES)
         _auto_retry_counts[tenant_id] = 0
         return
 
@@ -170,10 +181,15 @@ async def schedule_auto_retry(tenant_id: str, delay_seconds: int):
     set_cooldown(tenant_id, actual_delay)
 
     async def _delayed_retry():
-        logger.info("[HR-QUEUE] Auto-retry #%d scheduled for tenant %s in %ds (base=%ds, multiplier=%dx)", count + 1, tenant_id, actual_delay, delay_seconds, multiplier)
+        logger.info(
+            "[HR-QUEUE] Auto-retry scheduled: attempt=%d delay_seconds=%d multiplier=%d",
+            count + 1,
+            actual_delay,
+            multiplier,
+        )
         await asyncio.sleep(actual_delay)
         clear_cooldown(tenant_id)
-        logger.info("[HR-QUEUE] Auto-retry #%d starting for tenant %s", count + 1, tenant_id)
+        logger.info("[HR-QUEUE] Auto-retry starting: attempt=%d", count + 1)
         await push_queue_worker._process_tenant_queue(tenant_id)
         _auto_retry_tasks.pop(tenant_id, None)
 
@@ -190,16 +206,16 @@ async def start_background_batch_push(tenant_id: str):
     # Cancel existing batch push for this tenant
     existing = _batch_push_tasks.get(tenant_id)
     if existing and not existing.done():
-        logger.info("[HR-BATCH] Batch push already running for tenant %s — merging", tenant_id)
+        logger.info("[HR-BATCH] Batch delivery already running; merging")
         return  # Let the existing batch handle it
 
     async def _batch_process():
-        logger.info("[HR-BATCH] Background batch push starting for tenant %s", tenant_id)
+        logger.info("[HR-BATCH] Background batch delivery starting")
         # Small delay to let the HTTP response return first
         await asyncio.sleep(1)
         await push_queue_worker._process_tenant_queue(tenant_id)
         _batch_push_tasks.pop(tenant_id, None)
-        logger.info("[HR-BATCH] Background batch push completed for tenant %s", tenant_id)
+        logger.info("[HR-BATCH] Background batch delivery completed")
 
     task = asyncio.create_task(_batch_process())
     _batch_push_tasks[tenant_id] = task
@@ -217,6 +233,7 @@ async def get_queue_status(tenant_id: str) -> dict:
     retrying = await db.hr_push_queue.count_documents({"tenant_id": tenant_id, "status": "retrying"})
     completed = await db.hr_push_queue.count_documents({"tenant_id": tenant_id, "status": "completed"})
     failed = await db.hr_push_queue.count_documents({"tenant_id": tenant_id, "status": "failed"})
+    manual_review = await db.hr_push_queue.count_documents({"tenant_id": tenant_id, "status": "manual_review"})
 
     last_success = await db.hr_push_queue.find_one(
         {"tenant_id": tenant_id, "status": "completed"},
@@ -241,6 +258,7 @@ async def get_queue_status(tenant_id: str) -> dict:
         "retrying": retrying,
         "completed": completed,
         "failed": failed,
+        "manual_review": manual_review,
         "total_in_queue": pending + retrying,
         "last_success_at": last_success.get("completed_at") if last_success else None,
         "pending_items": pending_items,
@@ -326,25 +344,27 @@ class HRPushQueueWorker:
             # Skip tenants still in cooldown
             cooldown = get_cooldown_remaining(tenant_id)
             if cooldown > 0:
-                logger.info("[HR-QUEUE] Tenant %s still in cooldown (%ds remaining), skipping", tenant_id, cooldown)
+                logger.info("[HR-QUEUE] Cooldown active: seconds_remaining=%d", cooldown)
                 continue
             await self._process_tenant_queue(tenant_id)
 
     async def _process_tenant_queue(self, tenant_id: str):
         """Process pending queue items for a specific tenant."""
         from domains.channel_manager.hr_rate_manager_router import _get_hr_provider
-        from domains.channel_manager.providers.hotelrunner.errors import HotelRunnerRateLimitError
+        from domains.channel_manager.providers.hotelrunner.ari_delivery import (
+            deliver_hotelrunner_ari,
+        )
 
         # Check cooldown before processing
         cooldown = get_cooldown_remaining(tenant_id)
         if cooldown > 0:
-            logger.info("[HR-QUEUE] Tenant %s in cooldown (%ds), scheduling auto-retry", tenant_id, cooldown)
+            logger.info("[HR-QUEUE] Cooldown active; controlled retry scheduled")
             await schedule_auto_retry(tenant_id, cooldown + 2)
             return
 
         provider, _ = await _get_hr_provider(tenant_id)
         if not provider:
-            logger.warning("[HR-QUEUE] No provider for tenant %s — skipping", tenant_id)
+            logger.warning("[HR-QUEUE] Provider unavailable; delivery blocked")
             return
 
         items = (
@@ -359,7 +379,7 @@ class HRPushQueueWorker:
         if not items:
             return
 
-        logger.info("[HR-QUEUE] Processing %d items for tenant %s", len(items), tenant_id)
+        logger.info("[HR-QUEUE] Processing queued deliveries: count=%d", len(items))
 
         success_count = 0
         for item in items:
@@ -383,12 +403,22 @@ class HRPushQueueWorker:
                 update_data["stop_sale"] = 1 if item["stop"] else 0
             if item.get("minstay") is not None:
                 update_data["min_stay"] = int(item["minstay"])
+            if item.get("maxstay") is not None:
+                update_data["max_stay"] = int(item["maxstay"])
+            if item.get("cta") is not None:
+                update_data["cta"] = 1 if item["cta"] else 0
+            if item.get("ctd") is not None:
+                update_data["ctd"] = 1 if item["ctd"] else 0
             if item.get("days") is not None:
                 update_data["days"] = item["days"]
 
             try:
-                result = await provider.update_room(**update_data)
-                if result.get("success"):
+                delivery = await deliver_hotelrunner_ari(
+                    tenant_id,
+                    update_data,
+                    provider=provider,
+                )
+                if delivery.success:
                     await db.hr_push_queue.update_one(
                         {"id": item["id"]},
                         {
@@ -403,71 +433,69 @@ class HRPushQueueWorker:
                     self._consecutive_rate_limits = 0
                     clear_cooldown(tenant_id)
                     reset_auto_retry(tenant_id)
-                    logger.info("[HR-QUEUE] Push OK: %s (%s ~ %s)", item["room_type_code"], item["start_date"], item["end_date"])
-                else:
+                    logger.info("[HR-QUEUE] ARI transaction confirmed")
+                elif delivery.retryable and delivery.provider_status_class == "RATE_LIMITED":
                     retry_count = item.get("retry_count", 0) + 1
-                    new_status = "failed" if retry_count >= MAX_QUEUE_RETRIES else "pending"
+                    retry_after = delivery.retry_after_seconds or DEFAULT_RATE_LIMIT_COOLDOWN
+                    next_retry = (datetime.now(UTC) + timedelta(seconds=retry_after)).isoformat()
                     await db.hr_push_queue.update_one(
                         {"id": item["id"]},
                         {
                             "$set": {
-                                "status": new_status,
+                                "status": "pending",
                                 "retry_count": retry_count,
-                                "last_error": result.get("error", "Unknown error"),
+                                "last_error": delivery.error_code,
+                                "next_retry_at": next_retry,
                                 "updated_at": now,
                             }
                         },
                     )
-                    logger.warning("[HR-QUEUE] Push FAILED: %s — %s (retry %d)", item["room_type_code"], result.get("error"), retry_count)
-
-            except HotelRunnerRateLimitError as e:
-                retry_count = item.get("retry_count", 0) + 1
-                next_retry = (datetime.now(UTC) + timedelta(seconds=e.retry_after_seconds)).isoformat()
-                await db.hr_push_queue.update_one(
-                    {"id": item["id"]},
-                    {
-                        "$set": {
-                            "status": "pending",
-                            "retry_count": retry_count,
-                            "last_error": f"Rate limit: {e}",
-                            "next_retry_at": next_retry,
-                            "updated_at": now,
-                        }
-                    },
-                )
-                self._consecutive_rate_limits += 1
-                set_cooldown(tenant_id, e.retry_after_seconds + 5)
-                logger.warning(
-                    "[HR-QUEUE] Rate limited on %s — cooldown %ds, scheduling auto-retry (consecutive=%d)",
-                    item["room_type_code"],
-                    e.retry_after_seconds,
-                    self._consecutive_rate_limits,
-                )
-                # Schedule auto-retry after cooldown
-                await schedule_auto_retry(tenant_id, e.retry_after_seconds + 5)
-                break  # Stop processing — API is rate-limited
+                    self._consecutive_rate_limits += 1
+                    set_cooldown(tenant_id, retry_after + 5)
+                    await schedule_auto_retry(tenant_id, retry_after + 5)
+                    logger.warning("[HR-QUEUE] Rate limited; controlled retry scheduled")
+                    break
+                else:
+                    retry_count = item.get("retry_count", 0) + 1
+                    await db.hr_push_queue.update_one(
+                        {"id": item["id"]},
+                        {
+                            "$set": {
+                                "status": "manual_review",
+                                "retry_count": retry_count,
+                                "last_error": delivery.error_code,
+                                "provider_status_class": delivery.provider_status_class,
+                                "updated_at": now,
+                            }
+                        },
+                    )
+                    logger.warning(
+                        "[HR-QUEUE] ARI transaction requires manual review: %s",
+                        delivery.provider_status_class,
+                    )
+                    break
 
             except Exception as e:
                 retry_count = item.get("retry_count", 0) + 1
-                new_status = "failed" if retry_count >= MAX_QUEUE_RETRIES else "pending"
                 await db.hr_push_queue.update_one(
                     {"id": item["id"]},
                     {
                         "$set": {
-                            "status": new_status,
+                            "status": "manual_review",
                             "retry_count": retry_count,
-                            "last_error": str(e),
+                            "last_error": f"ARI_QUEUE_{type(e).__name__.upper()}",
                             "updated_at": now,
                         }
                     },
                 )
-                logger.error("[HR-QUEUE] Error pushing %s: %s", item["room_type_code"], e)
+                logger.error("[HR-QUEUE] ARI queue delivery error: %s", type(e).__name__)
+                break
 
             # Delay between pushes
             await asyncio.sleep(INTER_PUSH_DELAY)
 
         if success_count > 0:
-            logger.info("[HR-QUEUE] Tenant %s: %d/%d pushes successful", tenant_id, success_count, len(items))
+            logger.info("[HR-QUEUE] Deliveries confirmed: count=%d total=%d", success_count, len(items))
 
 
 # Singleton

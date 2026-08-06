@@ -53,3 +53,5 @@ class ProviderResult(BaseModel):
     error: str | None = None
     duration_ms: int = 0
     retryable: bool = False
+    delivery_state: str = "confirmed"
+    provider_write_count: int = 0

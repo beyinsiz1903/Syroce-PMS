@@ -41,10 +41,8 @@ async def sync_availability_after_booking(
         await _do_sync(tenant_id, room_id, check_in, check_out)
     except Exception as e:
         logger.error(
-            "[AVAIL-AUTO-SYNC] Hata tenant=%s room=%s: %s",
-            tenant_id,
-            room_id,
-            e,
+            "[AVAIL-AUTO-SYNC] Sync failed: %s",
+            type(e).__name__,
         )
     finally:
         clear_tenant_context()
@@ -58,11 +56,11 @@ async def _do_sync(tenant_id: str, room_id: str, check_in: str, check_out: str):
         {"_id": 0, "room_type": 1},
     )
     if not room:
-        logger.warning("[AVAIL-AUTO-SYNC] Room not found: %s", room_id)
+        logger.warning("[AVAIL-AUTO-SYNC] Room not found")
         return
     pms_room_type = room.get("room_type", "")
     if not pms_room_type:
-        logger.warning("[AVAIL-AUTO-SYNC] Room type empty: %s", room_id)
+        logger.warning("[AVAIL-AUTO-SYNC] Room type missing")
         return
 
     # 2. Bu oda tipindeki toplam oda sayısını ve oda ID'lerini bul
@@ -118,12 +116,8 @@ async def _do_sync(tenant_id: str, room_id: str, check_in: str, check_out: str):
         return
 
     logger.info(
-        "[AVAIL-AUTO-SYNC] tenant=%s room_type=%s tarih=%s→%s avail=%s",
-        tenant_id,
-        pms_room_type,
-        ci_str,
-        co_str,
-        dict(list(date_availability.items())[:5]),
+        "[AVAIL-AUTO-SYNC] Availability calculated: date_count=%d",
+        len(date_availability),
     )
 
     # 6. Kanallara push et (arka planda paralel)
@@ -252,7 +246,7 @@ async def _push_to_hotelrunner(
     try:
         conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
         if not conn:
-            logger.debug("[AVAIL-AUTO-SYNC] No HR connection for tenant=%s", tenant_id)
+            logger.debug("[AVAIL-AUTO-SYNC] No active HR connection")
             return
 
         # PMS room type → HR inv_code mapping
@@ -261,17 +255,12 @@ async def _push_to_hotelrunner(
             {"_id": 0},
         ).to_list(10)
         if not mappings:
-            logger.debug("[AVAIL-AUTO-SYNC] No HR mapping for pms_type=%s", pms_room_type)
+            logger.debug("[AVAIL-AUTO-SYNC] No HR room mapping")
             return
 
-        # HR provider'ı al
-        try:
-            from domains.channel_manager.providers.hotelrunner.factory import get_provider as _get_provider
-
-            provider, _ = await _get_provider(tenant_id)
-        except Exception as e:
-            logger.warning("[AVAIL-AUTO-SYNC] Cannot get HR provider: %s", e)
-            return
+        from domains.channel_manager.providers.hotelrunner.ari_delivery import (
+            deliver_hotelrunner_ari,
+        )
 
         # Tarihleri ardışık gruplara ayır
         sorted_dates = sorted(date_availability.keys())
@@ -300,29 +289,24 @@ async def _push_to_hotelrunner(
                         "end_date": group_end,
                         "availability": int(avail),
                     }
-                    result = await provider.update_room(**update_data)
-                    if result.get("success"):
+                    delivery = await deliver_hotelrunner_ari(tenant_id, update_data)
+                    if delivery.success:
                         push_count += 1
-                        logger.info(
-                            "[AVAIL-AUTO-SYNC] HR push OK: inv=%s %s→%s avail=%d",
-                            hr_inv_code,
-                            group_start,
-                            group_end,
-                            avail,
-                        )
+                        logger.info("[AVAIL-AUTO-SYNC] HR transaction confirmed")
                     else:
                         logger.warning(
-                            "[AVAIL-AUTO-SYNC] HR push FAIL: inv=%s err=%s",
-                            hr_inv_code,
-                            result.get("error"),
+                            "[AVAIL-AUTO-SYNC] HR transaction not confirmed: %s",
+                            delivery.provider_status_class,
                         )
+                        return
                 except Exception as e:
-                    logger.error("[AVAIL-AUTO-SYNC] HR push error: %s", e)
+                    logger.error("[AVAIL-AUTO-SYNC] HR delivery error: %s", type(e).__name__)
+                    return
 
         logger.info("[AVAIL-AUTO-SYNC] HR total %d pushes completed", push_count)
 
     except Exception as e:
-        logger.error("[AVAIL-AUTO-SYNC] HR sync error: %s", e)
+        logger.error("[AVAIL-AUTO-SYNC] HR sync error: %s", type(e).__name__)
 
 
 def _group_consecutive_dates_with_same_avail(

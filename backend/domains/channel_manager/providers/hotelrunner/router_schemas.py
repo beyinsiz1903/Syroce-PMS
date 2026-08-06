@@ -32,6 +32,7 @@ class HRARIUpdate(BaseModel):
     price: float | None = None
     stop_sale: int | None = None
     min_stay: int | None = None
+    max_stay: int | None = None
     cta: int | None = None
     ctd: int | None = None
     days: list[int] | None = None

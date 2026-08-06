@@ -36,7 +36,10 @@ async def process_ack(
             "outbound_change_id": outbound_change_id,
             "provider_delta_hash": change_set.get("provider_delta_hash", ""),
             "endpoint_or_action": f"{result.provider}:{change_set['change_scope']}",
-            "request_payload": change_set.get("compacted_payload"),
+            "request_payload": {
+                "scope": change_set["change_scope"],
+                "fields": sorted((change_set.get("compacted_payload") or {}).keys()),
+            },
             "response_payload": result.response_payload,
             "status_code": result.status_code,
             "success": result.success,
@@ -44,10 +47,30 @@ async def process_ack(
         }
     )
 
-    if result.success:
+    if result.success and result.delivery_state == "confirmed":
         await repo.update_change_set_status(cs_id, STATUS_ACKED)
         logger.info(f"ARI push acked: {provider} cs={cs_id}")
         return STATUS_ACKED
+
+    if result.delivery_state in {
+        "blocked",
+        "dry_run",
+        "ambiguous",
+        "reconciliation_pending",
+        "partial_failure",
+    }:
+        await repo.update_change_set_status(
+            cs_id,
+            STATUS_FAILED_PERMANENT,
+            error=result.error or f"Unconfirmed provider delivery: {result.delivery_state}",
+            inc_attempt=True,
+        )
+        logger.error(
+            "ARI push not confirmed: provider=%s state=%s",
+            provider,
+            result.delivery_state,
+        )
+        return STATUS_FAILED_PERMANENT
 
     # Failure path
     error_class = classify_error(result.status_code or 0, result.error or "")

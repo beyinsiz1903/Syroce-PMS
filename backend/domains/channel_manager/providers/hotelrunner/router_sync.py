@@ -24,6 +24,7 @@ from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v96 DW
 
+from .ari_delivery import deliver_hotelrunner_ari
 from .factory import get_provider
 from .router_schemas import HRARIUpdate
 from .sync_log import log_sync
@@ -37,7 +38,7 @@ router = APIRouter()
 @router.get("/rooms")
 async def get_rooms(current_user: User = Depends(get_current_user)):
     """Fetch all rooms/rates from HotelRunner."""
-    provider, conn = await get_provider(current_user.tenant_id)
+    provider, _ = await get_provider(current_user.tenant_id)
     result = await provider.get_rooms()
 
     if not result["success"]:
@@ -60,21 +61,38 @@ async def update_room_ari(
     _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Push ARI update to HotelRunner."""
-    provider, conn = await get_provider(current_user.tenant_id)
+    provider, _ = await get_provider(current_user.tenant_id)
 
     update_data = payload.model_dump(exclude_none=True)
-    result = await provider.update_room(**update_data)
+    delivery = await deliver_hotelrunner_ari(
+        current_user.tenant_id,
+        update_data,
+        provider=provider,
+    )
 
-    status = "success" if result["success"] else "failed"
-    await log_sync(current_user.tenant_id, "ari_push", status, duration_ms=result.get("duration_ms", 0), records=1, error=result.get("error"), user_name=current_user.name)
+    status = "success" if delivery.success else "failed"
+    await log_sync(
+        current_user.tenant_id,
+        "ari_push",
+        status,
+        records=1 if delivery.success else 0,
+        error=delivery.error_code or None,
+        user_name=current_user.name,
+    )
 
-    if not result["success"]:
-        raise HTTPException(status_code=502, detail=f"ARI guncelleme hatasi: {result['error']}")
+    if not delivery.success:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error_code": delivery.error_code,
+                "provider_status_class": delivery.provider_status_class,
+                "provider_write_count": delivery.provider_write_count,
+            },
+        )
 
     return {
         "message": "ARI guncelleme basarili",
-        "transaction_id": result["data"].get("transaction_id"),
-        "status": result["data"].get("status"),
+        **delivery.safe_metadata(),
     }
 
 
@@ -82,24 +100,57 @@ async def update_room_ari(
 async def bulk_update_ari(
     updates: list[HRARIUpdate],
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
+    _perm=Depends(require_op("manage_channel_connectors")),
 ):
     """Push multiple ARI updates to HotelRunner."""
-    provider, conn = await get_provider(current_user.tenant_id)
+    provider, _ = await get_provider(current_user.tenant_id)
 
     update_dicts = [u.model_dump(exclude_none=True) for u in updates]
-    results = await provider.push_ari_bulk(update_dicts)
+    deliveries = []
+    for update in update_dicts:
+        delivery = await deliver_hotelrunner_ari(
+            current_user.tenant_id,
+            update,
+            provider=provider,
+        )
+        deliveries.append(delivery)
+        if not delivery.success:
+            break
 
-    success_count = sum(1 for r in results if r.get("success"))
-    fail_count = len(results) - success_count
+    success_count = sum(1 for delivery in deliveries if delivery.success)
+    fail_count = len(deliveries) - success_count
+    skipped_count = len(update_dicts) - len(deliveries)
 
-    await log_sync(current_user.tenant_id, "ari_bulk_push", "success" if fail_count == 0 else "partial", records=success_count, user_name=current_user.name)
+    await log_sync(
+        current_user.tenant_id,
+        "ari_bulk_push",
+        "success" if fail_count == 0 else "failed",
+        records=success_count,
+        error="ARI_BULK_PARTIAL_FAILURE" if fail_count else None,
+        user_name=current_user.name,
+    )
+
+    safe_results = [delivery.safe_metadata() for delivery in deliveries]
+    if fail_count:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error_code": "ARI_BULK_PARTIAL_FAILURE",
+                "total": len(deliveries),
+                "requested": len(update_dicts),
+                "confirmed": success_count,
+                "failed": fail_count,
+                "skipped": skipped_count,
+                "results": safe_results,
+            },
+        )
 
     return {
-        "total": len(results),
+        "total": len(deliveries),
         "success": success_count,
         "failed": fail_count,
-        "results": results,
+        "skipped": skipped_count,
+        "results": safe_results,
     }
 
 
