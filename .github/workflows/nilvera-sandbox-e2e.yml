@@ -23,8 +23,8 @@ on:
         required: false
         default: ''
         type: string
-      reconciliation_source_year:
-        description: Four-digit year used by the fixture identity contract
+      reconciliation_source_timestamp:
+        description: UTC timestamp of the GitHub Actions run that produced the fixture identity
         required: false
         default: ''
         type: string
@@ -100,7 +100,7 @@ jobs:
           RUN_INCOMING_ANSWER: ${{ inputs.run_incoming_answer }}
           RUN_RECONCILIATION: ${{ inputs.run_reconciliation }}
           RECONCILIATION_SOURCE_RUN_ID: ${{ inputs.reconciliation_source_run_id }}
-          RECONCILIATION_SOURCE_YEAR: ${{ inputs.reconciliation_source_year }}
+          RECONCILIATION_SOURCE_TIMESTAMP: ${{ inputs.reconciliation_source_timestamp }}
           SENDER_KEY: ${{ secrets.NILVERA_E2E_SENDER_SANDBOX_KEY }}
           RECEIVER_KEY: ${{ secrets.NILVERA_E2E_RECEIVER_SANDBOX_KEY }}
           CORRELATION_HMAC_KEY: ${{ secrets.NILVERA_E2E_CORRELATION_HMAC_KEY }}
@@ -117,7 +117,7 @@ jobs:
               exit 1
             fi
           elif [ "${RUN_RECONCILIATION}" = "true" ]; then
-            if [ -z "${SENDER_KEY}" ] || [ -z "${RECEIVER_KEY}" ] || [ -z "${CORRELATION_HMAC_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ] || [ -z "${RECONCILIATION_SOURCE_RUN_ID}" ] || [ -z "${RECONCILIATION_SOURCE_YEAR}" ]; then
+            if [ -z "${SENDER_KEY}" ] || [ -z "${RECEIVER_KEY}" ] || [ -z "${CORRELATION_HMAC_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ] || [ -z "${RECONCILIATION_SOURCE_RUN_ID}" ] || [ -z "${RECONCILIATION_SOURCE_TIMESTAMP}" ]; then
               echo "::error::BLOCKED_MISSING_RECONCILIATION_SANDBOX_CONFIGURATION"
               exit 1
             fi
@@ -149,7 +149,7 @@ jobs:
           NILVERA_E2E_INCOMING_ANSWER_ALLOWED: ${{ inputs.run_incoming_answer }}
           NILVERA_E2E_RECONCILIATION_ALLOWED: ${{ inputs.run_reconciliation }}
           NILVERA_E2E_SOURCE_RUN_ID: ${{ inputs.reconciliation_source_run_id }}
-          NILVERA_E2E_SOURCE_RUN_YEAR: ${{ inputs.reconciliation_source_year }}
+          NILVERA_E2E_SOURCE_RUN_TIMESTAMP: ${{ inputs.reconciliation_source_timestamp }}
           NILVERA_E2E_RUN_ID: ${{ github.run_id }}
           MONGO_URL: ${{ env.MONGO_URL }}
           DB_NAME: ${{ env.DB_NAME }}

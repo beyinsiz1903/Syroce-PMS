@@ -42,6 +42,7 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
 
     assert "run_incoming_fixture:" in workflow
     assert "run_reconciliation:" in workflow
+    assert "reconciliation_source_timestamp:" in workflow
     assert "default: false" in workflow
     assert "scripts/nilvera_sandbox_selector.py" in workflow
     with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
@@ -385,8 +386,8 @@ async def test_read_only_reconciliation_finds_exact_outgoing_and_incoming_fixtur
     assert not hasattr(sender_client, "post")
     assert not hasattr(receiver_client, "post")
     sale_list_call = next(call for call in sender_client.get.await_args_list if call.args[0] == NilveraEndpoints.LIST_SALE_INVOICES)
-    assert sale_list_call.kwargs["params"]["StartDate"].startswith("2026-01-01")
-    assert sale_list_call.kwargs["params"]["EndDate"].startswith("2026-12-31")
+    assert sale_list_call.kwargs["params"]["StartDate"].startswith("2026-08-05")
+    assert sale_list_call.kwargs["params"]["EndDate"].startswith("2026-08-07")
 
 
 async def test_read_only_reconciliation_blocks_company_mismatch_before_list_queries():
@@ -410,6 +411,42 @@ async def test_read_only_reconciliation_blocks_company_mismatch_before_list_quer
     assert exc_info.value.receiver_match is False
     sender_client.get.assert_awaited_once_with(NilveraEndpoints.GET_COMPANY)
     receiver_client.get.assert_awaited_once_with(NilveraEndpoints.GET_COMPANY)
+
+
+async def test_read_only_reconciliation_reports_only_safe_query_failure_metadata():
+    error = NilveraValidationError(
+        "provider rejected query",
+        http_status=400,
+        provider_code="QUERY_RANGE_INVALID",
+    )
+
+    async def sender_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": SELLER_TAX_NUMBER}
+        raise error
+
+    sender_client = SimpleNamespace(get=AsyncMock(side_effect=sender_get))
+    receiver_client = SimpleNamespace(get=AsyncMock(return_value={"TaxNumber": BUYER_TAX_NUMBER}))
+
+    with pytest.raises(SandboxFixtureBlocked, match="BLOCKED_FIXTURE_RECONCILIATION_QUERY") as exc_info:
+        await reconcile_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            reference_time=NOW,
+        )
+
+    assert exc_info.value.failure_stage == "SENDER_SALE_LIST"
+    assert exc_info.value.http_status_class == "4xx"
+    assert exc_info.value.provider_code == "QUERY_RANGE_INVALID"
+    assert exc_info.value.exception_type == "NilveraValidationError"
+    assert exc_info.value.sender_match is True
+    assert exc_info.value.receiver_match is True
 
 
 async def test_read_only_reconciliation_reports_not_found_without_claiming_absence():
