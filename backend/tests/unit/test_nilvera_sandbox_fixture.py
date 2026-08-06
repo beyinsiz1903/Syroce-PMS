@@ -24,6 +24,9 @@ from tests.nilvera_sandbox_fixture import (
     MATCH_COUNT_ONE,
     MATCH_COUNT_ZERO,
     NOT_FOUND_OR_NOT_VISIBLE,
+    PAGE_COUNT_ONE,
+    PAGE_COUNT_TWO_TO_FIVE,
+    RECONCILIATION_MAX_PAGES,
     ReadOnlySandboxClient,
     SandboxFixtureBlocked,
     SandboxFixtureFailed,
@@ -67,6 +70,7 @@ async def test_read_only_client_blocks_non_get_methods_before_provider_access():
         put=AsyncMock(),
         patch=AsyncMock(),
         delete=AsyncMock(),
+        last_http_status=200,
     )
     client = ReadOnlySandboxClient(delegate)
 
@@ -80,6 +84,7 @@ async def test_read_only_client_blocks_non_get_methods_before_provider_access():
     delegate.put.assert_not_awaited()
     delegate.patch.assert_not_awaited()
     delegate.delete.assert_not_awaited()
+    assert client.exact_http_status == 200
 
 
 def test_fixture_identity_is_transferred_to_invoice_serie_or_number():
@@ -390,11 +395,14 @@ async def test_read_only_reconciliation_finds_exact_outgoing_and_incoming_fixtur
     assert result.receiver_visibility == FOUND
     assert result.receiver_detail_match is True
     assert result.receiver_status_ready is True
+    assert result.sender_page_count_class == PAGE_COUNT_ONE
+    assert result.receiver_page_count_class == PAGE_COUNT_ONE
     assert not hasattr(sender_client, "post")
     assert not hasattr(receiver_client, "post")
     sale_list_call = next(call for call in sender_client.get.await_args_list if call.args[0] == NilveraEndpoints.LIST_SALE_INVOICES)
-    assert sale_list_call.kwargs["params"]["StartDate"].startswith("2026-08-05")
-    assert sale_list_call.kwargs["params"]["EndDate"].startswith("2026-08-07")
+    assert sale_list_call.kwargs["params"]["StartDate"].startswith("2026-08-03")
+    assert sale_list_call.kwargs["params"]["EndDate"].startswith("2026-08-09")
+    assert sale_list_call.kwargs["params"]["DateFilterType"] == "CreatedDate"
 
 
 async def test_read_only_reconciliation_blocks_company_mismatch_before_list_queries():
@@ -540,9 +548,11 @@ async def test_read_only_reconciliation_reports_not_found_without_claiming_absen
     assert receiver_client.get.await_count == 2
     purchase_call = next(call for call in receiver_client.get.await_args_list if call.args[0] == NilveraEndpoints.LIST_PURCHASE_INVOICES)
     assert set(purchase_call.kwargs["params"]) == {
-        "Search",
         "StartDate",
         "EndDate",
+        "DateFilterType",
+        "SortColumn",
+        "SortType",
         "Page",
         "PageSize",
     }
@@ -571,6 +581,205 @@ async def test_read_only_reconciliation_stops_on_multiple_exact_matches():
     receiver_client = SimpleNamespace(get=AsyncMock(side_effect=receiver_get))
 
     with pytest.raises(SandboxFixtureBlocked, match="CONFLICT_FIXTURE_RECONCILIATION"):
+        await reconcile_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            reference_time=NOW,
+        )
+
+
+async def test_read_only_reconciliation_scans_all_pages_to_find_exact_fixture():
+    identity = build_fixture_identity(year=NOW.year, run_id=RUN_ID, hmac_key=HMAC_KEY)
+
+    async def sender_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": SELLER_TAX_NUMBER}
+        if path == NilveraEndpoints.LIST_SALE_INVOICES:
+            page = int(kwargs["params"]["Page"])
+            content = [{"UUID": PROVIDER_UUID, "InvoiceNumber": identity}] if page == 2 else []
+            return {"TotalPages": 2, "Content": content}
+        if path == NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=PROVIDER_UUID):
+            return {
+                "InvoiceNumber": identity,
+                "InvoiceProfile": "TICARIFATURA",
+                "InvoiceType": "SATIS",
+            }
+        if path == NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=PROVIDER_UUID):
+            return {"Status": "SUCCESS"}
+        raise AssertionError("unexpected sender read")
+
+    async def receiver_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": BUYER_TAX_NUMBER}
+        page = int(kwargs["params"]["Page"])
+        content = [{"UUID": PROVIDER_UUID, "InvoiceNumber": identity}] if page == 3 else []
+        return {"TotalPages": 3, "Content": content}
+
+    sender_delegate = SimpleNamespace(get=AsyncMock(side_effect=sender_get), last_http_status=200)
+    receiver_delegate = SimpleNamespace(get=AsyncMock(side_effect=receiver_get), last_http_status=200)
+    sender_client = ReadOnlySandboxClient(sender_delegate)
+    receiver_client = ReadOnlySandboxClient(receiver_delegate)
+
+    with patch("tests.nilvera_sandbox_fixture.NilveraIncomingService", return_value=_incoming_service(visible=True)):
+        result = await reconcile_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            reference_time=NOW,
+        )
+
+    assert result.match_count_class == MATCH_COUNT_ONE
+    assert result.receiver_visibility == FOUND
+    assert result.sender_page_count_class == PAGE_COUNT_TWO_TO_FIVE
+    assert result.receiver_page_count_class == PAGE_COUNT_TWO_TO_FIVE
+    assert result.http_status == 200
+    sender_pages = [
+        call.kwargs["params"]["Page"]
+        for call in sender_delegate.get.await_args_list
+        if call.args[0] == NilveraEndpoints.LIST_SALE_INVOICES
+    ]
+    receiver_pages = [
+        call.kwargs["params"]["Page"]
+        for call in receiver_delegate.get.await_args_list
+        if call.args[0] == NilveraEndpoints.LIST_PURCHASE_INVOICES
+    ]
+    assert sender_pages == ["1", "2"]
+    assert receiver_pages == ["1", "2", "3"]
+
+
+async def test_read_only_reconciliation_uses_narrowed_detail_fallback_when_tag_field_is_absent():
+    identity = build_fixture_identity(year=NOW.year, run_id=RUN_ID, hmac_key=HMAC_KEY)
+
+    async def sender_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": SELLER_TAX_NUMBER}
+        if path == NilveraEndpoints.LIST_SALE_INVOICES:
+            return {
+                "Content": [
+                    {
+                        "UUID": PROVIDER_UUID,
+                        "InvoiceProfile": "TICARIFATURA",
+                        "InvoiceType": "SATIS",
+                        "BuyerTaxNumber": BUYER_TAX_NUMBER,
+                    }
+                ]
+            }
+        if path == NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=PROVIDER_UUID):
+            return {
+                "InvoiceNumber": identity,
+                "InvoiceProfile": "TICARIFATURA",
+                "InvoiceType": "SATIS",
+            }
+        if path == NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=PROVIDER_UUID):
+            return {"Status": "SUCCESS"}
+        raise AssertionError("unexpected sender read")
+
+    async def receiver_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": BUYER_TAX_NUMBER}
+        return {
+            "Content": [
+                {
+                    "UUID": PROVIDER_UUID,
+                    "InvoiceProfile": "TICARIFATURA",
+                    "InvoiceType": "SATIS",
+                    "SenderTaxNumber": SELLER_TAX_NUMBER,
+                }
+            ]
+        }
+
+    sender_client = SimpleNamespace(get=AsyncMock(side_effect=sender_get))
+    receiver_client = SimpleNamespace(get=AsyncMock(side_effect=receiver_get))
+    incoming_service = _incoming_service(visible=True)
+
+    with patch("tests.nilvera_sandbox_fixture.NilveraIncomingService", return_value=incoming_service):
+        result = await reconcile_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            reference_time=NOW,
+        )
+
+    assert result.match_count_class == MATCH_COUNT_ONE
+    assert result.receiver_visibility == FOUND
+    incoming_service.fetch_incoming_invoice_detail.assert_awaited_once_with(PROVIDER_UUID)
+    assert all(call.args[0] != NilveraEndpoints.SEND_ANSWER for call in sender_client.get.await_args_list)
+    assert all(call.args[0] != NilveraEndpoints.SEND_ANSWER for call in receiver_client.get.await_args_list)
+
+
+async def test_read_only_reconciliation_blocks_before_partial_scan_exceeds_page_limit():
+    async def sender_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": SELLER_TAX_NUMBER}
+        return {"TotalPages": RECONCILIATION_MAX_PAGES + 1, "Content": []}
+
+    sender_delegate = SimpleNamespace(get=AsyncMock(side_effect=sender_get), last_http_status=200)
+    receiver_delegate = SimpleNamespace(
+        get=AsyncMock(return_value={"TaxNumber": BUYER_TAX_NUMBER}),
+        last_http_status=200,
+    )
+
+    with pytest.raises(SandboxFixtureBlocked, match="BLOCKED_RECONCILIATION_PAGE_LIMIT") as exc_info:
+        await reconcile_incoming_commercial_fixture(
+            sender_client=ReadOnlySandboxClient(sender_delegate),
+            receiver_client=ReadOnlySandboxClient(receiver_delegate),
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            reference_time=NOW,
+        )
+
+    assert exc_info.value.sender_page_count_class == PAGE_COUNT_ONE
+    assert exc_info.value.receiver_page_count_class is None
+    assert exc_info.value.http_status == 200
+    assert sender_delegate.get.await_count == 2
+
+
+async def test_read_only_reconciliation_treats_malformed_candidate_detail_as_blocked():
+    async def sender_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": SELLER_TAX_NUMBER}
+        if path == NilveraEndpoints.LIST_SALE_INVOICES:
+            return {
+                "Content": [
+                    {
+                        "UUID": PROVIDER_UUID,
+                        "InvoiceProfile": "TICARIFATURA",
+                        "InvoiceType": "SATIS",
+                        "BuyerTaxNumber": BUYER_TAX_NUMBER,
+                    }
+                ]
+            }
+        return {"unexpected": "detail-shape"}
+
+    async def receiver_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": BUYER_TAX_NUMBER}
+        return {"Content": []}
+
+    sender_client = SimpleNamespace(get=AsyncMock(side_effect=sender_get))
+    receiver_client = SimpleNamespace(get=AsyncMock(side_effect=receiver_get))
+
+    with pytest.raises(SandboxFixtureBlocked, match="BLOCKED_FIXTURE_RECONCILIATION_PARSE"):
         await reconcile_incoming_commercial_fixture(
             sender_client=sender_client,
             receiver_client=receiver_client,

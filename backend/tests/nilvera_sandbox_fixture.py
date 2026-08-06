@@ -41,6 +41,26 @@ NOT_FOUND_OR_NOT_VISIBLE = "NOT_FOUND_OR_NOT_VISIBLE"
 MATCH_COUNT_ZERO = "ZERO"
 MATCH_COUNT_ONE = "ONE"
 MATCH_COUNT_MULTIPLE = "MULTIPLE"
+RECONCILIATION_WINDOW_DAYS = 3
+RECONCILIATION_PAGE_SIZE = 100
+RECONCILIATION_MAX_PAGES = 20
+RECONCILIATION_MAX_DETAIL_CANDIDATES = 20
+PAGE_COUNT_ONE = "ONE"
+PAGE_COUNT_TWO_TO_FIVE = "TWO_TO_FIVE"
+PAGE_COUNT_SIX_TO_TEN = "SIX_TO_TEN"
+PAGE_COUNT_ELEVEN_TO_LIMIT = "ELEVEN_TO_LIMIT"
+BLOCKED_NOT_FOUND_AFTER_EXHAUSTIVE_READ = "BLOCKED_NOT_FOUND_AFTER_EXHAUSTIVE_READ"
+
+_CORRELATION_FIELDS = (
+    "InvoiceNumber",
+    "InvoiceSerieOrNumber",
+    "InvoiceNo",
+    "DocumentNumber",
+)
+_PROFILE_FIELDS = ("InvoiceProfile", "DocumentProfile", "Profile")
+_TYPE_FIELDS = ("InvoiceType", "DocumentType", "Type")
+_OUTGOING_COUNTERPART_FIELDS = ("BuyerTaxNumber", "ReceiverTaxNumber", "TaxNumber")
+_INCOMING_COUNTERPART_FIELDS = ("SenderTaxNumber", "SellerTaxNumber", "TaxNumber")
 
 
 class SandboxFixtureError(RuntimeError):
@@ -58,6 +78,8 @@ class SandboxFixtureError(RuntimeError):
         sender_match: bool | None = None,
         receiver_match: bool | None = None,
         match_count_class: str | None = None,
+        sender_page_count_class: str | None = None,
+        receiver_page_count_class: str | None = None,
     ):
         super().__init__(safe_code)
         self.safe_code = safe_code
@@ -71,6 +93,8 @@ class SandboxFixtureError(RuntimeError):
         self.sender_match = sender_match
         self.receiver_match = receiver_match
         self.match_count_class = match_count_class
+        self.sender_page_count_class = sender_page_count_class
+        self.receiver_page_count_class = receiver_page_count_class
 
 
 class SandboxFixtureBlocked(SandboxFixtureError):
@@ -86,10 +110,23 @@ class ReadOnlySandboxClient:
 
     def __init__(self, client: Any):
         self._client = client
+        self._http_statuses: list[int] = []
+
+    @property
+    def exact_http_status(self) -> int | None:
+        unique_statuses = set(self._http_statuses)
+        if len(unique_statuses) != 1:
+            return None
+        return next(iter(unique_statuses))
 
     async def get(self, path: str, **kwargs: Any) -> Any:
         kwargs["retryable"] = False
-        return await self._client.get(path, **kwargs)
+        try:
+            return await self._client.get(path, **kwargs)
+        finally:
+            status = getattr(self._client, "last_http_status", None)
+            if isinstance(status, int) and 100 <= status <= 599:
+                self._http_statuses.append(status)
 
     async def post(self, *_args: Any, **_kwargs: Any) -> Any:
         raise SandboxFixtureBlocked("BLOCKED_RECONCILIATION_NON_GET_METHOD")
@@ -127,6 +164,22 @@ class SandboxFixtureReconciliationResult:
     receiver_visibility: str
     receiver_detail_match: bool | None
     receiver_status_ready: bool | None
+    sender_page_count_class: str
+    receiver_page_count_class: str
+    http_status: int | None
+
+
+@dataclass(frozen=True)
+class _ReconciliationPages:
+    items: tuple[dict[str, Any], ...]
+    page_count: int
+    page_count_class: str
+
+
+@dataclass(frozen=True)
+class _ReconciliationCandidates:
+    provider_uuids: tuple[str, ...]
+    used_detail_fallback: bool
 
 
 def ensure_distinct_sandbox_keys(sender_key: str, receiver_key: str) -> None:
@@ -284,13 +337,33 @@ def build_fixture_payload(
 async def company_identity_matches(client: Any, expected_tax_number: str) -> bool:
     try:
         response = await client.get(NilveraEndpoints.GET_COMPANY)
-    except Exception:
-        raise SandboxFixtureBlocked("BLOCKED_COMPANY_IDENTITY_QUERY") from None
+    except Exception as exc:
+        http_status = exc.http_status if isinstance(exc, NilveraApiError) else None
+        provider_code = exc.provider_code if isinstance(exc, NilveraApiError) else None
+        raise SandboxFixtureBlocked(
+            "BLOCKED_COMPANY_IDENTITY_QUERY",
+            http_status=http_status,
+            http_status_class=_http_status_class(http_status),
+            provider_code=_safe_provider_code(provider_code),
+            exception_type=_safe_exception_type(exc),
+        ) from None
     if not isinstance(response, dict):
-        raise SandboxFixtureBlocked("BLOCKED_COMPANY_IDENTITY_PARSE")
+        http_status = _client_exact_http_status(client)
+        raise SandboxFixtureBlocked(
+            "BLOCKED_COMPANY_IDENTITY_PARSE",
+            http_status=http_status,
+            http_status_class=_http_status_class(http_status),
+            exception_type="NilveraValidationError",
+        )
     tax_number = response.get("TaxNumber")
     if not isinstance(tax_number, str) or not tax_number.isdigit() or len(tax_number) not in (10, 11):
-        raise SandboxFixtureBlocked("BLOCKED_COMPANY_IDENTITY_PARSE")
+        http_status = _client_exact_http_status(client)
+        raise SandboxFixtureBlocked(
+            "BLOCKED_COMPANY_IDENTITY_PARSE",
+            http_status=http_status,
+            http_status_class=_http_status_class(http_status),
+            exception_type="NilveraValidationError",
+        )
     return hmac.compare_digest(tax_number.encode(), expected_tax_number.encode())
 
 
@@ -328,35 +401,268 @@ def _matches_fixture(candidate: str, target_digest: bytes, hmac_key: str) -> boo
     return hmac.compare_digest(candidate_digest, target_digest)
 
 
-def _matching_provider_uuids(
-    response: Any,
+def _page_count_class(page_count: int) -> str:
+    if page_count == 1:
+        return PAGE_COUNT_ONE
+    if 2 <= page_count <= 5:
+        return PAGE_COUNT_TWO_TO_FIVE
+    if 6 <= page_count <= 10:
+        return PAGE_COUNT_SIX_TO_TEN
+    if 11 <= page_count <= RECONCILIATION_MAX_PAGES:
+        return PAGE_COUNT_ELEVEN_TO_LIMIT
+    raise SandboxFixtureBlocked("BLOCKED_RECONCILIATION_PAGE_COUNT")
+
+
+def _client_exact_http_status(client: Any) -> int | None:
+    status = getattr(client, "exact_http_status", None)
+    return status if isinstance(status, int) and 100 <= status <= 599 else None
+
+
+def _combined_exact_http_status(*clients: Any) -> int | None:
+    statuses = {_client_exact_http_status(client) for client in clients}
+    statuses.discard(None)
+    if len(statuses) != 1:
+        return None
+    return next(iter(statuses))
+
+
+def _enrich_reconciliation_error(
+    exc: SandboxFixtureError,
+    *,
+    sender_match: bool,
+    receiver_match: bool,
+    sender_page_count_class: str,
+    receiver_page_count_class: str,
+    http_status: int | None,
+) -> SandboxFixtureError:
+    exc.sender_match = sender_match
+    exc.receiver_match = receiver_match
+    exc.sender_page_count_class = sender_page_count_class
+    exc.receiver_page_count_class = receiver_page_count_class
+    if exc.http_status is None:
+        exc.http_status = http_status
+        exc.http_status_class = _http_status_class(http_status)
+    return exc
+
+
+def _page_error_metadata(
+    *,
+    side: str,
+    page_count: int,
+    sender_page_count_class: str | None,
+) -> dict[str, str | None]:
+    current_page_class = _page_count_class(page_count) if page_count else None
+    return {
+        "sender_page_count_class": current_page_class if side == "sender" else sender_page_count_class,
+        "receiver_page_count_class": current_page_class if side == "receiver" else None,
+    }
+
+
+async def _scan_reconciliation_pages(
+    *,
+    client: Any,
+    path: str,
+    params: dict[str, str],
+    correlation_label: str,
+    side: str,
+    sender_match: bool,
+    receiver_match: bool,
+    sender_page_count_class: str | None = None,
+) -> _ReconciliationPages:
+    items: list[dict[str, Any]] = []
+    completed_pages = 0
+
+    for page in range(1, RECONCILIATION_MAX_PAGES + 1):
+        page_params = {**params, "Page": str(page), "PageSize": str(RECONCILIATION_PAGE_SIZE)}
+        try:
+            response = await client.get(
+                path,
+                params=page_params,
+                correlation_id=correlation_label,
+            )
+        except Exception as exc:
+            failure_stage = "SENDER_SALE_LIST" if side == "sender" else "RECEIVER_PURCHASE_LIST"
+            blocked = _reconciliation_query_failure(
+                exc,
+                failure_stage=failure_stage,
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+            )
+            metadata = _page_error_metadata(
+                side=side,
+                page_count=completed_pages,
+                sender_page_count_class=sender_page_count_class,
+            )
+            blocked.sender_page_count_class = metadata["sender_page_count_class"]
+            blocked.receiver_page_count_class = metadata["receiver_page_count_class"]
+            raise blocked from None
+
+        completed_pages += 1
+        metadata = _page_error_metadata(
+            side=side,
+            page_count=completed_pages,
+            sender_page_count_class=sender_page_count_class,
+        )
+        if not isinstance(response, dict) or not isinstance(response.get("Content"), list):
+            raise SandboxFixtureBlocked(
+                "BLOCKED_FIXTURE_RECONCILIATION_PARSE",
+                failure_stage=f"{side.upper()}_LIST_PARSE",
+                http_status=_client_exact_http_status(client),
+                http_status_class=_http_status_class(_client_exact_http_status(client)),
+                exception_type="NilveraValidationError",
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                **metadata,
+            )
+
+        content = response["Content"]
+        if any(not isinstance(item, dict) for item in content):
+            raise SandboxFixtureBlocked(
+                "BLOCKED_FIXTURE_RECONCILIATION_PARSE",
+                failure_stage=f"{side.upper()}_LIST_PARSE",
+                http_status=_client_exact_http_status(client),
+                http_status_class=_http_status_class(_client_exact_http_status(client)),
+                exception_type="NilveraValidationError",
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                **metadata,
+            )
+        items.extend(content)
+
+        raw_total_pages = response.get("TotalPages")
+        if raw_total_pages is not None:
+            if isinstance(raw_total_pages, bool) or not isinstance(raw_total_pages, int) or raw_total_pages < 0:
+                raise SandboxFixtureBlocked(
+                    "BLOCKED_FIXTURE_RECONCILIATION_PARSE",
+                    failure_stage=f"{side.upper()}_PAGINATION_PARSE",
+                    http_status=_client_exact_http_status(client),
+                    http_status_class=_http_status_class(_client_exact_http_status(client)),
+                    exception_type="NilveraValidationError",
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                    **metadata,
+                )
+            if raw_total_pages > RECONCILIATION_MAX_PAGES:
+                raise SandboxFixtureBlocked(
+                    "BLOCKED_RECONCILIATION_PAGE_LIMIT",
+                    failure_stage=f"{side.upper()}_PAGE_LIMIT",
+                    http_status=_client_exact_http_status(client),
+                    http_status_class=_http_status_class(_client_exact_http_status(client)),
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                    **metadata,
+                )
+            if raw_total_pages == 0 and content:
+                raise SandboxFixtureBlocked(
+                    "BLOCKED_FIXTURE_RECONCILIATION_PARSE",
+                    failure_stage=f"{side.upper()}_PAGINATION_PARSE",
+                    http_status=_client_exact_http_status(client),
+                    http_status_class=_http_status_class(_client_exact_http_status(client)),
+                    exception_type="NilveraValidationError",
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                    **metadata,
+                )
+            if page >= max(raw_total_pages, 1):
+                return _ReconciliationPages(tuple(items), completed_pages, _page_count_class(completed_pages))
+        elif len(content) < RECONCILIATION_PAGE_SIZE:
+            return _ReconciliationPages(tuple(items), completed_pages, _page_count_class(completed_pages))
+
+    raise SandboxFixtureBlocked(
+        "BLOCKED_RECONCILIATION_PAGE_LIMIT",
+        failure_stage=f"{side.upper()}_PAGE_LIMIT",
+        http_status=_client_exact_http_status(client),
+        http_status_class=_http_status_class(_client_exact_http_status(client)),
+        sender_match=sender_match,
+        receiver_match=receiver_match,
+        **_page_error_metadata(
+            side=side,
+            page_count=completed_pages,
+            sender_page_count_class=sender_page_count_class,
+        ),
+    )
+
+
+def _normalized_item_field(item: dict[str, Any], fields: Sequence[str]) -> str:
+    for field in fields:
+        value = item.get(field)
+        if isinstance(value, str) and value.strip():
+            return _normalize(value)
+    return ""
+
+
+def _parse_candidate_uuid(item: dict[str, Any]) -> str:
+    raw_uuid = item.get("UUID") or item.get("Id")
+    try:
+        return str(uuid.UUID(str(raw_uuid)))
+    except (AttributeError, TypeError, ValueError):
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_RECONCILIATION_PARSE") from None
+
+
+def _matches_counterpart(
+    item: dict[str, Any],
+    fields: Sequence[str],
+    expected_tax_number: str,
+    hmac_key: str,
+) -> bool:
+    expected_digest = hmac.new(hmac_key.encode(), expected_tax_number.encode(), hashlib.sha256).digest()
+    for field in fields:
+        value = item.get(field)
+        if isinstance(value, str) and value:
+            return _matches_fixture(value, expected_digest, hmac_key)
+    return False
+
+
+def _reconciliation_candidates(
+    items: Sequence[dict[str, Any]],
     *,
     target_digest: bytes,
     hmac_key: str,
-    parse_error_code: str,
-) -> tuple[str, ...]:
-    if not isinstance(response, dict) or not isinstance(response.get("Content"), list):
-        raise SandboxFixtureFailed(parse_error_code)
+    counterpart_tax_number: str,
+    counterpart_fields: Sequence[str],
+) -> _ReconciliationCandidates:
+    tag_field_seen = False
+    exact_matches: set[str] = set()
+    for item in items:
+        for field in _CORRELATION_FIELDS:
+            value = item.get(field)
+            if not isinstance(value, str) or not value.strip():
+                continue
+            tag_field_seen = True
+            if _matches_fixture(value, target_digest, hmac_key):
+                exact_matches.add(_parse_candidate_uuid(item))
 
-    matches: set[str] = set()
-    for item in response["Content"]:
-        if not isinstance(item, dict):
-            raise SandboxFixtureFailed(parse_error_code)
-        invoice_number = item.get("InvoiceNumber")
-        if not isinstance(invoice_number, str) or not _matches_fixture(invoice_number, target_digest, hmac_key):
+    if exact_matches or tag_field_seen:
+        return _ReconciliationCandidates(tuple(sorted(exact_matches)), False)
+
+    narrowed: set[str] = set()
+    for item in items:
+        if _normalized_item_field(item, _PROFILE_FIELDS) != "ticarifatura":
             continue
-        try:
-            matches.add(str(uuid.UUID(item.get("UUID", ""))))
-        except (AttributeError, TypeError, ValueError):
-            raise SandboxFixtureFailed(parse_error_code) from None
-    return tuple(matches)
+        if _normalized_item_field(item, _TYPE_FIELDS) != "satis":
+            continue
+        if not _matches_counterpart(item, counterpart_fields, counterpart_tax_number, hmac_key):
+            continue
+        narrowed.add(_parse_candidate_uuid(item))
+
+    if len(narrowed) > RECONCILIATION_MAX_DETAIL_CANDIDATES:
+        raise SandboxFixtureBlocked("BLOCKED_RECONCILIATION_CANDIDATE_LIMIT")
+    return _ReconciliationCandidates(tuple(sorted(narrowed)), True)
 
 
 def _detail_matches_fixture(detail: Any, *, target_digest: bytes, hmac_key: str) -> bool:
     if not isinstance(detail, dict):
-        return False
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_RECONCILIATION_PARSE")
     invoice_number = detail.get("InvoiceNumber")
-    return isinstance(invoice_number, str) and _matches_fixture(invoice_number, target_digest, hmac_key) and detail.get("InvoiceProfile") == "TICARIFATURA" and detail.get("InvoiceType") == "SATIS"
+    invoice_profile = detail.get("InvoiceProfile")
+    invoice_type = detail.get("InvoiceType")
+    if not all(isinstance(value, str) and value.strip() for value in (invoice_number, invoice_profile, invoice_type)):
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_RECONCILIATION_PARSE")
+    return (
+        _matches_fixture(invoice_number, target_digest, hmac_key)
+        and invoice_profile == "TICARIFATURA"
+        and invoice_type == "SATIS"
+    )
 
 
 async def reconcile_incoming_commercial_fixture(
@@ -388,59 +694,174 @@ async def reconcile_incoming_commercial_fixture(
     correlation_label = fixture_correlation_label(identity, hmac_key)
     target_digest = hmac.new(hmac_key.encode(), identity.encode(), hashlib.sha256).digest()
     params = {
-        "Search": identity,
-        "StartDate": (reference_time - timedelta(days=1)).isoformat(),
-        "EndDate": (reference_time + timedelta(days=1)).isoformat(),
-        "Page": "1",
-        "PageSize": "100",
+        "StartDate": (reference_time - timedelta(days=RECONCILIATION_WINDOW_DAYS)).isoformat(),
+        "EndDate": (reference_time + timedelta(days=RECONCILIATION_WINDOW_DAYS)).isoformat(),
+        "DateFilterType": "CreatedDate",
+        "SortColumn": "CreatedDate",
+        "SortType": "ASC",
     }
 
-    try:
-        outgoing_page = await sender_client.get(
-            NilveraEndpoints.LIST_SALE_INVOICES,
-            params=params,
-            correlation_id=correlation_label,
-        )
-    except Exception as exc:
-        raise _reconciliation_query_failure(
-            exc,
-            failure_stage="SENDER_SALE_LIST",
-            sender_match=sender_match,
-            receiver_match=receiver_match,
-        ) from None
+    outgoing_pages = await _scan_reconciliation_pages(
+        client=sender_client,
+        path=NilveraEndpoints.LIST_SALE_INVOICES,
+        params=params,
+        correlation_label=correlation_label,
+        side="sender",
+        sender_match=sender_match,
+        receiver_match=receiver_match,
+    )
+    incoming_pages = await _scan_reconciliation_pages(
+        client=receiver_client,
+        path=NilveraEndpoints.LIST_PURCHASE_INVOICES,
+        params=params,
+        correlation_label=correlation_label,
+        side="receiver",
+        sender_match=sender_match,
+        receiver_match=receiver_match,
+        sender_page_count_class=outgoing_pages.page_count_class,
+    )
+    exact_http_status = _combined_exact_http_status(sender_client, receiver_client)
 
     try:
-        incoming_page = await receiver_client.get(
-            NilveraEndpoints.LIST_PURCHASE_INVOICES,
-            params=params,
-            correlation_id=correlation_label,
+        outgoing_candidates = _reconciliation_candidates(
+            outgoing_pages.items,
+            target_digest=target_digest,
+            hmac_key=hmac_key,
+            counterpart_tax_number=buyer_tax_number,
+            counterpart_fields=_OUTGOING_COUNTERPART_FIELDS,
         )
-    except Exception as exc:
-        raise _reconciliation_query_failure(
+        incoming_candidates = _reconciliation_candidates(
+            incoming_pages.items,
+            target_digest=target_digest,
+            hmac_key=hmac_key,
+            counterpart_tax_number=seller_tax_number,
+            counterpart_fields=_INCOMING_COUNTERPART_FIELDS,
+        )
+    except SandboxFixtureError as exc:
+        raise _enrich_reconciliation_error(
             exc,
-            failure_stage="RECEIVER_PURCHASE_LIST",
             sender_match=sender_match,
             receiver_match=receiver_match,
+            sender_page_count_class=outgoing_pages.page_count_class,
+            receiver_page_count_class=incoming_pages.page_count_class,
+            http_status=exact_http_status,
         ) from None
 
-    outgoing_matches = _matching_provider_uuids(
-        outgoing_page,
-        target_digest=target_digest,
-        hmac_key=hmac_key,
-        parse_error_code="FIXTURE_OUTGOING_RECONCILIATION_PARSE_FAILED",
-    )
-    incoming_matches = _matching_provider_uuids(
-        incoming_page,
-        target_digest=target_digest,
-        hmac_key=hmac_key,
-        parse_error_code="FIXTURE_INCOMING_RECONCILIATION_PARSE_FAILED",
-    )
+    if (
+        (not outgoing_candidates.used_detail_fallback and len(outgoing_candidates.provider_uuids) > 1)
+        or (not incoming_candidates.used_detail_fallback and len(incoming_candidates.provider_uuids) > 1)
+    ):
+        raise SandboxFixtureBlocked(
+            "CONFLICT_FIXTURE_RECONCILIATION",
+            sender_match=sender_match,
+            receiver_match=receiver_match,
+            match_count_class=MATCH_COUNT_MULTIPLE,
+            sender_page_count_class=outgoing_pages.page_count_class,
+            receiver_page_count_class=incoming_pages.page_count_class,
+            http_status=exact_http_status,
+            http_status_class=_http_status_class(exact_http_status),
+        )
+
+    outgoing_matches: list[str] = []
+    outgoing_details: dict[str, Any] = {}
+    for provider_uuid in outgoing_candidates.provider_uuids:
+        try:
+            detail_response = await sender_client.get(
+                NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=provider_uuid),
+                correlation_id=correlation_label,
+            )
+            detail_matches = _detail_matches_fixture(
+                detail_response,
+                target_digest=target_digest,
+                hmac_key=hmac_key,
+            )
+        except SandboxFixtureError as exc:
+            raise _enrich_reconciliation_error(
+                exc,
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                sender_page_count_class=outgoing_pages.page_count_class,
+                receiver_page_count_class=incoming_pages.page_count_class,
+                http_status=_combined_exact_http_status(sender_client, receiver_client),
+            ) from None
+        except Exception as exc:
+            blocked = _reconciliation_query_failure(
+                exc,
+                failure_stage="SENDER_SALE_DETAIL",
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+            )
+            raise _enrich_reconciliation_error(
+                blocked,
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                sender_page_count_class=outgoing_pages.page_count_class,
+                receiver_page_count_class=incoming_pages.page_count_class,
+                http_status=_combined_exact_http_status(sender_client, receiver_client),
+            ) from None
+        if detail_matches:
+            outgoing_matches.append(provider_uuid)
+            outgoing_details[provider_uuid] = detail_response
+
+    incoming_matches: list[str] = []
+    incoming_details: dict[str, Any] = {}
+    incoming_service = NilveraIncomingService(receiver_client)
+    for provider_uuid in incoming_candidates.provider_uuids:
+        try:
+            detail = await incoming_service.fetch_incoming_invoice_detail(provider_uuid)
+        except Exception as exc:
+            blocked = _reconciliation_query_failure(
+                exc,
+                failure_stage="RECEIVER_PURCHASE_DETAIL",
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+            )
+            raise _enrich_reconciliation_error(
+                blocked,
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                sender_page_count_class=outgoing_pages.page_count_class,
+                receiver_page_count_class=incoming_pages.page_count_class,
+                http_status=_combined_exact_http_status(sender_client, receiver_client),
+            ) from None
+        if (
+            _matches_fixture(detail.invoice_number, target_digest, hmac_key)
+            and detail.invoice_profile == "TICARIFATURA"
+            and detail.invoice_type == "SATIS"
+        ):
+            incoming_matches.append(provider_uuid)
+            incoming_details[provider_uuid] = detail
+
+    if outgoing_candidates.provider_uuids and not outgoing_candidates.used_detail_fallback and not outgoing_matches:
+        raise SandboxFixtureFailed(
+            "FIXTURE_OUTGOING_RECONCILIATION_MISMATCH",
+            http_status=_combined_exact_http_status(sender_client, receiver_client),
+            http_status_class=_http_status_class(_combined_exact_http_status(sender_client, receiver_client)),
+            sender_match=sender_match,
+            receiver_match=receiver_match,
+            sender_page_count_class=outgoing_pages.page_count_class,
+            receiver_page_count_class=incoming_pages.page_count_class,
+        )
+    if incoming_candidates.provider_uuids and not incoming_candidates.used_detail_fallback and not incoming_matches:
+        raise SandboxFixtureFailed(
+            "FIXTURE_RECEIVER_RECONCILIATION_MISMATCH",
+            http_status=_combined_exact_http_status(sender_client, receiver_client),
+            http_status_class=_http_status_class(_combined_exact_http_status(sender_client, receiver_client)),
+            sender_match=sender_match,
+            receiver_match=receiver_match,
+            sender_page_count_class=outgoing_pages.page_count_class,
+            receiver_page_count_class=incoming_pages.page_count_class,
+        )
     if len(outgoing_matches) > 1 or len(incoming_matches) > 1:
         raise SandboxFixtureBlocked(
             "CONFLICT_FIXTURE_RECONCILIATION",
             sender_match=sender_match,
             receiver_match=receiver_match,
             match_count_class=MATCH_COUNT_MULTIPLE,
+            sender_page_count_class=outgoing_pages.page_count_class,
+            receiver_page_count_class=incoming_pages.page_count_class,
+            http_status=_combined_exact_http_status(sender_client, receiver_client),
+            http_status_class=_http_status_class(_combined_exact_http_status(sender_client, receiver_client)),
         )
     match_count_class = MATCH_COUNT_ONE if outgoing_matches else MATCH_COUNT_ZERO
 
@@ -454,15 +875,38 @@ async def reconcile_incoming_commercial_fixture(
                 NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=provider_uuid),
                 correlation_id=correlation_label,
             )
-            detail_response = await sender_client.get(
-                NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=provider_uuid),
-                correlation_id=correlation_label,
+        except Exception as exc:
+            blocked = _reconciliation_query_failure(
+                exc,
+                failure_stage="SENDER_SALE_STATUS",
+                sender_match=sender_match,
+                receiver_match=receiver_match,
             )
-        except Exception:
-            raise SandboxFixtureBlocked("BLOCKED_FIXTURE_OUTGOING_RECONCILIATION_QUERY") from None
-        outgoing_outcome = parse_sale_outcome(status_response)
+            raise _enrich_reconciliation_error(
+                blocked,
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                sender_page_count_class=outgoing_pages.page_count_class,
+                receiver_page_count_class=incoming_pages.page_count_class,
+                http_status=_combined_exact_http_status(sender_client, receiver_client),
+            ) from None
+        try:
+            outgoing_outcome = parse_sale_outcome(status_response)
+        except SandboxFixtureError:
+            exact_status = _combined_exact_http_status(sender_client, receiver_client)
+            raise SandboxFixtureBlocked(
+                "BLOCKED_FIXTURE_RECONCILIATION_PARSE",
+                failure_stage="SENDER_SALE_STATUS_PARSE",
+                http_status=exact_status,
+                http_status_class=_http_status_class(exact_status),
+                exception_type="NilveraValidationError",
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                sender_page_count_class=outgoing_pages.page_count_class,
+                receiver_page_count_class=incoming_pages.page_count_class,
+            ) from None
         outgoing_detail_match = _detail_matches_fixture(
-            detail_response,
+            outgoing_details[provider_uuid],
             target_digest=target_digest,
             hmac_key=hmac_key,
         )
@@ -475,13 +919,29 @@ async def reconcile_incoming_commercial_fixture(
     receiver_status_ready = None
     if incoming_matches:
         provider_uuid = incoming_matches[0]
-        incoming_service = NilveraIncomingService(receiver_client)
         try:
-            detail = await incoming_service.fetch_incoming_invoice_detail(provider_uuid)
             status = await incoming_service.fetch_incoming_invoice_status(provider_uuid)
-        except Exception:
-            raise SandboxFixtureBlocked("BLOCKED_FIXTURE_RECEIVER_RECONCILIATION_QUERY") from None
-        receiver_detail_match = _matches_fixture(detail.invoice_number, target_digest, hmac_key) and detail.invoice_profile == "TICARIFATURA" and detail.invoice_type == "SATIS"
+        except Exception as exc:
+            blocked = _reconciliation_query_failure(
+                exc,
+                failure_stage="RECEIVER_PURCHASE_STATUS",
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+            )
+            raise _enrich_reconciliation_error(
+                blocked,
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                sender_page_count_class=outgoing_pages.page_count_class,
+                receiver_page_count_class=incoming_pages.page_count_class,
+                http_status=_combined_exact_http_status(sender_client, receiver_client),
+            ) from None
+        detail = incoming_details[provider_uuid]
+        receiver_detail_match = (
+            _matches_fixture(detail.invoice_number, target_digest, hmac_key)
+            and detail.invoice_profile == "TICARIFATURA"
+            and detail.invoice_type == "SATIS"
+        )
         receiver_status_ready = _normalize(status.status_code) in {"succeed", "success"}
         if not receiver_detail_match:
             raise SandboxFixtureFailed("FIXTURE_RECEIVER_RECONCILIATION_MISMATCH")
@@ -499,6 +959,9 @@ async def reconcile_incoming_commercial_fixture(
         receiver_visibility=receiver_visibility,
         receiver_detail_match=receiver_detail_match,
         receiver_status_ready=receiver_status_ready,
+        sender_page_count_class=outgoing_pages.page_count_class,
+        receiver_page_count_class=incoming_pages.page_count_class,
+        http_status=_combined_exact_http_status(sender_client, receiver_client),
     )
 
 
