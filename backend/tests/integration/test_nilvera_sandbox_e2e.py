@@ -72,8 +72,8 @@ def check_missing_secrets() -> bool:
         hmac_key = os.environ.get("NILVERA_E2E_CORRELATION_HMAC_KEY")
         run_id_name = "NILVERA_E2E_SOURCE_RUN_ID" if reconciliation_mode else "NILVERA_E2E_RUN_ID"
         run_id = os.environ.get(run_id_name)
-        source_year = os.environ.get("NILVERA_E2E_SOURCE_RUN_YEAR") if reconciliation_mode else "not-required"
-        return not (sender_key and receiver_key and hmac_key and run_id and source_year and buyer and seller)
+        source_timestamp = os.environ.get("NILVERA_E2E_SOURCE_RUN_TIMESTAMP") if reconciliation_mode else "not-required"
+        return not (sender_key and receiver_key and hmac_key and run_id and source_timestamp and buyer and seller)
     selected_key = receiver_key if answer_mode else sender_key
     return not (selected_key and buyer and seller)
 
@@ -462,14 +462,14 @@ async def test_sandbox_reconcile_incoming_commercial_invoice_fixture(record_prop
     receiver_key = os.environ.get("NILVERA_E2E_RECEIVER_SANDBOX_KEY", "")
     hmac_key = os.environ.get("NILVERA_E2E_CORRELATION_HMAC_KEY", "")
     source_run_id = os.environ.get("NILVERA_E2E_SOURCE_RUN_ID", "")
-    source_year = os.environ.get("NILVERA_E2E_SOURCE_RUN_YEAR", "")
+    source_timestamp = os.environ.get("NILVERA_E2E_SOURCE_RUN_TIMESTAMP", "")
     buyer_tax_number = os.environ.get("NILVERA_E2E_BUYER_VKN", "")
     seller_tax_number = os.environ.get("NILVERA_E2E_SELLER_VKN", "")
 
     try:
-        if len(source_year) != 4 or not source_year.isdigit():
+        reference_time = datetime.fromisoformat(source_timestamp.replace("Z", "+00:00"))
+        if reference_time.tzinfo is None or reference_time.utcoffset() is None:
             raise ValueError
-        reference_time = datetime(int(source_year), 1, 1, tzinfo=UTC)
         ensure_distinct_sandbox_keys(sender_key, receiver_key)
     except (SandboxFixtureError, ValueError) as exc:
         safe_code = exc.safe_code if isinstance(exc, SandboxFixtureError) else "BLOCKED_INVALID_RECONCILIATION_SOURCE_YEAR"
@@ -498,6 +498,15 @@ async def test_sandbox_reconcile_incoming_commercial_invoice_fixture(record_prop
                 record_property("receiver_match", str(exc.receiver_match).lower())
             if exc.match_count_class is not None:
                 record_property("match_count_class", exc.match_count_class)
+            safe_metadata = {
+                "failure_stage": exc.failure_stage,
+                "http_status_class": exc.http_status_class,
+                "provider_code": exc.provider_code,
+                "exception_type": exc.exception_type,
+            }
+            for name, value in safe_metadata.items():
+                if value is not None:
+                    record_property(name, value)
             pytest.fail(exc.safe_code, pytrace=False)
 
     provider_status_class = result.outgoing_outcome.name if result.outgoing_outcome is not None else "NOT_AVAILABLE"

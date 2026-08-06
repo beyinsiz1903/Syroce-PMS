@@ -175,6 +175,26 @@ def _send_failure(exc: NilveraApiError, *, provider_write_count: int) -> Sandbox
     )
 
 
+def _reconciliation_query_failure(
+    exc: Exception,
+    *,
+    failure_stage: str,
+    sender_match: bool,
+    receiver_match: bool,
+) -> SandboxFixtureBlocked:
+    http_status = exc.http_status if isinstance(exc, NilveraApiError) else None
+    provider_code = exc.provider_code if isinstance(exc, NilveraApiError) else None
+    return SandboxFixtureBlocked(
+        "BLOCKED_FIXTURE_RECONCILIATION_QUERY",
+        failure_stage=failure_stage,
+        http_status_class=_http_status_class(http_status),
+        provider_code=_safe_provider_code(provider_code),
+        exception_type=_safe_exception_type(exc),
+        sender_match=sender_match,
+        receiver_match=receiver_match,
+    )
+
+
 def build_fixture_identity(*, year: int, run_id: str, hmac_key: str) -> str:
     if year < 2000 or year > 9999 or not run_id.isdigit() or len(hmac_key) < 32:
         raise SandboxFixtureBlocked("BLOCKED_INVALID_FIXTURE_ID_INPUT")
@@ -363,12 +383,10 @@ async def reconcile_incoming_commercial_fixture(
     identity = build_fixture_identity(year=reference_time.year, run_id=run_id, hmac_key=hmac_key)
     correlation_label = fixture_correlation_label(identity, hmac_key)
     target_digest = hmac.new(hmac_key.encode(), identity.encode(), hashlib.sha256).digest()
-    year_start = datetime(reference_time.year, 1, 1, tzinfo=reference_time.tzinfo)
-    year_end = datetime(reference_time.year, 12, 31, 23, 59, 59, tzinfo=reference_time.tzinfo)
     params = {
         "Search": identity,
-        "StartDate": year_start.isoformat(),
-        "EndDate": year_end.isoformat(),
+        "StartDate": (reference_time - timedelta(days=1)).isoformat(),
+        "EndDate": (reference_time + timedelta(days=1)).isoformat(),
         "Page": "1",
         "PageSize": "100",
     }
@@ -379,13 +397,27 @@ async def reconcile_incoming_commercial_fixture(
             params=params,
             correlation_id=correlation_label,
         )
+    except Exception as exc:
+        raise _reconciliation_query_failure(
+            exc,
+            failure_stage="SENDER_SALE_LIST",
+            sender_match=sender_match,
+            receiver_match=receiver_match,
+        ) from None
+
+    try:
         incoming_page = await receiver_client.get(
             NilveraEndpoints.LIST_PURCHASE_INVOICES,
             params=params,
             correlation_id=correlation_label,
         )
-    except Exception:
-        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_RECONCILIATION_QUERY") from None
+    except Exception as exc:
+        raise _reconciliation_query_failure(
+            exc,
+            failure_stage="RECEIVER_PURCHASE_LIST",
+            sender_match=sender_match,
+            receiver_match=receiver_match,
+        ) from None
 
     outgoing_matches = _matching_provider_uuids(
         outgoing_page,
