@@ -16,6 +16,7 @@ from core.integrations.nilvera.errors import (
     NilveraResponseSizeError,
     NilveraServerError,
     NilveraValidationError,
+    normalize_validation_issue,
 )
 
 
@@ -360,6 +361,83 @@ async def test_numeric_provider_code_is_preserved_as_safe_string(config_override
     assert exc_info.value.provider_code == "400"
 
 
+@pytest.mark.asyncio
+async def test_422_code_2004_preserves_only_safe_field_reason_metadata(config_override):
+    def handler(request):
+        return httpx.Response(
+            422,
+            json={
+                "Message": "Kayıt Başarısız.",
+                "Errors": [
+                    {
+                        "Code": 2004,
+                        "Description": "InvoiceInfo.PayableAmount toplamı uyuşmuyor; VKN 1111111111",
+                        "Detail": "ETTN 123e4567-e89b-12d3-a456-426614174000 ve user@example.invalid",
+                    }
+                ],
+            },
+        )
+
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        with pytest.raises(NilveraBusinessRuleError) as exc_info:
+            await http_client.post("/test", json={"safe": True})
+
+    error = exc_info.value
+    assert error.http_status == 422
+    assert error.provider_code == "2004"
+    assert error.safe_validation_issues == ("FIELD=InvoiceInfo.PayableAmount;REASON=TOTAL_MISMATCH",)
+    assert error.sanitized_preview is None
+    assert "1111111111" not in repr(error.safe_validation_issues)
+    assert "123e4567" not in repr(error.safe_validation_issues)
+    assert "example.invalid" not in repr(error.safe_validation_issues)
+
+
+def test_validation_issue_normalizer_redacts_identifiers_secrets_and_payload_values():
+    issue = normalize_validation_issue(
+        "Authorization: Bearer sandbox-secret",
+        "InvoiceSerieOrNumber TST2026000000001 geçersiz",
+        "VKN 1111111111, ETTN 123e4567-e89b-12d3-a456-426614174000, user@example.invalid",
+    )
+
+    assert issue == "FIELD=InvoiceInfo.InvoiceSerieOrNumber;REASON=FORMAT_INVALID"
+    assert len(issue) <= 160
+    for sensitive in ("sandbox-secret", "TST2026000000001", "1111111111", "123e4567", "example.invalid"):
+        assert sensitive not in issue
+
+
+@pytest.mark.asyncio
+async def test_error_parser_normalizes_all_bounded_validation_errors(config_override):
+    def handler(request):
+        return httpx.Response(
+            422,
+            json={
+                "Message": "İş kuralı doğrulaması başarısız.",
+                "Errors": [
+                    {"Code": 2004, "Description": "InvoiceLines.KDVTotal tutarsız", "Detail": "VKN 1111111111"},
+                    {"Code": 2004, "Description": "InvoiceInfo.CurrencyCode geçersiz", "Detail": "token unsafe-value"},
+                ],
+            },
+        )
+
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        with pytest.raises(NilveraBusinessRuleError) as exc_info:
+            await http_client.post("/test", json={"safe": True})
+
+    assert exc_info.value.safe_validation_issues == (
+        "FIELD=InvoiceLines.KDVTotal;REASON=TOTAL_MISMATCH",
+        "FIELD=InvoiceInfo.CurrencyCode;REASON=FORMAT_INVALID",
+    )
+
+
+def test_error_drops_untrusted_pre_normalized_validation_metadata():
+    error = NilveraApiError(
+        "provider rejected request",
+        validation_issues=("FIELD=PayableAmount;REASON=FORMAT_INVALID;VALUE=sensitive",),
+    )
+
+    assert error.safe_validation_issues == ()
+
+
 @pytest.mark.parametrize("status_code", [502, 503, 504])
 @pytest.mark.asyncio
 async def test_get_5xx_retries(config_override, mock_sleeper, status_code):
@@ -607,14 +685,15 @@ async def test_oversized_error_content_length_rejected_before_full_read(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_small_json_error_is_parsed(config_override):
+async def test_small_json_error_is_reduced_without_retaining_raw_response(config_override):
     def handler(request):
         return httpx.Response(400, headers={"Content-Type": "application/json"}, content=b'{"Message": "Bad"}')
 
     async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
         with pytest.raises(NilveraValidationError) as exc:
             await http_client.get("/test")
-        assert "Bad" in exc.value.sanitized_preview
+        assert exc.value.sanitized_preview is None
+        assert exc.value.safe_validation_issues == ("FIELD=UNKNOWN;REASON=VALIDATION_REJECTED",)
         assert exc.value.args == ("E-Belge entegratörü ile iletişimde bir sorun oluştu.",)
 
 

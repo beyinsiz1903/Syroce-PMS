@@ -10,6 +10,7 @@ from core.integrations.nilvera.config import NilveraEndpoints
 from core.integrations.nilvera.errors import (
     NilveraApiError,
     NilveraAuthError,
+    NilveraBusinessRuleError,
     NilveraNotFoundError,
     NilveraServerError,
     NilveraTimeoutError,
@@ -20,6 +21,9 @@ from scripts.nilvera_sandbox_selector import INCOMING_FIXTURE_TARGET, RECONCILIA
 from tests.nilvera_sandbox_fixture import (
     AMBIGUOUS_WRITE,
     DEFINITIVE_REJECTION,
+    FIELD_MISSING,
+    FIELD_PRESENT,
+    FORMAT_VALID,
     FOUND,
     MATCH_COUNT_ONE,
     MATCH_COUNT_ZERO,
@@ -27,11 +31,14 @@ from tests.nilvera_sandbox_fixture import (
     PAGE_COUNT_ONE,
     PAGE_COUNT_TWO_TO_FIVE,
     RECONCILIATION_MAX_PAGES,
+    TOTAL_MISMATCH,
     ReadOnlySandboxClient,
     SandboxFixtureBlocked,
     SandboxFixtureFailed,
     build_fixture_identity,
     build_fixture_payload,
+    classify_fixture_payload_contract,
+    ensure_fixture_payload_contract,
     fixture_correlation_label,
     prepare_incoming_commercial_fixture,
     reconcile_incoming_commercial_fixture,
@@ -109,6 +116,91 @@ def test_fixture_identity_is_transferred_to_invoice_serie_or_number():
     assert payload.EInvoice.InvoiceInfo.KdvTotal == Decimal("0.20")
     assert fixture_correlation_label(identity, HMAC_KEY) != identity
     assert len(fixture_correlation_label(identity, HMAC_KEY)) == 12
+
+
+def test_fixture_payload_matches_official_send_model_contract_shape():
+    identity = build_fixture_identity(year=NOW.year, run_id=RUN_ID, hmac_key=HMAC_KEY)
+    payload = build_fixture_payload(
+        fixture_identity=identity,
+        seller_tax_number=SELLER_TAX_NUMBER,
+        buyer_tax_number=BUYER_TAX_NUMBER,
+        buyer_alias="urn:mail:defaultpk@sandbox.invalid",
+        issue_date=NOW,
+    )
+    serialized = payload.model_dump(mode="json", by_alias=True)
+    classes = classify_fixture_payload_contract(payload)
+
+    assert set(serialized) == {"EInvoice", "CustomerAlias"}
+    assert set(serialized["EInvoice"]) == {"InvoiceInfo", "CompanyInfo", "CustomerInfo", "InvoiceLines"}
+    assert set(serialized["EInvoice"]["InvoiceInfo"]) == {
+        "UUID",
+        "IssueDate",
+        "InvoiceType",
+        "InvoiceProfile",
+        "InvoiceSerieOrNumber",
+        "CurrencyCode",
+        "ExchangeRate",
+        "LineExtensionAmount",
+        "GeneralKDV1Total",
+        "GeneralKDV8Total",
+        "GeneralKDV10Total",
+        "GeneralKDV18Total",
+        "GeneralKDV20Total",
+        "GeneralAllowanceTotal",
+        "PayableAmount",
+        "KdvTotal",
+    }
+    assert classes["InvoiceInfo"] == FIELD_PRESENT
+    assert classes["Scenario"] == FIELD_MISSING
+    assert classes["TaxTotal"] == FIELD_MISSING
+    assert classes["WithholdingTaxTotal"] == FIELD_MISSING
+    assert classes["LegalMonetaryTotal"] == FIELD_MISSING
+    assert classes["SenderAlias"] == FIELD_MISSING
+    assert classes["ReceiverAlias"] == FIELD_PRESENT
+    assert all(
+        classes[field] == FORMAT_VALID
+        for field in (
+            "InvoiceType",
+            "InvoiceProfile",
+            "CurrencyCode",
+            "IssueDate",
+            "InvoiceSerieOrNumber",
+        )
+    )
+
+
+def test_fixture_payload_monetary_totals_are_consistent():
+    identity = build_fixture_identity(year=NOW.year, run_id=RUN_ID, hmac_key=HMAC_KEY)
+    payload = build_fixture_payload(
+        fixture_identity=identity,
+        seller_tax_number=SELLER_TAX_NUMBER,
+        buyer_tax_number=BUYER_TAX_NUMBER,
+        buyer_alias="urn:mail:defaultpk@sandbox.invalid",
+        issue_date=NOW,
+    )
+    classes = classify_fixture_payload_contract(payload)
+
+    assert all(
+        classes[field] == FORMAT_VALID
+        for field in (
+            "LineExtensionAmount",
+            "InvoiceLines.KDVPercent",
+            "InvoiceLines.KDVTotal",
+            "GeneralKDV1Total",
+            "GeneralKDV8Total",
+            "GeneralKDV10Total",
+            "GeneralKDV18Total",
+            "GeneralKDV20Total",
+            "GeneralAllowanceTotal",
+            "KdvTotal",
+            "PayableAmount",
+        )
+    )
+
+    payload.EInvoice.InvoiceInfo.PayableAmount = Decimal("1.21")
+    assert classify_fixture_payload_contract(payload)["PayableAmount"] == TOTAL_MISMATCH
+    with pytest.raises(SandboxFixtureFailed, match="FIXTURE_PAYLOAD_CONTRACT_FAILED"):
+        ensure_fixture_payload_contract(payload)
 
 
 async def test_identical_sender_and_receiver_keys_block_before_provider_access():
@@ -254,6 +346,38 @@ async def test_fixture_validation_rejection_is_definitive_and_sanitized():
     assert exc_info.value.provider_code == "MODEL_VALIDATION_FAILED"
     assert exc_info.value.exception_type == "NilveraValidationError"
     assert exc_info.value.write_disposition == DEFINITIVE_REJECTION
+    sender_client.post.assert_awaited_once()
+
+
+async def test_fixture_422_code_2004_is_definitive_with_safe_validation_issue_and_no_retry():
+    error = NilveraBusinessRuleError(
+        "provider rejected fixture",
+        http_status=422,
+        provider_code="2004",
+        validation_issues=("FIELD=InvoiceInfo.PayableAmount;REASON=TOTAL_MISMATCH",),
+    )
+    sender_client, receiver_client = _clients(post_side_effect=error)
+
+    with pytest.raises(SandboxFixtureFailed, match="FIXTURE_VALIDATION_REJECTED") as exc_info:
+        await prepare_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            buyer_alias="urn:mail:defaultpk@sandbox.invalid",
+            now=NOW,
+            sleeper=AsyncMock(),
+        )
+
+    assert exc_info.value.http_status == 422
+    assert exc_info.value.provider_code == "2004"
+    assert exc_info.value.validation_issue == "FIELD=InvoiceInfo.PayableAmount;REASON=TOTAL_MISMATCH"
+    assert exc_info.value.write_disposition == DEFINITIVE_REJECTION
+    assert exc_info.value.provider_write_count == 1
     sender_client.post.assert_awaited_once()
 
 

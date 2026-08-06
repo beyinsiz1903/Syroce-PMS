@@ -17,6 +17,7 @@ from .errors import (
     NilveraServerError,
     NilveraTimeoutError,
     NilveraValidationError,
+    normalize_validation_issue,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,12 +57,14 @@ class NilveraHttpClient:
 
     def _parse_error_response(self, status_code: int, text_content: str, headers: httpx.Headers, correlation_id: str | None) -> NilveraApiError:
         """Safely parse error response without crashing on HTML."""
-        data = {}
+        data: dict[str, Any] = {}
         if "application/json" in headers.get("Content-Type", "").lower():
             import json
 
             try:
-                data = json.loads(text_content)
+                parsed = json.loads(text_content)
+                if isinstance(parsed, dict):
+                    data = parsed
             except ValueError:
                 pass
 
@@ -70,15 +73,28 @@ class NilveraHttpClient:
         provider_code = None
         description = None
         detail = None
-        if errors and isinstance(errors, list) and len(errors) > 0:
-            first_err = errors[0]
-            if isinstance(first_err, dict):
+        provider_message = data.get("Message") if isinstance(data.get("Message"), str) else None
+        validation_issues: list[str] = []
+        primary_error_found = False
+        if isinstance(errors, list):
+            for error in errors[:5]:
+                if not isinstance(error, dict):
+                    continue
+                error_description = error.get("Description") if isinstance(error.get("Description"), str) else None
+                error_detail = error.get("Detail") if isinstance(error.get("Detail"), str) else None
+                validation_issues.append(normalize_validation_issue(provider_message, error_description, error_detail))
+                if primary_error_found:
+                    continue
+                primary_error_found = True
+                first_err = error
                 raw_provider_code = first_err.get("Code")
                 if isinstance(raw_provider_code, (str, int)) and not isinstance(raw_provider_code, bool):
                     normalized_provider_code = str(raw_provider_code).strip()
                     provider_code = normalized_provider_code or None
-                description = first_err.get("Description")
-                detail = first_err.get("Detail")
+                description = error_description
+                detail = error_detail
+        if not validation_issues and provider_message:
+            validation_issues.append(normalize_validation_issue(provider_message))
 
         kwargs = {
             "message": "Nilvera provider request failed",
@@ -86,8 +102,9 @@ class NilveraHttpClient:
             "provider_code": provider_code,
             "description": description,
             "detail": detail,
+            "provider_message": provider_message,
+            "validation_issues": tuple(dict.fromkeys(validation_issues)),
             "correlation_id": correlation_id,
-            "raw_response": data if data else text_content,
         }
 
         if status_code == 400:

@@ -438,6 +438,7 @@ async def test_sandbox_prepare_incoming_commercial_invoice_fixture(record_proper
                 "http_status": str(exc.http_status) if exc.http_status is not None else None,
                 "http_status_class": exc.http_status_class,
                 "provider_code": exc.provider_code,
+                "validation_issue": exc.validation_issue,
                 "exception_type": exc.exception_type,
                 "write_disposition": exc.write_disposition,
             }

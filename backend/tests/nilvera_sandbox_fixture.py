@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from core.integrations.nilvera.config import NilveraEndpoints
@@ -20,6 +20,7 @@ from models.schemas.invoicing import Invoice, InvoiceItem
 
 _FIXTURE_ID_PATTERN = re.compile(r"^TST\d{13}$")
 _SAFE_PROVIDER_CODE_PATTERN = re.compile(r"^[A-Z0-9_.-]{1,64}$")
+_SAFE_VALIDATION_ISSUE_PATTERN = re.compile(r"^FIELD=[A-Za-z0-9_.]+;REASON=[A-Z0-9_]+(?:\|FIELD=[A-Za-z0-9_.]+;REASON=[A-Z0-9_]+)*$")
 _SAFE_EXCEPTION_TYPES = {
     "NilveraApiError",
     "NilveraAuthError",
@@ -50,6 +51,11 @@ PAGE_COUNT_TWO_TO_FIVE = "TWO_TO_FIVE"
 PAGE_COUNT_SIX_TO_TEN = "SIX_TO_TEN"
 PAGE_COUNT_ELEVEN_TO_LIMIT = "ELEVEN_TO_LIMIT"
 BLOCKED_NOT_FOUND_AFTER_EXHAUSTIVE_READ = "BLOCKED_NOT_FOUND_AFTER_EXHAUSTIVE_READ"
+FIELD_PRESENT = "FIELD_PRESENT"
+FIELD_MISSING = "FIELD_MISSING"
+FORMAT_VALID = "FORMAT_VALID"
+FORMAT_INVALID = "FORMAT_INVALID"
+TOTAL_MISMATCH = "TOTAL_MISMATCH"
 
 _CORRELATION_FIELDS = (
     "InvoiceNumber",
@@ -73,6 +79,7 @@ class SandboxFixtureError(RuntimeError):
         http_status: int | None = None,
         http_status_class: str | None = None,
         provider_code: str | None = None,
+        validation_issue: str | None = None,
         exception_type: str | None = None,
         write_disposition: str | None = None,
         sender_match: bool | None = None,
@@ -88,6 +95,7 @@ class SandboxFixtureError(RuntimeError):
         self.http_status = http_status
         self.http_status_class = http_status_class
         self.provider_code = provider_code
+        self.validation_issue = validation_issue
         self.exception_type = exception_type
         self.write_disposition = write_disposition
         self.sender_match = sender_match
@@ -204,18 +212,29 @@ def _safe_provider_code(value: str | None) -> str | None:
     return normalized
 
 
+def _safe_validation_issue(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if len(normalized) > 512 or _SAFE_VALIDATION_ISSUE_PATTERN.fullmatch(normalized) is None:
+        return None
+    return normalized
+
+
 def _safe_exception_type(exc: Exception) -> str:
     exception_type = type(exc).__name__
     return exception_type if exception_type in _SAFE_EXCEPTION_TYPES else "UnexpectedError"
 
 
 def _send_failure(exc: NilveraApiError, *, provider_write_count: int) -> SandboxFixtureError:
+    validation_issue = "|".join(exc.safe_validation_issues)
     metadata = {
         "provider_write_count": provider_write_count,
         "failure_stage": "SEND_MODEL",
         "http_status": exc.http_status,
         "http_status_class": _http_status_class(exc.http_status),
         "provider_code": _safe_provider_code(exc.provider_code),
+        "validation_issue": _safe_validation_issue(validation_issue),
         "exception_type": _safe_exception_type(exc),
     }
     if exc.http_status in {400, 422}:
@@ -266,6 +285,109 @@ def build_fixture_identity(*, year: int, run_id: str, hmac_key: str) -> str:
 def fixture_correlation_label(identity: str, hmac_key: str) -> str:
     digest = hmac.new(hmac_key.encode(), identity.encode(), hashlib.sha256).hexdigest()
     return digest[:12]
+
+
+def classify_fixture_payload_contract(payload: NilveraEInvoicePayload) -> dict[str, str]:
+    """Classify the emitted Send/Model fixture without exposing any field values."""
+    einvoice = payload.EInvoice
+    info = einvoice.InvoiceInfo
+    lines = einvoice.InvoiceLines
+    line_extension_sum = sum((line.Quantity * line.Price) - line.AllowanceTotal for line in lines)
+    allowance_sum = sum(line.AllowanceTotal for line in lines)
+    kdv_sum = sum(line.KDVTotal for line in lines)
+    kdv_by_rate = {
+        Decimal("1"): Decimal("0"),
+        Decimal("8"): Decimal("0"),
+        Decimal("10"): Decimal("0"),
+        Decimal("18"): Decimal("0"),
+        Decimal("20"): Decimal("0"),
+    }
+    line_kdv_matches = True
+    for line in lines:
+        if line.KDVPercent in kdv_by_rate:
+            kdv_by_rate[line.KDVPercent] += line.KDVTotal
+        expected_kdv = (((line.Quantity * line.Price) - line.AllowanceTotal) * line.KDVPercent / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        line_kdv_matches = line_kdv_matches and line.KDVTotal == expected_kdv
+
+    supplier_present = all(
+        isinstance(value, str) and bool(value.strip())
+        for value in (
+            einvoice.CompanyInfo.TaxNumber,
+            einvoice.CompanyInfo.Name,
+            einvoice.CompanyInfo.Address,
+            einvoice.CompanyInfo.City,
+            einvoice.CompanyInfo.Country,
+        )
+    )
+    customer_present = all(
+        isinstance(value, str) and bool(value.strip())
+        for value in (
+            einvoice.CustomerInfo.TaxNumber,
+            einvoice.CustomerInfo.Name,
+            einvoice.CustomerInfo.Address,
+            einvoice.CustomerInfo.City,
+            einvoice.CustomerInfo.Country,
+        )
+    )
+    identity = info.InvoiceSerieOrNumber
+    identity_valid = bool(identity) and ((len(identity) == 3 and identity.isascii() and identity.isalnum()) or (len(identity) == 16 and _FIXTURE_ID_PATTERN.fullmatch(identity) is not None))
+
+    return {
+        "InvoiceInfo": FIELD_PRESENT,
+        "Scenario": FIELD_MISSING,
+        "InvoiceType": FORMAT_VALID if info.InvoiceType == "SATIS" else FORMAT_INVALID,
+        "InvoiceProfile": FORMAT_VALID if info.InvoiceProfile == "TICARIFATURA" else FORMAT_INVALID,
+        "CurrencyCode": FORMAT_VALID if re.fullmatch(r"[A-Z]{3}", info.CurrencyCode) else FORMAT_INVALID,
+        "IssueDate": FORMAT_VALID if info.IssueDate.tzinfo is not None and info.IssueDate.utcoffset() is not None else FORMAT_INVALID,
+        "Supplier": FIELD_PRESENT if supplier_present else FIELD_MISSING,
+        "Customer": FIELD_PRESENT if customer_present else FIELD_MISSING,
+        "TaxTotal": FIELD_MISSING,
+        "WithholdingTaxTotal": FIELD_MISSING,
+        "LegalMonetaryTotal": FIELD_MISSING,
+        "InvoiceLines": FIELD_PRESENT if lines else FIELD_MISSING,
+        "LineExtensionAmount": FORMAT_VALID if info.LineExtensionAmount == line_extension_sum else TOTAL_MISMATCH,
+        "AllowanceCharge": FIELD_PRESENT if lines else FIELD_MISSING,
+        "InvoiceLines.KDVPercent": FORMAT_VALID if all(line.KDVPercent >= 0 for line in lines) else FORMAT_INVALID,
+        "InvoiceLines.KDVTotal": FORMAT_VALID if line_kdv_matches else TOTAL_MISMATCH,
+        "GeneralKDV1Total": FORMAT_VALID if info.GeneralKDV1Total == kdv_by_rate[Decimal("1")] else TOTAL_MISMATCH,
+        "GeneralKDV8Total": FORMAT_VALID if info.GeneralKDV8Total == kdv_by_rate[Decimal("8")] else TOTAL_MISMATCH,
+        "GeneralKDV10Total": FORMAT_VALID if info.GeneralKDV10Total == kdv_by_rate[Decimal("10")] else TOTAL_MISMATCH,
+        "GeneralKDV18Total": FORMAT_VALID if info.GeneralKDV18Total == kdv_by_rate[Decimal("18")] else TOTAL_MISMATCH,
+        "GeneralKDV20Total": FORMAT_VALID if info.GeneralKDV20Total == kdv_by_rate[Decimal("20")] else TOTAL_MISMATCH,
+        "GeneralAllowanceTotal": FORMAT_VALID if info.GeneralAllowanceTotal == allowance_sum else TOTAL_MISMATCH,
+        "KdvTotal": FORMAT_VALID if info.KdvTotal == kdv_sum else TOTAL_MISMATCH,
+        "PayableAmount": FORMAT_VALID if info.PayableAmount == line_extension_sum + kdv_sum else TOTAL_MISMATCH,
+        "SenderAlias": FIELD_MISSING,
+        "ReceiverAlias": FIELD_PRESENT if bool(payload.CustomerAlias.strip()) else FIELD_MISSING,
+        "InvoiceSerieOrNumber": FORMAT_VALID if identity_valid else FORMAT_INVALID,
+    }
+
+
+def ensure_fixture_payload_contract(payload: NilveraEInvoicePayload) -> None:
+    classifications = classify_fixture_payload_contract(payload)
+    required_present = ("InvoiceInfo", "Supplier", "Customer", "InvoiceLines", "ReceiverAlias")
+    required_valid = (
+        "InvoiceType",
+        "InvoiceProfile",
+        "CurrencyCode",
+        "IssueDate",
+        "LineExtensionAmount",
+        "InvoiceLines.KDVPercent",
+        "InvoiceLines.KDVTotal",
+        "GeneralKDV1Total",
+        "GeneralKDV8Total",
+        "GeneralKDV10Total",
+        "GeneralKDV18Total",
+        "GeneralKDV20Total",
+        "GeneralAllowanceTotal",
+        "KdvTotal",
+        "PayableAmount",
+        "InvoiceSerieOrNumber",
+    )
+    if any(classifications[field] != FIELD_PRESENT for field in required_present):
+        raise SandboxFixtureFailed("FIXTURE_PAYLOAD_CONTRACT_FAILED")
+    if any(classifications[field] != FORMAT_VALID for field in required_valid):
+        raise SandboxFixtureFailed("FIXTURE_PAYLOAD_CONTRACT_FAILED")
 
 
 def build_fixture_payload(
@@ -331,6 +453,7 @@ def build_fixture_payload(
         raise SandboxFixtureFailed("FIXTURE_ID_TRANSFER_FAILED")
     if payload.EInvoice.InvoiceInfo.InvoiceProfile != "TICARIFATURA" or payload.EInvoice.InvoiceInfo.InvoiceType != "SATIS":
         raise SandboxFixtureFailed("FIXTURE_DOCUMENT_CONTRACT_FAILED")
+    ensure_fixture_payload_contract(payload)
     return payload
 
 
