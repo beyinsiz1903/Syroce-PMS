@@ -67,7 +67,10 @@ class NilveraHttpClient:
         if errors and isinstance(errors, list) and len(errors) > 0:
             first_err = errors[0]
             if isinstance(first_err, dict):
-                provider_code = first_err.get("Code")
+                raw_provider_code = first_err.get("Code")
+                if isinstance(raw_provider_code, (str, int)) and not isinstance(raw_provider_code, bool):
+                    normalized_provider_code = str(raw_provider_code).strip()
+                    provider_code = normalized_provider_code or None
                 description = first_err.get("Description")
                 detail = first_err.get("Detail")
 

@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from core.integrations.nilvera.client import NilveraHttpClient
-from core.integrations.nilvera.config import NilveraSettings, get_nilvera_config
+from core.integrations.nilvera.config import NilveraEndpoints, NilveraSettings, get_nilvera_config
 from core.integrations.nilvera.errors import (
     NilveraApiError,
     NilveraAuthError,
@@ -129,6 +129,39 @@ def test_config_rejects_invalid_response_size():
 
 def test_config_has_no_api_key_field():
     assert "api_key" not in NilveraSettings.model_fields
+
+
+@pytest.mark.asyncio
+async def test_company_and_purchase_use_same_sandbox_bearer_auth(config_override):
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"Content": []})
+
+    receiver_key = "receiver-offline-test-key"
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, base_url="https://apitest.nilvera.com") as injected_client:
+        async with NilveraHttpClient(receiver_key, client=injected_client) as http_client:
+            await http_client.get(NilveraEndpoints.GET_COMPANY)
+            await http_client.get(
+                NilveraEndpoints.LIST_PURCHASE_INVOICES,
+                params={
+                    "Search": "TST2026000000001",
+                    "StartDate": "2026-08-05T00:00:00.000Z",
+                    "EndDate": "2026-08-07T00:00:00.000Z",
+                    "Page": "1",
+                    "PageSize": "100",
+                },
+            )
+
+    assert [request.method for request in requests] == ["GET", "GET"]
+    assert [request.url.path for request in requests] == [
+        NilveraEndpoints.GET_COMPANY,
+        NilveraEndpoints.LIST_PURCHASE_INVOICES,
+    ]
+    assert {request.url.host for request in requests} == {"apitest.nilvera.com"}
+    assert {request.headers["Authorization"] for request in requests} == {f"Bearer {receiver_key}"}
 
 
 # --- ERROR REDACTION TESTS ---
@@ -297,9 +330,29 @@ async def test_no_retry_for_client_errors(config_override, mock_sleeper, status_
         return httpx.Response(status_code, json={"Message": "Error"})
 
     async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
-        with pytest.raises(exc_class):
+        with pytest.raises(exc_class) as exc_info:
             await http_client.get("/test", _sleeper=mock_sleeper)
         assert calls == 1
+        assert exc_info.value.http_status == status_code
+
+
+@pytest.mark.asyncio
+async def test_numeric_provider_code_is_preserved_as_safe_string(config_override):
+    def handler(request):
+        return httpx.Response(
+            400,
+            json={
+                "Message": "invalid request",
+                "Errors": [{"Code": 400, "Description": "field", "Detail": "invalid"}],
+            },
+        )
+
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        with pytest.raises(NilveraValidationError) as exc_info:
+            await http_client.get("/test")
+
+    assert exc_info.value.http_status == 400
+    assert exc_info.value.provider_code == "400"
 
 
 @pytest.mark.parametrize("status_code", [502, 503, 504])

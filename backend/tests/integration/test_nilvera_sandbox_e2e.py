@@ -434,6 +434,7 @@ async def test_sandbox_prepare_incoming_commercial_invoice_fixture(record_proper
             record_property("provider_write_count", str(exc.provider_write_count))
             safe_metadata = {
                 "failure_stage": exc.failure_stage,
+                "http_status": str(exc.http_status) if exc.http_status is not None else None,
                 "http_status_class": exc.http_status_class,
                 "provider_code": exc.provider_code,
                 "exception_type": exc.exception_type,
@@ -500,6 +501,7 @@ async def test_sandbox_reconcile_incoming_commercial_invoice_fixture(record_prop
                 record_property("match_count_class", exc.match_count_class)
             safe_metadata = {
                 "failure_stage": exc.failure_stage,
+                "http_status": str(exc.http_status) if exc.http_status is not None else None,
                 "http_status_class": exc.http_status_class,
                 "provider_code": exc.provider_code,
                 "exception_type": exc.exception_type,

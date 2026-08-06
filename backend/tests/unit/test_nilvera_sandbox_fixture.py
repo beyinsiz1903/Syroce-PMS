@@ -7,7 +7,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from core.integrations.nilvera.config import NilveraEndpoints
-from core.integrations.nilvera.errors import NilveraApiError, NilveraServerError, NilveraTimeoutError, NilveraValidationError
+from core.integrations.nilvera.errors import (
+    NilveraApiError,
+    NilveraAuthError,
+    NilveraNotFoundError,
+    NilveraServerError,
+    NilveraTimeoutError,
+    NilveraValidationError,
+)
 from core.integrations.nilvera.status_mapper import ProviderInvoiceOutcome
 from scripts.nilvera_sandbox_selector import INCOMING_FIXTURE_TARGET, RECONCILIATION_TARGET, select_test_target
 from tests.nilvera_sandbox_fixture import (
@@ -442,9 +449,61 @@ async def test_read_only_reconciliation_reports_only_safe_query_failure_metadata
         )
 
     assert exc_info.value.failure_stage == "SENDER_SALE_LIST"
+    assert exc_info.value.http_status == 400
     assert exc_info.value.http_status_class == "4xx"
     assert exc_info.value.provider_code == "QUERY_RANGE_INVALID"
     assert exc_info.value.exception_type == "NilveraValidationError"
+    assert exc_info.value.sender_match is True
+    assert exc_info.value.receiver_match is True
+
+
+@pytest.mark.parametrize(
+    ("status_code", "error_type"),
+    [
+        (400, NilveraValidationError),
+        (401, NilveraAuthError),
+        (403, NilveraAuthError),
+        (404, NilveraNotFoundError),
+    ],
+)
+async def test_receiver_purchase_error_preserves_exact_safe_classification(status_code, error_type):
+    error = error_type(
+        "provider rejected receiver purchase query",
+        http_status=status_code,
+        provider_code="SAFE_PROVIDER_CODE",
+    )
+
+    async def sender_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": SELLER_TAX_NUMBER}
+        return {"Content": []}
+
+    async def receiver_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": BUYER_TAX_NUMBER}
+        raise error
+
+    sender_client = SimpleNamespace(get=AsyncMock(side_effect=sender_get))
+    receiver_client = SimpleNamespace(get=AsyncMock(side_effect=receiver_get))
+
+    with pytest.raises(SandboxFixtureBlocked, match="BLOCKED_FIXTURE_RECONCILIATION_QUERY") as exc_info:
+        await reconcile_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            reference_time=NOW,
+        )
+
+    assert exc_info.value.failure_stage == "RECEIVER_PURCHASE_LIST"
+    assert exc_info.value.http_status == status_code
+    assert exc_info.value.http_status_class == "4xx"
+    assert exc_info.value.provider_code == "SAFE_PROVIDER_CODE"
+    assert exc_info.value.exception_type == error_type.__name__
     assert exc_info.value.sender_match is True
     assert exc_info.value.receiver_match is True
 
@@ -479,6 +538,16 @@ async def test_read_only_reconciliation_reports_not_found_without_claiming_absen
     assert result.receiver_status_ready is None
     assert sender_client.get.await_count == 2
     assert receiver_client.get.await_count == 2
+    purchase_call = next(call for call in receiver_client.get.await_args_list if call.args[0] == NilveraEndpoints.LIST_PURCHASE_INVOICES)
+    assert set(purchase_call.kwargs["params"]) == {
+        "Search",
+        "StartDate",
+        "EndDate",
+        "Page",
+        "PageSize",
+    }
+    assert purchase_call.kwargs["params"]["Page"] == "1"
+    assert purchase_call.kwargs["params"]["PageSize"] == "100"
 
 
 async def test_read_only_reconciliation_stops_on_multiple_exact_matches():

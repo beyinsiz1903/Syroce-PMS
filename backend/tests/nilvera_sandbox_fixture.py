@@ -50,6 +50,7 @@ class SandboxFixtureError(RuntimeError):
         *,
         provider_write_count: int = 0,
         failure_stage: str | None = None,
+        http_status: int | None = None,
         http_status_class: str | None = None,
         provider_code: str | None = None,
         exception_type: str | None = None,
@@ -62,6 +63,7 @@ class SandboxFixtureError(RuntimeError):
         self.safe_code = safe_code
         self.provider_write_count = provider_write_count
         self.failure_stage = failure_stage
+        self.http_status = http_status
         self.http_status_class = http_status_class
         self.provider_code = provider_code
         self.exception_type = exception_type
@@ -158,6 +160,7 @@ def _send_failure(exc: NilveraApiError, *, provider_write_count: int) -> Sandbox
     metadata = {
         "provider_write_count": provider_write_count,
         "failure_stage": "SEND_MODEL",
+        "http_status": exc.http_status,
         "http_status_class": _http_status_class(exc.http_status),
         "provider_code": _safe_provider_code(exc.provider_code),
         "exception_type": _safe_exception_type(exc),
@@ -187,6 +190,7 @@ def _reconciliation_query_failure(
     return SandboxFixtureBlocked(
         "BLOCKED_FIXTURE_RECONCILIATION_QUERY",
         failure_stage=failure_stage,
+        http_status=http_status,
         http_status_class=_http_status_class(http_status),
         provider_code=_safe_provider_code(provider_code),
         exception_type=_safe_exception_type(exc),
