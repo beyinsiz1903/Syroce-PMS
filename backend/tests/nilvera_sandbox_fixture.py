@@ -38,6 +38,9 @@ DEFINITIVE_REJECTION = "DEFINITIVE_REJECTION"
 AMBIGUOUS_WRITE = "AMBIGUOUS_WRITE"
 FOUND = "FOUND"
 NOT_FOUND_OR_NOT_VISIBLE = "NOT_FOUND_OR_NOT_VISIBLE"
+MATCH_COUNT_ZERO = "ZERO"
+MATCH_COUNT_ONE = "ONE"
+MATCH_COUNT_MULTIPLE = "MULTIPLE"
 
 
 class SandboxFixtureError(RuntimeError):
@@ -51,6 +54,9 @@ class SandboxFixtureError(RuntimeError):
         provider_code: str | None = None,
         exception_type: str | None = None,
         write_disposition: str | None = None,
+        sender_match: bool | None = None,
+        receiver_match: bool | None = None,
+        match_count_class: str | None = None,
     ):
         super().__init__(safe_code)
         self.safe_code = safe_code
@@ -60,6 +66,9 @@ class SandboxFixtureError(RuntimeError):
         self.provider_code = provider_code
         self.exception_type = exception_type
         self.write_disposition = write_disposition
+        self.sender_match = sender_match
+        self.receiver_match = receiver_match
+        self.match_count_class = match_count_class
 
 
 class SandboxFixtureBlocked(SandboxFixtureError):
@@ -68,6 +77,29 @@ class SandboxFixtureBlocked(SandboxFixtureError):
 
 class SandboxFixtureFailed(SandboxFixtureError):
     pass
+
+
+class ReadOnlySandboxClient:
+    """Allow only non-retrying GET requests during reconciliation."""
+
+    def __init__(self, client: Any):
+        self._client = client
+
+    async def get(self, path: str, **kwargs: Any) -> Any:
+        kwargs["retryable"] = False
+        return await self._client.get(path, **kwargs)
+
+    async def post(self, *_args: Any, **_kwargs: Any) -> Any:
+        raise SandboxFixtureBlocked("BLOCKED_RECONCILIATION_NON_GET_METHOD")
+
+    async def put(self, *_args: Any, **_kwargs: Any) -> Any:
+        raise SandboxFixtureBlocked("BLOCKED_RECONCILIATION_NON_GET_METHOD")
+
+    async def patch(self, *_args: Any, **_kwargs: Any) -> Any:
+        raise SandboxFixtureBlocked("BLOCKED_RECONCILIATION_NON_GET_METHOD")
+
+    async def delete(self, *_args: Any, **_kwargs: Any) -> Any:
+        raise SandboxFixtureBlocked("BLOCKED_RECONCILIATION_NON_GET_METHOD")
 
 
 @dataclass(frozen=True)
@@ -83,6 +115,10 @@ class SandboxFixtureResult:
 @dataclass(frozen=True)
 class SandboxFixtureReconciliationResult:
     correlation_label: str
+    provider_write_count: int
+    sender_match: bool
+    receiver_match: bool
+    match_count_class: str
     outgoing_result: str
     outgoing_outcome: ProviderInvoiceOutcome | None
     outgoing_detail_match: bool | None
@@ -303,20 +339,36 @@ async def reconcile_incoming_commercial_fixture(
     *,
     sender_client: Any,
     receiver_client: Any,
+    sender_key: str,
+    receiver_key: str,
     hmac_key: str,
     run_id: str,
+    seller_tax_number: str,
+    buyer_tax_number: str,
     reference_time: datetime,
 ) -> SandboxFixtureReconciliationResult:
     if reference_time.tzinfo is None or reference_time.utcoffset() is None:
         raise SandboxFixtureBlocked("BLOCKED_RECONCILIATION_REFERENCE_TIME")
 
+    ensure_distinct_sandbox_keys(sender_key, receiver_key)
+    sender_match = await company_identity_matches(sender_client, seller_tax_number)
+    receiver_match = await company_identity_matches(receiver_client, buyer_tax_number)
+    if not sender_match or not receiver_match:
+        raise SandboxFixtureBlocked(
+            "BLOCKED_SANDBOX_COMPANY_MISMATCH",
+            sender_match=sender_match,
+            receiver_match=receiver_match,
+        )
+
     identity = build_fixture_identity(year=reference_time.year, run_id=run_id, hmac_key=hmac_key)
     correlation_label = fixture_correlation_label(identity, hmac_key)
     target_digest = hmac.new(hmac_key.encode(), identity.encode(), hashlib.sha256).digest()
+    year_start = datetime(reference_time.year, 1, 1, tzinfo=reference_time.tzinfo)
+    year_end = datetime(reference_time.year, 12, 31, 23, 59, 59, tzinfo=reference_time.tzinfo)
     params = {
         "Search": identity,
-        "StartDate": (reference_time - timedelta(days=1)).isoformat(),
-        "EndDate": (reference_time + timedelta(days=1)).isoformat(),
+        "StartDate": year_start.isoformat(),
+        "EndDate": year_end.isoformat(),
         "Page": "1",
         "PageSize": "100",
     }
@@ -348,7 +400,13 @@ async def reconcile_incoming_commercial_fixture(
         parse_error_code="FIXTURE_INCOMING_RECONCILIATION_PARSE_FAILED",
     )
     if len(outgoing_matches) > 1 or len(incoming_matches) > 1:
-        raise SandboxFixtureBlocked("CONFLICT_FIXTURE_RECONCILIATION")
+        raise SandboxFixtureBlocked(
+            "CONFLICT_FIXTURE_RECONCILIATION",
+            sender_match=sender_match,
+            receiver_match=receiver_match,
+            match_count_class=MATCH_COUNT_MULTIPLE,
+        )
+    match_count_class = MATCH_COUNT_ONE if outgoing_matches else MATCH_COUNT_ZERO
 
     outgoing_result = NOT_FOUND_OR_NOT_VISIBLE
     outgoing_outcome = None
@@ -395,6 +453,10 @@ async def reconcile_incoming_commercial_fixture(
 
     return SandboxFixtureReconciliationResult(
         correlation_label=correlation_label,
+        provider_write_count=0,
+        sender_match=sender_match,
+        receiver_match=receiver_match,
+        match_count_class=match_count_class,
         outgoing_result=outgoing_result,
         outgoing_outcome=outgoing_outcome,
         outgoing_detail_match=outgoing_detail_match,

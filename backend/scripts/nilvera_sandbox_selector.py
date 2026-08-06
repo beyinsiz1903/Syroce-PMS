@@ -6,15 +6,18 @@ import sys
 SANDBOX_FILE = "tests/integration/test_nilvera_sandbox_e2e.py"
 INCOMING_ANSWER_TARGET = f"{SANDBOX_FILE}::test_sandbox_incoming_commercial_invoice_answer_contract"
 INCOMING_FIXTURE_TARGET = f"{SANDBOX_FILE}::test_sandbox_prepare_incoming_commercial_invoice_fixture"
+RECONCILIATION_TARGET = f"{SANDBOX_FILE}::test_sandbox_reconcile_incoming_commercial_invoice_fixture"
 
 
-def select_test_target(*, run_incoming_fixture: bool, run_incoming_answer: bool) -> str:
-    if run_incoming_fixture and run_incoming_answer:
-        raise ValueError("BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_WRITES")
+def select_test_target(*, run_incoming_fixture: bool, run_incoming_answer: bool, run_reconciliation: bool = False) -> str:
+    if sum((run_incoming_fixture, run_incoming_answer, run_reconciliation)) > 1:
+        raise ValueError("BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES")
     if run_incoming_fixture:
         return INCOMING_FIXTURE_TARGET
     if run_incoming_answer:
         return INCOMING_ANSWER_TARGET
+    if run_reconciliation:
+        return RECONCILIATION_TARGET
     return SANDBOX_FILE
 
 
@@ -30,6 +33,7 @@ def main() -> int:
         target = select_test_target(
             run_incoming_fixture=_read_bool("NILVERA_E2E_RUN_INCOMING_FIXTURE"),
             run_incoming_answer=_read_bool("NILVERA_E2E_RUN_INCOMING_ANSWER"),
+            run_reconciliation=_read_bool("NILVERA_E2E_RUN_RECONCILIATION"),
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)

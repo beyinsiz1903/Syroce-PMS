@@ -44,9 +44,14 @@ from models.schemas.invoice_lifecycle import (
 )
 from models.schemas.invoicing import Invoice, InvoiceItem
 from tests.nilvera_sandbox_fixture import (
+    FOUND,
+    MATCH_COUNT_ZERO,
+    NOT_FOUND_OR_NOT_VISIBLE,
+    ReadOnlySandboxClient,
     SandboxFixtureError,
     ensure_distinct_sandbox_keys,
     prepare_incoming_commercial_fixture,
+    reconcile_incoming_commercial_fixture,
 )
 
 # Mark all tests in this file as nilvera_sandbox
@@ -61,11 +66,14 @@ def check_missing_secrets() -> bool:
     receiver_key = os.environ.get("NILVERA_E2E_RECEIVER_SANDBOX_KEY")
     fixture_mode = os.environ.get("NILVERA_E2E_INCOMING_FIXTURE_ALLOWED", "false").lower() == "true"
     answer_mode = os.environ.get("NILVERA_E2E_INCOMING_ANSWER_ALLOWED", "false").lower() == "true"
+    reconciliation_mode = os.environ.get("NILVERA_E2E_RECONCILIATION_ALLOWED", "false").lower() == "true"
 
-    if fixture_mode:
+    if fixture_mode or reconciliation_mode:
         hmac_key = os.environ.get("NILVERA_E2E_CORRELATION_HMAC_KEY")
-        run_id = os.environ.get("NILVERA_E2E_RUN_ID")
-        return not (sender_key and receiver_key and hmac_key and run_id and buyer and seller)
+        run_id_name = "NILVERA_E2E_SOURCE_RUN_ID" if reconciliation_mode else "NILVERA_E2E_RUN_ID"
+        run_id = os.environ.get(run_id_name)
+        source_year = os.environ.get("NILVERA_E2E_SOURCE_RUN_YEAR") if reconciliation_mode else "not-required"
+        return not (sender_key and receiver_key and hmac_key and run_id and source_year and buyer and seller)
     selected_key = receiver_key if answer_mode else sender_key
     return not (selected_key and buyer and seller)
 
@@ -442,6 +450,75 @@ async def test_sandbox_prepare_incoming_commercial_invoice_fixture(record_proper
     record_property("receiver_match", str(result.receiver_match).lower())
     record_property("provider_outcome", result.provider_outcome.value)
     record_property("receiver_visible", str(result.receiver_visible).lower())
+
+
+@pytest.mark.external
+async def test_sandbox_reconcile_incoming_commercial_invoice_fixture(record_property):
+    """Reconcile one prior fixture using company-verified, non-retrying GET requests."""
+    if os.environ.get("NILVERA_E2E_RECONCILIATION_ALLOWED", "false").lower() != "true":
+        pytest.skip("Incoming fixture reconciliation requires explicit Sandbox authorization")
+
+    sender_key = os.environ.get("NILVERA_E2E_SENDER_SANDBOX_KEY", "")
+    receiver_key = os.environ.get("NILVERA_E2E_RECEIVER_SANDBOX_KEY", "")
+    hmac_key = os.environ.get("NILVERA_E2E_CORRELATION_HMAC_KEY", "")
+    source_run_id = os.environ.get("NILVERA_E2E_SOURCE_RUN_ID", "")
+    source_year = os.environ.get("NILVERA_E2E_SOURCE_RUN_YEAR", "")
+    buyer_tax_number = os.environ.get("NILVERA_E2E_BUYER_VKN", "")
+    seller_tax_number = os.environ.get("NILVERA_E2E_SELLER_VKN", "")
+
+    try:
+        if len(source_year) != 4 or not source_year.isdigit():
+            raise ValueError
+        reference_time = datetime(int(source_year), 1, 1, tzinfo=UTC)
+        ensure_distinct_sandbox_keys(sender_key, receiver_key)
+    except (SandboxFixtureError, ValueError) as exc:
+        safe_code = exc.safe_code if isinstance(exc, SandboxFixtureError) else "BLOCKED_INVALID_RECONCILIATION_SOURCE_YEAR"
+        pytest.fail(safe_code, pytrace=False)
+
+    sender_client = new_sandbox_client(sender_key)
+    receiver_client = new_sandbox_client(receiver_key)
+    async with sender_client as sender, receiver_client as receiver:
+        try:
+            result = await reconcile_incoming_commercial_fixture(
+                sender_client=ReadOnlySandboxClient(sender),
+                receiver_client=ReadOnlySandboxClient(receiver),
+                sender_key=sender_key,
+                receiver_key=receiver_key,
+                hmac_key=hmac_key,
+                run_id=source_run_id,
+                seller_tax_number=seller_tax_number,
+                buyer_tax_number=buyer_tax_number,
+                reference_time=reference_time,
+            )
+        except SandboxFixtureError as exc:
+            record_property("provider_write_count", "0")
+            if exc.sender_match is not None:
+                record_property("sender_match", str(exc.sender_match).lower())
+            if exc.receiver_match is not None:
+                record_property("receiver_match", str(exc.receiver_match).lower())
+            if exc.match_count_class is not None:
+                record_property("match_count_class", exc.match_count_class)
+            pytest.fail(exc.safe_code, pytrace=False)
+
+    provider_status_class = result.outgoing_outcome.name if result.outgoing_outcome is not None else "NOT_AVAILABLE"
+    outgoing_found = result.outgoing_result == FOUND
+    receiver_visible = result.receiver_visibility == FOUND
+    record_property("provider_write_count", str(result.provider_write_count))
+    record_property("sender_match", str(result.sender_match).lower())
+    record_property("receiver_match", str(result.receiver_match).lower())
+    record_property("outgoing_found", str(outgoing_found).lower())
+    record_property("receiver_visible", str(receiver_visible).lower())
+    record_property("match_count_class", result.match_count_class)
+    record_property("provider_status_class", provider_status_class)
+
+    if result.match_count_class == MATCH_COUNT_ZERO:
+        pytest.fail(NOT_FOUND_OR_NOT_VISIBLE, pytrace=False)
+    if result.outgoing_outcome == ProviderInvoiceOutcome.REJECTED:
+        pytest.fail("FIXTURE_RECONCILIATION_PROVIDER_REJECTED", pytrace=False)
+    if result.outgoing_outcome in {ProviderInvoiceOutcome.PENDING, ProviderInvoiceOutcome.UNKNOWN}:
+        pytest.fail("BLOCKED_FIXTURE_RECONCILIATION_PROVIDER_NOT_TERMINAL", pytrace=False)
+    if not receiver_visible or result.receiver_status_ready is not True:
+        pytest.fail(NOT_FOUND_OR_NOT_VISIBLE, pytrace=False)
 
 
 @pytest.mark.external
