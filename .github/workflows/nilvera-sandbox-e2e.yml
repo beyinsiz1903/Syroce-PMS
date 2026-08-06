@@ -111,6 +111,7 @@ jobs:
       - name: Run Nilvera Sandbox E2E Tests
         if: steps.check-key.outputs.secrets_exist == 'true'
         env:
+          NILVERA_ENABLED: "true"
           NILVERA_E2E_SENDER_SANDBOX_KEY: ${{ secrets.NILVERA_E2E_SENDER_SANDBOX_KEY }}
           NILVERA_E2E_RECEIVER_SANDBOX_KEY: ${{ secrets.NILVERA_E2E_RECEIVER_SANDBOX_KEY }}
           NILVERA_E2E_CORRELATION_HMAC_KEY: ${{ secrets.NILVERA_E2E_CORRELATION_HMAC_KEY }}

@@ -1,6 +1,9 @@
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
+
+import pytest
 
 from core.integrations.nilvera.config import get_nilvera_config
 from core.integrations.nilvera.mapper import NilveraInvoiceMapper, SellerSnapshot
@@ -93,3 +96,25 @@ def test_sandbox_key_missing_skips_logic(monkeypatch):
     monkeypatch.delenv("NILVERA_E2E_SELLER_VKN", raising=False)
 
     assert check_missing_secrets() is True
+
+
+def test_nilvera_enabled_missing_remains_fail_closed(monkeypatch):
+    import core.integrations.nilvera.config
+
+    monkeypatch.delenv("NILVERA_ENABLED", raising=False)
+    monkeypatch.setenv("NILVERA_ENV", "test")
+    core.integrations.nilvera.config._config = None
+
+    with pytest.raises(ValueError, match="NILVERA_ENABLED_MISSING"):
+        get_nilvera_config()
+
+    assert core.integrations.nilvera.config._config is None
+
+
+def test_sandbox_workflow_explicitly_enables_nilvera_only_for_test_step():
+    workflow = (Path(__file__).parents[3] / ".github/workflows/nilvera-sandbox-e2e.yml").read_text()
+    test_step = workflow.split("      - name: Run Nilvera Sandbox E2E Tests\n", 1)[1].split("\n      - name:", 1)[0]
+
+    assert "environment: nilvera-sandbox" in workflow
+    assert 'NILVERA_ENABLED: "true"' in test_step
+    assert workflow.count('NILVERA_ENABLED: "true"') == 1
