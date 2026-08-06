@@ -224,6 +224,7 @@ jobs:
           python -m pytest \
             tests/test_hotelrunner_p0_integrity.py \
             tests/test_hotelrunner_reservation_lock.py \
+            tests/test_hotelrunner_compat_security.py \
             tests/test_hotelrunner_webhook_signature.py \
             tests/test_scheduler_concurrency.py \
             tests/test_channel_event_dedup_claim.py \
