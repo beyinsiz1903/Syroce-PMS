@@ -99,7 +99,7 @@ async def create_unmatched_reservation_hold(
     """Eslestirilemeyen rezervasyon icin idempotent tutma + alarm olusturur.
 
     Returns: {"created": bool, "booking_id": str|None, "nights_held": list,
-              "idempotent": bool}
+              "idempotent": bool, "alarm_raised": bool}
     """
     if not tenant_id or not external_id:
         logger.warning(
@@ -107,7 +107,13 @@ async def create_unmatched_reservation_hold(
             provider,
             external_id,
         )
-        return {"created": False, "booking_id": None, "nights_held": [], "idempotent": False}
+        return {
+            "created": False,
+            "booking_id": None,
+            "nights_held": [],
+            "idempotent": False,
+            "alarm_raised": False,
+        }
 
     property_id = property_id or tenant_id
 
@@ -123,12 +129,22 @@ async def create_unmatched_reservation_hold(
                 {"_id": 0, "id": 1},
                 )
     if existing:
-        # Tekrar teslimatlarda yeni alarm uretmiyoruz (idempotent).
+        alarm_raised = await _raise_unmatched_alarm(
+            provider=provider,
+            tenant_id=tenant_id,
+            external_id=external_id,
+            guest_name=guest_name,
+            check_in=check_in,
+            check_out=check_out,
+            room_type_code=room_type_code,
+            booking_id=existing["id"],
+        )
         return {
             "created": False,
             "booking_id": existing["id"],
             "nights_held": [],
             "idempotent": True,
+            "alarm_raised": alarm_raised,
         }
 
     booking_id = str(uuid.uuid4())
@@ -184,7 +200,13 @@ async def create_unmatched_reservation_hold(
             external_id,
             exc,
         )
-        return {"created": False, "booking_id": None, "nights_held": [], "idempotent": False}
+        return {
+            "created": False,
+            "booking_id": None,
+            "nights_held": [],
+            "idempotent": False,
+            "alarm_raised": False,
+        }
 
     # ── Sentinel oda-gece kilitleri (envanter koruma artefakti) ─────
     sentinel_room = _sentinel_room_id(provider, external_id)
@@ -236,7 +258,7 @@ async def create_unmatched_reservation_hold(
     )
 
     # ── ACIL alarm (idempotent) ─────────────────────────────────────
-    await _raise_unmatched_alarm(
+    alarm_raised = await _raise_unmatched_alarm(
         provider=provider,
         tenant_id=tenant_id,
         external_id=external_id,
@@ -252,6 +274,7 @@ async def create_unmatched_reservation_hold(
         "booking_id": booking_id,
         "nights_held": held,
         "idempotent": False,
+        "alarm_raised": alarm_raised,
     }
 
 
@@ -356,12 +379,13 @@ async def _raise_unmatched_alarm(
     check_out: str,
     room_type_code: str,
     booking_id: str,
-) -> None:
+) -> bool:
     """Idempotent ACIL alarm: in-app bildirim + websocket + Control Plane."""
     now = _now()
     ci = (check_in or "")[:10]
     co = (check_out or "")[:10]
     dedup_key = f"unmatched_mapping_{external_id}"
+    alarm_persisted = False
 
     # ── 1. Kalici in-app bildirim (tenant'a izole, idempotent) ──────
     # Misafir adi (PII) yalnizca tenant'a izole bildirimde yer alir.
@@ -400,6 +424,7 @@ async def _raise_unmatched_alarm(
                         "created_at": now,
                         }
                         )
+            alarm_persisted = True
             # ── 2. Tenant-scoped websocket bildirimi ────────────────
             # broadcast_notification KULLANILMAZ (global 'notifications'
             # odasina yayar -> cross-tenant PII sizintisi). Tenant-scoped
@@ -425,6 +450,8 @@ async def _raise_unmatched_alarm(
                     external_id,
                     exc,
                 )
+        else:
+            alarm_persisted = True
     except Exception as exc:
         logger.exception(
             "[UNMATCHED-HOLD] in-app bildirim basarisiz ext=%s: %s",
@@ -464,3 +491,4 @@ async def _raise_unmatched_alarm(
             external_id,
             exc,
         )
+    return alarm_persisted

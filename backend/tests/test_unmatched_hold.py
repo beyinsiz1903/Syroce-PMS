@@ -65,6 +65,7 @@ async def test_create_hold_creates_booking_locks_and_alarm():
     )
     assert res["created"] is True
     assert res["idempotent"] is False
+    assert res["alarm_raised"] is True
     booking_id = res["booking_id"]
     assert booking_id
 
@@ -116,6 +117,7 @@ async def test_create_hold_is_idempotent():
     assert first["created"] is True
     assert second["created"] is False
     assert second["idempotent"] is True
+    assert second["alarm_raised"] is True
     assert second["booking_id"] == first["booking_id"]
 
     # Tek booking, tek bildirim (alarm tekrarsiz)
@@ -249,7 +251,7 @@ async def test_check_booking_source_exists_tenant_isolation():
     """Ayni ext_id ile olusturulmus kayit diger tenant'tan bulunamamali."""
     from core.import_decision import check_booking_source_exists
     ext = f"EXT-ISO-{uuid.uuid4().hex[:6]}"
-    
+
     # 1) Tenant A'da booking olustur
     with tenant_context("TENANT_A"):
         await db.bookings.insert_one({
@@ -261,15 +263,15 @@ async def test_check_booking_source_exists_tenant_isolation():
             },
             "status": "confirmed"
         })
-    
+
     # 2) Tenant A'da bulundugunu dogrula
     found_a = await check_booking_source_exists("TENANT_A", "exely", ext)
     assert found_a is not None
-    
+
     # 3) Tenant B'de (farkli tenant) ayni ext_id bulunmamali
     found_b = await check_booking_source_exists("TENANT_B", "exely", ext)
     assert found_b is None
-    
+
     # Cleanup
     with tenant_context("TENANT_A"):
         await db.bookings.delete_many({"tenant_id": "TENANT_A", "external_reservation_id": ext})
@@ -280,14 +282,14 @@ async def test_compute_room_type_inventory_tenant_isolation():
     """Tenant A'daki kilitler/odalar Tenant B envanterini etkilememeli."""
     from core.room_type_inventory_service import compute_room_type_inventory
     night = "2031-05-15"
-    
+
     # 0) Cleanup
     with tenant_context("TENANT_A"):
         await db.rooms.delete_many({"tenant_id": "TENANT_A"})
         await db.room_night_locks.delete_many({"tenant_id": "TENANT_A"})
     with tenant_context("TENANT_B"):
         await db.rooms.delete_many({"tenant_id": "TENANT_B"})
-        
+
     # 1) Tenant A ve Tenant B'ye oda ekle
     with tenant_context("TENANT_A"):
         await db.rooms.insert_one({
@@ -301,7 +303,7 @@ async def test_compute_room_type_inventory_tenant_isolation():
             "booking_id": "booking-a",
             "lock_type": "booking"
         })
-        
+
     with tenant_context("TENANT_B"):
         await db.rooms.insert_one({
             "id": "room-b1", "tenant_id": "TENANT_B", "room_type": "STD", "is_active": True
@@ -311,17 +313,17 @@ async def test_compute_room_type_inventory_tenant_isolation():
     # 2) Hesaplamalari kontrol et
     inv_a = await compute_room_type_inventory("TENANT_A", night)
     inv_b = await compute_room_type_inventory("TENANT_B", night)
-    
+
     # Tenant A'daki oda kilitli, available 0
     a_std = next((x for x in inv_a if x["room_type"] == "STD"), None)
     assert a_std is not None
     assert a_std["sellable"] == 0
-    
+
     # Tenant B'deki oda kilitli degil, available 1 (Tenant A'dan etkilenmedi)
     b_std = next((x for x in inv_b if x["room_type"] == "STD"), None)
     assert b_std is not None
     assert b_std["sellable"] == 1
-    
+
     # Cleanup
     with tenant_context("TENANT_A"):
         await db.rooms.delete_many({"tenant_id": "TENANT_A"})

@@ -190,6 +190,221 @@ async def create_import_record(
         return None
 
 
+async def _recover_missing_import_record(
+    *,
+    tenant_id: str,
+    provider: str,
+    external_reservation_id: str,
+) -> dict[str, Any] | None:
+    """Rebuild an import row from durable lineage after a partial pipeline failure."""
+    lineage = await db.reservation_lineage.find_one(
+        {
+            "tenant_id": tenant_id,
+            "provider": provider,
+            "external_reservation_id": external_reservation_id,
+        },
+        {"_id": 0},
+    )
+    if not lineage:
+        return None
+
+    property_id = lineage.get("property_id", tenant_id)
+    room_code = lineage.get("room_type_code", "")
+    rate_code = lineage.get("rate_plan_code", "")
+    room_mapping = None
+    rate_mapping = None
+    if room_code:
+        room_mapping = await db.room_mappings.find_one(
+            {
+                "tenant_id": tenant_id,
+                "property_id": property_id,
+                "provider": provider,
+                "provider_room_code": room_code,
+                "is_active": True,
+            },
+            {"_id": 0},
+        )
+    if rate_code:
+        rate_mapping = await db.rate_plan_mappings.find_one(
+            {
+                "tenant_id": tenant_id,
+                "property_id": property_id,
+                "provider": provider,
+                "provider_rate_code": rate_code,
+                "is_active": True,
+            },
+            {"_id": 0},
+        )
+
+    from core.import_decision import classify_for_import
+
+    import_status, review_reason = classify_for_import(
+        lineage,
+        room_mapping,
+        rate_mapping,
+    )
+    created = await create_import_record(
+        lineage,
+        import_status=import_status,
+        review_reason=review_reason,
+        connector_id=lineage.get("connection_id", ""),
+    )
+    if created:
+        return created
+    return await db[COLL_IMPORTED].find_one(
+        {
+            "tenant_id": tenant_id,
+            "provider": provider,
+            "external_reservation_id": external_reservation_id,
+        },
+        {"_id": 0},
+    )
+
+
+async def replay_reviewed_mapping_import(
+    *,
+    tenant_id: str,
+    provider: str,
+    external_reservation_id: str,
+) -> dict[str, str]:
+    """Atomically replay one mapping review after mappings are fixed.
+
+    The function never calls a provider. Concurrent or duplicate replay attempts
+    either observe the durable PMS booking or fail to claim the same review row.
+    """
+    from core.tenant_db import set_tenant_context
+
+    set_tenant_context(tenant_id)
+    existing_booking_id = await check_booking_source_exists(
+        tenant_id,
+        provider,
+        external_reservation_id,
+    )
+    if existing_booking_id:
+        return {"status": "durable"}
+
+    record = await db[COLL_IMPORTED].find_one(
+        {
+            "tenant_id": tenant_id,
+            "provider": provider,
+            "external_reservation_id": external_reservation_id,
+        },
+        {"_id": 0},
+    )
+    if not record:
+        record = await _recover_missing_import_record(
+            tenant_id=tenant_id,
+            provider=provider,
+            external_reservation_id=external_reservation_id,
+        )
+        if not record:
+            return {"status": "failed"}
+
+    import_status = record.get("import_status")
+    if import_status in {STATUS_PENDING, STATUS_PROCESSING, STATUS_RETRY}:
+        return {"status": "pending"}
+    if import_status != STATUS_REVIEW or record.get("review_reason") not in {
+        "unmapped_room_type",
+        "unmapped_rate_plan",
+    }:
+        return {"status": "failed"}
+
+    property_id = record.get("property_id", tenant_id)
+    room_code = record.get("room_type_code", "")
+    rate_code = record.get("rate_plan_code", "")
+
+    from domains.channel_manager.providers.unmatched_hold import (
+        create_unmatched_reservation_hold,
+    )
+
+    hold = await create_unmatched_reservation_hold(
+        provider=provider,
+        tenant_id=tenant_id,
+        external_id=external_reservation_id,
+        check_in=record.get("arrival_date", ""),
+        check_out=record.get("departure_date", ""),
+        guest_name=record.get("guest_name", ""),
+        room_type_code=room_code,
+        rate_plan_code=rate_code,
+        total_amount=float(record.get("total_amount", 0) or 0),
+        currency=record.get("currency", "TRY"),
+        adults=record.get("adults", 1) or 1,
+        children=record.get("children", 0) or 0,
+        channel=record.get("source_system", "") or provider,
+        property_id=property_id,
+    )
+    if not hold.get("booking_id") or not hold.get("alarm_raised"):
+        return {"status": "failed"}
+
+    room_mapping = None
+    rate_mapping = None
+    if room_code:
+        room_mapping = await db.room_mappings.find_one(
+            {
+                "tenant_id": tenant_id,
+                "property_id": property_id,
+                "provider": provider,
+                "provider_room_code": room_code,
+                "is_active": True,
+            },
+            {"_id": 0, "pms_room_type_id": 1},
+        )
+    if rate_code:
+        rate_mapping = await db.rate_plan_mappings.find_one(
+            {
+                "tenant_id": tenant_id,
+                "property_id": property_id,
+                "provider": provider,
+                "provider_rate_code": rate_code,
+                "is_active": True,
+            },
+            {"_id": 0, "pms_rate_plan_id": 1},
+        )
+
+    if (room_code and not room_mapping) or (rate_code and not rate_mapping):
+        return {"status": "failed"}
+
+    claimed = await db[COLL_IMPORTED].find_one_and_update(
+        {
+            "id": record["id"],
+            "tenant_id": tenant_id,
+            "provider": provider,
+            "import_status": STATUS_REVIEW,
+            "review_reason": {"$in": ["unmapped_room_type", "unmapped_rate_plan"]},
+        },
+        {
+            "$set": {
+                "import_status": STATUS_PROCESSING,
+                "review_reason": None,
+                "updated_at": _utc_now(),
+            }
+        },
+        return_document=ReturnDocument.AFTER,
+        projection={"_id": 0},
+    )
+    if not claimed:
+        existing_booking_id = await check_booking_source_exists(
+            tenant_id,
+            provider,
+            external_reservation_id,
+        )
+        return {"status": "durable" if existing_booking_id else "pending"}
+
+    success, _ = await auto_import_reservation_to_pms(
+        claimed["id"],
+        pre_claimed_record=claimed,
+    )
+    if not success:
+        return {"status": "failed"}
+
+    existing_booking_id = await check_booking_source_exists(
+        tenant_id,
+        provider,
+        external_reservation_id,
+    )
+    return {"status": "durable" if existing_booking_id else "failed"}
+
+
 async def auto_import_reservation_to_pms(
     imported_reservation_id: str,
     pre_claimed_record: dict | None = None,
@@ -372,22 +587,6 @@ async def auto_import_reservation_to_pms(
                 return False, f"Review required: unmapped rate plan {rate_code}"
 
         # ── 5. Build booking document ────────────────────────────
-        # Eslestirme cozuldu -> varsa onceki tutmayi rebind ile serbest birak
-        # (sentinel kilitler + tutma kaydi silinir) ki cift sayim olmasin.
-        from domains.channel_manager.providers.unmatched_hold import (
-            release_unmatched_reservation_hold,
-        )
-
-        try:
-            await release_unmatched_reservation_hold(
-                tenant_id=tenant_id,
-                external_id=ext_res_id,
-                reason="mapping_resolved",
-                delete_hold=True,
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.exception(f"[IMPORT-BRIDGE] unmatched hold rebind hatasi {ext_res_id}: {e}")
-
         booking_id = str(uuid.uuid4())
         # Use PMS room type name from mapping, not provider code
         pms_room_type = room_id if room_id else room_type
@@ -495,6 +694,25 @@ async def auto_import_reservation_to_pms(
                 f"Room conflict: {str(e)[:500]}",
             )
             return False, f"Review required: booking conflict — {str(e)[:200]}"
+
+        # Gercek booking durable olduktan sonra gecici hold'u serbest birak.
+        # Bu sira, booking create hatasinda hold'un kaybolmasini onler.
+        from domains.channel_manager.providers.unmatched_hold import (
+            release_unmatched_reservation_hold,
+        )
+
+        try:
+            await release_unmatched_reservation_hold(
+                tenant_id=tenant_id,
+                external_id=ext_res_id,
+                reason="mapping_resolved",
+                delete_hold=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[IMPORT-BRIDGE] unmatched hold release raised %s",
+                type(exc).__name__,
+            )
 
         # ── 7. Update import record → imported ───────────────────
         imported_at = _utc_now()

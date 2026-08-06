@@ -218,6 +218,25 @@ jobs:
           # default of :8000.
           VITE_BACKEND_URL: http://localhost:8001
 
+      - name: Run HotelRunner direct regression suite (hard gate)
+        run: |
+          cd backend
+          python -m pytest \
+            tests/test_hotelrunner_p0_integrity.py \
+            tests/test_hotelrunner_webhook_signature.py \
+            tests/test_scheduler_concurrency.py \
+            tests/test_channel_event_dedup_claim.py \
+            tests/test_catchup_dedup_guard.py \
+            tests/test_unmatched_hold.py \
+            -v --tb=short -q --timeout=60 \
+            --junitxml=test-results-hotelrunner.xml
+        env:
+          MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+          TESTING: "1"
+
       # Task #323: live_mongo testleri gerçek MongoDB gerektirir; Mongo erişilemezse
       # doctrine gereği atlanır. REQUIRE_LIVE_MONGO=1 ile bu adım, testler GERÇEKTEN
       # koşmadıkça (hepsi skip / hiç koşmama) FAIL olur — skip-as-pass false-green
