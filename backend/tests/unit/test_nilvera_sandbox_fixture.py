@@ -9,12 +9,15 @@ import pytest
 from core.integrations.nilvera.config import NilveraEndpoints
 from core.integrations.nilvera.errors import NilveraApiError, NilveraServerError, NilveraTimeoutError, NilveraValidationError
 from core.integrations.nilvera.status_mapper import ProviderInvoiceOutcome
-from scripts.nilvera_sandbox_selector import INCOMING_FIXTURE_TARGET, select_test_target
+from scripts.nilvera_sandbox_selector import INCOMING_FIXTURE_TARGET, RECONCILIATION_TARGET, select_test_target
 from tests.nilvera_sandbox_fixture import (
     AMBIGUOUS_WRITE,
     DEFINITIVE_REJECTION,
     FOUND,
+    MATCH_COUNT_ONE,
+    MATCH_COUNT_ZERO,
     NOT_FOUND_OR_NOT_VISIBLE,
+    ReadOnlySandboxClient,
     SandboxFixtureBlocked,
     SandboxFixtureFailed,
     build_fixture_identity,
@@ -34,15 +37,41 @@ NOW = datetime(2026, 8, 6, 12, 0, tzinfo=UTC)
 PROVIDER_UUID = "123e4567-e89b-12d3-a456-426614174000"
 
 
-def test_workflow_fixture_mode_is_mutually_exclusive_with_incoming_answer():
+def test_workflow_sandbox_modes_are_mutually_exclusive():
     workflow = (Path(__file__).parents[3] / ".github/workflows/nilvera-sandbox-e2e.yml").read_text()
 
     assert "run_incoming_fixture:" in workflow
+    assert "run_reconciliation:" in workflow
     assert "default: false" in workflow
     assert "scripts/nilvera_sandbox_selector.py" in workflow
-    with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_WRITES"):
-        select_test_target(run_incoming_fixture=True, run_incoming_answer=True)
+    with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
+        select_test_target(run_incoming_fixture=True, run_incoming_answer=True, run_reconciliation=False)
+    with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
+        select_test_target(run_incoming_fixture=False, run_incoming_answer=True, run_reconciliation=True)
     assert select_test_target(run_incoming_fixture=True, run_incoming_answer=False) == INCOMING_FIXTURE_TARGET
+    assert select_test_target(run_incoming_fixture=False, run_incoming_answer=False, run_reconciliation=True) == RECONCILIATION_TARGET
+
+
+async def test_read_only_client_blocks_non_get_methods_before_provider_access():
+    delegate = SimpleNamespace(
+        get=AsyncMock(return_value={"ok": True}),
+        post=AsyncMock(),
+        put=AsyncMock(),
+        patch=AsyncMock(),
+        delete=AsyncMock(),
+    )
+    client = ReadOnlySandboxClient(delegate)
+
+    assert await client.get("/read") == {"ok": True}
+    for method in (client.post, client.put, client.patch, client.delete):
+        with pytest.raises(SandboxFixtureBlocked, match="BLOCKED_RECONCILIATION_NON_GET_METHOD"):
+            await method("/blocked")
+
+    delegate.get.assert_awaited_once_with("/read", retryable=False)
+    delegate.post.assert_not_awaited()
+    delegate.put.assert_not_awaited()
+    delegate.patch.assert_not_awaited()
+    delegate.delete.assert_not_awaited()
 
 
 def test_fixture_identity_is_transferred_to_invoice_serie_or_number():
@@ -307,6 +336,8 @@ async def test_read_only_reconciliation_finds_exact_outgoing_and_incoming_fixtur
     identity = build_fixture_identity(year=NOW.year, run_id=RUN_ID, hmac_key=HMAC_KEY)
 
     async def sender_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": SELLER_TAX_NUMBER}
         if path == NilveraEndpoints.LIST_SALE_INVOICES:
             return {"Content": [{"UUID": PROVIDER_UUID, "InvoiceNumber": identity}]}
         if path == NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=PROVIDER_UUID):
@@ -319,21 +350,33 @@ async def test_read_only_reconciliation_finds_exact_outgoing_and_incoming_fixtur
             }
         raise AssertionError("unexpected sender read")
 
-    receiver_get = AsyncMock(return_value={"Content": [{"UUID": PROVIDER_UUID, "InvoiceNumber": identity}]})
+    async def receiver_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": BUYER_TAX_NUMBER}
+        return {"Content": [{"UUID": PROVIDER_UUID, "InvoiceNumber": identity}]}
+
     sender_client = SimpleNamespace(get=AsyncMock(side_effect=sender_get))
-    receiver_client = SimpleNamespace(get=receiver_get)
+    receiver_client = SimpleNamespace(get=AsyncMock(side_effect=receiver_get))
     incoming_service = _incoming_service(visible=True)
 
     with patch("tests.nilvera_sandbox_fixture.NilveraIncomingService", return_value=incoming_service):
         result = await reconcile_incoming_commercial_fixture(
             sender_client=sender_client,
             receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
             hmac_key=HMAC_KEY,
             run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
             reference_time=NOW,
         )
 
     assert result.outgoing_result == FOUND
+    assert result.provider_write_count == 0
+    assert result.sender_match is True
+    assert result.receiver_match is True
+    assert result.match_count_class == MATCH_COUNT_ONE
     assert result.outgoing_outcome == ProviderInvoiceOutcome.ACCEPTED
     assert result.outgoing_detail_match is True
     assert result.receiver_visibility == FOUND
@@ -341,48 +384,95 @@ async def test_read_only_reconciliation_finds_exact_outgoing_and_incoming_fixtur
     assert result.receiver_status_ready is True
     assert not hasattr(sender_client, "post")
     assert not hasattr(receiver_client, "post")
+    sale_list_call = next(call for call in sender_client.get.await_args_list if call.args[0] == NilveraEndpoints.LIST_SALE_INVOICES)
+    assert sale_list_call.kwargs["params"]["StartDate"].startswith("2026-01-01")
+    assert sale_list_call.kwargs["params"]["EndDate"].startswith("2026-12-31")
+
+
+async def test_read_only_reconciliation_blocks_company_mismatch_before_list_queries():
+    sender_client = SimpleNamespace(get=AsyncMock(return_value={"TaxNumber": SELLER_TAX_NUMBER}))
+    receiver_client = SimpleNamespace(get=AsyncMock(return_value={"TaxNumber": "3333333333"}))
+
+    with pytest.raises(SandboxFixtureBlocked, match="BLOCKED_SANDBOX_COMPANY_MISMATCH") as exc_info:
+        await reconcile_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            reference_time=NOW,
+        )
+
+    assert exc_info.value.sender_match is True
+    assert exc_info.value.receiver_match is False
+    sender_client.get.assert_awaited_once_with(NilveraEndpoints.GET_COMPANY)
+    receiver_client.get.assert_awaited_once_with(NilveraEndpoints.GET_COMPANY)
 
 
 async def test_read_only_reconciliation_reports_not_found_without_claiming_absence():
-    sender_client = SimpleNamespace(get=AsyncMock(return_value={"Content": []}))
-    receiver_client = SimpleNamespace(get=AsyncMock(return_value={"Content": []}))
+    async def sender_get(path, **kwargs):
+        return {"TaxNumber": SELLER_TAX_NUMBER} if path == NilveraEndpoints.GET_COMPANY else {"Content": []}
+
+    async def receiver_get(path, **kwargs):
+        return {"TaxNumber": BUYER_TAX_NUMBER} if path == NilveraEndpoints.GET_COMPANY else {"Content": []}
+
+    sender_client = SimpleNamespace(get=AsyncMock(side_effect=sender_get))
+    receiver_client = SimpleNamespace(get=AsyncMock(side_effect=receiver_get))
 
     result = await reconcile_incoming_commercial_fixture(
         sender_client=sender_client,
         receiver_client=receiver_client,
+        sender_key=SENDER_KEY,
+        receiver_key=RECEIVER_KEY,
         hmac_key=HMAC_KEY,
         run_id=RUN_ID,
+        seller_tax_number=SELLER_TAX_NUMBER,
+        buyer_tax_number=BUYER_TAX_NUMBER,
         reference_time=NOW,
     )
 
     assert result.outgoing_result == NOT_FOUND_OR_NOT_VISIBLE
+    assert result.provider_write_count == 0
+    assert result.match_count_class == MATCH_COUNT_ZERO
     assert result.outgoing_outcome is None
     assert result.receiver_visibility == NOT_FOUND_OR_NOT_VISIBLE
     assert result.receiver_status_ready is None
-    assert sender_client.get.await_count == 1
-    assert receiver_client.get.await_count == 1
+    assert sender_client.get.await_count == 2
+    assert receiver_client.get.await_count == 2
 
 
 async def test_read_only_reconciliation_stops_on_multiple_exact_matches():
     identity = build_fixture_identity(year=NOW.year, run_id=RUN_ID, hmac_key=HMAC_KEY)
     second_uuid = "223e4567-e89b-12d3-a456-426614174000"
-    sender_client = SimpleNamespace(
-        get=AsyncMock(
-            return_value={
-                "Content": [
-                    {"UUID": PROVIDER_UUID, "InvoiceNumber": identity},
-                    {"UUID": second_uuid, "InvoiceNumber": identity},
-                ]
-            }
-        )
-    )
-    receiver_client = SimpleNamespace(get=AsyncMock(return_value={"Content": []}))
+
+    async def sender_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": SELLER_TAX_NUMBER}
+        return {
+            "Content": [
+                {"UUID": PROVIDER_UUID, "InvoiceNumber": identity},
+                {"UUID": second_uuid, "InvoiceNumber": identity},
+            ]
+        }
+
+    async def receiver_get(path, **kwargs):
+        return {"TaxNumber": BUYER_TAX_NUMBER} if path == NilveraEndpoints.GET_COMPANY else {"Content": []}
+
+    sender_client = SimpleNamespace(get=AsyncMock(side_effect=sender_get))
+    receiver_client = SimpleNamespace(get=AsyncMock(side_effect=receiver_get))
 
     with pytest.raises(SandboxFixtureBlocked, match="CONFLICT_FIXTURE_RECONCILIATION"):
         await reconcile_incoming_commercial_fixture(
             sender_client=sender_client,
             receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
             hmac_key=HMAC_KEY,
             run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
             reference_time=NOW,
         )
