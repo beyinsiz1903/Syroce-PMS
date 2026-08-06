@@ -470,6 +470,67 @@ async def test_production_encrypted_vault_fallback(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_production_encrypted_vault_resolves_provider_config_property_id(monkeypatch):
+    """Provider Config vault records are keyed by property_id, not HotelRunner ID."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
+        lambda: _EmptySecretsManager(),
+    )
+    vault = AsyncMock(
+        side_effect=lambda _tenant, _provider, key: (
+            {"token": "synthetic-vault-token", "hr_id": "synthetic-hr-id"}
+            if key == "synthetic-property-id"
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_decrypted_credentials",
+        vault,
+        raising=False,
+    )
+
+    result = await resolve_hotelrunner_credentials(
+        "synthetic-tenant",
+        {"hr_id": "synthetic-hr-id", "property_id": "synthetic-property-id"},
+        actor="offline-test",
+    )
+
+    assert result is not None
+    assert result["token"] == "synthetic-vault-token"
+    assert result["hr_id"] == "synthetic-hr-id"
+    assert result["_credential_source"] == "encrypted_vault"
+    assert vault.await_count == 1
+    assert vault.await_args.args[2] == "synthetic-property-id"
+
+
+@pytest.mark.asyncio
+async def test_encrypted_vault_falls_back_to_hr_id_without_duplicate_lookup(monkeypatch):
+    """Legacy vault records remain resolvable and identical keys are queried once."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
+        lambda: _EmptySecretsManager(),
+    )
+    vault = AsyncMock(return_value={"token": "synthetic-token", "hr_id": "synthetic-hr-id"})
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_decrypted_credentials",
+        vault,
+        raising=False,
+    )
+
+    result = await resolve_hotelrunner_credentials(
+        "synthetic-tenant",
+        {"hr_id": "synthetic-hr-id", "property_id": "synthetic-hr-id"},
+        actor="offline-test",
+    )
+
+    assert result is not None
+    assert result["_credential_source"] == "encrypted_vault"
+    assert vault.await_count == 1
+
+
+@pytest.mark.asyncio
 async def test_production_only_plaintext_token_fails_closed(monkeypatch):
     """Scenario 4: production + only plaintext connection token => FAIL-CLOSED."""
     monkeypatch.setenv("APP_ENV", "production")

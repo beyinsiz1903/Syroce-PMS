@@ -9,7 +9,8 @@ Resolution priority (highest to lowest):
 2. Encrypted Provider Config credential vault — ``get_decrypted_credentials``
    from ``credential_vault``.  Only reached when the secrets manager returns
    nothing.  Production connections established via the Provider Config screen
-   store their token here (AES-encrypted, decrypted at runtime).
+   store their token here (AES-encrypted, decrypted at runtime). The vault is
+   queried by ``property_id`` first, then by ``hr_id`` for legacy records.
 
 3. Plaintext legacy fallback — connection document ``token`` field.
    Available only in development / test environments.
@@ -62,7 +63,7 @@ async def resolve_hotelrunner_credentials(
 
     1. Secrets manager keyed by ``hr_id``
     2. Secrets manager keyed by ``property_id``
-    3. Encrypted credential vault (Provider Config screen)
+    3. Encrypted credential vault keyed by ``property_id``, then ``hr_id``
     4. Plaintext connection token (development/test only — fail-closed in production)
 
     Returns a dict with ``token``, ``hr_id``, and ``_credential_source`` on
@@ -112,20 +113,20 @@ async def resolve_hotelrunner_credentials(
             }
 
     # ── 3. Encrypted Provider Config credential vault ──────────────────
-    try:
-        vault_id = hr_id or property_id
-        if vault_id:
+    vault_ids = list(dict.fromkeys(candidate for candidate in (property_id, hr_id) if candidate))
+    for vault_id in vault_ids:
+        try:
             vault_creds = await get_decrypted_credentials(tenant_id, "hotelrunner", vault_id)
-            if vault_creds and vault_creds.get("token"):
-                resolved_hr_id = str(vault_creds.get("hr_id") or hr_id or vault_id)
-                return {
-                    "token": str(vault_creds["token"]),
-                    "hr_id": resolved_hr_id,
-                    "_credential_source": "encrypted_vault",
-                }
-    except Exception:
-        # Vault unavailable — continue to legacy fallback
-        pass
+        except Exception:
+            # A vault failure must not expose credentials or enable plaintext in production.
+            continue
+        if vault_creds and vault_creds.get("token"):
+            resolved_hr_id = str(vault_creds.get("hr_id") or hr_id or vault_id)
+            return {
+                "token": str(vault_creds["token"]),
+                "hr_id": resolved_hr_id,
+                "_credential_source": "encrypted_vault",
+            }
 
     # ── 4. Plaintext legacy fallback (dev/test only) ───────────────────
     if is_production_env():
