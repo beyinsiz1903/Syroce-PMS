@@ -206,6 +206,7 @@ jobs:
             tests/test_pms_checkin_night_audit_hardening.py \
             tests/unit/test_nilvera_incoming_xml_mapper.py \
             tests/unit/test_nilvera_incoming_answer.py \
+            tests/unit/test_nilvera_sandbox_fixture.py \
             tests/unit/test_incoming_invoice_sync_service.py \
             tests/unit/test_incoming_invoice_sync_worker.py \
             tests/unit/test_incoming_invoice_tenant_guard.py \

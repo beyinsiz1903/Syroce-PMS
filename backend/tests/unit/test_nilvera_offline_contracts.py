@@ -87,9 +87,9 @@ def test_sandbox_key_missing_skips_logic(monkeypatch):
     We temporarily clear the env vars and ensure the check returns True.
     """
     from tests.integration.test_nilvera_sandbox_e2e import check_missing_secrets
-    monkeypatch.delenv("NILVERA_E2E_SANDBOX_KEY", raising=False)
+    monkeypatch.delenv("NILVERA_E2E_SENDER_SANDBOX_KEY", raising=False)
+    monkeypatch.delenv("NILVERA_E2E_RECEIVER_SANDBOX_KEY", raising=False)
     monkeypatch.delenv("NILVERA_E2E_BUYER_VKN", raising=False)
     monkeypatch.delenv("NILVERA_E2E_SELLER_VKN", raising=False)
-    
-    assert check_missing_secrets() is True
 
+    assert check_missing_secrets() is True

@@ -43,6 +43,11 @@ from models.schemas.invoice_lifecycle import (
     InvoiceLifecycleDirection,
 )
 from models.schemas.invoicing import Invoice, InvoiceItem
+from tests.nilvera_sandbox_fixture import (
+    SandboxFixtureError,
+    ensure_distinct_sandbox_keys,
+    prepare_incoming_commercial_fixture,
+)
 
 # Mark all tests in this file as nilvera_sandbox
 pytestmark = [pytest.mark.asyncio, pytest.mark.nilvera_sandbox]
@@ -50,22 +55,33 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.nilvera_sandbox]
 
 def check_missing_secrets() -> bool:
     """Return True if any required secret is missing."""
-    key = os.environ.get("NILVERA_E2E_SANDBOX_KEY")
     buyer = os.environ.get("NILVERA_E2E_BUYER_VKN")
     seller = os.environ.get("NILVERA_E2E_SELLER_VKN")
-    return not (key and buyer and seller)
+    sender_key = os.environ.get("NILVERA_E2E_SENDER_SANDBOX_KEY")
+    receiver_key = os.environ.get("NILVERA_E2E_RECEIVER_SANDBOX_KEY")
+    fixture_mode = os.environ.get("NILVERA_E2E_INCOMING_FIXTURE_ALLOWED", "false").lower() == "true"
+    answer_mode = os.environ.get("NILVERA_E2E_INCOMING_ANSWER_ALLOWED", "false").lower() == "true"
+
+    if fixture_mode:
+        hmac_key = os.environ.get("NILVERA_E2E_CORRELATION_HMAC_KEY")
+        run_id = os.environ.get("NILVERA_E2E_RUN_ID")
+        return not (sender_key and receiver_key and hmac_key and run_id and buyer and seller)
+    selected_key = receiver_key if answer_mode else sender_key
+    return not (selected_key and buyer and seller)
 
 
 @pytest.fixture(autouse=True)
 def skip_if_missing_secrets():
     """Skip E2E test if required secrets are missing."""
     if check_missing_secrets():
-        pytest.skip("Missing NILVERA_E2E_SANDBOX_KEY, BUYER_VKN or SELLER_VKN. Skipping real sandbox E2E tests.")
+        pytest.skip("Missing required Nilvera Sandbox configuration. Skipping real sandbox E2E tests.")
 
 
 @pytest.fixture
 def api_key():
-    return os.environ.get("NILVERA_E2E_SANDBOX_KEY")
+    if os.environ.get("NILVERA_E2E_INCOMING_ANSWER_ALLOWED", "false").lower() == "true":
+        return os.environ.get("NILVERA_E2E_RECEIVER_SANDBOX_KEY")
+    return os.environ.get("NILVERA_E2E_SENDER_SANDBOX_KEY")
 
 
 @pytest.fixture
@@ -90,6 +106,13 @@ def sandbox_client(api_key):
     config = get_nilvera_config()
     assert config.base_url == "https://apitest.nilvera.com", "Sandbox test MUST use apitest.nilvera.com"
 
+    return NilveraHttpClient(api_key=api_key)
+
+
+def new_sandbox_client(api_key: str) -> NilveraHttpClient:
+    """Create a separate client while retaining the sandbox-only host guard."""
+    config = get_nilvera_config()
+    assert config.base_url == "https://apitest.nilvera.com", "Sandbox test MUST use apitest.nilvera.com"
     return NilveraHttpClient(api_key=api_key)
 
 
@@ -355,6 +378,60 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
             pytest.fail("Downloaded XML document is empty")
         if b"Invoice" not in xml_content and b"invoice" not in xml_content:
             pytest.fail("Downloaded XML document does not contain an invoice root")
+
+
+@pytest.mark.external
+@pytest.mark.side_effect
+async def test_sandbox_prepare_incoming_commercial_invoice_fixture(record_property):
+    """Create at most one commercial Sandbox fixture and verify receiver visibility."""
+    if os.environ.get("NILVERA_E2E_INCOMING_FIXTURE_ALLOWED", "false").lower() != "true":
+        pytest.skip("Incoming fixture write test requires explicit Sandbox authorization")
+
+    sender_key = os.environ.get("NILVERA_E2E_SENDER_SANDBOX_KEY", "")
+    receiver_key = os.environ.get("NILVERA_E2E_RECEIVER_SANDBOX_KEY", "")
+    hmac_key = os.environ.get("NILVERA_E2E_CORRELATION_HMAC_KEY", "")
+    run_id = os.environ.get("NILVERA_E2E_RUN_ID", "")
+    buyer_tax_number = os.environ.get("NILVERA_E2E_BUYER_VKN", "")
+    seller_tax_number = os.environ.get("NILVERA_E2E_SELLER_VKN", "")
+
+    try:
+        ensure_distinct_sandbox_keys(sender_key, receiver_key)
+    except SandboxFixtureError as exc:
+        pytest.fail(exc.safe_code, pytrace=False)
+
+    sender_client = new_sandbox_client(sender_key)
+    receiver_client = new_sandbox_client(receiver_key)
+    async with sender_client as sender, receiver_client as receiver:
+        try:
+            aliases = await NilveraTaxpayerService(sender).get_taxpayer_aliases(buyer_tax_number)
+        except Exception as exc:
+            pytest.fail(f"BLOCKED_FIXTURE_ALIAS_QUERY (error_type={type(exc).__name__})", pytrace=False)
+        buyer_aliases = [alias for alias in aliases.aliases if "pk" in alias.lower()]
+        if not buyer_aliases:
+            pytest.fail("BLOCKED_FIXTURE_BUYER_ALIAS")
+
+        try:
+            result = await prepare_incoming_commercial_fixture(
+                sender_client=sender,
+                receiver_client=receiver,
+                sender_key=sender_key,
+                receiver_key=receiver_key,
+                hmac_key=hmac_key,
+                run_id=run_id,
+                seller_tax_number=seller_tax_number,
+                buyer_tax_number=buyer_tax_number,
+                buyer_alias=buyer_aliases[0],
+            )
+        except SandboxFixtureError as exc:
+            record_property("provider_write_count", str(exc.provider_write_count))
+            pytest.fail(exc.safe_code, pytrace=False)
+
+    record_property("correlation_label", result.correlation_label)
+    record_property("provider_write_count", str(result.provider_write_count))
+    record_property("sender_match", str(result.sender_match).lower())
+    record_property("receiver_match", str(result.receiver_match).lower())
+    record_property("provider_outcome", result.provider_outcome.value)
+    record_property("receiver_visible", str(result.receiver_visible).lower())
 
 
 @pytest.mark.external
