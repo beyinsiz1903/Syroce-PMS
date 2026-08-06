@@ -24,6 +24,7 @@ from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v101 DW
 
+from .credentials import hotelrunner_connection_projection
 from .factory import get_provider
 from .router_schemas import HRConnectionSetup
 from .sync_log import log_sync
@@ -45,13 +46,7 @@ async def setup_connection(
     """Setup HotelRunner connection with credentials and test it."""
     from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
 
-    logger.info(
-        "[HR-CONNECT] env=%s hr_id=%s token=%s...%s",
-        payload.environment,
-        payload.hr_id,
-        payload.token[:4] if len(payload.token) > 8 else "****",
-        payload.token[-4:] if len(payload.token) > 8 else "****",
-    )
+    logger.info("[HR-CONNECT] connection test started env=%s", payload.environment)
 
     provider = HotelRunnerProvider(
         token=payload.token,
@@ -64,8 +59,15 @@ async def setup_connection(
     test_result = await provider.test_connection()
 
     if not test_result.success:
-        logger.error("[HR-CONNECT] FAILED: %s (env=%s, url=%s)", test_result.error, payload.environment, provider._base_url)
-        raise HTTPException(status_code=400, detail=f"HotelRunner baglanti hatasi: {test_result.error}")
+        logger.error(
+            "[HR-CONNECT] FAILED error_type=%s env=%s",
+            test_result.error_type or "ProviderRejected",
+            payload.environment,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"HotelRunner baglanti hatasi ({test_result.error_type or 'ProviderRejected'})",
+        )
 
     result_data = test_result.data or {}
 
@@ -124,7 +126,12 @@ async def get_connection_status(current_user: User = Depends(get_current_user)):
     """Get current HotelRunner connection status."""
     conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": current_user.tenant_id},
-        {"_id": 0, "token": 0, "credentials_ref": 0},
+        {
+            "_id": 0,
+            "token": 0,
+            "callback_secret": 0,
+            "credentials_ref": 0,
+        },
     )
     if not conn:
         return {"connected": False, "message": "HotelRunner baglantisi kurulmamis"}
@@ -139,9 +146,15 @@ async def test_connection(
 ):
     """Test existing HotelRunner connection."""
     tid = current_user.tenant_id
-    hr_conn = await db.hotelrunner_connections.find_one({"tenant_id": tid, "is_active": True})
+    hr_conn = await db.hotelrunner_connections.find_one(
+        {"tenant_id": tid, "is_active": True},
+        hotelrunner_connection_projection(),
+    )
     if not hr_conn:
-        hr_conn = await db.provider_connections.find_one({"tenant_id": tid, "provider": "hotelrunner", "status": "active"})
+        hr_conn = await db.provider_connections.find_one(
+            {"tenant_id": tid, "provider": "hotelrunner", "status": "active"},
+            {"_id": 0, "environment": 1, "mode": 1},
+        )
     if not hr_conn:
         raise HTTPException(status_code=404, detail="HotelRunner baglantisi bulunamadi. Lutfen once baglanti kurun.")
 
@@ -236,11 +249,12 @@ async def rotate_webhook_secret(
         },
     )
 
+    from core.masking import fingerprint_id
+
     logger.info(
-        "[HR-WEBHOOK-SECRET] rotated tenant=%s hr_id=%s by=%s",
-        current_user.tenant_id,
-        conn["hr_id"],
-        current_user.name,
+        "[HR-WEBHOOK-SECRET] rotated tenant_fp=%s property_fp=%s",
+        fingerprint_id(current_user.tenant_id),
+        fingerprint_id(str(conn["hr_id"])),
     )
 
     return {

@@ -212,7 +212,12 @@ async def unified_callback(
 
     from core.masking import fingerprint_id
     masked_tenant = fingerprint_id(tenant_id)
-    logger.info(f"[CALLBACK] Received {event_type}: {len(reservations)} reservation(s) from {source_ip}, tenant_fp={masked_tenant}")
+    logger.info(
+        "[CALLBACK] Received event_type=%s count=%d tenant_fp=%s",
+        event_type,
+        len(reservations),
+        masked_tenant,
+    )
 
     req_id = request.scope.get("req_id", "unknown")
     t_enqueue_start = time.time()

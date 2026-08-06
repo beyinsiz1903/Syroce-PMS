@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user
+from infra.production_config import is_production_env
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v101 DW
 
@@ -186,7 +187,7 @@ async def save_credentials(
     # Ensure a provider_connection exists
     existing_conn = await db[COLL_PROVIDER_CONNECTIONS].find_one(
         {"tenant_id": tenant_id, "provider": provider, "property_id": property_id},
-        _NO_ID,
+        {"_id": 0, "id": 1},
     )
     if not existing_conn:
         conn = ProviderConnection(
@@ -195,23 +196,28 @@ async def save_credentials(
             provider=ConnectorProvider(provider),
             status=ConnectionStatus.DRAFT,
             display_name=f"{provider_def['display_name']} - {property_id}",
-            credentials=req.credentials,
-            credentials_ref=secret_id,
+            credentials={} if provider == "hotelrunner" else req.credentials,
         )
         conn_doc = conn.to_doc()
         conn_doc["credentials_ref"] = secret_id
+        if provider == "hotelrunner":
+            conn_doc["hr_id"] = req.credentials["hr_id"]
         await repo.upsert_connection(conn_doc)
     else:
         # Update credentials on connection + set credentials_ref
+        set_fields = {
+            "credentials_ref": secret_id,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+        update: dict[str, Any] = {"$set": set_fields}
+        if provider == "hotelrunner":
+            set_fields["hr_id"] = req.credentials["hr_id"]
+            update["$unset"] = {"credentials": ""}
+        else:
+            set_fields["credentials"] = req.credentials
         await db[COLL_PROVIDER_CONNECTIONS].update_one(
             {"tenant_id": tenant_id, "provider": provider, "property_id": property_id},
-            {
-                "$set": {
-                    "credentials": req.credentials,
-                    "credentials_ref": secret_id,
-                    "updated_at": datetime.now(UTC).isoformat(),
-                }
-            },
+            update,
         )
 
     return {
@@ -250,6 +256,14 @@ async def delete_credentials(
     deleted = await vault.delete_secret(current_user.tenant_id, provider, "")
     if not deleted:
         deleted = await vault.delete_secret(current_user.tenant_id, provider, "default")
+    if provider == "hotelrunner":
+        await db[COLL_PROVIDER_CONNECTIONS].update_many(
+            {"tenant_id": current_user.tenant_id, "provider": provider},
+            {
+                "$unset": {"credentials": "", "credentials_ref": ""},
+                "$set": {"updated_at": datetime.now(UTC).isoformat()},
+            },
+        )
     return {"success": deleted, "provider": provider}
 
 
@@ -273,7 +287,7 @@ async def run_full_validation(
     creds = await vault.get_decrypted_credentials(tenant_id, provider, "default")
     if not creds:
         creds = await vault.get_decrypted_credentials(tenant_id, provider, "")
-    if not creds:
+    if not creds and not (provider == "hotelrunner" and is_production_env()):
         # Try from connection directly
         conn = await db[COLL_PROVIDER_CONNECTIONS].find_one(
             {"tenant_id": tenant_id, "provider": provider},
@@ -344,7 +358,7 @@ async def test_connection(
     creds = await vault.get_decrypted_credentials(tenant_id, provider, "default")
     if not creds:
         creds = await vault.get_decrypted_credentials(tenant_id, provider, "")
-    if not creds:
+    if not creds and not (provider == "hotelrunner" and is_production_env()):
         conn = await db[COLL_PROVIDER_CONNECTIONS].find_one(
             {"tenant_id": tenant_id, "provider": provider},
             _NO_ID,

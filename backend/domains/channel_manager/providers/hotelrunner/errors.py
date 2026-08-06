@@ -6,6 +6,8 @@ Every error maps to a specific recovery strategy.
 Monitoring and alert engine uses error types for severity classification.
 """
 
+import hashlib
+
 
 class HotelRunnerError(Exception):
     """Base error for all HotelRunner provider operations."""
@@ -50,7 +52,10 @@ class HotelRunnerParseError(HotelRunnerError):
     """Response parsing failure. No retry (manual inspection needed)."""
 
     def __init__(self, message: str = "Response parse error", raw_response: str = ""):
-        self.raw_response = raw_response[:2000]
+        raw_bytes = raw_response.encode("utf-8", errors="replace")
+        self.raw_response = ""
+        self.response_size_bytes = len(raw_bytes)
+        self.response_sha256 = hashlib.sha256(raw_bytes).hexdigest() if raw_bytes else ""
         super().__init__(message, recoverable=False)
 
 

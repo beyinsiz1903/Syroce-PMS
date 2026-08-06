@@ -9,6 +9,7 @@ from fastapi import HTTPException, Request
 
 from core.secrets import get_secrets_manager
 from core.tenant_db import get_system_db
+from infra.production_config import is_production_env
 
 logger = logging.getLogger(__name__)
 
@@ -23,16 +24,17 @@ def _source_ip(request: Request) -> str:
 def _log_webhook_reject(reason: str, source_ip: str, tenant_hint: str, hr_id_hint: str) -> None:
     """Structured security log for every rejected webhook.
 
-    Records the source IP, the rejection reason and the (untrusted) tenant /
-    hr_id hint. Secret and signature material is NEVER logged.
+    Records only fingerprints for request identifiers. Secret and signature
+    material is never logged.
     """
     from core.masking import fingerprint_id
     masked_tenant = fingerprint_id(tenant_hint)
     masked_hr_id = fingerprint_id(hr_id_hint)
+    masked_source = fingerprint_id(source_ip)
     logger.warning(
-        "[HR-WEBHOOK][SECURITY] reject reason=%s source_ip=%s tenant_fp=%s hr_fp=%s",
+        "[HR-WEBHOOK][SECURITY] reject reason=%s source_fp=%s tenant_fp=%s hr_fp=%s",
         reason,
-        source_ip or "unknown",
+        masked_source,
         masked_tenant,
         masked_hr_id,
     )
@@ -107,7 +109,7 @@ async def _lookup_signing_connection(hr_id_hint: str) -> dict | None:
         system_db = get_system_db()
         doc = await system_db.hotelrunner_connections.find_one(
             query,
-            {"_id": 0, "tenant_id": 1, "hr_id": 1, "callback_secret": 1, "token": 1},
+            {"_id": 0, "tenant_id": 1, "hr_id": 1},
         )
         logger.debug(
             "HotelRunner connection lookup completed found=%s",
@@ -253,7 +255,8 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     # ── MODE 2: Official Callback Validation (Token + hr_id + callback_secret) ──
 
     # 1. Callback Secret Validation
-    # Priority: SecretsManager > connection.callback_secret (legacy) > global
+    # Priority: SecretsManager > global environment secret. Plaintext
+    # connection-document secrets are intentionally unsupported.
     sm = get_secrets_manager()
     tenant_id = conn.get("tenant_id") if conn else ""
 
@@ -267,12 +270,10 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
             pass
 
     global_callback_secret = _os.environ.get("HOTELRUNNER_CALLBACK_SECRET")
-    connection_callback_secret = conn.get("callback_secret") if conn else None
-
-    expected_secret = secret_manager_callback_secret or connection_callback_secret or global_callback_secret
+    expected_secret = secret_manager_callback_secret or global_callback_secret
 
     secret_source = "missing"
-    if secret_manager_callback_secret or connection_callback_secret:
+    if secret_manager_callback_secret:
         secret_source = "tenant credentials"
     elif global_callback_secret:
         secret_source = "env"
@@ -280,7 +281,7 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     _logger.info(f"[DIAG] [{req_id}] Secret source type: {secret_source}")
 
     # P1 Fix: Fail closed in production if no secret is configured at all
-    if _os.environ.get("APP_ENV") == "production" and not expected_secret:
+    if is_production_env() and not expected_secret:
         raise HTTPException(
             status_code=503,
             detail="HotelRunner callback secret not configured",
@@ -327,13 +328,7 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
         logger.exception("SecretsManager error while loading HotelRunner token")
         raise HTTPException(status_code=503, detail="Webhook credential service unavailable")
 
-    if not real_token and "token" in conn:
-        if _os.environ.get("APP_ENV") in ("test", "development"):
-            real_token = conn.get("token")
-            logger.warning("[WEBHOOK] Security Warning: Falling back to plaintext DB token in test/dev mode.")
-
     if not real_token:
-        # P1 Fix: Raise 503 instead of falling back to plaintext DB token in production
         raise HTTPException(status_code=503, detail="HotelRunner credentials not configured")
 
     if not _hmac.compare_digest(str(real_token), str(token)):
@@ -346,5 +341,4 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
 
 
 # ── Webhook Batch Processor ──────────────────────────────────────────
-
 

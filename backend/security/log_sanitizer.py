@@ -24,6 +24,14 @@ logger = logging.getLogger(__name__)
 # ── Regex patterns for free-text PII detection ──────────────────────
 
 _SENSITIVE_PATTERNS = [
+    # HotelRunner callback secrets are path segments, not key-value pairs.
+    (
+        re.compile(
+            r"(/api/(?:channel-manager/hotelrunner|integrations/hotelrunner)/(?:callback|webhooks/reservations)/)[^/?\s]+",
+            re.IGNORECASE,
+        ),
+        r"\1***REDACTED***",
+    ),
     # Auth/secret key-value pairs
     (re.compile(r"(password|passwd|pwd|secret|token|api[_-]?key|authorization|bearer)\s*[=:]\s*\S+", re.IGNORECASE), r"\1=***REDACTED***"),
     # Email

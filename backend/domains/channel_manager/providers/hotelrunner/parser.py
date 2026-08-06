@@ -30,7 +30,7 @@ def parse_rooms_response(data: dict[str, Any]) -> list[HotelRunnerRoom]:
             raw_response=str(data)[:500],
         )
     rooms = []
-    for r in rooms_raw:
+    for index, r in enumerate(rooms_raw):
         try:
             rooms.append(
                 HotelRunnerRoom(
@@ -41,8 +41,12 @@ def parse_rooms_response(data: dict[str, Any]) -> list[HotelRunnerRoom]:
                     raw=r,
                 )
             )
-        except Exception as e:
-            logger.warning("Failed to parse room: %s — %s", r, e)
+        except Exception as exc:
+            logger.warning(
+                "Failed to parse room index=%d exception_class=%s",
+                index,
+                type(exc).__name__,
+            )
     return rooms
 
 
@@ -97,7 +101,7 @@ def parse_reservations_response(data: dict[str, Any]) -> HotelRunnerReservationP
         )
 
     reservations = []
-    for r in reservations_raw:
+    for index, r in enumerate(reservations_raw):
         try:
             # guest can be a string (full name) or dict — handle both
             guest_raw = r.get("guest", {})
@@ -130,9 +134,12 @@ def parse_reservations_response(data: dict[str, Any]) -> HotelRunnerReservationP
                     raw=r,
                 )
             )
-        except Exception as e:
-            ext_id = r.get("hr_number", r.get("reservation_id", "?"))
-            logger.warning("Failed to parse reservation %s: %s", ext_id, e)
+        except Exception as exc:
+            logger.warning(
+                "Failed to parse reservation index=%d exception_class=%s",
+                index,
+                type(exc).__name__,
+            )
 
     return HotelRunnerReservationPage(
         reservations=reservations,

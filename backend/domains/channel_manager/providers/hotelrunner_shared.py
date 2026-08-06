@@ -8,6 +8,7 @@ Common functions used by both the webhook ingestion module and the sync/polling 
 - Persist & process pipeline entry point
 """
 
+import hashlib
 import json
 import logging
 import uuid
@@ -57,27 +58,38 @@ async def _store_raw_payload(
     payload: dict,
     source_ip: str,
 ) -> str:
-    """Store raw webhook JSON payload for debugging. Returns payload_id."""
+    """Store non-sensitive payload metadata. Returns payload_id.
+
+    The replay-capable raw event remains the single necessary payload copy.
+    This diagnostics collection intentionally stores no provider values.
+    """
     payload_id = str(uuid.uuid4())
     try:
         raw_str = json.dumps(payload, default=str, ensure_ascii=False)
+        raw_bytes = raw_str.encode("utf-8")
+        from core.masking import fingerprint_id
+
         await db.webhook_raw_payloads.insert_one(
             {
                 "id": payload_id,
                 "tenant_id": tenant_id,
                 "correlation_id": correlation_id,
                 "provider": provider,
-                "external_id": external_id,
+                "external_id_hash": fingerprint_id(external_id),
                 "event_type": event_type,
                 "content_type": "application/json",
-                "raw_payload": raw_str,
-                "payload_size_bytes": len(raw_str.encode("utf-8")),
-                "source_ip": source_ip,
+                "payload_field_names": sorted(str(key) for key in payload),
+                "payload_sha256": hashlib.sha256(raw_bytes).hexdigest(),
+                "payload_size_bytes": len(raw_bytes),
+                "source_ip_hash": fingerprint_id(source_ip),
                 "received_at": datetime.now(UTC).isoformat(),
             }
         )
-    except Exception as e:
-        logger.warning("Raw payload storage failed (non-blocking): %s", e)
+    except Exception as exc:
+        logger.warning(
+            "Payload metadata storage failed exception_class=%s",
+            type(exc).__name__,
+        )
     return payload_id
 
 
@@ -233,8 +245,11 @@ async def _persist_and_process(
                 from domains.channel_manager.monitoring.dedup_counter import record_skip
 
                 await record_skip(tenant_id, "hotelrunner")
-            except Exception as e:
-                logger.warning(f"[CATCHUP-DEDUP] counter record failed (non-blocking): {e}")
+            except Exception as exc:
+                logger.warning(
+                    "[CATCHUP-DEDUP] counter record failed exception_class=%s",
+                    type(exc).__name__,
+                )
             from domains.channel_manager.ingest.pipeline import IngestDecision, PipelineResult
 
             result = PipelineResult(existing.get("id", ""))
@@ -253,13 +268,16 @@ async def _persist_and_process(
             identity["provider_event_id"],
         )
         if not claimed:
-            logger.info(f"[CM-DEDUP-CLAIM] skip insert: provider_event_id={identity['provider_event_id']} concurrently claimed")
+            logger.info("[CM-DEDUP-CLAIM] concurrent event claim skipped")
             try:
                 from domains.channel_manager.monitoring.dedup_counter import record_skip
 
                 await record_skip(tenant_id, "hotelrunner")
-            except Exception as e:
-                logger.warning(f"[CM-DEDUP-CLAIM] counter record failed (non-blocking): {e}")
+            except Exception as exc:
+                logger.warning(
+                    "[CM-DEDUP-CLAIM] counter record failed exception_class=%s",
+                    type(exc).__name__,
+                )
             from domains.channel_manager.ingest.pipeline import IngestDecision, PipelineResult
 
             result = PipelineResult("")
@@ -295,8 +313,8 @@ async def _persist_and_process(
         metadata={
             "raw_payload_id": raw_payload_id,
             "event_type": event_type,
-            "hr_number": hr_number,
-            "source_ip": source_ip,
+            "external_id_hash": hashlib.sha256(hr_number.encode("utf-8")).hexdigest()[:12] if hr_number else "-",
+            "source_ip_hash": hashlib.sha256(source_ip.encode("utf-8")).hexdigest()[:12] if source_ip else "-",
             "content_type": "application/json",
         },
     )
@@ -323,5 +341,10 @@ async def _persist_and_process(
     event_doc["id"] = event_id
 
     result = await process_event(event_doc)
-    logger.info(f"[WEBHOOK] {event_type}: {event_id} -> {result.decision} ({result.reason})")
+    logger.info(
+        "[WEBHOOK] event_type=%s decision=%s status=%s",
+        event_type,
+        result.decision,
+        result.status,
+    )
     return result

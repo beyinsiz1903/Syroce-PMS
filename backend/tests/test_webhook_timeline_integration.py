@@ -337,8 +337,8 @@ class TestHotelRunnerWebhookTimeline:
         print(f"PASS: HotelRunner webhook created {len(events)} timeline events with stages: {stages}")
         return hr_number
 
-    def test_hotelrunner_raw_payload_storage(self):
-        """Test that HotelRunner webhook stores raw JSON payload."""
+    def test_hotelrunner_safe_payload_metadata_storage(self):
+        """HotelRunner diagnostics retain metadata, not guest payload values."""
         hr_number = f"HR-RAW-{uuid.uuid4().hex[:8].upper()}"
         payload = get_hotelrunner_payload(hr_number, "HR Raw Test")
         
@@ -372,9 +372,13 @@ class TestHotelRunnerWebhookTimeline:
         raw_payload = payloads[0]
         assert raw_payload["provider"] == "hotelrunner"
         assert raw_payload["content_type"] == "application/json"
-        assert hr_number in raw_payload["raw_payload"]
+        assert "raw_payload" not in raw_payload
+        assert "external_id" not in raw_payload
+        assert "source_ip" not in raw_payload
+        assert len(raw_payload["payload_sha256"]) == 64
+        assert raw_payload["payload_size_bytes"] > 0
         
-        print(f"PASS: HotelRunner raw payload stored ({raw_payload['payload_size_bytes']} bytes)")
+        print(f"PASS: HotelRunner safe payload metadata stored ({raw_payload['payload_size_bytes']} bytes)")
 
     def test_hotelrunner_duplicate_detection(self):
         """Test HotelRunner duplicate detection via pipeline."""

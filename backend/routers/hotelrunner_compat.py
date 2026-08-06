@@ -161,8 +161,12 @@ async def hotelrunner_webhook(
                     pipeline_event_type,
                     source_ip,
                 )
-            except Exception as e:
-                logger.error("[COMPAT-WEBHOOK] Error processing %s: %s", pipeline_event_type, e)
+            except Exception as exc:
+                logger.error(
+                    "[COMPAT-WEBHOOK] Processing failed event_type=%s exception_class=%s",
+                    pipeline_event_type,
+                    type(exc).__name__,
+                )
 
     background_tasks.add_task(_process_batch)
 

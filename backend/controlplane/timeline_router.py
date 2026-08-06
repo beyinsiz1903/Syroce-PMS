@@ -94,12 +94,7 @@ async def get_external_timeline(
 async def get_raw_payload(
     correlation_id: str,
 ):
-    """Retrieve the raw webhook payload for a given correlation_id.
-
-    This is the exact bytes/JSON that the OTA sent, stored at webhook entry.
-    Essential for debugging mapping errors, validation failures, and provider bugs.
-    PII fields are masked by default — unmask requires super_admin + audit trail.
-    """
+    """Retrieve safe webhook payload metadata for a correlation ID."""
     from security.pii_registry import mask_dict
 
     doc = await db.webhook_raw_payloads.find_one(
@@ -118,16 +113,18 @@ async def get_raw_payloads_by_external_id(
     external_id: str,
     limit: int = Query(10, ge=1, le=50),
 ):
-    """Retrieve all raw webhook payloads for a given OTA reservation ID.
-
-    Useful when multiple webhooks arrive for the same reservation
-    (create, modify, cancel). PII fields are masked.
-    """
+    """Retrieve webhook payload metadata for an OTA reservation ID."""
+    from core.masking import fingerprint_id
     from security.pii_registry import mask_dict
 
     docs = (
         await db.webhook_raw_payloads.find(
-            {"external_id": external_id},
+            {
+                "$or": [
+                    {"external_id": external_id},
+                    {"external_id_hash": fingerprint_id(external_id)},
+                ]
+            },
             {"_id": 0},
         )
         .sort("received_at", -1)

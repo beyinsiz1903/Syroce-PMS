@@ -71,6 +71,22 @@ def _timeline_append(**kwargs):
         return _noop()
 
 
+def _safe_normalized_timeline_metadata(
+    canonical: dict[str, Any],
+    canonical_hash: str | None = None,
+) -> dict[str, Any]:
+    """Return operational fields without guest identity or monetary values."""
+    return {
+        "check_in": canonical.get("check_in", ""),
+        "check_out": canonical.get("check_out", ""),
+        "room_type_code": canonical.get("room_type_code", ""),
+        "rate_plan_code": canonical.get("rate_plan_code", ""),
+        "currency": canonical.get("currency", ""),
+        "canonical_status": canonical.get("status", ""),
+        "canonical_hash": canonical_hash or compute_canonical_hash(canonical),
+    }
+
+
 class PipelineResult:
     def __init__(self, event_id: str):
         self.event_id = event_id
@@ -136,7 +152,7 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
             )
             if is_dup:
                 result.decision = IngestDecision.SKIP
-                result.reason = f"Duplicate provider_event_id: {provider_event_id}"
+                result.reason = "Duplicate provider event"
                 result.status = "duplicate"
                 await _finalize_event(event["id"], "duplicate", result)
                 # Timeline: deduplicated (duplicate detected)
@@ -151,12 +167,11 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
                     provider=provider,
                     metadata={
                         "duplicate_type": "provider_event_id",
-                        "provider_event_id": provider_event_id,
                         "decision": "skip",
                         "reason": result.reason,
                     },
                 )
-                logger.info(f"[{event['id']}] DUPLICATE: {provider_event_id}")
+                logger.info("[INGEST] Duplicate provider event skipped")
                 return result
 
         # ── Stage 3: Payload Hash Check ───────────────────────────
@@ -170,7 +185,7 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
             )
             if hash_exists:
                 result.decision = IngestDecision.SKIP
-                result.reason = f"Same payload hash already processed: {payload_hash}"
+                result.reason = "Duplicate payload hash"
                 result.status = "duplicate"
                 await _finalize_event(event["id"], "duplicate", result)
                 # Timeline: deduplicated (hash duplicate)
@@ -190,7 +205,7 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
                         "reason": result.reason,
                     },
                 )
-                logger.info(f"[{event['id']}] HASH_DUP: {payload_hash}")
+                logger.info("[INGEST] Duplicate payload hash skipped")
                 return result
 
         # ── Stage 4: Stale Event Detection ────────────────────────
@@ -206,7 +221,7 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
             existing_version = existing_lineage.get("provider_version", "")
             if existing_version and incoming_version <= existing_version:
                 result.decision = IngestDecision.SKIP
-                result.reason = f"Stale: {incoming_version} <= {existing_version}"
+                result.reason = "Stale provider version"
                 result.status = "stale"
                 await _finalize_event(event["id"], "stale", result)
                 # Timeline: deduplicated (stale version)
@@ -221,12 +236,10 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
                     provider=provider,
                     metadata={
                         "duplicate_type": "stale_version",
-                        "incoming_version": incoming_version,
-                        "existing_version": existing_version,
                         "decision": "skip",
                     },
                 )
-                logger.info(f"[{event['id']}] STALE: {incoming_version}")
+                logger.info("[INGEST] Stale provider event skipped")
                 return result
 
         # ── Timeline: deduplicated (passed — unique event) ────────
@@ -261,17 +274,7 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
             status="success",
             source="ingest_pipeline",
             provider=provider,
-            metadata={
-                "guest_name": canonical.get("guest_name", ""),
-                "check_in": canonical.get("check_in", ""),
-                "check_out": canonical.get("check_out", ""),
-                "room_type_code": canonical.get("room_type_code", ""),
-                "rate_plan_code": canonical.get("rate_plan_code", ""),
-                "total_amount": canonical.get("total_amount", 0.0),
-                "currency": canonical.get("currency", ""),
-                "canonical_status": canonical.get("status", ""),
-                "canonical_hash": canonical_hash,
-            },
+            metadata=_safe_normalized_timeline_metadata(canonical, canonical_hash),
         )
 
         # ── Stage 6: Mapping Resolution (HARD FAIL) ──────────────
@@ -494,7 +497,12 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
         # Enrich the raw event with decision trace
         await _finalize_event(event["id"], result.status, result, canonical)
 
-        logger.info(f"[{event['id']}] {decision}: {reason} mutation={mutation_type} trace={result.trace_id}")
+        logger.info(
+            "[INGEST] decision=%s mutation=%s status=%s",
+            decision,
+            mutation_type,
+            result.status,
+        )
         return result
 
     except ReservationLockLostError:
@@ -504,11 +512,12 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
         await _finalize_event(event["id"], "pending", result)
         logger.error("Reservation lock ownership lost; processing deferred")
         return result
-    except Exception as e:
+    except Exception as exc:
         result.status = "failed"
-        result.error = str(e)
+        result.error = type(exc).__name__
+        result.reason = "Pipeline processing failed"
         await _finalize_event(event["id"], "failed", result)
-        logger.error(f"[{event['id']}] PIPELINE ERROR: {e}")
+        logger.error("[INGEST] Pipeline failed exception_class=%s", type(exc).__name__)
         return result
     finally:
         if lock_heartbeat_task:
