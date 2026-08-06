@@ -301,14 +301,23 @@ async def run_phase_a5(
                                 )
                                 mod_processed += 1
                                 if is_cancelled:
-                                    logger.info(f"[PULL-A5] Cancellation detected: {sub_res.get('hr_number')}")
-                            except Exception as e:
-                                if "duplicate" not in str(e).lower():
-                                    logger.error(f"[PULL-A5] Error processing modified {sub_res.get('hr_number')}: {e}")
-                    except Exception as e:
-                        logger.error(f"[PULL-A5] Error: {e}")
-    except Exception as e:
-        logger.warning(f"[PULL-A5] Modified reservation check error: {e}")
+                                    logger.info("[PULL-A5] Cancellation event processed")
+                            except Exception as exc:
+                                if "duplicate" not in str(exc).lower():
+                                    logger.error(
+                                        "[PULL-A5] Modified event failed exception_class=%s",
+                                        type(exc).__name__,
+                                    )
+                    except Exception as exc:
+                        logger.error(
+                            "[PULL-A5] Reservation expansion failed exception_class=%s",
+                            type(exc).__name__,
+                        )
+    except Exception as exc:
+        logger.warning(
+            "[PULL-A5] Modified reservation check failed exception_class=%s",
+            type(exc).__name__,
+        )
 
     return mod_processed
 
@@ -349,9 +358,12 @@ async def run_phase_a6(tenant_id: str) -> int:
             )
             if was_updated:
                 updated += 1
-        except Exception as e:
-            if "not found" not in str(e).lower():
-                logger.warning(f"[PULL-A6] Sync error for {ext_id}: {e}")
+        except Exception as exc:
+            if "not found" not in str(exc).lower():
+                logger.warning(
+                    "[PULL-A6] Sync failed exception_class=%s",
+                    type(exc).__name__,
+                )
 
     return updated
 
@@ -393,7 +405,6 @@ async def run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
         all_total_pages = result["data"].get("pages", 1)
 
         for res in page_reservations:
-            hr_number = res.get("hr_number", "")
             hr_updated_at = res.get("updated_at", "")
             hr_state = res.get("state", "confirmed")
             hr_next_states = res.get("next_states") or []
@@ -403,7 +414,13 @@ async def run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
             if hr_state in ("cancelled", "canceled") or hr_cancel_reason:
                 effective_state = "canceled"
 
-            logger.info(f"[PULL-PHASE-B] {hr_number}: state={hr_state}, effective={effective_state}, next_states={hr_next_states}, cancel_reason={hr_cancel_reason}, updated_at={hr_updated_at}")
+            logger.info(
+                "[PULL-PHASE-B] state=%s effective_state=%s next_state_count=%d has_cancel_reason=%s",
+                hr_state,
+                effective_state,
+                len(hr_next_states),
+                bool(hr_cancel_reason),
+            )
 
             sub_reservations = explode_multi_room_reservation(res)
 
@@ -435,9 +452,12 @@ async def run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
                             catchup_evt,
                         )
                         catchup_imported += 1
-                    except Exception as e:
-                        if "duplicate" not in str(e).lower():
-                            logger.error(f"[PULL-CATCHUP] Error importing {sub_ext}: {e}")
+                    except Exception as exc:
+                        if "duplicate" not in str(exc).lower():
+                            logger.error(
+                                "[PULL-CATCHUP] Import failed exception_class=%s",
+                                type(exc).__name__,
+                            )
                 else:
                     stored_updated = known_ext_updated.get(sub_ext, "")
                     stored_status = known_ext_status.get(sub_ext, "confirmed")
@@ -454,9 +474,12 @@ async def run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
                         sub_effective_state = effective_state
 
                     logger.info(
-                        f"[PULL-PHASE-B] {sub_ext}: sub_effective={sub_effective_state}, "
-                        f"room_cancelled={sub_room_cancelled}, top_effective={effective_state}, "
-                        f"ts_changed={timestamp_changed}, new_partial={has_new_room_cancels}"
+                        "[PULL-PHASE-B] sub_effective=%s room_cancelled=%s top_effective=%s ts_changed=%s new_partial=%s",
+                        sub_effective_state,
+                        sub_room_cancelled,
+                        effective_state,
+                        timestamp_changed,
+                        has_new_room_cancels,
                     )
 
                     hr_status_check = {"canceled": "cancelled", "cancelled": "cancelled", "no_show": "no_show"}.get(sub_effective_state, sub_effective_state)
@@ -476,16 +499,25 @@ async def run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
                             )
                             if updated:
                                 catchup_updated += 1
-                                logger.info(f"[PULL-SYNC] {sub_ext}: state_changed={state_changed} (hr={hr_status_check}, stored={stored_status}), ts_changed={timestamp_changed}")
-                        except Exception as e:
-                            logger.error(f"[PULL-SYNC] Error updating {sub_ext}: {e}")
+                                logger.info(
+                                    "[PULL-SYNC] state_changed=%s provider_state=%s stored_state=%s ts_changed=%s",
+                                    state_changed,
+                                    hr_status_check,
+                                    stored_status,
+                                    timestamp_changed,
+                                )
+                        except Exception as exc:
+                            logger.error(
+                                "[PULL-SYNC] Update failed exception_class=%s",
+                                type(exc).__name__,
+                            )
 
         all_page += 1
 
     if catchup_imported > 0:
-        logger.info(f"[PULL-CATCHUP] Tenant {tenant_id}: {catchup_imported} missing reservations imported")
+        logger.info("[PULL-CATCHUP] Missing reservations imported count=%d", catchup_imported)
     if catchup_updated > 0:
-        logger.info(f"[PULL-SYNC] Tenant {tenant_id}: {catchup_updated} reservations updated")
+        logger.info("[PULL-SYNC] Reservations updated count=%d", catchup_updated)
 
     return catchup_imported, catchup_updated
 

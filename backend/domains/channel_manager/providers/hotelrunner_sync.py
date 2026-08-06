@@ -15,6 +15,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from core.database import db
 from core.security import get_current_user
+from domains.channel_manager.providers.hotelrunner.credentials import (
+    hotelrunner_connection_projection,
+    resolve_hotelrunner_credentials,
+)
 from domains.channel_manager.providers.hotelrunner_shared import (
     _persist_and_process,
     _resolve_property_id,
@@ -50,26 +54,19 @@ async def manual_pull(
 ):
     conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": current_user.tenant_id, "is_active": True},
-        {"_id": 0},
+        hotelrunner_connection_projection(),
     )
     if not conn:
         raise HTTPException(status_code=404, detail="HotelRunner baglantisi bulunamadi")
 
     hr_id = conn.get("hr_id", conn.get("property_id", "default"))
-    from core.secrets import get_secrets_manager
-
-    sm = get_secrets_manager()
-    creds = await sm.get_provider_credentials(current_user.tenant_id, "hotelrunner", hr_id)
-
-    if not creds or not creds.get("token"):
-        fallback = await db.hotelrunner_connections.find_one(
-            {"tenant_id": current_user.tenant_id, "is_active": True},
-            {"_id": 0, "token": 1, "hr_id": 1},
-        )
-        if fallback and fallback.get("token"):
-            creds = {"token": fallback["token"], "hr_id": fallback.get("hr_id", hr_id)}
-        else:
-            raise HTTPException(status_code=502, detail="HotelRunner kimlik bilgileri bulunamadi")
+    creds = await resolve_hotelrunner_credentials(
+        current_user.tenant_id,
+        conn,
+        actor="hotelrunner.manual_pull",
+    )
+    if not creds:
+        raise HTTPException(status_code=502, detail="HotelRunner kimlik bilgileri bulunamadi")
 
     result = await pull_scheduler.pull_for_tenant(
         tenant_id=current_user.tenant_id,
@@ -130,7 +127,7 @@ async def start_scheduler(
 ):
     conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": current_user.tenant_id, "is_active": True},
-        {"_id": 0},
+        hotelrunner_connection_projection(),
     )
     if not conn:
         raise HTTPException(status_code=404, detail="HotelRunner baglantisi bulunamadi")
@@ -163,20 +160,13 @@ async def full_resync(
         raise HTTPException(status_code=404, detail="HotelRunner baglantisi bulunamadi")
 
     hr_id = conn.get("hr_id", conn.get("property_id", "default"))
-    from core.secrets import get_secrets_manager
-
-    sm = get_secrets_manager()
-    creds = await sm.get_provider_credentials(current_user.tenant_id, "hotelrunner", hr_id)
-
-    if not creds or not creds.get("token"):
-        fallback = await db.hotelrunner_connections.find_one(
-            {"tenant_id": current_user.tenant_id, "is_active": True},
-            {"_id": 0, "token": 1, "hr_id": 1},
-        )
-        if fallback and fallback.get("token"):
-            creds = {"token": fallback["token"], "hr_id": fallback.get("hr_id", hr_id)}
-        else:
-            raise HTTPException(status_code=502, detail="HotelRunner kimlik bilgileri bulunamadi")
+    creds = await resolve_hotelrunner_credentials(
+        current_user.tenant_id,
+        conn,
+        actor="hotelrunner.full_resync",
+    )
+    if not creds:
+        raise HTTPException(status_code=502, detail="HotelRunner kimlik bilgileri bulunamadi")
 
     from core.tenant_db import set_tenant_context
 
@@ -221,7 +211,7 @@ async def full_resync(
                     skipped += 1
                 else:
                     errors += 1
-                    logger.error(f"[RESYNC] Error: {e}")
+                    logger.error("[RESYNC] Error exception_class=%s", type(e).__name__)
 
     return {
         "message": f"Full resync tamamlandi: {processed} islendi, {skipped} atlandi (zaten var), {errors} hata",

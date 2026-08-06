@@ -6,11 +6,28 @@ Records provider call metrics, logs, and health indicators.
 Writes to monitoring_metrics and ari_outbound_logs collections.
 """
 
+import hashlib
+import json
 import logging
 from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger("hotelrunner.observability")
+
+
+def _fingerprint(value: str) -> str:
+    if not value:
+        return "-"
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+
+
+def _payload_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    serialized = json.dumps(payload, default=str, sort_keys=True, separators=(",", ":"))
+    return {
+        "field_names": sorted(str(key) for key in payload),
+        "size_bytes": len(serialized.encode("utf-8")),
+        "sha256": hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
+    }
 
 # In-memory counters for the current process
 _metrics = {
@@ -57,7 +74,7 @@ def record_provider_call(
         status_code,
         duration_ms,
         success,
-        connection_id,
+        _fingerprint(connection_id),
         correlation_id,
     )
 
@@ -80,10 +97,9 @@ def record_provider_failure(
         _metrics["rate_limit_count"] += 1
 
     logger.error(
-        "[HR-OBS] FAILURE %s: %s (conn=%s path=%s)",
+        "[HR-OBS] FAILURE type=%s conn_fp=%s path=%s",
         error_type,
-        message,
-        connection_id,
+        _fingerprint(connection_id),
         path,
     )
 
@@ -143,7 +159,7 @@ async def persist_outbound_log(
     """Persist an outbound provider log to the database."""
     log_doc = {
         "provider": "hotelrunner",
-        "connection_id": connection_id,
+        "connection_fingerprint": _fingerprint(connection_id),
         "operation": operation,
         "path": path,
         "method": method,
@@ -155,11 +171,14 @@ async def persist_outbound_log(
         "timestamp": datetime.now(UTC).isoformat(),
     }
     if request_payload:
-        log_doc["request_payload_summary"] = str(request_payload)[:1000]
+        log_doc["request_payload_metadata"] = _payload_metadata(request_payload)
     if response_payload:
-        log_doc["response_payload_summary"] = str(response_payload)[:1000]
+        log_doc["response_payload_metadata"] = _payload_metadata(response_payload)
 
     try:
         await db["ari_outbound_logs"].insert_one(log_doc)
-    except Exception as e:
-        logger.warning("Failed to persist outbound log: %s", e)
+    except Exception as exc:
+        logger.warning(
+            "Failed to persist outbound log exception_class=%s",
+            type(exc).__name__,
+        )

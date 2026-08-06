@@ -46,7 +46,6 @@ class HttpResult:
     error: str = ""
     duration_ms: int = 0
     correlation_id: str = ""
-    raw_text: str = ""
 
 
 class HotelRunnerHttpClient:
@@ -187,18 +186,23 @@ class HotelRunnerHttpClient:
             except Exception:
                 raise HotelRunnerParseError(
                     f"Invalid JSON response from {path}",
-                    raw_response=resp.text[:2000],
+                    raw_response=resp.text,
+                )
+
+            if not isinstance(data, dict):
+                raise HotelRunnerParseError(
+                    f"Unexpected JSON response type from {path}",
+                    raw_response=resp.text,
                 )
 
             if data.get("status") == "error":
                 return HttpResult(
                     success=False,
                     status_code=resp.status_code,
-                    data=data,
-                    error=data.get("error", "API returned error status"),
+                    data={"provider_status": "error"},
+                    error="HotelRunner API returned an error status",
                     duration_ms=duration_ms,
                     correlation_id=corr_id,
-                    raw_text=resp.text[:2000],
                 )
 
             return HttpResult(
@@ -241,8 +245,8 @@ class HotelRunnerHttpClient:
                 message=f"Rate limit exceeded (429) [{corr_id}]",
             )
         if code == 400:
-            raise HotelRunnerPayloadError(f"Bad request (400) [{corr_id}]: {resp.text[:500]}")
+            raise HotelRunnerPayloadError(f"Bad request (400) [{corr_id}]")
         if code >= 500:
             raise HotelRunnerTemporaryError(f"Server error ({code}) [{corr_id}]")
         if code >= 400:
-            raise HotelRunnerPayloadError(f"Client error ({code}) [{corr_id}]: {resp.text[:500]}")
+            raise HotelRunnerPayloadError(f"Client error ({code}) [{corr_id}]")

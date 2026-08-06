@@ -11,6 +11,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from core.database import db
+from domains.channel_manager.providers.hotelrunner.credentials import (
+    hotelrunner_connection_projection,
+    resolve_hotelrunner_credentials,
+)
 from domains.channel_manager.providers.sync_engine import (
     log_pull,
     run_phase_a,
@@ -78,8 +82,8 @@ class ReservationPullScheduler:
             except Exception as lock_err:
                 logger.error(
                     "[PULL] Distributed lock acquisition failed; "
-                    "skipping cycle to prevent split-brain: %s",
-                    lock_err,
+                    "skipping cycle to prevent split-brain exception_class=%s",
+                    type(lock_err).__name__,
                 )
                 await asyncio.sleep(expected_sleep)
                 continue
@@ -104,7 +108,10 @@ class ReservationPullScheduler:
                             lock_lost.set()
                             return
                     except Exception as hb_err:
-                        logger.error(f"[PULL] Heartbeat error: {hb_err}")
+                        logger.error(
+                            "[PULL] Heartbeat error exception_class=%s",
+                            type(hb_err).__name__,
+                        )
                         lock_lost.set()
                         return
 
@@ -128,8 +135,11 @@ class ReservationPullScheduler:
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                logger.error(f"[PULL] Loop error: {e}")
+            except Exception as exc:
+                logger.error(
+                    "[PULL] Loop error exception_class=%s",
+                    type(exc).__name__,
+                )
             finally:
                 if not heartbeat_task.done():
                     heartbeat_task.cancel()
@@ -162,7 +172,7 @@ class ReservationPullScheduler:
         self._cycle_count += 1
         connections = await db.hotelrunner_connections.find(
             {"is_active": True, "auto_sync_reservations": True},
-            {"_id": 0},
+            hotelrunner_connection_projection(),
         ).to_list(100)
 
         for conn in connections:
@@ -170,17 +180,14 @@ class ReservationPullScheduler:
                 tenant_id = conn["tenant_id"]
                 hr_id = conn.get("hr_id", conn.get("property_id", "default"))
 
-                from core.secrets import get_secrets_manager
-
-                sm = get_secrets_manager()
-                creds = await sm.get_provider_credentials(tenant_id, "hotelrunner", hr_id)
-
-                if not creds or not creds.get("token"):
-                    if conn.get("token"):
-                        creds = {"token": conn["token"], "hr_id": hr_id}
-                    else:
-                        logger.error(f"[PULL] No credentials for tenant {tenant_id} — skipping")
-                        continue
+                creds = await resolve_hotelrunner_credentials(
+                    tenant_id,
+                    conn,
+                    actor="hotelrunner.scheduler",
+                )
+                if not creds:
+                    logger.error("[PULL] Credentials unavailable; tenant skipped")
+                    continue
 
                 await self.pull_for_tenant(
                     tenant_id=tenant_id,
@@ -189,7 +196,7 @@ class ReservationPullScheduler:
                     safety_window_minutes=safety_window_minutes,
                 )
             except Exception as e:
-                logger.error(f"[PULL] Error for tenant {conn.get('tenant_id', '?')}: {e}")
+                logger.error("[PULL] Tenant pull failed exception_class=%s", type(e).__name__)
 
     async def pull_for_tenant(
         self,
@@ -233,8 +240,11 @@ class ReservationPullScheduler:
         if mod_processed > 0:
             try:
                 individual_updated = await run_phase_a6(tenant_id)
-            except Exception as e:
-                logger.warning(f"[PULL-A6] Modification sync error: {e}")
+            except Exception as exc:
+                logger.warning(
+                    "[PULL-A6] Modification sync error exception_class=%s",
+                    type(exc).__name__,
+                )
 
         catchup_imported = 0
         catchup_updated = 0
@@ -251,8 +261,11 @@ class ReservationPullScheduler:
         if run_b:
             try:
                 catchup_imported, catchup_updated = await run_phase_b(tenant_id, provider)
-            except Exception as e:
-                logger.error(f"[PULL-CATCHUP] Error during catch-up pull: {e}")
+            except Exception as exc:
+                logger.error(
+                    "[PULL-CATCHUP] Error during catch-up pull exception_class=%s",
+                    type(exc).__name__,
+                )
 
         await db.hotelrunner_pull_cursors.update_one(
             {"tenant_id": tenant_id},

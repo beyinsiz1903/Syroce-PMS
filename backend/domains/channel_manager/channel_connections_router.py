@@ -42,15 +42,24 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
     )
     prov_hr = await db.provider_connections.find_one(
         {"tenant_id": tid, "provider": "hotelrunner", "status": "active"},
-        {"_id": 0},
+        {
+            "_id": 0,
+            "credentials.hr_id": 1,
+            "hr_id": 1,
+            "property_id": 1,
+            "display_name": 1,
+            "created_at": 1,
+            "sync_reservations": 1,
+        },
     )
     if prov_hr:
         creds = prov_hr.get("credentials", {})
+        provider_hr_id = prov_hr.get("hr_id") or creds.get("hr_id", "")
         if not hr_conn:
             hr_conn = {
                 "is_active": True,
                 "property_name": prov_hr.get("display_name", "HotelRunner"),
-                "hr_id": creds.get("hr_id", ""),
+                "hr_id": provider_hr_id,
                 "environment": "sandbox",
                 "channels": [],
                 "connected_at": prov_hr.get("created_at"),
@@ -61,8 +70,8 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
             # Legacy doc var ama is_active eksik/false → provider_connections
             # aktifse "bağlı" kabul et; eksik metadata'yı zenginleştir.
             hr_conn["is_active"] = True
-            if not hr_conn.get("hr_id") and creds.get("hr_id"):
-                hr_conn["hr_id"] = creds["hr_id"]
+            if not hr_conn.get("hr_id") and provider_hr_id:
+                hr_conn["hr_id"] = provider_hr_id
             if not hr_conn.get("property_name"):
                 hr_conn["property_name"] = prov_hr.get("display_name", "HotelRunner")
     hr_mappings = await db.hotelrunner_room_mappings.count_documents({"tenant_id": tid})
