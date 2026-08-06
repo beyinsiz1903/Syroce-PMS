@@ -96,6 +96,10 @@ async def test_production_plaintext_connection_token_is_not_used(monkeypatch):
         "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
         lambda: manager,
     )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.credential_vault.get_decrypted_credentials",
+        AsyncMock(return_value=None),
+    )
 
     result = await resolve_hotelrunner_credentials(
         "synthetic-tenant",
@@ -105,6 +109,46 @@ async def test_production_plaintext_connection_token_is_not_used(monkeypatch):
 
     assert result is None
     assert manager.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_production_provider_config_encrypted_credentials_are_resolved(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    manager = _EmptySecretsManager()
+    encrypted_vault_read = AsyncMock(
+        return_value={
+            "token": "synthetic-encrypted-token",
+            "hr_id": "synthetic-hotel-id",
+        }
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
+        lambda: manager,
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.credential_vault.get_decrypted_credentials",
+        encrypted_vault_read,
+    )
+
+    result = await resolve_hotelrunner_credentials(
+        "synthetic-tenant",
+        {
+            "property_id": "default",
+            "hr_id": "synthetic-hotel-id",
+        },
+        actor="offline-test",
+    )
+
+    assert result == {
+        "token": "synthetic-encrypted-token",
+        "hr_id": "synthetic-hotel-id",
+    }
+    assert manager.calls == 2
+    encrypted_vault_read.assert_awaited_once_with(
+        "synthetic-tenant",
+        "hotelrunner",
+        "default",
+    )
 
 
 def test_production_connection_query_excludes_plaintext_fields(monkeypatch):
@@ -150,6 +194,10 @@ async def test_development_plaintext_fallback_remains_local_only(monkeypatch):
     monkeypatch.setattr(
         "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
         lambda: _EmptySecretsManager(),
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.credential_vault.get_decrypted_credentials",
+        AsyncMock(return_value=None),
     )
 
     result = await resolve_hotelrunner_credentials(
