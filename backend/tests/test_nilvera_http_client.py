@@ -154,6 +154,7 @@ async def test_company_and_purchase_use_same_sandbox_bearer_auth(config_override
                     "PageSize": "100",
                 },
             )
+            assert http_client.last_http_status == 200
 
     assert [request.method for request in requests] == ["GET", "GET"]
     assert [request.url.path for request in requests] == [
@@ -260,8 +261,10 @@ async def test_malformed_json_returns_typed_error(config_override):
         return httpx.Response(200, content=b"invalid{json", headers={"Content-Type": "application/json"})
 
     async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
-        with pytest.raises(NilveraApiError):
+        with pytest.raises(NilveraApiError) as exc_info:
             await http_client.get("/test")
+        assert exc_info.value.http_status == 200
+        assert http_client.last_http_status == 200
 
 
 @pytest.mark.asyncio
@@ -270,8 +273,10 @@ async def test_json_endpoint_rejects_html_success_response(config_override):
         return httpx.Response(200, content=b"<html>ok</html>", headers={"Content-Type": "text/html"})
 
     async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
-        with pytest.raises(NilveraValidationError):
+        with pytest.raises(NilveraValidationError) as exc_info:
             await http_client.get("/test")
+        assert exc_info.value.http_status == 200
+        assert http_client.last_http_status == 200
 
 
 @pytest.mark.asyncio

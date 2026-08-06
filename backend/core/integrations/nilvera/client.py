@@ -30,6 +30,12 @@ class NilveraHttpClient:
         self._config = get_nilvera_config()
         self._injected_client = client
         self._owned_client: httpx.AsyncClient | None = None
+        self._last_http_status: int | None = None
+
+    @property
+    def last_http_status(self) -> int | None:
+        """Expose only the latest status code for safe E2E diagnostics."""
+        return self._last_http_status
 
     async def __aenter__(self) -> "NilveraHttpClient":
         if self._injected_client is None:
@@ -133,6 +139,7 @@ class NilveraHttpClient:
         **kwargs: Any,
     ) -> httpx.Response | Any:
         client = self._get_active_client()
+        self._last_http_status = None
 
         headers = dict(kwargs.pop("headers", {}))
         headers["Authorization"] = f"Bearer {self._api_key}"
@@ -155,6 +162,7 @@ class NilveraHttpClient:
             try:
                 request_obj = client.build_request(method, path, headers=headers, **kwargs)
                 response = await client.send(request_obj, stream=True)
+                self._last_http_status = response.status_code
 
                 if response.is_error:
                     try:
@@ -208,13 +216,21 @@ class NilveraHttpClient:
         content_type = response.headers.get("Content-Type", "").lower()
         ct = content_type.split(";")[0].strip()
         if ct != "application/json" and not (ct.startswith("application/") and ct.endswith("+json")):
-            raise NilveraValidationError(f"Expected JSON, got {content_type}", correlation_id=correlation_id)
+            raise NilveraValidationError(
+                f"Expected JSON, got {content_type}",
+                correlation_id=correlation_id,
+                http_status=response.status_code,
+            )
         import json
 
         try:
             return json.loads(response.content)
         except ValueError as e:
-            raise NilveraApiError("Invalid JSON response from GET request", correlation_id=correlation_id) from e
+            raise NilveraApiError(
+                "Invalid JSON response from GET request",
+                correlation_id=correlation_id,
+                http_status=response.status_code,
+            ) from e
 
     async def get_binary(
         self,

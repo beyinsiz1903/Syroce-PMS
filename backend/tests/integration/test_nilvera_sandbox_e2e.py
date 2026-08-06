@@ -44,6 +44,7 @@ from models.schemas.invoice_lifecycle import (
 )
 from models.schemas.invoicing import Invoice, InvoiceItem
 from tests.nilvera_sandbox_fixture import (
+    BLOCKED_NOT_FOUND_AFTER_EXHAUSTIVE_READ,
     FOUND,
     MATCH_COUNT_ZERO,
     NOT_FOUND_OR_NOT_VISIBLE,
@@ -499,6 +500,10 @@ async def test_sandbox_reconcile_incoming_commercial_invoice_fixture(record_prop
                 record_property("receiver_match", str(exc.receiver_match).lower())
             if exc.match_count_class is not None:
                 record_property("match_count_class", exc.match_count_class)
+            if exc.sender_page_count_class is not None:
+                record_property("sender_page_count_class", exc.sender_page_count_class)
+            if exc.receiver_page_count_class is not None:
+                record_property("receiver_page_count_class", exc.receiver_page_count_class)
             safe_metadata = {
                 "failure_stage": exc.failure_stage,
                 "http_status": str(exc.http_status) if exc.http_status is not None else None,
@@ -521,9 +526,13 @@ async def test_sandbox_reconcile_incoming_commercial_invoice_fixture(record_prop
     record_property("receiver_visible", str(receiver_visible).lower())
     record_property("match_count_class", result.match_count_class)
     record_property("provider_status_class", provider_status_class)
+    record_property("sender_page_count_class", result.sender_page_count_class)
+    record_property("receiver_page_count_class", result.receiver_page_count_class)
+    record_property("http_status", str(result.http_status) if result.http_status is not None else "NOT_APPLICABLE")
+    record_property("provider_code", "NOT_APPLICABLE")
 
     if result.match_count_class == MATCH_COUNT_ZERO:
-        pytest.fail(NOT_FOUND_OR_NOT_VISIBLE, pytrace=False)
+        pytest.fail(BLOCKED_NOT_FOUND_AFTER_EXHAUSTIVE_READ, pytrace=False)
     if result.outgoing_outcome == ProviderInvoiceOutcome.REJECTED:
         pytest.fail("FIXTURE_RECONCILIATION_PROVIDER_REJECTED", pytrace=False)
     if result.outgoing_outcome in {ProviderInvoiceOutcome.PENDING, ProviderInvoiceOutcome.UNKNOWN}:
