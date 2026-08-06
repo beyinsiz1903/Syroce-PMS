@@ -17,8 +17,11 @@ Unified ingest pipeline with full traceability and hardening:
 TIMELINE: Writes normalized, deduplicated, validated stages for end-to-end traceability.
 """
 
+import asyncio
 import logging
 import uuid as _uuid
+from collections.abc import Awaitable
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -43,6 +46,11 @@ logger = logging.getLogger("ingest.pipeline")
 
 # Concurrency: lock TTL for reservation-scoped processing
 LOCK_TTL_SECONDS = 30
+LOCK_HEARTBEAT_SECONDS = 10
+
+
+class ReservationLockLostError(RuntimeError):
+    """Raised when a reservation mutation loses its ownership lease."""
 
 
 def _now() -> str:
@@ -105,6 +113,9 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
     property_id = event["property_id"]
     provider = event["provider"]
     existing_lineage = None
+    lock_owner_token: str | None = None
+    lock_lost = asyncio.Event()
+    lock_heartbeat_task: asyncio.Task[None] | None = None
     correlation_id = event.get("correlation_id", "")
     ext_res_id = event.get("external_reservation_id", "")
     replay_of_failed = bool(event.get("replay_of_failed"))
@@ -324,17 +335,21 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
 
         # ── Stage 8: Concurrency Control ──────────────────────────
         if decision in (IngestDecision.UPDATE, IngestDecision.CANCEL) and existing_lineage:
-            lock_ok = await _acquire_reservation_lock(
-                existing_lineage,
-                event["id"],
-            )
-            if not lock_ok:
+            lock_owner_token = await _acquire_reservation_lock(existing_lineage)
+            if not lock_owner_token:
                 result.decision = IngestDecision.SKIP
                 result.reason = "Reservation locked by another worker"
                 result.status = "retry_later"
                 await _finalize_event(event["id"], "pending", result)
-                logger.warning(f"[{event['id']}] LOCK_CONTENTION for {ext_res_id}")
+                logger.warning("Reservation lock contention; processing deferred")
                 return result
+            lock_heartbeat_task = asyncio.create_task(
+                _reservation_lock_heartbeat(
+                    existing_lineage["id"],
+                    lock_owner_token,
+                    lock_lost,
+                )
+            )
 
         # ── Stage 9: Execute Decision ─────────────────────────────
         received_via = event.get("received_via", "webhook")
@@ -365,24 +380,34 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
             )
 
         elif decision == IngestDecision.UPDATE:
-            lineage_id = await _update_lineage(
-                existing_lineage,
-                canonical,
-                canonical_hash,
-                received_via,
-                mutation_type,
+            lineage_id = await _run_reservation_mutation(
+                _update_lineage(
+                    existing_lineage,
+                    canonical,
+                    canonical_hash,
+                    received_via,
+                    mutation_type,
+                    lock_owner_token,
+                ),
+                lock_lost,
             )
             result.lineage_id = lineage_id
             result.status = "processed"
 
         elif decision == IngestDecision.CANCEL:
             if existing_lineage:
-                lineage_id = await _cancel_lineage(existing_lineage, canonical)
+                lineage_id = await _run_reservation_mutation(
+                    _cancel_lineage(existing_lineage, canonical, lock_owner_token),
+                    lock_lost,
+                )
                 result.lineage_id = lineage_id
                 # Also propagate cancellation to bookings and imported_reservations
-                cancellation_durable = await _propagate_cancellation_to_booking(
-                    tenant_id,
-                    ext_res_id,
+                cancellation_durable = await _run_reservation_mutation(
+                    _propagate_cancellation_to_booking(
+                        tenant_id,
+                        ext_res_id,
+                    ),
+                    lock_lost,
                 )
                 if not cancellation_durable:
                     raise RuntimeError("PMS_CANCELLATION_NOT_DURABLE")
@@ -472,6 +497,13 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
         logger.info(f"[{event['id']}] {decision}: {reason} mutation={mutation_type} trace={result.trace_id}")
         return result
 
+    except ReservationLockLostError:
+        result.status = "retry_later"
+        result.error = "RESERVATION_LOCK_LOST"
+        result.reason = "Reservation lock ownership lost"
+        await _finalize_event(event["id"], "pending", result)
+        logger.error("Reservation lock ownership lost; processing deferred")
+        return result
     except Exception as e:
         result.status = "failed"
         result.error = str(e)
@@ -479,9 +511,12 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
         logger.error(f"[{event['id']}] PIPELINE ERROR: {e}")
         return result
     finally:
-        # Release lock if held
-        if existing_lineage and existing_lineage.get("lock_holder") == event["id"]:
-            await _release_reservation_lock(existing_lineage)
+        if lock_heartbeat_task:
+            lock_heartbeat_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await lock_heartbeat_task
+        if existing_lineage and lock_owner_token:
+            await _release_reservation_lock(existing_lineage["id"], lock_owner_token)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -528,14 +563,14 @@ async def _finalize_event(
 
 async def _acquire_reservation_lock(
     lineage: dict,
-    worker_id: str,
-) -> bool:
+) -> str | None:
     """
     Acquire a reservation-scoped lock using optimistic concurrency.
     Scope: tenant_id + provider + external_reservation_id
     """
     now = datetime.now(UTC)
     expires = (now + timedelta(seconds=LOCK_TTL_SECONDS)).isoformat()
+    owner_token = _uuid.uuid4().hex
 
     # Try to acquire: only succeed if no lock or lock expired
     result = await db[COLL_RESERVATION_LINEAGE].update_one(
@@ -544,38 +579,120 @@ async def _acquire_reservation_lock(
             "$or": [
                 {"lock_holder": None},
                 {"lock_holder": ""},
+                {"lock_holder": {"$exists": False}},
                 {"lock_expires_at": {"$lt": now.isoformat()}},
             ],
         },
         {
             "$set": {
-                "lock_holder": worker_id,
+                "lock_holder": "ingest-pipeline",
+                "lock_owner_token": owner_token,
                 "lock_acquired_at": now.isoformat(),
+                "lock_heartbeat_at": now.isoformat(),
                 "lock_expires_at": expires,
             }
         },
     )
     if result.modified_count > 0:
-        lineage["lock_holder"] = worker_id
-        return True
+        lineage["lock_holder"] = "ingest-pipeline"
+        lineage["lock_owner_token"] = owner_token
+        return owner_token
 
-    logger.warning(f"Lock contention: lineage={lineage['id']} held_by={lineage.get('lock_holder')}")
-    return False
+    return None
 
 
-async def _release_reservation_lock(lineage: dict) -> None:
-    """Release reservation-scoped lock."""
+async def _extend_reservation_lock(lineage_id: str, owner_token: str) -> bool:
+    """Extend a live reservation lease only for its current owner."""
+    now = datetime.now(UTC)
+    expires = (now + timedelta(seconds=LOCK_TTL_SECONDS)).isoformat()
+    result = await db[COLL_RESERVATION_LINEAGE].update_one(
+        {
+            "id": lineage_id,
+            "lock_owner_token": owner_token,
+            "lock_expires_at": {"$gte": now.isoformat()},
+        },
+        {
+            "$set": {
+                "lock_heartbeat_at": now.isoformat(),
+                "lock_expires_at": expires,
+            }
+        },
+    )
+    return result.matched_count == 1
 
-    await db[COLL_RESERVATION_LINEAGE].update_one(
-        {"id": lineage["id"]},
+
+async def _reservation_lock_heartbeat(
+    lineage_id: str,
+    owner_token: str,
+    lock_lost: asyncio.Event,
+) -> None:
+    while True:
+        await asyncio.sleep(LOCK_HEARTBEAT_SECONDS)
+        try:
+            if not await _extend_reservation_lock(lineage_id, owner_token):
+                lock_lost.set()
+                logger.error("Reservation lock heartbeat lost ownership")
+                return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            lock_lost.set()
+            logger.error(
+                "Reservation lock heartbeat failed: %s",
+                type(exc).__name__,
+            )
+            return
+
+
+async def _run_reservation_mutation(
+    mutation: Awaitable[Any],
+    lock_lost: asyncio.Event,
+) -> Any:
+    """Cancel a mutation and fail closed as soon as its lease is lost."""
+    if lock_lost.is_set():
+        if hasattr(mutation, "close"):
+            mutation.close()
+        raise ReservationLockLostError("RESERVATION_LOCK_LOST")
+
+    mutation_task = asyncio.ensure_future(mutation)
+    lost_task = asyncio.create_task(lock_lost.wait())
+    try:
+        await asyncio.wait(
+            {mutation_task, lost_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if lock_lost.is_set():
+            mutation_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await mutation_task
+            raise ReservationLockLostError("RESERVATION_LOCK_LOST")
+        return await mutation_task
+    finally:
+        if not mutation_task.done():
+            mutation_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await mutation_task
+        lost_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await lost_task
+
+
+async def _release_reservation_lock(lineage_id: str, owner_token: str) -> bool:
+    """Release a reservation lease only if the caller still owns it."""
+
+    result = await db[COLL_RESERVATION_LINEAGE].update_one(
+        {"id": lineage_id, "lock_owner_token": owner_token},
         {
             "$set": {
                 "lock_holder": None,
+                "lock_owner_token": None,
                 "lock_acquired_at": None,
+                "lock_heartbeat_at": None,
                 "lock_expires_at": None,
             }
         },
     )
+    return result.matched_count == 1
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -637,7 +754,10 @@ async def _update_lineage(
     payload_hash: str,
     received_via: str,
     mutation_type: str,
+    owner_token: str | None,
 ) -> str:
+    if not owner_token:
+        raise ReservationLockLostError("RESERVATION_LOCK_OWNER_MISSING")
     now = _now()
     # Track previous status for transition auditing
     existing["previous_status"] = existing.get("status")
@@ -664,10 +784,19 @@ async def _update_lineage(
     existing["decision_version"] = existing.get("decision_version", 0) + 1
     existing["last_seen_at"] = now
     existing["last_synced_at"] = now
-    return await repo.upsert_reservation_lineage(existing)
+    lineage_id = await repo.update_reservation_lineage_with_lock(existing, owner_token)
+    if not lineage_id:
+        raise ReservationLockLostError("RESERVATION_LOCK_LOST")
+    return lineage_id
 
 
-async def _cancel_lineage(existing: dict, canonical: dict) -> str:
+async def _cancel_lineage(
+    existing: dict,
+    canonical: dict,
+    owner_token: str | None,
+) -> str:
+    if not owner_token:
+        raise ReservationLockLostError("RESERVATION_LOCK_OWNER_MISSING")
     now = _now()
     existing["previous_status"] = existing.get("status")
     existing["status"] = "cancelled"
@@ -678,7 +807,10 @@ async def _cancel_lineage(existing: dict, canonical: dict) -> str:
     existing["decision_version"] = existing.get("decision_version", 0) + 1
     existing["last_seen_at"] = now
     existing["last_synced_at"] = now
-    return await repo.upsert_reservation_lineage(existing)
+    lineage_id = await repo.update_reservation_lineage_with_lock(existing, owner_token)
+    if not lineage_id:
+        raise ReservationLockLostError("RESERVATION_LOCK_LOST")
+    return lineage_id
 
 
 async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) -> bool:

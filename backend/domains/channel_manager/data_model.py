@@ -457,8 +457,10 @@ class ReservationLineage(BaseModel):
     reconciled_at: str | None = None
 
     # Concurrency control
-    lock_holder: str | None = None  # worker ID holding lock
+    lock_holder: str | None = None  # compatibility label for the active worker type
+    lock_owner_token: str | None = None  # opaque token fencing each processing attempt
     lock_acquired_at: str | None = None
+    lock_heartbeat_at: str | None = None
     lock_expires_at: str | None = None
 
     # Timestamps

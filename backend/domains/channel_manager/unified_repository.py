@@ -550,6 +550,41 @@ async def upsert_reservation_lineage(doc: dict) -> str:
         return lineage_id
 
 
+async def update_reservation_lineage_with_lock(
+    doc: dict,
+    owner_token: str,
+) -> str | None:
+    """Update an existing lineage only while the caller owns its live lease."""
+    now = _now()
+    update_doc = dict(doc)
+    update_doc.pop("_id", None)
+    update_doc.pop("version", None)
+    for field in (
+        "lock_holder",
+        "lock_owner_token",
+        "lock_acquired_at",
+        "lock_heartbeat_at",
+        "lock_expires_at",
+    ):
+        update_doc.pop(field, None)
+    update_doc["updated_at"] = now
+
+    result = await db[COLL_RESERVATION_LINEAGE].update_one(
+        {
+            "id": doc["id"],
+            "lock_owner_token": owner_token,
+            "lock_expires_at": {"$gte": now},
+        },
+        {
+            "$set": update_doc,
+            "$inc": {"version": 1},
+        },
+    )
+    if result.matched_count != 1:
+        return None
+    return doc["id"]
+
+
 async def get_reservation_lineage(
     tenant_id: str,
     lineage_id: str,
