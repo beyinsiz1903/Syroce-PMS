@@ -32,6 +32,8 @@ from domains.channel_manager.providers.exely.response_parser import (
 )
 from domains.channel_manager.providers.exely.retry import ExelyRetryPolicy
 
+pytestmark = pytest.mark.exely_failure_stress
+
 
 def _soap(body: str) -> bytes:
     return (f'<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ota="http://www.opentravel.org/OTA/2003/05"><soap:Body>{body}</soap:Body></soap:Envelope>').encode()
@@ -180,6 +182,12 @@ def test_http_429_uses_safe_retry_after_parser():
     with pytest.raises(ExelyRateLimitError) as exc_info:
         ExelySoapTransport._raise_for_http_status(response, 1, "safe-correlation")
     assert exc_info.value.retry_after_seconds == 60
+
+
+def test_http_500_is_temporary_failure_not_success():
+    response = httpx.Response(500)
+    with pytest.raises(ExelyTemporaryError):
+        ExelySoapTransport._raise_for_http_status(response, 1, "safe-correlation")
 
 
 @pytest.mark.parametrize("code", ["-100", "-101", "-102", "-103", "-104", "-105"])
