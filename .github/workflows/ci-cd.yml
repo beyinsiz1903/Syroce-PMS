@@ -228,6 +228,7 @@ jobs:
             tests/test_hotelrunner_webhook_signature.py \
             tests/test_hotelrunner_credential_log_security.py \
             tests/test_hotelrunner_ari_reconciliation.py \
+            tests/test_hotelrunner_ari_pilot_contract.py \
             tests/test_scheduler_concurrency.py \
             tests/test_channel_event_dedup_claim.py \
             tests/test_catchup_dedup_guard.py \

@@ -21,6 +21,7 @@ markers = [
     "chaos_outbox: Outbox/worker resilience tests",
     "live_mongo: Tests that require a reachable real MongoDB; when REQUIRE_LIVE_MONGO=1 these must actually run (no skip-as-pass)",
     "nilvera_sandbox: Nilvera real sandbox E2E tests",
+    "hotelrunner_pilot: HotelRunner real test-account pilot tests",
     "external: Tests depending on real external APIs",
     "side_effect: Tests that create real mutations/records on external platforms",
 ]
