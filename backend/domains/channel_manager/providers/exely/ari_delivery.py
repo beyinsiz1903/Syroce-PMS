@@ -182,7 +182,7 @@ async def deliver_exely_ari(
         return _result(False, STATE_BLOCKED, error_code, status_class, 0, identity)
 
     error_type = str(provider_result.error_type or status_class or "PROVIDER_ERROR").upper()
-    if status_class in {"MALFORMED", "WRITE_OUTCOME_UNKNOWN"} or error_type in {
+    if status_class in {"AMBIGUOUS", "MALFORMED", "WRITE_OUTCOME_UNKNOWN"} or error_type in {
         "EXELYTEMPORARYERROR",
         "EXELYPARSEERROR",
         "MALFORMED",

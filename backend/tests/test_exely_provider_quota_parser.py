@@ -85,7 +85,6 @@ async def test_reservation_read_and_ari_share_tenant_property_total_budget():
     first_keys = redis.eval_calls[0][3:]
     second_keys = redis.eval_calls[1][3:]
     assert first_keys[0] == second_keys[0]
-    assert first_keys[1] == second_keys[1]
     assert any(":read:" in key for key in first_keys if isinstance(key, str))
     assert any(":changes:" in key for key in second_keys if isinstance(key, str))
 

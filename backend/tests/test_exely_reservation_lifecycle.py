@@ -265,7 +265,7 @@ def test_notif_report_requires_exact_provider_timestamps():
 
 def test_ack_parser_requires_explicit_success():
     response = f'<soap:Envelope xmlns:soap="{SOAP_NS}"><soap:Body><OTA_NotifReportRS xmlns="{OTA_NS}"/></soap:Body></soap:Envelope>'
-    assert parse_notif_report_rs(response.encode())["error_type"] == "ExelyAckMalformed"
+    assert parse_notif_report_rs(response.encode())["result_class"] == "MALFORMED"
 
 
 def test_read_parser_preserves_provider_context_and_roomstay_index():
@@ -585,7 +585,8 @@ async def test_provider_confirm_delivery_does_not_use_retry_on_temporary_failure
         last_modify_datetime="2030-01-01T10:00:00Z",
     )
     assert result.success is False
-    assert result.error_type == "ExelyTemporaryError"
+    assert result.error_type == "AMBIGUOUS"
+    assert result.metadata["provider_write_count"] == 1
     provider._transport.send_soap.assert_awaited_once()
 
 
