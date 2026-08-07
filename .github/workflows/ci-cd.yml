@@ -228,6 +228,7 @@ jobs:
           cd backend
           python -m pytest \
             tests/test_exely_credential_log_security.py \
+            tests/test_exely_compatibility_mount.py \
             tests/test_exely_reservation_lifecycle.py \
             tests/test_exely_ari_delivery.py \
             tests/test_exely_provider_quota_parser.py \
