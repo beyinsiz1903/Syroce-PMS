@@ -53,8 +53,17 @@ class ExelyTemporaryError(ExelyError):
 class ExelyRateLimitError(ExelyError):
     """429 or throttle. Retry with backoff. Alert severity: medium/high."""
 
-    def __init__(self, retry_after_seconds: int = 60, message: str = "Rate limit exceeded"):
+    def __init__(
+        self,
+        retry_after_seconds: int = 60,
+        message: str = "Rate limit exceeded",
+        *,
+        provider_code: str = "",
+        source: str = "provider",
+    ):
         self.retry_after_seconds = retry_after_seconds
+        self.provider_code = _safe_provider_code(provider_code)
+        self.source = source if source in {"provider", "local_quota"} else "provider"
         super().__init__(message, recoverable=True)
 
 

@@ -292,7 +292,14 @@ async def exely_pull_once() -> dict[str, Any]:
                 continue
 
             try:
-                provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
+                provider_kwargs = {
+                    "username": username,
+                    "password": password,
+                    "hotel_code": hotel_code,
+                    "tenant_id": tenant_id,
+                    "property_id": hotel_code,
+                    "connection_id": f"{tenant_id}:{hotel_code}",
+                }
                 if endpoint_url:
                     provider_kwargs["endpoint_url"] = endpoint_url
                 provider = ExelyProvider(**provider_kwargs)

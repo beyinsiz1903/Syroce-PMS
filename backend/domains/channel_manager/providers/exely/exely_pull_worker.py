@@ -147,7 +147,14 @@ class ExelyPullScheduler:
         safety_window_minutes: int = 5,
     ) -> dict[str, Any]:
         set_tenant_context(tenant_id)
-        provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
+        provider_kwargs = {
+            "username": username,
+            "password": password,
+            "hotel_code": hotel_code,
+            "tenant_id": tenant_id,
+            "property_id": hotel_code,
+            "connection_id": f"{tenant_id}:{hotel_code}",
+        }
         if endpoint_url:
             provider_kwargs["endpoint_url"] = endpoint_url
         provider = ExelyProvider(**provider_kwargs)

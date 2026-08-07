@@ -29,6 +29,8 @@ async def get_exely_provider(tenant_id: str):
         hotel_code=hotel_code,
         endpoint_url=credentials["endpoint_url"],
         connection_id=f"{tenant_id}:{hotel_code}",
+        tenant_id=tenant_id,
+        property_id=hotel_code,
         max_retries=0,
     )
     return provider, connection

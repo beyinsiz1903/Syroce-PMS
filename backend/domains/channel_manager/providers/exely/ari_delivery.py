@@ -158,6 +158,7 @@ async def deliver_exely_ari(
         return _result(False, STATE_AMBIGUOUS, error_code, "WRITE_OUTCOME_UNKNOWN", 1, identity)
 
     metadata = provider_result.metadata if isinstance(provider_result.metadata, dict) else {}
+    provider_write_count = 1 if metadata.get("provider_write_count") == 1 else 0
     status_class = str(metadata.get("provider_status_class") or "MALFORMED")
     warning_codes = _safe_codes(metadata.get("warning_codes"))
     if provider_result.success and status_class in {"SUCCESS", "WARNING_SUCCESS"}:
@@ -172,10 +173,16 @@ async def deliver_exely_ari(
                 1,
                 identity,
             )
-        return _result(True, state, "", status_class, 1, identity, warning_codes)
+        return _result(True, state, "", status_class, provider_write_count, identity, warning_codes)
+
+    if provider_write_count == 0:
+        error_type = str(provider_result.error_type or status_class or "PROVIDER_ERROR").upper()
+        error_code = f"EXELY_ARI_{error_type}"
+        await _finish(identity, owner_token, STATE_BLOCKED, error_code, status_class)
+        return _result(False, STATE_BLOCKED, error_code, status_class, 0, identity)
 
     error_type = str(provider_result.error_type or status_class or "PROVIDER_ERROR").upper()
-    if status_class in {"MALFORMED", "WRITE_OUTCOME_UNKNOWN"} or error_type in {
+    if status_class in {"AMBIGUOUS", "MALFORMED", "WRITE_OUTCOME_UNKNOWN"} or error_type in {
         "EXELYTEMPORARYERROR",
         "EXELYPARSEERROR",
         "MALFORMED",
@@ -187,7 +194,7 @@ async def deliver_exely_ari(
         result_class = "RATE_LIMITED" if "RATELIMIT" in error_type else "DEFINITIVE_REJECTION"
     error_code = f"EXELY_ARI_{error_type}"
     await _finish(identity, owner_token, state, error_code, result_class)
-    return _result(False, state, error_code, result_class, 1, identity)
+    return _result(False, state, error_code, result_class, provider_write_count, identity)
 
 
 async def reconcile_pending_exely_ari(tenant_id: str, *, limit: int = 50) -> dict[str, Any]:

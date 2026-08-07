@@ -14,6 +14,8 @@ Responsibilities:
 import logging
 import time
 import uuid as _uuid
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 
 import httpx
 
@@ -30,6 +32,25 @@ logger = logging.getLogger("exely.client")
 EXELY_DEFAULT_URL = EXELY_TEST_ENDPOINT_URL
 SOAP_CONTENT_TYPE = "text/xml; charset=utf-8"
 _TIMEOUT = httpx.Timeout(30.0, connect=5.0)
+_DEFAULT_RETRY_AFTER_SECONDS = 60
+_MAX_RETRY_AFTER_SECONDS = 3600
+
+
+def parse_retry_after(value: str | None, *, now: datetime | None = None) -> int:
+    """Parse seconds or an HTTP-date without trusting unbounded provider input."""
+    candidate = str(value or "").strip()
+    seconds = _DEFAULT_RETRY_AFTER_SECONDS
+    if candidate.isdigit():
+        seconds = int(candidate)
+    elif candidate:
+        try:
+            parsed = parsedate_to_datetime(candidate)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            seconds = int((parsed - (now or datetime.now(UTC))).total_seconds())
+        except (TypeError, ValueError, OverflowError):
+            seconds = _DEFAULT_RETRY_AFTER_SECONDS
+    return max(1, min(seconds, _MAX_RETRY_AFTER_SECONDS))
 
 
 class ExelySoapTransport:
@@ -112,6 +133,8 @@ class ExelySoapTransport:
             raise ExelyTemporaryError("Cannot connect to Exely SOAP API")
         except httpx.TimeoutException:
             raise ExelyTemporaryError(f"Exely SOAP API timeout ({operation})")
+        except httpx.RequestError:
+            raise ExelyTemporaryError(f"Exely SOAP API transport error ({operation})")
 
     @staticmethod
     def _raise_for_http_status(resp: httpx.Response, duration_ms: int, corr_id: str) -> None:
@@ -121,7 +144,7 @@ class ExelySoapTransport:
         if code == 401 or code == 403:
             raise ExelyAuthError(f"HTTP {code} — authentication/access denied [{corr_id}]")
         if code == 429:
-            retry_after = int(resp.headers.get("Retry-After", "60"))
+            retry_after = parse_retry_after(resp.headers.get("Retry-After"))
             raise ExelyRateLimitError(
                 retry_after_seconds=retry_after,
                 message=f"Rate limit exceeded ({code}) [{corr_id}]",

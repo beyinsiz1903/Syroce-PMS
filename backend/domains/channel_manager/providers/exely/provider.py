@@ -21,11 +21,23 @@ from typing import Any
 from . import observability as obs
 from .client import EXELY_DEFAULT_URL, ExelySoapTransport
 from .errors import (
+    ExelyAuthError,
     ExelyError,
+    ExelyParseError,
+    ExelyPayloadError,
+    ExelyRateLimitError,
+    ExelyTemporaryError,
     ExelyValidationError,
 )
 from .normalizer import normalize_reservation
+from .provider_quota import ExelyProviderQuota
 from .response_parser import (
+    AMBIGUOUS,
+    AUTH_FAILED,
+    MALFORMED,
+    PROVIDER_ERROR,
+    RATE_LIMITED,
+    REJECTED,
     parse_ari_update_rs,
     parse_hotel_avail_rs,
     parse_notif_report_rs,
@@ -75,6 +87,9 @@ class ExelyProvider:
         credentials: dict[str, str] | None = None,
         endpoint_url: str = EXELY_DEFAULT_URL,
         connection_id: str = "",
+        tenant_id: str = "",
+        property_id: str = "",
+        quota_guard: ExelyProviderQuota | None = None,
         max_retries: int = 3,
     ):
         if credentials:
@@ -85,8 +100,36 @@ class ExelyProvider:
         self._password = password
         self._hotel_code = hotel_code
         self._connection_id = connection_id
+        self._tenant_id = tenant_id
+        self._property_id = property_id or hotel_code
         self._transport = ExelySoapTransport(endpoint_url)
         self._retry = ExelyRetryPolicy(max_retries=max_retries)
+        self._quota = quota_guard
+        if self._quota is None and tenant_id and self._property_id:
+            self._quota = ExelyProviderQuota(tenant_id, self._property_id)
+
+    async def _reserve_quota(self, operation: str, *, change_count: int = 0) -> None:
+        if self._quota is None:
+            return
+        decision = await self._quota.reserve(operation=operation, change_count=change_count)
+        if not decision.allowed:
+            raise ExelyRateLimitError(
+                retry_after_seconds=decision.retry_after_seconds or 60,
+                message=decision.reason,
+                source="local_quota",
+            )
+
+    async def _send_read(self, xml: str, soap_action: str, *, operation: str) -> bytes:
+        async def _call():
+            await self._reserve_quota(operation)
+            try:
+                return await self._transport.send_soap(xml, soap_action)
+            except ExelyRateLimitError as exc:
+                if self._quota is not None and exc.source == "provider":
+                    await self._quota.record_cooldown(exc.retry_after_seconds)
+                raise
+
+        return await self._retry.execute_read(_call)
 
     # ── Connection Test ───────────────────────────────────────────────
 
@@ -103,11 +146,9 @@ class ExelyProvider:
             checkout = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
             xml = build_hotel_avail_rq(self._username, self._password, self._hotel_code, checkin, checkout)
 
-            async def _call():
-                return await self._transport.send_soap(xml, soap_action)
-
-            raw = await self._retry.execute(_call)
+            raw = await self._send_read(xml, soap_action, operation="discovery")
             result = parse_hotel_avail_rs(raw)
+            await self._record_provider_limit(result)
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
@@ -117,6 +158,7 @@ class ExelyProvider:
                 connection_id=self._connection_id,
             )
 
+            metadata = _parser_metadata(result)
             if result["success"]:
                 return ProviderResult(
                     success=True,
@@ -126,11 +168,14 @@ class ExelyProvider:
                         "rate_plans": result["rate_plans"],
                     },
                     duration_ms=duration_ms,
+                    metadata=metadata,
                 )
             return ProviderResult(
                 success=False,
                 error=result.get("error", "Connection test failed"),
+                error_type=result.get("result_class", MALFORMED),
                 duration_ms=duration_ms,
+                metadata=metadata,
             )
         except ExelyError as e:
             return self._handle_error(e, start, operation)
@@ -151,11 +196,9 @@ class ExelyProvider:
             co = checkout or (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
             xml = build_hotel_avail_rq(self._username, self._password, self._hotel_code, ci, co)
 
-            async def _call():
-                return await self._transport.send_soap(xml, soap_action)
-
-            raw = await self._retry.execute(_call)
+            raw = await self._send_read(xml, soap_action, operation="discovery")
             result = parse_hotel_avail_rs(raw)
+            await self._record_provider_limit(result)
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
@@ -165,6 +208,7 @@ class ExelyProvider:
                 connection_id=self._connection_id,
             )
 
+            metadata = _parser_metadata(result)
             if result["success"]:
                 return ProviderResult(
                     success=True,
@@ -173,8 +217,15 @@ class ExelyProvider:
                         "rate_plans": result["rate_plans"],
                     },
                     duration_ms=duration_ms,
+                    metadata=metadata,
                 )
-            return ProviderResult(success=False, error=result.get("error", "Discovery failed"), duration_ms=duration_ms)
+            return ProviderResult(
+                success=False,
+                error=result.get("error", "Discovery failed"),
+                error_type=result.get("result_class", MALFORMED),
+                duration_ms=duration_ms,
+                metadata=metadata,
+            )
         except ExelyError as e:
             return self._handle_error(e, start, operation)
 
@@ -194,11 +245,9 @@ class ExelyProvider:
             validate_date_range(from_date, to_date)
             xml = build_read_rq(self._username, self._password, self._hotel_code, from_date, to_date, reservation_id)
 
-            async def _call():
-                return await self._transport.send_soap(xml, soap_action)
-
-            raw = await self._retry.execute(_call)
+            raw = await self._send_read(xml, soap_action, operation="reservation_read")
             result = parse_read_rs(raw)
+            await self._record_provider_limit(result)
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
@@ -208,6 +257,7 @@ class ExelyProvider:
                 connection_id=self._connection_id,
             )
 
+            metadata = _parser_metadata(result)
             if result["success"]:
                 return ProviderResult(
                     success=True,
@@ -216,8 +266,15 @@ class ExelyProvider:
                         "count": result.get("count", 0),
                     },
                     duration_ms=duration_ms,
+                    metadata=metadata,
                 )
-            return ProviderResult(success=False, error=result.get("error", "Pull failed"), duration_ms=duration_ms)
+            return ProviderResult(
+                success=False,
+                error=result.get("error", "Pull failed"),
+                error_type=result.get("result_class", MALFORMED),
+                duration_ms=duration_ms,
+                metadata=metadata,
+            )
         except ExelyError as e:
             return self._handle_error(e, start, operation)
 
@@ -283,6 +340,7 @@ class ExelyProvider:
     ) -> ProviderResult:
         """Send one SOAP mutation once and require explicit provider success."""
         start = time.time()
+        provider_write_count = 0
         breaker = provider_failover.get_breaker(_exely_circuit_key(self._connection_id))
         if not await breaker.try_acquire():
             return ProviderResult(
@@ -347,8 +405,14 @@ class ExelyProvider:
             )
 
         try:
+            await self._reserve_quota(
+                "ari_mutation",
+                change_count=_ari_change_count(start_date, end_date),
+            )
+            provider_write_count = 1
             raw = await self._transport.send_soap(xml, get_soap_action_uri(soap_operation))
             parsed = parse_ari_update_rs(raw)
+            await self._record_provider_limit(parsed)
             duration_ms = int((time.time() - start) * 1000)
             obs.record_provider_call(
                 soap_action=soap_operation,
@@ -357,11 +421,13 @@ class ExelyProvider:
                 connection_id=self._connection_id,
             )
             metadata = {
-                "provider_write_count": 1,
+                "provider_write_count": provider_write_count,
                 "provider_status_class": parsed.get("result_class", "MALFORMED"),
                 "provider_codes": parsed.get("provider_codes", []),
                 "warning_codes": parsed.get("warning_codes", []),
             }
+            if parsed.get("retry_after_seconds"):
+                metadata["retry_after_seconds"] = int(parsed["retry_after_seconds"])
             if not parsed["success"]:
                 await breaker.record_failure()
                 return ProviderResult(
@@ -385,11 +451,13 @@ class ExelyProvider:
             )
         except ExelyError as error:
             await breaker.record_failure()
-            result = self._handle_error(error, start, soap_operation)
-            result.metadata = {
-                "provider_write_count": 1,
-                "provider_status_class": "WRITE_OUTCOME_UNKNOWN" if error.recoverable else "DEFINITIVE_REJECTION",
-            }
+            result = self._handle_error(
+                error,
+                start,
+                soap_operation,
+                mutation=True,
+                provider_write_count=provider_write_count,
+            )
             return result
 
     # ── Reservation Delivery Confirmation ─────────────────────────────
@@ -408,6 +476,7 @@ class ExelyProvider:
         """Confirm reservation delivery via OTA_NotifReportRQ.
         Exely accepts ResStatus='Reserved' for delivery confirmation."""
         start = time.time()
+        provider_write_count = 0
         operation = "OTA_NotifReportRQ"
         soap_action = get_soap_action_uri(operation)
         try:
@@ -433,8 +502,11 @@ class ExelyProvider:
 
             # Delivery ACKs are provider mutations. Without a provider idempotency
             # key, an ambiguous timeout must never trigger a blind retry.
+            await self._reserve_quota("reservation_ack")
+            provider_write_count = 1
             raw = await self._transport.send_soap(xml, soap_action)
             result = parse_notif_report_rs(raw)
+            await self._record_provider_limit(result)
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
@@ -446,23 +518,40 @@ class ExelyProvider:
 
             if result["success"]:
                 logger.info("[EXELY] operation=reservation_ack delivery_state=accepted")
-                return ProviderResult(success=True, data=result, duration_ms=duration_ms)
+                return ProviderResult(
+                    success=True,
+                    data=result,
+                    duration_ms=duration_ms,
+                    metadata={**_parser_metadata(result), "provider_write_count": 1},
+                )
 
             logger.warning("[EXELY] operation=reservation_ack delivery_state=rejected")
             return ProviderResult(
                 success=False,
                 error="Provider rejected reservation acknowledgement",
-                error_type=result.get("error_type") or "ProviderRejected",
+                error_type=result.get("error_type") or result.get("result_class", REJECTED),
                 duration_ms=duration_ms,
+                metadata={**_parser_metadata(result), "provider_write_count": 1},
             )
         except ExelyError as e:
-            return self._handle_error(e, start, operation)
+            return self._handle_error(
+                e,
+                start,
+                operation,
+                mutation=True,
+                provider_write_count=provider_write_count,
+            )
 
     # ── Canonical helpers (for snapshot collectors & ingest) ───────────
 
     def normalize_to_canonical(self, raw: dict[str, Any], source: str = "pull") -> dict[str, Any]:
         """Normalize a raw Exely reservation to canonical format."""
         return normalize_reservation(raw, source)
+
+    async def _record_provider_limit(self, result: dict[str, Any]) -> None:
+        if result.get("result_class") != RATE_LIMITED or self._quota is None:
+            return
+        await self._quota.record_cooldown(int(result.get("retry_after_seconds") or 60))
 
     # ── Legacy compatibility methods ──────────────────────────────────
     # These match the old ExelyClient interface so existing callers
@@ -555,7 +644,15 @@ class ExelyProvider:
 
     # ── Internal helpers ──────────────────────────────────────────────
 
-    def _handle_error(self, error: ExelyError, start_time: float, soap_action: str) -> ProviderResult:
+    def _handle_error(
+        self,
+        error: ExelyError,
+        start_time: float,
+        soap_action: str,
+        *,
+        mutation: bool = False,
+        provider_write_count: int = 0,
+    ) -> ProviderResult:
         duration_ms = int((time.time() - start_time) * 1000)
         obs.record_provider_failure(
             error_type=type(error).__name__,
@@ -563,9 +660,55 @@ class ExelyProvider:
             connection_id=self._connection_id,
             soap_action=soap_action,
         )
+        classification = _classify_exception(error, mutation=mutation, provider_write_count=provider_write_count)
+        provider_status_class = "WRITE_OUTCOME_UNKNOWN" if classification == AMBIGUOUS else classification
+        error_type = type(error).__name__ if isinstance(error, ExelyTemporaryError) else classification
+        metadata = {
+            "classification": classification,
+            "provider_status_class": provider_status_class,
+            "provider_codes": [error.provider_code] if isinstance(error, ExelyRateLimitError) and error.provider_code else [],
+            "provider_write_count": provider_write_count,
+        }
+        if isinstance(error, ExelyRateLimitError):
+            metadata["retry_after_seconds"] = error.retry_after_seconds
         return ProviderResult(
             success=False,
             error=str(error),
-            error_type=type(error).__name__,
+            error_type=error_type,
             duration_ms=duration_ms,
+            metadata=metadata,
         )
+
+
+def _parser_metadata(result: dict[str, Any]) -> dict[str, Any]:
+    classification = result.get("result_class", MALFORMED)
+    metadata = {
+        "classification": classification,
+        "provider_status_class": classification,
+        "provider_codes": result.get("provider_codes", []),
+        "warning_codes": result.get("warning_codes", []),
+        "provider_write_count": 0,
+    }
+    if result.get("retry_after_seconds"):
+        metadata["retry_after_seconds"] = int(result["retry_after_seconds"])
+    return metadata
+
+
+def _classify_exception(error: ExelyError, *, mutation: bool, provider_write_count: int) -> str:
+    if isinstance(error, ExelyRateLimitError):
+        return RATE_LIMITED
+    if isinstance(error, ExelyAuthError):
+        return AUTH_FAILED
+    if isinstance(error, ExelyParseError):
+        return MALFORMED
+    if isinstance(error, ExelyPayloadError | ExelyValidationError):
+        return REJECTED
+    if isinstance(error, ExelyTemporaryError) and mutation and provider_write_count:
+        return AMBIGUOUS
+    return PROVIDER_ERROR
+
+
+def _ari_change_count(start_date: str, end_date: str) -> int:
+    start = datetime.strptime(start_date, "%Y-%m-%d").date()
+    end = datetime.strptime(end_date, "%Y-%m-%d").date()
+    return max(1, (end - start).days + 1)

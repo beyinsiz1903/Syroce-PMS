@@ -107,7 +107,15 @@ async def collect_exely_snapshot(
         logger.warning(f"Exely snapshot: missing credentials for property={property_id}")
         return []
 
-    provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
+    tenant_id = str(connection.get("tenant_id") or "")
+    provider_kwargs = {
+        "username": username,
+        "password": password,
+        "hotel_code": hotel_code,
+        "tenant_id": tenant_id,
+        "property_id": hotel_code,
+        "connection_id": f"{tenant_id}:{hotel_code}",
+    }
     if endpoint_url:
         provider_kwargs["endpoint_url"] = endpoint_url
     provider = ExelyProvider(**provider_kwargs)
