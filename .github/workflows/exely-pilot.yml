@@ -1,0 +1,220 @@
+name: Exely PMSConnect Pilot
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Single pilot operation to run
+        required: true
+        default: discovery
+        type: choice
+        options:
+          - discovery
+          - reservation_read
+          - availability
+          - rate
+          - stop_sell
+          - min_los
+          - min_los_arrival
+          - reservation_ack
+      confirm_provider_write:
+        description: Required for exactly one provider mutation
+        required: true
+        default: false
+        type: boolean
+      approved_head_sha:
+        description: Exact 40-character commit SHA approved for this run
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  PYTHON_VERSION: '3.11'
+  MONGO_URL: mongodb://localhost:27017/hotel_pms_test
+  DB_NAME: hotel_pms_test
+  JWT_SECRET: ci-test-secret-key-do-not-use-in-production
+
+jobs:
+  exely-pilot:
+    name: Run Exely PMSConnect Pilot
+    runs-on: ubuntu-latest
+    environment: exely-pilot
+    concurrency:
+      group: exely-pilot
+      cancel-in-progress: false
+    timeout-minutes: 15
+
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping:1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout exact ref
+        uses: actions/checkout@v5
+
+      - name: Validate exact-head approval and single-operation gate
+        env:
+          APPROVED_HEAD_SHA: ${{ inputs.approved_head_sha }}
+          CONFIRM_PROVIDER_WRITE: ${{ inputs.confirm_provider_write }}
+          PILOT_OPERATION: ${{ inputs.operation }}
+        run: |
+          case "${APPROVED_HEAD_SHA}" in
+            [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+            *) echo "::error::BLOCKED_INVALID_APPROVED_HEAD"; exit 1 ;;
+          esac
+          if [ "${APPROVED_HEAD_SHA}" != "${GITHUB_SHA}" ]; then
+            echo "::error::BLOCKED_EXACT_HEAD_MISMATCH"
+            exit 1
+          fi
+          case "${PILOT_OPERATION}" in
+            discovery|reservation_read)
+              if [ "${CONFIRM_PROVIDER_WRITE}" = "true" ]; then
+                echo "::error::BLOCKED_READONLY_WRITE_CONFLICT"
+                exit 1
+              fi
+              ;;
+            availability|rate|stop_sell|min_los|min_los_arrival|reservation_ack)
+              if [ "${CONFIRM_PROVIDER_WRITE}" != "true" ]; then
+                echo "::error::BLOCKED_PROVIDER_WRITE_NOT_APPROVED"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::BLOCKED_UNSUPPORTED_PILOT_OPERATION"
+              exit 1
+              ;;
+          esac
+
+      - name: Require successful exact-head normal workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          verify_workflow() {
+            local workflow="$1"
+            local success_count
+            success_count="$(
+              gh run list \
+                --repo "${GITHUB_REPOSITORY}" \
+                --workflow "${workflow}" \
+                --branch "${GITHUB_REF_NAME}" \
+                --limit 30 \
+                --json headSha,status,conclusion \
+                --jq "[.[] | select(.headSha == \"${GITHUB_SHA}\" and .status == \"completed\" and .conclusion == \"success\")] | length"
+            )"
+            if [ "${success_count}" -lt 1 ]; then
+              echo "::error::BLOCKED_EXACT_HEAD_NORMAL_CI_NOT_GREEN:${workflow}"
+              exit 1
+            fi
+          }
+          verify_workflow "ci-cd.yml"
+          verify_workflow "frontend-quality.yml"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+          bash scripts/post_install.sh
+          pip install pytest pytest-asyncio pytest-timeout
+
+      - name: Run one gated Exely discovery or ARI target
+        if: inputs.operation != 'reservation_ack'
+        env:
+          APP_ENV: test
+          TESTING: '1'
+          REDIS_URL: redis://localhost:6379/0
+          GITHUB_SHA: ${{ github.sha }}
+          EXELY_PILOT_ENDPOINT_URL: https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc
+          EXELY_PILOT_OPERATION: ${{ inputs.operation }}
+          EXELY_PILOT_WRITE_APPROVED: ${{ inputs.confirm_provider_write }}
+          EXELY_PILOT_APPROVED_HEAD: ${{ inputs.approved_head_sha }}
+          EXELY_PILOT_RUN_ID: ${{ github.run_id }}
+          EXELY_PILOT_ACCOUNT_CONFIRMED: ${{ vars.EXELY_PILOT_ACCOUNT_CONFIRMED }}
+          EXELY_PILOT_CREDENTIAL_SCOPE: ${{ vars.EXELY_PILOT_CREDENTIAL_SCOPE }}
+          EXELY_PILOT_TEST_DATE: ${{ vars.EXELY_PILOT_TEST_DATE }}
+          EXELY_PILOT_AVAILABILITY: ${{ vars.EXELY_PILOT_AVAILABILITY }}
+          EXELY_PILOT_RATE: ${{ vars.EXELY_PILOT_RATE }}
+          EXELY_PILOT_CURRENCY: ${{ vars.EXELY_PILOT_CURRENCY }}
+          EXELY_PILOT_STOP_SELL: ${{ vars.EXELY_PILOT_STOP_SELL }}
+          EXELY_PILOT_MIN_LOS: ${{ vars.EXELY_PILOT_MIN_LOS }}
+          EXELY_PILOT_MIN_LOS_ARRIVAL: ${{ vars.EXELY_PILOT_MIN_LOS_ARRIVAL }}
+          EXELY_PILOT_USERNAME: ${{ secrets.EXELY_PILOT_USERNAME }}
+          EXELY_PILOT_PASSWORD: ${{ secrets.EXELY_PILOT_PASSWORD }}
+          EXELY_PILOT_HOTEL_CODE: ${{ secrets.EXELY_PILOT_HOTEL_CODE }}
+          EXELY_PILOT_ROOM_TYPE_CODE: ${{ secrets.EXELY_PILOT_ROOM_TYPE_CODE }}
+          EXELY_PILOT_RATE_PLAN_CODE: ${{ secrets.EXELY_PILOT_RATE_PLAN_CODE }}
+          EXELY_PILOT_HMAC_KEY: ${{ secrets.EXELY_PILOT_HMAC_KEY }}
+        run: |
+          cd backend
+          case "${EXELY_PILOT_OPERATION}" in
+            discovery|reservation_read)
+              target="tests/integration/test_exely_pilot.py::test_exely_pilot_readonly"
+              ;;
+            *)
+              target="tests/integration/test_exely_pilot.py::test_exely_pilot_single_write"
+              ;;
+          esac
+          python -m pytest "${target}" \
+            -v --tb=short -q --timeout=600 \
+            --junitxml=exely-pilot-results.xml
+
+      - name: Run one gated Exely acknowledgement target
+        if: inputs.operation == 'reservation_ack'
+        env:
+          APP_ENV: test
+          TESTING: '1'
+          REDIS_URL: redis://localhost:6379/0
+          GITHUB_SHA: ${{ github.sha }}
+          EXELY_PILOT_ENDPOINT_URL: https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc
+          EXELY_PILOT_OPERATION: ${{ inputs.operation }}
+          EXELY_PILOT_WRITE_APPROVED: ${{ inputs.confirm_provider_write }}
+          EXELY_PILOT_APPROVED_HEAD: ${{ inputs.approved_head_sha }}
+          EXELY_PILOT_RUN_ID: ${{ github.run_id }}
+          EXELY_PILOT_ACCOUNT_CONFIRMED: ${{ vars.EXELY_PILOT_ACCOUNT_CONFIRMED }}
+          EXELY_PILOT_CREDENTIAL_SCOPE: ${{ vars.EXELY_PILOT_CREDENTIAL_SCOPE }}
+          EXELY_PILOT_ACK_DURABLE_PMS_ATTESTED: ${{ vars.EXELY_PILOT_ACK_DURABLE_PMS_ATTESTED }}
+          EXELY_PILOT_USERNAME: ${{ secrets.EXELY_PILOT_USERNAME }}
+          EXELY_PILOT_PASSWORD: ${{ secrets.EXELY_PILOT_PASSWORD }}
+          EXELY_PILOT_HOTEL_CODE: ${{ secrets.EXELY_PILOT_HOTEL_CODE }}
+          EXELY_PILOT_HMAC_KEY: ${{ secrets.EXELY_PILOT_HMAC_KEY }}
+          EXELY_PILOT_ACK_RESERVATION_ID: ${{ secrets.EXELY_PILOT_ACK_RESERVATION_ID }}
+          EXELY_PILOT_ACK_CONFIRMATION_ID: ${{ secrets.EXELY_PILOT_ACK_CONFIRMATION_ID }}
+          EXELY_PILOT_ACK_CREATE_DATETIME: ${{ secrets.EXELY_PILOT_ACK_CREATE_DATETIME }}
+          EXELY_PILOT_ACK_LAST_MODIFY_DATETIME: ${{ secrets.EXELY_PILOT_ACK_LAST_MODIFY_DATETIME }}
+        run: |
+          cd backend
+          python -m pytest "tests/integration/test_exely_pilot.py::test_exely_pilot_single_write" \
+            -v --tb=short -q --timeout=600 \
+            --junitxml=exely-pilot-results.xml
+
+      - name: Upload safe pilot test results
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: exely-pilot-results
+          path: backend/exely-pilot-results.xml
+          if-no-files-found: ignore

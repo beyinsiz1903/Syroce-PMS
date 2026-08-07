@@ -233,6 +233,7 @@ jobs:
             tests/test_exely_ari_delivery.py \
             tests/test_exely_provider_quota_parser.py \
             tests/test_exely_legacy_closure.py \
+            tests/test_exely_pilot_contract.py \
             tests/unit/test_exely_provider.py \
             tests/integration/test_exely_provider_flows.py \
             -v --tb=short -q --timeout=60 \
