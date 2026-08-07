@@ -28,6 +28,8 @@ from domains.channel_manager.providers.exely.soap_builder import build_notif_rep
 OTA_NS = "http://www.opentravel.org/OTA/2003/05"
 SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/"
 
+pytestmark = pytest.mark.exely_failure_stress
+
 
 def _matches(document, query):
     for key, expected in query.items():
@@ -422,6 +424,41 @@ async def test_multiroom_create_modify_partial_cancel_and_full_cancel_are_idempo
     duplicate = await pms_lifecycle.process_reservation_version("tenant", cancelled_current)
     assert duplicate["success"] is True
     assert len(fake_db.bookings.documents) == 2
+
+
+@pytest.mark.asyncio
+async def test_concurrent_modify_cancel_race_keeps_newest_cancelled_state(fake_db):
+    await _add_mapping(fake_db)
+    _, created_current = await _persist(fake_db, _canonical(), payload_hash="create")
+    created = await pms_lifecycle.process_reservation_version("tenant", created_current)
+    assert created["success"] is True
+
+    _, modified_current = await _persist(
+        fake_db,
+        _canonical("2030-01-01T11:00:00Z", [_room("11", amount=125)], "modified"),
+        payload_hash="modify",
+        event_type="modification",
+    )
+    _, cancelled_current = await _persist(
+        fake_db,
+        _canonical("2030-01-01T12:00:00Z", [_room("11", amount=125)], "cancelled"),
+        payload_hash="cancel",
+        event_type="cancellation",
+    )
+
+    await asyncio.gather(
+        pms_lifecycle.process_reservation_version("tenant", modified_current),
+        pms_lifecycle.process_reservation_version("tenant", cancelled_current),
+    )
+
+    assert len(fake_db.bookings.documents) == 1
+    assert fake_db.bookings.documents[0]["status"] == "cancelled"
+    newest = await fake_db.exely_reservation_versions.find_one(
+        {"version_identity": cancelled_current["provider_version_identity"]},
+        {"_id": 0},
+    )
+    assert newest["processing_state"] == lifecycle.PMS_DURABLE
+    assert newest["ack_state"] == lifecycle.ACK_PENDING
 
 
 @pytest.mark.asyncio

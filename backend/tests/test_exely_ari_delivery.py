@@ -26,6 +26,8 @@ from domains.channel_manager.providers.exely.soap_builder import (
 )
 from domains.channel_manager.providers.hotelrunner.schemas import ProviderResult
 
+pytestmark = pytest.mark.exely_failure_stress
+
 SOAP_SUCCESS = b"""<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
 <s:Body><OTA_HotelAvailNotifRS xmlns="http://www.opentravel.org/OTA/2003/05" Version="1.17">
 <Success/></OTA_HotelAvailNotifRS></s:Body></s:Envelope>"""

@@ -5,6 +5,8 @@ import pytest
 
 from bootstrap import router_registry
 
+pytestmark = pytest.mark.exely_failure_stress
+
 _MODULE = "domains.channel_manager.providers.exely.exely_webhook_router"
 _ENV_KEYS = ("APP_ENV", "ENVIRONMENT", "NODE_ENV")
 

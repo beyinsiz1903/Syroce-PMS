@@ -17,6 +17,21 @@ if str(TESTS_DIR) not in sys.path:
 # Ensure TESTING=1 so rate limiter uses relaxed limits during test runs
 os.environ.setdefault("TESTING", "1")
 
+
+@pytest.fixture(autouse=True)
+def _block_exely_provider_network_in_failure_stress(request, monkeypatch):
+    if request.node.get_closest_marker("exely_failure_stress") is None:
+        return
+
+    async def _provider_network_forbidden(*_args, **_kwargs):
+        raise AssertionError("EXELY_FAILURE_STRESS_EXTERNAL_CALL_FORBIDDEN")
+
+    monkeypatch.setenv("E2E_EXTERNAL_DRY_RUN", "true")
+    monkeypatch.setattr(
+        "integrations.xchange.safety.safe_post_async",
+        _provider_network_forbidden,
+    )
+
 # Mongo: tests run outside start.sh so MONGO_URL may be unset.
 # Fallback to MONGO_ATLAS_URI (the same source start.sh uses).
 if not os.environ.get("MONGO_URL"):
