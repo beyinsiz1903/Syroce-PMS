@@ -5,6 +5,7 @@ with proper error isolation so one broken module cannot crash the app.
 """
 
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 import asyncio
@@ -342,7 +343,6 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.guest_relations", "router", ["Guest Relations Smart Engine"], None, None),
     # CM Conflict Queue — front-desk resolution UI for pending_assignment bookings (Turu #1b)
     ("routers.cm_conflict_queue", "router", ["channel-manager"], None, None),
-
     # IoT Hardware Integration
     ("domains.iot.access_control_router", "router", ["IoT Access Control"], None, None),
 ]
@@ -352,6 +352,20 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
 _OPTIONAL_ROUTERS: list[tuple[str, str, list[str], str | None, str | None]] = [
     ("channel_manager.interfaces.router_registry", "router", ["Channel Manager v2"], None, None),
 ]
+
+_EXELY_COMPATIBILITY_WEBHOOK_MODULE = "domains.channel_manager.providers.exely.exely_webhook_router"
+
+
+def _should_mount_router(module_path: str) -> bool:
+    """The legacy Exely inbound webhook has no PMSConnect inbound contract.
+
+    PMSConnect OTA_HotelResNotifRQ is a PMS-to-Exely notification.  The
+    compatibility receiver remains available for non-production stress and
+    migration tests, but it is not part of the production route table.
+    """
+    if module_path != _EXELY_COMPATIBILITY_WEBHOOK_MODULE:
+        return True
+    return not any(os.getenv(key, "").strip().lower() in {"production", "prod", "live"} for key in ("APP_ENV", "ENVIRONMENT", "NODE_ENV"))
 
 
 def _iter_register(app: FastAPI, api_router, require_super_admin_dep: Callable = None):
@@ -364,6 +378,10 @@ def _iter_register(app: FastAPI, api_router, require_super_admin_dep: Callable =
     """
     # Mount extracted routers onto the api_router (these all use /api prefix already)
     for mod_path, attr, tags, prefix_override, deps in _EXTRACTED_ROUTERS:
+        if not _should_mount_router(mod_path):
+            logger.info("  Exely compatibility webhook disabled in production")
+            yield
+            continue
         router = _safe_import(mod_path, attr)
         if router is not None:
             try:
