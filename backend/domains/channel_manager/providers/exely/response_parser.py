@@ -102,6 +102,7 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
     """Parse a single HotelReservation element to a dict."""
     res = {
         "reservation_id": _attr(hr_el, "ResID_Value", _attr(hr_el, "ResID")),
+        "reservation_id_context": "",
         "status": _attr(hr_el, "ResStatus", "Commit"),
         "create_date": _attr(hr_el, "CreateDateTime", ""),
         "last_modify": _attr(hr_el, "LastModifyDateTime", ""),
@@ -113,6 +114,7 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
         uid_id = _attr(uid, "ID")
         if uid_type == "14":
             res["reservation_id"] = uid_id
+            res["reservation_id_context"] = _attr(uid, "ID_Context", "")
         elif uid_type == "16":
             res["booking_source_id"] = uid_id
 
@@ -139,7 +141,7 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
     # Room stays
     rooms = []
     for room_stay in hr_el.iter(_ns("RoomStay")):
-        room = {}
+        room = {"index_number": _attr(room_stay, "IndexNumber", "")}
 
         # Room type
         for rt in room_stay.iter(_ns("RoomType")):
@@ -148,7 +150,7 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
 
         # Rate plan
         for rp in room_stay.iter(_ns("RatePlan")):
-            room["rate_plan_code"] = _attr(rp, "RatePlanCode")
+            room["rate_plan_code"] = _attr(rp, "RatePlanCode", _attr(rp, "RatePlanID"))
             room["rate_plan_name"] = _attr(rp, "RatePlanName", "")
 
         # Room rates
@@ -308,6 +310,13 @@ def parse_notif_report_rs(xml_bytes: bytes) -> dict[str, Any]:
     if errors_el is not None:
         codes = _safe_provider_codes(errors_el)
         return {"success": False, "error": "Provider rejected reservation acknowledgement", "provider_codes": codes}
+
+    if body.find(f".//{_ns('Success')}") is None:
+        return {
+            "success": False,
+            "error": "Malformed acknowledgement response",
+            "error_type": "ExelyAckMalformed",
+        }
 
     return {"success": True, "message": "Delivery confirmed"}
 

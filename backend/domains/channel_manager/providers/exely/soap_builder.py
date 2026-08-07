@@ -14,6 +14,7 @@ Supported messages:
 """
 
 from datetime import UTC, datetime
+from typing import Any
 
 from lxml import etree
 
@@ -180,9 +181,12 @@ def build_notif_report_rq(
     hotel_code: str,
     reservation_id: str,
     confirmation_number: str,
-    create_datetime: str = None,
-    last_modify_datetime: str = None,
+    create_datetime: str | None = None,
+    last_modify_datetime: str | None = None,
     res_status: str = "Reserved",
+    *,
+    provider_id_context: str = "",
+    confirmations: list[dict[str, Any]] | None = None,
 ) -> str:
     """Build OTA_NotifReportRQ to confirm reservation delivery to Exely.
 
@@ -192,13 +196,18 @@ def build_notif_report_rq(
 
     Exely accepts ResStatus="Reserved" for delivery confirmation.
     """
-    now_str = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if not create_datetime or not last_modify_datetime:
+        raise ValueError("Exact provider CreateDateTime and LastModifyDateTime are required")
+    if res_status not in {"Reserved", "Requestdenied"}:
+        raise ValueError("Unsupported Exely acknowledgement status")
+
+    acknowledgement_rows = confirmations or [{"pms_booking_id": confirmation_number, "room_stay_indexes": []}]
+    if not acknowledgement_rows or any(not str(row.get("pms_booking_id") or "") for row in acknowledgement_rows):
+        raise ValueError("At least one PMS booking confirmation is required")
+
     rq = etree.Element(
         f"{{{OTA_NS}}}OTA_NotifReportRQ",
-        attrib={
-            "Version": "1.0",
-            "TimeStamp": now_str,
-        },
+        attrib={"Version": "1.17"},
     )
 
     etree.SubElement(rq, f"{{{OTA_NS}}}Success")
@@ -216,35 +225,45 @@ def build_notif_report_rq(
 
     reservations_el = etree.SubElement(hotel_notif, f"{{{OTA_NS}}}HotelReservations")
 
-    # Build HotelReservation attributes
-    # Exely requires BOTH CreateDateTime and LastModifyDateTime
-    res_attrib = {}
-    if res_status:
-        res_attrib["ResStatus"] = res_status
-    res_attrib["CreateDateTime"] = create_datetime or now_str
-    res_attrib["LastModifyDateTime"] = last_modify_datetime or create_datetime or now_str
+    for row in acknowledgement_rows:
+        row_create_datetime = str(row.get("pms_created_at") or create_datetime)
+        if not row_create_datetime:
+            raise ValueError("PMS booking CreateDateTime is required")
+        hotel_res = etree.SubElement(
+            reservations_el,
+            f"{{{OTA_NS}}}HotelReservation",
+            attrib={
+                "ResStatus": res_status,
+                "CreateDateTime": row_create_datetime,
+                "LastModifyDateTime": last_modify_datetime,
+            },
+        )
 
-    hotel_res = etree.SubElement(reservations_el, f"{{{OTA_NS}}}HotelReservation", attrib=res_attrib)
+        unique_id_attributes = {"Type": "14", "ID": reservation_id}
+        if provider_id_context:
+            unique_id_attributes["ID_Context"] = provider_id_context
+        etree.SubElement(hotel_res, f"{{{OTA_NS}}}UniqueID", attrib=unique_id_attributes)
 
-    etree.SubElement(
-        hotel_res,
-        f"{{{OTA_NS}}}UniqueID",
-        attrib={
-            "Type": "14",
-            "ID": reservation_id,
-        },
-    )
+        room_stay_indexes = [str(value) for value in row.get("room_stay_indexes") or [] if str(value)]
+        if room_stay_indexes:
+            room_stays = etree.SubElement(hotel_res, f"{{{OTA_NS}}}RoomStays")
+            for index_number in room_stay_indexes:
+                etree.SubElement(
+                    room_stays,
+                    f"{{{OTA_NS}}}RoomStay",
+                    attrib={"IndexNumber": index_number},
+                )
 
-    res_info = etree.SubElement(hotel_res, f"{{{OTA_NS}}}ResGlobalInfo")
-    hotel_res_ids = etree.SubElement(res_info, f"{{{OTA_NS}}}HotelReservationIDs")
-    etree.SubElement(
-        hotel_res_ids,
-        f"{{{OTA_NS}}}HotelReservationID",
-        attrib={
-            "ResID_Type": "14",
-            "ResID_Value": confirmation_number,
-        },
-    )
+        res_info = etree.SubElement(hotel_res, f"{{{OTA_NS}}}ResGlobalInfo")
+        hotel_res_ids = etree.SubElement(res_info, f"{{{OTA_NS}}}HotelReservationIDs")
+        etree.SubElement(
+            hotel_res_ids,
+            f"{{{OTA_NS}}}HotelReservationID",
+            attrib={
+                "ResID_Type": "14",
+                "ResID_Value": str(row["pms_booking_id"]),
+            },
+        )
 
     return _soap_envelope(username, password, hotel_code, rq)
 

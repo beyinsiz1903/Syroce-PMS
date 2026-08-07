@@ -17,6 +17,7 @@ def normalize_reservation(raw: dict[str, Any], source: str = "pull") -> dict[str
     for room in rooms:
         room_details.append(
             {
+                "index_number": str(room.get("index_number", "")),
                 "room_type_code": room.get("room_type_code", ""),
                 "rate_plan_code": room.get("rate_plan_code", ""),
                 "room_name": room.get("room_name", ""),
@@ -24,6 +25,8 @@ def normalize_reservation(raw: dict[str, Any], source: str = "pull") -> dict[str
                 "children": room.get("children", 0),
                 "amount": room.get("amount", 0),
                 "daily_rates": room.get("daily_rates", []),
+                "check_in": room.get("check_in", raw.get("checkin_date", "")),
+                "check_out": room.get("check_out", raw.get("checkout_date", "")),
                 "guest_name": raw.get("guest_name", ""),
             }
         )
@@ -47,11 +50,13 @@ def normalize_reservation(raw: dict[str, Any], source: str = "pull") -> dict[str
     return {
         "external_id": raw.get("reservation_id", ""),
         "provider_reservation_id": raw.get("reservation_id", ""),
+        "provider_reservation_id_context": raw.get("reservation_id_context", ""),
+        "property_id": str(raw.get("property_id") or raw.get("hotel_code") or ""),
         "channel": raw.get("channel", "exely"),
         "channel_display": raw.get("channel", "Exely"),
         "provider_last_modified_at": raw.get("last_modify", ""),
         "provider_created_at": raw.get("create_date", ""),
-        "provider_version": 1,
+        "provider_version": raw.get("last_modify", ""),
         "guest": {
             "name": raw.get("guest_name", ""),
             "first_name": raw.get("guest_firstname", ""),

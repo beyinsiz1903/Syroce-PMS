@@ -325,10 +325,20 @@ class TestSoapBuilder:
         assert "HotelRef" in xml
 
     def test_build_notif_report_rq(self):
-        xml = build_notif_report_rq("u", "p", "H1", "RES1", "CONF1")
+        xml = build_notif_report_rq(
+            "u",
+            "p",
+            "H1",
+            "RES1",
+            "CONF1",
+            create_datetime="2030-01-01T09:00:00Z",
+            last_modify_datetime="2030-01-01T10:00:00Z",
+        )
         assert "OTA_NotifReportRQ" in xml
         assert "RES1" in xml
         assert "CONF1" in xml
+        assert 'Version="1.17"' in xml
+        assert 'LastModifyDateTime="2030-01-01T10:00:00Z"' in xml
 
     def test_build_ari_update_with_availability(self):
         xml = build_ari_update_rq("u", "p", "H1", "DBL", "BAR", "2025-07-01", "2025-07-10", availability=5)
@@ -628,7 +638,12 @@ class TestExelyProvider:
         provider = ExelyProvider(username="u", password="p", hotel_code="H1")
         with patch.object(provider._transport, "send_soap", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = _SOAP_SUCCESS_RS
-            result = await provider.confirm_delivery("RES001", "CONF001")
+            result = await provider.confirm_delivery(
+                "RES001",
+                "CONF001",
+                create_datetime="2030-01-01T09:00:00Z",
+                last_modify_datetime="2030-01-01T10:00:00Z",
+            )
             assert result.success is True
 
     @pytest.mark.asyncio
@@ -636,7 +651,12 @@ class TestExelyProvider:
         provider = ExelyProvider(username="u", password="p", hotel_code="H1")
         with patch.object(provider._transport, "send_soap", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = _SOAP_ERROR_RS
-            result = await provider.confirm_delivery("RES001", "CONF001")
+            result = await provider.confirm_delivery(
+                "RES001",
+                "CONF001",
+                create_datetime="2030-01-01T09:00:00Z",
+                last_modify_datetime="2030-01-01T10:00:00Z",
+            )
             # NotifReportRS with Errors should fail
             # Actually parse_notif_report_rs checks for Errors element
             # _SOAP_ERROR_RS has ota:Errors so it should fail

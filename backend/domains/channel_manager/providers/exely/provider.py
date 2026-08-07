@@ -22,6 +22,7 @@ from . import observability as obs
 from .client import EXELY_DEFAULT_URL, ExelySoapTransport
 from .errors import (
     ExelyError,
+    ExelyValidationError,
 )
 from .normalizer import normalize_reservation
 from .response_parser import (
@@ -344,6 +345,9 @@ class ExelyProvider:
         create_datetime: str = None,
         last_modify_datetime: str = None,
         res_status: str = "Reserved",
+        *,
+        provider_id_context: str = "",
+        confirmations: list[dict[str, Any]] | None = None,
     ) -> ProviderResult:
         """Confirm reservation delivery via OTA_NotifReportRQ.
         Exely accepts ResStatus='Reserved' for delivery confirmation."""
@@ -351,6 +355,11 @@ class ExelyProvider:
         operation = "OTA_NotifReportRQ"
         soap_action = get_soap_action_uri(operation)
         try:
+            if not create_datetime or not last_modify_datetime:
+                raise ExelyValidationError("Exact provider acknowledgement timestamps are required")
+            acknowledgement_rows = confirmations or [{"pms_booking_id": confirmation_number, "room_stay_indexes": []}]
+            if not reservation_id or not acknowledgement_rows or any(not str(row.get("pms_booking_id") or "") for row in acknowledgement_rows):
+                raise ExelyValidationError("A provider reservation and PMS confirmation are required")
             xml = build_notif_report_rq(
                 self._username,
                 self._password,
@@ -360,14 +369,15 @@ class ExelyProvider:
                 create_datetime=create_datetime,
                 last_modify_datetime=last_modify_datetime,
                 res_status=res_status,
+                provider_id_context=provider_id_context,
+                confirmations=acknowledgement_rows,
             )
 
             logger.info("[EXELY] operation=reservation_ack delivery_state=sending")
 
-            async def _call():
-                return await self._transport.send_soap(xml, soap_action)
-
-            raw = await self._retry.execute(_call)
+            # Delivery ACKs are provider mutations. Without a provider idempotency
+            # key, an ambiguous timeout must never trigger a blind retry.
+            raw = await self._transport.send_soap(xml, soap_action)
             result = parse_notif_report_rs(raw)
             duration_ms = int((time.time() - start) * 1000)
 
@@ -383,7 +393,12 @@ class ExelyProvider:
                 return ProviderResult(success=True, data=result, duration_ms=duration_ms)
 
             logger.warning("[EXELY] operation=reservation_ack delivery_state=rejected")
-            return ProviderResult(success=False, error="Provider rejected reservation acknowledgement", duration_ms=duration_ms)
+            return ProviderResult(
+                success=False,
+                error="Provider rejected reservation acknowledgement",
+                error_type=result.get("error_type") or "ProviderRejected",
+                duration_ms=duration_ms,
+            )
         except ExelyError as e:
             return self._handle_error(e, start, operation)
 
@@ -449,10 +464,26 @@ class ExelyProvider:
         return {"success": False, "error": result.error, "duration_ms": result.duration_ms}
 
     async def legacy_confirm_delivery(
-        self, reservation_id: str, confirmation_number: str, create_datetime: str = None, last_modify_datetime: str = None, res_status: str = "Reserved"
+        self,
+        reservation_id: str,
+        confirmation_number: str,
+        create_datetime: str = None,
+        last_modify_datetime: str = None,
+        res_status: str = "Reserved",
+        *,
+        provider_id_context: str = "",
+        confirmations: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Legacy: returns dict like the old ExelyClient."""
-        result = await self.confirm_delivery(reservation_id, confirmation_number, create_datetime=create_datetime, last_modify_datetime=last_modify_datetime, res_status=res_status)
+        result = await self.confirm_delivery(
+            reservation_id,
+            confirmation_number,
+            create_datetime=create_datetime,
+            last_modify_datetime=last_modify_datetime,
+            res_status=res_status,
+            provider_id_context=provider_id_context,
+            confirmations=confirmations,
+        )
         if result.success:
             return {"success": True, **(result.data or {}), "duration_ms": result.duration_ms}
         return {"success": False, "error": result.error, "duration_ms": result.duration_ms}
