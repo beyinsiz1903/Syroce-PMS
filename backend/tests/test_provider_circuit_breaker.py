@@ -213,7 +213,7 @@ async def test_t6_exely_push_ari_circuit_open_short_circuits_soap():
             r = await provider.push_ari(
                 room_type_code="STD", rate_plan_code="BAR",
                 start_date="2026-06-01", end_date="2026-06-05",
-                availability=10, stop_sell=False,
+                availability=10,
             )
             assert r.success is False
 
@@ -224,7 +224,7 @@ async def test_t6_exely_push_ari_circuit_open_short_circuits_soap():
         r = await provider.push_ari(
             room_type_code="STD", rate_plan_code="BAR",
             start_date="2026-06-01", end_date="2026-06-05",
-            availability=10, stop_sell=False,
+            availability=10,
         )
 
     assert r.success is False

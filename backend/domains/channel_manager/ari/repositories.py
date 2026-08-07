@@ -73,6 +73,7 @@ async def insert_ari_event(event: dict) -> str:
         "payload": event["payload"],
         "actor_id": event.get("actor_id"),
         "correlation_id": event.get("correlation_id"),
+        "target_provider": event.get("target_provider"),
         "created_at": event.get("created_at", _now_iso()),
     }
     await db[COLL_ARI_EVENTS].insert_one(doc)
@@ -152,7 +153,13 @@ async def get_pending_change_sets(
     provider: str | None = None,
     limit: int = 50,
 ) -> list[dict]:
-    query: dict[str, Any] = {"tenant_id": tenant_id, "status": {"$in": ["pending", "failed_retryable"]}}
+    query: dict[str, Any] = {
+        "tenant_id": tenant_id,
+        "$or": [
+            {"status": "pending"},
+            {"status": "failed_retryable", "provider": {"$ne": "exely"}},
+        ],
+    }
     if provider:
         query["provider"] = provider
     cursor = db[COLL_ARI_CHANGE_SETS].find(query, {"_id": 0}).sort("created_at", 1).limit(limit)

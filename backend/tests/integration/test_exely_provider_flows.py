@@ -8,20 +8,19 @@ Tests the full integration flow:
 - Error propagation through the full stack
 - Call site wiring verification
 """
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
-from domains.channel_manager.providers.exely import ExelyProvider, ProviderResult
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from domains.channel_manager.providers.exely import ExelyProvider
+from domains.channel_manager.providers.exely import observability as obs
 from domains.channel_manager.providers.exely.errors import (
-    ExelyError,
     ExelyAuthError,
-    ExelyTemporaryError,
     ExelyRateLimitError,
-    ExelyPayloadError,
+    ExelyTemporaryError,
 )
 from domains.channel_manager.providers.exely.retry import ExelyRetryPolicy
-from domains.channel_manager.providers.exely import observability as obs
-
 
 # Sample SOAP responses
 _AVAIL_RS = b"""<?xml version="1.0" encoding="UTF-8"?>
@@ -122,10 +121,9 @@ class TestProviderFacadeIntegration:
                 start_date="2025-07-01",
                 end_date="2025-07-10",
                 availability=5,
-                rate_amount=200.0,
-                min_stay=2,
             )
             assert result.success is True
+            assert mock.await_count == 1
             # Verify the SOAP envelope was built correctly
             call_args = mock.call_args
             xml_body = call_args[0][0]
@@ -178,8 +176,11 @@ class TestLegacyCompatibility:
         with patch.object(provider._transport, "send_soap", new_callable=AsyncMock) as mock:
             mock.return_value = _SUCCESS_RS
             result = await provider.legacy_push_ari(
-                room_type_code="DBL", rate_plan_code="BAR",
-                start_date="2025-07-01", end_date="2025-07-10",
+                room_type_code="DBL",
+                rate_plan_code="BAR",
+                start_date="2025-07-01",
+                end_date="2025-07-10",
+                availability=5,
             )
             assert isinstance(result, dict)
             assert result["success"] is True
@@ -189,7 +190,12 @@ class TestLegacyCompatibility:
         provider = ExelyProvider(username="u", password="p", hotel_code="H1")
         with patch.object(provider._transport, "send_soap", new_callable=AsyncMock) as mock:
             mock.return_value = _SUCCESS_RS
-            result = await provider.legacy_confirm_delivery("RES001", "CONF001")
+            result = await provider.legacy_confirm_delivery(
+                "RES001",
+                "CONF001",
+                create_datetime="2030-01-01T09:00:00Z",
+                last_modify_datetime="2030-01-01T10:00:00Z",
+            )
             assert isinstance(result, dict)
             assert result["success"] is True
 

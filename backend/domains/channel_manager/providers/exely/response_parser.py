@@ -36,6 +36,18 @@ def _safe_provider_codes(errors_el) -> list[str]:
     return sorted(set(codes))
 
 
+def _safe_warning_codes(body) -> list[str]:
+    warnings_el = body.find(f".//{_ns('Warnings')}")
+    if warnings_el is None:
+        return []
+    codes = []
+    for warning in warnings_el.iter(_ns("Warning")):
+        code = _attr(warning, "Code", "")[:64]
+        if code and re.fullmatch(r"[A-Za-z0-9_.:-]+", code):
+            codes.append(code)
+    return sorted(set(codes))
+
+
 def parse_soap_response(xml_bytes: bytes) -> dict[str, Any]:
     """Parse a SOAP envelope, extract body, detect faults."""
     try:
@@ -322,7 +334,7 @@ def parse_notif_report_rs(xml_bytes: bytes) -> dict[str, Any]:
 
 
 def parse_ari_update_rs(xml_bytes: bytes) -> dict[str, Any]:
-    """Parse ARI update response."""
+    """Parse ARI response using the explicit PMSConnect success contract."""
     envelope = parse_soap_response(xml_bytes)
     if not envelope["success"]:
         return envelope
@@ -331,9 +343,32 @@ def parse_ari_update_rs(xml_bytes: bytes) -> dict[str, Any]:
     errors_el = body.find(f".//{_ns('Errors')}")
     if errors_el is not None:
         codes = _safe_provider_codes(errors_el)
-        return {"success": False, "error": "Provider rejected ARI update", "provider_codes": codes}
+        return {
+            "success": False,
+            "result_class": "REJECTED",
+            "error": "Provider rejected ARI update",
+            "provider_codes": codes,
+            "warning_codes": [],
+        }
 
-    return {"success": True, "message": "ARI update applied"}
+    if body.find(f".//{_ns('Success')}") is None:
+        return {
+            "success": False,
+            "result_class": "MALFORMED",
+            "error": "ARI response did not contain explicit Success",
+            "provider_codes": [],
+            "warning_codes": [],
+        }
+
+    warning_codes = _safe_warning_codes(body)
+    result_class = "WARNING_SUCCESS" if body.find(f".//{_ns('Warnings')}") is not None else "SUCCESS"
+    return {
+        "success": True,
+        "result_class": result_class,
+        "message": "ARI update explicitly confirmed",
+        "provider_codes": [],
+        "warning_codes": warning_codes,
+    }
 
 
 def _safe_float(val) -> float:

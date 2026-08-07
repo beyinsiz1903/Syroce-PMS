@@ -55,6 +55,7 @@ def compile_delta_hotelrunner(change_set: dict) -> ARIDelta:
             date_to=change_set["date_to"],
             payload=hr_payload,
         ),
+        operation_identity=change_set.get("outbound_change_id") or change_set.get("id", ""),
     )
 
 
@@ -65,25 +66,18 @@ def compile_delta_exely(change_set: dict) -> ARIDelta:
 
     exely_payload = {}
     if scope == "availability":
-        exely_payload["BookingLimit"] = payload.get("availability", 0)
-        if "stop_sell" in payload:
-            exely_payload["RestrictionStatus"] = "Close" if payload["stop_sell"] else "Open"
+        exely_payload["operation"] = "availability"
+        exely_payload["value"] = payload.get("availability")
     elif scope == "rate":
-        exely_payload["AmountAfterTax"] = str(payload.get("base_rate", 0))
-        exely_payload["CurrencyCode"] = payload.get("currency", "TRY")
-        if "occupancy_prices" in payload:
-            exely_payload["OccupancyPrices"] = payload["occupancy_prices"]
+        exely_payload["operation"] = "rate"
+        exely_payload["value"] = payload.get("base_rate")
+        exely_payload["currency"] = payload.get("currency", "TRY")
     elif scope == "restriction":
-        if "min_los" in payload:
-            exely_payload["MinLOS"] = payload["min_los"]
-        if "max_los" in payload:
-            exely_payload["MaxLOS"] = payload["max_los"]
-        if "cta" in payload:
-            exely_payload["ArrivalDateBased"] = not payload["cta"]
-        if "ctd" in payload:
-            exely_payload["DepartureDateBased"] = not payload["ctd"]
-        if "stop_sell" in payload:
-            exely_payload["RestrictionStatus"] = "Close" if payload["stop_sell"] else "Open"
+        operation = payload.get("operation")
+        if operation not in {"stop_sell", "min_los", "min_los_arrival", "max_los", "cta", "ctd"}:
+            raise ValueError("Exely restriction operation must be explicit")
+        exely_payload["operation"] = operation
+        exely_payload["value"] = payload.get(operation)
 
     return ARIDelta(
         provider="exely",
@@ -104,6 +98,7 @@ def compile_delta_exely(change_set: dict) -> ARIDelta:
             date_to=change_set["date_to"],
             payload=exely_payload,
         ),
+        operation_identity=change_set.get("outbound_change_id") or change_set.get("id", ""),
     )
 
 

@@ -149,27 +149,11 @@ async def _push_to_exely(
             logger.debug("[AVAIL-AUTO-SYNC] No Exely mapping for pms_type=%s", pms_room_type)
             return
 
-        # Credential'ları al ve provider oluştur
-        from domains.channel_manager.credential_vault import get_decrypted_credentials
-
         hotel_code = conn.get("hotel_code", "")
-        creds = await get_decrypted_credentials(tenant_id, "exely", hotel_code)
-        if not creds:
-            logger.warning("[AVAIL-AUTO-SYNC] Exely credentials not found for tenant=%s", tenant_id)
+        if not hotel_code:
+            logger.warning("[AVAIL-AUTO-SYNC] Exely property mapping missing")
             return
-
-        from domains.channel_manager.providers.exely.provider import ExelyProvider
-
-        provider_kwargs = {
-            "username": creds.get("username", ""),
-            "password": creds.get("password", ""),
-            "hotel_code": hotel_code,
-            "connection_id": f"{tenant_id}:{hotel_code}",
-        }
-        if conn.get("endpoint_url"):
-            provider_kwargs["endpoint_url"] = conn["endpoint_url"]
-
-        provider = ExelyProvider(**provider_kwargs)
+        from domains.channel_manager.providers.exely.ari_publish import enqueue_exely_ari_update
 
         # Rate plan'ları al
         rate_plans = conn.get("rate_plans", [])
@@ -204,34 +188,29 @@ async def _push_to_exely(
 
                 for group_start, group_end, avail in date_groups:
                     try:
-                        result = await provider.push_ari(
+                        result = await enqueue_exely_ari_update(
+                            tenant_id,
+                            hotel_code,
                             room_type_code=exely_room_code,
                             rate_plan_code=rp_code,
                             start_date=group_start,
                             end_date=group_end,
+                            source_service="availability_auto_sync",
                             availability=avail,
                         )
-                        if result.success:
+                        if result["accepted"]:
                             push_count += 1
                             logger.info(
-                                "[AVAIL-AUTO-SYNC] Exely push OK: room=%s rp=%s %s→%s avail=%d",
-                                exely_room_code,
-                                rp_code,
-                                group_start,
-                                group_end,
-                                avail,
+                                "[AVAIL-AUTO-SYNC] Exely delivery_state=queued operation=availability",
                             )
                         else:
                             logger.warning(
-                                "[AVAIL-AUTO-SYNC] Exely push FAIL: room=%s rp=%s err=%s",
-                                exely_room_code,
-                                rp_code,
-                                result.error,
+                                "[AVAIL-AUTO-SYNC] Exely delivery_state=blocked operation=availability",
                             )
                     except Exception as e:
-                        logger.error("[AVAIL-AUTO-SYNC] Exely push error: %s", e)
+                        logger.error("[AVAIL-AUTO-SYNC] Exely queue failed: %s", type(e).__name__)
 
-        logger.info("[AVAIL-AUTO-SYNC] Exely total %d pushes completed", push_count)
+        logger.info("[AVAIL-AUTO-SYNC] Exely queued operations=%d", push_count)
 
     except Exception as e:
         logger.error("[AVAIL-AUTO-SYNC] Exely sync error: %s", e)

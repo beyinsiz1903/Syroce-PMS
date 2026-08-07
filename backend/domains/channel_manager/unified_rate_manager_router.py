@@ -882,35 +882,19 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
 
 
 async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_fields, selected_days_set):
-    """Exely'ye arka planda push gonder.
+    """Queue Exely changes through the canonical durable ARI outbox.
 
     Frontend grid'i HotelRunner tabanli oda kodlari (HR:xxx) ile geliyor.
     Exely'nin kendi room_code + rate_plan_code'larina ceviriyoruz:
       HR:xxx -> hotelrunner_room_mappings.pms_room_type_name -> exely_room_mappings.exely_room_code
       rate_plan -> Exely connection'daki rate_plans listesi.
     """
-    try:
-        from domains.channel_manager.providers.exely.security import resolve_exely_credentials
-
-        hotel_code = conn.get("hotel_code", "")
-        creds = await resolve_exely_credentials(tenant_id, conn, actor="unified_rate_manager")
-        if not creds:
-            logger.warning("[UNIFIED] Exely credential_state=missing action=blocked")
-            return 0
-        logger.info("[UNIFIED] Exely operation=ari_push delivery_state=starting")
-        from domains.channel_manager.providers.exely.provider import ExelyProvider
-
-        kwargs = {
-            "username": creds["username"],
-            "password": creds["password"],
-            "hotel_code": creds["hotel_code"],
-            "endpoint_url": creds["endpoint_url"],
-            "connection_id": f"{tenant_id}:{hotel_code}",
-        }
-        provider = ExelyProvider(**kwargs)
-    except Exception as exc:
-        logger.error("[UNIFIED] Exely provider_init_failed exception_class=%s", type(exc).__name__)
+    del selected_days_set
+    hotel_code = str(conn.get("hotel_code") or "")
+    if not hotel_code:
+        logger.warning("[UNIFIED] Exely mapping_state=missing mapping_type=property")
         return 0
+    from domains.channel_manager.providers.exely.ari_publish import enqueue_exely_ari_update
 
     # ── HR room code (HR:xxx / xxx) -> pms_room_type -> exely_room_code ──
     # Birincil kaynak: HotelRunner connection.cached_rooms
@@ -1040,41 +1024,60 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         push_avail = (rv.availability if rv else request.availability) if "availability" in update_fields else None
         push_stop = (rv.stop_sell if rv else request.stop_sell) if "stop_sell" in update_fields else None
         push_min = (rv.min_stay if rv else request.min_stay) if "min_stay" in update_fields else None
+        push_max = (rv.max_stay if rv else request.max_stay) if "max_stay" in update_fields else None
+        push_cta = (rv.cta if rv else request.cta) if "cta" in update_fields else None
+        push_ctd = (rv.ctd if rv else request.ctd) if "ctd" in update_fields else None
 
         for ex_code in exely_codes:
             for rp in exely_rate_plans:
 
-                async def _push(rt=ex_code, rp=rp, rate=push_rate, avail=push_avail, stop=push_stop, minstay=push_min, cur=push_currency):
+                async def _push(
+                    rt=ex_code,
+                    rp=rp,
+                    rate=push_rate,
+                    avail=push_avail,
+                    stop=push_stop,
+                    minstay=push_min,
+                    maxstay=push_max,
+                    cta=push_cta,
+                    ctd=push_ctd,
+                    cur=push_currency,
+                ):
                     try:
-                        logger.info("[UNIFIED] Exely operation=ari_push delivery_state=sending")
-                        result = await provider.push_ari(
+                        result = await enqueue_exely_ari_update(
+                            tenant_id,
+                            hotel_code,
                             room_type_code=rt,
                             rate_plan_code=rp,
                             start_date=request.start_date,
                             end_date=request.end_date,
+                            source_service="unified_rate_manager",
                             availability=avail,
                             rate_amount=rate,
                             currency=cur,
                             stop_sell=stop,
-                            min_stay=minstay,
+                            min_los=minstay,
+                            max_los=maxstay,
+                            cta=cta,
+                            ctd=ctd,
                         )
-                        logger.info("[UNIFIED] Exely operation=ari_push success=%s", result.success)
+                        logger.info(
+                            "[UNIFIED] Exely delivery_state=%s queued_operation_count=%d",
+                            result["delivery_state"],
+                            result["queued_operation_count"],
+                        )
                         return result
                     except Exception as exc:
-                        logger.error("[UNIFIED] Exely operation=ari_push delivery_state=failed exception_class=%s", type(exc).__name__)
+                        logger.error("[UNIFIED] Exely queue_failed exception_class=%s", type(exc).__name__)
 
                 push_tasks.append(_push())
 
     if push_tasks:
-
-        async def _bg(tasks):
-            try:
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                logger.info("[UNIFIED] Exely background push completed: %d tasks", len(results))
-            except Exception as exc:
-                logger.error("[UNIFIED] Exely background_push_failed exception_class=%s", type(exc).__name__)
-
-        asyncio.create_task(_bg(push_tasks))
+        results = await asyncio.gather(*push_tasks, return_exceptions=True)
+        failures = sum(1 for result in results if isinstance(result, Exception))
+        if failures:
+            logger.error("[UNIFIED] Exely queue_failed count=%d", failures)
+        logger.info("[UNIFIED] Exely durable queue completed: %d tasks", len(results))
 
     return len(push_tasks)
 

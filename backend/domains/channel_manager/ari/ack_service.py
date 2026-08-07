@@ -52,6 +52,22 @@ async def process_ack(
         logger.info(f"ARI push acked: {provider} cs={cs_id}")
         return STATUS_ACKED
 
+    # Exely mutations do not have a provider idempotency key or ARI read-back
+    # endpoint. Any unconfirmed result requires operator/provider reconciliation;
+    # it must never re-enter the automatic mutation queue.
+    if provider == "exely":
+        await repo.update_change_set_status(
+            cs_id,
+            STATUS_FAILED_PERMANENT,
+            error=result.error or f"Unconfirmed Exely delivery: {result.delivery_state}",
+            inc_attempt=False,
+        )
+        logger.error(
+            "ARI push not confirmed: provider=exely state=%s",
+            result.delivery_state,
+        )
+        return STATUS_FAILED_PERMANENT
+
     if result.delivery_state in {
         "blocked",
         "dry_run",

@@ -3,7 +3,6 @@ Rate Manager Router — Fiyat, Müsaitlik, Min Konaklama Yönetimi
 PMS üzerinden ayarla → Exely'ye push et → OTA'lara yansısın.
 """
 
-import asyncio
 import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -15,7 +14,7 @@ from pymongo import UpdateOne
 from core.database import db
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
-from domains.channel_manager.credential_vault import get_decrypted_credentials
+from domains.channel_manager.providers.exely.ari_publish import enqueue_exely_ari_update
 from domains.channel_manager.rate_utils import (
     BulkGridUpdateRequest,
     PricingSettingsRequest,
@@ -221,25 +220,9 @@ async def update_rates(
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found")
 
-    # Get credentials for Exely push
     hotel_code = conn.get("hotel_code", "")
-    creds = await get_decrypted_credentials(tenant_id, "exely", hotel_code)
-    provider = None
-    if creds:
-        from domains.channel_manager.providers.exely.provider import ExelyProvider
-
-        provider_kwargs = {
-            "username": creds.get("username", ""),
-            "password": creds.get("password", ""),
-            "hotel_code": hotel_code,
-            "connection_id": f"{tenant_id}:{hotel_code}",
-        }
-        if conn.get("endpoint_url"):
-            provider_kwargs["endpoint_url"] = conn["endpoint_url"]
-        try:
-            provider = ExelyProvider(**provider_kwargs)
-        except Exception:
-            provider = None
+    if not hotel_code:
+        raise HTTPException(status_code=422, detail="Exely property mapping is missing")
 
     bulk_ops = []
     push_tasks = []
@@ -283,53 +266,50 @@ async def update_rates(
             saved += 1
             d += timedelta(days=1)
 
-        # Prepare Exely push task (will run in parallel)
-        if provider:
+        async def _queue(u=upd):
+            try:
+                return await enqueue_exely_ari_update(
+                    tenant_id,
+                    hotel_code,
+                    room_type_code=u.room_type_code,
+                    rate_plan_code=u.rate_plan_code,
+                    start_date=u.start_date,
+                    end_date=u.end_date,
+                    source_service="rate_manager",
+                    availability=u.availability,
+                    rate_amount=u.rate,
+                    currency=conn.get("currency", "TRY"),
+                    stop_sell=u.stop_sell,
+                    min_los=u.min_stay,
+                    max_los=u.max_stay,
+                    cta=u.cta,
+                    ctd=u.ctd,
+                    actor_id=current_user.id,
+                )
+            except Exception as exc:
+                logger.error("[RATE-MGR] Exely queue failed: %s", type(exc).__name__)
+                return {"accepted": False, "delivery_state": "blocked", "provider_write_count": 0}
 
-            async def _push(u=upd):
-                try:
-                    result = await provider.push_ari(
-                        room_type_code=u.room_type_code,
-                        rate_plan_code=u.rate_plan_code,
-                        start_date=u.start_date,
-                        end_date=u.end_date,
-                        availability=u.availability,
-                        rate_amount=u.rate,
-                        currency=conn.get("currency", "TRY"),
-                        stop_sell=u.stop_sell,
-                        min_stay=u.min_stay,
-                    )
-                    return {"room_type_code": u.room_type_code, "rate_plan_code": u.rate_plan_code, "success": result.success, "error": result.error if not result.success else None}
-                except Exception as e:
-                    logger.error(f"[RATE-MGR] Exely push error: {e}")
-                    return {"room_type_code": u.room_type_code, "rate_plan_code": u.rate_plan_code, "success": False, "error": str(e)}
-
-            push_tasks.append(_push())
-        else:
-            push_results.append(
-                {
-                    "room_type_code": upd.room_type_code,
-                    "rate_plan_code": upd.rate_plan_code,
-                    "success": False,
-                    "error": "Exely credentials not found",
-                }
-            )
+        push_tasks.append(_queue())
 
     # Execute DB bulk write in one batch
     if bulk_ops:
         await db.rate_calendar.bulk_write(bulk_ops, ordered=False)
 
-    # Execute all Exely pushes in parallel
+    # Queue only after the PMS calendar write is durable.
     if push_tasks:
-        push_results.extend(await asyncio.gather(*push_tasks))
+        for task in push_tasks:
+            push_results.append(await task)
 
-    all_success = all(r["success"] for r in push_results)
+    all_queued = bool(push_results) and all(r.get("accepted") for r in push_results)
 
     return {
         "saved": saved,
         "push_results": push_results,
-        "all_pushed": all_success,
-        "message": "All updates applied successfully" if all_success else "Some updates failed",
+        "all_pushed": False,
+        "all_queued": all_queued,
+        "provider_write_count": 0,
+        "message": "All updates queued" if all_queued else "Some updates were not queued",
     }
 
 
@@ -374,25 +354,9 @@ async def bulk_grid_update(
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found")
 
-    # Get credentials for Exely push
     hotel_code = conn.get("hotel_code", "")
-    creds = await get_decrypted_credentials(tenant_id, "exely", hotel_code)
-    provider = None
-    if creds:
-        from domains.channel_manager.providers.exely.provider import ExelyProvider
-
-        provider_kwargs = {
-            "username": creds.get("username", ""),
-            "password": creds.get("password", ""),
-            "hotel_code": hotel_code,
-            "connection_id": f"{tenant_id}:{hotel_code}",
-        }
-        if conn.get("endpoint_url"):
-            provider_kwargs["endpoint_url"] = conn["endpoint_url"]
-        try:
-            provider = ExelyProvider(**provider_kwargs)
-        except Exception:
-            provider = None
+    if not hotel_code:
+        raise HTTPException(status_code=422, detail="Exely property mapping is missing")
 
     selected_days_set = set(request.selected_days) if request.selected_days else None
     update_fields = set(request.update_fields)
@@ -485,59 +449,71 @@ async def bulk_grid_update(
             saved += 1
             d += timedelta(days=1)
 
-        # Prepare Exely push task (will run in parallel)
-        if provider:
-            push_rate = v_rate if "rate" in update_fields else None
-            push_avail = v_avail if "availability" in update_fields else None
-            push_stop = v_stop if "stop_sell" in update_fields else None
-            push_min = v_min if "min_stay" in update_fields else None
-            _cur_code, _ = await get_tenant_currency(tenant_id)
-            push_currency = conn.get("currency") or _cur_code
+        push_rate = v_rate if "rate" in update_fields else None
+        push_avail = v_avail if "availability" in update_fields else None
+        push_stop = v_stop if "stop_sell" in update_fields else None
+        push_min = v_min if "min_stay" in update_fields else None
+        push_max = v_max if "max_stay" in update_fields else None
+        push_cta = v_cta if "cta" in update_fields else None
+        push_ctd = v_ctd if "ctd" in update_fields else None
+        _cur_code, _ = await get_tenant_currency(tenant_id)
+        push_currency = conn.get("currency") or _cur_code
 
-            async def _push(rt=rt_code, rp=rp_code, rate=push_rate, avail=push_avail, stop=push_stop, minstay=push_min, cur=push_currency):
-                try:
-                    result = await provider.push_ari(
-                        room_type_code=rt,
-                        rate_plan_code=rp,
-                        start_date=request.start_date,
-                        end_date=request.end_date,
-                        availability=avail,
-                        rate_amount=rate,
-                        currency=cur,
-                        stop_sell=stop,
-                        min_stay=minstay,
-                    )
-                    return {"room_type_code": rt, "rate_plan_code": rp, "success": result.success, "error": result.error if not result.success else None}
-                except Exception as e:
-                    logger.error(f"[BULK-UPDATE] Exely push error: {e}")
-                    return {"room_type_code": rt, "rate_plan_code": rp, "success": False, "error": str(e)}
+        async def _queue(
+            rt=rt_code,
+            rp=rp_code,
+            rate=push_rate,
+            avail=push_avail,
+            stop=push_stop,
+            minstay=push_min,
+            maxstay=push_max,
+            cta=push_cta,
+            ctd=push_ctd,
+            cur=push_currency,
+        ):
+            try:
+                return await enqueue_exely_ari_update(
+                    tenant_id,
+                    hotel_code,
+                    room_type_code=rt,
+                    rate_plan_code=rp,
+                    start_date=request.start_date,
+                    end_date=request.end_date,
+                    source_service="rate_manager_bulk",
+                    availability=avail,
+                    rate_amount=rate,
+                    currency=cur,
+                    stop_sell=stop,
+                    min_los=minstay,
+                    max_los=maxstay,
+                    cta=cta,
+                    ctd=ctd,
+                    actor_id=current_user.id,
+                )
+            except Exception as exc:
+                logger.error("[BULK-UPDATE] Exely queue failed: %s", type(exc).__name__)
+                return {"accepted": False, "delivery_state": "blocked", "provider_write_count": 0}
 
-            push_tasks.append(_push())
+        push_tasks.append(_queue())
 
     # Execute DB bulk write in one batch
     if bulk_ops:
         await db.rate_calendar.bulk_write(bulk_ops, ordered=False)
 
-    # Fire-and-forget: push to Exely in background (don't block response)
+    queue_results = []
     if push_tasks:
-
-        async def _background_push(tasks):
-            try:
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                success = sum(1 for r in results if isinstance(r, dict) and r.get("success"))
-                logger.info(f"[BULK-UPDATE] Background Exely push done: {success}/{len(results)} successful")
-            except Exception as e:
-                logger.error(f"[BULK-UPDATE] Background Exely push failed: {e}")
-
-        asyncio.create_task(_background_push(push_tasks))
+        for task in push_tasks:
+            queue_results.append(await task)
+    all_queued = bool(queue_results) and all(result.get("accepted") for result in queue_results)
 
     return {
         "saved": saved,
-        "push_results": [],
+        "push_results": queue_results,
         "all_pushed": False,
-        "background_push": len(push_tasks) > 0,
+        "all_queued": all_queued,
+        "provider_write_count": 0,
         "total_room_types": len(total_room_types_set),
-        "message": f"{saved} kayıt güncellendi" + (f", {len(push_tasks)} Exely push arka planda gönderiliyor" if push_tasks else ""),
+        "message": f"{saved} records updated" + (f", {len(push_tasks)} Exely operations queued" if push_tasks else ""),
     }
 
 
