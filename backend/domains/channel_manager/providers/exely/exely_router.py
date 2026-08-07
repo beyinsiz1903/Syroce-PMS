@@ -18,6 +18,10 @@ from domains.channel_manager.providers.exely.errors import ExelyError
 from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
 from domains.channel_manager.providers.exely.provider import ExelyProvider
+from domains.channel_manager.providers.exely.security import (
+    exely_connection_projection,
+    resolve_exely_credentials,
+)
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v93 DW
 
@@ -70,41 +74,26 @@ class ExelyARIUpdate(BaseModel):
 async def _get_client(tenant_id: str) -> tuple:
     conn = await db.exely_connections.find_one(
         {"tenant_id": tenant_id, "is_active": True},
-        {"_id": 0},
+        exely_connection_projection(),
     )
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found. Please set up a connection first.")
 
-    # Resolve credentials via secrets manager (with legacy fallback)
-    sm = get_secrets_manager()
-    hotel_code = conn.get("hotel_code", "")
-    creds = await sm.get_provider_credentials(tenant_id, PROVIDER, hotel_code)
-
-    if creds:
-        kwargs = {
-            "username": creds.get("username", ""),
-            "password": creds.get("password", ""),
-            "hotel_code": creds.get("hotel_code", hotel_code),
-        }
-        if creds.get("endpoint_url"):
-            kwargs["endpoint_url"] = creds["endpoint_url"]
-    else:
-        # Final fallback: read from connection doc (pre-migration data)
-        kwargs = {
-            "username": conn.get("username", ""),
-            "password": conn.get("password", ""),
-            "hotel_code": conn.get("hotel_code", ""),
-        }
-        if conn.get("endpoint_url"):
-            kwargs["endpoint_url"] = conn["endpoint_url"]
-        if kwargs.get("username"):
-            logger.warning("Using legacy connection doc credentials for Exely tenant=%s — migrate ASAP", tenant_id)
+    creds = await resolve_exely_credentials(tenant_id, conn, actor="exely_router")
+    if not creds:
+        raise HTTPException(status_code=503, detail="Exely credentials are unavailable")
+    kwargs = {
+        "username": creds["username"],
+        "password": creds["password"],
+        "hotel_code": creds["hotel_code"],
+        "endpoint_url": creds["endpoint_url"],
+    }
     try:
         return ExelyProvider(**kwargs), conn
     except ExelyError as exc:
-        raise HTTPException(status_code=502, detail=f"Exely credentials invalid or missing: {exc.message}")
+        raise HTTPException(status_code=502, detail=f"Exely connection rejected ({type(exc).__name__})")
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Exely connection error: {exc}")
+        raise HTTPException(status_code=502, detail=f"Exely connection failed ({type(exc).__name__})")
 
 
 # ── Connection Management ────────────────────────────────────────────
@@ -129,7 +118,7 @@ async def setup_connection(
     test_result = await provider.legacy_test_connection()
 
     if not test_result["connected"]:
-        raise HTTPException(status_code=400, detail=f"Exely connection error: {test_result['error']}")
+        raise HTTPException(status_code=400, detail="Exely connection test failed")
 
     # Store credentials in secrets manager (encrypted, audited)
     sm = get_secrets_manager()
@@ -188,7 +177,7 @@ async def setup_connection(
 async def get_connection_status(current_user: User = Depends(get_current_user)):
     conn = await db.exely_connections.find_one(
         {"tenant_id": current_user.tenant_id},
-        {"_id": 0, "password": 0, "username": 0, "credentials_ref": 0},
+        {"_id": 0, "password": 0, "username": 0, "credentials_ref": 0, "endpoint_url": 0},
     )
     if not conn:
         return {"connected": False, "message": "Exely connection not configured"}
@@ -202,7 +191,7 @@ async def test_connection(
 ):
     conn = await db.exely_connections.find_one(
         {"tenant_id": current_user.tenant_id, "is_active": True},
-        {"_id": 0},
+        exely_connection_projection(),
     )
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found")
@@ -386,7 +375,7 @@ async def push_ari(
 async def bulk_push_ari(
     updates: list[ExelyARIUpdate],
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
+    _perm=Depends(require_op("manage_channel_connectors")),
 ):
     """Push multiple ARI updates."""
     client, conn = await _get_client(current_user.tenant_id)
@@ -417,58 +406,48 @@ async def bulk_push_ari(
 @router.post("/sync/reservations/pull")
 async def manual_pull(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
+    _perm=Depends(require_op("manage_channel_connectors")),
 ):
     """Manually trigger a reservation pull from Exely."""
     conn = await db.exely_connections.find_one(
         {"tenant_id": current_user.tenant_id, "is_active": True},
-        {"_id": 0},
+        exely_connection_projection(),
     )
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found")
 
-    # Get credentials from secrets manager
-    sm = get_secrets_manager()
-    creds = await sm.get_provider_credentials(current_user.tenant_id, PROVIDER, conn.get("hotel_code", ""))
-    if creds:
-        username = creds.get("username", "")
-        password = creds.get("password", "")
-        hotel_code = creds.get("hotel_code", "")
-        endpoint_url = creds.get("endpoint_url", "")
-    else:
-        username = conn.get("username", "")
-        password = conn.get("password", "")
-        hotel_code = conn.get("hotel_code", "")
-        endpoint_url = conn.get("endpoint_url", "")
+    creds = await resolve_exely_credentials(current_user.tenant_id, conn, actor="exely_manual_pull")
+    if not creds:
+        raise HTTPException(status_code=503, detail="Exely credentials are unavailable")
 
     result = await exely_pull_scheduler.pull_for_tenant(
         tenant_id=current_user.tenant_id,
-        username=username,
-        password=password,
-        hotel_code=hotel_code,
-        endpoint_url=endpoint_url,
+        username=creds["username"],
+        password=creds["password"],
+        hotel_code=creds["hotel_code"],
+        endpoint_url=creds["endpoint_url"],
     )
 
     if not result["success"]:
-        raise HTTPException(status_code=502, detail=f"Pull hatasi: {result.get('error')}")
+        raise HTTPException(status_code=502, detail="Exely reservation pull failed")
 
     # Also check individual imported reservations for cancellation status changes.
     # The batch "Undelivered" pull may not return cancellations immediately.
     cancel_detected = await _check_individual_cancellations(
         current_user.tenant_id,
-        username,
-        password,
-        hotel_code,
-        endpoint_url,
+        creds["username"],
+        creds["password"],
+        creds["hotel_code"],
+        creds["endpoint_url"],
     )
 
     # Also check for modifications (name, date, room type changes)
     mod_detected = await _check_individual_modifications(
         current_user.tenant_id,
-        username,
-        password,
-        hotel_code,
-        endpoint_url,
+        creds["username"],
+        creds["password"],
+        creds["hotel_code"],
+        creds["endpoint_url"],
     )
 
     # Auto-import is already triggered inside pull_for_tenant
@@ -476,9 +455,12 @@ async def manual_pull(
     from domains.channel_manager.providers.exely.auto_import import auto_import_pending
     from domains.channel_manager.providers.exely.provider import ExelyProvider
 
-    provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
-    if endpoint_url:
-        provider_kwargs["endpoint_url"] = endpoint_url
+    provider_kwargs = {
+        "username": creds["username"],
+        "password": creds["password"],
+        "hotel_code": creds["hotel_code"],
+        "endpoint_url": creds["endpoint_url"],
+    }
     confirm_provider = ExelyProvider(**provider_kwargs)
     import_result = await auto_import_pending(current_user.tenant_id, provider=confirm_provider)
 
@@ -549,9 +531,9 @@ async def _check_individual_cancellations(
                 )
                 if ingest_result.get("action") == "cancelled":
                     cancel_count += 1
-                    logger.info(f"[EXELY-CANCEL-CHECK] Detected cancellation for {ext_id}")
-        except Exception as e:
-            logger.warning(f"[EXELY-CANCEL-CHECK] Error checking {ext_id}: {e}")
+                    logger.info("[EXELY-CANCEL-CHECK] event=cancellation_detected")
+        except Exception as exc:
+            logger.warning("[EXELY-CANCEL-CHECK] failed exception_class=%s", type(exc).__name__)
 
     return cancel_count
 
@@ -642,12 +624,13 @@ async def _check_individual_modifications(
                 if ingest_result.get("action") in ("updated", "created"):
                     mod_count += 1
                     logger.info(
-                        f"[EXELY-MOD-CHECK] Detected modification for {ext_id}: "
-                        f"name={new_name != stored_name}, dates={new_checkin[:10] != (stored_checkin or '')[:10]}, "
-                        f"room={new_room_code != stored_room_code}"
+                        "[EXELY-MOD-CHECK] event=modification_detected name_changed=%s dates_changed=%s room_changed=%s",
+                        new_name != stored_name,
+                        new_checkin[:10] != (stored_checkin or "")[:10],
+                        new_room_code != stored_room_code,
                     )
         except Exception as e:
-            logger.warning(f"[EXELY-MOD-CHECK] Error checking {ext_id}: {e}")
+            logger.warning("[EXELY-MOD-CHECK] failed exception_class=%s", type(e).__name__)
 
     return mod_count
 
@@ -740,7 +723,7 @@ async def confirm_all_imported_deliveries(
                     {"$set": {"delivery_confirmed": True, "confirmed_at": datetime.now(UTC).isoformat()}},
                 )
                 confirmed += 1
-                logger.info(f"[EXELY] Bulk confirm: {res['external_id']} -> OK")
+                logger.info("[EXELY] operation=reservation_ack delivery_state=accepted source=bulk")
             else:
                 errors.append({"external_id": res["external_id"], "error": result.get("error", "unknown")})
         except Exception as e:
@@ -758,7 +741,7 @@ async def confirm_all_imported_deliveries(
 async def import_reservation_to_pms(
     reservation_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
+    _perm=Depends(require_op("manage_channel_connectors")),
 ):
     """Manually import a channel reservation into PMS as a booking."""
     tenant_id = current_user.tenant_id
@@ -793,9 +776,9 @@ async def import_reservation_to_pms(
             external_id = res.get("external_id", reservation_id)
             confirm = await client.legacy_confirm_delivery(external_id, result["pms_booking_id"])
             if confirm.get("success"):
-                logger.info(f"[EXELY] Delivery confirmed for {external_id}")
-        except Exception as e:
-            logger.warning(f"[EXELY] Delivery confirm error: {e}")
+                logger.info("[EXELY] operation=reservation_ack delivery_state=accepted source=manual_import")
+        except Exception as exc:
+            logger.warning("[EXELY] operation=reservation_ack delivery_state=failed exception_class=%s", type(exc).__name__)
 
     return {
         "message": "Rezervasyon PMS'e basariyla aktarildi",
@@ -829,7 +812,7 @@ async def verify_test_booking(
     tenant_id = current_user.tenant_id
     conn = await db.exely_connections.find_one(
         {"tenant_id": tenant_id, "is_active": True},
-        {"_id": 0},
+        exely_connection_projection(),
     )
     if not conn:
         raise HTTPException(status_code=404, detail="Exely bağlantısı bulunamadı")
@@ -843,19 +826,13 @@ async def verify_test_booking(
     ).to_list(500)
     before_ids = {r["external_id"] for r in existing if r.get("external_id")}
 
-    # Get credentials from secrets manager
-    sm = get_secrets_manager()
-    creds = await sm.get_provider_credentials(tenant_id, PROVIDER, conn.get("hotel_code", ""))
-    if creds:
-        username = creds.get("username", "")
-        password = creds.get("password", "")
-        hotel_code = creds.get("hotel_code", "")
-        endpoint_url = creds.get("endpoint_url", "")
-    else:
-        username = conn.get("username", "")
-        password = conn.get("password", "")
-        hotel_code = conn.get("hotel_code", "")
-        endpoint_url = conn.get("endpoint_url", "")
+    creds = await resolve_exely_credentials(tenant_id, conn, actor="exely_test_booking_verify")
+    if not creds:
+        raise HTTPException(status_code=503, detail="Exely credentials are unavailable")
+    username = creds["username"]
+    password = creds["password"]
+    hotel_code = creds["hotel_code"]
+    endpoint_url = creds["endpoint_url"]
 
     verification = {
         "session_id": str(uuid.uuid4()),
@@ -893,7 +870,7 @@ async def verify_test_booking(
                         }
                     )
             else:
-                verification["errors"].append(f"OTA_ReadRQ: {pull.get('error', 'unknown')}")
+                verification["errors"].append("OTA_ReadRQ: provider_read_failed")
         else:
             # Do a general pull for new undelivered reservations
             result = await exely_pull_scheduler.pull_for_tenant(
@@ -909,8 +886,8 @@ async def verify_test_booking(
                 "error": result.get("error"),
             }
 
-    except Exception as e:
-        verification["errors"].append(str(e))
+    except Exception as exc:
+        verification["errors"].append(type(exc).__name__)
 
     # After state
     after_count = await db.exely_reservations.count_documents({"tenant_id": tenant_id})
@@ -977,11 +954,11 @@ async def get_sync_status(current_user: User = Depends(get_current_user)):
 @router.post("/sync/scheduler/start")
 async def start_scheduler(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
+    _perm=Depends(require_op("manage_channel_connectors")),
 ):
     conn = await db.exely_connections.find_one(
         {"tenant_id": current_user.tenant_id, "is_active": True},
-        {"_id": 0},
+        {"_id": 0, "sync_interval_seconds": 1},
     )
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found")
@@ -993,7 +970,7 @@ async def start_scheduler(
 @router.post("/sync/scheduler/stop")
 async def stop_scheduler(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
+    _perm=Depends(require_op("manage_channel_connectors")),
 ):
     await exely_pull_scheduler.stop()
     return {"message": "Scheduler durduruldu"}

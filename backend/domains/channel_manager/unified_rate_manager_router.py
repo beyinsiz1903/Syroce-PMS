@@ -36,6 +36,7 @@ from cache_manager import cached
 from core.database import db
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
+from domains.channel_manager.providers.exely.security import exely_connection_projection
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v96 DW
 from services.cm_provider import _detect_active_provider, _tenant_configured_provider
@@ -132,7 +133,10 @@ async def detect_provider(current_user: User = Depends(get_current_user)):
     hr_detect = await _detect_active_provider(tenant_id, prefer="hotelrunner")
     hr_conn = hr_detect["connection"] if hr_detect["provider"] == "hotelrunner" else None
 
-    exely_conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
+    exely_conn = await db.exely_connections.find_one(
+        {"tenant_id": tenant_id, "is_active": True},
+        exely_connection_projection(),
+    )
 
     # Otel icin super_admin bir altyapi sectiyse, operatore YALNIZCA o
     # saglayici gosterilir (fail-closed: secilenin baglantisi yoksa liste bos).
@@ -548,7 +552,10 @@ async def unified_bulk_grid_update(
                 "cached_rooms": (legacy or {}).get("cached_rooms", []),
             }
 
-    exely_conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
+    exely_conn = await db.exely_connections.find_one(
+        {"tenant_id": tenant_id, "is_active": True},
+        exely_connection_projection(),
+    )
 
     # Per-tenant secili altyapi (super_admin) OTORITERDIR; istemcinin
     # request.provider'i bunu ezemez: configured-exely otel yalnizca Exely'ye
@@ -883,24 +890,26 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
       rate_plan -> Exely connection'daki rate_plans listesi.
     """
     try:
-        from domains.channel_manager.credential_vault import get_decrypted_credentials
+        from domains.channel_manager.providers.exely.security import resolve_exely_credentials
 
         hotel_code = conn.get("hotel_code", "")
-        creds = await get_decrypted_credentials(tenant_id, "exely", hotel_code)
+        creds = await resolve_exely_credentials(tenant_id, conn, actor="unified_rate_manager")
         if not creds:
-            creds = {"username": conn.get("username", ""), "password": conn.get("password", "")}
-            if not creds.get("username"):
-                logger.warning("[UNIFIED] Exely credentials bulunamadi tenant=%s", tenant_id)
-                return 0
-        logger.info("[UNIFIED] Exely push baslatiliyor tenant=%s hotel_code=%s user=%s", tenant_id, hotel_code, creds.get("username", "?"))
+            logger.warning("[UNIFIED] Exely credential_state=missing action=blocked")
+            return 0
+        logger.info("[UNIFIED] Exely operation=ari_push delivery_state=starting")
         from domains.channel_manager.providers.exely.provider import ExelyProvider
 
-        kwargs = {"username": creds.get("username", ""), "password": creds.get("password", ""), "hotel_code": hotel_code, "connection_id": f"{tenant_id}:{hotel_code}"}
-        if conn.get("endpoint_url"):
-            kwargs["endpoint_url"] = conn["endpoint_url"]
+        kwargs = {
+            "username": creds["username"],
+            "password": creds["password"],
+            "hotel_code": creds["hotel_code"],
+            "endpoint_url": creds["endpoint_url"],
+            "connection_id": f"{tenant_id}:{hotel_code}",
+        }
         provider = ExelyProvider(**kwargs)
-    except Exception as e:
-        logger.error("[UNIFIED] Exely provider olusturulamadi: %s", e)
+    except Exception as exc:
+        logger.error("[UNIFIED] Exely provider_init_failed exception_class=%s", type(exc).__name__)
         return 0
 
     # ── HR room code (HR:xxx / xxx) -> pms_room_type -> exely_room_code ──
@@ -921,8 +930,8 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
                 hr_to_pms[inv] = pms
                 if inv.startswith("HR:"):
                     hr_to_pms[inv.split(":", 1)[1]] = pms
-    except Exception as e:
-        logger.warning("[UNIFIED] Exely: HR cached_rooms okunamadi: %s", e)
+    except Exception as exc:
+        logger.warning("[UNIFIED] Exely room_cache_read_failed exception_class=%s", type(exc).__name__)
 
     # Fallback: birlesik room_mappings (provider=hotelrunner)
     rt_codes_norm = sorted({rt for rt, _ in pairs} | {rt.split(":", 1)[1] for rt, _ in pairs if rt.startswith("HR:")})
@@ -980,26 +989,20 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         # Sadece Exely connection'da bilinen plan id'lerini kullan
         filtered = [p for p in selected_exely_plans if str(p) in valid_plan_set]
         if not filtered:
-            logger.warning(
-                "[UNIFIED] Exely: secilen rate plan'larin hicbiri connection'da yok selected=%s valid=%s, push iptal",
-                selected_exely_plans,
-                sorted(valid_plan_set),
-            )
+            logger.warning("[UNIFIED] Exely mapping_state=missing mapping_type=rate_plan")
             return 0
         exely_rate_plans = filtered
     else:
         exely_rate_plans = conn_exely_plans
 
     if not exely_rate_plans:
-        logger.warning("[UNIFIED] Exely conn rate_plans bos, push iptal tenant=%s", tenant_id)
+        logger.warning("[UNIFIED] Exely mapping_state=missing mapping_type=rate_plan")
         return 0
 
     logger.info(
-        "[UNIFIED] Exely mapping: HR->PMS=%s PMS->Exely=%s native_exely=%s rate_plans=%s",
-        hr_to_pms,
-        pms_to_exely_codes,
-        sorted(native_exely_codes),
-        exely_rate_plans,
+        "[UNIFIED] Exely mapping_state=ready room_mapping_count=%d rate_plan_count=%d",
+        len(pms_to_exely_codes),
+        len(exely_rate_plans),
     )
 
     # rt_code -> liste[Exely room code] cevirisini yap (HR akisi VEYA dogrudan Exely akisi)
@@ -1016,11 +1019,11 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         hr_only = rt_str.split(":", 1)[1] if rt_str.startswith("HR:") else rt_str
         pms_type = hr_to_pms.get(hr_only)
         if not pms_type:
-            logger.warning("[UNIFIED] Exely: %s icin ne native Exely kodu ne HR mapping bulundu, atlandi", rt_code)
+            logger.warning("[UNIFIED] Exely mapping_state=missing mapping_type=room")
             continue
         exely_codes = pms_to_exely_codes.get(pms_type) or []
         if not exely_codes:
-            logger.warning("[UNIFIED] Exely: pms_type=%s icin exely_room_mappings yok, atlandi (rt=%s)", pms_type, rt_code)
+            logger.warning("[UNIFIED] Exely mapping_state=missing mapping_type=provider_room")
             continue
         seen_exely_for_rt[rt_code] = exely_codes
 
@@ -1041,9 +1044,9 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         for ex_code in exely_codes:
             for rp in exely_rate_plans:
 
-                async def _push(rt=ex_code, rp=rp, rate=push_rate, avail=push_avail, stop=push_stop, minstay=push_min, src=rt_code, cur=push_currency):
+                async def _push(rt=ex_code, rp=rp, rate=push_rate, avail=push_avail, stop=push_stop, minstay=push_min, cur=push_currency):
                     try:
-                        logger.info("[UNIFIED] Exely push: src=%s rt=%s rp=%s rate=%s avail=%s", src, rt, rp, rate, avail)
+                        logger.info("[UNIFIED] Exely operation=ari_push delivery_state=sending")
                         result = await provider.push_ari(
                             room_type_code=rt,
                             rate_plan_code=rp,
@@ -1055,10 +1058,10 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
                             stop_sell=stop,
                             min_stay=minstay,
                         )
-                        logger.info("[UNIFIED] Exely push result rt=%s rp=%s: %s", rt, rp, result)
+                        logger.info("[UNIFIED] Exely operation=ari_push success=%s", result.success)
                         return result
-                    except Exception as e:
-                        logger.error("[UNIFIED] Exely push error rt=%s rp=%s: %s", rt, rp, e)
+                    except Exception as exc:
+                        logger.error("[UNIFIED] Exely operation=ari_push delivery_state=failed exception_class=%s", type(exc).__name__)
 
                 push_tasks.append(_push())
 
@@ -1068,8 +1071,8 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
             try:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 logger.info("[UNIFIED] Exely background push completed: %d tasks", len(results))
-            except Exception as e:
-                logger.error("[UNIFIED] Exely background push error: %s", e)
+            except Exception as exc:
+                logger.error("[UNIFIED] Exely background_push_failed exception_class=%s", type(exc).__name__)
 
         asyncio.create_task(_bg(push_tasks))
 
@@ -1315,7 +1318,10 @@ async def get_push_providers(current_user: User = Depends(get_current_user)):
     providers = []
 
     hr_conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
-    exely_conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
+    exely_conn = await db.exely_connections.find_one(
+        {"tenant_id": tenant_id, "is_active": True},
+        exely_connection_projection(),
+    )
 
     hr_flags = await db.connector_flags.find_one({"tenant_id": tenant_id, "provider": "hotelrunner"}, {"_id": 0})
     ex_flags = await db.connector_flags.find_one({"tenant_id": tenant_id, "provider": "exely"}, {"_id": 0})

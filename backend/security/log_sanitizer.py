@@ -33,7 +33,7 @@ _SENSITIVE_PATTERNS = [
         r"\1***REDACTED***",
     ),
     # Auth/secret key-value pairs
-    (re.compile(r"(password|passwd|pwd|secret|token|api[_-]?key|authorization|bearer)\s*[=:]\s*\S+", re.IGNORECASE), r"\1=***REDACTED***"),
+    (re.compile(r"(username|user|password|passwd|pwd|secret|token|api[_-]?key|authorization|bearer)\s*[=:]\s*\S+", re.IGNORECASE), r"\1=***REDACTED***"),
     # Email
     (re.compile(r"(\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b)"), "***EMAIL***"),
     # Credit card
@@ -78,6 +78,8 @@ def _init_sensitive_fields():
     # Base set
     _SENSITIVE_FIELDS = {
         "password",
+        "username",
+        "user",
         "hashed_password",
         "secret",
         "api_key",

@@ -87,7 +87,7 @@ async def auto_import_reservation(tenant_id: str, channel_res: dict[str, Any]) -
                     },
                 )
         except Exception as e:  # noqa: BLE001
-            logger.exception(f"[EXELY-IMPORT] unmatched hold olusturma hatasi {external_id}: {e}")
+            logger.error("[EXELY-IMPORT] unmatched_hold_create_failed exception_class=%s", type(e).__name__)
         return {"success": False, "reason": "pending_mapping"}
 
     if not pms_room_type:
@@ -108,7 +108,7 @@ async def auto_import_reservation(tenant_id: str, channel_res: dict[str, Any]) -
                 delete_hold=True,
             )
         except Exception as e:  # noqa: BLE001
-            logger.exception(f"[EXELY-IMPORT] unmatched hold rebind hatasi {external_id}: {e}")
+            logger.error("[EXELY-IMPORT] unmatched_hold_rebind_failed exception_class=%s", type(e).__name__)
 
     # Find or create guest
     guest_name = channel_res.get("guest_name", "")
@@ -195,7 +195,7 @@ async def auto_import_reservation(tenant_id: str, channel_res: dict[str, Any]) -
     try:
         await create_booking_atomic(tenant_id=tenant_id, booking_doc={**booking})
     except BookingConflictError:
-        logger.warning("OTA import conflict for %s room=%s, creating as unassigned", external_id, booking.get("room_id"))
+        logger.warning("[EXELY-IMPORT] inventory_conflict action=unassigned")
         booking["room_id"] = None
         booking["status"] = "confirmed"
         booking["allocation_source"] = "pending_assignment"
@@ -232,9 +232,9 @@ async def auto_import_reservation(tenant_id: str, channel_res: dict[str, Any]) -
         }
         await db.notifications.insert_one({**notification})
     except Exception as e:
-        logger.warning(f"[EXELY-IMPORT] Notification creation failed: {e}")
+        logger.warning("[EXELY-IMPORT] notification_create_failed exception_class=%s", type(e).__name__)
 
-    logger.info(f"[EXELY-IMPORT] {external_id} -> booking {booking_id}, type {pms_room_type} (unassigned), guest {guest_name}")
+    logger.info("[EXELY-IMPORT] reservation_action=created assignment_state=unassigned")
 
     return {
         "success": True,
@@ -260,7 +260,7 @@ async def _update_existing_booking(tenant_id: str, channel_res: dict[str, Any]) 
         {"_id": 0},
     )
     if not existing_booking:
-        logger.warning(f"[EXELY-IMPORT] PMS booking {pms_booking_id} not found for update")
+        logger.warning("[EXELY-IMPORT] reservation_action=update result=booking_not_found")
         return {"success": False, "reason": "pms_booking_not_found"}
 
     # Room type mapping
@@ -373,9 +373,9 @@ async def _update_existing_booking(tenant_id: str, channel_res: dict[str, Any]) 
                 }
             )
         except Exception as e:
-            logger.warning(f"[EXELY-IMPORT] Modification notification failed: {e}")
+            logger.warning("[EXELY-IMPORT] modification_notification_failed exception_class=%s", type(e).__name__)
 
-    logger.info(f"[EXELY-IMPORT] Updated PMS booking {pms_booking_id} for {external_id}: {', '.join(changes) if changes else 'minor update'}")
+    logger.info("[EXELY-IMPORT] reservation_action=updated changed_fields=%d", len(changes))
 
     return {
         "success": True,
@@ -423,18 +423,18 @@ async def auto_import_pending(tenant_id: str, provider=None) -> dict[str, Any]:
                             {"tenant_id": tenant_id, "external_id": external_id},
                             {"$set": {"delivery_confirmed": True, "delivery_confirmed_at": datetime.now(UTC).isoformat()}},
                         )
-                        logger.info(f"[EXELY-IMPORT] Delivery confirmed for {external_id} -> PMS {pms_booking_id}")
+                        logger.info("[EXELY-IMPORT] operation=reservation_ack delivery_state=accepted")
                     else:
-                        logger.warning(f"[EXELY-IMPORT] Delivery confirm failed for {external_id}: {confirm_result.error}")
+                        logger.warning("[EXELY-IMPORT] operation=reservation_ack delivery_state=rejected")
                 except Exception as e:
-                    logger.warning(f"[EXELY-IMPORT] Delivery confirm error for {res.get('external_id')}: {e}")
+                    logger.warning("[EXELY-IMPORT] operation=reservation_ack delivery_state=failed exception_class=%s", type(e).__name__)
         else:
             errors.append({"external_id": res.get("external_id"), "reason": result.get("reason")})
 
     # Also process pending cancellations
     cancelled = await process_pending_cancellations(tenant_id)
 
-    logger.info(f"[EXELY-IMPORT] Tenant {tenant_id}: {imported}/{len(pending)} imported, {updated} updated")
+    logger.info("[EXELY-IMPORT] imported=%d candidates=%d updated=%d", imported, len(pending), updated)
     return {"imported": imported, "updated": updated, "total": len(pending), "errors": errors, "cancelled": cancelled}
 
 
@@ -470,7 +470,7 @@ async def process_pending_cancellations(tenant_id: str) -> int:
                 delete_hold=False,
             )
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"[EXELY-IMPORT] unmatched hold iptal release hatasi {res.get('external_id')}: {e}")
+            logger.warning("[EXELY-IMPORT] unmatched_hold_cancel_release_failed exception_class=%s", type(e).__name__)
 
         # Get the PMS booking before cancelling
         booking = await db.bookings.find_one(
@@ -531,6 +531,6 @@ async def process_pending_cancellations(tenant_id: str) -> int:
         )
 
         count += 1
-        logger.info(f"[EXELY-IMPORT] Cancelled PMS booking {pms_booking_id} via OTA cancellation")
+        logger.info("[EXELY-IMPORT] reservation_action=cancelled")
 
     return count

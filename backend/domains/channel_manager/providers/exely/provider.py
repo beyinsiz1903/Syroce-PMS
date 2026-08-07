@@ -285,12 +285,12 @@ class ExelyProvider:
                 dur = int((time.time() - start) * 1000)
                 obs.record_provider_call(soap_action=rate_op, duration_ms=dur, success=result["success"], connection_id=self._connection_id)
                 if not result["success"]:
-                    errors.append(f"Rate: {result.get('error', 'failed')}")
+                    errors.append("Rate: provider_rejected")
                 else:
-                    logger.info(f"[ARI-PUSH] Rate pushed OK: room={room_type_code} plan={rate_plan_code} rate={rate_amount} currency={currency} {start_date}-{end_date}")
+                    logger.info("[EXELY-ARI] operation=rate delivery_state=accepted")
             except ExelyError as e:
-                errors.append(f"Rate: {e}")
-                logger.error(f"[ARI-PUSH] Rate push error: {e}")
+                errors.append(f"Rate: {type(e).__name__}")
+                logger.error("[EXELY-ARI] operation=rate delivery_state=failed exception_class=%s", type(e).__name__)
 
         # 2) Push availability/restrictions via OTA_HotelAvailNotifRQ
         if has_avail:
@@ -320,12 +320,12 @@ class ExelyProvider:
                 dur = int((time.time() - start) * 1000)
                 obs.record_provider_call(soap_action=avail_op, duration_ms=dur, success=result["success"], connection_id=self._connection_id)
                 if not result["success"]:
-                    errors.append(f"Avail: {result.get('error', 'failed')}")
+                    errors.append("Avail: provider_rejected")
                 else:
-                    logger.info(f"[ARI-PUSH] Avail pushed OK: room={room_type_code} plan={rate_plan_code} avail={availability} stop={stop_sell} min_stay={min_stay} {start_date}-{end_date}")
+                    logger.info("[EXELY-ARI] operation=availability delivery_state=accepted")
             except ExelyError as e:
-                errors.append(f"Avail: {e}")
-                logger.error(f"[ARI-PUSH] Avail push error: {e}")
+                errors.append(f"Avail: {type(e).__name__}")
+                logger.error("[EXELY-ARI] operation=availability delivery_state=failed exception_class=%s", type(e).__name__)
 
         duration_ms = int((time.time() - start) * 1000)
 
@@ -362,7 +362,7 @@ class ExelyProvider:
                 res_status=res_status,
             )
 
-            logger.info(f"[EXELY] Confirming delivery for {reservation_id} with ResStatus={res_status}")
+            logger.info("[EXELY] operation=reservation_ack delivery_state=sending")
 
             async def _call():
                 return await self._transport.send_soap(xml, soap_action)
@@ -379,11 +379,11 @@ class ExelyProvider:
             )
 
             if result["success"]:
-                logger.info(f"[EXELY] Delivery confirmed OK for {reservation_id}")
+                logger.info("[EXELY] operation=reservation_ack delivery_state=accepted")
                 return ProviderResult(success=True, data=result, duration_ms=duration_ms)
 
-            logger.warning(f"[EXELY] Delivery confirm failed for {reservation_id}: {result.get('error')}")
-            return ProviderResult(success=False, error=result.get("error", "Confirm failed"), duration_ms=duration_ms)
+            logger.warning("[EXELY] operation=reservation_ack delivery_state=rejected")
+            return ProviderResult(success=False, error="Provider rejected reservation acknowledgement", duration_ms=duration_ms)
         except ExelyError as e:
             return self._handle_error(e, start, operation)
 

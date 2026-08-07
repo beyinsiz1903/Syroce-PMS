@@ -8,6 +8,14 @@ Monitoring and alert engine uses error types for severity classification.
 SOAP-specific: differentiates transport errors, SOAP Faults, and OTA-level errors.
 """
 
+import hashlib
+import re
+
+
+def _safe_provider_code(value: str) -> str:
+    candidate = str(value or "")[:64]
+    return candidate if re.fullmatch(r"[A-Za-z0-9_.:-]+", candidate) else ""
+
 
 class ExelyError(Exception):
     """Base error for all Exely provider operations."""
@@ -29,9 +37,9 @@ class ExelySOAPFaultError(ExelyError):
     """SOAP Fault received from server. May or may not be retryable."""
 
     def __init__(self, fault_code: str = "", fault_string: str = "", *, recoverable: bool = False):
-        self.fault_code = fault_code
-        self.fault_string = fault_string
-        msg = f"SOAP Fault [{fault_code}]: {fault_string}" if fault_code else fault_string or "SOAP Fault"
+        self.fault_code = _safe_provider_code(fault_code)
+        self.fault_string = ""
+        msg = f"SOAP Fault [{self.fault_code}]" if self.fault_code else "SOAP Fault"
         super().__init__(msg, recoverable=recoverable)
 
 
@@ -54,7 +62,8 @@ class ExelyPayloadError(ExelyError):
     """400 — bad request / invalid SOAP message. No retry."""
 
     def __init__(self, message: str = "Invalid request payload", details: dict | None = None):
-        self.details = details or {}
+        self.detail_fields = sorted(str(key) for key in (details or {}))
+        self.details = {}
         super().__init__(message, recoverable=False)
 
 
@@ -62,7 +71,10 @@ class ExelyParseError(ExelyError):
     """XML/SOAP response parsing failure. No retry (manual inspection needed)."""
 
     def __init__(self, message: str = "Response parse error", raw_response: str = ""):
-        self.raw_response = raw_response[:2000]
+        encoded = raw_response.encode("utf-8", errors="replace")
+        self.raw_response = ""
+        self.response_size_bytes = len(encoded)
+        self.response_sha256 = hashlib.sha256(encoded).hexdigest() if encoded else ""
         super().__init__(message, recoverable=False)
 
 

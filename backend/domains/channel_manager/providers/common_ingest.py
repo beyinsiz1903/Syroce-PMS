@@ -85,7 +85,7 @@ async def _create_unmatched_hold_for_reservation(
                 {"$set": {"pms_booking_id": hold["booking_id"]}},
             )
     except Exception as e:  # noqa: BLE001 - tutma asla ingest'i kirmamali
-        logger.exception(f"[{provider.upper()}] unmatched hold olusturma hatasi {external_id}: {e}")
+        logger.error("[%s] unmatched_hold_create_failed exception_class=%s", provider.upper(), type(e).__name__)
 
 
 async def _release_unmatched_hold_for_reservation(
@@ -106,7 +106,7 @@ async def _release_unmatched_hold_for_reservation(
             delete_hold=delete_hold,
         )
     except Exception as e:  # noqa: BLE001
-        logger.warning(f"[{provider.upper()}] unmatched hold release hatasi {external_id}: {e}")
+        logger.warning("[%s] unmatched_hold_release_failed exception_class=%s", provider.upper(), type(e).__name__)
 
 
 async def store_raw_event(
@@ -120,6 +120,7 @@ async def store_raw_event(
     provider_event_id: str | None = None,
 ) -> str:
     event_id = str(uuid.uuid4())
+    serialized = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
     doc: dict[str, Any] = {
         "id": event_id,
         "tenant_id": tenant_id,
@@ -128,7 +129,6 @@ async def store_raw_event(
         "external_id": external_id,
         "channel": channel,
         "source": source,
-        "payload": payload,
         "payload_hash": _compute_payload_hash(payload),
         "received_at": datetime.now(UTC).isoformat(),
         "processed_at": None,
@@ -136,6 +136,13 @@ async def store_raw_event(
         "error_message": None,
         "retry_count": 0,
     }
+    if provider == "exely":
+        doc["payload_metadata"] = {
+            "field_names": sorted(str(key) for key in payload),
+            "size_bytes": len(serialized.encode("utf-8")),
+        }
+    else:
+        doc["payload"] = payload
     # Optional deterministic dedup key. Used by `ingest_reservation` to
     # short-circuit catchup re-fetches of the same provider event.
     if provider_event_id:
@@ -191,9 +198,21 @@ async def _check_provider_event_recorded(
 
 
 async def mark_event_processed(provider: str, event_id: str, status: str = "processed", error: str | None = None):
+    stored_error = error
+    error_type = None
+    if provider == "exely":
+        error_type = error if error and error.replace("_", "").isalnum() else None
+        stored_error = error_type
+    updates = {
+        "processed_at": datetime.now(UTC).isoformat(),
+        "status": status,
+        "error_message": stored_error,
+    }
+    if provider == "exely":
+        updates["error_type"] = error_type
     await _col(provider, "raw_events").update_one(
         {"id": event_id},
-        {"$set": {"processed_at": datetime.now(UTC).isoformat(), "status": status, "error_message": error}},
+        {"$set": updates},
     )
 
 
@@ -348,7 +367,7 @@ async def process_reservation(
                 col,
             )
         await mark_event_processed(provider, event_id, "processed")
-        logger.info(f"[{provider.upper()}] Created {external_id} from {channel}")
+        logger.info("[%s] reservation_action=created", provider.upper())
         return {"action": "created", "external_id": external_id, "pms_status": res_doc["pms_status"]}
 
     elif action == "update":
@@ -381,7 +400,7 @@ async def process_reservation(
                 delete_hold=True,
             )
         await mark_event_processed(provider, event_id, "processed")
-        logger.info(f"[{provider.upper()}] Updated {external_id} from {channel}")
+        logger.info("[%s] reservation_action=updated", provider.upper())
         return {"action": "updated", "external_id": external_id}
 
     elif action == "cancel":
@@ -409,7 +428,7 @@ async def process_reservation(
             delete_hold=False,
         )
         await mark_event_processed(provider, event_id, "processed")
-        logger.info(f"[{provider.upper()}] Cancelled {external_id} from {channel}")
+        logger.info("[%s] reservation_action=cancelled", provider.upper())
         return {"action": "cancelled", "external_id": external_id}
 
     await mark_event_processed(provider, event_id, "error", f"Unknown action: {action}")
@@ -461,7 +480,7 @@ async def ingest_reservation(
         # The check is a best-effort optimisation. If it fails we fall
         # through to the normal insert + downstream idempotency path,
         # which still protects correctness via `check_idempotency`.
-        logger.warning(f"[{provider.upper()}] pre-insert dedup check failed for {provider_event_id}: {e}")
+        logger.warning("[%s] dedup_check_failed exception_class=%s", provider.upper(), type(e).__name__)
         existing = None
     if existing is not None:
         try:
@@ -471,13 +490,8 @@ async def ingest_reservation(
 
             await record_skip(tenant_id, provider)
         except Exception as e:
-            logger.warning(f"[{provider.upper()}] dedup_counter.record_skip failed: {e}")
-        logger.info(
-            f"[CATCHUP-DEDUP] [{provider.upper()}] skipping already-recorded "
-            f"event provider_event_id={provider_event_id} "
-            f"existing_event_id={existing.get('id')!r} "
-            f"existing_status={existing.get('status')!r}"
-        )
+            logger.warning("[%s] dedup_counter_failed exception_class=%s", provider.upper(), type(e).__name__)
+        logger.info("[CATCHUP-DEDUP] provider=%s decision=duplicate", provider)
         return {
             "success": True,
             "event_id": existing.get("id"),
@@ -501,23 +515,36 @@ async def ingest_reservation(
         result = await process_reservation(provider, tenant_id, canonical, event_type, event_id, payload_hash)
         return {"success": True, "event_id": event_id, **result}
     except Exception as e:
-        await mark_event_processed(provider, event_id, "error", str(e))
-        logger.error(f"[{provider.upper()}] Ingest error for {external_id}: {e}")
-        return {"success": False, "event_id": event_id, "error": str(e)}
+        error_type = type(e).__name__
+        await mark_event_processed(provider, event_id, "error", error_type)
+        logger.error("[%s] ingest_failed exception_class=%s", provider.upper(), error_type)
+        returned_error = "Reservation ingest failed" if provider == "exely" else str(e)
+        return {"success": False, "event_id": event_id, "error": returned_error, "error_type": error_type}
 
 
 async def log_sync(provider: str, tenant_id: str, sync_type: str, status: str, duration_ms: int = 0, records: int = 0, error: str | None = None, user_name: str = "system"):
-    await _col(provider, "sync_logs").insert_one(
-        {
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "provider": provider,
-            "timestamp": datetime.now(UTC).isoformat(),
-            "sync_type": sync_type,
-            "status": status,
-            "duration_ms": duration_ms,
-            "records_synced": records,
-            "error_message": error,
-            "initiator": user_name,
-        }
-    )
+    log_doc = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "provider": provider,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "sync_type": sync_type,
+        "status": status,
+        "duration_ms": duration_ms,
+        "records_synced": records,
+        "error_message": error,
+        "initiator": user_name,
+    }
+    if provider == "exely":
+        safe_error_type = None
+        if error:
+            safe_error_type = error if error.replace("_", "").isalnum() else "ProviderOperationError"
+        log_doc.update(
+            {
+                "error_type": safe_error_type,
+                "error_message": safe_error_type,
+                "initiator": "system" if not user_name or user_name == "system" else "redacted",
+                "initiator_fingerprint": hashlib.sha256(user_name.encode("utf-8")).hexdigest()[:12] if user_name else "-",
+            }
+        )
+    await _col(provider, "sync_logs").insert_one(log_doc)

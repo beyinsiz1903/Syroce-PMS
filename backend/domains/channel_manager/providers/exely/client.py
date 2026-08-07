@@ -23,10 +23,11 @@ from .errors import (
     ExelyRateLimitError,
     ExelyTemporaryError,
 )
+from .security import EXELY_TEST_ENDPOINT_URL, safe_fingerprint, validate_exely_endpoint
 
 logger = logging.getLogger("exely.client")
 
-EXELY_DEFAULT_URL = "https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc"
+EXELY_DEFAULT_URL = EXELY_TEST_ENDPOINT_URL
 SOAP_CONTENT_TYPE = "text/xml; charset=utf-8"
 _TIMEOUT = httpx.Timeout(30.0, connect=5.0)
 
@@ -40,7 +41,7 @@ class ExelySoapTransport:
     """
 
     def __init__(self, endpoint_url: str = EXELY_DEFAULT_URL):
-        self._endpoint_url = endpoint_url
+        self._endpoint_url = validate_exely_endpoint(endpoint_url)
 
     async def send_soap(
         self,
@@ -54,6 +55,8 @@ class ExelySoapTransport:
         Raises typed errors for HTTP and SOAP failures.
         """
         corr_id = correlation_id or str(_uuid.uuid4())[:12]
+        corr_tag = safe_fingerprint(corr_id)
+        operation = (soap_action or "SOAP").rsplit("/", 1)[-1]
         headers = {
             "Content-Type": SOAP_CONTENT_TYPE,
             "SOAPAction": soap_action,
@@ -78,39 +81,24 @@ class ExelySoapTransport:
                 )
             except EgressDenied as _e:
                 logger.warning(
-                    "[EXELY] SOAP egress blocked (SSRF guard): endpoint=%s reason=%s [%s]",
-                    self._endpoint_url,
-                    _e,
-                    corr_id,
+                    "[EXELY] egress_blocked operation=%s exception_class=%s corr=%s",
+                    operation,
+                    type(_e).__name__,
+                    corr_tag,
                 )
-                raise ExelyPayloadError(f"endpoint URL not permitted: {_e}") from _e
+                raise ExelyPayloadError("Exely endpoint egress denied") from _e
 
             duration_ms = int((time.monotonic() - start) * 1000)
 
             logger.info(
-                "[EXELY] SOAP %s -> %d (%dms) [%s]",
-                soap_action or "POST",
-                resp.status_code,
+                "[EXELY] operation=%s status_class=%dxx duration_ms=%d corr=%s",
+                operation,
+                resp.status_code // 100,
                 duration_ms,
-                corr_id,
-            )
-            if "NotifReport" in (soap_action or "") or "ResNotif" in (soap_action or ""):
-                logger.info("[EXELY] NOTIF REQUEST [%s]:\n%s", corr_id, xml_body[:3000])
-                logger.info("[EXELY] NOTIF RESPONSE [%s]:\n%s", corr_id, resp.text[:3000])
-            if "ReadReservation" in (soap_action or "") or "ResRetrieve" in (soap_action or ""):
-                logger.info("[EXELY] READRQ RESPONSE [%s]:\n%s", corr_id, resp.text[:8000])
-            logger.debug(
-                "[EXELY] RAW REQUEST [%s]:\n%s",
-                corr_id,
-                xml_body[:2000],
-            )
-            logger.debug(
-                "[EXELY] RAW RESPONSE [%s]:\n%s",
-                corr_id,
-                resp.text[:3000],
+                corr_tag,
             )
 
-            self._raise_for_http_status(resp, duration_ms, corr_id)
+            self._raise_for_http_status(resp, duration_ms, corr_tag)
             return resp.content
 
         except (
@@ -121,9 +109,9 @@ class ExelySoapTransport:
         ):
             raise
         except httpx.ConnectError:
-            raise ExelyTemporaryError(f"Cannot connect to Exely SOAP API ({self._endpoint_url})")
+            raise ExelyTemporaryError("Cannot connect to Exely SOAP API")
         except httpx.TimeoutException:
-            raise ExelyTemporaryError(f"Exely SOAP API timeout ({soap_action})")
+            raise ExelyTemporaryError(f"Exely SOAP API timeout ({operation})")
 
     @staticmethod
     def _raise_for_http_status(resp: httpx.Response, duration_ms: int, corr_id: str) -> None:
@@ -139,8 +127,8 @@ class ExelySoapTransport:
                 message=f"Rate limit exceeded ({code}) [{corr_id}]",
             )
         if code == 400:
-            raise ExelyPayloadError(f"Bad request ({code}) [{corr_id}]: {resp.text[:500]}")
+            raise ExelyPayloadError(f"Bad request ({code}) [{corr_id}]")
         if code >= 500:
             raise ExelyTemporaryError(f"Server error ({code}) [{corr_id}]")
         if code >= 400:
-            raise ExelyPayloadError(f"Client error ({code}) [{corr_id}]: {resp.text[:500]}")
+            raise ExelyPayloadError(f"Client error ({code}) [{corr_id}]")

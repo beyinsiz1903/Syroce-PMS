@@ -15,6 +15,7 @@ from .response_parser import (
     parse_notif_report_rs,
     parse_read_rs,
 )
+from .security import EXELY_TEST_ENDPOINT_URL, validate_exely_endpoint
 from .soap_builder import (
     build_ari_update_rq,
     build_hotel_avail_rq,
@@ -24,7 +25,7 @@ from .soap_builder import (
 
 logger = logging.getLogger(__name__)
 
-EXELY_DEFAULT_URL = "https://www.exely.com/ota/OTA"
+EXELY_DEFAULT_URL = EXELY_TEST_ENDPOINT_URL
 SOAP_CONTENT_TYPE = "text/xml; charset=utf-8"
 
 
@@ -35,7 +36,7 @@ class ExelyClient:
         self.username = username
         self.password = password
         self.hotel_code = hotel_code
-        self.endpoint_url = endpoint_url
+        self.endpoint_url = validate_exely_endpoint(endpoint_url)
 
     async def _send_soap(self, xml_body: str, soap_action: str = "") -> bytes:
         """Send SOAP request and return raw response bytes."""

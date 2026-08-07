@@ -35,6 +35,7 @@ farkli rezervasyonlar icin az-uyarabilir. Per-rezervasyon idempotency ve asil
 gorunurluk, tenant'a izole in-app bildirim (dedup_key) tarafindan saglanir.
 """
 
+import hashlib
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -59,6 +60,10 @@ ALARM_TRIGGER = "unmatched_reservation"
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _fingerprint(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12] if value else "-"
 
 
 def _sentinel_room_id(provider: str, external_id: str) -> str:
@@ -103,9 +108,9 @@ async def create_unmatched_reservation_hold(
     """
     if not tenant_id or not external_id:
         logger.warning(
-            "[UNMATCHED-HOLD] tenant_id/external_id eksik; atlandi provider=%s ext=%s",
+            "[UNMATCHED-HOLD] required_identity_missing provider=%s external_present=%s",
             provider,
-            external_id,
+            bool(external_id),
         )
         return {
             "created": False,
@@ -119,15 +124,15 @@ async def create_unmatched_reservation_hold(
 
     # ── Idempotency: aktif bir tutma zaten var mi? ──────────────────
     with tenant_context(tenant_id):
-                existing = await db.bookings.find_one(
-                {
+        existing = await db.bookings.find_one(
+            {
                 "tenant_id": tenant_id,
                 "external_reservation_id": external_id,
                 "booking_source": UNMATCHED_HOLD_SOURCE,
                 "status": {"$ne": "cancelled"},
-                },
-                {"_id": 0, "id": 1},
-                )
+            },
+            {"_id": 0, "id": 1},
+        )
     if existing:
         alarm_raised = await _raise_unmatched_alarm(
             provider=provider,
@@ -192,13 +197,12 @@ async def create_unmatched_reservation_hold(
 
     try:
         with tenant_context(tenant_id):
-                    await db.bookings.insert_one(hold_doc)
+            await db.bookings.insert_one(hold_doc)
     except Exception as exc:
-        logger.exception(
-            "[UNMATCHED-HOLD] tutma booking insert basarisiz provider=%s ext=%s: %s",
+        logger.error(
+            "[UNMATCHED-HOLD] booking_insert_failed provider=%s exception_class=%s",
             provider,
-            external_id,
-            exc,
+            type(exc).__name__,
         )
         return {
             "created": False,
@@ -215,11 +219,8 @@ async def create_unmatched_reservation_hold(
         nights = _night_dates(_norm_dt(check_in), _norm_dt(check_out))
     except Exception as exc:
         logger.warning(
-            "[UNMATCHED-HOLD] gece hesaplama basarisiz ext=%s (%s -> %s): %s",
-            external_id,
-            check_in,
-            check_out,
-            exc,
+            "[UNMATCHED-HOLD] night_calculation_failed exception_class=%s",
+            type(exc).__name__,
         )
 
     held = []
@@ -236,24 +237,21 @@ async def create_unmatched_reservation_hold(
         }
         try:
             with tenant_context(tenant_id):
-                        await db.room_night_locks.insert_one(lock_doc)
+                await db.room_night_locks.insert_one(lock_doc)
             held.append(night)
         except DuplicateKeyError:
             # Idempotent: ayni sentinel oda+gece zaten kilitli.
             held.append(night)
         except Exception as exc:
             logger.warning(
-                "[UNMATCHED-HOLD] sentinel kilit basarisiz ext=%s night=%s: %s",
-                external_id,
-                night,
-                exc,
+                "[UNMATCHED-HOLD] sentinel_lock_failed exception_class=%s",
+                type(exc).__name__,
             )
 
     logger.info(
-        "[UNMATCHED-HOLD] tutma olusturuldu provider=%s ext=%s booking=%s nights=%d",
+        "[UNMATCHED-HOLD] hold_created provider=%s correlation=%s nights=%d",
         provider,
-        external_id,
-        booking_id,
+        _fingerprint(external_id),
         len(held),
     )
 
@@ -296,15 +294,15 @@ async def release_unmatched_reservation_hold(
         return {"released": False, "booking_id": None, "nights_released": 0}
 
     with tenant_context(tenant_id):
-                hold = await db.bookings.find_one(
-                {
+        hold = await db.bookings.find_one(
+            {
                 "tenant_id": tenant_id,
                 "external_reservation_id": external_id,
                 "booking_source": UNMATCHED_HOLD_SOURCE,
                 "status": {"$ne": "cancelled"},
-                },
-                {"_id": 0, "id": 1},
-                )
+            },
+            {"_id": 0, "id": 1},
+        )
     if not hold:
         return {"released": False, "booking_id": None, "nights_released": 0}
 
@@ -313,12 +311,7 @@ async def release_unmatched_reservation_hold(
     try:
         released = await release_booking_nights(tenant_id, booking_id, reason=reason)
     except Exception as exc:
-        logger.exception(
-            "[UNMATCHED-HOLD] kilit serbest birakma basarisiz ext=%s booking=%s: %s",
-            external_id,
-            booking_id,
-            exc,
-        )
+        logger.error("[UNMATCHED-HOLD] lock_release_failed exception_class=%s", type(exc).__name__)
         released = 0
         release_ok = False
 
@@ -329,37 +322,35 @@ async def release_unmatched_reservation_hold(
         # sahipsiz (orphan) kalmasın, boş oda yanlışlıkla 'dolu' görünmesin.
         # Sahibi kalan hold daha sonra script/tekrar deneme ile temizlenebilir.
         with tenant_context(tenant_id):
-                    await db.bookings.update_one(
-                    {"id": booking_id, "tenant_id": tenant_id},
-                    {"$set": {"action_needed": True, "updated_at": now}},
-                    )
+            await db.bookings.update_one(
+                {"id": booking_id, "tenant_id": tenant_id},
+                {"$set": {"action_needed": True, "updated_at": now}},
+            )
     elif delete_hold:
         with tenant_context(tenant_id):
-                    await db.bookings.delete_one({"id": booking_id, "tenant_id": tenant_id})
+            await db.bookings.delete_one({"id": booking_id, "tenant_id": tenant_id})
         deleted = True
     else:
         with tenant_context(tenant_id):
-                    await db.bookings.update_one(
-                    {"id": booking_id, "tenant_id": tenant_id},
-                    {
+            await db.bookings.update_one(
+                {"id": booking_id, "tenant_id": tenant_id},
+                {
                     "$set": {
-                    "status": "cancelled",
-                    "cancelled_at": now,
-                    "cancelled_reason": reason,
-                    "action_needed": False,
-                    "is_inventory_hold": False,
-                    "updated_at": now,
+                        "status": "cancelled",
+                        "cancelled_at": now,
+                        "cancelled_reason": reason,
+                        "action_needed": False,
+                        "is_inventory_hold": False,
+                        "updated_at": now,
                     }
-                    },
-                    )
+                },
+            )
 
     logger.info(
-        "[UNMATCHED-HOLD] tutma serbest ext=%s booking=%s nights=%d delete=%s reason=%s",
-        external_id,
-        booking_id,
+        "[UNMATCHED-HOLD] hold_released correlation=%s nights=%d delete=%s",
+        _fingerprint(external_id),
         released,
         delete_hold,
-        reason,
     )
     return {
         "released": release_ok,
@@ -397,16 +388,16 @@ async def _raise_unmatched_alarm(
     )
     try:
         with tenant_context(tenant_id):
-                    existing_notif = await db.notifications.find_one(
-                    {
+            existing_notif = await db.notifications.find_one(
+                {
                     "tenant_id": tenant_id,
                     "dedup_key": dedup_key,
-                    }
-                    )
+                }
+            )
         if not existing_notif:
             with tenant_context(tenant_id):
-                        await db.notifications.insert_one(
-                        {
+                await db.notifications.insert_one(
+                    {
                         "id": str(uuid.uuid4()),
                         "tenant_id": tenant_id,
                         "user_id": None,
@@ -422,8 +413,8 @@ async def _raise_unmatched_alarm(
                         "read": False,
                         "dedup_key": dedup_key,
                         "created_at": now,
-                        }
-                        )
+                    }
+                )
             alarm_persisted = True
             # ── 2. Tenant-scoped websocket bildirimi ────────────────
             # broadcast_notification KULLANILMAZ (global 'notifications'
@@ -446,27 +437,18 @@ async def _raise_unmatched_alarm(
                 )
             except Exception as exc:
                 logger.warning(
-                    "[UNMATCHED-HOLD] websocket yayini basarisiz ext=%s: %s",
-                    external_id,
-                    exc,
+                    "[UNMATCHED-HOLD] websocket_publish_failed exception_class=%s",
+                    type(exc).__name__,
                 )
         else:
             alarm_persisted = True
     except Exception as exc:
-        logger.exception(
-            "[UNMATCHED-HOLD] in-app bildirim basarisiz ext=%s: %s",
-            external_id,
-            exc,
-        )
+        logger.error("[UNMATCHED-HOLD] notification_failed exception_class=%s", type(exc).__name__)
 
     # ── 3. Control Plane uyari motoru (best-effort, PII'siz) ────────
     # Misafir adi cp-alert baglamina/mesajina KONULMAZ (Slack/e-posta
     # egress'inden gecebilir). Yalnizca operasyonel tanimlayicilar.
-    cp_message = (
-        f"{provider.upper()} kanalindan {external_id} numarali rezervasyon "
-        f"({ci} -> {co}) oda/fiyat eslestirmesi yapilamadigi icin aktarilamadi. "
-        f"Gecici envanter tutmasi olusturuldu; oda tipi eslestirmesi gerekli."
-    )
+    cp_message = f"{provider.upper()} rezervasyonu eslestirme eksigi nedeniyle beklemeye alindi. Korelasyon: {_fingerprint(external_id)}."
     try:
         from controlplane.alerting import AlertSeverity, get_alerting_engine
 
@@ -477,18 +459,11 @@ async def _raise_unmatched_alarm(
             message=cp_message,
             context={
                 "provider": provider,
-                "external_reservation_id": external_id,
-                "check_in": ci,
-                "check_out": co,
-                "provider_room_code": room_type_code,
-                "booking_id": booking_id,
+                "correlation_fingerprint": _fingerprint(external_id),
+                "mapping_state": "required",
             },
             tenant_id=tenant_id,
         )
     except Exception as exc:
-        logger.warning(
-            "[UNMATCHED-HOLD] control plane uyarisi basarisiz ext=%s: %s",
-            external_id,
-            exc,
-        )
+        logger.warning("[UNMATCHED-HOLD] control_plane_alert_failed exception_class=%s", type(exc).__name__)
     return alarm_persisted
