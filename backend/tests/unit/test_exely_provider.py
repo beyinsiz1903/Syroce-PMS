@@ -306,17 +306,20 @@ from domains.channel_manager.providers.exely.soap_builder import (
 
 
 class TestSoapBuilder:
-    def test_build_read_rq_by_date(self):
-        xml = build_read_rq("u", "p", "H1", "2025-01-01", "2025-01-10")
+    def test_build_read_rq_uses_official_undelivered_contract(self):
+        xml = build_read_rq("u", "p", "H1")
         assert "OTA_ReadRQ" in xml
         assert "H1" in xml
-        assert "2025-01-01" in xml
+        assert 'Version="1.17"' in xml
+        assert 'SelectionType="Undelivered"' in xml
+        assert "Start=" not in xml
+        assert "End=" not in xml
         assert 'Username>u</wsse:Username>' in xml or 'Username="u"' in xml
 
-    def test_build_read_rq_by_id(self):
-        xml = build_read_rq("u", "p", "H1", reservation_id="RES123")
-        assert "RES123" in xml
-        assert "UniqueID" in xml
+    def test_build_read_rq_exposes_no_noncontract_filters(self):
+        import inspect
+
+        assert list(inspect.signature(build_read_rq).parameters) == ["username", "password", "hotel_code"]
 
     def test_build_hotel_avail_rq(self):
         xml = build_hotel_avail_rq("u", "p", "H1", "2025-06-01", "2025-06-02")
@@ -608,7 +611,7 @@ class TestExelyProvider:
         provider = ExelyProvider(username="u", password="p", hotel_code="H1")
         with patch.object(provider._transport, "send_soap", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = _SOAP_READ_RS
-            result = await provider.pull_reservations(from_date="2025-06-01", to_date="2025-06-15")
+            result = await provider.pull_reservations()
             assert result.success is True
             assert result.data["count"] == 1
             assert result.data["reservations"][0]["reservation_id"] == "RES001"
@@ -664,35 +667,17 @@ class TestExelyProvider:
             # _SOAP_ERROR_RS has ota:Errors so it should fail
             assert result.success is False
 
-    @pytest.mark.asyncio
-    async def test_legacy_test_connection(self):
+    def test_legacy_test_connection_surface_is_removed(self):
         provider = ExelyProvider(username="u", password="p", hotel_code="H1")
-        with patch.object(provider._transport, "send_soap", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = _SOAP_AVAIL_RS
-            result = await provider.legacy_test_connection()
-            assert isinstance(result, dict)
-            assert result["connected"] is True
-            assert "room_types" in result
+        assert not hasattr(provider, "legacy_test_connection")
 
-    @pytest.mark.asyncio
-    async def test_legacy_pull_reservations(self):
+    def test_legacy_pull_surface_is_removed(self):
         provider = ExelyProvider(username="u", password="p", hotel_code="H1")
-        with patch.object(provider._transport, "send_soap", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = _SOAP_READ_RS
-            result = await provider.legacy_pull_reservations(from_date="2025-06-01", to_date="2025-06-15")
-            assert isinstance(result, dict)
-            assert result["success"] is True
-            assert len(result["reservations"]) == 1
+        assert not hasattr(provider, "legacy_pull_reservations")
 
-    @pytest.mark.asyncio
-    async def test_legacy_discover_rooms(self):
+    def test_legacy_discovery_surface_is_removed(self):
         provider = ExelyProvider(username="u", password="p", hotel_code="H1")
-        with patch.object(provider._transport, "send_soap", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = _SOAP_AVAIL_RS
-            result = await provider.legacy_discover_rooms("2025-06-01", "2025-06-02")
-            assert isinstance(result, dict)
-            assert result["success"] is True
-            assert len(result["room_types"]) == 2
+        assert not hasattr(provider, "legacy_discover_rooms")
 
     @pytest.mark.asyncio
     async def test_temporary_error_triggers_retry(self):

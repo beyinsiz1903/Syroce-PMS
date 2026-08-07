@@ -40,8 +40,6 @@ ALLOWED_RAW_HTTPX = {
     "backend/core/outbox_dispatcher.py",
     # Operator env AFSADAKAT_PROVISIONER_URL (NOT tenant — installer)
     "backend/core/afsadakat_provisioner.py",
-    # Legacy unused (superseded by adapter migration)
-    "backend/domains/channel_manager/providers/exely/exely_client_legacy.py",
     # Operator env OPS_*_WEBHOOK_URL / PAGERDUTY_URL / SLACK_OPS_URL
     "backend/infra/live_ops_alerts.py",
     # Operator env OPS_VAULT_URL — secrets infrastructure

@@ -75,19 +75,12 @@ def build_read_rq(
     username: str,
     password: str,
     hotel_code: str,
-    from_date: str | None = None,
-    to_date: str | None = None,
-    reservation_id: str | None = None,
 ) -> str:
-    """
-    Build OTA_ReadRQ to pull reservations.
-    If reservation_id is provided, fetches a specific reservation.
-    Otherwise fetches reservations in [from_date, to_date] range.
-    """
+    """Build the official PMSConnect 1.17 undelivered-bookings request."""
     rq = etree.Element(
         f"{{{OTA_NS}}}OTA_ReadRQ",
         attrib={
-            "Version": "1.0",
+            "Version": "1.17",
             "TimeStamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         },
     )
@@ -101,35 +94,11 @@ def build_read_rq(
         },
     )
 
-    if reservation_id:
-        etree.SubElement(
-            read_request,
-            f"{{{OTA_NS}}}UniqueID",
-            attrib={
-                "Type": "14",
-                "ID": reservation_id,
-            },
-        )
-        # Exely requires SelectionCriteria even for specific reservation lookups
-        etree.SubElement(
-            read_request,
-            f"{{{OTA_NS}}}SelectionCriteria",
-            attrib={
-                "SelectionType": "All",
-            },
-        )
-    else:
-        selection = etree.SubElement(
-            read_request,
-            f"{{{OTA_NS}}}SelectionCriteria",
-            attrib={
-                "SelectionType": "Undelivered",
-            },
-        )
-        if from_date:
-            selection.set("Start", from_date)
-        if to_date:
-            selection.set("End", to_date)
+    etree.SubElement(
+        read_request,
+        f"{{{OTA_NS}}}SelectionCriteria",
+        attrib={"SelectionType": "Undelivered"},
+    )
 
     return _soap_envelope(username, password, hotel_code, rq)
 

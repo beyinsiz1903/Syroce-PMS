@@ -105,7 +105,7 @@ class TestProviderFacadeIntegration:
 
             # Step 3: Pull reservations
             mock.return_value = _READ_RS
-            pull_result = await provider.pull_reservations(from_date="2025-06-01", to_date="2025-06-15")
+            pull_result = await provider.pull_reservations()
             assert pull_result.success is True
             assert pull_result.data["count"] == 1
             assert pull_result.data["reservations"][0]["reservation_id"] == "RES001"
@@ -134,72 +134,28 @@ class TestProviderFacadeIntegration:
             assert "BAR" in xml_body
 
 
-class TestLegacyCompatibility:
-    """Verify legacy dict interface still works for all call sites."""
+class TestLegacySurfaceClosure:
+    """Verify the legacy facade cannot bypass canonical Exely services."""
 
-    @pytest.mark.asyncio
-    async def test_legacy_test_connection_dict_format(self):
+    def test_legacy_test_connection_is_removed(self):
         provider = ExelyProvider(username="u", password="p", hotel_code="H1")
-        with patch.object(provider._transport, "send_soap", new_callable=AsyncMock) as mock:
-            mock.return_value = _AVAIL_RS
-            result = await provider.legacy_test_connection()
-            assert isinstance(result, dict)
-            assert result["connected"] is True
-            assert "room_types" in result
-            assert "rate_plans" in result
-            assert "duration_ms" in result
+        assert not hasattr(provider, "legacy_test_connection")
 
-    @pytest.mark.asyncio
-    async def test_legacy_pull_reservations_dict_format(self):
+    def test_legacy_pull_is_removed(self):
         provider = ExelyProvider(username="u", password="p", hotel_code="H1")
-        with patch.object(provider._transport, "send_soap", new_callable=AsyncMock) as mock:
-            mock.return_value = _READ_RS
-            result = await provider.legacy_pull_reservations(from_date="2025-06-01", to_date="2025-06-15")
-            assert isinstance(result, dict)
-            assert result["success"] is True
-            assert isinstance(result["reservations"], list)
-            assert "count" in result
-            assert "duration_ms" in result
+        assert not hasattr(provider, "legacy_pull_reservations")
 
-    @pytest.mark.asyncio
-    async def test_legacy_discover_rooms_dict_format(self):
+    def test_legacy_discovery_is_removed(self):
         provider = ExelyProvider(username="u", password="p", hotel_code="H1")
-        with patch.object(provider._transport, "send_soap", new_callable=AsyncMock) as mock:
-            mock.return_value = _AVAIL_RS
-            result = await provider.legacy_discover_rooms("2025-06-01", "2025-06-02")
-            assert isinstance(result, dict)
-            assert result["success"] is True
-            assert isinstance(result["room_types"], list)
-            assert isinstance(result["rate_plans"], list)
+        assert not hasattr(provider, "legacy_discover_rooms")
 
-    @pytest.mark.asyncio
-    async def test_legacy_push_ari_dict_format(self):
+    def test_legacy_ari_mutation_is_removed(self):
         provider = ExelyProvider(username="u", password="p", hotel_code="H1")
-        with patch.object(provider._transport, "send_soap", new_callable=AsyncMock) as mock:
-            mock.return_value = _SUCCESS_RS
-            result = await provider.legacy_push_ari(
-                room_type_code="DBL",
-                rate_plan_code="BAR",
-                start_date="2025-07-01",
-                end_date="2025-07-10",
-                availability=5,
-            )
-            assert isinstance(result, dict)
-            assert result["success"] is True
+        assert not hasattr(provider, "legacy_push_ari")
 
-    @pytest.mark.asyncio
-    async def test_legacy_confirm_delivery_dict_format(self):
+    def test_legacy_ack_mutation_is_removed(self):
         provider = ExelyProvider(username="u", password="p", hotel_code="H1")
-        with patch.object(provider._transport, "send_soap", new_callable=AsyncMock) as mock:
-            mock.return_value = _SUCCESS_RS
-            result = await provider.legacy_confirm_delivery(
-                "RES001",
-                "CONF001",
-                create_datetime="2030-01-01T09:00:00Z",
-                last_modify_datetime="2030-01-01T10:00:00Z",
-            )
-            assert isinstance(result, dict)
-            assert result["success"] is True
+        assert not hasattr(provider, "legacy_confirm_delivery")
 
 
 class TestErrorPropagation:

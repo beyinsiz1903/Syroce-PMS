@@ -583,7 +583,15 @@ async def _test_exely_connection(creds: dict[str, str], tenant_id: str) -> dict[
     if endpoint_url:
         kwargs["endpoint_url"] = endpoint_url
     provider = ExelyProvider(**kwargs)
-    return await provider.legacy_test_connection()
+    result = await provider.test_connection()
+    data = result.data or {}
+    return {
+        "connected": bool(result.success and data.get("connected")),
+        "room_types": data.get("room_types", []),
+        "rate_plans": data.get("rate_plans", []),
+        "duration_ms": result.duration_ms,
+        "error": result.error_type if not result.success else None,
+    }
 
 
 async def _validate_exely(creds: dict[str, str], tenant_id: str) -> list[dict[str, Any]]:
@@ -615,11 +623,12 @@ async def _validate_exely(creds: dict[str, str], tenant_id: str) -> list[dict[st
     # 1. Connection + WSSE auth test
     t0 = time.time()
     try:
-        conn_result = await provider.legacy_test_connection()
+        conn_result = await provider.test_connection()
+        conn_data = conn_result.data or {}
         ms = int((time.time() - t0) * 1000)
-        if conn_result.get("connected"):
-            room_types = conn_result.get("room_types", [])
-            rate_plans = conn_result.get("rate_plans", [])
+        if conn_result.success and conn_data.get("connected"):
+            room_types = conn_data.get("room_types", [])
+            rate_plans = conn_data.get("rate_plans", [])
             results.append(
                 {
                     "check": "connection_test",
@@ -634,7 +643,7 @@ async def _validate_exely(creds: dict[str, str], tenant_id: str) -> list[dict[st
                 {
                     "check": "connection_test",
                     "status": "failed",
-                    "message": conn_result.get("error", "SOAP connection failed"),
+                    "message": conn_result.error_type or "SOAP connection failed",
                     "duration_ms": ms,
                 }
             )
@@ -651,11 +660,12 @@ async def _validate_exely(creds: dict[str, str], tenant_id: str) -> list[dict[st
 
         checkin = dt.now().strftime("%Y-%m-%d")
         checkout = (dt.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-        discover_result = await provider.legacy_discover_rooms(checkin, checkout)
+        discover_result = await provider.discover_rooms(checkin, checkout)
+        discover_data = discover_result.data or {}
         ms = int((time.time() - t0) * 1000)
-        if discover_result.get("success"):
-            room_types = discover_result.get("room_types", [])
-            rate_plans = discover_result.get("rate_plans", [])
+        if discover_result.success:
+            room_types = discover_data.get("room_types", [])
+            rate_plans = discover_data.get("rate_plans", [])
             results.append(
                 {
                     "check": "room_discovery",
@@ -666,33 +676,29 @@ async def _validate_exely(creds: dict[str, str], tenant_id: str) -> list[dict[st
                 }
             )
         else:
-            results.append({"check": "room_discovery", "status": "failed", "message": discover_result.get("error", "Discovery failed"), "duration_ms": ms})
+            results.append({"check": "room_discovery", "status": "failed", "message": discover_result.error_type or "Discovery failed", "duration_ms": ms})
     except Exception as e:
         results.append({"check": "room_discovery", "status": "failed", "message": str(e), "duration_ms": int((time.time() - t0) * 1000)})
 
     # 3. Reservation pull (OTA_ReadRQ)
     t0 = time.time()
     try:
-        from datetime import datetime as dt
-        from datetime import timedelta
-
-        from_date = (dt.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-        to_date = dt.now().strftime("%Y-%m-%d")
-        pull_result = await provider.legacy_pull_reservations(from_date=from_date, to_date=to_date)
+        pull_result = await provider.pull_reservations()
+        pull_data = pull_result.data or {}
         ms = int((time.time() - t0) * 1000)
-        if pull_result.get("success"):
-            reservations = pull_result.get("reservations", [])
+        if pull_result.success:
+            reservations = pull_data.get("reservations", [])
             results.append(
                 {
                     "check": "reservation_pull",
                     "status": "passed",
-                    "message": f"OTA_ReadRQ OK — {len(reservations)} reservations (last 7 days)",
+                    "message": f"OTA_ReadRQ OK — {len(reservations)} undelivered reservations",
                     "duration_ms": ms,
                     "data": {"reservation_count": len(reservations)},
                 }
             )
         else:
-            results.append({"check": "reservation_pull", "status": "failed", "message": pull_result.get("error", "Pull failed"), "duration_ms": ms})
+            results.append({"check": "reservation_pull", "status": "failed", "message": pull_result.error_type or "Pull failed", "duration_ms": ms})
     except Exception as e:
         results.append({"check": "reservation_pull", "status": "failed", "message": str(e), "duration_ms": int((time.time() - t0) * 1000)})
 
