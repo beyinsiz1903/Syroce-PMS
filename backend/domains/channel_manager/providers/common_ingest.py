@@ -289,6 +289,25 @@ async def process_reservation(
     event_id: str,
     payload_hash: str = "",
 ) -> dict[str, Any]:
+    if provider == "exely":
+        from domains.channel_manager.providers.exely.lifecycle import persist_exely_event
+
+        result = await persist_exely_event(
+            tenant_id,
+            canonical,
+            event_type,
+            event_id,
+            payload_hash,
+        )
+        action = result.get("action")
+        if action == "skip":
+            await mark_event_processed(provider, event_id, "skipped", result.get("reason"))
+        elif action == "error":
+            await mark_event_processed(provider, event_id, "error", result.get("reason"))
+        else:
+            await mark_event_processed(provider, event_id, "processed")
+        return result
+
     external_id = canonical["external_id"]
     channel = canonical["channel"]
     provider_last_modified = canonical.get("provider_last_modified_at", "")

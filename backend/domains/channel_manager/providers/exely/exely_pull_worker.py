@@ -181,6 +181,7 @@ class ExelyPullScheduler:
         processed = 0
 
         for raw_res in reservations:
+            raw_res = {**raw_res, "property_id": hotel_code}
             # Determine event type from status
             status = (raw_res.get("status") or "").lower()
             ext_id = raw_res.get("reservation_id", "")
@@ -251,12 +252,9 @@ class ExelyPullScheduler:
         import_result = await auto_import_pending(tenant_id, provider=provider)
         logger.info(f"[EXELY-PULL] Auto-import: {import_result['imported']}/{import_result['total']} imported, {import_result.get('updated', 0)} updated")
 
-        # Auto-confirm delivery for all newly imported reservations
-        await self._auto_confirm_deliveries(provider, tenant_id)
-
         # Individual check for cancellations and modifications that batch pull may miss
         try:
-            cancel_detected = await self._check_individual_changes(provider, tenant_id)
+            cancel_detected = await self._check_individual_changes(provider, tenant_id, hotel_code)
             if cancel_detected.get("cancelled", 0) > 0 or cancel_detected.get("modified", 0) > 0:
                 # Re-run auto_import to process any new changes
                 import_result2 = await auto_import_pending(tenant_id, provider=provider)
@@ -272,13 +270,28 @@ class ExelyPullScheduler:
             "from_date": from_date,
         }
 
-    async def _check_individual_changes(self, provider: ExelyProvider, tenant_id: str) -> dict[str, int]:
+    async def _check_individual_changes(
+        self,
+        provider: ExelyProvider,
+        tenant_id: str,
+        property_id: str,
+    ) -> dict[str, int]:
         """Check individual imported reservations for cancellations and modifications.
         Only check reservations with check-in within the next 30 days for performance."""
         cutoff_date = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
         imported = await db.exely_reservations.find(
             {"tenant_id": tenant_id, "state": {"$in": ["confirmed", "modified", "pending"]}, "pms_status": "imported", "checkin_date": {"$lte": cutoff_date}},
-            {"_id": 0, "external_id": 1, "provider_reservation_id": 1, "guest_name": 1, "checkin_date": 1, "checkout_date": 1, "rooms": 1, "provider_last_modified_at": 1},
+            {
+                "_id": 0,
+                "external_id": 1,
+                "provider_reservation_id": 1,
+                "property_id": 1,
+                "guest_name": 1,
+                "checkin_date": 1,
+                "checkout_date": 1,
+                "rooms": 1,
+                "provider_last_modified_at": 1,
+            },
         ).to_list(20)  # Reduced from 50 to 20 for speed
 
         if not imported:
@@ -297,7 +310,7 @@ class ExelyPullScheduler:
                 reservations = pull_result.get("reservations", [])
                 if not reservations:
                     continue
-                raw_res = reservations[0]
+                raw_res = {**reservations[0], "property_id": res.get("property_id") or property_id}
                 status = (raw_res.get("status") or "").lower()
 
                 if status in ("cancel", "cancelled"):
@@ -346,52 +359,6 @@ class ExelyPullScheduler:
                 logger.warning("[EXELY-PULL] individual_check_failed exception_class=%s", type(exc).__name__)
 
         return {"cancelled": cancel_count, "modified": mod_count}
-
-    async def _auto_confirm_deliveries(self, provider: ExelyProvider, tenant_id: str):
-        """Auto-confirm delivery for all imported but unconfirmed reservations."""
-        try:
-            unconfirmed = await db.exely_reservations.find(
-                {
-                    "tenant_id": tenant_id,
-                    "delivery_confirmed": {"$ne": True},
-                    "pms_status": {"$in": ["imported", "confirmed"]},
-                    "state": {"$ne": "cancelled"},
-                },
-                {"_id": 0, "external_id": 1, "pms_booking_id": 1, "provider_last_modified_at": 1, "created_at": 1},
-            ).to_list(50)
-
-            if not unconfirmed:
-                return
-
-            confirmed = 0
-            for res in unconfirmed:
-                ext_id = res.get("external_id", "")
-                pms_id = res.get("pms_booking_id", ext_id)
-                create_dt = res.get("provider_last_modified_at") or res.get("created_at")
-                modify_dt = res.get("provider_last_modified_at")
-                try:
-                    result = await provider.confirm_delivery(
-                        ext_id,
-                        pms_id,
-                        create_datetime=create_dt,
-                        last_modify_datetime=modify_dt,
-                        res_status="Reserved",
-                    )
-                    if result.success:
-                        await db.exely_reservations.update_one(
-                            {"tenant_id": tenant_id, "external_id": ext_id},
-                            {"$set": {"delivery_confirmed": True, "delivery_confirmed_at": datetime.now(UTC).isoformat()}},
-                        )
-                        confirmed += 1
-                    else:
-                        logger.warning("[EXELY-PULL] operation=reservation_ack delivery_state=rejected")
-                except Exception as exc:
-                    logger.warning("[EXELY-PULL] operation=reservation_ack delivery_state=failed exception_class=%s", type(exc).__name__)
-
-            if confirmed:
-                logger.info("[EXELY-PULL] acked=%d candidates=%d", confirmed, len(unconfirmed))
-        except Exception as exc:
-            logger.warning("[EXELY-PULL] auto_confirm_failed exception_class=%s", type(exc).__name__)
 
 
 # Singleton

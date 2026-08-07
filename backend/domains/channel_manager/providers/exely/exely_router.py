@@ -518,7 +518,7 @@ async def _check_individual_cancellations(
             reservations = pull_result.get("reservations", [])
             if not reservations:
                 continue
-            raw_res = reservations[0]
+            raw_res = {**reservations[0], "property_id": hotel_code}
             status = (raw_res.get("status") or "").lower()
             if status in ("cancel", "cancelled"):
                 ingest_result = await ingest_reservation(
@@ -575,7 +575,7 @@ async def _check_individual_modifications(
             reservations = pull_result.get("reservations", [])
             if not reservations:
                 continue
-            raw_res = reservations[0]
+            raw_res = {**reservations[0], "property_id": hotel_code}
             status = (raw_res.get("status") or "").lower()
 
             # Skip cancelled (handled by cancellation check)
@@ -672,16 +672,12 @@ async def confirm_reservation(
     if not res:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
-    pms_booking_id = res.get("pms_booking_id") or reservation_id
-    result = await client.legacy_confirm_delivery(reservation_id, pms_booking_id)
+    from domains.channel_manager.providers.exely.lifecycle import acknowledge_durable_version
 
-    if not result["success"]:
-        raise HTTPException(status_code=502, detail=f"Teslimat onay hatasi: {result['error']}")
-
-    await db.exely_reservations.update_one(
-        {"tenant_id": current_user.tenant_id, "external_id": reservation_id},
-        {"$set": {"delivery_confirmed": True, "confirmed_at": datetime.now(UTC).isoformat()}},
-    )
+    result = await acknowledge_durable_version(client, res)
+    if not result.get("success"):
+        status_code = 502 if result.get("provider_write_count") else 409
+        raise HTTPException(status_code=status_code, detail=f"Teslimat onayi tamamlanamadi ({result.get('reason')})")
 
     return {"message": "Rezervasyon teslimati onaylandi", "reservation_id": reservation_id}
 
@@ -693,47 +689,17 @@ async def confirm_all_imported_deliveries(
 ):
     """Confirm delivery for all imported but unconfirmed reservations."""
     tenant_id = current_user.tenant_id
-    client, conn = await _get_client(tenant_id)
+    client, _conn = await _get_client(tenant_id)
 
-    # Find imported reservations that haven't been confirmed to Exely
-    unconfirmed = await db.exely_reservations.find(
-        {
-            "tenant_id": tenant_id,
-            "pms_status": "imported",
-            "pms_booking_id": {"$ne": None},
-            "delivery_confirmed": {"$ne": True},
-        },
-        {"_id": 0, "external_id": 1, "pms_booking_id": 1, "provider_last_modified_at": 1, "created_at": 1},
-    ).to_list(200)
+    from domains.channel_manager.providers.exely.lifecycle import acknowledge_pending_versions
 
-    confirmed = 0
-    errors = []
-    for res in unconfirmed:
-        try:
-            create_dt = res.get("provider_last_modified_at") or res.get("created_at")
-            result = await client.legacy_confirm_delivery(
-                res["external_id"],
-                res["pms_booking_id"],
-                create_datetime=create_dt,
-                res_status="Book",
-            )
-            if result.get("success"):
-                await db.exely_reservations.update_one(
-                    {"tenant_id": tenant_id, "external_id": res["external_id"]},
-                    {"$set": {"delivery_confirmed": True, "confirmed_at": datetime.now(UTC).isoformat()}},
-                )
-                confirmed += 1
-                logger.info("[EXELY] operation=reservation_ack delivery_state=accepted source=bulk")
-            else:
-                errors.append({"external_id": res["external_id"], "error": result.get("error", "unknown")})
-        except Exception as e:
-            errors.append({"external_id": res["external_id"], "error": str(e)})
+    result = await acknowledge_pending_versions(client, tenant_id, limit=200)
 
     return {
-        "message": f"{confirmed}/{len(unconfirmed)} teslimat onaylandi",
-        "confirmed": confirmed,
-        "total": len(unconfirmed),
-        "errors": errors,
+        "message": f"{result['acked']} teslimat onaylandi",
+        "confirmed": result["acked"],
+        "failed": result["failed"],
+        "provider_write_count": result["provider_write_count"],
     }
 
 
@@ -759,26 +725,15 @@ async def import_reservation_to_pms(
     if not res:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
-    if res.get("pms_status") == "imported" and res.get("pms_booking_id"):
-        return {"message": "Rezervasyon zaten PMS'e aktarilmis", "pms_booking_id": res["pms_booking_id"]}
+    from domains.channel_manager.providers.exely.pms_lifecycle import process_single_and_ack
 
-    from domains.channel_manager.providers.exely.auto_import import auto_import_reservation
-
-    result = await auto_import_reservation(tenant_id, res)
+    client, _conn = await _get_client(tenant_id)
+    result = await process_single_and_ack(tenant_id, res, provider=client)
 
     if not result.get("success"):
-        raise HTTPException(status_code=400, detail=f"Import hatasi: {result.get('reason')}")
-
-    # Confirm delivery to Exely
-    if result.get("pms_booking_id"):
-        try:
-            client, conn = await _get_client(tenant_id)
-            external_id = res.get("external_id", reservation_id)
-            confirm = await client.legacy_confirm_delivery(external_id, result["pms_booking_id"])
-            if confirm.get("success"):
-                logger.info("[EXELY] operation=reservation_ack delivery_state=accepted source=manual_import")
-        except Exception as exc:
-            logger.warning("[EXELY] operation=reservation_ack delivery_state=failed exception_class=%s", type(exc).__name__)
+        acknowledgement = result.get("acknowledgement") or {}
+        status_code = 502 if acknowledgement.get("provider_write_count") else 409
+        raise HTTPException(status_code=status_code, detail=f"Import tamamlanamadi ({result.get('reason')})")
 
     return {
         "message": "Rezervasyon PMS'e basariyla aktarildi",
@@ -853,6 +808,7 @@ async def verify_test_booking(
             pull = await provider.legacy_pull_reservations(reservation_id=payload.reservation_id)
             if pull.get("success") and pull.get("reservations"):
                 for raw_res in pull["reservations"]:
+                    raw_res = {**raw_res, "property_id": hotel_code}
                     ingest_result = await ingest_reservation(
                         provider=PROVIDER,
                         tenant_id=tenant_id,

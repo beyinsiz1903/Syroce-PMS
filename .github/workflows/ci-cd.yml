@@ -203,6 +203,7 @@ jobs:
             tests/test_production_blockers.py \
             tests/test_route_shadowing.py \
             tests/test_exely_credential_log_security.py \
+            tests/test_exely_reservation_lifecycle.py \
             tests/test_hr_shifts_overnight.py \
             tests/unit/test_nilvera_incoming_xml_mapper.py \
             tests/unit/test_incoming_invoice_sync_service.py \
