@@ -121,6 +121,7 @@
   },
   "resolutions": {
     "minimatch": "10.2.5",
+    "nanoid": "3.3.17",
     "nth-check": ">=2.0.1",
     "svgo": ">=2.8.1",
     "underscore": ">=1.13.8",
