@@ -1,0 +1,175 @@
+name: HotelRunner ARI Pilot
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Single pilot operation to run
+        required: true
+        default: discovery
+        type: choice
+        options:
+          - discovery
+          - availability
+          - rate
+          - stop_sell
+          - restriction
+      confirm_provider_write:
+        description: Required for a single ARI provider write
+        required: true
+        default: false
+        type: boolean
+      approved_head_sha:
+        description: Exact 40-character commit SHA approved for this run
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  PYTHON_VERSION: '3.11'
+  MONGO_URL: mongodb://localhost:27017/hotel_pms_test
+  DB_NAME: hotel_pms_test
+  JWT_SECRET: ci-test-secret-key-do-not-use-in-production
+
+jobs:
+  hotelrunner-ari-pilot:
+    name: Run HotelRunner ARI Pilot
+    runs-on: ubuntu-latest
+    environment: hotelrunner-pilot
+    concurrency:
+      group: hotelrunner-ari-pilot
+      cancel-in-progress: false
+    timeout-minutes: 15
+
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping:1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout exact ref
+        uses: actions/checkout@v5
+
+      - name: Validate exact-head approval and operation gate
+        env:
+          APPROVED_HEAD_SHA: ${{ inputs.approved_head_sha }}
+          CONFIRM_PROVIDER_WRITE: ${{ inputs.confirm_provider_write }}
+          PILOT_OPERATION: ${{ inputs.operation }}
+        run: |
+          if [ "${APPROVED_HEAD_SHA}" != "${GITHUB_SHA}" ]; then
+            echo "::error::BLOCKED_EXACT_HEAD_MISMATCH"
+            exit 1
+          fi
+          case "${PILOT_OPERATION}" in
+            discovery)
+              if [ "${CONFIRM_PROVIDER_WRITE}" = "true" ]; then
+                echo "::error::BLOCKED_DISCOVERY_WRITE_CONFLICT"
+                exit 1
+              fi
+              ;;
+            availability|rate|stop_sell|restriction)
+              if [ "${CONFIRM_PROVIDER_WRITE}" != "true" ]; then
+                echo "::error::BLOCKED_PROVIDER_WRITE_NOT_APPROVED"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::BLOCKED_UNSUPPORTED_PILOT_OPERATION"
+              exit 1
+              ;;
+          esac
+
+      - name: Require successful exact-head normal workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          verify_workflow() {
+            local workflow="$1"
+            local success_count
+            success_count="$(
+              gh run list \
+                --repo "${GITHUB_REPOSITORY}" \
+                --workflow "${workflow}" \
+                --branch "${GITHUB_REF_NAME}" \
+                --limit 30 \
+                --json headSha,status,conclusion \
+                --jq "[.[] | select(.headSha == \"${GITHUB_SHA}\" and .status == \"completed\" and .conclusion == \"success\")] | length"
+            )"
+            if [ "${success_count}" -lt 1 ]; then
+              echo "::error::BLOCKED_EXACT_HEAD_NORMAL_CI_NOT_GREEN:${workflow}"
+              exit 1
+            fi
+          }
+          verify_workflow "ci-cd.yml"
+          verify_workflow "frontend-quality.yml"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+          bash scripts/post_install.sh
+          pip install pytest pytest-asyncio pytest-timeout
+
+      - name: Run one gated HotelRunner pilot target
+        env:
+          APP_ENV: test
+          TESTING: '1'
+          REDIS_URL: redis://localhost:6379/0
+          HOTELRUNNER_PILOT_BASE_URL: https://app.hotelrunner.com
+          HOTELRUNNER_PILOT_OPERATION: ${{ inputs.operation }}
+          HOTELRUNNER_PILOT_WRITE_APPROVED: ${{ inputs.confirm_provider_write }}
+          HOTELRUNNER_PILOT_APPROVED_HEAD: ${{ inputs.approved_head_sha }}
+          HOTELRUNNER_PILOT_RUN_ID: ${{ github.run_id }}
+          HOTELRUNNER_PILOT_ACCOUNT_CONFIRMED: ${{ vars.HOTELRUNNER_PILOT_ACCOUNT_CONFIRMED }}
+          HOTELRUNNER_PILOT_TEST_DATE: ${{ vars.HOTELRUNNER_PILOT_TEST_DATE }}
+          HOTELRUNNER_PILOT_AVAILABILITY: ${{ vars.HOTELRUNNER_PILOT_AVAILABILITY }}
+          HOTELRUNNER_PILOT_RATE: ${{ vars.HOTELRUNNER_PILOT_RATE }}
+          HOTELRUNNER_PILOT_STOP_SELL: ${{ vars.HOTELRUNNER_PILOT_STOP_SELL }}
+          HOTELRUNNER_PILOT_MIN_STAY: ${{ vars.HOTELRUNNER_PILOT_MIN_STAY }}
+          HOTELRUNNER_PILOT_TOKEN: ${{ secrets.HOTELRUNNER_PILOT_TOKEN }}
+          HOTELRUNNER_PILOT_HR_ID: ${{ secrets.HOTELRUNNER_PILOT_HR_ID }}
+          HOTELRUNNER_PILOT_INV_CODE: ${{ secrets.HOTELRUNNER_PILOT_INV_CODE }}
+          HOTELRUNNER_PILOT_CHANNEL_CODE: ${{ secrets.HOTELRUNNER_PILOT_CHANNEL_CODE }}
+          HOTELRUNNER_PILOT_HMAC_KEY: ${{ secrets.HOTELRUNNER_PILOT_HMAC_KEY }}
+        run: |
+          cd backend
+          if [ "${HOTELRUNNER_PILOT_OPERATION}" = "discovery" ]; then
+            target="tests/integration/test_hotelrunner_ari_pilot.py::test_hotelrunner_pilot_readonly_discovery"
+          else
+            target="tests/integration/test_hotelrunner_ari_pilot.py::test_hotelrunner_pilot_single_ari_write"
+          fi
+          python -m pytest "${target}" \
+            -v --tb=short -q --timeout=600 \
+            --junitxml=hotelrunner-ari-pilot-results.xml
+
+      - name: Upload safe pilot test results
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: hotelrunner-ari-pilot-results
+          path: backend/hotelrunner-ari-pilot-results.xml
+          if-no-files-found: ignore
