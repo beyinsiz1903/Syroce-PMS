@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -13,6 +15,10 @@ from pymongo.errors import DuplicateKeyError
 from bootstrap.migrations.versions.v010_exely_reservation_lifecycle import (
     ExelyReservationLifecycleMigration,
 )
+from bootstrap.migrations.versions.v011_exely_reservation_fencing import (
+    ExelyReservationFencingMigration,
+)
+from domains.channel_manager.providers import common_ingest
 from domains.channel_manager.providers.exely import lifecycle, pms_lifecycle
 from domains.channel_manager.providers.exely.errors import ExelyTemporaryError
 from domains.channel_manager.providers.exely.provider import ExelyProvider
@@ -25,6 +31,10 @@ SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/"
 
 def _matches(document, query):
     for key, expected in query.items():
+        if key == "$or":
+            if not any(_matches(document, branch) for branch in expected):
+                return False
+            continue
         actual = document.get(key)
         if isinstance(expected, dict):
             if "$in" in expected and actual not in expected["$in"]:
@@ -34,6 +44,12 @@ def _matches(document, query):
             if "$exists" in expected and (key in document) is not expected["$exists"]:
                 return False
             if "$type" in expected and expected["$type"] == "string" and not isinstance(actual, str):
+                return False
+            if "$lt" in expected and (actual is None or actual >= expected["$lt"]):
+                return False
+            if "$lte" in expected and (actual is None or actual > expected["$lte"]):
+                return False
+            if "$gte" in expected and (actual is None or actual < expected["$gte"]):
                 return False
         elif actual != expected:
             return False
@@ -91,7 +107,7 @@ class _Collection:
             self.documents.append(target)
             inserted = True
         if target is None:
-            return SimpleNamespace(modified_count=0, upserted_id=None)
+            return SimpleNamespace(matched_count=0, modified_count=0, upserted_id=None)
         if inserted:
             target.update(deepcopy(update.get("$setOnInsert", {})))
         target.update(deepcopy(update.get("$set", {})))
@@ -99,7 +115,7 @@ class _Collection:
             target.pop(key, None)
         for key, value in update.get("$inc", {}).items():
             target[key] = target.get(key, 0) + value
-        return SimpleNamespace(modified_count=1, upserted_id=target.get("id") if inserted else None)
+        return SimpleNamespace(matched_count=1, modified_count=1, upserted_id=target.get("id") if inserted else None)
 
 
 class _DB:
@@ -596,3 +612,209 @@ async def test_lifecycle_migration_index_failure_is_fail_closed():
     )
     with pytest.raises(RuntimeError, match="index unavailable"):
         await ExelyReservationLifecycleMigration().up(database)
+
+
+@pytest.mark.asyncio
+async def test_ten_concurrent_workers_produce_one_pms_booking(fake_db):
+    await _add_mapping(fake_db)
+    _, current = await _persist(fake_db, _canonical())
+
+    results = await asyncio.gather(*(pms_lifecycle.process_reservation_version("tenant", current) for _ in range(10)))
+
+    assert sum(result.get("created", 0) for result in results) == 1
+    assert len(fake_db.bookings.documents) == 1
+    version = await fake_db.exely_reservation_versions.find_one(
+        {"version_identity": current["provider_version_identity"]},
+        {"_id": 0},
+    )
+    assert version["processing_state"] == lifecycle.PMS_DURABLE
+    assert version["ack_state"] == lifecycle.ACK_PENDING
+    assert "processing_owner_token" not in version
+
+
+@pytest.mark.asyncio
+async def test_expired_lease_is_taken_over_and_old_owner_is_fenced(fake_db):
+    await _add_mapping(fake_db)
+    _, current = await _persist(fake_db, _canonical())
+    identity = current["provider_version_identity"]
+
+    old_claim = await pms_lifecycle._acquire_processing_claim(identity)
+    assert old_claim is not None
+    assert await pms_lifecycle._acquire_processing_claim(identity) is None
+    version = fake_db.exely_reservation_versions.documents[0]
+    version["processing_lease_expires_at"] = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
+
+    new_claim = await pms_lifecycle._acquire_processing_claim(identity)
+    assert new_claim is not None
+    assert new_claim.generation == old_claim.generation + 1
+    assert (
+        await pms_lifecycle._finish_processing_claim(
+            old_claim,
+            processing_state=lifecycle.PMS_FAILED,
+        )
+        is False
+    )
+    assert version["processing_owner_token"] == new_claim.owner_token
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_renews_only_the_current_owner_lease(fake_db):
+    await _add_mapping(fake_db)
+    _, current = await _persist(fake_db, _canonical())
+    claim = await pms_lifecycle._acquire_processing_claim(current["provider_version_identity"])
+    assert claim is not None
+    version = fake_db.exely_reservation_versions.documents[0]
+    original_expiry = version["processing_lease_expires_at"]
+
+    assert await pms_lifecycle._renew_processing_claim(claim) is True
+    assert version["processing_lease_expires_at"] >= original_expiry
+    wrong_owner = pms_lifecycle.ProcessingClaim(
+        claim.version_identity,
+        "wrong-owner",
+        claim.generation,
+    )
+    assert await pms_lifecycle._renew_processing_claim(wrong_owner) is False
+    assert version["processing_owner_token"] == claim.owner_token
+
+
+@pytest.mark.asyncio
+async def test_process_crash_lease_expiry_allows_single_safe_replay(fake_db):
+    await _add_mapping(fake_db)
+    _, current = await _persist(fake_db, _canonical())
+    identity = current["provider_version_identity"]
+    abandoned = await pms_lifecycle._acquire_processing_claim(identity)
+    assert abandoned is not None
+    fake_db.exely_reservation_versions.documents[0]["processing_lease_expires_at"] = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
+
+    replay = await pms_lifecycle.process_reservation_version("tenant", current)
+
+    assert replay["success"] is True
+    assert replay["created"] == 1
+    assert len(fake_db.bookings.documents) == 1
+
+
+@pytest.mark.asyncio
+async def test_old_worker_cannot_overwrite_new_generation_booking(fake_db):
+    old_claim = pms_lifecycle.ProcessingClaim("identity", "old-owner", 1)
+    booking = {
+        "id": "booking",
+        "tenant_id": "tenant",
+        "provider_version_key": "2030-01-01T10:00:00Z",
+        "exely_processing_generation": 2,
+        "room_type": "Standard",
+        "check_in": "2030-01-01",
+        "check_out": "2030-01-02",
+        "status": "confirmed",
+    }
+    await fake_db.bookings.insert_one(booking)
+    stale_update = {
+        **booking,
+        "room_type": "Stale",
+        "exely_processing_generation": 1,
+    }
+
+    with pytest.raises(pms_lifecycle.ProcessingClaimLostError):
+        await pms_lifecycle._upsert_booking("tenant", stale_update, old_claim)
+    stored = await fake_db.bookings.find_one({"id": "booking"}, {"_id": 0})
+    assert stored["room_type"] == "Standard"
+    assert stored["exely_processing_generation"] == 2
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_loss_fails_closed_without_ack(fake_db, monkeypatch):
+    await _add_mapping(fake_db)
+    _, current = await _persist(fake_db, _canonical())
+
+    async def _lose_claim(_claim, claim_lost):
+        claim_lost.set()
+
+    monkeypatch.setattr(pms_lifecycle, "_processing_claim_heartbeat", _lose_claim)
+    result = await pms_lifecycle.process_reservation_version("tenant", current)
+
+    assert result == {
+        "success": False,
+        "reason": "PROCESSING_CLAIM_LOST",
+        "provider_write_count": 0,
+    }
+    version = await fake_db.exely_reservation_versions.find_one(
+        {"version_identity": current["provider_version_identity"]},
+        {"_id": 0},
+    )
+    assert version["ack_state"] == lifecycle.ACK_NOT_READY
+    assert len(fake_db.bookings.documents) == 0
+
+
+@pytest.mark.asyncio
+async def test_mapping_replay_race_produces_one_booking(fake_db, monkeypatch):
+    hold = AsyncMock(return_value={"booking_id": "hold", "alarm_raised": True})
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.unmatched_hold.create_unmatched_reservation_hold",
+        hold,
+    )
+    _, current = await _persist(fake_db, _canonical())
+    await _add_mapping(fake_db)
+
+    results = await asyncio.gather(*(pms_lifecycle.process_reservation_version("tenant", current) for _ in range(10)))
+
+    assert sum(result.get("created", 0) for result in results) == 1
+    assert len(fake_db.bookings.documents) == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_raw_event_duplicate_is_resolved_by_unique_claim(monkeypatch):
+    monkeypatch.setattr(
+        common_ingest,
+        "_check_provider_event_recorded",
+        AsyncMock(side_effect=[None, {"id": "existing-event"}]),
+    )
+    monkeypatch.setattr(
+        common_ingest,
+        "store_raw_event",
+        AsyncMock(side_effect=DuplicateKeyError("duplicate event")),
+    )
+
+    result = await common_ingest.ingest_reservation(
+        "exely",
+        "tenant",
+        {
+            "external_id": "provider-reservation",
+            "last_modify": "2030-01-01T10:00:00Z",
+        },
+        lambda _payload, _source: pytest.fail("duplicate must stop before normalize"),
+    )
+
+    assert result["success"] is True
+    assert result["action"] == "duplicate"
+    assert result["reason"] == "concurrent_event_claimed"
+
+
+@pytest.mark.asyncio
+async def test_fencing_migration_requires_all_critical_unique_indexes():
+    versions = SimpleNamespace(create_indexes=AsyncMock())
+    raw_events = SimpleNamespace(create_indexes=AsyncMock())
+    bookings = SimpleNamespace(create_indexes=AsyncMock())
+    database = SimpleNamespace(
+        exely_reservation_versions=versions,
+        exely_raw_events=raw_events,
+        bookings=bookings,
+    )
+
+    await ExelyReservationFencingMigration().up(database)
+
+    version_indexes = versions.create_indexes.await_args.args[0]
+    raw_indexes = raw_events.create_indexes.await_args.args[0]
+    booking_indexes = bookings.create_indexes.await_args.args[0]
+    assert version_indexes[0].document["unique"] is True
+    assert raw_indexes[0].document["unique"] is True
+    assert booking_indexes[0].document["unique"] is True
+
+
+@pytest.mark.asyncio
+async def test_fencing_migration_unique_index_failure_is_fail_closed():
+    database = SimpleNamespace(
+        exely_reservation_versions=SimpleNamespace(create_indexes=AsyncMock(side_effect=RuntimeError("index unavailable"))),
+        exely_raw_events=SimpleNamespace(create_indexes=AsyncMock()),
+        bookings=SimpleNamespace(create_indexes=AsyncMock()),
+    )
+    with pytest.raises(RuntimeError, match="index unavailable"):
+        await ExelyReservationFencingMigration().up(database)

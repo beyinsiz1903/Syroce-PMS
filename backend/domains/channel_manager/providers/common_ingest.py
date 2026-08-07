@@ -12,6 +12,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from pymongo.errors import DuplicateKeyError
+
 from core.database import db
 
 logger = logging.getLogger(__name__)
@@ -519,16 +521,31 @@ async def ingest_reservation(
             "provider_event_id": provider_event_id,
         }
 
-    event_id = await store_raw_event(
-        provider,
-        tenant_id,
-        event_type,
-        external_id,
-        channel,
-        raw_payload,
-        source,
-        provider_event_id=provider_event_id,
-    )
+    try:
+        event_id = await store_raw_event(
+            provider,
+            tenant_id,
+            event_type,
+            external_id,
+            channel,
+            raw_payload,
+            source,
+            provider_event_id=provider_event_id,
+        )
+    except DuplicateKeyError:
+        if provider != "exely":
+            raise
+        existing = await _check_provider_event_recorded(provider, tenant_id, provider_event_id)
+        if existing is None:
+            raise
+        logger.info("[CATCHUP-DEDUP] provider=exely decision=concurrent_duplicate")
+        return {
+            "success": True,
+            "event_id": existing.get("id"),
+            "action": "duplicate",
+            "reason": "concurrent_event_claimed",
+            "provider_event_id": provider_event_id,
+        }
     try:
         canonical = normalizer(raw_payload, source)
         result = await process_reservation(provider, tenant_id, canonical, event_type, event_id, payload_hash)
