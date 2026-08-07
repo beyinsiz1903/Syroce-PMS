@@ -13,6 +13,13 @@ function loadJson(p) {
 }
 
 export const test = base.extend({
+    apiBaseUrl: async ({ baseURL }, use) => {
+        const resolved = process.env.E2E_BASE_URL || baseURL;
+        if (!resolved || !/^https?:\/\//i.test(resolved)) {
+            throw new Error('[stress-context] E2E_BASE_URL is missing or invalid');
+        }
+        await use(resolved);
+    },
     stressState: async ({}, use) => { await use(loadJson(STATE_FILE)); },
     stressTokens: async ({}, use) => {
         const tokens = loadJson(TOKEN_FILE);

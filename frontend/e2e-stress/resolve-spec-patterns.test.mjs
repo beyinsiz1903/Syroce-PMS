@@ -91,10 +91,12 @@ test('stress workflow inventories resolved files and hard-fails zero tests', () 
 
 test('stress config keeps the guarded setup, teardown, and single project', () => {
     const config = fs.readFileSync(path.join(frontendRoot, 'playwright.stress.config.js'), 'utf8');
+    const context = fs.readFileSync(path.join(directory, 'fixtures/stress-context.js'), 'utf8');
 
     assert.match(config, /testDir:\s*'\.\/e2e-stress\/specs'/);
     assert.match(config, /globalSetup:.*global-setup\.js/);
     assert.match(config, /globalTeardown:.*global-teardown\.js/);
     assert.match(config, /name:\s*'stress'/);
     assert.doesNotMatch(config, /testMatch:|testIgnore:|grep:|grepInvert:/);
+    assert.match(context, /apiBaseUrl:\s*async \(\{ baseURL \}, use\)/);
 });
