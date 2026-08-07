@@ -52,7 +52,7 @@ from .soap_builder import (
     build_read_rq,
     get_soap_action_uri,
 )
-from .validators import extract_credentials, validate_ari_payload, validate_credentials, validate_date_range
+from .validators import extract_credentials, validate_ari_payload, validate_credentials
 
 logger = logging.getLogger("exely.provider")
 
@@ -231,19 +231,13 @@ class ExelyProvider:
 
     # ── Reservation Pull ──────────────────────────────────────────────
 
-    async def pull_reservations(
-        self,
-        from_date: str | None = None,
-        to_date: str | None = None,
-        reservation_id: str | None = None,
-    ) -> ProviderResult:
-        """Pull reservations via OTA_ReadRQ."""
+    async def pull_reservations(self) -> ProviderResult:
+        """Pull only undelivered reservations via official OTA_ReadRQ."""
         start = time.time()
         operation = "OTA_ReadRQ"
         soap_action = get_soap_action_uri(operation)
         try:
-            validate_date_range(from_date, to_date)
-            xml = build_read_rq(self._username, self._password, self._hotel_code, from_date, to_date, reservation_id)
+            xml = build_read_rq(self._username, self._password, self._hotel_code)
 
             raw = await self._send_read(xml, soap_action, operation="reservation_read")
             result = parse_read_rs(raw)
@@ -552,86 +546,6 @@ class ExelyProvider:
         if result.get("result_class") != RATE_LIMITED or self._quota is None:
             return
         await self._quota.record_cooldown(int(result.get("retry_after_seconds") or 60))
-
-    # ── Legacy compatibility methods ──────────────────────────────────
-    # These match the old ExelyClient interface so existing callers
-    # can migrate without breaking.
-
-    async def legacy_test_connection(self) -> dict[str, Any]:
-        """Legacy: returns dict like the old ExelyClient."""
-        result = await self.test_connection()
-        if result.success:
-            data = result.data or {}
-            return {
-                "connected": True,
-                "room_types": data.get("room_types", []),
-                "rate_plans": data.get("rate_plans", []),
-                "duration_ms": result.duration_ms,
-            }
-        return {"connected": False, "error": result.error, "duration_ms": result.duration_ms}
-
-    async def legacy_pull_reservations(
-        self,
-        from_date: str | None = None,
-        to_date: str | None = None,
-        reservation_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Legacy: returns dict like the old ExelyClient."""
-        result = await self.pull_reservations(from_date, to_date, reservation_id)
-        if result.success:
-            data = result.data or {}
-            return {
-                "success": True,
-                "reservations": data.get("reservations", []),
-                "count": data.get("count", 0),
-                "duration_ms": result.duration_ms,
-            }
-        return {"success": False, "error": result.error, "reservations": [], "duration_ms": result.duration_ms}
-
-    async def legacy_discover_rooms(self, checkin: str, checkout: str) -> dict[str, Any]:
-        """Legacy: returns dict like the old ExelyClient."""
-        result = await self.discover_rooms(checkin, checkout)
-        if result.success:
-            data = result.data or {}
-            return {
-                "success": True,
-                "room_types": data.get("room_types", []),
-                "rate_plans": data.get("rate_plans", []),
-                "duration_ms": result.duration_ms,
-            }
-        return {"success": False, "error": result.error, "room_types": [], "rate_plans": [], "duration_ms": result.duration_ms}
-
-    async def legacy_push_ari(self, **kwargs) -> dict[str, Any]:
-        """Legacy: returns dict like the old ExelyClient."""
-        result = await self.push_ari(**kwargs)
-        if result.success:
-            return {"success": True, **(result.data or {}), "duration_ms": result.duration_ms}
-        return {"success": False, "error": result.error, "duration_ms": result.duration_ms}
-
-    async def legacy_confirm_delivery(
-        self,
-        reservation_id: str,
-        confirmation_number: str,
-        create_datetime: str = None,
-        last_modify_datetime: str = None,
-        res_status: str = "Reserved",
-        *,
-        provider_id_context: str = "",
-        confirmations: list[dict[str, Any]] | None = None,
-    ) -> dict[str, Any]:
-        """Legacy: returns dict like the old ExelyClient."""
-        result = await self.confirm_delivery(
-            reservation_id,
-            confirmation_number,
-            create_datetime=create_datetime,
-            last_modify_datetime=last_modify_datetime,
-            res_status=res_status,
-            provider_id_context=provider_id_context,
-            confirmations=confirmations,
-        )
-        if result.success:
-            return {"success": True, **(result.data or {}), "duration_ms": result.duration_ms}
-        return {"success": False, "error": result.error, "duration_ms": result.duration_ms}
 
     def get_usage_stats(self) -> dict[str, Any]:
         """Get API usage statistics."""

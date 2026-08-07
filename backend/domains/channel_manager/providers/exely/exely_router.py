@@ -126,9 +126,10 @@ async def setup_connection(
         kwargs["endpoint_url"] = payload.endpoint_url
 
     provider = ExelyProvider(**kwargs)
-    test_result = await provider.legacy_test_connection()
+    provider_result = await provider.test_connection()
+    test_data = provider_result.data or {}
 
-    if not test_result["connected"]:
+    if not provider_result.success:
         raise HTTPException(status_code=400, detail="Exely connection test failed")
 
     # Store credentials in secrets manager (encrypted, audited)
@@ -161,8 +162,8 @@ async def setup_connection(
         "mode": "sandbox",
         "currency": payload.currency,
         "is_active": True,
-        "room_types": test_result.get("room_types", []),
-        "rate_plans": test_result.get("rate_plans", []),
+        "room_types": test_data.get("room_types", []),
+        "rate_plans": test_data.get("rate_plans", []),
         "connected_at": datetime.now(UTC).isoformat(),
         "last_sync_at": None,
         "created_by": current_user.name,
@@ -174,13 +175,13 @@ async def setup_connection(
         upsert=True,
     )
 
-    await log_sync(PROVIDER, current_user.tenant_id, "connection", "success", duration_ms=test_result.get("duration_ms", 0), user_name=current_user.name)
+    await log_sync(PROVIDER, current_user.tenant_id, "connection", "success", duration_ms=provider_result.duration_ms, user_name=current_user.name)
 
     return {
         "message": "Exely connection established successfully",
         "connected": True,
-        "room_types": test_result.get("room_types", []),
-        "rate_plans": test_result.get("rate_plans", []),
+        "room_types": test_data.get("room_types", []),
+        "rate_plans": test_data.get("rate_plans", []),
         "connection_id": connection["id"],
     }
 
@@ -217,12 +218,16 @@ async def test_connection(
             "mode": "sandbox",
         }
     client, _conn = await _get_client(current_user.tenant_id)
-    result = await client.legacy_test_connection()
-    if isinstance(result, dict) and "connected" not in result:
-        result["connected"] = result.get("success", False)
-    if isinstance(result, dict) and "success" not in result:
-        result["success"] = result.get("connected", False)
-    return result
+    result = await client.test_connection()
+    data = result.data or {}
+    return {
+        "success": result.success,
+        "connected": bool(result.success and data.get("connected")),
+        "room_types": data.get("room_types", []),
+        "rate_plans": data.get("rate_plans", []),
+        "duration_ms": result.duration_ms,
+        "error_type": result.error_type if not result.success else None,
+    }
 
 
 @router.delete("/disconnect")
@@ -276,25 +281,26 @@ async def discover_rooms(
     ci = checkin or datetime.now().strftime("%Y-%m-%d")
     co = checkout or (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    result = await client.legacy_discover_rooms(ci, co)
-    if not result["success"]:
-        raise HTTPException(status_code=502, detail=f"Exely room discovery error: {result['error']}")
+    result = await client.discover_rooms(ci, co)
+    if not result.success:
+        raise HTTPException(status_code=502, detail=f"Exely room discovery error ({result.error_type})")
+    data = result.data or {}
 
     # Cache discovered rooms/rates on connection
     await db.exely_connections.update_one(
         {"tenant_id": current_user.tenant_id},
         {
             "$set": {
-                "room_types": result["room_types"],
-                "rate_plans": result["rate_plans"],
+                "room_types": data.get("room_types", []),
+                "rate_plans": data.get("rate_plans", []),
                 "rooms_fetched_at": datetime.now(UTC).isoformat(),
             }
         },
     )
 
     return {
-        "room_types": result["room_types"],
-        "rate_plans": result["rate_plans"],
+        "room_types": data.get("room_types", []),
+        "rate_plans": data.get("rate_plans", []),
     }
 
 
@@ -486,47 +492,12 @@ async def manual_pull(
     if not result["success"]:
         raise HTTPException(status_code=502, detail="Exely reservation pull failed")
 
-    # Also check individual imported reservations for cancellation status changes.
-    # The batch "Undelivered" pull may not return cancellations immediately.
-    cancel_detected = await _check_individual_cancellations(
-        current_user.tenant_id,
-        creds["username"],
-        creds["password"],
-        creds["hotel_code"],
-        creds["endpoint_url"],
-    )
-
-    # Also check for modifications (name, date, room type changes)
-    mod_detected = await _check_individual_modifications(
-        current_user.tenant_id,
-        creds["username"],
-        creds["password"],
-        creds["hotel_code"],
-        creds["endpoint_url"],
-    )
-
-    # Auto-import is already triggered inside pull_for_tenant
-    # Also import any previously pending ones (including modifications)
-    from domains.channel_manager.providers.exely.auto_import import auto_import_pending
-    from domains.channel_manager.providers.exely.provider import ExelyProvider
-
-    provider_kwargs = {
-        "username": creds["username"],
-        "password": creds["password"],
-        "hotel_code": creds["hotel_code"],
-        "endpoint_url": creds["endpoint_url"],
-        "tenant_id": current_user.tenant_id,
-        "property_id": creds["hotel_code"],
-        "connection_id": f"{current_user.tenant_id}:{creds['hotel_code']}",
-    }
-    confirm_provider = ExelyProvider(**provider_kwargs)
-    import_result = await auto_import_pending(current_user.tenant_id, provider=confirm_provider)
-
-    cancelled = import_result.get("cancelled", 0) + cancel_detected
-    updated = import_result.get("updated", 0) + mod_detected
+    cancelled = result.get("cancelled", 0)
+    updated = result.get("updated", 0)
+    imported = result.get("imported", 0)
     msg_parts = [f"{result['processed']} rezervasyon cekildi"]
-    if import_result["imported"]:
-        msg_parts.append(f"{import_result['imported']} PMS'e aktarildi")
+    if imported:
+        msg_parts.append(f"{imported} PMS'e aktarildi")
     if updated:
         msg_parts.append(f"{updated} guncellendi")
     if cancelled:
@@ -534,177 +505,10 @@ async def manual_pull(
     return {
         "message": ", ".join(msg_parts),
         **result,
-        "auto_imported": import_result["imported"],
+        "auto_imported": imported,
         "updated": updated,
         "cancelled": cancelled,
     }
-
-
-async def _check_individual_cancellations(
-    tenant_id: str,
-    username: str,
-    password: str,
-    hotel_code: str,
-    endpoint_url: str,
-) -> int:
-    """
-    Check each imported (non-cancelled) exely_reservation individually via Exely SOAP
-    to detect cancellations that the batch 'Undelivered' pull may miss.
-    """
-
-    imported_reservations = await db.exely_reservations.find(
-        {"tenant_id": tenant_id, "state": {"$in": ["confirmed", "pending"]}, "pms_status": "imported"},
-        {"_id": 0, "external_id": 1, "provider_reservation_id": 1},
-    ).to_list(50)
-
-    if not imported_reservations:
-        return 0
-
-    provider_kwargs = {
-        "username": username,
-        "password": password,
-        "hotel_code": hotel_code,
-        "tenant_id": tenant_id,
-        "property_id": hotel_code,
-        "connection_id": f"{tenant_id}:{hotel_code}",
-    }
-    if endpoint_url:
-        provider_kwargs["endpoint_url"] = endpoint_url
-    provider = ExelyProvider(**provider_kwargs)
-
-    cancel_count = 0
-    for res in imported_reservations:
-        ext_id = res.get("external_id", "")
-        prov_res_id = res.get("provider_reservation_id", ext_id)
-        try:
-            pull_result = await provider.legacy_pull_reservations(reservation_id=prov_res_id)
-            if not pull_result.get("success"):
-                continue
-            reservations = pull_result.get("reservations", [])
-            if not reservations:
-                continue
-            raw_res = {**reservations[0], "property_id": hotel_code}
-            status = (raw_res.get("status") or "").lower()
-            if status in ("cancel", "cancelled"):
-                ingest_result = await ingest_reservation(
-                    provider=PROVIDER,
-                    tenant_id=tenant_id,
-                    raw_payload=raw_res,
-                    normalizer=normalize_reservation,
-                    event_type="cancellation",
-                    source="manual_cancel_check",
-                )
-                if ingest_result.get("action") == "cancelled":
-                    cancel_count += 1
-                    logger.info("[EXELY-CANCEL-CHECK] event=cancellation_detected")
-        except Exception as exc:
-            logger.warning("[EXELY-CANCEL-CHECK] failed exception_class=%s", type(exc).__name__)
-
-    return cancel_count
-
-
-async def _check_individual_modifications(
-    tenant_id: str,
-    username: str,
-    password: str,
-    hotel_code: str,
-    endpoint_url: str,
-) -> int:
-    """
-    Check each imported exely_reservation individually via Exely SOAP
-    to detect modifications (name changes, date changes, room type changes)
-    that the batch 'Undelivered' pull may miss.
-    """
-
-    imported_reservations = await db.exely_reservations.find(
-        {"tenant_id": tenant_id, "state": {"$in": ["confirmed", "modified"]}, "pms_status": "imported"},
-        {"_id": 0, "external_id": 1, "provider_reservation_id": 1, "guest_name": 1, "checkin_date": 1, "checkout_date": 1, "rooms": 1, "provider_last_modified_at": 1},
-    ).to_list(50)
-
-    if not imported_reservations:
-        return 0
-
-    provider_kwargs = {
-        "username": username,
-        "password": password,
-        "hotel_code": hotel_code,
-        "tenant_id": tenant_id,
-        "property_id": hotel_code,
-        "connection_id": f"{tenant_id}:{hotel_code}",
-    }
-    if endpoint_url:
-        provider_kwargs["endpoint_url"] = endpoint_url
-    provider = ExelyProvider(**provider_kwargs)
-
-    mod_count = 0
-    for res in imported_reservations:
-        ext_id = res.get("external_id", "")
-        prov_res_id = res.get("provider_reservation_id", ext_id)
-        try:
-            pull_result = await provider.legacy_pull_reservations(reservation_id=prov_res_id)
-            if not pull_result.get("success"):
-                continue
-            reservations = pull_result.get("reservations", [])
-            if not reservations:
-                continue
-            raw_res = {**reservations[0], "property_id": hotel_code}
-            status = (raw_res.get("status") or "").lower()
-
-            # Skip cancelled (handled by cancellation check)
-            if status in ("cancel", "cancelled"):
-                continue
-
-            # Detect changes by comparing with stored data
-            changed = False
-            new_name = raw_res.get("guest_name", "")
-            new_checkin = raw_res.get("checkin_date", "")
-            new_checkout = raw_res.get("checkout_date", "")
-            new_rooms = raw_res.get("rooms", [])
-            new_room_code = new_rooms[0].get("room_type_code", "") if new_rooms else ""
-
-            stored_name = res.get("guest_name", "")
-            stored_checkin = res.get("checkin_date", "")
-            stored_checkout = res.get("checkout_date", "")
-            stored_rooms = res.get("rooms", [])
-            stored_room_code = stored_rooms[0].get("room_type_code", "") if stored_rooms else ""
-
-            # Compare last_modify timestamp
-            new_last_modify = raw_res.get("last_modify", "")
-            stored_last_modify = res.get("provider_last_modified_at", "")
-            if new_last_modify and stored_last_modify and new_last_modify != stored_last_modify:
-                changed = True
-
-            # Also compare individual fields
-            if new_name and new_name != stored_name:
-                changed = True
-            if new_checkin and new_checkin[:10] != (stored_checkin or "")[:10]:
-                changed = True
-            if new_checkout and new_checkout[:10] != (stored_checkout or "")[:10]:
-                changed = True
-            if new_room_code and new_room_code != stored_room_code:
-                changed = True
-
-            if changed:
-                ingest_result = await ingest_reservation(
-                    provider=PROVIDER,
-                    tenant_id=tenant_id,
-                    raw_payload=raw_res,
-                    normalizer=normalize_reservation,
-                    event_type="modification",
-                    source="individual_mod_check",
-                )
-                if ingest_result.get("action") in ("updated", "created"):
-                    mod_count += 1
-                    logger.info(
-                        "[EXELY-MOD-CHECK] event=modification_detected name_changed=%s dates_changed=%s room_changed=%s",
-                        new_name != stored_name,
-                        new_checkin[:10] != (stored_checkin or "")[:10],
-                        new_room_code != stored_room_code,
-                    )
-        except Exception as e:
-            logger.warning("[EXELY-MOD-CHECK] failed exception_class=%s", type(e).__name__)
-
-    return mod_count
 
 
 @router.get("/reservations/local")
@@ -871,7 +675,8 @@ async def verify_test_booking(
     }
 
     try:
-        # If specific reservation_id provided, do targeted pull
+        # PMSConnect only supports SelectionType=Undelivered. A supplied ID is
+        # filtered locally after the canonical undelivered read.
         if payload.reservation_id:
             provider_kwargs = {
                 "username": username,
@@ -884,9 +689,11 @@ async def verify_test_booking(
             if endpoint_url:
                 provider_kwargs["endpoint_url"] = endpoint_url
             provider = ExelyProvider(**provider_kwargs)
-            pull = await provider.legacy_pull_reservations(reservation_id=payload.reservation_id)
-            if pull.get("success") and pull.get("reservations"):
-                for raw_res in pull["reservations"]:
+            pull = await provider.pull_reservations()
+            pull_data = pull.data or {}
+            matches = [item for item in pull_data.get("reservations", []) if str(item.get("reservation_id") or "") == payload.reservation_id]
+            if pull.success and matches:
+                for raw_res in matches:
                     raw_res = {**raw_res, "property_id": hotel_code}
                     ingest_result = await ingest_reservation(
                         provider=PROVIDER,
@@ -904,7 +711,7 @@ async def verify_test_booking(
                             "status": raw_res.get("status", ""),
                         }
                     )
-            else:
+            elif not pull.success:
                 verification["errors"].append("OTA_ReadRQ: provider_read_failed")
         else:
             # Do a general pull for new undelivered reservations

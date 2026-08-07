@@ -12,7 +12,6 @@ from domains.channel_manager.providers import common_ingest
 from domains.channel_manager.providers.exely import exely_webhook_router
 from domains.channel_manager.providers.exely.client import ExelySoapTransport
 from domains.channel_manager.providers.exely.errors import ExelyParseError, ExelyPayloadError, ExelyValidationError
-from domains.channel_manager.providers.exely.exely_client_legacy import ExelyClient
 from domains.channel_manager.providers.exely.observability import persist_outbound_log
 from domains.channel_manager.providers.exely.response_parser import parse_read_rs
 from domains.channel_manager.providers.exely.security import (
@@ -72,9 +71,9 @@ def test_official_test_endpoint_is_allowed_offline():
     assert validate_exely_endpoint(EXELY_TEST_ENDPOINT_URL) == EXELY_TEST_ENDPOINT_URL
 
 
-def test_legacy_client_uses_the_same_endpoint_allowlist():
-    with pytest.raises(ExelyValidationError):
-        ExelyClient("synthetic-user", "synthetic-password", "synthetic-property", "https://attacker.example")
+def test_legacy_direct_http_client_is_removed():
+    legacy_path = Path(__file__).parents[1] / "domains/channel_manager/providers/exely/exely_client_legacy.py"
+    assert not legacy_path.exists()
 
 
 @pytest.mark.parametrize(
