@@ -296,20 +296,20 @@ jobs:
                   PLAYWRIGHT_GREP: ${{ github.event.inputs.playwright_grep }}
                   SPEC_PATTERN_INPUT: ${{ github.event.inputs.spec_pattern }}
               run: |
+                  set -euo pipefail
                   cd frontend
                   TARGET_PATTERN="$SPEC_PATTERN_INPUT"
                   if [ -z "$TARGET_PATTERN" ]; then
                     TARGET_PATTERN="${{ matrix.spec_pattern }}"
                   fi
                   
-                  args=(playwright test --config=playwright.stress.config.js)
-                  
                   if [[ "$TARGET_PATTERN" == *$'\n'* ]] || [[ "$TARGET_PATTERN" == *$'\r'* ]]; then
                       echo "::error::Newline characters are not allowed"
                       exit 1
                   fi
+                  pattern_args=()
                   if [ -n "$TARGET_PATTERN" ]; then
-                      read -a pattern_args <<< "$TARGET_PATTERN"
+                      read -ra pattern_args <<< "$TARGET_PATTERN"
                       for p in "${pattern_args[@]}"; do
                           if [[ "$p" == -* ]]; then
                               echo "::error::spec_pattern elements cannot begin with a dash: $p"
@@ -323,15 +323,62 @@ jobs:
                               echo "::error::Invalid characters in spec_pattern: $p"
                               exit 1
                           fi
-                          args+=("$p")
                       done
                   fi
-                  
+
+                  resolved_file=$(mktemp)
+                  full_list_output=$(mktemp)
+                  list_output=$(mktemp)
+                  trap 'rm -f "$resolved_file" "$full_list_output" "$list_output"' EXIT
+                  if ! node e2e-stress/resolve-spec-patterns.mjs "${pattern_args[@]}" > "$resolved_file"; then
+                      echo "::error::BLOCKED_TEST_DISCOVERY: spec patterns could not be resolved"
+                      exit 1
+                  fi
+                  mapfile -t resolved_specs < "$resolved_file"
+                  if [ "${#resolved_specs[@]}" -eq 0 ]; then
+                      echo "::error::BLOCKED_TEST_DISCOVERY: resolved spec count is zero"
+                      exit 1
+                  fi
+
+                  if ! npx playwright test --config=playwright.stress.config.js --list | tee "$full_list_output"; then
+                      echo "::error::BLOCKED_TEST_DISCOVERY: full Playwright inventory failed"
+                      exit 1
+                  fi
+                  full_discovered_count=$(sed -nE 's/^[[:space:]]*Total: ([0-9]+) tests?.*/\1/p' "$full_list_output" | tail -n1)
+                  if [[ ! "$full_discovered_count" =~ ^[1-9][0-9]*$ ]]; then
+                      echo "::error::BLOCKED_TEST_DISCOVERY: full discovered test count is zero or unavailable"
+                      exit 1
+                  fi
+                  echo "FULL_DISCOVERED_TEST_COUNT=$full_discovered_count"
+
+                  args=(playwright test --config=playwright.stress.config.js "${resolved_specs[@]}")
                   if [ -n "$PLAYWRIGHT_GREP" ]; then
                       args+=(--grep "$PLAYWRIGHT_GREP")
                   fi
-                  
-                  yarn "${args[@]}" 
+
+                  if ! npx "${args[@]}" --list | tee "$list_output"; then
+                      echo "::error::BLOCKED_TEST_DISCOVERY: Playwright inventory failed"
+                      exit 1
+                  fi
+                  discovered_count=$(sed -nE 's/^[[:space:]]*Total: ([0-9]+) tests?.*/\1/p' "$list_output" | tail -n1)
+                  if [[ ! "$discovered_count" =~ ^[1-9][0-9]*$ ]]; then
+                      echo "::error::BLOCKED_TEST_DISCOVERY: discovered test count is zero or unavailable"
+                      exit 1
+                  fi
+                  echo "DISCOVERED_TEST_COUNT=$discovered_count"
+
+                  yarn "${args[@]}"
+
+                  report=$(ls -1t ../docs/drill_reports/*_stress_${STRESS_REPORT_TAG}.md 2>/dev/null | head -n1 || true)
+                  executed_count=""
+                  if [ -n "$report" ]; then
+                      executed_count=$(sed -nE 's/^\| Toplam test \| ([0-9]+) \|$/\1/p' "$report" | head -n1)
+                  fi
+                  if [[ ! "$executed_count" =~ ^[1-9][0-9]*$ ]]; then
+                      echo "::error::BLOCKED_TEST_DISCOVERY: executed test count is zero or unavailable"
+                      exit 1
+                  fi
+                  echo "EXECUTED_TEST_COUNT=$executed_count"
 
             - name: Verify drill report verdict (hard-fail on NO-GO)
               id: verdict_check
@@ -438,13 +485,13 @@ jobs:
                   STRESS_SKIP_SETUP: 'true'
                   STRESS_SKIP_TEARDOWN: 'false'
                   STRESS_FULL_WIPE: 'true'
-                  STRESS_TEARDOWN_LOG_NAME: 'teardown-main.json'
+                  STRESS_TEARDOWN_LOG_NAME: 'teardown.json'
               run: |
                   cd frontend
                   yarn playwright test --config=playwright.stress.config.js e2e-stress/specs/00-gates.spec.js
-                  test -s e2e-stress/.auth/teardown-main.json
+                  test -s e2e-stress/.auth/teardown.json
                   mkdir -p e2e-stress/teardown-logs
-                  cp e2e-stress/.auth/teardown-main.json e2e-stress/teardown-logs/teardown-main.json
+                  cp e2e-stress/.auth/teardown.json e2e-stress/teardown-logs/teardown-main.json
 
             - name: Reset Auth State for POS Cleanup
               if: always()
@@ -501,4 +548,3 @@ jobs:
                   path: frontend/e2e-stress/teardown-logs/teardown-*.json
                   retention-days: 14
                   if-no-files-found: error
-
