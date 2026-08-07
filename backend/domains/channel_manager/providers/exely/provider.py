@@ -529,7 +529,7 @@ class ExelyProvider:
             return ProviderResult(
                 success=False,
                 error="Provider rejected reservation acknowledgement",
-                error_type=result.get("result_class", REJECTED),
+                error_type=result.get("error_type") or result.get("result_class", REJECTED),
                 duration_ms=duration_ms,
                 metadata={**_parser_metadata(result), "provider_write_count": 1},
             )
@@ -660,9 +660,12 @@ class ExelyProvider:
             connection_id=self._connection_id,
             soap_action=soap_action,
         )
-        result_class = _classify_exception(error, mutation=mutation, provider_write_count=provider_write_count)
+        classification = _classify_exception(error, mutation=mutation, provider_write_count=provider_write_count)
+        provider_status_class = "WRITE_OUTCOME_UNKNOWN" if classification == AMBIGUOUS else classification
+        error_type = type(error).__name__ if isinstance(error, ExelyTemporaryError) else classification
         metadata = {
-            "provider_status_class": result_class,
+            "classification": classification,
+            "provider_status_class": provider_status_class,
             "provider_codes": [error.provider_code] if isinstance(error, ExelyRateLimitError) and error.provider_code else [],
             "provider_write_count": provider_write_count,
         }
@@ -671,15 +674,17 @@ class ExelyProvider:
         return ProviderResult(
             success=False,
             error=str(error),
-            error_type=result_class,
+            error_type=error_type,
             duration_ms=duration_ms,
             metadata=metadata,
         )
 
 
 def _parser_metadata(result: dict[str, Any]) -> dict[str, Any]:
+    classification = result.get("result_class", MALFORMED)
     metadata = {
-        "provider_status_class": result.get("result_class", MALFORMED),
+        "classification": classification,
+        "provider_status_class": classification,
         "provider_codes": result.get("provider_codes", []),
         "warning_codes": result.get("warning_codes", []),
         "provider_write_count": 0,

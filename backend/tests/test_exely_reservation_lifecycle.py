@@ -265,7 +265,38 @@ def test_notif_report_requires_exact_provider_timestamps():
 
 def test_ack_parser_requires_explicit_success():
     response = f'<soap:Envelope xmlns:soap="{SOAP_NS}"><soap:Body><OTA_NotifReportRS xmlns="{OTA_NS}"/></soap:Body></soap:Envelope>'
-    assert parse_notif_report_rs(response.encode())["result_class"] == "MALFORMED"
+    parsed = parse_notif_report_rs(response.encode())
+    assert parsed["success"] is False
+    assert parsed["result_class"] == "MALFORMED"
+    assert parsed["error_type"] == "ExelyAckMalformed"
+
+
+@pytest.mark.parametrize(
+    ("body", "error_type"),
+    [
+        ('<Warnings><Warning Code="W1"/></Warnings>', "ExelyAckMalformed"),
+        ('<Errors><Error Code="E1"/></Errors>', "ExelyAckRejected"),
+    ],
+)
+def test_ack_parser_rejects_non_success_outcomes(body, error_type):
+    response = f'<soap:Envelope xmlns:soap="{SOAP_NS}"><soap:Body><OTA_NotifReportRS xmlns="{OTA_NS}">{body}</OTA_NotifReportRS></soap:Body></soap:Envelope>'
+    parsed = parse_notif_report_rs(response.encode())
+    assert parsed["success"] is False
+    assert parsed["error_type"] == error_type
+
+
+@pytest.mark.parametrize("response", [b"", b"not-xml"])
+def test_ack_parser_rejects_empty_or_malformed_xml(response):
+    parsed = parse_notif_report_rs(response)
+    assert parsed["success"] is False
+    assert parsed["error_type"] == "ExelyAckMalformed"
+
+
+def test_ack_parser_accepts_explicit_success():
+    response = f'<soap:Envelope xmlns:soap="{SOAP_NS}"><soap:Body><OTA_NotifReportRS xmlns="{OTA_NS}"><Success/></OTA_NotifReportRS></soap:Body></soap:Envelope>'
+    parsed = parse_notif_report_rs(response.encode())
+    assert parsed["success"] is True
+    assert parsed["result_class"] == "SUCCESS"
 
 
 def test_read_parser_preserves_provider_context_and_roomstay_index():
@@ -585,7 +616,9 @@ async def test_provider_confirm_delivery_does_not_use_retry_on_temporary_failure
         last_modify_datetime="2030-01-01T10:00:00Z",
     )
     assert result.success is False
-    assert result.error_type == "AMBIGUOUS"
+    assert result.error_type == "ExelyTemporaryError"
+    assert result.metadata["classification"] == "AMBIGUOUS"
+    assert result.metadata["provider_status_class"] == "WRITE_OUTCOME_UNKNOWN"
     assert result.metadata["provider_write_count"] == 1
     provider._transport.send_soap.assert_awaited_once()
 

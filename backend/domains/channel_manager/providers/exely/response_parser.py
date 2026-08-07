@@ -391,6 +391,8 @@ def parse_notif_report_rs(xml_bytes: bytes) -> dict[str, Any]:
     """Parse OTA_NotifReportRS for delivery confirmation."""
     envelope = parse_soap_response(xml_bytes)
     if not envelope["success"]:
+        if envelope.get("result_class") == MALFORMED:
+            return {**envelope, "error_type": "ExelyAckMalformed"}
         return envelope
 
     body = envelope["body"]
@@ -398,11 +400,14 @@ def parse_notif_report_rs(xml_bytes: bytes) -> dict[str, Any]:
     # Check for success/errors
     errors_el = body.find(f".//{_ns('Errors')}")
     if errors_el is not None:
-        return _provider_error(errors_el, error="Provider rejected reservation acknowledgement")
+        return {
+            **_provider_error(errors_el, error="Provider rejected reservation acknowledgement"),
+            "error_type": "ExelyAckRejected",
+        }
 
     outcome = _explicit_success(body, error="Malformed acknowledgement response")
     if not outcome["success"]:
-        return outcome
+        return {**outcome, "error_type": "ExelyAckMalformed"}
     return {**outcome, "message": "Delivery confirmed"}
 
 

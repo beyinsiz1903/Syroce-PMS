@@ -65,6 +65,11 @@ class _QuotaGuard:
         self.cooldowns.append(seconds)
 
 
+def _budget_keys(eval_call):
+    key_count = int(eval_call[1])
+    return eval_call[3 : 2 + key_count]
+
+
 def test_official_pmsconnect_quota_limits_are_encoded():
     assert TOTAL_REQUESTS_PER_HOUR == 650
     assert READ_REQUESTS_PER_HOUR == 30
@@ -82,9 +87,11 @@ async def test_reservation_read_and_ari_share_tenant_property_total_budget():
     assert (await quota.reserve(operation="reservation_read")).allowed is True
     assert (await quota.reserve(operation="ari_mutation", change_count=2)).allowed is True
 
-    first_keys = redis.eval_calls[0][3:]
-    second_keys = redis.eval_calls[1][3:]
-    assert first_keys[0] == second_keys[0]
+    first_keys = _budget_keys(redis.eval_calls[0])
+    second_keys = _budget_keys(redis.eval_calls[1])
+    assert first_keys[1] == second_keys[1]
+    assert ":total:" in first_keys[1]
+    assert first_keys[0] != second_keys[0]
     assert any(":read:" in key for key in first_keys if isinstance(key, str))
     assert any(":changes:" in key for key in second_keys if isinstance(key, str))
 
@@ -94,9 +101,13 @@ async def test_quota_scope_is_tenant_and_property_specific():
     redis = _FakeRedis()
     first = ExelyProviderQuota("tenant-a", "property-a", redis_client=redis)
     second = ExelyProviderQuota("tenant-b", "property-a", redis_client=redis)
+    third = ExelyProviderQuota("tenant-a", "property-b", redis_client=redis)
     await first.reserve(operation="reservation_read")
     await second.reserve(operation="reservation_read")
-    assert redis.eval_calls[0][3] != redis.eval_calls[1][3]
+    await third.reserve(operation="reservation_read")
+    first_total_key = _budget_keys(redis.eval_calls[0])[1]
+    assert first_total_key != _budget_keys(redis.eval_calls[1])[1]
+    assert first_total_key != _budget_keys(redis.eval_calls[2])[1]
 
 
 @pytest.mark.asyncio

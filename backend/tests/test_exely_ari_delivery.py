@@ -158,7 +158,10 @@ class TestExelySingleWriteProvider:
             availability=4,
         )
         assert result.success is False
-        assert result.metadata["provider_status_class"] == "AMBIGUOUS"
+        assert result.error_type == "ExelyTemporaryError"
+        assert result.metadata["classification"] == "AMBIGUOUS"
+        assert result.metadata["provider_status_class"] == "WRITE_OUTCOME_UNKNOWN"
+        assert result.metadata["provider_write_count"] == 1
         assert provider._transport.send_soap.await_count == 1
 
 

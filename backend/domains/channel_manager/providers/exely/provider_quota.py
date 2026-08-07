@@ -74,21 +74,7 @@ class ExelyProviderQuota:
             return QuotaDecision(False, "QUOTA_BACKEND_UNAVAILABLE")
 
         now = datetime.now(UTC)
-        windows: list[tuple[str, int, int, int]] = [
-            (f"total:{now:%Y%m%d%H}", 1, TOTAL_REQUESTS_PER_HOUR, 3700),
-        ]
-        if operation == "reservation_read":
-            windows.append((f"read:{now:%Y%m%d%H}", 1, READ_REQUESTS_PER_HOUR, 3700))
-        if change_count > 0:
-            epoch = int(now.timestamp())
-            windows.extend(
-                [
-                    (f"changes:second:{epoch}", change_count, CHANGES_PER_SECOND, 2),
-                    (f"changes:3m:{epoch // 180}", change_count, CHANGES_PER_THREE_MINUTES, 190),
-                    (f"changes:hour:{now:%Y%m%d%H}", change_count, CHANGES_PER_HOUR, 3700),
-                    (f"changes:day:{now:%Y%m%d}", change_count, CHANGES_PER_DAY, 90000),
-                ]
-            )
+        windows = _quota_windows(operation, change_count, now)
 
         keys = [self._key("cooldown"), *(self._key(name) for name, _cost, _limit, _ttl in windows)]
         args = [item for _name, cost, limit, ttl in windows for item in (cost, limit, ttl)]
@@ -118,6 +104,22 @@ class ExelyProviderQuota:
 
     def _key(self, suffix: str) -> str:
         return f"exely:provider-quota:{self._tag}:{suffix}"
+
+
+def _quota_windows(operation: str, change_count: int, now: datetime) -> list[tuple[str, int, int, int]]:
+    total = (f"total:{now:%Y%m%d%H}", 1, TOTAL_REQUESTS_PER_HOUR, 3700)
+    if operation == "reservation_read":
+        return [(f"read:{now:%Y%m%d%H}", 1, READ_REQUESTS_PER_HOUR, 3700), total]
+    if change_count > 0:
+        epoch = int(now.timestamp())
+        return [
+            (f"changes:second:{epoch}", change_count, CHANGES_PER_SECOND, 2),
+            total,
+            (f"changes:3m:{epoch // 180}", change_count, CHANGES_PER_THREE_MINUTES, 190),
+            (f"changes:hour:{now:%Y%m%d%H}", change_count, CHANGES_PER_HOUR, 3700),
+            (f"changes:day:{now:%Y%m%d}", change_count, CHANGES_PER_DAY, 90000),
+        ]
+    return [total]
 
 
 async def _shared_redis_client() -> Any | None:
