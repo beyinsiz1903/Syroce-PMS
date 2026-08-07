@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 import uuid
-from datetime import UTC, datetime
+from contextlib import suppress
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pymongo.errors import DuplicateKeyError
@@ -13,12 +17,12 @@ from core.database import db
 from domains.channel_manager.providers.exely.lifecycle import (
     ACK_NOT_READY,
     ACK_PENDING,
-    ACK_STALE,
     HOLD_MAPPING_REQUIRED,
     MALFORMED,
     PMS_DURABLE,
     PMS_FAILED,
     RECEIVED,
+    _compare_versions,
     acknowledge_durable_version,
     acknowledge_pending_versions,
     mark_version_state,
@@ -27,10 +31,198 @@ from domains.channel_manager.providers.exely.lifecycle import (
 logger = logging.getLogger("exely.pms_lifecycle")
 
 PMS_PROCESSING = "PMS_PROCESSING"
+PROCESSING_LEASE_SECONDS = max(int(os.getenv("EXELY_PROCESSING_LEASE_SECONDS", "60")), 10)
+PROCESSING_HEARTBEAT_SECONDS = max(
+    min(int(os.getenv("EXELY_PROCESSING_HEARTBEAT_SECONDS", "15")), PROCESSING_LEASE_SECONDS // 3),
+    1,
+)
+
+
+class ProcessingClaimLostError(RuntimeError):
+    """Raised when an Exely worker no longer owns its processing lease."""
+
+
+@dataclass(frozen=True)
+class ProcessingClaim:
+    version_identity: str
+    owner_token: str
+    generation: int
 
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+def _result_matched(result: Any) -> int:
+    matched = getattr(result, "matched_count", None)
+    return int(matched if matched is not None else getattr(result, "modified_count", 0))
+
+
+def _owned_claim_query(claim: ProcessingClaim, *, require_live: bool = True) -> dict[str, Any]:
+    query: dict[str, Any] = {
+        "version_identity": claim.version_identity,
+        "processing_state": PMS_PROCESSING,
+        "processing_owner_token": claim.owner_token,
+        "processing_generation": claim.generation,
+    }
+    if require_live:
+        query["processing_lease_expires_at"] = {"$gte": _utcnow().isoformat()}
+    return query
+
+
+async def _acquire_processing_claim(identity: str) -> ProcessingClaim | None:
+    now = _utcnow()
+    owner_token = uuid.uuid4().hex
+    result = await db.exely_reservation_versions.update_one(
+        {
+            "version_identity": identity,
+            "$or": [
+                {"processing_state": {"$in": [RECEIVED, PMS_FAILED]}},
+                {
+                    "processing_state": PMS_PROCESSING,
+                    "processing_lease_expires_at": {"$lt": now.isoformat()},
+                },
+            ],
+        },
+        {
+            "$set": {
+                "processing_state": PMS_PROCESSING,
+                "processing_owner_token": owner_token,
+                "processing_started_at": now.isoformat(),
+                "processing_heartbeat_at": now.isoformat(),
+                "processing_lease_expires_at": (now + timedelta(seconds=PROCESSING_LEASE_SECONDS)).isoformat(),
+                "updated_at": now.isoformat(),
+            },
+            "$inc": {"processing_generation": 1},
+        },
+    )
+    if _result_matched(result) != 1:
+        return None
+    owned = await db.exely_reservation_versions.find_one(
+        {"version_identity": identity, "processing_owner_token": owner_token},
+        {"_id": 0, "processing_generation": 1},
+    )
+    if not owned or not isinstance(owned.get("processing_generation"), int):
+        return None
+    return ProcessingClaim(identity, owner_token, int(owned["processing_generation"]))
+
+
+async def _claim_is_owned(claim: ProcessingClaim) -> bool:
+    owned = await db.exely_reservation_versions.find_one(
+        _owned_claim_query(claim),
+        {"_id": 0, "version_identity": 1},
+    )
+    return owned is not None
+
+
+async def _require_processing_claim(claim: ProcessingClaim) -> None:
+    if not await _claim_is_owned(claim):
+        raise ProcessingClaimLostError("PROCESSING_CLAIM_LOST")
+
+
+async def _renew_processing_claim(claim: ProcessingClaim) -> bool:
+    now = _utcnow()
+    result = await db.exely_reservation_versions.update_one(
+        _owned_claim_query(claim),
+        {
+            "$set": {
+                "processing_heartbeat_at": now.isoformat(),
+                "processing_lease_expires_at": (now + timedelta(seconds=PROCESSING_LEASE_SECONDS)).isoformat(),
+                "updated_at": now.isoformat(),
+            }
+        },
+    )
+    return _result_matched(result) == 1
+
+
+async def _processing_claim_heartbeat(claim: ProcessingClaim, claim_lost: asyncio.Event) -> None:
+    while True:
+        await asyncio.sleep(PROCESSING_HEARTBEAT_SECONDS)
+        try:
+            if not await _renew_processing_claim(claim):
+                claim_lost.set()
+                logger.error("[EXELY-LIFECYCLE] processing_claim=lost")
+                return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            claim_lost.set()
+            logger.error(
+                "[EXELY-LIFECYCLE] processing_claim=heartbeat_failed exception_class=%s",
+                type(exc).__name__,
+            )
+            return
+
+
+async def _run_claimed(mutation, claim: ProcessingClaim, claim_lost: asyncio.Event):
+    if claim_lost.is_set() or not await _claim_is_owned(claim):
+        if hasattr(mutation, "close"):
+            mutation.close()
+        raise ProcessingClaimLostError("PROCESSING_CLAIM_LOST")
+
+    mutation_task = asyncio.ensure_future(mutation)
+    lost_task = asyncio.create_task(claim_lost.wait())
+    try:
+        await asyncio.wait({mutation_task, lost_task}, return_when=asyncio.FIRST_COMPLETED)
+        if claim_lost.is_set():
+            mutation_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await mutation_task
+            raise ProcessingClaimLostError("PROCESSING_CLAIM_LOST")
+        result = await mutation_task
+        await _require_processing_claim(claim)
+        return result
+    finally:
+        if not mutation_task.done():
+            mutation_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await mutation_task
+        lost_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await lost_task
+
+
+async def _finish_processing_claim(claim: ProcessingClaim, **fields: Any) -> bool:
+    fields["updated_at"] = _now()
+    result = await db.exely_reservation_versions.update_one(
+        _owned_claim_query(claim),
+        {
+            "$set": fields,
+            "$unset": {
+                "processing_owner_token": "",
+                "processing_lease_expires_at": "",
+                "processing_heartbeat_at": "",
+            },
+        },
+    )
+    return _result_matched(result) == 1
+
+
+def _booking_fence_query(
+    tenant_id: str,
+    booking_id: str,
+    claim: ProcessingClaim,
+    existing_version_key: str | None,
+    incoming_version_key: str,
+) -> dict[str, Any]:
+    query: dict[str, Any] = {
+        "tenant_id": tenant_id,
+        "id": booking_id,
+    }
+    if existing_version_key == incoming_version_key:
+        query["$or"] = [
+            {"exely_processing_generation": {"$exists": False}},
+            {"exely_processing_generation": {"$lte": claim.generation}},
+        ]
+    if existing_version_key:
+        query["provider_version_key"] = existing_version_key
+    else:
+        query["provider_version_key"] = {"$exists": False}
+    return query
 
 
 def _stable_id(kind: str, tenant_id: str, property_id: str, external_id: str, slot: int | None = None) -> str:
@@ -186,6 +378,7 @@ def _booking_fields(
         "ota_reference_id": external_id,
         "external_reservation_id": _slot_external_id(external_id, slot),
         "provider_group_reservation_id": external_id,
+        "provider_room_stay_slot": slot,
         "provider_room_stay_index": str(room.get("index_number") or ""),
         "provider_version_key": version_doc["provider_version_key"],
         "source": {
@@ -199,8 +392,13 @@ def _booking_fields(
     }
 
 
-async def _upsert_booking(tenant_id: str, booking_doc: dict[str, Any]) -> str:
+async def _upsert_booking(
+    tenant_id: str,
+    booking_doc: dict[str, Any],
+    claim: ProcessingClaim,
+) -> str:
     booking_id = booking_doc["id"]
+    booking_doc["exely_processing_generation"] = claim.generation
     existing = await db.bookings.find_one(
         {"tenant_id": tenant_id, "id": booking_id},
         {
@@ -211,6 +409,8 @@ async def _upsert_booking(tenant_id: str, booking_doc: dict[str, Any]) -> str:
             "check_in": 1,
             "check_out": 1,
             "inventory_release_pending": 1,
+            "provider_version_key": 1,
+            "exely_processing_generation": 1,
         },
     )
     if not existing:
@@ -229,12 +429,18 @@ async def _upsert_booking(tenant_id: str, booking_doc: dict[str, Any]) -> str:
                     "check_in": 1,
                     "check_out": 1,
                     "inventory_release_pending": 1,
+                    "provider_version_key": 1,
+                    "exely_processing_generation": 1,
                 },
             )
             if not existing:
                 raise
         else:
             return "created"
+
+    existing_version_key = str(existing.get("provider_version_key") or "") if existing else ""
+    if existing_version_key and _compare_versions(booking_doc["provider_version_key"], existing_version_key) < 0:
+        raise ProcessingClaimLostError("PROCESSING_CLAIM_STALE_VERSION")
 
     update_fields = dict(booking_doc)
     update_fields.pop("id", None)
@@ -251,50 +457,98 @@ async def _upsert_booking(tenant_id: str, booking_doc: dict[str, Any]) -> str:
     release_needed = assignment_changed or bool(existing and existing.get("inventory_release_pending"))
     if release_needed:
         update_fields["inventory_release_pending"] = True
-    await db.bookings.update_one(
-        {"tenant_id": tenant_id, "id": booking_id},
+    updated = await db.bookings.update_one(
+        _booking_fence_query(
+            tenant_id,
+            booking_id,
+            claim,
+            existing_version_key or None,
+            booking_doc["provider_version_key"],
+        ),
         {"$set": update_fields},
     )
+    if _result_matched(updated) != 1:
+        raise ProcessingClaimLostError("PROCESSING_CLAIM_LOST")
     if release_needed:
         from core.atomic_booking import release_booking_nights
 
         await release_booking_nights(tenant_id, booking_id, reason="channel_modified")
-        await db.bookings.update_one(
-            {"tenant_id": tenant_id, "id": booking_id},
+        released = await db.bookings.update_one(
+            {
+                "tenant_id": tenant_id,
+                "id": booking_id,
+                "provider_version_key": booking_doc["provider_version_key"],
+                "exely_processing_generation": claim.generation,
+            },
             {"$unset": {"inventory_release_pending": ""}},
         )
+        if _result_matched(released) != 1:
+            raise ProcessingClaimLostError("PROCESSING_CLAIM_LOST")
     return "updated"
 
 
-async def _cancel_booking(tenant_id: str, booking_id: str, version_key: str) -> bool:
+async def _cancel_booking(
+    tenant_id: str,
+    booking_id: str,
+    version_key: str,
+    claim: ProcessingClaim,
+) -> bool:
     booking = await db.bookings.find_one(
         {"tenant_id": tenant_id, "id": booking_id},
-        {"_id": 0, "id": 1, "status": 1, "provider_version_key": 1, "inventory_release_pending": 1},
+        {
+            "_id": 0,
+            "id": 1,
+            "status": 1,
+            "provider_version_key": 1,
+            "inventory_release_pending": 1,
+            "exely_processing_generation": 1,
+        },
     )
     if not booking:
         return False
-    if booking.get("status") != "cancelled" or booking.get("provider_version_key") != version_key:
-        await db.bookings.update_one(
-            {"tenant_id": tenant_id, "id": booking_id},
+    existing_version_key = str(booking.get("provider_version_key") or "")
+    if existing_version_key and _compare_versions(version_key, existing_version_key) < 0:
+        raise ProcessingClaimLostError("PROCESSING_CLAIM_STALE_VERSION")
+    update_fields: dict[str, Any] = {"exely_processing_generation": claim.generation}
+    cancellation_needed = booking.get("status") != "cancelled" or existing_version_key != version_key
+    if cancellation_needed:
+        update_fields.update(
             {
-                "$set": {
-                    "status": "cancelled",
-                    "cancelled_at": _now(),
-                    "cancelled_by": "channel_manager",
-                    "provider_version_key": version_key,
-                    "inventory_release_pending": True,
-                    "updated_at": _now(),
-                }
-            },
+                "status": "cancelled",
+                "cancelled_at": _now(),
+                "cancelled_by": "channel_manager",
+                "provider_version_key": version_key,
+                "inventory_release_pending": True,
+                "updated_at": _now(),
+            }
         )
+    fenced = await db.bookings.update_one(
+        _booking_fence_query(
+            tenant_id,
+            booking_id,
+            claim,
+            existing_version_key or None,
+            version_key,
+        ),
+        {"$set": update_fields},
+    )
+    if _result_matched(fenced) != 1:
+        raise ProcessingClaimLostError("PROCESSING_CLAIM_LOST")
     if booking.get("inventory_release_pending") or booking.get("status") != "cancelled" or booking.get("provider_version_key") != version_key:
         from core.atomic_booking import release_booking_nights
 
         await release_booking_nights(tenant_id, booking_id, reason="channel_cancelled")
-        await db.bookings.update_one(
-            {"tenant_id": tenant_id, "id": booking_id},
+        released = await db.bookings.update_one(
+            {
+                "tenant_id": tenant_id,
+                "id": booking_id,
+                "provider_version_key": version_key,
+                "exely_processing_generation": claim.generation,
+            },
             {"$unset": {"inventory_release_pending": ""}},
         )
+        if _result_matched(released) != 1:
+            raise ProcessingClaimLostError("PROCESSING_CLAIM_LOST")
     return True
 
 
@@ -351,27 +605,15 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
             return {"success": False, "reason": state, "provider_write_count": 0}
         await mark_version_state(identity, processing_state=RECEIVED, mapping_state="MAPPED")
         state = RECEIVED
-    if state not in {RECEIVED, PMS_FAILED}:
+    if state not in {RECEIVED, PMS_FAILED, PMS_PROCESSING}:
         return {"success": False, "reason": "VERSION_NOT_CLAIMABLE", "provider_write_count": 0}
 
-    claim = await db.exely_reservation_versions.update_one(
-        {"version_identity": identity, "processing_state": {"$in": [RECEIVED, PMS_FAILED]}},
-        {"$set": {"processing_state": PMS_PROCESSING, "processing_started_at": _now()}},
-    )
-    if getattr(claim, "modified_count", 0) != 1:
+    claim = await _acquire_processing_claim(identity)
+    if claim is None:
         return {"success": False, "reason": "VERSION_NOT_CLAIMABLE", "provider_write_count": 0}
 
-    current = await db.exely_reservations.find_one(
-        {"tenant_id": tenant_id, "provider_version_identity": identity},
-        {"_id": 0},
-    )
-    if not current:
-        await mark_version_state(identity, processing_state=PMS_FAILED, failure_code="CURRENT_VERSION_CHANGED")
-        return {"success": False, "reason": "CURRENT_VERSION_CHANGED", "provider_write_count": 0}
-
-    property_id = str(current.get("property_id") or "")
-    external_id = str(current.get("external_id") or "")
-    previous_lineage = list(current.get("room_stay_lineage") or [])
+    claim_lost = asyncio.Event()
+    heartbeat_task = asyncio.create_task(_processing_claim_heartbeat(claim, claim_lost))
     expectations: list[dict[str, Any]] = []
     confirmations: list[dict[str, Any]] = []
     created = 0
@@ -379,6 +621,17 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
     cancelled = 0
 
     try:
+        current = await db.exely_reservations.find_one(
+            {"tenant_id": tenant_id, "provider_version_identity": identity},
+            {"_id": 0},
+        )
+        await _require_processing_claim(claim)
+        if not current:
+            raise RuntimeError("CURRENT_VERSION_CHANGED")
+
+        property_id = str(current.get("property_id") or "")
+        external_id = str(current.get("external_id") or "")
+        previous_lineage = list(current.get("room_stay_lineage") or [])
         if version_doc.get("event_type") == "cancellation" or current.get("state") == "cancelled":
             active = [row for row in previous_lineage if row.get("active", True) and row.get("pms_booking_id")]
             if not active:
@@ -390,7 +643,17 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
                 item = dict(row)
                 booking_id = str(item.get("pms_booking_id") or "")
                 if item.get("active", True) and booking_id:
-                    if not await _cancel_booking(tenant_id, booking_id, version_doc["provider_version_key"]):
+                    cancelled_booking = await _run_claimed(
+                        _cancel_booking(
+                            tenant_id,
+                            booking_id,
+                            version_doc["provider_version_key"],
+                            claim,
+                        ),
+                        claim,
+                        claim_lost,
+                    )
+                    if not cancelled_booking:
                         raise RuntimeError("PMS_BOOKING_NOT_FOUND")
                     cancelled += 1
                     item["active"] = False
@@ -419,7 +682,11 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
                     raise RuntimeError("ROOM_RATE_MAPPING_MISSING")
                 mappings.append(mapping)
 
-            guest_id = await _ensure_guest(tenant_id, property_id, current)
+            guest_id = await _run_claimed(
+                _ensure_guest(tenant_id, property_id, current),
+                claim,
+                claim_lost,
+            )
             assigned, removed = _assign_slots(previous_lineage, rooms)
             assigned_slots = {int(row["slot_ordinal"]) for row in assigned}
             new_lineage = [{**row, "active": False} for row in previous_lineage if int(row.get("slot_ordinal", 0)) not in assigned_slots]
@@ -437,7 +704,11 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
                     guest_id=guest_id,
                     booking_id=booking_id,
                 )
-                action = await _upsert_booking(tenant_id, booking_doc)
+                action = await _run_claimed(
+                    _upsert_booking(tenant_id, booking_doc, claim),
+                    claim,
+                    claim_lost,
+                )
                 created += action == "created"
                 updated += action == "updated"
                 index_number = str(row["room"].get("index_number") or "")
@@ -455,7 +726,21 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
 
             for row in removed:
                 booking_id = str(row.get("pms_booking_id") or "")
-                if not booking_id or not await _cancel_booking(tenant_id, booking_id, version_doc["provider_version_key"]):
+                cancelled_booking = (
+                    await _run_claimed(
+                        _cancel_booking(
+                            tenant_id,
+                            booking_id,
+                            version_doc["provider_version_key"],
+                            claim,
+                        ),
+                        claim,
+                        claim_lost,
+                    )
+                    if booking_id
+                    else False
+                )
+                if not cancelled_booking:
                     raise RuntimeError("PMS_BOOKING_NOT_FOUND")
                 cancelled += 1
                 expectations.append({"pms_booking_id": booking_id, "status": "cancelled"})
@@ -476,37 +761,54 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
         if current.get("hold_booking_id"):
             from domains.channel_manager.providers.unmatched_hold import release_unmatched_reservation_hold
 
-            release = await release_unmatched_reservation_hold(
-                tenant_id=tenant_id,
-                external_id=external_id,
-                reason="mapping_resolved",
-                delete_hold=True,
+            release = await _run_claimed(
+                release_unmatched_reservation_hold(
+                    tenant_id=tenant_id,
+                    external_id=external_id,
+                    reason="mapping_resolved",
+                    delete_hold=True,
+                ),
+                claim,
+                claim_lost,
             )
             if not release.get("released"):
                 raise RuntimeError("HOLD_RELEASE_FAILED")
 
-        persisted = await db.exely_reservations.update_one(
-            {"tenant_id": tenant_id, "provider_version_identity": identity},
-            {
-                "$set": {
-                    "pms_status": pms_status,
-                    "pms_booking_id": confirmations[0]["pms_booking_id"],
-                    "pms_booking_ids": [row["pms_booking_id"] for row in confirmations],
-                    "room_stay_lineage": sorted(new_lineage, key=lambda row: int(row.get("slot_ordinal", 0))),
-                    "durable_version_key": version_doc["provider_version_key"],
-                    "delivery_state": ACK_PENDING,
-                    "delivery_confirmed": False,
-                    "updated_at": _now(),
+        persisted = await _run_claimed(
+            db.exely_reservations.update_one(
+                {
+                    "tenant_id": tenant_id,
+                    "provider_version_identity": identity,
+                    "$or": [
+                        {"processing_generation": {"$exists": False}},
+                        {"processing_generation": {"$lte": claim.generation}},
+                    ],
                 },
-                "$unset": {"hold_booking_id": ""},
-            },
+                {
+                    "$set": {
+                        "pms_status": pms_status,
+                        "pms_booking_id": confirmations[0]["pms_booking_id"],
+                        "pms_booking_ids": [row["pms_booking_id"] for row in confirmations],
+                        "room_stay_lineage": sorted(new_lineage, key=lambda row: int(row.get("slot_ordinal", 0))),
+                        "durable_version_key": version_doc["provider_version_key"],
+                        "delivery_state": ACK_PENDING,
+                        "delivery_confirmed": False,
+                        "processing_generation": claim.generation,
+                        "updated_at": _now(),
+                    },
+                    "$unset": {"hold_booking_id": ""},
+                },
+            ),
+            claim,
+            claim_lost,
         )
-        if getattr(persisted, "modified_count", 0) != 1:
-            await mark_version_state(identity, processing_state=PMS_FAILED, ack_state=ACK_STALE, failure_code="CURRENT_VERSION_CHANGED")
-            return {"success": False, "reason": "CURRENT_VERSION_CHANGED", "provider_write_count": 0}
+        if _result_matched(persisted) != 1:
+            raise RuntimeError("CURRENT_VERSION_CHANGED")
 
-        await mark_version_state(
-            identity,
+        if claim_lost.is_set():
+            raise ProcessingClaimLostError("PROCESSING_CLAIM_LOST")
+        finished = await _finish_processing_claim(
+            claim,
             processing_state=PMS_DURABLE,
             ack_state=ACK_PENDING,
             ack_confirmations=confirmations,
@@ -514,6 +816,8 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
             failure_code=None,
             pms_durable_at=_now(),
         )
+        if not finished:
+            raise ProcessingClaimLostError("PROCESSING_CLAIM_LOST")
         logger.info(
             "[EXELY-LIFECYCLE] pms_state=durable created=%d updated=%d cancelled=%d",
             created,
@@ -530,6 +834,9 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
             "cancelled": cancelled,
             "provider_write_count": 0,
         }
+    except ProcessingClaimLostError:
+        logger.error("[EXELY-LIFECYCLE] pms_state=failed failure_code=PROCESSING_CLAIM_LOST")
+        return {"success": False, "reason": "PROCESSING_CLAIM_LOST", "provider_write_count": 0}
     except Exception as exc:
         failure_code = (
             str(exc)
@@ -547,9 +854,20 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
             }
             else type(exc).__name__
         )
-        await mark_version_state(identity, processing_state=PMS_FAILED, ack_state=ACK_NOT_READY, failure_code=failure_code)
+        failed = await _finish_processing_claim(
+            claim,
+            processing_state=PMS_FAILED,
+            ack_state=ACK_NOT_READY,
+            failure_code=failure_code,
+        )
+        if not failed:
+            failure_code = "PROCESSING_CLAIM_LOST"
         logger.error("[EXELY-LIFECYCLE] pms_state=failed exception_class=%s", type(exc).__name__)
         return {"success": False, "reason": failure_code, "provider_write_count": 0}
+    finally:
+        heartbeat_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await heartbeat_task
 
 
 async def process_pending_reservations(tenant_id: str, provider=None, limit: int = 100) -> dict[str, Any]:

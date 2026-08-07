@@ -130,6 +130,7 @@ def _reservation_document(
         "confidence_score": None,
         "delivery_confirmed": False,
         "delivery_state": ACK_NOT_READY,
+        "processing_generation": 0,
     }
 
 
