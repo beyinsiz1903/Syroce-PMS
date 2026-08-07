@@ -112,6 +112,11 @@ jobs:
           cd frontend
           npx eslint src/ --quiet
 
+      - name: Stress shard discovery contracts (hard gate)
+        run: |
+          cd frontend
+          node --test e2e-stress/resolve-spec-patterns.test.mjs
+
   # ============ BACKEND TESTS (HARD GATE) ============
   backend-test:
     runs-on: ubuntu-latest

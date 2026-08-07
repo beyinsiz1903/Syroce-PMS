@@ -111,7 +111,15 @@ class StressReporter {
         }
 
         const failedTests = this.results.filter((r) => r.outcome === 'failed' || r.outcome === 'timedOut');
-        const verdict = decideVerdict({ counters, failedTests, runResult, state, teardown, sevAgg });
+        const verdict = decideVerdict({
+            counters,
+            failedTests,
+            runResult,
+            state,
+            teardown,
+            sevAgg,
+            testCount: this.results.length,
+        });
 
         let md = '';
         md += `# ${REPORT_TITLE} — ${date}\n\n`;
@@ -164,7 +172,9 @@ class StressReporter {
         md += '\n';
 
         md += `## 5) P0/P1/P2/P3 Severity Triage\n\n`;
-        if (allFindings.length === 0) {
+        if (this.results.length === 0) {
+            md += `**BLOCKED_TEST_DISCOVERY:** 0 test çalıştı; business-rule, UI, performans veya severity sonucu üretilemez.\n\n`;
+        } else if (allFindings.length === 0) {
             md += `**Hiç finding yok.** Tüm spec'ler kritik bulgu üretmedi (pilot drift=0, business-rule guard'lar tutuyor, veri kaybı/leak yok).\n\n`;
         } else {
             for (const sev of ['P0', 'P1', 'P2', 'P3']) {
@@ -277,9 +287,16 @@ class StressReporter {
     }
 }
 
-function decideVerdict({ counters, failedTests, runResult, state, teardown, sevAgg }) {
+export function decideVerdict({ counters, failedTests, runResult, state, teardown, sevAgg, testCount }) {
     const isF8A = REPORT_TAG.startsWith('f8a');
     const nextStep = isF8A ? 'F8B (Channel Manager / outbox / circuit breaker stress)' : 'F8 (operasyonel stress senaryoları)';
+    if (testCount === 0) {
+        return {
+            label: 'NO-GO',
+            reason: 'BLOCKED_TEST_DISCOVERY: executed test count=0',
+            next: '❌ **NO-GO** — test discovery düzeltilmeden sonuç üretilemez.',
+        };
+    }
     if (sevAgg.P0 > 0) {
         return { label: 'NO-GO', reason: `P0 finding=${sevAgg.P0}`,
             next: `❌ **NO-GO** — ${nextStep} öncesi P0 düzeltilmeli.` };
