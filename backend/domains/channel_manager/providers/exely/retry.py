@@ -83,11 +83,11 @@ class ExelyRetryPolicy:
                     raise
                 delay = self.get_backoff_seconds(attempt, e)
                 logger.warning(
-                    "Exely retry %d/%d after %.1fs: %s",
+                    "Exely retry attempt=%d max=%d delay_seconds=%.1f exception_class=%s",
                     attempt + 1,
                     self.max_retries,
                     delay,
-                    e,
+                    type(e).__name__,
                 )
                 await asyncio.sleep(delay)
         raise last_error  # type: ignore[misc]

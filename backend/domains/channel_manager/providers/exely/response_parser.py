@@ -4,6 +4,7 @@ Parses OTA-standard XML responses from the Exely channel manager.
 """
 
 import logging
+import re
 from typing import Any
 
 from defusedxml import ElementTree as safe_ET
@@ -26,19 +27,28 @@ def _attr(el, key, default=""):
     return el.get(key, default) if el is not None else default
 
 
+def _safe_provider_codes(errors_el) -> list[str]:
+    codes = []
+    for err in errors_el.iter(_ns("Error")):
+        code = _attr(err, "Code", "")[:64]
+        if code and re.fullmatch(r"[A-Za-z0-9_.:-]+", code):
+            codes.append(code)
+    return sorted(set(codes))
+
+
 def parse_soap_response(xml_bytes: bytes) -> dict[str, Any]:
     """Parse a SOAP envelope, extract body, detect faults."""
     try:
         root = safe_ET.fromstring(xml_bytes)
     except Exception as e:
-        return {"success": False, "error": f"XML parse error: {e}", "body": None}
+        return {"success": False, "error": "XML parse error", "error_type": type(e).__name__, "body": None}
 
     # Check for SOAP Fault
     fault = root.find(f".//{_ns('Fault', SOAP_NS)}")
     if fault is not None:
-        faultstring = _text(fault.find("faultstring"))
         faultcode = _text(fault.find("faultcode"))
-        return {"success": False, "error": f"SOAP Fault [{faultcode}]: {faultstring}", "body": None}
+        safe_code = faultcode[:64] if re.fullmatch(r"[A-Za-z0-9_.:-]+", faultcode[:64]) else ""
+        return {"success": False, "error": "SOAP Fault", "provider_codes": [safe_code] if safe_code else [], "body": None}
 
     # Extract Body content
     body = root.find(f"{_ns('Body', SOAP_NS)}")
@@ -64,14 +74,18 @@ def parse_read_rs(xml_bytes: bytes) -> dict[str, Any]:
     # Check for OTA-level Errors (not SOAP Fault, but OTA Error elements)
     errors_el = body.find(_ns("Errors"))
     if errors_el is not None:
-        error_msgs = []
-        for err in errors_el.findall(_ns("Error")):
-            code = _attr(err, "Code", "")
-            msg = _text(err, "Unknown error")
-            error_msgs.append(f"OTA Error [{code}]: {msg}")
-        if error_msgs:
-            logger.warning("OTA_ReadRS returned errors: %s", "; ".join(error_msgs))
-            return {"success": False, "error": "; ".join(error_msgs), "reservations": [], "count": 0}
+        codes = _safe_provider_codes(errors_el)
+        error_count = len(list(errors_el.iter(_ns("Error"))))
+        if error_count:
+            logger.warning("OTA_ReadRS provider_rejected error_count=%d", error_count)
+            return {
+                "success": False,
+                "error": "Provider rejected reservation read",
+                "provider_codes": codes,
+                "error_count": error_count,
+                "reservations": [],
+                "count": 0,
+            }
 
     reservations = []
 
@@ -225,14 +239,18 @@ def parse_hotel_avail_rs(xml_bytes: bytes) -> dict[str, Any]:
 
     errors_el = body.find(_ns("Errors"))
     if errors_el is not None:
-        error_msgs = []
-        for err in errors_el.findall(_ns("Error")):
-            code = _attr(err, "Code", "")
-            msg = _text(err, "Unknown error")
-            error_msgs.append(f"OTA Error [{code}]: {msg}")
-        if error_msgs:
-            logger.warning("OTA_HotelAvailRS returned errors: %s", "; ".join(error_msgs))
-            return {"success": False, "error": "; ".join(error_msgs), "room_types": [], "rate_plans": []}
+        codes = _safe_provider_codes(errors_el)
+        error_count = len(list(errors_el.iter(_ns("Error"))))
+        if error_count:
+            logger.warning("OTA_HotelAvailRS provider_rejected error_count=%d", error_count)
+            return {
+                "success": False,
+                "error": "Provider rejected availability read",
+                "provider_codes": codes,
+                "error_count": error_count,
+                "room_types": [],
+                "rate_plans": [],
+            }
 
     room_types = []
     rate_plans = []
@@ -288,10 +306,8 @@ def parse_notif_report_rs(xml_bytes: bytes) -> dict[str, Any]:
     # Check for success/errors
     errors_el = body.find(f".//{_ns('Errors')}")
     if errors_el is not None:
-        msgs = []
-        for err in errors_el.iter(_ns("Error")):
-            msgs.append(_text(err) or _attr(err, "ShortText"))
-        return {"success": False, "error": "; ".join(msgs)}
+        codes = _safe_provider_codes(errors_el)
+        return {"success": False, "error": "Provider rejected reservation acknowledgement", "provider_codes": codes}
 
     return {"success": True, "message": "Delivery confirmed"}
 
@@ -305,10 +321,8 @@ def parse_ari_update_rs(xml_bytes: bytes) -> dict[str, Any]:
     body = envelope["body"]
     errors_el = body.find(f".//{_ns('Errors')}")
     if errors_el is not None:
-        msgs = []
-        for err in errors_el.iter(_ns("Error")):
-            msgs.append(_text(err) or _attr(err, "ShortText"))
-        return {"success": False, "error": "; ".join(msgs)}
+        codes = _safe_provider_codes(errors_el)
+        return {"success": False, "error": "Provider rejected ARI update", "provider_codes": codes}
 
     return {"success": True, "message": "ARI update applied"}
 

@@ -6,9 +6,12 @@ Records provider call metrics, logs, and health indicators.
 Mirrors the HotelRunner observability module for consistency.
 """
 
+import hashlib
 import logging
 from datetime import UTC, datetime
 from typing import Any
+
+from .security import safe_fingerprint
 
 logger = logging.getLogger("exely.observability")
 
@@ -52,8 +55,8 @@ def record_provider_call(
         soap_action,
         duration_ms,
         success,
-        connection_id,
-        correlation_id,
+        safe_fingerprint(connection_id),
+        safe_fingerprint(correlation_id),
     )
 
 
@@ -76,10 +79,9 @@ def record_provider_failure(
         _metrics["soap_fault_count"] += 1
 
     logger.error(
-        "[EXELY-OBS] FAILURE %s: %s (conn=%s action=%s)",
+        "[EXELY-OBS] FAILURE type=%s conn=%s action=%s",
         error_type,
-        message,
-        connection_id,
+        safe_fingerprint(connection_id),
         soap_action,
     )
 
@@ -127,24 +129,34 @@ async def persist_outbound_log(
     error_type: str = "",
     correlation_id: str = "",
 ) -> None:
+    def _payload_metadata(payload: str) -> dict[str, Any]:
+        encoded = payload.encode("utf-8", errors="replace")
+        return {
+            "size_bytes": len(encoded),
+            "sha256": hashlib.sha256(encoded).hexdigest(),
+        }
+
     log_doc = {
         "provider": "exely",
-        "connection_id": connection_id,
+        "connection_fingerprint": safe_fingerprint(connection_id),
         "operation": operation,
         "soap_action": soap_action,
         "method": "POST",
         "duration_ms": duration_ms,
         "success": success,
         "error_type": error_type,
-        "correlation_id": correlation_id,
+        "correlation_fingerprint": safe_fingerprint(correlation_id),
         "timestamp": datetime.now(UTC).isoformat(),
     }
     if request_payload:
-        log_doc["request_payload_summary"] = request_payload[:1000]
+        log_doc["request_payload_metadata"] = _payload_metadata(request_payload)
     if response_payload:
-        log_doc["response_payload_summary"] = response_payload[:1000]
+        log_doc["response_payload_metadata"] = _payload_metadata(response_payload)
 
     try:
         await db["ari_outbound_logs"].insert_one(log_doc)
-    except Exception as e:
-        logger.warning("Failed to persist outbound log: %s", e)
+    except Exception as exc:
+        logger.warning(
+            "Failed to persist Exely outbound log exception_class=%s",
+            type(exc).__name__,
+        )

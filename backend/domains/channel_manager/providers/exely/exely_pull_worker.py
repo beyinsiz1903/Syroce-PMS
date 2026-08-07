@@ -5,19 +5,21 @@ Scheduled pull via OTA_ReadRQ → common ingest pipeline.
 
 import asyncio
 import logging
-import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from core.database import db
-from core.secrets import get_secrets_manager
 from core.tenant_db import clear_tenant_context, set_tenant_context
-from core.transient_db_guard import TransientFailureTracker
-from domains.channel_manager.credential_vault import get_decrypted_credentials
+from core.transient_db_guard import TransientFailureTracker, is_transient_db_error
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
 from domains.channel_manager.providers.exely.auto_import import auto_import_pending
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
 from domains.channel_manager.providers.exely.provider import ExelyProvider
+from domains.channel_manager.providers.exely.security import (
+    exely_connection_projection,
+    resolve_exely_credentials,
+    safe_fingerprint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,107 +32,12 @@ PROVIDER = "exely"
 # for the inner loop and by OUTER_LOOP_KEY for the scheduler tick.
 _transient_tracker = TransientFailureTracker("EXELY-PULL")
 
-# v95 — Per-(tenant,hotel) rate limit for plaintext-creds warning to stop log spam.
-# Format: {(tenant_id, hotel_code): epoch_seconds_of_last_warning}
-_PLAINTEXT_WARN_CACHE: dict[tuple[str, str], float] = {}
-_PLAINTEXT_WARN_INTERVAL_SEC = 3600  # warn at most once per hour per connection
 
-
-async def _resolve_exely_credentials(tenant_id: str, hotel_code: str, conn: dict[str, Any] | None = None) -> dict[str, str] | None:
-    """
-    Resolve Exely credentials with a 3-tier fallback chain (mirrors HotelRunner).
-
-    1) New SecretsManager (encrypted, AAD-bound) — written by /api/exely/connect
-    2) Legacy credential vault (`provider_secrets` collection) — older deployments
-    3) Plaintext on the connection document — seed data / pre-vault records
-    """
-    # Tier 1: New SecretsManager (preferred)
-    try:
-        sm = get_secrets_manager()
-        creds = await sm.get_provider_credentials(tenant_id, PROVIDER, hotel_code)
-        if creds and creds.get("username") and creds.get("password"):
-            return {
-                "username": creds["username"],
-                "password": creds["password"],
-                "endpoint_url": creds.get("endpoint_url", ""),
-            }
-    except Exception as e:
-        logger.warning(f"[EXELY-CREDS] SecretsManager lookup failed for {tenant_id}/{hotel_code}: {e}")
-
-    # Tier 2: Legacy credential vault
-    try:
-        legacy = await get_decrypted_credentials(tenant_id, PROVIDER, hotel_code)
-        if legacy and legacy.get("username") and legacy.get("password"):
-            return {
-                "username": legacy["username"],
-                "password": legacy["password"],
-                "endpoint_url": legacy.get("endpoint_url", ""),
-            }
-    except Exception as e:
-        logger.warning(f"[EXELY-CREDS] Legacy vault lookup failed for {tenant_id}/{hotel_code}: {e}")
-
-    # Tier 3: Plaintext on connection doc (seed / pre-vault)
-    if conn is None:
-        conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "hotel_code": hotel_code}, {"_id": 0})
-    if conn and conn.get("username") and conn.get("password"):
-        plaintext = {
-            "username": conn["username"],
-            "password": conn["password"],
-            "endpoint_url": conn.get("endpoint_url", ""),
-        }
-
-        # v95 — Auto-migrate plaintext → SecretsManager only when vault is EMPTY
-        # (create-if-absent). We must never overwrite an existing vault secret —
-        # plaintext can be stale or for a different property_id alias.
-        cache_key = (tenant_id, hotel_code)
-        now = time.time()
-        try:
-            sm = get_secrets_manager()
-            existing = None
-            try:
-                existing = await sm.get_provider_credentials(tenant_id, PROVIDER, hotel_code)
-            except Exception:
-                existing = None
-
-            if existing and (existing.get("username") or existing.get("password")):
-                # Vault already has a secret for this identity — do not overwrite.
-                # Tier 1 lookup must have failed transiently; just rate-limit the warning.
-                last_warn = _PLAINTEXT_WARN_CACHE.get(cache_key, 0)
-                if now - last_warn >= _PLAINTEXT_WARN_INTERVAL_SEC:
-                    logger.warning(
-                        "[EXELY-CREDS] Vault secret exists for %s/%s but Tier-1 lookup missed it; falling back to plaintext (transient).",
-                        tenant_id,
-                        hotel_code,
-                    )
-                    _PLAINTEXT_WARN_CACHE[cache_key] = now
-            else:
-                await sm.store_provider_credentials(
-                    tenant_id=tenant_id,
-                    provider=PROVIDER,
-                    property_id=hotel_code,
-                    credentials=plaintext,
-                    actor="exely_pull_worker.auto_migrate",
-                )
-                logger.info(
-                    "[EXELY-CREDS] Auto-migrated plaintext creds → vault for %s/%s",
-                    tenant_id,
-                    hotel_code,
-                )
-                _PLAINTEXT_WARN_CACHE[cache_key] = now
-        except Exception as me:
-            last_warn = _PLAINTEXT_WARN_CACHE.get(cache_key, 0)
-            if now - last_warn >= _PLAINTEXT_WARN_INTERVAL_SEC:
-                logger.warning(
-                    "[EXELY-CREDS] Using legacy plaintext for tenant %s, hotel %s (auto-migrate guard failed: %s). Re-save via /api/exely/connect.",
-                    tenant_id,
-                    hotel_code,
-                    me,
-                )
-                _PLAINTEXT_WARN_CACHE[cache_key] = now
-
-        return plaintext
-
-    return None
+def _record_scheduler_error(exc: BaseException, key: str, context: str) -> None:
+    if is_transient_db_error(exc):
+        _transient_tracker.log_exception(logger, exc, key, context=context)
+        return
+    logger.error("[EXELY-PULL] %s failed exception_class=%s", context, type(exc).__name__)
 
 
 class ExelyPullScheduler:
@@ -168,13 +75,7 @@ class ExelyPullScheduler:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                _transient_tracker.log_exception(
-                    logger,
-                    e,
-                    TransientFailureTracker.OUTER_LOOP_KEY,
-                    context="loop tick",
-                    non_transient_msg="%s loop error: %s",
-                )
+                _record_scheduler_error(e, TransientFailureTracker.OUTER_LOOP_KEY, "loop_tick")
             else:
                 _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
             await asyncio.sleep(interval_seconds)
@@ -187,31 +88,30 @@ class ExelyPullScheduler:
             tomorrow = (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d")
             week = (datetime.now(UTC) + timedelta(days=7)).strftime("%Y-%m-%d")
             result = await provider.discover_rooms(tomorrow, week)
-            logger.info(f"[EXELY-PULL] Heartbeat for {tenant_id}: success={result.success}")
-        except Exception as e:
-            logger.warning(f"[EXELY-PULL] Heartbeat failed for {tenant_id}: {e}")
+            logger.info("[EXELY-PULL] operation=heartbeat success=%s", result.success)
+        except Exception as exc:
+            logger.warning("[EXELY-PULL] operation=heartbeat success=false exception_class=%s", type(exc).__name__)
 
     async def _pull_all_tenants(self, safety_window_minutes: int):
         connections = await db.exely_connections.find(
             {"is_active": True, "auto_sync_reservations": True},
-            {"_id": 0},
+            exely_connection_projection(),
         ).to_list(100)
 
         active_keys: list[str] = []
         for conn in connections:
             tenant_id = conn.get("tenant_id", "")
-            key = tenant_id or "?"
+            key = safe_fingerprint(tenant_id)
             active_keys.append(key)
             try:
                 set_tenant_context(tenant_id)
-                hotel_code = conn["hotel_code"]
-                endpoint_url = conn.get("endpoint_url", "")
-
-                creds = await _resolve_exely_credentials(tenant_id, hotel_code, conn)
+                creds = await resolve_exely_credentials(
+                    tenant_id,
+                    conn,
+                    actor="exely_pull_worker",
+                )
                 if not creds:
-                    logger.warning(
-                        f"[EXELY-PULL] No credentials available for tenant {tenant_id}, hotel {hotel_code}. Connect Exely from the UI (Channel Manager → Exely → Connect) to enable auto-pull."
-                    )
+                    logger.warning("[EXELY-PULL] credential_state=missing action=blocked")
                     # Not a transient DB failure — clear any prior streak so a
                     # later genuine hiccup doesn't escalate early off stale state.
                     _transient_tracker.reset(key)
@@ -221,21 +121,13 @@ class ExelyPullScheduler:
                     tenant_id=tenant_id,
                     username=creds["username"],
                     password=creds["password"],
-                    hotel_code=hotel_code,
-                    endpoint_url=endpoint_url or creds.get("endpoint_url", ""),
+                    hotel_code=creds["hotel_code"],
+                    endpoint_url=creds["endpoint_url"],
                     safety_window_minutes=safety_window_minutes,
                 )
             except Exception as e:
-                # Transient Atlas hiccups (No primary / SSL handshake timeout) →
-                # WARNING until a streak proves a sustained outage; real bugs →
-                # ERROR (with traceback) on first occurrence. See transient_db_guard.
-                _transient_tracker.log_exception(
-                    logger,
-                    e,
-                    key,
-                    context=f"tenant {key}",
-                    non_transient_msg="%s error: %s",
-                )
+                # Preserve transient streak tracking without serializing exception details.
+                _record_scheduler_error(e, key, "tenant_pull")
             else:
                 _transient_tracker.reset(key)
             finally:
@@ -324,7 +216,7 @@ class ExelyPullScheduler:
                             or (new_co and old_co and new_co != old_co)
                         ):
                             event_type = "modification"
-                            logger.info(f"[EXELY-PULL] Detected modification for {ext_id} (status={status})")
+                            logger.info("[EXELY-PULL] event=modification_detected")
 
             ingest_result = await ingest_reservation(
                 provider=PROVIDER,
@@ -369,10 +261,10 @@ class ExelyPullScheduler:
                 # Re-run auto_import to process any new changes
                 import_result2 = await auto_import_pending(tenant_id, provider=provider)
                 logger.info(f"[EXELY-PULL] Post-individual-check import: {import_result2.get('updated', 0)} updated, {import_result2.get('cancelled', 0)} cancelled")
-        except Exception as e:
-            logger.warning(f"[EXELY-PULL] Individual check error: {e}")
+        except Exception as exc:
+            logger.warning("[EXELY-PULL] individual_change_check_failed exception_class=%s", type(exc).__name__)
 
-        logger.info(f"[EXELY-PULL] Tenant {tenant_id}: fetched {len(reservations)}, processed {processed}")
+        logger.info("[EXELY-PULL] fetched=%d processed=%d", len(reservations), processed)
         return {
             "success": True,
             "fetched": len(reservations),
@@ -449,9 +341,9 @@ class ExelyPullScheduler:
                     )
                     if ingest_result.get("action") in ("updated", "created"):
                         mod_count += 1
-                        logger.info(f"[EXELY-PULL] Modification detected for {ext_id}")
-            except Exception as e:
-                logger.warning(f"[EXELY-PULL] Individual check error for {ext_id}: {e}")
+                        logger.info("[EXELY-PULL] event=modification_detected source=individual_check")
+            except Exception as exc:
+                logger.warning("[EXELY-PULL] individual_check_failed exception_class=%s", type(exc).__name__)
 
         return {"cancelled": cancel_count, "modified": mod_count}
 
@@ -492,14 +384,14 @@ class ExelyPullScheduler:
                         )
                         confirmed += 1
                     else:
-                        logger.warning(f"[EXELY-PULL] Delivery confirm failed for {ext_id}: {result.error}")
-                except Exception as e:
-                    logger.warning(f"[EXELY-PULL] Delivery confirm error for {ext_id}: {e}")
+                        logger.warning("[EXELY-PULL] operation=reservation_ack delivery_state=rejected")
+                except Exception as exc:
+                    logger.warning("[EXELY-PULL] operation=reservation_ack delivery_state=failed exception_class=%s", type(exc).__name__)
 
             if confirmed:
-                logger.info(f"[EXELY-PULL] Auto-confirmed {confirmed}/{len(unconfirmed)} deliveries for tenant {tenant_id}")
-        except Exception as e:
-            logger.warning(f"[EXELY-PULL] Auto-confirm error: {e}")
+                logger.info("[EXELY-PULL] acked=%d candidates=%d", confirmed, len(unconfirmed))
+        except Exception as exc:
+            logger.warning("[EXELY-PULL] auto_confirm_failed exception_class=%s", type(exc).__name__)
 
 
 # Singleton

@@ -40,7 +40,8 @@ class TestExelyErrors:
     def test_soap_fault_error(self):
         e = ExelySOAPFaultError(fault_code="Server", fault_string="Internal error")
         assert "Server" in str(e)
-        assert "Internal error" in str(e)
+        assert "Internal error" not in str(e)
+        assert e.fault_string == ""
         assert e.recoverable is False
 
     def test_soap_fault_recoverable(self):
@@ -58,12 +59,15 @@ class TestExelyErrors:
 
     def test_payload_error(self):
         e = ExelyPayloadError("bad request", details={"field": "x"})
-        assert e.details == {"field": "x"}
+        assert e.details == {}
+        assert e.detail_fields == ["field"]
         assert e.recoverable is False
 
     def test_parse_error_truncates(self):
         e = ExelyParseError("parse fail", raw_response="x" * 5000)
-        assert len(e.raw_response) == 2000
+        assert e.raw_response == ""
+        assert e.response_size_bytes == 5000
+        assert len(e.response_sha256) == 64
         assert e.recoverable is False
 
     def test_mapping_error(self):
@@ -459,7 +463,8 @@ class TestResponseParser:
     def test_parse_soap_fault(self):
         result = parse_soap_response(_SOAP_FAULT)
         assert result["success"] is False
-        assert "Authentication failed" in result["error"]
+        assert result["error"] == "SOAP Fault"
+        assert result["provider_codes"] == ["Server"]
 
     def test_parse_invalid_xml(self):
         result = parse_soap_response(b"<broken>")
@@ -492,7 +497,8 @@ class TestResponseParser:
     def test_parse_ari_update_error(self):
         result = parse_ari_update_rs(_SOAP_ERROR_RS)
         assert result["success"] is False
-        assert "Invalid room type" in result["error"]
+        assert result["error"] == "Provider rejected ARI update"
+        assert result["provider_codes"] == []
 
 
 # ── Normalizer ───────────────────────────────────────────────────────
@@ -707,13 +713,14 @@ class TestExelyProvider:
 # ── Client (Transport) ──────────────────────────────────────────────
 
 from domains.channel_manager.providers.exely.client import ExelySoapTransport
+from domains.channel_manager.providers.exely.security import EXELY_TEST_ENDPOINT_URL
 import httpx
 
 
 class TestExelySoapTransport:
     @pytest.mark.asyncio
     async def test_raise_for_401(self):
-        transport = ExelySoapTransport("https://example.com")
+        transport = ExelySoapTransport(EXELY_TEST_ENDPOINT_URL)
         mock_resp = MagicMock()
         mock_resp.status_code = 401
         with pytest.raises(ExelyAuthError):
@@ -721,7 +728,7 @@ class TestExelySoapTransport:
 
     @pytest.mark.asyncio
     async def test_raise_for_429(self):
-        transport = ExelySoapTransport("https://example.com")
+        transport = ExelySoapTransport(EXELY_TEST_ENDPOINT_URL)
         mock_resp = MagicMock()
         mock_resp.status_code = 429
         mock_resp.headers = {"Retry-After": "30"}
@@ -731,7 +738,7 @@ class TestExelySoapTransport:
 
     @pytest.mark.asyncio
     async def test_raise_for_500(self):
-        transport = ExelySoapTransport("https://example.com")
+        transport = ExelySoapTransport(EXELY_TEST_ENDPOINT_URL)
         mock_resp = MagicMock()
         mock_resp.status_code = 500
         with pytest.raises(ExelyTemporaryError):
@@ -739,7 +746,7 @@ class TestExelySoapTransport:
 
     @pytest.mark.asyncio
     async def test_raise_for_400(self):
-        transport = ExelySoapTransport("https://example.com")
+        transport = ExelySoapTransport(EXELY_TEST_ENDPOINT_URL)
         mock_resp = MagicMock()
         mock_resp.status_code = 400
         mock_resp.text = "bad request"
@@ -748,7 +755,7 @@ class TestExelySoapTransport:
 
     @pytest.mark.asyncio
     async def test_200_no_raise(self):
-        transport = ExelySoapTransport("https://example.com")
+        transport = ExelySoapTransport(EXELY_TEST_ENDPOINT_URL)
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         # Should not raise
