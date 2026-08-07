@@ -94,12 +94,13 @@ async def _get_hr_provider(tenant_id: str):
         provider, conn = await _get_provider(tenant_id)
         return provider, conn
     except Exception as exc:
-        logger.warning("[HR-RATE-MGR] Provider alinamadi tenant=%s: %s", tenant_id, exc)
+        logger.warning("[HR-RATE-MGR] Provider unavailable: %s", type(exc).__name__)
         return None, None
 
 
 async def _push_with_retry(
     provider,
+    tenant_id: str,
     rt_code: str,
     start_date: str,
     end_date: str,
@@ -108,9 +109,12 @@ async def _push_with_retry(
     avail=None,
     stop=None,
     minstay=None,
+    maxstay=None,
+    cta=None,
+    ctd=None,
     days=None,
 ) -> dict:
-    """Push ARI update to HotelRunner — fail-fast, no retries."""
+    """Push once and require read-only transaction reconciliation."""
     update_data = {"inv_code": rt_code, "start_date": start_date, "end_date": end_date}
     if avail is not None:
         update_data["availability"] = int(avail)
@@ -120,18 +124,52 @@ async def _push_with_retry(
         update_data["stop_sale"] = 1 if stop else 0
     if minstay is not None:
         update_data["min_stay"] = int(minstay)
+    if maxstay is not None:
+        update_data["max_stay"] = int(maxstay)
+    if cta is not None:
+        update_data["cta"] = 1 if cta else 0
+    if ctd is not None:
+        update_data["ctd"] = 1 if ctd else 0
     if days is not None:
         update_data["days"] = days
 
     try:
-        result = await provider.update_room(**update_data)
-        return {"room_type_code": rt_code, "success": result.get("success", False), "error": result.get("error")}
+        from domains.channel_manager.providers.hotelrunner.ari_delivery import (
+            deliver_hotelrunner_ari,
+        )
+
+        delivery = await deliver_hotelrunner_ari(
+            tenant_id,
+            update_data,
+            provider=provider,
+        )
+        return {
+            "success": delivery.success,
+            "error": delivery.error_code,
+            "delivery_state": delivery.state,
+            "provider_status_class": delivery.provider_status_class,
+            "provider_write_count": delivery.provider_write_count,
+            "retry_after_seconds": delivery.retry_after_seconds,
+        }
     except HotelRunnerRateLimitError as e:
-        logger.warning("[HR-BULK-UPDATE] Rate limit for %s — hemen kuyruga ekleniyor (server: %ds)", rt_code, e.retry_after_seconds)
-        return {"room_type_code": rt_code, "success": False, "error": f"Rate limit: {e}", "retry_after_seconds": e.retry_after_seconds}
+        logger.warning("[HR-BULK-UPDATE] Rate limited; queued for controlled retry")
+        return {
+            "success": False,
+            "error": "ARI_WRITE_RATE_LIMITED",
+            "delivery_state": "rejected",
+            "provider_status_class": "RATE_LIMITED",
+            "provider_write_count": 1,
+            "retry_after_seconds": e.retry_after_seconds,
+        }
     except Exception as e:
-        logger.error("[HR-BULK-UPDATE] push error for %s: %s", rt_code, e)
-        return {"room_type_code": rt_code, "success": False, "error": str(e)}
+        logger.error("[HR-BULK-UPDATE] ARI delivery failed: %s", type(e).__name__)
+        return {
+            "success": False,
+            "error": f"ARI_DELIVERY_{type(e).__name__.upper()}",
+            "delivery_state": "ambiguous",
+            "provider_status_class": "WRITE_OUTCOME_UNKNOWN",
+            "provider_write_count": 1,
+        }
 
 
 # ── Grid Endpoint ────────────────────────────────────────────────
@@ -471,14 +509,17 @@ async def hr_bulk_grid_update(
             push_avail = v_avail if "availability" in update_fields else None
             push_stop = v_stop if "stop_sell" in update_fields else None
             push_min = v_min if "min_stay" in update_fields else None
+            push_max = v_max if "max_stay" in update_fields else None
+            push_cta = v_cta if "cta" in update_fields else None
+            push_ctd = v_ctd if "ctd" in update_fields else None
 
             # Warn about permission issues
             if push_avail is not None and not perms.get("availability_update", True):
                 permission_warnings.append(f"{rt_code}: HotelRunner bu oda tipi icin musaitlik guncellemesine izin vermiyor (availability_update=false)")
-                logger.warning("[HR-BULK-UPDATE] availability_update=false for %s — availability will be skipped by HR", rt_code)
+                logger.warning("[HR-BULK-UPDATE] availability_update permission disabled")
             if push_rate is not None and not perms.get("price_update", True):
                 permission_warnings.append(f"{rt_code}: HotelRunner bu oda tipi icin fiyat guncellemesine izin vermiyor (price_update=false)")
-                logger.warning("[HR-BULK-UPDATE] price_update=false for %s — price will be skipped by HR", rt_code)
+                logger.warning("[HR-BULK-UPDATE] price_update permission disabled")
 
             # Build push tasks: when day filter is active, use days[] param
             # so HR only updates those weekdays in a SINGLE API call (instead
@@ -491,6 +532,9 @@ async def hr_bulk_grid_update(
                         "avail": push_avail,
                         "stop": push_stop,
                         "minstay": push_min,
+                        "maxstay": push_max,
+                        "cta": push_cta,
+                        "ctd": push_ctd,
                         "start_date": request.start_date,
                         "end_date": request.end_date,
                         "days": sorted(selected_days_set),
@@ -504,6 +548,9 @@ async def hr_bulk_grid_update(
                         "avail": push_avail,
                         "stop": push_stop,
                         "minstay": push_min,
+                        "maxstay": push_max,
+                        "cta": push_cta,
+                        "ctd": push_ctd,
                         "start_date": request.start_date,
                         "end_date": request.end_date,
                         "days": None,
@@ -516,7 +563,7 @@ async def hr_bulk_grid_update(
     provider_warning = None
     if not provider and len(pairs) > 0:
         provider_warning = "HotelRunner kimlik bilgileri alinamadi — veriler yerel olarak kaydedildi ancak HotelRunner'a gonderilemedi"
-        logger.warning("[HR-BULK-UPDATE] Provider is None, skipping push for tenant=%s", tenant_id)
+        logger.warning("[HR-BULK-UPDATE] Provider unavailable; delivery blocked")
 
     if push_tasks and provider:
         # ── Arka planda sıralı gönder, hemen yanıt dön ──
@@ -525,30 +572,17 @@ async def hr_bulk_grid_update(
         async def _background_push(tasks, prov, t_id):
             await asyncio.sleep(0.2)  # HTTP yanıtı dönmesini bekle
             success_count = 0
-            consecutive_auth_errors = 0
-            MAX_CONSECUTIVE_AUTH_ERRORS = 5
-            logger.info("[HR-BULK-UPDATE] Background push starting: %d tasks for tenant=%s", len(tasks), t_id)
+            logger.info("[HR-BULK-UPDATE] Background delivery started: tasks=%d", len(tasks))
             for i, task_info in enumerate(tasks):
                 rt = task_info["rt"]
                 t_start = task_info["start_date"]
                 t_end = task_info["end_date"]
                 t_days = task_info.get("days")
-                logger.info(
-                    "[HR-BULK-UPDATE] Push [%d/%d] rt=%s dates=%s→%s rate=%s avail=%s stop=%s minstay=%s days=%s",
-                    i + 1,
-                    len(tasks),
-                    rt,
-                    t_start,
-                    t_end,
-                    task_info["rate"],
-                    task_info["avail"],
-                    task_info["stop"],
-                    task_info["minstay"],
-                    t_days,
-                )
+                logger.info("[HR-BULK-UPDATE] Delivery started: item=%d/%d", i + 1, len(tasks))
                 try:
                     result = await _push_with_retry(
                         prov,
+                        t_id,
                         rt,
                         t_start,
                         t_end,
@@ -556,15 +590,17 @@ async def hr_bulk_grid_update(
                         avail=task_info["avail"],
                         stop=task_info["stop"],
                         minstay=task_info["minstay"],
+                        maxstay=task_info["maxstay"],
+                        cta=task_info["cta"],
+                        ctd=task_info["ctd"],
                         days=t_days,
                     )
                     if result.get("success"):
                         clear_cooldown(t_id)
                         reset_auto_retry(t_id)
                         success_count += 1
-                        consecutive_auth_errors = 0
-                        logger.info("[HR-BULK-UPDATE] Push [%d/%d] SUCCESS rt=%s dates=%s→%s", i + 1, len(tasks), rt, t_start, t_end)
-                    elif "rate limit" in str(result.get("error", "")).lower():
+                        logger.info("[HR-BULK-UPDATE] Transaction confirmed: item=%d/%d", i + 1, len(tasks))
+                    elif result.get("provider_status_class") == "RATE_LIMITED":
                         # Rate limit → kalan push'ları da dahil kuyruğa ekle
                         retry_secs = result.get("retry_after_seconds", 65)
                         for remaining in tasks[i:]:
@@ -577,66 +613,31 @@ async def hr_bulk_grid_update(
                                 avail=remaining["avail"],
                                 stop=remaining["stop"],
                                 minstay=remaining["minstay"],
+                                maxstay=remaining["maxstay"],
+                                cta=remaining["cta"],
+                                ctd=remaining["ctd"],
                                 days=remaining.get("days"),
                                 error=result.get("error", ""),
                                 retry_after_seconds=retry_secs,
                             )
                         await schedule_auto_retry(t_id, retry_secs + 5)
-                        logger.warning("[HR-BULK-UPDATE] Rate limit at %s — %d remaining queued for retry", rt, len(tasks) - i)
+                        logger.warning("[HR-BULK-UPDATE] Rate limited; remaining=%d", len(tasks) - i)
                         break
-                    elif "403" in str(result.get("error", "")) or "access denied" in str(result.get("error", "")).lower():
-                        consecutive_auth_errors += 1
-                        if consecutive_auth_errors >= MAX_CONSECUTIVE_AUTH_ERRORS:
-                            # Ardışık 403 hataları — muhtemelen geçici IP engeli, kalan push'ları kuyruğa at
-                            logger.warning("[HR-BULK-UPDATE] %d consecutive 403 errors — queuing %d remaining tasks for retry", consecutive_auth_errors, len(tasks) - i)
-                            for remaining in tasks[i:]:
-                                await enqueue_failed_push(
-                                    t_id,
-                                    remaining["rt"],
-                                    remaining["start_date"],
-                                    remaining["end_date"],
-                                    rate=remaining["rate"],
-                                    avail=remaining["avail"],
-                                    stop=remaining["stop"],
-                                    minstay=remaining["minstay"],
-                                    days=remaining.get("days"),
-                                    error="Persistent 403 — queued for retry",
-                                    retry_after_seconds=120,
-                                )
-                            await schedule_auto_retry(t_id, 120)
-                            break
                     else:
-                        consecutive_auth_errors = 0
+                        logger.warning(
+                            "[HR-BULK-UPDATE] Delivery not confirmed: state=%s",
+                            result.get("delivery_state", "unknown"),
+                        )
+                        break
                 except Exception as e:
-                    logger.error("[HR-BULK-UPDATE] Background push error for %s (%s→%s): %s", rt, t_start, t_end, e)
-                    if "403" in str(e) or "access denied" in str(e).lower():
-                        consecutive_auth_errors += 1
-                        if consecutive_auth_errors >= MAX_CONSECUTIVE_AUTH_ERRORS:
-                            logger.warning("[HR-BULK-UPDATE] %d consecutive 403 exceptions — queuing %d remaining for retry", consecutive_auth_errors, len(tasks) - i)
-                            for remaining in tasks[i:]:
-                                await enqueue_failed_push(
-                                    t_id,
-                                    remaining["rt"],
-                                    remaining["start_date"],
-                                    remaining["end_date"],
-                                    rate=remaining["rate"],
-                                    avail=remaining["avail"],
-                                    stop=remaining["stop"],
-                                    minstay=remaining["minstay"],
-                                    days=remaining.get("days"),
-                                    error=f"Persistent 403: {e}",
-                                    retry_after_seconds=120,
-                                )
-                            await schedule_auto_retry(t_id, 120)
-                            break
-                    else:
-                        consecutive_auth_errors = 0
+                    logger.error("[HR-BULK-UPDATE] Background delivery error: %s", type(e).__name__)
+                    break
 
                 # Kısa ara ile rate limit'e takılmayı engelle
                 if i < len(tasks) - 1:
                     await asyncio.sleep(2)
 
-            logger.info("[HR-BULK-UPDATE] Background push done: %d/%d successful (tenant=%s)", success_count, len(tasks), t_id)
+            logger.info("[HR-BULK-UPDATE] Background delivery done: confirmed=%d total=%d", success_count, len(tasks))
 
         asyncio.create_task(
             _background_push(
@@ -1009,7 +1010,7 @@ async def remove_hr_room_type(
         }
     )
 
-    logger.info("[HR-ROOM-TYPE] Removed inv_code=%s from cached_rooms (%d entries removed)", inv_code, removed_count)
+    logger.info("[HR-ROOM-TYPE] Cached room mapping removed: count=%d", removed_count)
 
     return {
         "message": f"Oda tipi '{inv_code}' basariyla kaldirildi ({removed_count} kayit silindi)",
@@ -1067,7 +1068,11 @@ async def cancel_all_queue_items(
         }
     )
 
-    logger.info("[HR-QUEUE] Tenant %s: %d pending/retrying + %d completed items cancelled/cleared", tenant_id, deleted, completed_result.deleted_count)
+    logger.info(
+        "[HR-QUEUE] Queue items cleared: active=%d completed=%d",
+        deleted,
+        completed_result.deleted_count,
+    )
 
     return {
         "message": f"{deleted} bekleyen push iptal edildi",

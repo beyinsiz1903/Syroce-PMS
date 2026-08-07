@@ -96,6 +96,11 @@ async def test_production_plaintext_connection_token_is_not_used(monkeypatch):
         "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
         lambda: manager,
     )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_decrypted_credentials",
+        AsyncMock(return_value=None),
+        raising=False,
+    )
 
     result = await resolve_hotelrunner_credentials(
         "synthetic-tenant",
@@ -104,6 +109,7 @@ async def test_production_plaintext_connection_token_is_not_used(monkeypatch):
     )
 
     assert result is None
+    # hr_id path only (property_id == hr_id so deduped)
     assert manager.calls == 1
 
 
@@ -151,6 +157,11 @@ async def test_development_plaintext_fallback_remains_local_only(monkeypatch):
         "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
         lambda: _EmptySecretsManager(),
     )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_decrypted_credentials",
+        AsyncMock(return_value=None),
+        raising=False,
+    )
 
     result = await resolve_hotelrunner_credentials(
         "synthetic-tenant",
@@ -158,10 +169,10 @@ async def test_development_plaintext_fallback_remains_local_only(monkeypatch):
         actor="offline-test",
     )
 
-    assert result == {
-        "token": "synthetic-local-token",
-        "hr_id": "synthetic-property",
-    }
+    assert result is not None
+    assert result["token"] == "synthetic-local-token"
+    assert result["hr_id"] == "synthetic-property"
+    assert result["_credential_source"] == "legacy_dev_fallback"
 
 
 @pytest.mark.asyncio
@@ -326,10 +337,7 @@ async def test_outbound_audit_persists_payload_metadata_only():
 
 
 def test_hotelrunner_query_and_path_secrets_are_redacted():
-    message = (
-        "GET /api/channel-manager/hotelrunner/callback/synthetic-path-secret"
-        "?token=synthetic-query-token&hr_id=synthetic-property"
-    )
+    message = "GET /api/channel-manager/hotelrunner/callback/synthetic-path-secret?token=synthetic-query-token&hr_id=synthetic-property"
 
     sanitized = sanitize_string(message)
 
@@ -355,3 +363,323 @@ def test_normalized_timeline_metadata_omits_guest_and_amount():
     assert "guest_name" not in metadata
     assert "total_amount" not in metadata
     assert "SyntheticGuest" not in json.dumps(metadata)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Credential Resolver: new dual-key + vault scenarios (PR #214 additions)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class _SecretsManagerWithHrId:
+    """Returns credentials when queried by hr_id key."""
+
+    def __init__(self, hit_key: str, token: str, hr_id: str):
+        self._hit_key = hit_key
+        self._token = token
+        self._hr_id = hr_id
+        self.calls: list[str] = []
+
+    async def get_provider_credentials(self, tenant_id, provider, property_id, *, actor):
+        self.calls.append(property_id)
+        if property_id == self._hit_key:
+            return {"token": self._token, "hr_id": self._hr_id}
+        return None
+
+
+@pytest.mark.asyncio
+async def test_production_secrets_manager_resolves_by_hr_id(monkeypatch):
+    """Scenario 1: production + secrets manager + hr_id => PASS."""
+    monkeypatch.setenv("APP_ENV", "production")
+    manager = _SecretsManagerWithHrId(
+        hit_key="synthetic-hr-id",
+        token="synthetic-sm-token",
+        hr_id="synthetic-hr-id",
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
+        lambda: manager,
+    )
+
+    result = await resolve_hotelrunner_credentials(
+        "synthetic-tenant",
+        {"hr_id": "synthetic-hr-id", "property_id": "synthetic-prop-id"},
+        actor="offline-test",
+    )
+
+    assert result is not None
+    assert result["token"] == "synthetic-sm-token"
+    assert result["hr_id"] == "synthetic-hr-id"
+    assert result["_credential_source"] == "secrets_manager"
+    # hr_id tried first — resolved immediately
+    assert manager.calls[0] == "synthetic-hr-id"
+
+
+@pytest.mark.asyncio
+async def test_production_secrets_manager_resolves_by_property_id(monkeypatch):
+    """Scenario 2: production + secrets manager + property_id => PASS."""
+    monkeypatch.setenv("APP_ENV", "production")
+    manager = _SecretsManagerWithHrId(
+        hit_key="synthetic-prop-id",
+        token="synthetic-prop-token",
+        hr_id="synthetic-hr-id",
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
+        lambda: manager,
+    )
+
+    # hr_id != property_id so both paths are attempted
+    result = await resolve_hotelrunner_credentials(
+        "synthetic-tenant",
+        {"hr_id": "synthetic-hr-id", "property_id": "synthetic-prop-id"},
+        actor="offline-test",
+    )
+
+    assert result is not None
+    assert result["token"] == "synthetic-prop-token"
+    assert result["_credential_source"] == "secrets_manager"
+    # hr_id tried first, then property_id
+    assert "synthetic-hr-id" in manager.calls
+    assert "synthetic-prop-id" in manager.calls
+
+
+@pytest.mark.asyncio
+async def test_production_encrypted_vault_fallback(monkeypatch):
+    """Scenario 3: production + encrypted Provider Config vault => PASS."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
+        lambda: _EmptySecretsManager(),
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_decrypted_credentials",
+        AsyncMock(return_value={"token": "synthetic-vault-token", "hr_id": "synthetic-hr-id"}),
+        raising=False,
+    )
+
+    result = await resolve_hotelrunner_credentials(
+        "synthetic-tenant",
+        {"hr_id": "synthetic-hr-id"},
+        actor="offline-test",
+    )
+
+    assert result is not None
+    assert result["token"] == "synthetic-vault-token"
+    assert result["hr_id"] == "synthetic-hr-id"
+    assert result["_credential_source"] == "encrypted_vault"
+
+
+@pytest.mark.asyncio
+async def test_production_encrypted_vault_resolves_provider_config_property_id(monkeypatch):
+    """Provider Config vault records are keyed by property_id, not HotelRunner ID."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
+        lambda: _EmptySecretsManager(),
+    )
+    vault = AsyncMock(
+        side_effect=lambda _tenant, _provider, key: (
+            {"token": "synthetic-vault-token", "hr_id": "synthetic-hr-id"}
+            if key == "synthetic-property-id"
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_decrypted_credentials",
+        vault,
+        raising=False,
+    )
+
+    result = await resolve_hotelrunner_credentials(
+        "synthetic-tenant",
+        {"hr_id": "synthetic-hr-id", "property_id": "synthetic-property-id"},
+        actor="offline-test",
+    )
+
+    assert result is not None
+    assert result["token"] == "synthetic-vault-token"
+    assert result["hr_id"] == "synthetic-hr-id"
+    assert result["_credential_source"] == "encrypted_vault"
+    assert vault.await_count == 1
+    assert vault.await_args.args[2] == "synthetic-property-id"
+
+
+@pytest.mark.asyncio
+async def test_encrypted_vault_falls_back_to_hr_id_without_duplicate_lookup(monkeypatch):
+    """Legacy vault records remain resolvable and identical keys are queried once."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
+        lambda: _EmptySecretsManager(),
+    )
+    vault = AsyncMock(return_value={"token": "synthetic-token", "hr_id": "synthetic-hr-id"})
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_decrypted_credentials",
+        vault,
+        raising=False,
+    )
+
+    result = await resolve_hotelrunner_credentials(
+        "synthetic-tenant",
+        {"hr_id": "synthetic-hr-id", "property_id": "synthetic-hr-id"},
+        actor="offline-test",
+    )
+
+    assert result is not None
+    assert result["_credential_source"] == "encrypted_vault"
+    assert vault.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_production_only_plaintext_token_fails_closed(monkeypatch):
+    """Scenario 4: production + only plaintext connection token => FAIL-CLOSED."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
+        lambda: _EmptySecretsManager(),
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_decrypted_credentials",
+        AsyncMock(return_value=None),
+        raising=False,
+    )
+
+    result = await resolve_hotelrunner_credentials(
+        "synthetic-tenant",
+        {"hr_id": "synthetic-hr-id", "token": "synthetic-plaintext-token"},
+        actor="offline-test",
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_development_controlled_legacy_plaintext_fallback(monkeypatch):
+    """Scenario 5: development + controlled legacy plaintext fallback => PASS."""
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("NODE_ENV", raising=False)
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
+        lambda: _EmptySecretsManager(),
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_decrypted_credentials",
+        AsyncMock(return_value=None),
+        raising=False,
+    )
+
+    result = await resolve_hotelrunner_credentials(
+        "synthetic-tenant",
+        {"hr_id": "synthetic-hr-id", "token": "synthetic-dev-token"},
+        actor="offline-test",
+    )
+
+    assert result is not None
+    assert result["_credential_source"] == "legacy_dev_fallback"
+    assert result["token"] == "synthetic-dev-token"
+
+
+@pytest.mark.asyncio
+async def test_credential_values_not_in_returned_credential_source_key(monkeypatch):
+    """Scenario 8: credential values do not appear in _credential_source metadata."""
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("NODE_ENV", raising=False)
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
+        lambda: _EmptySecretsManager(),
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_decrypted_credentials",
+        AsyncMock(return_value=None),
+        raising=False,
+    )
+
+    result = await resolve_hotelrunner_credentials(
+        "synthetic-tenant",
+        {"hr_id": "synthetic-hr-id", "token": "SHOULD-NOT-APPEAR-IN-SOURCE"},
+        actor="offline-test",
+    )
+
+    assert result is not None
+    assert "SHOULD-NOT-APPEAR-IN-SOURCE" not in result["_credential_source"]
+    assert result["_credential_source"] in (
+        "secrets_manager",
+        "encrypted_vault",
+        "legacy_dev_fallback",
+    )
+
+
+@pytest.mark.asyncio
+async def test_no_credential_returns_none_no_exception(monkeypatch):
+    """Scenario 7: credential not found => None returned, no provider write."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
+        lambda: _EmptySecretsManager(),
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_decrypted_credentials",
+        AsyncMock(return_value=None),
+        raising=False,
+    )
+
+    result = await resolve_hotelrunner_credentials(
+        "synthetic-tenant",
+        {"hr_id": "synthetic-hr-id"},
+        actor="offline-test",
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_vault_exception_does_not_propagate(monkeypatch):
+    """Vault failure must fall through to next source, not raise."""
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("NODE_ENV", raising=False)
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_secrets_manager",
+        lambda: _EmptySecretsManager(),
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.hotelrunner.credentials.get_decrypted_credentials",
+        AsyncMock(side_effect=RuntimeError("vault unreachable")),
+        raising=False,
+    )
+
+    # Should reach legacy fallback without raising
+    result = await resolve_hotelrunner_credentials(
+        "synthetic-tenant",
+        {"hr_id": "synthetic-hr-id", "token": "synthetic-dev-token"},
+        actor="offline-test",
+    )
+
+    assert result is not None
+    assert result["_credential_source"] == "legacy_dev_fallback"
+
+
+def test_credential_source_values_are_safe_class_metadata():
+    """_credential_source must only be one of the four defined safe values."""
+    import inspect
+
+    from domains.channel_manager.providers.hotelrunner import credentials as creds_mod
+
+    source = inspect.getsource(creds_mod)
+    for assignment in (
+        '"secrets_manager"',
+        '"encrypted_vault"',
+        '"legacy_dev_fallback"',
+    ):
+        assert assignment in source, f"Expected {assignment} in source"
+
+    # Verify no raw secret value is assigned to _credential_source
+    for forbidden in ("token", "password", "secret", "key"):
+        # Only the key name 'token' appears in credential source assignment lines
+        # — not its value
+        lines = [ln for ln in source.splitlines() if "_credential_source" in ln and forbidden in ln]
+        # allow mentions like checking creds.get("token") but not as value
+        for ln in lines:
+            assert "creds" not in ln or '= "' not in ln, f"Possible credential value leak in _credential_source assignment: {ln}"

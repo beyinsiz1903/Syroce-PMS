@@ -17,9 +17,7 @@ from typing import Any
 from .client import HRv2Client
 from .endpoint_map import get_path
 from .errors import HRv2AuthError, HRv2Error
-from .feature_flags import is_shadow_mode, is_write_enabled
 from .mapper import (
-    ari_to_update_payload,
     compute_idempotency_key,
     compute_payload_hash,
     detect_event_type,
@@ -27,7 +25,7 @@ from .mapper import (
     reservation_to_canonical,
 )
 from .metrics import record_metric
-from .retry import HRv2RetryPolicy, send_to_dlq
+from .retry import HRv2RetryPolicy
 
 logger = logging.getLogger("hrv2.service")
 
@@ -383,6 +381,7 @@ class HotelRunnerV2Service:
         price: float | None = None,
         stop_sale: bool | None = None,
         min_stay: int | None = None,
+        max_stay: int | None = None,
         cta: bool | None = None,
         ctd: bool | None = None,
         days: list[int] | None = None,
@@ -390,117 +389,34 @@ class HotelRunnerV2Service:
         verify: bool = True,
         correlation_id: str = "",
     ) -> dict[str, Any]:
-        """
-        Push ARI update to HotelRunner.
-        PUT /api/v2/apps/rooms/~
-
-        Respects shadow mode and write flags.
-        Optional verify step via transaction_details.
-        """
-        corr_id = correlation_id or str(_uuid.uuid4())[:12]
-        start = time.time()
-
-        # Shadow mode check
-        shadow = await is_shadow_mode(self._tenant_id)
-        write_ok = await is_write_enabled(self._tenant_id)
-
-        if shadow or not write_ok:
-            duration_ms = int((time.time() - start) * 1000)
-            logger.info("[HRv2 SHADOW] ARI push skipped: inv=%s %s→%s (shadow=%s, write=%s)", inv_code, start_date, end_date, shadow, write_ok)
-            await record_metric(
-                self._tenant_id,
-                "ari_push_shadow",
-                success=True,
-                duration_ms=duration_ms,
-                correlation_id=corr_id,
-                metadata={"inv_code": inv_code, "shadow": True},
-            )
-            return {
-                "success": True,
-                "shadow_mode": True,
-                "message": "ARI push skipped (shadow mode)",
-                "correlation_id": corr_id,
-            }
-
-        form_data = ari_to_update_payload(
-            inv_code,
-            start_date,
-            end_date,
-            availability=availability,
-            price=price,
-            stop_sale=stop_sale,
-            min_stay=min_stay,
-            cta=cta,
-            ctd=ctd,
-            days=days,
-            channel_codes=channel_codes,
+        """Use the canonical, gated HotelRunner ARI delivery path."""
+        del verify, correlation_id
+        from domains.channel_manager.providers.hotelrunner.ari_delivery import (
+            deliver_hotelrunner_ari,
         )
 
-        ep = get_path("rooms_update")
-
-        try:
-
-            async def _call():
-                return await self._client.put(ep, form_data=form_data, correlation_id=corr_id)
-
-            resp = await self._retry.execute(_call, context=f"ARI {inv_code}")
-            duration_ms = int((time.time() - start) * 1000)
-
-            await record_metric(
-                self._tenant_id,
-                "ari_push",
-                success=resp.success,
-                duration_ms=duration_ms,
-                correlation_id=corr_id,
-                metadata={"inv_code": inv_code},
-            )
-
-            if resp.success:
-                # Store in outbox for audit
-                await self._store_outbox(corr_id, "ari_push", form_data, resp.data)
-
-                # Verify step (check transaction status)
-                transaction_id = resp.data.get("transaction_id")
-                verification = None
-                if verify and transaction_id:
-                    verification = await self.verify_transaction(transaction_id, correlation_id=corr_id)
-
-            return {
-                "success": resp.success,
-                "data": resp.data,
-                "verification": verification if resp.success and verify else None,
-                "error": resp.error if not resp.success else None,
-                "duration_ms": duration_ms,
-                "correlation_id": corr_id,
-            }
-
-        except HRv2Error as e:
-            duration_ms = int((time.time() - start) * 1000)
-            await record_metric(
-                self._tenant_id,
-                "ari_push",
-                success=False,
-                duration_ms=duration_ms,
-                error_category=e.category,
-                correlation_id=corr_id,
-            )
-            # Send to DLQ on final failure
-            await send_to_dlq(
-                self._tenant_id,
-                "ari_push",
-                form_data,
-                str(e),
-                self._retry.max_retries,
-                corr_id,
-            )
-            return {
-                "success": False,
-                "error": str(e),
-                "error_category": e.category,
-                "dlq": True,
-                "correlation_id": corr_id,
-                "duration_ms": duration_ms,
-            }
+        update: dict[str, Any] = {
+            "inv_code": inv_code,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+        optional = {
+            "availability": availability,
+            "price": price,
+            "stop_sale": stop_sale,
+            "min_stay": min_stay,
+            "max_stay": max_stay,
+            "cta": cta,
+            "ctd": ctd,
+            "days": days,
+            "channel_codes": channel_codes,
+        }
+        update.update({key: value for key, value in optional.items() if value is not None})
+        delivery = await deliver_hotelrunner_ari(self._tenant_id, update)
+        return {
+            "success": delivery.success,
+            **delivery.safe_metadata(),
+        }
 
     # ── Transaction Verification ──────────────────────────────────────
 

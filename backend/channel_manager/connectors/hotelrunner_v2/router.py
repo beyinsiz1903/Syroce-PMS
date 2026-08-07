@@ -290,6 +290,7 @@ async def push_ari(
     tenant_id: str = Depends(_resolved_tenant),
     property_id: str = Query("default"),
     body: dict[str, Any] = Body(...),
+    _perm=Depends(require_op("manage_channel_connectors")),
 ):
     """Push ARI update (availability/rate/restriction)."""
     from channel_manager.connectors.hotelrunner_v2.feature_flags import is_enabled
@@ -308,6 +309,7 @@ async def push_ari(
         price=body.get("price"),
         stop_sale=body.get("stop_sale"),
         min_stay=body.get("min_stay"),
+        max_stay=body.get("max_stay"),
         cta=body.get("cta"),
         ctd=body.get("ctd"),
         days=body.get("days"),
@@ -369,6 +371,7 @@ async def get_flags_endpoint(tenant_id: str = Depends(_resolved_tenant)):
 async def update_flags(
     tenant_id: str = Depends(_resolved_tenant),
     body: dict[str, Any] = Body(...),
+    _perm=Depends(require_op("manage_channel_connectors")),
 ):
     from channel_manager.connectors.hotelrunner_v2.feature_flags import set_flags
 
@@ -415,36 +418,23 @@ async def retry_dlq_entry(
     dlq_id: str,
     tenant_id: str = Depends(_resolved_tenant),
     property_id: str = Query("default"),
+    _perm=Depends(require_op("manage_channel_connectors")),
 ):
-    """Retry a dead letter queue entry."""
+    """Fail closed for legacy ARI DLQ writes with unknown delivery outcome."""
+    del property_id
     from core.database import db
 
     entry = await db["connector_dlq"].find_one({"id": dlq_id, "tenant_id": tenant_id}, {"_id": 0})
     if not entry:
         raise HTTPException(status_code=404, detail="DLQ entry not found")
 
-    from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service
-
-    svc = await HotelRunnerV2Service.create(tenant_id, property_id)
-
     operation = entry.get("operation", "")
-    payload = entry.get("payload", {})
 
     if operation == "ari_push":
-        result = await svc.push_ari(
-            room_code=payload.get("inv_code", ""),
-            start_date=payload.get("start_date", ""),
-            end_date=payload.get("end_date", ""),
-            availability=int(payload["availability"]) if "availability" in payload else None,
-            price=float(payload["price"]) if "price" in payload else None,
-            stop_sale=payload.get("stop_sale") == "1" if "stop_sale" in payload else None,
+        raise HTTPException(
+            status_code=409,
+            detail="ARI_DLQ_RETRY_REQUIRES_RECONCILIATION",
         )
-        if result.get("success"):
-            await db["connector_dlq"].update_one(
-                {"id": dlq_id},
-                {"$set": {"status": "retried_success"}},
-            )
-        return result
 
     raise HTTPException(status_code=400, detail=f"Unknown operation: {operation}")
 

@@ -50,9 +50,9 @@ ENDPOINTS = {
         "description": "Get connected channel list",
     },
     "transaction_details": {
-        "path": "/api/v1/apps/infos/transaction_details",
+        "path": "/api/v2/apps/infos/transaction_details",
         "method": "GET",
-        "api_version": "v1",
+        "api_version": "v2",
         "description": "Get ARI update transaction status/logs",
     },
 }

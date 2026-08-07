@@ -10,11 +10,9 @@ Tests against the existing mock server (localhost:9999):
   5. Feature flag enforcement
 """
 import pytest
-import pytest_asyncio
 
 from channel_manager.connectors.hotelrunner_v2.client import HRv2Client
 from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service
-
 
 MOCK_TOKEN = "mock-hr-token-001"
 MOCK_HR_ID = "HR-HOTEL-001"
@@ -123,7 +121,7 @@ class TestIngestFlow:
             "state": "confirmed",
             "updated_at": "2026-06-01T00:00:00Z",
         }
-        r1 = await service.ingest_reservation(payload, received_via="test")
+        await service.ingest_reservation(payload, received_via="test")
         r2 = await service.ingest_reservation(payload, received_via="test")
         # Second should be duplicate or skip
         assert r2.get("decision") in ("skip", "create", "pending_mapping")
@@ -151,8 +149,8 @@ class TestIngestFlow:
 class TestARIPush:
     @pytest.mark.asyncio
     async def test_push_shadow_mode(self, service):
-        """ARI push in shadow mode should be skipped gracefully."""
-        # Default: shadow_mode=True → push skipped
+        """Shadow mode must not report a provider write as successful."""
         result = await service.push_ari("STD", "2026-04-10", "2026-04-15", availability=5)
-        assert result["success"]
-        assert result.get("shadow_mode") or result.get("data") is not None
+        assert result["success"] is False
+        assert result["delivery_state"] == "blocked"
+        assert result["provider_write_count"] == 0

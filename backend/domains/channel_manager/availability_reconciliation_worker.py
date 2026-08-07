@@ -1,17 +1,17 @@
 """
 Availability Reconciliation Worker
 ===================================
-Compares real PMS availability with channel availability every 15 minutes
-and automatically corrects discrepancies.
+Reconciles channel availability delivery every 15 minutes.
 
 Safety net:
-  - Compensates for failed pushes due to network errors
+  - Resolves accepted HotelRunner writes through GET-only transaction checks
   - Captures availability impact of bookings received via webhook
   - Auto-syncs manual DB changes
 
 Flow:
   15 min -> all tenants -> each room type -> date range (today + 60 days) ->
-  calculate real availability -> push to channels
+  calculate real availability -> Exely reconciliation push + HotelRunner
+  transaction reconciliation (no blind HotelRunner refresh)
 """
 
 import asyncio
@@ -248,69 +248,36 @@ async def _push_reconciliation_hr(
     tenant_id: str,
     availability_by_type: dict[str, dict[str, int]],
 ) -> int:
-    """Push reconciliation data to HotelRunner."""
-    push_count = 0
+    """Reconcile prior HotelRunner writes with GET-only transaction checks.
+
+    HotelRunner's REST contract exposes transaction details but no authoritative
+    ARI snapshot endpoint. Blindly writing a 60-day refresh is not
+    reconciliation, so this worker only resolves already accepted transactions.
+    """
+    del availability_by_type
     try:
         conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
         if not conn:
             return 0
-
-        all_mappings = await db.hotelrunner_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
-
-        seen = set()
-        unique_mappings = []
-        for m in all_mappings:
-            key = (m.get("pms_room_type", ""), m.get("hr_inv_code", ""))
-            if key[0] and key[1] and key not in seen:
-                seen.add(key)
-                unique_mappings.append(m)
-
-        if not unique_mappings:
-            return 0
-
-        try:
-            from domains.channel_manager.providers.hotelrunner.factory import get_provider as _get_provider
-
-            provider, _ = await _get_provider(tenant_id)
-        except Exception as e:
-            logger.warning("[AVAIL-RECON] Cannot get HR provider: %s", e)
-            return 0
-
-        from domains.channel_manager.availability_auto_sync import (
-            _group_consecutive_dates_with_same_avail,
+        from domains.channel_manager.providers.hotelrunner.ari_delivery import (
+            reconcile_pending_hotelrunner_ari,
         )
 
-        for mapping in unique_mappings:
-            pms_type = mapping.get("pms_room_type", "")
-            hr_inv = mapping.get("hr_inv_code", "")
-
-            date_avail = availability_by_type.get(pms_type)
-            if not date_avail:
-                continue
-
-            sorted_dates = sorted(date_avail.keys())
-            groups = _group_consecutive_dates_with_same_avail(sorted_dates, date_avail)
-
-            for group_start, group_end, avail in groups:
-                try:
-                    result = await provider.update_room(
-                        inv_code=hr_inv,
-                        start_date=group_start,
-                        end_date=group_end,
-                        availability=int(avail),
-                    )
-                    if result.get("success"):
-                        push_count += 1
-                except Exception as e:
-                    logger.error("[AVAIL-RECON] HR push error: %s", e)
-
-        if push_count > 0:
-            logger.info("[AVAIL-RECON] HR: %d push OK (tenant=%s)", push_count, tenant_id[:8])
+        summary = await reconcile_pending_hotelrunner_ari(tenant_id)
+        if summary["checked"] > 0:
+            logger.info(
+                "[AVAIL-RECON] HR transaction reconciliation: checked=%d confirmed=%d pending=%d failed=%d",
+                summary["checked"],
+                summary["confirmed"],
+                summary["pending"],
+                summary["failed"],
+            )
+        return summary["confirmed"]
 
     except Exception as e:
-        logger.error("[AVAIL-RECON] HR recon error: %s", e)
+        logger.error("[AVAIL-RECON] HR reconciliation error: %s", type(e).__name__)
 
-    return push_count
+    return 0
 
 
 availability_reconciliation_worker = AvailabilityReconciliationWorker()

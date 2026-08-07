@@ -8,6 +8,9 @@ import logging
 import time
 
 from domains.channel_manager.ari.events import ARIDelta, ProviderResult
+from domains.channel_manager.providers.hotelrunner.ari_delivery import (
+    deliver_hotelrunner_ari,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,18 +40,6 @@ class HotelRunnerARIAdapter:
     async def _push(self, delta: ARIDelta, scope: str) -> ProviderResult:
         start = time.time()
 
-        if not self._client:
-            # Dry-run / sandbox mode
-            duration = int((time.time() - start) * 1000)
-            logger.info(f"[HotelRunner DRY-RUN] {scope} push: {delta.room_type_code} {delta.date_from}→{delta.date_to}")
-            return ProviderResult(
-                success=True,
-                provider="hotelrunner",
-                status_code=200,
-                response_payload={"dry_run": True, "scope": scope},
-                duration_ms=duration,
-            )
-
         try:
             params = {
                 "inv_code": delta.room_type_code,
@@ -66,40 +57,43 @@ class HotelRunnerARIAdapter:
                 if "price" in payload:
                     params["price"] = payload["price"]
             elif scope == "restriction":
-                for key in ("min_stay", "cta", "ctd", "stop_sale"):
+                for key in ("min_stay", "max_stay", "cta", "ctd", "stop_sale"):
                     if key in payload:
                         params[key] = payload[key]
 
-            result = await self._client.update_room(**params)
+            delivery = await deliver_hotelrunner_ari(
+                delta.tenant_id,
+                params,
+                provider=self._client,
+            )
             duration = int((time.time() - start) * 1000)
 
-            if result.get("success"):
-                return ProviderResult(
-                    success=True,
-                    provider="hotelrunner",
-                    status_code=200,
-                    response_payload=result.get("data"),
-                    duration_ms=duration,
-                )
-            else:
-                status_code = 500
-                error = result.get("error", "Unknown error")
-                if "429" in str(error) or "rate" in str(error).lower():
-                    status_code = 429
-                return ProviderResult(
-                    success=False,
-                    provider="hotelrunner",
-                    status_code=status_code,
-                    error=error,
-                    duration_ms=duration,
-                    retryable=status_code >= 500 or status_code == 429,
-                )
+            status_codes = {
+                "confirmed": 200,
+                "blocked": 409,
+                "rejected": 429 if delivery.retryable else 422,
+                "ambiguous": 503,
+                "reconciliation_pending": 202,
+                "partial_failure": 502,
+            }
+            return ProviderResult(
+                success=delivery.success,
+                provider="hotelrunner",
+                status_code=status_codes.get(delivery.state, 500),
+                response_payload=delivery.safe_metadata(),
+                error=delivery.error_code or None,
+                duration_ms=duration,
+                retryable=delivery.retryable,
+                delivery_state=delivery.state,
+                provider_write_count=delivery.provider_write_count,
+            )
         except Exception as e:
             duration = int((time.time() - start) * 1000)
             return ProviderResult(
                 success=False,
                 provider="hotelrunner",
-                error=str(e),
+                error=f"ARI_ADAPTER_{type(e).__name__.upper()}",
                 duration_ms=duration,
-                retryable=True,
+                retryable=False,
+                delivery_state="ambiguous",
             )

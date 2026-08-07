@@ -23,6 +23,7 @@ async def phase_g_channels_and_audit(app):
         await _raw_db["ari_change_sets"].create_index([("provider", 1), ("property_id", 1), ("provider_delta_hash", 1)])
         await _raw_db["ari_outbound_logs"].create_index([("tenant_id", 1), ("property_id", 1), ("pushed_at", -1)])
         await _raw_db["ari_drift_state"].create_index([("tenant_id", 1), ("property_id", 1), ("provider", 1)])
+        await _raw_db["hotelrunner_ari_deliveries"].create_index([("tenant_id", 1), ("state", 1), ("created_at", 1)])
         logger.info("✅ ARI Push Engine initialized (HotelRunner + Exely adapters)")
     except Exception as e:
         logger.warning(f"ARI Push Engine init warning: {e}")

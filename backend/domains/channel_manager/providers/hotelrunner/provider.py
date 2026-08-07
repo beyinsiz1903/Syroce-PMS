@@ -733,8 +733,9 @@ class HotelRunnerProvider:
         within the start_date→end_date range (single API call instead of
         one call per non-consecutive date).
 
-        Routed through retry policy + observability recorder so it has the
-        same operational guarantees as push_daily_inventory / fetch_*.
+        A mutation is attempted exactly once. A timeout, connection loss, or
+        5xx response is ambiguous and must be reconciled through the returned
+        transaction rather than resubmitted automatically.
         """
         start = time.time()
         try:
@@ -742,7 +743,15 @@ class HotelRunnerProvider:
             for key in ("inv_code", "start_date", "end_date"):
                 if key in kwargs:
                     query_params[key] = str(kwargs[key])
-            for key in ("availability", "price", "stop_sale", "min_stay", "cta", "ctd"):
+            for key in (
+                "availability",
+                "price",
+                "stop_sale",
+                "min_stay",
+                "max_stay",
+                "cta",
+                "ctd",
+            ):
                 if key in kwargs and kwargs[key] is not None:
                     query_params[key] = str(kwargs[key])
 
@@ -751,11 +760,11 @@ class HotelRunnerProvider:
             if days is not None and len(days) < 7:
                 # httpx handles list values as repeated params: days[]=0&days[]=6
                 query_params["days[]"] = [str(d) for d in days]
+            channel_codes = kwargs.get("channel_codes")
+            if channel_codes:
+                query_params["channel_codes[]"] = [str(code) for code in channel_codes]
 
-            async def _call():
-                return await self._client.put(ep.ROOMS_DATERANGE, params=query_params)
-
-            result = await self._retry.execute(_call)
+            result = await self._client.put(ep.ROOMS_DATERANGE, params=query_params)
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
@@ -771,14 +780,24 @@ class HotelRunnerProvider:
             return {"success": False, "error": result.error, "duration_ms": duration_ms}
         except HotelRunnerError as e:
             pr = self._handle_error(e, start, ep.ROOMS_DATERANGE)
-            return {"success": pr.success, "data": pr.data, "error": pr.error, "duration_ms": pr.duration_ms}
+            response = {
+                "success": pr.success,
+                "data": pr.data,
+                "error": pr.error,
+                "error_type": pr.error_type,
+                "duration_ms": pr.duration_ms,
+            }
+            retry_after = getattr(e, "retry_after_seconds", None)
+            if retry_after is not None:
+                response["retry_after_seconds"] = retry_after
+            return response
 
     async def push_ari_bulk(self, updates: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Bulk ARI push: invoke update_room for each item, preserving order.
 
         Each input dict carries the same kwargs as update_room (inv_code,
         start_date, end_date, availability, price, stop_sale, min_stay,
-        cta, ctd, days). Returns a list of update_room result dicts so the
+        max_stay, cta, ctd, days). Returns a list of update_room result dicts so the
         caller can compute success/fail counts and surface per-row errors.
 
         Sequential by design — bulk inventory pushes share rate-limit
