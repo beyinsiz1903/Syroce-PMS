@@ -14,6 +14,7 @@ from core.database import db
 from core.secrets import get_secrets_manager
 from core.security import get_current_user
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
+from domains.channel_manager.providers.exely.ari_publish import enqueue_exely_ari_update
 from domains.channel_manager.providers.exely.errors import ExelyError
 from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
@@ -66,6 +67,10 @@ class ExelyARIUpdate(BaseModel):
     currency: str = "TRY"
     stop_sell: bool | None = None
     min_stay: int | None = None
+    min_los_arrival: int | None = None
+    max_stay: int | None = None
+    cta: bool | None = None
+    ctd: bool | None = None
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -145,6 +150,7 @@ async def setup_connection(
         "endpoint_url": payload.endpoint_url or "",
         "property_name": payload.property_name or f"Exely Property ({payload.hotel_code})",
         "auto_sync_reservations": payload.auto_sync_reservations,
+        "ari_write_enabled": False,
         "sync_interval_minutes": payload.sync_interval_minutes,
         "mode": "sandbox",
         "currency": payload.currency,
@@ -342,62 +348,105 @@ async def delete_room_mapping(
 # ── ARI Push ─────────────────────────────────────────────────────────
 
 
-@router.post("/ari/push")
+@router.post("/ari/push", status_code=202)
 async def push_ari(
     payload: ExelyARIUpdate,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),  # v100 DW
 ):
-    """Push a delta ARI update to Exely."""
-    client, conn = await _get_client(current_user.tenant_id)
-    result = await client.legacy_push_ari(
+    """Durably queue an ARI update for the canonical Exely worker."""
+    conn = await db.exely_connections.find_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"_id": 0, "hotel_code": 1},
+    )
+    if not conn:
+        raise HTTPException(status_code=404, detail="Exely connection not found")
+    result = await enqueue_exely_ari_update(
+        current_user.tenant_id,
+        str(conn.get("hotel_code") or ""),
         room_type_code=payload.room_type_code,
         rate_plan_code=payload.rate_plan_code,
         start_date=payload.start_date,
         end_date=payload.end_date,
+        source_service="exely_router",
         availability=payload.availability,
         rate_amount=payload.rate_amount,
         currency=payload.currency,
         stop_sell=payload.stop_sell,
-        min_stay=payload.min_stay,
+        min_los=payload.min_stay,
+        min_los_arrival=payload.min_los_arrival,
+        max_los=payload.max_stay,
+        cta=payload.cta,
+        ctd=payload.ctd,
+        actor_id=current_user.id,
     )
 
-    status = "success" if result["success"] else "failed"
-    await log_sync(PROVIDER, current_user.tenant_id, "ari_push", status, duration_ms=result.get("duration_ms", 0), records=1, error=result.get("error"), user_name=current_user.name)
+    await log_sync(
+        PROVIDER,
+        current_user.tenant_id,
+        "ari_queue",
+        "queued" if result["accepted"] else "blocked",
+        records=result["queued_operation_count"],
+        user_name=current_user.name,
+    )
+    if not result["accepted"]:
+        raise HTTPException(status_code=422, detail="No supported ARI mutation was supplied")
+    return {"message": "ARI update queued", "result": result}
 
-    if not result["success"]:
-        raise HTTPException(status_code=502, detail=f"ARI push hatasi: {result['error']}")
 
-    return {"message": "ARI guncelleme Exely'ye gonderildi", "result": result}
-
-
-@router.post("/ari/bulk-push")
+@router.post("/ari/bulk-push", status_code=202)
 async def bulk_push_ari(
     updates: list[ExelyARIUpdate],
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
-    """Push multiple ARI updates."""
-    client, conn = await _get_client(current_user.tenant_id)
+    """Durably queue multiple ARI updates without direct provider writes."""
+    conn = await db.exely_connections.find_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"_id": 0, "hotel_code": 1},
+    )
+    if not conn:
+        raise HTTPException(status_code=404, detail="Exely connection not found")
     results = []
     for u in updates:
-        r = await client.push_ari(
+        r = await enqueue_exely_ari_update(
+            current_user.tenant_id,
+            str(conn.get("hotel_code") or ""),
             room_type_code=u.room_type_code,
             rate_plan_code=u.rate_plan_code,
             start_date=u.start_date,
             end_date=u.end_date,
+            source_service="exely_router_bulk",
             availability=u.availability,
             rate_amount=u.rate_amount,
             currency=u.currency,
             stop_sell=u.stop_sell,
-            min_stay=u.min_stay,
+            min_los=u.min_stay,
+            min_los_arrival=u.min_los_arrival,
+            max_los=u.max_stay,
+            cta=u.cta,
+            ctd=u.ctd,
+            actor_id=current_user.id,
         )
         results.append(r)
 
-    success_count = sum(1 for r in results if r.get("success"))
-    await log_sync(PROVIDER, current_user.tenant_id, "ari_bulk_push", "success" if success_count == len(results) else "partial", records=success_count, user_name=current_user.name)
+    accepted_count = sum(1 for r in results if r.get("accepted"))
+    await log_sync(
+        PROVIDER,
+        current_user.tenant_id,
+        "ari_bulk_queue",
+        "queued" if accepted_count == len(results) else "partial",
+        records=accepted_count,
+        user_name=current_user.name,
+    )
 
-    return {"total": len(results), "success": success_count, "failed": len(results) - success_count, "results": results}
+    return {
+        "total": len(results),
+        "queued": accepted_count,
+        "blocked": len(results) - accepted_count,
+        "provider_write_count": 0,
+        "results": results,
+    }
 
 
 # ── Reservation Sync ─────────────────────────────────────────────────

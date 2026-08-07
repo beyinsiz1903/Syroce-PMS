@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 def _coalescing_key(event: ARIChangeEvent) -> str:
     """Build the coalescing key for grouping events."""
-    return f"{event.tenant_id}|{event.property_id}|{event.room_type_code}|{event.rate_plan_code or ''}|{event.date_from}:{event.date_to}|{event.event_type}"
+    operation = str(event.payload.get("operation") or "")
+    target = event.target_provider or "all"
+    return f"{event.tenant_id}|{event.property_id}|{target}|{event.room_type_code}|{event.rate_plan_code or ''}|{event.date_from}:{event.date_to}|{event.event_type}|{operation}"
 
 
 class ARIEventBuffer:

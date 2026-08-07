@@ -160,88 +160,23 @@ async def _push_reconciliation_exely(
     tenant_id: str,
     availability_by_type: dict[str, dict[str, int]],
 ) -> int:
-    """Push reconciliation data to Exely."""
-    push_count = 0
+    """Inspect pending Exely delivery state without blind refresh writes."""
+    del availability_by_type
     try:
-        conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
-        if not conn:
-            return 0
+        from domains.channel_manager.providers.exely.ari_delivery import reconcile_pending_exely_ari
 
-        from domains.channel_manager.credential_vault import get_decrypted_credentials
-
-        hotel_code = conn.get("hotel_code", "")
-        creds = await get_decrypted_credentials(tenant_id, "exely", hotel_code)
-        if not creds:
-            return 0
-
-        from domains.channel_manager.providers.exely.provider import ExelyProvider
-
-        provider_kwargs = {
-            "username": creds.get("username", ""),
-            "password": creds.get("password", ""),
-            "hotel_code": hotel_code,
-            "connection_id": f"{tenant_id}:{hotel_code}",
-        }
-        if conn.get("endpoint_url"):
-            provider_kwargs["endpoint_url"] = conn["endpoint_url"]
-
-        provider = ExelyProvider(**provider_kwargs)
-
-        rate_plans = conn.get("rate_plans", [])
-        if not rate_plans:
-            return 0
-
-        all_mappings = await db.exely_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
-
-        seen = set()
-        unique_mappings = []
-        for m in all_mappings:
-            key = (m.get("pms_room_type", ""), m.get("exely_room_code", ""))
-            if key[0] and key[1] and key not in seen:
-                seen.add(key)
-                unique_mappings.append(m)
-
-        for mapping in unique_mappings:
-            pms_type = mapping.get("pms_room_type", "")
-            exely_code = mapping.get("exely_room_code", "")
-
-            date_avail = availability_by_type.get(pms_type)
-            if not date_avail:
-                continue
-
-            from domains.channel_manager.availability_auto_sync import (
-                _group_consecutive_dates_with_same_avail,
+        result = await reconcile_pending_exely_ari(tenant_id)
+        if result["pending"]:
+            logger.warning(
+                "[AVAIL-RECON] Exely reconciliation_status=%s pending_count=%d",
+                result["reconciliation_status"],
+                result["pending"],
             )
 
-            sorted_dates = sorted(date_avail.keys())
-            groups = _group_consecutive_dates_with_same_avail(sorted_dates, date_avail)
-
-            for rp in rate_plans:
-                rp_code = rp.get("code", "")
-                if not rp_code:
-                    continue
-
-                for group_start, group_end, avail in groups:
-                    try:
-                        result = await provider.push_ari(
-                            room_type_code=exely_code,
-                            rate_plan_code=rp_code,
-                            start_date=group_start,
-                            end_date=group_end,
-                            availability=avail,
-                        )
-                        if result.success:
-                            push_count += 1
-                    except Exception as e:
-                        logger.error("[AVAIL-RECON] Exely push error: %s", e)
-
-        if push_count > 0:
-            logger.info("[AVAIL-RECON] Exely: %d push OK (tenant=%s)", push_count, tenant_id[:8])
-
     except Exception as e:
-        logger.error("[AVAIL-RECON] Exely recon error: %s", e)
+        logger.error("[AVAIL-RECON] Exely reconciliation failed: %s", type(e).__name__)
 
-    return push_count
+    return 0
 
 
 async def _push_reconciliation_hr(

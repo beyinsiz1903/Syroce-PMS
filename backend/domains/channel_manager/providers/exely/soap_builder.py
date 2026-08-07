@@ -344,13 +344,17 @@ def build_ari_update_rq(
     currency: str = "TRY",
     stop_sell: bool | None = None,
     min_stay: int | None = None,
+    min_los_arrival: int | None = None,
+    max_stay: int | None = None,
+    cta: bool | None = None,
+    ctd: bool | None = None,
 ) -> str:
     """Build OTA_HotelAvailNotifRQ for availability + restrictions only.
     Rate updates go via OTA_HotelRateAmountNotifRQ separately."""
     rq = etree.Element(
         f"{{{OTA_NS}}}OTA_HotelAvailNotifRQ",
         attrib={
-            "Version": "1.0",
+            "Version": "1.17",
             "TimeStamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         },
     )
@@ -380,21 +384,37 @@ def build_ari_update_rq(
         etree.SubElement(
             msg,
             f"{{{OTA_NS}}}RestrictionStatus",
-            attrib={
-                "Status": "Close" if stop_sell else "Open",
-                "Restriction": "Arrival",
-            },
+            attrib={"Status": "Close" if stop_sell else "Open"},
         )
 
-    if min_stay is not None:
-        los = etree.SubElement(msg, f"{{{OTA_NS}}}LengthsOfStay")
+    if min_stay is not None or max_stay is not None or min_los_arrival is not None:
+        los_attributes = {"ArrivalDateBased": "true"} if min_los_arrival is not None else {}
+        los = etree.SubElement(msg, f"{{{OTA_NS}}}LengthsOfStay", attrib=los_attributes)
+        los_value = min_los_arrival if min_los_arrival is not None else min_stay
+        los_type = "SetMaxLOS" if max_stay is not None else "SetMinLOS"
+        if max_stay is not None:
+            los_value = max_stay
         etree.SubElement(
             los,
             f"{{{OTA_NS}}}LengthOfStay",
             attrib={
-                "Time": str(min_stay),
-                "MinMaxMessageType": "SetMinLOS",
+                "Time": str(los_value),
+                "MinMaxMessageType": los_type,
             },
+        )
+
+    if cta is not None:
+        etree.SubElement(
+            msg,
+            f"{{{OTA_NS}}}RestrictionStatus",
+            attrib={"Status": "Close" if cta else "Open", "Restriction": "Arrival"},
+        )
+
+    if ctd is not None:
+        etree.SubElement(
+            msg,
+            f"{{{OTA_NS}}}RestrictionStatus",
+            attrib={"Status": "Close" if ctd else "Open", "Restriction": "Departure"},
         )
 
     return _soap_envelope(username, password, hotel_code, rq)
@@ -415,7 +435,7 @@ def build_rate_amount_notif_rq(
     rq = etree.Element(
         f"{{{OTA_NS}}}OTA_HotelRateAmountNotifRQ",
         attrib={
-            "Version": "1.0",
+            "Version": "1.17",
             "TimeStamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         },
     )
@@ -434,8 +454,6 @@ def build_rate_amount_notif_rq(
         msg,
         f"{{{OTA_NS}}}StatusApplicationControl",
         attrib={
-            "Start": start_date,
-            "End": end_date,
             "InvTypeCode": room_type_code,
             "RatePlanCode": rate_plan_code,
         },

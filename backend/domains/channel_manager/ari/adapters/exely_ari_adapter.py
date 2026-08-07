@@ -1,146 +1,53 @@
-"""
-Exely ARI Adapter.
-
-Translates ARIDelta into Exely SOAP API calls (OTA_HotelAvailNotifRQ, OTA_HotelRateAmountNotifRQ).
-"""
-
-import logging
-import time
+"""Canonical Exely ARI adapter backed by durable single-write delivery."""
 
 from domains.channel_manager.ari.events import ARIDelta, ProviderResult
-
-logger = logging.getLogger(__name__)
+from domains.channel_manager.providers.exely.ari_delivery import deliver_exely_ari
 
 
 class ExelyARIAdapter:
-    """ARI push adapter for Exely SOAP API."""
+    """Translate a compiled delta into one durable Exely operation."""
 
-    def __init__(self, exely_client=None):
-        """
-        Args:
-            exely_client: ExelyProvider instance (optional, for live mode)
-        """
+    def __init__(self, exely_client=None, *, write_enabled: bool | None = None):
         self._client = exely_client
+        self._write_enabled = write_enabled
 
     async def push_availability(self, delta: ARIDelta) -> ProviderResult:
-        """Push availability via OTA_HotelAvailNotifRQ."""
-        return await self._push(delta, "availability")
+        return await self._push(delta)
 
     async def push_rate(self, delta: ARIDelta) -> ProviderResult:
-        """Push rate via OTA_HotelRateAmountNotifRQ."""
-        return await self._push(delta, "rate")
+        return await self._push(delta)
 
     async def push_restrictions(self, delta: ARIDelta) -> ProviderResult:
-        """Push restrictions via OTA_HotelAvailNotifRQ."""
-        return await self._push(delta, "restriction")
+        return await self._push(delta)
 
-    async def _push(self, delta: ARIDelta, scope: str) -> ProviderResult:
-        start = time.time()
-
-        if not self._client:
-            # Dry-run / sandbox mode
-            duration = int((time.time() - start) * 1000)
-            logger.info(f"[Exely DRY-RUN] {scope} push: {delta.room_type_code} {delta.date_from}→{delta.date_to}")
-            return ProviderResult(
-                success=True,
-                provider="exely",
-                status_code=200,
-                response_payload={"dry_run": True, "scope": scope},
-                duration_ms=duration,
-            )
-
-        try:
-            payload = delta.payload
-
-            if scope == "availability":
-                soap_action = "OTA_HotelAvailNotifRQ"
-                request_body = {
-                    "AvailStatusMessages": [
-                        {
-                            "StatusApplicationControl": {
-                                "Start": str(delta.date_from),
-                                "End": str(delta.date_to),
-                                "InvTypeCode": delta.room_type_code,
-                                "RatePlanCode": delta.rate_plan_code or "",
-                            },
-                            "BookingLimit": payload.get("BookingLimit", 0),
-                            "RestrictionStatus": payload.get("RestrictionStatus", "Open"),
-                        }
-                    ],
-                }
-            elif scope == "rate":
-                soap_action = "OTA_HotelRateAmountNotifRQ"
-                request_body = {
-                    "RateAmountMessages": [
-                        {
-                            "StatusApplicationControl": {
-                                "Start": str(delta.date_from),
-                                "End": str(delta.date_to),
-                                "InvTypeCode": delta.room_type_code,
-                                "RatePlanCode": delta.rate_plan_code or "",
-                            },
-                            "Rates": [
-                                {
-                                    "AmountAfterTax": payload.get("AmountAfterTax", "0"),
-                                    "CurrencyCode": payload.get("CurrencyCode", "TRY"),
-                                }
-                            ],
-                        }
-                    ],
-                }
-            elif scope == "restriction":
-                soap_action = "OTA_HotelAvailNotifRQ"
-                restriction_msg = {
-                    "StatusApplicationControl": {
-                        "Start": str(delta.date_from),
-                        "End": str(delta.date_to),
-                        "InvTypeCode": delta.room_type_code,
-                        "RatePlanCode": delta.rate_plan_code or "",
-                    },
-                    "LengthsOfStay": {},
-                }
-                if "MinLOS" in payload:
-                    restriction_msg["LengthsOfStay"]["MinLOS"] = payload["MinLOS"]
-                if "MaxLOS" in payload:
-                    restriction_msg["LengthsOfStay"]["MaxLOS"] = payload["MaxLOS"]
-                if "RestrictionStatus" in payload:
-                    restriction_msg["RestrictionStatus"] = payload["RestrictionStatus"]
-                request_body = {"AvailStatusMessages": [restriction_msg]}
-            else:
-                return ProviderResult(
-                    success=False,
-                    provider="exely",
-                    error=f"Unknown scope: {scope}",
-                )
-
-            # In live mode, use SOAP client to send
-            result = await self._client.send_request(soap_action, request_body)
-            duration = int((time.time() - start) * 1000)
-
-            if result.get("success"):
-                return ProviderResult(
-                    success=True,
-                    provider="exely",
-                    status_code=200,
-                    response_payload=result.get("data"),
-                    duration_ms=duration,
-                )
-            else:
-                return ProviderResult(
-                    success=False,
-                    provider="exely",
-                    status_code=result.get("status_code", 500),
-                    error=result.get("error", "SOAP error"),
-                    duration_ms=duration,
-                    retryable=True,
-                )
-
-        except Exception as e:
-            duration = int((time.time() - start) * 1000)
-            return ProviderResult(
-                success=False,
-                provider="exely",
-                error=str(e),
-                duration_ms=duration,
-                retryable=True,
-            )
+    async def _push(self, delta: ARIDelta) -> ProviderResult:
+        operation = str(delta.payload.get("operation") or "")
+        update = {
+            "property_id": delta.property_id,
+            "room_type_code": delta.room_type_code,
+            "rate_plan_code": delta.rate_plan_code or "",
+            "start_date": str(delta.date_from),
+            "end_date": str(delta.date_to),
+            "value": delta.payload.get("value"),
+            "currency": delta.payload.get("currency", "TRY"),
+            "operation_identity": delta.operation_identity,
+        }
+        result = await deliver_exely_ari(
+            delta.tenant_id,
+            operation,
+            update,
+            provider=self._client,
+            write_enabled=self._write_enabled,
+        )
+        delivery_state = "confirmed" if result.success else result.state
+        return ProviderResult(
+            success=result.success,
+            provider="exely",
+            status_code=200 if result.success else None,
+            response_payload=result.safe_metadata(),
+            error=result.error_code or None,
+            duration_ms=0,
+            retryable=False,
+            delivery_state=delivery_state,
+            provider_write_count=result.provider_write_count,
+        )

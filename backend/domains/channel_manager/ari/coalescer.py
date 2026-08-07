@@ -111,6 +111,8 @@ def coalesce_events(
 
     ref = events[0]
     event_type = ref.event_type
+    if ref.target_provider:
+        providers = [ref.target_provider]
 
     # For restrictions, apply precedence rules
     if event_type == "restriction":

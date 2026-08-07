@@ -24,6 +24,7 @@ class ARIChangeEvent(BaseModel):
     payload: dict
     actor_id: str | None = None
     correlation_id: str | None = Field(default_factory=lambda: str(uuid.uuid4()))
+    target_provider: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -41,6 +42,7 @@ class ARIDelta(BaseModel):
     date_to: date
     payload: dict
     provider_delta_hash: str = ""
+    operation_identity: str = ""
 
 
 class ProviderResult(BaseModel):

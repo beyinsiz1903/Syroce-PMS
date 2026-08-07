@@ -86,10 +86,6 @@ async def _on_buffer_flush(coalescing_key: str, events: list[ARIChangeEvent]):
     tenant_id = events[0].tenant_id
     providers = await get_active_providers_async(tenant_id)
 
-    # Persist raw events
-    for event in events:
-        await repo.insert_ari_event(event.model_dump())
-
     # T004: best-effort per-agency Redis Streams fanout (Channel B), parallel to
     # the coalesce/provider pipeline. MUST NOT break ARI — fully swallowed here
     # AND inside the service (Redis-down => Mongo outbox replayed later).
@@ -126,15 +122,29 @@ async def publish_ari_event(event: ARIChangeEvent) -> dict:
     Main entry point: publish an ARI change event.
     Event goes into the buffer for debounce + coalescing.
     """
-    buf = get_buffer()
-    if not buf._running:
-        await buf.start()
+    from .buffer import _coalescing_key
 
-    key = await buf.push(event)
+    key = _coalescing_key(event)
+    providers = [event.target_provider] if event.target_provider else await get_active_providers_async(event.tenant_id)
+    change_set_ids = []
+    for change_set in coalesce_events(key, [event], providers):
+        change_set_ids.append(await repo.upsert_change_set(change_set))
+    try:
+        await repo.insert_ari_event(event.model_dump())
+    except Exception:  # noqa: BLE001
+        logger.exception("[ARI] durable change set created but event audit insert failed")
+    try:
+        from services.b2b_streams import publish_ari_to_agency_streams
+
+        await publish_ari_to_agency_streams([event])
+    except Exception:  # noqa: BLE001
+        logger.exception("[ARI] B2B stream fanout failed (non-fatal)")
     return {
         "event_id": event.id,
         "coalescing_key": key,
+        "change_set_ids": change_set_ids,
         "buffered": True,
+        "durable": True,
     }
 
 
@@ -238,6 +248,12 @@ async def force_push_change_set(cs_id: str) -> dict:
     cs = await db[COLL_ARI_CHANGE_SETS].find_one({"id": cs_id}, {"_id": 0})
     if not cs:
         return {"error": "Change set not found"}
+
+    if cs.get("provider") == "exely" and int(cs.get("outbound_attempt_count") or 0) > 0:
+        return {
+            "error": "EXELY_MUTATION_RETRY_BLOCKED",
+            "provider_write_count": 0,
+        }
 
     await repo.update_change_set_status(cs_id, "pending")
     result = await push_pending_changes(cs["tenant_id"], cs["provider"], limit=1)
