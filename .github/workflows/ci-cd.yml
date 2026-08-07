@@ -202,8 +202,6 @@ jobs:
             tests/test_egress_ci_guard.py \
             tests/test_production_blockers.py \
             tests/test_route_shadowing.py \
-            tests/test_exely_credential_log_security.py \
-            tests/test_exely_reservation_lifecycle.py \
             tests/test_hr_shifts_overnight.py \
             tests/unit/test_nilvera_incoming_xml_mapper.py \
             tests/unit/test_incoming_invoice_sync_service.py \
@@ -224,6 +222,40 @@ jobs:
           # to :8001 (see "Start backend server" step above), not the conftest
           # default of :8000.
           VITE_BACKEND_URL: http://localhost:8001
+
+      - name: Run Exely offline regression suite (hard gate)
+        run: |
+          cd backend
+          python -m pytest \
+            tests/test_exely_credential_log_security.py \
+            tests/test_exely_reservation_lifecycle.py \
+            tests/test_exely_ari_delivery.py \
+            tests/test_exely_provider_quota_parser.py \
+            tests/unit/test_exely_provider.py \
+            tests/integration/test_exely_provider_flows.py \
+            -v --tb=short -q --timeout=60 \
+            --junitxml=test-results-exely.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("test-results-exely.xml").getroot()
+          suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
+          tests = sum(int(suite.attrib.get("tests", 0)) for suite in suites)
+          failures = sum(int(suite.attrib.get("failures", 0)) for suite in suites)
+          errors = sum(int(suite.attrib.get("errors", 0)) for suite in suites)
+          skipped = sum(int(suite.attrib.get("skipped", 0)) for suite in suites)
+          if tests <= 0 or failures or errors or skipped:
+              raise SystemExit(
+                  f"Exely hard gate failed: tests={tests} failures={failures} errors={errors} skipped={skipped}"
+              )
+          print(f"Exely hard gate passed: tests={tests} failures=0 errors=0 skipped=0")
+          PY
+        env:
+          MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+          TESTING: "1"
 
       - name: Run HotelRunner direct regression suite (hard gate)
         run: |
@@ -276,6 +308,7 @@ jobs:
           name: backend-test-results
           path: |
             backend/test-results.xml
+            backend/test-results-exely.xml
             backend/test-results-live-mongo.xml
 
   # ============ BATTLE E2E TESTS (HARD GATE) ============

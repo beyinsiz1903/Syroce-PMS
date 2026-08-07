@@ -372,7 +372,7 @@ async def test_connection(
     if provider == "hotelrunner":
         result = await _test_hotelrunner_connection(creds)
     elif provider == "exely":
-        result = await _test_exely_connection(creds)
+        result = await _test_exely_connection(creds, current_user.tenant_id)
     else:
         raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
 
@@ -563,7 +563,7 @@ async def _validate_hotelrunner(creds: dict[str, str], tenant_id: str) -> list[d
 # ── Exely Validation ──────────────────────────────────────────────────
 
 
-async def _test_exely_connection(creds: dict[str, str]) -> dict[str, Any]:
+async def _test_exely_connection(creds: dict[str, str], tenant_id: str) -> dict[str, Any]:
     from .providers.exely import ExelyProvider
 
     username = creds.get("username", "")
@@ -572,7 +572,14 @@ async def _test_exely_connection(creds: dict[str, str]) -> dict[str, Any]:
     endpoint_url = creds.get("endpoint_url") or creds.get("soap_url", "")
     if not username or not password or not hotel_code:
         return {"connected": False, "error": "Missing username, password, or hotel_code"}
-    kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
+    kwargs = {
+        "username": username,
+        "password": password,
+        "hotel_code": hotel_code,
+        "tenant_id": tenant_id,
+        "property_id": hotel_code,
+        "connection_id": f"{tenant_id}:{hotel_code}",
+    }
     if endpoint_url:
         kwargs["endpoint_url"] = endpoint_url
     provider = ExelyProvider(**kwargs)
@@ -593,7 +600,14 @@ async def _validate_exely(creds: dict[str, str], tenant_id: str) -> list[dict[st
     if not username or not password or not hotel_code:
         return [{"check": "connection_test", "status": "failed", "message": "Missing username, password, or hotel_code", "duration_ms": 0}]
 
-    kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
+    kwargs = {
+        "username": username,
+        "password": password,
+        "hotel_code": hotel_code,
+        "tenant_id": tenant_id,
+        "property_id": hotel_code,
+        "connection_id": f"{tenant_id}:{hotel_code}",
+    }
     if endpoint_url:
         kwargs["endpoint_url"] = endpoint_url
     provider = ExelyProvider(**kwargs)

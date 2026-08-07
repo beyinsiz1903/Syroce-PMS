@@ -92,6 +92,9 @@ async def _get_client(tenant_id: str) -> tuple:
         "password": creds["password"],
         "hotel_code": creds["hotel_code"],
         "endpoint_url": creds["endpoint_url"],
+        "tenant_id": tenant_id,
+        "property_id": creds["hotel_code"],
+        "connection_id": f"{tenant_id}:{creds['hotel_code']}",
     }
     try:
         return ExelyProvider(**kwargs), conn
@@ -115,6 +118,9 @@ async def setup_connection(
         "username": payload.username,
         "password": payload.password,
         "hotel_code": payload.hotel_code,
+        "tenant_id": current_user.tenant_id,
+        "property_id": payload.hotel_code,
+        "connection_id": f"{current_user.tenant_id}:{payload.hotel_code}",
     }
     if payload.endpoint_url:
         kwargs["endpoint_url"] = payload.endpoint_url
@@ -509,6 +515,9 @@ async def manual_pull(
         "password": creds["password"],
         "hotel_code": creds["hotel_code"],
         "endpoint_url": creds["endpoint_url"],
+        "tenant_id": current_user.tenant_id,
+        "property_id": creds["hotel_code"],
+        "connection_id": f"{current_user.tenant_id}:{creds['hotel_code']}",
     }
     confirm_provider = ExelyProvider(**provider_kwargs)
     import_result = await auto_import_pending(current_user.tenant_id, provider=confirm_provider)
@@ -551,7 +560,14 @@ async def _check_individual_cancellations(
     if not imported_reservations:
         return 0
 
-    provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
+    provider_kwargs = {
+        "username": username,
+        "password": password,
+        "hotel_code": hotel_code,
+        "tenant_id": tenant_id,
+        "property_id": hotel_code,
+        "connection_id": f"{tenant_id}:{hotel_code}",
+    }
     if endpoint_url:
         provider_kwargs["endpoint_url"] = endpoint_url
     provider = ExelyProvider(**provider_kwargs)
@@ -608,7 +624,14 @@ async def _check_individual_modifications(
     if not imported_reservations:
         return 0
 
-    provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
+    provider_kwargs = {
+        "username": username,
+        "password": password,
+        "hotel_code": hotel_code,
+        "tenant_id": tenant_id,
+        "property_id": hotel_code,
+        "connection_id": f"{tenant_id}:{hotel_code}",
+    }
     if endpoint_url:
         provider_kwargs["endpoint_url"] = endpoint_url
     provider = ExelyProvider(**provider_kwargs)
@@ -850,7 +873,14 @@ async def verify_test_booking(
     try:
         # If specific reservation_id provided, do targeted pull
         if payload.reservation_id:
-            provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
+            provider_kwargs = {
+                "username": username,
+                "password": password,
+                "hotel_code": hotel_code,
+                "tenant_id": tenant_id,
+                "property_id": hotel_code,
+                "connection_id": f"{tenant_id}:{hotel_code}",
+            }
             if endpoint_url:
                 provider_kwargs["endpoint_url"] = endpoint_url
             provider = ExelyProvider(**provider_kwargs)

@@ -28,6 +28,7 @@ _AVAIL_RS = b"""<?xml version="1.0" encoding="UTF-8"?>
                   xmlns:ota="http://www.opentravel.org/OTA/2003/05">
   <soapenv:Body>
     <ota:OTA_HotelAvailRS>
+      <ota:Success/>
       <ota:RoomStay>
         <ota:RoomType RoomTypeCode="DBL" RoomDescription="Double Room" NumberOfUnits="5"/>
         <ota:RatePlan RatePlanCode="BAR" RatePlanName="Best Available Rate"/>
@@ -41,6 +42,7 @@ _READ_RS = b"""<?xml version="1.0" encoding="UTF-8"?>
                   xmlns:ota="http://www.opentravel.org/OTA/2003/05">
   <soapenv:Body>
     <ota:OTA_ResRetrieveRS>
+      <ota:Success/>
       <ota:HotelReservation ResStatus="Commit" CreateDateTime="2025-06-01T10:00:00">
         <ota:UniqueID Type="14" ID="RES001"/>
         <ota:ResGuest>
@@ -217,7 +219,7 @@ class TestErrorPropagation:
         with patch.object(provider._transport, "send_soap", side_effect=auth_fail):
             result = await provider.test_connection()
             assert result.success is False
-            assert result.error_type == "ExelyAuthError"
+            assert result.error_type == "AUTH_FAILED"
             assert call_count == 1  # No retry for auth errors
 
     @pytest.mark.asyncio

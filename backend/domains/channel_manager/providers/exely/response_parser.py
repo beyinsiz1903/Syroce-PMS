@@ -13,6 +13,25 @@ logger = logging.getLogger(__name__)
 
 OTA_NS = "http://www.opentravel.org/OTA/2003/05"
 SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/"
+SUCCESS = "SUCCESS"
+WARNING_SUCCESS = "WARNING_SUCCESS"
+REJECTED = "REJECTED"
+RATE_LIMITED = "RATE_LIMITED"
+AUTH_FAILED = "AUTH_FAILED"
+AMBIGUOUS = "AMBIGUOUS"
+MALFORMED = "MALFORMED"
+PROVIDER_ERROR = "PROVIDER_ERROR"
+
+RATE_LIMIT_CODES = frozenset({"-100", "-101", "-102", "-103", "-104", "-105"})
+AUTH_ERROR_CODES = frozenset({"175"})
+RATE_LIMIT_RETRY_SECONDS = {
+    "-100": 3600,
+    "-101": 300,
+    "-102": 1,
+    "-103": 180,
+    "-104": 3600,
+    "-105": 3600,
+}
 
 
 def _ns(tag: str, ns: str = OTA_NS) -> str:
@@ -48,31 +67,88 @@ def _safe_warning_codes(body) -> list[str]:
     return sorted(set(codes))
 
 
+def _classify_provider_codes(codes: list[str]) -> str:
+    if any(code in RATE_LIMIT_CODES for code in codes):
+        return RATE_LIMITED
+    if any(code in AUTH_ERROR_CODES for code in codes):
+        return AUTH_FAILED
+    return REJECTED
+
+
+def _provider_error(errors_el, *, error: str, **extra: Any) -> dict[str, Any]:
+    codes = _safe_provider_codes(errors_el)
+    error_count = len(list(errors_el.iter(_ns("Error"))))
+    result_class = _classify_provider_codes(codes)
+    return {
+        "success": False,
+        "result_class": result_class,
+        "error": error,
+        "provider_codes": codes,
+        "warning_codes": [],
+        "error_count": error_count,
+        **({"retry_after_seconds": max(RATE_LIMIT_RETRY_SECONDS[code] for code in codes if code in RATE_LIMIT_RETRY_SECONDS)} if result_class == RATE_LIMITED else {}),
+        **extra,
+    }
+
+
+def _explicit_success(body, *, error: str) -> dict[str, Any] | None:
+    if body.find(f".//{_ns('Success')}") is None:
+        return {
+            "success": False,
+            "result_class": MALFORMED,
+            "error": error,
+            "provider_codes": [],
+            "warning_codes": [],
+        }
+    warning_codes = _safe_warning_codes(body)
+    return {
+        "success": True,
+        "result_class": WARNING_SUCCESS if body.find(f".//{_ns('Warnings')}") is not None else SUCCESS,
+        "provider_codes": [],
+        "warning_codes": warning_codes,
+    }
+
+
 def parse_soap_response(xml_bytes: bytes) -> dict[str, Any]:
     """Parse a SOAP envelope, extract body, detect faults."""
     try:
         root = safe_ET.fromstring(xml_bytes)
     except Exception as e:
-        return {"success": False, "error": "XML parse error", "error_type": type(e).__name__, "body": None}
+        return {
+            "success": False,
+            "result_class": MALFORMED,
+            "error": "XML parse error",
+            "error_type": type(e).__name__,
+            "provider_codes": [],
+            "warning_codes": [],
+            "body": None,
+        }
 
     # Check for SOAP Fault
     fault = root.find(f".//{_ns('Fault', SOAP_NS)}")
     if fault is not None:
         faultcode = _text(fault.find("faultcode"))
         safe_code = faultcode[:64] if re.fullmatch(r"[A-Za-z0-9_.:-]+", faultcode[:64]) else ""
-        return {"success": False, "error": "SOAP Fault", "provider_codes": [safe_code] if safe_code else [], "body": None}
+        return {
+            "success": False,
+            "result_class": PROVIDER_ERROR,
+            "error": "SOAP Fault",
+            "provider_codes": [safe_code] if safe_code else [],
+            "warning_codes": [],
+            "body": None,
+        }
 
     # Extract Body content
     body = root.find(f"{_ns('Body', SOAP_NS)}")
     if body is None:
-        return {"success": False, "error": "No SOAP Body found", "body": None}
+        return {"success": False, "result_class": MALFORMED, "error": "No SOAP Body found", "body": None}
 
     # Get first child of body (the actual response)
     children = list(body)
     if not children:
-        return {"success": False, "error": "Empty SOAP Body", "body": None}
+        return {"success": False, "result_class": MALFORMED, "error": "Empty SOAP Body", "body": None}
 
-    return {"success": True, "error": None, "body": children[0]}
+    return {"success": True, "error": None, "result_class": SUCCESS, "body": children[0]}
 
 
 def parse_read_rs(xml_bytes: bytes) -> dict[str, Any]:
@@ -86,18 +162,19 @@ def parse_read_rs(xml_bytes: bytes) -> dict[str, Any]:
     # Check for OTA-level Errors (not SOAP Fault, but OTA Error elements)
     errors_el = body.find(_ns("Errors"))
     if errors_el is not None:
-        codes = _safe_provider_codes(errors_el)
         error_count = len(list(errors_el.iter(_ns("Error"))))
         if error_count:
             logger.warning("OTA_ReadRS provider_rejected error_count=%d", error_count)
-            return {
-                "success": False,
-                "error": "Provider rejected reservation read",
-                "provider_codes": codes,
-                "error_count": error_count,
-                "reservations": [],
-                "count": 0,
-            }
+            return _provider_error(
+                errors_el,
+                error="Provider rejected reservation read",
+                reservations=[],
+                count=0,
+            )
+
+    outcome = _explicit_success(body, error="Reservation response did not contain explicit Success")
+    if not outcome["success"]:
+        return {**outcome, "reservations": [], "count": 0}
 
     reservations = []
 
@@ -107,7 +184,7 @@ def parse_read_rs(xml_bytes: bytes) -> dict[str, Any]:
         if res:
             reservations.append(res)
 
-    return {"success": True, "reservations": reservations, "count": len(reservations)}
+    return {**outcome, "reservations": reservations, "count": len(reservations)}
 
 
 def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
@@ -253,18 +330,19 @@ def parse_hotel_avail_rs(xml_bytes: bytes) -> dict[str, Any]:
 
     errors_el = body.find(_ns("Errors"))
     if errors_el is not None:
-        codes = _safe_provider_codes(errors_el)
         error_count = len(list(errors_el.iter(_ns("Error"))))
         if error_count:
             logger.warning("OTA_HotelAvailRS provider_rejected error_count=%d", error_count)
-            return {
-                "success": False,
-                "error": "Provider rejected availability read",
-                "provider_codes": codes,
-                "error_count": error_count,
-                "room_types": [],
-                "rate_plans": [],
-            }
+            return _provider_error(
+                errors_el,
+                error="Provider rejected availability read",
+                room_types=[],
+                rate_plans=[],
+            )
+
+    outcome = _explicit_success(body, error="Availability response did not contain explicit Success")
+    if not outcome["success"]:
+        return {**outcome, "room_types": [], "rate_plans": []}
 
     room_types = []
     rate_plans = []
@@ -306,7 +384,7 @@ def parse_hotel_avail_rs(xml_bytes: bytes) -> dict[str, Any]:
             seen_rates.add(r["code"])
             unique_rates.append(r)
 
-    return {"success": True, "room_types": unique_rooms, "rate_plans": unique_rates}
+    return {**outcome, "room_types": unique_rooms, "rate_plans": unique_rates}
 
 
 def parse_notif_report_rs(xml_bytes: bytes) -> dict[str, Any]:
@@ -320,17 +398,12 @@ def parse_notif_report_rs(xml_bytes: bytes) -> dict[str, Any]:
     # Check for success/errors
     errors_el = body.find(f".//{_ns('Errors')}")
     if errors_el is not None:
-        codes = _safe_provider_codes(errors_el)
-        return {"success": False, "error": "Provider rejected reservation acknowledgement", "provider_codes": codes}
+        return _provider_error(errors_el, error="Provider rejected reservation acknowledgement")
 
-    if body.find(f".//{_ns('Success')}") is None:
-        return {
-            "success": False,
-            "error": "Malformed acknowledgement response",
-            "error_type": "ExelyAckMalformed",
-        }
-
-    return {"success": True, "message": "Delivery confirmed"}
+    outcome = _explicit_success(body, error="Malformed acknowledgement response")
+    if not outcome["success"]:
+        return outcome
+    return {**outcome, "message": "Delivery confirmed"}
 
 
 def parse_ari_update_rs(xml_bytes: bytes) -> dict[str, Any]:
@@ -342,33 +415,12 @@ def parse_ari_update_rs(xml_bytes: bytes) -> dict[str, Any]:
     body = envelope["body"]
     errors_el = body.find(f".//{_ns('Errors')}")
     if errors_el is not None:
-        codes = _safe_provider_codes(errors_el)
-        return {
-            "success": False,
-            "result_class": "REJECTED",
-            "error": "Provider rejected ARI update",
-            "provider_codes": codes,
-            "warning_codes": [],
-        }
+        return _provider_error(errors_el, error="Provider rejected ARI update")
 
-    if body.find(f".//{_ns('Success')}") is None:
-        return {
-            "success": False,
-            "result_class": "MALFORMED",
-            "error": "ARI response did not contain explicit Success",
-            "provider_codes": [],
-            "warning_codes": [],
-        }
-
-    warning_codes = _safe_warning_codes(body)
-    result_class = "WARNING_SUCCESS" if body.find(f".//{_ns('Warnings')}") is not None else "SUCCESS"
-    return {
-        "success": True,
-        "result_class": result_class,
-        "message": "ARI update explicitly confirmed",
-        "provider_codes": [],
-        "warning_codes": warning_codes,
-    }
+    outcome = _explicit_success(body, error="ARI response did not contain explicit Success")
+    if not outcome["success"]:
+        return outcome
+    return {**outcome, "message": "ARI update explicitly confirmed"}
 
 
 def _safe_float(val) -> float:

@@ -51,13 +51,15 @@ class ExelyRetryPolicy:
         self.max_delay = max_delay
         self.jitter = jitter
 
-    def should_retry(self, error: Exception, attempt: int) -> bool:
+    def should_retry(self, error: Exception, attempt: int, *, read_only: bool = True) -> bool:
+        if not read_only:
+            return False
         if attempt > self.max_retries:
             return False
         if isinstance(error, _NON_RETRYABLE):
             return False
         if isinstance(error, ExelyRateLimitError):
-            return True
+            return error.source == "provider"
         if isinstance(error, ExelyTemporaryError):
             return True
         if isinstance(error, ExelyError) and error.recoverable:
@@ -72,14 +74,21 @@ class ExelyRetryPolicy:
         delay += random.uniform(-jitter_range, jitter_range)
         return max(0.5, delay)
 
-    async def execute(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
+    async def execute_read(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
+        return await self.execute(func, *args, read_only=True, **kwargs)
+
+    async def execute_mutation(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
+        """Execute once. Provider mutations and ACKs never blind-retry."""
+        return await self.execute(func, *args, read_only=False, **kwargs)
+
+    async def execute(self, func: Callable, *args: Any, read_only: bool = True, **kwargs: Any) -> Any:
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
                 return await func(*args, **kwargs)
             except Exception as e:
                 last_error = e
-                if not self.should_retry(e, attempt + 1):
+                if not self.should_retry(e, attempt + 1, read_only=read_only):
                     raise
                 delay = self.get_backoff_seconds(attempt, e)
                 logger.warning(
