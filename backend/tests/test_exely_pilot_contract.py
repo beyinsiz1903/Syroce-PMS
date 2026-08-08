@@ -109,7 +109,33 @@ def test_workflow_requires_both_normal_exact_head_workflows():
     assert "frontend-quality.yml" in script
     assert ".headSha" in script
     assert "${GITHUB_SHA}" in script
+    assert '.event == \\"push\\"' in script
     assert '.conclusion == \\"success\\"' in script
+
+
+def test_workflow_requires_exact_head_backend_quality_jobs_without_deploy():
+    workflow = _workflow()
+    gate = next(step for step in workflow["jobs"]["exely-pilot"]["steps"] if step.get("name") == "Require successful exact-head normal workflows")
+    script = gate["run"]
+
+    for job_name in (
+        "lockfile-guard",
+        "backend-lint",
+        "frontend-lint",
+        "backend-test",
+        "battle-e2e",
+        "load-test",
+        "frontend-build",
+        "security-scan",
+    ):
+        assert f'"{job_name}"' in script
+    assert "BLOCKED_EXACT_HEAD_REQUIRED_JOB_NOT_GREEN" in script
+    assert "verify_required_jobs \\" in script
+    assert '"ci-cd.yml" \\' in script
+    assert 'verify_completed_workflow "frontend-quality.yml"' in script
+    assert 'verify_completed_workflow "ci-cd.yml"' not in script
+    assert '"deploy-production"' not in script
+    assert '"deploy-staging"' not in script
 
 
 def test_workflow_scopes_ari_and_ack_secrets_to_mutually_exclusive_steps():
