@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from pymongo.errors import OperationFailure
 
 from domains.channel_manager.providers.exely import pilot_import
 
@@ -46,6 +47,32 @@ class _DB:
         self.exely_reservations = _Collection()
         self.exely_reservation_versions = _Collection()
         self.bookings = _Collection()
+
+
+@pytest.mark.asyncio
+async def test_persistence_preflight_redacts_database_auth_failure(monkeypatch):
+    sensitive = "synthetic-sensitive-database-detail"
+    mapping = AsyncMock()
+    monkeypatch.setattr(
+        pilot_import,
+        "ensure_pilot_schema",
+        AsyncMock(side_effect=OperationFailure(sensitive)),
+    )
+    monkeypatch.setattr(pilot_import, "ensure_pilot_mapping", mapping)
+
+    with pytest.raises(
+        pilot_import.PilotImportError,
+        match="BLOCKED_PERSISTENT_TEST_DB_PREFLIGHT_FAILED",
+    ) as exc_info:
+        await pilot_import.prepare_pilot_persistence(
+            "tenant",
+            room_type_code="synthetic-room",
+            rate_plan_code="synthetic-rate",
+            pms_room_type="Synthetic Standard",
+        )
+
+    assert sensitive not in str(exc_info.value)
+    mapping.assert_not_awaited()
 
 
 def _raw_reservation(*, room="synthetic-room", rate="synthetic-rate"):

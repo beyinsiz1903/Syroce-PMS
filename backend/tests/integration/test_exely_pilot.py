@@ -29,6 +29,7 @@ from domains.channel_manager.providers.exely.pilot_import import (
     PilotImportError,
     import_reservation_durably,
     load_ack_ready_reservation,
+    prepare_pilot_persistence,
 )
 from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.security import (
@@ -508,6 +509,12 @@ async def test_exely_pilot_reservation_import(record_property):
     guard = PilotTransportGuard(provider, settings)
     metadata: dict[str, Any] = {}
     try:
+        await prepare_pilot_persistence(
+            settings.tenant_id,
+            room_type_code=settings.room_type_code,
+            rate_plan_code=settings.rate_plan_code,
+            pms_room_type=settings.pms_room_type,
+        )
         metadata, reservation = await _read_reservations(
             provider,
             settings,
