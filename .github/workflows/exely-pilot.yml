@@ -93,6 +93,10 @@ jobs:
               fi
               ;;
             availability|rate|stop_sell|min_los|min_los_arrival|reservation_ack)
+              if [ "${GITHUB_RUN_ATTEMPT}" != "1" ]; then
+                echo "::error::BLOCKED_MUTATION_RERUN"
+                exit 1
+              fi
               if [ "${CONFIRM_PROVIDER_WRITE}" != "true" ]; then
                 echo "::error::BLOCKED_PROVIDER_WRITE_NOT_APPROVED"
                 exit 1
@@ -197,6 +201,7 @@ jobs:
           EXELY_PILOT_WRITE_APPROVED: ${{ inputs.confirm_provider_write }}
           EXELY_PILOT_APPROVED_HEAD: ${{ inputs.approved_head_sha }}
           EXELY_PILOT_RUN_ID: ${{ github.run_id }}
+          EXELY_PILOT_RUN_ATTEMPT: ${{ github.run_attempt }}
           EXELY_PILOT_ACCOUNT_CONFIRMED: ${{ vars.EXELY_PILOT_ACCOUNT_CONFIRMED }}
           EXELY_PILOT_CREDENTIAL_SCOPE: ${{ vars.EXELY_PILOT_CREDENTIAL_SCOPE }}
           EXELY_PILOT_TEST_DATE: ${{ vars.EXELY_PILOT_TEST_DATE }}
@@ -238,6 +243,7 @@ jobs:
           EXELY_PILOT_WRITE_APPROVED: ${{ inputs.confirm_provider_write }}
           EXELY_PILOT_APPROVED_HEAD: ${{ inputs.approved_head_sha }}
           EXELY_PILOT_RUN_ID: ${{ github.run_id }}
+          EXELY_PILOT_RUN_ATTEMPT: ${{ github.run_attempt }}
           EXELY_PILOT_ACCOUNT_CONFIRMED: ${{ vars.EXELY_PILOT_ACCOUNT_CONFIRMED }}
           EXELY_PILOT_CREDENTIAL_SCOPE: ${{ vars.EXELY_PILOT_CREDENTIAL_SCOPE }}
           EXELY_PILOT_ACK_DURABLE_PMS_ATTESTED: ${{ vars.EXELY_PILOT_ACK_DURABLE_PMS_ATTESTED }}

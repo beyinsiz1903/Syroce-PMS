@@ -44,6 +44,7 @@ def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False)
         "EXELY_PILOT_RATE": "100.00",
         "EXELY_PILOT_RATE_PLAN_CODE": "synthetic-rate",
         "EXELY_PILOT_ROOM_TYPE_CODE": "synthetic-room",
+        "EXELY_PILOT_RUN_ATTEMPT": "1",
         "EXELY_PILOT_RUN_ID": "123456",
         "EXELY_PILOT_STOP_SELL": "false",
         "EXELY_PILOT_TEST_DATE": future_date,
@@ -83,6 +84,8 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
     assert "BLOCKED_READONLY_WRITE_CONFLICT" in gate["run"]
     assert "BLOCKED_PROVIDER_WRITE_NOT_APPROVED" in gate["run"]
     assert "BLOCKED_EXACT_HEAD_MISMATCH" in gate["run"]
+    assert 'if [ "${GITHUB_RUN_ATTEMPT}" != "1" ]' in gate["run"]
+    assert "BLOCKED_MUTATION_RERUN" in gate["run"]
 
 
 def test_workflow_uses_protected_environment_and_exact_targets():
@@ -208,6 +211,26 @@ def test_settings_fail_closed_without_write_approval(monkeypatch):
 
     with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_PROVIDER_WRITE_NOT_APPROVED"):
         pilot._load_settings()
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["availability", "rate", "stop_sell", "min_los", "min_los_arrival", "reservation_ack"],
+)
+def test_mutations_fail_closed_on_workflow_rerun(monkeypatch, operation):
+    _base_env(monkeypatch, operation=operation, write=True)
+    monkeypatch.setenv("EXELY_PILOT_RUN_ATTEMPT", "2")
+
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_MUTATION_RERUN"):
+        pilot._load_settings()
+
+
+@pytest.mark.parametrize("operation", ["discovery", "reservation_read"])
+def test_readonly_operations_allow_workflow_rerun(monkeypatch, operation):
+    _base_env(monkeypatch, operation=operation)
+    monkeypatch.setenv("EXELY_PILOT_RUN_ATTEMPT", "2")
+
+    assert pilot._load_settings().operation == operation
 
 
 def test_discovery_allows_mapping_secrets_to_be_absent(monkeypatch):

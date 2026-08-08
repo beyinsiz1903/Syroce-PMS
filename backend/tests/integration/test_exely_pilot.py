@@ -178,6 +178,8 @@ def _load_settings() -> PilotSettings:
         raise PilotSafetyError("BLOCKED_READONLY_WRITE_CONFLICT")
     if operation in _WRITE_OPERATIONS and not write_approved:
         raise PilotSafetyError("BLOCKED_PROVIDER_WRITE_NOT_APPROVED")
+    if operation in _WRITE_OPERATIONS and _required_env("EXELY_PILOT_RUN_ATTEMPT") != "1":
+        raise PilotSafetyError("BLOCKED_MUTATION_RERUN")
     if os.environ.get("EXELY_PILOT_ACCOUNT_CONFIRMED") != "true":
         raise PilotSafetyError("BLOCKED_TEST_ACCOUNT_NOT_CONFIRMED")
     if os.environ.get("EXELY_PILOT_CREDENTIAL_SCOPE") != "test":
