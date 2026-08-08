@@ -1,4 +1,5 @@
-from datetime import UTC, datetime
+import inspect
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,7 +11,6 @@ from core.integrations.nilvera.config import NilveraEndpoints
 from core.integrations.nilvera.errors import (
     NilveraApiError,
     NilveraAuthError,
-    NilveraBusinessRuleError,
     NilveraNotFoundError,
     NilveraServerError,
     NilveraTimeoutError,
@@ -38,8 +38,11 @@ from tests.nilvera_sandbox_fixture import (
     build_fixture_identity,
     build_fixture_payload,
     classify_fixture_payload_contract,
+    ensure_fixture_invoice_date,
     ensure_fixture_payload_contract,
     fixture_correlation_label,
+    parse_pilot_invoice_date,
+    pilot_invoice_datetime,
     prepare_incoming_commercial_fixture,
     reconcile_incoming_commercial_fixture,
 )
@@ -51,6 +54,7 @@ SELLER_TAX_NUMBER = "1111111111"
 BUYER_TAX_NUMBER = "2222222222"
 RUN_ID = "31000000000"
 NOW = datetime(2026, 8, 6, 12, 0, tzinfo=UTC)
+PILOT_DATE = "2026-08-06"
 PROVIDER_UUID = "123e4567-e89b-12d3-a456-426614174000"
 
 
@@ -62,6 +66,12 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
     assert "reconciliation_source_timestamp:" in workflow
     assert "default: false" in workflow
     assert "scripts/nilvera_sandbox_selector.py" in workflow
+    assert "NILVERA_PILOT_INVOICE_DATE: ${{ vars.NILVERA_PILOT_INVOICE_DATE }}" in workflow
+    assert "BLOCKED_INVALID_OR_MISSING_PILOT_INVOICE_DATE" in workflow
+    assert "BLOCKED_EXACT_HEAD_NOT_APPROVED" in workflow
+    assert "BLOCKED_PROVIDER_WRITE_NOT_CONFIRMED" in workflow
+    assert "BLOCKED_TEST_ACCOUNT_NOT_ATTESTED" in workflow
+    assert "WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}" in workflow
     with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
         select_test_target(run_incoming_fixture=True, run_incoming_answer=True, run_reconciliation=False)
     with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
@@ -116,6 +126,36 @@ def test_fixture_identity_is_transferred_to_invoice_serie_or_number():
     assert payload.EInvoice.InvoiceInfo.KdvTotal == Decimal("0.20")
     assert fixture_correlation_label(identity, HMAC_KEY) != identity
     assert len(fixture_correlation_label(identity, HMAC_KEY)) == 12
+
+
+@pytest.mark.parametrize("value", [None, "", "2026-8-06", "2026-02-30", "2026-08-06T00:00:00Z", " 2026-08-06"])
+def test_pilot_invoice_date_missing_or_invalid_is_blocked(value):
+    expected_code = "BLOCKED_MISSING_PILOT_INVOICE_DATE" if value in (None, "") else "BLOCKED_INVALID_PILOT_INVOICE_DATE"
+    with pytest.raises(SandboxFixtureBlocked, match=expected_code):
+        parse_pilot_invoice_date(value)
+
+
+def test_pilot_invoice_date_is_exact_utc_midnight_without_timezone_shift():
+    parsed = pilot_invoice_datetime(PILOT_DATE)
+
+    assert parsed == datetime(2026, 8, 6, 0, 0, tzinfo=UTC)
+    assert parsed.date().isoformat() == PILOT_DATE
+    assert "datetime.now" not in inspect.getsource(prepare_incoming_commercial_fixture)
+
+
+def test_fixture_date_preflight_rejects_timezone_shifted_dto():
+    identity = build_fixture_identity(year=2026, run_id=RUN_ID, hmac_key=HMAC_KEY)
+    shifted = datetime(2026, 8, 6, 0, 0, tzinfo=timezone(timedelta(hours=3)))
+    payload = build_fixture_payload(
+        fixture_identity=identity,
+        seller_tax_number=SELLER_TAX_NUMBER,
+        buyer_tax_number=BUYER_TAX_NUMBER,
+        buyer_alias="urn:mail:defaultpk@sandbox.invalid",
+        issue_date=shifted,
+    )
+
+    with pytest.raises(SandboxFixtureBlocked, match="BLOCKED_FIXTURE_DATE_MISMATCH"):
+        ensure_fixture_invoice_date(payload, parse_pilot_invoice_date(PILOT_DATE))
 
 
 def test_fixture_payload_matches_official_send_model_contract_shape():
@@ -218,7 +258,57 @@ async def test_identical_sender_and_receiver_keys_block_before_provider_access()
             seller_tax_number=SELLER_TAX_NUMBER,
             buyer_tax_number=BUYER_TAX_NUMBER,
             buyer_alias="urn:mail:defaultpk@sandbox.invalid",
-            now=NOW,
+            pilot_invoice_date=PILOT_DATE,
+            workflow_run_attempt=1,
+        )
+
+    sender_client.get.assert_not_awaited()
+    sender_client.post.assert_not_awaited()
+    receiver_client.get.assert_not_awaited()
+
+
+@pytest.mark.parametrize("pilot_date", [None, "", "2026-02-30", "2026-08-06T00:00:00Z"])
+async def test_invalid_pilot_date_blocks_before_provider_access(pilot_date):
+    sender_client = SimpleNamespace(get=AsyncMock(), post=AsyncMock())
+    receiver_client = SimpleNamespace(get=AsyncMock())
+
+    with pytest.raises(SandboxFixtureBlocked):
+        await prepare_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            buyer_alias="urn:mail:defaultpk@sandbox.invalid",
+            pilot_invoice_date=pilot_date,
+            workflow_run_attempt=1,
+        )
+
+    sender_client.get.assert_not_awaited()
+    sender_client.post.assert_not_awaited()
+    receiver_client.get.assert_not_awaited()
+
+
+async def test_duplicate_workflow_attempt_blocks_before_provider_access():
+    sender_client = SimpleNamespace(get=AsyncMock(), post=AsyncMock())
+    receiver_client = SimpleNamespace(get=AsyncMock())
+
+    with pytest.raises(SandboxFixtureBlocked, match="BLOCKED_DUPLICATE_FIXTURE_RUN_ATTEMPT"):
+        await prepare_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            buyer_alias="urn:mail:defaultpk@sandbox.invalid",
+            pilot_invoice_date=PILOT_DATE,
+            workflow_run_attempt=2,
         )
 
     sender_client.get.assert_not_awaited()
@@ -271,7 +361,8 @@ async def _prepare(*, sale_status: str = "SUCCESS", visible: bool = True, post_s
             seller_tax_number=SELLER_TAX_NUMBER,
             buyer_tax_number=BUYER_TAX_NUMBER,
             buyer_alias="urn:mail:defaultpk@sandbox.invalid",
-            now=NOW,
+            pilot_invoice_date=PILOT_DATE,
+            workflow_run_attempt=1,
             outgoing_delays=(0,),
             incoming_delays=(0,),
             sleeper=AsyncMock(),
@@ -287,6 +378,8 @@ async def test_fixture_sends_at_most_one_provider_write():
     sender_client.post.assert_awaited_once()
     _, kwargs = sender_client.post.await_args
     assert kwargs["retryable"] is False
+    assert kwargs["stage"] == "SEND_MODEL"
+    assert kwargs["json"]["EInvoice"]["InvoiceInfo"]["IssueDate"].startswith(PILOT_DATE)
     assert kwargs["json"]["EInvoice"]["InvoiceInfo"]["InvoiceProfile"] == "TICARIFATURA"
     assert kwargs["json"]["EInvoice"]["InvoiceInfo"]["InvoiceType"] == "SATIS"
 
@@ -305,7 +398,8 @@ async def test_fixture_timeout_does_not_retry_provider_write():
             seller_tax_number=SELLER_TAX_NUMBER,
             buyer_tax_number=BUYER_TAX_NUMBER,
             buyer_alias="urn:mail:defaultpk@sandbox.invalid",
-            now=NOW,
+            pilot_invoice_date=PILOT_DATE,
+            workflow_run_attempt=1,
             sleeper=AsyncMock(),
         )
 
@@ -336,7 +430,8 @@ async def test_fixture_validation_rejection_is_definitive_and_sanitized():
             seller_tax_number=SELLER_TAX_NUMBER,
             buyer_tax_number=BUYER_TAX_NUMBER,
             buyer_alias="urn:mail:defaultpk@sandbox.invalid",
-            now=NOW,
+            pilot_invoice_date=PILOT_DATE,
+            workflow_run_attempt=1,
             sleeper=AsyncMock(),
         )
 
@@ -350,11 +445,16 @@ async def test_fixture_validation_rejection_is_definitive_and_sanitized():
 
 
 async def test_fixture_422_code_2004_is_definitive_with_safe_validation_issue_and_no_retry():
-    error = NilveraBusinessRuleError(
+    support_detail = (
+        "Fatura Veritabanına Kaydedilemedi. Hata: TEST-INVOICE Numaralı Fatura "
+        "'2026-03-23 | 2026-03-23 Tarihleri Arasında Olmalıdır.'"
+    )
+    error = NilveraValidationError(
         "provider rejected fixture",
         http_status=422,
         provider_code="2004",
-        validation_issues=("FIELD=InvoiceInfo.PayableAmount;REASON=TOTAL_MISMATCH",),
+        description="Kayıt Başarısız.",
+        detail=support_detail,
     )
     sender_client, receiver_client = _clients(post_side_effect=error)
 
@@ -369,16 +469,55 @@ async def test_fixture_422_code_2004_is_definitive_with_safe_validation_issue_an
             seller_tax_number=SELLER_TAX_NUMBER,
             buyer_tax_number=BUYER_TAX_NUMBER,
             buyer_alias="urn:mail:defaultpk@sandbox.invalid",
-            now=NOW,
+            pilot_invoice_date=PILOT_DATE,
+            workflow_run_attempt=1,
             sleeper=AsyncMock(),
         )
 
     assert exc_info.value.http_status == 422
     assert exc_info.value.provider_code == "2004"
-    assert exc_info.value.validation_issue == "FIELD=InvoiceInfo.PayableAmount;REASON=TOTAL_MISMATCH"
+    assert exc_info.value.validation_issue == "FIELD=InvoiceInfo.IssueDate;REASON=DATE_OUT_OF_RANGE"
+    assert exc_info.value.validation_detail == (
+        "FIELD=InvoiceInfo.IssueDate;REASON=DATE_OUT_OF_RANGE;"
+        "WINDOW_START=2026-03-23;WINDOW_END=2026-03-23"
+    )
+    assert exc_info.value.classification == "VALIDATION_REJECTED"
     assert exc_info.value.write_disposition == DEFINITIVE_REJECTION
     assert exc_info.value.provider_write_count == 1
     sender_client.post.assert_awaited_once()
+
+
+async def test_fixture_date_mismatch_blocks_with_zero_provider_writes():
+    sender_client, receiver_client = _clients()
+    identity = build_fixture_identity(year=2026, run_id=RUN_ID, hmac_key=HMAC_KEY)
+    mismatched_payload = build_fixture_payload(
+        fixture_identity=identity,
+        seller_tax_number=SELLER_TAX_NUMBER,
+        buyer_tax_number=BUYER_TAX_NUMBER,
+        buyer_alias="urn:mail:defaultpk@sandbox.invalid",
+        issue_date=pilot_invoice_datetime("2026-08-07"),
+    )
+
+    with (
+        patch("tests.nilvera_sandbox_fixture.build_fixture_payload", return_value=mismatched_payload),
+        pytest.raises(SandboxFixtureBlocked, match="BLOCKED_FIXTURE_DATE_MISMATCH") as exc_info,
+    ):
+        await prepare_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            buyer_alias="urn:mail:defaultpk@sandbox.invalid",
+            pilot_invoice_date=PILOT_DATE,
+            workflow_run_attempt=1,
+        )
+
+    assert exc_info.value.provider_write_count == 0
+    sender_client.post.assert_not_awaited()
 
 
 async def test_fixture_drops_unsafe_provider_code_from_diagnostics():
@@ -400,7 +539,8 @@ async def test_fixture_drops_unsafe_provider_code_from_diagnostics():
             seller_tax_number=SELLER_TAX_NUMBER,
             buyer_tax_number=BUYER_TAX_NUMBER,
             buyer_alias="urn:mail:defaultpk@sandbox.invalid",
-            now=NOW,
+            pilot_invoice_date=PILOT_DATE,
+            workflow_run_attempt=1,
             sleeper=AsyncMock(),
         )
 
@@ -429,7 +569,8 @@ async def test_fixture_ambiguous_send_failure_does_not_retry(error, expected_typ
             seller_tax_number=SELLER_TAX_NUMBER,
             buyer_tax_number=BUYER_TAX_NUMBER,
             buyer_alias="urn:mail:defaultpk@sandbox.invalid",
-            now=NOW,
+            pilot_invoice_date=PILOT_DATE,
+            workflow_run_attempt=1,
             sleeper=AsyncMock(),
         )
 
@@ -454,7 +595,8 @@ async def test_fixture_rejected_result_is_failure():
             seller_tax_number=SELLER_TAX_NUMBER,
             buyer_tax_number=BUYER_TAX_NUMBER,
             buyer_alias="urn:mail:defaultpk@sandbox.invalid",
-            now=NOW,
+            pilot_invoice_date=PILOT_DATE,
+            workflow_run_attempt=1,
             outgoing_delays=(0,),
             sleeper=AsyncMock(),
         )

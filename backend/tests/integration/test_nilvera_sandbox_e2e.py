@@ -400,6 +400,11 @@ async def test_sandbox_prepare_incoming_commercial_invoice_fixture(record_proper
     receiver_key = os.environ.get("NILVERA_E2E_RECEIVER_SANDBOX_KEY", "")
     hmac_key = os.environ.get("NILVERA_E2E_CORRELATION_HMAC_KEY", "")
     run_id = os.environ.get("NILVERA_E2E_RUN_ID", "")
+    pilot_invoice_date = os.environ.get("NILVERA_PILOT_INVOICE_DATE")
+    try:
+        workflow_run_attempt = int(os.environ.get("GITHUB_RUN_ATTEMPT", ""))
+    except ValueError:
+        pytest.fail("BLOCKED_INVALID_FIXTURE_RUN_ATTEMPT", pytrace=False)
     buyer_tax_number = os.environ.get("NILVERA_E2E_BUYER_VKN", "")
     seller_tax_number = os.environ.get("NILVERA_E2E_SELLER_VKN", "")
 
@@ -430,6 +435,8 @@ async def test_sandbox_prepare_incoming_commercial_invoice_fixture(record_proper
                 seller_tax_number=seller_tax_number,
                 buyer_tax_number=buyer_tax_number,
                 buyer_alias=buyer_aliases[0],
+                pilot_invoice_date=pilot_invoice_date,
+                workflow_run_attempt=workflow_run_attempt,
             )
         except SandboxFixtureError as exc:
             record_property("provider_write_count", str(exc.provider_write_count))
@@ -439,8 +446,10 @@ async def test_sandbox_prepare_incoming_commercial_invoice_fixture(record_proper
                 "http_status_class": exc.http_status_class,
                 "provider_code": exc.provider_code,
                 "validation_issue": exc.validation_issue,
+                "validation_detail": exc.validation_detail,
                 "exception_type": exc.exception_type,
                 "write_disposition": exc.write_disposition,
+                "classification": exc.classification,
             }
             for name, value in safe_metadata.items():
                 if value is not None:
