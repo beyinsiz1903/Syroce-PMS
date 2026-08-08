@@ -7,7 +7,7 @@ import re
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -21,12 +21,31 @@ from models.schemas.invoicing import Invoice, InvoiceItem
 _FIXTURE_ID_PATTERN = re.compile(r"^TST\d{13}$")
 _SAFE_PROVIDER_CODE_PATTERN = re.compile(r"^[A-Z0-9_.-]{1,64}$")
 _SAFE_VALIDATION_ISSUE_PATTERN = re.compile(r"^FIELD=[A-Za-z0-9_.]+;REASON=[A-Z0-9_]+(?:\|FIELD=[A-Za-z0-9_.]+;REASON=[A-Z0-9_]+)*$")
+_SAFE_VALIDATION_DETAIL_PATTERN = re.compile(
+    r"^FIELD=[A-Za-z0-9_.]+;REASON=[A-Z0-9_]+"
+    r"(?:;WINDOW_START=\d{4}-\d{2}-\d{2};WINDOW_END=\d{4}-\d{2}-\d{2})?$"
+)
+_SAFE_CLASSIFICATIONS = {
+    "AMBIGUOUS",
+    "AUTH_FAILED",
+    "BUSINESS_RULE_REJECTED",
+    "DUPLICATE",
+    "MALFORMED_RESPONSE",
+    "NETWORK_ERROR",
+    "NOT_FOUND",
+    "PROVIDER_ERROR",
+    "RATE_LIMITED",
+    "UNKNOWN",
+    "VALIDATION_REJECTED",
+}
 _SAFE_EXCEPTION_TYPES = {
     "NilveraApiError",
     "NilveraAuthError",
     "NilveraBusinessRuleError",
     "NilveraDuplicateError",
     "NilveraNotFoundError",
+    "NilveraMalformedResponseError",
+    "NilveraNetworkError",
     "NilveraRateLimitError",
     "NilveraServerError",
     "NilveraTimeoutError",
@@ -80,8 +99,10 @@ class SandboxFixtureError(RuntimeError):
         http_status_class: str | None = None,
         provider_code: str | None = None,
         validation_issue: str | None = None,
+        validation_detail: str | None = None,
         exception_type: str | None = None,
         write_disposition: str | None = None,
+        classification: str | None = None,
         sender_match: bool | None = None,
         receiver_match: bool | None = None,
         match_count_class: str | None = None,
@@ -96,8 +117,10 @@ class SandboxFixtureError(RuntimeError):
         self.http_status_class = http_status_class
         self.provider_code = provider_code
         self.validation_issue = validation_issue
+        self.validation_detail = validation_detail
         self.exception_type = exception_type
         self.write_disposition = write_disposition
+        self.classification = classification
         self.sender_match = sender_match
         self.receiver_match = receiver_match
         self.match_count_class = match_count_class
@@ -221,6 +244,19 @@ def _safe_validation_issue(value: str | None) -> str | None:
     return normalized
 
 
+def _safe_validation_detail(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if len(normalized) > 256 or _SAFE_VALIDATION_DETAIL_PATTERN.fullmatch(normalized) is None:
+        return None
+    return normalized
+
+
+def _safe_classification(value: str | None) -> str | None:
+    return value if value in _SAFE_CLASSIFICATIONS else None
+
+
 def _safe_exception_type(exc: Exception) -> str:
     exception_type = type(exc).__name__
     return exception_type if exception_type in _SAFE_EXCEPTION_TYPES else "UnexpectedError"
@@ -228,6 +264,7 @@ def _safe_exception_type(exc: Exception) -> str:
 
 def _send_failure(exc: NilveraApiError, *, provider_write_count: int) -> SandboxFixtureError:
     validation_issue = "|".join(exc.safe_validation_issues)
+    validation_detail = exc.safe_provider_details[0] if exc.safe_provider_details else None
     metadata = {
         "provider_write_count": provider_write_count,
         "failure_stage": "SEND_MODEL",
@@ -235,7 +272,9 @@ def _send_failure(exc: NilveraApiError, *, provider_write_count: int) -> Sandbox
         "http_status_class": _http_status_class(exc.http_status),
         "provider_code": _safe_provider_code(exc.provider_code),
         "validation_issue": _safe_validation_issue(validation_issue),
+        "validation_detail": _safe_validation_detail(validation_detail),
         "exception_type": _safe_exception_type(exc),
+        "classification": _safe_classification(exc.classification),
     }
     if exc.http_status in {400, 422}:
         return SandboxFixtureFailed(
@@ -280,6 +319,42 @@ def build_fixture_identity(*, year: int, run_id: str, hmac_key: str) -> str:
     if len(identity) != 16 or _FIXTURE_ID_PATTERN.fullmatch(identity) is None:
         raise SandboxFixtureFailed("FIXTURE_ID_CONTRACT_FAILED")
     return identity
+
+
+def parse_pilot_invoice_date(value: str | None) -> date:
+    """Parse the explicit pilot date without timezone conversion or a clock fallback."""
+    if value is None or not value.strip():
+        raise SandboxFixtureBlocked("BLOCKED_MISSING_PILOT_INVOICE_DATE")
+    normalized = value.strip()
+    try:
+        parsed = date.fromisoformat(normalized)
+    except ValueError:
+        raise SandboxFixtureBlocked("BLOCKED_INVALID_PILOT_INVOICE_DATE") from None
+    if parsed.isoformat() != value:
+        raise SandboxFixtureBlocked("BLOCKED_INVALID_PILOT_INVOICE_DATE")
+    return parsed
+
+
+def pilot_invoice_datetime(value: str | None) -> datetime:
+    parsed = parse_pilot_invoice_date(value)
+    return datetime.combine(parsed, time.min, tzinfo=UTC)
+
+
+def ensure_fixture_write_attempt(workflow_run_attempt: int) -> None:
+    if workflow_run_attempt != 1:
+        raise SandboxFixtureBlocked("BLOCKED_DUPLICATE_FIXTURE_RUN_ATTEMPT")
+
+
+def ensure_fixture_invoice_date(payload: NilveraEInvoicePayload, expected_date: date) -> None:
+    expected_datetime = datetime.combine(expected_date, time.min, tzinfo=UTC)
+    actual_datetime = payload.EInvoice.InvoiceInfo.IssueDate
+    serialized_date = payload.model_dump(mode="json", by_alias=True)["EInvoice"]["InvoiceInfo"]["IssueDate"]
+    try:
+        parsed_serialized = datetime.fromisoformat(serialized_date.replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError):
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_DATE_MISMATCH") from None
+    if actual_datetime != expected_datetime or parsed_serialized != expected_datetime:
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_DATE_MISMATCH")
 
 
 def fixture_correlation_label(identity: str, hmac_key: str) -> str:
@@ -1099,19 +1174,22 @@ async def prepare_incoming_commercial_fixture(
     seller_tax_number: str,
     buyer_tax_number: str,
     buyer_alias: str,
-    now: datetime | None = None,
+    pilot_invoice_date: str | None,
+    workflow_run_attempt: int,
     outgoing_delays: Sequence[float] = (1, 2, 4, 5, 5, 5),
     incoming_delays: Sequence[float] = (1, 2, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5),
     sleeper: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> SandboxFixtureResult:
+    invoice_date = parse_pilot_invoice_date(pilot_invoice_date)
+    ensure_fixture_write_attempt(workflow_run_attempt)
     ensure_distinct_sandbox_keys(sender_key, receiver_key)
     sender_match = await company_identity_matches(sender_client, seller_tax_number)
     receiver_match = await company_identity_matches(receiver_client, buyer_tax_number)
     if not sender_match or not receiver_match:
         raise SandboxFixtureBlocked("BLOCKED_SANDBOX_COMPANY_MISMATCH")
 
-    current_time = now or datetime.now(UTC)
-    identity = build_fixture_identity(year=current_time.year, run_id=run_id, hmac_key=hmac_key)
+    current_time = datetime.combine(invoice_date, time.min, tzinfo=UTC)
+    identity = build_fixture_identity(year=invoice_date.year, run_id=run_id, hmac_key=hmac_key)
     correlation_label = fixture_correlation_label(identity, hmac_key)
     payload = build_fixture_payload(
         fixture_identity=identity,
@@ -1120,6 +1198,7 @@ async def prepare_incoming_commercial_fixture(
         buyer_alias=buyer_alias,
         issue_date=current_time,
     )
+    ensure_fixture_invoice_date(payload, invoice_date)
 
     provider_write_count = 1
     try:
@@ -1128,6 +1207,7 @@ async def prepare_incoming_commercial_fixture(
             json=payload.model_dump(mode="json", by_alias=True),
             correlation_id=correlation_label,
             retryable=False,
+            stage="SEND_MODEL",
         )
     except NilveraApiError as exc:
         raise _send_failure(exc, provider_write_count=provider_write_count) from None

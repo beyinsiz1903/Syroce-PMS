@@ -1,6 +1,5 @@
 """Nilvera HTTP client."""
 
-import logging
 from typing import Any
 
 import httpx
@@ -9,18 +8,19 @@ from .config import get_nilvera_config
 from .errors import (
     NilveraApiError,
     NilveraAuthError,
-    NilveraBusinessRuleError,
     NilveraDuplicateError,
+    NilveraMalformedResponseError,
+    NilveraNetworkError,
     NilveraNotFoundError,
+    NilveraProviderError,
     NilveraRateLimitError,
     NilveraResponseSizeError,
     NilveraServerError,
     NilveraTimeoutError,
     NilveraValidationError,
     normalize_validation_issue,
+    sanitize_provider_detail,
 )
-
-logger = logging.getLogger(__name__)
 
 
 class NilveraHttpClient:
@@ -55,10 +55,18 @@ class NilveraHttpClient:
             return self._owned_client
         raise RuntimeError("NilveraHttpClient must be used as an async context manager or instantiated with an open httpx.AsyncClient.")
 
-    def _parse_error_response(self, status_code: int, text_content: str, headers: httpx.Headers, correlation_id: str | None) -> NilveraApiError:
+    def _parse_error_response(
+        self,
+        status_code: int,
+        text_content: str,
+        headers: httpx.Headers,
+        correlation_id: str | None,
+        stage: str | None,
+    ) -> NilveraApiError:
         """Safely parse error response without crashing on HTML."""
         data: dict[str, Any] = {}
-        if "application/json" in headers.get("Content-Type", "").lower():
+        content_type = headers.get("Content-Type", "").lower().split(";", 1)[0].strip()
+        if content_type == "application/json" or (content_type.startswith("application/") and content_type.endswith("+json")):
             import json
 
             try:
@@ -70,31 +78,69 @@ class NilveraHttpClient:
 
         errors = data.get("Errors", [])
 
-        provider_code = None
-        description = None
-        detail = None
         provider_message = data.get("Message") if isinstance(data.get("Message"), str) else None
         validation_issues: list[str] = []
-        primary_error_found = False
+        parsed_entries: list[tuple[str | None, str | None, str | None]] = []
         if isinstance(errors, list):
-            for error in errors[:5]:
+            for error in errors:
                 if not isinstance(error, dict):
                     continue
                 error_description = error.get("Description") if isinstance(error.get("Description"), str) else None
                 error_detail = error.get("Detail") if isinstance(error.get("Detail"), str) else None
-                validation_issues.append(normalize_validation_issue(provider_message, error_description, error_detail))
-                if primary_error_found:
-                    continue
-                primary_error_found = True
-                first_err = error
-                raw_provider_code = first_err.get("Code")
+                raw_provider_code = error.get("Code")
+                error_code = None
                 if isinstance(raw_provider_code, (str, int)) and not isinstance(raw_provider_code, bool):
                     normalized_provider_code = str(raw_provider_code).strip()
-                    provider_code = normalized_provider_code or None
-                description = error_description
-                detail = error_detail
+                    error_code = normalized_provider_code or None
+                parsed_entries.append((error_code, error_description, error_detail))
+                validation_issues.append(normalize_validation_issue(provider_message, error_description, error_detail))
         if not validation_issues and provider_message:
             validation_issues.append(normalize_validation_issue(provider_message))
+
+        error_class: type[NilveraApiError] = NilveraApiError
+        classification = "UNKNOWN"
+        retryable = False
+        if status_code in (400, 422):
+            error_class = NilveraValidationError
+            classification = "VALIDATION_REJECTED"
+        elif status_code in (401, 403):
+            error_class = NilveraAuthError
+            classification = "AUTH_FAILED"
+        elif status_code == 404:
+            error_class = NilveraNotFoundError
+            classification = "NOT_FOUND"
+        elif status_code == 409:
+            error_class = NilveraDuplicateError
+            classification = "DUPLICATE"
+        elif status_code == 429:
+            error_class = NilveraRateLimitError
+            classification = "RATE_LIMITED"
+            retryable = True
+        elif status_code >= 500:
+            error_class = NilveraServerError
+            classification = "PROVIDER_ERROR"
+            retryable = True
+
+        provider_errors = tuple(
+            NilveraProviderError(
+                http_status=status_code,
+                code=code,
+                description=description,
+                detail=detail,
+                stage=stage,
+                retryable=retryable,
+                classification=classification,
+                safe_detail=sanitize_provider_detail(
+                    provider_message,
+                    description,
+                    detail,
+                ),
+            )
+            for code, description, detail in parsed_entries
+        )
+        provider_code = provider_errors[0].code if provider_errors else None
+        description = provider_errors[0].description if provider_errors else None
+        detail = provider_errors[0].detail if provider_errors else None
 
         kwargs = {
             "message": "Nilvera provider request failed",
@@ -104,29 +150,13 @@ class NilveraHttpClient:
             "detail": detail,
             "provider_message": provider_message,
             "validation_issues": tuple(dict.fromkeys(validation_issues)),
+            "provider_errors": provider_errors,
+            "stage": stage,
+            "classification": classification,
             "correlation_id": correlation_id,
+            "retryable": retryable,
         }
-
-        if status_code == 400:
-            return NilveraValidationError(**kwargs)
-        elif status_code in (401, 403):
-            return NilveraAuthError(**kwargs)
-        elif status_code == 404:
-            return NilveraNotFoundError(**kwargs)
-        elif status_code == 409:
-            return NilveraDuplicateError(**kwargs)
-        elif status_code == 422:
-            return NilveraBusinessRuleError(**kwargs)
-        elif status_code == 429:
-            retry_after = headers.get("Retry-After")
-            kwargs["retryable"] = True
-            kwargs["detail"] = f"Retry-After: {retry_after}" if retry_after else detail
-            return NilveraRateLimitError(**kwargs)
-        elif status_code >= 500:
-            kwargs["retryable"] = True
-            return NilveraServerError(**kwargs)
-
-        return NilveraApiError(**kwargs)
+        return error_class(**kwargs)
 
     async def _read_bounded_response(self, response: httpx.Response, max_bytes: int, correlation_id: str | None) -> bytes:
         content_length = response.headers.get("Content-Length")
@@ -153,6 +183,7 @@ class NilveraHttpClient:
         correlation_id: str | None = None,
         retryable: bool | None = None,
         stream: bool = False,
+        stage: str | None = None,
         **kwargs: Any,
     ) -> httpx.Response | Any:
         client = self._get_active_client()
@@ -188,7 +219,7 @@ class NilveraHttpClient:
                     finally:
                         await response.aclose()
 
-                    error_obj = self._parse_error_response(response.status_code, text_content, response.headers, correlation_id)
+                    error_obj = self._parse_error_response(response.status_code, text_content, response.headers, correlation_id, stage)
 
                     if isinstance(error_obj, NilveraRateLimitError) and is_retryable and attempts <= max_attempts:
                         retry_after = response.headers.get("Retry-After")
@@ -225,28 +256,37 @@ class NilveraHttpClient:
                     await sleeper(delay)
                     continue
                 if isinstance(e, httpx.TimeoutException):
-                    raise NilveraTimeoutError("Connection timeout while contacting provider", correlation_id=correlation_id) from e
-                raise NilveraApiError(f"Network error: {str(e)}", correlation_id=correlation_id, retryable=True) from e
+                    raise NilveraTimeoutError("Connection timeout while contacting provider", correlation_id=correlation_id, stage=stage) from e
+                raise NilveraNetworkError("Network error while contacting provider", correlation_id=correlation_id, stage=stage) from e
 
-    async def get(self, path: str, correlation_id: str | None = None, retryable: bool | None = None, **kwargs: Any) -> dict[str, Any]:
-        response = await self._request("GET", path, correlation_id=correlation_id, retryable=retryable, stream=False, **kwargs)
+    async def get(
+        self,
+        path: str,
+        correlation_id: str | None = None,
+        retryable: bool | None = None,
+        stage: str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        response = await self._request("GET", path, correlation_id=correlation_id, retryable=retryable, stream=False, stage=stage, **kwargs)
         content_type = response.headers.get("Content-Type", "").lower()
         ct = content_type.split(";")[0].strip()
         if ct != "application/json" and not (ct.startswith("application/") and ct.endswith("+json")):
-            raise NilveraValidationError(
+            raise NilveraMalformedResponseError(
                 f"Expected JSON, got {content_type}",
                 correlation_id=correlation_id,
                 http_status=response.status_code,
+                stage=stage,
             )
         import json
 
         try:
             return json.loads(response.content)
         except ValueError as e:
-            raise NilveraApiError(
+            raise NilveraMalformedResponseError(
                 "Invalid JSON response from GET request",
                 correlation_id=correlation_id,
                 http_status=response.status_code,
+                stage=stage,
             ) from e
 
     async def get_binary(
@@ -268,14 +308,27 @@ class NilveraHttpClient:
             raise NilveraValidationError("Empty binary response", correlation_id=correlation_id)
         return content, content_type
 
-    async def post(self, path: str, json: dict[str, Any], correlation_id: str | None = None, retryable: bool = False, **kwargs: Any) -> dict[str, Any]:
-        response = await self._request("POST", path, json=json, correlation_id=correlation_id, retryable=retryable, stream=False, **kwargs)
+    async def post(
+        self,
+        path: str,
+        json: dict[str, Any],
+        correlation_id: str | None = None,
+        retryable: bool = False,
+        stage: str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        response = await self._request("POST", path, json=json, correlation_id=correlation_id, retryable=retryable, stream=False, stage=stage, **kwargs)
         import json as json_mod
 
         try:
             return json_mod.loads(response.content)
         except ValueError as e:
-            raise NilveraApiError("Invalid JSON response from POST request", correlation_id=correlation_id) from e
+            raise NilveraMalformedResponseError(
+                "Invalid JSON response from POST request",
+                correlation_id=correlation_id,
+                http_status=response.status_code,
+                stage=stage,
+            ) from e
 
     async def put(
         self,
