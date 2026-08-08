@@ -51,8 +51,11 @@ identifiers, guest data, or provider payloads in workflow inputs.
 ## Gates
 
 Every run requires a separately approved exact 40-character head SHA. Normal
-backend and frontend workflows must both have successful completed runs on that
-exact SHA. The workflow is manual only and selects exactly one operation:
+backend quality jobs and the frontend workflow must have successful completed
+runs on that exact SHA. Production and staging deployment jobs are deliberately
+excluded from the pilot gate, so a test-account pilot can never require or
+approve a deployment. The workflow is manual only and selects exactly one
+operation:
 
 - `discovery`: one read-only availability/discovery request
 - `reservation_read`: one official undelivered reservation read
