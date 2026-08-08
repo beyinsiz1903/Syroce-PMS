@@ -245,8 +245,15 @@ def _load_settings() -> PilotSettings:
             }
         )
 
-    room_type_code = _required_env("EXELY_PILOT_ROOM_TYPE_CODE") if operation in {"discovery", *_ARI_OPERATIONS} else ""
-    rate_plan_code = _required_env("EXELY_PILOT_RATE_PLAN_CODE") if operation in {"discovery", *_ARI_OPERATIONS} else ""
+    if operation in _ARI_OPERATIONS:
+        room_type_code = _required_env("EXELY_PILOT_ROOM_TYPE_CODE")
+        rate_plan_code = _required_env("EXELY_PILOT_RATE_PLAN_CODE")
+    elif operation == "discovery":
+        room_type_code = os.environ.get("EXELY_PILOT_ROOM_TYPE_CODE", "").strip()
+        rate_plan_code = os.environ.get("EXELY_PILOT_RATE_PLAN_CODE", "").strip()
+    else:
+        room_type_code = ""
+        rate_plan_code = ""
     return PilotSettings(
         operation=operation,
         endpoint_url=endpoint_url,
@@ -333,11 +340,14 @@ async def _discover_mapping(
     rates = result.data.get("rate_plans")
     if not isinstance(rooms, list) or not isinstance(rates, list):
         _fail_safe(record_property, "BLOCKED_READONLY_DISCOVERY_RESPONSE_INVALID", metadata)
-    room_matches = [item for item in rooms if isinstance(item, dict) and hmac.compare_digest(str(item.get("code") or ""), settings.room_type_code)]
-    rate_matches = [item for item in rates if isinstance(item, dict) and hmac.compare_digest(str(item.get("code") or ""), settings.rate_plan_code)]
-    metadata["room_match"] = len(room_matches) == 1
-    metadata["rate_plan_match"] = len(rate_matches) == 1
+    room_candidates = [item for item in rooms if isinstance(item, dict) and item.get("code")]
+    rate_candidates = [item for item in rates if isinstance(item, dict) and item.get("code")]
+    room_matches = [item for item in room_candidates if hmac.compare_digest(str(item["code"]), settings.room_type_code)] if settings.room_type_code else room_candidates
+    rate_matches = [item for item in rate_candidates if hmac.compare_digest(str(item["code"]), settings.rate_plan_code)] if settings.rate_plan_code else rate_candidates
+    metadata["room_match"] = len(room_matches) == 1 if settings.room_type_code else bool(room_matches)
+    metadata["rate_plan_match"] = len(rate_matches) == 1 if settings.rate_plan_code else bool(rate_matches)
     metadata["capability_match"] = metadata["room_match"] and metadata["rate_plan_match"]
+    metadata["match_count_class"] = "ZERO" if not room_matches or not rate_matches else "ONE" if len(room_matches) == 1 and len(rate_matches) == 1 else "MULTIPLE"
     if not metadata["capability_match"]:
         _fail_safe(record_property, "BLOCKED_PILOT_MAPPING_NOT_DISCOVERED", metadata)
     metadata["provider_status_class"] = str(result.metadata.get("provider_status_class") or "SUCCESS")
