@@ -2,6 +2,47 @@ name: Nilvera Sandbox E2E
 
 on:
   workflow_dispatch:
+    inputs:
+      run_incoming_fixture:
+        description: Run only the explicitly approved incoming fixture preparation test
+        required: true
+        default: false
+        type: boolean
+      run_incoming_answer:
+        description: Run the explicitly approved incoming invoice answer write test
+        required: true
+        default: false
+        type: boolean
+      run_reconciliation:
+        description: Run only the read-only incoming fixture reconciliation test
+        required: true
+        default: false
+        type: boolean
+      reconciliation_source_run_id:
+        description: GitHub Actions run ID that produced the fixture identity
+        required: false
+        default: ''
+        type: string
+      reconciliation_source_timestamp:
+        description: UTC timestamp of the GitHub Actions run that produced the fixture identity
+        required: false
+        default: ''
+        type: string
+      approved_head_sha:
+        description: Exact reviewed commit authorized for a provider mutation
+        required: false
+        default: ''
+        type: string
+      confirm_provider_write:
+        description: Confirm the single explicitly approved provider mutation
+        required: true
+        default: false
+        type: boolean
+      test_account_attestation:
+        description: Confirm all configured identities belong to Nilvera Sandbox test accounts
+        required: true
+        default: false
+        type: boolean
 
 env:
   PYTHON_VERSION: '3.11'
@@ -56,28 +97,128 @@ jobs:
           bash scripts/post_install.sh
           pip install pytest pytest-asyncio httpx pytest-cov pytest-timeout
 
+      - name: Select Sandbox test target
+        id: select-test
+        env:
+          NILVERA_E2E_RUN_INCOMING_FIXTURE: ${{ inputs.run_incoming_fixture }}
+          NILVERA_E2E_RUN_INCOMING_ANSWER: ${{ inputs.run_incoming_answer }}
+          NILVERA_E2E_RUN_RECONCILIATION: ${{ inputs.run_reconciliation }}
+        run: |
+          cd backend
+          test_target="$(python scripts/nilvera_sandbox_selector.py)"
+          echo "test_target=${test_target}" >> "$GITHUB_OUTPUT"
+
       - name: Check for Required Secrets
         id: check-key
+        env:
+          RUN_INCOMING_FIXTURE: ${{ inputs.run_incoming_fixture }}
+          RUN_INCOMING_ANSWER: ${{ inputs.run_incoming_answer }}
+          RUN_RECONCILIATION: ${{ inputs.run_reconciliation }}
+          RECONCILIATION_SOURCE_RUN_ID: ${{ inputs.reconciliation_source_run_id }}
+          RECONCILIATION_SOURCE_TIMESTAMP: ${{ inputs.reconciliation_source_timestamp }}
+          SENDER_KEY: ${{ secrets.NILVERA_E2E_SENDER_SANDBOX_KEY }}
+          RECEIVER_KEY: ${{ secrets.NILVERA_E2E_RECEIVER_SANDBOX_KEY }}
+          CORRELATION_HMAC_KEY: ${{ secrets.NILVERA_E2E_CORRELATION_HMAC_KEY }}
+          BUYER_VKN: ${{ secrets.NILVERA_E2E_BUYER_VKN }}
+          SELLER_VKN: ${{ secrets.NILVERA_E2E_SELLER_VKN }}
+          PILOT_INVOICE_DATE: ${{ vars.NILVERA_PILOT_INVOICE_DATE }}
+          APPROVED_HEAD_SHA: ${{ inputs.approved_head_sha }}
+          ACTUAL_HEAD_SHA: ${{ github.sha }}
+          CONFIRM_PROVIDER_WRITE: ${{ inputs.confirm_provider_write }}
+          TEST_ACCOUNT_ATTESTATION: ${{ inputs.test_account_attestation }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
-          if [ -z "${{ secrets.NILVERA_E2E_SANDBOX_KEY }}" ] || [ -z "${{ secrets.NILVERA_E2E_BUYER_VKN }}" ] || [ -z "${{ secrets.NILVERA_E2E_SELLER_VKN }}" ]; then
-            echo "::error::One or more required secrets (KEY, BUYER_VKN, SELLER_VKN) are missing in the nilvera-sandbox environment."
+          mutation_requested=false
+          if [ "${RUN_INCOMING_FIXTURE}" = "true" ] || [ "${RUN_INCOMING_ANSWER}" = "true" ]; then
+            mutation_requested=true
+          fi
+          if [ "${mutation_requested}" = "true" ]; then
+            if [ "${CONFIRM_PROVIDER_WRITE}" != "true" ]; then
+              echo "::error::BLOCKED_PROVIDER_WRITE_NOT_CONFIRMED"
+              exit 1
+            fi
+            if [ "${TEST_ACCOUNT_ATTESTATION}" != "true" ]; then
+              echo "::error::BLOCKED_TEST_ACCOUNT_NOT_ATTESTED"
+              exit 1
+            fi
+            if [ -z "${APPROVED_HEAD_SHA}" ] || [ "${APPROVED_HEAD_SHA}" != "${ACTUAL_HEAD_SHA}" ]; then
+              echo "::error::BLOCKED_EXACT_HEAD_NOT_APPROVED"
+              exit 1
+            fi
+            if [ "${WORKFLOW_RUN_ATTEMPT}" != "1" ]; then
+              echo "::error::BLOCKED_DUPLICATE_FIXTURE_RUN_ATTEMPT"
+              exit 1
+            fi
+          fi
+          if [ "${RUN_INCOMING_FIXTURE}" = "true" ]; then
+            if [ -z "${SENDER_KEY}" ] || [ -z "${RECEIVER_KEY}" ] || [ -z "${CORRELATION_HMAC_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ]; then
+              echo "::error::BLOCKED_MISSING_FIXTURE_SANDBOX_CONFIGURATION"
+              exit 1
+            fi
+            if ! PILOT_INVOICE_DATE="${PILOT_INVOICE_DATE}" python - <<'PY'
+          import os
+          from datetime import date
+
+          value = os.environ.get("PILOT_INVOICE_DATE", "")
+          try:
+              parsed = date.fromisoformat(value)
+          except ValueError:
+              raise SystemExit(1)
+          if parsed.isoformat() != value:
+              raise SystemExit(1)
+          PY
+            then
+              echo "::error::BLOCKED_INVALID_OR_MISSING_PILOT_INVOICE_DATE"
+              exit 1
+            fi
+            if [ "${SENDER_KEY}" = "${RECEIVER_KEY}" ]; then
+              echo "::error::BLOCKED_IDENTICAL_SANDBOX_KEYS"
+              exit 1
+            fi
+          elif [ "${RUN_RECONCILIATION}" = "true" ]; then
+            if [ -z "${SENDER_KEY}" ] || [ -z "${RECEIVER_KEY}" ] || [ -z "${CORRELATION_HMAC_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ] || [ -z "${RECONCILIATION_SOURCE_RUN_ID}" ] || [ -z "${RECONCILIATION_SOURCE_TIMESTAMP}" ]; then
+              echo "::error::BLOCKED_MISSING_RECONCILIATION_SANDBOX_CONFIGURATION"
+              exit 1
+            fi
+            if [ "${SENDER_KEY}" = "${RECEIVER_KEY}" ]; then
+              echo "::error::BLOCKED_IDENTICAL_SANDBOX_KEYS"
+              exit 1
+            fi
+          elif [ "${RUN_INCOMING_ANSWER}" = "true" ]; then
+            if [ -z "${RECEIVER_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ]; then
+              echo "::error::BLOCKED_MISSING_ANSWER_SANDBOX_CONFIGURATION"
+              exit 1
+            fi
+          elif [ -z "${SENDER_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ]; then
+            echo "::error::BLOCKED_MISSING_SANDBOX_CONFIGURATION"
             exit 1
           fi
-          echo "secrets_exist=true" >> $GITHUB_OUTPUT
+          echo "secrets_exist=true" >> "$GITHUB_OUTPUT"
 
       - name: Run Nilvera Sandbox E2E Tests
         if: steps.check-key.outputs.secrets_exist == 'true'
         env:
-          NILVERA_E2E_SANDBOX_KEY: ${{ secrets.NILVERA_E2E_SANDBOX_KEY }}
+          NILVERA_ENABLED: "true"
+          NILVERA_E2E_SENDER_SANDBOX_KEY: ${{ secrets.NILVERA_E2E_SENDER_SANDBOX_KEY }}
+          NILVERA_E2E_RECEIVER_SANDBOX_KEY: ${{ secrets.NILVERA_E2E_RECEIVER_SANDBOX_KEY }}
+          NILVERA_E2E_CORRELATION_HMAC_KEY: ${{ secrets.NILVERA_E2E_CORRELATION_HMAC_KEY }}
           NILVERA_E2E_BUYER_VKN: ${{ secrets.NILVERA_E2E_BUYER_VKN }}
           NILVERA_E2E_SELLER_VKN: ${{ secrets.NILVERA_E2E_SELLER_VKN }}
+          NILVERA_E2E_INCOMING_FIXTURE_ALLOWED: ${{ inputs.run_incoming_fixture }}
+          NILVERA_E2E_INCOMING_ANSWER_ALLOWED: ${{ inputs.run_incoming_answer }}
+          NILVERA_E2E_RECONCILIATION_ALLOWED: ${{ inputs.run_reconciliation }}
+          NILVERA_E2E_SOURCE_RUN_ID: ${{ inputs.reconciliation_source_run_id }}
+          NILVERA_E2E_SOURCE_RUN_TIMESTAMP: ${{ inputs.reconciliation_source_timestamp }}
+          NILVERA_E2E_RUN_ID: ${{ github.run_id }}
+          NILVERA_PILOT_INVOICE_DATE: ${{ vars.NILVERA_PILOT_INVOICE_DATE }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
           MONGO_URL: ${{ env.MONGO_URL }}
           DB_NAME: ${{ env.DB_NAME }}
           REDIS_URL: redis://localhost:6379/0
           JWT_SECRET: ${{ env.JWT_SECRET }}
         run: |
           cd backend
-          python -m pytest tests/integration/test_nilvera_sandbox_e2e.py \
+          python -m pytest "${{ steps.select-test.outputs.test_target }}" \
             -m nilvera_sandbox \
             -v --tb=short -q --timeout=300 \
             --junitxml=nilvera-sandbox-results.xml

@@ -22,6 +22,7 @@ except ImportError:
 
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 
+
 async def _mongo_or_skip():
     if AsyncIOMotorClient is None:
         pytest.skip("motor not installed")
@@ -32,6 +33,7 @@ async def _mongo_or_skip():
         client.close()
         pytest.skip(f"MongoDB unreachable ({MONGO_URL})")
     return client
+
 
 @pytest.fixture
 async def live_test_db(monkeypatch):
@@ -51,19 +53,23 @@ async def live_test_db(monkeypatch):
     await client.drop_database(db_name)
     client.close()
 
+
 @pytest.fixture(autouse=True)
 def setup_tenant():
     set_tenant_context("tenant_realdb")
     yield
     clear_tenant_context()
 
+
 @pytest.fixture
 async def migrated_db(live_test_db):
     import bootstrap.migrations.versions.v005_incoming_invoice_lifecycle as mig5
     import bootstrap.migrations.versions.v006_incoming_invoice_answer_atomicity as mig6
+
     await mig5.MIGRATION.up(live_test_db)
     await mig6.MIGRATION.up(live_test_db)
     yield live_test_db
+
 
 async def test_repo_tenant_isolation(migrated_db):
     tenant_1 = "tenant_1"
@@ -82,7 +88,7 @@ async def test_repo_tenant_isolation(migrated_db):
         idempotency_key=f"{tenant_1}:inv_1:ACCEPT:req-1",
         request_fingerprint="fingerprint-1",
         requested_by="admin",
-        requested_at=datetime.now(UTC)
+        requested_at=datetime.now(UTC),
     )
 
     await InvoiceLifecycleRepository.create_action(action)
@@ -108,6 +114,7 @@ async def test_repo_tenant_isolation(migrated_db):
     updated_t1 = await InvoiceLifecycleRepository.update_action_result(tenant_1, action_id, "worker", {"state": InvoiceLifecycleActionState.SUCCEEDED.value})
     assert updated_t1
 
+
 async def test_repo_concurrent_workers_and_stale_lease(migrated_db):
     tenant_id = "tenant_1"
     action_id = str(uuid.uuid4())
@@ -124,26 +131,123 @@ async def test_repo_concurrent_workers_and_stale_lease(migrated_db):
         idempotency_key=f"{tenant_id}:inv_2:ACCEPT:req-2",
         request_fingerprint="fingerprint-2",
         requested_by="admin",
-        requested_at=datetime.now(UTC)
+        requested_at=datetime.now(UTC),
     )
     await InvoiceLifecycleRepository.create_action(action)
 
     # Worker 1 claims it
-    w1_lease = await InvoiceLifecycleRepository.claim_action_lease(tenant_id, action_id, "worker_1", 1) # 1 second lease
+    w1_lease = await InvoiceLifecycleRepository.claim_action_lease(tenant_id, action_id, "worker_1", 1)  # 1 second lease
     assert w1_lease is not None
 
     # Worker 2 tries to claim it concurrently
     w2_lease = await InvoiceLifecycleRepository.claim_action_lease(tenant_id, action_id, "worker_2", 60)
-    assert w2_lease is None # Cannot claim!
+    assert w2_lease is None  # Cannot claim!
 
     import asyncio
-    await asyncio.sleep(1.5) # Wait for lease to become stale
+
+    await asyncio.sleep(1.5)  # Wait for lease to become stale
 
     # Worker 2 tries again -> stale lease recovery
     w2_lease_recovered = await InvoiceLifecycleRepository.claim_action_lease(tenant_id, action_id, "worker_2", 60)
     assert w2_lease_recovered is not None
     assert w2_lease_recovered.lifecycle_lease_owner == "worker_2"
     assert w2_lease_recovered.state == InvoiceLifecycleActionState.PROCESSING
+
+
+async def test_provider_attempt_marker_prevents_unleased_or_duplicate_marks(migrated_db):
+    tenant_id = "tenant_marker"
+    action_id = str(uuid.uuid4())
+    action = InvoiceLifecycleAction(
+        id=action_id,
+        tenant_id=tenant_id,
+        direction=InvoiceLifecycleDirection.INCOMING,
+        source_invoice_id="invoice_marker",
+        source_provider_uuid="11112222-3333-4444-5555-666677778888",
+        action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING,
+        state=InvoiceLifecycleActionState.REQUESTED,
+        request_uuid="request_marker",
+        idempotency_key="idempotency_marker",
+        request_fingerprint="fingerprint_marker",
+        requested_by="admin",
+        requested_at=datetime.now(UTC),
+    )
+    await InvoiceLifecycleRepository.create_action(action)
+
+    assert not await InvoiceLifecycleRepository.mark_provider_attempt_started(
+        tenant_id,
+        action_id,
+        "not-owner",
+        datetime.now(UTC),
+    )
+    claimed = await InvoiceLifecycleRepository.claim_action_lease(
+        tenant_id,
+        action_id,
+        "worker-owner",
+        60,
+    )
+    assert claimed is not None
+    assert await InvoiceLifecycleRepository.mark_provider_attempt_started(
+        tenant_id,
+        action_id,
+        "worker-owner",
+        datetime.now(UTC),
+    )
+    assert not await InvoiceLifecycleRepository.mark_provider_attempt_started(
+        tenant_id,
+        action_id,
+        "worker-owner",
+        datetime.now(UTC),
+    )
+    assert await InvoiceLifecycleRepository.mark_provider_request_accepted(
+        tenant_id,
+        action_id,
+        "worker-owner",
+        datetime.now(UTC),
+    )
+
+
+async def test_terminal_action_cannot_be_reclaimed(migrated_db):
+    tenant_id = "tenant_terminal"
+    action_id = str(uuid.uuid4())
+    action = InvoiceLifecycleAction(
+        id=action_id,
+        tenant_id=tenant_id,
+        direction=InvoiceLifecycleDirection.INCOMING,
+        source_invoice_id="invoice_terminal",
+        source_provider_uuid="11112222-3333-4444-5555-666677778888",
+        action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING,
+        state=InvoiceLifecycleActionState.REQUESTED,
+        request_uuid="request_terminal",
+        idempotency_key="idempotency_terminal",
+        request_fingerprint="fingerprint_terminal",
+        requested_by="admin",
+        requested_at=datetime.now(UTC),
+    )
+    await InvoiceLifecycleRepository.create_action(action)
+    assert await InvoiceLifecycleRepository.claim_action_lease(
+        tenant_id,
+        action_id,
+        "worker-owner",
+        60,
+    )
+    fields = {"state": InvoiceLifecycleActionState.SUCCEEDED.value}
+    assert await InvoiceLifecycleRepository.update_action_result(
+        tenant_id,
+        action_id,
+        "worker-owner",
+        fields,
+    )
+    assert fields == {"state": InvoiceLifecycleActionState.SUCCEEDED.value}
+    assert (
+        await InvoiceLifecycleRepository.claim_action_lease(
+            tenant_id,
+            action_id,
+            "worker-next",
+            60,
+        )
+        is None
+    )
+
 
 async def test_cross_tenant_incoming_invoice_get_returns_none(migrated_db):
     from datetime import UTC, datetime
@@ -153,10 +257,19 @@ async def test_cross_tenant_incoming_invoice_get_returns_none(migrated_db):
     from models.schemas.invoice_sync import InvoiceProvider
 
     invoice = IncomingInvoice(
-        id="inv_cross", tenant_id="tenant_A", provider=InvoiceProvider.NILVERA, provider_uuid="1111",
-        invoice_number="ABC", sender_vkn_tckn="111", sender_title="Test", profile=IncomingInvoiceProfile.COMMERCIAL,
-        answer_status=IncomingInvoiceAnswerStatus.PENDING, issue_date=datetime.now(UTC), received_at=datetime.now(UTC),
-        created_at=datetime.now(UTC), updated_at=datetime.now(UTC)
+        id="inv_cross",
+        tenant_id="tenant_A",
+        provider=InvoiceProvider.NILVERA,
+        provider_uuid="1111",
+        invoice_number="ABC",
+        sender_vkn_tckn="111",
+        sender_title="Test",
+        profile=IncomingInvoiceProfile.COMMERCIAL,
+        answer_status=IncomingInvoiceAnswerStatus.PENDING,
+        issue_date=datetime.now(UTC),
+        received_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     await IncomingInvoiceRepository.save(invoice)
 
@@ -168,6 +281,7 @@ async def test_cross_tenant_incoming_invoice_get_returns_none(migrated_db):
     result_a = await IncomingInvoiceRepository.get_by_id("tenant_A", "inv_cross")
     assert result_a is not None
 
+
 async def test_cross_tenant_incoming_invoice_update_fails(migrated_db):
     from datetime import UTC, datetime
 
@@ -176,10 +290,19 @@ async def test_cross_tenant_incoming_invoice_update_fails(migrated_db):
     from models.schemas.invoice_sync import InvoiceProvider
 
     invoice = IncomingInvoice(
-        id="inv_cross_upd", tenant_id="tenant_A", provider=InvoiceProvider.NILVERA, provider_uuid="2222",
-        invoice_number="ABC", sender_vkn_tckn="111", sender_title="Test", profile=IncomingInvoiceProfile.COMMERCIAL,
-        answer_status=IncomingInvoiceAnswerStatus.PENDING, issue_date=datetime.now(UTC), received_at=datetime.now(UTC),
-        created_at=datetime.now(UTC), updated_at=datetime.now(UTC)
+        id="inv_cross_upd",
+        tenant_id="tenant_A",
+        provider=InvoiceProvider.NILVERA,
+        provider_uuid="2222",
+        invoice_number="ABC",
+        sender_vkn_tckn="111",
+        sender_title="Test",
+        profile=IncomingInvoiceProfile.COMMERCIAL,
+        answer_status=IncomingInvoiceAnswerStatus.PENDING,
+        issue_date=datetime.now(UTC),
+        received_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     await IncomingInvoiceRepository.save(invoice)
 
@@ -190,6 +313,7 @@ async def test_cross_tenant_incoming_invoice_update_fails(migrated_db):
     # Check it wasn't updated
     doc = await IncomingInvoiceRepository.get_by_id("tenant_A", "inv_cross_upd")
     assert doc.answer_status == IncomingInvoiceAnswerStatus.PENDING
+
 
 async def test_repo_answer_guard_atomicity(migrated_db):
     from datetime import UTC, datetime
@@ -205,17 +329,35 @@ async def test_repo_answer_guard_atomicity(migrated_db):
 
     tenant_id = "tenant_atomic"
     action1 = InvoiceLifecycleAction(
-        id="act_atomic_1", tenant_id=tenant_id, direction=InvoiceLifecycleDirection.INCOMING,
-        source_invoice_id="inv_atomic", source_provider_uuid="p_uuid", action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING,
-        state=InvoiceLifecycleActionState.REQUESTED, request_uuid="req_1", idempotency_key="key_1", request_fingerprint="f_1",
-        answer_guard_key="inv_atomic", requested_by="u1", requested_at=datetime.now(UTC)
+        id="act_atomic_1",
+        tenant_id=tenant_id,
+        direction=InvoiceLifecycleDirection.INCOMING,
+        source_invoice_id="inv_atomic",
+        source_provider_uuid="p_uuid",
+        action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING,
+        state=InvoiceLifecycleActionState.REQUESTED,
+        request_uuid="req_1",
+        idempotency_key="key_1",
+        request_fingerprint="f_1",
+        answer_guard_key="inv_atomic",
+        requested_by="u1",
+        requested_at=datetime.now(UTC),
     )
 
     action2 = InvoiceLifecycleAction(
-        id="act_atomic_2", tenant_id=tenant_id, direction=InvoiceLifecycleDirection.INCOMING,
-        source_invoice_id="inv_atomic", source_provider_uuid="p_uuid", action_type=InvoiceLifecycleActionType.REJECT_INCOMING,
-        state=InvoiceLifecycleActionState.REQUESTED, request_uuid="req_2", idempotency_key="key_2", request_fingerprint="f_2",
-        answer_guard_key="inv_atomic", requested_by="u1", requested_at=datetime.now(UTC)
+        id="act_atomic_2",
+        tenant_id=tenant_id,
+        direction=InvoiceLifecycleDirection.INCOMING,
+        source_invoice_id="inv_atomic",
+        source_provider_uuid="p_uuid",
+        action_type=InvoiceLifecycleActionType.REJECT_INCOMING,
+        state=InvoiceLifecycleActionState.REQUESTED,
+        request_uuid="req_2",
+        idempotency_key="key_2",
+        request_fingerprint="f_2",
+        answer_guard_key="inv_atomic",
+        requested_by="u1",
+        requested_at=datetime.now(UTC),
     )
 
     # First creation should succeed
@@ -228,14 +370,13 @@ async def test_repo_answer_guard_atomicity(migrated_db):
 
     # If we clear the guard key (simulate FAILED), we should be able to create again
     await InvoiceLifecycleRepository.update_action_result(
-        tenant_id, "act_atomic_1", action1.lifecycle_lease_owner,
-        {"state": InvoiceLifecycleActionState.FAILED.value},
-        unset_fields={"answer_guard_key": ""}
+        tenant_id, "act_atomic_1", action1.lifecycle_lease_owner, {"state": InvoiceLifecycleActionState.FAILED.value}, unset_fields={"answer_guard_key": ""}
     )
 
     # Now action2 should succeed
     created2_retry = await InvoiceLifecycleRepository.create_action(action2)
     assert created2_retry == ActionCreationResult.SUCCESS
+
 
 async def test_duplicate_guard_detected_from_key_pattern():
     from unittest.mock import patch
@@ -245,10 +386,18 @@ async def test_duplicate_guard_detected_from_key_pattern():
     from models.schemas.invoice_lifecycle import ActionCreationResult
 
     action = InvoiceLifecycleAction(
-        id="a1", tenant_id="t1", direction="INCOMING", source_invoice_id="i1",
-        source_provider_uuid="p1", action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING, state="REQUESTED",
-        request_uuid="r1", idempotency_key="id1", request_fingerprint="f1",
-        requested_by="user1", requested_at=datetime.now(UTC)
+        id="a1",
+        tenant_id="t1",
+        direction="INCOMING",
+        source_invoice_id="i1",
+        source_provider_uuid="p1",
+        action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING,
+        state="REQUESTED",
+        request_uuid="r1",
+        idempotency_key="id1",
+        request_fingerprint="f1",
+        requested_by="user1",
+        requested_at=datetime.now(UTC),
     )
 
     with patch("core.integrations.invoice_lifecycle_repository.get_db_for_tenant") as mock_get_db:
@@ -259,6 +408,7 @@ async def test_duplicate_guard_detected_from_key_pattern():
         result = await InvoiceLifecycleRepository.create_action(action)
         assert result == ActionCreationResult.GUARD_CONFLICT
 
+
 async def test_duplicate_idempotency_detected_from_key_pattern():
     from unittest.mock import patch
 
@@ -267,10 +417,18 @@ async def test_duplicate_idempotency_detected_from_key_pattern():
     from models.schemas.invoice_lifecycle import ActionCreationResult
 
     action = InvoiceLifecycleAction(
-        id="a1", tenant_id="t1", direction="INCOMING", source_invoice_id="i1",
-        source_provider_uuid="p1", action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING, state="REQUESTED",
-        request_uuid="r1", idempotency_key="id1", request_fingerprint="f1",
-        requested_by="user1", requested_at=datetime.now(UTC)
+        id="a1",
+        tenant_id="t1",
+        direction="INCOMING",
+        source_invoice_id="i1",
+        source_provider_uuid="p1",
+        action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING,
+        state="REQUESTED",
+        request_uuid="r1",
+        idempotency_key="id1",
+        request_fingerprint="f1",
+        requested_by="user1",
+        requested_at=datetime.now(UTC),
     )
 
     with patch("core.integrations.invoice_lifecycle_repository.get_db_for_tenant") as mock_get_db:

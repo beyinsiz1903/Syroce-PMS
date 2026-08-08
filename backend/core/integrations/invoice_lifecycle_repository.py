@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from core.tenant_db import get_db_for_tenant
@@ -55,19 +56,25 @@ class InvoiceLifecycleRepository:
     @staticmethod
     async def has_active_action_for_invoice(tenant_id: str, invoice_id: str) -> bool:
         from models.schemas.invoice_lifecycle import InvoiceLifecycleActionType
+
         db: AsyncIOMotorDatabase = get_db_for_tenant(tenant_id)
-        count = await db.invoice_lifecycle_actions.count_documents({
-            "tenant_id": tenant_id,
-            "source_invoice_id": invoice_id,
-            "action_type": {"$in": [InvoiceLifecycleActionType.ACCEPT_INCOMING.value, InvoiceLifecycleActionType.REJECT_INCOMING.value]},
-            "state": {"$in": [
-                InvoiceLifecycleActionState.REQUESTED.value,
-                InvoiceLifecycleActionState.PROCESSING.value,
-                InvoiceLifecycleActionState.RETRY_SCHEDULED.value,
-                InvoiceLifecycleActionState.SUCCEEDED.value,
-                InvoiceLifecycleActionState.RECONCILIATION_REQUIRED.value
-            ]}
-        })
+        count = await db.invoice_lifecycle_actions.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "source_invoice_id": invoice_id,
+                "action_type": {"$in": [InvoiceLifecycleActionType.ACCEPT_INCOMING.value, InvoiceLifecycleActionType.REJECT_INCOMING.value]},
+                "state": {
+                    "$in": [
+                        InvoiceLifecycleActionState.REQUESTED.value,
+                        InvoiceLifecycleActionState.PROCESSING.value,
+                        InvoiceLifecycleActionState.RETRY_SCHEDULED.value,
+                        InvoiceLifecycleActionState.PROVIDER_PENDING.value,
+                        InvoiceLifecycleActionState.SUCCEEDED.value,
+                        InvoiceLifecycleActionState.RECONCILIATION_REQUIRED.value,
+                    ]
+                },
+            }
+        )
         return count > 0
 
     @staticmethod
@@ -78,12 +85,29 @@ class InvoiceLifecycleRepository:
         db: AsyncIOMotorDatabase = get_db_for_tenant(tenant_id)
         now = datetime.now(UTC)
         from datetime import timedelta
+
         expires_at = now + timedelta(seconds=lease_duration_sec) if lease_duration_sec > 0 else now
 
         doc = await db.invoice_lifecycle_actions.find_one_and_update(
             {
                 "id": action_id,
                 "tenant_id": tenant_id,
+                "state": {
+                    "$in": [
+                        InvoiceLifecycleActionState.REQUESTED.value,
+                        InvoiceLifecycleActionState.PROCESSING.value,
+                        InvoiceLifecycleActionState.RETRY_SCHEDULED.value,
+                        InvoiceLifecycleActionState.PROVIDER_PENDING.value,
+                    ]
+                },
+                "$and": [
+                    {
+                        "$or": [
+                            {"next_attempt_at": None},
+                            {"next_attempt_at": {"$lte": now}},
+                        ]
+                    }
+                ],
                 "$or": [
                     {"lifecycle_lease_owner": None},
                     {"lifecycle_lease_expires_at": {"$lte": now}},
@@ -96,25 +120,71 @@ class InvoiceLifecycleRepository:
                     "state": InvoiceLifecycleActionState.PROCESSING.value,
                 }
             },
-            return_document=True,
+            return_document=ReturnDocument.AFTER,
         )
         if not doc:
             return None
         return InvoiceLifecycleAction.model_validate(doc)
 
     @staticmethod
-    async def update_action_result(tenant_id: str, action_id: str, worker_id: str, update_fields: dict, unset_fields: dict | None = None) -> bool:
+    async def mark_provider_attempt_started(
+        tenant_id: str,
+        action_id: str,
+        worker_id: str,
+        attempted_at: datetime,
+    ) -> bool:
+        db: AsyncIOMotorDatabase = get_db_for_tenant(tenant_id)
+        result = await db.invoice_lifecycle_actions.update_one(
+            {
+                "id": action_id,
+                "tenant_id": tenant_id,
+                "lifecycle_lease_owner": worker_id,
+                "provider_attempted_at": None,
+            },
+            {"$set": {"provider_attempted_at": attempted_at}},
+        )
+        return result.modified_count == 1
+
+    @staticmethod
+    async def mark_provider_request_accepted(
+        tenant_id: str,
+        action_id: str,
+        worker_id: str,
+        accepted_at: datetime,
+    ) -> bool:
+        db: AsyncIOMotorDatabase = get_db_for_tenant(tenant_id)
+        result = await db.invoice_lifecycle_actions.update_one(
+            {
+                "id": action_id,
+                "tenant_id": tenant_id,
+                "lifecycle_lease_owner": worker_id,
+                "provider_attempted_at": {"$ne": None},
+            },
+            {"$set": {"provider_accepted_at": accepted_at}},
+        )
+        return result.modified_count == 1
+
+    @staticmethod
+    async def update_action_result(
+        tenant_id: str,
+        action_id: str,
+        worker_id: str,
+        update_fields: dict,
+        unset_fields: dict | None = None,
+    ) -> bool:
         """
         Updates the result of a processed action and releases the lease.
         Only succeeds if the worker still owns the lease.
         """
         db: AsyncIOMotorDatabase = get_db_for_tenant(tenant_id)
 
-        # Clean the lease
-        update_fields["lifecycle_lease_owner"] = None
-        update_fields["lifecycle_lease_expires_at"] = None
+        persisted_fields = {
+            **update_fields,
+            "lifecycle_lease_owner": None,
+            "lifecycle_lease_expires_at": None,
+        }
 
-        update_op = {"$set": update_fields}
+        update_op = {"$set": persisted_fields}
         if unset_fields:
             update_op["$unset"] = unset_fields
 

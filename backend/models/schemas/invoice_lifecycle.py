@@ -13,6 +13,7 @@ class InvoiceLifecycleActionType(StrEnum):
     ACCEPT_INCOMING = "ACCEPT_INCOMING"
     REJECT_INCOMING = "REJECT_INCOMING"
 
+
 class ActionCreationResult(StrEnum):
     SUCCESS = "SUCCESS"
     IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"
@@ -23,6 +24,7 @@ class InvoiceLifecycleActionState(StrEnum):
     REQUESTED = "REQUESTED"
     PROCESSING = "PROCESSING"
     RETRY_SCHEDULED = "RETRY_SCHEDULED"
+    PROVIDER_PENDING = "PROVIDER_PENDING"
     SUCCEEDED = "SUCCEEDED"
     RECONCILIATION_REQUIRED = "RECONCILIATION_REQUIRED"
     FAILED = "FAILED"
@@ -55,7 +57,12 @@ class InvoiceLifecycleAction(BaseModel):
     generated_invoice_number: str | None = None
 
     attempt_count: int = 0
+    verification_attempt_count: int = 0
     next_attempt_at: datetime | None = None
+
+    provider_attempted_at: datetime | None = None
+    provider_accepted_at: datetime | None = None
+    last_error_code: str | None = None
 
     reconciliation_required: bool = False
     reconciliation_reason: str | None = None
