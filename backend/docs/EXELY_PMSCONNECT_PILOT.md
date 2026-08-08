@@ -24,13 +24,18 @@ secrets, with values belonging only to a dedicated Exely test property:
 - `EXELY_PILOT_USERNAME`
 - `EXELY_PILOT_PASSWORD`
 - `EXELY_PILOT_HOTEL_CODE`
-- `EXELY_PILOT_ROOM_TYPE_CODE`
-- `EXELY_PILOT_RATE_PLAN_CODE`
 - `EXELY_PILOT_HMAC_KEY`
 - `EXELY_PILOT_ACK_RESERVATION_ID`
 - `EXELY_PILOT_ACK_CONFIRMATION_ID`
 - `EXELY_PILOT_ACK_CREATE_DATETIME`
 - `EXELY_PILOT_ACK_LAST_MODIFY_DATETIME`
+
+ARI mutation runs additionally require these mapping secrets. They are optional
+for read-only discovery, which reports only safe capability booleans and count
+classes without exposing discovered provider identifiers:
+
+- `EXELY_PILOT_ROOM_TYPE_CODE`
+- `EXELY_PILOT_RATE_PLAN_CODE`
 
 It also requires these environment variables:
 

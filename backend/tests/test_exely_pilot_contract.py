@@ -210,6 +210,56 @@ def test_settings_fail_closed_without_write_approval(monkeypatch):
         pilot._load_settings()
 
 
+def test_discovery_allows_mapping_secrets_to_be_absent(monkeypatch):
+    _base_env(monkeypatch, operation="discovery")
+    monkeypatch.delenv("EXELY_PILOT_ROOM_TYPE_CODE")
+    monkeypatch.delenv("EXELY_PILOT_RATE_PLAN_CODE")
+
+    settings = pilot._load_settings()
+
+    assert settings.room_type_code == ""
+    assert settings.rate_plan_code == ""
+
+
+def test_ari_write_still_requires_mapping_secrets(monkeypatch):
+    _base_env(monkeypatch, operation="availability", write=True)
+    monkeypatch.delenv("EXELY_PILOT_ROOM_TYPE_CODE")
+
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_MISSING_CONFIGURATION:EXELY_PILOT_ROOM_TYPE_CODE"):
+        pilot._load_settings()
+
+
+@pytest.mark.asyncio
+async def test_discovery_without_target_mapping_reports_safe_capability_metadata(monkeypatch):
+    _base_env(monkeypatch, operation="discovery")
+    monkeypatch.delenv("EXELY_PILOT_ROOM_TYPE_CODE")
+    monkeypatch.delenv("EXELY_PILOT_RATE_PLAN_CODE")
+    settings = pilot._load_settings()
+    provider = SimpleNamespace(
+        discover_rooms=AsyncMock(
+            return_value=SimpleNamespace(
+                success=True,
+                data={
+                    "room_types": [{"code": "synthetic-room-a"}, {"code": "synthetic-room-b"}],
+                    "rate_plans": [{"code": "synthetic-rate"}],
+                },
+                metadata={"provider_status_class": "SUCCESS"},
+            )
+        )
+    )
+    recorded: list[tuple[str, object]] = []
+
+    metadata = await pilot._discover_mapping(provider, settings, lambda key, value: recorded.append((key, value)))
+
+    assert metadata["capability_match"] is True
+    assert metadata["room_match"] is True
+    assert metadata["rate_plan_match"] is True
+    assert metadata["match_count_class"] == "MULTIPLE"
+    assert "synthetic-room" not in str(metadata)
+    assert "synthetic-rate" not in str(metadata)
+    assert recorded == []
+
+
 def test_ack_requires_separate_durable_pms_attestation(monkeypatch):
     _base_env(monkeypatch, operation="reservation_ack", write=True)
     monkeypatch.setenv("EXELY_PILOT_ACK_DURABLE_PMS_ATTESTED", "false")
