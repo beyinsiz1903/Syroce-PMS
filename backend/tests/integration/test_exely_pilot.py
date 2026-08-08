@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -22,6 +23,12 @@ from domains.channel_manager.providers.exely.ari_delivery import (
     STATE_WARNING_SUCCESS,
     deliver_exely_ari,
     reconcile_pending_exely_ari,
+)
+from domains.channel_manager.providers.exely.lifecycle import acknowledge_durable_version
+from domains.channel_manager.providers.exely.pilot_import import (
+    PilotImportError,
+    import_reservation_durably,
+    load_ack_ready_reservation,
 )
 from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.security import (
@@ -38,7 +45,8 @@ pytestmark = [
 
 logger = logging.getLogger("exely.pilot")
 
-_READ_OPERATIONS = frozenset({"discovery", "reservation_read"})
+_PROVIDER_READ_OPERATIONS = frozenset({"discovery", "reservation_read"})
+_READ_OPERATIONS = frozenset({*_PROVIDER_READ_OPERATIONS, "reservation_import"})
 _ARI_OPERATIONS = frozenset({"availability", "rate", "stop_sell", "min_los", "min_los_arrival"})
 _WRITE_OPERATIONS = frozenset({*_ARI_OPERATIONS, "reservation_ack"})
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -56,6 +64,7 @@ class PilotSettings:
     approved_head: str
     run_id: str
     correlation_label: str
+    tenant_id: str = field(repr=False)
     test_date: date | None = None
     availability: int | None = None
     rate: Decimal | None = None
@@ -68,11 +77,8 @@ class PilotSettings:
     hotel_code: str = field(default="", repr=False)
     room_type_code: str = field(default="", repr=False)
     rate_plan_code: str = field(default="", repr=False)
+    pms_room_type: str = field(default="", repr=False)
     hmac_key: str = field(default="", repr=False)
-    ack_reservation_id: str = field(default="", repr=False)
-    ack_confirmation_id: str = field(default="", repr=False)
-    ack_create_datetime: str = field(default="", repr=False)
-    ack_last_modify_datetime: str = field(default="", repr=False)
 
 
 class PilotTransportGuard:
@@ -82,7 +88,7 @@ class PilotTransportGuard:
         self._transport = provider._transport
         self._original_send = self._transport.send_soap
         self._write_approved = settings.operation in _WRITE_OPERATIONS
-        self._allowed_read_action = get_soap_action_uri("OTA_ReadRQ" if settings.operation in {"reservation_read", "reservation_ack"} else "OTA_HotelAvailRQ")
+        self._allowed_read_action = get_soap_action_uri("OTA_ReadRQ" if settings.operation in {"reservation_read", "reservation_import", "reservation_ack"} else "OTA_HotelAvailRQ")
         self._allowed_write_action = self._write_action(settings.operation)
         self.read_count = 0
         self.write_count = 0
@@ -149,6 +155,33 @@ def _require_local_test_database() -> None:
         raise PilotSafetyError("BLOCKED_NON_TEST_APPLICATION_ENVIRONMENT")
 
 
+def _require_persistent_test_database() -> None:
+    mongo_url = _required_env("MONGO_URL")
+    db_name = _required_env("DB_NAME")
+    if os.environ.get("APP_ENV") != "test" or os.environ.get("TESTING") != "1":
+        raise PilotSafetyError("BLOCKED_NON_TEST_APPLICATION_ENVIRONMENT")
+    if os.environ.get("EXELY_PILOT_DB_SCOPE") != "test":
+        raise PilotSafetyError("BLOCKED_NON_TEST_PMS_DB")
+    if os.environ.get("EXELY_PILOT_PERSISTENT_DB_ATTESTED") != "true":
+        raise PilotSafetyError("BLOCKED_PERSISTENT_TEST_DB_NOT_ATTESTED")
+    if mongo_url.startswith(("mongodb://localhost:", "mongodb://127.0.0.1:")):
+        raise PilotSafetyError("BLOCKED_EPHEMERAL_PMS_DATABASE")
+    if not mongo_url.startswith(("mongodb://", "mongodb+srv://")):
+        raise PilotSafetyError("BLOCKED_INVALID_PERSISTENT_DATABASE_URI")
+    try:
+        hostname = str(urlsplit(mongo_url).hostname or "").lower()
+    except ValueError as exc:
+        raise PilotSafetyError("BLOCKED_INVALID_PERSISTENT_DATABASE_URI") from exc
+    lowered_name = db_name.lower()
+    host_tokens = set(re.split(r"[^a-z0-9]+", hostname))
+    if not hostname or {"prod", "production"} & host_tokens:
+        raise PilotSafetyError("BLOCKED_NON_TEST_PMS_DB")
+    if any(marker in lowered_name for marker in ("production", "_prod", "-prod")):
+        raise PilotSafetyError("BLOCKED_NON_TEST_PMS_DB")
+    if "test" not in lowered_name or not ({"exely", "pilot"} & set(re.split(r"[^a-z0-9]+", lowered_name))):
+        raise PilotSafetyError("BLOCKED_NON_TEST_DATABASE_NAME")
+
+
 def _parse_int(name: str, *, minimum: int, maximum: int) -> int:
     raw = _required_env(name)
     try:
@@ -168,10 +201,13 @@ def _parse_bool(name: str) -> bool:
 
 
 def _load_settings() -> PilotSettings:
-    _require_local_test_database()
     operation = _required_env("EXELY_PILOT_OPERATION")
     if operation not in {*_READ_OPERATIONS, *_WRITE_OPERATIONS}:
         raise PilotSafetyError("BLOCKED_UNSUPPORTED_PILOT_OPERATION")
+    if operation in {"reservation_import", "reservation_ack"}:
+        _require_persistent_test_database()
+    else:
+        _require_local_test_database()
 
     write_approved = os.environ.get("EXELY_PILOT_WRITE_APPROVED") == "true"
     if operation in _READ_OPERATIONS and write_approved:
@@ -238,16 +274,8 @@ def _load_settings() -> PilotSettings:
     elif operation == "reservation_ack":
         if os.environ.get("EXELY_PILOT_ACK_DURABLE_PMS_ATTESTED") != "true":
             raise PilotSafetyError("BLOCKED_DURABLE_PMS_RESULT_NOT_ATTESTED")
-        values.update(
-            {
-                "ack_reservation_id": _required_env("EXELY_PILOT_ACK_RESERVATION_ID"),
-                "ack_confirmation_id": _required_env("EXELY_PILOT_ACK_CONFIRMATION_ID"),
-                "ack_create_datetime": _required_env("EXELY_PILOT_ACK_CREATE_DATETIME"),
-                "ack_last_modify_datetime": _required_env("EXELY_PILOT_ACK_LAST_MODIFY_DATETIME"),
-            }
-        )
 
-    if operation in _ARI_OPERATIONS:
+    if operation in {*_ARI_OPERATIONS, "reservation_import", "reservation_ack"}:
         room_type_code = _required_env("EXELY_PILOT_ROOM_TYPE_CODE")
         rate_plan_code = _required_env("EXELY_PILOT_RATE_PLAN_CODE")
     elif operation == "discovery":
@@ -256,32 +284,43 @@ def _load_settings() -> PilotSettings:
     else:
         room_type_code = ""
         rate_plan_code = ""
+    hotel_code = _required_env("EXELY_PILOT_HOTEL_CODE")
+    tenant_id = (
+        "exely-pilot-"
+        + hmac.new(
+            hmac_key.encode(),
+            f"persistent-tenant:{hotel_code}".encode(),
+            hashlib.sha256,
+        ).hexdigest()[:24]
+    )
+    pms_room_type = _required_env("EXELY_PILOT_PMS_ROOM_TYPE") if operation == "reservation_import" else ""
     return PilotSettings(
         operation=operation,
         endpoint_url=endpoint_url,
         approved_head=approved_head,
         run_id=run_id,
         correlation_label=correlation_label,
+        tenant_id=tenant_id,
         username=_required_env("EXELY_PILOT_USERNAME"),
         password=_required_env("EXELY_PILOT_PASSWORD"),
-        hotel_code=_required_env("EXELY_PILOT_HOTEL_CODE"),
+        hotel_code=hotel_code,
         room_type_code=room_type_code,
         rate_plan_code=rate_plan_code,
+        pms_room_type=pms_room_type,
         hmac_key=hmac_key,
         **values,
     )
 
 
 def _build_provider(settings: PilotSettings) -> ExelyProvider:
-    tenant_id = f"exely-pilot-{settings.correlation_label}"
     return ExelyProvider(
         username=settings.username,
         password=settings.password,
         hotel_code=settings.hotel_code,
         endpoint_url=settings.endpoint_url,
-        tenant_id=tenant_id,
+        tenant_id=settings.tenant_id,
         property_id=settings.hotel_code,
-        connection_id=tenant_id,
+        connection_id=settings.tenant_id,
         max_retries=0,
     )
 
@@ -292,17 +331,26 @@ def _record_safe_metadata(record_property, metadata: dict[str, Any]) -> None:
         "capability_match",
         "correlation_label",
         "delivery_state",
+        "durable_pms_state",
         "exact_head_match",
         "exception_class",
         "match_count_class",
+        "local_pms_write_count",
+        "lineage_match",
         "operation",
         "pilot_account_attested",
         "provider_status_class",
+        "provider_read_count",
         "provider_write_count",
         "read_count",
         "result",
         "room_match",
         "rate_plan_match",
+        "ack_state_pending",
+        "ack_reservation_id_present",
+        "ack_confirmation_id_present",
+        "ack_create_datetime_present",
+        "ack_last_modify_datetime_present",
         "version_match",
     }
     safe = {key: value for key, value in metadata.items() if key in allowed}
@@ -361,8 +409,8 @@ async def _read_reservations(
     settings: PilotSettings,
     record_property,
     *,
-    require_ack_match: bool,
-) -> dict[str, Any]:
+    require_exactly_one: bool,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
     metadata: dict[str, Any] = {
         "correlation_label": settings.correlation_label,
         "operation": settings.operation,
@@ -383,20 +431,17 @@ async def _read_reservations(
     if not isinstance(reservations, list):
         _fail_safe(record_property, "BLOCKED_RESERVATION_READ_RESPONSE_INVALID", metadata)
 
-    if not require_ack_match:
-        metadata["match_count_class"] = "ZERO" if not reservations else "ONE" if len(reservations) == 1 else "MULTIPLE"
-        metadata["version_match"] = True
-        return metadata
-
-    matches = [item for item in reservations if isinstance(item, dict) and hmac.compare_digest(str(item.get("reservation_id") or ""), settings.ack_reservation_id)]
-    metadata["match_count_class"] = "ZERO" if not matches else "ONE" if len(matches) == 1 else "MULTIPLE"
-    if len(matches) != 1:
-        code = "BLOCKED_ACK_RESERVATION_NOT_UNDELIVERED" if not matches else "CONFLICT_MULTIPLE_ACK_RESERVATIONS"
+    valid = [item for item in reservations if isinstance(item, dict)]
+    if len(valid) != len(reservations):
+        _fail_safe(record_property, "BLOCKED_RESERVATION_READ_RESPONSE_INVALID", metadata)
+    metadata["match_count_class"] = "ZERO" if not valid else "ONE" if len(valid) == 1 else "MULTIPLE"
+    if require_exactly_one and len(valid) != 1:
+        code = "BLOCKED_NO_UNDELIVERED_RESERVATION" if not valid else "BLOCKED_MULTIPLE_UNDELIVERED_RESERVATIONS"
         _fail_safe(record_property, code, metadata)
-    metadata["version_match"] = hmac.compare_digest(str(matches[0].get("last_modify") or ""), settings.ack_last_modify_datetime)
-    if not metadata["version_match"]:
-        _fail_safe(record_property, "BLOCKED_ACK_VERSION_MISMATCH", metadata)
-    return metadata
+    metadata["version_match"] = not require_exactly_one or bool(valid[0].get("last_modify"))
+    if require_exactly_one and not metadata["version_match"]:
+        _fail_safe(record_property, "BLOCKED_RESERVATION_VERSION_MISSING", metadata)
+    return metadata, valid[0] if len(valid) == 1 else None
 
 
 def _ari_value(settings: PilotSettings) -> Any:
@@ -415,7 +460,7 @@ async def test_exely_pilot_readonly(record_property):
         settings = _load_settings()
     except PilotSafetyError as exc:
         pytest.fail(str(exc), pytrace=False)
-    if settings.operation not in _READ_OPERATIONS:
+    if settings.operation not in _PROVIDER_READ_OPERATIONS:
         pytest.fail("BLOCKED_READONLY_TARGET_OPERATION_MISMATCH", pytrace=False)
 
     provider = _build_provider(settings)
@@ -425,7 +470,12 @@ async def test_exely_pilot_readonly(record_property):
         if settings.operation == "discovery":
             metadata = await _discover_mapping(provider, settings, record_property)
         else:
-            metadata = await _read_reservations(provider, settings, record_property, require_ack_match=False)
+            metadata, _ = await _read_reservations(
+                provider,
+                settings,
+                record_property,
+                require_exactly_one=False,
+            )
         metadata.update({"read_count": guard.read_count, "provider_write_count": guard.write_count})
         if guard.write_count != 0:
             _fail_safe(record_property, "FAIL_READONLY_PROVIDER_WRITE_DETECTED", metadata)
@@ -446,6 +496,82 @@ async def test_exely_pilot_readonly(record_property):
         guard.restore()
 
 
+async def test_exely_pilot_reservation_import(record_property):
+    try:
+        settings = _load_settings()
+    except PilotSafetyError as exc:
+        pytest.fail(str(exc), pytrace=False)
+    if settings.operation != "reservation_import":
+        pytest.fail("BLOCKED_IMPORT_TARGET_OPERATION_MISMATCH", pytrace=False)
+
+    provider = _build_provider(settings)
+    guard = PilotTransportGuard(provider, settings)
+    metadata: dict[str, Any] = {}
+    try:
+        metadata, reservation = await _read_reservations(
+            provider,
+            settings,
+            record_property,
+            require_exactly_one=True,
+        )
+        if reservation is None:
+            _fail_safe(record_property, "BLOCKED_NO_UNDELIVERED_RESERVATION", metadata)
+        result = await import_reservation_durably(
+            settings.tenant_id,
+            settings.hotel_code,
+            reservation,
+            room_type_code=settings.room_type_code,
+            rate_plan_code=settings.rate_plan_code,
+            pms_room_type=settings.pms_room_type,
+        )
+        verification = result.verification
+        metadata.update(
+            {
+                "provider_read_count": guard.read_count,
+                "read_count": guard.read_count,
+                "provider_write_count": guard.write_count,
+                "local_pms_write_count": result.local_pms_write_count,
+                "durable_pms_state": verification.durable_pms_state,
+                "lineage_match": verification.lineage_match,
+                "version_match": verification.version_match,
+                "ack_state_pending": verification.ack_state_pending,
+                "ack_reservation_id_present": verification.ack_reservation_id_present,
+                "ack_confirmation_id_present": verification.ack_confirmation_id_present,
+                "ack_create_datetime_present": verification.ack_create_datetime_present,
+                "ack_last_modify_datetime_present": verification.ack_last_modify_datetime_present,
+                "delivery_state": "ALREADY_DURABLE" if result.already_durable else "PMS_DURABLE",
+            }
+        )
+        if guard.read_count != 1:
+            _fail_safe(record_property, "FAIL_READ_COUNT_INVALID", metadata)
+        if guard.write_count != 0:
+            _fail_safe(record_property, "FAIL_READONLY_PROVIDER_WRITE_DETECTED", metadata)
+        metadata["result"] = "PASS"
+        _record_safe_metadata(record_property, metadata)
+    except (PilotSafetyError, PilotImportError) as exc:
+        metadata.update(
+            {
+                "exception_class": type(exc).__name__,
+                "provider_read_count": guard.read_count,
+                "read_count": guard.read_count,
+                "provider_write_count": guard.write_count,
+            }
+        )
+        _fail_safe(record_property, str(exc), metadata)
+    except Exception as exc:
+        metadata.update(
+            {
+                "exception_class": type(exc).__name__,
+                "provider_read_count": guard.read_count,
+                "read_count": guard.read_count,
+                "provider_write_count": guard.write_count,
+            }
+        )
+        _fail_safe(record_property, "BLOCKED_PROVIDER_OPERATION_EXCEPTION", metadata)
+    finally:
+        guard.restore()
+
+
 @pytest.mark.side_effect
 async def test_exely_pilot_single_write(record_property):
     try:
@@ -457,7 +583,7 @@ async def test_exely_pilot_single_write(record_property):
 
     provider = _build_provider(settings)
     guard = PilotTransportGuard(provider, settings)
-    tenant_id = f"exely-pilot-{settings.correlation_label}"
+    tenant_id = settings.tenant_id
     metadata: dict[str, Any] = {
         "correlation_label": settings.correlation_label,
         "operation": settings.operation,
@@ -502,30 +628,40 @@ async def test_exely_pilot_single_write(record_property):
             if reconciliation.get("pending") != 0 or reconciliation.get("provider_write_count") != 0:
                 _fail_safe(record_property, "BLOCKED_ARI_RECONCILIATION_PENDING", metadata)
         else:
-            metadata.update(await _read_reservations(provider, settings, record_property, require_ack_match=True))
-            result = await provider.confirm_delivery(
-                settings.ack_reservation_id,
-                settings.ack_confirmation_id,
-                create_datetime=settings.ack_create_datetime,
-                last_modify_datetime=settings.ack_last_modify_datetime,
+            read_metadata, reservation = await _read_reservations(
+                provider,
+                settings,
+                record_property,
+                require_exactly_one=True,
             )
-            status_class = str(result.metadata.get("provider_status_class") or result.error_type or "MALFORMED")
+            metadata.update(read_metadata)
+            if reservation is None:
+                _fail_safe(record_property, "BLOCKED_NO_UNDELIVERED_RESERVATION", metadata)
+            current = await load_ack_ready_reservation(
+                settings.tenant_id,
+                settings.hotel_code,
+                reservation,
+                room_type_code=settings.room_type_code,
+                rate_plan_code=settings.rate_plan_code,
+            )
+            result = await acknowledge_durable_version(provider, current)
+            status_class = "SUCCESS" if result.get("success") else str(result.get("reason") or "MALFORMED")
             metadata.update(
                 {
-                    "delivery_state": "ACKED" if result.success else "ACK_FAILED",
+                    "delivery_state": "ACKED" if result.get("success") else "ACK_FAILED",
                     "provider_status_class": status_class,
                     "provider_write_count": guard.write_count,
                     "read_count": guard.read_count,
                 }
             )
-            if guard.write_count != 1 or result.metadata.get("provider_write_count") != 1:
+            if guard.write_count != 1 or result.get("provider_write_count") != 1:
                 _fail_safe(record_property, "FAIL_PROVIDER_WRITE_COUNT_INVALID", metadata)
-            if not result.success or status_class not in {"SUCCESS", "WARNING_SUCCESS"}:
+            if not result.get("success") or status_class not in {"SUCCESS", "WARNING_SUCCESS"}:
                 _fail_safe(record_property, "BLOCKED_RESERVATION_ACK_NOT_CONFIRMED", metadata)
 
         metadata["result"] = "PASS"
         _record_safe_metadata(record_property, metadata)
-    except PilotSafetyError as exc:
+    except (PilotSafetyError, PilotImportError) as exc:
         metadata.update(
             {
                 "exception_class": type(exc).__name__,
