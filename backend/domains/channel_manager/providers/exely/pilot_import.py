@@ -133,6 +133,28 @@ async def ensure_pilot_mapping(
         return 0
 
 
+async def prepare_pilot_persistence(
+    tenant_id: str,
+    *,
+    room_type_code: str,
+    rate_plan_code: str,
+    pms_room_type: str,
+) -> None:
+    """Prove pilot DB access before consuming an undelivered reservation."""
+    try:
+        await ensure_pilot_schema()
+        await ensure_pilot_mapping(
+            tenant_id,
+            room_type_code=room_type_code,
+            rate_plan_code=rate_plan_code,
+            pms_room_type=pms_room_type,
+        )
+    except PilotImportError:
+        raise
+    except Exception as exc:
+        raise PilotImportError("BLOCKED_PERSISTENT_TEST_DB_PREFLIGHT_FAILED") from exc
+
+
 async def verify_durable_import(
     tenant_id: str,
     property_id: str,
@@ -238,8 +260,7 @@ async def import_reservation_durably(
         room_type_code=room_type_code,
         rate_plan_code=rate_plan_code,
     )
-    await ensure_pilot_schema()
-    await ensure_pilot_mapping(
+    await prepare_pilot_persistence(
         tenant_id,
         room_type_code=room_type_code,
         rate_plan_code=rate_plan_code,

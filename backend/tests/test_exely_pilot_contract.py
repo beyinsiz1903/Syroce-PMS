@@ -526,6 +526,32 @@ async def test_reservation_import_timeout_is_not_retried():
 
 
 @pytest.mark.asyncio
+async def test_reservation_import_db_preflight_blocks_before_provider_read(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_import")
+    provider = SimpleNamespace(
+        _transport=SimpleNamespace(send_soap=AsyncMock()),
+        pull_reservations=AsyncMock(),
+    )
+    monkeypatch.setattr(pilot, "_build_provider", lambda settings: provider)
+    monkeypatch.setattr(
+        pilot,
+        "prepare_pilot_persistence",
+        AsyncMock(side_effect=pilot.PilotImportError("BLOCKED_PERSISTENT_TEST_DB_PREFLIGHT_FAILED")),
+    )
+    recorded: list[tuple[str, object]] = []
+
+    with pytest.raises(
+        pytest.fail.Exception,
+        match="BLOCKED_PERSISTENT_TEST_DB_PREFLIGHT_FAILED",
+    ):
+        await pilot.test_exely_pilot_reservation_import(lambda key, value: recorded.append((key, value)))
+
+    provider.pull_reservations.assert_not_awaited()
+    assert ("provider_read_count", 0) in recorded
+    assert ("provider_write_count", 0) in recorded
+
+
+@pytest.mark.asyncio
 async def test_timeout_consumes_single_write_and_never_retries():
     original = AsyncMock(side_effect=TimeoutError)
     provider = SimpleNamespace(_transport=SimpleNamespace(send_soap=original))
