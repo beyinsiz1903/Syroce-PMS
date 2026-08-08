@@ -25,10 +25,14 @@ secrets, with values belonging only to a dedicated Exely test property:
 - `EXELY_PILOT_PASSWORD`
 - `EXELY_PILOT_HOTEL_CODE`
 - `EXELY_PILOT_HMAC_KEY`
-- `EXELY_PILOT_ACK_RESERVATION_ID`
-- `EXELY_PILOT_ACK_CONFIRMATION_ID`
-- `EXELY_PILOT_ACK_CREATE_DATETIME`
-- `EXELY_PILOT_ACK_LAST_MODIFY_DATETIME`
+
+Persistent reservation import and acknowledgement additionally require:
+
+- `EXELY_PILOT_PERSISTENT_MONGO_URL`, pointing only to a dedicated non-production database
+- `EXELY_PILOT_PERSISTENT_DB_NAME`, containing both the pilot/Exely and test scope in its name
+- `EXELY_PILOT_DB_SCOPE=test`
+- `EXELY_PILOT_PERSISTENT_DB_ATTESTED=true`, set only after confirming that the database is not shared with production
+- `EXELY_PILOT_PMS_ROOM_TYPE`, the local test PMS room-type mapping used by `reservation_import`
 
 ARI mutation runs additionally require these mapping secrets. They are optional
 for read-only discovery, which reports only safe capability booleans and count
@@ -64,6 +68,7 @@ operation:
 
 - `discovery`: one read-only availability/discovery request
 - `reservation_read`: one official undelivered reservation read
+- `reservation_import`: one undelivered read followed by canonical durable import into the persistent test DB; provider writes remain zero
 - `availability`: one availability mutation
 - `rate`: one rate mutation
 - `stop_sell`: one stop-sell mutation
@@ -84,9 +89,18 @@ write. PMSConnect has no ARI read-back, so ambiguous, malformed, timeout,
 rate-limited, rejected, pending, or provider-error outcomes remain blocked and
 are never retried automatically.
 
+Reservation import requires exactly one undelivered reservation, the configured
+room/rate mapping, canonical raw/version persistence, the existing fenced PMS
+lifecycle, and a same-database readback proving `PMS_DURABLE`, lineage, exact
+provider version, and `ACK_PENDING`. Re-running the local import is allowed only
+because the canonical version and booking identities are idempotent.
+
 Reservation ACK additionally requires a read-only exact reservation/version
-match and the dedicated durable-PMS attestation. It never runs in the same
-workflow execution as an ARI mutation.
+match and the dedicated durable-PMS attestation. Before provider egress it loads
+the persistent test DB and independently proves the exact durable version,
+booking readback, lineage, and pending ACK state. Environment attestation alone
+cannot authorize an ACK. It never runs in the same workflow execution as an ARI
+mutation.
 
 Only safe metadata is emitted: booleans, count classes, operation class,
 delivery/result class, exception class, provider write count, and a truncated

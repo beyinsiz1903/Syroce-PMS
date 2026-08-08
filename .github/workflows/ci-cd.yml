@@ -234,6 +234,7 @@ jobs:
             tests/test_exely_provider_quota_parser.py \
             tests/test_exely_legacy_closure.py \
             tests/test_exely_pilot_contract.py \
+            tests/test_exely_pilot_import.py \
             tests/unit/test_exely_provider.py \
             tests/integration/test_exely_provider_flows.py \
             -v --tb=short -q --timeout=60 \
@@ -267,6 +268,7 @@ jobs:
             tests/test_exely_compatibility_mount.py \
             tests/test_exely_reservation_lifecycle.py \
             tests/test_exely_ari_delivery.py \
+            tests/test_exely_pilot_import.py \
             tests/test_exely_provider_quota_parser.py \
             -m exely_failure_stress --strict-markers \
             -v --tb=short -q --timeout=60 \

@@ -11,6 +11,7 @@ on:
         options:
           - discovery
           - reservation_read
+          - reservation_import
           - availability
           - rate
           - stop_sell
@@ -86,7 +87,7 @@ jobs:
             exit 1
           fi
           case "${PILOT_OPERATION}" in
-            discovery|reservation_read)
+            discovery|reservation_read|reservation_import)
               if [ "${CONFIRM_PROVIDER_WRITE}" = "true" ]; then
                 echo "::error::BLOCKED_READONLY_WRITE_CONFLICT"
                 exit 1
@@ -190,7 +191,7 @@ jobs:
           pip install pytest pytest-asyncio pytest-timeout
 
       - name: Run one gated Exely discovery or ARI target
-        if: inputs.operation != 'reservation_ack'
+        if: inputs.operation != 'reservation_ack' && inputs.operation != 'reservation_import'
         env:
           APP_ENV: test
           TESTING: '1'
@@ -231,12 +232,14 @@ jobs:
             -v --tb=short -q --timeout=600 \
             --junitxml=exely-pilot-results.xml
 
-      - name: Run one gated Exely acknowledgement target
-        if: inputs.operation == 'reservation_ack'
+      - name: Run one gated Exely durable reservation import target
+        if: inputs.operation == 'reservation_import'
         env:
           APP_ENV: test
           TESTING: '1'
           REDIS_URL: redis://localhost:6379/0
+          MONGO_URL: ${{ secrets.EXELY_PILOT_PERSISTENT_MONGO_URL }}
+          DB_NAME: ${{ vars.EXELY_PILOT_PERSISTENT_DB_NAME }}
           GITHUB_SHA: ${{ github.sha }}
           EXELY_PILOT_ENDPOINT_URL: https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc
           EXELY_PILOT_OPERATION: ${{ inputs.operation }}
@@ -246,15 +249,47 @@ jobs:
           EXELY_PILOT_RUN_ATTEMPT: ${{ github.run_attempt }}
           EXELY_PILOT_ACCOUNT_CONFIRMED: ${{ vars.EXELY_PILOT_ACCOUNT_CONFIRMED }}
           EXELY_PILOT_CREDENTIAL_SCOPE: ${{ vars.EXELY_PILOT_CREDENTIAL_SCOPE }}
+          EXELY_PILOT_DB_SCOPE: ${{ vars.EXELY_PILOT_DB_SCOPE }}
+          EXELY_PILOT_PERSISTENT_DB_ATTESTED: ${{ vars.EXELY_PILOT_PERSISTENT_DB_ATTESTED }}
+          EXELY_PILOT_PMS_ROOM_TYPE: ${{ vars.EXELY_PILOT_PMS_ROOM_TYPE }}
+          EXELY_PILOT_USERNAME: ${{ secrets.EXELY_PILOT_USERNAME }}
+          EXELY_PILOT_PASSWORD: ${{ secrets.EXELY_PILOT_PASSWORD }}
+          EXELY_PILOT_HOTEL_CODE: ${{ secrets.EXELY_PILOT_HOTEL_CODE }}
+          EXELY_PILOT_ROOM_TYPE_CODE: ${{ secrets.EXELY_PILOT_ROOM_TYPE_CODE }}
+          EXELY_PILOT_RATE_PLAN_CODE: ${{ secrets.EXELY_PILOT_RATE_PLAN_CODE }}
+          EXELY_PILOT_HMAC_KEY: ${{ secrets.EXELY_PILOT_HMAC_KEY }}
+        run: |
+          cd backend
+          python -m pytest "tests/integration/test_exely_pilot.py::test_exely_pilot_reservation_import" \
+            -v --tb=short -q --timeout=600 \
+            --junitxml=exely-pilot-results.xml
+
+      - name: Run one gated Exely acknowledgement target
+        if: inputs.operation == 'reservation_ack'
+        env:
+          APP_ENV: test
+          TESTING: '1'
+          REDIS_URL: redis://localhost:6379/0
+          MONGO_URL: ${{ secrets.EXELY_PILOT_PERSISTENT_MONGO_URL }}
+          DB_NAME: ${{ vars.EXELY_PILOT_PERSISTENT_DB_NAME }}
+          GITHUB_SHA: ${{ github.sha }}
+          EXELY_PILOT_ENDPOINT_URL: https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc
+          EXELY_PILOT_OPERATION: ${{ inputs.operation }}
+          EXELY_PILOT_WRITE_APPROVED: ${{ inputs.confirm_provider_write }}
+          EXELY_PILOT_APPROVED_HEAD: ${{ inputs.approved_head_sha }}
+          EXELY_PILOT_RUN_ID: ${{ github.run_id }}
+          EXELY_PILOT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          EXELY_PILOT_ACCOUNT_CONFIRMED: ${{ vars.EXELY_PILOT_ACCOUNT_CONFIRMED }}
+          EXELY_PILOT_CREDENTIAL_SCOPE: ${{ vars.EXELY_PILOT_CREDENTIAL_SCOPE }}
+          EXELY_PILOT_DB_SCOPE: ${{ vars.EXELY_PILOT_DB_SCOPE }}
+          EXELY_PILOT_PERSISTENT_DB_ATTESTED: ${{ vars.EXELY_PILOT_PERSISTENT_DB_ATTESTED }}
           EXELY_PILOT_ACK_DURABLE_PMS_ATTESTED: ${{ vars.EXELY_PILOT_ACK_DURABLE_PMS_ATTESTED }}
           EXELY_PILOT_USERNAME: ${{ secrets.EXELY_PILOT_USERNAME }}
           EXELY_PILOT_PASSWORD: ${{ secrets.EXELY_PILOT_PASSWORD }}
           EXELY_PILOT_HOTEL_CODE: ${{ secrets.EXELY_PILOT_HOTEL_CODE }}
+          EXELY_PILOT_ROOM_TYPE_CODE: ${{ secrets.EXELY_PILOT_ROOM_TYPE_CODE }}
+          EXELY_PILOT_RATE_PLAN_CODE: ${{ secrets.EXELY_PILOT_RATE_PLAN_CODE }}
           EXELY_PILOT_HMAC_KEY: ${{ secrets.EXELY_PILOT_HMAC_KEY }}
-          EXELY_PILOT_ACK_RESERVATION_ID: ${{ secrets.EXELY_PILOT_ACK_RESERVATION_ID }}
-          EXELY_PILOT_ACK_CONFIRMATION_ID: ${{ secrets.EXELY_PILOT_ACK_CONFIRMATION_ID }}
-          EXELY_PILOT_ACK_CREATE_DATETIME: ${{ secrets.EXELY_PILOT_ACK_CREATE_DATETIME }}
-          EXELY_PILOT_ACK_LAST_MODIFY_DATETIME: ${{ secrets.EXELY_PILOT_ACK_LAST_MODIFY_DATETIME }}
         run: |
           cd backend
           python -m pytest "tests/integration/test_exely_pilot.py::test_exely_pilot_single_write" \

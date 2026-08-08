@@ -44,6 +44,7 @@ def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False)
         "EXELY_PILOT_RATE": "100.00",
         "EXELY_PILOT_RATE_PLAN_CODE": "synthetic-rate",
         "EXELY_PILOT_ROOM_TYPE_CODE": "synthetic-room",
+        "EXELY_PILOT_PMS_ROOM_TYPE": "Synthetic Standard",
         "EXELY_PILOT_RUN_ATTEMPT": "1",
         "EXELY_PILOT_RUN_ID": "123456",
         "EXELY_PILOT_STOP_SELL": "false",
@@ -51,11 +52,16 @@ def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False)
         "EXELY_PILOT_USERNAME": "synthetic-user",
         "EXELY_PILOT_WRITE_APPROVED": "true" if write else "false",
         "EXELY_PILOT_ACK_DURABLE_PMS_ATTESTED": "true",
-        "EXELY_PILOT_ACK_RESERVATION_ID": "synthetic-reservation",
-        "EXELY_PILOT_ACK_CONFIRMATION_ID": "synthetic-confirmation",
-        "EXELY_PILOT_ACK_CREATE_DATETIME": "2030-01-01T09:00:00Z",
-        "EXELY_PILOT_ACK_LAST_MODIFY_DATETIME": "2030-01-01T10:00:00Z",
     }
+    if operation in {"reservation_import", "reservation_ack"}:
+        values.update(
+            {
+                "MONGO_URL": "mongodb+srv://user:password@pilot-test.invalid/",
+                "DB_NAME": "syroce_exely_pilot_test",
+                "EXELY_PILOT_DB_SCOPE": "test",
+                "EXELY_PILOT_PERSISTENT_DB_ATTESTED": "true",
+            }
+        )
     for key, value in values.items():
         monkeypatch.setenv(key, value)
 
@@ -68,6 +74,7 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
     assert inputs["operation"]["options"] == [
         "discovery",
         "reservation_read",
+        "reservation_import",
         "availability",
         "rate",
         "stop_sell",
@@ -97,8 +104,9 @@ def test_workflow_uses_protected_environment_and_exact_targets():
     assert job["environment"] == "exely-pilot"
     assert job["concurrency"]["cancel-in-progress"] == "false"
     assert workflow["permissions"] == {"actions": "read", "contents": "read"}
-    assert len(run_steps) == 2
+    assert len(run_steps) == 3
     assert "test_exely_pilot_readonly" in scripts
+    assert "test_exely_pilot_reservation_import" in scripts
     assert "test_exely_pilot_single_write" in scripts
     assert "pytest -m" not in scripts
 
@@ -154,24 +162,25 @@ def test_workflow_scopes_ari_and_ack_secrets_to_mutually_exclusive_steps():
         "EXELY_PILOT_ROOM_TYPE_CODE",
         "EXELY_PILOT_RATE_PLAN_CODE",
     }
-    ack_secrets = {
-        "EXELY_PILOT_ACK_RESERVATION_ID",
-        "EXELY_PILOT_ACK_CONFIRMATION_ID",
-        "EXELY_PILOT_ACK_CREATE_DATETIME",
-        "EXELY_PILOT_ACK_LAST_MODIFY_DATETIME",
-    }
+    persistent_secrets = {"MONGO_URL"}
     ari_step = next(step for step in job["steps"] if step.get("name") == "Run one gated Exely discovery or ARI target")
+    import_step = next(step for step in job["steps"] if step.get("name") == "Run one gated Exely durable reservation import target")
     ack_step = next(step for step in job["steps"] if step.get("name") == "Run one gated Exely acknowledgement target")
 
-    assert ari_step["if"] == "inputs.operation != 'reservation_ack'"
+    assert ari_step["if"] == "inputs.operation != 'reservation_ack' && inputs.operation != 'reservation_import'"
+    assert import_step["if"] == "inputs.operation == 'reservation_import'"
     assert ack_step["if"] == "inputs.operation == 'reservation_ack'"
     assert common_secrets | ari_secrets <= set(ari_step["env"])
-    assert ack_secrets.isdisjoint(ari_step["env"])
-    assert common_secrets | ack_secrets <= set(ack_step["env"])
-    assert ari_secrets.isdisjoint(ack_step["env"])
+    assert persistent_secrets.isdisjoint(ari_step["env"])
+    assert common_secrets | ari_secrets | persistent_secrets <= set(import_step["env"])
+    assert common_secrets | ari_secrets | persistent_secrets <= set(ack_step["env"])
+    assert import_step["env"]["MONGO_URL"] == "${{ secrets.EXELY_PILOT_PERSISTENT_MONGO_URL }}"
+    assert import_step["env"]["DB_NAME"] == "${{ vars.EXELY_PILOT_PERSISTENT_DB_NAME }}"
+    assert "test_exely_pilot_reservation_import" in import_step["run"]
+    assert "test_exely_pilot_single_write" not in import_step["run"]
     for step in job["steps"]:
-        if step.get("name") not in {ari_step["name"], ack_step["name"]}:
-            assert (common_secrets | ari_secrets | ack_secrets).isdisjoint(step.get("env", {}))
+        if step.get("name") not in {ari_step["name"], import_step["name"], ack_step["name"]}:
+            assert (common_secrets | ari_secrets | persistent_secrets).isdisjoint(step.get("env", {}))
 
 
 def test_workflow_pins_official_test_host_and_test_scope():
@@ -225,7 +234,7 @@ def test_mutations_fail_closed_on_workflow_rerun(monkeypatch, operation):
         pilot._load_settings()
 
 
-@pytest.mark.parametrize("operation", ["discovery", "reservation_read"])
+@pytest.mark.parametrize("operation", ["discovery", "reservation_read", "reservation_import"])
 def test_readonly_operations_allow_workflow_rerun(monkeypatch, operation):
     _base_env(monkeypatch, operation=operation)
     monkeypatch.setenv("EXELY_PILOT_RUN_ATTEMPT", "2")
@@ -283,11 +292,127 @@ async def test_discovery_without_target_mapping_reports_safe_capability_metadata
     assert recorded == []
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("reservations", "failure_code"),
+    [
+        ([], "BLOCKED_NO_UNDELIVERED_RESERVATION"),
+        ([{"last_modify": "version"}, {"last_modify": "version"}], "BLOCKED_MULTIPLE_UNDELIVERED_RESERVATIONS"),
+    ],
+)
+async def test_exactly_one_reservation_gate_fails_closed(monkeypatch, reservations, failure_code):
+    _base_env(monkeypatch, operation="reservation_import")
+    settings = pilot._load_settings()
+    provider = SimpleNamespace(
+        pull_reservations=AsyncMock(
+            return_value=SimpleNamespace(
+                success=True,
+                data={"reservations": reservations},
+                metadata={"provider_status_class": "SUCCESS"},
+            )
+        )
+    )
+
+    with pytest.raises(pytest.fail.Exception, match=failure_code):
+        await pilot._read_reservations(
+            provider,
+            settings,
+            lambda *_: None,
+            require_exactly_one=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_provider_5xx_is_never_a_success(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_import")
+    settings = pilot._load_settings()
+    provider = SimpleNamespace(
+        pull_reservations=AsyncMock(
+            return_value=SimpleNamespace(
+                success=False,
+                data=None,
+                error_type="HTTP_5XX",
+                metadata={},
+            )
+        )
+    )
+
+    with pytest.raises(pytest.fail.Exception, match="BLOCKED_RESERVATION_READ_FAILED"):
+        await pilot._read_reservations(
+            provider,
+            settings,
+            lambda *_: None,
+            require_exactly_one=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_malformed_provider_response_is_never_a_success(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_import")
+    settings = pilot._load_settings()
+    provider = SimpleNamespace(
+        pull_reservations=AsyncMock(
+            return_value=SimpleNamespace(
+                success=True,
+                data={"reservations": "malformed"},
+                metadata={"provider_status_class": "SUCCESS"},
+            )
+        )
+    )
+
+    with pytest.raises(pytest.fail.Exception, match="BLOCKED_RESERVATION_READ_RESPONSE_INVALID"):
+        await pilot._read_reservations(
+            provider,
+            settings,
+            lambda *_: None,
+            require_exactly_one=True,
+        )
+
+
 def test_ack_requires_separate_durable_pms_attestation(monkeypatch):
     _base_env(monkeypatch, operation="reservation_ack", write=True)
     monkeypatch.setenv("EXELY_PILOT_ACK_DURABLE_PMS_ATTESTED", "false")
 
     with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_DURABLE_PMS_RESULT_NOT_ATTESTED"):
+        pilot._load_settings()
+
+
+def test_persistent_import_rejects_ephemeral_database(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_import")
+    monkeypatch.setenv("MONGO_URL", "mongodb://localhost:27017/hotel_pms_test")
+
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_EPHEMERAL_PMS_DATABASE"):
+        pilot._load_settings()
+
+
+def test_persistent_import_rejects_non_test_database_scope(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_import")
+    monkeypatch.setenv("EXELY_PILOT_DB_SCOPE", "production")
+
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_NON_TEST_PMS_DB"):
+        pilot._load_settings()
+
+
+def test_persistent_import_rejects_production_hostname_marker(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_import")
+    monkeypatch.setenv("MONGO_URL", "mongodb+srv://user:password@prod.mongodb.invalid/")
+
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_NON_TEST_PMS_DB"):
+        pilot._load_settings()
+
+
+def test_persistent_import_rejects_missing_database_attestation(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_import")
+    monkeypatch.setenv("EXELY_PILOT_PERSISTENT_DB_ATTESTED", "false")
+
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_PERSISTENT_TEST_DB_NOT_ATTESTED"):
+        pilot._load_settings()
+
+
+def test_reservation_import_conflicts_with_provider_write_approval(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_import", write=True)
+
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_READONLY_WRITE_CONFLICT"):
         pilot._load_settings()
 
 
@@ -299,8 +424,6 @@ def test_settings_repr_never_contains_credentials_or_provider_identifiers(monkey
         "synthetic-user",
         "synthetic-password",
         "synthetic-property",
-        "synthetic-reservation",
-        "synthetic-confirmation",
         "synthetic-hmac-key-with-at-least-32-chars",
     ):
         assert sensitive not in settings_repr
@@ -371,6 +494,35 @@ async def test_transport_guard_blocks_unexpected_action_before_provider_call():
 
     assert guard.write_count == 0
     original.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reservation_import_transport_allows_only_one_read_and_no_provider_write():
+    original = AsyncMock(return_value=b"synthetic-response")
+    provider = SimpleNamespace(_transport=SimpleNamespace(send_soap=original))
+    guard = pilot.PilotTransportGuard(provider, SimpleNamespace(operation="reservation_import"))
+
+    await provider._transport.send_soap("synthetic", get_soap_action_uri("OTA_ReadRQ"))
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_UNEXPECTED_SOAP_ACTION"):
+        await provider._transport.send_soap("synthetic", get_soap_action_uri("OTA_NotifReportRQ"))
+
+    assert guard.read_count == 1
+    assert guard.write_count == 0
+    assert original.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_reservation_import_timeout_is_not_retried():
+    original = AsyncMock(side_effect=TimeoutError)
+    provider = SimpleNamespace(_transport=SimpleNamespace(send_soap=original))
+    guard = pilot.PilotTransportGuard(provider, SimpleNamespace(operation="reservation_import"))
+
+    with pytest.raises(TimeoutError):
+        await provider._transport.send_soap("synthetic", get_soap_action_uri("OTA_ReadRQ"))
+
+    assert guard.read_count == 1
+    assert guard.write_count == 0
+    assert original.await_count == 1
 
 
 @pytest.mark.asyncio
