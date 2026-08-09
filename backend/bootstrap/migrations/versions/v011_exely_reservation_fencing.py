@@ -3,11 +3,68 @@
 import logging
 
 import pymongo.errors
-from pymongo import ASCENDING, IndexModel
+from pymongo import ASCENDING, IndexModel, UpdateOne
 
 from bootstrap.migrations.base import Migration
+from domains.channel_manager.providers.event_fence import raw_event_fence_key
 
 logger = logging.getLogger(__name__)
+
+RAW_EVENT_BACKFILL_BATCH_SIZE = 500
+
+
+async def _backfill_raw_event_fences(collection) -> int:
+    """Fence one canonical row per legacy identity without deleting duplicates."""
+    cursor = collection.aggregate(
+        [
+            {
+                "$match": {
+                    "tenant_id": {"$type": "string"},
+                    "provider_event_id": {"$type": "string"},
+                }
+            },
+            {"$sort": {"_id": 1}},
+            {
+                "$group": {
+                    "_id": {
+                        "tenant_id": "$tenant_id",
+                        "provider_event_id": "$provider_event_id",
+                    },
+                    "canonical_id": {"$first": "$_id"},
+                }
+            },
+        ],
+        allowDiskUse=True,
+    )
+    operations: list[UpdateOne] = []
+    updated = 0
+
+    async def flush() -> None:
+        nonlocal updated
+        if not operations:
+            return
+        batch = operations.copy()
+        operations.clear()
+        await collection.bulk_write(batch, ordered=False)
+        updated += len(batch)
+
+    async for group in cursor:
+        identity = group.get("_id") or {}
+        tenant_id = identity.get("tenant_id")
+        provider_event_id = identity.get("provider_event_id")
+        canonical_id = group.get("canonical_id")
+        if not isinstance(tenant_id, str) or not isinstance(provider_event_id, str) or canonical_id is None:
+            continue
+        operations.append(
+            UpdateOne(
+                {"_id": canonical_id},
+                {"$set": {"dedup_fence_key": raw_event_fence_key(tenant_id, provider_event_id)}},
+            )
+        )
+        if len(operations) >= RAW_EVENT_BACKFILL_BATCH_SIZE:
+            await flush()
+    await flush()
+    return updated
 
 
 class ExelyReservationFencingMigration(Migration):
@@ -38,12 +95,14 @@ class ExelyReservationFencingMigration(Migration):
                 ),
             ]
         )
+        fenced_events = await _backfill_raw_event_fences(db.exely_raw_events)
+        logger.info("Exely raw-event fencing backfill completed count=%d", fenced_events)
         await db.exely_raw_events.create_indexes(
             [
                 IndexModel(
-                    [("tenant_id", ASCENDING), ("provider_event_id", ASCENDING)],
+                    [("dedup_fence_key", ASCENDING)],
                     unique=True,
-                    partialFilterExpression={"provider_event_id": {"$type": "string"}},
+                    partialFilterExpression={"dedup_fence_key": {"$type": "string"}},
                     name="idx_exely_raw_event_unique",
                 )
             ]

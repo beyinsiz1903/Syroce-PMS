@@ -233,6 +233,7 @@ jobs:
             tests/test_exely_ari_delivery.py \
             tests/test_exely_provider_quota_parser.py \
             tests/test_exely_legacy_closure.py \
+            tests/test_exely_legacy_duplicate_fencing.py \
             tests/test_exely_pilot_contract.py \
             tests/test_exely_pilot_import.py \
             tests/test_exely_production_cutover_workflow.py \

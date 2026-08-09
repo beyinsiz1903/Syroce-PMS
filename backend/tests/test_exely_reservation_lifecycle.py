@@ -31,6 +31,11 @@ SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/"
 pytestmark = pytest.mark.exely_failure_stress
 
 
+async def _empty_async_cursor():
+    if False:
+        yield None
+
+
 def _matches(document, query):
     for key, expected in query.items():
         if key == "$or":
@@ -862,7 +867,11 @@ async def test_concurrent_raw_event_duplicate_is_resolved_by_unique_claim(monkey
 @pytest.mark.asyncio
 async def test_fencing_migration_requires_all_critical_unique_indexes():
     versions = SimpleNamespace(create_indexes=AsyncMock())
-    raw_events = SimpleNamespace(create_indexes=AsyncMock())
+    raw_events = SimpleNamespace(
+        aggregate=lambda *_args, **_kwargs: _empty_async_cursor(),
+        bulk_write=AsyncMock(),
+        create_indexes=AsyncMock(),
+    )
     bookings = SimpleNamespace(create_indexes=AsyncMock())
     database = SimpleNamespace(
         exely_reservation_versions=versions,
@@ -877,6 +886,7 @@ async def test_fencing_migration_requires_all_critical_unique_indexes():
     booking_indexes = bookings.create_indexes.await_args.args[0]
     assert version_indexes[0].document["unique"] is True
     assert raw_indexes[0].document["unique"] is True
+    assert raw_indexes[0].document["key"] == {"dedup_fence_key": 1}
     assert booking_indexes[0].document["unique"] is True
 
 
@@ -884,7 +894,11 @@ async def test_fencing_migration_requires_all_critical_unique_indexes():
 async def test_fencing_migration_unique_index_failure_is_fail_closed():
     database = SimpleNamespace(
         exely_reservation_versions=SimpleNamespace(create_indexes=AsyncMock(side_effect=RuntimeError("index unavailable"))),
-        exely_raw_events=SimpleNamespace(create_indexes=AsyncMock()),
+        exely_raw_events=SimpleNamespace(
+            aggregate=lambda *_args, **_kwargs: _empty_async_cursor(),
+            bulk_write=AsyncMock(),
+            create_indexes=AsyncMock(),
+        ),
         bookings=SimpleNamespace(create_indexes=AsyncMock()),
     )
     with pytest.raises(RuntimeError, match="index unavailable"):

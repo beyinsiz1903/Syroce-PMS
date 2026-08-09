@@ -15,6 +15,7 @@ from typing import Any
 from pymongo.errors import DuplicateKeyError
 
 from core.database import db
+from domains.channel_manager.providers.event_fence import raw_event_fence_key
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +150,8 @@ async def store_raw_event(
     # short-circuit catchup re-fetches of the same provider event.
     if provider_event_id:
         doc["provider_event_id"] = provider_event_id
+        if provider == "exely":
+            doc["dedup_fence_key"] = raw_event_fence_key(tenant_id, provider_event_id)
     await _col(provider, "raw_events").insert_one(doc)
     return event_id
 
