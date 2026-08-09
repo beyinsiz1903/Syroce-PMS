@@ -3,10 +3,10 @@ Tests for the multi-instance live chat bridge (ws_redis_adapter)
 health surface — adapter metrics, normalized health endpoint logic,
 and alerting engine threshold check.
 """
+
 import sys
 
 import pytest
-
 
 # ── Helpers ──────────────────────────────────────────────────────
 
@@ -106,10 +106,32 @@ async def test_publish_error_records_last_error_metric():
 
     metrics = adapter.get_metrics()
     assert metrics["publish_errors"] == 1
-    assert "RuntimeError" in metrics["last_publish_error"]
-    assert "redis down" in metrics["last_publish_error"]
+    assert metrics["last_publish_error"] == "RuntimeError"
+    assert "redis down" not in metrics["last_publish_error"]
     assert metrics["last_publish_error_at"] is not None
     assert metrics["messages_published"] == 0
+
+
+@pytest.mark.asyncio
+async def test_ws_failure_telemetry_redacts_room_and_exception_message(caplog):
+    from infra.ws_redis_adapter import WebSocketRedisAdapter
+
+    sensitive_room = "internal_chat:synthetic-tenant:user:synthetic-user"
+    sensitive_error = "credential-bearing synthetic failure"
+
+    class _BrokenPubSub:
+        async def subscribe(self, channel):
+            raise RuntimeError(sensitive_error)
+
+    adapter = WebSocketRedisAdapter()
+    adapter._pubsub = _BrokenPubSub()
+    adapter._active = True
+
+    await adapter.subscribe(sensitive_room)
+
+    assert "WS subscribe error type=RuntimeError" in caplog.text
+    assert sensitive_room not in caplog.text
+    assert sensitive_error not in caplog.text
 
 
 def test_metrics_default_includes_last_error_fields():
@@ -165,9 +187,7 @@ async def test_ws_bridge_publish_errors_alert_fires_above_threshold(monkeypatch)
     )
 
     await engine.evaluate_all()
-    bridge_alerts = [
-        a for a in fired if a["alert_type"] == ae.AlertType.WS_BRIDGE_PUBLISH_ERRORS
-    ]
+    bridge_alerts = [a for a in fired if a["alert_type"] == ae.AlertType.WS_BRIDGE_PUBLISH_ERRORS]
     assert bridge_alerts, "expected WS bridge alert to fire"
 
     ctx = bridge_alerts[0]["context"]
@@ -205,9 +225,7 @@ async def test_ws_bridge_publish_errors_alert_silent_below_threshold(monkeypatch
     )
 
     await engine.evaluate_all()
-    assert not [
-        a for a in fired if a["alert_type"] == ae.AlertType.WS_BRIDGE_PUBLISH_ERRORS
-    ]
+    assert not [a for a in fired if a["alert_type"] == ae.AlertType.WS_BRIDGE_PUBLISH_ERRORS]
 
 
 @pytest.mark.asyncio
@@ -247,9 +265,7 @@ async def test_ws_bridge_alert_baseline_resets_when_counter_drops(monkeypatch):
 
     await engine.evaluate_all()
 
-    bridge_alerts = [
-        a for a in fired if a["alert_type"] == ae.AlertType.WS_BRIDGE_PUBLISH_ERRORS
-    ]
+    bridge_alerts = [a for a in fired if a["alert_type"] == ae.AlertType.WS_BRIDGE_PUBLISH_ERRORS]
     assert bridge_alerts, "expected re-fire after counter reset"
     # Baseline must have been reset to 0 first, then advanced to current.
     assert engine._baselines["ws_bridge_publish_errors"] == threshold + 2
@@ -263,8 +279,8 @@ async def test_normalized_ws_bridge_endpoint_reports_critical_on_burst(monkeypat
     """publish_errors past the critical multiplier (5x threshold) must
     produce status=critical with a degraded_reason and expose the last
     error for operators."""
-    from routers import system_health_normalized as shn
     from modules.observability import alerting_engine as ae
+    from routers import system_health_normalized as shn
 
     threshold = ae.DEFAULT_THRESHOLDS[ae.AlertType.WS_BRIDGE_PUBLISH_ERRORS]["count"]
 

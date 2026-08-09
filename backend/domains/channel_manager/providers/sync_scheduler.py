@@ -7,6 +7,7 @@ of reservations for all active tenants.
 
 import asyncio
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -33,6 +34,30 @@ class ReservationPullScheduler:
         self._cycle_count = 0
         self._consecutive_rate_limits = 0
         self._base_interval = 30
+        self._lock_error_log_interval = 900.0
+        self._last_lock_error_log_at: float | None = None
+        self._suppressed_lock_errors = 0
+
+    def _record_lock_acquisition_failure(self, error: Exception) -> None:
+        now = time.monotonic()
+        if self._last_lock_error_log_at is None or now - self._last_lock_error_log_at >= self._lock_error_log_interval:
+            logger.error(
+                "[PULL] Distributed lock acquisition failed; skipping cycle to prevent split-brain exception_class=%s suppressed=%d",
+                type(error).__name__,
+                self._suppressed_lock_errors,
+            )
+            self._last_lock_error_log_at = now
+            self._suppressed_lock_errors = 0
+            return
+        self._suppressed_lock_errors += 1
+        logger.debug(
+            "[PULL] Distributed lock acquisition failure suppressed exception_class=%s",
+            type(error).__name__,
+        )
+
+    def _reset_lock_acquisition_failures(self) -> None:
+        self._last_lock_error_log_at = None
+        self._suppressed_lock_errors = 0
 
     async def start(self, interval_minutes: int = 15, safety_window_minutes: int = 5, interval_seconds: int | None = None):
         if self._running:
@@ -80,13 +105,10 @@ class ReservationPullScheduler:
             try:
                 acquired = await dl.acquire()
             except Exception as lock_err:
-                logger.error(
-                    "[PULL] Distributed lock acquisition failed; "
-                    "skipping cycle to prevent split-brain exception_class=%s",
-                    type(lock_err).__name__,
-                )
+                self._record_lock_acquisition_failure(lock_err)
                 await asyncio.sleep(expected_sleep)
                 continue
+            self._reset_lock_acquisition_failures()
 
             if not acquired:
                 logger.debug("[PULL] Cycle owned by another worker; skipping")
