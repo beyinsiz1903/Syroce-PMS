@@ -11,6 +11,7 @@ on:
           - prepare_disabled
           - enable_read_only
           - close_all
+          - diagnose_last_failed
       approved_head_sha:
         description: "Exact main SHA approved for this production change"
         required: true
@@ -86,6 +87,7 @@ jobs:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Apply exact-head image and fail-closed Exely gates
+        if: inputs.operation != 'diagnose_last_failed'
         shell: bash
         env:
           DO_APP_ID: ${{ secrets.DO_APP_ID }}
@@ -205,6 +207,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Health smoke test
+        if: inputs.operation != 'diagnose_last_failed'
         shell: bash
         env:
           APP_BASE_URL: ${{ secrets.VITE_BACKEND_URL }}
@@ -219,7 +222,57 @@ jobs:
           curl --fail --silent --show-error --max-time 20 \
             "${BASE_URL}/health/live" >/dev/null
 
+      - name: Diagnose last failed backend deployment safely
+        if: inputs.operation == 'diagnose_last_failed'
+        shell: bash
+        env:
+          DO_APP_ID: ${{ secrets.DO_APP_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          deployment_id="$(
+            doctl apps list-deployments "$DO_APP_ID" --format ID,Phase --no-header \
+              | awk '$2 == "ERROR" {print $1; exit}'
+          )"
+          test -n "$deployment_id" || {
+            echo "::error::BLOCKED_FAILED_DEPLOYMENT_NOT_FOUND"
+            exit 1
+          }
+
+          if ! doctl apps logs "$DO_APP_ID" backend \
+            --type deploy \
+            --deployment "$deployment_id" \
+            --tail 500 \
+            --no-prefix \
+            > /tmp/exely-backend-deploy.log \
+            2> /tmp/exely-log-retrieval-error; then
+            echo "::error::BLOCKED_DIAGNOSTIC_LOG_RETRIEVAL"
+            exit 1
+          fi
+
+          diagnosis="$(python backend/scripts/safe_startup_log_diagnosis.py < /tmp/exely-backend-deploy.log)"
+          classification="$(jq -r '.classification' <<<"$diagnosis")"
+          {
+            echo "### Exely Production Deployment Diagnosis"
+            echo '```json'
+            echo "$diagnosis"
+            echo '```'
+            echo "- provider_read_count: 0"
+            echo "- provider_write_count: 0"
+            echo "- production_mutation_count: 0"
+          } >> "$GITHUB_STEP_SUMMARY"
+          test "$classification" != "UNCLASSIFIED_STARTUP_FAILURE" || {
+            echo "::error::BLOCKED_UNCLASSIFIED_STARTUP_FAILURE"
+            exit 1
+          }
+
       - name: Remove temporary deployment files
         if: always()
         shell: bash
-        run: rm -f /tmp/exely-spec.json /tmp/exely-new-spec.json /tmp/exely-live-spec.json
+        run: |
+          rm -f \
+            /tmp/exely-spec.json \
+            /tmp/exely-new-spec.json \
+            /tmp/exely-live-spec.json \
+            /tmp/exely-backend-deploy.log \
+            /tmp/exely-log-retrieval-error
