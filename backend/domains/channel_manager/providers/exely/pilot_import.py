@@ -18,7 +18,7 @@ from bootstrap.migrations.versions.v011_exely_reservation_fencing import (
 from core.database import db
 from core.tenant_db import tenant_context
 from domains.channel_manager.providers.common_ingest import ingest_reservation
-from domains.channel_manager.providers.exely.lifecycle import ACK_PENDING, PMS_DURABLE
+from domains.channel_manager.providers.exely.lifecycle import ACK_PENDING, PMS_DURABLE, PMS_FAILED
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
 from domains.channel_manager.providers.exely.pms_lifecycle import process_reservation_version
 
@@ -61,6 +61,49 @@ class DurableImportResult:
     verification: DurableImportVerification
     local_pms_write_count: int
     already_durable: bool
+
+
+async def _load_exact_lifecycle_version(
+    tenant_id: str,
+    property_id: str,
+    *,
+    processing_state: str,
+    ack_state: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    query: dict[str, Any] = {
+        "tenant_id": tenant_id,
+        "property_id": property_id,
+        "processing_state": processing_state,
+    }
+    if ack_state is not None:
+        query["ack_state"] = ack_state
+    versions = await db.exely_reservation_versions.find(query, {"_id": 0}).to_list(2)
+    if not versions:
+        raise PilotImportError("BLOCKED_NO_LOCAL_LIFECYCLE_CANDIDATE")
+    if len(versions) != 1:
+        raise PilotImportError("BLOCKED_MULTIPLE_LOCAL_LIFECYCLE_CANDIDATES")
+
+    version = versions[0]
+    identity = str(version.get("version_identity") or "")
+    current = await db.exely_reservations.find_one(
+        {
+            "tenant_id": tenant_id,
+            "property_id": property_id,
+            "provider_version_identity": identity,
+        },
+        {"_id": 0},
+    )
+    if not identity or not current:
+        raise PilotImportError("BLOCKED_LOCAL_LIFECYCLE_CURRENT_NOT_FOUND")
+    return current, version
+
+
+def _verification_payload(version: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "reservation_id": str(version.get("provider_reservation_id") or ""),
+        "last_modify": str(version.get("provider_version_key") or ""),
+        "rooms": list(version.get("room_stays") or []),
+    }
 
 
 def _event_type(raw_reservation: dict[str, Any]) -> str:
@@ -317,6 +360,57 @@ async def import_reservation_durably(
     )
 
 
+async def replay_failed_reservation_durably(
+    tenant_id: str,
+    property_id: str,
+    *,
+    room_type_code: str,
+    rate_plan_code: str,
+    pms_room_type: str,
+) -> DurableImportResult:
+    """Replay exactly one locally persisted failed version without provider I/O."""
+    await prepare_pilot_persistence(
+        tenant_id,
+        room_type_code=room_type_code,
+        rate_plan_code=rate_plan_code,
+        pms_room_type=pms_room_type,
+    )
+    with tenant_context(tenant_id):
+        current, version = await _load_exact_lifecycle_version(
+            tenant_id,
+            property_id,
+            processing_state=PMS_FAILED,
+        )
+        raw_reservation = _verification_payload(version)
+        validate_exact_mapping(
+            raw_reservation,
+            room_type_code=room_type_code,
+            rate_plan_code=rate_plan_code,
+        )
+        processed = await process_reservation_version(tenant_id, current)
+        if not processed.get("success"):
+            raise PilotImportError("BLOCKED_CANONICAL_LIFECYCLE_REPLAY_FAILED")
+        verification = await verify_durable_import(
+            tenant_id,
+            property_id,
+            raw_reservation,
+            room_type_code=room_type_code,
+            rate_plan_code=rate_plan_code,
+        )
+    if not verification.success:
+        raise PilotImportError("BLOCKED_DURABLE_PMS_READBACK_FAILED")
+
+    already_durable = processed.get("reason") == "ALREADY_DURABLE"
+    local_writes = sum(int(processed.get(key) or 0) for key in ("created", "updated", "cancelled"))
+    if not already_durable and local_writes < 1:
+        raise PilotImportError("BLOCKED_LOCAL_PMS_WRITE_NOT_DURABLE")
+    return DurableImportResult(
+        verification=verification,
+        local_pms_write_count=local_writes,
+        already_durable=already_durable,
+    )
+
+
 async def load_ack_ready_reservation(
     tenant_id: str,
     property_id: str,
@@ -343,5 +437,32 @@ async def load_ack_ready_reservation(
         {"_id": 0},
     )
     if not current:
+        raise PilotImportError("BLOCKED_ACK_DURABLE_STATE_NOT_VERIFIED")
+    return current
+
+
+async def load_single_ack_ready_reservation(
+    tenant_id: str,
+    property_id: str,
+    *,
+    room_type_code: str,
+    rate_plan_code: str,
+) -> dict[str, Any]:
+    """Load one durable ACK candidate from local state without provider reads."""
+    with tenant_context(tenant_id):
+        current, version = await _load_exact_lifecycle_version(
+            tenant_id,
+            property_id,
+            processing_state=PMS_DURABLE,
+            ack_state=ACK_PENDING,
+        )
+        verification = await verify_durable_import(
+            tenant_id,
+            property_id,
+            _verification_payload(version),
+            room_type_code=room_type_code,
+            rate_plan_code=rate_plan_code,
+        )
+    if not verification.success:
         raise PilotImportError("BLOCKED_ACK_DURABLE_STATE_NOT_VERIFIED")
     return current

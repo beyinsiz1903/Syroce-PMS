@@ -13,6 +13,7 @@ on:
           - inventory_read
           - reservation_read
           - reservation_import
+          - reservation_replay
           - availability
           - rate
           - stop_sell
@@ -88,7 +89,7 @@ jobs:
             exit 1
           fi
           case "${PILOT_OPERATION}" in
-            discovery|inventory_read|reservation_read|reservation_import)
+            discovery|inventory_read|reservation_read|reservation_import|reservation_replay)
               if [ "${CONFIRM_PROVIDER_WRITE}" = "true" ]; then
                 echo "::error::BLOCKED_READONLY_WRITE_CONFLICT"
                 exit 1
@@ -192,7 +193,7 @@ jobs:
           pip install pytest pytest-asyncio pytest-timeout
 
       - name: Run one gated Exely discovery or ARI target
-        if: inputs.operation != 'reservation_ack' && inputs.operation != 'reservation_import'
+        if: inputs.operation != 'reservation_ack' && inputs.operation != 'reservation_import' && inputs.operation != 'reservation_replay'
         env:
           APP_ENV: test
           TESTING: '1'
@@ -233,8 +234,8 @@ jobs:
             -v --tb=short -q --timeout=600 \
             --junitxml=exely-pilot-results.xml
 
-      - name: Run one gated Exely durable reservation import target
-        if: inputs.operation == 'reservation_import'
+      - name: Run one gated Exely durable reservation import or replay target
+        if: inputs.operation == 'reservation_import' || inputs.operation == 'reservation_replay'
         env:
           APP_ENV: test
           TESTING: '1'
@@ -261,7 +262,12 @@ jobs:
           EXELY_PILOT_HMAC_KEY: ${{ secrets.EXELY_PILOT_HMAC_KEY }}
         run: |
           cd backend
-          python -m pytest "tests/integration/test_exely_pilot.py::test_exely_pilot_reservation_import" \
+          if [ "${EXELY_PILOT_OPERATION}" = "reservation_replay" ]; then
+            target="tests/integration/test_exely_pilot.py::test_exely_pilot_reservation_replay"
+          else
+            target="tests/integration/test_exely_pilot.py::test_exely_pilot_reservation_import"
+          fi
+          python -m pytest "${target}" \
             -v --tb=short -q --timeout=600 \
             --junitxml=exely-pilot-results.xml
 

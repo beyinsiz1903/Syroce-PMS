@@ -41,6 +41,15 @@ class _Collection:
         self.documents.append(deepcopy(document))
         return SimpleNamespace(inserted_id=document.get("id"))
 
+    def find(self, query, projection=None):
+        matches = [deepcopy(row) for row in self.documents if all(row.get(key) == value for key, value in query.items())]
+
+        class _Cursor:
+            async def to_list(self, length):
+                return matches[:length]
+
+        return _Cursor()
+
 
 class _DB:
     def __init__(self):
@@ -481,3 +490,110 @@ async def test_ack_loader_blocks_when_durable_state_is_not_verified(monkeypatch)
             room_type_code="synthetic-room",
             rate_plan_code="synthetic-rate",
         )
+
+
+@pytest.mark.asyncio
+async def test_failed_local_version_replays_without_provider_io(monkeypatch):
+    database = _DB()
+    current = {
+        "tenant_id": "tenant",
+        "property_id": "property",
+        "provider_version_identity": "identity",
+    }
+    version = {
+        "tenant_id": "tenant",
+        "property_id": "property",
+        "version_identity": "identity",
+        "provider_reservation_id": "synthetic-reservation",
+        "provider_version_key": "2030-01-01T10:00:00Z",
+        "processing_state": "PMS_FAILED",
+        "room_stays": _raw_reservation()["rooms"],
+    }
+    database.exely_reservations.documents.append(current)
+    database.exely_reservation_versions.documents.append(version)
+    monkeypatch.setattr(pilot_import, "db", database)
+    monkeypatch.setattr(pilot_import, "prepare_pilot_persistence", AsyncMock())
+    process = AsyncMock(return_value={"success": True, "created": 1, "provider_write_count": 0})
+    monkeypatch.setattr(pilot_import, "process_reservation_version", process)
+    monkeypatch.setattr(pilot_import, "verify_durable_import", AsyncMock(return_value=_verification()))
+
+    result = await pilot_import.replay_failed_reservation_durably(
+        "tenant",
+        "property",
+        room_type_code="synthetic-room",
+        rate_plan_code="synthetic-rate",
+        pms_room_type="Synthetic Standard",
+    )
+
+    assert result.local_pms_write_count == 1
+    assert result.already_durable is False
+    process.assert_awaited_once_with("tenant", current)
+    assert get_current_tenant_id() is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("candidate_count", [0, 2])
+async def test_failed_local_replay_requires_exactly_one_candidate(monkeypatch, candidate_count):
+    database = _DB()
+    for index in range(candidate_count):
+        database.exely_reservation_versions.documents.append(
+            {
+                "tenant_id": "tenant",
+                "property_id": "property",
+                "version_identity": f"identity-{index}",
+                "processing_state": "PMS_FAILED",
+            }
+        )
+    monkeypatch.setattr(pilot_import, "db", database)
+    monkeypatch.setattr(pilot_import, "prepare_pilot_persistence", AsyncMock())
+    process = AsyncMock()
+    monkeypatch.setattr(pilot_import, "process_reservation_version", process)
+
+    expected = "BLOCKED_NO_LOCAL_LIFECYCLE_CANDIDATE" if candidate_count == 0 else "BLOCKED_MULTIPLE_LOCAL_LIFECYCLE_CANDIDATES"
+    with pytest.raises(pilot_import.PilotImportError, match=expected):
+        await pilot_import.replay_failed_reservation_durably(
+            "tenant",
+            "property",
+            room_type_code="synthetic-room",
+            rate_plan_code="synthetic-rate",
+            pms_room_type="Synthetic Standard",
+        )
+
+    process.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ack_candidate_is_loaded_only_from_exact_durable_local_state(monkeypatch):
+    database = _DB()
+    current = {
+        "tenant_id": "tenant",
+        "property_id": "property",
+        "provider_version_identity": "identity",
+    }
+    database.exely_reservations.documents.append(current)
+    database.exely_reservation_versions.documents.append(
+        {
+            "tenant_id": "tenant",
+            "property_id": "property",
+            "version_identity": "identity",
+            "provider_reservation_id": "synthetic-reservation",
+            "provider_version_key": "2030-01-01T10:00:00Z",
+            "processing_state": "PMS_DURABLE",
+            "ack_state": "PENDING",
+            "room_stays": _raw_reservation()["rooms"],
+        }
+    )
+    monkeypatch.setattr(pilot_import, "db", database)
+    verify = AsyncMock(return_value=_verification())
+    monkeypatch.setattr(pilot_import, "verify_durable_import", verify)
+
+    loaded = await pilot_import.load_single_ack_ready_reservation(
+        "tenant",
+        "property",
+        room_type_code="synthetic-room",
+        rate_plan_code="synthetic-rate",
+    )
+
+    assert loaded == current
+    verify.assert_awaited_once()
+    assert get_current_tenant_id() is None
