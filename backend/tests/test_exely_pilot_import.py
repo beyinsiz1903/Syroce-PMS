@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 from pymongo.errors import OperationFailure
 
+from core.tenant_db import get_current_tenant_id
 from domains.channel_manager.providers.exely import pilot_import
 
 pytestmark = pytest.mark.exely_failure_stress
@@ -209,6 +210,47 @@ async def test_lifecycle_failure_is_blocked(monkeypatch):
             rate_plan_code="synthetic-rate",
             pms_room_type="Synthetic Standard",
         )
+
+
+@pytest.mark.asyncio
+async def test_pilot_import_runs_canonical_lifecycle_in_tenant_context(monkeypatch):
+    database = _DB()
+    database.exely_reservations.documents.append(
+        {
+            "tenant_id": "tenant",
+            "property_id": "property",
+            "external_id": "synthetic-reservation",
+        }
+    )
+    monkeypatch.setattr(pilot_import, "db", database)
+    monkeypatch.setattr(pilot_import, "ensure_pilot_schema", AsyncMock())
+    monkeypatch.setattr(pilot_import, "ensure_pilot_mapping", AsyncMock(return_value=0))
+    monkeypatch.setattr(
+        pilot_import,
+        "ingest_reservation",
+        AsyncMock(return_value={"success": True, "action": "duplicate"}),
+    )
+
+    async def process_in_context(tenant_id, _reservation):
+        assert get_current_tenant_id() == tenant_id
+        return {"success": False, "reason": "PMS_FAILED"}
+
+    monkeypatch.setattr(pilot_import, "process_reservation_version", process_in_context)
+
+    with pytest.raises(
+        pilot_import.PilotImportError,
+        match="BLOCKED_CANONICAL_LIFECYCLE_FAILED",
+    ):
+        await pilot_import.import_reservation_durably(
+            "tenant",
+            "property",
+            _raw_reservation(),
+            room_type_code="synthetic-room",
+            rate_plan_code="synthetic-rate",
+            pms_room_type="Synthetic Standard",
+        )
+
+    assert get_current_tenant_id() is None
 
 
 @pytest.mark.asyncio
