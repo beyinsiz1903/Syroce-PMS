@@ -18,9 +18,16 @@ from domains.channel_manager.providers.exely.ari_publish import enqueue_exely_ar
 from domains.channel_manager.providers.exely.errors import ExelyError
 from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
+from domains.channel_manager.providers.exely.production_safety import (
+    ari_write_block_reason,
+    provider_io_block_reason,
+    reservation_sync_block_reason,
+    safe_runtime_state,
+)
 from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.security import (
     exely_connection_projection,
+    is_exely_production,
     resolve_exely_credentials,
 )
 from models.schemas import User
@@ -77,6 +84,10 @@ class ExelyARIUpdate(BaseModel):
 
 
 async def _get_client(tenant_id: str) -> tuple:
+    runtime_block = provider_io_block_reason()
+    if runtime_block:
+        raise HTTPException(status_code=503, detail=runtime_block)
+
     conn = await db.exely_connections.find_one(
         {"tenant_id": tenant_id, "is_active": True},
         exely_connection_projection(),
@@ -114,6 +125,10 @@ async def setup_connection(
     _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Setup Exely SOAP connection with credentials and test it."""
+    runtime_block = provider_io_block_reason()
+    if runtime_block:
+        raise HTTPException(status_code=503, detail=runtime_block)
+
     kwargs = {
         "username": payload.username,
         "password": payload.password,
@@ -159,7 +174,7 @@ async def setup_connection(
         "auto_sync_reservations": payload.auto_sync_reservations,
         "ari_write_enabled": False,
         "sync_interval_minutes": payload.sync_interval_minutes,
-        "mode": "sandbox",
+        "mode": "production" if is_exely_production() else "sandbox",
         "currency": payload.currency,
         "is_active": True,
         "room_types": test_data.get("room_types", []),
@@ -208,7 +223,7 @@ async def test_connection(
     )
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found")
-    if conn.get("mode") == "sandbox":
+    if conn.get("mode") == "sandbox" and not is_exely_production():
         return {
             "success": True,
             "connected": True,
@@ -367,6 +382,10 @@ async def push_ari(
     _perm=Depends(require_op("manage_channel_connectors")),  # v100 DW
 ):
     """Durably queue an ARI update for the canonical Exely worker."""
+    runtime_block = ari_write_block_reason()
+    if runtime_block:
+        raise HTTPException(status_code=503, detail=runtime_block)
+
     conn = await db.exely_connections.find_one(
         {"tenant_id": current_user.tenant_id, "is_active": True},
         {"_id": 0, "hotel_code": 1},
@@ -413,6 +432,10 @@ async def bulk_push_ari(
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
     """Durably queue multiple ARI updates without direct provider writes."""
+    runtime_block = ari_write_block_reason()
+    if runtime_block:
+        raise HTTPException(status_code=503, detail=runtime_block)
+
     conn = await db.exely_connections.find_one(
         {"tenant_id": current_user.tenant_id, "is_active": True},
         {"_id": 0, "hotel_code": 1},
@@ -470,6 +493,10 @@ async def manual_pull(
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
     """Manually trigger a reservation pull from Exely."""
+    runtime_block = reservation_sync_block_reason()
+    if runtime_block:
+        raise HTTPException(status_code=503, detail=runtime_block)
+
     conn = await db.exely_connections.find_one(
         {"tenant_id": current_user.tenant_id, "is_active": True},
         exely_connection_projection(),
@@ -537,6 +564,10 @@ async def confirm_reservation(
     _perm=Depends(require_op("manage_channel_connectors")),  # v97 DW
 ):
     """Confirm reservation delivery to Exely via OTA_NotifReportRQ."""
+    runtime_block = reservation_sync_block_reason()
+    if runtime_block:
+        raise HTTPException(status_code=503, detail=runtime_block)
+
     client, conn = await _get_client(current_user.tenant_id)
 
     res = await db.exely_reservations.find_one(
@@ -564,6 +595,10 @@ async def confirm_all_imported_deliveries(
     _perm=Depends(require_op("manage_channel_connectors")),  # v97 DW
 ):
     """Confirm delivery for all imported but unconfirmed reservations."""
+    runtime_block = reservation_sync_block_reason()
+    if runtime_block:
+        raise HTTPException(status_code=503, detail=runtime_block)
+
     tenant_id = current_user.tenant_id
     client, _conn = await _get_client(tenant_id)
 
@@ -586,6 +621,10 @@ async def import_reservation_to_pms(
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
     """Manually import a channel reservation into PMS as a booking."""
+    runtime_block = reservation_sync_block_reason()
+    if runtime_block:
+        raise HTTPException(status_code=503, detail=runtime_block)
+
     tenant_id = current_user.tenant_id
 
     # Find channel reservation
@@ -640,6 +679,10 @@ async def verify_test_booking(
     3. Compare before/after
     4. Return verification report
     """
+    runtime_block = reservation_sync_block_reason()
+    if runtime_block:
+        raise HTTPException(status_code=503, detail=runtime_block)
+
     tenant_id = current_user.tenant_id
     conn = await db.exely_connections.find_one(
         {"tenant_id": tenant_id, "is_active": True},
@@ -786,6 +829,7 @@ async def get_sync_status(current_user: User = Depends(get_current_user)):
     )
     return {
         "scheduler_running": exely_pull_scheduler.is_running,
+        "production_safety": safe_runtime_state(),
         "last_pull": cursor,
         "pending_events": pending_events,
         "error_events": error_events,
@@ -798,6 +842,10 @@ async def start_scheduler(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
+    runtime_block = reservation_sync_block_reason()
+    if runtime_block:
+        raise HTTPException(status_code=503, detail=runtime_block)
+
     conn = await db.exely_connections.find_one(
         {"tenant_id": current_user.tenant_id, "is_active": True},
         {"_id": 0, "sync_interval_seconds": 1},

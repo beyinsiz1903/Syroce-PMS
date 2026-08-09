@@ -30,6 +30,11 @@ from .errors import (
     ExelyValidationError,
 )
 from .normalizer import normalize_reservation
+from .production_safety import (
+    ari_write_block_reason,
+    provider_io_block_reason,
+    reservation_sync_block_reason,
+)
 from .provider_quota import ExelyProviderQuota
 from .response_parser import (
     AMBIGUOUS,
@@ -120,6 +125,10 @@ class ExelyProvider:
             )
 
     async def _send_read(self, xml: str, soap_action: str, *, operation: str) -> bytes:
+        runtime_block = reservation_sync_block_reason() if operation == "reservation_read" else provider_io_block_reason()
+        if runtime_block:
+            raise ExelyValidationError(runtime_block)
+
         async def _call():
             await self._reserve_quota(operation)
             try:
@@ -335,6 +344,18 @@ class ExelyProvider:
         """Send one SOAP mutation once and require explicit provider success."""
         start = time.time()
         provider_write_count = 0
+        runtime_block = ari_write_block_reason()
+        if runtime_block:
+            return ProviderResult(
+                success=False,
+                error=runtime_block,
+                error_type=runtime_block,
+                duration_ms=0,
+                metadata={
+                    "provider_write_count": 0,
+                    "provider_status_class": "NOT_SENT",
+                },
+            )
         breaker = provider_failover.get_breaker(_exely_circuit_key(self._connection_id))
         if not await breaker.try_acquire():
             return ProviderResult(
@@ -473,6 +494,18 @@ class ExelyProvider:
         provider_write_count = 0
         operation = "OTA_NotifReportRQ"
         soap_action = get_soap_action_uri(operation)
+        runtime_block = reservation_sync_block_reason()
+        if runtime_block:
+            return ProviderResult(
+                success=False,
+                error=runtime_block,
+                error_type=runtime_block,
+                duration_ms=0,
+                metadata={
+                    "provider_write_count": 0,
+                    "provider_status_class": "NOT_SENT",
+                },
+            )
         try:
             if not create_datetime or not last_modify_datetime:
                 raise ExelyValidationError("Exact provider acknowledgement timestamps are required")

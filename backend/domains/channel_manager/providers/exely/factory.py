@@ -2,11 +2,16 @@
 
 from core.database import db
 
+from .production_safety import provider_io_block_reason
 from .provider import ExelyProvider
 from .security import exely_connection_projection, resolve_exely_credentials
 
 
 async def get_exely_provider(tenant_id: str):
+    runtime_block = provider_io_block_reason()
+    if runtime_block:
+        raise RuntimeError(runtime_block)
+
     connection = await db.exely_connections.find_one(
         {"tenant_id": tenant_id, "is_active": True},
         exely_connection_projection(),

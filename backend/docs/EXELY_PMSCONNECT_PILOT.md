@@ -1,5 +1,9 @@
 # Exely PMSConnect Pilot
 
+**Status:** Closed with PASS on 9 August 2026. No additional pilot provider
+mutation is authorized. Production remains NO-GO; see
+`backend/docs/EXELY_PRODUCTION_READINESS.md`.
+
 ## Provider contract
 
 The pilot follows the supplied Exely PMSConnect 1.17 specification. Reservation

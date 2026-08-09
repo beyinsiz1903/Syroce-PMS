@@ -16,6 +16,8 @@ from pymongo.errors import DuplicateKeyError
 
 from core.database import db
 
+from .production_safety import ari_write_block_reason
+
 logger = logging.getLogger("exely.ari_delivery")
 
 COLL_EXELY_ARI_DELIVERIES = "exely_ari_deliveries"
@@ -99,6 +101,10 @@ async def deliver_exely_ari(
         return _result(False, STATE_BLOCKED, error, "NOT_SENT", 0, identity)
     if dry_run:
         return _result(False, STATE_DRY_RUN, "", "NOT_SENT", 0, identity)
+
+    runtime_block = ari_write_block_reason()
+    if runtime_block:
+        return _result(False, STATE_BLOCKED, runtime_block, "NOT_SENT", 0, identity)
 
     if write_enabled is None:
         try:
