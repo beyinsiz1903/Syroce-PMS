@@ -96,9 +96,9 @@ class WebSocketRedisAdapter:
             try:
                 self._pubsub = self._redis.pubsub()
                 self._active = True
-                logger.info(f"WS Redis adapter initialized (instance={instance_id})")
+                logger.info("WS Redis adapter initialized")
             except Exception as e:
-                logger.warning(f"WS Redis adapter init failed: {e}")
+                logger.warning("WS Redis adapter init failed type=%s", type(e).__name__)
                 self._active = False
         else:
             logger.info("WS Redis adapter: no Redis, using local-only mode")
@@ -147,7 +147,7 @@ class WebSocketRedisAdapter:
                 except Exception as e:
                     # Connection probably dropping; leave the channel
                     # tracked so the next successful reconnect picks it up.
-                    logger.error(f"WS subscribe error ({room}): {e}")
+                    logger.error("WS subscribe error type=%s", type(e).__name__)
             if not self._listener_task or self._listener_task.done():
                 self._listener_task = asyncio.create_task(self._listen())
 
@@ -178,7 +178,7 @@ class WebSocketRedisAdapter:
                 try:
                     await self._pubsub.unsubscribe(channel)
                 except Exception as e:
-                    logger.error(f"WS unsubscribe error ({room}): {e}")
+                    logger.error("WS unsubscribe error type=%s", type(e).__name__)
 
     async def publish(self, room: str, event: str, data: dict[str, Any]):
         """Publish event to all instances via Redis.
@@ -194,7 +194,7 @@ class WebSocketRedisAdapter:
             try:
                 await self._local_handler(room, event, data)
             except Exception as e:
-                logger.error(f"WS local handler error ({room}): {e}")
+                logger.error("WS local handler error type=%s", type(e).__name__)
 
         # 2) Cross-instance fan-out via Redis pub/sub (best-effort).
         await self.publish_remote_only(room, event, data)
@@ -228,9 +228,9 @@ class WebSocketRedisAdapter:
             self._metrics["messages_published"] += 1
         except Exception as e:
             self._metrics["publish_errors"] += 1
-            self._metrics["last_publish_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+            self._metrics["last_publish_error"] = type(e).__name__
             self._metrics["last_publish_error_at"] = datetime.now(UTC).isoformat()
-            logger.error(f"WS publish error ({room}): {e}")
+            logger.error("WS publish error type=%s", type(e).__name__)
 
     async def _listen(self):
         """Listen for messages from other instances.
@@ -280,9 +280,9 @@ class WebSocketRedisAdapter:
                                 await self._local_handler(payload["room"], payload["event"], payload["data"])
                                 self._metrics["messages_forwarded"] += 1
                         except Exception as e:
-                            self._metrics["last_listen_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+                            self._metrics["last_listen_error"] = type(e).__name__
                             self._metrics["last_listen_error_at"] = datetime.now(UTC).isoformat()
-                            logger.error(f"WS message parse error: {e}")
+                            logger.error("WS message parse error type=%s", type(e).__name__)
                     # listen() returned without raising → server closed
                     # the subscription cleanly. Treat as a transient
                     # drop and rebuild so bridged events keep flowing.
@@ -290,26 +290,32 @@ class WebSocketRedisAdapter:
                         logger.warning("WS pubsub listener exited; attempting reconnect")
                 except asyncio.CancelledError:
                     return
-                except (TimeoutError, RedisTimeoutError) as e:
+                except (TimeoutError, RedisTimeoutError):
                     # Pub/sub idle socket timeout (default redis socket_timeout
                     # ~30s). No message arrived in the read window — this is
                     # normal for low-traffic channels, NOT an error. Quiet
                     # reconnect keeps the listener alive without log spam.
-                    self._metrics["last_listen_error"] = f"IdleTimeout: {str(e)[:120]}"
+                    self._metrics["last_listen_error"] = "IdleTimeout"
                     self._metrics["last_listen_error_at"] = datetime.now(UTC).isoformat()
                     logger.debug("WS pubsub idle timeout; reconnecting")
                     exit_reason = "idle"
                 except Exception as e:
-                    self._metrics["last_listen_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+                    self._metrics["last_listen_error"] = type(e).__name__
                     self._metrics["last_listen_error_at"] = datetime.now(UTC).isoformat()
                     exit_reason = "error"
                     # Genuine connection failure (network blip, Redis restart)
                     # — WARNING the first few times, then suppress to debug
                     # so a stuck remote endpoint cannot flood the log.
                     if breaker_count < self._breaker_threshold:
-                        logger.warning(f"WS pubsub listener error: {e}; attempting reconnect")
+                        logger.warning(
+                            "WS pubsub listener error type=%s; attempting reconnect",
+                            type(e).__name__,
+                        )
                     else:
-                        logger.debug(f"WS pubsub listener error (suppressed): {e}")
+                        logger.debug(
+                            "WS pubsub listener error suppressed type=%s",
+                            type(e).__name__,
+                        )
             # else: previous reconnect attempt cleared _pubsub but
             # failed to rebuild it — fall through and keep retrying so
             # we don't permanently drop into local-only mode.
@@ -397,7 +403,7 @@ class WebSocketRedisAdapter:
                 logger.debug(f"WS pubsub reconnected; re-subscribed to {len(channels)} channel(s)")
                 return True
         except Exception as e:
-            logger.warning(f"WS pubsub reconnect failed: {e}")
+            logger.warning("WS pubsub reconnect failed type=%s", type(e).__name__)
             return False
 
     async def close(self):

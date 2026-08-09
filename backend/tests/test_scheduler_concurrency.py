@@ -1,7 +1,7 @@
 import asyncio
 import os
 import sys
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 from domains.channel_manager.providers.sync_scheduler import ReservationPullScheduler
 from infra.distributed_lock import lock_manager
@@ -35,6 +35,7 @@ class MockRedis:
                     return 1
                 return 0
         return 0
+
 
 async def test_scheduler_concurrency_only_one_worker_runs():
     print("Running test_scheduler_concurrency_only_one_worker_runs...")
@@ -72,6 +73,7 @@ async def test_scheduler_concurrency_only_one_worker_runs():
     assert len(pull_calls) == 1, f"Expected 1 pull call, got {len(pull_calls)}"
     print("test_scheduler_concurrency_only_one_worker_runs PASSED")
 
+
 async def test_scheduler_concurrency_redis_unavailable():
     print("Running test_scheduler_concurrency_redis_unavailable...")
     lock_manager.set_redis(None)
@@ -95,6 +97,7 @@ async def test_scheduler_concurrency_redis_unavailable():
 
     assert len(pull_calls) == 0, "Worker should skip cycle when Redis is unavailable"
     print("test_scheduler_concurrency_redis_unavailable PASSED")
+
 
 async def test_scheduler_concurrency_long_cycle():
     print("Running test_scheduler_concurrency_long_cycle...")
@@ -131,8 +134,10 @@ async def test_scheduler_concurrency_long_cycle():
     assert len(pull_calls) == 1, "Scheduler 2 should not pull while Scheduler 1 is running"
     print("test_scheduler_concurrency_long_cycle PASSED")
 
+
 async def test_scheduler_concurrency_lock_release():
     from infra.distributed_lock import DistributedLock, lock_manager
+
     print("Running test_scheduler_concurrency_lock_release...")
     mock_redis = MockRedis()
     lock_manager.set_redis(mock_redis)
@@ -163,14 +168,14 @@ async def test_scheduler_concurrency_lock_release():
     assert actual_key not in mock_redis._store, "Lock should be removed after finally block"
     print("test_scheduler_concurrency_lock_release PASSED")
 
+
 async def test_scheduler_heartbeat_extends_lock():
     from infra.distributed_lock import DistributedLock, lock_manager
+
     print("Running test_scheduler_heartbeat_extends_lock...")
     redis = MockRedis()
     lock_manager.set_redis(redis)
     os.environ["ENV"] = "test"
-
-
 
     async def mock_pull_long(*args, **kwargs):
         pass
@@ -186,6 +191,7 @@ async def test_scheduler_heartbeat_extends_lock():
     assert has_pexpire, "pexpire should be called"
     print("test_scheduler_heartbeat_extends_lock PASSED")
 
+
 async def test_scheduler_different_hostnames_same_key():
     print("Running test_scheduler_different_hostnames_same_key...")
     # Simulate two different HOSTNAME environments but SAME DEPLOYMENT_ENV
@@ -194,18 +200,22 @@ async def test_scheduler_different_hostnames_same_key():
     # 1. First worker
     os.environ["HOSTNAME"] = "backend-worker-A"
     scheduler1 = ReservationPullScheduler()
+
     # Mock pull to just hold the lock
     async def mock_pull_A(*args, **kwargs):
         await asyncio.sleep(0.5)
+
     scheduler1._pull_all_tenants = AsyncMock(side_effect=mock_pull_A)
 
     # 2. Second worker
     os.environ["HOSTNAME"] = "backend-worker-B"
     scheduler2 = ReservationPullScheduler()
     pull_calls_B = []
+
     async def mock_pull_B(*args, **kwargs):
         pull_calls_B.append(1)
         await asyncio.sleep(0.1)
+
     scheduler2._pull_all_tenants = AsyncMock(side_effect=mock_pull_B)
 
     scheduler1._running = True
@@ -215,7 +225,7 @@ async def test_scheduler_different_hostnames_same_key():
     lock_manager.set_redis(redis)
 
     t1 = asyncio.create_task(scheduler1._run_loop(sleep_seconds=1, safety_window_minutes=5))
-    await asyncio.sleep(0.1) # let worker A acquire lock
+    await asyncio.sleep(0.1)  # let worker A acquire lock
     t2 = asyncio.create_task(scheduler2._run_loop(sleep_seconds=1, safety_window_minutes=5))
     await asyncio.sleep(0.2)
 
@@ -253,6 +263,7 @@ async def test_scheduler_heartbeat_loss_aborts_cycle():
 
     # Patch DistributedLock.extend to return False and sleep to return immediately
     from infra.distributed_lock import DistributedLock
+
     original_extend = DistributedLock.extend
     original_sleep = asyncio.sleep
 
@@ -287,6 +298,7 @@ async def test_scheduler_heartbeat_loss_aborts_cycle():
 
     print("test_scheduler_heartbeat_loss_aborts_cycle PASSED")
 
+
 async def test_scheduler_heartbeat_exception_aborts_cycle():
     print("Running test_scheduler_heartbeat_exception_aborts_cycle...")
     redis = MockRedis()
@@ -311,6 +323,7 @@ async def test_scheduler_heartbeat_exception_aborts_cycle():
     scheduler._running = True
 
     from infra.distributed_lock import DistributedLock
+
     original_extend = DistributedLock.extend
     original_sleep = asyncio.sleep
 
@@ -343,6 +356,7 @@ async def test_scheduler_heartbeat_exception_aborts_cycle():
         t1.cancel()
 
     print("test_scheduler_heartbeat_exception_aborts_cycle PASSED")
+
 
 async def test_scheduler_shutdown_cancels_pull_task():
     print("Running test_scheduler_shutdown_cancels_pull_task...")
@@ -381,6 +395,7 @@ async def test_scheduler_shutdown_cancels_pull_task():
     assert pull_aborted is True, "Pull task should be cancelled when scheduler shuts down"
     print("test_scheduler_shutdown_cancels_pull_task PASSED")
 
+
 async def test_scheduler_acquire_exception_skips_cycle():
     print("Running test_scheduler_acquire_exception_skips_cycle...")
     redis = MockRedis()
@@ -398,6 +413,7 @@ async def test_scheduler_acquire_exception_skips_cycle():
 
     # Patch DistributedLock.acquire to throw an exception
     from infra.distributed_lock import DistributedLock
+
     original_acquire = DistributedLock.acquire
 
     async def mock_acquire(self):
@@ -419,6 +435,30 @@ async def test_scheduler_acquire_exception_skips_cycle():
 
     print("test_scheduler_acquire_exception_skips_cycle PASSED")
 
+
+def test_scheduler_lock_error_is_rate_limited_and_redacted(monkeypatch):
+    from domains.channel_manager.providers import sync_scheduler
+
+    scheduler = ReservationPullScheduler()
+    error_log = Mock()
+    debug_log = Mock()
+    clock = iter([100.0, 101.0, 1001.0])
+    monkeypatch.setattr(sync_scheduler.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(sync_scheduler.logger, "error", error_log)
+    monkeypatch.setattr(sync_scheduler.logger, "debug", debug_log)
+
+    sensitive_error = "connection metadata must not be logged"
+    scheduler._record_lock_acquisition_failure(RuntimeError(sensitive_error))
+    scheduler._record_lock_acquisition_failure(RuntimeError(sensitive_error))
+    scheduler._record_lock_acquisition_failure(RuntimeError(sensitive_error))
+
+    assert error_log.call_count == 2
+    assert debug_log.call_count == 1
+    rendered_args = repr(error_log.call_args_list) + repr(debug_log.call_args_list)
+    assert sensitive_error not in rendered_args
+    assert "RuntimeError" in rendered_args
+
+
 async def main():
     try:
         await test_scheduler_concurrency_only_one_worker_runs()
@@ -435,6 +475,7 @@ async def main():
     except AssertionError as e:
         print(f"TEST FAILED: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
