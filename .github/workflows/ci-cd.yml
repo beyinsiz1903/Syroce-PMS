@@ -307,6 +307,7 @@ jobs:
           cd backend
           python -m pytest \
             tests/test_hotelrunner_p0_integrity.py \
+            tests/test_hotelrunner_mutation_outcome_safety.py \
             tests/test_hotelrunner_reservation_lock.py \
             tests/test_hotelrunner_compat_security.py \
             tests/test_hotelrunner_webhook_signature.py \
