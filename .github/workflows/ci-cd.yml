@@ -214,6 +214,7 @@ jobs:
             tests/test_invoice_lifecycle_api.py \
             tests/test_invoice_lifecycle_service.py \
             tests/test_invoice_lifecycle_worker.py \
+            tests/test_invoice_status_worker.py \
             tests/test_bootstrap_invoice_workers.py \
             tests/test_nilvera_worker_lifecycle.py \
             tests/integration/test_academy_cert_race_live.py \

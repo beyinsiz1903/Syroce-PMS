@@ -7,9 +7,11 @@ from models.schemas.invoice_sync import InvoiceSyncState
 
 pytestmark = pytest.mark.asyncio
 
+
 @pytest.fixture
 def worker():
     return InvoiceStatusWorker(batch_size=5, poll_interval_sec=0.1)
+
 
 @patch("core.integrations.invoice_status_worker._raw_db")
 @patch("core.integrations.invoice_status_worker.InvoiceStatusService")
@@ -18,6 +20,7 @@ async def test_worker_process_batch(mock_service, mock_raw_db, worker):
     mock_cursor.sort.return_value = mock_cursor
     mock_cursor.limit.return_value = mock_cursor
     from datetime import UTC, datetime
+
     now = datetime.now(UTC)
     mock_dict = {
         "id": "test_id_1",
@@ -52,6 +55,7 @@ async def test_worker_process_batch(mock_service, mock_raw_db, worker):
 
     mock_service.poll_invoice_status.assert_called_once()
 
+
 @patch("core.integrations.invoice_status_worker._raw_db")
 @patch("core.integrations.invoice_status_worker.InvoiceStatusService")
 async def test_worker_process_batch_unclaimed(mock_service, mock_raw_db, worker):
@@ -59,6 +63,7 @@ async def test_worker_process_batch_unclaimed(mock_service, mock_raw_db, worker)
     mock_cursor.sort.return_value = mock_cursor
     mock_cursor.limit.return_value = mock_cursor
     from datetime import UTC, datetime
+
     now = datetime.now(UTC)
     mock_dict = {
         "id": "test_id_1",
@@ -89,6 +94,7 @@ async def test_worker_process_batch_unclaimed(mock_service, mock_raw_db, worker)
     mock_raw_db.invoice_sync.find.assert_called_once()
     mock_service.poll_invoice_status.assert_called_once()
 
+
 @patch("core.integrations.invoice_status_worker._raw_db")
 async def test_worker_process_batch_empty(mock_raw_db, worker):
     mock_cursor = MagicMock()
@@ -101,14 +107,15 @@ async def test_worker_process_batch_empty(mock_raw_db, worker):
 
     assert processed == 0
 
+
 async def test_worker_start_stop(worker):
     assert worker._worker_id.startswith("status_worker_")
 
     await worker.start()
-    assert worker._stop.is_set() is False
+    assert worker._stop_event.is_set() is False
     assert worker._task is not None
     assert not worker._task.done()
 
     await worker.stop()
-    assert worker._stop.is_set() is True
+    assert worker._stop_event.is_set() is True
     assert worker._task is None
