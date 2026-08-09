@@ -27,7 +27,12 @@ from . import observability as obs
 from .auth import extract_credentials, validate_credentials
 from .client import HotelRunnerHttpClient
 from .errors import (
+    HotelRunnerAuthError,
     HotelRunnerError,
+    HotelRunnerParseError,
+    HotelRunnerPayloadError,
+    HotelRunnerRateLimitError,
+    HotelRunnerTemporaryError,
 )
 from .mapper import (
     map_ari_delta_to_daily_payload,
@@ -576,25 +581,19 @@ class HotelRunnerProvider:
             if pms_number:
                 params["pms_number"] = pms_number
 
-            async def _call():
-                return await self._client.put(ep.RESERVATIONS_ACK, params=params)
-
-            result = await self._retry.execute(_call)
+            result = await self._client.put(ep.RESERVATIONS_ACK, params=params)
             duration_ms = int((time.time() - start) * 1000)
 
-            obs.record_provider_call(
+            self._record_mutation_call(
                 path=ep.RESERVATIONS_ACK,
-                method="PUT",
                 status_code=result.status_code,
                 duration_ms=duration_ms,
                 success=result.success,
-                tenant_id=self._config.tenant_id,
-                connection_id=self._config.connection_id,
             )
-            return result
+            return self._mutation_http_result(result, duration_ms)
 
         except Exception as e:
-            return self._handle_error(e, start, ep.RESERVATIONS_ACK)
+            return self._mutation_error_result(e, start, ep.RESERVATIONS_ACK)
 
     # ── Reservation State Update ──────────────────────────────────────────
 
@@ -618,29 +617,18 @@ class HotelRunnerProvider:
             if event == "cancel" and cancel_reason:
                 params["cancel_reason"] = cancel_reason
 
-            async def _call():
-                return await self._client.put(ep.RESERVATIONS_FIRE, params=params)
-
-            result = await self._retry.execute(_call)
+            result = await self._client.put(ep.RESERVATIONS_FIRE, params=params)
             duration_ms = int((time.time() - start) * 1000)
 
-            obs.record_provider_call(
+            self._record_mutation_call(
                 path=ep.RESERVATIONS_FIRE,
-                method="PUT",
                 status_code=result.status_code,
                 duration_ms=duration_ms,
                 success=result.success,
-                tenant_id=self._config.tenant_id,
-                connection_id=self._config.connection_id,
             )
-            return ProviderResult(
-                success=result.success,
-                data=result.data,
-                error=result.error,
-                duration_ms=duration_ms,
-            )
+            return self._mutation_http_result(result, duration_ms)
         except Exception as e:
-            return self._handle_error(e, start, ep.RESERVATIONS_FIRE)
+            return self._mutation_error_result(e, start, ep.RESERVATIONS_FIRE)
 
     # ── Canonical helpers (for snapshot collectors & ingest) ───────────
 
@@ -854,6 +842,95 @@ class HotelRunnerProvider:
         }
 
     # ── Internal helpers ──────────────────────────────────────────────
+
+    def _record_mutation_call(
+        self,
+        *,
+        path: str,
+        status_code: int,
+        duration_ms: int,
+        success: bool,
+    ) -> None:
+        try:
+            obs.record_provider_call(
+                path=path,
+                method="PUT",
+                status_code=status_code,
+                duration_ms=duration_ms,
+                success=success,
+                connection_id=self._connection_id,
+            )
+        except Exception as exc:
+            logger.error(
+                "[HR-MUTATION] telemetry failure type=%s",
+                type(exc).__name__,
+            )
+
+    @staticmethod
+    def _mutation_http_result(result: Any, duration_ms: int) -> ProviderResult:
+        success = bool(result.success)
+        return ProviderResult(
+            success=success,
+            data=result.data,
+            error="" if success else "HOTELRUNNER_WRITE_REJECTED",
+            duration_ms=duration_ms,
+            error_type="" if success else "ProviderRejected",
+            metadata={
+                "provider_write_count": 1,
+                "retry_count": 0,
+                "provider_status_class": "SUCCESS" if success else "REJECTED",
+                "delivery_state": "CONFIRMED" if success else "REJECTED",
+                "http_status": result.status_code,
+                "retryable": False,
+            },
+        )
+
+    def _mutation_error_result(
+        self,
+        error: Exception,
+        start_time: float,
+        path: str,
+    ) -> ProviderResult:
+        duration_ms = int((time.time() - start_time) * 1000)
+        error_type = type(error).__name__
+        try:
+            obs.record_provider_failure(
+                error_type=error_type,
+                message="",
+                connection_id=self._connection_id,
+                path=path,
+            )
+        except Exception as telemetry_error:
+            logger.error(
+                "[HR-MUTATION] failure telemetry type=%s",
+                type(telemetry_error).__name__,
+            )
+
+        ambiguous = isinstance(
+            error,
+            (HotelRunnerTemporaryError, HotelRunnerParseError),
+        ) or not isinstance(
+            error,
+            (
+                HotelRunnerAuthError,
+                HotelRunnerPayloadError,
+                HotelRunnerRateLimitError,
+            ),
+        )
+        return ProviderResult(
+            success=False,
+            error="HOTELRUNNER_WRITE_OUTCOME_UNKNOWN" if ambiguous else "HOTELRUNNER_WRITE_REJECTED",
+            error_type=error_type,
+            duration_ms=duration_ms,
+            metadata={
+                "provider_write_count": 1,
+                "retry_count": 0,
+                "provider_status_class": "WRITE_OUTCOME_UNKNOWN" if ambiguous else "REJECTED",
+                "delivery_state": "AMBIGUOUS" if ambiguous else "REJECTED",
+                "http_status": 0,
+                "retryable": False,
+            },
+        )
 
     def _handle_error(self, error: HotelRunnerError, start_time: float, path: str) -> ProviderResult:
         duration_ms = int((time.time() - start_time) * 1000)

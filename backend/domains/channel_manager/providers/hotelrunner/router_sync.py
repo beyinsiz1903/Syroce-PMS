@@ -290,8 +290,15 @@ async def confirm_reservation_delivery(
         pms_number=res.get("pms_booking_id"),
     )
 
-    if not result["success"]:
-        raise HTTPException(status_code=502, detail=f"Teslimat onay hatasi: {result['error']}")
+    if not result.success:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "HOTELRUNNER_ACK_FAILED",
+                "error_type": result.error_type or "ProviderRejected",
+                "delivery_state": result.metadata.get("delivery_state", "REJECTED"),
+            },
+        )
 
     await db.hotelrunner_reservations.update_one(
         {"tenant_id": current_user.tenant_id, "hr_number": hr_number},
