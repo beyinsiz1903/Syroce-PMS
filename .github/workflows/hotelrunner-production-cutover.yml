@@ -1,0 +1,235 @@
+name: HotelRunner Production Cutover
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Fail-closed production cutover stage"
+        required: true
+        type: choice
+        options:
+          - prepare_disabled
+          - enable_read_only
+          - close_all
+      approved_head_sha:
+        description: "Exact main SHA approved for this production change"
+        required: true
+        type: string
+      confirm_production_change:
+        description: "I approve this production configuration change"
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: hotelrunner-production-cutover
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  cutover:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fail-closed approval and exact-head guard
+        shell: bash
+        env:
+          APPROVED_HEAD_SHA: ${{ inputs.approved_head_sha }}
+          CONFIRM_PRODUCTION_CHANGE: ${{ inputs.confirm_production_change }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRM_PRODUCTION_CHANGE" = "true" || {
+            echo "::error::BLOCKED_PRODUCTION_CONFIRMATION_REQUIRED"
+            exit 1
+          }
+          test "$RUN_ATTEMPT" = "1" || {
+            echo "::error::BLOCKED_MUTATION_RERUN"
+            exit 1
+          }
+          test "${{ github.ref_name }}" = "main" || {
+            echo "::error::BLOCKED_MAIN_REQUIRED"
+            exit 1
+          }
+          test "$APPROVED_HEAD_SHA" = "${{ github.sha }}" || {
+            echo "::error::BLOCKED_EXACT_HEAD_MISMATCH"
+            exit 1
+          }
+
+      - name: Validate required configuration
+        shell: bash
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          DO_APP_ID: ${{ secrets.DO_APP_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$DO_TOKEN" || {
+            echo "::error::BLOCKED_DEPLOY_TOKEN_MISSING"
+            exit 1
+          }
+          test -n "$DO_APP_ID" || {
+            echo "::error::BLOCKED_APP_ID_MISSING"
+            exit 1
+          }
+
+      - name: Install deployment client
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Apply exact-head image and fail-closed HotelRunner gates
+        shell: bash
+        env:
+          DO_APP_ID: ${{ secrets.DO_APP_ID }}
+          EXACT_SHA: ${{ github.sha }}
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          case "$OPERATION" in
+            prepare_disabled|close_all)
+              MASTER_GATE="false"
+              ;;
+            enable_read_only)
+              MASTER_GATE="true"
+              ;;
+            *)
+              echo "::error::BLOCKED_UNKNOWN_OPERATION"
+              exit 1
+              ;;
+          esac
+
+          doctl apps spec get "$DO_APP_ID" --format json > /tmp/hotelrunner-spec.json
+
+          for component in backend frontend worker beat; do
+            if [ "$component" = "backend" ] || [ "$component" = "frontend" ]; then
+              list='.services[]?'
+            else
+              list='.workers[]?'
+            fi
+            case "$component" in
+              backend) expected_repository="syroce-backend" ;;
+              frontend) expected_repository="syroce-frontend" ;;
+              worker|beat) expected_repository="syroce-worker" ;;
+            esac
+            count="$(jq -r "[$list | select(.name == \"$component\")] | length" /tmp/hotelrunner-spec.json)"
+            test "$count" = "1" || {
+              echo "::error::BLOCKED_COMPONENT_CARDINALITY"
+              exit 1
+            }
+            repository="$(jq -r "$list | select(.name == \"$component\") | .image.repository // empty" /tmp/hotelrunner-spec.json)"
+            test "${repository##*/}" = "$expected_repository" || {
+              echo "::error::BLOCKED_COMPONENT_REPOSITORY"
+              exit 1
+            }
+          done
+
+          jq \
+            --arg sha "$EXACT_SHA" \
+            --arg master "$MASTER_GATE" \
+            -f .github/scripts/hotelrunner-cutover-spec.jq \
+            /tmp/hotelrunner-spec.json > /tmp/hotelrunner-new-spec.json
+
+          doctl apps update "$DO_APP_ID" --spec /tmp/hotelrunner-new-spec.json --wait >/dev/null
+          deployment_id="$(doctl apps get "$DO_APP_ID" --format ActiveDeployment.ID --no-header)"
+          test -n "$deployment_id" || {
+            echo "::error::BLOCKED_DEPLOYMENT_ID_MISSING"
+            exit 1
+          }
+          phase="$(doctl apps get-deployment "$DO_APP_ID" "$deployment_id" --format Phase --no-header)"
+          test "$phase" = "ACTIVE" || {
+            echo "::error::BLOCKED_DEPLOYMENT_NOT_ACTIVE"
+            exit 1
+          }
+
+          doctl apps spec get "$DO_APP_ID" --format json > /tmp/hotelrunner-live-spec.json
+          for component in backend frontend worker beat; do
+            if [ "$component" = "backend" ] || [ "$component" = "frontend" ]; then
+              list='.services[]?'
+            else
+              list='.workers[]?'
+            fi
+            case "$component" in
+              backend) expected_repository="syroce-backend" ;;
+              frontend) expected_repository="syroce-frontend" ;;
+              worker|beat) expected_repository="syroce-worker" ;;
+            esac
+            tag="$(jq -r "$list | select(.name == \"$component\") | .image.tag // empty" /tmp/hotelrunner-live-spec.json)"
+            repository="$(jq -r "$list | select(.name == \"$component\") | .image.repository // empty" /tmp/hotelrunner-live-spec.json)"
+            test "$tag" = "$EXACT_SHA" || {
+              echo "::error::BLOCKED_LIVE_SHA_MISMATCH"
+              exit 1
+            }
+            test "${repository##*/}" = "$expected_repository" || {
+              echo "::error::BLOCKED_LIVE_REPOSITORY_MISMATCH"
+              exit 1
+            }
+            if [ "$component" = "frontend" ]; then
+              continue
+            fi
+            master="$(jq -r "$list | select(.name == \"$component\") | [.envs[]? | select(.key == \"ENABLE_HOTELRUNNER_PRODUCTION\") | .value] | last // empty" /tmp/hotelrunner-live-spec.json)"
+            reservation_stop="$(jq -r "$list | select(.name == \"$component\") | [.envs[]? | select(.key == \"DISABLE_HOTELRUNNER_RESERVATION_SYNC\") | .value] | last // empty" /tmp/hotelrunner-live-spec.json)"
+            ari_stop="$(jq -r "$list | select(.name == \"$component\") | [.envs[]? | select(.key == \"DISABLE_HOTELRUNNER_ARI_WRITE\") | .value] | last // empty" /tmp/hotelrunner-live-spec.json)"
+            nilvera_enabled="$(jq -r "$list | select(.name == \"$component\") | [.envs[]? | select(.key == \"NILVERA_ENABLED\") | .value] | last // empty" /tmp/hotelrunner-live-spec.json)"
+            test "$master" = "$MASTER_GATE" || {
+              echo "::error::BLOCKED_MASTER_GATE_MISMATCH"
+              exit 1
+            }
+            test "$reservation_stop" = "true" || {
+              echo "::error::BLOCKED_RESERVATION_STOP_MISSING"
+              exit 1
+            }
+            test "$ari_stop" = "true" || {
+              echo "::error::BLOCKED_ARI_STOP_MISSING"
+              exit 1
+            }
+            test "$nilvera_enabled" = "false" || {
+              echo "::error::BLOCKED_NILVERA_STOP_MISSING"
+              exit 1
+            }
+          done
+
+          {
+            echo "### HotelRunner Production Cutover"
+            echo "- exact_head_match: true"
+            echo "- deployment_active: true"
+            echo "- production_master_enabled: $MASTER_GATE"
+            echo "- reservation_sync_disabled: true"
+            echo "- ari_write_disabled: true"
+            echo "- nilvera_disabled: true"
+            echo "- provider_read_count: 0"
+            echo "- provider_write_count: 0"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Health smoke test
+        shell: bash
+        env:
+          APP_BASE_URL: ${{ secrets.VITE_BACKEND_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$APP_BASE_URL" || {
+            echo "::error::BLOCKED_PRODUCTION_URL_MISSING"
+            exit 1
+          }
+          BASE_URL="${APP_BASE_URL%/}"
+          BASE_URL="${BASE_URL%/api}"
+          curl --fail --silent --show-error --max-time 20 \
+            "${BASE_URL}/health/live" >/dev/null
+
+      - name: Remove temporary deployment files
+        if: always()
+        shell: bash
+        run: |
+          rm -f \
+            /tmp/hotelrunner-spec.json \
+            /tmp/hotelrunner-new-spec.json \
+            /tmp/hotelrunner-live-spec.json

@@ -46,6 +46,11 @@ from .parser import (
     parse_reservations_response,
     parse_rooms_response,
 )
+from .production_safety import (
+    ari_write_block_reason,
+    provider_io_block_reason,
+    reservation_sync_block_reason,
+)
 from .retry import HotelRunnerRetryPolicy
 from .schemas import ProviderResult
 from .validators import (
@@ -134,6 +139,9 @@ class HotelRunnerProvider:
         Smoke test: call GET /infos/channels to verify credentials.
         Returns ProviderResult with connected status.
         """
+        runtime_block = provider_io_block_reason()
+        if runtime_block:
+            return self._blocked_provider_result(runtime_block)
         start = time.time()
         try:
 
@@ -183,6 +191,9 @@ class HotelRunnerProvider:
 
     async def fetch_rooms(self) -> ProviderResult:
         """Fetch all rooms/rates from HotelRunner."""
+        runtime_block = provider_io_block_reason()
+        if runtime_block:
+            return self._blocked_provider_result(runtime_block)
         start = time.time()
         try:
 
@@ -216,6 +227,9 @@ class HotelRunnerProvider:
 
     async def fetch_channels(self) -> ProviderResult:
         """Fetch all available channels."""
+        runtime_block = provider_io_block_reason()
+        if runtime_block:
+            return self._blocked_provider_result(runtime_block)
         start = time.time()
         try:
 
@@ -247,6 +261,9 @@ class HotelRunnerProvider:
 
     async def fetch_connected_channels(self) -> ProviderResult:
         """Fetch connected channels with process stats."""
+        runtime_block = provider_io_block_reason()
+        if runtime_block:
+            return self._blocked_provider_result(runtime_block)
         start = time.time()
         try:
 
@@ -295,6 +312,9 @@ class HotelRunnerProvider:
         If page is None and undelivered=False, fetches ALL pages.
         Otherwise fetches the specified single page.
         """
+        runtime_block = reservation_sync_block_reason()
+        if runtime_block:
+            return self._blocked_provider_result(runtime_block)
         start = time.time()
         try:
             if page is not None or undelivered:
@@ -465,6 +485,9 @@ class HotelRunnerProvider:
         is OPEN, the HTTP call is short-circuited and a fail-fast
         ProviderResult is returned (metadata.circuit_open=True).
         """
+        runtime_block = ari_write_block_reason()
+        if runtime_block:
+            return self._blocked_provider_result(runtime_block)
         start = time.time()
         breaker = provider_failover.get_breaker(_hr_circuit_key(self._connection_id))
         if not await breaker.try_acquire():
@@ -521,6 +544,9 @@ class HotelRunnerProvider:
         HotelRunner v2 REST API expects parameters as query params.
         Wrapped in the same per-connection breaker as push_daily_inventory.
         """
+        runtime_block = ari_write_block_reason()
+        if runtime_block:
+            return self._blocked_provider_result(runtime_block)
         start = time.time()
         breaker = provider_failover.get_breaker(_hr_circuit_key(self._connection_id))
         if not await breaker.try_acquire():
@@ -575,6 +601,9 @@ class HotelRunnerProvider:
         pms_number: str | None = None,
     ) -> ProviderResult:
         """Confirm reservation delivery to HotelRunner via /reservations/fire."""
+        runtime_block = reservation_sync_block_reason()
+        if runtime_block:
+            return self._blocked_provider_result(runtime_block)
         start = time.time()
         try:
             params: dict[str, str] = {"message_uid": message_uid}
@@ -608,6 +637,9 @@ class HotelRunnerProvider:
         event: "confirm" or "cancel"
         cancel_reason: "customer", "no_room", "no_show", "invalid_price" (only if event="cancel")
         """
+        runtime_block = reservation_sync_block_reason()
+        if runtime_block:
+            return self._blocked_provider_result(runtime_block)
         start = time.time()
         try:
             params: dict[str, str] = {
@@ -725,6 +757,14 @@ class HotelRunnerProvider:
         5xx response is ambiguous and must be reconciled through the returned
         transaction rather than resubmitted automatically.
         """
+        runtime_block = ari_write_block_reason()
+        if runtime_block:
+            return {
+                "success": False,
+                "error": runtime_block,
+                "error_type": runtime_block,
+                "provider_write_count": 0,
+            }
         start = time.time()
         try:
             query_params: dict[str, Any] = {}
@@ -803,6 +843,14 @@ class HotelRunnerProvider:
         push delivery status to the UI. Routed through retry +
         observability like other GET calls.
         """
+        runtime_block = provider_io_block_reason()
+        if runtime_block:
+            return {
+                "success": False,
+                "error": runtime_block,
+                "error_type": runtime_block,
+                "provider_read_count": 0,
+            }
         start = time.time()
         try:
 
@@ -842,6 +890,20 @@ class HotelRunnerProvider:
         }
 
     # ── Internal helpers ──────────────────────────────────────────────
+
+    @staticmethod
+    def _blocked_provider_result(reason: str) -> ProviderResult:
+        return ProviderResult(
+            success=False,
+            error=reason,
+            error_type=reason,
+            metadata={
+                "delivery_state": "BLOCKED",
+                "provider_status_class": "NOT_SENT",
+                "provider_read_count": 0,
+                "provider_write_count": 0,
+            },
+        )
 
     def _record_mutation_call(
         self,

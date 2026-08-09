@@ -92,19 +92,47 @@ async def phase_g_channels_and_audit(app):
 
     # HotelRunner Pull Scheduler (auto-start)
     try:
-        active_hr = await _raw_db.hotelrunner_connections.find_one({"is_active": True, "auto_sync_reservations": True}, {"_id": 1})
+        from domains.channel_manager.providers.hotelrunner.production_safety import (
+            ari_write_block_reason as hotelrunner_ari_block_reason,
+        )
+        from domains.channel_manager.providers.hotelrunner.production_safety import (
+            reservation_sync_block_reason as hotelrunner_reservation_block_reason,
+        )
+
+        reservation_block = hotelrunner_reservation_block_reason()
+        ari_block = hotelrunner_ari_block_reason()
+        active_hr = None
+        if not reservation_block or not ari_block:
+            active_hr = await _raw_db.hotelrunner_connections.find_one(
+                {"is_active": True, "auto_sync_reservations": True},
+                {"_id": 1},
+            )
         if active_hr:
-            from domains.channel_manager.providers.hotelrunner_sync import pull_scheduler as hr_pull_scheduler
+            if reservation_block:
+                logger.warning("HotelRunner Pull Scheduler blocked reason=%s", reservation_block)
+            else:
+                from domains.channel_manager.providers.hotelrunner_sync import pull_scheduler as hr_pull_scheduler
 
-            _hr_int = int(os.getenv("SYROCE_HR_PULL_INTERVAL", "180"))
-            await hr_pull_scheduler.start(interval_seconds=_hr_int)
-            app.state.hr_pull_scheduler = hr_pull_scheduler
-            logger.info(f"HotelRunner Pull Scheduler started ({_hr_int}s interval, adaptive backoff active)")
-            from domains.channel_manager.hr_push_queue_worker import push_queue_worker as hr_push_worker
+                _hr_int = int(os.getenv("SYROCE_HR_PULL_INTERVAL", "180"))
+                started = await hr_pull_scheduler.start(interval_seconds=_hr_int)
+                if started:
+                    app.state.hr_pull_scheduler = hr_pull_scheduler
+                    logger.info(f"HotelRunner Pull Scheduler started ({_hr_int}s interval, adaptive backoff active)")
+            if ari_block:
+                logger.warning("HotelRunner Push Queue Worker blocked reason=%s", ari_block)
+            else:
+                from domains.channel_manager.hr_push_queue_worker import push_queue_worker as hr_push_worker
 
-            await hr_push_worker.start()
-            app.state.hr_push_queue_worker = hr_push_worker
-            logger.info("HotelRunner Push Queue Worker started (120s interval)")
+                started = await hr_push_worker.start()
+                if started:
+                    app.state.hr_push_queue_worker = hr_push_worker
+                    logger.info("HotelRunner Push Queue Worker started (120s interval)")
+        elif reservation_block or ari_block:
+            logger.warning(
+                "HotelRunner background workers blocked reservation_reason=%s ari_reason=%s",
+                reservation_block or "NONE",
+                ari_block or "NONE",
+            )
         else:
             logger.info("No active HotelRunner connections; pull scheduler not started")
     except Exception as e:

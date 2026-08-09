@@ -14,6 +14,7 @@ from .credentials import (
     hotelrunner_connection_projection,
     resolve_hotelrunner_credentials,
 )
+from .production_safety import provider_io_block_reason
 
 
 async def get_provider(tenant_id: str):
@@ -25,6 +26,10 @@ async def get_provider(tenant_id: str):
         HTTPException 404 if no connection found.
         HTTPException 502 if credentials missing or invalid.
     """
+    runtime_block = provider_io_block_reason()
+    if runtime_block:
+        raise HTTPException(status_code=503, detail=runtime_block)
+
     from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
 
     conn = await db.hotelrunner_connections.find_one(
