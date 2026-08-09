@@ -15,6 +15,8 @@ from tests.integration import test_exely_pilot as pilot
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "exely-pilot.yml"
+INTEGRATIONS_REQUIREMENTS = ROOT / "backend" / "requirements" / "integrations.txt"
+POST_INSTALL = ROOT / "backend" / "scripts" / "post_install.sh"
 
 
 def _workflow() -> dict:
@@ -147,6 +149,14 @@ def test_workflow_requires_exact_head_backend_quality_jobs_without_deploy():
     assert 'verify_completed_workflow "ci-cd.yml"' not in script
     assert '"deploy-production"' not in script
     assert '"deploy-staging"' not in script
+
+
+def test_litellm_security_override_declares_and_verifies_settings_dependency():
+    requirements = INTEGRATIONS_REQUIREMENTS.read_text().splitlines()
+    post_install = POST_INSTALL.read_text()
+
+    assert "pydantic-settings==2.14.2" in requirements
+    assert "import litellm, openai, pydantic_settings" in post_install
 
 
 def test_workflow_scopes_ari_and_ack_secrets_to_mutually_exclusive_steps():

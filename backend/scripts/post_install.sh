@@ -13,9 +13,10 @@ python -m pip install "litellm>=1.84.0" --no-deps --quiet
 
 echo "Verifying..."
 python3 -c "
-import litellm, openai
+import litellm, openai, pydantic_settings
 print(f'litellm: OK')
 print(f'openai: {openai.__version__}')
+print('pydantic-settings: OK')
 print('All imports OK')
 "
 
