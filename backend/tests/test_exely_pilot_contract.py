@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 import pytest
 import yaml
 
+from core.tenant_db import get_current_tenant_id
 from domains.channel_manager.ari.provider_snapshot_contract import ProviderSnapshotEmpty
 from domains.channel_manager.providers.exely.snapshot_adapter import ExelySnapshotAdapter
 from domains.channel_manager.providers.exely.soap_builder import get_soap_action_uri
@@ -578,6 +579,24 @@ def test_safe_metadata_drops_payload_and_identifier_fields(caplog):
 
     assert recorded == [("correlation_label", "abcdef123456"), ("provider_write_count", 0)]
     assert sensitive not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_ack_lifecycle_runs_in_tenant_context_and_resets(monkeypatch):
+    async def acknowledge(_provider, _current):
+        assert get_current_tenant_id() == "tenant"
+        return {"success": True, "provider_write_count": 1}
+
+    monkeypatch.setattr(pilot, "acknowledge_durable_version", acknowledge)
+
+    result = await pilot._acknowledge_in_tenant_context(
+        SimpleNamespace(),
+        {},
+        "tenant",
+    )
+
+    assert result == {"success": True, "provider_write_count": 1}
+    assert get_current_tenant_id() is None
 
 
 def test_each_ari_operation_builds_one_value(monkeypatch):

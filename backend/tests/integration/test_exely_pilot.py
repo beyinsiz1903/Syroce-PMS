@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 import pytest
 
 from core.database import db
+from core.tenant_db import tenant_context
 from domains.channel_manager.ari.provider_snapshot_contract import (
     ProviderSnapshotEmpty,
     ProviderSnapshotUnavailable,
@@ -372,6 +373,15 @@ def _record_safe_metadata(record_property, metadata: dict[str, Any]) -> None:
     for key, value in sorted(safe.items()):
         record_property(key, value)
     logger.info("EXELY_PILOT_SAFE_METADATA %s", json.dumps(safe, sort_keys=True))
+
+
+async def _acknowledge_in_tenant_context(
+    provider: ExelyProvider,
+    current: dict[str, Any],
+    tenant_id: str,
+) -> dict[str, Any]:
+    with tenant_context(tenant_id):
+        return await acknowledge_durable_version(provider, current)
 
 
 def _fail_safe(record_property, code: str, metadata: dict[str, Any]) -> None:
@@ -798,7 +808,11 @@ async def test_exely_pilot_single_write(record_property):
                 rate_plan_code=settings.rate_plan_code,
             )
             metadata.update({"match_count_class": "ONE", "provider_read_count": 0})
-            result = await acknowledge_durable_version(provider, current)
+            result = await _acknowledge_in_tenant_context(
+                provider,
+                current,
+                settings.tenant_id,
+            )
             status_class = "SUCCESS" if result.get("success") else str(result.get("reason") or "MALFORMED")
             metadata.update(
                 {
