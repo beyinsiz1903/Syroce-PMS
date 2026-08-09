@@ -16,6 +16,7 @@ from bootstrap.migrations.versions.v011_exely_reservation_fencing import (
     ExelyReservationFencingMigration,
 )
 from core.database import db
+from core.tenant_db import tenant_context
 from domains.channel_manager.providers.common_ingest import ingest_reservation
 from domains.channel_manager.providers.exely.lifecycle import ACK_PENDING, PMS_DURABLE
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
@@ -268,39 +269,40 @@ async def import_reservation_durably(
     )
 
     provider_payload = {**raw_reservation, "property_id": property_id}
-    ingest = await ingest_reservation(
-        provider="exely",
-        tenant_id=tenant_id,
-        raw_payload=provider_payload,
-        normalizer=normalize_reservation,
-        event_type=_event_type(provider_payload),
-        source="pilot_import",
-    )
-    if not ingest.get("success") or ingest.get("action") in {"error", "hold"}:
-        raise PilotImportError("BLOCKED_CANONICAL_PERSISTENCE_FAILED")
+    with tenant_context(tenant_id):
+        ingest = await ingest_reservation(
+            provider="exely",
+            tenant_id=tenant_id,
+            raw_payload=provider_payload,
+            normalizer=normalize_reservation,
+            event_type=_event_type(provider_payload),
+            source="pilot_import",
+        )
+        if not ingest.get("success") or ingest.get("action") in {"error", "hold"}:
+            raise PilotImportError("BLOCKED_CANONICAL_PERSISTENCE_FAILED")
 
-    current = await db.exely_reservations.find_one(
-        {
-            "tenant_id": tenant_id,
-            "property_id": property_id,
-            "external_id": str(raw_reservation.get("reservation_id") or ""),
-        },
-        {"_id": 0},
-    )
-    if not current:
-        raise PilotImportError("BLOCKED_CANONICAL_PERSISTENCE_FAILED")
+        current = await db.exely_reservations.find_one(
+            {
+                "tenant_id": tenant_id,
+                "property_id": property_id,
+                "external_id": str(raw_reservation.get("reservation_id") or ""),
+            },
+            {"_id": 0},
+        )
+        if not current:
+            raise PilotImportError("BLOCKED_CANONICAL_PERSISTENCE_FAILED")
 
-    processed = await process_reservation_version(tenant_id, current)
-    if not processed.get("success"):
-        raise PilotImportError("BLOCKED_CANONICAL_LIFECYCLE_FAILED")
+        processed = await process_reservation_version(tenant_id, current)
+        if not processed.get("success"):
+            raise PilotImportError("BLOCKED_CANONICAL_LIFECYCLE_FAILED")
 
-    verification = await verify_durable_import(
-        tenant_id,
-        property_id,
-        raw_reservation,
-        room_type_code=room_type_code,
-        rate_plan_code=rate_plan_code,
-    )
+        verification = await verify_durable_import(
+            tenant_id,
+            property_id,
+            raw_reservation,
+            room_type_code=room_type_code,
+            rate_plan_code=rate_plan_code,
+        )
     if not verification.success:
         raise PilotImportError("BLOCKED_DURABLE_PMS_READBACK_FAILED")
 
