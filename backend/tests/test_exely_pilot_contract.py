@@ -57,7 +57,7 @@ def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False)
         "EXELY_PILOT_WRITE_APPROVED": "true" if write else "false",
         "EXELY_PILOT_ACK_DURABLE_PMS_ATTESTED": "true",
     }
-    if operation in {"reservation_import", "reservation_ack"}:
+    if operation in {"reservation_import", "reservation_replay", "reservation_ack"}:
         values.update(
             {
                 "MONGO_URL": "mongodb+srv://user:password@pilot-test.invalid/",
@@ -80,6 +80,7 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
         "inventory_read",
         "reservation_read",
         "reservation_import",
+        "reservation_replay",
         "availability",
         "rate",
         "stop_sell",
@@ -177,11 +178,11 @@ def test_workflow_scopes_ari_and_ack_secrets_to_mutually_exclusive_steps():
     }
     persistent_secrets = {"MONGO_URL"}
     ari_step = next(step for step in job["steps"] if step.get("name") == "Run one gated Exely discovery or ARI target")
-    import_step = next(step for step in job["steps"] if step.get("name") == "Run one gated Exely durable reservation import target")
+    import_step = next(step for step in job["steps"] if step.get("name") == "Run one gated Exely durable reservation import or replay target")
     ack_step = next(step for step in job["steps"] if step.get("name") == "Run one gated Exely acknowledgement target")
 
-    assert ari_step["if"] == "inputs.operation != 'reservation_ack' && inputs.operation != 'reservation_import'"
-    assert import_step["if"] == "inputs.operation == 'reservation_import'"
+    assert ari_step["if"] == "inputs.operation != 'reservation_ack' && inputs.operation != 'reservation_import' && inputs.operation != 'reservation_replay'"
+    assert import_step["if"] == "inputs.operation == 'reservation_import' || inputs.operation == 'reservation_replay'"
     assert ack_step["if"] == "inputs.operation == 'reservation_ack'"
     assert common_secrets | ari_secrets <= set(ari_step["env"])
     assert persistent_secrets.isdisjoint(ari_step["env"])
@@ -190,6 +191,7 @@ def test_workflow_scopes_ari_and_ack_secrets_to_mutually_exclusive_steps():
     assert import_step["env"]["MONGO_URL"] == "${{ secrets.EXELY_PILOT_PERSISTENT_MONGO_URL }}"
     assert import_step["env"]["DB_NAME"] == "${{ vars.EXELY_PILOT_PERSISTENT_DB_NAME }}"
     assert "test_exely_pilot_reservation_import" in import_step["run"]
+    assert "test_exely_pilot_reservation_replay" in import_step["run"]
     assert "test_exely_pilot_single_write" not in import_step["run"]
     for step in job["steps"]:
         if step.get("name") not in {ari_step["name"], import_step["name"], ack_step["name"]}:
@@ -247,7 +249,10 @@ def test_mutations_fail_closed_on_workflow_rerun(monkeypatch, operation):
         pilot._load_settings()
 
 
-@pytest.mark.parametrize("operation", ["discovery", "inventory_read", "reservation_read", "reservation_import"])
+@pytest.mark.parametrize(
+    "operation",
+    ["discovery", "inventory_read", "reservation_read", "reservation_import", "reservation_replay"],
+)
 def test_readonly_operations_allow_workflow_rerun(monkeypatch, operation):
     _base_env(monkeypatch, operation=operation)
     monkeypatch.setenv("EXELY_PILOT_RUN_ATTEMPT", "2")
@@ -532,8 +537,9 @@ def test_persistent_import_rejects_missing_database_attestation(monkeypatch):
         pilot._load_settings()
 
 
-def test_reservation_import_conflicts_with_provider_write_approval(monkeypatch):
-    _base_env(monkeypatch, operation="reservation_import", write=True)
+@pytest.mark.parametrize("operation", ["reservation_import", "reservation_replay"])
+def test_local_reservation_operations_conflict_with_provider_write_approval(monkeypatch, operation):
+    _base_env(monkeypatch, operation=operation, write=True)
 
     with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_READONLY_WRITE_CONFLICT"):
         pilot._load_settings()
@@ -632,6 +638,21 @@ async def test_reservation_import_transport_allows_only_one_read_and_no_provider
     assert guard.read_count == 1
     assert guard.write_count == 0
     assert original.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["reservation_replay", "reservation_ack"])
+async def test_local_lifecycle_operations_block_provider_reads(operation):
+    original = AsyncMock(return_value=b"synthetic-response")
+    provider = SimpleNamespace(_transport=SimpleNamespace(send_soap=original))
+    guard = pilot.PilotTransportGuard(provider, SimpleNamespace(operation=operation))
+
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_UNEXPECTED_SOAP_ACTION"):
+        await provider._transport.send_soap("synthetic", get_soap_action_uri("OTA_ReadRQ"))
+
+    assert guard.read_count == 0
+    assert guard.write_count == 0
+    original.assert_not_awaited()
 
 
 @pytest.mark.asyncio
