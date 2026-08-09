@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 import pytest
 import yaml
 
+from domains.channel_manager.providers.exely.snapshot_adapter import ExelySnapshotAdapter
 from domains.channel_manager.providers.exely.soap_builder import get_soap_action_uri
 from tests.integration import test_exely_pilot as pilot
 
@@ -75,6 +76,7 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
 
     assert inputs["operation"]["options"] == [
         "discovery",
+        "inventory_read",
         "reservation_read",
         "reservation_import",
         "availability",
@@ -244,7 +246,7 @@ def test_mutations_fail_closed_on_workflow_rerun(monkeypatch, operation):
         pilot._load_settings()
 
 
-@pytest.mark.parametrize("operation", ["discovery", "reservation_read", "reservation_import"])
+@pytest.mark.parametrize("operation", ["discovery", "inventory_read", "reservation_read", "reservation_import"])
 def test_readonly_operations_allow_workflow_rerun(monkeypatch, operation):
     _base_env(monkeypatch, operation=operation)
     monkeypatch.setenv("EXELY_PILOT_RUN_ATTEMPT", "2")
@@ -268,6 +270,17 @@ def test_ari_write_still_requires_mapping_secrets(monkeypatch):
     monkeypatch.delenv("EXELY_PILOT_ROOM_TYPE_CODE")
 
     with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_MISSING_CONFIGURATION:EXELY_PILOT_ROOM_TYPE_CODE"):
+        pilot._load_settings()
+
+
+def test_inventory_read_requires_mapping_secrets(monkeypatch):
+    _base_env(monkeypatch, operation="inventory_read")
+    monkeypatch.delenv("EXELY_PILOT_RATE_PLAN_CODE")
+
+    with pytest.raises(
+        pilot.PilotSafetyError,
+        match="BLOCKED_MISSING_CONFIGURATION:EXELY_PILOT_RATE_PLAN_CODE",
+    ):
         pilot._load_settings()
 
 
@@ -300,6 +313,85 @@ async def test_discovery_without_target_mapping_reports_safe_capability_metadata
     assert "synthetic-room" not in str(metadata)
     assert "synthetic-rate" not in str(metadata)
     assert recorded == []
+
+
+@pytest.mark.asyncio
+async def test_inventory_read_requires_one_open_sellable_mapping(monkeypatch):
+    _base_env(monkeypatch, operation="inventory_read")
+    settings = pilot._load_settings()
+    transport = SimpleNamespace(send_soap=AsyncMock())
+    provider = SimpleNamespace(_transport=transport)
+    snapshot = [
+        {
+            "room_type_code": settings.room_type_code,
+            "rate_plan_code": settings.rate_plan_code,
+            "date": settings.test_date.isoformat(),
+            "availability": 1,
+            "rate": 100.0,
+            "restrictions": {"stop_sell": False},
+        }
+    ]
+    adapter = SimpleNamespace(fetch_snapshot=AsyncMock(return_value=snapshot))
+    monkeypatch.setattr(pilot, "ExelySnapshotAdapter", lambda *, transport: adapter)
+
+    metadata = await pilot._read_inventory(provider, settings, lambda *_: None)
+
+    assert metadata["match_count_class"] == "ONE"
+    assert metadata["availability_positive"] is True
+    assert metadata["rate_present"] is True
+    assert metadata["stop_sell_open"] is True
+    credentials = adapter.fetch_snapshot.await_args.args[2]
+    assert credentials["username"] == settings.username
+    assert credentials["password"] == settings.password
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("snapshot", "failure_code"),
+    [
+        ([], "BLOCKED_INVENTORY_NOT_VISIBLE"),
+        (
+            [
+                {
+                    "availability": 0,
+                    "rate": 100.0,
+                    "restrictions": {"stop_sell": False},
+                }
+            ],
+            "BLOCKED_INVENTORY_UNAVAILABLE",
+        ),
+        (
+            [
+                {
+                    "availability": 1,
+                    "rate": 100.0,
+                    "restrictions": {"stop_sell": True},
+                }
+            ],
+            "BLOCKED_STOP_SELL_NOT_OPEN",
+        ),
+    ],
+)
+async def test_inventory_read_fails_closed(monkeypatch, snapshot, failure_code):
+    _base_env(monkeypatch, operation="inventory_read")
+    settings = pilot._load_settings()
+    for item in snapshot:
+        item.update(
+            {
+                "room_type_code": settings.room_type_code,
+                "rate_plan_code": settings.rate_plan_code,
+                "date": settings.test_date.isoformat(),
+            }
+        )
+    adapter = SimpleNamespace(fetch_snapshot=AsyncMock(return_value=snapshot))
+    monkeypatch.setattr(pilot, "ExelySnapshotAdapter", lambda *, transport: adapter)
+
+    with pytest.raises(pytest.fail.Exception, match=failure_code):
+        await pilot._read_inventory(
+            SimpleNamespace(_transport=SimpleNamespace(send_soap=AsyncMock())),
+            settings,
+            lambda *_: None,
+        )
 
 
 @pytest.mark.asyncio
@@ -519,6 +611,44 @@ async def test_reservation_import_transport_allows_only_one_read_and_no_provider
     assert guard.read_count == 1
     assert guard.write_count == 0
     assert original.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_inventory_read_transport_allows_only_availability_read():
+    original = AsyncMock(return_value=b"synthetic-response")
+    provider = SimpleNamespace(_transport=SimpleNamespace(send_soap=original))
+    guard = pilot.PilotTransportGuard(provider, SimpleNamespace(operation="inventory_read"))
+
+    await provider._transport.send_soap("synthetic", get_soap_action_uri("OTA_HotelAvailRQ"))
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_UNEXPECTED_SOAP_ACTION"):
+        await provider._transport.send_soap("synthetic", get_soap_action_uri("OTA_HotelAvailNotifRQ"))
+
+    assert guard.read_count == 1
+    assert guard.write_count == 0
+    assert original.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_exely_snapshot_uses_injected_guarded_transport():
+    xml = (ROOT / "backend" / "tests" / "fixtures" / "exely_avail_rs.xml").read_bytes()
+    transport = SimpleNamespace(send_soap=AsyncMock(return_value=xml))
+    adapter = ExelySnapshotAdapter(transport=transport)
+
+    result = await adapter.fetch_snapshot(
+        "tenant-1",
+        "prop-1",
+        {
+            "username": "synthetic-user",
+            "password": "synthetic-password",
+            "hotel_code": "synthetic-hotel",
+            "api_url": "https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc",
+        },
+        date_from="2026-06-29",
+        date_to="2026-06-30",
+    )
+
+    assert len(result) == 2
+    transport.send_soap.assert_awaited_once()
 
 
 @pytest.mark.asyncio

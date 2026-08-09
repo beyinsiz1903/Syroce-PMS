@@ -14,6 +14,9 @@ logger = logging.getLogger("exely.snapshot_adapter")
 
 
 class ExelySnapshotAdapter(ProviderSnapshotAdapter):
+    def __init__(self, transport: ExelySoapTransport | None = None):
+        self._transport = transport
+
     async def fetch_snapshot(
         self,
         tenant_id: str,
@@ -35,7 +38,7 @@ class ExelySnapshotAdapter(ProviderSnapshotAdapter):
             raise CredentialsMissing("Exely credential 'api_url' is required; refusing to fall back to test endpoint in production.")
 
         try:
-            transport = ExelySoapTransport(endpoint_url=endpoint_url)
+            transport = self._transport or ExelySoapTransport(endpoint_url=endpoint_url)
             xml = soap_builder.build_hotel_avail_rq(username, password, hotel_code, date_from, date_to)
             soap_action = soap_builder.get_soap_action_uri("OTA_HotelAvailRQ")
             raw_bytes = await transport.send_soap(xml, soap_action)
