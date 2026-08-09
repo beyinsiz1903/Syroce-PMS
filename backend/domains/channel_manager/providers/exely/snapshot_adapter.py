@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from domains.channel_manager.ari.provider_snapshot_contract import (
     CredentialsMissing,
     ProviderSnapshotAdapter,
+    ProviderSnapshotEmpty,
     ProviderSnapshotUnavailable,
 )
 from domains.channel_manager.providers.exely import soap_builder
@@ -152,6 +153,6 @@ class ExelySnapshotAdapter(ProviderSnapshotAdapter):
                                 curr_dt += timedelta(days=1)
 
         if not normalized:
-            raise ProviderSnapshotUnavailable("Exely returned an empty ARI snapshot; refusing to clear drift state.")
+            raise ProviderSnapshotEmpty("Exely returned an empty ARI snapshot; refusing to clear drift state.")
 
         return normalized

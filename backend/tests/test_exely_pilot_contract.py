@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 import pytest
 import yaml
 
+from domains.channel_manager.ari.provider_snapshot_contract import ProviderSnapshotEmpty
 from domains.channel_manager.providers.exely.snapshot_adapter import ExelySnapshotAdapter
 from domains.channel_manager.providers.exely.soap_builder import get_soap_action_uri
 from tests.integration import test_exely_pilot as pilot
@@ -395,6 +396,26 @@ async def test_inventory_read_fails_closed(monkeypatch, snapshot, failure_code):
 
 
 @pytest.mark.asyncio
+async def test_inventory_empty_provider_snapshot_is_safe_zero(monkeypatch):
+    _base_env(monkeypatch, operation="inventory_read")
+    settings = pilot._load_settings()
+    adapter = SimpleNamespace(fetch_snapshot=AsyncMock(side_effect=ProviderSnapshotEmpty("Exely returned an empty ARI snapshot; refusing to clear drift state.")))
+    monkeypatch.setattr(pilot, "ExelySnapshotAdapter", lambda *, transport: adapter)
+    recorded: list[tuple[str, object]] = []
+
+    with pytest.raises(pytest.fail.Exception, match="BLOCKED_INVENTORY_NOT_VISIBLE"):
+        await pilot._read_inventory(
+            SimpleNamespace(_transport=SimpleNamespace(send_soap=AsyncMock())),
+            settings,
+            lambda key, value: recorded.append((key, value)),
+        )
+
+    assert ("match_count_class", "ZERO") in recorded
+    assert ("provider_status_class", "SUCCESS_EMPTY") in recorded
+    assert ("provider_write_count", 0) in recorded
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("reservations", "failure_code"),
     [
@@ -649,6 +670,33 @@ async def test_exely_snapshot_uses_injected_guarded_transport():
 
     assert len(result) == 2
     transport.send_soap.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_exely_snapshot_classifies_empty_success_separately():
+    xml = b"""<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\">
+      <soapenv:Body>
+        <OTA_HotelAvailRS xmlns=\"http://www.opentravel.org/OTA/2003/05\" Version=\"1.0\">
+          <RoomStays/>
+        </OTA_HotelAvailRS>
+      </soapenv:Body>
+    </soapenv:Envelope>"""
+    transport = SimpleNamespace(send_soap=AsyncMock(return_value=xml))
+    adapter = ExelySnapshotAdapter(transport=transport)
+
+    with pytest.raises(ProviderSnapshotEmpty):
+        await adapter.fetch_snapshot(
+            "tenant-1",
+            "prop-1",
+            {
+                "username": "synthetic-user",
+                "password": "synthetic-password",
+                "hotel_code": "synthetic-hotel",
+                "api_url": "https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc",
+            },
+            date_from="2026-06-29",
+            date_to="2026-06-30",
+        )
 
 
 @pytest.mark.asyncio
