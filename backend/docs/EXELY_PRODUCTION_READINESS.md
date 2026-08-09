@@ -73,15 +73,22 @@ All items are blocking. A missing or ambiguous result is not a pass.
 
 ## Controlled first-live procedure
 
-1. Deploy the approved exact head with `ENABLE_EXELY_PRODUCTION` off and both
-   emergency switches on. Do not configure automatic synchronization yet.
+1. Run the protected `Exely Production Cutover` workflow with
+   `operation=prepare_disabled`, the approved exact `main` SHA, and explicit
+   production confirmation. This deploys the approved head with
+   `ENABLE_EXELY_PRODUCTION` off and both emergency switches on. Do not configure
+   automatic synchronization yet. The workflow cannot be re-run and never calls
+   Exely.
 2. Verify the application is healthy, the compatibility webhook is absent, and
    both Exely operation paths report disabled.
 3. Install production credentials and tenant/property mapping without printing
    or copying their values into tickets, chat, logs, or workflow inputs.
-4. Keep reservation and ARI emergency switches on. Enable only the production
-   master gate and perform one separately approved read-only connection/discovery
-   check. HTTP 500, timeout, parse failure, or authorization failure is NO-GO.
+4. Keep reservation and ARI emergency switches on. Run the cutover workflow with
+   `operation=enable_read_only` and a fresh explicit approval to enable only the
+   production master gate. The workflow verifies the live exact SHA and all three
+   flags without printing the application spec. Then perform one separately
+   approved read-only connection/discovery check. HTTP 500, timeout, parse
+   failure, or authorization failure is NO-GO.
 5. After a successful read-only check, enable reservation synchronization for
    one property. Keep ARI disabled. Observe exactly one real reservation through
    `PMS_DURABLE`, `ACK_PENDING`, one confirmed ACK write, and queue removal.
@@ -105,6 +112,8 @@ All items are blocking. A missing or ambiguous result is not a pass.
 4. Disable tenant connection flags if the outage is tenant-specific.
 5. Reconcile provider and PMS state read-only before re-enabling any path.
 6. Roll back the application revision only after provider I/O has been stopped.
+7. `operation=close_all` is the protected deployment-level emergency action. It
+   forces the master gate off while keeping both path-specific switches on.
 
 ## Current gate result
 
