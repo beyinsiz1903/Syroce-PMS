@@ -68,6 +68,8 @@ def test_diagnostic_mode_is_read_only_and_redacted() -> None:
     assert "safe_startup_log_diagnosis.py" in text
     assert "BLOCKED_UNCLASSIFIED_STARTUP_FAILURE" in text
     assert "production_mutation_count: 0" in text
+    assert "END {print deployment_id}" in text
+    assert "{print $1; exit}" not in text
 
 
 def test_cutover_verifies_live_sha_and_all_runtime_gates() -> None:

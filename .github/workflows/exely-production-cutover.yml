@@ -232,7 +232,7 @@ jobs:
           umask 077
           deployment_id="$(
             doctl apps list-deployments "$DO_APP_ID" --format ID,Phase --no-header \
-              | awk '$2 == "ERROR" {print $1; exit}'
+              | awk '$2 == "ERROR" && !found {deployment_id=$1; found=1} END {print deployment_id}'
           )"
           test -n "$deployment_id" || {
             echo "::error::BLOCKED_FAILED_DEPLOYMENT_NOT_FOUND"
