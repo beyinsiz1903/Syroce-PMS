@@ -252,6 +252,7 @@ jobs:
 
           diagnosis="$(python backend/scripts/safe_startup_log_diagnosis.py < /tmp/exely-backend-deploy.log)"
           classification="$(jq -r '.classification' <<<"$diagnosis")"
+          echo "::notice title=Safe Startup Diagnosis::$diagnosis"
           {
             echo "### Exely Production Deployment Diagnosis"
             echo '```json'
