@@ -48,7 +48,7 @@ class InvoiceStatusService:
 
         # Check 24-hour rule
         if now - tracking_started >= timedelta(hours=24):
-            logger.warning(f"Status tracking for dispatch {record.id} exceeded 24h. Flagging for reconciliation.")
+            logger.warning("Invoice status tracking exceeded 24h; reconciliation required")
             await InvoiceStatusRepository.update_status_poll_result(
                 record.tenant_id,
                 record.id,
@@ -202,8 +202,8 @@ class InvoiceStatusService:
                 update_fields["status_poll_retryable"] = True
 
             await InvoiceStatusRepository.update_status_poll_result(record.tenant_id, record.id, worker_id, update_fields)
-        except Exception as e:
-            logger.error(f"Unexpected error during status poll: {e}")
+        except Exception as exc:
+            logger.error("Unexpected invoice status poll error_type=%s", type(exc).__name__)
             await InvoiceStatusRepository.update_status_poll_result(
                 record.tenant_id,
                 record.id,

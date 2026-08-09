@@ -31,7 +31,7 @@ class InvoiceStatusWorker(NilveraWorkerHealthMixin):
 
     async def start(self) -> None:
         if not self.health.enabled:
-            logger.info(f"{self._worker_id} is disabled. Will not start.")
+            logger.info("InvoiceStatusWorker is disabled. Will not start.")
             return
 
         if self._task and not self._task.done():
@@ -48,7 +48,7 @@ class InvoiceStatusWorker(NilveraWorkerHealthMixin):
             raise RuntimeError("NILVERA_WORKER_STARTUP_FAILED") from None
 
         self._mark_running()
-        logger.info("InvoiceStatusWorker started with ID %s", self._worker_id)
+        logger.info("InvoiceStatusWorker started")
 
     async def stop(self) -> None:
         self._stop_event.set()
@@ -130,9 +130,9 @@ class InvoiceStatusWorker(NilveraWorkerHealthMixin):
                 if claimed_and_processed:
                     processed += 1
                     self._record_success(1)
-            except Exception as e:
+            except Exception as exc:
                 self._record_job_error(NilveraWorkerErrorCode.STATUS_POLL_FAILED)
-                logger.error(f"Error processing status for dispatch {record.id}: {type(e).__name__}")
+                logger.error("Invoice status worker failed error_type=%s", type(exc).__name__)
 
         return processed
 

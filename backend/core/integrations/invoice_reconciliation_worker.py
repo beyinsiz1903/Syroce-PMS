@@ -58,7 +58,7 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
 
     async def start(self) -> None:
         if not self.health.enabled:
-            logger.info(f"{self.worker_id} is disabled. Will not start.")
+            logger.info("Invoice Reconciliation Worker is disabled. Will not start.")
             return
 
         if self._task and not self._task.done():
@@ -75,7 +75,7 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
             raise RuntimeError("NILVERA_WORKER_STARTUP_FAILED") from None
 
         self._mark_running()
-        logger.info("Invoice Reconciliation Worker started: %s", self.worker_id)
+        logger.info("Invoice Reconciliation Worker started")
 
     async def stop(self) -> None:
         self._stop_event.set()
@@ -93,7 +93,7 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
             finally:
                 self._task = None
                 self._mark_stopped()
-        logger.info("Invoice Reconciliation Worker stopped: %s", self.worker_id)
+        logger.info("Invoice Reconciliation Worker stopped")
 
     async def _run(self) -> None:
         try:
@@ -217,7 +217,7 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
         expected_version = record.get("version")
 
         if not record_id or not tenant_id or expected_version is None:
-            logger.error("Invalid record claimed: %s", record)
+            logger.error("Invoice reconciliation worker claimed an invalid record")
             return
 
         with tenant_context(tenant_id):
@@ -250,9 +250,9 @@ class InvoiceReconciliationWorker(NilveraWorkerHealthMixin):
                     reader=reader
                 )
                 self._record_success(1)
-            except Exception as e:
+            except Exception as exc:
                 self._record_job_error(NilveraWorkerErrorCode.RECONCILIATION_FAILED)
-                logger.error("Error reconciling local dispatch %s: %s", record_id, type(e).__name__)
+                logger.error("Invoice reconciliation failed error_type=%s", type(exc).__name__)
 
             # Release lease always after processing
             sysdb = get_system_db()
