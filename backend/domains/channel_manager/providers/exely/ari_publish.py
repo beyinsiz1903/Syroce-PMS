@@ -8,6 +8,8 @@ from typing import Any
 from domains.channel_manager.ari.events import ARIChangeEvent
 from domains.channel_manager.ari.outbound_service import publish_ari_event
 
+from .production_safety import ari_write_block_reason
+
 
 async def enqueue_exely_ari_update(
     tenant_id: str,
@@ -29,6 +31,16 @@ async def enqueue_exely_ari_update(
     ctd: bool | None = None,
     actor_id: str | None = None,
 ) -> dict[str, Any]:
+    runtime_block = ari_write_block_reason()
+    if runtime_block:
+        return {
+            "accepted": False,
+            "delivery_state": "blocked",
+            "queued_operation_count": 0,
+            "provider_write_count": 0,
+            "error_code": runtime_block,
+        }
+
     operations = (
         ("availability", "availability", availability, {"availability": availability}),
         ("rate", "rate", rate_amount, {"base_rate": rate_amount, "currency": currency}),

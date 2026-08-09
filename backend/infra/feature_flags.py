@@ -146,7 +146,10 @@ KNOWN_FLAGS: tuple[tuple[str, str, bool], ...] = (
     ("ENABLE_QUICKID_DEMO", "enable", False),
     ("ENABLE_SETUP_ENDPOINTS", "enable", False),
     ("ENABLE_LEGACY_SECRET_FALLBACK", "enable", True),
+    ("ENABLE_EXELY_PRODUCTION", "enable", False),
     ("DISABLE_EXPO_PUSH", "disable", False),
+    ("DISABLE_EXELY_RESERVATION_SYNC", "disable", False),
+    ("DISABLE_EXELY_ARI_WRITE", "disable", False),
     ("DISABLE_AUTH_THROTTLE", "guard", False),
 )
 

@@ -8,7 +8,7 @@
 | Dimension | Exely | HotelRunner |
 |-----------|-------|-------------|
 | Protocol | SOAP/XML | REST/JSON |
-| Integration Phase | Production | Production |
+| Integration Phase | Pilot complete; production gated | Production |
 | Webhook Ingest | Yes | Yes |
 | ARI Push (Outbox) | Yes | Yes |
 
@@ -25,7 +25,7 @@
 | Normalization to canonical form | Yes | Yes | Unified `IngestEvent` model |
 | Room mapping validation | Yes | Yes | `validated` stage in pipeline |
 | Rate mapping validation | Yes | Yes | `validated` stage in pipeline |
-| Raw payload storage | Yes (SOAP XML) | Yes (JSON) | 90-day TTL, correlation_id linked |
+| Raw payload storage | Metadata only | Yes (JSON) | Exely retains hash/size metadata, not SOAP or PII |
 | End-to-end timeline tracing | Yes | Yes | webhook_received -> normalized -> deduplicated -> validated |
 | Correlation ID propagation | Yes | Yes | From webhook entry through all pipeline stages |
 | Error classification | Yes | Yes | 5-type failure taxonomy in FailureTracker |
@@ -40,7 +40,8 @@
 | Outbox reliable delivery | Yes | Yes | Retry with exponential backoff |
 | Batch ARI update | Partial | Yes | HotelRunner has native batch API |
 | Rate plan sync | Partial | Yes | |
-| Stop sale | Partial | Partial | Basic support, needs edge testing |
+| Stop sale | Yes | Partial | Exely test-provider pilot confirmed |
+| MinLOS / MinLOSArrival | Yes | Partial | Exely test-provider pilot confirmed |
 
 ## Cancel/Modify Edge Coverage
 
@@ -71,7 +72,6 @@
 | Channel-level inventory allotments | Cannot set per-OTA room limits | Phase C.3 | P1 |
 | Deferred room assignment | Room assigned at ingest, not at check-in | Phase C.3 | P1 |
 | Push latency SLO monitoring | No formal latency tracking for ARI pushes | Telemetry sprint | P2 |
-| Rate plan parity (Exely) | Exely rate sync less mature than HotelRunner | Channel hardening | P2 |
 | Reconciliation reporting | No dashboard for reconciliation results | Governance Phase 3 | P2 |
 | Connection health monitoring | Provider connectivity not actively monitored | Ops sprint | P2 |
 | Capability auto-discovery | No runtime feature negotiation with providers | Future | P3 |
@@ -86,7 +86,8 @@
 | Raw payload audit trail | Yes (90d retention) | Yes (90d retention) |
 | Timeline traceability | Yes (<1s lookup) | Yes (<1s lookup) |
 | CI hard gate coverage | Yes | Yes |
-| Sandbox/staging tested | Pending | Pending |
-| Live pilot hotel tested | Pending | Pending |
+| Sandbox/staging tested | Yes (dedicated test property) | Pending |
+| Live pilot hotel tested | Test-provider pilot complete | Pending |
+| Production activation gate | Default off | Provider-specific |
 | Cancel/modify edge coverage | 6/7 scenarios | 6/7 scenarios |
 | Push latency SLO defined | Not yet | Not yet |

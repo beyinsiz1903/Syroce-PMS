@@ -109,7 +109,7 @@ restart'ında kaybolur. SADECE Secrets vault.
 
 ---
 
-## §3 — Envanter (mevcut 5 kill-switch — wire'lı)
+## §3 — Envanter (mevcut 8 kill-switch — wire'lı)
 
 Tüm flag'ler `feature_flags.snapshot()` ile programatik okunabilir.
 
@@ -167,6 +167,39 @@ Tüm flag'ler `feature_flags.snapshot()` ile programatik okunabilir.
 | Pilot kullanım| **KAPALI** — pilot prod, prod guard zaten yoksayar          |
 | Açma süresi   | Anında (her check'te okunur)                                |
 | Side-effect   | Prod'da set edilse bile YOKSAYILIR + WARNING log            |
+
+### 3.6 `ENABLE_EXELY_PRODUCTION` (opt-in)
+
+| Alan          | Değer                                                       |
+|---------------|-------------------------------------------------------------|
+| Kind          | `enable` (default OFF)                                      |
+| Wire noktası  | `backend/domains/channel_manager/providers/exely/production_safety.py` |
+| Etki          | Production Exely provider read/write erişiminin ana kapısı  |
+| Pilot kullanım| Gerekmez; test/pilot ortam davranışı korunur                |
+| Açma süresi   | Her provider işlemi öncesi okunur                           |
+| Side-effect   | Kapalıyken production Exely read/write sayısı sıfır kalır   |
+
+### 3.7 `DISABLE_EXELY_RESERVATION_SYNC` (opt-out)
+
+| Alan          | Değer                                                       |
+|---------------|-------------------------------------------------------------|
+| Kind          | `disable` (default OFF)                                     |
+| Wire noktası  | Exely scheduler, pull ve reservation ACK alt seviye yolları |
+| Etki          | Reservation read ve ACK provider işlemlerini birlikte durdurur |
+| Pilot kullanım| Kapalı                                                       |
+| Açma süresi   | Her scheduler tick/read/ACK öncesi okunur                   |
+| Side-effect   | Kuyruk provider tarafında bekler; blind ACK retry yapılmaz  |
+
+### 3.8 `DISABLE_EXELY_ARI_WRITE` (opt-out)
+
+| Alan          | Değer                                                       |
+|---------------|-------------------------------------------------------------|
+| Kind          | `disable` (default OFF)                                     |
+| Wire noktası  | Exely ARI enqueue, durable delivery ve provider adapter     |
+| Etki          | Availability/rate/restriction mutationlarını provider öncesi durdurur |
+| Pilot kullanım| Kapalı                                                       |
+| Açma süresi   | Her enqueue ve provider mutation öncesi okunur              |
+| Side-effect   | Yeni Exely ARI olayı kuyruğa alınmaz; provider write sıfır  |
 
 ---
 

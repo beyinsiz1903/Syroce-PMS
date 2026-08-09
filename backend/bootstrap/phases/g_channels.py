@@ -66,14 +66,25 @@ async def phase_g_channels_and_audit(app):
 
     # Exely Pull Scheduler (auto-start)
     try:
-        active_exely = await _raw_db.exely_connections.find_one({"is_active": True, "auto_sync_reservations": True}, {"_id": 1})
-        if active_exely:
+        from domains.channel_manager.providers.exely.production_safety import reservation_sync_block_reason
+
+        exely_runtime_block = reservation_sync_block_reason()
+        active_exely = None
+        if not exely_runtime_block:
+            active_exely = await _raw_db.exely_connections.find_one(
+                {"is_active": True, "auto_sync_reservations": True},
+                {"_id": 1},
+            )
+        if exely_runtime_block:
+            logger.warning("Exely Pull Scheduler blocked reason=%s", exely_runtime_block)
+        elif active_exely:
             from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
 
             _exely_int = int(os.getenv("SYROCE_EXELY_PULL_INTERVAL", "180"))
-            await exely_pull_scheduler.start(interval_seconds=_exely_int)
-            app.state.exely_pull_scheduler = exely_pull_scheduler
-            logger.info(f"✅ Exely Pull Scheduler started ({_exely_int}s interval, auto-import enabled)")
+            started = await exely_pull_scheduler.start(interval_seconds=_exely_int)
+            if started:
+                app.state.exely_pull_scheduler = exely_pull_scheduler
+                logger.info(f"✅ Exely Pull Scheduler started ({_exely_int}s interval, auto-import enabled)")
         else:
             logger.info("ℹ️ No active Exely connections; pull scheduler not started")
     except Exception as e:

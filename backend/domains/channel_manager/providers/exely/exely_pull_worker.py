@@ -14,6 +14,7 @@ from core.transient_db_guard import TransientFailureTracker, is_transient_db_err
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
 from domains.channel_manager.providers.exely.auto_import import auto_import_pending
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
+from domains.channel_manager.providers.exely.production_safety import reservation_sync_block_reason
 from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.security import (
     exely_connection_projection,
@@ -53,10 +54,15 @@ class ExelyPullScheduler:
     async def start(self, interval_seconds: int = 60, safety_window_minutes: int = 5):
         if self._running:
             logger.warning("[EXELY-PULL] Scheduler already running")
-            return
+            return True
+        runtime_block = reservation_sync_block_reason()
+        if runtime_block:
+            logger.warning("[EXELY-PULL] Scheduler blocked reason=%s", runtime_block)
+            return False
         self._running = True
         self._task = asyncio.create_task(self._run_loop(interval_seconds, safety_window_minutes))
         logger.info(f"[EXELY-PULL] Scheduler started: every {interval_seconds}s")
+        return True
 
     async def stop(self):
         self._running = False
@@ -93,6 +99,11 @@ class ExelyPullScheduler:
             logger.warning("[EXELY-PULL] operation=heartbeat success=false exception_class=%s", type(exc).__name__)
 
     async def _pull_all_tenants(self, safety_window_minutes: int):
+        runtime_block = reservation_sync_block_reason()
+        if runtime_block:
+            logger.warning("[EXELY-PULL] Tick blocked reason=%s", runtime_block)
+            return
+
         connections = await db.exely_connections.find(
             {"is_active": True, "auto_sync_reservations": True},
             exely_connection_projection(),
@@ -145,6 +156,15 @@ class ExelyPullScheduler:
         hotel_code: str,
         endpoint_url: str = "",
     ) -> dict[str, Any]:
+        runtime_block = reservation_sync_block_reason()
+        if runtime_block:
+            return {
+                "success": False,
+                "error": runtime_block,
+                "provider_read_count": 0,
+                "provider_write_count": 0,
+            }
+
         set_tenant_context(tenant_id)
         provider_kwargs = {
             "username": username,
