@@ -181,6 +181,7 @@ jobs:
             master="$(jq -r "$list | select(.name == \"$component\") | [.envs[]? | select(.key == \"ENABLE_EXELY_PRODUCTION\") | .value] | last // empty" /tmp/exely-live-spec.json)"
             reservation_stop="$(jq -r "$list | select(.name == \"$component\") | [.envs[]? | select(.key == \"DISABLE_EXELY_RESERVATION_SYNC\") | .value] | last // empty" /tmp/exely-live-spec.json)"
             ari_stop="$(jq -r "$list | select(.name == \"$component\") | [.envs[]? | select(.key == \"DISABLE_EXELY_ARI_WRITE\") | .value] | last // empty" /tmp/exely-live-spec.json)"
+            nilvera_enabled="$(jq -r "$list | select(.name == \"$component\") | [.envs[]? | select(.key == \"NILVERA_ENABLED\") | .value] | last // empty" /tmp/exely-live-spec.json)"
             test "$master" = "$MASTER_GATE" || {
               echo "::error::BLOCKED_MASTER_GATE_MISMATCH"
               exit 1
@@ -193,6 +194,10 @@ jobs:
               echo "::error::BLOCKED_ARI_STOP_MISSING"
               exit 1
             }
+            test "$nilvera_enabled" = "false" || {
+              echo "::error::BLOCKED_NILVERA_STOP_MISSING"
+              exit 1
+            }
           done
 
           {
@@ -202,6 +207,7 @@ jobs:
             echo "- production_master_enabled: $MASTER_GATE"
             echo "- reservation_sync_disabled: true"
             echo "- ari_write_disabled: true"
+            echo "- nilvera_disabled: true"
             echo "- provider_read_count: 0"
             echo "- provider_write_count: 0"
           } >> "$GITHUB_STEP_SUMMARY"

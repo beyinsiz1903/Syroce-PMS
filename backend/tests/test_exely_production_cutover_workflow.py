@@ -41,6 +41,7 @@ def test_read_only_stage_keeps_reservation_and_ari_stopped() -> None:
     assert 'set_env("DISABLE_EXELY_RESERVATION_SYNC"; "true")' in spec_filter
     assert 'set_env("DISABLE_EXELY_ARI_WRITE"; "true")' in spec_filter
     assert 'set_env("ENABLE_EXELY_PRODUCTION"; $master)' in spec_filter
+    assert 'set_env("NILVERA_ENABLED"; "false")' in spec_filter
 
 
 def test_prepare_and_close_stages_disable_master_gate() -> None:
@@ -82,6 +83,8 @@ def test_cutover_verifies_live_sha_and_all_runtime_gates() -> None:
     assert "BLOCKED_MASTER_GATE_MISMATCH" in text
     assert "BLOCKED_RESERVATION_STOP_MISSING" in text
     assert "BLOCKED_ARI_STOP_MISSING" in text
+    assert "BLOCKED_NILVERA_STOP_MISSING" in text
+    assert "nilvera_disabled: true" in text
     assert "provider_read_count: 0" in text
     assert "provider_write_count: 0" in text
 
@@ -143,5 +146,6 @@ def test_spec_filter_sets_exact_sha_and_fail_closed_gates() -> None:
             "DISABLE_EXELY_ARI_WRITE": "true",
             "DISABLE_EXELY_RESERVATION_SYNC": "true",
             "ENABLE_EXELY_PRODUCTION": "true",
+            "NILVERA_ENABLED": "false",
         }
     assert "envs" not in components["frontend"]
