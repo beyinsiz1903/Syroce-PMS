@@ -17,7 +17,10 @@ from urllib.parse import urlsplit
 import pytest
 
 from core.database import db
-from domains.channel_manager.ari.provider_snapshot_contract import ProviderSnapshotUnavailable
+from domains.channel_manager.ari.provider_snapshot_contract import (
+    ProviderSnapshotEmpty,
+    ProviderSnapshotUnavailable,
+)
 from domains.channel_manager.providers.exely.ari_delivery import (
     COLL_EXELY_ARI_DELIVERIES,
     STATE_CONFIRMED,
@@ -486,7 +489,13 @@ async def _read_inventory(
             date_from=settings.test_date.isoformat(),
             date_to=(settings.test_date + timedelta(days=1)).isoformat(),
         )
-    except ProviderSnapshotUnavailable:
+    except ProviderSnapshotEmpty:
+        snapshot = []
+        metadata["account_match"] = True
+        metadata["provider_status_class"] = "SUCCESS_EMPTY"
+    except ProviderSnapshotUnavailable as exc:
+        cause = exc.__cause__
+        metadata["exception_class"] = type(cause).__name__ if cause is not None else type(exc).__name__
         metadata["provider_status_class"] = "PROVIDER_ERROR"
         _fail_safe(record_property, "BLOCKED_INVENTORY_READ_FAILED", metadata)
 

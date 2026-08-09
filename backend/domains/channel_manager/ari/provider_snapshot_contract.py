@@ -7,6 +7,12 @@ class ProviderSnapshotUnavailable(Exception):
     pass
 
 
+class ProviderSnapshotEmpty(ProviderSnapshotUnavailable):
+    """Raised when a successful provider read contains no usable inventory rows."""
+
+    pass
+
+
 class CredentialsMissing(Exception):
     """Raised when the tenant has no credentials configured for the provider."""
 
