@@ -66,6 +66,7 @@ def test_diagnostic_mode_is_read_only_and_redacted() -> None:
     assert "if: inputs.operation != 'diagnose_last_failed'" in text
     assert "if: inputs.operation == 'diagnose_last_failed'" in text
     assert "safe_startup_log_diagnosis.py" in text
+    assert "::notice title=Safe Startup Diagnosis::$diagnosis" in text
     assert "BLOCKED_UNCLASSIFIED_STARTUP_FAILURE" in text
     assert "production_mutation_count: 0" in text
     assert "END {print deployment_id}" in text
