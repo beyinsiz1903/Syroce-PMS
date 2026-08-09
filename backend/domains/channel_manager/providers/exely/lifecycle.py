@@ -8,6 +8,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from pymongo.errors import DuplicateKeyError
+
 from core.database import db
 
 logger = logging.getLogger("exely.lifecycle")
@@ -251,21 +253,92 @@ async def persist_exely_event(
     reservation_doc["pms_status"] = pms_status
     if current and current.get("provider_version_identity"):
         current_query["provider_version_identity"] = current["provider_version_identity"]
-    current_update = await db.exely_reservations.update_one(
-        current_query,
-        {
-            "$set": reservation_doc,
-            "$setOnInsert": {
-                "id": str(uuid.uuid4()),
-                "created_at": now,
-                "pms_booking_id": None,
-                "pms_booking_ids": [],
-                "room_stay_lineage": [],
-            },
-            "$inc": {"provider_version_sequence": 1},
+    reservation_update = {
+        "$set": reservation_doc,
+        "$setOnInsert": {
+            "id": str(uuid.uuid4()),
+            "created_at": now,
+            "pms_booking_id": None,
+            "pms_booking_ids": [],
+            "room_stay_lineage": [],
         },
-        upsert=not bool(current),
-    )
+        "$inc": {"provider_version_sequence": 1},
+    }
+    try:
+        current_update = await db.exely_reservations.update_one(
+            current_query,
+            reservation_update,
+            upsert=not bool(current),
+        )
+    except DuplicateKeyError:
+        # Two first-delivery workers can both observe no current row before the
+        # unique (tenant_id, external_id) index chooses one winner. Re-read the
+        # winner and resolve the race without serializing Mongo's error text,
+        # which may contain tenant and provider identifiers.
+        winner = await db.exely_reservations.find_one(
+            {"tenant_id": tenant_id, "external_id": external_id},
+            {
+                "_id": 0,
+                "id": 1,
+                "provider_version_key": 1,
+                "provider_version_identity": 1,
+                "provider_payload_hash": 1,
+                "pms_booking_ids": 1,
+                "pms_booking_id": 1,
+            },
+        )
+        if not winner:
+            raise
+
+        winner_identity = str(winner.get("provider_version_identity") or "")
+        winner_hash = str(winner.get("provider_payload_hash") or "")
+        if winner_identity == identity:
+            if winner_hash == payload_hash:
+                return {"action": "skip", "reason": "duplicate_payload", "external_id": external_id}
+            await mark_version_state(
+                identity,
+                processing_state=MALFORMED,
+                ack_state=ACK_NOT_READY,
+                failure_code="VERSION_PAYLOAD_CONFLICT",
+            )
+            return {"action": "error", "reason": "VERSION_PAYLOAD_CONFLICT", "external_id": external_id}
+
+        winner_version = str(winner.get("provider_version_key") or "")
+        if not winner_version:
+            await mark_version_state(identity, ack_state=ACK_STALE, failure_code="CURRENT_VERSION_CHANGED")
+            return {"action": "skip", "reason": "stale_event", "external_id": external_id}
+
+        comparison = _compare_versions(version_key, winner_version)
+        if comparison < 0:
+            await mark_version_state(identity, ack_state=ACK_STALE)
+            return {"action": "skip", "reason": "stale_event", "external_id": external_id}
+        if comparison == 0:
+            if winner_hash == payload_hash:
+                return {"action": "skip", "reason": "duplicate_payload", "external_id": external_id}
+            await mark_version_state(
+                identity,
+                processing_state=MALFORMED,
+                ack_state=ACK_NOT_READY,
+                failure_code="VERSION_PAYLOAD_CONFLICT",
+            )
+            return {"action": "error", "reason": "VERSION_PAYLOAD_CONFLICT", "external_id": external_id}
+
+        if winner.get("pms_booking_ids") or winner.get("pms_booking_id"):
+            reservation_doc["pms_status"] = "updated"
+        retry_query = {"tenant_id": tenant_id, "external_id": external_id}
+        if winner_identity:
+            retry_query["provider_version_identity"] = winner_identity
+        elif winner.get("id"):
+            retry_query["id"] = winner["id"]
+        else:
+            await mark_version_state(identity, ack_state=ACK_STALE, failure_code="CURRENT_VERSION_CHANGED")
+            return {"action": "skip", "reason": "stale_event", "external_id": external_id}
+        current_update = await db.exely_reservations.update_one(
+            retry_query,
+            reservation_update,
+            upsert=False,
+        )
+        current = winner
     if current and getattr(current_update, "modified_count", 0) != 1:
         await mark_version_state(identity, ack_state=ACK_STALE, failure_code="CURRENT_VERSION_CHANGED")
         return {"action": "skip", "reason": "stale_event", "external_id": external_id}
