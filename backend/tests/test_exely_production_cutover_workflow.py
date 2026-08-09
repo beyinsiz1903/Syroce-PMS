@@ -59,6 +59,17 @@ def test_cutover_has_no_exely_provider_call() -> None:
     assert "ota_hotelavailnotif" not in text
 
 
+def test_diagnostic_mode_is_read_only_and_redacted() -> None:
+    text = _workflow_text()
+
+    assert "diagnose_last_failed" in text
+    assert "if: inputs.operation != 'diagnose_last_failed'" in text
+    assert "if: inputs.operation == 'diagnose_last_failed'" in text
+    assert "safe_startup_log_diagnosis.py" in text
+    assert "BLOCKED_UNCLASSIFIED_STARTUP_FAILURE" in text
+    assert "production_mutation_count: 0" in text
+
+
 def test_cutover_verifies_live_sha_and_all_runtime_gates() -> None:
     text = _workflow_text()
 
