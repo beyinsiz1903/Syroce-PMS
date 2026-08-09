@@ -9,7 +9,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import urlsplit
@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 import pytest
 
 from core.database import db
+from domains.channel_manager.ari.provider_snapshot_contract import ProviderSnapshotUnavailable
 from domains.channel_manager.providers.exely.ari_delivery import (
     COLL_EXELY_ARI_DELIVERIES,
     STATE_CONFIRMED,
@@ -36,6 +37,7 @@ from domains.channel_manager.providers.exely.security import (
     EXELY_TEST_ENDPOINT_URL,
     validate_exely_endpoint,
 )
+from domains.channel_manager.providers.exely.snapshot_adapter import ExelySnapshotAdapter
 from domains.channel_manager.providers.exely.soap_builder import get_soap_action_uri
 
 pytestmark = [
@@ -46,7 +48,7 @@ pytestmark = [
 
 logger = logging.getLogger("exely.pilot")
 
-_PROVIDER_READ_OPERATIONS = frozenset({"discovery", "reservation_read"})
+_PROVIDER_READ_OPERATIONS = frozenset({"discovery", "inventory_read", "reservation_read"})
 _READ_OPERATIONS = frozenset({*_PROVIDER_READ_OPERATIONS, "reservation_import"})
 _ARI_OPERATIONS = frozenset({"availability", "rate", "stop_sell", "min_los", "min_los_arrival"})
 _WRITE_OPERATIONS = frozenset({*_ARI_OPERATIONS, "reservation_ack"})
@@ -242,7 +244,7 @@ def _load_settings() -> PilotSettings:
     ).hexdigest()[:12]
 
     values: dict[str, Any] = {}
-    if operation in _ARI_OPERATIONS:
+    if operation in {*_ARI_OPERATIONS, "inventory_read"}:
         raw_date = _required_env("EXELY_PILOT_TEST_DATE")
         try:
             test_date = date.fromisoformat(raw_date)
@@ -276,7 +278,7 @@ def _load_settings() -> PilotSettings:
         if os.environ.get("EXELY_PILOT_ACK_DURABLE_PMS_ATTESTED") != "true":
             raise PilotSafetyError("BLOCKED_DURABLE_PMS_RESULT_NOT_ATTESTED")
 
-    if operation in {*_ARI_OPERATIONS, "reservation_import", "reservation_ack"}:
+    if operation in {*_ARI_OPERATIONS, "inventory_read", "reservation_import", "reservation_ack"}:
         room_type_code = _required_env("EXELY_PILOT_ROOM_TYPE_CODE")
         rate_plan_code = _required_env("EXELY_PILOT_RATE_PLAN_CODE")
     elif operation == "discovery":
@@ -347,6 +349,9 @@ def _record_safe_metadata(record_property, metadata: dict[str, Any]) -> None:
         "result",
         "room_match",
         "rate_plan_match",
+        "availability_positive",
+        "rate_present",
+        "stop_sell_open",
         "ack_state_pending",
         "ack_reservation_id_present",
         "ack_confirmation_id_present",
@@ -445,6 +450,83 @@ async def _read_reservations(
     return metadata, valid[0] if len(valid) == 1 else None
 
 
+async def _read_inventory(
+    provider: ExelyProvider,
+    settings: PilotSettings,
+    record_property,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "correlation_label": settings.correlation_label,
+        "operation": settings.operation,
+        "exact_head_match": True,
+        "pilot_account_attested": True,
+        "account_match": False,
+        "room_match": False,
+        "rate_plan_match": False,
+        "match_count_class": "NOT_APPLICABLE",
+        "availability_positive": False,
+        "rate_present": False,
+        "stop_sell_open": False,
+        "provider_write_count": 0,
+    }
+    if settings.test_date is None:
+        _fail_safe(record_property, "BLOCKED_INVENTORY_DATE_MISSING", metadata)
+
+    adapter = ExelySnapshotAdapter(transport=provider._transport)
+    try:
+        snapshot = await adapter.fetch_snapshot(
+            settings.tenant_id,
+            settings.hotel_code,
+            {
+                "username": settings.username,
+                "password": settings.password,
+                "hotel_code": settings.hotel_code,
+                "api_url": settings.endpoint_url,
+            },
+            date_from=settings.test_date.isoformat(),
+            date_to=(settings.test_date + timedelta(days=1)).isoformat(),
+        )
+    except ProviderSnapshotUnavailable:
+        metadata["provider_status_class"] = "PROVIDER_ERROR"
+        _fail_safe(record_property, "BLOCKED_INVENTORY_READ_FAILED", metadata)
+
+    metadata["account_match"] = True
+    matches = [
+        item
+        for item in snapshot
+        if isinstance(item, dict)
+        and hmac.compare_digest(str(item.get("room_type_code") or ""), settings.room_type_code)
+        and hmac.compare_digest(str(item.get("rate_plan_code") or ""), settings.rate_plan_code)
+        and hmac.compare_digest(str(item.get("date") or ""), settings.test_date.isoformat())
+    ]
+    metadata["room_match"] = bool(matches)
+    metadata["rate_plan_match"] = bool(matches)
+    metadata["match_count_class"] = "ZERO" if not matches else "ONE" if len(matches) == 1 else "MULTIPLE"
+    if len(matches) != 1:
+        code = "BLOCKED_INVENTORY_NOT_VISIBLE" if not matches else "BLOCKED_INVENTORY_CONFLICT"
+        _fail_safe(record_property, code, metadata)
+
+    row = matches[0]
+    availability = row.get("availability")
+    metadata["availability_positive"] = isinstance(availability, int) and not isinstance(availability, bool) and availability > 0
+    try:
+        rate = Decimal(str(row.get("rate")))
+    except (InvalidOperation, TypeError, ValueError):
+        rate = Decimal("0")
+    metadata["rate_present"] = rate.is_finite() and rate > 0
+    restrictions = row.get("restrictions")
+    metadata["stop_sell_open"] = isinstance(restrictions, dict) and restrictions.get("stop_sell") is False
+    metadata["provider_status_class"] = "SUCCESS"
+
+    if not metadata["availability_positive"]:
+        _fail_safe(record_property, "BLOCKED_INVENTORY_UNAVAILABLE", metadata)
+    if not metadata["rate_present"]:
+        _fail_safe(record_property, "BLOCKED_RATE_NOT_VISIBLE", metadata)
+    if not metadata["stop_sell_open"]:
+        _fail_safe(record_property, "BLOCKED_STOP_SELL_NOT_OPEN", metadata)
+    return metadata
+
+
 def _ari_value(settings: PilotSettings) -> Any:
     values = {
         "availability": settings.availability,
@@ -470,6 +552,8 @@ async def test_exely_pilot_readonly(record_property):
     try:
         if settings.operation == "discovery":
             metadata = await _discover_mapping(provider, settings, record_property)
+        elif settings.operation == "inventory_read":
+            metadata = await _read_inventory(provider, settings, record_property)
         else:
             metadata, _ = await _read_reservations(
                 provider,
