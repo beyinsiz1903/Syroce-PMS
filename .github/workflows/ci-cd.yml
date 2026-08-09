@@ -235,6 +235,7 @@ jobs:
             tests/test_exely_legacy_closure.py \
             tests/test_exely_pilot_contract.py \
             tests/test_exely_pilot_import.py \
+            tests/test_exely_production_cutover_workflow.py \
             tests/unit/test_exely_provider.py \
             tests/integration/test_exely_provider_flows.py \
             -v --tb=short -q --timeout=60 \
