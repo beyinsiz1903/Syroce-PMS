@@ -66,7 +66,7 @@ def _database(*, winner: dict, update_results: list) -> SimpleNamespace:
     return SimpleNamespace(
         exely_reservation_versions=SimpleNamespace(update_one=AsyncMock()),
         exely_reservations=SimpleNamespace(
-            find_one=AsyncMock(side_effect=[None, winner]),
+            find_one=AsyncMock(side_effect=[None, None, winner]),
             update_one=AsyncMock(side_effect=update_results),
         ),
         exely_room_mappings=SimpleNamespace(find_one=AsyncMock(return_value={"pms_room_type": "Standard"})),
