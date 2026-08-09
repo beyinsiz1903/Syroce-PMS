@@ -16,6 +16,7 @@ const ACTION_LABELS = {
   edit_booking: 'Rezervasyona git',
   checkout_or_extend: 'Folyoya git',
   checkin_or_no_show: 'Check-in / no-show',
+  assign_room: 'Oda ata',
   open_run: 'Açık denetimi aç',
 };
 
