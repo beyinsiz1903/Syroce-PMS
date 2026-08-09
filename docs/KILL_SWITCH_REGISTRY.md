@@ -201,6 +201,39 @@ Tüm flag'ler `feature_flags.snapshot()` ile programatik okunabilir.
 | Açma süresi   | Her enqueue ve provider mutation öncesi okunur              |
 | Side-effect   | Yeni Exely ARI olayı kuyruğa alınmaz; provider write sıfır  |
 
+### 3.9 `ENABLE_HOTELRUNNER_PRODUCTION` (opt-in)
+
+| Alan          | Değer                                                       |
+|---------------|-------------------------------------------------------------|
+| Kind          | `enable` (default OFF)                                      |
+| Wire noktası  | `backend/domains/channel_manager/providers/hotelrunner/production_safety.py` |
+| Etki          | Production HotelRunner provider read/write erişiminin ana kapısı |
+| Pilot kullanım| Gerekmez; test/pilot ortam davranışı korunur                |
+| Açma süresi   | Her provider işlemi öncesi okunur                           |
+| Side-effect   | Kapalıyken production HotelRunner provider I/O sayısı sıfır kalır |
+
+### 3.10 `DISABLE_HOTELRUNNER_RESERVATION_SYNC` (opt-out)
+
+| Alan          | Değer                                                       |
+|---------------|-------------------------------------------------------------|
+| Kind          | `disable` (default OFF)                                     |
+| Wire noktası  | HotelRunner scheduler, pull ve reservation ACK alt seviye yolları |
+| Etki          | Reservation read ve ACK provider işlemlerini birlikte durdurur |
+| Pilot kullanım| Kapalı                                                       |
+| Açma süresi   | Her scheduler tick/read/ACK öncesi okunur                   |
+| Side-effect   | Provider kuyruğu korunur; doğrulanmamış ACK gönderilmez     |
+
+### 3.11 `DISABLE_HOTELRUNNER_ARI_WRITE` (opt-out)
+
+| Alan          | Değer                                                       |
+|---------------|-------------------------------------------------------------|
+| Kind          | `disable` (default OFF)                                     |
+| Wire noktası  | HotelRunner ARI delivery, push worker ve provider adapter   |
+| Etki          | Availability/rate/restriction mutationlarını provider öncesi durdurur |
+| Pilot kullanım| Kapalı                                                       |
+| Açma süresi   | Her queue tick ve provider mutation öncesi okunur           |
+| Side-effect   | Kuyruk korunur; HotelRunner ARI provider write sayısı sıfır kalır |
+
 ---
 
 ## §4 — Önerilen yeni kill-switch'ler (DEFER, wire EDİLMEDİ)

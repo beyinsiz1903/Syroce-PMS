@@ -18,6 +18,10 @@ from typing import Any
 
 import httpx
 
+from domains.channel_manager.providers.hotelrunner.production_safety import (
+    provider_operation_block_reason,
+)
+
 from .errors import (
     HRv2AuthError,
     HRv2ParseError,
@@ -87,6 +91,10 @@ class HRv2Client:
         form_data: dict | None = None,
         correlation_id: str = "",
     ) -> HRv2Response:
+        runtime_block = provider_operation_block_reason(method, path)
+        if runtime_block:
+            raise HRv2ValidationError(runtime_block)
+
         corr_id = correlation_id or str(_uuid.uuid4())[:12]
         url = self._url(path)
         merged = {**self._auth_params(), **(params or {})}

@@ -12,6 +12,10 @@ from typing import Any
 
 import httpx
 
+from domains.channel_manager.providers.hotelrunner.production_safety import (
+    provider_operation_block_reason,
+)
+
 from . import xml_builder, xml_parser
 from .auth import HotelRunnerAuth
 from .connector_errors import (
@@ -121,6 +125,10 @@ class HotelRunnerClient:
         params: dict[str, str] | None = None,
     ) -> str:
         """Make an authenticated XML request to HotelRunner API."""
+        runtime_block = provider_operation_block_reason(method, path)
+        if runtime_block:
+            raise ConnectorError(runtime_block, recoverable=False)
+
         acquired = await self._rate_limiter.acquire(timeout=120)
         if not acquired:
             raise RateLimitError(retry_after_seconds=60, message="Local rate limit exceeded")
@@ -186,6 +194,10 @@ class HotelRunnerClient:
         Make an authenticated REST/JSON request to HotelRunner API.
         Returns (parsed_json, audit_entry).
         """
+        runtime_block = provider_operation_block_reason(method, path)
+        if runtime_block:
+            raise ConnectorError(runtime_block, recoverable=False)
+
         acquired = await self._rate_limiter.acquire(timeout=120)
         if not acquired:
             raise RateLimitError(retry_after_seconds=60, message="Local rate limit exceeded")
@@ -586,6 +598,15 @@ class HotelRunnerClient:
 
     async def _test_single_step(self, step_name: str, method: str, path: str, xml_body: str | None = None) -> dict[str, Any]:
         """Execute a single test step and capture the result with latency."""
+        runtime_block = provider_operation_block_reason(method, path)
+        if runtime_block:
+            return {
+                "status": "fail",
+                "latency_ms": 0,
+                "error_code": runtime_block,
+                "message": runtime_block,
+            }
+
         start = time.monotonic()
         try:
             merged_params = self._auth.get_auth_params()

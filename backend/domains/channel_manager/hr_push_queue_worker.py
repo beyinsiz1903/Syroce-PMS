@@ -17,6 +17,9 @@ from datetime import UTC, datetime, timedelta
 
 from core.database import db
 from core.transient_db_guard import TransientFailureTracker
+from domains.channel_manager.providers.hotelrunner.production_safety import (
+    ari_write_block_reason,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -285,12 +288,17 @@ class HRPushQueueWorker:
         self._consecutive_rate_limits = 0
 
     async def start(self, interval_seconds: int = QUEUE_CHECK_INTERVAL):
+        runtime_block = ari_write_block_reason()
+        if runtime_block:
+            logger.warning("[HR-QUEUE] Worker blocked reason=%s", runtime_block)
+            return False
         if self._running:
             logger.warning("[HR-QUEUE] Worker already running")
-            return
+            return False
         self._running = True
         self._task = asyncio.create_task(self._run_loop(interval_seconds))
         logger.info("[HR-QUEUE] Worker started (check every %ds)", interval_seconds)
+        return True
 
     async def stop(self):
         self._running = False
@@ -330,6 +338,10 @@ class HRPushQueueWorker:
 
     async def _process_queue(self):
         """Process all pending items across all tenants."""
+        runtime_block = ari_write_block_reason()
+        if runtime_block:
+            logger.warning("[HR-QUEUE] Processing blocked reason=%s", runtime_block)
+            return
         pipeline = [
             {"$match": {"status": {"$in": ["pending", "retrying"]}}},
             {"$group": {"_id": "$tenant_id"}},
@@ -350,6 +362,10 @@ class HRPushQueueWorker:
 
     async def _process_tenant_queue(self, tenant_id: str):
         """Process pending queue items for a specific tenant."""
+        runtime_block = ari_write_block_reason()
+        if runtime_block:
+            logger.warning("[HR-QUEUE] Tenant delivery blocked reason=%s", runtime_block)
+            return
         from domains.channel_manager.hr_rate_manager_router import _get_hr_provider
         from domains.channel_manager.providers.hotelrunner.ari_delivery import (
             deliver_hotelrunner_ari,

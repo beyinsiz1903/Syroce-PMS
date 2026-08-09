@@ -314,6 +314,8 @@ jobs:
             tests/test_hotelrunner_credential_log_security.py \
             tests/test_hotelrunner_ari_reconciliation.py \
             tests/test_hotelrunner_ari_pilot_contract.py \
+            tests/test_hotelrunner_production_safety.py \
+            tests/test_hotelrunner_production_cutover_workflow.py \
             tests/test_ws_bridge_health.py \
             tests/test_scheduler_concurrency.py \
             tests/test_channel_event_dedup_claim.py \

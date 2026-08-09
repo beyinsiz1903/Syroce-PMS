@@ -12,6 +12,7 @@ from typing import Any
 from core.database import db
 
 from . import endpoints as ep
+from .production_safety import ari_write_block_reason
 
 logger = logging.getLogger("hotelrunner.ari_delivery")
 
@@ -100,6 +101,16 @@ async def deliver_hotelrunner_ari(
     provider=None,
 ) -> ARIDeliveryResult:
     """Send at most one ARI write and require terminal transaction confirmation."""
+    runtime_block = ari_write_block_reason()
+    if runtime_block:
+        return ARIDeliveryResult(
+            success=False,
+            state=STATE_BLOCKED,
+            error_code=runtime_block,
+            provider_status_class="NOT_SENT",
+            provider_write_count=0,
+        )
+
     validation_error = _validate_update(update)
     if validation_error:
         return ARIDeliveryResult(

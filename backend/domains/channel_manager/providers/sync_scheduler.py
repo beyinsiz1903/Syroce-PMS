@@ -16,6 +16,9 @@ from domains.channel_manager.providers.hotelrunner.credentials import (
     hotelrunner_connection_projection,
     resolve_hotelrunner_credentials,
 )
+from domains.channel_manager.providers.hotelrunner.production_safety import (
+    reservation_sync_block_reason,
+)
 from domains.channel_manager.providers.sync_engine import (
     log_pull,
     run_phase_a,
@@ -60,14 +63,19 @@ class ReservationPullScheduler:
         self._suppressed_lock_errors = 0
 
     async def start(self, interval_minutes: int = 15, safety_window_minutes: int = 5, interval_seconds: int | None = None):
+        runtime_block = reservation_sync_block_reason()
+        if runtime_block:
+            logger.warning("[PULL] Scheduler blocked reason=%s", runtime_block)
+            return False
         if self._running:
             logger.warning("[PULL] Scheduler already running")
-            return
+            return False
         self._running = True
         sleep_seconds = interval_seconds if interval_seconds is not None else interval_minutes * 60
         self._base_interval = sleep_seconds
         self._task = asyncio.create_task(self._run_loop(sleep_seconds, safety_window_minutes))
         logger.info(f"[PULL] Scheduler started: every {sleep_seconds}s, safety window {safety_window_minutes}min")
+        return True
 
     async def stop(self):
         self._running = False
@@ -85,6 +93,11 @@ class ReservationPullScheduler:
         from infra.distributed_lock import DistributedLock, lock_manager
 
         while self._running:
+            runtime_block = reservation_sync_block_reason()
+            if runtime_block:
+                logger.warning("[PULL] Cycle blocked reason=%s", runtime_block)
+                await asyncio.sleep(sleep_seconds)
+                continue
             # Enforce same deployment key across replicas (do not fallback to hostnames)
             env = os.environ.get("DEPLOYMENT_ENV") or os.environ.get("APP_ENV") or os.environ.get("ENVIRONMENT") or "production"
             redis = lock_manager.get_redis()
@@ -191,6 +204,10 @@ class ReservationPullScheduler:
                 await asyncio.sleep(sleep_seconds)
 
     async def _pull_all_tenants(self, safety_window_minutes: int):
+        runtime_block = reservation_sync_block_reason()
+        if runtime_block:
+            logger.warning("[PULL] Tenant scan blocked reason=%s", runtime_block)
+            return
         self._cycle_count += 1
         connections = await db.hotelrunner_connections.find(
             {"is_active": True, "auto_sync_reservations": True},
@@ -228,6 +245,15 @@ class ReservationPullScheduler:
         safety_window_minutes: int = 5,
         is_manual: bool = False,
     ) -> dict[str, Any]:
+        runtime_block = reservation_sync_block_reason()
+        if runtime_block:
+            return {
+                "success": False,
+                "error": runtime_block,
+                "provider_read_count": 0,
+                "provider_write_count": 0,
+            }
+
         from core.tenant_db import set_tenant_context
 
         set_tenant_context(tenant_id)

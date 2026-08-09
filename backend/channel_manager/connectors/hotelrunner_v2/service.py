@@ -14,6 +14,10 @@ import uuid as _uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from domains.channel_manager.providers.hotelrunner.production_safety import (
+    provider_io_block_reason,
+)
+
 from .client import HRv2Client
 from .endpoint_map import get_path
 from .errors import HRv2AuthError, HRv2Error
@@ -74,6 +78,10 @@ class HotelRunnerV2Service:
         Factory: resolve credentials from SecretManager and build service.
         Never uses plaintext credentials.
         """
+        runtime_block = provider_io_block_reason()
+        if runtime_block:
+            raise HRv2Error(runtime_block)
+
         from core.secrets import get_secrets_manager
 
         sm = get_secrets_manager()
