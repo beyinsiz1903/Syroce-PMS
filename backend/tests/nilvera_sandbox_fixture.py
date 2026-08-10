@@ -217,6 +217,18 @@ class SandboxFixtureReconciliationResult:
 
 
 @dataclass(frozen=True)
+class IncomingAnswerEligibility:
+    identity_match: bool
+    document_match: bool
+    answer_waiting: bool
+    provider_ready: bool
+
+    @property
+    def eligible(self) -> bool:
+        return self.identity_match and self.document_match and self.answer_waiting and self.provider_ready
+
+
+@dataclass(frozen=True)
 class _ReconciliationPages:
     items: tuple[dict[str, Any], ...]
     page_count: int
@@ -372,6 +384,25 @@ def incoming_answer_discovery_window(fixture_time: datetime) -> tuple[datetime, 
         raise SandboxFixtureBlocked("BLOCKED_INVALID_ANSWER_FIXTURE_SOURCE")
     end_date = fixture_time + timedelta(days=1)
     return end_date - timedelta(days=31), end_date
+
+
+def evaluate_incoming_answer_candidate(
+    summary: Any,
+    detail: Any,
+    status: Any,
+    *,
+    target_provider_uuid: str,
+) -> IncomingAnswerEligibility:
+    identity_match = summary.provider_uuid == target_provider_uuid and detail.provider_uuid == target_provider_uuid
+    document_match = detail.invoice_profile == "TICARIFATURA" and detail.invoice_type == "SATIS"
+    answer_waiting = _normalize(status.answer_code) == "waitingforapproval"
+    provider_ready = _normalize(status.status_code) in {"succeed", "success"}
+    return IncomingAnswerEligibility(
+        identity_match=identity_match,
+        document_match=document_match,
+        answer_waiting=answer_waiting,
+        provider_ready=provider_ready,
+    )
 
 
 def ensure_fixture_write_attempt(workflow_run_attempt: int) -> None:

@@ -59,6 +59,7 @@ from tests.nilvera_sandbox_fixture import (
     build_fixture_request_uuid,
     company_identity_matches,
     ensure_distinct_sandbox_keys,
+    evaluate_incoming_answer_candidate,
     incoming_answer_discovery_window,
     pilot_invoice_datetime,
     prepare_incoming_commercial_fixture,
@@ -673,6 +674,10 @@ async def test_sandbox_incoming_commercial_invoice_answer_contract(sandbox_clien
     provider_write_count = 0
     provider_state = NilveraIncomingAnswerState.UNKNOWN
     lifecycle_state: InvoiceLifecycleActionState | None = None
+    target_summary_found = False
+    target_document_match = False
+    target_answer_waiting = False
+    target_provider_ready = False
 
     class BorrowedClientContext:
         def __init__(self, client):
@@ -698,24 +703,24 @@ async def test_sandbox_incoming_commercial_invoice_answer_contract(sandbox_clien
                 except Exception as exc:
                     fail_safely("candidate discovery", exc)
                 for summary in page.items:
-                    normalized_answer = "".join(character for character in (summary.answer_code or "").lower() if character.isalnum())
-                    normalized_status = "".join(character for character in (summary.status_code or "").upper() if character.isalnum())
                     if summary.provider_uuid != target_provider_uuid:
                         continue
-                    if normalized_answer not in {"", "waitingforapproval"}:
-                        continue
-                    if normalized_status not in {"SUCCEED", "SUCCESS"}:
-                        continue
+                    target_summary_found = True
                     try:
                         detail = await incoming_service.fetch_incoming_invoice_detail(summary.provider_uuid)
                         status = await incoming_service.fetch_incoming_invoice_status(summary.provider_uuid)
                     except Exception as exc:
                         fail_safely("candidate verification", exc)
-                    if detail.provider_uuid != target_provider_uuid or detail.invoice_profile != "TICARIFATURA":
-                        continue
-                    verified_answer = "".join(character for character in (status.answer_code or "").lower() if character.isalnum())
-                    verified_status = "".join(character for character in status.status_code.upper() if character.isalnum())
-                    if verified_answer in {"", "waitingforapproval"} and verified_status in {"SUCCEED", "SUCCESS"}:
+                    eligibility = evaluate_incoming_answer_candidate(
+                        summary,
+                        detail,
+                        status,
+                        target_provider_uuid=target_provider_uuid,
+                    )
+                    target_document_match = eligibility.document_match
+                    target_answer_waiting = eligibility.answer_waiting
+                    target_provider_ready = eligibility.provider_ready
+                    if eligibility.eligible:
                         provider_uuid = summary.provider_uuid
                         break
                 if provider_uuid is not None:
@@ -723,6 +728,11 @@ async def test_sandbox_incoming_commercial_invoice_answer_contract(sandbox_clien
                 await asyncio.sleep(5)
 
             if provider_uuid is None:
+                record_property("provider_write_count", "0")
+                record_property("target_summary_found", str(target_summary_found).lower())
+                record_property("target_document_match", str(target_document_match).lower())
+                record_property("target_answer_waiting", str(target_answer_waiting).lower())
+                record_property("target_provider_ready", str(target_provider_ready).lower())
                 pytest.fail("BLOCKED_NO_ELIGIBLE_TEST_INVOICE")
 
             try:

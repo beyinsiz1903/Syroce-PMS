@@ -57,6 +57,7 @@ from tests.nilvera_sandbox_fixture import (
     company_owns_alias,
     ensure_fixture_invoice_date,
     ensure_fixture_payload_contract,
+    evaluate_incoming_answer_candidate,
     fixture_correlation_label,
     incoming_answer_discovery_window,
     parse_envelope_status,
@@ -270,6 +271,54 @@ def test_incoming_answer_discovery_window_respects_31_day_contract():
 def test_incoming_answer_discovery_window_rejects_naive_fixture_time():
     with pytest.raises(SandboxFixtureBlocked, match="BLOCKED_INVALID_ANSWER_FIXTURE_SOURCE"):
         incoming_answer_discovery_window(datetime(2026, 8, 6))
+
+
+def test_incoming_answer_eligibility_uses_authoritative_detail_and_status():
+    summary = SimpleNamespace(
+        provider_uuid=PROVIDER_UUID,
+        answer_code="approved",
+        status_code="error",
+    )
+    detail = SimpleNamespace(
+        provider_uuid=PROVIDER_UUID,
+        invoice_profile="TICARIFATURA",
+        invoice_type="SATIS",
+    )
+    status = SimpleNamespace(answer_code="waitingForApproval", status_code="SUCCEED")
+
+    result = evaluate_incoming_answer_candidate(
+        summary,
+        detail,
+        status,
+        target_provider_uuid=PROVIDER_UUID,
+    )
+
+    assert result.eligible is True
+    assert result.answer_waiting is True
+    assert result.provider_ready is True
+
+
+@pytest.mark.parametrize(
+    ("answer_code", "status_code"),
+    [
+        ("unknown", "SUCCEED"),
+        ("approved", "SUCCEED"),
+        ("waitingForApproval", "waiting"),
+    ],
+)
+def test_incoming_answer_eligibility_fails_closed_for_non_waiting_or_non_ready_status(answer_code, status_code):
+    result = evaluate_incoming_answer_candidate(
+        SimpleNamespace(provider_uuid=PROVIDER_UUID),
+        SimpleNamespace(
+            provider_uuid=PROVIDER_UUID,
+            invoice_profile="TICARIFATURA",
+            invoice_type="SATIS",
+        ),
+        SimpleNamespace(answer_code=answer_code, status_code=status_code),
+        target_provider_uuid=PROVIDER_UUID,
+    )
+
+    assert result.eligible is False
 
 
 def test_fixture_date_preflight_rejects_timezone_shifted_dto():
