@@ -12,10 +12,11 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from core.integrations.nilvera.config import NilveraEndpoints
-from core.integrations.nilvera.errors import NilveraApiError
+from core.integrations.nilvera.errors import NilveraApiError, NilveraNotFoundError
 from core.integrations.nilvera.incoming import NilveraIncomingService
 from core.integrations.nilvera.mapper import NilveraEInvoicePayload, NilveraInvoiceMapper, SellerSnapshot
 from core.integrations.nilvera.status_mapper import ProviderInvoiceOutcome
+from core.integrations.nilvera.taxpayer import NilveraTaxpayerService
 from models.schemas.invoicing import Invoice, InvoiceItem
 
 _FIXTURE_ID_PATTERN = re.compile(r"^TST\d{13}$")
@@ -76,6 +77,15 @@ FORMAT_VALID = "FORMAT_VALID"
 FORMAT_INVALID = "FORMAT_INVALID"
 TOTAL_MISMATCH = "TOTAL_MISMATCH"
 SANDBOX_FIXTURE_SERIES = "SYR"
+ENVELOPE_STATUS_PENDING = "PENDING"
+ENVELOPE_STATUS_TARGET_RECEIVED = "TARGET_RECEIVED_PENDING_RESPONSE"
+ENVELOPE_STATUS_COMPLETED = "COMPLETED"
+ENVELOPE_STATUS_FAILED = "FAILED"
+ENVELOPE_STATUS_NOT_AVAILABLE = "NOT_AVAILABLE"
+ENVELOPE_STATUS_UNKNOWN = "UNKNOWN"
+DIRECT_LOOKUP_FOUND = "FOUND"
+DIRECT_LOOKUP_NOT_FOUND = "NOT_FOUND"
+DIRECT_LOOKUP_NOT_RUN = "NOT_RUN"
 
 _CORRELATION_FIELDS = (
     "InvoiceNumber",
@@ -199,6 +209,11 @@ class SandboxFixtureReconciliationResult:
     sender_page_count_class: str
     receiver_page_count_class: str
     http_status: int | None
+    receiver_list_visible: bool | None = None
+    receiver_direct_lookup: str | None = None
+    receiver_alias_match: bool | None = None
+    envelope_status_class: str | None = None
+    envelope_gib_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -580,6 +595,39 @@ async def company_identity_matches(client: Any, expected_tax_number: str) -> boo
     return hmac.compare_digest(tax_number.encode(), expected_tax_number.encode())
 
 
+async def company_owns_alias(client: Any, expected_alias: str) -> bool:
+    """Verify alias ownership without returning or logging any alias value."""
+    try:
+        response = await client.get(NilveraEndpoints.GET_COMPANY)
+    except Exception as exc:
+        http_status = exc.http_status if isinstance(exc, NilveraApiError) else None
+        provider_code = exc.provider_code if isinstance(exc, NilveraApiError) else None
+        raise SandboxFixtureBlocked(
+            "BLOCKED_COMPANY_ALIAS_QUERY",
+            http_status=http_status,
+            http_status_class=_http_status_class(http_status),
+            provider_code=_safe_provider_code(provider_code),
+            exception_type=_safe_exception_type(exc),
+        ) from None
+
+    aliases = response.get("Aliases") if isinstance(response, dict) else None
+    if not isinstance(aliases, list):
+        raise SandboxFixtureBlocked(
+            "BLOCKED_COMPANY_ALIAS_PARSE",
+            http_status=_client_exact_http_status(client),
+            http_status_class=_http_status_class(_client_exact_http_status(client)),
+            exception_type="NilveraValidationError",
+        )
+
+    for item in aliases:
+        if not isinstance(item, dict):
+            raise SandboxFixtureBlocked("BLOCKED_COMPANY_ALIAS_PARSE")
+        alias = item.get("Alias")
+        if isinstance(alias, str) and alias and hmac.compare_digest(alias.encode(), expected_alias.encode()):
+            return True
+    return False
+
+
 def _normalize(value: Any) -> str:
     if not isinstance(value, str):
         return ""
@@ -607,6 +655,29 @@ def parse_sale_outcome(response: Any) -> ProviderInvoiceOutcome:
     if normalized in {_normalize(value) for value in _PENDING_STATUSES}:
         return ProviderInvoiceOutcome.PENDING
     return ProviderInvoiceOutcome.UNKNOWN
+
+
+def parse_envelope_status(response: Any) -> tuple[str | None, str]:
+    """Return only the official GIB code and a safe delivery classification."""
+    if not isinstance(response, dict):
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_ENVELOPE_PARSE")
+    raw_code = response.get("GIBCode")
+    if raw_code is None or raw_code == "":
+        return None, ENVELOPE_STATUS_NOT_AVAILABLE
+    if isinstance(raw_code, bool) or not isinstance(raw_code, (str, int)):
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_ENVELOPE_PARSE")
+    code = str(raw_code).strip()
+    if re.fullmatch(r"\d{4}", code) is None:
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_ENVELOPE_PARSE")
+    if code in {"1000", "1100", "1200", "1210"}:
+        return code, ENVELOPE_STATUS_PENDING
+    if code == "1220":
+        return code, ENVELOPE_STATUS_TARGET_RECEIVED
+    if code == "1300":
+        return code, ENVELOPE_STATUS_COMPLETED
+    if code.startswith("11") or code in {"1215", "1230"}:
+        return code, ENVELOPE_STATUS_FAILED
+    return code, ENVELOPE_STATUS_UNKNOWN
 
 
 def _matches_fixture(candidate: str, target_digest: bytes, hmac_key: str) -> bool:
@@ -894,6 +965,7 @@ async def reconcile_incoming_commercial_fixture(
     seller_tax_number: str,
     buyer_tax_number: str,
     reference_time: datetime,
+    delivery_diagnostics: bool = False,
 ) -> SandboxFixtureReconciliationResult:
     if reference_time.tzinfo is None or reference_time.utcoffset() is None:
         raise SandboxFixtureBlocked("BLOCKED_RECONCILIATION_REFERENCE_TIME")
@@ -1084,6 +1156,11 @@ async def reconcile_incoming_commercial_fixture(
             http_status_class=_http_status_class(_combined_exact_http_status(sender_client, receiver_client)),
         )
     match_count_class = MATCH_COUNT_ONE if outgoing_matches else MATCH_COUNT_ZERO
+    receiver_list_visible = bool(incoming_matches)
+    receiver_direct_lookup = DIRECT_LOOKUP_NOT_RUN
+    receiver_alias_match = None
+    envelope_status_class = None
+    envelope_gib_code = None
 
     outgoing_result = NOT_FOUND_OR_NOT_VISIBLE
     outgoing_outcome = None
@@ -1135,6 +1212,98 @@ async def reconcile_incoming_commercial_fixture(
             raise SandboxFixtureFailed("FIXTURE_OUTGOING_RECONCILIATION_MISMATCH")
         outgoing_result = FOUND
 
+        if delivery_diagnostics:
+            try:
+                aliases = await NilveraTaxpayerService(sender_client).get_taxpayer_aliases(
+                    buyer_tax_number,
+                    correlation_label,
+                )
+                buyer_aliases = [alias for alias in aliases.aliases if "pk" in alias.lower()]
+                if not buyer_aliases:
+                    raise SandboxFixtureBlocked("BLOCKED_FIXTURE_BUYER_ALIAS")
+                receiver_alias_match = await company_owns_alias(receiver_client, buyer_aliases[0])
+            except SandboxFixtureError as exc:
+                raise _enrich_reconciliation_error(
+                    exc,
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                    sender_page_count_class=outgoing_pages.page_count_class,
+                    receiver_page_count_class=incoming_pages.page_count_class,
+                    http_status=_combined_exact_http_status(sender_client, receiver_client),
+                ) from None
+            except Exception as exc:
+                blocked = _reconciliation_query_failure(
+                    exc,
+                    failure_stage="BUYER_ALIAS_OWNERSHIP",
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                )
+                raise _enrich_reconciliation_error(
+                    blocked,
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                    sender_page_count_class=outgoing_pages.page_count_class,
+                    receiver_page_count_class=incoming_pages.page_count_class,
+                    http_status=_combined_exact_http_status(sender_client, receiver_client),
+                ) from None
+
+            try:
+                envelope_response = await sender_client.get(
+                    NilveraEndpoints.GET_SALE_INVOICE_ENVELOPE_INFO.format(uuid=provider_uuid),
+                    correlation_id=correlation_label,
+                )
+            except NilveraNotFoundError:
+                envelope_status_class = ENVELOPE_STATUS_NOT_AVAILABLE
+            except Exception as exc:
+                blocked = _reconciliation_query_failure(
+                    exc,
+                    failure_stage="SENDER_ENVELOPE_INFO",
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                )
+                raise _enrich_reconciliation_error(
+                    blocked,
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                    sender_page_count_class=outgoing_pages.page_count_class,
+                    receiver_page_count_class=incoming_pages.page_count_class,
+                    http_status=_combined_exact_http_status(sender_client, receiver_client),
+                ) from None
+            else:
+                envelope_gib_code, envelope_status_class = parse_envelope_status(envelope_response)
+
+            if not incoming_matches:
+                try:
+                    direct_detail = await incoming_service.fetch_incoming_invoice_detail(provider_uuid)
+                except NilveraNotFoundError:
+                    receiver_direct_lookup = DIRECT_LOOKUP_NOT_FOUND
+                except Exception as exc:
+                    blocked = _reconciliation_query_failure(
+                        exc,
+                        failure_stage="RECEIVER_PURCHASE_DIRECT_DETAIL",
+                        sender_match=sender_match,
+                        receiver_match=receiver_match,
+                    )
+                    raise _enrich_reconciliation_error(
+                        blocked,
+                        sender_match=sender_match,
+                        receiver_match=receiver_match,
+                        sender_page_count_class=outgoing_pages.page_count_class,
+                        receiver_page_count_class=incoming_pages.page_count_class,
+                        http_status=_combined_exact_http_status(sender_client, receiver_client),
+                    ) from None
+                else:
+                    direct_matches = (
+                        any(_matches_fixture(value, digest, hmac_key) for value in (direct_detail.provider_uuid, direct_detail.invoice_number) for digest in target_digests)
+                        and direct_detail.invoice_profile == "TICARIFATURA"
+                        and direct_detail.invoice_type == "SATIS"
+                    )
+                    if not direct_matches:
+                        raise SandboxFixtureFailed("FIXTURE_RECEIVER_DIRECT_DETAIL_MISMATCH")
+                    receiver_direct_lookup = DIRECT_LOOKUP_FOUND
+                    incoming_matches.append(provider_uuid)
+                    incoming_details[provider_uuid] = direct_detail
+
     receiver_visibility = NOT_FOUND_OR_NOT_VISIBLE
     receiver_detail_match = None
     receiver_status_ready = None
@@ -1183,6 +1352,11 @@ async def reconcile_incoming_commercial_fixture(
         sender_page_count_class=outgoing_pages.page_count_class,
         receiver_page_count_class=incoming_pages.page_count_class,
         http_status=_combined_exact_http_status(sender_client, receiver_client),
+        receiver_list_visible=receiver_list_visible,
+        receiver_direct_lookup=receiver_direct_lookup,
+        receiver_alias_match=receiver_alias_match,
+        envelope_status_class=envelope_status_class,
+        envelope_gib_code=envelope_gib_code,
     )
 
 

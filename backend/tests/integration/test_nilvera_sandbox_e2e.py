@@ -45,6 +45,11 @@ from models.schemas.invoice_lifecycle import (
 from models.schemas.invoicing import Invoice, InvoiceItem
 from tests.nilvera_sandbox_fixture import (
     BLOCKED_NOT_FOUND_AFTER_EXHAUSTIVE_READ,
+    DIRECT_LOOKUP_FOUND,
+    ENVELOPE_STATUS_COMPLETED,
+    ENVELOPE_STATUS_FAILED,
+    ENVELOPE_STATUS_PENDING,
+    ENVELOPE_STATUS_TARGET_RECEIVED,
     FOUND,
     MATCH_COUNT_ZERO,
     NOT_FOUND_OR_NOT_VISIBLE,
@@ -536,6 +541,7 @@ async def test_sandbox_reconcile_incoming_commercial_invoice_fixture(record_prop
                 seller_tax_number=seller_tax_number,
                 buyer_tax_number=buyer_tax_number,
                 reference_time=reference_time,
+                delivery_diagnostics=True,
             )
         except SandboxFixtureError as exc:
             record_property("provider_write_count", "0")
@@ -575,6 +581,14 @@ async def test_sandbox_reconcile_incoming_commercial_invoice_fixture(record_prop
     record_property("receiver_page_count_class", result.receiver_page_count_class)
     record_property("http_status", str(result.http_status) if result.http_status is not None else "NOT_APPLICABLE")
     record_property("provider_code", "NOT_APPLICABLE")
+    record_property("receiver_list_visible", str(result.receiver_list_visible).lower())
+    record_property("receiver_direct_lookup", result.receiver_direct_lookup or "NOT_APPLICABLE")
+    record_property(
+        "receiver_alias_match",
+        str(result.receiver_alias_match).lower() if result.receiver_alias_match is not None else "NOT_APPLICABLE",
+    )
+    record_property("envelope_status_class", result.envelope_status_class or "NOT_APPLICABLE")
+    record_property("envelope_gib_code", result.envelope_gib_code or "NOT_APPLICABLE")
 
     if result.match_count_class == MATCH_COUNT_ZERO:
         pytest.fail(BLOCKED_NOT_FOUND_AFTER_EXHAUSTIVE_READ, pytrace=False)
@@ -582,6 +596,19 @@ async def test_sandbox_reconcile_incoming_commercial_invoice_fixture(record_prop
         pytest.fail("FIXTURE_RECONCILIATION_PROVIDER_REJECTED", pytrace=False)
     if result.outgoing_outcome in {ProviderInvoiceOutcome.PENDING, ProviderInvoiceOutcome.UNKNOWN}:
         pytest.fail("BLOCKED_FIXTURE_RECONCILIATION_PROVIDER_NOT_TERMINAL", pytrace=False)
+    if result.receiver_alias_match is False:
+        pytest.fail("BLOCKED_RECEIVER_ALIAS_OWNERSHIP_MISMATCH", pytrace=False)
+    if result.envelope_status_class == ENVELOPE_STATUS_FAILED:
+        pytest.fail("FIXTURE_ENVELOPE_DELIVERY_FAILED", pytrace=False)
+    if not receiver_visible and result.envelope_status_class == ENVELOPE_STATUS_PENDING:
+        pytest.fail("BLOCKED_FIXTURE_ENVELOPE_DELIVERY_PENDING", pytrace=False)
+    if not receiver_visible and result.envelope_status_class in {
+        ENVELOPE_STATUS_TARGET_RECEIVED,
+        ENVELOPE_STATUS_COMPLETED,
+    }:
+        pytest.fail("BLOCKED_PROVIDER_RECEIVER_DELIVERY_INCONSISTENT", pytrace=False)
+    if result.receiver_list_visible is False and result.receiver_direct_lookup == DIRECT_LOOKUP_FOUND:
+        pytest.fail("BLOCKED_RECEIVER_PURCHASE_LIST_INDEX_LAG", pytrace=False)
     if not receiver_visible or result.receiver_status_ready is not True:
         pytest.fail(NOT_FOUND_OR_NOT_VISIBLE, pytrace=False)
 

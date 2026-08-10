@@ -27,6 +27,14 @@ from scripts.nilvera_sandbox_selector import (
 from tests.nilvera_sandbox_fixture import (
     AMBIGUOUS_WRITE,
     DEFINITIVE_REJECTION,
+    DIRECT_LOOKUP_FOUND,
+    DIRECT_LOOKUP_NOT_FOUND,
+    ENVELOPE_STATUS_COMPLETED,
+    ENVELOPE_STATUS_FAILED,
+    ENVELOPE_STATUS_NOT_AVAILABLE,
+    ENVELOPE_STATUS_PENDING,
+    ENVELOPE_STATUS_TARGET_RECEIVED,
+    ENVELOPE_STATUS_UNKNOWN,
     FIELD_MISSING,
     FIELD_PRESENT,
     FORMAT_VALID,
@@ -46,9 +54,11 @@ from tests.nilvera_sandbox_fixture import (
     build_fixture_payload,
     build_fixture_request_uuid,
     classify_fixture_payload_contract,
+    company_owns_alias,
     ensure_fixture_invoice_date,
     ensure_fixture_payload_contract,
     fixture_correlation_label,
+    parse_envelope_status,
     parse_pilot_invoice_date,
     pilot_invoice_datetime,
     prepare_incoming_commercial_fixture,
@@ -794,6 +804,178 @@ async def test_read_only_reconciliation_finds_exact_outgoing_and_incoming_fixtur
     assert sale_list_call.kwargs["params"]["StartDate"].startswith("2026-08-03")
     assert sale_list_call.kwargs["params"]["EndDate"].startswith("2026-08-09")
     assert sale_list_call.kwargs["params"]["DateFilterType"] == "CreatedDate"
+
+
+@pytest.mark.parametrize(
+    ("response", "expected_code", "expected_class"),
+    [
+        ({}, None, ENVELOPE_STATUS_NOT_AVAILABLE),
+        ({"GIBCode": "1000"}, "1000", ENVELOPE_STATUS_PENDING),
+        ({"GIBCode": 1200}, "1200", ENVELOPE_STATUS_PENDING),
+        ({"GIBCode": "1220"}, "1220", ENVELOPE_STATUS_TARGET_RECEIVED),
+        ({"GIBCode": "1300"}, "1300", ENVELOPE_STATUS_COMPLETED),
+        ({"GIBCode": "1215"}, "1215", ENVELOPE_STATUS_FAILED),
+        ({"GIBCode": "1230"}, "1230", ENVELOPE_STATUS_FAILED),
+        ({"GIBCode": "1999"}, "1999", ENVELOPE_STATUS_UNKNOWN),
+    ],
+)
+def test_envelope_status_parser_returns_only_safe_official_code_metadata(response, expected_code, expected_class):
+    response.update(
+        {
+            "GIBDescription": "provider description must not be returned",
+            "EnvelopeUUID": "provider identifier must not be returned",
+        }
+    )
+
+    assert parse_envelope_status(response) == (expected_code, expected_class)
+
+
+async def test_company_alias_ownership_returns_only_boolean_and_does_not_log_alias(caplog):
+    expected_alias = "urn:mail:defaultpk@sandbox.invalid"
+    client = SimpleNamespace(
+        get=AsyncMock(
+            return_value={
+                "TaxNumber": BUYER_TAX_NUMBER,
+                "Aliases": [{"Alias": expected_alias}],
+            }
+        )
+    )
+
+    assert await company_owns_alias(client, expected_alias) is True
+    assert expected_alias not in caplog.text
+
+
+async def test_delivery_diagnostics_distinguishes_alias_mismatch_from_purchase_absence():
+    expected_alias = "urn:mail:defaultpk@sandbox.invalid"
+
+    async def sender_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": SELLER_TAX_NUMBER}
+        if path == NilveraEndpoints.LIST_SALE_INVOICES:
+            return {"Content": [{"UUID": PROVIDER_UUID, "InvoiceNumber": INVOICE_NUMBER}]}
+        if path == NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=PROVIDER_UUID):
+            return {
+                "InvoiceNumber": INVOICE_NUMBER,
+                "InvoiceProfile": "TICARIFATURA",
+                "InvoiceType": "SATIS",
+            }
+        if path == NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=PROVIDER_UUID):
+            return {"Status": "SUCCESS"}
+        if path == NilveraEndpoints.GET_SALE_INVOICE_ENVELOPE_INFO.format(uuid=PROVIDER_UUID):
+            return {"GIBCode": "1200"}
+        raise AssertionError("unexpected sender read")
+
+    async def receiver_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {
+                "TaxNumber": BUYER_TAX_NUMBER,
+                "Aliases": [{"Alias": "urn:mail:differentpk@sandbox.invalid"}],
+            }
+        return {"Content": []}
+
+    sender_client = SimpleNamespace(get=AsyncMock(side_effect=sender_get))
+    receiver_client = SimpleNamespace(get=AsyncMock(side_effect=receiver_get))
+    incoming_service = _incoming_service(visible=False)
+    incoming_service.fetch_incoming_invoice_detail.side_effect = NilveraNotFoundError(
+        "not found",
+        http_status=404,
+    )
+    taxpayer_service = SimpleNamespace(
+        get_taxpayer_aliases=AsyncMock(
+            return_value=SimpleNamespace(aliases=[expected_alias]),
+        )
+    )
+
+    with (
+        patch("tests.nilvera_sandbox_fixture.NilveraIncomingService", return_value=incoming_service),
+        patch("tests.nilvera_sandbox_fixture.NilveraTaxpayerService", return_value=taxpayer_service),
+    ):
+        result = await reconcile_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            reference_time=NOW,
+            delivery_diagnostics=True,
+        )
+
+    assert result.receiver_alias_match is False
+    assert result.envelope_status_class == ENVELOPE_STATUS_PENDING
+    assert result.envelope_gib_code == "1200"
+    assert result.receiver_list_visible is False
+    assert result.receiver_direct_lookup == DIRECT_LOOKUP_NOT_FOUND
+    assert result.receiver_visibility == NOT_FOUND_OR_NOT_VISIBLE
+    assert result.provider_write_count == 0
+    assert not hasattr(sender_client, "post")
+    assert not hasattr(receiver_client, "post")
+
+
+async def test_delivery_diagnostics_detects_direct_detail_when_purchase_list_lags():
+    expected_alias = "urn:mail:defaultpk@sandbox.invalid"
+
+    async def sender_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": SELLER_TAX_NUMBER}
+        if path == NilveraEndpoints.LIST_SALE_INVOICES:
+            return {"Content": [{"UUID": PROVIDER_UUID, "InvoiceNumber": INVOICE_NUMBER}]}
+        if path == NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=PROVIDER_UUID):
+            return {
+                "InvoiceNumber": INVOICE_NUMBER,
+                "InvoiceProfile": "TICARIFATURA",
+                "InvoiceType": "SATIS",
+            }
+        if path == NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=PROVIDER_UUID):
+            return {"Status": "SUCCESS"}
+        if path == NilveraEndpoints.GET_SALE_INVOICE_ENVELOPE_INFO.format(uuid=PROVIDER_UUID):
+            return {"GIBCode": "1300"}
+        raise AssertionError("unexpected sender read")
+
+    async def receiver_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {
+                "TaxNumber": BUYER_TAX_NUMBER,
+                "Aliases": [{"Alias": expected_alias}],
+            }
+        return {"Content": []}
+
+    sender_client = SimpleNamespace(get=AsyncMock(side_effect=sender_get))
+    receiver_client = SimpleNamespace(get=AsyncMock(side_effect=receiver_get))
+    incoming_service = _incoming_service(visible=False)
+    taxpayer_service = SimpleNamespace(
+        get_taxpayer_aliases=AsyncMock(
+            return_value=SimpleNamespace(aliases=[expected_alias]),
+        )
+    )
+
+    with (
+        patch("tests.nilvera_sandbox_fixture.NilveraIncomingService", return_value=incoming_service),
+        patch("tests.nilvera_sandbox_fixture.NilveraTaxpayerService", return_value=taxpayer_service),
+    ):
+        result = await reconcile_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            reference_time=NOW,
+            delivery_diagnostics=True,
+        )
+
+    assert result.receiver_alias_match is True
+    assert result.envelope_status_class == ENVELOPE_STATUS_COMPLETED
+    assert result.envelope_gib_code == "1300"
+    assert result.receiver_list_visible is False
+    assert result.receiver_direct_lookup == DIRECT_LOOKUP_FOUND
+    assert result.receiver_visibility == FOUND
+    assert result.receiver_status_ready is True
+    assert result.provider_write_count == 0
 
 
 async def test_read_only_reconciliation_blocks_company_mismatch_before_list_queries():

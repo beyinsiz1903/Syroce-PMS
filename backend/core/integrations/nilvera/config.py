@@ -37,6 +37,7 @@ class NilveraEndpoints:
     LIST_SALE_INVOICES = "/einvoice/Sale"
     GET_SALE_INVOICE_STATUS = "/einvoice/Sale/{uuid}/Status"
     GET_SALE_INVOICE_DETAIL = "/einvoice/Sale/{uuid}/Details"
+    GET_SALE_INVOICE_ENVELOPE_INFO = "/einvoice/Sale/{uuid}/EnvelopeInfo"
 
     # E-Invoice Purchase (Incoming)
     LIST_PURCHASE_INVOICES = "/einvoice/Purchase"
