@@ -28,6 +28,16 @@ on:
         required: true
         default: false
         type: boolean
+      run_create_return_discovery:
+        description: Run the explicitly approved single-write CreateReturn contract discovery
+        required: true
+        default: false
+        type: boolean
+      run_create_return_reconciliation:
+        description: Reconcile a prior CreateReturn write using GET requests only
+        required: true
+        default: false
+        type: boolean
       reconciliation_source_run_id:
         description: GitHub Actions run ID that produced the fixture identity
         required: false
@@ -35,6 +45,11 @@ on:
         type: string
       reconciliation_source_timestamp:
         description: UTC timestamp of the GitHub Actions run that produced the fixture identity
+        required: false
+        default: ''
+        type: string
+      create_return_write_timestamp:
+        description: UTC timestamp of the prior CreateReturn workflow run
         required: false
         default: ''
         type: string
@@ -120,6 +135,8 @@ jobs:
           NILVERA_E2E_RUN_INCOMING_FIXTURE: ${{ inputs.run_incoming_fixture }}
           NILVERA_E2E_RUN_INCOMING_ANSWER: ${{ inputs.run_incoming_answer }}
           NILVERA_E2E_RUN_RECONCILIATION: ${{ inputs.run_reconciliation }}
+          NILVERA_E2E_RUN_CREATE_RETURN_DISCOVERY: ${{ inputs.run_create_return_discovery }}
+          NILVERA_E2E_RUN_CREATE_RETURN_RECONCILIATION: ${{ inputs.run_create_return_reconciliation }}
         run: |
           cd backend
           test_target="$(python scripts/nilvera_sandbox_selector.py)"
@@ -131,10 +148,13 @@ jobs:
           RUN_INCOMING_FIXTURE: ${{ inputs.run_incoming_fixture }}
           RUN_INCOMING_ANSWER: ${{ inputs.run_incoming_answer }}
           RUN_RECONCILIATION: ${{ inputs.run_reconciliation }}
+          RUN_CREATE_RETURN_DISCOVERY: ${{ inputs.run_create_return_discovery }}
+          RUN_CREATE_RETURN_RECONCILIATION: ${{ inputs.run_create_return_reconciliation }}
           RUN_OUTGOING_CONTRACT: ${{ inputs.run_outgoing_contract }}
           RUN_PREFLIGHT: ${{ inputs.run_preflight }}
           RECONCILIATION_SOURCE_RUN_ID: ${{ inputs.reconciliation_source_run_id }}
           RECONCILIATION_SOURCE_TIMESTAMP: ${{ inputs.reconciliation_source_timestamp }}
+          CREATE_RETURN_WRITE_TIMESTAMP: ${{ inputs.create_return_write_timestamp }}
           SENDER_KEY: ${{ secrets.NILVERA_E2E_SENDER_SANDBOX_KEY }}
           RECEIVER_KEY: ${{ secrets.NILVERA_E2E_RECEIVER_SANDBOX_KEY }}
           CORRELATION_HMAC_KEY: ${{ secrets.NILVERA_E2E_CORRELATION_HMAC_KEY }}
@@ -148,7 +168,7 @@ jobs:
           WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           mutation_requested=false
-          if [ "${RUN_OUTGOING_CONTRACT}" = "true" ] || [ "${RUN_INCOMING_FIXTURE}" = "true" ] || [ "${RUN_INCOMING_ANSWER}" = "true" ]; then
+          if [ "${RUN_OUTGOING_CONTRACT}" = "true" ] || [ "${RUN_INCOMING_FIXTURE}" = "true" ] || [ "${RUN_INCOMING_ANSWER}" = "true" ] || [ "${RUN_CREATE_RETURN_DISCOVERY}" = "true" ]; then
             mutation_requested=true
           fi
           if [ "${mutation_requested}" = "true" ]; then
@@ -233,6 +253,36 @@ jobs:
               echo "::error::BLOCKED_INVALID_OR_MISSING_PILOT_INVOICE_DATE"
               exit 1
             fi
+          elif [ "${RUN_CREATE_RETURN_DISCOVERY}" = "true" ]; then
+            if [ -z "${SENDER_KEY}" ] || [ -z "${RECEIVER_KEY}" ] || [ -z "${CORRELATION_HMAC_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ] || [ -z "${RECONCILIATION_SOURCE_RUN_ID}" ] || [ -z "${RECONCILIATION_SOURCE_TIMESTAMP}" ]; then
+              echo "::error::BLOCKED_MISSING_CREATE_RETURN_SANDBOX_CONFIGURATION"
+              exit 1
+            fi
+            if [ "${SENDER_KEY}" = "${RECEIVER_KEY}" ]; then
+              echo "::error::BLOCKED_IDENTICAL_SANDBOX_KEYS"
+              exit 1
+            fi
+            if ! PILOT_INVOICE_DATE="${PILOT_INVOICE_DATE}" python - <<'PY'
+          import os
+          from datetime import date
+
+          value = os.environ.get("PILOT_INVOICE_DATE", "")
+          try:
+              parsed = date.fromisoformat(value)
+          except ValueError:
+              raise SystemExit(1)
+          if parsed.isoformat() != value:
+              raise SystemExit(1)
+          PY
+            then
+              echo "::error::BLOCKED_INVALID_OR_MISSING_PILOT_INVOICE_DATE"
+              exit 1
+            fi
+          elif [ "${RUN_CREATE_RETURN_RECONCILIATION}" = "true" ]; then
+            if [ -z "${RECEIVER_KEY}" ] || [ -z "${CORRELATION_HMAC_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ] || [ -z "${RECONCILIATION_SOURCE_RUN_ID}" ] || [ -z "${RECONCILIATION_SOURCE_TIMESTAMP}" ] || [ -z "${CREATE_RETURN_WRITE_TIMESTAMP}" ]; then
+              echo "::error::BLOCKED_MISSING_CREATE_RETURN_RECONCILIATION_CONFIGURATION"
+              exit 1
+            fi
           elif [ "${RUN_OUTGOING_CONTRACT}" = "true" ] && { [ -z "${SENDER_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ]; }; then
             echo "::error::BLOCKED_MISSING_SANDBOX_CONFIGURATION"
             exit 1
@@ -244,6 +294,7 @@ jobs:
         env:
           NILVERA_ENABLED: "true"
           NILVERA_INCOMING_ANSWER_ENABLED: ${{ inputs.run_incoming_answer }}
+          NILVERA_CREATE_RETURN_ENABLED: ${{ inputs.run_create_return_discovery }}
           NILVERA_E2E_SENDER_SANDBOX_KEY: ${{ secrets.NILVERA_E2E_SENDER_SANDBOX_KEY }}
           NILVERA_E2E_RECEIVER_SANDBOX_KEY: ${{ secrets.NILVERA_E2E_RECEIVER_SANDBOX_KEY }}
           NILVERA_E2E_CORRELATION_HMAC_KEY: ${{ secrets.NILVERA_E2E_CORRELATION_HMAC_KEY }}
@@ -252,8 +303,11 @@ jobs:
           NILVERA_E2E_INCOMING_FIXTURE_ALLOWED: ${{ inputs.run_incoming_fixture }}
           NILVERA_E2E_INCOMING_ANSWER_ALLOWED: ${{ inputs.run_incoming_answer }}
           NILVERA_E2E_RECONCILIATION_ALLOWED: ${{ inputs.run_reconciliation }}
+          NILVERA_E2E_CREATE_RETURN_ALLOWED: ${{ inputs.run_create_return_discovery }}
+          NILVERA_E2E_CREATE_RETURN_RECONCILIATION_ALLOWED: ${{ inputs.run_create_return_reconciliation }}
           NILVERA_E2E_SOURCE_RUN_ID: ${{ inputs.reconciliation_source_run_id }}
           NILVERA_E2E_SOURCE_RUN_TIMESTAMP: ${{ inputs.reconciliation_source_timestamp }}
+          NILVERA_E2E_CREATE_RETURN_WRITE_TIMESTAMP: ${{ inputs.create_return_write_timestamp }}
           NILVERA_E2E_RUN_ID: ${{ github.run_id }}
           NILVERA_PILOT_INVOICE_DATE: ${{ inputs.pilot_invoice_date }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}

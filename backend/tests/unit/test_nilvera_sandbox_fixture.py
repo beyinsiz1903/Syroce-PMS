@@ -18,6 +18,8 @@ from core.integrations.nilvera.errors import (
 )
 from core.integrations.nilvera.status_mapper import ProviderInvoiceOutcome
 from scripts.nilvera_sandbox_selector import (
+    CREATE_RETURN_DISCOVERY_TARGET,
+    CREATE_RETURN_RECONCILIATION_TARGET,
     INCOMING_FIXTURE_TARGET,
     PREFLIGHT_TARGET,
     RECONCILIATION_TARGET,
@@ -107,6 +109,8 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
     assert "run_outgoing_contract:" in workflow
     assert "run_incoming_fixture:" in workflow
     assert "run_reconciliation:" in workflow
+    assert "run_create_return_discovery:" in workflow
+    assert "run_create_return_reconciliation:" in workflow
     assert "reconciliation_source_timestamp:" in workflow
     assert "pilot_invoice_date:" in workflow
     assert 'description: "Explicit invoice IssueDate for the approved Sandbox mutation (YYYY-MM-DD)"' in workflow
@@ -129,10 +133,25 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
     assert 'summary.invoice_number.startswith(f"TST' not in sandbox_test
     assert "WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}" in workflow
     assert "NILVERA_INCOMING_ANSWER_ENABLED: ${{ inputs.run_incoming_answer }}" in workflow
+    assert "NILVERA_CREATE_RETURN_ENABLED: ${{ inputs.run_create_return_discovery }}" in workflow
+    assert "BLOCKED_MISSING_CREATE_RETURN_SANDBOX_CONFIGURATION" in workflow
     with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
         select_test_target(run_incoming_fixture=True, run_incoming_answer=True, run_reconciliation=False)
     with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
         select_test_target(run_incoming_fixture=False, run_incoming_answer=True, run_reconciliation=True)
+    with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
+        select_test_target(
+            run_incoming_fixture=False,
+            run_incoming_answer=True,
+            run_create_return_discovery=True,
+        )
+    with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
+        select_test_target(
+            run_incoming_fixture=False,
+            run_incoming_answer=False,
+            run_create_return_discovery=True,
+            run_create_return_reconciliation=True,
+        )
     with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
         select_test_target(
             run_preflight=True,
@@ -164,6 +183,39 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
     )
     assert select_test_target(run_incoming_fixture=True, run_incoming_answer=False) == INCOMING_FIXTURE_TARGET
     assert select_test_target(run_incoming_fixture=False, run_incoming_answer=False, run_reconciliation=True) == RECONCILIATION_TARGET
+    assert (
+        select_test_target(
+            run_incoming_fixture=False,
+            run_incoming_answer=False,
+            run_create_return_discovery=True,
+        )
+        == CREATE_RETURN_DISCOVERY_TARGET
+    )
+    assert (
+        select_test_target(
+            run_incoming_fixture=False,
+            run_incoming_answer=False,
+            run_create_return_reconciliation=True,
+        )
+        == CREATE_RETURN_RECONCILIATION_TARGET
+    )
+
+
+def test_create_return_workflow_is_exact_head_single_attempt_and_sandbox_only():
+    workflow = (Path(__file__).parents[3] / ".github/workflows/nilvera-sandbox-e2e.yml").read_text()
+    sandbox_test = (Path(__file__).parents[1] / "integration/test_nilvera_sandbox_e2e.py").read_text()
+
+    assert "environment: nilvera-sandbox" in workflow
+    assert "NILVERA_CREATE_RETURN_ENABLED: ${{ inputs.run_create_return_discovery }}" in workflow
+    assert "NILVERA_E2E_CREATE_RETURN_ALLOWED: ${{ inputs.run_create_return_discovery }}" in workflow
+    assert "WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}" in workflow
+    assert "BLOCKED_EXACT_HEAD_NOT_APPROVED" in workflow
+    assert "BLOCKED_PROVIDER_WRITE_NOT_CONFIRMED" in workflow
+    assert "BLOCKED_TEST_ACCOUNT_NOT_ATTESTED" in workflow
+    assert "provider_write_count != 1" in sandbox_test
+    assert 'patch.object(receiver, "post", wraps=receiver.post)' in sandbox_test
+    assert "retryable=False" in sandbox_test
+    assert "api.nilvera.com" not in workflow
 
 
 def test_workflow_explicit_date_gate_is_fail_closed_and_mode_scoped():
@@ -200,8 +252,8 @@ def test_workflow_explicit_date_gate_is_fail_closed_and_mode_scoped():
 def test_reconciliation_identity_remains_source_run_based_without_date_input():
     sandbox_test = (Path(__file__).parents[1] / "integration/test_nilvera_sandbox_e2e.py").read_text()
     reconciliation_start = sandbox_test.index("async def test_sandbox_reconcile_incoming_commercial_invoice_fixture")
-    answer_start = sandbox_test.index("async def test_sandbox_incoming_commercial_invoice_answer_contract")
-    reconciliation_test = sandbox_test[reconciliation_start:answer_start]
+    create_return_start = sandbox_test.index("async def test_sandbox_create_return_contract_discovery")
+    reconciliation_test = sandbox_test[reconciliation_start:create_return_start]
 
     assert 'source_run_id = os.environ.get("NILVERA_E2E_SOURCE_RUN_ID", "")' in reconciliation_test
     assert 'source_timestamp = os.environ.get("NILVERA_E2E_SOURCE_RUN_TIMESTAMP", "")' in reconciliation_test

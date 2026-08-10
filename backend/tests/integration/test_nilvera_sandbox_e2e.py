@@ -1,8 +1,10 @@
 import asyncio
+import hashlib
+import hmac
 import logging
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
@@ -15,11 +17,12 @@ from core.integrations.incoming_invoice_sync_service import IncomingInvoiceSyncS
 from core.integrations.invoice_lifecycle_repository import InvoiceLifecycleRepository
 from core.integrations.invoice_lifecycle_service import InvoiceLifecycleService
 from core.integrations.nilvera.client import NilveraHttpClient
-from core.integrations.nilvera.config import get_nilvera_config
+from core.integrations.nilvera.config import NilveraEndpoints, get_nilvera_config
 from core.integrations.nilvera.document_service import NilveraDocumentService
 from core.integrations.nilvera.errors import (
     NilveraApiError,
     NilveraAuthError,
+    NilveraNotFoundError,
     NilveraServerError,
 )
 from core.integrations.nilvera.incoming import NilveraIncomingService
@@ -28,6 +31,7 @@ from core.integrations.nilvera.incoming_answer import (
     NilveraIncomingAnswerState,
 )
 from core.integrations.nilvera.mapper import NilveraInvoiceMapper, SellerSnapshot
+from core.integrations.nilvera.return_adapter import NilveraReturnAdapter
 from core.integrations.nilvera.status_mapper import ProviderInvoiceOutcome, map_nilvera_status
 from core.integrations.nilvera.taxpayer import NilveraTaxpayerService
 from models.schemas.incoming_invoice import (
@@ -110,13 +114,16 @@ def check_missing_secrets() -> bool:
     fixture_mode = os.environ.get("NILVERA_E2E_INCOMING_FIXTURE_ALLOWED", "false").lower() == "true"
     answer_mode = os.environ.get("NILVERA_E2E_INCOMING_ANSWER_ALLOWED", "false").lower() == "true"
     reconciliation_mode = os.environ.get("NILVERA_E2E_RECONCILIATION_ALLOWED", "false").lower() == "true"
+    create_return_mode = os.environ.get("NILVERA_E2E_CREATE_RETURN_ALLOWED", "false").lower() == "true"
+    create_return_reconciliation_mode = os.environ.get("NILVERA_E2E_CREATE_RETURN_RECONCILIATION_ALLOWED", "false").lower() == "true"
 
-    if fixture_mode or reconciliation_mode or answer_mode:
+    if fixture_mode or reconciliation_mode or answer_mode or create_return_mode or create_return_reconciliation_mode:
         hmac_key = os.environ.get("NILVERA_E2E_CORRELATION_HMAC_KEY")
         run_id_name = "NILVERA_E2E_RUN_ID" if fixture_mode else "NILVERA_E2E_SOURCE_RUN_ID"
         run_id = os.environ.get(run_id_name)
         source_timestamp = os.environ.get("NILVERA_E2E_SOURCE_RUN_TIMESTAMP") if not fixture_mode else "not-required"
-        selected_keys_present = bool(sender_key and receiver_key) if not answer_mode else bool(receiver_key)
+        receiver_only_mode = answer_mode or create_return_reconciliation_mode
+        selected_keys_present = bool(receiver_key) if receiver_only_mode and not create_return_mode else bool(sender_key and receiver_key)
         return not (selected_keys_present and hmac_key and run_id and source_timestamp and buyer and seller)
     selected_key = receiver_key if answer_mode else sender_key
     return not (selected_key and buyer and seller)
@@ -131,7 +138,15 @@ def skip_if_missing_secrets():
 
 @pytest.fixture
 def api_key():
-    if os.environ.get("NILVERA_E2E_INCOMING_ANSWER_ALLOWED", "false").lower() == "true":
+    receiver_mode = any(
+        os.environ.get(name, "false").lower() == "true"
+        for name in (
+            "NILVERA_E2E_INCOMING_ANSWER_ALLOWED",
+            "NILVERA_E2E_CREATE_RETURN_ALLOWED",
+            "NILVERA_E2E_CREATE_RETURN_RECONCILIATION_ALLOWED",
+        )
+    )
+    if receiver_mode:
         return os.environ.get("NILVERA_E2E_RECEIVER_SANDBOX_KEY")
     return os.environ.get("NILVERA_E2E_SENDER_SANDBOX_KEY")
 
@@ -629,6 +644,370 @@ async def test_sandbox_reconcile_incoming_commercial_invoice_fixture(record_prop
         pytest.fail("BLOCKED_RECEIVER_PURCHASE_LIST_INDEX_LAG", pytrace=False)
     if not receiver_visible or result.receiver_status_ready is not True:
         pytest.fail(NOT_FOUND_OR_NOT_VISIBLE, pytrace=False)
+
+
+@pytest.mark.external
+@pytest.mark.side_effect
+async def test_sandbox_create_return_contract_discovery(record_property):
+    """Discover CreateReturn once for an exact, receiver-visible Sandbox fixture."""
+    if os.environ.get("NILVERA_E2E_CREATE_RETURN_ALLOWED", "false").lower() != "true":
+        pytest.skip("CreateReturn discovery requires explicit Sandbox authorization")
+
+    sender_key = os.environ.get("NILVERA_E2E_SENDER_SANDBOX_KEY", "")
+    receiver_key = os.environ.get("NILVERA_E2E_RECEIVER_SANDBOX_KEY", "")
+    hmac_key = os.environ.get("NILVERA_E2E_CORRELATION_HMAC_KEY", "")
+    source_run_id = os.environ.get("NILVERA_E2E_SOURCE_RUN_ID", "")
+    source_timestamp = os.environ.get("NILVERA_E2E_SOURCE_RUN_TIMESTAMP", "")
+    seller_tax_number = os.environ.get("NILVERA_E2E_SELLER_VKN", "")
+    buyer_tax_number = os.environ.get("NILVERA_E2E_BUYER_VKN", "")
+    provider_write_count = 0
+
+    try:
+        reference_time = datetime.fromisoformat(source_timestamp.replace("Z", "+00:00"))
+        if reference_time.tzinfo is None or reference_time.utcoffset() is None:
+            raise ValueError
+        fixture_time = pilot_invoice_datetime(os.environ.get("NILVERA_PILOT_INVOICE_DATE"))
+        if fixture_time.year != reference_time.year:
+            raise ValueError
+        identity = build_fixture_identity(
+            year=fixture_time.year,
+            run_id=source_run_id,
+            hmac_key=hmac_key,
+        )
+        source_provider_uuid = str(build_fixture_request_uuid(identity, hmac_key))
+    except (SandboxFixtureError, ValueError):
+        pytest.fail("BLOCKED_INVALID_CREATE_RETURN_FIXTURE_SOURCE", pytrace=False)
+
+    sender_client = new_sandbox_client(sender_key)
+    receiver_client = new_sandbox_client(receiver_key)
+    try:
+        async with sender_client as sender, receiver_client as receiver:
+            reconciliation = await reconcile_incoming_commercial_fixture(
+                sender_client=ReadOnlySandboxClient(sender),
+                receiver_client=ReadOnlySandboxClient(receiver),
+                sender_key=sender_key,
+                receiver_key=receiver_key,
+                hmac_key=hmac_key,
+                run_id=source_run_id,
+                seller_tax_number=seller_tax_number,
+                buyer_tax_number=buyer_tax_number,
+                reference_time=reference_time,
+                delivery_diagnostics=True,
+            )
+            answer_states = {
+                reconciliation.receiver_status_answer_state,
+                reconciliation.receiver_detail_answer_state,
+            }
+            source_terminal = bool(answer_states & {"APPROVED", "ANSWERED_AUTOMATICALLY"}) or reconciliation.receiver_answered_automatically is True
+            source_ready = (
+                reconciliation.match_count_class == "ONE"
+                and reconciliation.receiver_visibility == FOUND
+                and reconciliation.receiver_status_ready is True
+                and reconciliation.receiver_alias_match is True
+                and source_terminal
+            )
+            record_property("source_fixture_ready", str(source_ready).lower())
+            if not source_ready:
+                pytest.fail("BLOCKED_CREATE_RETURN_SOURCE_NOT_READY", pytrace=False)
+
+            with patch.object(receiver, "post", wraps=receiver.post) as provider_post:
+                try:
+                    created = await NilveraReturnAdapter(receiver).create_return(
+                        source_provider_uuid,
+                        correlation_id=reconciliation.correlation_label,
+                    )
+                except Exception as exc:
+                    provider_write_count = provider_post.await_count
+                    http_status = exc.http_status if isinstance(exc, NilveraApiError) else None
+                    pytest.fail(
+                        f"CreateReturn discovery failed (error_type={type(exc).__name__}, http_status={http_status}, write_count={provider_write_count})",
+                        pytrace=False,
+                    )
+                provider_write_count = provider_post.await_count
+
+            if provider_write_count != 1:
+                pytest.fail(
+                    f"CreateReturn provider write count is invalid (write_count={provider_write_count})",
+                    pytrace=False,
+                )
+
+            created_uuid = str(created.provider_uuid)
+            try:
+                detail = await receiver.get(
+                    NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=created_uuid),
+                    correlation_id=reconciliation.correlation_label,
+                    retryable=False,
+                    stage="CREATE_RETURN_RECONCILIATION_DETAIL",
+                )
+                status = await receiver.get(
+                    NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=created_uuid),
+                    correlation_id=reconciliation.correlation_label,
+                    retryable=False,
+                    stage="CREATE_RETURN_RECONCILIATION_STATUS",
+                )
+            except Exception as exc:
+                http_status = exc.http_status if isinstance(exc, NilveraApiError) else None
+                pytest.fail(
+                    f"CreateReturn read-only reconciliation failed (error_type={type(exc).__name__}, http_status={http_status}, write_count={provider_write_count})",
+                    pytrace=False,
+                )
+
+            detail_uuid = detail.get("UUID") if isinstance(detail, dict) else None
+            try:
+                detail_uuid_matches = str(uuid.UUID(str(detail_uuid))) == created_uuid
+            except (AttributeError, TypeError, ValueError):
+                detail_uuid_matches = False
+            created_document_found = detail_uuid_matches and isinstance(status, dict) and bool(status)
+            record_property("provider_write_count", str(provider_write_count))
+            record_property("response_uuid_present", "true")
+            record_property("created_document_found", str(created_document_found).lower())
+            record_property("exact_http_status", str(receiver.last_http_status or "NOT_RECORDED"))
+            if not created_document_found:
+                pytest.fail("BLOCKED_CREATE_RETURN_RECONCILIATION_MISMATCH", pytrace=False)
+    except SandboxFixtureError as exc:
+        record_property("provider_write_count", str(provider_write_count))
+        pytest.fail(exc.safe_code, pytrace=False)
+    except Exception as exc:
+        http_status = exc.http_status if isinstance(exc, NilveraApiError) else None
+        record_property("provider_write_count", str(provider_write_count))
+        pytest.fail(
+            f"CreateReturn preflight failed (error_type={type(exc).__name__}, http_status={http_status}, write_count={provider_write_count})",
+            pytrace=False,
+        )
+
+
+def _nested_string(payload: dict, *paths: tuple[str, ...]) -> str | None:
+    for path in paths:
+        value: object = payload
+        for part in path:
+            if not isinstance(value, dict):
+                value = None
+                break
+            value = value.get(part)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _sensitive_value_matches(candidate: str | None, expected: str, hmac_key: str) -> bool:
+    if not candidate:
+        return False
+    candidate_digest = hmac.new(hmac_key.encode(), candidate.encode(), hashlib.sha256).digest()
+    expected_digest = hmac.new(hmac_key.encode(), expected.encode(), hashlib.sha256).digest()
+    return hmac.compare_digest(candidate_digest, expected_digest)
+
+
+def _created_return_detail_matches(
+    detail: dict,
+    *,
+    original_buyer_tax_number: str,
+    original_seller_tax_number: str,
+    source_provider_uuid: str,
+    hmac_key: str,
+) -> bool:
+    invoice_type = _nested_string(
+        detail,
+        ("InvoiceType",),
+        ("InvoiceInfo", "InvoiceType"),
+        ("EInvoice", "InvoiceInfo", "InvoiceType"),
+    )
+    supplier_tax_number = _nested_string(
+        detail,
+        ("SupplierTaxNumber",),
+        ("SenderTaxNumber",),
+        ("CompanyInfo", "TaxNumber"),
+        ("Supplier", "TaxNumber"),
+        ("EInvoice", "CompanyInfo", "TaxNumber"),
+    )
+    customer_tax_number = _nested_string(
+        detail,
+        ("BuyerTaxNumber",),
+        ("ReceiverTaxNumber",),
+        ("CustomerInfo", "TaxNumber"),
+        ("Customer", "TaxNumber"),
+        ("EInvoice", "CustomerInfo", "TaxNumber"),
+    )
+    counterpart_match = _sensitive_value_matches(
+        supplier_tax_number,
+        original_buyer_tax_number,
+        hmac_key,
+    ) and _sensitive_value_matches(
+        customer_tax_number,
+        original_seller_tax_number,
+        hmac_key,
+    )
+    source_reference_match = _payload_contains_reference(
+        detail,
+        source_provider_uuid,
+        hmac_key,
+    )
+    return invoice_type is not None and invoice_type.casefold() in {"iade", "return"} and (counterpart_match or source_reference_match)
+
+
+def _collect_uuid_values(payload: object) -> set[str]:
+    values: set[str] = set()
+    if isinstance(payload, dict):
+        for value in payload.values():
+            values.update(_collect_uuid_values(value))
+    elif isinstance(payload, list):
+        for value in payload:
+            values.update(_collect_uuid_values(value))
+    elif isinstance(payload, str):
+        try:
+            values.add(str(uuid.UUID(payload.strip())))
+        except (AttributeError, ValueError):
+            pass
+    return values
+
+
+def _payload_contains_reference(payload: object, expected: str, hmac_key: str) -> bool:
+    if isinstance(payload, dict):
+        return any(_payload_contains_reference(value, expected, hmac_key) for value in payload.values())
+    if isinstance(payload, list):
+        return any(_payload_contains_reference(value, expected, hmac_key) for value in payload)
+    return isinstance(payload, str) and _sensitive_value_matches(payload.strip(), expected, hmac_key)
+
+
+@pytest.mark.external
+async def test_sandbox_reconcile_created_return(record_property):
+    """Find the prior CreateReturn result using GET requests only."""
+    allowed = os.environ.get("NILVERA_E2E_CREATE_RETURN_RECONCILIATION_ALLOWED", "false")
+    if allowed.lower() != "true":
+        pytest.skip("CreateReturn reconciliation requires explicit read-only mode")
+
+    receiver_key = os.environ.get("NILVERA_E2E_RECEIVER_SANDBOX_KEY", "")
+    hmac_key = os.environ.get("NILVERA_E2E_CORRELATION_HMAC_KEY", "")
+    source_run_id = os.environ.get("NILVERA_E2E_SOURCE_RUN_ID", "")
+    source_timestamp = os.environ.get("NILVERA_E2E_SOURCE_RUN_TIMESTAMP", "")
+    write_timestamp = os.environ.get("NILVERA_E2E_CREATE_RETURN_WRITE_TIMESTAMP", "")
+    seller_tax_number = os.environ.get("NILVERA_E2E_SELLER_VKN", "")
+    buyer_tax_number = os.environ.get("NILVERA_E2E_BUYER_VKN", "")
+    record_property("provider_write_count", "0")
+
+    try:
+        fixture_reference_time = datetime.fromisoformat(source_timestamp.replace("Z", "+00:00"))
+        write_time = datetime.fromisoformat(write_timestamp.replace("Z", "+00:00"))
+        if any(value.tzinfo is None or value.utcoffset() is None for value in (fixture_reference_time, write_time)):
+            raise ValueError
+        identity = build_fixture_identity(
+            year=fixture_reference_time.year,
+            run_id=source_run_id,
+            hmac_key=hmac_key,
+        )
+        source_provider_uuid = str(build_fixture_request_uuid(identity, hmac_key))
+        correlation_label = hmac.new(
+            hmac_key.encode(),
+            f"create-return:{source_run_id}".encode(),
+            hashlib.sha256,
+        ).hexdigest()[:16]
+    except (SandboxFixtureError, ValueError):
+        pytest.fail("BLOCKED_INVALID_CREATE_RETURN_RECONCILIATION_SOURCE", pytrace=False)
+
+    receiver_client = new_sandbox_client(receiver_key)
+    try:
+        async with receiver_client as receiver:
+            receiver_match = await company_identity_matches(receiver, buyer_tax_number)
+            record_property("receiver_match", str(receiver_match).lower())
+            if not receiver_match:
+                pytest.fail("BLOCKED_CREATE_RETURN_RECEIVER_IDENTITY_MISMATCH", pytrace=False)
+
+            source_detail = await receiver.get(
+                NilveraEndpoints.GET_PURCHASE_INVOICE_DETAIL.format(uuid=source_provider_uuid),
+                correlation_id=correlation_label,
+                retryable=False,
+                stage="CREATE_RETURN_SOURCE_DETAIL_RECONCILIATION",
+            )
+            if not isinstance(source_detail, dict):
+                pytest.fail("BLOCKED_CREATE_RETURN_SOURCE_DETAIL_PARSE", pytrace=False)
+            linked_candidates = _collect_uuid_values(source_detail) - {source_provider_uuid}
+            record_property("linked_candidate_present", str(bool(linked_candidates)).lower())
+
+            candidates: dict[str, dict] = {candidate_uuid: {} for candidate_uuid in linked_candidates}
+            params = {
+                "StartDate": (write_time - timedelta(days=1)).isoformat(),
+                "EndDate": (write_time + timedelta(days=1)).isoformat(),
+                "PageSize": 100,
+            }
+            for page_number in range(1, 6):
+                response = await receiver.get(
+                    NilveraEndpoints.LIST_DRAFT_INVOICES,
+                    params={**params, "Page": page_number},
+                    correlation_id=correlation_label,
+                    retryable=False,
+                    stage="CREATE_RETURN_DRAFT_LIST_RECONCILIATION",
+                )
+                content = response.get("Content") if isinstance(response, dict) else None
+                if not isinstance(content, list):
+                    pytest.fail("BLOCKED_CREATE_RETURN_LIST_PARSE", pytrace=False)
+                for item in content:
+                    if not isinstance(item, dict):
+                        pytest.fail("BLOCKED_CREATE_RETURN_LIST_PARSE", pytrace=False)
+                    raw_uuid = item.get("UUID") or item.get("Id")
+                    try:
+                        candidate_uuid = str(uuid.UUID(str(raw_uuid)))
+                    except (AttributeError, TypeError, ValueError):
+                        pytest.fail("BLOCKED_CREATE_RETURN_LIST_PARSE", pytrace=False)
+                    candidates[candidate_uuid] = item
+                total_pages = response.get("TotalPages")
+                if isinstance(total_pages, int) and page_number >= max(total_pages, 1):
+                    break
+                if len(content) < 100:
+                    break
+            candidate_count_class = "ZERO" if not candidates else "ONE" if len(candidates) == 1 else "MULTIPLE"
+            record_property("candidate_count_class", candidate_count_class)
+            if len(candidates) > 100:
+                pytest.fail("BLOCKED_CREATE_RETURN_CANDIDATE_LIMIT", pytrace=False)
+
+            matches: list[tuple[str, dict]] = []
+            source_reference_match = False
+            for candidate_uuid in candidates:
+                try:
+                    detail = await receiver.get(
+                        NilveraEndpoints.GET_DRAFT_INVOICE_MODEL.format(uuid=candidate_uuid),
+                        correlation_id=correlation_label,
+                        retryable=False,
+                        stage="CREATE_RETURN_DRAFT_MODEL_RECONCILIATION",
+                    )
+                except NilveraNotFoundError:
+                    continue
+                if not isinstance(detail, dict):
+                    pytest.fail("BLOCKED_CREATE_RETURN_DETAIL_PARSE", pytrace=False)
+                if not _created_return_detail_matches(
+                    detail,
+                    original_buyer_tax_number=buyer_tax_number,
+                    original_seller_tax_number=seller_tax_number,
+                    source_provider_uuid=source_provider_uuid,
+                    hmac_key=hmac_key,
+                ):
+                    continue
+                source_reference_match = source_reference_match or _payload_contains_reference(
+                    detail,
+                    source_provider_uuid,
+                    hmac_key,
+                )
+                matches.append((candidate_uuid, detail))
+
+            match_count_class = "ZERO" if not matches else "ONE" if len(matches) == 1 else "MULTIPLE"
+            record_property("match_count_class", match_count_class)
+            record_property("source_reference_match", str(source_reference_match).lower())
+            if not matches:
+                pytest.fail("BLOCKED_CREATE_RETURN_NOT_FOUND", pytrace=False)
+            if len(matches) > 1:
+                pytest.fail("CONFLICT_CREATE_RETURN_MULTIPLE_MATCHES", pytrace=False)
+
+            _created_uuid, created_detail = matches[0]
+            created_document_found = bool(created_detail)
+            record_property("created_document_found", str(created_document_found).lower())
+            record_property("provider_status_class", "DRAFT_CREATED" if created_document_found else "NOT_RECORDED")
+            record_property("exact_http_status", str(receiver.last_http_status or "NOT_RECORDED"))
+            if not created_document_found:
+                pytest.fail("BLOCKED_CREATE_RETURN_STATUS_NOT_FOUND", pytrace=False)
+    except Exception as exc:
+        http_status = exc.http_status if isinstance(exc, NilveraApiError) else None
+        pytest.fail(
+            f"CreateReturn GET-only reconciliation failed (error_type={type(exc).__name__}, http_status={http_status}, write_count=0)",
+            pytrace=False,
+        )
 
 
 @pytest.mark.external
