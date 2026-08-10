@@ -93,6 +93,16 @@ ANSWER_STATE_APPROVED = "APPROVED"
 ANSWER_STATE_REJECTED = "REJECTED"
 ANSWER_STATE_AUTOMATIC = "ANSWERED_AUTOMATICALLY"
 ANSWER_STATE_UNSUPPORTED = "UNSUPPORTED"
+HISTORY_COUNT_ZERO = "ZERO"
+HISTORY_COUNT_ONE = "ONE"
+HISTORY_COUNT_MULTIPLE = "MULTIPLE"
+HISTORY_ANSWER_NOT_FOUND = "NOT_FOUND"
+HISTORY_ANSWER_CONFLICT = "CONFLICT"
+HISTORY_ACTOR_NOT_RECORDED = "NOT_RECORDED"
+HISTORY_ACTOR_SYSTEM = "SYSTEM"
+HISTORY_ACTOR_USER = "USER_PRESENT"
+HISTORY_ACTOR_MIXED = "MIXED"
+HISTORY_NOT_AVAILABLE = "NOT_AVAILABLE"
 
 _CORRELATION_FIELDS = (
     "InvoiceNumber",
@@ -224,6 +234,9 @@ class SandboxFixtureReconciliationResult:
     receiver_status_answer_state: str | None = None
     receiver_detail_answer_state: str | None = None
     receiver_answered_automatically: bool | None = None
+    history_event_count_class: str | None = None
+    history_answer_event_class: str | None = None
+    history_actor_class: str | None = None
 
 
 @dataclass(frozen=True)
@@ -236,6 +249,13 @@ class IncomingAnswerEligibility:
     @property
     def eligible(self) -> bool:
         return self.identity_match and self.document_match and self.answer_waiting and self.provider_ready
+
+
+@dataclass(frozen=True)
+class PurchaseHistoryDiagnostics:
+    event_count_class: str
+    answer_event_class: str
+    actor_class: str
 
 
 @dataclass(frozen=True)
@@ -425,6 +445,61 @@ def classify_incoming_answer_state(value: Any) -> str:
         "rejected": ANSWER_STATE_REJECTED,
         "documentansweredautomatically": ANSWER_STATE_AUTOMATIC,
     }.get(normalized, ANSWER_STATE_UNSUPPORTED)
+
+
+def _safe_history_tokens(value: Any) -> set[str]:
+    if not isinstance(value, str):
+        return set()
+    return set(re.findall(r"[a-zA-ZçğıöşüÇĞİÖŞÜ]+", value.casefold()))
+
+
+def classify_purchase_histories(payload: Any) -> PurchaseHistoryDiagnostics:
+    if not isinstance(payload, list):
+        raise SandboxFixtureBlocked("BLOCKED_PURCHASE_HISTORY_PARSE")
+
+    answer_events: list[tuple[str, str]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise SandboxFixtureBlocked("BLOCKED_PURCHASE_HISTORY_PARSE")
+        description_tokens = _safe_history_tokens(item.get("Description"))
+        if description_tokens & {"automatic", "automatically", "otomatik"}:
+            answer_state = ANSWER_STATE_AUTOMATIC
+        elif description_tokens & {"approved", "approval", "approve", "accepted", "accept", "onay", "onaylandı", "kabul"}:
+            answer_state = ANSWER_STATE_APPROVED
+        elif description_tokens & {"rejected", "reject", "red", "reddedildi", "ret"}:
+            answer_state = ANSWER_STATE_REJECTED
+        else:
+            continue
+
+        actor_tokens = _safe_history_tokens(item.get("UserName"))
+        if not actor_tokens:
+            actor_class = HISTORY_ACTOR_NOT_RECORDED
+        elif actor_tokens & {"api", "automatic", "nilvera", "service", "system", "otomatik"}:
+            actor_class = HISTORY_ACTOR_SYSTEM
+        else:
+            actor_class = HISTORY_ACTOR_USER
+        answer_events.append((answer_state, actor_class))
+
+    event_count_class = HISTORY_COUNT_ZERO
+    if len(payload) == 1:
+        event_count_class = HISTORY_COUNT_ONE
+    elif len(payload) > 1:
+        event_count_class = HISTORY_COUNT_MULTIPLE
+
+    if not answer_events:
+        return PurchaseHistoryDiagnostics(
+            event_count_class=event_count_class,
+            answer_event_class=HISTORY_ANSWER_NOT_FOUND,
+            actor_class=HISTORY_ACTOR_NOT_RECORDED,
+        )
+
+    answer_states = {event[0] for event in answer_events}
+    actor_classes = {event[1] for event in answer_events}
+    return PurchaseHistoryDiagnostics(
+        event_count_class=event_count_class,
+        answer_event_class=next(iter(answer_states)) if len(answer_states) == 1 else HISTORY_ANSWER_CONFLICT,
+        actor_class=next(iter(actor_classes)) if len(actor_classes) == 1 else HISTORY_ACTOR_MIXED,
+    )
 
 
 def ensure_fixture_write_attempt(workflow_run_attempt: int) -> None:
@@ -1382,6 +1457,9 @@ async def reconcile_incoming_commercial_fixture(
     receiver_status_answer_state = None
     receiver_detail_answer_state = None
     receiver_answered_automatically = None
+    history_event_count_class = None
+    history_answer_event_class = None
+    history_actor_class = None
     if incoming_matches:
         provider_uuid = incoming_matches[0]
         try:
@@ -1411,6 +1489,40 @@ async def reconcile_incoming_commercial_fixture(
         receiver_status_answer_state = classify_incoming_answer_state(status.answer_code)
         receiver_detail_answer_state = classify_incoming_answer_state(detail.answer_code)
         receiver_answered_automatically = receiver_status_answer_state == ANSWER_STATE_AUTOMATIC
+        if delivery_diagnostics and receiver_status_answer_state in {
+            ANSWER_STATE_APPROVED,
+            ANSWER_STATE_REJECTED,
+            ANSWER_STATE_AUTOMATIC,
+        }:
+            try:
+                histories = await receiver_client.get(
+                    NilveraEndpoints.GET_PURCHASE_INVOICE_HISTORIES.format(uuid=provider_uuid),
+                    correlation_id=correlation_label,
+                )
+            except NilveraNotFoundError:
+                history_event_count_class = HISTORY_NOT_AVAILABLE
+                history_answer_event_class = HISTORY_NOT_AVAILABLE
+                history_actor_class = HISTORY_NOT_AVAILABLE
+            except Exception as exc:
+                blocked = _reconciliation_query_failure(
+                    exc,
+                    failure_stage="RECEIVER_PURCHASE_HISTORIES",
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                )
+                raise _enrich_reconciliation_error(
+                    blocked,
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                    sender_page_count_class=outgoing_pages.page_count_class,
+                    receiver_page_count_class=incoming_pages.page_count_class,
+                    http_status=_combined_exact_http_status(sender_client, receiver_client),
+                ) from None
+            else:
+                history_diagnostics = classify_purchase_histories(histories)
+                history_event_count_class = history_diagnostics.event_count_class
+                history_answer_event_class = history_diagnostics.answer_event_class
+                history_actor_class = history_diagnostics.actor_class
         if not receiver_detail_match:
             raise SandboxFixtureFailed("FIXTURE_RECEIVER_RECONCILIATION_MISMATCH")
         receiver_visibility = FOUND
@@ -1438,6 +1550,9 @@ async def reconcile_incoming_commercial_fixture(
         receiver_status_answer_state=receiver_status_answer_state,
         receiver_detail_answer_state=receiver_detail_answer_state,
         receiver_answered_automatically=receiver_answered_automatically,
+        history_event_count_class=history_event_count_class,
+        history_answer_event_class=history_answer_event_class,
+        history_actor_class=history_actor_class,
     )
 
 

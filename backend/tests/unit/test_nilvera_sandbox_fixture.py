@@ -46,6 +46,15 @@ from tests.nilvera_sandbox_fixture import (
     FIELD_PRESENT,
     FORMAT_VALID,
     FOUND,
+    HISTORY_ACTOR_MIXED,
+    HISTORY_ACTOR_NOT_RECORDED,
+    HISTORY_ACTOR_SYSTEM,
+    HISTORY_ACTOR_USER,
+    HISTORY_ANSWER_CONFLICT,
+    HISTORY_ANSWER_NOT_FOUND,
+    HISTORY_COUNT_MULTIPLE,
+    HISTORY_COUNT_ONE,
+    HISTORY_COUNT_ZERO,
     MATCH_COUNT_ONE,
     MATCH_COUNT_ZERO,
     NOT_FOUND_OR_NOT_VISIBLE,
@@ -62,6 +71,7 @@ from tests.nilvera_sandbox_fixture import (
     build_fixture_request_uuid,
     classify_fixture_payload_contract,
     classify_incoming_answer_state,
+    classify_purchase_histories,
     company_owns_alias,
     ensure_fixture_invoice_date,
     ensure_fixture_payload_contract,
@@ -343,6 +353,54 @@ def test_incoming_answer_eligibility_fails_closed_for_non_waiting_or_non_ready_s
 )
 def test_incoming_answer_state_is_reduced_to_safe_metadata(raw_value, expected):
     assert classify_incoming_answer_state(raw_value) == expected
+
+
+def test_purchase_history_classification_never_returns_raw_actor_or_description():
+    result = classify_purchase_histories(
+        [
+            {
+                "CreatedDate": "2026-08-10T12:00:00Z",
+                "UserName": "private-operator-value",
+                "Description": "Fatura onaylandı private-document-value",
+            }
+        ]
+    )
+
+    assert result.event_count_class == HISTORY_COUNT_ONE
+    assert result.answer_event_class == ANSWER_STATE_APPROVED
+    assert result.actor_class == HISTORY_ACTOR_USER
+    assert "private" not in repr(result)
+
+
+@pytest.mark.parametrize(
+    ("payload", "count_class", "answer_class", "actor_class"),
+    [
+        ([], HISTORY_COUNT_ZERO, HISTORY_ANSWER_NOT_FOUND, HISTORY_ACTOR_NOT_RECORDED),
+        (
+            [{"Description": "Approved", "UserName": "system"}, {"Description": "Rejected", "UserName": "operator"}],
+            HISTORY_COUNT_MULTIPLE,
+            HISTORY_ANSWER_CONFLICT,
+            HISTORY_ACTOR_MIXED,
+        ),
+        (
+            [{"Description": "Otomatik olarak kabul edildi", "UserName": "Nilvera service"}],
+            HISTORY_COUNT_ONE,
+            ANSWER_STATE_AUTOMATIC,
+            HISTORY_ACTOR_SYSTEM,
+        ),
+    ],
+)
+def test_purchase_history_classification_is_fail_closed_and_safe(payload, count_class, answer_class, actor_class):
+    result = classify_purchase_histories(payload)
+
+    assert result.event_count_class == count_class
+    assert result.answer_event_class == answer_class
+    assert result.actor_class == actor_class
+
+
+def test_purchase_history_classification_rejects_non_list_payload():
+    with pytest.raises(SandboxFixtureBlocked, match="BLOCKED_PURCHASE_HISTORY_PARSE"):
+        classify_purchase_histories({"Content": []})
 
 
 def test_fixture_date_preflight_rejects_timezone_shifted_dto():
@@ -1112,6 +1170,68 @@ async def test_read_only_reconciliation_reports_automatic_answer_without_provide
     assert result.receiver_status_answer_state == ANSWER_STATE_AUTOMATIC
     assert result.receiver_detail_answer_state == ANSWER_STATE_AUTOMATIC
     assert result.receiver_answered_automatically is True
+    assert result.provider_write_count == 0
+    assert not hasattr(sender_client, "post")
+    assert not hasattr(receiver_client, "post")
+
+
+async def test_terminal_answer_diagnostics_reads_safe_purchase_history_without_write():
+    expected_alias = "urn:mail:defaultpk@sandbox.invalid"
+
+    async def sender_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": SELLER_TAX_NUMBER}
+        if path == NilveraEndpoints.LIST_SALE_INVOICES:
+            return {"Content": [{"UUID": PROVIDER_UUID, "InvoiceNumber": INVOICE_NUMBER}]}
+        if path == NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=PROVIDER_UUID):
+            return {
+                "InvoiceNumber": INVOICE_NUMBER,
+                "InvoiceProfile": "TICARIFATURA",
+                "InvoiceType": "SATIS",
+            }
+        if path == NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=PROVIDER_UUID):
+            return {"Status": "SUCCESS"}
+        if path == NilveraEndpoints.GET_SALE_INVOICE_ENVELOPE_INFO.format(uuid=PROVIDER_UUID):
+            return {"GIBCode": "1300"}
+        raise AssertionError("unexpected sender read")
+
+    async def receiver_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {
+                "TaxNumber": BUYER_TAX_NUMBER,
+                "Aliases": [{"Alias": expected_alias}],
+            }
+        if path == NilveraEndpoints.LIST_PURCHASE_INVOICES:
+            return {"Content": [{"UUID": PROVIDER_UUID, "InvoiceNumber": INVOICE_NUMBER}]}
+        if path == NilveraEndpoints.GET_PURCHASE_INVOICE_HISTORIES.format(uuid=PROVIDER_UUID):
+            return [{"Description": "Approved", "UserName": "system"}]
+        raise AssertionError("unexpected receiver read")
+
+    sender_client = SimpleNamespace(get=AsyncMock(side_effect=sender_get))
+    receiver_client = SimpleNamespace(get=AsyncMock(side_effect=receiver_get))
+    incoming_service = _incoming_service(visible=True, answer_code="approved", detail_answer_code="approved")
+    taxpayer_service = SimpleNamespace(get_taxpayer_aliases=AsyncMock(return_value=SimpleNamespace(aliases=[expected_alias])))
+
+    with (
+        patch("tests.nilvera_sandbox_fixture.NilveraIncomingService", return_value=incoming_service),
+        patch("tests.nilvera_sandbox_fixture.NilveraTaxpayerService", return_value=taxpayer_service),
+    ):
+        result = await reconcile_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            reference_time=NOW,
+            delivery_diagnostics=True,
+        )
+
+    assert result.history_event_count_class == HISTORY_COUNT_ONE
+    assert result.history_answer_event_class == ANSWER_STATE_APPROVED
+    assert result.history_actor_class == HISTORY_ACTOR_SYSTEM
     assert result.provider_write_count == 0
     assert not hasattr(sender_client, "post")
     assert not hasattr(receiver_client, "post")

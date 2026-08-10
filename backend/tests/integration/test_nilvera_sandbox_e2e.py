@@ -604,6 +604,9 @@ async def test_sandbox_reconcile_incoming_commercial_invoice_fixture(record_prop
         "receiver_answered_automatically",
         str(result.receiver_answered_automatically).lower() if result.receiver_answered_automatically is not None else "NOT_APPLICABLE",
     )
+    record_property("history_event_count_class", result.history_event_count_class or "NOT_APPLICABLE")
+    record_property("history_answer_event_class", result.history_answer_event_class or "NOT_APPLICABLE")
+    record_property("history_actor_class", result.history_actor_class or "NOT_APPLICABLE")
 
     if result.match_count_class == MATCH_COUNT_ZERO:
         pytest.fail(BLOCKED_NOT_FOUND_AFTER_EXHAUSTIVE_READ, pytrace=False)
