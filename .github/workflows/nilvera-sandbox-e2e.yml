@@ -38,6 +38,11 @@ on:
         required: false
         default: ''
         type: string
+      pilot_invoice_date:
+        description: "Explicit invoice IssueDate for the approved Sandbox mutation (YYYY-MM-DD)"
+        required: false
+        default: ''
+        type: string
       approved_head_sha:
         description: Exact reviewed commit authorized for a provider mutation
         required: false
@@ -135,7 +140,7 @@ jobs:
           CORRELATION_HMAC_KEY: ${{ secrets.NILVERA_E2E_CORRELATION_HMAC_KEY }}
           BUYER_VKN: ${{ secrets.NILVERA_E2E_BUYER_VKN }}
           SELLER_VKN: ${{ secrets.NILVERA_E2E_SELLER_VKN }}
-          PILOT_INVOICE_DATE: ${{ secrets.NILVERA_PILOT_INVOICE_DATE }}
+          PILOT_INVOICE_DATE: ${{ inputs.pilot_invoice_date }}
           APPROVED_HEAD_SHA: ${{ inputs.approved_head_sha }}
           ACTUAL_HEAD_SHA: ${{ github.sha }}
           CONFIRM_PROVIDER_WRITE: ${{ inputs.confirm_provider_write }}
@@ -208,8 +213,24 @@ jobs:
               exit 1
             fi
           elif [ "${RUN_INCOMING_ANSWER}" = "true" ]; then
-            if [ -z "${RECEIVER_KEY}" ] || [ -z "${CORRELATION_HMAC_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ] || [ -z "${RECONCILIATION_SOURCE_RUN_ID}" ] || [ -z "${RECONCILIATION_SOURCE_TIMESTAMP}" ] || [ -z "${PILOT_INVOICE_DATE}" ]; then
+            if [ -z "${RECEIVER_KEY}" ] || [ -z "${CORRELATION_HMAC_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ] || [ -z "${RECONCILIATION_SOURCE_RUN_ID}" ] || [ -z "${RECONCILIATION_SOURCE_TIMESTAMP}" ]; then
               echo "::error::BLOCKED_MISSING_ANSWER_SANDBOX_CONFIGURATION"
+              exit 1
+            fi
+            if ! PILOT_INVOICE_DATE="${PILOT_INVOICE_DATE}" python - <<'PY'
+          import os
+          from datetime import date
+
+          value = os.environ.get("PILOT_INVOICE_DATE", "")
+          try:
+              parsed = date.fromisoformat(value)
+          except ValueError:
+              raise SystemExit(1)
+          if parsed.isoformat() != value:
+              raise SystemExit(1)
+          PY
+            then
+              echo "::error::BLOCKED_INVALID_OR_MISSING_PILOT_INVOICE_DATE"
               exit 1
             fi
           elif [ "${RUN_OUTGOING_CONTRACT}" = "true" ] && { [ -z "${SENDER_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ]; }; then
@@ -233,7 +254,7 @@ jobs:
           NILVERA_E2E_SOURCE_RUN_ID: ${{ inputs.reconciliation_source_run_id }}
           NILVERA_E2E_SOURCE_RUN_TIMESTAMP: ${{ inputs.reconciliation_source_timestamp }}
           NILVERA_E2E_RUN_ID: ${{ github.run_id }}
-          NILVERA_PILOT_INVOICE_DATE: ${{ secrets.NILVERA_PILOT_INVOICE_DATE }}
+          NILVERA_PILOT_INVOICE_DATE: ${{ inputs.pilot_invoice_date }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
           MONGO_URL: ${{ env.MONGO_URL }}
           DB_NAME: ${{ env.DB_NAME }}

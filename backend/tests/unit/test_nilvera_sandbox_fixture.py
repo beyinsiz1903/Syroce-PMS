@@ -77,9 +77,13 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
     assert "run_incoming_fixture:" in workflow
     assert "run_reconciliation:" in workflow
     assert "reconciliation_source_timestamp:" in workflow
+    assert "pilot_invoice_date:" in workflow
+    assert 'description: "Explicit invoice IssueDate for the approved Sandbox mutation (YYYY-MM-DD)"' in workflow
     assert "default: false" in workflow
     assert "scripts/nilvera_sandbox_selector.py" in workflow
-    assert "NILVERA_PILOT_INVOICE_DATE: ${{ secrets.NILVERA_PILOT_INVOICE_DATE }}" in workflow
+    assert workflow.count("NILVERA_PILOT_INVOICE_DATE: ${{ inputs.pilot_invoice_date }}") == 1
+    assert "PILOT_INVOICE_DATE: ${{ inputs.pilot_invoice_date }}" in workflow
+    assert "secrets.NILVERA_PILOT_INVOICE_DATE" not in workflow
     assert "BLOCKED_INVALID_OR_MISSING_PILOT_INVOICE_DATE" in workflow
     assert 'if [ "${RUN_PREFLIGHT}" = "true" ]; then' in workflow
     assert 'elif [ "${RUN_INCOMING_FIXTURE}" = "true" ]; then' in workflow
@@ -128,6 +132,51 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
     )
     assert select_test_target(run_incoming_fixture=True, run_incoming_answer=False) == INCOMING_FIXTURE_TARGET
     assert select_test_target(run_incoming_fixture=False, run_incoming_answer=False, run_reconciliation=True) == RECONCILIATION_TARGET
+
+
+def test_workflow_explicit_date_gate_is_fail_closed_and_mode_scoped():
+    workflow = (Path(__file__).parents[3] / ".github/workflows/nilvera-sandbox-e2e.yml").read_text()
+    preflight_start = workflow.index('if [ "${RUN_PREFLIGHT}" = "true" ]; then')
+    fixture_start = workflow.index('elif [ "${RUN_INCOMING_FIXTURE}" = "true" ]; then')
+    reconciliation_start = workflow.index('elif [ "${RUN_RECONCILIATION}" = "true" ]; then')
+    answer_start = workflow.index('elif [ "${RUN_INCOMING_ANSWER}" = "true" ]; then')
+    outgoing_start = workflow.index('elif [ "${RUN_OUTGOING_CONTRACT}" = "true" ]')
+    test_step_start = workflow.index("- name: Run Nilvera Sandbox E2E Tests")
+
+    preflight_gate = workflow[preflight_start:fixture_start]
+    fixture_gate = workflow[fixture_start:reconciliation_start]
+    reconciliation_gate = workflow[reconciliation_start:answer_start]
+    answer_gate = workflow[answer_start:outgoing_start]
+    mutation_gate = workflow[workflow.index("mutation_requested=false") : preflight_start]
+
+    assert "PILOT_INVOICE_DATE" not in preflight_gate
+    assert "PILOT_INVOICE_DATE" not in reconciliation_gate
+    assert "date.fromisoformat(value)" in fixture_gate
+    assert "parsed.isoformat() != value" in fixture_gate
+    assert "BLOCKED_INVALID_OR_MISSING_PILOT_INVOICE_DATE" in fixture_gate
+    assert "date.fromisoformat(value)" in answer_gate
+    assert "parsed.isoformat() != value" in answer_gate
+    assert "BLOCKED_INVALID_OR_MISSING_PILOT_INVOICE_DATE" in answer_gate
+    assert "datetime.now" not in workflow
+    assert "date.today" not in workflow
+    assert "BLOCKED_EXACT_HEAD_NOT_APPROVED" in mutation_gate
+    assert "BLOCKED_DUPLICATE_FIXTURE_RUN_ATTEMPT" in mutation_gate
+    assert fixture_start < test_step_start
+    assert answer_start < test_step_start
+
+
+def test_reconciliation_identity_remains_source_run_based_without_date_input():
+    sandbox_test = (Path(__file__).parents[1] / "integration/test_nilvera_sandbox_e2e.py").read_text()
+    reconciliation_start = sandbox_test.index("async def test_sandbox_reconcile_incoming_commercial_invoice_fixture")
+    answer_start = sandbox_test.index("async def test_sandbox_incoming_commercial_invoice_answer_contract")
+    reconciliation_test = sandbox_test[reconciliation_start:answer_start]
+
+    assert 'source_run_id = os.environ.get("NILVERA_E2E_SOURCE_RUN_ID", "")' in reconciliation_test
+    assert 'source_timestamp = os.environ.get("NILVERA_E2E_SOURCE_RUN_TIMESTAMP", "")' in reconciliation_test
+    assert "NILVERA_PILOT_INVOICE_DATE" not in reconciliation_test
+    assert "reconcile_incoming_commercial_fixture(" in reconciliation_test
+    assert "run_id=source_run_id" in reconciliation_test
+    assert "reference_time=reference_time" in reconciliation_test
 
 
 async def test_read_only_client_blocks_non_get_methods_before_provider_access():
