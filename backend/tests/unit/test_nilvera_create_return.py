@@ -17,6 +17,7 @@ from core.integrations.nilvera.errors import (
 )
 from core.integrations.nilvera.return_adapter import NilveraReturnAdapter
 from tests.integration.test_nilvera_sandbox_e2e import (
+    _collect_uuid_values,
     _created_return_detail_matches,
     _payload_contains_reference,
 )
@@ -168,6 +169,7 @@ def test_created_return_reconciliation_matches_type_and_counterpart_with_hmac():
         detail,
         original_buyer_tax_number="receiver-tax",
         original_seller_tax_number="original-seller-tax",
+        source_provider_uuid="source-provider-uuid",
         hmac_key="safe-test-hmac-key-at-least-32-bytes",
     )
     assert _payload_contains_reference(
@@ -179,8 +181,20 @@ def test_created_return_reconciliation_matches_type_and_counterpart_with_hmac():
         detail,
         original_buyer_tax_number="different-receiver",
         original_seller_tax_number="original-seller-tax",
+        source_provider_uuid="different-source-provider-uuid",
         hmac_key="safe-test-hmac-key-at-least-32-bytes",
     )
+
+
+def test_create_return_reconciliation_collects_only_normalized_uuid_values():
+    first = str(uuid.uuid4())
+    second = str(uuid.uuid4())
+    payload = {
+        "UUID": first.upper(),
+        "Nested": [{"ReturnUUID": f" {second} "}, {"Other": "not-an-identifier"}],
+    }
+
+    assert _collect_uuid_values(payload) == {first, second}
 
 
 def test_create_return_reconciliation_target_is_get_only_and_redacted():

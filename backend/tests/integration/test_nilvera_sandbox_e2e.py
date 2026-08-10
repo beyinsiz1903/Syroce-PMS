@@ -22,6 +22,7 @@ from core.integrations.nilvera.document_service import NilveraDocumentService
 from core.integrations.nilvera.errors import (
     NilveraApiError,
     NilveraAuthError,
+    NilveraNotFoundError,
     NilveraServerError,
 )
 from core.integrations.nilvera.incoming import NilveraIncomingService
@@ -801,6 +802,7 @@ def _created_return_detail_matches(
     *,
     original_buyer_tax_number: str,
     original_seller_tax_number: str,
+    source_provider_uuid: str,
     hmac_key: str,
 ) -> bool:
     invoice_type = _nested_string(
@@ -825,20 +827,37 @@ def _created_return_detail_matches(
         ("Customer", "TaxNumber"),
         ("EInvoice", "CustomerInfo", "TaxNumber"),
     )
-    return (
-        invoice_type is not None
-        and invoice_type.casefold() in {"iade", "return"}
-        and _sensitive_value_matches(
-            supplier_tax_number,
-            original_buyer_tax_number,
-            hmac_key,
-        )
-        and _sensitive_value_matches(
-            customer_tax_number,
-            original_seller_tax_number,
-            hmac_key,
-        )
+    counterpart_match = _sensitive_value_matches(
+        supplier_tax_number,
+        original_buyer_tax_number,
+        hmac_key,
+    ) and _sensitive_value_matches(
+        customer_tax_number,
+        original_seller_tax_number,
+        hmac_key,
     )
+    source_reference_match = _payload_contains_reference(
+        detail,
+        source_provider_uuid,
+        hmac_key,
+    )
+    return invoice_type is not None and invoice_type.casefold() in {"iade", "return"} and (counterpart_match or source_reference_match)
+
+
+def _collect_uuid_values(payload: object) -> set[str]:
+    values: set[str] = set()
+    if isinstance(payload, dict):
+        for value in payload.values():
+            values.update(_collect_uuid_values(value))
+    elif isinstance(payload, list):
+        for value in payload:
+            values.update(_collect_uuid_values(value))
+    elif isinstance(payload, str):
+        try:
+            values.add(str(uuid.UUID(payload.strip())))
+        except (AttributeError, ValueError):
+            pass
+    return values
 
 
 def _payload_contains_reference(payload: object, expected: str, hmac_key: str) -> bool:
@@ -892,10 +911,21 @@ async def test_sandbox_reconcile_created_return(record_property):
             if not receiver_match:
                 pytest.fail("BLOCKED_CREATE_RETURN_RECEIVER_IDENTITY_MISMATCH", pytrace=False)
 
-            candidates: dict[str, dict] = {}
+            source_detail = await receiver.get(
+                NilveraEndpoints.GET_PURCHASE_INVOICE_DETAIL.format(uuid=source_provider_uuid),
+                correlation_id=correlation_label,
+                retryable=False,
+                stage="CREATE_RETURN_SOURCE_DETAIL_RECONCILIATION",
+            )
+            if not isinstance(source_detail, dict):
+                pytest.fail("BLOCKED_CREATE_RETURN_SOURCE_DETAIL_PARSE", pytrace=False)
+            linked_candidates = _collect_uuid_values(source_detail) - {source_provider_uuid}
+            record_property("linked_candidate_present", str(bool(linked_candidates)).lower())
+
+            candidates: dict[str, dict] = {candidate_uuid: {} for candidate_uuid in linked_candidates}
             params = {
-                "StartDate": (write_time - timedelta(minutes=5)).isoformat(),
-                "EndDate": (write_time + timedelta(minutes=5)).isoformat(),
+                "StartDate": (write_time - timedelta(days=1)).isoformat(),
+                "EndDate": (write_time + timedelta(days=1)).isoformat(),
                 "DateFilterType": "CreatedDate",
                 "SortColumn": "CreatedDate",
                 "SortType": "ASC",
@@ -926,24 +956,30 @@ async def test_sandbox_reconcile_created_return(record_property):
                     break
                 if len(content) < 100:
                     break
-            if len(candidates) > 20:
+            candidate_count_class = "ZERO" if not candidates else "ONE" if len(candidates) == 1 else "MULTIPLE"
+            record_property("candidate_count_class", candidate_count_class)
+            if len(candidates) > 100:
                 pytest.fail("BLOCKED_CREATE_RETURN_CANDIDATE_LIMIT", pytrace=False)
 
             matches: list[tuple[str, dict]] = []
             source_reference_match = False
             for candidate_uuid in candidates:
-                detail = await receiver.get(
-                    NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=candidate_uuid),
-                    correlation_id=correlation_label,
-                    retryable=False,
-                    stage="CREATE_RETURN_DETAIL_RECONCILIATION",
-                )
+                try:
+                    detail = await receiver.get(
+                        NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=candidate_uuid),
+                        correlation_id=correlation_label,
+                        retryable=False,
+                        stage="CREATE_RETURN_DETAIL_RECONCILIATION",
+                    )
+                except NilveraNotFoundError:
+                    continue
                 if not isinstance(detail, dict):
                     pytest.fail("BLOCKED_CREATE_RETURN_DETAIL_PARSE", pytrace=False)
                 if not _created_return_detail_matches(
                     detail,
                     original_buyer_tax_number=buyer_tax_number,
                     original_seller_tax_number=seller_tax_number,
+                    source_provider_uuid=source_provider_uuid,
                     hmac_key=hmac_key,
                 ):
                     continue
