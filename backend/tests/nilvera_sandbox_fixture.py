@@ -75,6 +75,7 @@ FIELD_MISSING = "FIELD_MISSING"
 FORMAT_VALID = "FORMAT_VALID"
 FORMAT_INVALID = "FORMAT_INVALID"
 TOTAL_MISMATCH = "TOTAL_MISMATCH"
+SANDBOX_FIXTURE_SERIES = "SYR"
 
 _CORRELATION_FIELDS = (
     "InvoiceNumber",
@@ -321,6 +322,17 @@ def build_fixture_identity(*, year: int, run_id: str, hmac_key: str) -> str:
     return identity
 
 
+def build_fixture_request_uuid(identity: str, hmac_key: str) -> uuid.UUID:
+    if _FIXTURE_ID_PATTERN.fullmatch(identity) is None or len(hmac_key) < 32:
+        raise SandboxFixtureBlocked("BLOCKED_INVALID_FIXTURE_ID_INPUT")
+    digest = hmac.new(
+        hmac_key.encode(),
+        f"nilvera-fixture-uuid:{identity}".encode(),
+        hashlib.sha256,
+    ).digest()
+    return uuid.UUID(bytes=digest[:16], version=4)
+
+
 def parse_pilot_invoice_date(value: str | None) -> date:
     """Parse the explicit pilot date without timezone conversion or a clock fallback."""
     if value is None or not value.strip():
@@ -404,8 +416,7 @@ def classify_fixture_payload_contract(payload: NilveraEInvoicePayload) -> dict[s
             einvoice.CustomerInfo.Country,
         )
     )
-    identity = info.InvoiceSerieOrNumber
-    identity_valid = bool(identity) and ((len(identity) == 3 and identity.isascii() and identity.isalnum()) or (len(identity) == 16 and _FIXTURE_ID_PATTERN.fullmatch(identity) is not None))
+    series_valid = info.InvoiceSerieOrNumber == SANDBOX_FIXTURE_SERIES
 
     return {
         "InvoiceInfo": FIELD_PRESENT,
@@ -434,7 +445,7 @@ def classify_fixture_payload_contract(payload: NilveraEInvoicePayload) -> dict[s
         "PayableAmount": FORMAT_VALID if info.PayableAmount == line_extension_sum + kdv_sum else TOTAL_MISMATCH,
         "SenderAlias": FIELD_MISSING,
         "ReceiverAlias": FIELD_PRESENT if bool(payload.CustomerAlias.strip()) else FIELD_MISSING,
-        "InvoiceSerieOrNumber": FORMAT_VALID if identity_valid else FORMAT_INVALID,
+        "InvoiceSerieOrNumber": FORMAT_VALID if series_valid else FORMAT_INVALID,
     }
 
 
@@ -468,6 +479,7 @@ def ensure_fixture_payload_contract(payload: NilveraEInvoicePayload) -> None:
 def build_fixture_payload(
     *,
     fixture_identity: str,
+    hmac_key: str,
     seller_tax_number: str,
     buyer_tax_number: str,
     buyer_alias: str,
@@ -492,7 +504,7 @@ def build_fixture_payload(
         invoice_number="LOCAL_VALUE_MUST_NOT_BE_USED",
         invoice_type="SATIS",
         profile="TICARIFATURA",
-        series=fixture_identity,
+        series=SANDBOX_FIXTURE_SERIES,
         currency="TRY",
         exchange_rate=Decimal("1.0"),
         issue_date=issue_date,
@@ -523,9 +535,12 @@ def build_fixture_payload(
             )
         ],
     )
-    payload = NilveraInvoiceMapper.map_to_nilvera(invoice, seller, buyer_alias, uuid.uuid4())
-    if payload.EInvoice.InvoiceInfo.InvoiceSerieOrNumber != fixture_identity:
-        raise SandboxFixtureFailed("FIXTURE_ID_TRANSFER_FAILED")
+    request_uuid = build_fixture_request_uuid(fixture_identity, hmac_key)
+    payload = NilveraInvoiceMapper.map_to_nilvera(invoice, seller, buyer_alias, request_uuid)
+    if payload.EInvoice.InvoiceInfo.InvoiceSerieOrNumber != SANDBOX_FIXTURE_SERIES:
+        raise SandboxFixtureFailed("FIXTURE_SERIES_TRANSFER_FAILED")
+    if payload.EInvoice.InvoiceInfo.UUID != str(request_uuid):
+        raise SandboxFixtureFailed("FIXTURE_UUID_TRANSFER_FAILED")
     if payload.EInvoice.InvoiceInfo.InvoiceProfile != "TICARIFATURA" or payload.EInvoice.InvoiceInfo.InvoiceType != "SATIS":
         raise SandboxFixtureFailed("FIXTURE_DOCUMENT_CONTRACT_FAILED")
     ensure_fixture_payload_contract(payload)
@@ -814,7 +829,7 @@ def _matches_counterpart(
 def _reconciliation_candidates(
     items: Sequence[dict[str, Any]],
     *,
-    target_digest: bytes,
+    target_digests: Sequence[bytes],
     hmac_key: str,
     counterpart_tax_number: str,
     counterpart_fields: Sequence[str],
@@ -822,12 +837,15 @@ def _reconciliation_candidates(
     tag_field_seen = False
     exact_matches: set[str] = set()
     for item in items:
+        raw_uuid = item.get("UUID") or item.get("Id")
+        if isinstance(raw_uuid, str) and any(_matches_fixture(raw_uuid, digest, hmac_key) for digest in target_digests):
+            exact_matches.add(_parse_candidate_uuid(item))
         for field in _CORRELATION_FIELDS:
             value = item.get(field)
             if not isinstance(value, str) or not value.strip():
                 continue
             tag_field_seen = True
-            if _matches_fixture(value, target_digest, hmac_key):
+            if any(_matches_fixture(value, digest, hmac_key) for digest in target_digests):
                 exact_matches.add(_parse_candidate_uuid(item))
 
     if exact_matches or tag_field_seen:
@@ -848,7 +866,13 @@ def _reconciliation_candidates(
     return _ReconciliationCandidates(tuple(sorted(narrowed)), True)
 
 
-def _detail_matches_fixture(detail: Any, *, target_digest: bytes, hmac_key: str) -> bool:
+def _detail_matches_fixture(
+    detail: Any,
+    *,
+    provider_uuid: str,
+    target_digests: Sequence[bytes],
+    hmac_key: str,
+) -> bool:
     if not isinstance(detail, dict):
         raise SandboxFixtureBlocked("BLOCKED_FIXTURE_RECONCILIATION_PARSE")
     invoice_number = detail.get("InvoiceNumber")
@@ -856,11 +880,7 @@ def _detail_matches_fixture(detail: Any, *, target_digest: bytes, hmac_key: str)
     invoice_type = detail.get("InvoiceType")
     if not all(isinstance(value, str) and value.strip() for value in (invoice_number, invoice_profile, invoice_type)):
         raise SandboxFixtureBlocked("BLOCKED_FIXTURE_RECONCILIATION_PARSE")
-    return (
-        _matches_fixture(invoice_number, target_digest, hmac_key)
-        and invoice_profile == "TICARIFATURA"
-        and invoice_type == "SATIS"
-    )
+    return any(_matches_fixture(value, digest, hmac_key) for value in (provider_uuid, invoice_number) for digest in target_digests) and invoice_profile == "TICARIFATURA" and invoice_type == "SATIS"
 
 
 async def reconcile_incoming_commercial_fixture(
@@ -890,7 +910,11 @@ async def reconcile_incoming_commercial_fixture(
 
     identity = build_fixture_identity(year=reference_time.year, run_id=run_id, hmac_key=hmac_key)
     correlation_label = fixture_correlation_label(identity, hmac_key)
-    target_digest = hmac.new(hmac_key.encode(), identity.encode(), hashlib.sha256).digest()
+    request_uuid = str(build_fixture_request_uuid(identity, hmac_key))
+    target_digests = (
+        hmac.new(hmac_key.encode(), request_uuid.encode(), hashlib.sha256).digest(),
+        hmac.new(hmac_key.encode(), identity.encode(), hashlib.sha256).digest(),
+    )
     params = {
         "StartDate": (reference_time - timedelta(days=RECONCILIATION_WINDOW_DAYS)).isoformat(),
         "EndDate": (reference_time + timedelta(days=RECONCILIATION_WINDOW_DAYS)).isoformat(),
@@ -923,14 +947,14 @@ async def reconcile_incoming_commercial_fixture(
     try:
         outgoing_candidates = _reconciliation_candidates(
             outgoing_pages.items,
-            target_digest=target_digest,
+            target_digests=target_digests,
             hmac_key=hmac_key,
             counterpart_tax_number=buyer_tax_number,
             counterpart_fields=_OUTGOING_COUNTERPART_FIELDS,
         )
         incoming_candidates = _reconciliation_candidates(
             incoming_pages.items,
-            target_digest=target_digest,
+            target_digests=target_digests,
             hmac_key=hmac_key,
             counterpart_tax_number=seller_tax_number,
             counterpart_fields=_INCOMING_COUNTERPART_FIELDS,
@@ -945,10 +969,7 @@ async def reconcile_incoming_commercial_fixture(
             http_status=exact_http_status,
         ) from None
 
-    if (
-        (not outgoing_candidates.used_detail_fallback and len(outgoing_candidates.provider_uuids) > 1)
-        or (not incoming_candidates.used_detail_fallback and len(incoming_candidates.provider_uuids) > 1)
-    ):
+    if (not outgoing_candidates.used_detail_fallback and len(outgoing_candidates.provider_uuids) > 1) or (not incoming_candidates.used_detail_fallback and len(incoming_candidates.provider_uuids) > 1):
         raise SandboxFixtureBlocked(
             "CONFLICT_FIXTURE_RECONCILIATION",
             sender_match=sender_match,
@@ -970,7 +991,8 @@ async def reconcile_incoming_commercial_fixture(
             )
             detail_matches = _detail_matches_fixture(
                 detail_response,
-                target_digest=target_digest,
+                provider_uuid=provider_uuid,
+                target_digests=target_digests,
                 hmac_key=hmac_key,
             )
         except SandboxFixtureError as exc:
@@ -1023,7 +1045,7 @@ async def reconcile_incoming_commercial_fixture(
                 http_status=_combined_exact_http_status(sender_client, receiver_client),
             ) from None
         if (
-            _matches_fixture(detail.invoice_number, target_digest, hmac_key)
+            any(_matches_fixture(value, digest, hmac_key) for value in (detail.provider_uuid, detail.invoice_number) for digest in target_digests)
             and detail.invoice_profile == "TICARIFATURA"
             and detail.invoice_type == "SATIS"
         ):
@@ -1105,7 +1127,8 @@ async def reconcile_incoming_commercial_fixture(
             ) from None
         outgoing_detail_match = _detail_matches_fixture(
             outgoing_details[provider_uuid],
-            target_digest=target_digest,
+            provider_uuid=provider_uuid,
+            target_digests=target_digests,
             hmac_key=hmac_key,
         )
         if outgoing_outcome == ProviderInvoiceOutcome.UNKNOWN or not outgoing_detail_match:
@@ -1136,7 +1159,7 @@ async def reconcile_incoming_commercial_fixture(
             ) from None
         detail = incoming_details[provider_uuid]
         receiver_detail_match = (
-            _matches_fixture(detail.invoice_number, target_digest, hmac_key)
+            any(_matches_fixture(value, digest, hmac_key) for value in (detail.provider_uuid, detail.invoice_number) for digest in target_digests)
             and detail.invoice_profile == "TICARIFATURA"
             and detail.invoice_type == "SATIS"
         )
@@ -1190,9 +1213,11 @@ async def prepare_incoming_commercial_fixture(
 
     current_time = datetime.combine(invoice_date, time.min, tzinfo=UTC)
     identity = build_fixture_identity(year=invoice_date.year, run_id=run_id, hmac_key=hmac_key)
+    request_uuid = str(build_fixture_request_uuid(identity, hmac_key))
     correlation_label = fixture_correlation_label(identity, hmac_key)
     payload = build_fixture_payload(
         fixture_identity=identity,
+        hmac_key=hmac_key,
         seller_tax_number=seller_tax_number,
         buyer_tax_number=buyer_tax_number,
         buyer_alias=buyer_alias,
@@ -1238,6 +1263,14 @@ async def prepare_incoming_commercial_fixture(
             exception_type="ResponseParseError",
             write_disposition=AMBIGUOUS_WRITE,
         ) from None
+    if provider_uuid != request_uuid:
+        raise SandboxFixtureBlocked(
+            "BLOCKED_FIXTURE_UUID_MISMATCH",
+            provider_write_count=provider_write_count,
+            failure_stage="SEND_RESPONSE_PARSE",
+            exception_type="ResponseParseError",
+            write_disposition=AMBIGUOUS_WRITE,
+        )
 
     provider_outcome = ProviderInvoiceOutcome.PENDING
     for delay in outgoing_delays:
@@ -1259,7 +1292,7 @@ async def prepare_incoming_commercial_fixture(
     else:
         raise SandboxFixtureBlocked("BLOCKED_FIXTURE_SALE_STATUS_PENDING", provider_write_count=provider_write_count)
 
-    target_digest = hmac.new(hmac_key.encode(), identity.encode(), hashlib.sha256).digest()
+    target_digest = hmac.new(hmac_key.encode(), request_uuid.encode(), hashlib.sha256).digest()
     incoming_service = NilveraIncomingService(receiver_client)
     end_date = current_time
     start_date = end_date - timedelta(days=31)
@@ -1270,14 +1303,14 @@ async def prepare_incoming_commercial_fixture(
         except Exception:
             raise SandboxFixtureFailed("FIXTURE_RECEIVER_LIST_QUERY_FAILED", provider_write_count=provider_write_count) from None
         for summary in page.items:
-            if not _matches_fixture(summary.invoice_number, target_digest, hmac_key):
+            if not _matches_fixture(summary.provider_uuid, target_digest, hmac_key):
                 continue
             try:
                 detail = await incoming_service.fetch_incoming_invoice_detail(summary.provider_uuid)
                 status = await incoming_service.fetch_incoming_invoice_status(summary.provider_uuid)
             except Exception:
                 raise SandboxFixtureFailed("FIXTURE_RECEIVER_VERIFICATION_FAILED", provider_write_count=provider_write_count) from None
-            if detail.invoice_profile != "TICARIFATURA" or detail.invoice_type != "SATIS":
+            if not _matches_fixture(detail.provider_uuid, target_digest, hmac_key) or detail.invoice_profile != "TICARIFATURA" or detail.invoice_type != "SATIS":
                 raise SandboxFixtureFailed("FIXTURE_RECEIVER_DOCUMENT_MISMATCH", provider_write_count=provider_write_count)
             if _normalize(status.status_code) not in {"succeed", "success"}:
                 raise SandboxFixtureBlocked("BLOCKED_FIXTURE_RECEIVER_NOT_READY", provider_write_count=provider_write_count)

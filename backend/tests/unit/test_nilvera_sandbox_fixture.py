@@ -37,12 +37,14 @@ from tests.nilvera_sandbox_fixture import (
     PAGE_COUNT_ONE,
     PAGE_COUNT_TWO_TO_FIVE,
     RECONCILIATION_MAX_PAGES,
+    SANDBOX_FIXTURE_SERIES,
     TOTAL_MISMATCH,
     ReadOnlySandboxClient,
     SandboxFixtureBlocked,
     SandboxFixtureFailed,
     build_fixture_identity,
     build_fixture_payload,
+    build_fixture_request_uuid,
     classify_fixture_payload_contract,
     ensure_fixture_invoice_date,
     ensure_fixture_payload_contract,
@@ -61,11 +63,14 @@ BUYER_TAX_NUMBER = "2222222222"
 RUN_ID = "31000000000"
 NOW = datetime(2026, 8, 6, 12, 0, tzinfo=UTC)
 PILOT_DATE = "2026-08-06"
-PROVIDER_UUID = "123e4567-e89b-12d3-a456-426614174000"
+FIXTURE_IDENTITY = build_fixture_identity(year=NOW.year, run_id=RUN_ID, hmac_key=HMAC_KEY)
+PROVIDER_UUID = str(build_fixture_request_uuid(FIXTURE_IDENTITY, HMAC_KEY))
+INVOICE_NUMBER = "SYR2026000000001"
 
 
 def test_workflow_sandbox_modes_are_mutually_exclusive():
     workflow = (Path(__file__).parents[3] / ".github/workflows/nilvera-sandbox-e2e.yml").read_text()
+    sandbox_test = (Path(__file__).parents[1] / "integration/test_nilvera_sandbox_e2e.py").read_text()
 
     assert "run_preflight:" in workflow
     assert "run_outgoing_contract:" in workflow
@@ -74,10 +79,7 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
     assert "reconciliation_source_timestamp:" in workflow
     assert "default: false" in workflow
     assert "scripts/nilvera_sandbox_selector.py" in workflow
-    assert (
-        "NILVERA_PILOT_INVOICE_DATE: ${{ secrets.NILVERA_PILOT_INVOICE_DATE }}"
-        in workflow
-    )
+    assert "NILVERA_PILOT_INVOICE_DATE: ${{ secrets.NILVERA_PILOT_INVOICE_DATE }}" in workflow
     assert "BLOCKED_INVALID_OR_MISSING_PILOT_INVOICE_DATE" in workflow
     assert 'if [ "${RUN_PREFLIGHT}" = "true" ]; then' in workflow
     assert 'elif [ "${RUN_INCOMING_FIXTURE}" = "true" ]; then' in workflow
@@ -85,6 +87,11 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
     assert "BLOCKED_EXACT_HEAD_NOT_APPROVED" in workflow
     assert "BLOCKED_PROVIDER_WRITE_NOT_CONFIRMED" in workflow
     assert "BLOCKED_TEST_ACCOUNT_NOT_ATTESTED" in workflow
+    assert "BLOCKED_MISSING_ANSWER_SANDBOX_CONFIGURATION" in workflow
+    assert "RECONCILIATION_SOURCE_RUN_ID" in workflow
+    assert "RECONCILIATION_SOURCE_TIMESTAMP" in workflow
+    assert "summary.provider_uuid != target_provider_uuid" in sandbox_test
+    assert 'summary.invoice_number.startswith(f"TST' not in sandbox_test
     assert "WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}" in workflow
     with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
         select_test_target(run_incoming_fixture=True, run_incoming_answer=True, run_reconciliation=False)
@@ -147,11 +154,12 @@ async def test_read_only_client_blocks_non_get_methods_before_provider_access():
     assert client.exact_http_status == 200
 
 
-def test_fixture_identity_is_transferred_to_invoice_serie_or_number():
+def test_supported_series_and_deterministic_uuid_are_transferred_without_local_number_correlation():
     identity = build_fixture_identity(year=NOW.year, run_id=RUN_ID, hmac_key=HMAC_KEY)
 
     payload = build_fixture_payload(
         fixture_identity=identity,
+        hmac_key=HMAC_KEY,
         seller_tax_number=SELLER_TAX_NUMBER,
         buyer_tax_number=BUYER_TAX_NUMBER,
         buyer_alias="urn:mail:defaultpk@sandbox.invalid",
@@ -160,8 +168,10 @@ def test_fixture_identity_is_transferred_to_invoice_serie_or_number():
 
     assert len(identity) == 16
     assert identity.startswith("TST2026")
-    assert payload.EInvoice.InvoiceInfo.InvoiceSerieOrNumber == identity
+    assert payload.EInvoice.InvoiceInfo.InvoiceSerieOrNumber == SANDBOX_FIXTURE_SERIES
+    assert payload.EInvoice.InvoiceInfo.InvoiceSerieOrNumber != identity
     assert payload.EInvoice.InvoiceInfo.InvoiceSerieOrNumber != "LOCAL_VALUE_MUST_NOT_BE_USED"
+    assert payload.EInvoice.InvoiceInfo.UUID == str(build_fixture_request_uuid(identity, HMAC_KEY))
     assert payload.EInvoice.InvoiceInfo.LineExtensionAmount == Decimal("1.00")
     assert payload.EInvoice.InvoiceInfo.GeneralKDV20Total == Decimal("0.20")
     assert payload.EInvoice.InvoiceInfo.GeneralAllowanceTotal == Decimal("0.00")
@@ -191,6 +201,7 @@ def test_fixture_date_preflight_rejects_timezone_shifted_dto():
     shifted = datetime(2026, 8, 6, 0, 0, tzinfo=timezone(timedelta(hours=3)))
     payload = build_fixture_payload(
         fixture_identity=identity,
+        hmac_key=HMAC_KEY,
         seller_tax_number=SELLER_TAX_NUMBER,
         buyer_tax_number=BUYER_TAX_NUMBER,
         buyer_alias="urn:mail:defaultpk@sandbox.invalid",
@@ -205,6 +216,7 @@ def test_fixture_payload_matches_official_send_model_contract_shape():
     identity = build_fixture_identity(year=NOW.year, run_id=RUN_ID, hmac_key=HMAC_KEY)
     payload = build_fixture_payload(
         fixture_identity=identity,
+        hmac_key=HMAC_KEY,
         seller_tax_number=SELLER_TAX_NUMBER,
         buyer_tax_number=BUYER_TAX_NUMBER,
         buyer_alias="urn:mail:defaultpk@sandbox.invalid",
@@ -256,6 +268,7 @@ def test_fixture_payload_monetary_totals_are_consistent():
     identity = build_fixture_identity(year=NOW.year, run_id=RUN_ID, hmac_key=HMAC_KEY)
     payload = build_fixture_payload(
         fixture_identity=identity,
+        hmac_key=HMAC_KEY,
         seller_tax_number=SELLER_TAX_NUMBER,
         buyer_tax_number=BUYER_TAX_NUMBER,
         buyer_alias="urn:mail:defaultpk@sandbox.invalid",
@@ -375,13 +388,13 @@ def _clients(*, sale_status: str = "SUCCESS", post_side_effect=None):
 
 
 def _incoming_service(*, visible: bool):
-    identity = build_fixture_identity(year=NOW.year, run_id=RUN_ID, hmac_key=HMAC_KEY)
-    items = (SimpleNamespace(invoice_number=identity, provider_uuid=PROVIDER_UUID),) if visible else ()
+    items = (SimpleNamespace(invoice_number=INVOICE_NUMBER, provider_uuid=PROVIDER_UUID),) if visible else ()
     return SimpleNamespace(
         fetch_incoming_invoices=AsyncMock(return_value=SimpleNamespace(items=items)),
         fetch_incoming_invoice_detail=AsyncMock(
             return_value=SimpleNamespace(
-                invoice_number=identity,
+                provider_uuid=PROVIDER_UUID,
+                invoice_number=INVOICE_NUMBER,
                 invoice_profile="TICARIFATURA",
                 invoice_type="SATIS",
             )
@@ -425,6 +438,33 @@ async def test_fixture_sends_at_most_one_provider_write():
     assert kwargs["json"]["EInvoice"]["InvoiceInfo"]["IssueDate"].startswith(PILOT_DATE)
     assert kwargs["json"]["EInvoice"]["InvoiceInfo"]["InvoiceProfile"] == "TICARIFATURA"
     assert kwargs["json"]["EInvoice"]["InvoiceInfo"]["InvoiceType"] == "SATIS"
+    assert kwargs["json"]["EInvoice"]["InvoiceInfo"]["InvoiceSerieOrNumber"] == SANDBOX_FIXTURE_SERIES
+    assert kwargs["json"]["EInvoice"]["InvoiceInfo"]["UUID"] == PROVIDER_UUID
+
+
+async def test_fixture_response_uuid_mismatch_blocks_without_second_write():
+    sender_client, receiver_client = _clients()
+    sender_client.post = AsyncMock(return_value={"UUID": "123e4567-e89b-12d3-a456-426614174000"})
+
+    with pytest.raises(SandboxFixtureBlocked, match="BLOCKED_FIXTURE_UUID_MISMATCH") as exc_info:
+        await prepare_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            buyer_alias="urn:mail:defaultpk@sandbox.invalid",
+            pilot_invoice_date=PILOT_DATE,
+            workflow_run_attempt=1,
+            sleeper=AsyncMock(),
+        )
+
+    assert exc_info.value.provider_write_count == 1
+    assert exc_info.value.write_disposition == AMBIGUOUS_WRITE
+    sender_client.post.assert_awaited_once()
 
 
 async def test_fixture_timeout_does_not_retry_provider_write():
@@ -488,10 +528,7 @@ async def test_fixture_validation_rejection_is_definitive_and_sanitized():
 
 
 async def test_fixture_422_code_2004_is_definitive_with_safe_validation_issue_and_no_retry():
-    support_detail = (
-        "Fatura Veritabanına Kaydedilemedi. Hata: TEST-INVOICE Numaralı Fatura "
-        "'2026-03-23 | 2026-03-23 Tarihleri Arasında Olmalıdır.'"
-    )
+    support_detail = "Fatura Veritabanına Kaydedilemedi. Hata: TEST-INVOICE Numaralı Fatura '2026-03-23 | 2026-03-23 Tarihleri Arasında Olmalıdır.'"
     error = NilveraValidationError(
         "provider rejected fixture",
         http_status=422,
@@ -520,10 +557,7 @@ async def test_fixture_422_code_2004_is_definitive_with_safe_validation_issue_an
     assert exc_info.value.http_status == 422
     assert exc_info.value.provider_code == "2004"
     assert exc_info.value.validation_issue == "FIELD=InvoiceInfo.IssueDate;REASON=DATE_OUT_OF_RANGE"
-    assert exc_info.value.validation_detail == (
-        "FIELD=InvoiceInfo.IssueDate;REASON=DATE_OUT_OF_RANGE;"
-        "WINDOW_START=2026-03-23;WINDOW_END=2026-03-23"
-    )
+    assert exc_info.value.validation_detail == ("FIELD=InvoiceInfo.IssueDate;REASON=DATE_OUT_OF_RANGE;WINDOW_START=2026-03-23;WINDOW_END=2026-03-23")
     assert exc_info.value.classification == "VALIDATION_REJECTED"
     assert exc_info.value.write_disposition == DEFINITIVE_REJECTION
     assert exc_info.value.provider_write_count == 1
@@ -535,6 +569,7 @@ async def test_fixture_date_mismatch_blocks_with_zero_provider_writes():
     identity = build_fixture_identity(year=2026, run_id=RUN_ID, hmac_key=HMAC_KEY)
     mismatched_payload = build_fixture_payload(
         fixture_identity=identity,
+        hmac_key=HMAC_KEY,
         seller_tax_number=SELLER_TAX_NUMBER,
         buyer_tax_number=BUYER_TAX_NUMBER,
         buyer_alias="urn:mail:defaultpk@sandbox.invalid",
@@ -655,18 +690,16 @@ async def test_fixture_not_visible_on_receiver_is_blocked():
 
 
 async def test_read_only_reconciliation_finds_exact_outgoing_and_incoming_fixture():
-    identity = build_fixture_identity(year=NOW.year, run_id=RUN_ID, hmac_key=HMAC_KEY)
-
     async def sender_get(path, **kwargs):
         if path == NilveraEndpoints.GET_COMPANY:
             return {"TaxNumber": SELLER_TAX_NUMBER}
         if path == NilveraEndpoints.LIST_SALE_INVOICES:
-            return {"Content": [{"UUID": PROVIDER_UUID, "InvoiceNumber": identity}]}
+            return {"Content": [{"UUID": PROVIDER_UUID, "InvoiceNumber": INVOICE_NUMBER}]}
         if path == NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=PROVIDER_UUID):
             return {"Status": "SUCCESS"}
         if path == NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=PROVIDER_UUID):
             return {
-                "InvoiceNumber": identity,
+                "InvoiceNumber": INVOICE_NUMBER,
                 "InvoiceProfile": "TICARIFATURA",
                 "InvoiceType": "SATIS",
             }
@@ -675,7 +708,7 @@ async def test_read_only_reconciliation_finds_exact_outgoing_and_incoming_fixtur
     async def receiver_get(path, **kwargs):
         if path == NilveraEndpoints.GET_COMPANY:
             return {"TaxNumber": BUYER_TAX_NUMBER}
-        return {"Content": [{"UUID": PROVIDER_UUID, "InvoiceNumber": identity}]}
+        return {"Content": [{"UUID": PROVIDER_UUID, "InvoiceNumber": INVOICE_NUMBER}]}
 
     sender_client = SimpleNamespace(get=AsyncMock(side_effect=sender_get))
     receiver_client = SimpleNamespace(get=AsyncMock(side_effect=receiver_get))
@@ -904,18 +937,16 @@ async def test_read_only_reconciliation_stops_on_multiple_exact_matches():
 
 
 async def test_read_only_reconciliation_scans_all_pages_to_find_exact_fixture():
-    identity = build_fixture_identity(year=NOW.year, run_id=RUN_ID, hmac_key=HMAC_KEY)
-
     async def sender_get(path, **kwargs):
         if path == NilveraEndpoints.GET_COMPANY:
             return {"TaxNumber": SELLER_TAX_NUMBER}
         if path == NilveraEndpoints.LIST_SALE_INVOICES:
             page = int(kwargs["params"]["Page"])
-            content = [{"UUID": PROVIDER_UUID, "InvoiceNumber": identity}] if page == 2 else []
+            content = [{"UUID": PROVIDER_UUID, "InvoiceNumber": INVOICE_NUMBER}] if page == 2 else []
             return {"TotalPages": 2, "Content": content}
         if path == NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=PROVIDER_UUID):
             return {
-                "InvoiceNumber": identity,
+                "InvoiceNumber": INVOICE_NUMBER,
                 "InvoiceProfile": "TICARIFATURA",
                 "InvoiceType": "SATIS",
             }
@@ -927,7 +958,7 @@ async def test_read_only_reconciliation_scans_all_pages_to_find_exact_fixture():
         if path == NilveraEndpoints.GET_COMPANY:
             return {"TaxNumber": BUYER_TAX_NUMBER}
         page = int(kwargs["params"]["Page"])
-        content = [{"UUID": PROVIDER_UUID, "InvoiceNumber": identity}] if page == 3 else []
+        content = [{"UUID": PROVIDER_UUID, "InvoiceNumber": INVOICE_NUMBER}] if page == 3 else []
         return {"TotalPages": 3, "Content": content}
 
     sender_delegate = SimpleNamespace(get=AsyncMock(side_effect=sender_get), last_http_status=200)
@@ -953,16 +984,8 @@ async def test_read_only_reconciliation_scans_all_pages_to_find_exact_fixture():
     assert result.sender_page_count_class == PAGE_COUNT_TWO_TO_FIVE
     assert result.receiver_page_count_class == PAGE_COUNT_TWO_TO_FIVE
     assert result.http_status == 200
-    sender_pages = [
-        call.kwargs["params"]["Page"]
-        for call in sender_delegate.get.await_args_list
-        if call.args[0] == NilveraEndpoints.LIST_SALE_INVOICES
-    ]
-    receiver_pages = [
-        call.kwargs["params"]["Page"]
-        for call in receiver_delegate.get.await_args_list
-        if call.args[0] == NilveraEndpoints.LIST_PURCHASE_INVOICES
-    ]
+    sender_pages = [call.kwargs["params"]["Page"] for call in sender_delegate.get.await_args_list if call.args[0] == NilveraEndpoints.LIST_SALE_INVOICES]
+    receiver_pages = [call.kwargs["params"]["Page"] for call in receiver_delegate.get.await_args_list if call.args[0] == NilveraEndpoints.LIST_PURCHASE_INVOICES]
     assert sender_pages == ["1", "2"]
     assert receiver_pages == ["1", "2", "3"]
 

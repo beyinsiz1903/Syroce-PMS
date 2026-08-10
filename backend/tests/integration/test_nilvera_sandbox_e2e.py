@@ -50,8 +50,11 @@ from tests.nilvera_sandbox_fixture import (
     NOT_FOUND_OR_NOT_VISIBLE,
     ReadOnlySandboxClient,
     SandboxFixtureError,
+    build_fixture_identity,
+    build_fixture_request_uuid,
     company_identity_matches,
     ensure_distinct_sandbox_keys,
+    pilot_invoice_datetime,
     prepare_incoming_commercial_fixture,
     reconcile_incoming_commercial_fixture,
 )
@@ -100,12 +103,13 @@ def check_missing_secrets() -> bool:
     answer_mode = os.environ.get("NILVERA_E2E_INCOMING_ANSWER_ALLOWED", "false").lower() == "true"
     reconciliation_mode = os.environ.get("NILVERA_E2E_RECONCILIATION_ALLOWED", "false").lower() == "true"
 
-    if fixture_mode or reconciliation_mode:
+    if fixture_mode or reconciliation_mode or answer_mode:
         hmac_key = os.environ.get("NILVERA_E2E_CORRELATION_HMAC_KEY")
-        run_id_name = "NILVERA_E2E_SOURCE_RUN_ID" if reconciliation_mode else "NILVERA_E2E_RUN_ID"
+        run_id_name = "NILVERA_E2E_RUN_ID" if fixture_mode else "NILVERA_E2E_SOURCE_RUN_ID"
         run_id = os.environ.get(run_id_name)
-        source_timestamp = os.environ.get("NILVERA_E2E_SOURCE_RUN_TIMESTAMP") if reconciliation_mode else "not-required"
-        return not (sender_key and receiver_key and hmac_key and run_id and source_timestamp and buyer and seller)
+        source_timestamp = os.environ.get("NILVERA_E2E_SOURCE_RUN_TIMESTAMP") if not fixture_mode else "not-required"
+        selected_keys_present = bool(sender_key and receiver_key) if not answer_mode else bool(receiver_key)
+        return not (selected_keys_present and hmac_key and run_id and source_timestamp and buyer and seller)
     selected_key = receiver_key if answer_mode else sender_key
     return not (selected_key and buyer and seller)
 
@@ -312,7 +316,7 @@ async def test_sandbox_invoice_submission_and_polling_flow(sandbox_client, buyer
         invoice_number=inv_no,
         invoice_type="SATIS",
         profile="TICARIFATURA",
-        series="TST",
+        series="SYR",
         currency="TRY",
         exchange_rate=Decimal("1.0"),
         issue_date=datetime.now(UTC),
@@ -598,6 +602,23 @@ async def test_sandbox_incoming_commercial_invoice_answer_contract(sandbox_clien
     if "localhost" not in mongo_url and "127.0.0.1" not in mongo_url:
         pytest.fail("Incoming answer lifecycle E2E requires the isolated local Mongo service")
 
+    hmac_key = os.environ.get("NILVERA_E2E_CORRELATION_HMAC_KEY", "")
+    source_run_id = os.environ.get("NILVERA_E2E_SOURCE_RUN_ID", "")
+    source_timestamp = os.environ.get("NILVERA_E2E_SOURCE_RUN_TIMESTAMP", "")
+    try:
+        reference_time = datetime.fromisoformat(source_timestamp.replace("Z", "+00:00"))
+        if reference_time.tzinfo is None or reference_time.utcoffset() is None:
+            raise ValueError
+        fixture_time = pilot_invoice_datetime(os.environ.get("NILVERA_PILOT_INVOICE_DATE"))
+        identity = build_fixture_identity(
+            year=fixture_time.year,
+            run_id=source_run_id,
+            hmac_key=hmac_key,
+        )
+        target_provider_uuid = str(build_fixture_request_uuid(identity, hmac_key))
+    except (SandboxFixtureError, ValueError):
+        pytest.fail("BLOCKED_INVALID_ANSWER_FIXTURE_SOURCE", pytrace=False)
+
     from bootstrap.migrations.versions.v005_incoming_invoice_lifecycle import MIGRATION as v005
     from bootstrap.migrations.versions.v006_incoming_invoice_answer_atomicity import MIGRATION as v006
     from bootstrap.migrations.versions.v007_f2_create_return_models import MIGRATION as v007
@@ -612,8 +633,8 @@ async def test_sandbox_incoming_commercial_invoice_answer_contract(sandbox_clien
 
     tenant_id = f"nilvera-answer-e2e-{uuid.uuid4().hex}"
     tenant_db = get_db_for_tenant(tenant_id)
-    end_date = datetime.now(UTC)
-    start_date = end_date - timedelta(days=31)
+    end_date = fixture_time + timedelta(days=1)
+    start_date = fixture_time - timedelta(days=31)
     provider_uuid = None
     provider_write_count = 0
     provider_state = NilveraIncomingAnswerState.UNKNOWN
@@ -645,7 +666,7 @@ async def test_sandbox_incoming_commercial_invoice_answer_contract(sandbox_clien
                 for summary in page.items:
                     normalized_answer = "".join(character for character in (summary.answer_code or "").lower() if character.isalnum())
                     normalized_status = "".join(character for character in (summary.status_code or "").upper() if character.isalnum())
-                    if not summary.invoice_number.startswith(f"TST{end_date.year}"):
+                    if summary.provider_uuid != target_provider_uuid:
                         continue
                     if normalized_answer not in {"", "waitingforapproval"}:
                         continue
@@ -656,7 +677,7 @@ async def test_sandbox_incoming_commercial_invoice_answer_contract(sandbox_clien
                         status = await incoming_service.fetch_incoming_invoice_status(summary.provider_uuid)
                     except Exception as exc:
                         fail_safely("candidate verification", exc)
-                    if detail.invoice_profile != "TICARIFATURA":
+                    if detail.provider_uuid != target_provider_uuid or detail.invoice_profile != "TICARIFATURA":
                         continue
                     verified_answer = "".join(character for character in (status.answer_code or "").lower() if character.isalnum())
                     verified_status = "".join(character for character in status.status_code.upper() if character.isalnum())

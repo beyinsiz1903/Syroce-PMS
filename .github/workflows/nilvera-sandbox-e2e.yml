@@ -208,7 +208,7 @@ jobs:
               exit 1
             fi
           elif [ "${RUN_INCOMING_ANSWER}" = "true" ]; then
-            if [ -z "${RECEIVER_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ]; then
+            if [ -z "${RECEIVER_KEY}" ] || [ -z "${CORRELATION_HMAC_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ] || [ -z "${RECONCILIATION_SOURCE_RUN_ID}" ] || [ -z "${RECONCILIATION_SOURCE_TIMESTAMP}" ] || [ -z "${PILOT_INVOICE_DATE}" ]; then
               echo "::error::BLOCKED_MISSING_ANSWER_SANDBOX_CONFIGURATION"
               exit 1
             fi
