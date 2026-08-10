@@ -46,7 +46,7 @@ logger = logging.getLogger("hotelrunner.ari_pilot")
 
 _OFFICIAL_PILOT_BASE_URL = "https://app.hotelrunner.com"
 _WRITE_OPERATIONS = frozenset({"availability", "rate", "stop_sell", "restriction"})
-_ALLOWED_GET_PATHS = frozenset({ep.CHANNELS, ep.ROOMS, ep.TRANSACTION_DETAILS})
+_ALLOWED_GET_PATHS = frozenset({ep.CHANNELS, ep.ROOMS, ep.RESERVATIONS, ep.TRANSACTION_DETAILS})
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _TERMINAL_STATES = frozenset({STATE_CONFIRMED, "partial_failure", "rejected", "blocked"})
 
@@ -155,12 +155,12 @@ def _parse_int(name: str, *, minimum: int, maximum: int) -> int:
 def _load_settings() -> PilotSettings:
     _require_local_test_database()
     operation = _required_env("HOTELRUNNER_PILOT_OPERATION")
-    if operation not in {"discovery", *_WRITE_OPERATIONS}:
+    if operation not in {"discovery", "reservation_read", *_WRITE_OPERATIONS}:
         raise PilotSafetyError("BLOCKED_UNSUPPORTED_PILOT_OPERATION")
 
     write_approved = os.environ.get("HOTELRUNNER_PILOT_WRITE_APPROVED") == "true"
-    if operation == "discovery" and write_approved:
-        raise PilotSafetyError("BLOCKED_DISCOVERY_WRITE_CONFLICT")
+    if operation in {"discovery", "reservation_read"} and write_approved:
+        raise PilotSafetyError("BLOCKED_READONLY_WRITE_CONFLICT")
     if operation in _WRITE_OPERATIONS and not write_approved:
         raise PilotSafetyError("BLOCKED_PROVIDER_WRITE_NOT_APPROVED")
     if os.environ.get("HOTELRUNNER_PILOT_ACCOUNT_CONFIRMED") != "true":
@@ -255,6 +255,8 @@ def _record_safe_metadata(record_property, metadata: dict[str, Any]) -> None:
         "provider_status_class",
         "provider_write_count",
         "read_http_status",
+        "reservation_identity_valid",
+        "reservation_payload_shape_valid",
         "result",
         "room_match",
         "write_http_status",
@@ -299,12 +301,7 @@ async def _read_only_preflight(
     if not isinstance(rooms, list):
         _fail_safe(record_property, "BLOCKED_READONLY_ROOM_RESPONSE_INVALID", metadata)
 
-    matches = [
-        room
-        for room in rooms
-        if isinstance(room, dict)
-        and hmac.compare_digest(str(room.get("inv_code") or ""), settings.inv_code)
-    ]
+    matches = [room for room in rooms if isinstance(room, dict) and hmac.compare_digest(str(room.get("inv_code") or ""), settings.inv_code)]
     metadata["match_count_class"] = "ZERO" if not matches else "ONE" if len(matches) == 1 else "MULTIPLE"
     if len(matches) != 1:
         code = "BLOCKED_PILOT_ROOM_NOT_FOUND" if not matches else "CONFLICT_MULTIPLE_PILOT_ROOMS"
@@ -317,10 +314,7 @@ async def _read_only_preflight(
         _fail_safe(record_property, "BLOCKED_PILOT_ROOM_CAPABILITIES_MISSING", metadata)
 
     channel_codes = room.get("channel_codes")
-    channel_match = isinstance(channel_codes, list) and any(
-        isinstance(code, str) and hmac.compare_digest(code, settings.channel_code)
-        for code in channel_codes
-    )
+    channel_match = isinstance(channel_codes, list) and any(isinstance(code, str) and hmac.compare_digest(code, settings.channel_code) for code in channel_codes)
     capability_key = {
         "availability": "availability_update",
         "rate": "price_update",
@@ -328,10 +322,7 @@ async def _read_only_preflight(
         "restriction": "restrictions_update",
     }.get(settings.operation)
     if settings.operation == "discovery":
-        capability_match = all(
-            raw.get(key) is True
-            for key in ("availability_update", "price_update", "restrictions_update")
-        )
+        capability_match = all(raw.get(key) is True for key in ("availability_update", "price_update", "restrictions_update"))
     else:
         capability_match = raw.get(capability_key) is True
     metadata["capability_match"] = bool(channel_match and capability_match)
@@ -361,13 +352,7 @@ def _build_single_mutation(settings: PilotSettings) -> dict[str, Any]:
 
 
 async def _latest_delivery_record(tenant_id: str) -> dict[str, Any] | None:
-    records = (
-        await db[COLL_ARI_DELIVERIES]
-        .find({"tenant_id": tenant_id}, {"_id": 0})
-        .sort("created_at", -1)
-        .limit(1)
-        .to_list(1)
-    )
+    records = await db[COLL_ARI_DELIVERIES].find({"tenant_id": tenant_id}, {"_id": 0}).sort("created_at", -1).limit(1).to_list(1)
     return records[0] if records else None
 
 
@@ -394,6 +379,95 @@ async def test_hotelrunner_pilot_readonly_discovery(record_property):
         )
         if guard.write_count != 0:
             _fail_safe(record_property, "FAIL_READONLY_PROVIDER_WRITE_DETECTED", metadata)
+        _record_safe_metadata(record_property, metadata)
+    finally:
+        guard.restore()
+        await provider._client.close()
+
+
+async def test_hotelrunner_pilot_readonly_reservation(record_property):
+    """Read exactly one undelivered test reservation without delivery ACK."""
+    try:
+        settings = _load_settings()
+    except PilotSafetyError as exc:
+        pytest.fail(str(exc), pytrace=False)
+    if settings.operation != "reservation_read":
+        pytest.fail("BLOCKED_RESERVATION_READ_TARGET_OPERATION_MISMATCH", pytrace=False)
+
+    provider = _build_provider(settings)
+    guard = PilotHttpGuard(provider, allow_write=False)
+    metadata: dict[str, Any] = {
+        "correlation_label": settings.correlation_label,
+        "operation": settings.operation,
+        "exact_head_match": True,
+        "pilot_account_attested": True,
+        "credential_read_ok": False,
+        "match_count_class": "ZERO",
+        "reservation_identity_valid": False,
+        "reservation_payload_shape_valid": False,
+        "provider_write_count": 0,
+    }
+    try:
+        connection = await provider.test_connection()
+        if not connection.success:
+            _fail_safe(
+                record_property,
+                "BLOCKED_READONLY_CREDENTIAL_CHECK_FAILED",
+                metadata,
+            )
+        metadata["credential_read_ok"] = True
+
+        result = await provider.fetch_reservations(
+            undelivered=True,
+            per_page=2,
+            page=1,
+        )
+        if not result.success or not isinstance(result.data, dict):
+            _fail_safe(
+                record_property,
+                "BLOCKED_RESERVATION_READ_FAILED",
+                metadata,
+            )
+
+        reservations = result.data.get("raw_reservations")
+        if not isinstance(reservations, list):
+            _fail_safe(
+                record_property,
+                "BLOCKED_RESERVATION_RESPONSE_INVALID",
+                metadata,
+            )
+        metadata["reservation_payload_shape_valid"] = True
+        metadata["match_count_class"] = "ZERO" if not reservations else "ONE" if len(reservations) == 1 else "MULTIPLE"
+        if len(reservations) != 1:
+            code = "BLOCKED_NO_UNDELIVERED_RESERVATION" if not reservations else "BLOCKED_MULTIPLE_UNDELIVERED_RESERVATIONS"
+            _fail_safe(record_property, code, metadata)
+
+        reservation = reservations[0]
+        identity_fields = ("hr_number", "message_uid", "rooms")
+        identity_valid = isinstance(reservation, dict) and all(reservation.get(field) for field in identity_fields)
+        metadata["reservation_identity_valid"] = bool(identity_valid)
+        if not identity_valid:
+            _fail_safe(
+                record_property,
+                "BLOCKED_RESERVATION_IDENTITY_INVALID",
+                metadata,
+            )
+
+        metadata.update(
+            {
+                "get_count": guard.get_count,
+                "provider_write_count": guard.write_count,
+                "read_http_status": guard.read_http_status or "NOT_RECORDED",
+                "provider_status_class": "SUCCESS",
+                "result": "PASS",
+            }
+        )
+        if guard.write_count != 0:
+            _fail_safe(
+                record_property,
+                "FAIL_READONLY_PROVIDER_WRITE_DETECTED",
+                metadata,
+            )
         _record_safe_metadata(record_property, metadata)
     finally:
         guard.restore()
@@ -428,9 +502,7 @@ async def test_hotelrunner_pilot_single_ari_write(record_property):
         )
         metadata.update(preflight_metadata)
 
-        await db[COLL_FEATURE_FLAGS].delete_many(
-            {"tenant_id": tenant_id, "provider": "hotelrunner_v2"}
-        )
+        await db[COLL_FEATURE_FLAGS].delete_many({"tenant_id": tenant_id, "provider": "hotelrunner_v2"})
         await db[COLL_ARI_DELIVERIES].delete_many({"tenant_id": tenant_id})
         await set_flags(
             tenant_id,
@@ -462,11 +534,7 @@ async def test_hotelrunner_pilot_single_ari_write(record_property):
 
         record = await _latest_delivery_record(tenant_id)
         final_state = str((record or {}).get("state") or result.state)
-        provider_status_class = str(
-            (record or {}).get("provider_status_class")
-            or result.provider_status_class
-            or "NOT_RECORDED"
-        )
+        provider_status_class = str((record or {}).get("provider_status_class") or result.provider_status_class or "NOT_RECORDED")
         metadata.update(
             {
                 "delivery_state": final_state,
