@@ -16,6 +16,19 @@ import redis
 logger = logging.getLogger(__name__)
 
 
+def _log_cache_failure(operation: str, exc: Exception) -> None:
+    """Log bounded cache failure metadata without keys or backend messages."""
+    level = logging.WARNING if isinstance(exc, redis.exceptions.RedisError) else logging.ERROR
+    logger.log(
+        level,
+        "Advanced cache operation failed",
+        extra={
+            "cache_operation": operation,
+            "exception_type": type(exc).__name__,
+        },
+    )
+
+
 class CacheLayer:
     L1_CRITICAL = "L1"  # 1 minute - Real-time critical data
     L2_STANDARD = "L2"  # 5 minutes - Standard data
@@ -41,16 +54,16 @@ class AdvancedCacheManager:
         """Serialize value for cache storage"""
         try:
             return json.dumps(value, default=str)
-        except Exception as e:
-            logger.error(f"Serialization error: {e}")
+        except Exception as exc:
+            _log_cache_failure("serialize", exc)
             return None
 
     def _deserialize(self, value: str) -> Any:
         """Deserialize value from cache"""
         try:
             return json.loads(value) if value else None
-        except Exception as e:
-            logger.error(f"Deserialization error: {e}")
+        except Exception as exc:
+            _log_cache_failure("deserialize", exc)
             return None
 
     async def get(self, key: str, layer: str = CacheLayer.L2_STANDARD) -> Any | None:
@@ -69,14 +82,14 @@ class AdvancedCacheManager:
             value = self.redis.get(cache_key)
 
             if value:
-                logger.debug(f"Cache HIT: {cache_key}")
+                logger.debug("Advanced cache hit")
                 return self._deserialize(value)
             else:
-                logger.debug(f"Cache MISS: {cache_key}")
+                logger.debug("Advanced cache miss")
                 return None
 
-        except Exception as e:
-            logger.error(f"Cache get error: {e}")
+        except Exception as exc:
+            _log_cache_failure("get", exc)
             return None
 
     async def set(self, key: str, value: Any, layer: str = CacheLayer.L2_STANDARD, ttl: int | None = None) -> bool:
@@ -102,11 +115,11 @@ class AdvancedCacheManager:
             ttl_seconds = ttl if ttl is not None else CacheLayer.TTL_MAP.get(layer, 300)
 
             self.redis.setex(cache_key, ttl_seconds, serialized)
-            logger.debug(f"Cache SET: {cache_key} (TTL: {ttl_seconds}s)")
+            logger.debug("Advanced cache set", extra={"cache_ttl_seconds": ttl_seconds})
             return True
 
-        except Exception as e:
-            logger.error(f"Cache set error: {e}")
+        except Exception as exc:
+            _log_cache_failure("set", exc)
             return False
 
     async def delete(self, key: str, layer: str = CacheLayer.L2_STANDARD) -> bool:
@@ -114,10 +127,10 @@ class AdvancedCacheManager:
         try:
             cache_key = self._make_key(layer, key)
             self.redis.delete(cache_key)
-            logger.debug(f"Cache DELETE: {cache_key}")
+            logger.debug("Advanced cache delete")
             return True
-        except Exception as e:
-            logger.error(f"Cache delete error: {e}")
+        except Exception as exc:
+            _log_cache_failure("delete", exc)
             return False
 
     async def invalidate_pattern(self, pattern: str) -> int:
@@ -136,12 +149,12 @@ class AdvancedCacheManager:
 
             if keys:
                 count = self.redis.delete(*keys)
-                logger.info(f"Invalidated {count} keys matching {pattern}")
+                logger.info("Advanced cache invalidated", extra={"cache_key_count": count})
                 return count
             return 0
 
-        except Exception as e:
-            logger.error(f"Cache invalidation error: {e}")
+        except Exception as exc:
+            _log_cache_failure("invalidate_pattern", exc)
             return 0
 
     async def get_stats(self) -> dict:
@@ -176,9 +189,9 @@ class AdvancedCacheManager:
                 },
             }
 
-        except Exception as e:
-            logger.error(f"Failed to get cache stats: {e}")
-            return {"error": str(e)}
+        except Exception as exc:
+            _log_cache_failure("get_stats", exc)
+            return {"status": "unhealthy", "exception_type": type(exc).__name__}
 
 
 def cache_with_layer(layer: str = CacheLayer.L2_STANDARD, key_prefix: str = "", ttl: int | None = None):
@@ -250,8 +263,8 @@ class CacheWarmer:
 
             return False
 
-        except Exception as e:
-            logger.error(f"Cache warming failed: {e}")
+        except Exception as exc:
+            _log_cache_failure("warm_dashboard", exc)
             return False
 
     async def warm_pms_cache(self, db):
@@ -274,6 +287,6 @@ class CacheWarmer:
             logger.info("PMS cache warmed successfully")
             return True
 
-        except Exception as e:
-            logger.error(f"PMS cache warming failed: {e}")
+        except Exception as exc:
+            _log_cache_failure("warm_pms", exc)
             return False
