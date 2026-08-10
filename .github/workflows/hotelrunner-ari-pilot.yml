@@ -102,7 +102,42 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          verify_workflow() {
+          exact_head_run_id() {
+            local workflow="$1"
+            gh run list \
+              --repo "${GITHUB_REPOSITORY}" \
+              --workflow "${workflow}" \
+              --branch "${GITHUB_REF_NAME}" \
+              --limit 30 \
+              --json databaseId,headSha,event \
+              --jq "[.[] | select(.headSha == \"${GITHUB_SHA}\" and .event == \"push\")] | first | .databaseId // empty"
+          }
+
+          verify_required_jobs() {
+            local workflow="$1"
+            shift
+            local run_id
+            run_id="$(exact_head_run_id "${workflow}")"
+            if [ -z "${run_id}" ]; then
+              echo "::error::BLOCKED_EXACT_HEAD_NORMAL_CI_NOT_GREEN:${workflow}"
+              exit 1
+            fi
+            for job_name in "$@"; do
+              local success_count
+              success_count="$(
+                gh run view "${run_id}" \
+                  --repo "${GITHUB_REPOSITORY}" \
+                  --json jobs \
+                  --jq "[.jobs[] | select(.name == \"${job_name}\" and .status == \"completed\" and .conclusion == \"success\")] | length"
+              )"
+              if [ "${success_count}" -ne 1 ]; then
+                echo "::error::BLOCKED_EXACT_HEAD_REQUIRED_JOB_NOT_GREEN:${workflow}:${job_name}"
+                exit 1
+              fi
+            done
+          }
+
+          verify_completed_workflow() {
             local workflow="$1"
             local success_count
             success_count="$(
@@ -111,16 +146,25 @@ jobs:
                 --workflow "${workflow}" \
                 --branch "${GITHUB_REF_NAME}" \
                 --limit 30 \
-                --json headSha,status,conclusion \
-                --jq "[.[] | select(.headSha == \"${GITHUB_SHA}\" and .status == \"completed\" and .conclusion == \"success\")] | length"
+                --json headSha,event,status,conclusion \
+                --jq "[.[] | select(.headSha == \"${GITHUB_SHA}\" and .event == \"push\" and .status == \"completed\" and .conclusion == \"success\")] | length"
             )"
             if [ "${success_count}" -lt 1 ]; then
               echo "::error::BLOCKED_EXACT_HEAD_NORMAL_CI_NOT_GREEN:${workflow}"
               exit 1
             fi
           }
-          verify_workflow "ci-cd.yml"
-          verify_workflow "frontend-quality.yml"
+          verify_required_jobs \
+            "ci-cd.yml" \
+            "lockfile-guard" \
+            "backend-lint" \
+            "frontend-lint" \
+            "backend-test" \
+            "battle-e2e" \
+            "load-test" \
+            "frontend-build" \
+            "security-scan"
+          verify_completed_workflow "frontend-quality.yml"
 
       - name: Set up Python
         uses: actions/setup-python@v5
