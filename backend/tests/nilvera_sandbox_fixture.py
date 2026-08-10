@@ -86,6 +86,13 @@ ENVELOPE_STATUS_UNKNOWN = "UNKNOWN"
 DIRECT_LOOKUP_FOUND = "FOUND"
 DIRECT_LOOKUP_NOT_FOUND = "NOT_FOUND"
 DIRECT_LOOKUP_NOT_RUN = "NOT_RUN"
+ANSWER_STATE_NOT_RECORDED = "NOT_RECORDED"
+ANSWER_STATE_UNKNOWN = "UNKNOWN"
+ANSWER_STATE_WAITING = "WAITING_FOR_APPROVAL"
+ANSWER_STATE_APPROVED = "APPROVED"
+ANSWER_STATE_REJECTED = "REJECTED"
+ANSWER_STATE_AUTOMATIC = "ANSWERED_AUTOMATICALLY"
+ANSWER_STATE_UNSUPPORTED = "UNSUPPORTED"
 
 _CORRELATION_FIELDS = (
     "InvoiceNumber",
@@ -214,6 +221,9 @@ class SandboxFixtureReconciliationResult:
     receiver_alias_match: bool | None = None
     envelope_status_class: str | None = None
     envelope_gib_code: str | None = None
+    receiver_status_answer_state: str | None = None
+    receiver_detail_answer_state: str | None = None
+    receiver_answered_automatically: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -403,6 +413,18 @@ def evaluate_incoming_answer_candidate(
         answer_waiting=answer_waiting,
         provider_ready=provider_ready,
     )
+
+
+def classify_incoming_answer_state(value: Any) -> str:
+    normalized = _normalize(value)
+    return {
+        "": ANSWER_STATE_NOT_RECORDED,
+        "unknown": ANSWER_STATE_UNKNOWN,
+        "waitingforapproval": ANSWER_STATE_WAITING,
+        "approved": ANSWER_STATE_APPROVED,
+        "rejected": ANSWER_STATE_REJECTED,
+        "documentansweredautomatically": ANSWER_STATE_AUTOMATIC,
+    }.get(normalized, ANSWER_STATE_UNSUPPORTED)
 
 
 def ensure_fixture_write_attempt(workflow_run_attempt: int) -> None:
@@ -1357,6 +1379,9 @@ async def reconcile_incoming_commercial_fixture(
     receiver_visibility = NOT_FOUND_OR_NOT_VISIBLE
     receiver_detail_match = None
     receiver_status_ready = None
+    receiver_status_answer_state = None
+    receiver_detail_answer_state = None
+    receiver_answered_automatically = None
     if incoming_matches:
         provider_uuid = incoming_matches[0]
         try:
@@ -1383,6 +1408,9 @@ async def reconcile_incoming_commercial_fixture(
             and detail.invoice_type == "SATIS"
         )
         receiver_status_ready = _normalize(status.status_code) in {"succeed", "success"}
+        receiver_status_answer_state = classify_incoming_answer_state(status.answer_code)
+        receiver_detail_answer_state = classify_incoming_answer_state(detail.answer_code)
+        receiver_answered_automatically = receiver_status_answer_state == ANSWER_STATE_AUTOMATIC
         if not receiver_detail_match:
             raise SandboxFixtureFailed("FIXTURE_RECEIVER_RECONCILIATION_MISMATCH")
         receiver_visibility = FOUND
@@ -1407,6 +1435,9 @@ async def reconcile_incoming_commercial_fixture(
         receiver_alias_match=receiver_alias_match,
         envelope_status_class=envelope_status_class,
         envelope_gib_code=envelope_gib_code,
+        receiver_status_answer_state=receiver_status_answer_state,
+        receiver_detail_answer_state=receiver_detail_answer_state,
+        receiver_answered_automatically=receiver_answered_automatically,
     )
 
 

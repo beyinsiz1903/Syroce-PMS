@@ -26,6 +26,13 @@ from scripts.nilvera_sandbox_selector import (
 )
 from tests.nilvera_sandbox_fixture import (
     AMBIGUOUS_WRITE,
+    ANSWER_STATE_APPROVED,
+    ANSWER_STATE_AUTOMATIC,
+    ANSWER_STATE_NOT_RECORDED,
+    ANSWER_STATE_REJECTED,
+    ANSWER_STATE_UNKNOWN,
+    ANSWER_STATE_UNSUPPORTED,
+    ANSWER_STATE_WAITING,
     DEFINITIVE_REJECTION,
     DIRECT_LOOKUP_FOUND,
     DIRECT_LOOKUP_NOT_FOUND,
@@ -54,6 +61,7 @@ from tests.nilvera_sandbox_fixture import (
     build_fixture_payload,
     build_fixture_request_uuid,
     classify_fixture_payload_contract,
+    classify_incoming_answer_state,
     company_owns_alias,
     ensure_fixture_invoice_date,
     ensure_fixture_payload_contract,
@@ -321,6 +329,22 @@ def test_incoming_answer_eligibility_fails_closed_for_non_waiting_or_non_ready_s
     assert result.eligible is False
 
 
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [
+        (None, ANSWER_STATE_NOT_RECORDED),
+        ("unknown", ANSWER_STATE_UNKNOWN),
+        ("waitingForApproval", ANSWER_STATE_WAITING),
+        ("approved", ANSWER_STATE_APPROVED),
+        ("rejected", ANSWER_STATE_REJECTED),
+        ("documentAnsweredAutomatically", ANSWER_STATE_AUTOMATIC),
+        ("newProviderValue", ANSWER_STATE_UNSUPPORTED),
+    ],
+)
+def test_incoming_answer_state_is_reduced_to_safe_metadata(raw_value, expected):
+    assert classify_incoming_answer_state(raw_value) == expected
+
+
 def test_fixture_date_preflight_rejects_timezone_shifted_dto():
     identity = build_fixture_identity(year=2026, run_id=RUN_ID, hmac_key=HMAC_KEY)
     shifted = datetime(2026, 8, 6, 0, 0, tzinfo=timezone(timedelta(hours=3)))
@@ -519,7 +543,12 @@ def _clients(*, sale_status: str = "SUCCESS", post_side_effect=None):
     return sender_client, receiver_client
 
 
-def _incoming_service(*, visible: bool):
+def _incoming_service(
+    *,
+    visible: bool,
+    answer_code: str | None = "waitingForApproval",
+    detail_answer_code: str | None = "waitingForApproval",
+):
     items = (SimpleNamespace(invoice_number=INVOICE_NUMBER, provider_uuid=PROVIDER_UUID),) if visible else ()
     return SimpleNamespace(
         fetch_incoming_invoices=AsyncMock(return_value=SimpleNamespace(items=items)),
@@ -529,9 +558,10 @@ def _incoming_service(*, visible: bool):
                 invoice_number=INVOICE_NUMBER,
                 invoice_profile="TICARIFATURA",
                 invoice_type="SATIS",
+                answer_code=detail_answer_code,
             )
         ),
-        fetch_incoming_invoice_status=AsyncMock(return_value=SimpleNamespace(status_code="SUCCEED")),
+        fetch_incoming_invoice_status=AsyncMock(return_value=SimpleNamespace(status_code="SUCCEED", answer_code=answer_code)),
     )
 
 
@@ -916,6 +946,9 @@ async def test_read_only_reconciliation_finds_exact_outgoing_and_incoming_fixtur
     assert result.receiver_visibility == FOUND
     assert result.receiver_detail_match is True
     assert result.receiver_status_ready is True
+    assert result.receiver_status_answer_state == ANSWER_STATE_WAITING
+    assert result.receiver_detail_answer_state == ANSWER_STATE_WAITING
+    assert result.receiver_answered_automatically is False
     assert result.sender_page_count_class == PAGE_COUNT_ONE
     assert result.receiver_page_count_class == PAGE_COUNT_ONE
     assert not hasattr(sender_client, "post")
@@ -1029,6 +1062,56 @@ async def test_delivery_diagnostics_distinguishes_alias_mismatch_from_purchase_a
     assert result.receiver_list_visible is False
     assert result.receiver_direct_lookup == DIRECT_LOOKUP_NOT_FOUND
     assert result.receiver_visibility == NOT_FOUND_OR_NOT_VISIBLE
+    assert result.provider_write_count == 0
+
+
+async def test_read_only_reconciliation_reports_automatic_answer_without_provider_write():
+    async def sender_get(path, **kwargs):
+        if path == NilveraEndpoints.GET_COMPANY:
+            return {"TaxNumber": SELLER_TAX_NUMBER}
+        if path == NilveraEndpoints.LIST_SALE_INVOICES:
+            return {"Content": [{"UUID": PROVIDER_UUID, "InvoiceNumber": INVOICE_NUMBER}]}
+        if path == NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=PROVIDER_UUID):
+            return {"Status": "SUCCESS"}
+        if path == NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=PROVIDER_UUID):
+            return {
+                "InvoiceNumber": INVOICE_NUMBER,
+                "InvoiceProfile": "TICARIFATURA",
+                "InvoiceType": "SATIS",
+            }
+        raise AssertionError("unexpected sender read")
+
+    receiver_client = SimpleNamespace(
+        get=AsyncMock(
+            side_effect=[
+                {"TaxNumber": BUYER_TAX_NUMBER},
+                {"Content": [{"UUID": PROVIDER_UUID, "InvoiceNumber": INVOICE_NUMBER}]},
+            ]
+        )
+    )
+    sender_client = SimpleNamespace(get=AsyncMock(side_effect=sender_get))
+    incoming_service = _incoming_service(
+        visible=True,
+        answer_code="documentAnsweredAutomatically",
+        detail_answer_code="documentAnsweredAutomatically",
+    )
+
+    with patch("tests.nilvera_sandbox_fixture.NilveraIncomingService", return_value=incoming_service):
+        result = await reconcile_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            reference_time=NOW,
+        )
+
+    assert result.receiver_status_answer_state == ANSWER_STATE_AUTOMATIC
+    assert result.receiver_detail_answer_state == ANSWER_STATE_AUTOMATIC
+    assert result.receiver_answered_automatically is True
     assert result.provider_write_count == 0
     assert not hasattr(sender_client, "post")
     assert not hasattr(receiver_client, "post")

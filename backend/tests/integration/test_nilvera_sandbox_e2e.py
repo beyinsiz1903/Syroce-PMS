@@ -598,6 +598,12 @@ async def test_sandbox_reconcile_incoming_commercial_invoice_fixture(record_prop
     )
     record_property("envelope_status_class", result.envelope_status_class or "NOT_APPLICABLE")
     record_property("envelope_gib_code", result.envelope_gib_code or "NOT_APPLICABLE")
+    record_property("receiver_status_answer_state", result.receiver_status_answer_state or "NOT_APPLICABLE")
+    record_property("receiver_detail_answer_state", result.receiver_detail_answer_state or "NOT_APPLICABLE")
+    record_property(
+        "receiver_answered_automatically",
+        str(result.receiver_answered_automatically).lower() if result.receiver_answered_automatically is not None else "NOT_APPLICABLE",
+    )
 
     if result.match_count_class == MATCH_COUNT_ZERO:
         pytest.fail(BLOCKED_NOT_FOUND_AFTER_EXHAUSTIVE_READ, pytrace=False)
