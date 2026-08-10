@@ -96,9 +96,24 @@ def test_workflow_requires_both_normal_exact_head_workflows():
 
     assert "ci-cd.yml" in script
     assert "frontend-quality.yml" in script
+    assert "databaseId,headSha,event" in script
+    assert '.event == \\"push\\"' in script
+    for job_name in (
+        "lockfile-guard",
+        "backend-lint",
+        "frontend-lint",
+        "backend-test",
+        "battle-e2e",
+        "load-test",
+        "frontend-build",
+        "security-scan",
+    ):
+        assert f'"{job_name}"' in script
+    assert "deploy-production" not in script
     assert ".headSha" in script
     assert "${GITHUB_SHA}" in script
     assert '.conclusion == \\"success\\"' in script
+    assert "BLOCKED_EXACT_HEAD_REQUIRED_JOB_NOT_GREEN" in script
 
 
 def test_workflow_passes_secrets_only_to_the_selected_test_step():
