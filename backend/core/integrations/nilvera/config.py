@@ -45,6 +45,7 @@ class NilveraEndpoints:
     GET_PURCHASE_INVOICE_STATUS = "/einvoice/Purchase/{uuid}/Status"
     GET_PURCHASE_INVOICE_HISTORIES = "/einvoice/Purchase/{uuid}/Histories"
     SEND_ANSWER = "/einvoice/Purchase/SendAnswer"
+    CREATE_PURCHASE_RETURN = "/einvoice/Purchase/{uuid}/CreateReturn"
 
 
 _config: NilveraSettings | None = None
@@ -67,6 +68,11 @@ def _parse_required_bool(name: str) -> bool:
 def is_nilvera_incoming_answer_enabled() -> bool:
     """Return the fail-closed incoming answer feature state."""
     return os.environ.get("NILVERA_INCOMING_ANSWER_ENABLED", "false").strip().lower() == "true"
+
+
+def is_nilvera_create_return_enabled() -> bool:
+    """Return the fail-closed CreateReturn discovery feature state."""
+    return os.environ.get("NILVERA_CREATE_RETURN_ENABLED", "false").strip().lower() == "true"
 
 
 def get_nilvera_config() -> NilveraSettings:

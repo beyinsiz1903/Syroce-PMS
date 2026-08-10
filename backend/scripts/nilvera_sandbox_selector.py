@@ -7,6 +7,7 @@ SANDBOX_FILE = "tests/integration/test_nilvera_sandbox_e2e.py"
 INCOMING_ANSWER_TARGET = f"{SANDBOX_FILE}::test_sandbox_incoming_commercial_invoice_answer_contract"
 INCOMING_FIXTURE_TARGET = f"{SANDBOX_FILE}::test_sandbox_prepare_incoming_commercial_invoice_fixture"
 RECONCILIATION_TARGET = f"{SANDBOX_FILE}::test_sandbox_reconcile_incoming_commercial_invoice_fixture"
+CREATE_RETURN_DISCOVERY_TARGET = f"{SANDBOX_FILE}::test_sandbox_create_return_contract_discovery"
 PREFLIGHT_TARGET = f"{SANDBOX_FILE}::test_sandbox_incoming_fixture_accounts_preflight"
 
 
@@ -17,16 +18,21 @@ def select_test_target(
     run_incoming_fixture: bool,
     run_incoming_answer: bool,
     run_reconciliation: bool = False,
+    run_create_return_discovery: bool = False,
 ) -> str:
-    if sum(
-        (
-            run_outgoing_contract,
-            run_preflight,
-            run_incoming_fixture,
-            run_incoming_answer,
-            run_reconciliation,
+    if (
+        sum(
+            (
+                run_outgoing_contract,
+                run_preflight,
+                run_incoming_fixture,
+                run_incoming_answer,
+                run_reconciliation,
+                run_create_return_discovery,
+            )
         )
-    ) > 1:
+        > 1
+    ):
         raise ValueError("BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES")
     if run_preflight:
         return PREFLIGHT_TARGET
@@ -38,6 +44,8 @@ def select_test_target(
         return INCOMING_ANSWER_TARGET
     if run_reconciliation:
         return RECONCILIATION_TARGET
+    if run_create_return_discovery:
+        return CREATE_RETURN_DISCOVERY_TARGET
     raise ValueError("BLOCKED_SANDBOX_MODE_REQUIRED")
 
 
@@ -56,6 +64,7 @@ def main() -> int:
             run_incoming_fixture=_read_bool("NILVERA_E2E_RUN_INCOMING_FIXTURE"),
             run_incoming_answer=_read_bool("NILVERA_E2E_RUN_INCOMING_ANSWER"),
             run_reconciliation=_read_bool("NILVERA_E2E_RUN_RECONCILIATION"),
+            run_create_return_discovery=_read_bool("NILVERA_E2E_RUN_CREATE_RETURN_DISCOVERY"),
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)

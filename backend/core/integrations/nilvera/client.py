@@ -311,13 +311,24 @@ class NilveraHttpClient:
     async def post(
         self,
         path: str,
-        json: dict[str, Any],
+        json: dict[str, Any] | None = None,
         correlation_id: str | None = None,
         retryable: bool = False,
         stage: str | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        response = await self._request("POST", path, json=json, correlation_id=correlation_id, retryable=retryable, stream=False, stage=stage, **kwargs)
+        request_kwargs: dict[str, Any] = dict(kwargs)
+        if json is not None:
+            request_kwargs["json"] = json
+        response = await self._request(
+            "POST",
+            path,
+            correlation_id=correlation_id,
+            retryable=retryable,
+            stream=False,
+            stage=stage,
+            **request_kwargs,
+        )
         import json as json_mod
 
         try:
