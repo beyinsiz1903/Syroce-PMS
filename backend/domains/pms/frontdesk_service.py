@@ -86,37 +86,55 @@ class FrontdeskService:
         booking = await self._db.bookings.find_one({"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not booking:
             return ServiceResult.fail("Booking not found", "NOT_FOUND")
-        if booking["status"] == "checked_in":
+        booking_status = booking.get("status")
+        if booking_status == "checked_in":
             return ServiceResult.fail("Guest already checked in", "ALREADY_CHECKED_IN")
+        if booking_status not in {"confirmed", "guaranteed"}:
+            return ServiceResult.fail("Booking status is not eligible for check-in", "INVALID_BOOKING_STATUS")
 
-        room = await self._db.rooms.find_one({"id": booking["room_id"]}, {"_id": 0})
+        room_id = booking.get("room_id")
+        if not room_id:
+            return ServiceResult.fail("Assign a room before check-in", "ROOM_ASSIGNMENT_REQUIRED")
+
+        room = await self._db.rooms.find_one(
+            {"id": room_id, "tenant_id": ctx.tenant_id},
+            {"_id": 0},
+        )
         if not room:
-            return ServiceResult.fail("Room not found", "NOT_FOUND")
+            return ServiceResult.fail("Assigned room was not found for this hotel", "ROOM_ASSIGNMENT_REQUIRED")
 
         # If room is dirty/cleaning and force_clean requested, clean it first
-        if room["status"] in ("dirty", "cleaning") and force_clean:
+        room_status = room.get("status")
+        if room_status in ("dirty", "cleaning") and force_clean:
             await self._db.rooms.update_one(
-                {"id": room["id"]},
+                {"id": room["id"], "tenant_id": ctx.tenant_id},
                 {"$set": {"status": "available"}},
             )
-        elif room["status"] == "occupied":
+        elif room_status == "occupied":
             # Use room's own current_booking_id for authoritative occupancy check
             blocker_id = room.get("current_booking_id")
             if blocker_id and blocker_id != booking_id:
                 blocker = await self._db.bookings.find_one(
                     {
                         "id": blocker_id,
+                        "tenant_id": ctx.tenant_id,
                         "status": "checked_in",
                     }
                 )
                 if blocker:
                     return ServiceResult.fail("Room is occupied by another guest", "ROOM_NOT_READY")
             # Stale occupied status or no active blocker — allow check-in
-        elif room["status"] not in ("available", "inspected"):
-            return ServiceResult.fail(f"Room not ready. Status: {room['status']}", "ROOM_NOT_READY")
+        elif room_status not in ("available", "inspected"):
+            return ServiceResult.fail("Room is not ready for check-in", "ROOM_NOT_READY")
 
         if create_folio:
-            existing_folio = await self._db.folios.find_one({"booking_id": booking_id, "folio_type": "guest"})
+            existing_folio = await self._db.folios.find_one(
+                {
+                    "booking_id": booking_id,
+                    "tenant_id": ctx.tenant_id,
+                    "folio_type": "guest",
+                }
+            )
             if not existing_folio:
                 folio_number = f"F-{datetime.now().year}-{uuid.uuid4().hex[:5].upper()}"
                 folio_id = str(uuid.uuid4())
@@ -126,7 +144,7 @@ class FrontdeskService:
                     "booking_id": booking_id,
                     "folio_number": folio_number,
                     "folio_type": "guest",
-                    "guest_id": booking["guest_id"],
+                    "guest_id": booking.get("guest_id"),
                     "status": "open",
                     "balance": 0.0,
                     "created_at": datetime.now(UTC).isoformat(),
@@ -134,21 +152,36 @@ class FrontdeskService:
                 await self._db.folios.insert_one(folio_doc)
 
         checked_in_time = datetime.now(UTC)
-        await self._db.bookings.update_one(
-            {"id": booking_id},
+        booking_result = await self._db.bookings.update_one(
+            {
+                "id": booking_id,
+                "tenant_id": ctx.tenant_id,
+                "status": {"$in": ["confirmed", "guaranteed"]},
+            },
             {"$set": {"status": "checked_in", "checked_in_at": checked_in_time.isoformat()}},
         )
-        await self._db.rooms.update_one(
-            {"id": booking["room_id"]},
+        if booking_result.modified_count != 1:
+            return ServiceResult.fail("Booking state changed during check-in", "CHECKIN_STATE_CONFLICT")
+
+        room_result = await self._db.rooms.update_one(
+            {"id": room_id, "tenant_id": ctx.tenant_id},
             {"$set": {"status": "occupied", "current_booking_id": booking_id}},
         )
-        await self._db.guests.update_one({"id": booking["guest_id"]}, {"$inc": {"total_stays": 1}})
+        if room_result.matched_count != 1:
+            return ServiceResult.fail("Assigned room changed during check-in", "CHECKIN_STATE_CONFLICT")
+
+        guest_id = booking.get("guest_id")
+        if guest_id:
+            await self._db.guests.update_one(
+                {"id": guest_id, "tenant_id": ctx.tenant_id},
+                {"$inc": {"total_stays": 1}},
+            )
 
         return ServiceResult.success(
             {
                 "message": "Check-in completed successfully",
                 "checked_in_at": checked_in_time.isoformat(),
-                "room_number": room["room_number"],
+                "room_number": room.get("room_number"),
             }
         )
 

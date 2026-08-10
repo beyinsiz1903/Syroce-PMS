@@ -71,6 +71,74 @@ def _next_date(d: str) -> str:
     return (dt_date.fromisoformat(d) + timedelta(days=1)).isoformat()
 
 
+def _normalize_booking_date(value: Any) -> dt_date | None:
+    """Normalize date-only and ISO timestamp booking fields without string ordering."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, dt_date):
+        return value
+    if not isinstance(value, str):
+        return None
+
+    candidate = value.strip()
+    if len(candidate) < 10:
+        return None
+    try:
+        return dt_date.fromisoformat(candidate[:10])
+    except ValueError:
+        return None
+
+
+def _partition_due_bookings(
+    bookings: list[dict[str, Any]],
+    field_name: str,
+    business_date: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    target_date = dt_date.fromisoformat(business_date)
+    due: list[dict[str, Any]] = []
+    invalid: list[dict[str, Any]] = []
+    for booking in bookings:
+        normalized = _normalize_booking_date(booking.get(field_name))
+        if normalized is None:
+            invalid.append(booking)
+        elif normalized <= target_date:
+            due.append(booking)
+    return due, invalid
+
+
+def _split_pending_arrivals(
+    bookings: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    with_room = [booking for booking in bookings if booking.get("room_id")]
+    without_room = [booking for booking in bookings if not booking.get("room_id")]
+    return with_room, without_room
+
+
+async def _load_bookings_for_date_check(
+    tenant_id: str,
+    statuses: list[str],
+) -> list[dict[str, Any]]:
+    return await db.bookings.find(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": statuses},
+        },
+        {
+            "_id": 0,
+            "id": 1,
+            "tenant_id": 1,
+            "guest_id": 1,
+            "guest_name": 1,
+            "room_id": 1,
+            "room_no": 1,
+            "check_in": 1,
+            "check_out": 1,
+            "status": 1,
+            "confirmation_code": 1,
+        },
+    ).to_list(None)
+
+
 # ═══════════════════════════════════════════════════════════════
 #  INDEX SETUP
 # ═══════════════════════════════════════════════════════════════
@@ -588,32 +656,40 @@ async def _validate_preconditions(
     # 4. BLOCKING: overdue check-outs (still checked_in past their check_out date)
     # Bu misafirler ya cikis yapmali ya da konaklama uzatilmali; sessizce ek bir gece
     # yazilmasi musafire fazla fatura ve veri tutarsizligi yaratir.
-    overdue_checkouts = await db.bookings.count_documents(
-        {
-            "tenant_id": tenant_id,
-            "status": "checked_in",
-            "check_out": {"$lte": bd},
-        }
+    checked_in_for_dates = await _load_bookings_for_date_check(tenant_id, ["checked_in"])
+    overdue_checkouts, invalid_checkouts = _partition_due_bookings(
+        checked_in_for_dates,
+        "check_out",
+        bd,
     )
-    if overdue_checkouts > 0:
-        blocking.append(f"{overdue_checkouts} rezervasyonun cikis tarihi gectigi halde hala 'checked-in'. Gece denetiminden once cikis yapin veya konaklamayi uzatin.")
+    if overdue_checkouts:
+        blocking.append(f"{len(overdue_checkouts)} rezervasyonun cikis tarihi gectigi halde hala 'checked-in'. Gece denetiminden once cikis yapin veya konaklamayi uzatin.")
+    if invalid_checkouts:
+        blocking.append(f"{len(invalid_checkouts)} checked-in rezervasyonda gecerli cikis tarihi yok. Gece denetiminden once rezervasyon tarihlerini duzeltin.")
 
     # 5. BLOCKING: pending arrivals (confirmed/guaranteed but never checked in by audit time)
     # Otomatik no-show yerine personel karari bekleyelim. 'Dogrulamalari Atla'
     # bayragi ile bilerek bypass edilirse mevcut akis no-show yazar.
-    pending_arrivals = await db.bookings.count_documents(
-        {
-            "tenant_id": tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed"]},
-            "check_in": {"$lte": bd},
-        }
+    arrival_candidates = await _load_bookings_for_date_check(
+        tenant_id,
+        ["confirmed", "guaranteed"],
     )
-    if pending_arrivals > 0:
+    pending_arrivals, invalid_arrivals = _partition_due_bookings(
+        arrival_candidates,
+        "check_in",
+        bd,
+    )
+    pending_with_room, pending_without_room = _split_pending_arrivals(pending_arrivals)
+    if pending_with_room:
         blocking.append(
-            f"{pending_arrivals} rezervasyonun giris tarihi gectigi halde check-in yapilmadi. "
+            f"{len(pending_with_room)} rezervasyonun giris tarihi gectigi halde check-in yapilmadi. "
             f"Misafirleri check-in edin, manuel no-show isaretleyin veya rezervasyonu iptal edin. "
             f"Otomatik no-show istenirse 'Dogrulamalari Atla' ile devam edin."
         )
+    if pending_without_room:
+        blocking.append(f"{len(pending_without_room)} bekleyen geliste oda atamasi yok. Check-in veya no-show kararindan once oda atayin, rezervasyonu iptal edin ya da manuel no-show isaretleyin.")
+    if invalid_arrivals:
+        blocking.append(f"{len(invalid_arrivals)} confirmed/guaranteed rezervasyonda gecerli giris tarihi yok. Gece denetiminden once rezervasyon tarihlerini duzeltin.")
 
     # 6. Warning: open POS transactions
     try:
@@ -1301,6 +1377,23 @@ async def _sample_bookings(query: dict, limit: int = 25) -> list[dict]:
     return items
 
 
+async def _sample_classified_bookings(
+    tenant_id: str,
+    bookings: list[dict[str, Any]],
+    limit: int = 25,
+) -> list[dict]:
+    booking_ids = [booking.get("id") for booking in bookings if booking.get("id")]
+    if not booking_ids:
+        return []
+    return await _sample_bookings(
+        {
+            "tenant_id": tenant_id,
+            "id": {"$in": booking_ids[:limit]},
+        },
+        limit=limit,
+    )
+
+
 from cache_manager import cached as _na_cached  # local import to avoid cycles at module top
 
 
@@ -1413,37 +1506,70 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
                 }
             )
 
-    # 4) Cikis tarihi gecmis ama hala checked_in
-    overdue_q = {"tenant_id": tenant_id, "status": "checked_in", "check_out": {"$lte": bd}}
-    overdue_count = await db.bookings.count_documents(overdue_q)
-    if overdue_count > 0:
+    # 4) Cikis tarihi gecmis ama hala checked_in. Date-only ve ISO timestamp
+    # alanlari ayni takvim gunune normalize edilir; string siralamasi kullanilmaz.
+    checked_in_for_dates = await _load_bookings_for_date_check(tenant_id, ["checked_in"])
+    overdue_bookings, invalid_checkouts = _partition_due_bookings(
+        checked_in_for_dates,
+        "check_out",
+        bd,
+    )
+    if overdue_bookings:
         blockers.append(
             {
                 "category": "overdue_checkouts",
                 "label": "Gec cikis (overdue)",
-                "message": (f"{overdue_count} rezervasyonun cikis tarihi gectigi halde hala 'checked-in'. Cikis yapin veya konaklamayi uzatin."),
-                "count": overdue_count,
-                "items": await _sample_bookings(overdue_q),
+                "message": (f"{len(overdue_bookings)} rezervasyonun cikis tarihi gectigi halde hala 'checked-in'. Cikis yapin veya konaklamayi uzatin."),
+                "count": len(overdue_bookings),
+                "items": await _sample_classified_bookings(tenant_id, overdue_bookings),
                 "action": "checkout_or_extend",
             }
         )
 
-    # 5) Geliş tarihi gecmis confirmed/guaranteed (no-check-in)
-    pending_arr_q = {
-        "tenant_id": tenant_id,
-        "status": {"$in": ["confirmed", "guaranteed"]},
-        "check_in": {"$lte": bd},
-    }
-    pending_count = await db.bookings.count_documents(pending_arr_q)
-    if pending_count > 0:
+    # 5) Gelis tarihi gecmis confirmed/guaranteed (no-check-in). Oda atamasi
+    # olmayanlar check-in eylemine yonlendirilmez; ayri veri butunlugu blocker'i olur.
+    arrival_candidates = await _load_bookings_for_date_check(
+        tenant_id,
+        ["confirmed", "guaranteed"],
+    )
+    pending_arrivals, invalid_arrivals = _partition_due_bookings(
+        arrival_candidates,
+        "check_in",
+        bd,
+    )
+    pending_with_room, pending_without_room = _split_pending_arrivals(pending_arrivals)
+    if pending_with_room:
         blockers.append(
             {
                 "category": "pending_arrivals",
                 "label": "Bekleyen geliş (no-check-in)",
-                "message": (f"{pending_count} rezervasyonun giris tarihi gectigi halde check-in yapilmadi. Check-in yapin, no-show isaretleyin veya iptal edin."),
-                "count": pending_count,
-                "items": await _sample_bookings(pending_arr_q),
+                "message": (f"{len(pending_with_room)} rezervasyonun giris tarihi gectigi halde check-in yapilmadi. Check-in yapin, no-show isaretleyin veya iptal edin."),
+                "count": len(pending_with_room),
+                "items": await _sample_classified_bookings(tenant_id, pending_with_room),
                 "action": "checkin_or_no_show",
+            }
+        )
+    if pending_without_room:
+        blockers.append(
+            {
+                "category": "pending_arrivals_no_room",
+                "label": "Oda atamasi gereken bekleyen gelis",
+                "message": (f"{len(pending_without_room)} bekleyen geliste oda atamasi yok. Check-in oncesinde oda atayin; gerekirse no-show veya iptal karari verin."),
+                "count": len(pending_without_room),
+                "items": await _sample_classified_bookings(tenant_id, pending_without_room),
+                "action": "assign_room",
+            }
+        )
+    invalid_date_bookings = invalid_checkouts + invalid_arrivals
+    if invalid_date_bookings:
+        blockers.append(
+            {
+                "category": "invalid_reservation_dates",
+                "label": "Gecersiz rezervasyon tarihleri",
+                "message": (f"{len(invalid_date_bookings)} aktif rezervasyonda gecerli giris/cikis tarihi yok. Gece denetiminden once tarihleri duzeltin."),
+                "count": len(invalid_date_bookings),
+                "items": await _sample_classified_bookings(tenant_id, invalid_date_bookings),
+                "action": "edit_booking",
             }
         )
 

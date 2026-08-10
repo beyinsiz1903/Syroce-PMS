@@ -148,6 +148,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const rawBalance = summary?.balance;
   const balance = Number(rawBalance) || 0;
   const hasOpenBalance = balance > 0.01;
+  const hasRoomAssignment = Boolean(booking?.room_id && room?.id);
 
   // Birincil sekmeler — günlük kullanımda en sık ihtiyaç duyulanlar
   const primaryTabs = [
@@ -421,11 +422,26 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               <div className="border-t bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
                 <Button
                   size="sm"
-                  onClick={() => setCheckinAlertOpen(true)}
-                  className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm"
+                  onClick={() => {
+                    if (!hasRoomAssignment) {
+                      setActiveTab('room_change');
+                      toast.warning('Check-in öncesinde oda atayın');
+                      return;
+                    }
+                    setCheckinAlertOpen(true);
+                  }}
+                  className={`w-full h-10 text-white font-medium shadow-sm ${
+                    hasRoomAssignment
+                      ? 'bg-emerald-600 hover:bg-emerald-700'
+                      : 'bg-amber-600 hover:bg-amber-700'
+                  }`}
                   data-testid="btn-checkin"
                 >
-                  <LogIn className="w-4 h-4 mr-2" /> {t('cm.pages_ReservationDetailModal.giris_yap')}
+                  {hasRoomAssignment ? (
+                    <><LogIn className="w-4 h-4 mr-2" /> {t('cm.pages_ReservationDetailModal.giris_yap')}</>
+                  ) : (
+                    <><BedDouble className="w-4 h-4 mr-2" /> Önce oda atayın</>
+                  )}
                 </Button>
               </div>
             )}

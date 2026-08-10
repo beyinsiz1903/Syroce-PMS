@@ -35,7 +35,11 @@ export default function GuestAlertModal({ guestId, open, onClose, onConfirm, con
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg" data-testid="guest-alert-modal">
+      <DialogContent
+        className="z-[80] max-w-lg"
+        overlayClassName="z-[70]"
+        data-testid="guest-alert-modal"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {blacklisted ? <ShieldAlert className="w-5 h-5 text-red-600" /> : <Crown className="w-5 h-5 text-yellow-600" />}

@@ -135,7 +135,14 @@ async def check_in_guest(
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.checkin(ctx, booking_id, create_folio, force_clean)
     if not result.ok:
-        code_map = {"NOT_FOUND": 404, "ALREADY_CHECKED_IN": 400, "ROOM_NOT_READY": 400}
+        code_map = {
+            "NOT_FOUND": 404,
+            "ALREADY_CHECKED_IN": 400,
+            "INVALID_BOOKING_STATUS": 400,
+            "ROOM_ASSIGNMENT_REQUIRED": 400,
+            "ROOM_NOT_READY": 400,
+            "CHECKIN_STATE_CONFLICT": 409,
+        }
         raise HTTPException(status_code=code_map.get(result.code, 400), detail=result.error)
     return result.data
 
