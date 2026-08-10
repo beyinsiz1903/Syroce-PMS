@@ -66,7 +66,10 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
     assert "reconciliation_source_timestamp:" in workflow
     assert "default: false" in workflow
     assert "scripts/nilvera_sandbox_selector.py" in workflow
-    assert "NILVERA_PILOT_INVOICE_DATE: ${{ vars.NILVERA_PILOT_INVOICE_DATE }}" in workflow
+    assert (
+        "NILVERA_PILOT_INVOICE_DATE: ${{ secrets.NILVERA_PILOT_INVOICE_DATE }}"
+        in workflow
+    )
     assert "BLOCKED_INVALID_OR_MISSING_PILOT_INVOICE_DATE" in workflow
     assert "BLOCKED_EXACT_HEAD_NOT_APPROVED" in workflow
     assert "BLOCKED_PROVIDER_WRITE_NOT_CONFIRMED" in workflow

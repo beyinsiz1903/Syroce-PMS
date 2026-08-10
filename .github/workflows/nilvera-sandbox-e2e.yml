@@ -121,7 +121,7 @@ jobs:
           CORRELATION_HMAC_KEY: ${{ secrets.NILVERA_E2E_CORRELATION_HMAC_KEY }}
           BUYER_VKN: ${{ secrets.NILVERA_E2E_BUYER_VKN }}
           SELLER_VKN: ${{ secrets.NILVERA_E2E_SELLER_VKN }}
-          PILOT_INVOICE_DATE: ${{ vars.NILVERA_PILOT_INVOICE_DATE }}
+          PILOT_INVOICE_DATE: ${{ secrets.NILVERA_PILOT_INVOICE_DATE }}
           APPROVED_HEAD_SHA: ${{ inputs.approved_head_sha }}
           ACTUAL_HEAD_SHA: ${{ github.sha }}
           CONFIRM_PROVIDER_WRITE: ${{ inputs.confirm_provider_write }}
@@ -210,7 +210,7 @@ jobs:
           NILVERA_E2E_SOURCE_RUN_ID: ${{ inputs.reconciliation_source_run_id }}
           NILVERA_E2E_SOURCE_RUN_TIMESTAMP: ${{ inputs.reconciliation_source_timestamp }}
           NILVERA_E2E_RUN_ID: ${{ github.run_id }}
-          NILVERA_PILOT_INVOICE_DATE: ${{ vars.NILVERA_PILOT_INVOICE_DATE }}
+          NILVERA_PILOT_INVOICE_DATE: ${{ secrets.NILVERA_PILOT_INVOICE_DATE }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
           MONGO_URL: ${{ env.MONGO_URL }}
           DB_NAME: ${{ env.DB_NAME }}
