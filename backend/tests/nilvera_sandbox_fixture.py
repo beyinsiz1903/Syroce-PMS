@@ -597,6 +597,11 @@ async def company_identity_matches(client: Any, expected_tax_number: str) -> boo
 
 async def company_owns_alias(client: Any, expected_alias: str) -> bool:
     """Verify alias ownership without returning or logging any alias value."""
+    return await select_company_owned_alias(client, (expected_alias,)) is not None
+
+
+async def select_company_owned_alias(client: Any, candidate_aliases: Sequence[str]) -> str | None:
+    """Select a receiver-owned alias without logging company or mailbox data."""
     try:
         response = await client.get(NilveraEndpoints.GET_COMPANY)
     except Exception as exc:
@@ -619,13 +624,20 @@ async def company_owns_alias(client: Any, expected_alias: str) -> bool:
             exception_type="NilveraValidationError",
         )
 
+    company_aliases: list[str] = []
     for item in aliases:
         if not isinstance(item, dict):
             raise SandboxFixtureBlocked("BLOCKED_COMPANY_ALIAS_PARSE")
         alias = item.get("Alias")
-        if isinstance(alias, str) and alias and hmac.compare_digest(alias.encode(), expected_alias.encode()):
-            return True
-    return False
+        if isinstance(alias, str) and alias:
+            company_aliases.append(alias)
+
+    for candidate in candidate_aliases:
+        if not isinstance(candidate, str) or not candidate:
+            continue
+        if any(hmac.compare_digest(owned.encode(), candidate.encode()) for owned in company_aliases):
+            return candidate
+    return None
 
 
 def _normalize(value: Any) -> str:
@@ -1384,6 +1396,13 @@ async def prepare_incoming_commercial_fixture(
     receiver_match = await company_identity_matches(receiver_client, buyer_tax_number)
     if not sender_match or not receiver_match:
         raise SandboxFixtureBlocked("BLOCKED_SANDBOX_COMPANY_MISMATCH")
+    if not await company_owns_alias(receiver_client, buyer_alias):
+        raise SandboxFixtureBlocked(
+            "BLOCKED_RECEIVER_ALIAS_OWNERSHIP_MISMATCH",
+            provider_write_count=0,
+            sender_match=sender_match,
+            receiver_match=receiver_match,
+        )
 
     current_time = datetime.combine(invoice_date, time.min, tzinfo=UTC)
     identity = build_fixture_identity(year=invoice_date.year, run_id=run_id, hmac_key=hmac_key)

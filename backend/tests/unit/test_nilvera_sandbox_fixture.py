@@ -63,6 +63,7 @@ from tests.nilvera_sandbox_fixture import (
     pilot_invoice_datetime,
     prepare_incoming_commercial_fixture,
     reconcile_incoming_commercial_fixture,
+    select_company_owned_alias,
 )
 
 SENDER_KEY = "sender-sandbox-key-value"
@@ -442,7 +443,14 @@ def _clients(*, sale_status: str = "SUCCESS", post_side_effect=None):
         side_effect=post_side_effect,
     )
     sender_client = SimpleNamespace(get=AsyncMock(side_effect=sender_get), post=sender_post)
-    receiver_client = SimpleNamespace(get=AsyncMock(return_value={"TaxNumber": BUYER_TAX_NUMBER}))
+    receiver_client = SimpleNamespace(
+        get=AsyncMock(
+            return_value={
+                "TaxNumber": BUYER_TAX_NUMBER,
+                "Aliases": [{"Alias": "urn:mail:defaultpk@sandbox.invalid"}],
+            }
+        )
+    )
     return sender_client, receiver_client
 
 
@@ -499,6 +507,53 @@ async def test_fixture_sends_at_most_one_provider_write():
     assert kwargs["json"]["EInvoice"]["InvoiceInfo"]["InvoiceType"] == "SATIS"
     assert kwargs["json"]["EInvoice"]["InvoiceInfo"]["InvoiceSerieOrNumber"] == SANDBOX_FIXTURE_SERIES
     assert kwargs["json"]["EInvoice"]["InvoiceInfo"]["UUID"] == PROVIDER_UUID
+
+
+async def test_fixture_alias_mismatch_blocks_before_provider_write():
+    sender_client, receiver_client = _clients()
+    receiver_client.get = AsyncMock(
+        return_value={
+            "TaxNumber": BUYER_TAX_NUMBER,
+            "Aliases": [{"Alias": "urn:mail:differentpk@sandbox.invalid"}],
+        }
+    )
+
+    with pytest.raises(SandboxFixtureBlocked, match="BLOCKED_RECEIVER_ALIAS_OWNERSHIP_MISMATCH") as exc_info:
+        await prepare_incoming_commercial_fixture(
+            sender_client=sender_client,
+            receiver_client=receiver_client,
+            sender_key=SENDER_KEY,
+            receiver_key=RECEIVER_KEY,
+            hmac_key=HMAC_KEY,
+            run_id=RUN_ID,
+            seller_tax_number=SELLER_TAX_NUMBER,
+            buyer_tax_number=BUYER_TAX_NUMBER,
+            buyer_alias="urn:mail:defaultpk@sandbox.invalid",
+            pilot_invoice_date=PILOT_DATE,
+            workflow_run_attempt=1,
+        )
+
+    assert exc_info.value.provider_write_count == 0
+    sender_client.post.assert_not_awaited()
+
+
+async def test_receiver_owned_alias_selection_uses_intersection_without_logging_alias(caplog):
+    matching_alias = "urn:mail:receiverpk@sandbox.invalid"
+    client = SimpleNamespace(
+        get=AsyncMock(
+            return_value={
+                "Aliases": [{"Alias": matching_alias}],
+            }
+        )
+    )
+
+    selected = await select_company_owned_alias(
+        client,
+        ("urn:mail:otherpk@sandbox.invalid", matching_alias),
+    )
+
+    assert selected == matching_alias
+    assert matching_alias not in caplog.text
 
 
 async def test_fixture_response_uuid_mismatch_blocks_without_second_write():

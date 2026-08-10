@@ -62,6 +62,7 @@ from tests.nilvera_sandbox_fixture import (
     pilot_invoice_datetime,
     prepare_incoming_commercial_fixture,
     reconcile_incoming_commercial_fixture,
+    select_company_owned_alias,
 )
 
 # Mark all tests in this file as nilvera_sandbox
@@ -463,6 +464,12 @@ async def test_sandbox_prepare_incoming_commercial_invoice_fixture(record_proper
         buyer_aliases = [alias for alias in aliases.aliases if "pk" in alias.lower()]
         if not buyer_aliases:
             pytest.fail("BLOCKED_FIXTURE_BUYER_ALIAS")
+        try:
+            buyer_alias = await select_company_owned_alias(receiver, buyer_aliases)
+        except SandboxFixtureError as exc:
+            pytest.fail(exc.safe_code, pytrace=False)
+        if buyer_alias is None:
+            pytest.fail("BLOCKED_RECEIVER_ALIAS_OWNERSHIP_MISMATCH", pytrace=False)
 
         try:
             result = await prepare_incoming_commercial_fixture(
@@ -474,7 +481,7 @@ async def test_sandbox_prepare_incoming_commercial_invoice_fixture(record_proper
                 run_id=run_id,
                 seller_tax_number=seller_tax_number,
                 buyer_tax_number=buyer_tax_number,
-                buyer_alias=buyer_aliases[0],
+                buyer_alias=buyer_alias,
                 pilot_invoice_date=pilot_invoice_date,
                 workflow_run_attempt=workflow_run_attempt,
             )
