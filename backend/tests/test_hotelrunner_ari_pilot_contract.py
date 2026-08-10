@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import pytest
 import yaml
@@ -57,6 +57,7 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
 
     assert inputs["operation"]["options"] == [
         "discovery",
+        "reservation_read",
         "availability",
         "rate",
         "stop_sell",
@@ -68,7 +69,7 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
 
     job = workflow["jobs"]["hotelrunner-ari-pilot"]
     gate = next(step for step in job["steps"] if step.get("name") == "Validate exact-head approval and operation gate")
-    assert "BLOCKED_DISCOVERY_WRITE_CONFLICT" in gate["run"]
+    assert "BLOCKED_READONLY_WRITE_CONFLICT" in gate["run"]
     assert "BLOCKED_PROVIDER_WRITE_NOT_APPROVED" in gate["run"]
 
 
@@ -82,6 +83,7 @@ def test_workflow_uses_protected_pilot_environment_and_exact_targets():
     assert job["concurrency"]["cancel-in-progress"] == "false"
     assert workflow["permissions"] == {"actions": "read", "contents": "read"}
     assert "test_hotelrunner_pilot_readonly_discovery" in script
+    assert "test_hotelrunner_pilot_readonly_reservation" in script
     assert "test_hotelrunner_pilot_single_ari_write" in script
     assert "pytest -m" not in script
 
@@ -145,6 +147,21 @@ def test_settings_fail_closed_without_write_approval(monkeypatch):
     _base_env(monkeypatch, operation="availability", write=False)
 
     with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_PROVIDER_WRITE_NOT_APPROVED"):
+        pilot._load_settings()
+
+
+def test_reservation_read_is_readonly(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_read", write=False)
+
+    settings = pilot._load_settings()
+
+    assert settings.operation == "reservation_read"
+
+
+def test_reservation_read_rejects_write_approval(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_read", write=True)
+
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_READONLY_WRITE_CONFLICT"):
         pilot._load_settings()
 
 
@@ -243,3 +260,68 @@ async def test_readonly_guard_rejects_put_before_provider_call():
         await provider._client._request("PUT", ep.ROOMS_DATERANGE)
 
     original.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_readonly_guard_allows_reservation_get_but_rejects_ack():
+    original = AsyncMock(return_value=SimpleNamespace(status_code=200))
+    provider = SimpleNamespace(_client=SimpleNamespace(_request=original))
+    guard = pilot.PilotHttpGuard(provider, allow_write=False)
+
+    await provider._client._request("GET", ep.RESERVATIONS)
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_PROVIDER_WRITE_IN_READONLY_MODE"):
+        await provider._client._request("PUT", ep.RESERVATIONS_ACK)
+
+    assert guard.get_count == 1
+    assert guard.write_count == 0
+    original.assert_awaited_once_with("GET", ep.RESERVATIONS)
+
+
+@pytest.mark.asyncio
+async def test_reservation_read_target_uses_two_gets_and_no_ack(
+    monkeypatch,
+    caplog,
+):
+    _base_env(monkeypatch, operation="reservation_read", write=False)
+    provider_call = AsyncMock(return_value=SimpleNamespace(status_code=200))
+    client = SimpleNamespace(_request=provider_call, close=AsyncMock())
+    synthetic_identifier = "synthetic-reservation-identifier"
+
+    class FakeProvider:
+        def __init__(self):
+            self._client = client
+
+        async def test_connection(self):
+            await self._client._request("GET", ep.TRANSACTION_DETAILS)
+            return SimpleNamespace(success=True)
+
+        async def fetch_reservations(self, **_kwargs):
+            await self._client._request("GET", ep.RESERVATIONS)
+            return SimpleNamespace(
+                success=True,
+                data={
+                    "raw_reservations": [
+                        {
+                            "hr_number": synthetic_identifier,
+                            "message_uid": "synthetic-message-uid",
+                            "rooms": [{"room_code": "synthetic-room"}],
+                        }
+                    ]
+                },
+            )
+
+    monkeypatch.setattr(pilot, "_build_provider", lambda _settings: FakeProvider())
+    recorded: list[tuple[str, object]] = []
+
+    with caplog.at_level("INFO", logger="hotelrunner.ari_pilot"):
+        await pilot.test_hotelrunner_pilot_readonly_reservation(lambda key, value: recorded.append((key, value)))
+
+    assert ("match_count_class", "ONE") in recorded
+    assert ("provider_write_count", 0) in recorded
+    assert ("get_count", 2) in recorded
+    assert ("result", "PASS") in recorded
+    assert provider_call.await_args_list == [
+        call("GET", ep.TRANSACTION_DETAILS),
+        call("GET", ep.RESERVATIONS),
+    ]
+    assert synthetic_identifier not in caplog.text

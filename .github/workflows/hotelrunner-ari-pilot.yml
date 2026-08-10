@@ -10,6 +10,7 @@ on:
         type: choice
         options:
           - discovery
+          - reservation_read
           - availability
           - rate
           - stop_sell
@@ -79,9 +80,9 @@ jobs:
             exit 1
           fi
           case "${PILOT_OPERATION}" in
-            discovery)
+            discovery|reservation_read)
               if [ "${CONFIRM_PROVIDER_WRITE}" = "true" ]; then
-                echo "::error::BLOCKED_DISCOVERY_WRITE_CONFLICT"
+                echo "::error::BLOCKED_READONLY_WRITE_CONFLICT"
                 exit 1
               fi
               ;;
@@ -157,11 +158,17 @@ jobs:
           HOTELRUNNER_PILOT_HMAC_KEY: ${{ secrets.HOTELRUNNER_PILOT_HMAC_KEY }}
         run: |
           cd backend
-          if [ "${HOTELRUNNER_PILOT_OPERATION}" = "discovery" ]; then
-            target="tests/integration/test_hotelrunner_ari_pilot.py::test_hotelrunner_pilot_readonly_discovery"
-          else
-            target="tests/integration/test_hotelrunner_ari_pilot.py::test_hotelrunner_pilot_single_ari_write"
-          fi
+          case "${HOTELRUNNER_PILOT_OPERATION}" in
+            discovery)
+              target="tests/integration/test_hotelrunner_ari_pilot.py::test_hotelrunner_pilot_readonly_discovery"
+              ;;
+            reservation_read)
+              target="tests/integration/test_hotelrunner_ari_pilot.py::test_hotelrunner_pilot_readonly_reservation"
+              ;;
+            *)
+              target="tests/integration/test_hotelrunner_ari_pilot.py::test_hotelrunner_pilot_single_ari_write"
+              ;;
+          esac
           python -m pytest "${target}" \
             -v --tb=short -q --timeout=600 \
             --junitxml=hotelrunner-ari-pilot-results.xml
