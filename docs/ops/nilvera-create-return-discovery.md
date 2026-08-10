@@ -2,9 +2,11 @@
 
 ## Status
 
-CreateReturn remains disabled by default. The production incoming-return API
-continues to fail closed with `PROVIDER_CONTRACT_NOT_VERIFIED`; merging the
-discovery infrastructure does not enable a provider mutation.
+CreateReturn remains disabled by default. The Sandbox contract and GET-only
+reconciliation verified that the operation creates an e-Invoice draft. The
+production incoming-return API and lifecycle worker still require the explicit
+`NILVERA_CREATE_RETURN_ENABLED=true` feature gate; merging the implementation
+does not enable a provider mutation.
 
 Nilvera's official endpoint page documents:
 
@@ -38,14 +40,27 @@ read-only lookup is not success and never triggers a second write.
 
 ## Production Gate
 
-Production CreateReturn remains NO-GO until the Sandbox discovery has verified:
+The Sandbox discovery verified:
 
 1. the bodyless request contract,
 2. the response shape,
 3. created-document lookup and reconciliation,
-4. duplicate-call behavior through read-only evidence or a separately approved
-   isolated experiment,
-5. the lifecycle worker and allocation state transitions.
+4. the resulting document is a draft rather than a sale invoice.
+
+The application lifecycle now provides:
+
+- atomic action creation and quantity reservation,
+- one non-retrying CreateReturn POST after a durable attempt marker,
+- exact generated-UUID verification through `GET /einvoice/Draft/{UUID}/model`,
+- no second POST after timeout, 5xx, malformed response, or ambiguous outcome,
+- deterministic rejection release and ambiguous-outcome reconciliation states,
+- tenant-scoped balances and allocations,
+- full-return support only. Partial returns fail closed because the verified
+  bodyless provider contract has no line-quantity input.
+
+Production activation remains a separate NO-GO until credentials, tenant
+mapping, monitoring, and the feature gate receive an explicit production
+cutover approval.
 
 Each mutation experiment requires a separate exact-head approval. CreateReturn,
 incoming APPROVE/REJECT, fixture creation, cancellation, deletion, and cleanup

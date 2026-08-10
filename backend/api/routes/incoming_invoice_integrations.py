@@ -7,15 +7,29 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator, model_validator
+from pymongo.errors import PyMongoError
 
 from core.helpers import require_admin
 from core.integrations.incoming_invoice_repository import IncomingInvoiceRepository
 from core.integrations.incoming_invoice_sync_service import IncomingInvoiceSyncService
 from core.integrations.invoice_lifecycle_repository import InvoiceLifecycleRepository
-from core.integrations.invoice_return_service import ReturnQuantityRequest
-from core.integrations.nilvera.config import is_nilvera_incoming_answer_enabled
+from core.integrations.invoice_return_repository import (
+    CASFailedError,
+    PreconditionFailedError,
+)
+from core.integrations.invoice_return_service import (
+    ReturnQuantityRequest,
+    ReturnValidationError,
+    count_return_allocations,
+    initialize_balances_for_invoice,
+    reserve_return_action,
+)
+from core.integrations.nilvera.config import (
+    is_nilvera_create_return_enabled,
+    is_nilvera_incoming_answer_enabled,
+)
 from core.integrations.nilvera.errors import NilveraApiError
 from models.schemas import User
 from models.schemas.incoming_invoice import (
@@ -369,11 +383,11 @@ def _map_to_response(action: InvoiceLifecycleAction) -> InvoiceLifecycleResponse
 class IncomingInvoiceReturnRequest(BaseModel):
     return_type: Literal["FULL", "PARTIAL"]
     lines: list[ReturnQuantityRequest] | None = None
-    request_uuid: str
+    request_uuid: uuid.UUID
 
 
 class IncomingInvoiceReturnResponse(BaseModel):
-    return_action_id: str | None = None
+    return_action_id: str
     source_invoice_id: str
     return_type: str
     allocated_lines_count: int
@@ -381,44 +395,161 @@ class IncomingInvoiceReturnResponse(BaseModel):
 
 @router.post("/{invoice_id}/return", response_model=IncomingInvoiceReturnResponse)
 async def create_incoming_invoice_return(
-    request: Request,
     invoice_id: str,
     payload: IncomingInvoiceReturnRequest,
     user: User = Depends(require_admin),
 ) -> IncomingInvoiceReturnResponse:
+    if not is_nilvera_create_return_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "NILVERA_CREATE_RETURN_DISABLED",
+                "detail": "Incoming invoice returns are disabled.",
+            },
+        )
+
     tenant_id = user.tenant_id
 
-    # 1. Validate UUID format for invoice_id
     try:
         uuid.UUID(invoice_id)
     except ValueError:
-        raise HTTPException(status_code=422, detail="Invalid invoice_id format")
+        raise HTTPException(status_code=422, detail="Invalid invoice_id format") from None
 
-    try:
-        uuid.UUID(payload.request_uuid)
-    except ValueError:
-        raise HTTPException(status_code=422, detail="Invalid request_uuid format")
+    if payload.return_type == "PARTIAL":
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "PARTIAL_RETURN_NOT_SUPPORTED_BY_PROVIDER_CONTRACT",
+                "detail": "Nilvera CreateReturn currently supports full returns only.",
+            },
+        )
+    if payload.lines:
+        raise HTTPException(status_code=422, detail="FULL return does not accept line quantities")
 
-    # 2. Check incoming invoice existence and tenant match
     invoice = await IncomingInvoiceRepository.get_by_id(tenant_id, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    # 3. Payload validation
-    if payload.return_type == "PARTIAL":
-        if not payload.lines or len(payload.lines) == 0:
-            raise HTTPException(status_code=422, detail="PARTIAL return requires lines")
+    request_uuid = str(payload.request_uuid)
+    action_type = InvoiceLifecycleActionType.CREATE_INCOMING_RETURN
+    idempotency_key = f"{tenant_id}:{invoice_id}:{action_type.value}:{request_uuid}"
+    fingerprint_data = json.dumps(
+        {
+            "action_type": action_type.value,
+            "return_type": payload.return_type,
+            "source_invoice_id": invoice_id,
+            "tenant_id": tenant_id,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    request_fingerprint = hashlib.sha256(fingerprint_data.encode("utf-8")).hexdigest()
 
-        line_ids = set()
-        for line in payload.lines:
-            if line.quantity <= Decimal("0"):
-                raise HTTPException(status_code=422, detail="Return quantity must be greater than 0")
-            if line.source_line_id in line_ids:
-                raise HTTPException(status_code=422, detail="Duplicate source_line_id in payload")
-            line_ids.add(line.source_line_id)
+    existing_action = await InvoiceLifecycleRepository.get_by_idempotency_key(
+        tenant_id,
+        idempotency_key,
+    )
+    if existing_action:
+        if existing_action.request_fingerprint != request_fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail="IDEMPOTENCY_CONFLICT: request_uuid used with different payload.",
+            )
+        return IncomingInvoiceReturnResponse(
+            return_action_id=existing_action.id,
+            source_invoice_id=invoice_id,
+            return_type=existing_action.return_type or payload.return_type,
+            allocated_lines_count=await count_return_allocations(
+                tenant_id,
+                existing_action.id,
+            ),
+        )
 
-        # Optional: Validate lines belong to invoice (can be handled by service too, but good to check here)
+    if invoice.provider_status != IncomingInvoiceProviderStatus.SUCCEED:
+        raise HTTPException(status_code=409, detail="INVOICE_PROVIDER_STATUS_NOT_READY")
 
-    # 4. Fail-Closed Option A: Provider Contract Not Verified
-    # Do not create allocation or action yet.
-    raise HTTPException(status_code=503, detail={"code": "PROVIDER_CONTRACT_NOT_VERIFIED", "detail": "CreateReturn provider contract is not verified."})
+    action = InvoiceLifecycleAction(
+        id=str(uuid.uuid4()),
+        tenant_id=tenant_id,
+        direction=InvoiceLifecycleDirection.INCOMING,
+        source_invoice_id=invoice_id,
+        source_provider_uuid=invoice.provider_uuid,
+        action_type=action_type,
+        state=InvoiceLifecycleActionState.REQUESTED,
+        request_uuid=request_uuid,
+        idempotency_key=idempotency_key,
+        request_fingerprint=request_fingerprint,
+        answer_guard_key=f"return:{invoice_id}",
+        return_type=payload.return_type,
+        requested_by=str(user.id),
+        requested_at=datetime.now(UTC),
+    )
+
+    try:
+        await initialize_balances_for_invoice(tenant_id, invoice_id)
+        reservation = await reserve_return_action(action, payload.return_type)
+    except ReturnValidationError:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "RETURN_QUANTITY_UNAVAILABLE",
+                "detail": "No returnable quantity is available.",
+            },
+        ) from None
+    except CASFailedError:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "RETURN_ALLOCATION_CONFLICT",
+                "detail": "Return quantities changed concurrently.",
+            },
+        ) from None
+    except PreconditionFailedError:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "RETURN_TRANSACTION_UNAVAILABLE",
+                "detail": "Return allocation transaction is unavailable.",
+            },
+        ) from None
+    except PyMongoError:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "RETURN_PERSISTENCE_UNAVAILABLE",
+                "detail": "Return persistence is unavailable.",
+            },
+        ) from None
+
+    if reservation.creation_result == ActionCreationResult.IDEMPOTENCY_CONFLICT:
+        concurrent_action = await InvoiceLifecycleRepository.get_by_idempotency_key(
+            tenant_id,
+            idempotency_key,
+        )
+        if concurrent_action and concurrent_action.request_fingerprint == request_fingerprint:
+            return IncomingInvoiceReturnResponse(
+                return_action_id=concurrent_action.id,
+                source_invoice_id=invoice_id,
+                return_type=concurrent_action.return_type or payload.return_type,
+                allocated_lines_count=await count_return_allocations(
+                    tenant_id,
+                    concurrent_action.id,
+                ),
+            )
+        raise HTTPException(
+            status_code=409,
+            detail="IDEMPOTENCY_CONFLICT: request_uuid used with different payload.",
+        )
+    if reservation.creation_result == ActionCreationResult.GUARD_CONFLICT:
+        raise HTTPException(
+            status_code=409,
+            detail="INVOICE_RETURN_ALREADY_CREATED",
+        )
+
+    return IncomingInvoiceReturnResponse(
+        return_action_id=action.id,
+        source_invoice_id=invoice_id,
+        return_type=payload.return_type,
+        allocated_lines_count=len(reservation.allocations),
+    )

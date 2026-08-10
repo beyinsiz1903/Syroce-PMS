@@ -12,6 +12,7 @@ class InvoiceLifecycleDirection(StrEnum):
 class InvoiceLifecycleActionType(StrEnum):
     ACCEPT_INCOMING = "ACCEPT_INCOMING"
     REJECT_INCOMING = "REJECT_INCOMING"
+    CREATE_INCOMING_RETURN = "CREATE_INCOMING_RETURN"
 
 
 class ActionCreationResult(StrEnum):
@@ -51,6 +52,7 @@ class InvoiceLifecycleAction(BaseModel):
     request_fingerprint: str
 
     reason: str | None = None
+    return_type: str | None = None
 
     provider_action_id: str | None = None
     generated_invoice_uuid: str | None = None
