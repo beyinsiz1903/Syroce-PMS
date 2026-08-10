@@ -79,6 +79,9 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
         in workflow
     )
     assert "BLOCKED_INVALID_OR_MISSING_PILOT_INVOICE_DATE" in workflow
+    assert 'if [ "${RUN_PREFLIGHT}" = "true" ]; then' in workflow
+    assert 'elif [ "${RUN_INCOMING_FIXTURE}" = "true" ]; then' in workflow
+    assert "BLOCKED_MISSING_PREFLIGHT_SANDBOX_CONFIGURATION" in workflow
     assert "BLOCKED_EXACT_HEAD_NOT_APPROVED" in workflow
     assert "BLOCKED_PROVIDER_WRITE_NOT_CONFIRMED" in workflow
     assert "BLOCKED_TEST_ACCOUNT_NOT_ATTESTED" in workflow

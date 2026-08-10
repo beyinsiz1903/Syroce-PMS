@@ -164,7 +164,16 @@ jobs:
               exit 1
             fi
           fi
-          if [ "${RUN_PREFLIGHT}" = "true" ] || [ "${RUN_INCOMING_FIXTURE}" = "true" ]; then
+          if [ "${RUN_PREFLIGHT}" = "true" ]; then
+            if [ -z "${SENDER_KEY}" ] || [ -z "${RECEIVER_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ]; then
+              echo "::error::BLOCKED_MISSING_PREFLIGHT_SANDBOX_CONFIGURATION"
+              exit 1
+            fi
+            if [ "${SENDER_KEY}" = "${RECEIVER_KEY}" ]; then
+              echo "::error::BLOCKED_IDENTICAL_SANDBOX_KEYS"
+              exit 1
+            fi
+          elif [ "${RUN_INCOMING_FIXTURE}" = "true" ]; then
             if [ -z "${SENDER_KEY}" ] || [ -z "${RECEIVER_KEY}" ] || [ -z "${CORRELATION_HMAC_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ]; then
               echo "::error::BLOCKED_MISSING_FIXTURE_SANDBOX_CONFIGURATION"
               exit 1
