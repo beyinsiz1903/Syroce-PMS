@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from core.integrations.incoming_invoice_repository import IncomingInvoiceRepository
 from core.integrations.invoice_lifecycle_repository import InvoiceLifecycleRepository
 from core.integrations.nilvera.client import NilveraHttpClient
+from core.integrations.nilvera.config import is_nilvera_incoming_answer_enabled
 from core.integrations.nilvera.errors import NilveraApiError
 from core.integrations.nilvera.incoming_answer import (
     NilveraIncomingAnswerDecision,
@@ -72,6 +73,16 @@ class InvoiceLifecycleService:
                 state=InvoiceLifecycleActionState.FAILED,
                 error_code="UNSUPPORTED_ACTION_TYPE",
                 release_answer_guard=True,
+            )
+            return
+
+        if action.provider_attempted_at is None and not is_nilvera_incoming_answer_enabled():
+            await cls._finish(
+                action,
+                worker_id,
+                state=InvoiceLifecycleActionState.RETRY_SCHEDULED,
+                error_code="INCOMING_ANSWER_FEATURE_DISABLED",
+                next_attempt_at=datetime.now(UTC) + timedelta(minutes=15),
             )
             return
 

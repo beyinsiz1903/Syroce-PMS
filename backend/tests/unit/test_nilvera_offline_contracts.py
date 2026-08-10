@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from core.integrations.nilvera.config import get_nilvera_config
+from core.integrations.nilvera.config import (
+    get_nilvera_config,
+    is_nilvera_incoming_answer_enabled,
+)
 from core.integrations.nilvera.mapper import NilveraInvoiceMapper, SellerSnapshot
 from models.schemas.invoicing import Invoice, InvoiceItem
 
@@ -16,6 +19,7 @@ def test_sandbox_host_is_forced(monkeypatch):
     monkeypatch.setenv("NILVERA_ENABLED", "true")
 
     import core.integrations.nilvera.config
+
     core.integrations.nilvera.config._config = None
     config = get_nilvera_config()
 
@@ -26,18 +30,11 @@ def test_sandbox_host_is_forced(monkeypatch):
     for host in forbidden_hosts:
         assert host not in config.base_url
 
+
 def test_invoice_mapper_contract():
     """Verify that the payload mapper works cleanly without API call."""
     request_uuid = uuid.uuid4()
-    seller = SellerSnapshot(
-        tax_number="1234567801",
-        name="TEST KURUM 1",
-        tax_office="TEST VD",
-        country="Türkiye",
-        city="İstanbul",
-        district="Şişli",
-        address="Test Mah. Test Sok. No:1"
-    )
+    seller = SellerSnapshot(tax_number="1234567801", name="TEST KURUM 1", tax_office="TEST VD", country="Türkiye", city="İstanbul", district="Şişli", address="Test Mah. Test Sok. No:1")
 
     invoice = Invoice(
         id=str(uuid.uuid4()),
@@ -72,9 +69,9 @@ def test_invoice_mapper_contract():
                 line_extension_amount=Decimal("100.00"),
                 kdv_rate=Decimal("20.0"),
                 kdv_amount=Decimal("20.00"),
-                total=Decimal("120.00")
+                total=Decimal("120.00"),
             )
-        ]
+        ],
     )
 
     alias = "urn:mail:defaultpk@nilvera.com"
@@ -84,12 +81,14 @@ def test_invoice_mapper_contract():
     assert payload.EInvoice.CompanyInfo.TaxNumber == "1234567801"
     assert payload.EInvoice.CustomerInfo.TaxNumber == "1234567802"
 
+
 def test_sandbox_key_missing_skips_logic(monkeypatch):
     """
     Unit test to verify that the missing secrets logic works.
     We temporarily clear the env vars and ensure the check returns True.
     """
     from tests.integration.test_nilvera_sandbox_e2e import check_missing_secrets
+
     monkeypatch.delenv("NILVERA_E2E_SENDER_SANDBOX_KEY", raising=False)
     monkeypatch.delenv("NILVERA_E2E_RECEIVER_SANDBOX_KEY", raising=False)
     monkeypatch.delenv("NILVERA_E2E_BUYER_VKN", raising=False)
@@ -111,6 +110,24 @@ def test_nilvera_enabled_missing_remains_fail_closed(monkeypatch):
     assert core.integrations.nilvera.config._config is None
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, False),
+        ("false", False),
+        ("invalid", False),
+        (" true ", True),
+    ],
+)
+def test_incoming_answer_feature_gate_is_fail_closed(monkeypatch, value, expected):
+    if value is None:
+        monkeypatch.delenv("NILVERA_INCOMING_ANSWER_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("NILVERA_INCOMING_ANSWER_ENABLED", value)
+
+    assert is_nilvera_incoming_answer_enabled() is expected
+
+
 def test_sandbox_workflow_explicitly_enables_nilvera_only_for_test_step():
     workflow = (Path(__file__).parents[3] / ".github/workflows/nilvera-sandbox-e2e.yml").read_text()
     test_step = workflow.split("      - name: Run Nilvera Sandbox E2E Tests\n", 1)[1].split("\n      - name:", 1)[0]
@@ -118,3 +135,5 @@ def test_sandbox_workflow_explicitly_enables_nilvera_only_for_test_step():
     assert "environment: nilvera-sandbox" in workflow
     assert 'NILVERA_ENABLED: "true"' in test_step
     assert workflow.count('NILVERA_ENABLED: "true"') == 1
+    assert "NILVERA_INCOMING_ANSWER_ENABLED: ${{ inputs.run_incoming_answer }}" in test_step
+    assert workflow.count("NILVERA_INCOMING_ANSWER_ENABLED:") == 1

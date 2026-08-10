@@ -8,6 +8,8 @@ Provider reference: <https://developer.nilvera.com/en/api/e-invoice-api/incoming
 
 ## Safety Model
 
+- `NILVERA_INCOMING_ANSWER_ENABLED` is a dedicated fail-closed feature gate. It defaults to disabled and must be explicitly enabled independently from the global Nilvera switch.
+- While the gate is disabled, the API cannot create an answer action and the worker cannot start a new provider write. An action that already has `provider_attempted_at` may continue GET-only verification so an ambiguous prior write is not abandoned or repeated.
 - The API accepts only an invoice whose synchronized provider status is `SUCCEED` and whose answer status is `PENDING`.
 - `request_uuid` is a required UUID and forms part of the tenant-scoped idempotency key.
 - A partial unique answer guard prevents competing approve/reject actions for the same tenant and invoice.
@@ -23,6 +25,8 @@ Provider reference: <https://developer.nilvera.com/en/api/e-invoice-api/incoming
 
 ## Sandbox Verification
 
-The Sandbox workflow input `run_incoming_answer` defaults to `false`. The write test runs only when it is explicitly set to `true` after approval. In that mode the workflow selects only the incoming-answer test, so the suite's outgoing submission test cannot issue another provider write. It approves only one provider-ready, pending commercial invoice whose number uses the Sandbox suite's reserved test prefix. The test creates an isolated local lifecycle action, persists the provider-attempt marker before the write, and asserts exactly one provider write. Success requires the final provider answer, lifecycle action, and local invoice answer to be `APPROVED`/`SUCCEEDED`; these non-sensitive values and the write count are stored in the JUnit artifact. Missing candidates, provider errors, timeouts, unsupported responses, pending exhaustion, and conflicting terminal states fail the test.
+The Sandbox workflow input `run_incoming_answer` defaults to `false` and is the only workflow input that enables `NILVERA_INCOMING_ANSWER_ENABLED`. The write test runs only when it is explicitly set to `true` after approval. In that mode the workflow selects only the incoming-answer test, so the suite's outgoing submission test cannot issue another provider write. It approves only one provider-ready, pending commercial invoice whose number uses the Sandbox suite's reserved test prefix. The test creates an isolated local lifecycle action, persists the provider-attempt marker before the write, and asserts exactly one provider write. Success requires the final provider answer, lifecycle action, and local invoice answer to be `APPROVED`/`SUCCEEDED`; these non-sensitive values and the write count are stored in the JUnit artifact. Missing candidates, provider errors, timeouts, unsupported responses, pending exhaustion, and conflicting terminal states fail the test.
+
+The controlled Sandbox fixture was delivered and verified through GET-only reconciliation. Before Syroce could submit `SendAnswer`, the provider moved the document to `APPROVED`; provider history classified the actor as `SYSTEM`. The Sandbox `SendAnswer` mutation is therefore **NOT VERIFIED due to provider-side preemption**, and no Syroce incoming-answer provider write occurred. This is a documented pilot limitation, not evidence of a successful provider mutation. Production approve/reject remains disabled by the dedicated feature gate.
 
 Production credentials, production tenants, and production deployment are outside this procedure.

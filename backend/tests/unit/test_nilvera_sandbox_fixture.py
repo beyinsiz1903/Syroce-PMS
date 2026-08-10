@@ -128,6 +128,7 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
     assert "summary.provider_uuid != target_provider_uuid" in sandbox_test
     assert 'summary.invoice_number.startswith(f"TST' not in sandbox_test
     assert "WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}" in workflow
+    assert "NILVERA_INCOMING_ANSWER_ENABLED: ${{ inputs.run_incoming_answer }}" in workflow
     with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
         select_test_target(run_incoming_fixture=True, run_incoming_answer=True, run_reconciliation=False)
     with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):

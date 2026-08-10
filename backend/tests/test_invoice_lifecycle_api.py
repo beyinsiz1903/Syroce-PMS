@@ -36,10 +36,31 @@ def mock_require_admin():
 app.dependency_overrides[require_admin] = mock_require_admin
 
 
+@pytest.fixture(autouse=True)
+def enable_incoming_answer_feature(monkeypatch):
+    monkeypatch.setenv("NILVERA_INCOMING_ANSWER_ENABLED", "true")
+
+
 @pytest.fixture
 def client():
     with TestClient(app) as test_client:
         yield test_client
+
+
+def test_disabled_feature_rejects_before_repository_access(client, monkeypatch):
+    monkeypatch.delenv("NILVERA_INCOMING_ANSWER_ENABLED", raising=False)
+    with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as get_invoice:
+        response = client.post(
+            "/api/integrations/incoming-invoices/invoice-1/answer",
+            json={"answer": "APPROVE", "request_uuid": REQUEST_UUID},
+        )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == {
+        "code": "NILVERA_INCOMING_ANSWER_DISABLED",
+        "detail": "Incoming invoice answers are disabled.",
+    }
+    get_invoice.assert_not_called()
 
 
 def _invoice(**updates) -> IncomingInvoice:

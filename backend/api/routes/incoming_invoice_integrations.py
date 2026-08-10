@@ -15,6 +15,7 @@ from core.integrations.incoming_invoice_repository import IncomingInvoiceReposit
 from core.integrations.incoming_invoice_sync_service import IncomingInvoiceSyncService
 from core.integrations.invoice_lifecycle_repository import InvoiceLifecycleRepository
 from core.integrations.invoice_return_service import ReturnQuantityRequest
+from core.integrations.nilvera.config import is_nilvera_incoming_answer_enabled
 from core.integrations.nilvera.errors import NilveraApiError
 from models.schemas import User
 from models.schemas.incoming_invoice import (
@@ -261,6 +262,15 @@ async def answer_incoming_invoice(
     request: IncomingInvoiceAnswerRequest,
     user: User = Depends(require_admin),
 ) -> InvoiceLifecycleResponse:
+    if not is_nilvera_incoming_answer_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "NILVERA_INCOMING_ANSWER_DISABLED",
+                "detail": "Incoming invoice answers are disabled.",
+            },
+        )
+
     tenant_id = user.tenant_id
     invoice = await IncomingInvoiceRepository.get_by_id(tenant_id, invoice_id)
     if not invoice:

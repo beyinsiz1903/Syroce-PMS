@@ -22,6 +22,11 @@ from models.schemas.invoice_lifecycle import (
 PROVIDER_UUID = "11112222-3333-4444-5555-666677778888"
 
 
+@pytest.fixture(autouse=True)
+def enable_incoming_answer_feature(monkeypatch):
+    monkeypatch.setenv("NILVERA_INCOMING_ANSWER_ENABLED", "true")
+
+
 def _action(**updates) -> InvoiceLifecycleAction:
     values = {
         "id": "action-id",
@@ -73,6 +78,35 @@ async def test_invalid_provider_uuid_fails_without_provider_call():
     assert fields["state"] == InvoiceLifecycleActionState.FAILED.value
     assert fields["last_error_code"] == "INVALID_PROVIDER_UUID"
     assert update.await_args.args[4] == {"answer_guard_key": ""}
+
+
+@pytest.mark.asyncio
+async def test_disabled_feature_schedules_retry_before_credentials_or_provider(monkeypatch):
+    monkeypatch.delenv("NILVERA_INCOMING_ANSWER_ENABLED", raising=False)
+    action = _action()
+    with (
+        patch(
+            "core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config",
+            new=AsyncMock(),
+        ) as get_tenant_config,
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result",
+            new=AsyncMock(return_value=True),
+        ) as update,
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.mark_provider_attempt_started",
+            new=AsyncMock(),
+        ) as mark_attempt,
+        patch("core.integrations.invoice_lifecycle_service.NilveraHttpClient") as client_class,
+    ):
+        await InvoiceLifecycleService._process_claimed_action(action, "worker-id")
+
+    get_tenant_config.assert_not_awaited()
+    mark_attempt.assert_not_awaited()
+    client_class.assert_not_called()
+    fields = update.await_args.args[3]
+    assert fields["state"] == InvoiceLifecycleActionState.RETRY_SCHEDULED.value
+    assert fields["last_error_code"] == "INCOMING_ANSWER_FEATURE_DISABLED"
 
 
 @pytest.mark.asyncio
@@ -259,6 +293,48 @@ async def test_existing_provider_attempt_verifies_without_repeating_write():
     mark_attempt.assert_not_awaited()
     answer_service.send_answer.assert_not_awaited()
     answer_service.fetch_answer_state.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_disabled_feature_allows_verification_after_provider_attempt(monkeypatch):
+    monkeypatch.delenv("NILVERA_INCOMING_ANSWER_ENABLED", raising=False)
+    action = _action(provider_attempted_at=datetime.now(UTC))
+    client_context, answer_service = _provider_context()
+    with (
+        patch(
+            "core.integrations.invoice_lifecycle_service.get_nilvera_tenant_config",
+            new=AsyncMock(return_value={"enabled": True, "api_key": "test-key"}),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraHttpClient",
+            return_value=client_context,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.NilveraIncomingAnswerService",
+            return_value=answer_service,
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.mark_provider_attempt_started",
+            new=AsyncMock(),
+        ) as mark_attempt,
+        patch(
+            "core.integrations.invoice_lifecycle_service.IncomingInvoiceRepository.update_answer_status",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.InvoiceLifecycleRepository.update_action_result",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "core.integrations.invoice_lifecycle_service.event_bus.publish",
+            new=AsyncMock(),
+        ),
+    ):
+        await InvoiceLifecycleService._process_claimed_action(action, "worker-id")
+
+    mark_attempt.assert_not_awaited()
+    answer_service.send_answer.assert_not_awaited()
+    answer_service.fetch_answer_state.assert_awaited_once_with(PROVIDER_UUID)
 
 
 @pytest.mark.asyncio

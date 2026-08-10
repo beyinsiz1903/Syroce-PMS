@@ -64,6 +64,11 @@ def _parse_required_bool(name: str) -> bool:
     raise ValueError(f"{name}_INVALID")
 
 
+def is_nilvera_incoming_answer_enabled() -> bool:
+    """Return the fail-closed incoming answer feature state."""
+    return os.environ.get("NILVERA_INCOMING_ANSWER_ENABLED", "false").strip().lower() == "true"
+
+
 def get_nilvera_config() -> NilveraSettings:
     """Lazy loader for config."""
     global _config
