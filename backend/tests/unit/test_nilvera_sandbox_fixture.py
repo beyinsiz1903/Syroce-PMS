@@ -1002,7 +1002,12 @@ async def test_delivery_diagnostics_detects_direct_detail_when_purchase_list_lag
     incoming_service = _incoming_service(visible=False)
     taxpayer_service = SimpleNamespace(
         get_taxpayer_aliases=AsyncMock(
-            return_value=SimpleNamespace(aliases=[expected_alias]),
+            return_value=SimpleNamespace(
+                aliases=[
+                    "urn:mail:otherpk@sandbox.invalid",
+                    expected_alias,
+                ],
+            ),
         )
     )
 

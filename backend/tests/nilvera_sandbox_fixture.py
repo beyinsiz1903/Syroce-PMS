@@ -1233,7 +1233,7 @@ async def reconcile_incoming_commercial_fixture(
                 buyer_aliases = [alias for alias in aliases.aliases if "pk" in alias.lower()]
                 if not buyer_aliases:
                     raise SandboxFixtureBlocked("BLOCKED_FIXTURE_BUYER_ALIAS")
-                receiver_alias_match = await company_owns_alias(receiver_client, buyer_aliases[0])
+                receiver_alias_match = await select_company_owned_alias(receiver_client, buyer_aliases) is not None
             except SandboxFixtureError as exc:
                 raise _enrich_reconciliation_error(
                     exc,
