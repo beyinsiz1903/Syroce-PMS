@@ -21,13 +21,6 @@ def _safe_validation_summary(error: ValidationError) -> dict:
     }
 
 
-def _mask_tax_number(tax_number: str) -> str:
-    """Mask VKN/TCKN for safe logging (e.g., '***1234')."""
-    if not tax_number or len(tax_number) < 4:
-        return "****"
-    return "***" + tax_number[-4:]
-
-
 class TaxpayerCheckResult(BaseModel):
     """Result of checking if a taxpayer is an e-Invoice user."""
 
@@ -97,11 +90,7 @@ class NilveraTaxpayerService:
         """Validate format and length of tax number."""
         clean_number = (tax_number or "").strip()
         if not clean_number or not clean_number.isdigit() or len(clean_number) not in (10, 11):
-            logger.warning(
-                "Invalid tax number format for %s",
-                _mask_tax_number(clean_number),
-                extra={"correlation_id": correlation_id},
-            )
+            logger.warning("Invalid tax number format")
             raise NilveraValidationError(
                 message="Geçersiz Vergi Kimlik Numarası (VKN) veya TCKN",
                 correlation_id=correlation_id,
@@ -122,7 +111,6 @@ class NilveraTaxpayerService:
                 logger.error(
                     "Unexpected response type from Check/TaxNumber: %s",
                     type(response_data).__name__,
-                    extra={"correlation_id": correlation_id},
                 )
                 raise NilveraValidationError(
                     message="Nilvera Check servisi geçersiz yanıt döndürdü (Liste bekleniyordu).",
@@ -139,14 +127,7 @@ class NilveraTaxpayerService:
             try:
                 first_item = NilveraCheckResponseItem(**response_data[0])
             except ValidationError as e:
-                logger.error(
-                    "Malformed response item in Check/TaxNumber for %s",
-                    _mask_tax_number(clean_number),
-                    extra={
-                        "correlation_id": correlation_id,
-                        "validation_errors": _safe_validation_summary(e),
-                    },
-                )
+                logger.error("Malformed response item in Check/TaxNumber validation=%s", _safe_validation_summary(e))
                 raise NilveraValidationError(
                     message="Nilvera Check servisi geçersiz öğe döndürdü.",
                     correlation_id=correlation_id,
@@ -160,12 +141,7 @@ class NilveraTaxpayerService:
             )
 
         except NilveraApiError as e:
-            logger.error(
-                "Failed to check taxpayer status for %s: %s",
-                _mask_tax_number(clean_number),
-                e.__class__.__name__,
-                extra={"correlation_id": correlation_id},
-            )
+            logger.error("Failed to check taxpayer status error_type=%s", e.__class__.__name__)
             raise
 
     async def get_taxpayer_aliases(self, tax_number: str, correlation_id: str | None = None) -> TaxpayerAliasResult:
@@ -182,7 +158,6 @@ class NilveraTaxpayerService:
                 logger.error(
                     "Unexpected response type from GetGlobalCustomerInfo: %s",
                     type(response_data).__name__,
-                    extra={"correlation_id": correlation_id},
                 )
                 raise NilveraValidationError(
                     message="Nilvera CustomerInfo servisi geçersiz yanıt döndürdü (Obje bekleniyordu).",
@@ -192,14 +167,7 @@ class NilveraTaxpayerService:
             try:
                 info = NilveraCustomerInfoResponse(**response_data)
             except ValidationError as e:
-                logger.error(
-                    "Malformed response in GetGlobalCustomerInfo for %s",
-                    _mask_tax_number(clean_number),
-                    extra={
-                        "correlation_id": correlation_id,
-                        "validation_errors": _safe_validation_summary(e),
-                    },
-                )
+                logger.error("Malformed response in GetGlobalCustomerInfo validation=%s", _safe_validation_summary(e))
                 raise NilveraValidationError(
                     message="Nilvera CustomerInfo servisi geçersiz öğe döndürdü.",
                     correlation_id=correlation_id,
@@ -214,10 +182,5 @@ class NilveraTaxpayerService:
             )
 
         except NilveraApiError as e:
-            logger.error(
-                "Failed to get taxpayer aliases for %s: %s",
-                _mask_tax_number(clean_number),
-                e.__class__.__name__,
-                extra={"correlation_id": correlation_id},
-            )
+            logger.error("Failed to get taxpayer aliases error_type=%s", e.__class__.__name__)
             raise

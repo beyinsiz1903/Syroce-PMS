@@ -1,325 +1,405 @@
+import hashlib
+import json
+from datetime import UTC, datetime
 from unittest.mock import patch
 
-# Normally we would import the FastAPI app here, but since we are just mocking the router logic
-# we can create a simple test app wrapper.
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routes.incoming_invoice_integrations import require_admin, router
+from models.schemas.incoming_invoice import (
+    IncomingInvoice,
+    IncomingInvoiceAnswerStatus,
+    IncomingInvoiceProfile,
+    IncomingInvoiceProviderStatus,
+)
+from models.schemas.invoice_lifecycle import (
+    ActionCreationResult,
+    InvoiceLifecycleAction,
+    InvoiceLifecycleActionState,
+    InvoiceLifecycleActionType,
+    InvoiceLifecycleDirection,
+)
+from models.schemas.invoice_sync import InvoiceProvider
+
+REQUEST_UUID = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 
 app = FastAPI()
 app.include_router(router)
 
+
 def mock_require_admin():
-    # Minimal mock user matching expected schema structure for Depends(require_admin)
-    class MockUser:
-        id = "admin_user_123"
-        tenant_id = "tenant_1"
-    return MockUser()
+    return type("MockUser", (), {"id": "admin-user", "tenant_id": "tenant-1"})()
+
 
 app.dependency_overrides[require_admin] = mock_require_admin
+
+
+@pytest.fixture(autouse=True)
+def enable_incoming_answer_feature(monkeypatch):
+    monkeypatch.setenv("NILVERA_INCOMING_ANSWER_ENABLED", "true")
+
 
 @pytest.fixture
 def client():
     with TestClient(app) as test_client:
         yield test_client
 
-def test_answer_incoming_invoice_basic_rejection_denied(client):
-    # Setup mock to return a BASIC invoice
-    with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as mock_get:
-        from datetime import UTC, datetime
 
-        from models.schemas.incoming_invoice import IncomingInvoice, IncomingInvoiceAnswerStatus, IncomingInvoiceProfile
-        from models.schemas.invoice_sync import InvoiceProvider
-
-        mock_inv = IncomingInvoice(
-            id="inv_1",
-            tenant_id="tenant_1",
-            provider=InvoiceProvider.NILVERA,
-            provider_uuid="11112222-3333-4444-5555-666677778888",
-            invoice_number="ABC2023000000001",
-            sender_vkn_tckn="11111111111",
-            sender_title="Test Sender A.S.",
-            profile=IncomingInvoiceProfile.BASIC,
-            answer_status=IncomingInvoiceAnswerStatus.PENDING,
-            issue_date=datetime.now(UTC),
-            received_at=datetime.now(UTC),
-            created_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC)
-        )
-        mock_get.return_value = mock_inv
-
+def test_disabled_feature_rejects_before_repository_access(client, monkeypatch):
+    monkeypatch.delenv("NILVERA_INCOMING_ANSWER_ENABLED", raising=False)
+    with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as get_invoice:
         response = client.post(
-            "/api/integrations/incoming-invoices/inv_1/answer",
-            json={"answer": "REJECT", "request_uuid": "req-1"}
+            "/api/integrations/incoming-invoices/invoice-1/answer",
+            json={"answer": "APPROVE", "request_uuid": REQUEST_UUID},
         )
 
-        assert response.status_code == 400
-        assert "Cannot approve or reject a BASIC" in response.json()["detail"]
+    assert response.status_code == 503
+    assert response.json()["detail"] == {
+        "code": "NILVERA_INCOMING_ANSWER_DISABLED",
+        "detail": "Incoming invoice answers are disabled.",
+    }
+    get_invoice.assert_not_called()
 
-def test_idempotency_same_uuid_diff_fingerprint(client):
-    # Mock get_by_idempotency_key to return an existing action
-    with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as mock_get_inv:
-        with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key") as mock_get_action:
-            from datetime import UTC, datetime
 
-            from models.schemas.incoming_invoice import IncomingInvoice, IncomingInvoiceAnswerStatus, IncomingInvoiceProfile
-            from models.schemas.invoice_lifecycle import InvoiceLifecycleAction, InvoiceLifecycleActionState, InvoiceLifecycleActionType, InvoiceLifecycleDirection
-            from models.schemas.invoice_sync import InvoiceProvider
+def _invoice(**updates) -> IncomingInvoice:
+    now = datetime.now(UTC)
+    values = {
+        "id": "invoice-1",
+        "tenant_id": "tenant-1",
+        "provider": InvoiceProvider.NILVERA,
+        "provider_uuid": "11112222-3333-4444-5555-666677778888",
+        "invoice_number": "SANDBOX-INVOICE",
+        "sender_vkn_tckn": "11111111111",
+        "sender_title": "Sandbox Sender",
+        "profile": IncomingInvoiceProfile.COMMERCIAL,
+        "answer_status": IncomingInvoiceAnswerStatus.PENDING,
+        "provider_status": IncomingInvoiceProviderStatus.SUCCEED,
+        "issue_date": now,
+        "received_at": now,
+        "created_at": now,
+        "updated_at": now,
+    }
+    values.update(updates)
+    return IncomingInvoice(**values)
 
-            mock_inv = IncomingInvoice(
-                id="inv_2",
-                tenant_id="tenant_1",
-                provider=InvoiceProvider.NILVERA,
-                provider_uuid="11112222",
-                invoice_number="ABC",
-                sender_vkn_tckn="111",
-                sender_title="Test",
-                profile=IncomingInvoiceProfile.COMMERCIAL,
-                answer_status=IncomingInvoiceAnswerStatus.PENDING,
-                issue_date=datetime.now(UTC),
-                received_at=datetime.now(UTC),
-                created_at=datetime.now(UTC),
-                updated_at=datetime.now(UTC)
-            )
-            mock_get_inv.return_value = mock_inv
 
-            mock_action = InvoiceLifecycleAction(
-                id="act_1",
-                tenant_id="tenant_1",
-                direction=InvoiceLifecycleDirection.INCOMING,
-                source_invoice_id="inv_2",
-                source_provider_uuid="11112222",
-                action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING,
-                state=InvoiceLifecycleActionState.REQUESTED,
-                request_uuid="req-2",
-                idempotency_key="tenant_1:inv_2:APPROVE:req-2",
-                request_fingerprint="old-fingerprint", # DIFFERENT fingerprint
-                requested_by="admin",
-                requested_at=datetime.now(UTC)
-            )
-            mock_get_action.return_value = mock_action
-
-            response = client.post(
-                "/api/integrations/incoming-invoices/inv_2/answer",
-                json={"answer": "APPROVE", "request_uuid": "req-2"} # Will calculate a different fingerprint
-            )
-
-            assert response.status_code == 409
-            assert "IDEMPOTENCY_CONFLICT" in response.json()["detail"]
-
-def test_idempotency_same_uuid_same_fingerprint(client):
-    # Mock get_by_idempotency_key to return an existing action WITH same fingerprint
-    with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as mock_get_inv:
-        with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key") as mock_get_action:
-            import hashlib
-            from datetime import UTC, datetime
-
-            from models.schemas.incoming_invoice import IncomingInvoice, IncomingInvoiceAnswerStatus, IncomingInvoiceProfile
-            from models.schemas.invoice_lifecycle import InvoiceLifecycleAction, InvoiceLifecycleActionState, InvoiceLifecycleActionType, InvoiceLifecycleDirection
-            from models.schemas.invoice_sync import InvoiceProvider
-
-            mock_inv = IncomingInvoice(
-                id="inv_3",
-                tenant_id="tenant_1",
-                provider=InvoiceProvider.NILVERA,
-                provider_uuid="11112222",
-                invoice_number="ABC",
-                sender_vkn_tckn="111",
-                sender_title="Test",
-                profile=IncomingInvoiceProfile.COMMERCIAL,
-                answer_status=IncomingInvoiceAnswerStatus.PENDING,
-                issue_date=datetime.now(UTC),
-                received_at=datetime.now(UTC),
-                created_at=datetime.now(UTC),
-                updated_at=datetime.now(UTC)
-            )
-            mock_get_inv.return_value = mock_inv
-
-            # Same fingerprint calculation as API
-            action_type_val = InvoiceLifecycleActionType.ACCEPT_INCOMING.value
-            fingerprint_raw = f"tenant_1:inv_3:{action_type_val}:APPROVE:"
-            fingerprint = hashlib.sha256(fingerprint_raw.encode("utf-8")).hexdigest()
-
-            mock_action = InvoiceLifecycleAction(
-                id="act_2",
-                tenant_id="tenant_1",
-                direction=InvoiceLifecycleDirection.INCOMING,
-                source_invoice_id="inv_3",
-                source_provider_uuid="11112222",
-                action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING,
-                state=InvoiceLifecycleActionState.SUCCEEDED, # Existing state
-                request_uuid="req-3",
-                idempotency_key="tenant_1:inv_3:APPROVE:req-3",
-                request_fingerprint=fingerprint, # SAME fingerprint
-                requested_by="admin",
-                requested_at=datetime.now(UTC)
-            )
-            mock_get_action.return_value = mock_action
-
-            response = client.post(
-                "/api/integrations/incoming-invoices/inv_3/answer",
-                json={"answer": "APPROVE", "request_uuid": "req-3"}
-            )
-
-            assert response.status_code == 200 # Should return existing without 409
-            data = response.json()
-            assert data["state"] == "SUCCEEDED"
-            assert "idempotency_key" not in data # safe DTO check
-            assert "lifecycle_lease_owner" not in data # safe DTO check
-
-def test_status_dto_excludes_internal_fields():
-    from datetime import UTC, datetime
-
-    from api.routes.incoming_invoice_integrations import _map_to_response
-    from models.schemas.invoice_lifecycle import InvoiceLifecycleAction, InvoiceLifecycleActionState, InvoiceLifecycleActionType, InvoiceLifecycleDirection
-
-    action = InvoiceLifecycleAction(
-        id="act_dto",
-        tenant_id="tenant_1",
-        direction=InvoiceLifecycleDirection.INCOMING,
-        source_invoice_id="inv_dto",
-        source_provider_uuid="uuid-dto",
-        action_type=InvoiceLifecycleActionType.ACCEPT_INCOMING,
-        state=InvoiceLifecycleActionState.REQUESTED,
-        request_uuid="req-dto",
-        idempotency_key="tenant_1:inv_dto:ACCEPT:req-dto",
-        request_fingerprint="fingerprint-dto",
-        lifecycle_lease_owner="worker_1",
-        lifecycle_lease_expires_at=datetime.now(UTC),
-        requested_by="admin",
-        requested_at=datetime.now(UTC),
-        version=5
+def _fingerprint(invoice_id: str, action_type: InvoiceLifecycleActionType, note=None) -> str:
+    data = json.dumps(
+        {
+            "action_type": action_type.value,
+            "note": note,
+            "source_invoice_id": invoice_id,
+            "tenant_id": "tenant-1",
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
     )
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
-    response_dto = _map_to_response(action)
-    dto_dict = response_dto.model_dump()
 
-    # Excluded internal fields
-    assert "idempotency_key" not in dto_dict
-    assert "request_fingerprint" not in dto_dict
-    assert "lifecycle_lease_owner" not in dto_dict
-    assert "lifecycle_lease_expires_at" not in dto_dict
-    assert "version" not in dto_dict
-    assert "provider_uuid" not in dto_dict
-    assert "tenant_id" not in dto_dict
+def _action(invoice_id="invoice-1", **updates) -> InvoiceLifecycleAction:
+    values = {
+        "id": "action-1",
+        "tenant_id": "tenant-1",
+        "direction": InvoiceLifecycleDirection.INCOMING,
+        "source_invoice_id": invoice_id,
+        "source_provider_uuid": "11112222-3333-4444-5555-666677778888",
+        "action_type": InvoiceLifecycleActionType.ACCEPT_INCOMING,
+        "state": InvoiceLifecycleActionState.REQUESTED,
+        "request_uuid": REQUEST_UUID,
+        "idempotency_key": (f"tenant-1:{invoice_id}:ACCEPT_INCOMING:{REQUEST_UUID}"),
+        "request_fingerprint": _fingerprint(
+            invoice_id,
+            InvoiceLifecycleActionType.ACCEPT_INCOMING,
+        ),
+        "requested_by": "admin-user",
+        "requested_at": datetime.now(UTC),
+    }
+    values.update(updates)
+    return InvoiceLifecycleAction(**values)
 
-    assert "action_id" in dto_dict
-    assert "state" in dto_dict
 
-def test_real_require_admin_dependency_is_used():
-    import inspect
+def test_basic_invoice_cannot_be_answered(client):
+    with patch(
+        "api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id",
+        return_value=_invoice(profile=IncomingInvoiceProfile.BASIC),
+    ):
+        response = client.post(
+            "/api/integrations/incoming-invoices/invoice-1/answer",
+            json={"answer": "APPROVE", "request_uuid": REQUEST_UUID},
+        )
 
-    from api.routes.incoming_invoice_integrations import answer_incoming_invoice
-    sig = inspect.signature(answer_incoming_invoice)
-    assert "user" in sig.parameters
-    assert sig.parameters["user"].default.dependency.__name__ == "require_admin"
+    assert response.status_code == 400
+    assert "Cannot approve or reject a BASIC" in response.json()["detail"]
 
-def test_real_user_tenant_is_used():
-    import inspect
 
-    from api.routes.incoming_invoice_integrations import answer_incoming_invoice
-    sig = inspect.signature(answer_incoming_invoice)
-    # The return type or parameter annotation should indicate we rely on User
-    assert sig.parameters["user"].annotation.__name__ == "User"
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"answer": "INVALID", "request_uuid": REQUEST_UUID},
+        {"answer": "REJECT", "request_uuid": REQUEST_UUID},
+        {
+            "answer": "APPROVE",
+            "note": "must not be sent",
+            "request_uuid": REQUEST_UUID,
+        },
+        {"answer": "APPROVE", "request_uuid": "not-a-uuid"},
+    ],
+)
+def test_invalid_answer_requests_return_422_without_repository_access(client, payload):
+    with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as get_invoice:
+        response = client.post(
+            "/api/integrations/incoming-invoices/invoice-1/answer",
+            json=payload,
+        )
 
-def test_requested_by_uses_authenticated_user(client):
-    # If we call it with a mock user, does it pass the user.id to requested_by?
-    with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as mock_get_inv:
-        with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key") as mock_get_action:
-            with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.has_active_action_for_invoice") as mock_has_active:
-                with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.create_action") as mock_create:
-                    from datetime import UTC, datetime
+    assert response.status_code == 422
+    get_invoice.assert_not_called()
 
-                    from models.schemas.incoming_invoice import IncomingInvoice, IncomingInvoiceAnswerStatus, IncomingInvoiceProfile
-                    from models.schemas.invoice_sync import InvoiceProvider
 
-                    mock_inv = IncomingInvoice(
-                        id="inv_mock_user", tenant_id="tenant_1", provider=InvoiceProvider.NILVERA, provider_uuid="11112222",
-                        invoice_number="ABC", sender_vkn_tckn="111", sender_title="Test", profile=IncomingInvoiceProfile.COMMERCIAL,
-                        answer_status=IncomingInvoiceAnswerStatus.PENDING, issue_date=datetime.now(UTC), received_at=datetime.now(UTC),
-                        created_at=datetime.now(UTC), updated_at=datetime.now(UTC)
-                    )
-                    mock_get_inv.return_value = mock_inv
-                    mock_get_action.return_value = None
-                    mock_has_active.return_value = False
-                    mock_create.return_value = True
+def test_lowercase_answer_is_normalized(client):
+    with (
+        patch(
+            "api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id",
+            return_value=_invoice(),
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key",
+            return_value=None,
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.has_active_action_for_invoice",
+            return_value=False,
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.create_action",
+            return_value=ActionCreationResult.SUCCESS,
+        ) as create_action,
+    ):
+        response = client.post(
+            "/api/integrations/incoming-invoices/invoice-1/answer",
+            json={"answer": "approve", "request_uuid": REQUEST_UUID},
+        )
 
-                    response = client.post(
-                        "/api/integrations/incoming-invoices/inv_mock_user/answer",
-                        json={"answer": "APPROVE", "request_uuid": "req-mock"}
-                    )
-                    assert response.status_code == 200
-                    mock_create.assert_called_once()
-                    created_action = mock_create.call_args[0][0]
-                    # We expect our mock_require_admin user.id
-                    assert created_action.requested_by == "admin_user_123"
-                    assert created_action.tenant_id == "tenant_1"
+    assert response.status_code == 200
+    assert create_action.call_args.args[0].action_type == InvoiceLifecycleActionType.ACCEPT_INCOMING
 
-def test_router_uses_api_prefix():
-    from api.routes.incoming_invoice_integrations import router
-    assert router.prefix == "/api/integrations/incoming-invoices"
 
-def test_answered_invoice_does_not_create_second_action(client):
-    with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as mock_get_inv:
-        with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key") as mock_get_action:
-            with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.has_active_action_for_invoice") as mock_has_active:
-                from datetime import UTC, datetime
+@pytest.mark.parametrize(
+    "invoice",
+    [
+        _invoice(answer_status=IncomingInvoiceAnswerStatus.APPROVED),
+        _invoice(provider_status=IncomingInvoiceProviderStatus.WAITING),
+        _invoice(provider_status=IncomingInvoiceProviderStatus.ERROR),
+        _invoice(provider_status=IncomingInvoiceProviderStatus.UNKNOWN),
+    ],
+)
+def test_non_ready_invoice_cannot_create_answer_action(client, invoice):
+    with (
+        patch(
+            "api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id",
+            return_value=invoice,
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key",
+            return_value=None,
+        ),
+        patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.create_action") as create_action,
+    ):
+        response = client.post(
+            "/api/integrations/incoming-invoices/invoice-1/answer",
+            json={"answer": "APPROVE", "request_uuid": REQUEST_UUID},
+        )
 
-                from models.schemas.incoming_invoice import IncomingInvoice, IncomingInvoiceAnswerStatus, IncomingInvoiceProfile
-                from models.schemas.invoice_sync import InvoiceProvider
+    assert response.status_code == 409
+    create_action.assert_not_called()
 
-                mock_inv = IncomingInvoice(
-                    id="inv_dup", tenant_id="tenant_1", provider=InvoiceProvider.NILVERA, provider_uuid="11112222",
-                    invoice_number="ABC", sender_vkn_tckn="111", sender_title="Test", profile=IncomingInvoiceProfile.COMMERCIAL,
-                    answer_status=IncomingInvoiceAnswerStatus.PENDING, issue_date=datetime.now(UTC), received_at=datetime.now(UTC),
-                    created_at=datetime.now(UTC), updated_at=datetime.now(UTC)
-                )
-                mock_get_inv.return_value = mock_inv
-                mock_get_action.return_value = None
 
-                # Assume there is an existing processed action for this invoice
-                mock_has_active.return_value = True
+def test_idempotent_replay_returns_existing_action_after_invoice_state_changes(client):
+    existing = _action(state=InvoiceLifecycleActionState.SUCCEEDED)
+    with (
+        patch(
+            "api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id",
+            return_value=_invoice(answer_status=IncomingInvoiceAnswerStatus.APPROVED),
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key",
+            return_value=existing,
+        ),
+    ):
+        response = client.post(
+            "/api/integrations/incoming-invoices/invoice-1/answer",
+            json={"answer": "APPROVE", "request_uuid": REQUEST_UUID},
+        )
 
-                response = client.post(
-                    "/api/integrations/incoming-invoices/inv_dup/answer",
-                    json={"answer": "REJECT", "request_uuid": "req-dup", "note": "Duplicate reject test"}
-                )
-                assert response.status_code == 409
-                assert "INVOICE_ALREADY_ANSWERED" in response.json()["detail"]
+    assert response.status_code == 200
+    assert response.json()["state"] == InvoiceLifecycleActionState.SUCCEEDED.value
 
-def test_conflicting_second_answer_returns_409(client):
-    test_answered_invoice_does_not_create_second_action(client)
 
-def test_guard_duplicate_returns_invoice_already_answered(client):
-    from models.schemas.invoice_lifecycle import ActionCreationResult
-    with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as mock_get:
-        mock_get.return_value = type("MockInv", (), {"answer_status": "PENDING", "profile": "COMMERCIAL", "provider_uuid": "123"})()
-        with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key", return_value=None):
-            with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.has_active_action_for_invoice", return_value=False):
-                with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.create_action", return_value=ActionCreationResult.GUARD_CONFLICT):
-                    payload = {"answer": "APPROVE", "request_uuid": "req-1"}
-                    response = client.post(
-                        "/api/integrations/incoming-invoices/inv_already_answered/answer",
-                        headers={"Authorization": "Bearer test-only-minimum-32-character-secret", "X-Idempotency-Key": "idemp-x"},
-                        json=payload
-                    )
-                    assert response.status_code == 409
-                    assert "INVOICE_ALREADY_ANSWERED" in response.json()["detail"]
+def test_idempotency_fingerprint_conflict_returns_409(client):
+    existing = _action(request_fingerprint="different-fingerprint")
+    with (
+        patch(
+            "api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id",
+            return_value=_invoice(),
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key",
+            return_value=existing,
+        ),
+    ):
+        response = client.post(
+            "/api/integrations/incoming-invoices/invoice-1/answer",
+            json={"answer": "APPROVE", "request_uuid": REQUEST_UUID},
+        )
 
-def test_idempotency_duplicate_returns_idempotency_conflict(client):
-    from models.schemas.invoice_lifecycle import ActionCreationResult
-    with patch("api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id") as mock_get:
-        mock_get.return_value = type("MockInv", (), {"answer_status": "PENDING", "profile": "COMMERCIAL", "provider_uuid": "123"})()
-        with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key", return_value=None):
-            with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.has_active_action_for_invoice", return_value=False):
-                with patch("api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.create_action", return_value=ActionCreationResult.IDEMPOTENCY_CONFLICT):
-                    payload = {"answer": "APPROVE", "request_uuid": "req-1"}
-                    response = client.post(
-                        "/api/integrations/incoming-invoices/inv_idemp_conflict/answer",
-                        headers={"Authorization": "Bearer test-only-minimum-32-character-secret", "X-Idempotency-Key": "idemp-x"},
-                        json=payload
-                    )
-                    assert response.status_code == 409
-                    assert "IDEMPOTENCY_CONFLICT" in response.json()["detail"]
+    assert response.status_code == 409
+    assert "IDEMPOTENCY_CONFLICT" in response.json()["detail"]
+
+
+def test_active_action_returns_409(client):
+    with (
+        patch(
+            "api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id",
+            return_value=_invoice(),
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key",
+            return_value=None,
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.has_active_action_for_invoice",
+            return_value=True,
+        ),
+    ):
+        response = client.post(
+            "/api/integrations/incoming-invoices/invoice-1/answer",
+            json={"answer": "APPROVE", "request_uuid": REQUEST_UUID},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "INVOICE_ALREADY_ANSWERED"
+
+
+@pytest.mark.parametrize(
+    ("creation_result", "expected_detail"),
+    [
+        (ActionCreationResult.IDEMPOTENCY_CONFLICT, "IDEMPOTENCY_CONFLICT"),
+        (ActionCreationResult.GUARD_CONFLICT, "INVOICE_ALREADY_ANSWERED"),
+    ],
+)
+def test_atomic_creation_conflicts_return_409(client, creation_result, expected_detail):
+    with (
+        patch(
+            "api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id",
+            return_value=_invoice(),
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key",
+            return_value=None,
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.has_active_action_for_invoice",
+            return_value=False,
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.create_action",
+            return_value=creation_result,
+        ),
+    ):
+        response = client.post(
+            "/api/integrations/incoming-invoices/invoice-1/answer",
+            json={"answer": "APPROVE", "request_uuid": REQUEST_UUID},
+        )
+
+    assert response.status_code == 409
+    assert expected_detail in response.json()["detail"]
+
+
+def test_concurrent_identical_creation_returns_idempotent_action(client):
+    concurrent_action = _action()
+    with (
+        patch(
+            "api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id",
+            return_value=_invoice(),
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key",
+            side_effect=[None, concurrent_action],
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.has_active_action_for_invoice",
+            return_value=False,
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.create_action",
+            return_value=ActionCreationResult.IDEMPOTENCY_CONFLICT,
+        ),
+    ):
+        response = client.post(
+            "/api/integrations/incoming-invoices/invoice-1/answer",
+            json={"answer": "APPROVE", "request_uuid": REQUEST_UUID},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["action_id"] == concurrent_action.id
+
+
+def test_created_action_uses_authenticated_tenant_and_user(client):
+    with (
+        patch(
+            "api.routes.incoming_invoice_integrations.IncomingInvoiceRepository.get_by_id",
+            return_value=_invoice(),
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.get_by_idempotency_key",
+            return_value=None,
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.has_active_action_for_invoice",
+            return_value=False,
+        ),
+        patch(
+            "api.routes.incoming_invoice_integrations.InvoiceLifecycleRepository.create_action",
+            return_value=ActionCreationResult.SUCCESS,
+        ) as create_action,
+    ):
+        response = client.post(
+            "/api/integrations/incoming-invoices/invoice-1/answer",
+            json={
+                "answer": "REJECT",
+                "note": "Sandbox business rejection",
+                "request_uuid": REQUEST_UUID,
+            },
+        )
+
+    assert response.status_code == 200
+    action = create_action.call_args.args[0]
+    assert action.tenant_id == "tenant-1"
+    assert action.requested_by == "admin-user"
+    assert action.action_type == InvoiceLifecycleActionType.REJECT_INCOMING
+    assert action.reason == "Sandbox business rejection"
+
+
+def test_response_dto_excludes_internal_and_provider_fields():
+    from api.routes.incoming_invoice_integrations import _map_to_response
+
+    response = _map_to_response(
+        _action(
+            lifecycle_lease_owner="worker-id",
+            lifecycle_lease_expires_at=datetime.now(UTC),
+        )
+    ).model_dump()
+
+    for field in {
+        "idempotency_key",
+        "request_fingerprint",
+        "lifecycle_lease_owner",
+        "lifecycle_lease_expires_at",
+        "source_provider_uuid",
+        "tenant_id",
+    }:
+        assert field not in response

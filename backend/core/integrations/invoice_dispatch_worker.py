@@ -17,7 +17,7 @@ import logging
 import os
 import socket
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pymongo.errors
@@ -67,7 +67,7 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
 
     async def start(self) -> None:
         if not self.health.enabled:
-            logger.info(f"{self.worker_id} is disabled. Will not start.")
+            logger.info("Invoice Dispatch Worker is disabled. Will not start.")
             return
 
         if self._task and not self._task.done():
@@ -84,7 +84,7 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
             raise RuntimeError("NILVERA_WORKER_STARTUP_FAILED") from None
 
         self._mark_running()
-        logger.info("Invoice Dispatch Worker started: %s", self.worker_id)
+        logger.info("Invoice Dispatch Worker started")
 
     async def stop(self) -> None:
         self._stop_event.set()
@@ -104,7 +104,7 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
             finally:
                 self._task = None
                 self._mark_stopped()
-        logger.info("Invoice Dispatch Worker stopped: %s", self.worker_id)
+        logger.info("Invoice Dispatch Worker stopped")
 
     @property
     def metrics(self) -> dict[str, Any]:
@@ -279,7 +279,7 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
         tenant_id = record.get("tenant_id")
 
         if not record_id or not tenant_id:
-            logger.error("Invalid record claimed: %s", record)
+            logger.error("Invoice dispatch worker claimed an invalid record")
             return
 
         # Use tenant context so all nested repository calls map correctly to the tenant
@@ -288,10 +288,10 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
 
             if success:
                 self._record_success(1)
-                logger.info("Invoice dispatch worker success: %s for tenant %s", record_id, tenant_id)
+                logger.info("Invoice dispatch worker completed a record")
             else:
                 self._record_job_error(NilveraWorkerErrorCode.DISPATCH_FAILED)
-                logger.warning("Invoice dispatch worker failed/retry: %s for tenant %s", record_id, tenant_id)
+                logger.warning("Invoice dispatch worker record requires retry")
 
 
 # Singleton worker instance

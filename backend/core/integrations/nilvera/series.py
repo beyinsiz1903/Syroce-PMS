@@ -130,17 +130,13 @@ class NilveraSeriesService:
         try:
             response_data = await self._client.get(path, correlation_id=correlation_id)
         except NilveraApiError:
-            logger.error(
-                "Failed to fetch e-Invoice series",
-                extra={"correlation_id": correlation_id},
-            )
+            logger.error("Failed to fetch e-Invoice series")
             raise
 
         if not isinstance(response_data, dict):
             logger.error(
                 "Unexpected response type from /einvoice/Series: %s",
                 type(response_data).__name__,
-                extra={"correlation_id": correlation_id},
             )
             raise NilveraValidationError(
                 message="Nilvera Series servisi geçersiz yanıt döndürdü (Obje bekleniyordu).",
@@ -150,13 +146,7 @@ class NilveraSeriesService:
         try:
             page_result = NilveraSeriesPage(**response_data)
         except ValidationError as exc:
-            logger.error(
-                "Malformed response from /einvoice/Series",
-                extra={
-                    "correlation_id": correlation_id,
-                    "validation_errors": _safe_validation_summary(exc),
-                },
-            )
+            logger.error("Malformed response from /einvoice/Series validation=%s", _safe_validation_summary(exc))
             raise NilveraValidationError(
                 message="Nilvera Series servisi geçersiz yapı döndürdü.",
                 correlation_id=correlation_id,

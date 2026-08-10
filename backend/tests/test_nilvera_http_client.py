@@ -5,17 +5,19 @@ import pytest
 from pydantic import ValidationError
 
 from core.integrations.nilvera.client import NilveraHttpClient
-from core.integrations.nilvera.config import NilveraSettings, get_nilvera_config
+from core.integrations.nilvera.config import NilveraEndpoints, NilveraSettings, get_nilvera_config
 from core.integrations.nilvera.errors import (
     NilveraApiError,
     NilveraAuthError,
-    NilveraBusinessRuleError,
     NilveraDuplicateError,
+    NilveraMalformedResponseError,
+    NilveraNetworkError,
     NilveraNotFoundError,
     NilveraRateLimitError,
     NilveraResponseSizeError,
     NilveraServerError,
     NilveraValidationError,
+    normalize_validation_issue,
 )
 
 
@@ -131,6 +133,40 @@ def test_config_has_no_api_key_field():
     assert "api_key" not in NilveraSettings.model_fields
 
 
+@pytest.mark.asyncio
+async def test_company_and_purchase_use_same_sandbox_bearer_auth(config_override):
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"Content": []})
+
+    receiver_key = "receiver-offline-test-key"
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, base_url="https://apitest.nilvera.com") as injected_client:
+        async with NilveraHttpClient(receiver_key, client=injected_client) as http_client:
+            await http_client.get(NilveraEndpoints.GET_COMPANY)
+            await http_client.get(
+                NilveraEndpoints.LIST_PURCHASE_INVOICES,
+                params={
+                    "Search": "TST2026000000001",
+                    "StartDate": "2026-08-05T00:00:00.000Z",
+                    "EndDate": "2026-08-07T00:00:00.000Z",
+                    "Page": "1",
+                    "PageSize": "100",
+                },
+            )
+            assert http_client.last_http_status == 200
+
+    assert [request.method for request in requests] == ["GET", "GET"]
+    assert [request.url.path for request in requests] == [
+        NilveraEndpoints.GET_COMPANY,
+        NilveraEndpoints.LIST_PURCHASE_INVOICES,
+    ]
+    assert {request.url.host for request in requests} == {"apitest.nilvera.com"}
+    assert {request.headers["Authorization"] for request in requests} == {f"Bearer {receiver_key}"}
+
+
 # --- ERROR REDACTION TESTS ---
 
 
@@ -148,7 +184,7 @@ def test_error_string_redacts_api_key():
     err = NilveraApiError(message="Test", raw_response={"Authorization": "Bearer super-secret", "api_key": "123"})
     assert "super-secret" not in str(err)
     assert "123" not in str(err)
-    assert err.sanitized_preview == "[REDACTED_POTENTIAL_SECRETS]"
+    assert err.sanitized_preview == "[REDACTED_PROVIDER_RESPONSE]"
 
 
 def test_error_preview_is_bounded():
@@ -227,8 +263,10 @@ async def test_malformed_json_returns_typed_error(config_override):
         return httpx.Response(200, content=b"invalid{json", headers={"Content-Type": "application/json"})
 
     async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
-        with pytest.raises(NilveraApiError):
+        with pytest.raises(NilveraApiError) as exc_info:
             await http_client.get("/test")
+        assert exc_info.value.http_status == 200
+        assert http_client.last_http_status == 200
 
 
 @pytest.mark.asyncio
@@ -237,8 +275,10 @@ async def test_json_endpoint_rejects_html_success_response(config_override):
         return httpx.Response(200, content=b"<html>ok</html>", headers={"Content-Type": "text/html"})
 
     async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
-        with pytest.raises(NilveraValidationError):
+        with pytest.raises(NilveraMalformedResponseError) as exc_info:
             await http_client.get("/test")
+        assert exc_info.value.http_status == 200
+        assert http_client.last_http_status == 200
 
 
 @pytest.mark.asyncio
@@ -284,7 +324,7 @@ async def test_oversized_actual_body_rejected(monkeypatch):
         (403, NilveraAuthError),
         (404, NilveraNotFoundError),
         (409, NilveraDuplicateError),
-        (422, NilveraBusinessRuleError),
+        (422, NilveraValidationError),
     ],
 )
 @pytest.mark.asyncio
@@ -297,9 +337,135 @@ async def test_no_retry_for_client_errors(config_override, mock_sleeper, status_
         return httpx.Response(status_code, json={"Message": "Error"})
 
     async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
-        with pytest.raises(exc_class):
+        with pytest.raises(exc_class) as exc_info:
             await http_client.get("/test", _sleeper=mock_sleeper)
         assert calls == 1
+        assert exc_info.value.http_status == status_code
+
+
+@pytest.mark.asyncio
+async def test_numeric_provider_code_is_preserved_as_safe_string(config_override):
+    def handler(request):
+        return httpx.Response(
+            400,
+            json={
+                "Message": "invalid request",
+                "Errors": [{"Code": 400, "Description": "field", "Detail": "invalid"}],
+            },
+        )
+
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        with pytest.raises(NilveraValidationError) as exc_info:
+            await http_client.get("/test")
+
+    assert exc_info.value.http_status == 400
+    assert exc_info.value.provider_code == "400"
+
+
+@pytest.mark.asyncio
+async def test_422_code_2004_preserves_lossless_detail_and_safe_date_diagnostic(config_override, caplog):
+    support_detail = (
+        "Fatura Veritabanına Kaydedilemedi. Hata: TEST-INVOICE Numaralı Fatura "
+        "'2026-03-23 | 2026-03-23 Tarihleri Arasında Olmalıdır.'"
+    )
+
+    def handler(request):
+        return httpx.Response(
+            422,
+            json={
+                "Message": "Kayıt Başarısız.",
+                "Errors": [
+                    {
+                        "Code": 2004,
+                        "Description": "Kayıt Başarısız.",
+                        "Detail": support_detail,
+                    }
+                ],
+            },
+        )
+
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        with pytest.raises(NilveraValidationError) as exc_info:
+            await http_client.post("/test", json={"safe": True}, stage="SEND_MODEL")
+
+    error = exc_info.value
+    assert error.http_status == 422
+    assert error.provider_code == "2004"
+    assert error.provider_message == "Kayıt Başarısız."
+    assert error.classification == "VALIDATION_REJECTED"
+    assert error.retryable is False
+    assert error.stage == "SEND_MODEL"
+    assert error.safe_validation_issues == ("FIELD=InvoiceInfo.IssueDate;REASON=DATE_OUT_OF_RANGE",)
+    assert len(error.provider_errors) == 1
+    assert error.provider_errors[0].code == "2004"
+    assert error.provider_errors[0].description == "Kayıt Başarısız."
+    assert error.provider_errors[0].detail == support_detail
+    assert error.provider_errors[0].classification == "VALIDATION_REJECTED"
+    assert error.provider_errors[0].retryable is False
+    assert error.provider_errors[0].safe_detail == (
+        "FIELD=InvoiceInfo.IssueDate;REASON=DATE_OUT_OF_RANGE;"
+        "WINDOW_START=2026-03-23;WINDOW_END=2026-03-23"
+    )
+    assert error.sanitized_preview is None
+    assert "TEST-INVOICE" not in repr(error.provider_errors)
+    assert "TEST-INVOICE" not in repr(error.sanitized_context)
+    assert "TEST-INVOICE" not in caplog.text
+    assert support_detail not in caplog.text
+
+
+def test_validation_issue_normalizer_redacts_identifiers_secrets_and_payload_values():
+    issue = normalize_validation_issue(
+        "Authorization: Bearer sandbox-secret",
+        "InvoiceSerieOrNumber TST2026000000001 geçersiz",
+        "VKN 1111111111, ETTN 123e4567-e89b-12d3-a456-426614174000, user@example.invalid",
+    )
+
+    assert issue == "FIELD=InvoiceInfo.InvoiceSerieOrNumber;REASON=FORMAT_INVALID"
+    assert len(issue) <= 160
+    for sensitive in ("sandbox-secret", "TST2026000000001", "1111111111", "123e4567", "example.invalid"):
+        assert sensitive not in issue
+
+
+@pytest.mark.asyncio
+async def test_error_parser_normalizes_all_bounded_validation_errors(config_override):
+    def handler(request):
+        return httpx.Response(
+            422,
+            json={
+                "Message": "İş kuralı doğrulaması başarısız.",
+                "Errors": [
+                    {"Code": 2004, "Description": "InvoiceLines.KDVTotal tutarsız", "Detail": "VKN 1111111111"},
+                    {"Code": 2004, "Description": "InvoiceInfo.CurrencyCode geçersiz", "Detail": "token unsafe-value"},
+                ],
+            },
+        )
+
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        with pytest.raises(NilveraValidationError) as exc_info:
+            await http_client.post("/test", json={"safe": True})
+
+    assert exc_info.value.safe_validation_issues == (
+        "FIELD=InvoiceLines.KDVTotal;REASON=TOTAL_MISMATCH",
+        "FIELD=InvoiceInfo.CurrencyCode;REASON=FORMAT_INVALID",
+    )
+    assert [entry.code for entry in exc_info.value.provider_errors] == ["2004", "2004"]
+    assert [entry.description for entry in exc_info.value.provider_errors] == [
+        "InvoiceLines.KDVTotal tutarsız",
+        "InvoiceInfo.CurrencyCode geçersiz",
+    ]
+    assert [entry.detail for entry in exc_info.value.provider_errors] == [
+        "VKN 1111111111",
+        "token unsafe-value",
+    ]
+
+
+def test_error_drops_untrusted_pre_normalized_validation_metadata():
+    error = NilveraApiError(
+        "provider rejected request",
+        validation_issues=("FIELD=PayableAmount;REASON=FORMAT_INVALID;VALUE=sensitive",),
+    )
+
+    assert error.safe_validation_issues == ()
 
 
 @pytest.mark.parametrize("status_code", [502, 503, 504])
@@ -483,7 +649,7 @@ def test_error_str_does_not_expose_description():
 
 def test_error_preview_redacts_authorization_case_insensitive():
     err = NilveraApiError("Test", raw_response={"aUtHoRiZaTiOn": "Bearer secret", "safe_key": "val"})
-    assert err.sanitized_preview == '{"safe_key": "val"}'
+    assert err.sanitized_preview == "[REDACTED_PROVIDER_RESPONSE]"
 
 
 def test_error_preview_redacts_vkn_tckn_like_values():
@@ -491,7 +657,7 @@ def test_error_preview_redacts_vkn_tckn_like_values():
     preview = err.sanitized_preview
     assert "1234567890" not in preview
     assert "12345678901" not in preview
-    assert "[REDACTED]" in preview
+    assert preview == "[REDACTED_PROVIDER_RESPONSE]"
 
 
 @pytest.mark.asyncio
@@ -549,14 +715,15 @@ async def test_oversized_error_content_length_rejected_before_full_read(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_small_json_error_is_parsed(config_override):
+async def test_small_json_error_is_reduced_without_retaining_raw_response(config_override):
     def handler(request):
         return httpx.Response(400, headers={"Content-Type": "application/json"}, content=b'{"Message": "Bad"}')
 
     async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
         with pytest.raises(NilveraValidationError) as exc:
             await http_client.get("/test")
-        assert "Bad" in exc.value.sanitized_preview
+        assert exc.value.sanitized_preview is None
+        assert exc.value.safe_validation_issues == ("FIELD=UNKNOWN;REASON=VALIDATION_REJECTED",)
         assert exc.value.args == ("E-Belge entegratörü ile iletişimde bir sorun oluştu.",)
 
 
@@ -645,23 +812,98 @@ def test_provider_message_tckn_is_redacted():
 def test_provider_message_email_is_redacted():
     err = NilveraApiError("Test", raw_response={"Message": "Contact test@example.com"})
     assert "test@example.com" not in err.sanitized_preview
-    assert "[REDACTED_EMAIL]" in err.sanitized_preview
+    assert err.sanitized_preview == "[REDACTED_PROVIDER_RESPONSE]"
 
 
 def test_provider_message_bearer_token_is_redacted():
     err = NilveraApiError("Test", raw_response={"Message": "Bearer abcdef123456"})
     assert "abcdef123456" not in err.sanitized_preview
-    assert "[REDACTED_POTENTIAL_SECRETS]" in err.sanitized_preview
+    assert err.sanitized_preview == "[REDACTED_PROVIDER_RESPONSE]"
+
+
+def test_error_string_omits_unsafe_provider_code_and_raw_correlation_id():
+    err = NilveraApiError(
+        "Test",
+        provider_code="unsafe provider detail",
+        correlation_id="123e4567-e89b-12d3-a456-426614174000",
+    )
+
+    rendered = str(err)
+    assert "unsafe provider detail" not in rendered
+    assert "123e4567" not in rendered
 
 
 def test_description_and_detail_are_not_raw():
     err = NilveraApiError("Test", description="Desc with 12345678901", detail="Detail with user@example.com")
     assert not hasattr(err, "description")
     assert not hasattr(err, "detail")
+    assert err.provider_errors == ()
     assert err.sanitized_description is not None
     assert err.sanitized_detail is not None
     assert "12345678901" not in err.sanitized_description
     assert "user@example.com" not in err.sanitized_detail
+
+
+@pytest.mark.parametrize(
+    "status_code,body,content_type,expected_type,classification",
+    [
+        (422, '{"Errors": null}', "application/json", NilveraValidationError, "VALIDATION_REJECTED"),
+        (422, '{"Errors": []}', "application/json", NilveraValidationError, "VALIDATION_REJECTED"),
+        (422, '{"Errors": [{}]}', "application/json", NilveraValidationError, "VALIDATION_REJECTED"),
+        (422, "not-json", "application/json", NilveraValidationError, "VALIDATION_REJECTED"),
+        (500, "", "text/plain", NilveraServerError, "PROVIDER_ERROR"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_malformed_error_shapes_remain_fail_closed(
+    config_override,
+    status_code,
+    body,
+    content_type,
+    expected_type,
+    classification,
+):
+    def handler(request):
+        return httpx.Response(status_code, content=body, headers={"Content-Type": content_type})
+
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        with pytest.raises(expected_type) as exc_info:
+            await http_client.post("/test", json={"safe": True})
+
+    assert exc_info.value.classification == classification
+    assert exc_info.value.http_status == status_code
+    assert len(exc_info.value.provider_errors) <= 1
+
+
+@pytest.mark.asyncio
+async def test_success_response_parse_failure_is_malformed(config_override):
+    def handler(request):
+        return httpx.Response(200, content="not-json", headers={"Content-Type": "application/json"})
+
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        with pytest.raises(NilveraMalformedResponseError) as exc_info:
+            await http_client.post("/test", json={"safe": True})
+
+    assert exc_info.value.classification == "MALFORMED_RESPONSE"
+    assert exc_info.value.retryable is False
+
+
+@pytest.mark.asyncio
+async def test_post_connection_error_is_network_failure_without_retry(config_override, mock_sleeper):
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        raise httpx.ConnectError("connection failed", request=request)
+
+    async with NilveraHttpClient("key", client=get_mock_client(handler)) as http_client:
+        with pytest.raises(NilveraNetworkError) as exc_info:
+            await http_client.post("/test", json={"safe": True}, _sleeper=mock_sleeper)
+
+    assert calls == 1
+    assert exc_info.value.classification == "NETWORK_ERROR"
+    assert exc_info.value.retryable is True
 
 
 def test_str_never_contains_provider_message():

@@ -61,7 +61,7 @@ async def get_nilvera_tenant_config(tenant_id: str, *, decrypt_api_key: bool = F
             svc = get_crypto_service()
             out["api_key"] = svc.decrypt(cfg["api_key_enc"], aad=_aad(tenant_id))
         except Exception as exc:
-            logger.warning("[nilvera] api_key decrypt failed tenant=%s error_type=%s", tenant_id, type(exc).__name__)
+            logger.warning("[nilvera] api_key decrypt failed error_type=%s", type(exc).__name__)
             out["api_key"] = None
 
     return out

@@ -36,11 +36,8 @@ async def test_invalid_vkn_raises_validation_error(taxpayer_service, mock_client
 
     # A. invalid tax number redaction test
     if invalid_vkn.strip():
-        # Assert full invalid_vkn is NOT in the logs
         assert invalid_vkn not in caplog.text
-        # Assert masked is in logs
-        if len(invalid_vkn) >= 4:
-            assert f"***{invalid_vkn[-4:]}" in caplog.text
+        assert invalid_vkn[-4:] not in caplog.text
 
     with pytest.raises(NilveraValidationError) as exc:
         await taxpayer_service.get_taxpayer_aliases(invalid_vkn)
@@ -145,7 +142,8 @@ async def test_check_taxpayer_malformed_item_error(taxpayer_service, mock_client
     assert sensitive_name not in tb_text
 
     # Check that safe message is logged
-    assert "Malformed response item in Check/TaxNumber for ***7801" in caplog.text
+    assert "Malformed response item in Check/TaxNumber" in caplog.text
+    assert "7801" not in caplog.text
     # Verify PII/sensitive data is NOT in the logs
     assert sensitive_vkn not in caplog.text
     assert sensitive_title not in caplog.text
@@ -267,7 +265,8 @@ async def test_get_taxpayer_aliases_malformed_item(taxpayer_service, mock_client
     assert sensitive_address not in tb_text
     assert sensitive_alias not in tb_text
 
-    assert "Malformed response in GetGlobalCustomerInfo for ***7801" in caplog.text
+    assert "Malformed response in GetGlobalCustomerInfo" in caplog.text
+    assert "7801" not in caplog.text
     # Verify PII/sensitive data is NOT in the logs
     assert sensitive_vkn not in caplog.text
     assert sensitive_email not in caplog.text

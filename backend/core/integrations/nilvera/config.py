@@ -28,18 +28,22 @@ class NilveraEndpoints:
     """Official Nilvera API endpoints (V1)."""
 
     # Company / Taxpayer lookups
+    GET_COMPANY = "/general/Company"
     CHECK_TAX_NUMBER = "/general/GlobalCompany/Check/TaxNumber/{tax_number}"
     GET_CUSTOMER_INFO = "/general/GlobalCompany/GetGlobalCustomerInfo/{tax_number}"
 
     # E-Invoice
     SEND_INVOICE_MODEL = "/einvoice/Send/Model"
+    LIST_SALE_INVOICES = "/einvoice/Sale"
     GET_SALE_INVOICE_STATUS = "/einvoice/Sale/{uuid}/Status"
     GET_SALE_INVOICE_DETAIL = "/einvoice/Sale/{uuid}/Details"
+    GET_SALE_INVOICE_ENVELOPE_INFO = "/einvoice/Sale/{uuid}/EnvelopeInfo"
 
     # E-Invoice Purchase (Incoming)
     LIST_PURCHASE_INVOICES = "/einvoice/Purchase"
     GET_PURCHASE_INVOICE_DETAIL = "/einvoice/Purchase/{uuid}/Details"
     GET_PURCHASE_INVOICE_STATUS = "/einvoice/Purchase/{uuid}/Status"
+    GET_PURCHASE_INVOICE_HISTORIES = "/einvoice/Purchase/{uuid}/Histories"
     SEND_ANSWER = "/einvoice/Purchase/SendAnswer"
 
 
@@ -58,6 +62,11 @@ def _parse_required_bool(name: str) -> bool:
         return False
 
     raise ValueError(f"{name}_INVALID")
+
+
+def is_nilvera_incoming_answer_enabled() -> bool:
+    """Return the fail-closed incoming answer feature state."""
+    return os.environ.get("NILVERA_INCOMING_ANSWER_ENABLED", "false").strip().lower() == "true"
 
 
 def get_nilvera_config() -> NilveraSettings:

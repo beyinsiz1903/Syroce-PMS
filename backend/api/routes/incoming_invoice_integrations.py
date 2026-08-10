@@ -1,19 +1,21 @@
 """API Routes for Incoming Invoices Lifecycle Operations."""
 
 import hashlib
+import json
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from core.helpers import require_admin
 from core.integrations.incoming_invoice_repository import IncomingInvoiceRepository
 from core.integrations.incoming_invoice_sync_service import IncomingInvoiceSyncService
 from core.integrations.invoice_lifecycle_repository import InvoiceLifecycleRepository
 from core.integrations.invoice_return_service import ReturnQuantityRequest
+from core.integrations.nilvera.config import is_nilvera_incoming_answer_enabled
 from core.integrations.nilvera.errors import NilveraApiError
 from models.schemas import User
 from models.schemas.incoming_invoice import (
@@ -21,14 +23,15 @@ from models.schemas.incoming_invoice import (
     IncomingInvoiceLine,
     IncomingInvoiceProfile,
     IncomingInvoiceProviderStatus,
+    IncomingTaxDetail,
 )
 from models.schemas.invoice_lifecycle import (
+    ActionCreationResult,
     InvoiceLifecycleAction,
     InvoiceLifecycleActionState,
     InvoiceLifecycleActionType,
     InvoiceLifecycleDirection,
 )
-from models.schemas.invoicing import TaxDetail
 
 router = APIRouter(
     prefix="/api/integrations/incoming-invoices",
@@ -37,9 +40,24 @@ router = APIRouter(
 
 
 class IncomingInvoiceAnswerRequest(BaseModel):
-    answer: str  # "APPROVE" or "REJECT"
-    note: str | None = None
-    request_uuid: str
+    answer: Literal["APPROVE", "REJECT"]
+    note: str | None = Field(default=None, max_length=1000)
+    request_uuid: uuid.UUID
+
+    @field_validator("answer", mode="before")
+    @classmethod
+    def normalize_answer(cls, value):
+        return value.upper() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def validate_note(self):
+        if self.note is not None:
+            self.note = self.note.strip() or None
+        if self.answer == "REJECT" and self.note is None:
+            raise ValueError("A note is required when rejecting an invoice")
+        if self.answer == "APPROVE" and self.note is not None:
+            raise ValueError("A note is not allowed when approving an invoice")
+        return self
 
 
 class InvoiceLifecycleResponse(BaseModel):
@@ -91,7 +109,7 @@ class IncomingInvoiceLineResponse(BaseModel):
     line_extension_amount: Decimal
     kdv_rate: Decimal
     kdv_amount: Decimal
-    other_taxes: list[TaxDetail]
+    other_taxes: list[IncomingTaxDetail]
     currency: str
 
 
@@ -244,32 +262,48 @@ async def answer_incoming_invoice(
     request: IncomingInvoiceAnswerRequest,
     user: User = Depends(require_admin),
 ) -> InvoiceLifecycleResponse:
+    if not is_nilvera_incoming_answer_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "NILVERA_INCOMING_ANSWER_DISABLED",
+                "detail": "Incoming invoice answers are disabled.",
+            },
+        )
+
     tenant_id = user.tenant_id
     invoice = await IncomingInvoiceRepository.get_by_id(tenant_id, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    if invoice.profile == IncomingInvoiceProfile.BASIC:
-        raise HTTPException(status_code=400, detail="Cannot approve or reject a BASIC (TEMELFATURA) invoice.")
-
-    answer_upper = request.answer.upper()
-    if answer_upper not in ("APPROVE", "REJECT"):
-        raise HTTPException(status_code=400, detail="Answer must be APPROVE or REJECT.")
-
-    if answer_upper == "REJECT" and not request.note:
-        raise HTTPException(status_code=400, detail="A note is required when rejecting an invoice.")
-
-    action_type = InvoiceLifecycleActionType.ACCEPT_INCOMING if answer_upper == "APPROVE" else InvoiceLifecycleActionType.REJECT_INCOMING
-
-    idempotency_key = f"{tenant_id}:{invoice_id}:{action_type.value}:{request.request_uuid}"
-    fingerprint_raw = f"{tenant_id}:{invoice_id}:{action_type.value}:{answer_upper}:{request.note or ''}"
-    request_fingerprint = hashlib.sha256(fingerprint_raw.encode("utf-8")).hexdigest()
+    action_type = InvoiceLifecycleActionType.ACCEPT_INCOMING if request.answer == "APPROVE" else InvoiceLifecycleActionType.REJECT_INCOMING
+    request_uuid = str(request.request_uuid)
+    idempotency_key = f"{tenant_id}:{invoice_id}:{action_type.value}:{request_uuid}"
+    fingerprint_data = json.dumps(
+        {
+            "action_type": action_type.value,
+            "note": request.note,
+            "source_invoice_id": invoice_id,
+            "tenant_id": tenant_id,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    request_fingerprint = hashlib.sha256(fingerprint_data.encode("utf-8")).hexdigest()
 
     existing_action = await InvoiceLifecycleRepository.get_by_idempotency_key(tenant_id, idempotency_key)
     if existing_action:
         if existing_action.request_fingerprint != request_fingerprint:
             raise HTTPException(status_code=409, detail="IDEMPOTENCY_CONFLICT: request_uuid used with different payload.")
         return _map_to_response(existing_action)
+
+    if invoice.profile == IncomingInvoiceProfile.BASIC:
+        raise HTTPException(status_code=400, detail="Cannot approve or reject a BASIC (TEMELFATURA) invoice.")
+    if invoice.answer_status != IncomingInvoiceAnswerStatus.PENDING:
+        raise HTTPException(status_code=409, detail="INVOICE_ANSWER_STATE_NOT_PENDING")
+    if invoice.provider_status != IncomingInvoiceProviderStatus.SUCCEED:
+        raise HTTPException(status_code=409, detail="INVOICE_PROVIDER_STATUS_NOT_READY")
 
     # Make sure we don't already have an action for this invoice that has been processed or is processing.
     has_active = await InvoiceLifecycleRepository.has_active_action_for_invoice(tenant_id, invoice_id)
@@ -285,7 +319,7 @@ async def answer_incoming_invoice(
         source_provider_uuid=invoice.provider_uuid,
         action_type=action_type,
         state=InvoiceLifecycleActionState.REQUESTED,
-        request_uuid=request.request_uuid,
+        request_uuid=request_uuid,
         idempotency_key=idempotency_key,
         request_fingerprint=request_fingerprint,
         answer_guard_key=invoice_id,
@@ -295,9 +329,11 @@ async def answer_incoming_invoice(
     )
 
     created = await InvoiceLifecycleRepository.create_action(action)
-    from models.schemas.invoice_lifecycle import ActionCreationResult
     if created == ActionCreationResult.IDEMPOTENCY_CONFLICT:
-        raise HTTPException(status_code=409, detail="IDEMPOTENCY_CONFLICT: Concurrent creation detected.")
+        concurrent_action = await InvoiceLifecycleRepository.get_by_idempotency_key(tenant_id, idempotency_key)
+        if concurrent_action and concurrent_action.request_fingerprint == request_fingerprint:
+            return _map_to_response(concurrent_action)
+        raise HTTPException(status_code=409, detail="IDEMPOTENCY_CONFLICT: request_uuid used with different payload.")
     if created == ActionCreationResult.GUARD_CONFLICT:
         raise HTTPException(status_code=409, detail="INVOICE_ALREADY_ANSWERED: An answer is already being processed for this invoice.")
 
@@ -385,10 +421,4 @@ async def create_incoming_invoice_return(
 
     # 4. Fail-Closed Option A: Provider Contract Not Verified
     # Do not create allocation or action yet.
-    raise HTTPException(
-        status_code=503,
-        detail={
-            "code": "PROVIDER_CONTRACT_NOT_VERIFIED",
-            "detail": "CreateReturn provider contract is not verified."
-        }
-    )
+    raise HTTPException(status_code=503, detail={"code": "PROVIDER_CONTRACT_NOT_VERIFIED", "detail": "CreateReturn provider contract is not verified."})

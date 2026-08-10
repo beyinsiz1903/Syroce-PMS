@@ -1,0 +1,1703 @@
+"""Fail-closed support for the explicitly gated Nilvera Sandbox fixture test."""
+
+import asyncio
+import hashlib
+import hmac
+import re
+import uuid
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, time, timedelta
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
+
+from core.integrations.nilvera.config import NilveraEndpoints
+from core.integrations.nilvera.errors import NilveraApiError, NilveraNotFoundError
+from core.integrations.nilvera.incoming import NilveraIncomingService
+from core.integrations.nilvera.mapper import NilveraEInvoicePayload, NilveraInvoiceMapper, SellerSnapshot
+from core.integrations.nilvera.status_mapper import ProviderInvoiceOutcome
+from core.integrations.nilvera.taxpayer import NilveraTaxpayerService
+from models.schemas.invoicing import Invoice, InvoiceItem
+
+_FIXTURE_ID_PATTERN = re.compile(r"^TST\d{13}$")
+_SAFE_PROVIDER_CODE_PATTERN = re.compile(r"^[A-Z0-9_.-]{1,64}$")
+_SAFE_VALIDATION_ISSUE_PATTERN = re.compile(r"^FIELD=[A-Za-z0-9_.]+;REASON=[A-Z0-9_]+(?:\|FIELD=[A-Za-z0-9_.]+;REASON=[A-Z0-9_]+)*$")
+_SAFE_VALIDATION_DETAIL_PATTERN = re.compile(
+    r"^FIELD=[A-Za-z0-9_.]+;REASON=[A-Z0-9_]+"
+    r"(?:;WINDOW_START=\d{4}-\d{2}-\d{2};WINDOW_END=\d{4}-\d{2}-\d{2})?$"
+)
+_SAFE_CLASSIFICATIONS = {
+    "AMBIGUOUS",
+    "AUTH_FAILED",
+    "BUSINESS_RULE_REJECTED",
+    "DUPLICATE",
+    "MALFORMED_RESPONSE",
+    "NETWORK_ERROR",
+    "NOT_FOUND",
+    "PROVIDER_ERROR",
+    "RATE_LIMITED",
+    "UNKNOWN",
+    "VALIDATION_REJECTED",
+}
+_SAFE_EXCEPTION_TYPES = {
+    "NilveraApiError",
+    "NilveraAuthError",
+    "NilveraBusinessRuleError",
+    "NilveraDuplicateError",
+    "NilveraNotFoundError",
+    "NilveraMalformedResponseError",
+    "NilveraNetworkError",
+    "NilveraRateLimitError",
+    "NilveraServerError",
+    "NilveraTimeoutError",
+    "NilveraValidationError",
+}
+_ACCEPTED_STATUSES = {"accepted", "basarili", "başarılı", "onaylandi", "onaylandı", "succeed", "success"}
+_REJECTED_STATUSES = {"cancelled", "canceled", "error", "failed", "hatali", "hatalı", "rejected", "reddedildi"}
+_PENDING_STATUSES = {"pending", "processing", "waiting", "isleniyor", "işleniyor", "kuyrukta"}
+DEFINITIVE_REJECTION = "DEFINITIVE_REJECTION"
+AMBIGUOUS_WRITE = "AMBIGUOUS_WRITE"
+FOUND = "FOUND"
+NOT_FOUND_OR_NOT_VISIBLE = "NOT_FOUND_OR_NOT_VISIBLE"
+MATCH_COUNT_ZERO = "ZERO"
+MATCH_COUNT_ONE = "ONE"
+MATCH_COUNT_MULTIPLE = "MULTIPLE"
+RECONCILIATION_WINDOW_DAYS = 3
+RECONCILIATION_PAGE_SIZE = 100
+RECONCILIATION_MAX_PAGES = 20
+RECONCILIATION_MAX_DETAIL_CANDIDATES = 20
+PAGE_COUNT_ONE = "ONE"
+PAGE_COUNT_TWO_TO_FIVE = "TWO_TO_FIVE"
+PAGE_COUNT_SIX_TO_TEN = "SIX_TO_TEN"
+PAGE_COUNT_ELEVEN_TO_LIMIT = "ELEVEN_TO_LIMIT"
+BLOCKED_NOT_FOUND_AFTER_EXHAUSTIVE_READ = "BLOCKED_NOT_FOUND_AFTER_EXHAUSTIVE_READ"
+FIELD_PRESENT = "FIELD_PRESENT"
+FIELD_MISSING = "FIELD_MISSING"
+FORMAT_VALID = "FORMAT_VALID"
+FORMAT_INVALID = "FORMAT_INVALID"
+TOTAL_MISMATCH = "TOTAL_MISMATCH"
+SANDBOX_FIXTURE_SERIES = "SYR"
+ENVELOPE_STATUS_PENDING = "PENDING"
+ENVELOPE_STATUS_TARGET_RECEIVED = "TARGET_RECEIVED_PENDING_RESPONSE"
+ENVELOPE_STATUS_COMPLETED = "COMPLETED"
+ENVELOPE_STATUS_FAILED = "FAILED"
+ENVELOPE_STATUS_NOT_AVAILABLE = "NOT_AVAILABLE"
+ENVELOPE_STATUS_UNKNOWN = "UNKNOWN"
+DIRECT_LOOKUP_FOUND = "FOUND"
+DIRECT_LOOKUP_NOT_FOUND = "NOT_FOUND"
+DIRECT_LOOKUP_NOT_RUN = "NOT_RUN"
+ANSWER_STATE_NOT_RECORDED = "NOT_RECORDED"
+ANSWER_STATE_UNKNOWN = "UNKNOWN"
+ANSWER_STATE_WAITING = "WAITING_FOR_APPROVAL"
+ANSWER_STATE_APPROVED = "APPROVED"
+ANSWER_STATE_REJECTED = "REJECTED"
+ANSWER_STATE_AUTOMATIC = "ANSWERED_AUTOMATICALLY"
+ANSWER_STATE_UNSUPPORTED = "UNSUPPORTED"
+HISTORY_COUNT_ZERO = "ZERO"
+HISTORY_COUNT_ONE = "ONE"
+HISTORY_COUNT_MULTIPLE = "MULTIPLE"
+HISTORY_ANSWER_NOT_FOUND = "NOT_FOUND"
+HISTORY_ANSWER_CONFLICT = "CONFLICT"
+HISTORY_ACTOR_NOT_RECORDED = "NOT_RECORDED"
+HISTORY_ACTOR_SYSTEM = "SYSTEM"
+HISTORY_ACTOR_USER = "USER_PRESENT"
+HISTORY_ACTOR_MIXED = "MIXED"
+HISTORY_NOT_AVAILABLE = "NOT_AVAILABLE"
+
+_CORRELATION_FIELDS = (
+    "InvoiceNumber",
+    "InvoiceSerieOrNumber",
+    "InvoiceNo",
+    "DocumentNumber",
+)
+_PROFILE_FIELDS = ("InvoiceProfile", "DocumentProfile", "Profile")
+_TYPE_FIELDS = ("InvoiceType", "DocumentType", "Type")
+_OUTGOING_COUNTERPART_FIELDS = ("BuyerTaxNumber", "ReceiverTaxNumber", "TaxNumber")
+_INCOMING_COUNTERPART_FIELDS = ("SenderTaxNumber", "SellerTaxNumber", "TaxNumber")
+
+
+class SandboxFixtureError(RuntimeError):
+    def __init__(
+        self,
+        safe_code: str,
+        *,
+        provider_write_count: int = 0,
+        failure_stage: str | None = None,
+        http_status: int | None = None,
+        http_status_class: str | None = None,
+        provider_code: str | None = None,
+        validation_issue: str | None = None,
+        validation_detail: str | None = None,
+        exception_type: str | None = None,
+        write_disposition: str | None = None,
+        classification: str | None = None,
+        sender_match: bool | None = None,
+        receiver_match: bool | None = None,
+        match_count_class: str | None = None,
+        sender_page_count_class: str | None = None,
+        receiver_page_count_class: str | None = None,
+    ):
+        super().__init__(safe_code)
+        self.safe_code = safe_code
+        self.provider_write_count = provider_write_count
+        self.failure_stage = failure_stage
+        self.http_status = http_status
+        self.http_status_class = http_status_class
+        self.provider_code = provider_code
+        self.validation_issue = validation_issue
+        self.validation_detail = validation_detail
+        self.exception_type = exception_type
+        self.write_disposition = write_disposition
+        self.classification = classification
+        self.sender_match = sender_match
+        self.receiver_match = receiver_match
+        self.match_count_class = match_count_class
+        self.sender_page_count_class = sender_page_count_class
+        self.receiver_page_count_class = receiver_page_count_class
+
+
+class SandboxFixtureBlocked(SandboxFixtureError):
+    pass
+
+
+class SandboxFixtureFailed(SandboxFixtureError):
+    pass
+
+
+class ReadOnlySandboxClient:
+    """Allow only non-retrying GET requests during reconciliation."""
+
+    def __init__(self, client: Any):
+        self._client = client
+        self._http_statuses: list[int] = []
+
+    @property
+    def exact_http_status(self) -> int | None:
+        unique_statuses = set(self._http_statuses)
+        if len(unique_statuses) != 1:
+            return None
+        return next(iter(unique_statuses))
+
+    async def get(self, path: str, **kwargs: Any) -> Any:
+        kwargs["retryable"] = False
+        try:
+            return await self._client.get(path, **kwargs)
+        finally:
+            status = getattr(self._client, "last_http_status", None)
+            if isinstance(status, int) and 100 <= status <= 599:
+                self._http_statuses.append(status)
+
+    async def post(self, *_args: Any, **_kwargs: Any) -> Any:
+        raise SandboxFixtureBlocked("BLOCKED_RECONCILIATION_NON_GET_METHOD")
+
+    async def put(self, *_args: Any, **_kwargs: Any) -> Any:
+        raise SandboxFixtureBlocked("BLOCKED_RECONCILIATION_NON_GET_METHOD")
+
+    async def patch(self, *_args: Any, **_kwargs: Any) -> Any:
+        raise SandboxFixtureBlocked("BLOCKED_RECONCILIATION_NON_GET_METHOD")
+
+    async def delete(self, *_args: Any, **_kwargs: Any) -> Any:
+        raise SandboxFixtureBlocked("BLOCKED_RECONCILIATION_NON_GET_METHOD")
+
+
+@dataclass(frozen=True)
+class SandboxFixtureResult:
+    correlation_label: str
+    provider_write_count: int
+    sender_match: bool
+    receiver_match: bool
+    provider_outcome: ProviderInvoiceOutcome
+    receiver_visible: bool
+
+
+@dataclass(frozen=True)
+class SandboxFixtureReconciliationResult:
+    correlation_label: str
+    provider_write_count: int
+    sender_match: bool
+    receiver_match: bool
+    match_count_class: str
+    outgoing_result: str
+    outgoing_outcome: ProviderInvoiceOutcome | None
+    outgoing_detail_match: bool | None
+    receiver_visibility: str
+    receiver_detail_match: bool | None
+    receiver_status_ready: bool | None
+    sender_page_count_class: str
+    receiver_page_count_class: str
+    http_status: int | None
+    receiver_list_visible: bool | None = None
+    receiver_direct_lookup: str | None = None
+    receiver_alias_match: bool | None = None
+    envelope_status_class: str | None = None
+    envelope_gib_code: str | None = None
+    receiver_status_answer_state: str | None = None
+    receiver_detail_answer_state: str | None = None
+    receiver_answered_automatically: bool | None = None
+    history_event_count_class: str | None = None
+    history_answer_event_class: str | None = None
+    history_actor_class: str | None = None
+
+
+@dataclass(frozen=True)
+class IncomingAnswerEligibility:
+    identity_match: bool
+    document_match: bool
+    answer_waiting: bool
+    provider_ready: bool
+
+    @property
+    def eligible(self) -> bool:
+        return self.identity_match and self.document_match and self.answer_waiting and self.provider_ready
+
+
+@dataclass(frozen=True)
+class PurchaseHistoryDiagnostics:
+    event_count_class: str
+    answer_event_class: str
+    actor_class: str
+
+
+@dataclass(frozen=True)
+class _ReconciliationPages:
+    items: tuple[dict[str, Any], ...]
+    page_count: int
+    page_count_class: str
+
+
+@dataclass(frozen=True)
+class _ReconciliationCandidates:
+    provider_uuids: tuple[str, ...]
+    used_detail_fallback: bool
+
+
+def ensure_distinct_sandbox_keys(sender_key: str, receiver_key: str) -> None:
+    if not sender_key or not receiver_key:
+        raise SandboxFixtureBlocked("BLOCKED_MISSING_SANDBOX_KEY")
+    if hmac.compare_digest(sender_key.encode(), receiver_key.encode()):
+        raise SandboxFixtureBlocked("BLOCKED_IDENTICAL_SANDBOX_KEYS")
+
+
+def _http_status_class(status: int | None) -> str | None:
+    if status is None or status < 100 or status > 599:
+        return None
+    return f"{status // 100}xx"
+
+
+def _safe_provider_code(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().upper()
+    if _SAFE_PROVIDER_CODE_PATTERN.fullmatch(normalized) is None:
+        return None
+    return normalized
+
+
+def _safe_validation_issue(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if len(normalized) > 512 or _SAFE_VALIDATION_ISSUE_PATTERN.fullmatch(normalized) is None:
+        return None
+    return normalized
+
+
+def _safe_validation_detail(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if len(normalized) > 256 or _SAFE_VALIDATION_DETAIL_PATTERN.fullmatch(normalized) is None:
+        return None
+    return normalized
+
+
+def _safe_classification(value: str | None) -> str | None:
+    return value if value in _SAFE_CLASSIFICATIONS else None
+
+
+def _safe_exception_type(exc: Exception) -> str:
+    exception_type = type(exc).__name__
+    return exception_type if exception_type in _SAFE_EXCEPTION_TYPES else "UnexpectedError"
+
+
+def _send_failure(exc: NilveraApiError, *, provider_write_count: int) -> SandboxFixtureError:
+    validation_issue = "|".join(exc.safe_validation_issues)
+    validation_detail = exc.safe_provider_details[0] if exc.safe_provider_details else None
+    metadata = {
+        "provider_write_count": provider_write_count,
+        "failure_stage": "SEND_MODEL",
+        "http_status": exc.http_status,
+        "http_status_class": _http_status_class(exc.http_status),
+        "provider_code": _safe_provider_code(exc.provider_code),
+        "validation_issue": _safe_validation_issue(validation_issue),
+        "validation_detail": _safe_validation_detail(validation_detail),
+        "exception_type": _safe_exception_type(exc),
+        "classification": _safe_classification(exc.classification),
+    }
+    if exc.http_status in {400, 422}:
+        return SandboxFixtureFailed(
+            "FIXTURE_VALIDATION_REJECTED",
+            write_disposition=DEFINITIVE_REJECTION,
+            **metadata,
+        )
+    return SandboxFixtureBlocked(
+        "BLOCKED_FIXTURE_WRITE_OUTCOME_UNKNOWN",
+        write_disposition=AMBIGUOUS_WRITE,
+        **metadata,
+    )
+
+
+def _reconciliation_query_failure(
+    exc: Exception,
+    *,
+    failure_stage: str,
+    sender_match: bool,
+    receiver_match: bool,
+) -> SandboxFixtureBlocked:
+    http_status = exc.http_status if isinstance(exc, NilveraApiError) else None
+    provider_code = exc.provider_code if isinstance(exc, NilveraApiError) else None
+    return SandboxFixtureBlocked(
+        "BLOCKED_FIXTURE_RECONCILIATION_QUERY",
+        failure_stage=failure_stage,
+        http_status=http_status,
+        http_status_class=_http_status_class(http_status),
+        provider_code=_safe_provider_code(provider_code),
+        exception_type=_safe_exception_type(exc),
+        sender_match=sender_match,
+        receiver_match=receiver_match,
+    )
+
+
+def build_fixture_identity(*, year: int, run_id: str, hmac_key: str) -> str:
+    if year < 2000 or year > 9999 or not run_id.isdigit() or len(hmac_key) < 32:
+        raise SandboxFixtureBlocked("BLOCKED_INVALID_FIXTURE_ID_INPUT")
+    digest = hmac.new(hmac_key.encode(), f"nilvera-fixture:{year}:{run_id}".encode(), hashlib.sha256).digest()
+    run9 = int.from_bytes(digest[:8], "big") % 1_000_000_000
+    identity = f"TST{year}{run9:09d}"
+    if len(identity) != 16 or _FIXTURE_ID_PATTERN.fullmatch(identity) is None:
+        raise SandboxFixtureFailed("FIXTURE_ID_CONTRACT_FAILED")
+    return identity
+
+
+def build_fixture_request_uuid(identity: str, hmac_key: str) -> uuid.UUID:
+    if _FIXTURE_ID_PATTERN.fullmatch(identity) is None or len(hmac_key) < 32:
+        raise SandboxFixtureBlocked("BLOCKED_INVALID_FIXTURE_ID_INPUT")
+    digest = hmac.new(
+        hmac_key.encode(),
+        f"nilvera-fixture-uuid:{identity}".encode(),
+        hashlib.sha256,
+    ).digest()
+    return uuid.UUID(bytes=digest[:16], version=4)
+
+
+def parse_pilot_invoice_date(value: str | None) -> date:
+    """Parse the explicit pilot date without timezone conversion or a clock fallback."""
+    if value is None or not value.strip():
+        raise SandboxFixtureBlocked("BLOCKED_MISSING_PILOT_INVOICE_DATE")
+    normalized = value.strip()
+    try:
+        parsed = date.fromisoformat(normalized)
+    except ValueError:
+        raise SandboxFixtureBlocked("BLOCKED_INVALID_PILOT_INVOICE_DATE") from None
+    if parsed.isoformat() != value:
+        raise SandboxFixtureBlocked("BLOCKED_INVALID_PILOT_INVOICE_DATE")
+    return parsed
+
+
+def pilot_invoice_datetime(value: str | None) -> datetime:
+    parsed = parse_pilot_invoice_date(value)
+    return datetime.combine(parsed, time.min, tzinfo=UTC)
+
+
+def incoming_answer_discovery_window(fixture_time: datetime) -> tuple[datetime, datetime]:
+    if fixture_time.tzinfo is None or fixture_time.utcoffset() is None:
+        raise SandboxFixtureBlocked("BLOCKED_INVALID_ANSWER_FIXTURE_SOURCE")
+    end_date = fixture_time + timedelta(days=1)
+    return end_date - timedelta(days=31), end_date
+
+
+def evaluate_incoming_answer_candidate(
+    summary: Any,
+    detail: Any,
+    status: Any,
+    *,
+    target_provider_uuid: str,
+) -> IncomingAnswerEligibility:
+    identity_match = summary.provider_uuid == target_provider_uuid and detail.provider_uuid == target_provider_uuid
+    document_match = detail.invoice_profile == "TICARIFATURA" and detail.invoice_type == "SATIS"
+    answer_waiting = _normalize(status.answer_code) == "waitingforapproval"
+    provider_ready = _normalize(status.status_code) in {"succeed", "success"}
+    return IncomingAnswerEligibility(
+        identity_match=identity_match,
+        document_match=document_match,
+        answer_waiting=answer_waiting,
+        provider_ready=provider_ready,
+    )
+
+
+def classify_incoming_answer_state(value: Any) -> str:
+    normalized = _normalize(value)
+    return {
+        "": ANSWER_STATE_NOT_RECORDED,
+        "unknown": ANSWER_STATE_UNKNOWN,
+        "waitingforapproval": ANSWER_STATE_WAITING,
+        "approved": ANSWER_STATE_APPROVED,
+        "rejected": ANSWER_STATE_REJECTED,
+        "documentansweredautomatically": ANSWER_STATE_AUTOMATIC,
+    }.get(normalized, ANSWER_STATE_UNSUPPORTED)
+
+
+def _safe_history_tokens(value: Any) -> set[str]:
+    if not isinstance(value, str):
+        return set()
+    return set(re.findall(r"[a-zA-ZçğıöşüÇĞİÖŞÜ]+", value.casefold()))
+
+
+def classify_purchase_histories(payload: Any) -> PurchaseHistoryDiagnostics:
+    if not isinstance(payload, list):
+        raise SandboxFixtureBlocked("BLOCKED_PURCHASE_HISTORY_PARSE")
+
+    answer_events: list[tuple[str, str]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise SandboxFixtureBlocked("BLOCKED_PURCHASE_HISTORY_PARSE")
+        description_tokens = _safe_history_tokens(item.get("Description"))
+        if description_tokens & {"automatic", "automatically", "otomatik"}:
+            answer_state = ANSWER_STATE_AUTOMATIC
+        elif description_tokens & {"approved", "approval", "approve", "accepted", "accept", "onay", "onaylandı", "kabul"}:
+            answer_state = ANSWER_STATE_APPROVED
+        elif description_tokens & {"rejected", "reject", "red", "reddedildi", "ret"}:
+            answer_state = ANSWER_STATE_REJECTED
+        else:
+            continue
+
+        actor_tokens = _safe_history_tokens(item.get("UserName"))
+        if not actor_tokens:
+            actor_class = HISTORY_ACTOR_NOT_RECORDED
+        elif actor_tokens & {"api", "automatic", "nilvera", "service", "system", "otomatik"}:
+            actor_class = HISTORY_ACTOR_SYSTEM
+        else:
+            actor_class = HISTORY_ACTOR_USER
+        answer_events.append((answer_state, actor_class))
+
+    event_count_class = HISTORY_COUNT_ZERO
+    if len(payload) == 1:
+        event_count_class = HISTORY_COUNT_ONE
+    elif len(payload) > 1:
+        event_count_class = HISTORY_COUNT_MULTIPLE
+
+    if not answer_events:
+        return PurchaseHistoryDiagnostics(
+            event_count_class=event_count_class,
+            answer_event_class=HISTORY_ANSWER_NOT_FOUND,
+            actor_class=HISTORY_ACTOR_NOT_RECORDED,
+        )
+
+    answer_states = {event[0] for event in answer_events}
+    actor_classes = {event[1] for event in answer_events}
+    return PurchaseHistoryDiagnostics(
+        event_count_class=event_count_class,
+        answer_event_class=next(iter(answer_states)) if len(answer_states) == 1 else HISTORY_ANSWER_CONFLICT,
+        actor_class=next(iter(actor_classes)) if len(actor_classes) == 1 else HISTORY_ACTOR_MIXED,
+    )
+
+
+def ensure_fixture_write_attempt(workflow_run_attempt: int) -> None:
+    if workflow_run_attempt != 1:
+        raise SandboxFixtureBlocked("BLOCKED_DUPLICATE_FIXTURE_RUN_ATTEMPT")
+
+
+def ensure_fixture_invoice_date(payload: NilveraEInvoicePayload, expected_date: date) -> None:
+    expected_datetime = datetime.combine(expected_date, time.min, tzinfo=UTC)
+    actual_datetime = payload.EInvoice.InvoiceInfo.IssueDate
+    serialized_date = payload.model_dump(mode="json", by_alias=True)["EInvoice"]["InvoiceInfo"]["IssueDate"]
+    try:
+        parsed_serialized = datetime.fromisoformat(serialized_date.replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError):
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_DATE_MISMATCH") from None
+    if actual_datetime != expected_datetime or parsed_serialized != expected_datetime:
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_DATE_MISMATCH")
+
+
+def fixture_correlation_label(identity: str, hmac_key: str) -> str:
+    digest = hmac.new(hmac_key.encode(), identity.encode(), hashlib.sha256).hexdigest()
+    return digest[:12]
+
+
+def classify_fixture_payload_contract(payload: NilveraEInvoicePayload) -> dict[str, str]:
+    """Classify the emitted Send/Model fixture without exposing any field values."""
+    einvoice = payload.EInvoice
+    info = einvoice.InvoiceInfo
+    lines = einvoice.InvoiceLines
+    line_extension_sum = sum((line.Quantity * line.Price) - line.AllowanceTotal for line in lines)
+    allowance_sum = sum(line.AllowanceTotal for line in lines)
+    kdv_sum = sum(line.KDVTotal for line in lines)
+    kdv_by_rate = {
+        Decimal("1"): Decimal("0"),
+        Decimal("8"): Decimal("0"),
+        Decimal("10"): Decimal("0"),
+        Decimal("18"): Decimal("0"),
+        Decimal("20"): Decimal("0"),
+    }
+    line_kdv_matches = True
+    for line in lines:
+        if line.KDVPercent in kdv_by_rate:
+            kdv_by_rate[line.KDVPercent] += line.KDVTotal
+        expected_kdv = (((line.Quantity * line.Price) - line.AllowanceTotal) * line.KDVPercent / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        line_kdv_matches = line_kdv_matches and line.KDVTotal == expected_kdv
+
+    supplier_present = all(
+        isinstance(value, str) and bool(value.strip())
+        for value in (
+            einvoice.CompanyInfo.TaxNumber,
+            einvoice.CompanyInfo.Name,
+            einvoice.CompanyInfo.Address,
+            einvoice.CompanyInfo.City,
+            einvoice.CompanyInfo.Country,
+        )
+    )
+    customer_present = all(
+        isinstance(value, str) and bool(value.strip())
+        for value in (
+            einvoice.CustomerInfo.TaxNumber,
+            einvoice.CustomerInfo.Name,
+            einvoice.CustomerInfo.Address,
+            einvoice.CustomerInfo.City,
+            einvoice.CustomerInfo.Country,
+        )
+    )
+    series_valid = info.InvoiceSerieOrNumber == SANDBOX_FIXTURE_SERIES
+
+    return {
+        "InvoiceInfo": FIELD_PRESENT,
+        "Scenario": FIELD_MISSING,
+        "InvoiceType": FORMAT_VALID if info.InvoiceType == "SATIS" else FORMAT_INVALID,
+        "InvoiceProfile": FORMAT_VALID if info.InvoiceProfile == "TICARIFATURA" else FORMAT_INVALID,
+        "CurrencyCode": FORMAT_VALID if re.fullmatch(r"[A-Z]{3}", info.CurrencyCode) else FORMAT_INVALID,
+        "IssueDate": FORMAT_VALID if info.IssueDate.tzinfo is not None and info.IssueDate.utcoffset() is not None else FORMAT_INVALID,
+        "Supplier": FIELD_PRESENT if supplier_present else FIELD_MISSING,
+        "Customer": FIELD_PRESENT if customer_present else FIELD_MISSING,
+        "TaxTotal": FIELD_MISSING,
+        "WithholdingTaxTotal": FIELD_MISSING,
+        "LegalMonetaryTotal": FIELD_MISSING,
+        "InvoiceLines": FIELD_PRESENT if lines else FIELD_MISSING,
+        "LineExtensionAmount": FORMAT_VALID if info.LineExtensionAmount == line_extension_sum else TOTAL_MISMATCH,
+        "AllowanceCharge": FIELD_PRESENT if lines else FIELD_MISSING,
+        "InvoiceLines.KDVPercent": FORMAT_VALID if all(line.KDVPercent >= 0 for line in lines) else FORMAT_INVALID,
+        "InvoiceLines.KDVTotal": FORMAT_VALID if line_kdv_matches else TOTAL_MISMATCH,
+        "GeneralKDV1Total": FORMAT_VALID if info.GeneralKDV1Total == kdv_by_rate[Decimal("1")] else TOTAL_MISMATCH,
+        "GeneralKDV8Total": FORMAT_VALID if info.GeneralKDV8Total == kdv_by_rate[Decimal("8")] else TOTAL_MISMATCH,
+        "GeneralKDV10Total": FORMAT_VALID if info.GeneralKDV10Total == kdv_by_rate[Decimal("10")] else TOTAL_MISMATCH,
+        "GeneralKDV18Total": FORMAT_VALID if info.GeneralKDV18Total == kdv_by_rate[Decimal("18")] else TOTAL_MISMATCH,
+        "GeneralKDV20Total": FORMAT_VALID if info.GeneralKDV20Total == kdv_by_rate[Decimal("20")] else TOTAL_MISMATCH,
+        "GeneralAllowanceTotal": FORMAT_VALID if info.GeneralAllowanceTotal == allowance_sum else TOTAL_MISMATCH,
+        "KdvTotal": FORMAT_VALID if info.KdvTotal == kdv_sum else TOTAL_MISMATCH,
+        "PayableAmount": FORMAT_VALID if info.PayableAmount == line_extension_sum + kdv_sum else TOTAL_MISMATCH,
+        "SenderAlias": FIELD_MISSING,
+        "ReceiverAlias": FIELD_PRESENT if bool(payload.CustomerAlias.strip()) else FIELD_MISSING,
+        "InvoiceSerieOrNumber": FORMAT_VALID if series_valid else FORMAT_INVALID,
+    }
+
+
+def ensure_fixture_payload_contract(payload: NilveraEInvoicePayload) -> None:
+    classifications = classify_fixture_payload_contract(payload)
+    required_present = ("InvoiceInfo", "Supplier", "Customer", "InvoiceLines", "ReceiverAlias")
+    required_valid = (
+        "InvoiceType",
+        "InvoiceProfile",
+        "CurrencyCode",
+        "IssueDate",
+        "LineExtensionAmount",
+        "InvoiceLines.KDVPercent",
+        "InvoiceLines.KDVTotal",
+        "GeneralKDV1Total",
+        "GeneralKDV8Total",
+        "GeneralKDV10Total",
+        "GeneralKDV18Total",
+        "GeneralKDV20Total",
+        "GeneralAllowanceTotal",
+        "KdvTotal",
+        "PayableAmount",
+        "InvoiceSerieOrNumber",
+    )
+    if any(classifications[field] != FIELD_PRESENT for field in required_present):
+        raise SandboxFixtureFailed("FIXTURE_PAYLOAD_CONTRACT_FAILED")
+    if any(classifications[field] != FORMAT_VALID for field in required_valid):
+        raise SandboxFixtureFailed("FIXTURE_PAYLOAD_CONTRACT_FAILED")
+
+
+def build_fixture_payload(
+    *,
+    fixture_identity: str,
+    hmac_key: str,
+    seller_tax_number: str,
+    buyer_tax_number: str,
+    buyer_alias: str,
+    issue_date: datetime,
+) -> NilveraEInvoicePayload:
+    if len(fixture_identity) != 16 or _FIXTURE_ID_PATTERN.fullmatch(fixture_identity) is None:
+        raise SandboxFixtureFailed("FIXTURE_ID_CONTRACT_FAILED")
+
+    seller = SellerSnapshot(
+        tax_number=seller_tax_number,
+        name="NILVERA SANDBOX FIXTURE SENDER",
+        tax_office="SANDBOX",
+        country="TURKIYE",
+        city="ANKARA",
+        district="CANKAYA",
+        address="SANDBOX FIXTURE ADDRESS",
+    )
+    invoice = Invoice(
+        id=str(uuid.uuid4()),
+        tenant_id="nilvera-sandbox-fixture",
+        document_kind="E_INVOICE",
+        invoice_number="LOCAL_VALUE_MUST_NOT_BE_USED",
+        invoice_type="SATIS",
+        profile="TICARIFATURA",
+        series=SANDBOX_FIXTURE_SERIES,
+        currency="TRY",
+        exchange_rate=Decimal("1.0"),
+        issue_date=issue_date,
+        buyer_tax_number=buyer_tax_number,
+        buyer_legal_name="NILVERA SANDBOX FIXTURE RECEIVER",
+        buyer_country_name="TURKIYE",
+        buyer_city="ISTANBUL",
+        buyer_district="SISLI",
+        buyer_address="SANDBOX FIXTURE ADDRESS",
+        payable_total=Decimal("1.20"),
+        line_extension_total=Decimal("1.00"),
+        kdv_total=Decimal("0.20"),
+        other_tax_total=Decimal("0.00"),
+        discount_total=Decimal("0.00"),
+        items=[
+            InvoiceItem(
+                description="Nilvera Sandbox Fixture",
+                quantity=Decimal("1.0"),
+                tax_quantity=Decimal("1.0"),
+                unit_code="C62",
+                unit_price=Decimal("1.00"),
+                tax_unit_price=Decimal("1.00"),
+                discount_amount=Decimal("0.00"),
+                line_extension_amount=Decimal("1.00"),
+                kdv_rate=Decimal("20.0"),
+                kdv_amount=Decimal("0.20"),
+                total=Decimal("1.20"),
+            )
+        ],
+    )
+    request_uuid = build_fixture_request_uuid(fixture_identity, hmac_key)
+    payload = NilveraInvoiceMapper.map_to_nilvera(invoice, seller, buyer_alias, request_uuid)
+    if payload.EInvoice.InvoiceInfo.InvoiceSerieOrNumber != SANDBOX_FIXTURE_SERIES:
+        raise SandboxFixtureFailed("FIXTURE_SERIES_TRANSFER_FAILED")
+    if payload.EInvoice.InvoiceInfo.UUID != str(request_uuid):
+        raise SandboxFixtureFailed("FIXTURE_UUID_TRANSFER_FAILED")
+    if payload.EInvoice.InvoiceInfo.InvoiceProfile != "TICARIFATURA" or payload.EInvoice.InvoiceInfo.InvoiceType != "SATIS":
+        raise SandboxFixtureFailed("FIXTURE_DOCUMENT_CONTRACT_FAILED")
+    ensure_fixture_payload_contract(payload)
+    return payload
+
+
+async def company_identity_matches(client: Any, expected_tax_number: str) -> bool:
+    try:
+        response = await client.get(NilveraEndpoints.GET_COMPANY)
+    except Exception as exc:
+        http_status = exc.http_status if isinstance(exc, NilveraApiError) else None
+        provider_code = exc.provider_code if isinstance(exc, NilveraApiError) else None
+        raise SandboxFixtureBlocked(
+            "BLOCKED_COMPANY_IDENTITY_QUERY",
+            http_status=http_status,
+            http_status_class=_http_status_class(http_status),
+            provider_code=_safe_provider_code(provider_code),
+            exception_type=_safe_exception_type(exc),
+        ) from None
+    if not isinstance(response, dict):
+        http_status = _client_exact_http_status(client)
+        raise SandboxFixtureBlocked(
+            "BLOCKED_COMPANY_IDENTITY_PARSE",
+            http_status=http_status,
+            http_status_class=_http_status_class(http_status),
+            exception_type="NilveraValidationError",
+        )
+    tax_number = response.get("TaxNumber")
+    if not isinstance(tax_number, str) or not tax_number.isdigit() or len(tax_number) not in (10, 11):
+        http_status = _client_exact_http_status(client)
+        raise SandboxFixtureBlocked(
+            "BLOCKED_COMPANY_IDENTITY_PARSE",
+            http_status=http_status,
+            http_status_class=_http_status_class(http_status),
+            exception_type="NilveraValidationError",
+        )
+    return hmac.compare_digest(tax_number.encode(), expected_tax_number.encode())
+
+
+async def company_owns_alias(client: Any, expected_alias: str) -> bool:
+    """Verify alias ownership without returning or logging any alias value."""
+    return await select_company_owned_alias(client, (expected_alias,)) is not None
+
+
+async def select_company_owned_alias(client: Any, candidate_aliases: Sequence[str]) -> str | None:
+    """Select a receiver-owned alias without logging company or mailbox data."""
+    try:
+        response = await client.get(NilveraEndpoints.GET_COMPANY)
+    except Exception as exc:
+        http_status = exc.http_status if isinstance(exc, NilveraApiError) else None
+        provider_code = exc.provider_code if isinstance(exc, NilveraApiError) else None
+        raise SandboxFixtureBlocked(
+            "BLOCKED_COMPANY_ALIAS_QUERY",
+            http_status=http_status,
+            http_status_class=_http_status_class(http_status),
+            provider_code=_safe_provider_code(provider_code),
+            exception_type=_safe_exception_type(exc),
+        ) from None
+
+    aliases = response.get("Aliases") if isinstance(response, dict) else None
+    if not isinstance(aliases, list):
+        raise SandboxFixtureBlocked(
+            "BLOCKED_COMPANY_ALIAS_PARSE",
+            http_status=_client_exact_http_status(client),
+            http_status_class=_http_status_class(_client_exact_http_status(client)),
+            exception_type="NilveraValidationError",
+        )
+
+    company_aliases: list[str] = []
+    for item in aliases:
+        if not isinstance(item, dict):
+            raise SandboxFixtureBlocked("BLOCKED_COMPANY_ALIAS_PARSE")
+        alias = item.get("Alias")
+        if isinstance(alias, str) and alias:
+            company_aliases.append(alias)
+
+    for candidate in candidate_aliases:
+        if not isinstance(candidate, str) or not candidate:
+            continue
+        if any(hmac.compare_digest(owned.encode(), candidate.encode()) for owned in company_aliases):
+            return candidate
+    return None
+
+
+def _normalize(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return "".join(character for character in value.strip().lower() if character.isalnum())
+
+
+def parse_sale_outcome(response: Any) -> ProviderInvoiceOutcome:
+    item: Any
+    if isinstance(response, list) and response:
+        item = response[0]
+    elif isinstance(response, dict):
+        item = response
+    else:
+        raise SandboxFixtureFailed("FIXTURE_SALE_STATUS_PARSE_FAILED", provider_write_count=1)
+    if not isinstance(item, dict):
+        raise SandboxFixtureFailed("FIXTURE_SALE_STATUS_PARSE_FAILED", provider_write_count=1)
+
+    invoice_status = item.get("InvoiceStatus")
+    raw_status = invoice_status.get("Code") if isinstance(invoice_status, dict) else item.get("Status")
+    normalized = _normalize(raw_status)
+    if normalized in {_normalize(value) for value in _ACCEPTED_STATUSES}:
+        return ProviderInvoiceOutcome.ACCEPTED
+    if normalized in {_normalize(value) for value in _REJECTED_STATUSES}:
+        return ProviderInvoiceOutcome.REJECTED
+    if normalized in {_normalize(value) for value in _PENDING_STATUSES}:
+        return ProviderInvoiceOutcome.PENDING
+    return ProviderInvoiceOutcome.UNKNOWN
+
+
+def parse_envelope_status(response: Any) -> tuple[str | None, str]:
+    """Return only the official GIB code and a safe delivery classification."""
+    if not isinstance(response, dict):
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_ENVELOPE_PARSE")
+    raw_code = response.get("GIBCode")
+    if raw_code is None or raw_code == "":
+        return None, ENVELOPE_STATUS_NOT_AVAILABLE
+    if isinstance(raw_code, bool) or not isinstance(raw_code, (str, int)):
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_ENVELOPE_PARSE")
+    code = str(raw_code).strip()
+    if re.fullmatch(r"\d{4}", code) is None:
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_ENVELOPE_PARSE")
+    if code in {"1000", "1100", "1200", "1210"}:
+        return code, ENVELOPE_STATUS_PENDING
+    if code == "1220":
+        return code, ENVELOPE_STATUS_TARGET_RECEIVED
+    if code == "1300":
+        return code, ENVELOPE_STATUS_COMPLETED
+    if code.startswith("11") or code in {"1215", "1230"}:
+        return code, ENVELOPE_STATUS_FAILED
+    return code, ENVELOPE_STATUS_UNKNOWN
+
+
+def _matches_fixture(candidate: str, target_digest: bytes, hmac_key: str) -> bool:
+    candidate_digest = hmac.new(hmac_key.encode(), candidate.encode(), hashlib.sha256).digest()
+    return hmac.compare_digest(candidate_digest, target_digest)
+
+
+def _page_count_class(page_count: int) -> str:
+    if page_count == 1:
+        return PAGE_COUNT_ONE
+    if 2 <= page_count <= 5:
+        return PAGE_COUNT_TWO_TO_FIVE
+    if 6 <= page_count <= 10:
+        return PAGE_COUNT_SIX_TO_TEN
+    if 11 <= page_count <= RECONCILIATION_MAX_PAGES:
+        return PAGE_COUNT_ELEVEN_TO_LIMIT
+    raise SandboxFixtureBlocked("BLOCKED_RECONCILIATION_PAGE_COUNT")
+
+
+def _client_exact_http_status(client: Any) -> int | None:
+    status = getattr(client, "exact_http_status", None)
+    return status if isinstance(status, int) and 100 <= status <= 599 else None
+
+
+def _combined_exact_http_status(*clients: Any) -> int | None:
+    statuses = {_client_exact_http_status(client) for client in clients}
+    statuses.discard(None)
+    if len(statuses) != 1:
+        return None
+    return next(iter(statuses))
+
+
+def _enrich_reconciliation_error(
+    exc: SandboxFixtureError,
+    *,
+    sender_match: bool,
+    receiver_match: bool,
+    sender_page_count_class: str,
+    receiver_page_count_class: str,
+    http_status: int | None,
+) -> SandboxFixtureError:
+    exc.sender_match = sender_match
+    exc.receiver_match = receiver_match
+    exc.sender_page_count_class = sender_page_count_class
+    exc.receiver_page_count_class = receiver_page_count_class
+    if exc.http_status is None:
+        exc.http_status = http_status
+        exc.http_status_class = _http_status_class(http_status)
+    return exc
+
+
+def _page_error_metadata(
+    *,
+    side: str,
+    page_count: int,
+    sender_page_count_class: str | None,
+) -> dict[str, str | None]:
+    current_page_class = _page_count_class(page_count) if page_count else None
+    return {
+        "sender_page_count_class": current_page_class if side == "sender" else sender_page_count_class,
+        "receiver_page_count_class": current_page_class if side == "receiver" else None,
+    }
+
+
+async def _scan_reconciliation_pages(
+    *,
+    client: Any,
+    path: str,
+    params: dict[str, str],
+    correlation_label: str,
+    side: str,
+    sender_match: bool,
+    receiver_match: bool,
+    sender_page_count_class: str | None = None,
+) -> _ReconciliationPages:
+    items: list[dict[str, Any]] = []
+    completed_pages = 0
+
+    for page in range(1, RECONCILIATION_MAX_PAGES + 1):
+        page_params = {**params, "Page": str(page), "PageSize": str(RECONCILIATION_PAGE_SIZE)}
+        try:
+            response = await client.get(
+                path,
+                params=page_params,
+                correlation_id=correlation_label,
+            )
+        except Exception as exc:
+            failure_stage = "SENDER_SALE_LIST" if side == "sender" else "RECEIVER_PURCHASE_LIST"
+            blocked = _reconciliation_query_failure(
+                exc,
+                failure_stage=failure_stage,
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+            )
+            metadata = _page_error_metadata(
+                side=side,
+                page_count=completed_pages,
+                sender_page_count_class=sender_page_count_class,
+            )
+            blocked.sender_page_count_class = metadata["sender_page_count_class"]
+            blocked.receiver_page_count_class = metadata["receiver_page_count_class"]
+            raise blocked from None
+
+        completed_pages += 1
+        metadata = _page_error_metadata(
+            side=side,
+            page_count=completed_pages,
+            sender_page_count_class=sender_page_count_class,
+        )
+        if not isinstance(response, dict) or not isinstance(response.get("Content"), list):
+            raise SandboxFixtureBlocked(
+                "BLOCKED_FIXTURE_RECONCILIATION_PARSE",
+                failure_stage=f"{side.upper()}_LIST_PARSE",
+                http_status=_client_exact_http_status(client),
+                http_status_class=_http_status_class(_client_exact_http_status(client)),
+                exception_type="NilveraValidationError",
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                **metadata,
+            )
+
+        content = response["Content"]
+        if any(not isinstance(item, dict) for item in content):
+            raise SandboxFixtureBlocked(
+                "BLOCKED_FIXTURE_RECONCILIATION_PARSE",
+                failure_stage=f"{side.upper()}_LIST_PARSE",
+                http_status=_client_exact_http_status(client),
+                http_status_class=_http_status_class(_client_exact_http_status(client)),
+                exception_type="NilveraValidationError",
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                **metadata,
+            )
+        items.extend(content)
+
+        raw_total_pages = response.get("TotalPages")
+        if raw_total_pages is not None:
+            if isinstance(raw_total_pages, bool) or not isinstance(raw_total_pages, int) or raw_total_pages < 0:
+                raise SandboxFixtureBlocked(
+                    "BLOCKED_FIXTURE_RECONCILIATION_PARSE",
+                    failure_stage=f"{side.upper()}_PAGINATION_PARSE",
+                    http_status=_client_exact_http_status(client),
+                    http_status_class=_http_status_class(_client_exact_http_status(client)),
+                    exception_type="NilveraValidationError",
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                    **metadata,
+                )
+            if raw_total_pages > RECONCILIATION_MAX_PAGES:
+                raise SandboxFixtureBlocked(
+                    "BLOCKED_RECONCILIATION_PAGE_LIMIT",
+                    failure_stage=f"{side.upper()}_PAGE_LIMIT",
+                    http_status=_client_exact_http_status(client),
+                    http_status_class=_http_status_class(_client_exact_http_status(client)),
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                    **metadata,
+                )
+            if raw_total_pages == 0 and content:
+                raise SandboxFixtureBlocked(
+                    "BLOCKED_FIXTURE_RECONCILIATION_PARSE",
+                    failure_stage=f"{side.upper()}_PAGINATION_PARSE",
+                    http_status=_client_exact_http_status(client),
+                    http_status_class=_http_status_class(_client_exact_http_status(client)),
+                    exception_type="NilveraValidationError",
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                    **metadata,
+                )
+            if page >= max(raw_total_pages, 1):
+                return _ReconciliationPages(tuple(items), completed_pages, _page_count_class(completed_pages))
+        elif len(content) < RECONCILIATION_PAGE_SIZE:
+            return _ReconciliationPages(tuple(items), completed_pages, _page_count_class(completed_pages))
+
+    raise SandboxFixtureBlocked(
+        "BLOCKED_RECONCILIATION_PAGE_LIMIT",
+        failure_stage=f"{side.upper()}_PAGE_LIMIT",
+        http_status=_client_exact_http_status(client),
+        http_status_class=_http_status_class(_client_exact_http_status(client)),
+        sender_match=sender_match,
+        receiver_match=receiver_match,
+        **_page_error_metadata(
+            side=side,
+            page_count=completed_pages,
+            sender_page_count_class=sender_page_count_class,
+        ),
+    )
+
+
+def _normalized_item_field(item: dict[str, Any], fields: Sequence[str]) -> str:
+    for field in fields:
+        value = item.get(field)
+        if isinstance(value, str) and value.strip():
+            return _normalize(value)
+    return ""
+
+
+def _parse_candidate_uuid(item: dict[str, Any]) -> str:
+    raw_uuid = item.get("UUID") or item.get("Id")
+    try:
+        return str(uuid.UUID(str(raw_uuid)))
+    except (AttributeError, TypeError, ValueError):
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_RECONCILIATION_PARSE") from None
+
+
+def _matches_counterpart(
+    item: dict[str, Any],
+    fields: Sequence[str],
+    expected_tax_number: str,
+    hmac_key: str,
+) -> bool:
+    expected_digest = hmac.new(hmac_key.encode(), expected_tax_number.encode(), hashlib.sha256).digest()
+    for field in fields:
+        value = item.get(field)
+        if isinstance(value, str) and value:
+            return _matches_fixture(value, expected_digest, hmac_key)
+    return False
+
+
+def _reconciliation_candidates(
+    items: Sequence[dict[str, Any]],
+    *,
+    target_digests: Sequence[bytes],
+    hmac_key: str,
+    counterpart_tax_number: str,
+    counterpart_fields: Sequence[str],
+) -> _ReconciliationCandidates:
+    tag_field_seen = False
+    exact_matches: set[str] = set()
+    for item in items:
+        raw_uuid = item.get("UUID") or item.get("Id")
+        if isinstance(raw_uuid, str) and any(_matches_fixture(raw_uuid, digest, hmac_key) for digest in target_digests):
+            exact_matches.add(_parse_candidate_uuid(item))
+        for field in _CORRELATION_FIELDS:
+            value = item.get(field)
+            if not isinstance(value, str) or not value.strip():
+                continue
+            tag_field_seen = True
+            if any(_matches_fixture(value, digest, hmac_key) for digest in target_digests):
+                exact_matches.add(_parse_candidate_uuid(item))
+
+    if exact_matches or tag_field_seen:
+        return _ReconciliationCandidates(tuple(sorted(exact_matches)), False)
+
+    narrowed: set[str] = set()
+    for item in items:
+        if _normalized_item_field(item, _PROFILE_FIELDS) != "ticarifatura":
+            continue
+        if _normalized_item_field(item, _TYPE_FIELDS) != "satis":
+            continue
+        if not _matches_counterpart(item, counterpart_fields, counterpart_tax_number, hmac_key):
+            continue
+        narrowed.add(_parse_candidate_uuid(item))
+
+    if len(narrowed) > RECONCILIATION_MAX_DETAIL_CANDIDATES:
+        raise SandboxFixtureBlocked("BLOCKED_RECONCILIATION_CANDIDATE_LIMIT")
+    return _ReconciliationCandidates(tuple(sorted(narrowed)), True)
+
+
+def _detail_matches_fixture(
+    detail: Any,
+    *,
+    provider_uuid: str,
+    target_digests: Sequence[bytes],
+    hmac_key: str,
+) -> bool:
+    if not isinstance(detail, dict):
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_RECONCILIATION_PARSE")
+    invoice_number = detail.get("InvoiceNumber")
+    invoice_profile = detail.get("InvoiceProfile")
+    invoice_type = detail.get("InvoiceType")
+    if not all(isinstance(value, str) and value.strip() for value in (invoice_number, invoice_profile, invoice_type)):
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_RECONCILIATION_PARSE")
+    return any(_matches_fixture(value, digest, hmac_key) for value in (provider_uuid, invoice_number) for digest in target_digests) and invoice_profile == "TICARIFATURA" and invoice_type == "SATIS"
+
+
+async def reconcile_incoming_commercial_fixture(
+    *,
+    sender_client: Any,
+    receiver_client: Any,
+    sender_key: str,
+    receiver_key: str,
+    hmac_key: str,
+    run_id: str,
+    seller_tax_number: str,
+    buyer_tax_number: str,
+    reference_time: datetime,
+    delivery_diagnostics: bool = False,
+) -> SandboxFixtureReconciliationResult:
+    if reference_time.tzinfo is None or reference_time.utcoffset() is None:
+        raise SandboxFixtureBlocked("BLOCKED_RECONCILIATION_REFERENCE_TIME")
+
+    ensure_distinct_sandbox_keys(sender_key, receiver_key)
+    sender_match = await company_identity_matches(sender_client, seller_tax_number)
+    receiver_match = await company_identity_matches(receiver_client, buyer_tax_number)
+    if not sender_match or not receiver_match:
+        raise SandboxFixtureBlocked(
+            "BLOCKED_SANDBOX_COMPANY_MISMATCH",
+            sender_match=sender_match,
+            receiver_match=receiver_match,
+        )
+
+    identity = build_fixture_identity(year=reference_time.year, run_id=run_id, hmac_key=hmac_key)
+    correlation_label = fixture_correlation_label(identity, hmac_key)
+    request_uuid = str(build_fixture_request_uuid(identity, hmac_key))
+    target_digests = (
+        hmac.new(hmac_key.encode(), request_uuid.encode(), hashlib.sha256).digest(),
+        hmac.new(hmac_key.encode(), identity.encode(), hashlib.sha256).digest(),
+    )
+    params = {
+        "StartDate": (reference_time - timedelta(days=RECONCILIATION_WINDOW_DAYS)).isoformat(),
+        "EndDate": (reference_time + timedelta(days=RECONCILIATION_WINDOW_DAYS)).isoformat(),
+        "DateFilterType": "CreatedDate",
+        "SortColumn": "CreatedDate",
+        "SortType": "ASC",
+    }
+
+    outgoing_pages = await _scan_reconciliation_pages(
+        client=sender_client,
+        path=NilveraEndpoints.LIST_SALE_INVOICES,
+        params=params,
+        correlation_label=correlation_label,
+        side="sender",
+        sender_match=sender_match,
+        receiver_match=receiver_match,
+    )
+    incoming_pages = await _scan_reconciliation_pages(
+        client=receiver_client,
+        path=NilveraEndpoints.LIST_PURCHASE_INVOICES,
+        params=params,
+        correlation_label=correlation_label,
+        side="receiver",
+        sender_match=sender_match,
+        receiver_match=receiver_match,
+        sender_page_count_class=outgoing_pages.page_count_class,
+    )
+    exact_http_status = _combined_exact_http_status(sender_client, receiver_client)
+
+    try:
+        outgoing_candidates = _reconciliation_candidates(
+            outgoing_pages.items,
+            target_digests=target_digests,
+            hmac_key=hmac_key,
+            counterpart_tax_number=buyer_tax_number,
+            counterpart_fields=_OUTGOING_COUNTERPART_FIELDS,
+        )
+        incoming_candidates = _reconciliation_candidates(
+            incoming_pages.items,
+            target_digests=target_digests,
+            hmac_key=hmac_key,
+            counterpart_tax_number=seller_tax_number,
+            counterpart_fields=_INCOMING_COUNTERPART_FIELDS,
+        )
+    except SandboxFixtureError as exc:
+        raise _enrich_reconciliation_error(
+            exc,
+            sender_match=sender_match,
+            receiver_match=receiver_match,
+            sender_page_count_class=outgoing_pages.page_count_class,
+            receiver_page_count_class=incoming_pages.page_count_class,
+            http_status=exact_http_status,
+        ) from None
+
+    if (not outgoing_candidates.used_detail_fallback and len(outgoing_candidates.provider_uuids) > 1) or (not incoming_candidates.used_detail_fallback and len(incoming_candidates.provider_uuids) > 1):
+        raise SandboxFixtureBlocked(
+            "CONFLICT_FIXTURE_RECONCILIATION",
+            sender_match=sender_match,
+            receiver_match=receiver_match,
+            match_count_class=MATCH_COUNT_MULTIPLE,
+            sender_page_count_class=outgoing_pages.page_count_class,
+            receiver_page_count_class=incoming_pages.page_count_class,
+            http_status=exact_http_status,
+            http_status_class=_http_status_class(exact_http_status),
+        )
+
+    outgoing_matches: list[str] = []
+    outgoing_details: dict[str, Any] = {}
+    for provider_uuid in outgoing_candidates.provider_uuids:
+        try:
+            detail_response = await sender_client.get(
+                NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=provider_uuid),
+                correlation_id=correlation_label,
+            )
+            detail_matches = _detail_matches_fixture(
+                detail_response,
+                provider_uuid=provider_uuid,
+                target_digests=target_digests,
+                hmac_key=hmac_key,
+            )
+        except SandboxFixtureError as exc:
+            raise _enrich_reconciliation_error(
+                exc,
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                sender_page_count_class=outgoing_pages.page_count_class,
+                receiver_page_count_class=incoming_pages.page_count_class,
+                http_status=_combined_exact_http_status(sender_client, receiver_client),
+            ) from None
+        except Exception as exc:
+            blocked = _reconciliation_query_failure(
+                exc,
+                failure_stage="SENDER_SALE_DETAIL",
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+            )
+            raise _enrich_reconciliation_error(
+                blocked,
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                sender_page_count_class=outgoing_pages.page_count_class,
+                receiver_page_count_class=incoming_pages.page_count_class,
+                http_status=_combined_exact_http_status(sender_client, receiver_client),
+            ) from None
+        if detail_matches:
+            outgoing_matches.append(provider_uuid)
+            outgoing_details[provider_uuid] = detail_response
+
+    incoming_matches: list[str] = []
+    incoming_details: dict[str, Any] = {}
+    incoming_service = NilveraIncomingService(receiver_client)
+    for provider_uuid in incoming_candidates.provider_uuids:
+        try:
+            detail = await incoming_service.fetch_incoming_invoice_detail(provider_uuid)
+        except Exception as exc:
+            blocked = _reconciliation_query_failure(
+                exc,
+                failure_stage="RECEIVER_PURCHASE_DETAIL",
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+            )
+            raise _enrich_reconciliation_error(
+                blocked,
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                sender_page_count_class=outgoing_pages.page_count_class,
+                receiver_page_count_class=incoming_pages.page_count_class,
+                http_status=_combined_exact_http_status(sender_client, receiver_client),
+            ) from None
+        if (
+            any(_matches_fixture(value, digest, hmac_key) for value in (detail.provider_uuid, detail.invoice_number) for digest in target_digests)
+            and detail.invoice_profile == "TICARIFATURA"
+            and detail.invoice_type == "SATIS"
+        ):
+            incoming_matches.append(provider_uuid)
+            incoming_details[provider_uuid] = detail
+
+    if outgoing_candidates.provider_uuids and not outgoing_candidates.used_detail_fallback and not outgoing_matches:
+        raise SandboxFixtureFailed(
+            "FIXTURE_OUTGOING_RECONCILIATION_MISMATCH",
+            http_status=_combined_exact_http_status(sender_client, receiver_client),
+            http_status_class=_http_status_class(_combined_exact_http_status(sender_client, receiver_client)),
+            sender_match=sender_match,
+            receiver_match=receiver_match,
+            sender_page_count_class=outgoing_pages.page_count_class,
+            receiver_page_count_class=incoming_pages.page_count_class,
+        )
+    if incoming_candidates.provider_uuids and not incoming_candidates.used_detail_fallback and not incoming_matches:
+        raise SandboxFixtureFailed(
+            "FIXTURE_RECEIVER_RECONCILIATION_MISMATCH",
+            http_status=_combined_exact_http_status(sender_client, receiver_client),
+            http_status_class=_http_status_class(_combined_exact_http_status(sender_client, receiver_client)),
+            sender_match=sender_match,
+            receiver_match=receiver_match,
+            sender_page_count_class=outgoing_pages.page_count_class,
+            receiver_page_count_class=incoming_pages.page_count_class,
+        )
+    if len(outgoing_matches) > 1 or len(incoming_matches) > 1:
+        raise SandboxFixtureBlocked(
+            "CONFLICT_FIXTURE_RECONCILIATION",
+            sender_match=sender_match,
+            receiver_match=receiver_match,
+            match_count_class=MATCH_COUNT_MULTIPLE,
+            sender_page_count_class=outgoing_pages.page_count_class,
+            receiver_page_count_class=incoming_pages.page_count_class,
+            http_status=_combined_exact_http_status(sender_client, receiver_client),
+            http_status_class=_http_status_class(_combined_exact_http_status(sender_client, receiver_client)),
+        )
+    match_count_class = MATCH_COUNT_ONE if outgoing_matches else MATCH_COUNT_ZERO
+    receiver_list_visible = bool(incoming_matches)
+    receiver_direct_lookup = DIRECT_LOOKUP_NOT_RUN
+    receiver_alias_match = None
+    envelope_status_class = None
+    envelope_gib_code = None
+
+    outgoing_result = NOT_FOUND_OR_NOT_VISIBLE
+    outgoing_outcome = None
+    outgoing_detail_match = None
+    if outgoing_matches:
+        provider_uuid = outgoing_matches[0]
+        try:
+            status_response = await sender_client.get(
+                NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=provider_uuid),
+                correlation_id=correlation_label,
+            )
+        except Exception as exc:
+            blocked = _reconciliation_query_failure(
+                exc,
+                failure_stage="SENDER_SALE_STATUS",
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+            )
+            raise _enrich_reconciliation_error(
+                blocked,
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                sender_page_count_class=outgoing_pages.page_count_class,
+                receiver_page_count_class=incoming_pages.page_count_class,
+                http_status=_combined_exact_http_status(sender_client, receiver_client),
+            ) from None
+        try:
+            outgoing_outcome = parse_sale_outcome(status_response)
+        except SandboxFixtureError:
+            exact_status = _combined_exact_http_status(sender_client, receiver_client)
+            raise SandboxFixtureBlocked(
+                "BLOCKED_FIXTURE_RECONCILIATION_PARSE",
+                failure_stage="SENDER_SALE_STATUS_PARSE",
+                http_status=exact_status,
+                http_status_class=_http_status_class(exact_status),
+                exception_type="NilveraValidationError",
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                sender_page_count_class=outgoing_pages.page_count_class,
+                receiver_page_count_class=incoming_pages.page_count_class,
+            ) from None
+        outgoing_detail_match = _detail_matches_fixture(
+            outgoing_details[provider_uuid],
+            provider_uuid=provider_uuid,
+            target_digests=target_digests,
+            hmac_key=hmac_key,
+        )
+        if outgoing_outcome == ProviderInvoiceOutcome.UNKNOWN or not outgoing_detail_match:
+            raise SandboxFixtureFailed("FIXTURE_OUTGOING_RECONCILIATION_MISMATCH")
+        outgoing_result = FOUND
+
+        if delivery_diagnostics:
+            try:
+                aliases = await NilveraTaxpayerService(sender_client).get_taxpayer_aliases(
+                    buyer_tax_number,
+                    correlation_label,
+                )
+                buyer_aliases = [alias for alias in aliases.aliases if "pk" in alias.lower()]
+                if not buyer_aliases:
+                    raise SandboxFixtureBlocked("BLOCKED_FIXTURE_BUYER_ALIAS")
+                receiver_alias_match = await select_company_owned_alias(receiver_client, buyer_aliases) is not None
+            except SandboxFixtureError as exc:
+                raise _enrich_reconciliation_error(
+                    exc,
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                    sender_page_count_class=outgoing_pages.page_count_class,
+                    receiver_page_count_class=incoming_pages.page_count_class,
+                    http_status=_combined_exact_http_status(sender_client, receiver_client),
+                ) from None
+            except Exception as exc:
+                blocked = _reconciliation_query_failure(
+                    exc,
+                    failure_stage="BUYER_ALIAS_OWNERSHIP",
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                )
+                raise _enrich_reconciliation_error(
+                    blocked,
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                    sender_page_count_class=outgoing_pages.page_count_class,
+                    receiver_page_count_class=incoming_pages.page_count_class,
+                    http_status=_combined_exact_http_status(sender_client, receiver_client),
+                ) from None
+
+            try:
+                envelope_response = await sender_client.get(
+                    NilveraEndpoints.GET_SALE_INVOICE_ENVELOPE_INFO.format(uuid=provider_uuid),
+                    correlation_id=correlation_label,
+                )
+            except NilveraNotFoundError:
+                envelope_status_class = ENVELOPE_STATUS_NOT_AVAILABLE
+            except Exception as exc:
+                blocked = _reconciliation_query_failure(
+                    exc,
+                    failure_stage="SENDER_ENVELOPE_INFO",
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                )
+                raise _enrich_reconciliation_error(
+                    blocked,
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                    sender_page_count_class=outgoing_pages.page_count_class,
+                    receiver_page_count_class=incoming_pages.page_count_class,
+                    http_status=_combined_exact_http_status(sender_client, receiver_client),
+                ) from None
+            else:
+                envelope_gib_code, envelope_status_class = parse_envelope_status(envelope_response)
+
+            if not incoming_matches:
+                try:
+                    direct_detail = await incoming_service.fetch_incoming_invoice_detail(provider_uuid)
+                except NilveraNotFoundError:
+                    receiver_direct_lookup = DIRECT_LOOKUP_NOT_FOUND
+                except Exception as exc:
+                    blocked = _reconciliation_query_failure(
+                        exc,
+                        failure_stage="RECEIVER_PURCHASE_DIRECT_DETAIL",
+                        sender_match=sender_match,
+                        receiver_match=receiver_match,
+                    )
+                    raise _enrich_reconciliation_error(
+                        blocked,
+                        sender_match=sender_match,
+                        receiver_match=receiver_match,
+                        sender_page_count_class=outgoing_pages.page_count_class,
+                        receiver_page_count_class=incoming_pages.page_count_class,
+                        http_status=_combined_exact_http_status(sender_client, receiver_client),
+                    ) from None
+                else:
+                    direct_matches = (
+                        any(_matches_fixture(value, digest, hmac_key) for value in (direct_detail.provider_uuid, direct_detail.invoice_number) for digest in target_digests)
+                        and direct_detail.invoice_profile == "TICARIFATURA"
+                        and direct_detail.invoice_type == "SATIS"
+                    )
+                    if not direct_matches:
+                        raise SandboxFixtureFailed("FIXTURE_RECEIVER_DIRECT_DETAIL_MISMATCH")
+                    receiver_direct_lookup = DIRECT_LOOKUP_FOUND
+                    incoming_matches.append(provider_uuid)
+                    incoming_details[provider_uuid] = direct_detail
+
+    receiver_visibility = NOT_FOUND_OR_NOT_VISIBLE
+    receiver_detail_match = None
+    receiver_status_ready = None
+    receiver_status_answer_state = None
+    receiver_detail_answer_state = None
+    receiver_answered_automatically = None
+    history_event_count_class = None
+    history_answer_event_class = None
+    history_actor_class = None
+    if incoming_matches:
+        provider_uuid = incoming_matches[0]
+        try:
+            status = await incoming_service.fetch_incoming_invoice_status(provider_uuid)
+        except Exception as exc:
+            blocked = _reconciliation_query_failure(
+                exc,
+                failure_stage="RECEIVER_PURCHASE_STATUS",
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+            )
+            raise _enrich_reconciliation_error(
+                blocked,
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                sender_page_count_class=outgoing_pages.page_count_class,
+                receiver_page_count_class=incoming_pages.page_count_class,
+                http_status=_combined_exact_http_status(sender_client, receiver_client),
+            ) from None
+        detail = incoming_details[provider_uuid]
+        receiver_detail_match = (
+            any(_matches_fixture(value, digest, hmac_key) for value in (detail.provider_uuid, detail.invoice_number) for digest in target_digests)
+            and detail.invoice_profile == "TICARIFATURA"
+            and detail.invoice_type == "SATIS"
+        )
+        receiver_status_ready = _normalize(status.status_code) in {"succeed", "success"}
+        receiver_status_answer_state = classify_incoming_answer_state(status.answer_code)
+        receiver_detail_answer_state = classify_incoming_answer_state(detail.answer_code)
+        receiver_answered_automatically = receiver_status_answer_state == ANSWER_STATE_AUTOMATIC
+        if delivery_diagnostics and receiver_status_answer_state in {
+            ANSWER_STATE_APPROVED,
+            ANSWER_STATE_REJECTED,
+            ANSWER_STATE_AUTOMATIC,
+        }:
+            try:
+                histories = await receiver_client.get(
+                    NilveraEndpoints.GET_PURCHASE_INVOICE_HISTORIES.format(uuid=provider_uuid),
+                    correlation_id=correlation_label,
+                )
+            except NilveraNotFoundError:
+                history_event_count_class = HISTORY_NOT_AVAILABLE
+                history_answer_event_class = HISTORY_NOT_AVAILABLE
+                history_actor_class = HISTORY_NOT_AVAILABLE
+            except Exception as exc:
+                blocked = _reconciliation_query_failure(
+                    exc,
+                    failure_stage="RECEIVER_PURCHASE_HISTORIES",
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                )
+                raise _enrich_reconciliation_error(
+                    blocked,
+                    sender_match=sender_match,
+                    receiver_match=receiver_match,
+                    sender_page_count_class=outgoing_pages.page_count_class,
+                    receiver_page_count_class=incoming_pages.page_count_class,
+                    http_status=_combined_exact_http_status(sender_client, receiver_client),
+                ) from None
+            else:
+                history_diagnostics = classify_purchase_histories(histories)
+                history_event_count_class = history_diagnostics.event_count_class
+                history_answer_event_class = history_diagnostics.answer_event_class
+                history_actor_class = history_diagnostics.actor_class
+        if not receiver_detail_match:
+            raise SandboxFixtureFailed("FIXTURE_RECEIVER_RECONCILIATION_MISMATCH")
+        receiver_visibility = FOUND
+
+    return SandboxFixtureReconciliationResult(
+        correlation_label=correlation_label,
+        provider_write_count=0,
+        sender_match=sender_match,
+        receiver_match=receiver_match,
+        match_count_class=match_count_class,
+        outgoing_result=outgoing_result,
+        outgoing_outcome=outgoing_outcome,
+        outgoing_detail_match=outgoing_detail_match,
+        receiver_visibility=receiver_visibility,
+        receiver_detail_match=receiver_detail_match,
+        receiver_status_ready=receiver_status_ready,
+        sender_page_count_class=outgoing_pages.page_count_class,
+        receiver_page_count_class=incoming_pages.page_count_class,
+        http_status=_combined_exact_http_status(sender_client, receiver_client),
+        receiver_list_visible=receiver_list_visible,
+        receiver_direct_lookup=receiver_direct_lookup,
+        receiver_alias_match=receiver_alias_match,
+        envelope_status_class=envelope_status_class,
+        envelope_gib_code=envelope_gib_code,
+        receiver_status_answer_state=receiver_status_answer_state,
+        receiver_detail_answer_state=receiver_detail_answer_state,
+        receiver_answered_automatically=receiver_answered_automatically,
+        history_event_count_class=history_event_count_class,
+        history_answer_event_class=history_answer_event_class,
+        history_actor_class=history_actor_class,
+    )
+
+
+async def prepare_incoming_commercial_fixture(
+    *,
+    sender_client: Any,
+    receiver_client: Any,
+    sender_key: str,
+    receiver_key: str,
+    hmac_key: str,
+    run_id: str,
+    seller_tax_number: str,
+    buyer_tax_number: str,
+    buyer_alias: str,
+    pilot_invoice_date: str | None,
+    workflow_run_attempt: int,
+    outgoing_delays: Sequence[float] = (1, 2, 4, 5, 5, 5),
+    incoming_delays: Sequence[float] = (1, 2, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5),
+    sleeper: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> SandboxFixtureResult:
+    invoice_date = parse_pilot_invoice_date(pilot_invoice_date)
+    ensure_fixture_write_attempt(workflow_run_attempt)
+    ensure_distinct_sandbox_keys(sender_key, receiver_key)
+    sender_match = await company_identity_matches(sender_client, seller_tax_number)
+    receiver_match = await company_identity_matches(receiver_client, buyer_tax_number)
+    if not sender_match or not receiver_match:
+        raise SandboxFixtureBlocked("BLOCKED_SANDBOX_COMPANY_MISMATCH")
+    if not await company_owns_alias(receiver_client, buyer_alias):
+        raise SandboxFixtureBlocked(
+            "BLOCKED_RECEIVER_ALIAS_OWNERSHIP_MISMATCH",
+            provider_write_count=0,
+            sender_match=sender_match,
+            receiver_match=receiver_match,
+        )
+
+    current_time = datetime.combine(invoice_date, time.min, tzinfo=UTC)
+    identity = build_fixture_identity(year=invoice_date.year, run_id=run_id, hmac_key=hmac_key)
+    request_uuid = str(build_fixture_request_uuid(identity, hmac_key))
+    correlation_label = fixture_correlation_label(identity, hmac_key)
+    payload = build_fixture_payload(
+        fixture_identity=identity,
+        hmac_key=hmac_key,
+        seller_tax_number=seller_tax_number,
+        buyer_tax_number=buyer_tax_number,
+        buyer_alias=buyer_alias,
+        issue_date=current_time,
+    )
+    ensure_fixture_invoice_date(payload, invoice_date)
+
+    provider_write_count = 1
+    try:
+        response = await sender_client.post(
+            NilveraEndpoints.SEND_INVOICE_MODEL,
+            json=payload.model_dump(mode="json", by_alias=True),
+            correlation_id=correlation_label,
+            retryable=False,
+            stage="SEND_MODEL",
+        )
+    except NilveraApiError as exc:
+        raise _send_failure(exc, provider_write_count=provider_write_count) from None
+    except Exception as exc:
+        raise SandboxFixtureBlocked(
+            "BLOCKED_FIXTURE_WRITE_OUTCOME_UNKNOWN",
+            provider_write_count=provider_write_count,
+            failure_stage="SEND_MODEL",
+            exception_type=_safe_exception_type(exc),
+            write_disposition=AMBIGUOUS_WRITE,
+        ) from None
+
+    if not isinstance(response, dict):
+        raise SandboxFixtureBlocked(
+            "BLOCKED_FIXTURE_SEND_RESPONSE_PARSE",
+            provider_write_count=provider_write_count,
+            failure_stage="SEND_RESPONSE_PARSE",
+            exception_type="ResponseParseError",
+            write_disposition=AMBIGUOUS_WRITE,
+        )
+    try:
+        provider_uuid = str(uuid.UUID(response.get("UUID", "")))
+    except (AttributeError, TypeError, ValueError):
+        raise SandboxFixtureBlocked(
+            "BLOCKED_FIXTURE_SEND_RESPONSE_PARSE",
+            provider_write_count=provider_write_count,
+            failure_stage="SEND_RESPONSE_PARSE",
+            exception_type="ResponseParseError",
+            write_disposition=AMBIGUOUS_WRITE,
+        ) from None
+    if provider_uuid != request_uuid:
+        raise SandboxFixtureBlocked(
+            "BLOCKED_FIXTURE_UUID_MISMATCH",
+            provider_write_count=provider_write_count,
+            failure_stage="SEND_RESPONSE_PARSE",
+            exception_type="ResponseParseError",
+            write_disposition=AMBIGUOUS_WRITE,
+        )
+
+    provider_outcome = ProviderInvoiceOutcome.PENDING
+    for delay in outgoing_delays:
+        await sleeper(delay)
+        try:
+            status_response = await sender_client.get(
+                NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=provider_uuid),
+                correlation_id=correlation_label,
+            )
+        except Exception:
+            raise SandboxFixtureFailed("FIXTURE_SALE_STATUS_QUERY_FAILED", provider_write_count=provider_write_count) from None
+        provider_outcome = parse_sale_outcome(status_response)
+        if provider_outcome == ProviderInvoiceOutcome.ACCEPTED:
+            break
+        if provider_outcome in {ProviderInvoiceOutcome.REJECTED, ProviderInvoiceOutcome.CANCELLED}:
+            raise SandboxFixtureFailed("FIXTURE_PROVIDER_REJECTED", provider_write_count=provider_write_count)
+        if provider_outcome == ProviderInvoiceOutcome.UNKNOWN:
+            raise SandboxFixtureFailed("FIXTURE_SALE_STATUS_PARSE_FAILED", provider_write_count=provider_write_count)
+    else:
+        raise SandboxFixtureBlocked("BLOCKED_FIXTURE_SALE_STATUS_PENDING", provider_write_count=provider_write_count)
+
+    target_digest = hmac.new(hmac_key.encode(), request_uuid.encode(), hashlib.sha256).digest()
+    incoming_service = NilveraIncomingService(receiver_client)
+    end_date = current_time
+    start_date = end_date - timedelta(days=31)
+    for delay in incoming_delays:
+        await sleeper(delay)
+        try:
+            page = await incoming_service.fetch_incoming_invoices(start_date, end_date, page=1, page_size=100)
+        except Exception:
+            raise SandboxFixtureFailed("FIXTURE_RECEIVER_LIST_QUERY_FAILED", provider_write_count=provider_write_count) from None
+        for summary in page.items:
+            if not _matches_fixture(summary.provider_uuid, target_digest, hmac_key):
+                continue
+            try:
+                detail = await incoming_service.fetch_incoming_invoice_detail(summary.provider_uuid)
+                status = await incoming_service.fetch_incoming_invoice_status(summary.provider_uuid)
+            except Exception:
+                raise SandboxFixtureFailed("FIXTURE_RECEIVER_VERIFICATION_FAILED", provider_write_count=provider_write_count) from None
+            if not _matches_fixture(detail.provider_uuid, target_digest, hmac_key) or detail.invoice_profile != "TICARIFATURA" or detail.invoice_type != "SATIS":
+                raise SandboxFixtureFailed("FIXTURE_RECEIVER_DOCUMENT_MISMATCH", provider_write_count=provider_write_count)
+            if _normalize(status.status_code) not in {"succeed", "success"}:
+                raise SandboxFixtureBlocked("BLOCKED_FIXTURE_RECEIVER_NOT_READY", provider_write_count=provider_write_count)
+            return SandboxFixtureResult(
+                correlation_label=correlation_label,
+                provider_write_count=provider_write_count,
+                sender_match=sender_match,
+                receiver_match=receiver_match,
+                provider_outcome=provider_outcome,
+                receiver_visible=True,
+            )
+
+    raise SandboxFixtureBlocked("BLOCKED_FIXTURE_NOT_VISIBLE", provider_write_count=provider_write_count)

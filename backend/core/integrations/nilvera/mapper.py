@@ -24,7 +24,15 @@ class NilveraInvoiceInfo(NilveraConfiguredModel):
     InvoiceSerieOrNumber: str
     CurrencyCode: str
     ExchangeRate: Decimal | None = None
+    LineExtensionAmount: Decimal
+    GeneralKDV1Total: Decimal
+    GeneralKDV8Total: Decimal
+    GeneralKDV10Total: Decimal
+    GeneralKDV18Total: Decimal
+    GeneralKDV20Total: Decimal
+    GeneralAllowanceTotal: Decimal
     PayableAmount: Decimal
+    KdvTotal: Decimal
 
 
 class NilveraCompanyInfo(NilveraConfiguredModel):
@@ -186,11 +194,18 @@ class NilveraInvoiceMapper:
 
         # 11. KDV & Other Taxes Mapping
         nilvera_lines = []
+        kdv_totals_by_rate = {
+            Decimal("1"): Decimal("0"),
+            Decimal("8"): Decimal("0"),
+            Decimal("10"): Decimal("0"),
+            Decimal("18"): Decimal("0"),
+            Decimal("20"): Decimal("0"),
+        }
         for item in invoice.items:
             if item.other_taxes:
                 raise NilveraBusinessRuleError("Other taxes are currently unsupported", provider_code="E_INVOICE_OTHER_TAX_UNSUPPORTED")
 
-            if item.kdv_rate == Decimal('0'):
+            if item.kdv_rate == Decimal("0"):
                 raise NilveraBusinessRuleError("KDV exemption is currently unsupported", provider_code="E_INVOICE_KDV_EXEMPTION_UNSUPPORTED")
 
             line = NilveraInvoiceLine(
@@ -203,6 +218,8 @@ class NilveraInvoiceMapper:
                 KDVTotal=item.kdv_amount,
             )
             nilvera_lines.append(line)
+            if item.kdv_rate in kdv_totals_by_rate:
+                kdv_totals_by_rate[item.kdv_rate] += item.kdv_amount
 
         # Assemble Final Payload
         info = NilveraInvoiceInfo(
@@ -213,7 +230,15 @@ class NilveraInvoiceMapper:
             InvoiceSerieOrNumber=series_clean,
             CurrencyCode=currency_clean,
             ExchangeRate=exchange_rate,
+            LineExtensionAmount=invoice.line_extension_total,
+            GeneralKDV1Total=kdv_totals_by_rate[Decimal("1")],
+            GeneralKDV8Total=kdv_totals_by_rate[Decimal("8")],
+            GeneralKDV10Total=kdv_totals_by_rate[Decimal("10")],
+            GeneralKDV18Total=kdv_totals_by_rate[Decimal("18")],
+            GeneralKDV20Total=kdv_totals_by_rate[Decimal("20")],
+            GeneralAllowanceTotal=invoice.discount_total or Decimal("0"),
             PayableAmount=invoice.payable_total,
+            KdvTotal=invoice.kdv_total,
         )
 
         comp = NilveraCompanyInfo(

@@ -286,7 +286,7 @@ async def test_worker_graceful_shutdown(worker, mock_db):
     with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
         await worker.stop()
 
-    assert worker._stop.is_set()
+    assert worker._stop_event.is_set()
     assert worker._task is None
     assert fut.cancelled()
 

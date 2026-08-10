@@ -52,15 +52,15 @@ async def allocate_return_quantities(
                     return await _allocate_within_transaction(
                         db, session, tenant_id, source_incoming_invoice_id, allocations
                     )
-            except pymongo.errors.OperationFailure as e:
+            except pymongo.errors.OperationFailure as exc:
                 # Code 20 (IllegalOperation) or similar often means standalone server
-                if "Transaction" in str(e) or e.code in (20, 246):
-                    logger.error(f"MongoDB transactions not supported: {e}")
-                    raise PreconditionFailedError("MongoDB transaction support is required for return allocation") from e
+                if "Transaction" in str(exc) or exc.code in (20, 246):
+                    logger.error("MongoDB transactions not supported error_type=%s", type(exc).__name__)
+                    raise PreconditionFailedError("MongoDB transaction support is required for return allocation") from exc
                 raise
-    except pymongo.errors.OperationFailure as e:
-        if "Transaction" in str(e) or e.code in (20, 246):
-            raise PreconditionFailedError("MongoDB transaction support is required for return allocation") from e
+    except pymongo.errors.OperationFailure as exc:
+        if "Transaction" in str(exc) or exc.code in (20, 246):
+            raise PreconditionFailedError("MongoDB transaction support is required for return allocation") from exc
         raise
 
 
