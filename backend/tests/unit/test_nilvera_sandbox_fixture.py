@@ -58,6 +58,7 @@ from tests.nilvera_sandbox_fixture import (
     ensure_fixture_invoice_date,
     ensure_fixture_payload_contract,
     fixture_correlation_label,
+    incoming_answer_discovery_window,
     parse_envelope_status,
     parse_pilot_invoice_date,
     pilot_invoice_datetime,
@@ -254,6 +255,21 @@ def test_pilot_invoice_date_is_exact_utc_midnight_without_timezone_shift():
     assert parsed == datetime(2026, 8, 6, 0, 0, tzinfo=UTC)
     assert parsed.date().isoformat() == PILOT_DATE
     assert "datetime.now" not in inspect.getsource(prepare_incoming_commercial_fixture)
+
+
+def test_incoming_answer_discovery_window_respects_31_day_contract():
+    fixture_time = pilot_invoice_datetime(PILOT_DATE)
+
+    start_date, end_date = incoming_answer_discovery_window(fixture_time)
+
+    assert end_date == fixture_time + timedelta(days=1)
+    assert end_date - start_date == timedelta(days=31)
+    assert start_date <= fixture_time <= end_date
+
+
+def test_incoming_answer_discovery_window_rejects_naive_fixture_time():
+    with pytest.raises(SandboxFixtureBlocked, match="BLOCKED_INVALID_ANSWER_FIXTURE_SOURCE"):
+        incoming_answer_discovery_window(datetime(2026, 8, 6))
 
 
 def test_fixture_date_preflight_rejects_timezone_shifted_dto():

@@ -367,6 +367,13 @@ def pilot_invoice_datetime(value: str | None) -> datetime:
     return datetime.combine(parsed, time.min, tzinfo=UTC)
 
 
+def incoming_answer_discovery_window(fixture_time: datetime) -> tuple[datetime, datetime]:
+    if fixture_time.tzinfo is None or fixture_time.utcoffset() is None:
+        raise SandboxFixtureBlocked("BLOCKED_INVALID_ANSWER_FIXTURE_SOURCE")
+    end_date = fixture_time + timedelta(days=1)
+    return end_date - timedelta(days=31), end_date
+
+
 def ensure_fixture_write_attempt(workflow_run_attempt: int) -> None:
     if workflow_run_attempt != 1:
         raise SandboxFixtureBlocked("BLOCKED_DUPLICATE_FIXTURE_RUN_ATTEMPT")

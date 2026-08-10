@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
@@ -59,6 +59,7 @@ from tests.nilvera_sandbox_fixture import (
     build_fixture_request_uuid,
     company_identity_matches,
     ensure_distinct_sandbox_keys,
+    incoming_answer_discovery_window,
     pilot_invoice_datetime,
     prepare_incoming_commercial_fixture,
     reconcile_incoming_commercial_fixture,
@@ -667,8 +668,7 @@ async def test_sandbox_incoming_commercial_invoice_answer_contract(sandbox_clien
 
     tenant_id = f"nilvera-answer-e2e-{uuid.uuid4().hex}"
     tenant_db = get_db_for_tenant(tenant_id)
-    end_date = fixture_time + timedelta(days=1)
-    start_date = fixture_time - timedelta(days=31)
+    start_date, end_date = incoming_answer_discovery_window(fixture_time)
     provider_uuid = None
     provider_write_count = 0
     provider_state = NilveraIncomingAnswerState.UNKNOWN
