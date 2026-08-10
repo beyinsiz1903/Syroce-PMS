@@ -926,18 +926,15 @@ async def test_sandbox_reconcile_created_return(record_property):
             params = {
                 "StartDate": (write_time - timedelta(days=1)).isoformat(),
                 "EndDate": (write_time + timedelta(days=1)).isoformat(),
-                "DateFilterType": "CreatedDate",
-                "SortColumn": "CreatedDate",
-                "SortType": "ASC",
                 "PageSize": 100,
             }
             for page_number in range(1, 6):
                 response = await receiver.get(
-                    NilveraEndpoints.LIST_SALE_INVOICES,
+                    NilveraEndpoints.LIST_DRAFT_INVOICES,
                     params={**params, "Page": page_number},
                     correlation_id=correlation_label,
                     retryable=False,
-                    stage="CREATE_RETURN_LIST_RECONCILIATION",
+                    stage="CREATE_RETURN_DRAFT_LIST_RECONCILIATION",
                 )
                 content = response.get("Content") if isinstance(response, dict) else None
                 if not isinstance(content, list):
@@ -966,10 +963,10 @@ async def test_sandbox_reconcile_created_return(record_property):
             for candidate_uuid in candidates:
                 try:
                     detail = await receiver.get(
-                        NilveraEndpoints.GET_SALE_INVOICE_DETAIL.format(uuid=candidate_uuid),
+                        NilveraEndpoints.GET_DRAFT_INVOICE_MODEL.format(uuid=candidate_uuid),
                         correlation_id=correlation_label,
                         retryable=False,
-                        stage="CREATE_RETURN_DETAIL_RECONCILIATION",
+                        stage="CREATE_RETURN_DRAFT_MODEL_RECONCILIATION",
                     )
                 except NilveraNotFoundError:
                     continue
@@ -998,19 +995,10 @@ async def test_sandbox_reconcile_created_return(record_property):
             if len(matches) > 1:
                 pytest.fail("CONFLICT_CREATE_RETURN_MULTIPLE_MATCHES", pytrace=False)
 
-            created_uuid, _detail = matches[0]
-            status = await receiver.get(
-                NilveraEndpoints.GET_SALE_INVOICE_STATUS.format(uuid=created_uuid),
-                correlation_id=correlation_label,
-                retryable=False,
-                stage="CREATE_RETURN_STATUS_RECONCILIATION",
-            )
-            created_document_found = isinstance(status, dict) and bool(status)
+            _created_uuid, created_detail = matches[0]
+            created_document_found = bool(created_detail)
             record_property("created_document_found", str(created_document_found).lower())
-            record_property(
-                "provider_status_class",
-                "DRAFT_CREATED" if created_document_found else "NOT_RECORDED",
-            )
+            record_property("provider_status_class", "DRAFT_CREATED" if created_document_found else "NOT_RECORDED")
             record_property("exact_http_status", str(receiver.last_http_status or "NOT_RECORDED"))
             if not created_document_found:
                 pytest.fail("BLOCKED_CREATE_RETURN_STATUS_NOT_FOUND", pytrace=False)

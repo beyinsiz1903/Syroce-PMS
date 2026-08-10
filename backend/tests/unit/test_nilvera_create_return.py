@@ -197,6 +197,11 @@ def test_create_return_reconciliation_collects_only_normalized_uuid_values():
     assert _collect_uuid_values(payload) == {first, second}
 
 
+def test_create_return_reconciliation_uses_official_draft_read_endpoints():
+    assert NilveraEndpoints.LIST_DRAFT_INVOICES == "/einvoice/Draft"
+    assert NilveraEndpoints.GET_DRAFT_INVOICE_MODEL == "/einvoice/Draft/{uuid}/model"
+
+
 def test_create_return_reconciliation_target_is_get_only_and_redacted():
     sandbox_test = (Path(__file__).parents[1] / "integration/test_nilvera_sandbox_e2e.py").read_text()
     start = sandbox_test.index("async def test_sandbox_reconcile_created_return")
@@ -204,6 +209,9 @@ def test_create_return_reconciliation_target_is_get_only_and_redacted():
     reconciliation = sandbox_test[start:end]
 
     assert "await receiver.get(" in reconciliation
+    assert "NilveraEndpoints.LIST_DRAFT_INVOICES" in reconciliation
+    assert "NilveraEndpoints.GET_DRAFT_INVOICE_MODEL" in reconciliation
+    assert "NilveraEndpoints.LIST_SALE_INVOICES" not in reconciliation
     assert "await receiver.post(" not in reconciliation
     assert "await receiver.put(" not in reconciliation
     assert "await receiver.patch(" not in reconciliation
