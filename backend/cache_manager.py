@@ -52,6 +52,19 @@ import redis
 logger = logging.getLogger(__name__)
 
 
+def _log_cache_failure(operation: str, exc: Exception) -> None:
+    """Log bounded cache failure metadata without keys or backend messages."""
+    level = logging.WARNING if isinstance(exc, redis.exceptions.RedisError) else logging.ERROR
+    logger.log(
+        level,
+        "Cache operation failed",
+        extra={
+            "cache_operation": operation,
+            "exception_type": type(exc).__name__,
+        },
+    )
+
+
 class _InMemoryTTLStore:
     """Thread-safe in-memory TTL cache used when Redis is unavailable.
 
@@ -179,9 +192,9 @@ class CacheManager:
             self.enabled = True
             self.backend = "redis"
             logger.info("Redis cache connected successfully")
-        except Exception as e:
+        except Exception as exc:
             # Fallback to in-memory TTL cache so @cached() decorators stay effective.
-            logger.warning(f"Redis not available: {e}. Falling back to in-memory cache.")
+            _log_cache_failure("connect", exc)
             self.client = _InMemoryTTLStore()
             self.enabled = True
             self.backend = "memory"
@@ -196,8 +209,8 @@ class CacheManager:
             if value:
                 return json.loads(value)
             return None
-        except Exception as e:
-            logger.error(f"Cache get error for key {key}: {e}")
+        except Exception as exc:
+            _log_cache_failure("get", exc)
             return None
 
     def set(self, key: str, value: Any, ttl: int = 300):
@@ -209,8 +222,8 @@ class CacheManager:
             serializable = _make_serializable(value)
             self.client.setex(key, ttl, json.dumps(serializable, default=_json_serializer))
             return True
-        except Exception as e:
-            logger.error(f"Cache set error for key {key}: {e}")
+        except Exception as exc:
+            _log_cache_failure("set", exc)
             return False
 
     def delete(self, key: str):
@@ -221,8 +234,8 @@ class CacheManager:
         try:
             self.client.delete(key)
             return True
-        except Exception as e:
-            logger.error(f"Cache delete error for key {key}: {e}")
+        except Exception as exc:
+            _log_cache_failure("delete", exc)
             return False
 
     def incr_with_ttl(self, key: str, ttl: int) -> int:
@@ -250,8 +263,8 @@ class CacheManager:
             if new_val == 1:
                 self.client.expire(key, ttl)
             return new_val
-        except Exception as e:
-            logger.error(f"Cache incr_with_ttl error for key {key}: {e}")
+        except Exception as exc:
+            _log_cache_failure("incr_with_ttl", exc)
             return 0
 
     # Strict shape for tenant-scoped invalidation patterns:
@@ -279,15 +292,15 @@ class CacheManager:
             return False
         if pattern.startswith("cache:"):
             if not self._SAFE_PATTERN_RE.match(pattern):
-                logger.warning("cache.delete_pattern REJECTED malformed/unsafe pattern=%r", pattern)
+                logger.warning("Cache pattern rejected", extra={"cache_operation": "delete_pattern"})
                 return False
         try:
             keys = self.client.keys(pattern)
             if keys:
                 self.client.delete(*keys)
             return True
-        except Exception as e:
-            logger.error(f"Cache delete pattern error for {pattern}: {e}")
+        except Exception as exc:
+            _log_cache_failure("delete_pattern", exc)
             return False
 
     def invalidate_tenant_cache(self, tenant_id: str, entity_type: str = None):
@@ -296,10 +309,10 @@ class CacheManager:
         leaking into the pattern (defense-in-depth alongside the
         delete_pattern central guard)."""
         if not self._is_safe_tenant_id(tenant_id):
-            logger.warning("cache.invalidate_tenant_cache REJECTED unsafe tenant_id (entity=%s, tenant_repr=%r)", entity_type, tenant_id)
+            logger.warning("Cache invalidation rejected", extra={"cache_operation": "invalidate_tenant"})
             return False
         if entity_type and any(c in entity_type for c in "*?[]\\:"):
-            logger.warning("cache.invalidate_tenant_cache REJECTED unsafe entity=%r", entity_type)
+            logger.warning("Cache invalidation rejected", extra={"cache_operation": "invalidate_tenant"})
             return False
         if entity_type:
             pattern = f"cache:{tenant_id}:{entity_type}:*"
@@ -342,11 +355,11 @@ class CacheManager:
         key = f"{entity_prefix}"
         if not self._is_safe_tenant_id(tenant_id):
             self._bump(self.invalidation_failures, key)
-            logger.warning("cache.safe_invalidate REJECTED unsafe tenant_id (prefix=%s, tenant_repr=%r)", entity_prefix, tenant_id)
+            logger.warning("Cache invalidation rejected", extra={"cache_operation": "safe_invalidate"})
             return False
         if not entity_prefix or any(c in entity_prefix for c in "*?[]\\:"):
             self._bump(self.invalidation_failures, key)
-            logger.warning("cache.safe_invalidate REJECTED unsafe entity_prefix=%r", entity_prefix)
+            logger.warning("Cache invalidation rejected", extra={"cache_operation": "safe_invalidate"})
             return False
         pattern = f"cache:{tenant_id}:{entity_prefix}:*"
         ok = self.delete_pattern(pattern)
@@ -354,7 +367,7 @@ class CacheManager:
             self._bump(self.invalidation_success, key)
         else:
             self._bump(self.invalidation_failures, key)
-            logger.warning("cache.safe_invalidate FAILED pattern=%s", pattern)
+            logger.warning("Cache invalidation failed", extra={"cache_operation": "safe_invalidate"})
         return bool(ok)
 
     def invalidation_metrics(self) -> dict:
@@ -392,10 +405,10 @@ class CacheManager:
                 "total_keys": dbsize,
                 "invalidation": self.invalidation_metrics(),
             }
-        except Exception as e:
+        except Exception as exc:
             return {
                 "status": "unhealthy",
-                "error": str(e),
+                "exception_type": type(exc).__name__,
                 "invalidation": self.invalidation_metrics(),
             }
 
@@ -578,11 +591,11 @@ def cached(
             if not nocache:
                 cached_value = cache.get(cache_key)
                 if cached_value is not None:
-                    logger.debug(f"Cache hit: {cache_key}")
+                    logger.debug("Cache hit")
                     return cached_value
-                logger.debug(f"Cache miss: {cache_key}")
+                logger.debug("Cache miss")
             else:
-                logger.debug(f"Cache bypass (nocache=1): {cache_key}")
+                logger.debug("Cache bypass requested")
 
             result = await func(*args, **kwargs)
 
@@ -712,9 +725,9 @@ async def warm_dashboard_cache(tenant_id: str, db):
         key = DashboardCache.get_stats_key(tenant_id)
         cache.set(key, {"room_status_counts": status_counts}, ttl=300)
 
-        logger.info(f"✅ Warmed dashboard cache for tenant {tenant_id}")
-    except Exception as e:
-        logger.error(f"Error warming dashboard cache: {e}")
+        logger.info("Dashboard cache warmed")
+    except Exception as exc:
+        _log_cache_failure("warm_dashboard", exc)
 
 
 async def warm_room_cache(tenant_id: str, db):
@@ -725,6 +738,6 @@ async def warm_room_cache(tenant_id: str, db):
         key = RoomCache.get_status_key(tenant_id)
         cache.set(key, rooms, ttl=60)  # Short TTL for real-time data
 
-        logger.info(f"✅ Warmed room cache for tenant {tenant_id}")
-    except Exception as e:
-        logger.error(f"Error warming room cache: {e}")
+        logger.info("Room cache warmed")
+    except Exception as exc:
+        _log_cache_failure("warm_room", exc)

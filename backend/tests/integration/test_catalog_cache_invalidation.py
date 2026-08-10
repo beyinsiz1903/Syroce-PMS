@@ -10,9 +10,7 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-import logging
 import sys
-import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -168,7 +166,10 @@ class LegacyHelperGuardrailTests(unittest.TestCase):
         """`a:b*c` would skew naive split-based validation; the strict
         full-pattern regex must still reject it."""
         from cache_manager import (
-            DashboardCache, RoomCache, BookingCache, GuestCache,
+            BookingCache,
+            DashboardCache,
+            GuestCache,
+            RoomCache,
         )
         for helper in (
             lambda: DashboardCache.invalidate("a:b*c"),
@@ -208,8 +209,11 @@ class LegacyHelperGuardrailTests(unittest.TestCase):
         if not cache.enabled:
             self.skipTest("cache disabled in this env")
         from cache_manager import (
-            DashboardCache, RoomCache, BookingCache, GuestCache,
+            BookingCache,
+            DashboardCache,
+            GuestCache,
             ReportCache,
+            RoomCache,
         )
         safe_tenant = "57986e4f-7977-44c9-bed9-05aadf38853b"
         cases = [
@@ -258,8 +262,9 @@ class FailureMetricsTests(unittest.TestCase):
         with self.assertLogs("cache_manager", level="WARNING") as cm:
             ok = cache.safe_invalidate("evil*tenant", "anything")
         self.assertFalse(ok)
-        self.assertTrue(any("REJECTED unsafe tenant_id" in m
+        self.assertTrue(any("Cache invalidation rejected" in m
                             for m in cm.output))
+        self.assertFalse(any("evil*tenant" in m for m in cm.output))
         self.assertEqual(
             cache.invalidation_failures.get("anything", 0),
             before_fail + 1)
@@ -273,7 +278,9 @@ class FailureMetricsTests(unittest.TestCase):
                 ok = cache.safe_invalidate("good_tenant",
                                            "test_be_fail")
         self.assertFalse(ok)
-        self.assertTrue(any("FAILED pattern=" in m for m in cm.output))
+        self.assertTrue(any("Cache invalidation failed" in m
+                            for m in cm.output))
+        self.assertFalse(any("good_tenant" in m for m in cm.output))
         self.assertEqual(
             cache.invalidation_failures.get("test_be_fail", 0),
             before_fail + 1)
