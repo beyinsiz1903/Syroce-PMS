@@ -8,6 +8,7 @@ INCOMING_ANSWER_TARGET = f"{SANDBOX_FILE}::test_sandbox_incoming_commercial_invo
 INCOMING_FIXTURE_TARGET = f"{SANDBOX_FILE}::test_sandbox_prepare_incoming_commercial_invoice_fixture"
 RECONCILIATION_TARGET = f"{SANDBOX_FILE}::test_sandbox_reconcile_incoming_commercial_invoice_fixture"
 CREATE_RETURN_DISCOVERY_TARGET = f"{SANDBOX_FILE}::test_sandbox_create_return_contract_discovery"
+CREATE_RETURN_RECONCILIATION_TARGET = f"{SANDBOX_FILE}::test_sandbox_reconcile_created_return"
 PREFLIGHT_TARGET = f"{SANDBOX_FILE}::test_sandbox_incoming_fixture_accounts_preflight"
 
 
@@ -19,6 +20,7 @@ def select_test_target(
     run_incoming_answer: bool,
     run_reconciliation: bool = False,
     run_create_return_discovery: bool = False,
+    run_create_return_reconciliation: bool = False,
 ) -> str:
     if (
         sum(
@@ -29,6 +31,7 @@ def select_test_target(
                 run_incoming_answer,
                 run_reconciliation,
                 run_create_return_discovery,
+                run_create_return_reconciliation,
             )
         )
         > 1
@@ -46,6 +49,8 @@ def select_test_target(
         return RECONCILIATION_TARGET
     if run_create_return_discovery:
         return CREATE_RETURN_DISCOVERY_TARGET
+    if run_create_return_reconciliation:
+        return CREATE_RETURN_RECONCILIATION_TARGET
     raise ValueError("BLOCKED_SANDBOX_MODE_REQUIRED")
 
 
@@ -65,6 +70,7 @@ def main() -> int:
             run_incoming_answer=_read_bool("NILVERA_E2E_RUN_INCOMING_ANSWER"),
             run_reconciliation=_read_bool("NILVERA_E2E_RUN_RECONCILIATION"),
             run_create_return_discovery=_read_bool("NILVERA_E2E_RUN_CREATE_RETURN_DISCOVERY"),
+            run_create_return_reconciliation=_read_bool("NILVERA_E2E_RUN_CREATE_RETURN_RECONCILIATION"),
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)

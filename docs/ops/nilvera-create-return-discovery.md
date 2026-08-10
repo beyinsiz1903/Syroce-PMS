@@ -50,3 +50,10 @@ Production CreateReturn remains NO-GO until the Sandbox discovery has verified:
 Each mutation experiment requires a separate exact-head approval. CreateReturn,
 incoming APPROVE/REJECT, fixture creation, cancellation, deletion, and cleanup
 must never share one approval or workflow run.
+
+If the POST succeeds but its immediate GET verification fails locally, the
+write workflow must not be rerun. The mutually exclusive
+`run_create_return_reconciliation` mode searches a bounded creation-time window,
+validates the return type and both counterpart identities with keyed HMAC, and
+uses only non-retrying GET requests. Zero matches, multiple matches, malformed
+responses, 4xx, 5xx, timeouts, or an unavailable status remain blocked.

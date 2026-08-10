@@ -19,6 +19,7 @@ from core.integrations.nilvera.errors import (
 from core.integrations.nilvera.status_mapper import ProviderInvoiceOutcome
 from scripts.nilvera_sandbox_selector import (
     CREATE_RETURN_DISCOVERY_TARGET,
+    CREATE_RETURN_RECONCILIATION_TARGET,
     INCOMING_FIXTURE_TARGET,
     PREFLIGHT_TARGET,
     RECONCILIATION_TARGET,
@@ -109,6 +110,7 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
     assert "run_incoming_fixture:" in workflow
     assert "run_reconciliation:" in workflow
     assert "run_create_return_discovery:" in workflow
+    assert "run_create_return_reconciliation:" in workflow
     assert "reconciliation_source_timestamp:" in workflow
     assert "pilot_invoice_date:" in workflow
     assert 'description: "Explicit invoice IssueDate for the approved Sandbox mutation (YYYY-MM-DD)"' in workflow
@@ -142,6 +144,13 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
             run_incoming_fixture=False,
             run_incoming_answer=True,
             run_create_return_discovery=True,
+        )
+    with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
+        select_test_target(
+            run_incoming_fixture=False,
+            run_incoming_answer=False,
+            run_create_return_discovery=True,
+            run_create_return_reconciliation=True,
         )
     with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
         select_test_target(
@@ -181,6 +190,14 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
             run_create_return_discovery=True,
         )
         == CREATE_RETURN_DISCOVERY_TARGET
+    )
+    assert (
+        select_test_target(
+            run_incoming_fixture=False,
+            run_incoming_answer=False,
+            run_create_return_reconciliation=True,
+        )
+        == CREATE_RETURN_RECONCILIATION_TARGET
     )
 
 

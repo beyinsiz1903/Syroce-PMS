@@ -16,6 +16,10 @@ from core.integrations.nilvera.errors import (
     NilveraTimeoutError,
 )
 from core.integrations.nilvera.return_adapter import NilveraReturnAdapter
+from tests.integration.test_nilvera_sandbox_e2e import (
+    _created_return_detail_matches,
+    _payload_contains_reference,
+)
 
 
 @pytest.mark.parametrize(
@@ -150,3 +154,45 @@ def test_create_return_discovery_does_not_emit_raw_identifiers_or_payloads():
     assert 'record_property("invoice_number"' not in discovery
     assert "str(exc)" not in discovery
     assert "print(" not in discovery
+
+
+def test_created_return_reconciliation_matches_type_and_counterpart_with_hmac():
+    detail = {
+        "InvoiceInfo": {"InvoiceType": "IADE"},
+        "CompanyInfo": {"TaxNumber": "receiver-tax"},
+        "CustomerInfo": {"TaxNumber": "original-seller-tax"},
+        "AdditionalDocumentReferences": [{"DocumentId": "source-provider-uuid"}],
+    }
+
+    assert _created_return_detail_matches(
+        detail,
+        original_buyer_tax_number="receiver-tax",
+        original_seller_tax_number="original-seller-tax",
+        hmac_key="safe-test-hmac-key-at-least-32-bytes",
+    )
+    assert _payload_contains_reference(
+        detail,
+        "source-provider-uuid",
+        "safe-test-hmac-key-at-least-32-bytes",
+    )
+    assert not _created_return_detail_matches(
+        detail,
+        original_buyer_tax_number="different-receiver",
+        original_seller_tax_number="original-seller-tax",
+        hmac_key="safe-test-hmac-key-at-least-32-bytes",
+    )
+
+
+def test_create_return_reconciliation_target_is_get_only_and_redacted():
+    sandbox_test = (Path(__file__).parents[1] / "integration/test_nilvera_sandbox_e2e.py").read_text()
+    start = sandbox_test.index("async def test_sandbox_reconcile_created_return")
+    end = sandbox_test.index("async def test_sandbox_incoming_commercial_invoice_answer_contract")
+    reconciliation = sandbox_test[start:end]
+
+    assert "await receiver.get(" in reconciliation
+    assert "await receiver.post(" not in reconciliation
+    assert "await receiver.put(" not in reconciliation
+    assert "await receiver.patch(" not in reconciliation
+    assert "await receiver.delete(" not in reconciliation
+    assert 'record_property("provider_write_count", "0")' in reconciliation
+    assert "str(exc)" not in reconciliation
