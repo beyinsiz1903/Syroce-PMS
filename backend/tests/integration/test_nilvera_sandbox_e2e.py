@@ -50,6 +50,7 @@ from tests.nilvera_sandbox_fixture import (
     NOT_FOUND_OR_NOT_VISIBLE,
     ReadOnlySandboxClient,
     SandboxFixtureError,
+    company_identity_matches,
     ensure_distinct_sandbox_keys,
     prepare_incoming_commercial_fixture,
     reconcile_incoming_commercial_fixture,
@@ -57,6 +58,36 @@ from tests.nilvera_sandbox_fixture import (
 
 # Mark all tests in this file as nilvera_sandbox
 pytestmark = [pytest.mark.asyncio, pytest.mark.nilvera_sandbox]
+
+
+@pytest.mark.external
+async def test_sandbox_incoming_fixture_accounts_preflight(record_property):
+    """Verify both Sandbox accounts using GET only and emit safe booleans."""
+    sender_key = os.environ.get("NILVERA_E2E_SENDER_SANDBOX_KEY", "")
+    receiver_key = os.environ.get("NILVERA_E2E_RECEIVER_SANDBOX_KEY", "")
+    buyer_tax_number = os.environ.get("NILVERA_E2E_BUYER_VKN", "")
+    seller_tax_number = os.environ.get("NILVERA_E2E_SELLER_VKN", "")
+
+    try:
+        ensure_distinct_sandbox_keys(sender_key, receiver_key)
+    except SandboxFixtureError as exc:
+        pytest.fail(exc.safe_code, pytrace=False)
+
+    sender_client = new_sandbox_client(sender_key)
+    receiver_client = new_sandbox_client(receiver_key)
+    try:
+        async with sender_client as sender, receiver_client as receiver:
+            sender_match = await company_identity_matches(sender, seller_tax_number)
+            receiver_match = await company_identity_matches(receiver, buyer_tax_number)
+    except SandboxFixtureError as exc:
+        record_property("provider_write_count", "0")
+        pytest.fail(exc.safe_code, pytrace=False)
+
+    record_property("sender_match", str(sender_match).lower())
+    record_property("receiver_match", str(receiver_match).lower())
+    record_property("provider_write_count", "0")
+    if not sender_match or not receiver_match:
+        pytest.fail("BLOCKED_COMPANY_IDENTITY_MISMATCH", pytrace=False)
 
 
 def check_missing_secrets() -> bool:
