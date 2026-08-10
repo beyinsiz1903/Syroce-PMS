@@ -9,16 +9,31 @@ INCOMING_FIXTURE_TARGET = f"{SANDBOX_FILE}::test_sandbox_prepare_incoming_commer
 RECONCILIATION_TARGET = f"{SANDBOX_FILE}::test_sandbox_reconcile_incoming_commercial_invoice_fixture"
 
 
-def select_test_target(*, run_incoming_fixture: bool, run_incoming_answer: bool, run_reconciliation: bool = False) -> str:
-    if sum((run_incoming_fixture, run_incoming_answer, run_reconciliation)) > 1:
+def select_test_target(
+    *,
+    run_outgoing_contract: bool = False,
+    run_incoming_fixture: bool,
+    run_incoming_answer: bool,
+    run_reconciliation: bool = False,
+) -> str:
+    if sum(
+        (
+            run_outgoing_contract,
+            run_incoming_fixture,
+            run_incoming_answer,
+            run_reconciliation,
+        )
+    ) > 1:
         raise ValueError("BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES")
+    if run_outgoing_contract:
+        return SANDBOX_FILE
     if run_incoming_fixture:
         return INCOMING_FIXTURE_TARGET
     if run_incoming_answer:
         return INCOMING_ANSWER_TARGET
     if run_reconciliation:
         return RECONCILIATION_TARGET
-    return SANDBOX_FILE
+    raise ValueError("BLOCKED_SANDBOX_MODE_REQUIRED")
 
 
 def _read_bool(name: str) -> bool:
@@ -31,6 +46,7 @@ def _read_bool(name: str) -> bool:
 def main() -> int:
     try:
         target = select_test_target(
+            run_outgoing_contract=_read_bool("NILVERA_E2E_RUN_OUTGOING_CONTRACT"),
             run_incoming_fixture=_read_bool("NILVERA_E2E_RUN_INCOMING_FIXTURE"),
             run_incoming_answer=_read_bool("NILVERA_E2E_RUN_INCOMING_ANSWER"),
             run_reconciliation=_read_bool("NILVERA_E2E_RUN_RECONCILIATION"),

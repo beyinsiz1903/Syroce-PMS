@@ -17,7 +17,12 @@ from core.integrations.nilvera.errors import (
     NilveraValidationError,
 )
 from core.integrations.nilvera.status_mapper import ProviderInvoiceOutcome
-from scripts.nilvera_sandbox_selector import INCOMING_FIXTURE_TARGET, RECONCILIATION_TARGET, select_test_target
+from scripts.nilvera_sandbox_selector import (
+    INCOMING_FIXTURE_TARGET,
+    RECONCILIATION_TARGET,
+    SANDBOX_FILE,
+    select_test_target,
+)
 from tests.nilvera_sandbox_fixture import (
     AMBIGUOUS_WRITE,
     DEFINITIVE_REJECTION,
@@ -61,6 +66,7 @@ PROVIDER_UUID = "123e4567-e89b-12d3-a456-426614174000"
 def test_workflow_sandbox_modes_are_mutually_exclusive():
     workflow = (Path(__file__).parents[3] / ".github/workflows/nilvera-sandbox-e2e.yml").read_text()
 
+    assert "run_outgoing_contract:" in workflow
     assert "run_incoming_fixture:" in workflow
     assert "run_reconciliation:" in workflow
     assert "reconciliation_source_timestamp:" in workflow
@@ -79,6 +85,26 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
         select_test_target(run_incoming_fixture=True, run_incoming_answer=True, run_reconciliation=False)
     with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
         select_test_target(run_incoming_fixture=False, run_incoming_answer=True, run_reconciliation=True)
+    with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
+        select_test_target(
+            run_outgoing_contract=True,
+            run_incoming_fixture=True,
+            run_incoming_answer=False,
+        )
+    with pytest.raises(ValueError, match="BLOCKED_SANDBOX_MODE_REQUIRED"):
+        select_test_target(
+            run_incoming_fixture=False,
+            run_incoming_answer=False,
+            run_reconciliation=False,
+        )
+    assert (
+        select_test_target(
+            run_outgoing_contract=True,
+            run_incoming_fixture=False,
+            run_incoming_answer=False,
+        )
+        == SANDBOX_FILE
+    )
     assert select_test_target(run_incoming_fixture=True, run_incoming_answer=False) == INCOMING_FIXTURE_TARGET
     assert select_test_target(run_incoming_fixture=False, run_incoming_answer=False, run_reconciliation=True) == RECONCILIATION_TARGET
 

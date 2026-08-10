@@ -3,6 +3,11 @@ name: Nilvera Sandbox E2E
 on:
   workflow_dispatch:
     inputs:
+      run_outgoing_contract:
+        description: Run the explicitly approved outgoing submission and read contracts
+        required: true
+        default: false
+        type: boolean
       run_incoming_fixture:
         description: Run only the explicitly approved incoming fixture preparation test
         required: true
@@ -100,6 +105,7 @@ jobs:
       - name: Select Sandbox test target
         id: select-test
         env:
+          NILVERA_E2E_RUN_OUTGOING_CONTRACT: ${{ inputs.run_outgoing_contract }}
           NILVERA_E2E_RUN_INCOMING_FIXTURE: ${{ inputs.run_incoming_fixture }}
           NILVERA_E2E_RUN_INCOMING_ANSWER: ${{ inputs.run_incoming_answer }}
           NILVERA_E2E_RUN_RECONCILIATION: ${{ inputs.run_reconciliation }}
@@ -114,6 +120,7 @@ jobs:
           RUN_INCOMING_FIXTURE: ${{ inputs.run_incoming_fixture }}
           RUN_INCOMING_ANSWER: ${{ inputs.run_incoming_answer }}
           RUN_RECONCILIATION: ${{ inputs.run_reconciliation }}
+          RUN_OUTGOING_CONTRACT: ${{ inputs.run_outgoing_contract }}
           RECONCILIATION_SOURCE_RUN_ID: ${{ inputs.reconciliation_source_run_id }}
           RECONCILIATION_SOURCE_TIMESTAMP: ${{ inputs.reconciliation_source_timestamp }}
           SENDER_KEY: ${{ secrets.NILVERA_E2E_SENDER_SANDBOX_KEY }}
@@ -129,7 +136,7 @@ jobs:
           WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           mutation_requested=false
-          if [ "${RUN_INCOMING_FIXTURE}" = "true" ] || [ "${RUN_INCOMING_ANSWER}" = "true" ]; then
+          if [ "${RUN_OUTGOING_CONTRACT}" = "true" ] || [ "${RUN_INCOMING_FIXTURE}" = "true" ] || [ "${RUN_INCOMING_ANSWER}" = "true" ]; then
             mutation_requested=true
           fi
           if [ "${mutation_requested}" = "true" ]; then
@@ -189,7 +196,7 @@ jobs:
               echo "::error::BLOCKED_MISSING_ANSWER_SANDBOX_CONFIGURATION"
               exit 1
             fi
-          elif [ -z "${SENDER_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ]; then
+          elif [ "${RUN_OUTGOING_CONTRACT}" = "true" ] && { [ -z "${SENDER_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ]; }; then
             echo "::error::BLOCKED_MISSING_SANDBOX_CONFIGURATION"
             exit 1
           fi
