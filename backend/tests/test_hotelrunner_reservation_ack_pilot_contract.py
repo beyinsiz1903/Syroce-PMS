@@ -1,0 +1,136 @@
+"""Offline safety contract for the single HotelRunner reservation ACK pilot."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+import yaml
+
+from domains.channel_manager.providers.hotelrunner import endpoints as ep
+from tests.integration import test_hotelrunner_reservation_ack_pilot as ack_pilot
+
+ROOT = Path(__file__).resolve().parents[2]
+WORKFLOW = ROOT / ".github" / "workflows" / "hotelrunner-reservation-ack-pilot.yml"
+
+
+def _workflow() -> dict:
+    return yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+
+
+def _base_env(monkeypatch, *, write: bool = True):
+    values = {
+        "APP_ENV": "test",
+        "TESTING": "1",
+        "MONGO_URL": "mongodb://localhost:27017/hotel_pms_test",
+        "DB_NAME": "hotel_pms_test",
+        "GITHUB_SHA": "a" * 40,
+        "HOTELRUNNER_PILOT_ACCOUNT_CONFIRMED": "true",
+        "HOTELRUNNER_PILOT_APPROVED_HEAD": "a" * 40,
+        "HOTELRUNNER_PILOT_BASE_URL": "https://app.hotelrunner.com",
+        "HOTELRUNNER_PILOT_HMAC_KEY": "synthetic-hmac-key-with-at-least-32-chars",
+        "HOTELRUNNER_PILOT_HR_ID": "synthetic-hotel",
+        "HOTELRUNNER_PILOT_OPERATION": "reservation_ack",
+        "HOTELRUNNER_PILOT_RUN_ID": "123456",
+        "HOTELRUNNER_PILOT_TOKEN": "synthetic-token",
+        "HOTELRUNNER_PILOT_WRITE_APPROVED": "true" if write else "false",
+    }
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+
+
+def test_workflow_is_manual_exact_head_and_single_write_gated():
+    workflow = _workflow()
+    assert list(workflow["on"]) == ["workflow_dispatch"]
+    inputs = workflow["on"]["workflow_dispatch"]["inputs"]
+    assert inputs["confirm_provider_write"]["default"] == "false"
+    assert inputs["approved_head_sha"]["required"] == "true"
+
+    job = workflow["jobs"]["hotelrunner-reservation-ack-pilot"]
+    assert job["environment"] == "hotelrunner-pilot"
+    assert job["concurrency"]["cancel-in-progress"] == "false"
+    gate = next(step for step in job["steps"] if step.get("name") == "Validate exact-head approval and single ACK write gate")
+    assert "BLOCKED_EXACT_HEAD_MISMATCH" in gate["run"]
+    assert "BLOCKED_PROVIDER_WRITE_NOT_APPROVED" in gate["run"]
+
+
+def test_workflow_targets_exact_ack_test_and_no_deploy():
+    workflow = _workflow()
+    job = workflow["jobs"]["hotelrunner-reservation-ack-pilot"]
+    run_step = next(step for step in job["steps"] if step.get("name") == "Run exactly one gated HotelRunner reservation ACK")
+    assert run_step["env"]["HOTELRUNNER_PILOT_OPERATION"] == "reservation_ack"
+    assert "test_hotelrunner_single_reservation_ack" in run_step["run"]
+    assert "deploy" not in run_step["run"].lower()
+    assert workflow["permissions"] == {"actions": "read", "contents": "read"}
+
+
+def test_workflow_requires_exact_head_normal_ci_without_deploy_job():
+    workflow = _workflow()
+    job = workflow["jobs"]["hotelrunner-reservation-ack-pilot"]
+    gate = next(step for step in job["steps"] if step.get("name") == "Require successful exact-head normal workflows")
+    script = gate["run"]
+    for required in (
+        "lockfile-guard",
+        "backend-lint",
+        "frontend-lint",
+        "backend-test",
+        "battle-e2e",
+        "load-test",
+        "frontend-build",
+        "security-scan",
+    ):
+        assert f'"{required}"' in script
+    assert "frontend-quality.yml" in script
+    assert "deploy-production" not in script
+
+
+def test_settings_require_explicit_write_approval(monkeypatch):
+    _base_env(monkeypatch, write=False)
+    with pytest.raises(ack_pilot.ReservationPilotError, match="BLOCKED_PROVIDER_WRITE_NOT_APPROVED"):
+        ack_pilot._load_ack_settings()
+
+
+def test_settings_require_exact_head(monkeypatch):
+    _base_env(monkeypatch)
+    monkeypatch.setenv("GITHUB_SHA", "b" * 40)
+    with pytest.raises(ack_pilot.ReservationPilotError, match="BLOCKED_EXACT_HEAD_MISMATCH"):
+        ack_pilot._load_ack_settings()
+
+
+def test_settings_repr_hides_credentials(monkeypatch):
+    _base_env(monkeypatch)
+    settings = ack_pilot._load_ack_settings()
+    text = repr(settings)
+    assert "synthetic-token" not in text
+    assert "synthetic-hotel" not in text
+
+
+@pytest.mark.asyncio
+async def test_ack_guard_allows_reads_and_exactly_one_ack_put():
+    original = AsyncMock(return_value=SimpleNamespace(status_code=200))
+    provider = SimpleNamespace(_client=SimpleNamespace(_request=original))
+    guard = ack_pilot.AckPilotHttpGuard(provider)
+
+    await provider._client._request("GET", ep.CHANNELS)
+    await provider._client._request("GET", ep.RESERVATIONS)
+    await provider._client._request("PUT", ep.RESERVATIONS_ACK)
+    with pytest.raises(ack_pilot.ReservationPilotError, match="BLOCKED_SECOND_PROVIDER_WRITE_ATTEMPT"):
+        await provider._client._request("PUT", ep.RESERVATIONS_ACK)
+
+    assert guard.get_count == 2
+    assert guard.write_count == 1
+    assert original.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_ack_guard_rejects_other_provider_writes_before_call():
+    original = AsyncMock(return_value=SimpleNamespace(status_code=200))
+    provider = SimpleNamespace(_client=SimpleNamespace(_request=original))
+    ack_pilot.AckPilotHttpGuard(provider)
+
+    with pytest.raises(ack_pilot.ReservationPilotError, match="BLOCKED_UNEXPECTED_PROVIDER_WRITE_PATH"):
+        await provider._client._request("PUT", ep.ROOMS_DATERANGE)
+    original.assert_not_awaited()
