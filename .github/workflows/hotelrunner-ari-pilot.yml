@@ -11,6 +11,8 @@ on:
         options:
           - discovery
           - reservation_read
+          - reservation_import
+          - reservation_replay
           - availability
           - rate
           - stop_sell
@@ -80,7 +82,7 @@ jobs:
             exit 1
           fi
           case "${PILOT_OPERATION}" in
-            discovery|reservation_read)
+            discovery|reservation_read|reservation_import|reservation_replay)
               if [ "${CONFIRM_PROVIDER_WRITE}" = "true" ]; then
                 echo "::error::BLOCKED_READONLY_WRITE_CONFLICT"
                 exit 1
@@ -208,6 +210,12 @@ jobs:
               ;;
             reservation_read)
               target="tests/integration/test_hotelrunner_ari_pilot.py::test_hotelrunner_pilot_readonly_reservation"
+              ;;
+            reservation_import)
+              target="tests/integration/test_hotelrunner_reservation_import_pilot.py::test_hotelrunner_pilot_reservation_import"
+              ;;
+            reservation_replay)
+              target="tests/integration/test_hotelrunner_reservation_import_pilot.py::test_hotelrunner_pilot_reservation_replay"
               ;;
             *)
               target="tests/integration/test_hotelrunner_ari_pilot.py::test_hotelrunner_pilot_single_ari_write"
