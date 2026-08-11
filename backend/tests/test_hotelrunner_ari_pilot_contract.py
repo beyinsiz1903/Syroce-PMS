@@ -64,6 +64,7 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
         "reservation_import",
         "reservation_replay",
         "reservation_reconciliation",
+        "reservation_history_import",
         "availability",
         "rate",
         "stop_sell",
@@ -80,6 +81,7 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
     assert "reservation_import" in gate["run"]
     assert "reservation_replay" in gate["run"]
     assert "reservation_reconciliation" in gate["run"]
+    assert "reservation_history_import" in gate["run"]
     assert "BLOCKED_MISSING_RECONCILIATION_SOURCE_TIMESTAMP" in gate["run"]
     assert "${{ inputs.reconciliation_source_timestamp }}" not in gate["run"]
     assert gate["env"]["RECONCILIATION_SOURCE_TIMESTAMP"] == "${{ inputs.reconciliation_source_timestamp }}"
@@ -99,6 +101,7 @@ def test_workflow_uses_protected_pilot_environment_and_exact_targets():
     assert "test_hotelrunner_pilot_reservation_import" in script
     assert "test_hotelrunner_pilot_reservation_replay" in script
     assert "test_hotelrunner_pilot_reservation_reconciliation" in script
+    assert "test_hotelrunner_pilot_reservation_history_import" in script
     assert "test_hotelrunner_pilot_single_ari_write" in script
     assert "pytest -m" not in script
 
@@ -149,7 +152,9 @@ def test_workflow_passes_secrets_only_to_the_selected_test_step():
             assert secret_names <= set(env)
         else:
             assert secret_names.isdisjoint(env)
-    assert "inputs.operation == 'reservation_reconciliation'" in run_step["env"]["HOTELRUNNER_PILOT_TARGET_GUEST_NAME"]
+    target_secret_gate = run_step["env"]["HOTELRUNNER_PILOT_TARGET_GUEST_NAME"]
+    assert "inputs.operation == 'reservation_reconciliation'" in target_secret_gate
+    assert "inputs.operation == 'reservation_history_import'" in target_secret_gate
 
 
 def test_workflow_pins_the_official_documented_host():
@@ -360,6 +365,155 @@ def test_reconciliation_settings_repr_redacts_target_identity(monkeypatch):
 
     assert "Synthetic Target Guest" not in settings_repr
     assert "synthetic-hmac-key-with-at-least-32-chars" not in settings_repr
+
+
+def test_history_import_requires_secret_target_before_provider_access(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_history_import", write=False)
+    monkeypatch.delenv("HOTELRUNNER_PILOT_TARGET_GUEST_NAME")
+
+    with pytest.raises(
+        reservation_pilot.ReservationPilotError,
+        match="BLOCKED_MISSING_CONFIGURATION:HOTELRUNNER_PILOT_TARGET_GUEST_NAME",
+    ):
+        reservation_pilot._load_settings()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("target_count", "failure_code"),
+    [
+        (0, "BLOCKED_TARGET_HISTORY_RESERVATION_NOT_FOUND"),
+        (2, "CONFLICT_MULTIPLE_TARGET_HISTORY_RESERVATIONS"),
+    ],
+)
+async def test_history_target_selection_fails_closed_before_local_import(
+    monkeypatch,
+    target_count,
+    failure_code,
+):
+    _base_env(monkeypatch, operation="reservation_history_import", write=False)
+    source_timestamp = datetime.now(UTC).replace(microsecond=0)
+    monkeypatch.setenv(
+        "HOTELRUNNER_PILOT_SOURCE_TIMESTAMP",
+        source_timestamp.isoformat().replace("+00:00", "Z"),
+    )
+    provider_call = AsyncMock(return_value=SimpleNamespace(status_code=200))
+    client = SimpleNamespace(_request=provider_call, close=AsyncMock())
+    history = [
+        {
+            "completed_at": source_timestamp.isoformat(),
+            "guest": "Synthetic Target Guest",
+            "message_uid": f"synthetic-target-{index}",
+            "state": "reserved",
+        }
+        for index in range(target_count)
+    ]
+
+    class FakeProvider:
+        def __init__(self, **_kwargs):
+            self._client = client
+
+        async def test_connection(self):
+            await self._client._request("GET", ep.TRANSACTION_DETAILS)
+            return SimpleNamespace(success=True)
+
+        async def fetch_reservations(self, **kwargs):
+            await self._client._request("GET", ep.RESERVATIONS)
+            if kwargs["undelivered"]:
+                return SimpleNamespace(success=True, data={"raw_reservations": []})
+            return SimpleNamespace(success=True, data={"reservations": history})
+
+    monkeypatch.setattr(reservation_pilot, "HotelRunnerProvider", FakeProvider)
+    local_import = AsyncMock()
+    monkeypatch.setattr(reservation_pilot, "_import_durably", local_import)
+
+    with pytest.raises(reservation_pilot.ReservationPilotError, match=failure_code):
+        await reservation_pilot._fetch_target_history_reservation(reservation_pilot._load_settings())
+
+    local_import.assert_not_awaited()
+    assert all(call.args[0] == "GET" for call in provider_call.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_history_import_creates_one_booking_without_provider_write_or_identifier_output(
+    monkeypatch,
+):
+    _base_env(monkeypatch, operation="reservation_history_import", write=False)
+    sensitive_identifier = "synthetic-sensitive-history-identifier"
+    raw = {"message_uid": sensitive_identifier}
+    provider_metadata = {
+        "get_count": 3,
+        "history_match_count_class": "ONE",
+        "provider_state_class": "RESERVED",
+        "provider_write_count": 0,
+        "reservation_correlation_label": "abcdef123456",
+        "undelivered_match_count_class": "ZERO",
+    }
+    monkeypatch.setattr(
+        reservation_pilot,
+        "_fetch_target_history_reservation",
+        AsyncMock(return_value=(raw, provider_metadata)),
+    )
+    monkeypatch.setattr(
+        reservation_pilot,
+        "_import_durably",
+        AsyncMock(
+            return_value=(
+                {"external_reservation_id": sensitive_identifier},
+                {"id": "synthetic-booking"},
+            )
+        ),
+    )
+    replay = AsyncMock(return_value=SimpleNamespace(status="duplicate"))
+    monkeypatch.setattr(reservation_pilot, "_persist_and_process", replay)
+    monkeypatch.setattr(reservation_pilot, "_resolve_property_id", lambda _raw: "pilot-property")
+    monkeypatch.setattr(
+        reservation_pilot,
+        "db",
+        SimpleNamespace(
+            bookings=SimpleNamespace(count_documents=AsyncMock(return_value=1)),
+            imported_reservations=SimpleNamespace(count_documents=AsyncMock(return_value=1)),
+        ),
+    )
+    recorded: list[tuple[str, object]] = []
+
+    await reservation_pilot.test_hotelrunner_pilot_reservation_history_import(lambda key, value: recorded.append((key, value)))
+
+    assert ("durable_pms_booking", True) in recorded
+    assert ("pms_booking_count", 1) in recorded
+    assert ("import_record_count", 1) in recorded
+    assert ("provider_write_count", 0) in recorded
+    assert ("replay_duplicate_safe", True) in recorded
+    assert sensitive_identifier not in str(recorded)
+    replay.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_history_import_refuses_target_still_in_undelivered_queue(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_history_import", write=False)
+    monkeypatch.setattr(
+        reservation_pilot,
+        "_fetch_target_history_reservation",
+        AsyncMock(
+            return_value=(
+                {"message_uid": "synthetic-sensitive-history-identifier"},
+                {
+                    "provider_write_count": 0,
+                    "undelivered_match_count_class": "ONE",
+                },
+            )
+        ),
+    )
+    local_import = AsyncMock()
+    monkeypatch.setattr(reservation_pilot, "_import_durably", local_import)
+
+    with pytest.raises(
+        pytest.fail.Exception,
+        match="BLOCKED_HISTORY_TARGET_STILL_UNDELIVERED",
+    ):
+        await reservation_pilot.test_hotelrunner_pilot_reservation_history_import(lambda _key, _value: None)
+
+    local_import.assert_not_awaited()
 
 
 def test_settings_repr_never_contains_credentials_or_provider_identifiers(monkeypatch):
