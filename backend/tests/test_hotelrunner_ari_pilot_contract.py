@@ -58,6 +58,8 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
     assert inputs["operation"]["options"] == [
         "discovery",
         "reservation_read",
+        "reservation_import",
+        "reservation_replay",
         "availability",
         "rate",
         "stop_sell",
@@ -71,6 +73,8 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
     gate = next(step for step in job["steps"] if step.get("name") == "Validate exact-head approval and operation gate")
     assert "BLOCKED_READONLY_WRITE_CONFLICT" in gate["run"]
     assert "BLOCKED_PROVIDER_WRITE_NOT_APPROVED" in gate["run"]
+    assert "reservation_import" in gate["run"]
+    assert "reservation_replay" in gate["run"]
 
 
 def test_workflow_uses_protected_pilot_environment_and_exact_targets():
@@ -84,6 +88,8 @@ def test_workflow_uses_protected_pilot_environment_and_exact_targets():
     assert workflow["permissions"] == {"actions": "read", "contents": "read"}
     assert "test_hotelrunner_pilot_readonly_discovery" in script
     assert "test_hotelrunner_pilot_readonly_reservation" in script
+    assert "test_hotelrunner_pilot_reservation_import" in script
+    assert "test_hotelrunner_pilot_reservation_replay" in script
     assert "test_hotelrunner_pilot_single_ari_write" in script
     assert "pytest -m" not in script
 
