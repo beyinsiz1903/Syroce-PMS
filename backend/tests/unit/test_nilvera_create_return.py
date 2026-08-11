@@ -117,6 +117,40 @@ async def test_create_return_response_requires_provider_uuid(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_return_verifies_exact_draft_with_return_type():
+    generated_uuid = str(uuid.uuid4())
+    client = SimpleNamespace(
+        get=AsyncMock(return_value={"InvoiceInfo": {"InvoiceType": "IADE"}}),
+        last_http_status=200,
+    )
+
+    await NilveraReturnAdapter(client).verify_return_draft(
+        generated_uuid,
+        correlation_id="safe-correlation",
+    )
+
+    client.get.assert_awaited_once_with(
+        NilveraEndpoints.GET_DRAFT_INVOICE_MODEL.format(uuid=generated_uuid),
+        correlation_id="safe-correlation",
+        retryable=False,
+        stage="CREATE_RETURN_DRAFT_VERIFY",
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_return_draft_rejects_non_return_model():
+    client = SimpleNamespace(
+        get=AsyncMock(return_value={"InvoiceInfo": {"InvoiceType": "SATIS"}}),
+        last_http_status=200,
+    )
+
+    with pytest.raises(NilveraMalformedResponseError):
+        await NilveraReturnAdapter(client).verify_return_draft(str(uuid.uuid4()))
+
+    assert client.get.await_count == 1
+
+
+@pytest.mark.asyncio
 async def test_http_client_omits_body_and_content_type_for_bodyless_post(monkeypatch):
     monkeypatch.setenv("NILVERA_ENABLED", "true")
     monkeypatch.setenv("NILVERA_ENV", "test")

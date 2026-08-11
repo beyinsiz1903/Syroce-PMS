@@ -6,8 +6,17 @@ from datetime import UTC, datetime, timedelta
 
 from core.integrations.incoming_invoice_repository import IncomingInvoiceRepository
 from core.integrations.invoice_lifecycle_repository import InvoiceLifecycleRepository
+from core.integrations.invoice_return_service import (
+    handle_return_action_success,
+    handle_return_action_unknown_failure,
+    handle_return_action_validation_failure,
+    prepare_return_action_for_provider,
+)
 from core.integrations.nilvera.client import NilveraHttpClient
-from core.integrations.nilvera.config import is_nilvera_incoming_answer_enabled
+from core.integrations.nilvera.config import (
+    is_nilvera_create_return_enabled,
+    is_nilvera_incoming_answer_enabled,
+)
 from core.integrations.nilvera.errors import NilveraApiError
 from core.integrations.nilvera.incoming_answer import (
     NilveraIncomingAnswerDecision,
@@ -15,6 +24,7 @@ from core.integrations.nilvera.incoming_answer import (
     NilveraIncomingAnswerState,
 )
 from core.integrations.nilvera.provisioner import get_nilvera_tenant_config
+from core.integrations.nilvera.return_adapter import NilveraReturnAdapter
 from models.schemas.incoming_invoice import IncomingInvoiceAnswerStatus
 from models.schemas.invoice_lifecycle import (
     InvoiceLifecycleAction,
@@ -62,6 +72,10 @@ class InvoiceLifecycleService:
                 error_code="INVALID_PROVIDER_UUID",
                 release_answer_guard=True,
             )
+            return
+
+        if action.action_type == InvoiceLifecycleActionType.CREATE_INCOMING_RETURN:
+            await cls._process_return_action(action, worker_id, provider_uuid)
             return
 
         try:
@@ -165,6 +179,287 @@ class InvoiceLifecycleService:
                 decision,
                 answer_service,
             )
+
+    @classmethod
+    async def _process_return_action(
+        cls,
+        action: InvoiceLifecycleAction,
+        worker_id: str,
+        source_provider_uuid: str,
+    ) -> None:
+        if action.provider_attempted_at is None and not is_nilvera_create_return_enabled():
+            await cls._finish(
+                action,
+                worker_id,
+                state=InvoiceLifecycleActionState.RETRY_SCHEDULED,
+                error_code="CREATE_RETURN_FEATURE_DISABLED",
+                next_attempt_at=datetime.now(UTC) + timedelta(minutes=15),
+            )
+            return
+
+        try:
+            tenant_config = await get_nilvera_tenant_config(action.tenant_id, decrypt_api_key=True)
+        except Exception:
+            await cls._finish(
+                action,
+                worker_id,
+                state=InvoiceLifecycleActionState.RETRY_SCHEDULED,
+                error_code="TENANT_CONFIGURATION_UNAVAILABLE",
+                next_attempt_at=datetime.now(UTC) + timedelta(minutes=15),
+            )
+            return
+        if not isinstance(tenant_config, dict):
+            await cls._finish(
+                action,
+                worker_id,
+                state=InvoiceLifecycleActionState.RETRY_SCHEDULED,
+                error_code="TENANT_CONFIGURATION_UNAVAILABLE",
+                next_attempt_at=datetime.now(UTC) + timedelta(minutes=15),
+            )
+            return
+        api_key = tenant_config.get("api_key")
+        if not tenant_config.get("enabled") or not isinstance(api_key, str) or not api_key:
+            await cls._finish(
+                action,
+                worker_id,
+                state=InvoiceLifecycleActionState.RETRY_SCHEDULED,
+                error_code="TENANT_CREDENTIAL_UNAVAILABLE",
+                next_attempt_at=datetime.now(UTC) + timedelta(minutes=15),
+            )
+            return
+
+        async with NilveraHttpClient(api_key=api_key) as client:
+            return_adapter = NilveraReturnAdapter(client)
+            generated_provider_uuid = action.generated_invoice_uuid
+
+            if action.provider_attempted_at is None:
+                try:
+                    allocations_ready = await prepare_return_action_for_provider(
+                        action.tenant_id,
+                        action.id,
+                    )
+                except Exception:
+                    allocations_ready = False
+                if not allocations_ready:
+                    await cls._finish(
+                        action,
+                        worker_id,
+                        state=InvoiceLifecycleActionState.RETRY_SCHEDULED,
+                        error_code="RETURN_ALLOCATION_NOT_READY",
+                        next_attempt_at=datetime.now(UTC) + timedelta(minutes=5),
+                    )
+                    return
+
+                attempt_started = await InvoiceLifecycleRepository.mark_provider_attempt_started(
+                    action.tenant_id,
+                    action.id,
+                    worker_id,
+                    datetime.now(UTC),
+                )
+                if not attempt_started:
+                    cls._log_lease_lost("mark_create_return_attempt")
+                    return
+
+                try:
+                    response = await return_adapter.create_return(
+                        source_provider_uuid,
+                        correlation_id=action.id,
+                    )
+                except NilveraApiError as exc:
+                    await cls._handle_return_send_error(action, worker_id, exc)
+                    return
+                except Exception:
+                    await cls._mark_return_reconciliation(
+                        action,
+                        worker_id,
+                        error_code="CREATE_RETURN_WRITE_OUTCOME_UNKNOWN",
+                    )
+                    return
+
+                generated_provider_uuid = str(response.provider_uuid)
+                accepted = await InvoiceLifecycleRepository.mark_provider_return_created(
+                    action.tenant_id,
+                    action.id,
+                    worker_id,
+                    datetime.now(UTC),
+                    generated_provider_uuid,
+                )
+                if not accepted:
+                    cls._log_lease_lost("mark_create_return_accepted")
+                    return
+
+            if generated_provider_uuid is None:
+                await cls._mark_return_reconciliation(
+                    action,
+                    worker_id,
+                    error_code="CREATE_RETURN_RESULT_IDENTIFIER_UNAVAILABLE",
+                )
+                return
+
+            await cls._verify_return_draft(
+                action,
+                worker_id,
+                generated_provider_uuid,
+                return_adapter,
+            )
+
+    @classmethod
+    async def _verify_return_draft(
+        cls,
+        action: InvoiceLifecycleAction,
+        worker_id: str,
+        generated_provider_uuid: str,
+        return_adapter: NilveraReturnAdapter,
+    ) -> None:
+        try:
+            await return_adapter.verify_return_draft(
+                generated_provider_uuid,
+                correlation_id=action.id,
+            )
+        except NilveraApiError as exc:
+            if exc.http_status in {401, 403}:
+                await cls._mark_return_reconciliation(
+                    action,
+                    worker_id,
+                    error_code=exc.safe_code,
+                )
+                return
+            await cls._schedule_return_verification(
+                action,
+                worker_id,
+                error_code=exc.safe_code,
+            )
+            return
+        except (TypeError, ValueError):
+            await cls._mark_return_reconciliation(
+                action,
+                worker_id,
+                error_code="CREATE_RETURN_RESULT_IDENTIFIER_INVALID",
+            )
+            return
+        except Exception:
+            await cls._schedule_return_verification(
+                action,
+                worker_id,
+                error_code="CREATE_RETURN_DRAFT_STATUS_UNAVAILABLE",
+            )
+            return
+
+        try:
+            await handle_return_action_success(action.tenant_id, action.id)
+        except Exception:
+            await cls._mark_return_reconciliation(
+                action,
+                worker_id,
+                error_code="RETURN_ALLOCATION_CONFIRMATION_FAILED",
+            )
+            return
+
+        persisted = await cls._finish(
+            action,
+            worker_id,
+            state=InvoiceLifecycleActionState.SUCCEEDED,
+            error_code=None,
+            completed_at=datetime.now(UTC),
+        )
+        if persisted:
+            try:
+                await event_bus.publish(
+                    action.tenant_id,
+                    "invoice.lifecycle.create_incoming_return.completed",
+                    {
+                        "action_id": action.id,
+                        "source_invoice_id": action.source_invoice_id,
+                    },
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Incoming invoice return completion event unavailable error_type=%s",
+                    type(exc).__name__,
+                )
+
+    @classmethod
+    async def _handle_return_send_error(
+        cls,
+        action: InvoiceLifecycleAction,
+        worker_id: str,
+        exc: NilveraApiError,
+    ) -> None:
+        if exc.http_status in {400, 401, 403, 404, 422}:
+            try:
+                await handle_return_action_validation_failure(action.tenant_id, action.id)
+            except Exception:
+                await cls._mark_return_reconciliation(
+                    action,
+                    worker_id,
+                    error_code="RETURN_ALLOCATION_RELEASE_FAILED",
+                )
+                return
+            await cls._finish(
+                action,
+                worker_id,
+                state=InvoiceLifecycleActionState.FAILED,
+                error_code=exc.safe_code,
+                release_answer_guard=True,
+            )
+            return
+
+        await cls._mark_return_reconciliation(
+            action,
+            worker_id,
+            error_code=exc.safe_code,
+        )
+
+    @classmethod
+    async def _schedule_return_verification(
+        cls,
+        action: InvoiceLifecycleAction,
+        worker_id: str,
+        *,
+        error_code: str,
+    ) -> None:
+        next_count = action.verification_attempt_count + 1
+        if next_count > len(STATUS_POLL_DELAYS):
+            await cls._mark_return_reconciliation(
+                action,
+                worker_id,
+                error_code="CREATE_RETURN_VERIFICATION_EXHAUSTED",
+                verification_attempt_count=next_count,
+            )
+            return
+
+        await cls._finish(
+            action,
+            worker_id,
+            state=InvoiceLifecycleActionState.PROVIDER_PENDING,
+            error_code=error_code,
+            next_attempt_at=datetime.now(UTC) + timedelta(
+                seconds=_get_next_poll_delay(action.verification_attempt_count)
+            ),
+            verification_attempt_count=next_count,
+        )
+
+    @classmethod
+    async def _mark_return_reconciliation(
+        cls,
+        action: InvoiceLifecycleAction,
+        worker_id: str,
+        *,
+        error_code: str,
+        verification_attempt_count: int | None = None,
+    ) -> None:
+        try:
+            await handle_return_action_unknown_failure(action.tenant_id, action.id)
+        except Exception:
+            error_code = "RETURN_ALLOCATION_RECONCILIATION_FAILED"
+        await cls._finish(
+            action,
+            worker_id,
+            state=InvoiceLifecycleActionState.RECONCILIATION_REQUIRED,
+            error_code=error_code,
+            reconciliation_required=True,
+            verification_attempt_count=verification_attempt_count,
+        )
 
     @staticmethod
     def _decision_for(action: InvoiceLifecycleAction) -> NilveraIncomingAnswerDecision:

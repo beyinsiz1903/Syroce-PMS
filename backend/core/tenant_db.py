@@ -126,6 +126,8 @@ TENANT_SCOPED_COLLECTIONS: set[str] = {
     "incoming_invoice_lines",
     "incoming_invoice_sync_state",
     "invoice_lifecycle_actions",
+    "invoice_return_allocations",
+    "invoice_return_balances",
 }
 
 # ── Append-only audit collections (Task #568) ───────────────────

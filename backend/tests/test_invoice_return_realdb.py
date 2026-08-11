@@ -35,7 +35,7 @@ async def _mongo_or_skip():
         await client.admin.command("ping")
     except Exception:
         client.close()
-        pytest.skip(f"MongoDB unreachable ({MONGO_URL})")
+        pytest.skip("MongoDB unreachable")
     return client
 
 @pytest.fixture
@@ -58,7 +58,8 @@ async def live_test_db(monkeypatch):
     client.close()
 
 @pytest.fixture(autouse=True)
-def setup_tenant():
+def setup_tenant(monkeypatch):
+    monkeypatch.setenv("NILVERA_CREATE_RETURN_ENABLED", "true")
     set_tenant_context("tenant_return_db")
     yield
     clear_tenant_context()
@@ -238,7 +239,7 @@ async def test_api_invoice_not_found_returns_404(migrated_db):
     assert response.status_code == 404
     assert "Invoice not found" in response.text
 
-async def test_api_duplicate_source_line_returns_422(migrated_db):
+async def test_api_partial_return_contract_returns_422(migrated_db):
     tenant_id = "tenant_test"
     invoice_id = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
     # Create fake invoice
@@ -265,9 +266,11 @@ async def test_api_duplicate_source_line_returns_422(migrated_db):
             }
         )
     assert response.status_code == 422
-    assert "Duplicate source_line_id" in response.text
+    assert response.json()["detail"]["code"] == "PARTIAL_RETURN_NOT_SUPPORTED_BY_PROVIDER_CONTRACT"
 
-async def test_api_provider_contract_unverified_returns_503(migrated_db):
+
+async def test_api_create_return_feature_disabled_returns_503(migrated_db, monkeypatch):
+    monkeypatch.delenv("NILVERA_CREATE_RETURN_ENABLED", raising=False)
     tenant_id = "tenant_test"
     invoice_id = "f47ac10b-58cc-4372-a567-0e02b2c3d470"
     await migrated_db.incoming_invoices.insert_one({
@@ -285,10 +288,10 @@ async def test_api_provider_contract_unverified_returns_503(migrated_db):
         )
     assert response.status_code == 503
     data = response.json()
-    assert data["detail"]["code"] == "PROVIDER_CONTRACT_NOT_VERIFIED"
+    assert data["detail"]["code"] == "NILVERA_CREATE_RETURN_DISABLED"
 
     # Verify no action or allocation was saved to DB
-    action_count = await migrated_db.invoice_lifecycle_actions.count_documents({"idempotency_key": f"{tenant_id}:return:key-503-test"})
+    action_count = await migrated_db.invoice_lifecycle_actions.count_documents({"tenant_id": tenant_id})
     assert action_count == 0
 
 async def test_repository_allocation_state_transition_cas_miss_rollback(migrated_db):

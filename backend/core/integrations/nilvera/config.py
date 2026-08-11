@@ -75,7 +75,7 @@ def is_nilvera_incoming_answer_enabled() -> bool:
 
 
 def is_nilvera_create_return_enabled() -> bool:
-    """Return the fail-closed CreateReturn discovery feature state."""
+    """Return the fail-closed CreateReturn mutation feature state."""
     return os.environ.get("NILVERA_CREATE_RETURN_ENABLED", "false").strip().lower() == "true"
 
 

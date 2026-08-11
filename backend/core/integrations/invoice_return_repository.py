@@ -178,7 +178,11 @@ async def update_allocation_state(
             allocation.updated_at = now
 
             # Adjust balances if necessary
-            if old_state in (ReturnAllocationState.RESERVED, ReturnAllocationState.PROVIDER_PENDING):
+            if old_state in (
+                ReturnAllocationState.RESERVED,
+                ReturnAllocationState.PROVIDER_PENDING,
+                ReturnAllocationState.RECONCILIATION_REQUIRED,
+            ):
                 balance_doc = await db.invoice_return_balances.find_one(
                     {
                         "tenant_id": tenant_id,

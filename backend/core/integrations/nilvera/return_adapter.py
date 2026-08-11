@@ -1,4 +1,5 @@
 import uuid
+from typing import Never
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -20,7 +21,7 @@ class NilveraCreateReturnResponse(BaseModel):
 
 
 class NilveraReturnAdapter:
-    """Fail-closed adapter for the explicitly gated CreateReturn discovery."""
+    """Fail-closed adapter for creating and verifying a return draft."""
 
     def __init__(self, client: NilveraHttpClient):
         self._client = client
@@ -54,3 +55,54 @@ class NilveraReturnAdapter:
                 http_status=self._client.last_http_status,
                 stage="CREATE_RETURN_RESPONSE",
             ) from exc
+
+    async def verify_return_draft(
+        self,
+        generated_provider_uuid: str,
+        *,
+        correlation_id: str | None = None,
+    ) -> None:
+        """Verify the exact created draft exists and has the provider return type."""
+        try:
+            normalized_uuid = str(uuid.UUID(generated_provider_uuid))
+        except (AttributeError, TypeError, ValueError):
+            raise ValueError("INVALID_GENERATED_PROVIDER_UUID") from None
+
+        raw_response = await self._client.get(
+            NilveraEndpoints.GET_DRAFT_INVOICE_MODEL.format(uuid=normalized_uuid),
+            correlation_id=correlation_id,
+            retryable=False,
+            stage="CREATE_RETURN_DRAFT_VERIFY",
+        )
+        if not isinstance(raw_response, dict):
+            self._raise_invalid_draft(correlation_id)
+
+        invoice_type = self._nested_string(
+            raw_response,
+            ("InvoiceType",),
+            ("InvoiceInfo", "InvoiceType"),
+            ("EInvoice", "InvoiceInfo", "InvoiceType"),
+        )
+        if invoice_type is None or invoice_type.casefold() not in {"iade", "return"}:
+            self._raise_invalid_draft(correlation_id)
+
+    @staticmethod
+    def _nested_string(payload: dict, *paths: tuple[str, ...]) -> str | None:
+        for path in paths:
+            value: object = payload
+            for key in path:
+                if not isinstance(value, dict):
+                    value = None
+                    break
+                value = value.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    def _raise_invalid_draft(self, correlation_id: str | None) -> Never:
+        raise NilveraMalformedResponseError(
+            "CreateReturn draft contract is invalid",
+            correlation_id=correlation_id,
+            http_status=self._client.last_http_status,
+            stage="CREATE_RETURN_DRAFT_VERIFY",
+        )

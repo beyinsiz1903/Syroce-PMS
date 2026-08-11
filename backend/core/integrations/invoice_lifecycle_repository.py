@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from motor.motor_asyncio import AsyncIOMotorClientSession, AsyncIOMotorDatabase
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -12,30 +12,44 @@ class InvoiceLifecycleRepository:
     """Repository for managing invoice lifecycle actions."""
 
     @staticmethod
-    async def create_action(action: InvoiceLifecycleAction) -> ActionCreationResult:
+    def classify_duplicate_error(error: DuplicateKeyError) -> ActionCreationResult:
+        details = getattr(error, "details", None) or {}
+        key_pattern = details.get("keyPattern") or {}
+
+        if "answer_guard_key" in key_pattern:
+            return ActionCreationResult.GUARD_CONFLICT
+        if "idempotency_key" in key_pattern:
+            return ActionCreationResult.IDEMPOTENCY_CONFLICT
+
+        message = str(details.get("errmsg") or error)
+        if "idx_lifecycle_actions_tenant_answer_guard_unique" in message or "idx_tenant_answer_guard" in message:
+            return ActionCreationResult.GUARD_CONFLICT
+        return ActionCreationResult.IDEMPOTENCY_CONFLICT
+
+    @staticmethod
+    async def insert_action(
+        action: InvoiceLifecycleAction,
+        *,
+        session: AsyncIOMotorClientSession | None = None,
+    ) -> None:
+        """Insert an action, allowing transaction owners to handle conflicts."""
+        db: AsyncIOMotorDatabase = get_db_for_tenant(action.tenant_id)
+        await db.invoice_lifecycle_actions.insert_one(
+            action.model_dump(by_alias=True),
+            session=session,
+        )
+
+    @classmethod
+    async def create_action(cls, action: InvoiceLifecycleAction) -> ActionCreationResult:
         """
         Creates a new lifecycle action. Returns SUCCESS if inserted,
         IDEMPOTENCY_CONFLICT if idempotency key clashes, GUARD_CONFLICT if answer guard clashes.
         """
-        db: AsyncIOMotorDatabase = get_db_for_tenant(action.tenant_id)
-        doc = action.model_dump(by_alias=True)
         try:
-            await db.invoice_lifecycle_actions.insert_one(doc)
+            await cls.insert_action(action)
             return ActionCreationResult.SUCCESS
-        except DuplicateKeyError as e:
-            details = getattr(e, "details", None) or {}
-            key_pattern = details.get("keyPattern") or {}
-
-            if "answer_guard_key" in key_pattern:
-                return ActionCreationResult.GUARD_CONFLICT
-
-            if "idempotency_key" in key_pattern:
-                return ActionCreationResult.IDEMPOTENCY_CONFLICT
-
-            msg = str(details.get("errmsg") or e)
-            if "idx_lifecycle_actions_tenant_answer_guard_unique" in msg or "idx_tenant_answer_guard" in msg:
-                return ActionCreationResult.GUARD_CONFLICT
-            return ActionCreationResult.IDEMPOTENCY_CONFLICT
+        except DuplicateKeyError as error:
+            return cls.classify_duplicate_error(error)
 
     @staticmethod
     async def get_by_id(tenant_id: str, action_id: str) -> InvoiceLifecycleAction | None:
@@ -161,6 +175,31 @@ class InvoiceLifecycleRepository:
                 "provider_attempted_at": {"$ne": None},
             },
             {"$set": {"provider_accepted_at": accepted_at}},
+        )
+        return result.modified_count == 1
+
+    @staticmethod
+    async def mark_provider_return_created(
+        tenant_id: str,
+        action_id: str,
+        worker_id: str,
+        accepted_at: datetime,
+        generated_invoice_uuid: str,
+    ) -> bool:
+        db: AsyncIOMotorDatabase = get_db_for_tenant(tenant_id)
+        result = await db.invoice_lifecycle_actions.update_one(
+            {
+                "id": action_id,
+                "tenant_id": tenant_id,
+                "lifecycle_lease_owner": worker_id,
+                "provider_attempted_at": {"$ne": None},
+            },
+            {
+                "$set": {
+                    "provider_accepted_at": accepted_at,
+                    "generated_invoice_uuid": generated_invoice_uuid,
+                }
+            },
         )
         return result.modified_count == 1
 
