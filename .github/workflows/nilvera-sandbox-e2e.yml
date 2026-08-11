@@ -23,6 +23,11 @@ on:
         required: true
         default: false
         type: boolean
+      run_incoming_answer_discovery:
+        description: Inspect the source fixture answer eligibility using GET requests only
+        required: true
+        default: false
+        type: boolean
       run_reconciliation:
         description: Run only the read-only incoming fixture reconciliation test
         required: true
@@ -134,6 +139,7 @@ jobs:
           NILVERA_E2E_RUN_OUTGOING_CONTRACT: ${{ inputs.run_outgoing_contract }}
           NILVERA_E2E_RUN_INCOMING_FIXTURE: ${{ inputs.run_incoming_fixture }}
           NILVERA_E2E_RUN_INCOMING_ANSWER: ${{ inputs.run_incoming_answer }}
+          NILVERA_E2E_RUN_INCOMING_ANSWER_DISCOVERY: ${{ inputs.run_incoming_answer_discovery }}
           NILVERA_E2E_RUN_RECONCILIATION: ${{ inputs.run_reconciliation }}
           NILVERA_E2E_RUN_CREATE_RETURN_DISCOVERY: ${{ inputs.run_create_return_discovery }}
           NILVERA_E2E_RUN_CREATE_RETURN_RECONCILIATION: ${{ inputs.run_create_return_reconciliation }}
@@ -147,6 +153,7 @@ jobs:
         env:
           RUN_INCOMING_FIXTURE: ${{ inputs.run_incoming_fixture }}
           RUN_INCOMING_ANSWER: ${{ inputs.run_incoming_answer }}
+          RUN_INCOMING_ANSWER_DISCOVERY: ${{ inputs.run_incoming_answer_discovery }}
           RUN_RECONCILIATION: ${{ inputs.run_reconciliation }}
           RUN_CREATE_RETURN_DISCOVERY: ${{ inputs.run_create_return_discovery }}
           RUN_CREATE_RETURN_RECONCILIATION: ${{ inputs.run_create_return_reconciliation }}
@@ -232,6 +239,11 @@ jobs:
               echo "::error::BLOCKED_IDENTICAL_SANDBOX_KEYS"
               exit 1
             fi
+          elif [ "${RUN_INCOMING_ANSWER_DISCOVERY}" = "true" ]; then
+            if [ -z "${RECEIVER_KEY}" ] || [ -z "${CORRELATION_HMAC_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ] || [ -z "${RECONCILIATION_SOURCE_RUN_ID}" ] || [ -z "${RECONCILIATION_SOURCE_TIMESTAMP}" ]; then
+              echo "::error::BLOCKED_MISSING_ANSWER_DISCOVERY_SANDBOX_CONFIGURATION"
+              exit 1
+            fi
           elif [ "${RUN_INCOMING_ANSWER}" = "true" ]; then
             if [ -z "${RECEIVER_KEY}" ] || [ -z "${CORRELATION_HMAC_KEY}" ] || [ -z "${BUYER_VKN}" ] || [ -z "${SELLER_VKN}" ] || [ -z "${RECONCILIATION_SOURCE_RUN_ID}" ] || [ -z "${RECONCILIATION_SOURCE_TIMESTAMP}" ]; then
               echo "::error::BLOCKED_MISSING_ANSWER_SANDBOX_CONFIGURATION"
@@ -302,6 +314,7 @@ jobs:
           NILVERA_E2E_SELLER_VKN: ${{ secrets.NILVERA_E2E_SELLER_VKN }}
           NILVERA_E2E_INCOMING_FIXTURE_ALLOWED: ${{ inputs.run_incoming_fixture }}
           NILVERA_E2E_INCOMING_ANSWER_ALLOWED: ${{ inputs.run_incoming_answer }}
+          NILVERA_E2E_INCOMING_ANSWER_DISCOVERY_ALLOWED: ${{ inputs.run_incoming_answer_discovery }}
           NILVERA_E2E_RECONCILIATION_ALLOWED: ${{ inputs.run_reconciliation }}
           NILVERA_E2E_CREATE_RETURN_ALLOWED: ${{ inputs.run_create_return_discovery }}
           NILVERA_E2E_CREATE_RETURN_RECONCILIATION_ALLOWED: ${{ inputs.run_create_return_reconciliation }}

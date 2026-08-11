@@ -55,15 +55,21 @@ from tests.nilvera_sandbox_fixture import (
     ENVELOPE_STATUS_PENDING,
     ENVELOPE_STATUS_TARGET_RECEIVED,
     FOUND,
+    MATCH_COUNT_MULTIPLE,
+    MATCH_COUNT_ONE,
     MATCH_COUNT_ZERO,
     NOT_FOUND_OR_NOT_VISIBLE,
+    RECONCILIATION_MAX_PAGES,
+    SANDBOX_FIXTURE_SERIES,
     ReadOnlySandboxClient,
     SandboxFixtureError,
     build_fixture_identity,
     build_fixture_request_uuid,
+    classify_incoming_answer_state,
     company_identity_matches,
     ensure_distinct_sandbox_keys,
     evaluate_incoming_answer_candidate,
+    incoming_answer_candidate_tag,
     incoming_answer_discovery_window,
     pilot_invoice_datetime,
     prepare_incoming_commercial_fixture,
@@ -113,18 +119,20 @@ def check_missing_secrets() -> bool:
     receiver_key = os.environ.get("NILVERA_E2E_RECEIVER_SANDBOX_KEY")
     fixture_mode = os.environ.get("NILVERA_E2E_INCOMING_FIXTURE_ALLOWED", "false").lower() == "true"
     answer_mode = os.environ.get("NILVERA_E2E_INCOMING_ANSWER_ALLOWED", "false").lower() == "true"
+    answer_discovery_mode = os.environ.get("NILVERA_E2E_INCOMING_ANSWER_DISCOVERY_ALLOWED", "false").lower() == "true"
     reconciliation_mode = os.environ.get("NILVERA_E2E_RECONCILIATION_ALLOWED", "false").lower() == "true"
     create_return_mode = os.environ.get("NILVERA_E2E_CREATE_RETURN_ALLOWED", "false").lower() == "true"
     create_return_reconciliation_mode = os.environ.get("NILVERA_E2E_CREATE_RETURN_RECONCILIATION_ALLOWED", "false").lower() == "true"
 
-    if fixture_mode or reconciliation_mode or answer_mode or create_return_mode or create_return_reconciliation_mode:
+    if fixture_mode or reconciliation_mode or answer_mode or answer_discovery_mode or create_return_mode or create_return_reconciliation_mode:
         hmac_key = os.environ.get("NILVERA_E2E_CORRELATION_HMAC_KEY")
         run_id_name = "NILVERA_E2E_RUN_ID" if fixture_mode else "NILVERA_E2E_SOURCE_RUN_ID"
         run_id = os.environ.get(run_id_name)
         source_timestamp = os.environ.get("NILVERA_E2E_SOURCE_RUN_TIMESTAMP") if not fixture_mode else "not-required"
-        receiver_only_mode = answer_mode or create_return_reconciliation_mode
+        receiver_only_mode = answer_mode or answer_discovery_mode or create_return_reconciliation_mode
         selected_keys_present = bool(receiver_key) if receiver_only_mode and not create_return_mode else bool(sender_key and receiver_key)
-        return not (selected_keys_present and hmac_key and run_id and source_timestamp and buyer and seller)
+        identities_present = bool(buyer and seller)
+        return not (selected_keys_present and hmac_key and run_id and source_timestamp and identities_present)
     selected_key = receiver_key if answer_mode else sender_key
     return not (selected_key and buyer and seller)
 
@@ -142,6 +150,7 @@ def api_key():
         os.environ.get(name, "false").lower() == "true"
         for name in (
             "NILVERA_E2E_INCOMING_ANSWER_ALLOWED",
+            "NILVERA_E2E_INCOMING_ANSWER_DISCOVERY_ALLOWED",
             "NILVERA_E2E_CREATE_RETURN_ALLOWED",
             "NILVERA_E2E_CREATE_RETURN_RECONCILIATION_ALLOWED",
         )
@@ -1229,6 +1238,127 @@ async def test_sandbox_incoming_commercial_invoice_answer_contract(sandbox_clien
         await tenant_db.incoming_invoice_lines.delete_many({})
         await tenant_db.incoming_invoices.delete_many({})
         await tenant_db.incoming_invoice_sync_state.delete_many({})
+
+
+@pytest.mark.external
+async def test_sandbox_discover_incoming_commercial_invoice_answer_candidate(
+    sandbox_client,
+    buyer_vkn,
+    seller_vkn,
+    record_property,
+):
+    """Inventory eligible Syroce test invoices using GET only."""
+    if os.environ.get("NILVERA_E2E_INCOMING_ANSWER_DISCOVERY_ALLOWED", "false").lower() != "true":
+        pytest.skip("Incoming answer discovery requires explicit read-only selection")
+
+    hmac_key = os.environ.get("NILVERA_E2E_CORRELATION_HMAC_KEY", "")
+    source_run_id = os.environ.get("NILVERA_E2E_SOURCE_RUN_ID", "")
+    source_timestamp = os.environ.get("NILVERA_E2E_SOURCE_RUN_TIMESTAMP", "")
+    try:
+        reference_time = datetime.fromisoformat(source_timestamp.replace("Z", "+00:00"))
+        if reference_time.tzinfo is None or reference_time.utcoffset() is None:
+            raise ValueError
+        identity = build_fixture_identity(
+            year=reference_time.year,
+            run_id=source_run_id,
+            hmac_key=hmac_key,
+        )
+        target_provider_uuid = str(build_fixture_request_uuid(identity, hmac_key))
+        start_date, end_date = incoming_answer_discovery_window(reference_time)
+    except (SandboxFixtureError, ValueError):
+        pytest.fail("BLOCKED_INVALID_ANSWER_FIXTURE_SOURCE", pytrace=False)
+
+    target_summary_found = False
+    target_document_match = False
+    target_answer_waiting = False
+    target_provider_ready = False
+    target_answer_state = "NOT_RECORDED"
+    receiver_match = False
+    exact_http_status: int | str = "NOT_RECORDED"
+    eligible_candidate_tags: set[str] = set()
+    eligible_candidate_count_class = MATCH_COUNT_ZERO
+    eligible_candidate_tag = "NOT_RECORDED"
+    scanned_page_count = 0
+
+    try:
+        async with sandbox_client as client:
+            read_only_client = ReadOnlySandboxClient(client)
+            receiver_match = await company_identity_matches(read_only_client, buyer_vkn)
+            if not receiver_match:
+                pytest.fail("BLOCKED_COMPANY_IDENTITY_MISMATCH", pytrace=False)
+
+            incoming_service = NilveraIncomingService(read_only_client)
+            for page_number in range(1, RECONCILIATION_MAX_PAGES + 1):
+                page = await incoming_service.fetch_incoming_invoices(
+                    start_date,
+                    end_date,
+                    page=page_number,
+                    page_size=100,
+                )
+                scanned_page_count = page_number
+                for summary in page.items:
+                    is_target = summary.provider_uuid == target_provider_uuid
+                    if is_target:
+                        target_summary_found = True
+                    if not summary.invoice_number.startswith(SANDBOX_FIXTURE_SERIES):
+                        continue
+                    if summary.supplier_tax_number is None or not hmac.compare_digest(
+                        summary.supplier_tax_number.encode(),
+                        seller_vkn.encode(),
+                    ):
+                        continue
+                    detail = await incoming_service.fetch_incoming_invoice_detail(summary.provider_uuid)
+                    status = await incoming_service.fetch_incoming_invoice_status(summary.provider_uuid)
+                    eligibility = evaluate_incoming_answer_candidate(
+                        summary,
+                        detail,
+                        status,
+                        target_provider_uuid=summary.provider_uuid,
+                    )
+                    if is_target:
+                        target_document_match = eligibility.document_match
+                        target_answer_waiting = eligibility.answer_waiting
+                        target_provider_ready = eligibility.provider_ready
+                        target_answer_state = classify_incoming_answer_state(status.answer_code)
+                    if eligibility.eligible:
+                        eligible_candidate_tags.add(incoming_answer_candidate_tag(summary.provider_uuid, hmac_key))
+
+                if page.total_pages == 0 and page.items:
+                    pytest.fail("BLOCKED_ANSWER_DISCOVERY_PAGINATION_PARSE", pytrace=False)
+                if page_number >= max(page.total_pages, 1):
+                    break
+            else:
+                pytest.fail("BLOCKED_ANSWER_DISCOVERY_PAGE_LIMIT", pytrace=False)
+
+            if len(eligible_candidate_tags) == 1:
+                eligible_candidate_count_class = MATCH_COUNT_ONE
+                eligible_candidate_tag = next(iter(eligible_candidate_tags))
+            elif len(eligible_candidate_tags) > 1:
+                eligible_candidate_count_class = MATCH_COUNT_MULTIPLE
+            exact_http_status = read_only_client.exact_http_status or "NOT_RECORDED"
+    except Exception as exc:
+        http_status = exc.http_status if isinstance(exc, NilveraApiError) else None
+        pytest.fail(
+            f"Incoming answer GET-only discovery failed (error_type={type(exc).__name__}, http_status={http_status}, write_count=0)",
+            pytrace=False,
+        )
+    finally:
+        record_property("provider_write_count", "0")
+        record_property("receiver_match", str(receiver_match).lower())
+        record_property("target_summary_found", str(target_summary_found).lower())
+        record_property("target_document_match", str(target_document_match).lower())
+        record_property("target_answer_waiting", str(target_answer_waiting).lower())
+        record_property("target_provider_ready", str(target_provider_ready).lower())
+        record_property("target_answer_state", target_answer_state)
+        record_property("exact_http_status", str(exact_http_status))
+        record_property("eligible_candidate_count_class", eligible_candidate_count_class)
+        record_property("eligible_candidate_tag", eligible_candidate_tag)
+        record_property("scanned_page_count", str(scanned_page_count))
+
+    if eligible_candidate_count_class == MATCH_COUNT_MULTIPLE:
+        pytest.fail("CONFLICT_MULTIPLE_ELIGIBLE_TEST_INVOICES", pytrace=False)
+    if eligible_candidate_count_class != MATCH_COUNT_ONE:
+        pytest.fail("BLOCKED_NO_ELIGIBLE_TEST_INVOICE", pytrace=False)
 
 
 @pytest.mark.external

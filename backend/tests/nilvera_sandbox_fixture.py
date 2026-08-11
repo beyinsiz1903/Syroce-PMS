@@ -416,6 +416,22 @@ def incoming_answer_discovery_window(fixture_time: datetime) -> tuple[datetime, 
     return end_date - timedelta(days=31), end_date
 
 
+def incoming_answer_candidate_tag(provider_uuid: str, hmac_key: str) -> str:
+    """Return a short keyed correlation label without exposing the provider UUID."""
+    if len(hmac_key) < 32:
+        raise SandboxFixtureBlocked("BLOCKED_INVALID_ANSWER_CANDIDATE_TAG_INPUT")
+    try:
+        normalized_uuid = str(uuid.UUID(provider_uuid))
+    except (AttributeError, TypeError, ValueError):
+        raise SandboxFixtureBlocked("BLOCKED_INVALID_ANSWER_CANDIDATE_TAG_INPUT") from None
+    digest = hmac.new(
+        hmac_key.encode(),
+        f"nilvera-answer-candidate:{normalized_uuid}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"ANS-{digest[:16].upper()}"
+
+
 def evaluate_incoming_answer_candidate(
     summary: Any,
     detail: Any,
