@@ -45,6 +45,7 @@ def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False)
         "HOTELRUNNER_PILOT_SOURCE_TIMESTAMP": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "HOTELRUNNER_PILOT_STOP_SELL": "0",
         "HOTELRUNNER_PILOT_TEST_DATE": future_date,
+        "HOTELRUNNER_PILOT_TARGET_GUEST_NAME": "Synthetic Target Guest",
         "HOTELRUNNER_PILOT_TOKEN": "synthetic-token",
         "HOTELRUNNER_PILOT_WRITE_APPROVED": "true" if write else "false",
     }
@@ -133,12 +134,14 @@ def test_workflow_requires_both_normal_exact_head_workflows():
 def test_workflow_passes_secrets_only_to_the_selected_test_step():
     workflow = _workflow()
     job = workflow["jobs"]["hotelrunner-ari-pilot"]
+    run_step = next(step for step in job["steps"] if step.get("name") == "Run one gated HotelRunner pilot target")
     secret_names = {
         "HOTELRUNNER_PILOT_TOKEN",
         "HOTELRUNNER_PILOT_HR_ID",
         "HOTELRUNNER_PILOT_INV_CODE",
         "HOTELRUNNER_PILOT_CHANNEL_CODE",
         "HOTELRUNNER_PILOT_HMAC_KEY",
+        "HOTELRUNNER_PILOT_TARGET_GUEST_NAME",
     }
     for step in job["steps"]:
         env = step.get("env", {})
@@ -146,6 +149,7 @@ def test_workflow_passes_secrets_only_to_the_selected_test_step():
             assert secret_names <= set(env)
         else:
             assert secret_names.isdisjoint(env)
+    assert "inputs.operation == 'reservation_reconciliation'" in run_step["env"]["HOTELRUNNER_PILOT_TARGET_GUEST_NAME"]
 
 
 def test_workflow_pins_the_official_documented_host():
@@ -250,6 +254,7 @@ async def test_reconciliation_reads_history_and_queue_without_provider_write(mon
                     "reservations": [
                         {
                             "completed_at": source_timestamp.isoformat(),
+                            "guest": "Synthetic Target Guest",
                             "message_uid": sensitive_uid,
                             "pms_number": "synthetic-pms-number",
                             "state": "reserved",
@@ -278,6 +283,83 @@ async def test_reconciliation_reads_history_and_queue_without_provider_write(mon
         {"undelivered": True, "per_page": 100, "page": 1},
     ]
     assert all(call.args[0] == "GET" for call in provider_call.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_selects_one_secret_target_from_multiple_history_candidates(
+    monkeypatch,
+):
+    _base_env(monkeypatch, operation="reservation_reconciliation", write=False)
+    source_timestamp = datetime.now(UTC).replace(microsecond=0)
+    monkeypatch.setenv(
+        "HOTELRUNNER_PILOT_SOURCE_TIMESTAMP",
+        source_timestamp.isoformat().replace("+00:00", "Z"),
+    )
+    provider_call = AsyncMock(return_value=SimpleNamespace(status_code=200))
+    client = SimpleNamespace(_request=provider_call, close=AsyncMock())
+    sensitive_target_uid = "synthetic-target-message-uid"
+
+    class FakeProvider:
+        def __init__(self, **_kwargs):
+            self._client = client
+
+        async def test_connection(self):
+            await self._client._request("GET", ep.TRANSACTION_DETAILS)
+            return SimpleNamespace(success=True)
+
+        async def fetch_reservations(self, **kwargs):
+            await self._client._request("GET", ep.RESERVATIONS)
+            if kwargs["undelivered"]:
+                return SimpleNamespace(success=True, data={"raw_reservations": []})
+            return SimpleNamespace(
+                success=True,
+                data={
+                    "reservations": [
+                        {
+                            "completed_at": source_timestamp.isoformat(),
+                            "guest": "Different Synthetic Guest",
+                            "message_uid": "synthetic-other-message-uid",
+                            "state": "reserved",
+                        },
+                        {
+                            "completed_at": source_timestamp.isoformat(),
+                            "guest": "  synthetic   TARGET guest ",
+                            "message_uid": sensitive_target_uid,
+                            "state": "reserved",
+                        },
+                    ]
+                },
+            )
+
+    monkeypatch.setattr(reservation_pilot, "HotelRunnerProvider", FakeProvider)
+    settings = reservation_pilot._load_settings()
+    metadata = await reservation_pilot._reconcile_reservation_history(settings)
+
+    assert metadata["history_window_match_count_class"] == "MULTIPLE"
+    assert metadata["history_match_count_class"] == "ONE"
+    assert metadata["provider_write_count"] == 0
+    assert sensitive_target_uid not in str(metadata)
+    assert all(call.args[0] == "GET" for call in provider_call.await_args_list)
+
+
+def test_reconciliation_requires_secret_target_before_provider_access(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_reconciliation", write=False)
+    monkeypatch.delenv("HOTELRUNNER_PILOT_TARGET_GUEST_NAME")
+
+    with pytest.raises(
+        reservation_pilot.ReservationPilotError,
+        match="BLOCKED_MISSING_CONFIGURATION:HOTELRUNNER_PILOT_TARGET_GUEST_NAME",
+    ):
+        reservation_pilot._load_settings()
+
+
+def test_reconciliation_settings_repr_redacts_target_identity(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_reconciliation", write=False)
+
+    settings_repr = repr(reservation_pilot._load_settings())
+
+    assert "Synthetic Target Guest" not in settings_repr
+    assert "synthetic-hmac-key-with-at-least-32-chars" not in settings_repr
 
 
 def test_settings_repr_never_contains_credentials_or_provider_identifiers(monkeypatch):
@@ -435,6 +517,7 @@ async def test_reservation_read_target_uses_two_gets_and_no_ack(
     assert ("provider_write_count", 0) in recorded
     assert ("get_count", 2) in recorded
     assert ("result", "PASS") in recorded
+    assert any(key == "reservation_correlation_label" for key, _value in recorded)
     assert provider_call.await_args_list == [
         call("GET", ep.TRANSACTION_DETAILS),
         call("GET", ep.RESERVATIONS),

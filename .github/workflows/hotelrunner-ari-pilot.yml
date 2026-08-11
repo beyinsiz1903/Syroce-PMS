@@ -214,6 +214,7 @@ jobs:
           HOTELRUNNER_PILOT_INV_CODE: ${{ secrets.HOTELRUNNER_PILOT_INV_CODE }}
           HOTELRUNNER_PILOT_CHANNEL_CODE: ${{ secrets.HOTELRUNNER_PILOT_CHANNEL_CODE }}
           HOTELRUNNER_PILOT_HMAC_KEY: ${{ secrets.HOTELRUNNER_PILOT_HMAC_KEY }}
+          HOTELRUNNER_PILOT_TARGET_GUEST_NAME: ${{ inputs.operation == 'reservation_reconciliation' && secrets.HOTELRUNNER_PILOT_TARGET_GUEST_NAME || '' }}
         run: |
           cd backend
           case "${HOTELRUNNER_PILOT_OPERATION}" in
