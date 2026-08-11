@@ -1,0 +1,183 @@
+name: HotelRunner Reservation ACK Pilot
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_provider_write:
+        description: Required for exactly one HotelRunner reservation ACK provider write
+        required: true
+        default: false
+        type: boolean
+      approved_head_sha:
+        description: Exact 40-character commit SHA approved for this run
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  PYTHON_VERSION: '3.11'
+  MONGO_URL: mongodb://localhost:27017/hotel_pms_test
+  DB_NAME: hotel_pms_test
+  JWT_SECRET: ci-test-secret-key-do-not-use-in-production
+
+jobs:
+  hotelrunner-reservation-ack-pilot:
+    name: Run HotelRunner Reservation ACK Pilot
+    runs-on: ubuntu-latest
+    environment: hotelrunner-pilot
+    concurrency:
+      group: hotelrunner-reservation-ack-pilot
+      cancel-in-progress: false
+    timeout-minutes: 15
+
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping:1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout exact ref
+        uses: actions/checkout@v5
+
+      - name: Validate exact-head approval and single ACK write gate
+        env:
+          APPROVED_HEAD_SHA: ${{ inputs.approved_head_sha }}
+          CONFIRM_PROVIDER_WRITE: ${{ inputs.confirm_provider_write }}
+        run: |
+          if [ "${APPROVED_HEAD_SHA}" != "${GITHUB_SHA}" ]; then
+            echo "::error::BLOCKED_EXACT_HEAD_MISMATCH"
+            exit 1
+          fi
+          if [ "${CONFIRM_PROVIDER_WRITE}" != "true" ]; then
+            echo "::error::BLOCKED_PROVIDER_WRITE_NOT_APPROVED"
+            exit 1
+          fi
+
+      - name: Require successful exact-head normal workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          exact_head_run_id() {
+            local workflow="$1"
+            gh run list \
+              --repo "${GITHUB_REPOSITORY}" \
+              --workflow "${workflow}" \
+              --branch "${GITHUB_REF_NAME}" \
+              --limit 30 \
+              --json databaseId,headSha,event \
+              --jq "[.[] | select(.headSha == \"${GITHUB_SHA}\" and .event == \"push\")] | first | .databaseId // empty"
+          }
+
+          verify_required_jobs() {
+            local workflow="$1"
+            shift
+            local run_id
+            run_id="$(exact_head_run_id "${workflow}")"
+            if [ -z "${run_id}" ]; then
+              echo "::error::BLOCKED_EXACT_HEAD_NORMAL_CI_NOT_GREEN:${workflow}"
+              exit 1
+            fi
+            for job_name in "$@"; do
+              local success_count
+              success_count="$(
+                gh run view "${run_id}" \
+                  --repo "${GITHUB_REPOSITORY}" \
+                  --json jobs \
+                  --jq "[.jobs[] | select(.name == \"${job_name}\" and .status == \"completed\" and .conclusion == \"success\")] | length"
+              )"
+              if [ "${success_count}" -ne 1 ]; then
+                echo "::error::BLOCKED_EXACT_HEAD_REQUIRED_JOB_NOT_GREEN:${workflow}:${job_name}"
+                exit 1
+              fi
+            done
+          }
+
+          verify_completed_workflow() {
+            local workflow="$1"
+            local success_count
+            success_count="$(
+              gh run list \
+                --repo "${GITHUB_REPOSITORY}" \
+                --workflow "${workflow}" \
+                --branch "${GITHUB_REF_NAME}" \
+                --limit 30 \
+                --json headSha,event,status,conclusion \
+                --jq "[.[] | select(.headSha == \"${GITHUB_SHA}\" and .event == \"push\" and .status == \"completed\" and .conclusion == \"success\")] | length"
+            )"
+            if [ "${success_count}" -lt 1 ]; then
+              echo "::error::BLOCKED_EXACT_HEAD_NORMAL_CI_NOT_GREEN:${workflow}"
+              exit 1
+            fi
+          }
+
+          verify_required_jobs \
+            "ci-cd.yml" \
+            "lockfile-guard" \
+            "backend-lint" \
+            "frontend-lint" \
+            "backend-test" \
+            "battle-e2e" \
+            "load-test" \
+            "frontend-build" \
+            "security-scan"
+          verify_completed_workflow "frontend-quality.yml"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+          bash scripts/post_install.sh
+          pip install pytest pytest-asyncio pytest-timeout
+
+      - name: Run exactly one gated HotelRunner reservation ACK
+        env:
+          APP_ENV: test
+          TESTING: '1'
+          REDIS_URL: redis://localhost:6379/0
+          HOTELRUNNER_PILOT_BASE_URL: https://app.hotelrunner.com
+          HOTELRUNNER_PILOT_OPERATION: reservation_ack
+          HOTELRUNNER_PILOT_WRITE_APPROVED: ${{ inputs.confirm_provider_write }}
+          HOTELRUNNER_PILOT_APPROVED_HEAD: ${{ inputs.approved_head_sha }}
+          HOTELRUNNER_PILOT_RUN_ID: ${{ github.run_id }}
+          HOTELRUNNER_PILOT_ACCOUNT_CONFIRMED: ${{ vars.HOTELRUNNER_PILOT_ACCOUNT_CONFIRMED }}
+          HOTELRUNNER_PILOT_TOKEN: ${{ secrets.HOTELRUNNER_PILOT_TOKEN }}
+          HOTELRUNNER_PILOT_HR_ID: ${{ secrets.HOTELRUNNER_PILOT_HR_ID }}
+          HOTELRUNNER_PILOT_HMAC_KEY: ${{ secrets.HOTELRUNNER_PILOT_HMAC_KEY }}
+        run: |
+          cd backend
+          python -m pytest \
+            "tests/integration/test_hotelrunner_reservation_ack_pilot.py::test_hotelrunner_single_reservation_ack" \
+            -v --tb=short -q --timeout=600 \
+            --junitxml=hotelrunner-reservation-ack-pilot-results.xml
+
+      - name: Upload safe ACK pilot test results
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: hotelrunner-reservation-ack-pilot-results
+          path: backend/hotelrunner-reservation-ack-pilot-results.xml
+          if-no-files-found: ignore
