@@ -36,7 +36,14 @@ pytestmark = [
 
 _OFFICIAL_BASE_URL = "https://app.hotelrunner.com"
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
-_ALLOWED_OPERATIONS = frozenset({"reservation_import", "reservation_replay", "reservation_reconciliation"})
+_ALLOWED_OPERATIONS = frozenset(
+    {
+        "reservation_import",
+        "reservation_replay",
+        "reservation_reconciliation",
+        "reservation_history_import",
+    }
+)
 _SOURCE_TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 _RECONCILIATION_WINDOW = timedelta(minutes=30)
 
@@ -104,7 +111,7 @@ def _load_settings() -> ReservationPilotSettings:
 
     source_timestamp = None
     target_guest_name = None
-    if operation == "reservation_reconciliation":
+    if operation in {"reservation_reconciliation", "reservation_history_import"}:
         raw_timestamp = _required("HOTELRUNNER_PILOT_SOURCE_TIMESTAMP")
         if not _SOURCE_TIMESTAMP_PATTERN.fullmatch(raw_timestamp):
             raise ReservationPilotError("BLOCKED_INVALID_RECONCILIATION_SOURCE_TIMESTAMP")
@@ -202,9 +209,9 @@ def _guest_identity_digest(settings: ReservationPilotSettings, raw: Any) -> byte
     ).digest()
 
 
-async def _reconcile_reservation_history(
+async def _fetch_target_history_reservation(
     settings: ReservationPilotSettings,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     if settings.source_timestamp is None:
         raise ReservationPilotError("BLOCKED_MISSING_RECONCILIATION_SOURCE_TIMESTAMP")
     if settings.target_guest_name is None:
@@ -279,7 +286,7 @@ async def _reconcile_reservation_history(
             raise ReservationPilotError("FAIL_READONLY_PROVIDER_WRITE_DETECTED")
 
         state = str(candidate.get("state") or "").strip().upper()
-        return {
+        metadata = {
             "credential_read_ok": True,
             "delivery_state": "UNDELIVERED" if queued_matches else "DELIVERED_OR_NOT_QUEUED",
             "exact_head_match": True,
@@ -294,9 +301,17 @@ async def _reconcile_reservation_history(
             "result": "PASS",
             "undelivered_match_count_class": "ONE" if queued_matches else "ZERO",
         }
+        return candidate, metadata
     finally:
         guard.restore()
         await provider._client.close()
+
+
+async def _reconcile_reservation_history(
+    settings: ReservationPilotSettings,
+) -> dict[str, Any]:
+    _, metadata = await _fetch_target_history_reservation(settings)
+    return metadata
 
 
 async def _seed_local_mappings(settings: ReservationPilotSettings, raw: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -508,5 +523,68 @@ async def test_hotelrunner_pilot_reservation_reconciliation(record_property):
         metadata = await _reconcile_reservation_history(settings)
         _record(record_property, **metadata)
         assert metadata["provider_write_count"] == 0
+    except ReservationPilotError as exc:
+        pytest.fail(str(exc), pytrace=False)
+
+
+async def test_hotelrunner_pilot_reservation_history_import(record_property):
+    settings = _load_settings()
+    if settings.operation != "reservation_history_import":
+        pytest.fail(
+            "BLOCKED_RESERVATION_HISTORY_IMPORT_TARGET_OPERATION_MISMATCH",
+            pytrace=False,
+        )
+    try:
+        raw, provider_metadata = await _fetch_target_history_reservation(settings)
+        if provider_metadata["undelivered_match_count_class"] != "ZERO":
+            raise ReservationPilotError("BLOCKED_HISTORY_TARGET_STILL_UNDELIVERED")
+
+        canonical, _ = await _import_durably(settings, raw)
+        ext_id = str(canonical["external_reservation_id"])
+        replay = await _persist_and_process(
+            settings.tenant_id,
+            _resolve_property_id(raw),
+            raw,
+            "reservation_pull",
+            source_ip="hotelrunner-pilot-history-replay",
+        )
+        if replay.status not in {"duplicate", "processed"}:
+            raise ReservationPilotError("BLOCKED_HISTORY_IMPORT_REPLAY_NOT_IDEMPOTENT")
+
+        booking_count = await db.bookings.count_documents(
+            {
+                "tenant_id": settings.tenant_id,
+                "external_reservation_id": ext_id,
+                "booking_source": "ota_import",
+            }
+        )
+        import_count = await db.imported_reservations.count_documents(
+            {
+                "tenant_id": settings.tenant_id,
+                "provider": "hotelrunner",
+                "external_reservation_id": ext_id,
+            }
+        )
+        if booking_count != 1 or import_count != 1:
+            raise ReservationPilotError("BLOCKED_HISTORY_IMPORT_DUPLICATE_CREATED")
+
+        _record(
+            record_property,
+            credential_read_ok=True,
+            durable_pms_booking=True,
+            exact_head_match=True,
+            get_count=provider_metadata["get_count"],
+            history_match_count_class=provider_metadata["history_match_count_class"],
+            import_record_count=import_count,
+            match_count_class="ONE",
+            operation=settings.operation,
+            pms_booking_count=booking_count,
+            provider_state_class=provider_metadata["provider_state_class"],
+            provider_write_count=provider_metadata["provider_write_count"],
+            replay_duplicate_safe=True,
+            reservation_correlation_label=provider_metadata["reservation_correlation_label"],
+            result="PASS",
+        )
+        assert provider_metadata["provider_write_count"] == 0
     except ReservationPilotError as exc:
         pytest.fail(str(exc), pytrace=False)
