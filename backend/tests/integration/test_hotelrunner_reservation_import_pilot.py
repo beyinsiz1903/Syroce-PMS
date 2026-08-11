@@ -13,6 +13,7 @@ import os
 import re
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -35,7 +36,9 @@ pytestmark = [
 
 _OFFICIAL_BASE_URL = "https://app.hotelrunner.com"
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
-_ALLOWED_OPERATIONS = frozenset({"reservation_import", "reservation_replay"})
+_ALLOWED_OPERATIONS = frozenset({"reservation_import", "reservation_replay", "reservation_reconciliation"})
+_SOURCE_TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+_RECONCILIATION_WINDOW = timedelta(minutes=30)
 
 
 class ReservationPilotError(RuntimeError):
@@ -49,6 +52,7 @@ class ReservationPilotSettings:
     approved_head: str
     correlation_label: str
     tenant_id: str
+    source_timestamp: datetime | None
     token: str = field(repr=False)
     hr_id: str = field(repr=False)
 
@@ -96,12 +100,26 @@ def _load_settings() -> ReservationPilotSettings:
         hashlib.sha256,
     ).hexdigest()[:12]
 
+    source_timestamp = None
+    if operation == "reservation_reconciliation":
+        raw_timestamp = _required("HOTELRUNNER_PILOT_SOURCE_TIMESTAMP")
+        if not _SOURCE_TIMESTAMP_PATTERN.fullmatch(raw_timestamp):
+            raise ReservationPilotError("BLOCKED_INVALID_RECONCILIATION_SOURCE_TIMESTAMP")
+        try:
+            source_timestamp = datetime.fromisoformat(raw_timestamp.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ReservationPilotError("BLOCKED_INVALID_RECONCILIATION_SOURCE_TIMESTAMP") from exc
+        age = datetime.now(UTC) - source_timestamp
+        if age < timedelta(0) or age > timedelta(hours=48):
+            raise ReservationPilotError("BLOCKED_UNSAFE_RECONCILIATION_SOURCE_TIMESTAMP")
+
     return ReservationPilotSettings(
         operation=operation,
         base_url=base_url,
         approved_head=approved_head,
         correlation_label=correlation_label,
         tenant_id=f"hotelrunner-pilot-{correlation_label}",
+        source_timestamp=source_timestamp,
         token=_required("HOTELRUNNER_PILOT_TOKEN"),
         hr_id=_required("HOTELRUNNER_PILOT_HR_ID"),
     )
@@ -138,6 +156,114 @@ async def _fetch_one_undelivered(settings: ReservationPilotSettings):
         if guard.write_count != 0:
             raise ReservationPilotError("FAIL_READONLY_PROVIDER_WRITE_DETECTED")
         return reservations[0], guard.get_count, guard.write_count
+    finally:
+        guard.restore()
+        await provider._client.close()
+
+
+def _parse_provider_timestamp(raw: Any) -> datetime:
+    if not isinstance(raw, str) or not raw.strip():
+        raise ReservationPilotError("BLOCKED_HISTORY_TIMESTAMP_INVALID")
+    try:
+        parsed = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ReservationPilotError("BLOCKED_HISTORY_TIMESTAMP_INVALID") from exc
+    if parsed.tzinfo is None:
+        raise ReservationPilotError("BLOCKED_HISTORY_TIMESTAMP_INVALID")
+    return parsed.astimezone(UTC)
+
+
+def _safe_reservation_correlation(settings: ReservationPilotSettings, message_uid: Any) -> str:
+    if not isinstance(message_uid, str) or not message_uid.strip():
+        raise ReservationPilotError("BLOCKED_HISTORY_IDENTITY_INVALID")
+    return hmac.new(
+        _required("HOTELRUNNER_PILOT_HMAC_KEY").encode(),
+        message_uid.strip().encode(),
+        hashlib.sha256,
+    ).hexdigest()[:12]
+
+
+async def _reconcile_reservation_history(
+    settings: ReservationPilotSettings,
+) -> dict[str, Any]:
+    if settings.source_timestamp is None:
+        raise ReservationPilotError("BLOCKED_MISSING_RECONCILIATION_SOURCE_TIMESTAMP")
+
+    provider = HotelRunnerProvider(
+        token=settings.token,
+        hr_id=settings.hr_id,
+        connection_id=f"pilot:{settings.correlation_label}",
+        base_url=settings.base_url,
+        max_retries=0,
+    )
+    guard = PilotHttpGuard(provider, allow_write=False)
+    try:
+        connection = await provider.test_connection()
+        if not connection.success:
+            raise ReservationPilotError("BLOCKED_READONLY_CREDENTIAL_CHECK_FAILED")
+
+        history = await provider.fetch_reservations(
+            undelivered=False,
+            from_date=(settings.source_timestamp - timedelta(days=1)).date().isoformat(),
+            per_page=100,
+            page=None,
+        )
+        if not history.success or not isinstance(history.data, dict):
+            raise ReservationPilotError("BLOCKED_HISTORY_READ_FAILED")
+        reservations = history.data.get("reservations")
+        if not isinstance(reservations, list):
+            raise ReservationPilotError("BLOCKED_HISTORY_RESPONSE_INVALID")
+
+        window_start = settings.source_timestamp - _RECONCILIATION_WINDOW
+        window_end = settings.source_timestamp + _RECONCILIATION_WINDOW
+        candidates = []
+        for reservation in reservations:
+            if not isinstance(reservation, dict):
+                raise ReservationPilotError("BLOCKED_HISTORY_RESPONSE_INVALID")
+            completed_at = _parse_provider_timestamp(reservation.get("completed_at"))
+            if window_start <= completed_at <= window_end:
+                candidates.append(reservation)
+
+        if len(candidates) != 1:
+            if not candidates:
+                raise ReservationPilotError("BLOCKED_HISTORY_RESERVATION_NOT_FOUND")
+            raise ReservationPilotError("CONFLICT_MULTIPLE_HISTORY_RESERVATIONS")
+
+        candidate = candidates[0]
+        candidate_uid = candidate.get("message_uid")
+        candidate_label = _safe_reservation_correlation(settings, candidate_uid)
+
+        undelivered = await provider.fetch_reservations(
+            undelivered=True,
+            per_page=100,
+            page=1,
+        )
+        if not undelivered.success or not isinstance(undelivered.data, dict):
+            raise ReservationPilotError("BLOCKED_UNDELIVERED_READ_FAILED")
+        queued = undelivered.data.get("raw_reservations")
+        if not isinstance(queued, list):
+            raise ReservationPilotError("BLOCKED_UNDELIVERED_RESPONSE_INVALID")
+        queued_matches = [item for item in queued if isinstance(item, dict) and isinstance(item.get("message_uid"), str) and hmac.compare_digest(item["message_uid"], candidate_uid)]
+        if len(queued_matches) > 1:
+            raise ReservationPilotError("CONFLICT_MULTIPLE_UNDELIVERED_MATCHES")
+        if guard.write_count != 0:
+            raise ReservationPilotError("FAIL_READONLY_PROVIDER_WRITE_DETECTED")
+
+        state = str(candidate.get("state") or "").strip().upper()
+        return {
+            "credential_read_ok": True,
+            "delivery_state": "UNDELIVERED" if queued_matches else "DELIVERED_OR_NOT_QUEUED",
+            "exact_head_match": True,
+            "get_count": guard.get_count,
+            "history_match_count_class": "ONE",
+            "operation": settings.operation,
+            "pms_number_present": bool(candidate.get("pms_number")),
+            "provider_state_class": state if state in {"RESERVED", "CONFIRMED", "CANCELED"} else "UNKNOWN",
+            "provider_write_count": guard.write_count,
+            "reservation_correlation_label": candidate_label,
+            "result": "PASS",
+            "undelivered_match_count_class": "ONE" if queued_matches else "ZERO",
+        }
     finally:
         guard.restore()
         await provider._client.close()
@@ -337,5 +463,20 @@ async def test_hotelrunner_pilot_reservation_replay(record_property):
             result="PASS",
         )
         assert write_count == 0
+    except ReservationPilotError as exc:
+        pytest.fail(str(exc), pytrace=False)
+
+
+async def test_hotelrunner_pilot_reservation_reconciliation(record_property):
+    settings = _load_settings()
+    if settings.operation != "reservation_reconciliation":
+        pytest.fail(
+            "BLOCKED_RESERVATION_RECONCILIATION_TARGET_OPERATION_MISMATCH",
+            pytrace=False,
+        )
+    try:
+        metadata = await _reconcile_reservation_history(settings)
+        _record(record_property, **metadata)
+        assert metadata["provider_write_count"] == 0
     except ReservationPilotError as exc:
         pytest.fail(str(exc), pytrace=False)

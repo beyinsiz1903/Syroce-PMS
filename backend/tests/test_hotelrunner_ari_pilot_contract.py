@@ -12,6 +12,7 @@ import yaml
 
 from domains.channel_manager.providers.hotelrunner import endpoints as ep
 from tests.integration import test_hotelrunner_ari_pilot as pilot
+from tests.integration import test_hotelrunner_reservation_import_pilot as reservation_pilot
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "hotelrunner-ari-pilot.yml"
@@ -41,6 +42,7 @@ def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False)
         "HOTELRUNNER_PILOT_OPERATION": operation,
         "HOTELRUNNER_PILOT_RATE": "100.00",
         "HOTELRUNNER_PILOT_RUN_ID": "123456",
+        "HOTELRUNNER_PILOT_SOURCE_TIMESTAMP": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "HOTELRUNNER_PILOT_STOP_SELL": "0",
         "HOTELRUNNER_PILOT_TEST_DATE": future_date,
         "HOTELRUNNER_PILOT_TOKEN": "synthetic-token",
@@ -60,6 +62,7 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
         "reservation_read",
         "reservation_import",
         "reservation_replay",
+        "reservation_reconciliation",
         "availability",
         "rate",
         "stop_sell",
@@ -75,6 +78,10 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
     assert "BLOCKED_PROVIDER_WRITE_NOT_APPROVED" in gate["run"]
     assert "reservation_import" in gate["run"]
     assert "reservation_replay" in gate["run"]
+    assert "reservation_reconciliation" in gate["run"]
+    assert "BLOCKED_MISSING_RECONCILIATION_SOURCE_TIMESTAMP" in gate["run"]
+    assert "${{ inputs.reconciliation_source_timestamp }}" not in gate["run"]
+    assert gate["env"]["RECONCILIATION_SOURCE_TIMESTAMP"] == "${{ inputs.reconciliation_source_timestamp }}"
 
 
 def test_workflow_uses_protected_pilot_environment_and_exact_targets():
@@ -90,6 +97,7 @@ def test_workflow_uses_protected_pilot_environment_and_exact_targets():
     assert "test_hotelrunner_pilot_readonly_reservation" in script
     assert "test_hotelrunner_pilot_reservation_import" in script
     assert "test_hotelrunner_pilot_reservation_replay" in script
+    assert "test_hotelrunner_pilot_reservation_reconciliation" in script
     assert "test_hotelrunner_pilot_single_ari_write" in script
     assert "pytest -m" not in script
 
@@ -184,6 +192,92 @@ def test_reservation_read_rejects_write_approval(monkeypatch):
 
     with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_READONLY_WRITE_CONFLICT"):
         pilot._load_settings()
+
+
+def test_reconciliation_requires_strict_source_timestamp(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_reconciliation", write=False)
+    monkeypatch.setenv("HOTELRUNNER_PILOT_SOURCE_TIMESTAMP", "2026-08-11")
+
+    with pytest.raises(
+        reservation_pilot.ReservationPilotError,
+        match="BLOCKED_INVALID_RECONCILIATION_SOURCE_TIMESTAMP",
+    ):
+        reservation_pilot._load_settings()
+
+
+def test_reconciliation_rejects_write_approval(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_reconciliation", write=True)
+
+    with pytest.raises(
+        reservation_pilot.ReservationPilotError,
+        match="BLOCKED_READONLY_WRITE_CONFLICT",
+    ):
+        reservation_pilot._load_settings()
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_reads_history_and_queue_without_provider_write(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_reconciliation", write=False)
+    source_timestamp = datetime.now(UTC).replace(microsecond=0)
+    monkeypatch.setenv(
+        "HOTELRUNNER_PILOT_SOURCE_TIMESTAMP",
+        source_timestamp.isoformat().replace("+00:00", "Z"),
+    )
+    provider_call = AsyncMock(return_value=SimpleNamespace(status_code=200))
+    client = SimpleNamespace(_request=provider_call, close=AsyncMock())
+    sensitive_uid = "synthetic-sensitive-message-uid"
+    fetches: list[dict[str, object]] = []
+
+    class FakeProvider:
+        def __init__(self, **_kwargs):
+            self._client = client
+
+        async def test_connection(self):
+            await self._client._request("GET", ep.TRANSACTION_DETAILS)
+            return SimpleNamespace(success=True)
+
+        async def fetch_reservations(self, **kwargs):
+            fetches.append(kwargs)
+            await self._client._request("GET", ep.RESERVATIONS)
+            if kwargs["undelivered"]:
+                return SimpleNamespace(
+                    success=True,
+                    data={"raw_reservations": []},
+                )
+            return SimpleNamespace(
+                success=True,
+                data={
+                    "reservations": [
+                        {
+                            "completed_at": source_timestamp.isoformat(),
+                            "message_uid": sensitive_uid,
+                            "pms_number": "synthetic-pms-number",
+                            "state": "reserved",
+                        }
+                    ]
+                },
+            )
+
+    monkeypatch.setattr(reservation_pilot, "HotelRunnerProvider", FakeProvider)
+    settings = reservation_pilot._load_settings()
+    metadata = await reservation_pilot._reconcile_reservation_history(settings)
+
+    assert metadata["delivery_state"] == "DELIVERED_OR_NOT_QUEUED"
+    assert metadata["history_match_count_class"] == "ONE"
+    assert metadata["pms_number_present"] is True
+    assert metadata["provider_write_count"] == 0
+    assert metadata["undelivered_match_count_class"] == "ZERO"
+    assert sensitive_uid not in str(metadata)
+    assert fetches == [
+        {
+            "undelivered": False,
+            "from_date": (source_timestamp - timedelta(days=1)).date().isoformat(),
+            "per_page": 100,
+            "page": None,
+        },
+        {"undelivered": True, "per_page": 100, "page": 1},
+    ]
+    assert all(call.args[0] == "GET" for call in provider_call.await_args_list)
 
 
 def test_settings_repr_never_contains_credentials_or_provider_identifiers(monkeypatch):
