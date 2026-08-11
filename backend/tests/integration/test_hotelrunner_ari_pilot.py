@@ -255,6 +255,7 @@ def _record_safe_metadata(record_property, metadata: dict[str, Any]) -> None:
         "provider_status_class",
         "provider_write_count",
         "read_http_status",
+        "reservation_correlation_label",
         "reservation_identity_valid",
         "reservation_payload_shape_valid",
         "result",
@@ -453,12 +454,19 @@ async def test_hotelrunner_pilot_readonly_reservation(record_property):
                 metadata,
             )
 
+        reservation_correlation_label = hmac.new(
+            settings.hmac_key.encode(),
+            str(reservation["message_uid"]).strip().encode(),
+            hashlib.sha256,
+        ).hexdigest()[:12]
+
         metadata.update(
             {
                 "get_count": guard.get_count,
                 "provider_write_count": guard.write_count,
                 "read_http_status": guard.read_http_status or "NOT_RECORDED",
                 "provider_status_class": "SUCCESS",
+                "reservation_correlation_label": reservation_correlation_label,
                 "result": "PASS",
             }
         )

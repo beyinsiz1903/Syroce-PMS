@@ -55,6 +55,8 @@ class ReservationPilotSettings:
     source_timestamp: datetime | None
     token: str = field(repr=False)
     hr_id: str = field(repr=False)
+    hmac_key: str = field(repr=False)
+    target_guest_name: str | None = field(default=None, repr=False)
 
 
 def _required(name: str) -> str:
@@ -101,6 +103,7 @@ def _load_settings() -> ReservationPilotSettings:
     ).hexdigest()[:12]
 
     source_timestamp = None
+    target_guest_name = None
     if operation == "reservation_reconciliation":
         raw_timestamp = _required("HOTELRUNNER_PILOT_SOURCE_TIMESTAMP")
         if not _SOURCE_TIMESTAMP_PATTERN.fullmatch(raw_timestamp):
@@ -112,6 +115,7 @@ def _load_settings() -> ReservationPilotSettings:
         age = datetime.now(UTC) - source_timestamp
         if age < timedelta(0) or age > timedelta(hours=48):
             raise ReservationPilotError("BLOCKED_UNSAFE_RECONCILIATION_SOURCE_TIMESTAMP")
+        target_guest_name = _required("HOTELRUNNER_PILOT_TARGET_GUEST_NAME")
 
     return ReservationPilotSettings(
         operation=operation,
@@ -122,6 +126,8 @@ def _load_settings() -> ReservationPilotSettings:
         source_timestamp=source_timestamp,
         token=_required("HOTELRUNNER_PILOT_TOKEN"),
         hr_id=_required("HOTELRUNNER_PILOT_HR_ID"),
+        hmac_key=hmac_key,
+        target_guest_name=target_guest_name,
     )
 
 
@@ -177,10 +183,23 @@ def _safe_reservation_correlation(settings: ReservationPilotSettings, message_ui
     if not isinstance(message_uid, str) or not message_uid.strip():
         raise ReservationPilotError("BLOCKED_HISTORY_IDENTITY_INVALID")
     return hmac.new(
-        _required("HOTELRUNNER_PILOT_HMAC_KEY").encode(),
+        settings.hmac_key.encode(),
         message_uid.strip().encode(),
         hashlib.sha256,
     ).hexdigest()[:12]
+
+
+def _guest_identity_digest(settings: ReservationPilotSettings, raw: Any) -> bytes | None:
+    if not isinstance(raw, str):
+        return None
+    normalized = " ".join(raw.split()).casefold()
+    if not normalized:
+        return None
+    return hmac.new(
+        settings.hmac_key.encode(),
+        normalized.encode(),
+        hashlib.sha256,
+    ).digest()
 
 
 async def _reconcile_reservation_history(
@@ -188,6 +207,8 @@ async def _reconcile_reservation_history(
 ) -> dict[str, Any]:
     if settings.source_timestamp is None:
         raise ReservationPilotError("BLOCKED_MISSING_RECONCILIATION_SOURCE_TIMESTAMP")
+    if settings.target_guest_name is None:
+        raise ReservationPilotError("BLOCKED_MISSING_RECONCILIATION_TARGET")
 
     provider = HotelRunnerProvider(
         token=settings.token,
@@ -224,12 +245,20 @@ async def _reconcile_reservation_history(
             if window_start <= completed_at <= window_end:
                 candidates.append(reservation)
 
-        if len(candidates) != 1:
-            if not candidates:
-                raise ReservationPilotError("BLOCKED_HISTORY_RESERVATION_NOT_FOUND")
-            raise ReservationPilotError("CONFLICT_MULTIPLE_HISTORY_RESERVATIONS")
+        target_digest = _guest_identity_digest(settings, settings.target_guest_name)
+        if target_digest is None:
+            raise ReservationPilotError("BLOCKED_INVALID_RECONCILIATION_TARGET")
+        target_candidates = [
+            reservation
+            for reservation in candidates
+            if (candidate_digest := _guest_identity_digest(settings, reservation.get("guest"))) is not None and hmac.compare_digest(candidate_digest, target_digest)
+        ]
+        if len(target_candidates) != 1:
+            if not target_candidates:
+                raise ReservationPilotError("BLOCKED_TARGET_HISTORY_RESERVATION_NOT_FOUND")
+            raise ReservationPilotError("CONFLICT_MULTIPLE_TARGET_HISTORY_RESERVATIONS")
 
-        candidate = candidates[0]
+        candidate = target_candidates[0]
         candidate_uid = candidate.get("message_uid")
         candidate_label = _safe_reservation_correlation(settings, candidate_uid)
 
@@ -255,6 +284,7 @@ async def _reconcile_reservation_history(
             "delivery_state": "UNDELIVERED" if queued_matches else "DELIVERED_OR_NOT_QUEUED",
             "exact_head_match": True,
             "get_count": guard.get_count,
+            "history_window_match_count_class": "ONE" if len(candidates) == 1 else "MULTIPLE",
             "history_match_count_class": "ONE",
             "operation": settings.operation,
             "pms_number_present": bool(candidate.get("pms_number")),
