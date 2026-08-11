@@ -20,6 +20,7 @@ from core.integrations.nilvera.status_mapper import ProviderInvoiceOutcome
 from scripts.nilvera_sandbox_selector import (
     CREATE_RETURN_DISCOVERY_TARGET,
     CREATE_RETURN_RECONCILIATION_TARGET,
+    INCOMING_ANSWER_DISCOVERY_TARGET,
     INCOMING_FIXTURE_TARGET,
     PREFLIGHT_TARGET,
     RECONCILIATION_TARGET,
@@ -79,6 +80,7 @@ from tests.nilvera_sandbox_fixture import (
     ensure_fixture_payload_contract,
     evaluate_incoming_answer_candidate,
     fixture_correlation_label,
+    incoming_answer_candidate_tag,
     incoming_answer_discovery_window,
     parse_envelope_status,
     parse_pilot_invoice_date,
@@ -108,6 +110,7 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
     assert "run_preflight:" in workflow
     assert "run_outgoing_contract:" in workflow
     assert "run_incoming_fixture:" in workflow
+    assert "run_incoming_answer_discovery:" in workflow
     assert "run_reconciliation:" in workflow
     assert "run_create_return_discovery:" in workflow
     assert "run_create_return_reconciliation:" in workflow
@@ -127,6 +130,7 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
     assert "BLOCKED_PROVIDER_WRITE_NOT_CONFIRMED" in workflow
     assert "BLOCKED_TEST_ACCOUNT_NOT_ATTESTED" in workflow
     assert "BLOCKED_MISSING_ANSWER_SANDBOX_CONFIGURATION" in workflow
+    assert "BLOCKED_MISSING_ANSWER_DISCOVERY_SANDBOX_CONFIGURATION" in workflow
     assert "RECONCILIATION_SOURCE_RUN_ID" in workflow
     assert "RECONCILIATION_SOURCE_TIMESTAMP" in workflow
     assert "summary.provider_uuid != target_provider_uuid" in sandbox_test
@@ -139,6 +143,12 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
         select_test_target(run_incoming_fixture=True, run_incoming_answer=True, run_reconciliation=False)
     with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
         select_test_target(run_incoming_fixture=False, run_incoming_answer=True, run_reconciliation=True)
+    with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
+        select_test_target(
+            run_incoming_fixture=False,
+            run_incoming_answer=True,
+            run_incoming_answer_discovery=True,
+        )
     with pytest.raises(ValueError, match="BLOCKED_MUTUALLY_EXCLUSIVE_SANDBOX_MODES"):
         select_test_target(
             run_incoming_fixture=False,
@@ -187,6 +197,14 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
         select_test_target(
             run_incoming_fixture=False,
             run_incoming_answer=False,
+            run_incoming_answer_discovery=True,
+        )
+        == INCOMING_ANSWER_DISCOVERY_TARGET
+    )
+    assert (
+        select_test_target(
+            run_incoming_fixture=False,
+            run_incoming_answer=False,
             run_create_return_discovery=True,
         )
         == CREATE_RETURN_DISCOVERY_TARGET
@@ -199,6 +217,45 @@ def test_workflow_sandbox_modes_are_mutually_exclusive():
         )
         == CREATE_RETURN_RECONCILIATION_TARGET
     )
+
+
+def test_incoming_answer_discovery_is_get_only_and_does_not_enable_mutation_gate():
+    workflow = (Path(__file__).parents[3] / ".github/workflows/nilvera-sandbox-e2e.yml").read_text()
+    sandbox_test = (Path(__file__).parents[1] / "integration/test_nilvera_sandbox_e2e.py").read_text()
+
+    mutation_gate = workflow[
+        workflow.index("mutation_requested=false") : workflow.index('if [ "${RUN_PREFLIGHT}" = "true" ]; then')
+    ]
+    test_step = workflow.split("      - name: Run Nilvera Sandbox E2E Tests\n", 1)[1].split("\n      - name:", 1)[0]
+
+    assert "RUN_INCOMING_ANSWER_DISCOVERY" not in mutation_gate
+    assert "NILVERA_INCOMING_ANSWER_ENABLED: ${{ inputs.run_incoming_answer }}" in test_step
+    assert "NILVERA_E2E_INCOMING_ANSWER_DISCOVERY_ALLOWED: ${{ inputs.run_incoming_answer_discovery }}" in test_step
+    assert "ReadOnlySandboxClient(client)" in sandbox_test
+    assert 'record_property("provider_write_count", "0")' in sandbox_test
+    assert "BLOCKED_NO_ELIGIBLE_TEST_INVOICE" in sandbox_test
+    assert "eligible_candidate_count_class" in sandbox_test
+    assert "summary.invoice_number.startswith(SANDBOX_FIXTURE_SERIES)" in sandbox_test
+    assert "hmac.compare_digest(" in sandbox_test
+
+
+def test_incoming_answer_candidate_tag_is_deterministic_and_hides_provider_uuid():
+    first = incoming_answer_candidate_tag(PROVIDER_UUID, HMAC_KEY)
+    second = incoming_answer_candidate_tag(PROVIDER_UUID, HMAC_KEY)
+
+    assert first == second
+    assert first.startswith("ANS-")
+    assert len(first) == 20
+    assert PROVIDER_UUID not in first
+
+
+@pytest.mark.parametrize(
+    ("provider_uuid", "hmac_key"),
+    [("not-a-uuid", HMAC_KEY), (PROVIDER_UUID, "short")],
+)
+def test_incoming_answer_candidate_tag_fails_closed_for_invalid_input(provider_uuid, hmac_key):
+    with pytest.raises(SandboxFixtureBlocked, match="BLOCKED_INVALID_ANSWER_CANDIDATE_TAG_INPUT"):
+        incoming_answer_candidate_tag(provider_uuid, hmac_key)
 
 
 def test_create_return_workflow_is_exact_head_single_attempt_and_sandbox_only():
