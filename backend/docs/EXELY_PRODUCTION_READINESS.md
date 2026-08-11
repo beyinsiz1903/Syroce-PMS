@@ -2,10 +2,22 @@
 
 ## Decision boundary
 
-The Exely test-provider pilot is complete. Discovery, undelivered reservation
-read, canonical durable import, exact-version acknowledgement, queue cleanup,
-availability, rate, stop-sell, minimum stay, and arrival-based minimum stay were
-confirmed through the protected pilot workflow.
+The Exely technical integration and test-provider pilot are complete. Discovery,
+undelivered reservation read, canonical durable import, exact-version
+acknowledgement, queue cleanup, availability, rate, stop-sell, minimum stay, and
+arrival-based minimum stay were confirmed through the protected pilot workflow.
+
+The current `main` head `86273f46dcc6d74ab4c892388db764af9bf9523d`
+was rechecked without provider mutation on 2026-08-11:
+
+- discovery run `31487991082`: PASS, provider writes `0`
+- reservation-read run `31488826717`: PASS, ACK writes `0`
+
+The protected production cutover previously applied exact head
+`b9e1ee1e1178a5f8f4e80739328d35e3affd3db2` in read-only mode through run
+`31422645279`. The deployment was active, reservation synchronization and ARI
+writes remained disabled, and provider reads/writes were both `0` during the
+cutover.
 
 This evidence does not authorize production. Production credentials, tenant
 configuration, deployment, or provider operations require a separate explicit
@@ -121,12 +133,15 @@ All items are blocking. A missing or ambiguous result is not a pass.
 |---|---|
 | Offline code and CI | PASS |
 | Protected test-provider pilot | PASS |
+| Current-main read-only regression | PASS (`31487991082`, `31488826717`) |
 | Default-deny production activation | PASS |
 | Reservation and ARI emergency stops | PASS |
+| Protected production read-only cutover | PASS (`31422645279`) |
 | Production credentials and property mapping | NOT VERIFIED |
 | Production network and monitoring configuration | NOT VERIFIED |
 | First live reservation/modification/cancellation | NOT RUN |
 | Production provider operations | 0 |
-| Production deploy | 0 |
+| Production provider activation | 0 |
 
-**Current decision: PILOT COMPLETE / PRODUCTION NO-GO.**
+**Current decision: TECHNICAL INTEGRATION COMPLETE / TEST-PROVIDER GO /
+PRODUCTION READ-ONLY PASS / LIVE PROVIDER OPERATIONS NO-GO.**
