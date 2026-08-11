@@ -13,6 +13,7 @@ on:
           - reservation_read
           - reservation_import
           - reservation_replay
+          - reservation_reconciliation
           - availability
           - rate
           - stop_sell
@@ -25,6 +26,11 @@ on:
       approved_head_sha:
         description: Exact 40-character commit SHA approved for this run
         required: true
+        type: string
+      reconciliation_source_timestamp:
+        description: Source reservation-read run timestamp for GET-only reconciliation (YYYY-MM-DDTHH:MM:SSZ)
+        required: false
+        default: ''
         type: string
 
 permissions:
@@ -76,15 +82,20 @@ jobs:
           APPROVED_HEAD_SHA: ${{ inputs.approved_head_sha }}
           CONFIRM_PROVIDER_WRITE: ${{ inputs.confirm_provider_write }}
           PILOT_OPERATION: ${{ inputs.operation }}
+          RECONCILIATION_SOURCE_TIMESTAMP: ${{ inputs.reconciliation_source_timestamp }}
         run: |
           if [ "${APPROVED_HEAD_SHA}" != "${GITHUB_SHA}" ]; then
             echo "::error::BLOCKED_EXACT_HEAD_MISMATCH"
             exit 1
           fi
           case "${PILOT_OPERATION}" in
-            discovery|reservation_read|reservation_import|reservation_replay)
+            discovery|reservation_read|reservation_import|reservation_replay|reservation_reconciliation)
               if [ "${CONFIRM_PROVIDER_WRITE}" = "true" ]; then
                 echo "::error::BLOCKED_READONLY_WRITE_CONFLICT"
+                exit 1
+              fi
+              if [ "${PILOT_OPERATION}" = "reservation_reconciliation" ] && [ -z "${RECONCILIATION_SOURCE_TIMESTAMP}" ]; then
+                echo "::error::BLOCKED_MISSING_RECONCILIATION_SOURCE_TIMESTAMP"
                 exit 1
               fi
               ;;
@@ -191,6 +202,7 @@ jobs:
           HOTELRUNNER_PILOT_WRITE_APPROVED: ${{ inputs.confirm_provider_write }}
           HOTELRUNNER_PILOT_APPROVED_HEAD: ${{ inputs.approved_head_sha }}
           HOTELRUNNER_PILOT_RUN_ID: ${{ github.run_id }}
+          HOTELRUNNER_PILOT_SOURCE_TIMESTAMP: ${{ inputs.reconciliation_source_timestamp }}
           HOTELRUNNER_PILOT_ACCOUNT_CONFIRMED: ${{ vars.HOTELRUNNER_PILOT_ACCOUNT_CONFIRMED }}
           HOTELRUNNER_PILOT_TEST_DATE: ${{ vars.HOTELRUNNER_PILOT_TEST_DATE }}
           HOTELRUNNER_PILOT_AVAILABILITY: ${{ vars.HOTELRUNNER_PILOT_AVAILABILITY }}
@@ -216,6 +228,9 @@ jobs:
               ;;
             reservation_replay)
               target="tests/integration/test_hotelrunner_reservation_import_pilot.py::test_hotelrunner_pilot_reservation_replay"
+              ;;
+            reservation_reconciliation)
+              target="tests/integration/test_hotelrunner_reservation_import_pilot.py::test_hotelrunner_pilot_reservation_reconciliation"
               ;;
             *)
               target="tests/integration/test_hotelrunner_ari_pilot.py::test_hotelrunner_pilot_single_ari_write"
