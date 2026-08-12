@@ -32,7 +32,7 @@ pytestmark = [
 
 _OFFICIAL_BASE_URL = "https://app.hotelrunner.com"
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
-_TARGET_POLL_INTERVAL_SECONDS = 2
+_TARGET_POLL_INTERVAL_SECONDS = 10
 
 
 class AckPilotHttpGuard:
