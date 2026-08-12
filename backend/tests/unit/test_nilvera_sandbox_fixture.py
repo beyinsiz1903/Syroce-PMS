@@ -411,6 +411,7 @@ def test_incoming_answer_eligibility_uses_authoritative_detail_and_status():
         provider_uuid=PROVIDER_UUID,
         invoice_profile="TICARIFATURA",
         invoice_type="SATIS",
+        answer_code=None,
     )
     status = SimpleNamespace(answer_code="waitingForApproval", status_code="SUCCEED")
 
@@ -441,6 +442,7 @@ def test_incoming_answer_eligibility_fails_closed_for_non_waiting_or_non_ready_s
             provider_uuid=PROVIDER_UUID,
             invoice_profile="TICARIFATURA",
             invoice_type="SATIS",
+            answer_code=None,
         ),
         SimpleNamespace(answer_code=answer_code, status_code=status_code),
         target_provider_uuid=PROVIDER_UUID,
