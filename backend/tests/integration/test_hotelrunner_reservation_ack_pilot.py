@@ -1,8 +1,8 @@
 """Controlled single-write HotelRunner reservation ACK pilot.
 
-The pilot requires exactly one undelivered reservation, creates and verifies a durable
-local PMS booking first, then performs exactly one HotelRunner ACK mutation. Any
-ambiguous/failing ACK is never retried automatically.
+The pilot selects exactly one approved undelivered reservation, creates and verifies
+a durable local PMS booking first, then performs exactly one HotelRunner ACK mutation.
+Any ambiguous/failing ACK is never retried automatically.
 """
 
 from __future__ import annotations
@@ -94,6 +94,8 @@ def _load_ack_settings() -> ReservationPilotSettings:
         raise ReservationPilotError("BLOCKED_PROVIDER_WRITE_NOT_APPROVED")
     if os.environ.get("HOTELRUNNER_PILOT_ACCOUNT_CONFIRMED") != "true":
         raise ReservationPilotError("BLOCKED_TEST_ACCOUNT_NOT_CONFIRMED")
+    if _required("HOTELRUNNER_PILOT_RUN_ATTEMPT") != "1":
+        raise ReservationPilotError("BLOCKED_MUTATION_RERUN")
 
     base_url = _required("HOTELRUNNER_PILOT_BASE_URL").rstrip("/")
     if base_url != _OFFICIAL_BASE_URL:
@@ -108,9 +110,12 @@ def _load_ack_settings() -> ReservationPilotSettings:
     if len(hmac_key) < 32:
         raise ReservationPilotError("BLOCKED_WEAK_PILOT_HMAC_KEY")
     run_id = _required("HOTELRUNNER_PILOT_RUN_ID")
+    source_run_id = _required("HOTELRUNNER_PILOT_SOURCE_RUN_ID")
+    if not source_run_id.isdecimal():
+        raise ReservationPilotError("BLOCKED_INVALID_SOURCE_RUN_ID")
     correlation_label = hmac.new(
         hmac_key.encode(),
-        f"{run_id}:{approved_head}:reservation_ack".encode(),
+        f"{run_id}:{source_run_id}:{approved_head}:reservation_ack".encode(),
         hashlib.sha256,
     ).hexdigest()[:12]
 
@@ -120,14 +125,64 @@ def _load_ack_settings() -> ReservationPilotSettings:
         approved_head=approved_head,
         correlation_label=correlation_label,
         tenant_id=f"hotelrunner-ack-pilot-{correlation_label}",
+        source_timestamp=None,
         token=_required("HOTELRUNNER_PILOT_TOKEN"),
         hr_id=_required("HOTELRUNNER_PILOT_HR_ID"),
+        hmac_key=hmac_key,
+        target_guest_name=_required("HOTELRUNNER_PILOT_TARGET_GUEST_NAME"),
     )
 
 
 def _record(record_property, **values: Any) -> None:
     for key, value in sorted(values.items()):
         record_property(key, value)
+
+
+def _guest_identity_digest(settings: ReservationPilotSettings, raw: Any) -> bytes | None:
+    if not isinstance(raw, str):
+        return None
+    normalized = " ".join(raw.split()).casefold()
+    if not normalized:
+        return None
+    return hmac.new(
+        settings.hmac_key.encode(),
+        normalized.encode(),
+        hashlib.sha256,
+    ).digest()
+
+
+def _select_target_reservation(
+    settings: ReservationPilotSettings,
+    reservations: list[Any],
+) -> dict[str, Any]:
+    target_digest = _guest_identity_digest(settings, settings.target_guest_name)
+    if target_digest is None:
+        raise ReservationPilotError("BLOCKED_INVALID_ACK_TARGET")
+    matches = []
+    for reservation in reservations:
+        if not isinstance(reservation, dict):
+            raise ReservationPilotError("BLOCKED_RESERVATION_RESPONSE_INVALID")
+        candidate_digest = _guest_identity_digest(settings, reservation.get("guest"))
+        if candidate_digest is not None and hmac.compare_digest(candidate_digest, target_digest):
+            matches.append(reservation)
+    if not matches:
+        raise ReservationPilotError("BLOCKED_TARGET_UNDELIVERED_RESERVATION_NOT_FOUND")
+    if len(matches) > 1:
+        raise ReservationPilotError("CONFLICT_MULTIPLE_TARGET_UNDELIVERED_RESERVATIONS")
+    return matches[0]
+
+
+def _verify_history_pms_number(
+    reservations: list[Any],
+    message_uid: str,
+    pms_number: str,
+) -> None:
+    matches = [item for item in reservations if isinstance(item, dict) and isinstance(item.get("message_uid"), str) and hmac.compare_digest(item["message_uid"], message_uid)]
+    if len(matches) != 1:
+        raise ReservationPilotError("BLOCKED_POST_ACK_HISTORY_MATCH_INVALID")
+    provider_pms_number = str(matches[0].get("pms_number") or "").strip()
+    if not provider_pms_number or not hmac.compare_digest(provider_pms_number, pms_number):
+        raise ReservationPilotError("BLOCKED_POST_ACK_PMS_NUMBER_MISMATCH")
 
 
 async def test_hotelrunner_single_reservation_ack(record_property):
@@ -147,18 +202,13 @@ async def test_hotelrunner_single_reservation_ack(record_property):
             if not connection.success:
                 raise ReservationPilotError("BLOCKED_READONLY_CREDENTIAL_CHECK_FAILED")
 
-            fetched = await provider.fetch_reservations(undelivered=True, per_page=2, page=1)
+            fetched = await provider.fetch_reservations(undelivered=True, per_page=100, page=1)
             if not fetched.success or not isinstance(fetched.data, dict):
                 raise ReservationPilotError("BLOCKED_RESERVATION_READ_FAILED")
             reservations = fetched.data.get("raw_reservations")
             if not isinstance(reservations, list):
                 raise ReservationPilotError("BLOCKED_RESERVATION_RESPONSE_INVALID")
-            if len(reservations) != 1:
-                if not reservations:
-                    raise ReservationPilotError("BLOCKED_NO_UNDELIVERED_RESERVATION")
-                raise ReservationPilotError("BLOCKED_MULTIPLE_UNDELIVERED_RESERVATIONS")
-
-            raw = reservations[0]
+            raw = _select_target_reservation(settings, reservations)
             message_uid = str(raw.get("message_uid") or "").strip()
             if not message_uid:
                 raise ReservationPilotError("BLOCKED_RESERVATION_MESSAGE_UID_MISSING")
@@ -175,9 +225,13 @@ async def test_hotelrunner_single_reservation_ack(record_property):
                 raise ReservationPilotError("BLOCKED_ACK_WRITE_COUNT_MISMATCH")
             if not ack.success:
                 raise ReservationPilotError("BLOCKED_RESERVATION_ACK_FAILED_OR_AMBIGUOUS")
+            if ack.metadata.get("provider_status_class") != "SUCCESS":
+                raise ReservationPilotError("BLOCKED_RESERVATION_ACK_STATUS_INVALID")
+            if ack.metadata.get("retry_count") != 0:
+                raise ReservationPilotError("BLOCKED_RESERVATION_ACK_RETRY_DETECTED")
 
             # GET-only readback. Never retry the ACK mutation.
-            post = await provider.fetch_reservations(undelivered=True, per_page=2, page=1)
+            post = await provider.fetch_reservations(undelivered=True, per_page=100, page=1)
             if not post.success or not isinstance(post.data, dict):
                 raise ReservationPilotError("BLOCKED_POST_ACK_READBACK_FAILED")
             post_reservations = post.data.get("raw_reservations")
@@ -185,6 +239,18 @@ async def test_hotelrunner_single_reservation_ack(record_property):
                 raise ReservationPilotError("BLOCKED_POST_ACK_RESPONSE_INVALID")
             if any(str(item.get("message_uid") or "") == message_uid for item in post_reservations if isinstance(item, dict)):
                 raise ReservationPilotError("BLOCKED_ACK_NOT_DURABLE_ON_PROVIDER_READBACK")
+
+            history = await provider.fetch_reservations(
+                undelivered=False,
+                per_page=100,
+                page=None,
+            )
+            if not history.success or not isinstance(history.data, dict):
+                raise ReservationPilotError("BLOCKED_POST_ACK_HISTORY_READ_FAILED")
+            history_reservations = history.data.get("reservations")
+            if not isinstance(history_reservations, list):
+                raise ReservationPilotError("BLOCKED_POST_ACK_HISTORY_RESPONSE_INVALID")
+            _verify_history_pms_number(history_reservations, message_uid, pms_number)
 
             _record(
                 record_property,
@@ -196,6 +262,9 @@ async def test_hotelrunner_single_reservation_ack(record_property):
                 operation="reservation_ack",
                 pms_booking_count=1,
                 post_ack_target_absent=True,
+                provider_pms_number_match=True,
+                provider_status_class="SUCCESS",
+                retry_count=0,
                 provider_write_count=guard.write_count,
                 result="PASS",
                 write_http_status=guard.write_http_status or "NOT_RECORDED",
