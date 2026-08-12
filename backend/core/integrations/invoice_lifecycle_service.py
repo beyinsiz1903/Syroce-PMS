@@ -5,6 +5,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from core.integrations.incoming_invoice_repository import IncomingInvoiceRepository
+from core.integrations.invoice_gl_bridge import reverse_incoming_invoice_gl_for_return
 from core.integrations.invoice_lifecycle_repository import InvoiceLifecycleRepository
 from core.integrations.invoice_return_service import (
     handle_return_action_success,
@@ -363,6 +364,24 @@ class InvoiceLifecycleService:
             completed_at=datetime.now(UTC),
         )
         if persisted:
+            gl_reversal_status = "source_journal_missing"
+            try:
+                reversal = await reverse_incoming_invoice_gl_for_return(
+                    action.tenant_id,
+                    action.source_invoice_id,
+                    action_id=action.id,
+                    generated_provider_uuid=generated_provider_uuid,
+                    actor="system",
+                )
+                if reversal is not None:
+                    gl_reversal_status = "posted"
+            except Exception as exc:
+                gl_reversal_status = "failed"
+                logger.error(
+                    "Nilvera return GL reversal failed action_id=%s error_type=%s",
+                    action.id,
+                    type(exc).__name__,
+                )
             try:
                 await event_bus.publish(
                     action.tenant_id,
@@ -370,6 +389,8 @@ class InvoiceLifecycleService:
                     {
                         "action_id": action.id,
                         "source_invoice_id": action.source_invoice_id,
+                        "generated_provider_uuid": generated_provider_uuid,
+                        "gl_reversal_status": gl_reversal_status,
                     },
                 )
             except Exception as exc:
