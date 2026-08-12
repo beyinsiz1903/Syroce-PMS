@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -35,6 +34,10 @@ def _base_env(monkeypatch, *, write: bool = True):
         "HOTELRUNNER_PILOT_HR_ID": "synthetic-hotel",
         "HOTELRUNNER_PILOT_OPERATION": "reservation_ack",
         "HOTELRUNNER_PILOT_RUN_ID": "123456",
+        "HOTELRUNNER_PILOT_RUN_ATTEMPT": "1",
+        "HOTELRUNNER_PILOT_SOURCE_RUN_ID": "123455",
+        "HOTELRUNNER_PILOT_TARGET_GUEST_NAME": "Synthetic Target Guest",
+        "HOTELRUNNER_PILOT_TARGET_WAIT_SECONDS": "90",
         "HOTELRUNNER_PILOT_TOKEN": "synthetic-token",
         "HOTELRUNNER_PILOT_WRITE_APPROVED": "true" if write else "false",
     }
@@ -48,6 +51,7 @@ def test_workflow_is_manual_exact_head_and_single_write_gated():
     inputs = workflow["on"]["workflow_dispatch"]["inputs"]
     assert inputs["confirm_provider_write"]["default"] == "false"
     assert inputs["approved_head_sha"]["required"] == "true"
+    assert inputs["source_run_id"]["required"] == "true"
 
     job = workflow["jobs"]["hotelrunner-reservation-ack-pilot"]
     assert job["environment"] == "hotelrunner-pilot"
@@ -55,6 +59,8 @@ def test_workflow_is_manual_exact_head_and_single_write_gated():
     gate = next(step for step in job["steps"] if step.get("name") == "Validate exact-head approval and single ACK write gate")
     assert "BLOCKED_EXACT_HEAD_MISMATCH" in gate["run"]
     assert "BLOCKED_PROVIDER_WRITE_NOT_APPROVED" in gate["run"]
+    assert "BLOCKED_MUTATION_RERUN" in gate["run"]
+    assert "BLOCKED_INVALID_SOURCE_RUN_ID" in gate["run"]
 
 
 def test_workflow_targets_exact_ack_test_and_no_deploy():
@@ -62,6 +68,9 @@ def test_workflow_targets_exact_ack_test_and_no_deploy():
     job = workflow["jobs"]["hotelrunner-reservation-ack-pilot"]
     run_step = next(step for step in job["steps"] if step.get("name") == "Run exactly one gated HotelRunner reservation ACK")
     assert run_step["env"]["HOTELRUNNER_PILOT_OPERATION"] == "reservation_ack"
+    assert run_step["env"]["HOTELRUNNER_PILOT_RUN_ATTEMPT"] == "${{ github.run_attempt }}"
+    assert run_step["env"]["HOTELRUNNER_PILOT_TARGET_GUEST_NAME"] == "${{ secrets.HOTELRUNNER_PILOT_TARGET_GUEST_NAME }}"
+    assert run_step["env"]["HOTELRUNNER_PILOT_TARGET_WAIT_SECONDS"] == "90"
     assert "test_hotelrunner_single_reservation_ack" in run_step["run"]
     assert "deploy" not in run_step["run"].lower()
     assert workflow["permissions"] == {"actions": "read", "contents": "read"}
@@ -84,6 +93,7 @@ def test_workflow_requires_exact_head_normal_ci_without_deploy_job():
     ):
         assert f'"{required}"' in script
     assert "frontend-quality.yml" in script
+    assert '.event == \\"push\\" or .event == \\"pull_request\\"' in script
     assert "deploy-production" not in script
 
 
@@ -100,12 +110,128 @@ def test_settings_require_exact_head(monkeypatch):
         ack_pilot._load_ack_settings()
 
 
+def test_settings_block_workflow_rerun(monkeypatch):
+    _base_env(monkeypatch)
+    monkeypatch.setenv("HOTELRUNNER_PILOT_RUN_ATTEMPT", "2")
+    with pytest.raises(ack_pilot.ReservationPilotError, match="BLOCKED_MUTATION_RERUN"):
+        ack_pilot._load_ack_settings()
+
+
 def test_settings_repr_hides_credentials(monkeypatch):
     _base_env(monkeypatch)
     settings = ack_pilot._load_ack_settings()
     text = repr(settings)
     assert "synthetic-token" not in text
     assert "synthetic-hotel" not in text
+    assert "Synthetic Target Guest" not in text
+
+
+def test_ack_target_selection_uses_hmac_identity(monkeypatch):
+    _base_env(monkeypatch)
+    settings = ack_pilot._load_ack_settings()
+    selected = ack_pilot._select_target_reservation(
+        settings,
+        [
+            {"guest": "Different Guest", "message_uid": "other"},
+            {"guest": "  SYNTHETIC   target guest ", "message_uid": "target"},
+        ],
+    )
+    assert selected["message_uid"] == "target"
+
+
+def test_ack_target_selection_fails_closed_on_multiple_matches(monkeypatch):
+    _base_env(monkeypatch)
+    settings = ack_pilot._load_ack_settings()
+    with pytest.raises(
+        ack_pilot.ReservationPilotError,
+        match="CONFLICT_MULTIPLE_TARGET_UNDELIVERED_RESERVATIONS",
+    ):
+        ack_pilot._select_target_reservation(
+            settings,
+            [
+                {"guest": "Synthetic Target Guest"},
+                {"guest": "synthetic target guest"},
+            ],
+        )
+
+
+@pytest.mark.asyncio
+async def test_ack_target_wait_is_get_only_until_exact_target(monkeypatch):
+    _base_env(monkeypatch)
+    settings = ack_pilot._load_ack_settings()
+    provider = SimpleNamespace(
+        fetch_reservations=AsyncMock(
+            side_effect=[
+                SimpleNamespace(success=True, data={"raw_reservations": []}),
+                SimpleNamespace(
+                    success=True,
+                    data={"raw_reservations": [{"guest": "Synthetic Target Guest", "message_uid": "target"}]},
+                ),
+            ]
+        )
+    )
+    monkeypatch.setattr(ack_pilot.asyncio, "sleep", AsyncMock())
+
+    selected = await ack_pilot._wait_for_target_reservation(
+        provider,
+        settings,
+        wait_seconds=30,
+    )
+
+    assert selected["message_uid"] == "target"
+    assert provider.fetch_reservations.await_count == 2
+    ack_pilot.asyncio.sleep.assert_awaited_once_with(10)
+
+
+@pytest.mark.asyncio
+async def test_ack_target_wait_fails_immediately_on_provider_read_error(monkeypatch):
+    _base_env(monkeypatch)
+    settings = ack_pilot._load_ack_settings()
+    provider = SimpleNamespace(fetch_reservations=AsyncMock(return_value=SimpleNamespace(success=False, data=None)))
+
+    with pytest.raises(
+        ack_pilot.ReservationPilotError,
+        match="BLOCKED_RESERVATION_READ_FAILED",
+    ):
+        await ack_pilot._wait_for_target_reservation(
+            provider,
+            settings,
+            wait_seconds=30,
+        )
+    assert provider.fetch_reservations.await_count == 1
+
+
+def test_post_ack_history_requires_exact_pms_number_match():
+    ack_pilot._verify_history_pms_number(
+        [{"message_uid": "target-message", "pms_number": "pms-booking"}],
+        "target-message",
+        "pms-booking",
+    )
+
+    with pytest.raises(
+        ack_pilot.ReservationPilotError,
+        match="BLOCKED_POST_ACK_PMS_NUMBER_MISMATCH",
+    ):
+        ack_pilot._verify_history_pms_number(
+            [{"message_uid": "target-message", "pms_number": "different"}],
+            "target-message",
+            "pms-booking",
+        )
+
+
+def test_post_ack_history_rejects_duplicate_message_match():
+    with pytest.raises(
+        ack_pilot.ReservationPilotError,
+        match="BLOCKED_POST_ACK_HISTORY_MATCH_INVALID",
+    ):
+        ack_pilot._verify_history_pms_number(
+            [
+                {"message_uid": "target-message", "pms_number": "pms-booking"},
+                {"message_uid": "target-message", "pms_number": "pms-booking"},
+            ],
+            "target-message",
+            "pms-booking",
+        )
 
 
 @pytest.mark.asyncio

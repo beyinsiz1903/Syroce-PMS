@@ -39,6 +39,11 @@ def _patch_phase_a(monkeypatch, *, durability, pipeline_status="processed"):
     ensure = AsyncMock(return_value=durability)
     monkeypatch.setattr(sync_engine, "_persist_and_process", persist)
     monkeypatch.setattr(sync_engine, "_ensure_durable_pms_result", ensure)
+    monkeypatch.setattr(
+        sync_engine,
+        "_read_durable_pms_number",
+        AsyncMock(return_value="pms-booking"),
+    )
     monkeypatch.setattr(sync_engine, "log_pull", AsyncMock())
     return persist, ensure
 
@@ -65,7 +70,10 @@ async def test_durable_lifecycle_result_sends_one_ack(
 
     assert result["success"] is True
     assert result["fired"] == 1
-    provider.confirm_delivery.assert_awaited_once_with(message_uid="opaque-message")
+    provider.confirm_delivery.assert_awaited_once_with(
+        message_uid="opaque-message",
+        pms_number="pms-booking",
+    )
     assert all(call.args[3] == expected_event_type for call in persist.await_args_list)
 
 
@@ -198,6 +206,23 @@ async def test_ack_timeout_is_not_success(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_durable_booking_without_pms_number_never_acks(monkeypatch):
+    _patch_phase_a(monkeypatch, durability=sync_engine._PMS_DURABLE)
+    monkeypatch.setattr(
+        sync_engine,
+        "_read_durable_pms_number",
+        AsyncMock(return_value=None),
+    )
+    provider = _Provider([_reservation()])
+
+    result = await sync_engine.run_phase_a("tenant", provider, 5)
+
+    assert result["success"] is False
+    assert result["fired"] == 0
+    provider.confirm_delivery.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("is_cancellation", "readback_status"),
     [(False, "confirmed"), (True, "cancelled")],
@@ -238,7 +263,7 @@ async def test_mapping_fix_replay_produces_one_booking_and_one_ack(monkeypatch):
     state = {"booking": None, "created": 0}
 
     async def _find_booking(*_args, **_kwargs):
-        return {"status": "confirmed"} if state["booking"] else None
+        return {"id": "durable-booking", "status": "confirmed"} if state["booking"] else None
 
     async def _replay(**_kwargs):
         state["created"] += 1
@@ -279,7 +304,10 @@ async def test_mapping_fix_replay_produces_one_booking_and_one_ack(monkeypatch):
     assert result["success"] is True
     assert state["created"] == 1
     assert result["fired"] == 1
-    provider.confirm_delivery.assert_awaited_once()
+    provider.confirm_delivery.assert_awaited_once_with(
+        message_uid="opaque-message",
+        pms_number="durable-booking",
+    )
 
 
 class _Collection:

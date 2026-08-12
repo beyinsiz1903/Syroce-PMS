@@ -12,6 +12,10 @@ on:
         description: Exact 40-character commit SHA approved for this run
         required: true
         type: string
+      source_run_id:
+        description: HotelRunner reservation-read run that discovered the approved target
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -61,7 +65,13 @@ jobs:
         env:
           APPROVED_HEAD_SHA: ${{ inputs.approved_head_sha }}
           CONFIRM_PROVIDER_WRITE: ${{ inputs.confirm_provider_write }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
+          if [ "${RUN_ATTEMPT}" != "1" ]; then
+            echo "::error::BLOCKED_MUTATION_RERUN"
+            exit 1
+          fi
           if [ "${APPROVED_HEAD_SHA}" != "${GITHUB_SHA}" ]; then
             echo "::error::BLOCKED_EXACT_HEAD_MISMATCH"
             exit 1
@@ -70,6 +80,12 @@ jobs:
             echo "::error::BLOCKED_PROVIDER_WRITE_NOT_APPROVED"
             exit 1
           fi
+          case "${SOURCE_RUN_ID}" in
+            ''|*[!0-9]*)
+              echo "::error::BLOCKED_INVALID_SOURCE_RUN_ID"
+              exit 1
+              ;;
+          esac
 
       - name: Require successful exact-head normal workflows
         env:
@@ -83,7 +99,7 @@ jobs:
               --branch "${GITHUB_REF_NAME}" \
               --limit 30 \
               --json databaseId,headSha,event \
-              --jq "[.[] | select(.headSha == \"${GITHUB_SHA}\" and .event == \"push\")] | first | .databaseId // empty"
+              --jq "[.[] | select(.headSha == \"${GITHUB_SHA}\" and (.event == \"push\" or .event == \"pull_request\"))] | first | .databaseId // empty"
           }
 
           verify_required_jobs() {
@@ -120,7 +136,7 @@ jobs:
                 --branch "${GITHUB_REF_NAME}" \
                 --limit 30 \
                 --json headSha,event,status,conclusion \
-                --jq "[.[] | select(.headSha == \"${GITHUB_SHA}\" and .event == \"push\" and .status == \"completed\" and .conclusion == \"success\")] | length"
+                --jq "[.[] | select(.headSha == \"${GITHUB_SHA}\" and (.event == \"push\" or .event == \"pull_request\") and .status == \"completed\" and .conclusion == \"success\")] | length"
             )"
             if [ "${success_count}" -lt 1 ]; then
               echo "::error::BLOCKED_EXACT_HEAD_NORMAL_CI_NOT_GREEN:${workflow}"
@@ -163,10 +179,14 @@ jobs:
           HOTELRUNNER_PILOT_WRITE_APPROVED: ${{ inputs.confirm_provider_write }}
           HOTELRUNNER_PILOT_APPROVED_HEAD: ${{ inputs.approved_head_sha }}
           HOTELRUNNER_PILOT_RUN_ID: ${{ github.run_id }}
+          HOTELRUNNER_PILOT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          HOTELRUNNER_PILOT_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
           HOTELRUNNER_PILOT_ACCOUNT_CONFIRMED: ${{ vars.HOTELRUNNER_PILOT_ACCOUNT_CONFIRMED }}
           HOTELRUNNER_PILOT_TOKEN: ${{ secrets.HOTELRUNNER_PILOT_TOKEN }}
           HOTELRUNNER_PILOT_HR_ID: ${{ secrets.HOTELRUNNER_PILOT_HR_ID }}
           HOTELRUNNER_PILOT_HMAC_KEY: ${{ secrets.HOTELRUNNER_PILOT_HMAC_KEY }}
+          HOTELRUNNER_PILOT_TARGET_GUEST_NAME: ${{ secrets.HOTELRUNNER_PILOT_TARGET_GUEST_NAME }}
+          HOTELRUNNER_PILOT_TARGET_WAIT_SECONDS: '90'
         run: |
           cd backend
           python -m pytest \

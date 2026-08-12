@@ -260,6 +260,10 @@ async def _fetch_target_history_reservation(
             for reservation in candidates
             if (candidate_digest := _guest_identity_digest(settings, reservation.get("guest"))) is not None and hmac.compare_digest(candidate_digest, target_digest)
         ]
+        if len(target_candidates) > 1 and settings.operation == "reservation_reconciliation":
+            acknowledged_candidates = [reservation for reservation in target_candidates if str(reservation.get("pms_number") or "").strip()]
+            if len(acknowledged_candidates) == 1:
+                target_candidates = acknowledged_candidates
         if len(target_candidates) != 1:
             if not target_candidates:
                 raise ReservationPilotError("BLOCKED_TARGET_HISTORY_RESERVATION_NOT_FOUND")
