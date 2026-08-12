@@ -347,6 +347,58 @@ async def test_reconciliation_selects_one_secret_target_from_multiple_history_ca
     assert all(call.args[0] == "GET" for call in provider_call.await_args_list)
 
 
+@pytest.mark.asyncio
+async def test_reconciliation_selects_only_target_with_pms_number(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_reconciliation", write=False)
+    source_timestamp = datetime.now(UTC).replace(microsecond=0)
+    monkeypatch.setenv(
+        "HOTELRUNNER_PILOT_SOURCE_TIMESTAMP",
+        source_timestamp.isoformat().replace("+00:00", "Z"),
+    )
+    provider_call = AsyncMock(return_value=SimpleNamespace(status_code=200))
+    client = SimpleNamespace(_request=provider_call, close=AsyncMock())
+
+    class FakeProvider:
+        def __init__(self, **_kwargs):
+            self._client = client
+
+        async def test_connection(self):
+            await self._client._request("GET", ep.TRANSACTION_DETAILS)
+            return SimpleNamespace(success=True)
+
+        async def fetch_reservations(self, **kwargs):
+            await self._client._request("GET", ep.RESERVATIONS)
+            if kwargs["undelivered"]:
+                return SimpleNamespace(success=True, data={"raw_reservations": []})
+            return SimpleNamespace(
+                success=True,
+                data={
+                    "reservations": [
+                        {
+                            "completed_at": source_timestamp.isoformat(),
+                            "guest": "Synthetic Target Guest",
+                            "message_uid": "target-without-pms",
+                            "state": "reserved",
+                        },
+                        {
+                            "completed_at": source_timestamp.isoformat(),
+                            "guest": "Synthetic Target Guest",
+                            "message_uid": "target-with-pms",
+                            "pms_number": "synthetic-pms-number",
+                            "state": "reserved",
+                        },
+                    ]
+                },
+            )
+
+    monkeypatch.setattr(reservation_pilot, "HotelRunnerProvider", FakeProvider)
+    metadata = await reservation_pilot._reconcile_reservation_history(reservation_pilot._load_settings())
+
+    assert metadata["history_match_count_class"] == "ONE"
+    assert metadata["pms_number_present"] is True
+    assert metadata["provider_write_count"] == 0
+
+
 def test_reconciliation_requires_secret_target_before_provider_access(monkeypatch):
     _base_env(monkeypatch, operation="reservation_reconciliation", write=False)
     monkeypatch.delenv("HOTELRUNNER_PILOT_TARGET_GUEST_NAME")
