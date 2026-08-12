@@ -51,6 +51,8 @@ class HorizontalScalingManager:
         self._heartbeat_interval = 30
         self._heartbeat_task: asyncio.Task | None = None
         self._stale_threshold = 90  # seconds
+        self._heartbeat_failures = 0
+        self._heartbeat_error_threshold = 3
 
     @property
     def instance_id(self) -> str:
@@ -72,6 +74,7 @@ class HorizontalScalingManager:
                     self._instance_id,
                     json.dumps(self._instance_info.to_dict()),
                 )
+                self._heartbeat_failures = 0
                 self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
                 logger.info(f"Instance registered: {self._instance_id}")
             except Exception as e:
@@ -93,10 +96,24 @@ class HorizontalScalingManager:
                         self._instance_id,
                         json.dumps(self._instance_info.to_dict()),
                     )
+                    self._heartbeat_failures = 0
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Heartbeat failed: {e}")
+                self._heartbeat_failures += 1
+                if self._heartbeat_failures >= self._heartbeat_error_threshold:
+                    logger.error(
+                        "Heartbeat failed repeatedly (%s consecutive): %s",
+                        self._heartbeat_failures,
+                        e,
+                    )
+                else:
+                    logger.warning(
+                        "Heartbeat transient failure (%s/%s): %s",
+                        self._heartbeat_failures,
+                        self._heartbeat_error_threshold,
+                        e,
+                    )
 
     async def get_active_instances(self) -> list[dict[str, Any]]:
         """Get all active instances from registry."""
@@ -137,7 +154,6 @@ class HorizontalScalingManager:
         if self._redis:
             try:
                 await self._redis.hdel(self._registry_key, self._instance_id)
-                logger.info(f"Instance deregistered: {self._instance_id}")
             except Exception:
                 pass
 
