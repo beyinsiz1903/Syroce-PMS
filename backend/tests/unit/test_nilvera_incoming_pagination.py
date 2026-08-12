@@ -5,7 +5,10 @@ import pytest
 
 from core.integrations.nilvera.errors import NilveraValidationError
 from core.integrations.nilvera.incoming_mapper import IncomingInvoicePage
-from tests.nilvera_incoming_pagination import fetch_all_incoming_invoice_pages
+from tests.nilvera_incoming_pagination import (
+    fetch_all_incoming_invoice_pages,
+    scope_incoming_invoice_page_to_provider_uuid,
+)
 
 
 def _page(page, total_pages, items, *, total_count=0, page_size=100):
@@ -70,3 +73,31 @@ async def test_discovery_blocks_when_pagination_changes_mid_scan():
 
     with pytest.raises(NilveraValidationError, match="changed during scan"):
         await fetch_all_incoming_invoice_pages(fetch_page)
+
+
+def test_scope_exact_fixture_excludes_unrelated_shared_sandbox_documents():
+    page = _page(1, 1, ["unsupported", "target", "other"], total_count=3)
+
+    result = scope_incoming_invoice_page_to_provider_uuid(page, "target")
+
+    assert [item.provider_uuid for item in result.items] == ["target"]
+    assert result.page == 1
+    assert result.total_pages == 1
+    assert result.total_count == 1
+
+
+def test_scope_exact_fixture_returns_empty_consistent_page_when_absent():
+    page = _page(1, 1, ["unsupported", "other"], total_count=2)
+
+    result = scope_incoming_invoice_page_to_provider_uuid(page, "target")
+
+    assert result.items == ()
+    assert result.total_pages == 1
+    assert result.total_count == 0
+
+
+def test_scope_exact_fixture_fails_closed_on_duplicate_target_identity():
+    page = _page(1, 1, ["target", "target"], total_count=2)
+
+    with pytest.raises(NilveraValidationError, match="duplicate target identities"):
+        scope_incoming_invoice_page_to_provider_uuid(page, "target")

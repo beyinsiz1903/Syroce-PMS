@@ -46,3 +46,20 @@ async def fetch_all_incoming_invoice_pages(
         total_count=len(items),
         total_pages=1,
     )
+
+
+def scope_incoming_invoice_page_to_provider_uuid(
+    page: IncomingInvoicePage,
+    provider_uuid: str,
+) -> IncomingInvoicePage:
+    """Return a fail-closed synthetic page containing only the exact fixture."""
+    matches = tuple(item for item in page.items if item.provider_uuid == provider_uuid)
+    if len(matches) > 1:
+        raise NilveraValidationError("Incoming invoice discovery contains duplicate target identities")
+    return IncomingInvoicePage(
+        items=matches,
+        page=1,
+        page_size=page.page_size,
+        total_count=len(matches),
+        total_pages=1,
+    )
