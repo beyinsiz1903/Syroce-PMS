@@ -204,6 +204,9 @@ def test_valid_qr_active_booking(client, mock_db, mock_dependencies):
     r = client.post("/api/public/room-qr/t1/r1/session?t=valid")
     assert r.status_code == 200
     assert "session_token" in r.json()
+    rate_limit_key = mock_dependencies["rl"].call_args.args[0]
+    assert rate_limit_key.startswith("t1:r1:")
+    assert rate_limit_key.endswith(":session")
 
 def test_invalid_static_qr(client, mock_db, mock_dependencies):
     mock_dependencies["verify"].return_value = False
@@ -225,6 +228,9 @@ def test_valid_session_submission(client, mock_db, mock_dependencies):
     with patch("domains.guest.messaging.guest_requests.add_guest_message", new_callable=AsyncMock) as _:
         r = client.post("/api/public/room-qr/t1/r1/submit", json={"category": "towels", "description": "Need towels"}, headers={"X-Guest-Session": "secret"})
         assert r.status_code == 200
+        rate_limit_key = mock_dependencies["rl"].call_args.args[0]
+        assert rate_limit_key.startswith("t1:r1:")
+        assert rate_limit_key.endswith(":submit")
 
 def test_missing_token(client, mock_db, mock_dependencies):
     r = client.post("/api/public/room-qr/t1/r1/submit", json={"category": "towels", "description": "need"})
@@ -500,4 +506,3 @@ def test_staff_reply_missing_property_fail_closed(client, mock_db, mock_dependen
 
     assert excinfo.value.status_code == 403
     assert excinfo.value.detail == "Hizmet şu anda kullanılamıyor"
-
