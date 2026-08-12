@@ -115,7 +115,7 @@ def test_qid_diagnostics_no_secrets(client, capture_logs, monkeypatch):
     import routers.quick_id_proxy as qid
     monkeypatch.setattr(qid, "QUICKID_SERVICE_KEY", "super-secret-qid-key")
 
-    token = "long-token-1234567890abcdef"
+    token = "123e4567-e89b-12d3-a456-426614174000"
 
     class MockResponse:
         status_code = 200
@@ -274,8 +274,9 @@ def test_hr_background_persistence_failure(client, capture_logs, monkeypatch):
 def test_quick_id_upstream_exceptions(client, capture_logs, monkeypatch):
     import routers.quick_id_proxy as qid
     monkeypatch.setattr(qid, "QUICKID_SERVICE_KEY", "super-secret-qid-key")
+    monkeypatch.setattr(qid, "QUICKID_URL", "https://quick-id.invalid")
 
-    token = "long-token-1234567890abcdef"
+    token = "123e4567-e89b-12d3-a456-426614174000"
 
     class MockResponse:
         status_code = 502

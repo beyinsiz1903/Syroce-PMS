@@ -60,12 +60,12 @@ test.describe('F8B § 10 — Room QR requests', () => {
         // tur-24 hard precondition: fail fast if state shape regresses
         // (CI #48 silently built `/undefined/...` URLs → 50× 403).
         expect(stressTid, 'stress tenant id present in state file').toBeTruthy();
-        const target = rooms.slice(0, 50);
-        if (target.length < 50) {
-            rec(testInfo, { module: MOD, step: 'public_submit', status: 'SKIP',
-                note: `not enough rooms (${target.length})` });
-            return;
-        }
+        // A guest session is valid only for an in-house booking. Seed also
+        // contains intentionally vacant/checked-out rooms for room-move tests;
+        // exclude those instead of bypassing the production session guard.
+        const target = rooms.filter((room) =>
+            room.status === 'occupied' || room.status === 'in_house').slice(0, 50);
+        expect(target.length, '50 in-house rooms required for public submit stress').toBe(50);
         // Bulk token map (1 GET → tüm odalar)
         const bulkR = await request.get('/api/rooms/qr-codes/bulk', {
             headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
@@ -99,10 +99,31 @@ test.describe('F8B § 10 — Room QR requests', () => {
             const room = target[i];
             const token = tokenByRoom[room.id];
             if (!token) { fail++; if (errors.length < 3) errors.push({ status: 0, room: room.id, why: 'no_token_in_map' }); continue; }
+            const sessionR = await request.post(
+                `/api/public/room-qr/${stressTid}/${room.id}/session?t=${encodeURIComponent(token)}`,
+                {
+                    headers: { 'Origin': process.env.E2E_BASE_URL || 'http://localhost:8000' },
+                    failOnStatusCode: false,
+                    timeout: 15_000,
+                },
+            );
+            let sessionToken = null;
+            if (sessionR.ok()) {
+                const sessionBody = await sessionR.json().catch(() => null);
+                sessionToken = sessionBody?.session_token || null;
+            }
+            if (!sessionToken) {
+                fail++;
+                if (errors.length < 3) errors.push({ status: sessionR.status(), room: room.id, why: 'guest_session_failed' });
+                continue;
+            }
             const subUrl = `/api/public/room-qr/${stressTid}/${room.id}/submit?t=${encodeURIComponent(token)}`;
             const t0 = Date.now();
             const r = await request.post(subUrl, {
-                headers: { 'Origin': process.env.E2E_BASE_URL || 'http://localhost:8000' },
+                headers: {
+                    'Origin': process.env.E2E_BASE_URL || 'http://localhost:8000',
+                    'X-Guest-Session': sessionToken,
+                },
                 data: {
                     category: 'cleaning',
                     description: `F8B public submit ${i}`,

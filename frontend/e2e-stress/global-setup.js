@@ -469,15 +469,30 @@ export default async function globalSetup() {
     // re-runs / future expansion). Single-source the count so the request param
     // and the post-seed deploy-stale guard below can never drift apart.
     const SEED_PENDING_BOOKINGS = 2;
+    const hotelRunnerWebhookSecret = process.env.HOTELRUNNER_WEBHOOK_SECRET || '';
+    if (!hotelRunnerWebhookSecret) {
+        throw new Error('[stress-setup] NO-GO: HotelRunner signing configuration missing.');
+    }
     const seedResp = await api.post('/api/admin/stress/seed', {
         headers: { Authorization: `Bearer ${pilotToken}` },
-        data: { target_tenant_id: STRESS_TID, room_count: ROOM_COUNT, data_prefix: dataPrefix, seed_pending_bookings: SEED_PENDING_BOOKINGS },
+        data: {
+            target_tenant_id: STRESS_TID,
+            room_count: ROOM_COUNT,
+            data_prefix: dataPrefix,
+            seed_pending_bookings: SEED_PENDING_BOOKINGS,
+            hotelrunner_webhook_secret: hotelRunnerWebhookSecret,
+        },
         failOnStatusCode: false,
         timeout: 120_000,
     });
     if (!seedResp.ok()) {
-        const txt = await seedResp.text().catch(() => '');
-        throw new Error(`[stress-setup] NO-GO: seed failed (${seedResp.status()}): ${txt.slice(0, 400)}`);
+        await api.post('/api/admin/stress/cleanup', {
+            headers: { Authorization: `Bearer ${pilotToken}` },
+            data: { target_tenant_id: STRESS_TID, data_prefix: dataPrefix },
+            failOnStatusCode: false,
+            timeout: 120_000,
+        }).catch(() => null);
+        throw new Error(`[stress-setup] NO-GO: seed failed (${seedResp.status()}).`);
     }
     seedBody = await seedResp.json();
     if (!Array.isArray(seedBody.external_calls_made) || seedBody.external_calls_made.length !== 0) {

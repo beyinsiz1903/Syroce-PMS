@@ -305,6 +305,21 @@ class SecretsManager:
             return None
         return creds.get("webhook_secret")
 
+    async def delete_webhook_secret(
+        self,
+        tenant_id: str,
+        provider: str,
+        property_id: str,
+        actor: str = "system",
+    ) -> bool:
+        """Delete only the per-property webhook secret namespace."""
+        return await self.delete_provider_credentials(
+            tenant_id=tenant_id,
+            provider=f"{provider}_webhook",
+            property_id=property_id,
+            actor=actor,
+        )
+
     # ── Masking ──────────────────────────────────────────────────────
 
     @staticmethod

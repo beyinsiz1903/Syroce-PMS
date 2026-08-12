@@ -34,6 +34,9 @@ QUICKID_DEMO_ENABLED = os.environ.get("ENABLE_QUICKID_DEMO", "").lower() in ("1"
 
 QUICKID_UPSTREAM_TIMEOUT = float(os.environ.get("QUICKID_UPSTREAM_TIMEOUT_SECONDS", "10.0"))
 QUICKID_SCAN_TIMEOUT = float(os.environ.get("QUICKID_SCAN_TIMEOUT_SECONDS", "60.0"))
+# Public token probes must fail before the ingress timeout so callers receive a
+# deterministic JSON response instead of an infrastructure-generated 504 page.
+QUICKID_PUBLIC_INFO_TIMEOUT = min(QUICKID_UPSTREAM_TIMEOUT, 5.0)
 
 # Şifreleme anahtarları (öncelik: dedicated env > JWT_SECRET-türetilmiş).
 # Anahtar rotasyonu için OLD anahtar(lar) geçici olarak okumak için kullanılabilir.
@@ -721,7 +724,7 @@ async def precheckin_info_public(
 
     t_upstream = _diag_time.time()
     try:
-        async with httpx.AsyncClient(timeout=QUICKID_UPSTREAM_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=QUICKID_PUBLIC_INFO_TIMEOUT) as client:
             r = await client.get(
                 f"{QUICKID_URL}/api/precheckin/{token_id}",
                 headers={"X-Service-Key": QUICKID_SERVICE_KEY, "X-Acting-User": "guest-public"},
@@ -738,7 +741,10 @@ async def precheckin_info_public(
                 detail = "QR geçersiz"
             if r.status_code >= 500:
                 logger.info(f"[DIAG] [{req_id}] QID final response status 503, total_duration={(_diag_time.time() - _t_start)*1000:.2f}ms")
-                raise HTTPException(status_code=503, detail="Servise ulaşılamıyor")
+                raise HTTPException(
+                    status_code=503,
+                    detail={"code": "QUICKID_UNAVAILABLE", "message": "Quick-ID servisine ulaşılamıyor."},
+                )
 
             logger.info(f"[DIAG] [{req_id}] QID final response status {r.status_code}, total_duration={(_diag_time.time() - _t_start)*1000:.2f}ms")
             raise HTTPException(status_code=r.status_code, detail=str(detail))
@@ -750,7 +756,10 @@ async def precheckin_info_public(
         up_dur = _diag_time.time() - t_upstream
         logger.info(f"[DIAG] [{req_id}] upstream exception: {e.__class__.__name__}, upstream_duration={up_dur*1000:.2f}ms")
         logger.info(f"[DIAG] [{req_id}] QID final response status 503, total_duration={(_diag_time.time() - _t_start)*1000:.2f}ms")
-        raise HTTPException(status_code=503, detail=f"Servise ulaşılamıyor: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "QUICKID_UNAVAILABLE", "message": "Quick-ID servisine ulaşılamıyor."},
+        ) from e
 
 
 @public_router.post("/{token_id}/scan")

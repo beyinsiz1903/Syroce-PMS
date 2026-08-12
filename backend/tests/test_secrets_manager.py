@@ -387,6 +387,23 @@ async def test_sm_delete():
     assert await sm.get_provider_credentials(tenant, "exely", prop) is None
 
 
+async def test_sm_delete_webhook_secret_does_not_delete_api_credentials():
+    sm = await _get_manager()
+    tenant = f"t_wh_{os.getpid()}_smwh"
+    prop = f"h_wh_{os.getpid()}_smwh"
+
+    await sm.store_provider_credentials(tenant, "hotelrunner", prop, {"token": "api-token"})
+    await sm.store_webhook_secret(tenant, "hotelrunner", prop, "webhook-secret")
+
+    assert await sm.delete_webhook_secret(tenant, "hotelrunner", prop) is True
+    assert await sm.get_webhook_secret(tenant, "hotelrunner", prop) is None
+    assert await sm.get_provider_credentials(tenant, "hotelrunner", prop) == {
+        "token": "api-token"
+    }
+
+    await sm.delete_provider_credentials(tenant, "hotelrunner", prop)
+
+
 async def test_sm_get_nonexistent():
     sm = await _get_manager()
     result = await sm.get_provider_credentials("t_none", "exely", "h_none")

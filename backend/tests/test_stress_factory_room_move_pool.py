@@ -9,7 +9,7 @@ Acceptance per `digitalocean.md` F8A tur-10 gotcha:
   * stress_seed + stress_prefix tagged → cleanup prefix-scoped removes them
   * room_move_target=True marker present
 """
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 from domains.admin.router import stress as stress_mod
 
@@ -81,6 +81,34 @@ def test_factory_base_rooms_unchanged_by_extra_pool():
     # i%8==0 → pre_vacant: indices 0,8,16,...,496 = 63 pre_vacant in [0..499]
     assert len(available_base) == 63
     assert len(occupied_base) == 437
+
+
+def test_factory_rooms_and_bookings_share_property_scope():
+    rooms, _g, bookings, _f, _c, _p, _rnl, _hk = _build()
+
+    assert {room.get("property_id") for room in rooms} == {"TID_TEST"}
+    assert {booking.get("property_id") for booking in bookings} == {"TID_TEST"}
+
+
+def test_stress_webhook_secret_is_redacted_by_request_model():
+    secret = "offline-stress-secret-value"
+
+    payload = stress_mod.StressSeedRequest(
+        target_tenant_id="TID_TEST",
+        hotelrunner_webhook_secret=secret,
+    )
+
+    assert secret not in repr(payload)
+    assert secret not in payload.model_dump_json()
+    assert payload.hotelrunner_webhook_secret is not None
+    assert payload.hotelrunner_webhook_secret.get_secret_value() == secret
+
+
+def test_guest_sessions_cleanup_precedes_parent_bookings():
+    sessions_index = stress_mod.STRESS_COLLECTIONS.index("room_guest_sessions")
+    bookings_index = stress_mod.STRESS_COLLECTIONS.index("bookings")
+
+    assert sessions_index < bookings_index
 
 
 def test_seeded_counts_exposes_base_rooms_alias():

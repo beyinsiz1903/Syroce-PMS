@@ -40,7 +40,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from pymongo.errors import (
     AutoReconnect,
     ExecutionTimeout,
@@ -245,6 +245,7 @@ STRESS_COLLECTIONS = [
     "folios",
     "room_night_locks",
     "housekeeping_tasks",
+    "room_guest_sessions",
     "bookings",
     "guests",
     "rooms",
@@ -584,6 +585,9 @@ class StressSeedRequest(BaseModel):
     # so `_claim_room_for_pending_booking` cannot collide with the baseline
     # 1..4 night RNLs seeded above on any stress room.
     seed_pending_bookings: int = Field(default=0, ge=0, le=20)
+    # Ephemeral, stress-property-only signing secret. SecretStr keeps validation
+    # errors/repr redacted; the value is never returned by this endpoint.
+    hotelrunner_webhook_secret: SecretStr | None = None
 
 
 class StressSeedPendingRequest(BaseModel):
@@ -760,6 +764,7 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
             {
                 "id": rid,
                 "tenant_id": stress_tid,
+                "property_id": stress_tid,
                 "room_number": f"{prefix}{block}{floor:02d}{(i + 1):03d}",
                 "room_type": room_type,
                 "block": block,
@@ -814,6 +819,7 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
             {
                 "id": bid,
                 "tenant_id": stress_tid,
+                "property_id": stress_tid,
                 "guest_id": gid,
                 "room_id": rid,
                 # F8A #163 fix (run #20 NO-GO): 03-room-move setup'ı bookings.room_type
@@ -1032,6 +1038,7 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
                 {
                     "id": extra_rid,
                     "tenant_id": stress_tid,
+                    "property_id": stress_tid,
                     "room_number": f"{prefix}MV{block}{floor:02d}{(extra_idx + 1):03d}",
                     "room_type": rtype,
                     "block": block,
@@ -2530,27 +2537,16 @@ async def stress_seed(
     rc = payload.room_count
     prefix = payload.data_prefix or f"E2E_STRESS_{int(time.time())}_"
     now = datetime.now(UTC)
+    hotelrunner_property_id = f"{prefix}HOTEL"
 
-    try:
-        from core.tenant_db import get_system_db
-        _sysdb = get_system_db()
-        await _sysdb.hotelrunner_connections.update_one(
-            {"tenant_id": stress_tid, "hr_id": f"{prefix}HOTEL"},
-            {"$set": {
-                "is_active": True,
-                "tenant_id": stress_tid,
-                "hr_id": f"{prefix}HOTEL",
-                "stress_seed": True,
-                "stress_prefix": prefix
-            }},
-            upsert=True,
-        )
-    except Exception as e:
-        _stress_log.warning(
-            "stress.seed hotelrunner_connections upsert failed for %s: %s",
-            stress_tid,
-            type(e).__name__,
-        )
+    webhook_secret = None
+    if payload.hotelrunner_webhook_secret is not None:
+        webhook_secret = payload.hotelrunner_webhook_secret.get_secret_value()
+        if not webhook_secret:
+            raise HTTPException(
+                status_code=400,
+                detail="Stress HotelRunner webhook secret cannot be empty",
+            )
 
     t_factory_start = time.perf_counter()
     (rooms_docs, guests_docs, bookings_docs, folios_docs, folio_charges_docs, payments_docs, rnl_docs, hk_docs) = _build_factory_docs(
@@ -2722,6 +2718,14 @@ async def stress_seed(
             orphan_cleanup["currency_rates"] = res.deleted_count
         except Exception as e:
             orphan_cleanup["currency_rates_error"] = str(e)[:120]
+        # Guest sessions are created through the production endpoint and cannot
+        # carry stress markers. The tenant is dedicated to destructive stress,
+        # so tenant-scoped cleanup is the only complete, isolated cleanup.
+        try:
+            res = await db.room_guest_sessions.delete_many({"tenant_id": stress_tid})
+            orphan_cleanup["room_guest_sessions"] = res.deleted_count
+        except Exception as e:
+            orphan_cleanup["room_guest_sessions_error"] = type(e).__name__
         # Task #264 (post-review P1): payroll_runs/payroll_revisions backend
         # POST yolları `stress_seed` etiketi yazmaz (üretim yazım yolu).
         # Stres tenant'ı içinde oluşmuş tüm draft/locked runlar + revizyonlar
@@ -2953,6 +2957,70 @@ async def stress_seed(
         except Exception as e:
             verification["error"] = str(e)[:200]
     insert_ms = round((time.perf_counter() - t_insert_start) * 1000, 1)
+
+    # Provision the webhook identity only after the tenant fixture is durable.
+    # This avoids leaving a secret/connection orphan if the large seed fails
+    # midway. The signed webhook tests run later in the same serial suite.
+    _sysdb = None
+    try:
+        from core.tenant_db import get_system_db
+
+        _sysdb = get_system_db()
+        await _sysdb.hotelrunner_connections.update_one(
+            {"tenant_id": stress_tid, "hr_id": hotelrunner_property_id},
+            {
+                "$set": {
+                    "is_active": True,
+                    "tenant_id": stress_tid,
+                    "hr_id": hotelrunner_property_id,
+                    "stress_seed": True,
+                    "stress_prefix": prefix,
+                }
+            },
+            upsert=True,
+        )
+        if webhook_secret is not None:
+            from core.secrets import get_secrets_manager
+
+            await get_secrets_manager().store_webhook_secret(
+                stress_tid,
+                "hotelrunner",
+                hotelrunner_property_id,
+                webhook_secret,
+                actor="stress_seed",
+            )
+    except Exception as exc:
+        if webhook_secret is not None:
+            try:
+                from core.secrets import get_secrets_manager
+
+                await get_secrets_manager().delete_webhook_secret(
+                    stress_tid,
+                    "hotelrunner",
+                    hotelrunner_property_id,
+                    actor="stress_seed_rollback",
+                )
+            except Exception:
+                pass
+        if _sysdb is not None:
+            try:
+                await _sysdb.hotelrunner_connections.delete_many(
+                    {
+                        "tenant_id": stress_tid,
+                        "hr_id": hotelrunner_property_id,
+                        "stress_prefix": prefix,
+                    }
+                )
+            except Exception:
+                pass
+        _stress_log.error(
+            "stress.seed HotelRunner fixture provisioning failed: error_class=%s",
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Stress HotelRunner fixture provisioning failed",
+        ) from exc
 
     # Cache bust (architect tur-6 fix): rooms endpoint Redis cache'i seed öncesi
     # döküman setiyle (eski projection, eksik stress_prefix) doluysa fetchAllByPrefix
@@ -3553,11 +3621,38 @@ async def stress_cleanup(
     try:
         from core.tenant_db import get_system_db
         _sysdb = get_system_db()
+        seeded_connections = await _sysdb.hotelrunner_connections.find(
+            flt,
+            {"_id": 0, "hr_id": 1},
+        ).to_list(length=100)
+        if seeded_connections:
+            from core.secrets import get_secrets_manager
+
+            secrets_manager = get_secrets_manager()
+            deleted_secrets = 0
+            for connection in seeded_connections:
+                property_id = connection.get("hr_id")
+                if property_id and await secrets_manager.delete_webhook_secret(
+                    stress_tid,
+                    "hotelrunner",
+                    property_id,
+                    actor="stress_cleanup",
+                ):
+                    deleted_secrets += 1
+            deleted_counts["hotelrunner_webhook_secrets"] = deleted_secrets
         sys_res = await _sysdb.hotelrunner_connections.delete_many(flt)
         if sys_res.deleted_count > 0:
             deleted_counts["hotelrunner_connections"] = sys_res.deleted_count
     except Exception as e:
-        _stress_log.warning("stress.cleanup system_db hotelrunner_connections delete failed for %s: %s", stress_tid, type(e).__name__)
+        _stress_log.warning(
+            "stress.cleanup HotelRunner fixture cleanup failed for %s: %s",
+            stress_tid,
+            type(e).__name__,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Stress HotelRunner fixture cleanup failed",
+        ) from e
 
     t_start = time.perf_counter()
     # F8E v2 tur-6 (2026-05-19) — currency_rates exception:
@@ -3612,6 +3707,7 @@ async def stress_cleanup(
         "hr_positions",
         "mice_events",
         "entitlement_quota_usage",
+        "room_guest_sessions",
     }
     with tenant_context(stress_tid):
         from core.database import db
