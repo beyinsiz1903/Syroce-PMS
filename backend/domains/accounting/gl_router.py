@@ -15,6 +15,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.database import db
+from core.integrations.invoice_gl_bridge import (
+    InvoiceGLBridgeError,
+    get_incoming_invoice_gl_link,
+    post_incoming_invoice_to_gl,
+)
 from core.security import get_current_user
 from models.schemas import User
 from shared_kernel.gl_posting import (
@@ -158,6 +163,12 @@ class JournalIn(BaseModel):
     idempotency_key: str | None = Field(None, max_length=120)
 
 
+class NilveraIncomingGLPostIn(BaseModel):
+    purchase_account_code: str = Field(..., min_length=1, max_length=40)
+    vat_account_code: str = Field(..., min_length=1, max_length=40)
+    payable_account_code: str = Field(..., min_length=1, max_length=40)
+
+
 @router.get("/journal")
 async def list_journal(
     start: str | None = Query(None),
@@ -206,6 +217,48 @@ async def create_journal(payload: JournalIn, current_user: User = Depends(get_cu
     except GLPostingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"entry": entry}
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Nilvera incoming invoice ↔ GL bridge
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/integrations/nilvera/incoming/{invoice_id}/post")
+async def post_nilvera_incoming_invoice_to_gl(
+    invoice_id: str,
+    payload: NilveraIncomingGLPostIn,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    try:
+        entry = await post_incoming_invoice_to_gl(
+            tenant_id,
+            invoice_id,
+            purchase_account_code=payload.purchase_account_code,
+            vat_account_code=payload.vat_account_code,
+            payable_account_code=payload.payable_account_code,
+            actor=_actor_id(current_user),
+        )
+    except InvoiceGLBridgeError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "NILVERA_GL_POSTING_BLOCKED", "detail": str(exc)},
+        ) from exc
+    return {"entry": entry}
+
+
+@router.get("/integrations/nilvera/incoming/{invoice_id}/link")
+async def get_nilvera_incoming_invoice_gl_link(
+    invoice_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _READ_ROLES)
+    tenant_id = _tenant_of(current_user)
+    link = await get_incoming_invoice_gl_link(tenant_id, invoice_id)
+    return {
+        "source_entry": link.source_entry,
+        "return_entries": list(link.return_entries),
+    }
 
 
 @router.get("/trial-balance")
