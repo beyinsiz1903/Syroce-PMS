@@ -186,6 +186,7 @@ jobs:
           HOTELRUNNER_PILOT_HR_ID: ${{ secrets.HOTELRUNNER_PILOT_HR_ID }}
           HOTELRUNNER_PILOT_HMAC_KEY: ${{ secrets.HOTELRUNNER_PILOT_HMAC_KEY }}
           HOTELRUNNER_PILOT_TARGET_GUEST_NAME: ${{ secrets.HOTELRUNNER_PILOT_TARGET_GUEST_NAME }}
+          HOTELRUNNER_PILOT_TARGET_WAIT_SECONDS: '90'
         run: |
           cd backend
           python -m pytest \

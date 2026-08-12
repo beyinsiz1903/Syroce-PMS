@@ -37,6 +37,7 @@ def _base_env(monkeypatch, *, write: bool = True):
         "HOTELRUNNER_PILOT_RUN_ATTEMPT": "1",
         "HOTELRUNNER_PILOT_SOURCE_RUN_ID": "123455",
         "HOTELRUNNER_PILOT_TARGET_GUEST_NAME": "Synthetic Target Guest",
+        "HOTELRUNNER_PILOT_TARGET_WAIT_SECONDS": "90",
         "HOTELRUNNER_PILOT_TOKEN": "synthetic-token",
         "HOTELRUNNER_PILOT_WRITE_APPROVED": "true" if write else "false",
     }
@@ -69,6 +70,7 @@ def test_workflow_targets_exact_ack_test_and_no_deploy():
     assert run_step["env"]["HOTELRUNNER_PILOT_OPERATION"] == "reservation_ack"
     assert run_step["env"]["HOTELRUNNER_PILOT_RUN_ATTEMPT"] == "${{ github.run_attempt }}"
     assert run_step["env"]["HOTELRUNNER_PILOT_TARGET_GUEST_NAME"] == "${{ secrets.HOTELRUNNER_PILOT_TARGET_GUEST_NAME }}"
+    assert run_step["env"]["HOTELRUNNER_PILOT_TARGET_WAIT_SECONDS"] == "90"
     assert "test_hotelrunner_single_reservation_ack" in run_step["run"]
     assert "deploy" not in run_step["run"].lower()
     assert workflow["permissions"] == {"actions": "read", "contents": "read"}
@@ -151,6 +153,51 @@ def test_ack_target_selection_fails_closed_on_multiple_matches(monkeypatch):
                 {"guest": "synthetic target guest"},
             ],
         )
+
+
+@pytest.mark.asyncio
+async def test_ack_target_wait_is_get_only_until_exact_target(monkeypatch):
+    _base_env(monkeypatch)
+    settings = ack_pilot._load_ack_settings()
+    provider = SimpleNamespace(
+        fetch_reservations=AsyncMock(
+            side_effect=[
+                SimpleNamespace(success=True, data={"raw_reservations": []}),
+                SimpleNamespace(
+                    success=True,
+                    data={"raw_reservations": [{"guest": "Synthetic Target Guest", "message_uid": "target"}]},
+                ),
+            ]
+        )
+    )
+    monkeypatch.setattr(ack_pilot.asyncio, "sleep", AsyncMock())
+
+    selected = await ack_pilot._wait_for_target_reservation(
+        provider,
+        settings,
+        wait_seconds=30,
+    )
+
+    assert selected["message_uid"] == "target"
+    assert provider.fetch_reservations.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_ack_target_wait_fails_immediately_on_provider_read_error(monkeypatch):
+    _base_env(monkeypatch)
+    settings = ack_pilot._load_ack_settings()
+    provider = SimpleNamespace(fetch_reservations=AsyncMock(return_value=SimpleNamespace(success=False, data=None)))
+
+    with pytest.raises(
+        ack_pilot.ReservationPilotError,
+        match="BLOCKED_RESERVATION_READ_FAILED",
+    ):
+        await ack_pilot._wait_for_target_reservation(
+            provider,
+            settings,
+            wait_seconds=30,
+        )
+    assert provider.fetch_reservations.await_count == 1
 
 
 def test_post_ack_history_requires_exact_pms_number_match():

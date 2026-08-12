@@ -7,6 +7,7 @@ Any ambiguous/failing ACK is never retried automatically.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import os
@@ -31,6 +32,7 @@ pytestmark = [
 
 _OFFICIAL_BASE_URL = "https://app.hotelrunner.com"
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+_TARGET_POLL_INTERVAL_SECONDS = 2
 
 
 class AckPilotHttpGuard:
@@ -172,6 +174,36 @@ def _select_target_reservation(
     return matches[0]
 
 
+async def _wait_for_target_reservation(
+    provider: HotelRunnerProvider,
+    settings: ReservationPilotSettings,
+    *,
+    wait_seconds: int,
+) -> dict[str, Any]:
+    if not 1 <= wait_seconds <= 180:
+        raise ReservationPilotError("BLOCKED_INVALID_TARGET_WAIT_SECONDS")
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + wait_seconds
+    while True:
+        fetched = await provider.fetch_reservations(undelivered=True, per_page=100, page=1)
+        if not fetched.success or not isinstance(fetched.data, dict):
+            raise ReservationPilotError("BLOCKED_RESERVATION_READ_FAILED")
+        reservations = fetched.data.get("raw_reservations")
+        if not isinstance(reservations, list):
+            raise ReservationPilotError("BLOCKED_RESERVATION_RESPONSE_INVALID")
+        try:
+            return _select_target_reservation(settings, reservations)
+        except ReservationPilotError as exc:
+            if str(exc) != "BLOCKED_TARGET_UNDELIVERED_RESERVATION_NOT_FOUND":
+                raise
+
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            raise ReservationPilotError("BLOCKED_TARGET_UNDELIVERED_RESERVATION_NOT_FOUND")
+        await asyncio.sleep(min(_TARGET_POLL_INTERVAL_SECONDS, remaining))
+
+
 def _verify_history_pms_number(
     reservations: list[Any],
     message_uid: str,
@@ -202,13 +234,14 @@ async def test_hotelrunner_single_reservation_ack(record_property):
             if not connection.success:
                 raise ReservationPilotError("BLOCKED_READONLY_CREDENTIAL_CHECK_FAILED")
 
-            fetched = await provider.fetch_reservations(undelivered=True, per_page=100, page=1)
-            if not fetched.success or not isinstance(fetched.data, dict):
-                raise ReservationPilotError("BLOCKED_RESERVATION_READ_FAILED")
-            reservations = fetched.data.get("raw_reservations")
-            if not isinstance(reservations, list):
-                raise ReservationPilotError("BLOCKED_RESERVATION_RESPONSE_INVALID")
-            raw = _select_target_reservation(settings, reservations)
+            wait_seconds_raw = _required("HOTELRUNNER_PILOT_TARGET_WAIT_SECONDS")
+            if not wait_seconds_raw.isdecimal():
+                raise ReservationPilotError("BLOCKED_INVALID_TARGET_WAIT_SECONDS")
+            raw = await _wait_for_target_reservation(
+                provider,
+                settings,
+                wait_seconds=int(wait_seconds_raw),
+            )
             message_uid = str(raw.get("message_uid") or "").strip()
             if not message_uid:
                 raise ReservationPilotError("BLOCKED_RESERVATION_MESSAGE_UID_MISSING")
