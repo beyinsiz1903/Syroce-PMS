@@ -13,6 +13,12 @@ import { Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink, Building2, Arr
 import TestBookingVerification from '@/components/TestBookingVerification';
 import { useTranslation } from 'react-i18next';
 const API = "";
+
+export const buildExelyRequestConfig = user => {
+  const token = user?.token || user?.access_token;
+  return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+};
+
 const ExelyIntegration = ({
   user,
   tenant,
@@ -44,16 +50,14 @@ const ExelyIntegration = ({
     auto_sync_reservations: true,
     sync_interval_minutes: 15
   });
-  const headers = {
-    Authorization: `Bearer ${user?.token || user?.access_token}`
-  };
+  // Cookie-authenticated sessions do not expose the access token on the
+  // canonical user. Avoid replacing that valid session with "Bearer undefined".
+  const requestConfig = buildExelyRequestConfig(user);
   const fetchConnection = useCallback(async () => {
     try {
       const {
         data
-      } = await axios.get(`/channel-manager/exely/connection`, {
-        headers
-      });
+      } = await axios.get(`/channel-manager/exely/connection`, requestConfig);
       setConnection(data);
       if (data.connection?.room_types) setRoomTypes(data.connection.room_types);
       if (data.connection?.rate_plans) setRatePlans(data.connection.rate_plans);
@@ -67,27 +71,19 @@ const ExelyIntegration = ({
   const fetchAll = useCallback(async () => {
     if (!connection?.connected) return;
     try {
-      const [mappingsRes, logsRes, localRes, statusRes] = await Promise.all([axios.get(`/channel-manager/exely/room-mappings`, {
-        headers
-      }).catch(() => ({
+      const [mappingsRes, logsRes, localRes, statusRes] = await Promise.all([axios.get(`/channel-manager/exely/room-mappings`, requestConfig).catch(() => ({
         data: {
           mappings: []
         }
-      })), axios.get(`/channel-manager/exely/sync-logs?limit=20`, {
-        headers
-      }).catch(() => ({
+      })), axios.get(`/channel-manager/exely/sync-logs?limit=20`, requestConfig).catch(() => ({
         data: {
           logs: []
         }
-      })), axios.get(`/channel-manager/exely/reservations/local`, {
-        headers
-      }).catch(() => ({
+      })), axios.get(`/channel-manager/exely/reservations/local`, requestConfig).catch(() => ({
         data: {
           reservations: []
         }
-      })), axios.get(`/channel-manager/exely/sync/status`, {
-        headers
-      }).catch(() => ({
+      })), axios.get(`/channel-manager/exely/sync/status`, requestConfig).catch(() => ({
         data: {}
       }))]);
       setMappings(mappingsRes.data.mappings || []);
@@ -109,9 +105,7 @@ const ExelyIntegration = ({
     try {
       const {
         data
-      } = await axios.get(`/channel-manager/auto-map/status/exely`, {
-        headers
-      });
+      } = await axios.get(`/channel-manager/auto-map/status/exely`, requestConfig);
       setMappingStatus(data);
     } catch {/* ignore */}
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
@@ -128,9 +122,7 @@ const ExelyIntegration = ({
         data
       } = await axios.post(`/channel-manager/auto-map/suggest`, {
         provider: 'exely'
-      }, {
-        headers
-      });
+      }, requestConfig);
       setAutoMapSuggestions(data);
       setAutoMapOpen(true);
     } catch (e) {
@@ -155,9 +147,7 @@ const ExelyIntegration = ({
       };
       const {
         data
-      } = await axios.post(`/channel-manager/auto-map/apply`, payload, {
-        headers
-      });
+      } = await axios.post(`/channel-manager/auto-map/apply`, payload, requestConfig);
       toast.success(data.message);
       setAutoMapOpen(false);
       fetchAll();
@@ -170,9 +160,7 @@ const ExelyIntegration = ({
   };
   const handleDeleteMapping = async mappingId => {
     try {
-      await axios.delete(`/channel-manager/exely/room-mappings/${mappingId}`, {
-        headers
-      });
+      await axios.delete(`/channel-manager/exely/room-mappings/${mappingId}`, requestConfig);
       toast.success('Esleme silindi');
       fetchAll();
       fetchMappingStatus();
@@ -193,9 +181,7 @@ const ExelyIntegration = ({
       if (!payload.endpoint_url) delete payload.endpoint_url;
       const {
         data
-      } = await axios.post(`/channel-manager/exely/connect`, payload, {
-        headers
-      });
+      } = await axios.post(`/channel-manager/exely/connect`, payload, requestConfig);
       toast.success(data.message);
       setConnection({
         connected: true,
@@ -213,9 +199,7 @@ const ExelyIntegration = ({
   };
   const handleDisconnect = async () => {
     try {
-      await axios.delete(`/channel-manager/exely/disconnect`, {
-        headers
-      });
+      await axios.delete(`/channel-manager/exely/disconnect`, requestConfig);
       toast.success('Exely baglantisi kesildi');
       setConnection({
         connected: false
@@ -229,9 +213,7 @@ const ExelyIntegration = ({
     try {
       const {
         data
-      } = await axios.post(`/channel-manager/exely/test`, {}, {
-        headers
-      });
+      } = await axios.post(`/channel-manager/exely/test`, {}, requestConfig);
       if (data.connected) toast.success(`Bağlantı basarili (${data.duration_ms}ms)`);else toast.error(`Bağlantı hatası: ${data.error}`);
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Test hatası');
@@ -244,9 +226,7 @@ const ExelyIntegration = ({
     try {
       const {
         data
-      } = await axios.get(`/channel-manager/exely/rooms/discover`, {
-        headers
-      });
+      } = await axios.get(`/channel-manager/exely/rooms/discover`, requestConfig);
       setRoomTypes(data.room_types || []);
       setRatePlans(data.rate_plans || []);
       toast.success(`${(data.room_types || []).length} oda tipi, ${(data.rate_plans || []).length} fiyat plani kesfedildi`);
@@ -261,9 +241,7 @@ const ExelyIntegration = ({
     try {
       const {
         data
-      } = await axios.post(`/channel-manager/exely/sync/reservations/pull`, {}, {
-        headers
-      });
+      } = await axios.post(`/channel-manager/exely/sync/reservations/pull`, {}, requestConfig);
       toast.success(data.message);
       fetchAll();
     } catch (e) {
@@ -276,9 +254,7 @@ const ExelyIntegration = ({
     try {
       const {
         data
-      } = await axios.post(`/channel-manager/exely/reservations/${resId}/import`, {}, {
-        headers
-      });
+      } = await axios.post(`/channel-manager/exely/reservations/${resId}/import`, {}, requestConfig);
       toast.success(`${data.message} - Oda: ${data.room_number}`);
       fetchAll();
     } catch (e) {
@@ -409,9 +385,7 @@ const ExelyIntegration = ({
                       try {
                         await axios.patch(`/channel-manager/exely/currency`, {
                           currency: newCurrency
-                        }, {
-                          headers
-                        });
+                        }, requestConfig);
                         toast.success(`Para birimi ${newCurrency} olarak güncellendi`);
                         fetchConnection();
                       } catch (err) {
