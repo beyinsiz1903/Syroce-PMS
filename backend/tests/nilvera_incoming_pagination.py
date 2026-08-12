@@ -15,9 +15,10 @@ async def fetch_all_incoming_invoice_pages(
 ) -> IncomingInvoicePage:
     """Aggregate bounded Nilvera Purchase pages for exact fixture discovery.
 
-    This helper is intentionally fail-closed: it refuses malformed pagination,
-    inconsistent page counts, or an advertised result set larger than the
-    configured scan bound.
+    The returned object is a synthetic single page containing the complete
+    bounded result set. This keeps downstream consumers from re-paginating an
+    already aggregated result. The helper remains fail-closed for malformed or
+    changing provider pagination and for result sets beyond the safety bound.
     """
     if page_size < 1 or page_size > 100 or max_pages < 1:
         raise NilveraValidationError("Incoming invoice discovery pagination configuration is invalid")
@@ -42,6 +43,6 @@ async def fetch_all_incoming_invoice_pages(
         items=tuple(items),
         page=1,
         page_size=page_size,
-        total_count=first.total_count,
-        total_pages=total_pages,
+        total_count=len(items),
+        total_pages=1,
     )
