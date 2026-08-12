@@ -99,7 +99,7 @@ jobs:
               --branch "${GITHUB_REF_NAME}" \
               --limit 30 \
               --json databaseId,headSha,event \
-              --jq "[.[] | select(.headSha == \"${GITHUB_SHA}\" and .event == \"push\")] | first | .databaseId // empty"
+              --jq "[.[] | select(.headSha == \"${GITHUB_SHA}\" and (.event == \"push\" or .event == \"pull_request\"))] | first | .databaseId // empty"
           }
 
           verify_required_jobs() {
@@ -136,7 +136,7 @@ jobs:
                 --branch "${GITHUB_REF_NAME}" \
                 --limit 30 \
                 --json headSha,event,status,conclusion \
-                --jq "[.[] | select(.headSha == \"${GITHUB_SHA}\" and .event == \"push\" and .status == \"completed\" and .conclusion == \"success\")] | length"
+                --jq "[.[] | select(.headSha == \"${GITHUB_SHA}\" and (.event == \"push\" or .event == \"pull_request\") and .status == \"completed\" and .conclusion == \"success\")] | length"
             )"
             if [ "${success_count}" -lt 1 ]; then
               echo "::error::BLOCKED_EXACT_HEAD_NORMAL_CI_NOT_GREEN:${workflow}"

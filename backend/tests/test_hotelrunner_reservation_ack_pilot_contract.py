@@ -91,6 +91,7 @@ def test_workflow_requires_exact_head_normal_ci_without_deploy_job():
     ):
         assert f'"{required}"' in script
     assert "frontend-quality.yml" in script
+    assert '.event == \\"push\\" or .event == \\"pull_request\\"' in script
     assert "deploy-production" not in script
 
 
