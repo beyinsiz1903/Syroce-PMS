@@ -115,6 +115,7 @@ jobs:
         uses: digitalocean/action-doctl@v2
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          version: 1.164.0
 
       - name: Trigger App Platform Deployment
         env:
@@ -126,7 +127,6 @@ jobs:
           echo "Fetching current App Spec..."
           doctl apps spec get "$DO_APP_ID" --format json > /tmp/spec.json
           
-          # Verify and check all expected components before mutation
           echo "Verifying pre-mutation App Spec..."
           for COMP in "backend" "frontend" "worker" "beat"; do
              if [ "$COMP" == "backend" ]; then EXPECTED_REPO="syroce-backend"; LIST=".services[]?"; fi
@@ -153,7 +153,6 @@ jobs:
              fi
           done
           
-          # Check if the app has any image-based components
           if jq -e '(.services[]? | select(.image? != null)) or (.workers[]? | select(.image? != null))' /tmp/spec.json > /dev/null; then
             echo "App contains image-based components. Updating spec with new SHA tag ($GITHUB_SHA)..."
             jq --arg sha "${GITHUB_SHA}" '
