@@ -31,6 +31,9 @@ async def test_discovery_aggregates_all_advertised_pages():
     result = await fetch_all_incoming_invoice_pages(fetch_page)
 
     assert [item.provider_uuid for item in result.items] == ["a", "b", "target"]
+    assert result.page == 1
+    assert result.total_pages == 1
+    assert result.total_count == 3
     assert [call.args[0] for call in fetch_page.await_args_list] == [1, 2, 3]
 
 
@@ -41,6 +44,8 @@ async def test_discovery_single_page_does_not_overfetch():
     result = await fetch_all_incoming_invoice_pages(fetch_page)
 
     assert len(result.items) == 1
+    assert result.total_pages == 1
+    assert result.total_count == 1
     fetch_page.assert_awaited_once_with(1)
 
 
