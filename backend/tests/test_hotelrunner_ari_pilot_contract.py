@@ -115,7 +115,7 @@ def test_workflow_requires_both_normal_exact_head_workflows():
     assert "ci-cd.yml" in script
     assert "frontend-quality.yml" in script
     assert "databaseId,headSha,event" in script
-    assert '.event == \\"push\\"' in script
+    assert '.event == \\"push\\" or .event == \\"pull_request\\"' in script
     for job_name in (
         "lockfile-guard",
         "backend-lint",
