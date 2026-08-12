@@ -85,13 +85,14 @@ async def run_phase_a(
     processed = 0
     pending = 0
     failed = 0
-    fire_uids: list[str] = []
+    fire_items: list[tuple[str, str]] = []
     seen_uids: set[str] = set()
 
     for res in all_reservations:
         try:
             sub_reservations = explode_multi_room_reservation(res)
             reservation_durable = bool(sub_reservations)
+            reservation_pms_number: str | None = None
             for sub_res in sub_reservations:
                 try:
                     sub_state_a = (sub_res.get("state") or "").lower()
@@ -110,7 +111,17 @@ async def run_phase_a(
                         is_cancellation=bool(is_cancel_a),
                     )
                     if durability == _PMS_DURABLE:
-                        processed += 1
+                        pms_number = await _read_durable_pms_number(
+                            tenant_id,
+                            sub_res,
+                        )
+                        if not pms_number:
+                            failed += 1
+                            reservation_durable = False
+                            logger.error("[PULL-A] Durable reservation has no PMS booking number; delivery ACK withheld")
+                        else:
+                            processed += 1
+                            reservation_pms_number = reservation_pms_number or pms_number
                     elif durability == _PMS_PENDING:
                         pending += 1
                         reservation_durable = False
@@ -126,9 +137,9 @@ async def run_phase_a(
                     )
 
             msg_uid = res.get("message_uid") or res.get("ruid") or res.get("uid")
-            if reservation_durable and msg_uid and msg_uid not in seen_uids:
+            if reservation_durable and reservation_pms_number and msg_uid and msg_uid not in seen_uids:
                 seen_uids.add(msg_uid)
-                fire_uids.append(msg_uid)
+                fire_items.append((msg_uid, reservation_pms_number))
             elif reservation_durable and not msg_uid:
                 failed += 1
                 logger.error("[PULL-A] Durable reservation has no delivery UID; ACK withheld")
@@ -140,9 +151,12 @@ async def run_phase_a(
             )
 
     fired = 0
-    for uid in fire_uids:
+    for uid, pms_number in fire_items:
         try:
-            fire_result = await provider.confirm_delivery(message_uid=uid)
+            fire_result = await provider.confirm_delivery(
+                message_uid=uid,
+                pms_number=pms_number,
+            )
             if fire_result.success:
                 fired += 1
             else:
@@ -153,7 +167,7 @@ async def run_phase_a(
             logger.error("[PULL-A] Delivery ACK raised %s", type(exc).__name__)
 
     return {
-        "success": failed == 0 and pending == 0 and fired == len(fire_uids),
+        "success": failed == 0 and pending == 0 and fired == len(fire_items),
         "all_reservations": all_reservations,
         "processed": processed,
         "fired": fired,
@@ -161,6 +175,28 @@ async def run_phase_a(
         "failed": failed,
         "pages": total_pages,
     }
+
+
+async def _read_durable_pms_number(
+    tenant_id: str,
+    payload: dict[str, Any],
+) -> str | None:
+    """Read the tenant-scoped durable PMS identifier used in provider ACK history."""
+    external_id = str(payload.get("hr_number") or "").strip()
+    if not external_id:
+        return None
+    booking = await db.bookings.find_one(
+        {
+            "tenant_id": tenant_id,
+            "external_reservation_id": external_id,
+            "booking_source": {"$ne": "ota_unmatched_hold"},
+        },
+        {"_id": 0, "id": 1, "status": 1},
+    )
+    if not booking:
+        return None
+    pms_number = str(booking.get("id") or "").strip()
+    return pms_number or None
 
 
 async def _ensure_durable_pms_result(
@@ -188,10 +224,7 @@ async def _ensure_durable_pms_result(
     }
     booking = await db.bookings.find_one(booking_query, {"_id": 0, "status": 1})
 
-    if not booking and (
-        getattr(pipeline_result, "status", "") == "duplicate"
-        or getattr(pipeline_result, "decision", "") == "skip"
-    ):
+    if not booking and (getattr(pipeline_result, "status", "") == "duplicate" or getattr(pipeline_result, "decision", "") == "skip"):
         from core.import_bridge_service import replay_reviewed_mapping_import
 
         replay_result = await replay_reviewed_mapping_import(
