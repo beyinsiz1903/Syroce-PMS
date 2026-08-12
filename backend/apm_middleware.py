@@ -397,7 +397,9 @@ class EnhancedRateLimitMiddleware:
         # 429). We elevate ONLY the bursty test-relevant categories
         # (write/default/export/report) and KEEP auth + anonymous at prod
         # ceilings so a misconfigured deployment cannot become a login
-        # brute-force surface even if the flag leaks.
+        # brute-force surface even if the flag leaks. Public room-QR session
+        # and submit traffic has its own bounded bucket in every profile; those
+        # two routes additionally enforce a stricter distributed IP+room limit.
         stress_e2e_enabled = os.environ.get("E2E_ALLOW_DESTRUCTIVE_STRESS", "false").lower() == "true"
         if is_replit_deployment and not stress_e2e_enabled:
             is_test_env = False
@@ -420,6 +422,7 @@ class EnhancedRateLimitMiddleware:
                 "write": (10000, 60),
                 "default": (10000, 60),
                 "anonymous": (10000, 60),
+                "room_qr_public": (10000, 60),
             }
         elif stress_e2e_enabled:
             # Scoped stress profile: elevate authenticated test surfaces
@@ -433,6 +436,7 @@ class EnhancedRateLimitMiddleware:
                 "write": (10000, 60),
                 "default": (10000, 60),
                 "anonymous": (60, 60),
+                "room_qr_public": (120, 60),
             }
         else:
             self.limits = {
@@ -442,6 +446,10 @@ class EnhancedRateLimitMiddleware:
                 "write": (120, 60),  # 120 write ops/min
                 "default": (300, 60),  # 300 requests/min (authenticated)
                 "anonymous": (60, 60),  # 60 requests/min (no token)
+                # Session + submit is two requests per occupied room. Keep a
+                # bounded IP ceiling while allowing a busy hotel's shared NAT;
+                # room_qr_requests.py still caps each IP+room at 20/10 min.
+                "room_qr_public": (120, 60),
             }
 
         # Register state globally for stats access
@@ -483,6 +491,9 @@ class EnhancedRateLimitMiddleware:
         `anonymous` (60/min), undermining DoS/brute-force protection on
         non-mapped public paths.
         """
+        if path.startswith("/api/public/room-qr/") and (path.endswith("/session") or path.endswith("/submit")):
+            return "room_qr_public"
+
         for prefix, cat in self.category_map.items():
             if path.startswith(prefix):
                 return cat

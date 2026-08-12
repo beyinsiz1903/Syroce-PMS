@@ -22,6 +22,13 @@ const shardBPatterns = [
     'e2e-stress/specs/99B-*.spec.js',
 ];
 
+function workflowShardMatrix() {
+    const workflow = fs.readFileSync(path.join(repositoryRoot, '.github/workflows/stress.yml'), 'utf8');
+    const match = workflow.match(/echo '(\[\{.*\}\])' > shards\.json/);
+    assert.ok(match, 'stress workflow shard matrix must be parseable');
+    return JSON.parse(match[1]);
+}
+
 test('Shard B patterns resolve to the eleven configured spec files', () => {
     const resolved = resolveSpecPatterns(shardBPatterns, { cwd: frontendRoot });
 
@@ -59,6 +66,18 @@ test('zero-match and unsafe patterns fail closed', () => {
         () => resolveSpecPatterns(['../e2e-stress/specs/02-*.spec.js'], { cwd: frontendRoot }),
         /BLOCKED_TEST_DISCOVERY: unsafe spec pattern/,
     );
+});
+
+test('every configured stress shard pattern resolves to at least one spec', () => {
+    for (const shard of workflowShardMatrix()) {
+        const patterns = shard.spec_pattern.split(/\s+/).filter(Boolean);
+        assert.ok(patterns.length > 0, `Shard ${shard.shard} must declare spec patterns`);
+
+        for (const pattern of patterns) {
+            const resolved = resolveSpecPatterns([pattern], { cwd: frontendRoot });
+            assert.ok(resolved.length > 0, `Shard ${shard.shard} pattern must resolve: ${pattern}`);
+        }
+    }
 });
 
 test('zero executed tests can never produce a GO verdict', () => {
