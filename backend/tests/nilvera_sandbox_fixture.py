@@ -441,7 +441,19 @@ def evaluate_incoming_answer_candidate(
 ) -> IncomingAnswerEligibility:
     identity_match = summary.provider_uuid == target_provider_uuid and detail.provider_uuid == target_provider_uuid
     document_match = detail.invoice_profile == "TICARIFATURA" and detail.invoice_type == "SATIS"
-    answer_waiting = _normalize(status.answer_code) == "waitingforapproval"
+    status_answer = _normalize(status.answer_code)
+    detail_answer = _normalize(detail.answer_code)
+
+    # Nilvera Sandbox can omit Answer/AnswerCode from the Status endpoint
+    # while the Details endpoint still reports waitingForApproval.
+    # Keep Status authoritative when present and fail closed on disagreement.
+    if status_answer and detail_answer and status_answer != detail_answer:
+        answer_waiting = False
+    elif status_answer:
+        answer_waiting = status_answer == "waitingforapproval"
+    else:
+        answer_waiting = detail_answer == "waitingforapproval"
+
     provider_ready = _normalize(status.status_code) in {"succeed", "success"}
     return IncomingAnswerEligibility(
         identity_match=identity_match,
