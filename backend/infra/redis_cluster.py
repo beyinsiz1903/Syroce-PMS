@@ -53,6 +53,28 @@ class RedisClusterManager:
     def mode(self) -> str:
         return self._mode
 
+    @staticmethod
+    def _client_kwargs(*, socket_timeout: int, max_connections: int | None = None) -> dict[str, Any]:
+        """Common resilient connection options for managed Redis/Valkey.
+
+        Managed providers may close otherwise-idle TCP sessions. Keepalive +
+        health checks ensure the next command does not reuse a silently-dead
+        socket, while retry_on_timeout preserves the existing transient-timeout
+        behavior. The pub/sub client still has its own bounded read timeout so
+        the WS adapter can rebuild subscriptions if the upstream stalls.
+        """
+        kwargs: dict[str, Any] = {
+            "decode_responses": True,
+            "socket_connect_timeout": 5,
+            "socket_timeout": socket_timeout,
+            "retry_on_timeout": True,
+            "health_check_interval": 15,
+            "socket_keepalive": True,
+        }
+        if max_connections is not None:
+            kwargs["max_connections"] = max_connections
+        return kwargs
+
     async def connect(self) -> bool:
         """Establish Redis connection based on configured mode."""
         async with self._connect_lock:
@@ -70,14 +92,10 @@ class RedisClusterManager:
             try:
                 import redis.asyncio as aioredis
 
-                pool_kwargs = {
-                    "decode_responses": True,
-                    "socket_connect_timeout": 5,
-                    "socket_timeout": 10,
-                    "retry_on_timeout": True,
-                    "health_check_interval": 30,
-                    "max_connections": self._max_connections,
-                }
+                pool_kwargs = self._client_kwargs(
+                    socket_timeout=10,
+                    max_connections=self._max_connections,
+                )
 
                 if self._mode == "cluster":
                     from redis.asyncio.cluster import RedisCluster
@@ -97,18 +115,15 @@ class RedisClusterManager:
                 self._metrics["connections_created"] += 1
                 logger.info(f"Redis connected: mode={self._mode}")
 
-                # Create dedicated connections for pubsub and locks
+                # Create dedicated connections for pubsub and locks using the
+                # same managed-Redis hardening as the main command client.
                 self._pubsub_redis = aioredis.from_url(
                     self._url,
-                    decode_responses=True,
-                    socket_connect_timeout=5,
-                    socket_timeout=30,
+                    **self._client_kwargs(socket_timeout=30),
                 )
                 self._lock_redis = aioredis.from_url(
                     self._url,
-                    decode_responses=True,
-                    socket_connect_timeout=5,
-                    socket_timeout=10,
+                    **self._client_kwargs(socket_timeout=10),
                 )
                 return True
 
