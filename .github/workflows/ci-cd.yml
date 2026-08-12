@@ -115,7 +115,9 @@ jobs:
       - name: Stress shard discovery contracts (hard gate)
         run: |
           cd frontend
-          node --test e2e-stress/resolve-spec-patterns.test.mjs
+          node --test \
+            e2e-stress/resolve-spec-patterns.test.mjs \
+            e2e-stress/production-gates-contract.test.mjs
 
   # ============ BACKEND TESTS (HARD GATE) ============
   backend-test:
@@ -204,6 +206,10 @@ jobs:
             tests/test_route_shadowing.py \
             tests/test_hr_shifts_overnight.py \
             tests/test_pms_checkin_night_audit_hardening.py \
+            tests/test_quick_id_proxy.py \
+            tests/test_diagnostics.py \
+            tests/test_secrets_manager.py \
+            tests/test_stress_factory_room_move_pool.py \
             tests/unit/test_nilvera_incoming_xml_mapper.py \
             tests/unit/test_nilvera_incoming_answer.py \
             tests/unit/test_nilvera_sandbox_fixture.py \

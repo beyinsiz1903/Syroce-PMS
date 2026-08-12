@@ -40,15 +40,15 @@ import { test, expect, rec } from '../fixtures/stress-context.js';
 
 function computeTokenGuardStatus(garbage, tampered, ghost) {
     const ALLOWED_REJECT = new Set([400, 401, 403, 404, 410, 422]);
-    const garbageOk = garbage.status === 503 || ALLOWED_REJECT.has(garbage.status);
-    const tamperedOk = tampered.status === 503 || ALLOWED_REJECT.has(tampered.status);
-    const ghostOk = ghost.status === 503 || ALLOWED_REJECT.has(ghost.status);
+    const garbageOk = ALLOWED_REJECT.has(garbage.status);
+    const tamperedOk = ALLOWED_REJECT.has(tampered.status);
+    const ghostOk = ALLOWED_REJECT.has(ghost.status);
 
-    const hasAnyDisabled = 
+    const hasAnyDisabled =
         (tampered.status === 503 && tampered.body?.detail?.code === 'QUICKID_DISABLED') ||
         (ghost.status === 503 && ghost.body?.detail?.code === 'QUICKID_DISABLED');
 
-    const disabled = 
+    const disabled =
         garbage.status === 422 &&
         tampered.status === 503 &&
         tampered.body_kind === 'json' &&
@@ -399,17 +399,15 @@ test.describe('F8K § 60 — Public Online Check-in Stress', () => {
     test('D) Public token guard — Quick-ID precheckin public surface', async ({ request }, testInfo) => {
         // Quick-ID precheckin public token endpoint:
         //   GET /api/quick-id/precheckin/{token_id}/info  (no-auth, public)
-        // Contract: garbage/tampered/cross-tenant token → 4xx; non-existent
-        // valid-format token → upstream 404 → 400 "QR geçersiz" (404 da kabul).
-        // Service unconfigured → 503 (moduleBlocked sayılır ama spec D bağımsız).
+        // Contract: garbage/tampered/non-canonical token → local 4xx with
+        // zero upstream calls. Service unconfigured → controlled 503 only
+        // for canonical tokens (this test intentionally sends none).
         // POST scan probe YAPILMAZ — gerçek QuickID vendor call'ı tetiklenir
         // (`real vendor call = 0` ihlali). Sadece GET info probe.
         const PUBLIC_BASE = '/api/quick-id/precheckin';
-        const ALLOWED_REJECT = new Set([400, 401, 403, 404, 410, 422]);
 
         // 1) Garbage token (özel karakterler) → 4xx, no 5xx.
         const garbage = await callRaw(request, 'get', `${PUBLIC_BASE}/${encodeURIComponent('!@#$%^&*()')}/info`);
-        const garbageOk = garbage.status === 503 || ALLOWED_REJECT.has(garbage.status);
         if (garbage.status >= 500 && garbage.status !== 503) {
             recFinding(testInfo, 'P1', MOD,
                 'Public token garbage input 5xx storm',
@@ -421,21 +419,16 @@ test.describe('F8K § 60 — Public Online Check-in Stress', () => {
                 `GET ${PUBLIC_BASE}/<garbage>/info status=${garbage.status} duration_ms=${garbage.ms} request_id=${garbage.request_id} body_kind=${garbage.body_kind} — token validation bypass.`);
         }
 
-        // 2) Tampered (uzun rastgele) token → 404/400/503.
-        const tampered = await callRaw(request, 'get', `${PUBLIC_BASE}/F8K_TAMPERED_TOKEN_${'A'.repeat(64)}/info`);
-        const tamperedOk = tampered.status === 503 || ALLOWED_REJECT.has(tampered.status);
+        // 2) Tampered (>128 karakter) token → local 422.
+        const tampered = await callRaw(request, 'get', `${PUBLIC_BASE}/${'A'.repeat(129)}/info`);
         if (tampered.ok) {
             recFinding(testInfo, 'P0', MOD,
                 'Public token tampered input 2xx',
                 `GET ${PUBLIC_BASE}/<tampered>/info status=${tampered.status} duration_ms=${tampered.ms} request_id=${tampered.request_id} body_kind=${tampered.body_kind} — token bypass.`);
         }
 
-        // 3) Valid-format hex (32-char) ama DB'de yok → upstream 404 → 400/404.
-        //    Bu *expired/cross-tenant token* için en yakın güvenli probe;
-        //    gerçek expired token üretmek seed gerektirir (out-of-scope).
-        const ghostHex = 'abcdef0123456789abcdef0123456789';
-        const ghost = await callRaw(request, 'get', `${PUBLIC_BASE}/${ghostHex}/info`);
-        const ghostOk = ghost.status === 503 || ALLOWED_REJECT.has(ghost.status);
+        // 3) Minimum uzunluğun altındaki token → local 422.
+        const ghost = await callRaw(request, 'get', `${PUBLIC_BASE}/too-short-token/info`);
         if (ghost.ok) {
             recFinding(testInfo, 'P0', MOD,
                 'Public token ghost (var-olmayan) input 2xx',
@@ -466,6 +459,13 @@ test.describe('F8K § 60 — Public Online Check-in Stress', () => {
             { status: 500 },
             { status: 503, body_kind: 'json', body: { detail: { code: 'QUICKID_DISABLED' } } },
             { status: 503, body_kind: 'json', body: { detail: { code: 'QUICKID_DISABLED' } } }
+        ).finalStatus).toBe('FAIL');
+
+        // - controlled upstream unavailability is FAIL, never PASS/REVIEW/SKIP
+        expect(computeTokenGuardStatus(
+            { status: 422 },
+            { status: 503, body_kind: 'json', body: { detail: { code: 'QUICKID_UNAVAILABLE' } } },
+            { status: 503, body_kind: 'json', body: { detail: { code: 'QUICKID_UNAVAILABLE' } } }
         ).finalStatus).toBe('FAIL');
 
         // - tampered=504 HTML, ghost=disabled => FAIL
