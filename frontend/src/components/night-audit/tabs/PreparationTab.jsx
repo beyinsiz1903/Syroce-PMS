@@ -78,7 +78,7 @@ function StatTile({ icon: Icon, label, value, hint, tone = 'gray' }) {
   );
 }
 
-export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey = 0 }) {
+export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun, refreshKey = 0 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
@@ -258,7 +258,7 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey
                                   </Badge>
                                 )}
                               </div>
-                              {(href || ((b.action === 'checkout_or_extend' || b.action === 'checkin_or_no_show') && it.id)) && (
+                              {(href || b.action === 'open_run' || ((b.action === 'checkout_or_extend' || b.action === 'checkin_or_no_show') && it.id)) && (
                                 <Button
                                   size="sm" variant="ghost"
                                   className="h-7 px-2 text-indigo-700 hover:text-indigo-900"
@@ -273,6 +273,8 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey
                                     } else if (it.id && b.action === 'checkout_or_extend') {
                                       // Geç çıkış: folyosu var, doğrudan aç.
                                       openFolioForBooking(it.id, navigate);
+                                    } else if (it.run_id && b.action === 'open_run') {
+                                      onOpenRun?.(it.run_id);
                                     } else if (href) {
                                       navigate(href);
                                     }

@@ -114,6 +114,40 @@ def _split_pending_arrivals(
     return with_room, without_room
 
 
+def _partition_stays_for_business_date(
+    bookings: list[dict[str, Any]],
+    business_date: str,
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    """Classify checked-in stays against one business date.
+
+    A room charge belongs only to ``check_in <= business_date < check_out``.
+    Keeping this rule in one helper prevents future imported/demo check-ins
+    from being billed during business-date catch-up.
+    """
+    target = dt_date.fromisoformat(business_date)
+    active: list[dict[str, Any]] = []
+    future: list[dict[str, Any]] = []
+    ended: list[dict[str, Any]] = []
+    invalid: list[dict[str, Any]] = []
+    for booking in bookings:
+        check_in = _normalize_booking_date(booking.get("check_in"))
+        check_out = _normalize_booking_date(booking.get("check_out"))
+        if check_in is None or check_out is None or check_out <= check_in:
+            invalid.append(booking)
+        elif check_in > target:
+            future.append(booking)
+        elif check_out <= target:
+            ended.append(booking)
+        else:
+            active.append(booking)
+    return active, future, ended, invalid
+
+
 async def _load_bookings_for_date_check(
     tenant_id: str,
     statuses: list[str],
@@ -602,23 +636,30 @@ async def _validate_preconditions(
     if active:
         blocking.append(f"Active audit run exists for different date {active['business_date']} (status: {active['status']}, id: {active['id']})")
 
-    # 2. Checked-in bookings without room assignment
-    orphans = await db.bookings.count_documents(
-        {
-            "tenant_id": tenant_id,
-            "status": "checked_in",
-            "room_id": {"$in": [None, ""]},
-        }
+    # Only stays active on this business date may block posting. A booking can
+    # be in checked_in state with a future stay date because of imported/demo
+    # data; charging or requiring a folio for it before check-in would create
+    # revenue on the wrong business date.
+    checked_in_for_stay = await _load_bookings_for_date_check(tenant_id, ["checked_in"])
+    active_stays, future_stays, _ended_stays, invalid_stays = _partition_stays_for_business_date(
+        checked_in_for_stay,
+        bd,
     )
+
+    # 2. Active checked-in bookings without room assignment
+    orphans = sum(1 for booking in active_stays if not booking.get("room_id"))
     if orphans > 0:
         blocking.append(f"{orphans} checked-in booking(s) without room assignment")
 
     # 3. Checked-in bookings must have at least one open folio
     # N+1 fix: per-booking find_one yerine iki toplu sorgu
-    checked_in = await db.bookings.find(
-        {"tenant_id": tenant_id, "status": "checked_in"},
-        {"_id": 0, "id": 1, "folio_id": 1, "guest_name": 1},
-    ).to_list(2000)
+    active_ids = [booking["id"] for booking in active_stays if booking.get("id")]
+    checked_in = []
+    if active_ids:
+        checked_in = await db.bookings.find(
+            {"tenant_id": tenant_id, "id": {"$in": active_ids}},
+            {"_id": 0, "id": 1, "folio_id": 1, "guest_name": 1},
+        ).to_list(2000)
 
     if checked_in:
         explicit_folio_ids = [bk.get("folio_id") for bk in checked_in if bk.get("folio_id")]
@@ -666,6 +707,16 @@ async def _validate_preconditions(
         blocking.append(f"{len(overdue_checkouts)} rezervasyonun cikis tarihi gectigi halde hala 'checked-in'. Gece denetiminden once cikis yapin veya konaklamayi uzatin.")
     if invalid_checkouts:
         blocking.append(f"{len(invalid_checkouts)} checked-in rezervasyonda gecerli cikis tarihi yok. Gece denetiminden once rezervasyon tarihlerini duzeltin.")
+    if invalid_stays:
+        blocking.append(
+            f"{len(invalid_stays)} checked-in rezervasyonda gecerli konaklama tarih araligi yok. "
+            "Gece denetiminden once giris/cikis tarihlerini duzeltin."
+        )
+    if future_stays:
+        warnings.append(
+            f"{len(future_stays)} checked-in rezervasyonun giris tarihi is gununden sonra; "
+            "bu rezervasyonlar oda masrafi adaylarina dahil edilmedi."
+        )
 
     # 5. BLOCKING: pending arrivals (confirmed/guaranteed but never checked in by audit time)
     # Otomatik no-show yerine personel karari bekleyelim. 'Dogrulamalari Atla'
@@ -727,10 +778,14 @@ async def _build_candidate_set(
 
     # ── Room charges for checked-in stayover guests ──
     # N+1 fix: tum bookings'i once topla, sonra folio + folio_charges idempotency icin tek sorgu
-    bookings_list = await db.bookings.find(
+    all_checked_in = await db.bookings.find(
         {"tenant_id": tenant_id, "status": "checked_in"},
         {"_id": 0, "id": 1, "room_id": 1, "folio_id": 1, "room_rate": 1, "rate": 1, "total_amount": 1, "check_in": 1, "check_out": 1, "guest_name": 1, "currency": 1},
     ).to_list(5000)
+    bookings_list, _future, _ended, _invalid = _partition_stays_for_business_date(
+        all_checked_in,
+        bd,
+    )
 
     booking_ids_no_folio = [b["id"] for b in bookings_list if not b.get("folio_id")]
     folio_by_booking: dict = {}
@@ -1444,9 +1499,15 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
             }
         )
 
-    # 2) Oda atamasi olmayan checked-in rezervasyonlar
-    orphans_q = {"tenant_id": tenant_id, "status": "checked_in", "room_id": {"$in": [None, ""]}}
-    orphans_count = await db.bookings.count_documents(orphans_q)
+    checked_in_for_stay = await _load_bookings_for_date_check(tenant_id, ["checked_in"])
+    active_stays, future_stays, _ended_stays, invalid_stays = _partition_stays_for_business_date(
+        checked_in_for_stay,
+        bd,
+    )
+
+    # 2) Oda atamasi olmayan aktif checked-in rezervasyonlar
+    orphan_bookings = [booking for booking in active_stays if not booking.get("room_id")]
+    orphans_count = len(orphan_bookings)
     if orphans_count > 0:
         blockers.append(
             {
@@ -1454,16 +1515,19 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
                 "label": "Oda atanmamis check-in",
                 "message": f"{orphans_count} check-in misafire oda atanmamis.",
                 "count": orphans_count,
-                "items": await _sample_bookings(orphans_q),
+                "items": await _sample_classified_bookings(tenant_id, orphan_bookings),
                 "action": "edit_booking",
             }
         )
 
     # 3) Acik folio'su olmayan checked-in rezervasyonlar
-    checked_in = await db.bookings.find(
-        {"tenant_id": tenant_id, "status": "checked_in"},
-        {"_id": 0, "id": 1, "folio_id": 1, "guest_name": 1, "room_no": 1, "check_in": 1, "check_out": 1},
-    ).to_list(2000)
+    active_ids = [booking["id"] for booking in active_stays if booking.get("id")]
+    checked_in = []
+    if active_ids:
+        checked_in = await db.bookings.find(
+            {"tenant_id": tenant_id, "id": {"$in": active_ids}},
+            {"_id": 0, "id": 1, "folio_id": 1, "guest_name": 1, "room_no": 1, "check_in": 1, "check_out": 1},
+        ).to_list(2000)
     if checked_in:
         explicit_folio_ids = [bk.get("folio_id") for bk in checked_in if bk.get("folio_id")]
         booking_ids_no_folio = [bk["id"] for bk in checked_in if not bk.get("folio_id")]
@@ -1523,6 +1587,31 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
                 "count": len(overdue_bookings),
                 "items": await _sample_classified_bookings(tenant_id, overdue_bookings),
                 "action": "checkout_or_extend",
+            }
+        )
+    if invalid_stays:
+        blockers.append(
+            {
+                "category": "invalid_checked_in_stay_dates",
+                "label": "Gecersiz check-in tarih araligi",
+                "message": f"{len(invalid_stays)} check-in rezervasyonun giris/cikis tarih araligi gecersiz.",
+                "count": len(invalid_stays),
+                "items": await _sample_classified_bookings(tenant_id, invalid_stays),
+                "action": "edit_booking",
+            }
+        )
+    if future_stays:
+        warnings.append(
+            {
+                "category": "future_checked_in_stays",
+                "label": "Gelecek tarihli check-in kaydi",
+                "message": (
+                    f"{len(future_stays)} check-in rezervasyonun giris tarihi is gununden sonra. "
+                    "Bu kayitlar bugunun oda masrafina dahil edilmeyecek."
+                ),
+                "count": len(future_stays),
+                "items": await _sample_classified_bookings(tenant_id, future_stays),
+                "action": "edit_booking",
             }
         )
 
