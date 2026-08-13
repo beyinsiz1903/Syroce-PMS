@@ -1,4 +1,4 @@
-"""GET-only source-link diagnostics for ambiguous Nilvera CreateReturn reconciliation."""
+"""GET-only structural fingerprint diagnostics for ambiguous Nilvera CreateReturn reconciliation."""
 
 import hashlib
 import hmac
@@ -13,6 +13,7 @@ from core.integrations.nilvera.errors import NilveraApiError, NilveraNotFoundErr
 from tests.integration.test_nilvera_sandbox_e2e import (
     _collect_uuid_values,
     _created_return_detail_matches,
+    _payload_contains_reference,
     new_sandbox_client,
 )
 from tests.nilvera_sandbox_fixture import (
@@ -25,12 +26,78 @@ from tests.nilvera_sandbox_fixture import (
 pytestmark = [pytest.mark.asyncio, pytest.mark.nilvera_sandbox]
 
 
+def _nested_value(payload: object, *paths: tuple[str, ...]) -> object | None:
+    for path in paths:
+        value = payload
+        for part in path:
+            if not isinstance(value, dict):
+                value = None
+                break
+            value = value.get(part)
+        if value is not None:
+            return value
+    return None
+
+
+def _list_length(payload: object, *paths: tuple[str, ...]) -> int | None:
+    value = _nested_value(payload, *paths)
+    return len(value) if isinstance(value, list) else None
+
+
+def _return_fingerprint(detail: dict, *, source_provider_uuid: str, hmac_key: str) -> dict[str, object]:
+    invoice_number = _nested_value(
+        detail,
+        ("InvoiceNumber",),
+        ("InvoiceInfo", "InvoiceNumber"),
+        ("EInvoice", "InvoiceInfo", "InvoiceNumber"),
+    )
+    issue_date = _nested_value(
+        detail,
+        ("IssueDate",),
+        ("InvoiceInfo", "IssueDate"),
+        ("EInvoice", "InvoiceInfo", "IssueDate"),
+    )
+    currency = _nested_value(
+        detail,
+        ("Currency",),
+        ("DocumentCurrencyCode",),
+        ("InvoiceInfo", "Currency"),
+        ("EInvoice", "InvoiceInfo", "Currency"),
+    )
+    payable_total = _nested_value(
+        detail,
+        ("PayableAmount",),
+        ("PayableTotal",),
+        ("LegalMonetaryTotal", "PayableAmount"),
+        ("EInvoice", "LegalMonetaryTotal", "PayableAmount"),
+    )
+    line_count = _list_length(
+        detail,
+        ("InvoiceLines",),
+        ("Lines",),
+        ("InvoiceInfo", "InvoiceLines"),
+        ("EInvoice", "InvoiceLines"),
+    )
+    return {
+        "invoice_number_present": isinstance(invoice_number, str) and bool(invoice_number.strip()),
+        "issue_date_present": issue_date is not None,
+        "currency_present": currency is not None,
+        "payable_total_present": payable_total is not None,
+        "line_count": line_count,
+        "source_reference_present": _payload_contains_reference(detail, source_provider_uuid, hmac_key),
+    }
+
+
+def _fingerprint_difference_labels(left: dict[str, object], right: dict[str, object]) -> list[str]:
+    return sorted(key for key in left if left.get(key) != right.get(key))
+
+
 @pytest.mark.external
 async def test_sandbox_diagnose_created_return_source_links(record_property):
-    """Count source-linked matching return drafts using non-retrying GET requests only."""
+    """Compare safe structural fingerprints for exactly two matching return drafts using GET only."""
     allowed = os.environ.get("NILVERA_E2E_CREATE_RETURN_RECONCILIATION_ALLOWED", "false")
     if allowed.lower() != "true":
-        pytest.skip("CreateReturn source-link diagnostics require explicit read-only reconciliation mode")
+        pytest.skip("CreateReturn fingerprint diagnostics require explicit read-only reconciliation mode")
 
     receiver_key = os.environ.get("NILVERA_E2E_RECEIVER_SANDBOX_KEY", "")
     hmac_key = os.environ.get("NILVERA_E2E_CORRELATION_HMAC_KEY", "")
@@ -58,7 +125,7 @@ async def test_sandbox_diagnose_created_return_source_links(record_property):
             hashlib.sha256,
         ).hexdigest()[:16]
     except (SandboxFixtureError, ValueError):
-        pytest.fail("BLOCKED_INVALID_CREATE_RETURN_SOURCE_LINK_SOURCE", pytrace=False)
+        pytest.fail("BLOCKED_INVALID_CREATE_RETURN_FINGERPRINT_SOURCE", pytrace=False)
 
     receiver_client = new_sandbox_client(receiver_key)
     try:
@@ -72,7 +139,7 @@ async def test_sandbox_diagnose_created_return_source_links(record_property):
                 NilveraEndpoints.GET_PURCHASE_INVOICE_DETAIL.format(uuid=source_provider_uuid),
                 correlation_id=correlation_label,
                 retryable=False,
-                stage="CREATE_RETURN_SOURCE_LINK_SOURCE_DETAIL",
+                stage="CREATE_RETURN_FINGERPRINT_SOURCE_DETAIL",
             )
             if not isinstance(source_detail, dict):
                 pytest.fail("BLOCKED_CREATE_RETURN_SOURCE_DETAIL_PARSE", pytrace=False)
@@ -90,7 +157,7 @@ async def test_sandbox_diagnose_created_return_source_links(record_property):
                     params={**params, "Page": page_number},
                     correlation_id=correlation_label,
                     retryable=False,
-                    stage="CREATE_RETURN_SOURCE_LINK_DRAFT_LIST",
+                    stage="CREATE_RETURN_FINGERPRINT_DRAFT_LIST",
                 )
                 content = response.get("Content") if isinstance(response, dict) else None
                 if not isinstance(content, list):
@@ -113,14 +180,14 @@ async def test_sandbox_diagnose_created_return_source_links(record_property):
             if len(candidates) > 100:
                 pytest.fail("BLOCKED_CREATE_RETURN_CANDIDATE_LIMIT", pytrace=False)
 
-            matches: list[str] = []
+            matches: list[dict] = []
             for candidate_uuid in candidates:
                 try:
                     detail = await receiver.get(
                         NilveraEndpoints.GET_DRAFT_INVOICE_MODEL.format(uuid=candidate_uuid),
                         correlation_id=correlation_label,
                         retryable=False,
-                        stage="CREATE_RETURN_SOURCE_LINK_DRAFT_MODEL",
+                        stage="CREATE_RETURN_FINGERPRINT_DRAFT_MODEL",
                     )
                 except NilveraNotFoundError:
                     continue
@@ -133,39 +200,52 @@ async def test_sandbox_diagnose_created_return_source_links(record_property):
                     source_provider_uuid=source_provider_uuid,
                     hmac_key=hmac_key,
                 ):
-                    matches.append(candidate_uuid)
-
-            match_set = set(matches)
-            linked_match_count = len(match_set & linked_candidates)
-            unlinked_match_count = len(match_set - linked_candidates)
-            linked_candidate_count = len(linked_candidates)
+                    matches.append(detail)
 
             record_property("raw_match_count", str(len(matches)))
-            record_property("linked_candidate_count", str(linked_candidate_count))
-            record_property("linked_match_count", str(linked_match_count))
-            record_property("unlinked_match_count", str(unlinked_match_count))
+            record_property("provider_write_count", "0")
+            if len(matches) != 2:
+                pytest.fail(
+                    f"BLOCKED_CREATE_RETURN_FINGERPRINT_EXPECTED_TWO_MATCHES "
+                    f"(raw_match_count={len(matches)}, write_count=0)",
+                    pytrace=False,
+                )
+
+            fingerprints = [
+                _return_fingerprint(detail, source_provider_uuid=source_provider_uuid, hmac_key=hmac_key)
+                for detail in matches
+            ]
+            differences = _fingerprint_difference_labels(fingerprints[0], fingerprints[1])
+            fingerprint_equal = not differences
+            difference_labels = ",".join(differences) if differences else "NONE"
+
+            record_property("fingerprint_equal", str(fingerprint_equal).lower())
+            record_property("fingerprint_difference_count", str(len(differences)))
+            record_property("fingerprint_difference_fields", difference_labels)
             record_property("provider_write_count", "0")
 
             diagnostic = (
-                f"raw_match_count={len(matches)}, "
-                f"linked_candidate_count={linked_candidate_count}, "
-                f"linked_match_count={linked_match_count}, "
-                f"unlinked_match_count={unlinked_match_count}, write_count=0"
+                f"raw_match_count=2, fingerprint_equal={str(fingerprint_equal).lower()}, "
+                f"fingerprint_difference_count={len(differences)}, "
+                f"fingerprint_difference_fields={difference_labels}, write_count=0"
             )
-            print(f"CREATE_RETURN_SOURCE_LINK_DIAGNOSTIC {diagnostic}")
+            print(f"CREATE_RETURN_FINGERPRINT_DIAGNOSTIC {diagnostic}")
 
-            if not matches:
-                pytest.fail(f"BLOCKED_CREATE_RETURN_NOT_FOUND ({diagnostic})", pytrace=False)
-            if linked_match_count != 1:
+            if fingerprint_equal:
                 pytest.fail(
-                    f"CONFLICT_CREATE_RETURN_SOURCE_LINK_NOT_UNIQUE ({diagnostic})",
+                    f"CONFLICT_CREATE_RETURN_FINGERPRINT_IDENTICAL ({diagnostic})",
                     pytrace=False,
                 )
+
+            pytest.fail(
+                f"BLOCKED_CREATE_RETURN_FINGERPRINT_DIFFERENCES_FOUND ({diagnostic})",
+                pytrace=False,
+            )
 
     except Exception as exc:
         http_status = exc.http_status if isinstance(exc, NilveraApiError) else None
         pytest.fail(
-            f"CreateReturn GET-only source-link diagnostic failed "
+            f"CreateReturn GET-only fingerprint diagnostic failed "
             f"(error_type={type(exc).__name__}, http_status={http_status}, write_count=0)",
             pytrace=False,
         )
