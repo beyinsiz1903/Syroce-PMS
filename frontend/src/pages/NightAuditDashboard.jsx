@@ -439,7 +439,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
         <h1 data-testid="night-audit-title" className="sr-only">Gece Denetimi</h1>
 
         {blockedRunDetail && (
-          <Card className="border-rose-300 bg-rose-50/70" data-testid="blocked-run-details">
+          <Card className="border-rose-300 bg-rose-50 dark:border-rose-800 dark:bg-rose-950" data-testid="blocked-run-details">
             <CardContent className="py-4 space-y-3">
               <div className="flex items-start gap-3">
                 <AlertOctagon className="w-5 h-5 text-rose-600 mt-0.5" />
