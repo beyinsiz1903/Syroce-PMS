@@ -102,16 +102,24 @@ All items are blocking. A missing or ambiguous result is not a pass.
    approved read-only connection/discovery check. HTTP 500, timeout, parse
    failure, or authorization failure is NO-GO.
 5. After a successful read-only check, enable reservation synchronization for
-   one property. Keep ARI disabled. Observe exactly one real reservation through
+   one property with `operation=enable_reservation_sync`, prerequisite
+   attestation, and the exact `ENABLE_EXELY_RESERVATION_SYNC` confirmation.
+   Keep ARI disabled. Observe exactly one real reservation through
    `PMS_DURABLE`, `ACK_PENDING`, one confirmed ACK write, and queue removal.
 6. Reconcile the PMS booking, Exely queue, lifecycle lineage, and audit timeline.
    Any duplicate, stale version, mapping hold, or uncertain ACK result is NO-GO.
 7. Complete a separately approved modification and cancellation observation.
    ACK is allowed only after each PMS mutation is durable.
-8. Enable ARI only in a later window. Start with one mapped product and one
-   approved operation. Do not retry an ambiguous mutation.
+8. Enable ARI only in a later window with `operation=enable_ari_write`,
+   prerequisite attestation, and the exact `ENABLE_EXELY_ARI_WRITE`
+   confirmation. Reservation synchronization is stopped during this stage.
+   Start with one mapped product and one approved operation. Do not retry an
+   ambiguous mutation.
 9. Expand tenant/property scope only after the observation window closes with no
    P0/P1 issue, no 5xx, and no unresolved reconciliation item.
+10. Run `enable_live` with the exact `ENABLE_EXELY_LIVE` confirmation only after
+    both isolated observation windows pass. This is the only stage that opens
+    reservation synchronization and ARI delivery together.
 
 ## Rollback and kill procedure
 

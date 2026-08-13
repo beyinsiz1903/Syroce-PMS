@@ -54,7 +54,9 @@ it does not call HotelRunner.
 
 ### 3. First live reservation
 
-Requires separate written approval and a known live booking window. Enable only
+Requires separate written approval and a known live booking window. Run
+`enable_reservation_sync` with prerequisite attestation and the exact
+`ENABLE_HOTELRUNNER_RESERVATION_SYNC` confirmation. This enables only
 reservation synchronization, keep ARI stopped, import exactly one reservation,
 verify durable PMS state, then permit one ACK after the durable result. Any
 timeout, 5xx, parse error, lock loss, mapping hold, or ambiguous outcome is
@@ -62,10 +64,20 @@ timeout, 5xx, parse error, lock loss, mapping hold, or ambiguous outcome is
 
 ### 4. First live ARI mutation
 
-Requires another separate written approval. Enable ARI for one mapped room,
+Requires another separate written approval. Run `enable_ari_write` with
+prerequisite attestation and the exact `ENABLE_HOTELRUNNER_ARI_WRITE`
+confirmation. This disables reservation synchronization while enabling ARI for
+one mapped room,
 rate plan, date, and operation. Send at most one write, require terminal
 transaction reconciliation, then restore the ARI stop until evidence is
 reviewed. Never retry an ambiguous mutation blindly.
+
+### 5. Full live activation
+
+Run `enable_live` only after the reservation and ARI observation windows both
+close without a P0/P1 finding or unresolved reconciliation item. It requires
+the exact `ENABLE_HOTELRUNNER_LIVE` confirmation and keeps the same exact-head,
+first-attempt, protected-environment, live-image, and health gates.
 
 ## Rollback
 

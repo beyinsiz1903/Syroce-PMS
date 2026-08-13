@@ -10,6 +10,9 @@ on:
         options:
           - prepare_disabled
           - enable_read_only
+          - enable_reservation_sync
+          - enable_ari_write
+          - enable_live
           - close_all
           - diagnose_last_failed
       approved_head_sha:
@@ -21,6 +24,16 @@ on:
         required: true
         default: false
         type: boolean
+      confirm_provider_prerequisites:
+        description: "I attest production credentials, one-to-one mappings, monitoring, and rollback ownership are verified"
+        required: true
+        default: false
+        type: boolean
+      activation_confirmation:
+        description: "Required only for live I/O stages; enter the exact stage-specific confirmation"
+        required: false
+        default: ""
+        type: string
 
 concurrency:
   group: exely-production-cutover
@@ -45,6 +58,9 @@ jobs:
         env:
           APPROVED_HEAD_SHA: ${{ inputs.approved_head_sha }}
           CONFIRM_PRODUCTION_CHANGE: ${{ inputs.confirm_production_change }}
+          CONFIRM_PROVIDER_PREREQUISITES: ${{ inputs.confirm_provider_prerequisites }}
+          ACTIVATION_CONFIRMATION: ${{ inputs.activation_confirmation }}
+          OPERATION: ${{ inputs.operation }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
@@ -64,6 +80,44 @@ jobs:
             echo "::error::BLOCKED_EXACT_HEAD_MISMATCH"
             exit 1
           }
+          case "$OPERATION" in
+            prepare_disabled|enable_read_only|close_all|diagnose_last_failed)
+              ;;
+            enable_reservation_sync)
+              test "$CONFIRM_PROVIDER_PREREQUISITES" = "true" || {
+                echo "::error::BLOCKED_PROVIDER_PREREQUISITES_NOT_ATTESTED"
+                exit 1
+              }
+              test "$ACTIVATION_CONFIRMATION" = "ENABLE_EXELY_RESERVATION_SYNC" || {
+                echo "::error::BLOCKED_PROVIDER_ACTIVATION_CONFIRMATION"
+                exit 1
+              }
+              ;;
+            enable_ari_write)
+              test "$CONFIRM_PROVIDER_PREREQUISITES" = "true" || {
+                echo "::error::BLOCKED_PROVIDER_PREREQUISITES_NOT_ATTESTED"
+                exit 1
+              }
+              test "$ACTIVATION_CONFIRMATION" = "ENABLE_EXELY_ARI_WRITE" || {
+                echo "::error::BLOCKED_PROVIDER_ACTIVATION_CONFIRMATION"
+                exit 1
+              }
+              ;;
+            enable_live)
+              test "$CONFIRM_PROVIDER_PREREQUISITES" = "true" || {
+                echo "::error::BLOCKED_PROVIDER_PREREQUISITES_NOT_ATTESTED"
+                exit 1
+              }
+              test "$ACTIVATION_CONFIRMATION" = "ENABLE_EXELY_LIVE" || {
+                echo "::error::BLOCKED_PROVIDER_ACTIVATION_CONFIRMATION"
+                exit 1
+              }
+              ;;
+            *)
+              echo "::error::BLOCKED_UNKNOWN_OPERATION"
+              exit 1
+              ;;
+          esac
 
       - name: Validate required configuration
         shell: bash
@@ -100,9 +154,28 @@ jobs:
           case "$OPERATION" in
             prepare_disabled|close_all)
               MASTER_GATE="false"
+              RESERVATION_STOP="true"
+              ARI_STOP="true"
               ;;
             enable_read_only)
               MASTER_GATE="true"
+              RESERVATION_STOP="true"
+              ARI_STOP="true"
+              ;;
+            enable_reservation_sync)
+              MASTER_GATE="true"
+              RESERVATION_STOP="false"
+              ARI_STOP="true"
+              ;;
+            enable_ari_write)
+              MASTER_GATE="true"
+              RESERVATION_STOP="true"
+              ARI_STOP="false"
+              ;;
+            enable_live)
+              MASTER_GATE="true"
+              RESERVATION_STOP="false"
+              ARI_STOP="false"
               ;;
             *)
               echo "::error::BLOCKED_UNKNOWN_OPERATION"
@@ -138,6 +211,8 @@ jobs:
           jq \
             --arg sha "$EXACT_SHA" \
             --arg master "$MASTER_GATE" \
+            --arg reservation_stop "$RESERVATION_STOP" \
+            --arg ari_stop "$ARI_STOP" \
             -f .github/scripts/exely-cutover-spec.jq \
             /tmp/exely-spec.json > /tmp/exely-new-spec.json
 
@@ -186,12 +261,12 @@ jobs:
               echo "::error::BLOCKED_MASTER_GATE_MISMATCH"
               exit 1
             }
-            test "$reservation_stop" = "true" || {
-              echo "::error::BLOCKED_RESERVATION_STOP_MISSING"
+            test "$reservation_stop" = "$RESERVATION_STOP" || {
+              echo "::error::BLOCKED_RESERVATION_GATE_MISMATCH"
               exit 1
             }
-            test "$ari_stop" = "true" || {
-              echo "::error::BLOCKED_ARI_STOP_MISSING"
+            test "$ari_stop" = "$ARI_STOP" || {
+              echo "::error::BLOCKED_ARI_GATE_MISMATCH"
               exit 1
             }
             test "$nilvera_enabled" = "false" || {
@@ -205,8 +280,8 @@ jobs:
             echo "- exact_head_match: true"
             echo "- deployment_active: true"
             echo "- production_master_enabled: $MASTER_GATE"
-            echo "- reservation_sync_disabled: true"
-            echo "- ari_write_disabled: true"
+            echo "- reservation_sync_disabled: $RESERVATION_STOP"
+            echo "- ari_write_disabled: $ARI_STOP"
             echo "- nilvera_disabled: true"
             echo "- provider_read_count: 0"
             echo "- provider_write_count: 0"
