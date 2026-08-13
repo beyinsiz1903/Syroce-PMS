@@ -38,8 +38,8 @@ def test_read_only_stage_keeps_reservation_and_ari_stopped() -> None:
     spec_filter = SPEC_FILTER_PATH.read_text(encoding="utf-8")
 
     assert 'enable_read_only)\n              MASTER_GATE="true"' in text
-    assert 'set_env("DISABLE_EXELY_RESERVATION_SYNC"; "true")' in spec_filter
-    assert 'set_env("DISABLE_EXELY_ARI_WRITE"; "true")' in spec_filter
+    assert 'set_env("DISABLE_EXELY_RESERVATION_SYNC"; $reservation_stop)' in spec_filter
+    assert 'set_env("DISABLE_EXELY_ARI_WRITE"; $ari_stop)' in spec_filter
     assert 'set_env("ENABLE_EXELY_PRODUCTION"; $master)' in spec_filter
     assert 'set_env("NILVERA_ENABLED"; "false")' in spec_filter
 
@@ -48,6 +48,24 @@ def test_prepare_and_close_stages_disable_master_gate() -> None:
     text = _workflow_text()
 
     assert 'prepare_disabled|close_all)\n              MASTER_GATE="false"' in text
+
+
+def test_live_stages_require_prerequisite_attestation_and_exact_confirmation() -> None:
+    text = _workflow_text()
+
+    assert "BLOCKED_PROVIDER_PREREQUISITES_NOT_ATTESTED" in text
+    assert "BLOCKED_PROVIDER_ACTIVATION_CONFIRMATION" in text
+    assert '"ENABLE_EXELY_RESERVATION_SYNC"' in text
+    assert '"ENABLE_EXELY_ARI_WRITE"' in text
+    assert '"ENABLE_EXELY_LIVE"' in text
+
+
+def test_live_stage_matrix_keeps_paths_independent() -> None:
+    text = _workflow_text()
+
+    assert 'enable_reservation_sync)\n              MASTER_GATE="true"\n              RESERVATION_STOP="false"\n              ARI_STOP="true"' in text
+    assert 'enable_ari_write)\n              MASTER_GATE="true"\n              RESERVATION_STOP="true"\n              ARI_STOP="false"' in text
+    assert 'enable_live)\n              MASTER_GATE="true"\n              RESERVATION_STOP="false"\n              ARI_STOP="false"' in text
 
 
 def test_cutover_has_no_exely_provider_call() -> None:
@@ -81,8 +99,8 @@ def test_cutover_verifies_live_sha_and_all_runtime_gates() -> None:
     assert "BLOCKED_COMPONENT_REPOSITORY" in text
     assert "BLOCKED_LIVE_REPOSITORY_MISMATCH" in text
     assert "BLOCKED_MASTER_GATE_MISMATCH" in text
-    assert "BLOCKED_RESERVATION_STOP_MISSING" in text
-    assert "BLOCKED_ARI_STOP_MISSING" in text
+    assert "BLOCKED_RESERVATION_GATE_MISMATCH" in text
+    assert "BLOCKED_ARI_GATE_MISMATCH" in text
     assert "BLOCKED_NILVERA_STOP_MISSING" in text
     assert "nilvera_disabled: true" in text
     assert "provider_read_count: 0" in text
@@ -125,6 +143,12 @@ def test_spec_filter_sets_exact_sha_and_fail_closed_gates() -> None:
             "--arg",
             "master",
             "true",
+            "--arg",
+            "reservation_stop",
+            "true",
+            "--arg",
+            "ari_stop",
+            "true",
             "-f",
             str(SPEC_FILTER_PATH),
         ],
@@ -149,3 +173,43 @@ def test_spec_filter_sets_exact_sha_and_fail_closed_gates() -> None:
             "NILVERA_ENABLED": "false",
         }
     assert "envs" not in components["frontend"]
+
+
+def test_spec_filter_can_open_only_reservation_sync() -> None:
+    source = {
+        "services": [{"name": "backend", "image": {"tag": "old"}}],
+        "workers": [
+            {"name": "worker", "image": {"tag": "old"}},
+            {"name": "beat", "image": {"tag": "old"}},
+        ],
+    }
+    result = subprocess.run(
+        [
+            "jq",
+            "--arg",
+            "sha",
+            "exact-head",
+            "--arg",
+            "master",
+            "true",
+            "--arg",
+            "reservation_stop",
+            "false",
+            "--arg",
+            "ari_stop",
+            "true",
+            "-f",
+            str(SPEC_FILTER_PATH),
+        ],
+        input=json.dumps(source),
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+
+    transformed = json.loads(result.stdout)
+    for component in transformed["services"] + transformed["workers"]:
+        envs = {item["key"]: item["value"] for item in component["envs"]}
+        assert envs["ENABLE_EXELY_PRODUCTION"] == "true"
+        assert envs["DISABLE_EXELY_RESERVATION_SYNC"] == "false"
+        assert envs["DISABLE_EXELY_ARI_WRITE"] == "true"

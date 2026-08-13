@@ -8,8 +8,8 @@ def set_env($key; $value):
     .image.tag = $sha
     | del(.image.digest)
     | set_env("ENABLE_EXELY_PRODUCTION"; $master)
-    | set_env("DISABLE_EXELY_RESERVATION_SYNC"; "true")
-    | set_env("DISABLE_EXELY_ARI_WRITE"; "true")
+    | set_env("DISABLE_EXELY_RESERVATION_SYNC"; $reservation_stop)
+    | set_env("DISABLE_EXELY_ARI_WRITE"; $ari_stop)
     | set_env("NILVERA_ENABLED"; "false")
   elif .name == "frontend" then
     .image.tag = $sha | del(.image.digest)
@@ -21,8 +21,8 @@ def set_env($key; $value):
     .image.tag = $sha
     | del(.image.digest)
     | set_env("ENABLE_EXELY_PRODUCTION"; $master)
-    | set_env("DISABLE_EXELY_RESERVATION_SYNC"; "true")
-    | set_env("DISABLE_EXELY_ARI_WRITE"; "true")
+    | set_env("DISABLE_EXELY_RESERVATION_SYNC"; $reservation_stop)
+    | set_env("DISABLE_EXELY_ARI_WRITE"; $ari_stop)
     | set_env("NILVERA_ENABLED"; "false")
   else . end
 )
