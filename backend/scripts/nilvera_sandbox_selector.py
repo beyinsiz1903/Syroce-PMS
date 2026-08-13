@@ -4,14 +4,14 @@ import os
 import sys
 
 SANDBOX_FILE = "tests/integration/test_nilvera_sandbox_e2e.py"
-CREATE_RETURN_RECONCILIATION_FILE = "tests/integration/test_nilvera_create_return_reconciliation_v2.py"
+CREATE_RETURN_RECONCILIATION_FILE = "tests/integration/test_nilvera_create_return_reconciliation_diagnostic.py"
 INCOMING_ANSWER_TARGET = f"{SANDBOX_FILE}::test_sandbox_incoming_commercial_invoice_answer_contract"
 INCOMING_ANSWER_DISCOVERY_TARGET = f"{SANDBOX_FILE}::test_sandbox_discover_incoming_commercial_invoice_answer_candidate"
 INCOMING_FIXTURE_TARGET = f"{SANDBOX_FILE}::test_sandbox_prepare_incoming_commercial_invoice_fixture"
 RECONCILIATION_TARGET = f"{SANDBOX_FILE}::test_sandbox_reconcile_incoming_commercial_invoice_fixture"
 CREATE_RETURN_DISCOVERY_TARGET = f"{SANDBOX_FILE}::test_sandbox_create_return_contract_discovery"
 CREATE_RETURN_RECONCILIATION_TARGET = (
-    f"{CREATE_RETURN_RECONCILIATION_FILE}::test_sandbox_reconcile_created_return_exact_write_window"
+    f"{CREATE_RETURN_RECONCILIATION_FILE}::test_sandbox_diagnose_created_return_write_deltas"
 )
 PREFLIGHT_TARGET = f"{SANDBOX_FILE}::test_sandbox_incoming_fixture_accounts_preflight"
 
