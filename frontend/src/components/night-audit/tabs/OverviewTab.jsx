@@ -7,7 +7,7 @@ import { TabsContent } from '@/components/ui/tabs';
 import { Moon, Play, Clock, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Calendar, FileText, ChevronDown, ChevronUp, DollarSign, Users, Building2, BarChart3, Eye, Loader2, Shield, Info, Timer, Settings2, Zap, RotateCcw, TrendingUp, CreditCard, ShieldCheck, Scale, Receipt, PieChart, ArrowUpDown, Banknote, AlertOctagon, Search } from 'lucide-react';
 
 export default function OverviewTab(props) {
-  const { SeverityBadge, StatusBadge, exceptions, expandedRun, handleQuickToggleSchedule, history, historyTotal, lastRun, loading, schedule, scheduleStatus, setShowScheduleDialog, t, toggleExpand } = props;
+  const { SeverityBadge, StatusBadge, exceptions, expandedRun, handleAbortRun, handleQuickToggleSchedule, handleResumeRun, history, historyTotal, lastRun, loading, runActionId, schedule, scheduleStatus, setShowScheduleDialog, t, toggleExpand } = props;
   return (
     <TabsContent value="overview" className="space-y-4 mt-4">
       {/* Automatic Scheduling Card */}
@@ -308,6 +308,27 @@ export default function OverviewTab(props) {
                           </p>
                         ) : (
                           <p className="text-xs text-gray-400">{t('cm.components_nightaudit_tabs_OverviewTab.istisnalar_yukleniyor')}</p>
+                        )}
+                        {['blocked', 'failed', 'partial_recovery_required'].includes(run.status) && (
+                          <div className="flex justify-end gap-2 border-t pt-3">
+                            <Button
+                              size="sm"
+                              onClick={() => handleResumeRun(run.audit_id)}
+                              disabled={runActionId === run.audit_id}
+                              data-testid={`resume-audit-${run.audit_id}`}
+                            >
+                              <Play className="w-3.5 h-3.5 mr-1" /> Devam Ettir
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleAbortRun(run.audit_id)}
+                              disabled={runActionId === run.audit_id}
+                              data-testid={`abort-audit-${run.audit_id}`}
+                            >
+                              <XCircle className="w-3.5 h-3.5 mr-1" /> İptal Et
+                            </Button>
+                          </div>
                         )}
                       </div>
                     )}

@@ -100,6 +100,12 @@ const DEPARTMENTS = [{
   value: 'management',
   label: 'Yönetim'
 }];
+
+export const resolutionSuccessMessage = (guestEmailSent) => (
+  guestEmailSent
+    ? 'Şikayet çözüldü ve misafire bilgilendirme e-postası gönderildi'
+    : 'Şikayet çözüldü'
+);
 const COMPENSATIONS = [{
   value: 'none',
   label: 'Yok'
@@ -340,7 +346,7 @@ const ServiceRecovery = ({
         compensation_offered: resolveData.compensation_offered === 'none' ? null : resolveData.compensation_offered
       };
       const res = await axios.post(`/service/complaints/${selectedComplaint.id}/resolve`, payload);
-      toast.success('Şikayet çözüldü, misafire bilgilendirme e-postası gönderildi');
+      toast.success(resolutionSuccessMessage(res?.data?.guest_email_sent));
       const folio = res?.data?.folio;
       if (folio?.folio_adjusted) {
         toast.success(`Misafirin folyosuna ${Number(folio.amount_credited).toLocaleString(i18n.language)} TL kredi işlendi (yeni bakiye: ${Number(folio.new_balance).toLocaleString(i18n.language)} TL)`, {

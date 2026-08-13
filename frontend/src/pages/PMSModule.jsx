@@ -585,7 +585,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       if (forceClean) params.append('force_clean', 'true');
       const response = await axios.post(`/frontdesk/checkin/${bookingId}?${params}`);
       toast.success(`${response.data.message} - Room ${response.data.room_number}`);
-      loadData(); loadFrontDeskData();
+      await Promise.all([loadData(), loadFrontDeskData()]);
     } catch (error) { toast.error(error.response?.data?.detail || 'Check-in failed'); }
   };
 
@@ -594,7 +594,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       const response = await axios.post(`/frontdesk/checkout/${bookingId}?auto_close_folios=true`);
       if (response.data.total_balance > 0.01) toast.warning(`Open balance on check-out: ${response.data.total_balance.toFixed(2)} ₺`);
       else toast.success(`${response.data.message} - ${response.data.folios_closed} folios closed`);
-      loadData(); loadFrontDeskData(); loadHousekeepingData();
+      await Promise.all([loadData(), loadFrontDeskData(), loadHousekeepingData()]);
     } catch (error) { toast.error(error.response?.data?.detail || 'Check-out failed'); }
   };
 

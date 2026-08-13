@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from shared_kernel.gl_posting import GLPostingError, post_journal_entry
 
 logger = logging.getLogger("domains.pms.fnb_cost")
 
@@ -38,6 +39,7 @@ _READ_ROLES = {
     "staff",
     "accountant",
 }
+_POST_ROLES = {"super_admin", "admin", "finance"}
 
 # inventory_movements'ta tüketim/çıkış sayılan tipler (sunucu otoritedir).
 _CONSUMPTION_TYPES = {"out", "consumption", "usage", "sale", "waste", "depletion"}
@@ -350,49 +352,36 @@ async def yield_variance(
 async def post_fnb_cost_to_gl(
     start: str = Query(..., description="ISO başlangıç (gte)"),
     end: str = Query(..., description="ISO bitiş (lte)"),
+    outlet_id: str | None = Query(None),
     current_user: User = Depends(get_current_user),
 ):
     """
     Belirli bir tarih aralığındaki toplam 'Satılan Malın Maliyetini' (Teorik veya Fiili)
     hesaplayarak Genel Muhasebeye (740 Borç / 150 Alacak) Yevmiye Fişi (Mahsup) atar.
     """
-    _require_role(current_user, _READ_ROLES)
+    _require_role(current_user, _POST_ROLES)
+    tenant_id = _tenant_of(current_user)
     # Re-use the variance logic to get total cost
-    v = await yield_variance(start, end, None, current_user)
+    v = await yield_variance(start, end, outlet_id, current_user)
     total_cost = v["totals"]["actual_cost"] if v["totals"]["actual_cost"] > 0 else v["totals"]["theoretical_cost"]
 
     if total_cost <= 0:
-        return {"status": "error", "message": "Yansıtılacak bir maliyet bulunamadı."}
-
+        raise HTTPException(status_code=400, detail="Yansıtılacak bir maliyet bulunamadı")
     try:
-        import uuid
-        from datetime import datetime
-
-        from routers.finance.general_ledger import mock_db as gl_db
-
-        journal_entry = {
-            "id": str(uuid.uuid4()),
-            "date": datetime.utcnow().strftime("%Y-%m-%d"),
-            "type": "Mahsup",
-            "description": f"F&B Maliyet Yansıtma ({start} - {end})",
-            "total": total_cost,
-            "timestamp": datetime.utcnow().isoformat(),
-            "lines": [
-                {
-                    "account_code": "740",
-                    "debit": total_cost,
-                    "credit": 0.0,
-                    "description": "Hizmet Üretim Maliyeti (F&B)"
-                },
-                {
-                    "account_code": "150",
-                    "debit": 0.0,
-                    "credit": total_cost,
-                    "description": "İlk Madde ve Malzeme Çıkışı"
-                }
-            ]
-        }
-        gl_db["journals"].append(journal_entry)
-        return {"status": "success", "message": f"{total_cost} TL tutarında maliyet başarıyla yansıtıldı ve Mahsup fişi kesildi."}
-    except Exception as e:
-        return {"status": "error", "message": f"Muhasebe entegrasyon hatası: {str(e)}"}
+        entry = await post_journal_entry(
+            db,
+            tenant_id,
+            date=end[:10],
+            memo=f"F&B maliyet yansıtma ({start[:10]} - {end[:10]})",
+            lines=[
+                {"account_code": "740", "debit": total_cost, "memo": "F&B üretim maliyeti"},
+                {"account_code": "150", "credit": total_cost, "memo": "Malzeme çıkışı"},
+            ],
+            source="fnb_cost",
+            source_ref=f"{start}:{end}:{outlet_id or 'all'}",
+            actor=_actor_id(current_user),
+            idempotency_key=f"fnb-cost:{start}:{end}:{outlet_id or 'all'}",
+        )
+    except GLPostingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "success", "journal_entry_id": entry["id"]}

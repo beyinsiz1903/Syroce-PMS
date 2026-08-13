@@ -8,6 +8,12 @@ import { NAV_ITEMS } from '@/config/navItems';
 
 const trLower = (s) => (s || '').toLocaleLowerCase('tr');
 
+export const normalizeSearchResults = (data, collectionKey) => {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data[collectionKey])) return data[collectionKey];
+  return [];
+};
+
 const GlobalSearch = ({ onSelectResult }) => {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
@@ -55,18 +61,18 @@ const GlobalSearch = ({ onSelectResult }) => {
       setLoading(true);
       try {
         const [guestsRes, bookingsRes, roomsRes] = await Promise.all([
-          axios.get(`/pms/guests?search=${query}`).catch(() => ({ data: [] })),
-          axios.get(`/pms/bookings?search=${query}`).catch(() => ({ data: [] })),
-          axios.get(`/pms/rooms?search=${query}`).catch(() => ({ data: [] }))
+          axios.get(`/pms/guests/search?q=${encodeURIComponent(query)}&limit=3`).catch(() => ({ data: [] })),
+          axios.get(`/pms/bookings?search=${encodeURIComponent(query)}&limit=3`).catch(() => ({ data: [] })),
+          axios.get(`/pms/rooms?search=${encodeURIComponent(query)}&limit=3`).catch(() => ({ data: [] }))
         ]);
 
         setResults({
-          guests: (guestsRes.data || []).slice(0, 3),
-          bookings: (bookingsRes.data || []).slice(0, 3),
-          rooms: (roomsRes.data || []).slice(0, 3)
+          guests: normalizeSearchResults(guestsRes.data, 'guests').slice(0, 3),
+          bookings: normalizeSearchResults(bookingsRes.data, 'bookings').slice(0, 3),
+          rooms: normalizeSearchResults(roomsRes.data, 'rooms').slice(0, 3)
         });
-      } catch (error) {
-        console.error('Search error:', error);
+      } catch {
+        setResults({ guests: [], bookings: [], rooms: [] });
       } finally {
         setLoading(false);
       }

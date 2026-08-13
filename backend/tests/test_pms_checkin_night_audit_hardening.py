@@ -10,6 +10,7 @@ from common.result import ServiceResult
 from core.night_audit_hardened import (
     _normalize_booking_date,
     _partition_due_bookings,
+    _partition_stays_for_business_date,
     _split_pending_arrivals,
 )
 from domains.pms.frontdesk_service import FrontdeskService
@@ -199,3 +200,22 @@ def test_pending_arrivals_without_room_are_separate_data_integrity_blockers():
 
     assert [booking["id"] for booking in with_room] == ["assigned"]
     assert {booking["id"] for booking in without_room} == {"missing", "empty"}
+
+
+def test_room_charge_stays_are_scoped_to_the_business_date():
+    active, future, ended, invalid = _partition_stays_for_business_date(
+        [
+            {"id": "active", "check_in": "2026-05-01", "check_out": "2026-05-08"},
+            {"id": "starts-today", "check_in": "2026-05-05T15:00:00+03:00", "check_out": "2026-05-06"},
+            {"id": "future", "check_in": "2026-10-13", "check_out": "2026-10-14"},
+            {"id": "ended", "check_in": "2026-05-01", "check_out": "2026-05-05"},
+            {"id": "bad-order", "check_in": "2026-05-05", "check_out": "2026-05-04"},
+            {"id": "bad-date", "check_in": "legacy", "check_out": "2026-05-06"},
+        ],
+        "2026-05-05",
+    )
+
+    assert {booking["id"] for booking in active} == {"active", "starts-today"}
+    assert [booking["id"] for booking in future] == ["future"]
+    assert [booking["id"] for booking in ended] == ["ended"]
+    assert {booking["id"] for booking in invalid} == {"bad-order", "bad-date"}

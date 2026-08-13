@@ -19,6 +19,7 @@ import {
   PieChart, ArrowUpDown, Banknote, AlertOctagon, Search
 } from "lucide-react";
 import { toast } from "sonner";
+import { confirmDialog } from "@/lib/dialogs";
 
 import {
   StatusBadge, SeverityBadge, StatCard, IntegrityBadge,
@@ -42,6 +43,8 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const [exceptions, setExceptions] = useState({});
   const [showRunDialog, setShowRunDialog] = useState(false);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [blockedRunDetail, setBlockedRunDetail] = useState(null);
+  const [runActionId, setRunActionId] = useState(null);
   const [previewData, setPreviewData] = useState(null);
   const [prepRefreshKey, setPrepRefreshKey] = useState(0);
   const [scheduleLoading, setScheduleLoading] = useState(false);
@@ -84,7 +87,19 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const fetchHistory = useCallback(async () => {
     try {
       const res = await axios.get("/night-audit/history", { params: { limit: 20, skip: 0 } });
-      setHistory(res.data.runs || []);
+      const normalizedRuns = (res.data.runs || []).map((run) => ({
+        ...run,
+        audit_id: run.audit_id || run.id,
+        rooms_processed: run.rooms_processed ?? run.processed_count ?? 0,
+        charges_posted: run.charges_posted ?? run.processed_count ?? 0,
+        total_room_revenue: Number(run.total_room_revenue ?? run.total_amount ?? 0),
+        total_tax_amount: Number(run.total_tax_amount ?? run.total_tax ?? 0),
+        exceptions_count: run.exceptions_count ?? run.errors?.length ?? 0,
+        no_shows_processed: run.no_shows_processed ?? 0,
+        folios_balanced: run.folios_balanced ?? 0,
+        folios_unbalanced: run.folios_unbalanced ?? 0,
+      }));
+      setHistory(normalizedRuns);
       setHistoryTotal(res.data.total || 0);
     } catch (err) {
       console.error("History fetch failed:", err);
@@ -228,9 +243,15 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       const detail = err.response?.data?.detail;
       // BLOCKED: backend yapılandırılmış nesne döner ({success:false, code:"BLOCKED", error, run:{errors,warnings}})
       if (typeof detail === "object" && detail) {
-        if (detail.code === "BLOCKED") {
-          const errs = detail.run?.errors || [];
+        if (["BLOCKED", "VALIDATION_BLOCKED", "NEEDS_RESUME"].includes(detail.code)) {
+          const errs = detail.run?.errors || detail.blockers || [detail.error].filter(Boolean);
           const warns = detail.run?.warnings || [];
+          setBlockedRunDetail({
+            runId: detail.run?.id || detail.run_id || detail.existing_run_id || null,
+            businessDate: detail.run?.business_date || businessDate,
+            errors: errs,
+            warnings: warns,
+          });
           toast.error(
             `Gece denetimi engellendi (${errs.length} hata${warns.length ? `, ${warns.length} uyarı` : ""}). Hazırlık sekmesinden detayları görüp çözebilirsiniz.`,
             { duration: 6000 }
@@ -251,6 +272,54 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       }
     } finally {
       setRunning(false);
+    }
+  };
+
+  const handleResumeRun = async (runId) => {
+    if (!runId) return;
+    setRunActionId(runId);
+    try {
+      await axios.post(`/night-audit/runs/${runId}/resume`);
+      toast.success("Bloklanan gece denetimi tamamlandı");
+      setBlockedRunDetail(null);
+      await loadAll();
+      setPrepRefreshKey((key) => key + 1);
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      if (detail?.code === "STILL_BLOCKED") {
+        setBlockedRunDetail((prev) => ({
+          runId,
+          businessDate: prev?.businessDate || businessDate,
+          errors: detail.blockers || [],
+          warnings: prev?.warnings || [],
+        }));
+        toast.error("Denetim hâlâ engelli; aşağıdaki maddeleri çözün");
+      } else {
+        toast.error(detail?.error || detail || "Denetim devam ettirilemedi");
+      }
+    } finally {
+      setRunActionId(null);
+    }
+  };
+
+  const handleAbortRun = async (runId) => {
+    if (!runId) return;
+    if (!await confirmDialog({
+      message: "Bu açık gece denetimi iptal edilsin mi? Kaydedilmiş masraflar geri alınmaz.",
+      variant: "danger",
+    })) return;
+    setRunActionId(runId);
+    try {
+      await axios.post(`/night-audit/runs/${runId}/abort`);
+      toast.success("Açık gece denetimi iptal edildi");
+      setBlockedRunDetail(null);
+      await loadAll();
+      setPrepRefreshKey((key) => key + 1);
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      toast.error(detail?.error || detail || "Denetim iptal edilemedi");
+    } finally {
+      setRunActionId(null);
     }
   };
 
@@ -323,7 +392,13 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
     fetchBusinessDate, fetchHistory, fetchExceptions, fetchSchedule, fetchScheduleStatus,
     fetchFinancialSummary, fetchReconciliation, fetchIntegrityCheck, fetchFinancialReport,
     handleRunAudit, handleSaveSchedule, handleQuickToggleSchedule,
-    toggleExpand: () => {},
+    handleResumeRun, handleAbortRun, runActionId,
+    onOpenRun: async (runId) => {
+      setActiveTab("overview");
+      setExpandedRun(runId);
+      await fetchExceptions(runId);
+    },
+    toggleExpand,
     user, tenant, onLogout,
     lastRun,
     detail: null,
@@ -362,6 +437,48 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
           }
         />
         <h1 data-testid="night-audit-title" className="sr-only">Gece Denetimi</h1>
+
+        {blockedRunDetail && (
+          <Card className="border-rose-300 bg-rose-50 dark:border-rose-800 dark:bg-rose-950" data-testid="blocked-run-details">
+            <CardContent className="py-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <AlertOctagon className="w-5 h-5 text-rose-600 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-rose-900">
+                    {blockedRunDetail.businessDate} iş günü denetimi engellendi
+                  </p>
+                  <ul className="mt-2 list-disc pl-5 space-y-1 text-xs text-rose-800">
+                    {blockedRunDetail.errors.map((error, index) => <li key={`${index}-${error}`}>{error}</li>)}
+                  </ul>
+                  {blockedRunDetail.warnings.length > 0 && (
+                    <p className="mt-2 text-xs text-amber-800">
+                      Uyarılar: {blockedRunDetail.warnings.join(" · ")}
+                    </p>
+                  )}
+                </div>
+                {blockedRunDetail.runId && (
+                  <div className="flex gap-2 shrink-0">
+                    <Button
+                      size="sm"
+                      onClick={() => handleResumeRun(blockedRunDetail.runId)}
+                      disabled={runActionId === blockedRunDetail.runId}
+                    >
+                      <Play className="w-4 h-4 mr-1" /> Devam Ettir
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleAbortRun(blockedRunDetail.runId)}
+                      disabled={runActionId === blockedRunDetail.runId}
+                    >
+                      <XCircle className="w-4 h-4 mr-1" /> İptal Et
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Business Date & Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -423,6 +540,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
             <PreparationTab
               onStartRun={() => setShowRunDialog(true)}
               onPreviewLoaded={handlePreviewLoaded}
+              onOpenRun={ctx.onOpenRun}
               refreshKey={prepRefreshKey}
             />
           </TabsContent>

@@ -1,0 +1,79 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  GL_ENDPOINTS,
+  mergeAccountBalances,
+  normalizeTrialBalance,
+  toJournalPayload,
+} from '@/pages/GeneralLedgerModule';
+
+describe('GeneralLedgerModule persistent GL contract', () => {
+  it('uses the tenant-scoped persistent journal endpoint', () => {
+    expect(GL_ENDPOINTS).toEqual({
+      accounts: '/gl/accounts',
+      initializeAccounts: '/gl/accounts/initialize',
+      journal: '/gl/journal',
+      trialBalance: '/gl/trial-balance',
+    });
+  });
+
+  it('maps the form to the durable journal payload', () => {
+    expect(toJournalPayload({
+      date: '2026-08-13',
+      type: 'Mahsup',
+      description: ' Test fişi ',
+      lines: [
+        { account_code: ' 100 ', debit: 100, credit: 0, description: ' Borç ' },
+        { account_code: '600', debit: 0, credit: 100, description: '' },
+      ],
+    })).toEqual({
+      date: '2026-08-13',
+      memo: 'Test fişi',
+      source: 'manual',
+      source_ref: 'Mahsup',
+      lines: [
+        { account_code: '100', debit: 100, credit: 0, memo: 'Borç' },
+        { account_code: '600', debit: 0, credit: 100, memo: null },
+      ],
+    });
+  });
+
+  it('normalizes the persistent trial-balance response for the table', () => {
+    expect(normalizeTrialBalance({
+      rows: [{
+        account_code: '100',
+        account_name: 'Kasa',
+        total_debit: 150,
+        total_credit: 50,
+        debit_balance: 100,
+        credit_balance: 0,
+      }],
+      totals: { debit_balance: 100, credit_balance: 100, balanced: true },
+    })).toEqual({
+      lines: [{
+        code: '100',
+        name: 'Kasa',
+        total_debit: 150,
+        total_credit: 50,
+        balance_type: 'Borç',
+        balance: 100,
+      }],
+      totals: { total_debit: 100, total_credit: 100, balanced: true },
+    });
+  });
+
+  it('derives current account balances from the durable trial balance', () => {
+    expect(mergeAccountBalances(
+      [{ code: '100', name: 'Kasa' }, { code: '600', name: 'Satışlar' }],
+      {
+        rows: [
+          { account_code: '100', debit_balance: 125, credit_balance: 0 },
+          { account_code: '600', debit_balance: 0, credit_balance: 125 },
+        ],
+      }
+    )).toEqual([
+      { code: '100', name: 'Kasa', balance: 125 },
+      { code: '600', name: 'Satışlar', balance: -125 },
+    ]);
+  });
+});
