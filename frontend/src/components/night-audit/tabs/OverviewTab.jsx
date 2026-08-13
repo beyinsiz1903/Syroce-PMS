@@ -311,14 +311,16 @@ export default function OverviewTab(props) {
                         )}
                         {['blocked', 'failed', 'partial_recovery_required'].includes(run.status) && (
                           <div className="flex justify-end gap-2 border-t pt-3">
-                            <Button
-                              size="sm"
-                              onClick={() => handleResumeRun(run.audit_id)}
-                              disabled={runActionId === run.audit_id}
-                              data-testid={`resume-audit-${run.audit_id}`}
-                            >
-                              <Play className="w-3.5 h-3.5 mr-1" /> Devam Ettir
-                            </Button>
+                            {!run.is_dry_run && (
+                              <Button
+                                size="sm"
+                                onClick={() => handleResumeRun(run.audit_id)}
+                                disabled={runActionId === run.audit_id}
+                                data-testid={`resume-audit-${run.audit_id}`}
+                              >
+                                <Play className="w-3.5 h-3.5 mr-1" /> Devam Ettir
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="outline"

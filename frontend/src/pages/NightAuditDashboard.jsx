@@ -251,6 +251,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
             businessDate: detail.run?.business_date || businessDate,
             errors: errs,
             warnings: warns,
+            isDryRun: runOptions.dry_run || Boolean(detail.run?.dry_run),
           });
           toast.error(
             `Gece denetimi engellendi (${errs.length} hata${warns.length ? `, ${warns.length} uyarı` : ""}). Hazırlık sekmesinden detayları görüp çözebilirsiniz.`,
@@ -292,6 +293,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
           businessDate: prev?.businessDate || businessDate,
           errors: detail.blockers || [],
           warnings: prev?.warnings || [],
+          isDryRun: prev?.isDryRun || false,
         }));
         toast.error("Denetim hâlâ engelli; aşağıdaki maddeleri çözün");
       } else {
@@ -458,13 +460,15 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 </div>
                 {blockedRunDetail.runId && (
                   <div className="flex gap-2 shrink-0">
-                    <Button
-                      size="sm"
-                      onClick={() => handleResumeRun(blockedRunDetail.runId)}
-                      disabled={runActionId === blockedRunDetail.runId}
-                    >
-                      <Play className="w-4 h-4 mr-1" /> Devam Ettir
-                    </Button>
+                    {!blockedRunDetail.isDryRun && (
+                      <Button
+                        size="sm"
+                        onClick={() => handleResumeRun(blockedRunDetail.runId)}
+                        disabled={runActionId === blockedRunDetail.runId}
+                      >
+                        <Play className="w-4 h-4 mr-1" /> Devam Ettir
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="outline"

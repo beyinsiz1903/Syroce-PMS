@@ -202,7 +202,12 @@ async def resume_run(
     )
     if not result.get("success"):
         code = result.get("code", "UNKNOWN")
-        status_code = {"NOT_FOUND": 404, "INVALID_STATE": 409, "STILL_BLOCKED": 422}.get(code, 400)
+        status_code = {
+            "NOT_FOUND": 404,
+            "INVALID_STATE": 409,
+            "DRY_RUN_NOT_RESUMABLE": 409,
+            "STILL_BLOCKED": 422,
+        }.get(code, 400)
         raise HTTPException(status_code=status_code, detail=result)
     # Resume can finalize remaining steps → mutates folio/payment state.
     _invalidate_finance_cache(current_user.tenant_id)

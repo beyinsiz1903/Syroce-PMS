@@ -526,6 +526,44 @@ async def test_resume_invalid_state():
         c.close()
 
 
+@pytest.mark.asyncio
+async def test_blocked_dry_run_cannot_resume_as_real_audit():
+    """A blocked simulation must never post charges or roll the business date."""
+    c, db = await _get_db()
+    try:
+        await _cleanup(db)
+        run_id = str(uuid.uuid4())
+        now = _now_iso()
+        await db.night_audit_runs.insert_one({
+            "id": run_id, "tenant_id": TENANT, "property_id": PROPERTY,
+            "business_date": BD, "status": S_BLOCKED, "stage": ST_VALIDATING,
+            "trigger_source": "test", "started_by": {}, "dry_run": True,
+            "lock_token": str(uuid.uuid4()),
+            "candidate_count": 0, "processed_count": 0,
+            "failed_count": 0, "skipped_count": 0,
+            "warnings": [], "errors": ["Test blocker"],
+            "started_at": now, "completed_at": now,
+            "last_heartbeat_at": now, "created_at": now, "updated_at": now,
+        })
+        await db.tenant_settings.insert_one({
+            "tenant_id": TENANT,
+            "business_date": BD,
+        })
+
+        result = await _call_engine("resume_night_audit", c, db, TENANT, run_id)
+
+        assert result["success"] is False
+        assert result["code"] == "DRY_RUN_NOT_RESUMABLE"
+        assert await db.folio_charges.count_documents({"tenant_id": TENANT}) == 0
+        settings = await db.tenant_settings.find_one({"tenant_id": TENANT}, {"_id": 0})
+        assert settings["business_date"] == BD
+        run = await db.night_audit_runs.find_one({"id": run_id}, {"_id": 0})
+        assert run["status"] == S_BLOCKED
+    finally:
+        await _cleanup(db)
+        c.close()
+
+
 # ═══════════════════════════════════════════════════════════════
 #  G. NO DOUBLE CLOSE
 # ═══════════════════════════════════════════════════════════════
