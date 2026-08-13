@@ -1,4 +1,4 @@
-"""GET-only structural fingerprint diagnostics for ambiguous Nilvera CreateReturn reconciliation."""
+"""GET-only structural fingerprint diagnostics for ambiguous Nilvera CreateReturn drafts."""
 
 import hashlib
 import hmac
@@ -45,6 +45,7 @@ def _list_length(payload: object, *paths: tuple[str, ...]) -> int | None:
 
 
 def _return_fingerprint(detail: dict, *, source_provider_uuid: str, hmac_key: str) -> dict[str, object]:
+    """Build a non-sensitive structural fingerprint; never return raw provider values."""
     invoice_number = _nested_value(
         detail,
         ("InvoiceNumber",),
@@ -93,8 +94,8 @@ def _fingerprint_difference_labels(left: dict[str, object], right: dict[str, obj
 
 
 @pytest.mark.external
-async def test_sandbox_diagnose_created_return_source_links(record_property):
-    """Compare safe structural fingerprints for exactly two matching return drafts using GET only."""
+async def test_sandbox_diagnose_created_return_fingerprints(record_property):
+    """Compare safe structural fingerprints for matching return drafts using GET requests only."""
     allowed = os.environ.get("NILVERA_E2E_CREATE_RETURN_RECONCILIATION_ALLOWED", "false")
     if allowed.lower() != "true":
         pytest.skip("CreateReturn fingerprint diagnostics require explicit read-only reconciliation mode")
@@ -216,22 +217,22 @@ async def test_sandbox_diagnose_created_return_source_links(record_property):
                 for detail in matches
             ]
             differences = _fingerprint_difference_labels(fingerprints[0], fingerprints[1])
-            fingerprint_equal = not differences
+            same_fingerprint = not differences
             difference_labels = ",".join(differences) if differences else "NONE"
 
-            record_property("fingerprint_equal", str(fingerprint_equal).lower())
+            record_property("fingerprint_equal", str(same_fingerprint).lower())
             record_property("fingerprint_difference_count", str(len(differences)))
             record_property("fingerprint_difference_fields", difference_labels)
             record_property("provider_write_count", "0")
 
             diagnostic = (
-                f"raw_match_count=2, fingerprint_equal={str(fingerprint_equal).lower()}, "
+                f"raw_match_count=2, fingerprint_equal={str(same_fingerprint).lower()}, "
                 f"fingerprint_difference_count={len(differences)}, "
                 f"fingerprint_difference_fields={difference_labels}, write_count=0"
             )
             print(f"CREATE_RETURN_FINGERPRINT_DIAGNOSTIC {diagnostic}")
 
-            if fingerprint_equal:
+            if same_fingerprint:
                 pytest.fail(
                     f"CONFLICT_CREATE_RETURN_FINGERPRINT_IDENTICAL ({diagnostic})",
                     pytrace=False,
