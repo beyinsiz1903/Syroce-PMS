@@ -24,6 +24,11 @@ router = APIRouter(prefix="/api/channel-manager/auto-map", tags=["Auto-Map"])
 SIMILARITY_THRESHOLD = 0.4
 
 
+def _unambiguous_rate_plan(rate_plans: list[dict]) -> dict | None:
+    """Return a default only when the provider exposes exactly one plan."""
+    return rate_plans[0] if len(rate_plans) == 1 else None
+
+
 class AutoMapSuggestRequest(BaseModel):
     provider: str  # "exely" or "hotelrunner"
 
@@ -39,6 +44,11 @@ class AutoMapApplyItem(BaseModel):
 class AutoMapApplyRequest(BaseModel):
     provider: str
     mappings: list[AutoMapApplyItem]
+
+
+def _require_explicit_rate_plans(provider: str, mappings: list[AutoMapApplyItem]) -> None:
+    if provider == "exely" and any(not mapping.provider_rate_plan_code for mapping in mappings):
+        raise HTTPException(status_code=400, detail="Exely fiyat plani acikca secilmelidir.")
 
 
 def _similarity(a: str, b: str) -> float:
@@ -188,10 +198,12 @@ async def suggest_auto_mappings(
                 "similarity_score": round(best_score, 2),
                 "confidence": "high" if best_score >= 0.8 else "medium" if best_score >= 0.6 else "low",
             }
-            # For Exely, add default rate plan
-            if provider == "exely" and provider_rates:
-                suggestion["provider_rate_plan_code"] = provider_rates[0]["code"]
-                suggestion["provider_rate_plan_name"] = provider_rates[0]["name"]
+            # Never guess among multiple Exely rate plans. The operator must
+            # explicitly select one before a production mapping is persisted.
+            default_rate_plan = _unambiguous_rate_plan(provider_rates)
+            if provider == "exely" and default_rate_plan:
+                suggestion["provider_rate_plan_code"] = default_rate_plan["code"]
+                suggestion["provider_rate_plan_name"] = default_rate_plan["name"]
             suggestions.append(suggestion)
 
     # Also return unmapped PMS types that couldn't be matched
@@ -222,6 +234,7 @@ async def suggest_auto_mappings(
         "existing_mapping_count": len(existing),
         "total_pms_types": len(pms_types),
         "total_provider_rooms": len(provider_rooms),
+        "provider_rate_plans": provider_rates if provider == "exely" else [],
     }
 
 
@@ -235,6 +248,8 @@ async def apply_auto_mappings(
     provider = payload.provider.lower()
     if provider not in ("exely", "hotelrunner"):
         raise HTTPException(status_code=400, detail="Gecersiz provider.")
+
+    _require_explicit_rate_plans(provider, payload.mappings)
 
     created = 0
     errors = []

@@ -19,6 +19,20 @@ export const buildExelyRequestConfig = user => {
   return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
 };
 
+export const buildExelyAutoMapPayload = (suggestions, rateSelections, ratePlans) => suggestions.map(suggestion => {
+  const selectedCode = suggestion.provider_rate_plan_code || rateSelections[suggestion.provider_room_code];
+  const selectedPlan = ratePlans.find(plan => plan.code === selectedCode);
+  return {
+    pms_room_type: suggestion.pms_room_type,
+    provider_room_code: suggestion.provider_room_code,
+    provider_room_name: suggestion.provider_room_name,
+    provider_rate_plan_code: selectedCode || '',
+    provider_rate_plan_name: suggestion.provider_rate_plan_name || selectedPlan?.name || ''
+  };
+});
+
+export const hasCompleteExelyRatePlanSelection = mappings => mappings.every(mapping => Boolean(mapping.provider_rate_plan_code));
+
 const ExelyIntegration = ({
   user,
   tenant,
@@ -39,6 +53,7 @@ const ExelyIntegration = ({
   const [autoMapOpen, setAutoMapOpen] = useState(false);
   const [autoMapSuggestions, setAutoMapSuggestions] = useState(null);
   const [autoMapLoading, setAutoMapLoading] = useState(false);
+  const [autoMapRateSelections, setAutoMapRateSelections] = useState({});
   const [mappingStatus, setMappingStatus] = useState(null);
   const [connectForm, setConnectForm] = useState({
     username: '',
@@ -124,6 +139,7 @@ const ExelyIntegration = ({
         provider: 'exely'
       }, requestConfig);
       setAutoMapSuggestions(data);
+      setAutoMapRateSelections(Object.fromEntries((data.suggestions || []).filter(s => s.provider_rate_plan_code).map(s => [s.provider_room_code, s.provider_rate_plan_code])));
       setAutoMapOpen(true);
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Otomatik esleme onerisi alinamadi');
@@ -133,17 +149,16 @@ const ExelyIntegration = ({
   };
   const handleAutoMapApply = async selectedSuggestions => {
     if (!selectedSuggestions?.length) return;
+    const mappings = buildExelyAutoMapPayload(selectedSuggestions, autoMapRateSelections, autoMapSuggestions?.provider_rate_plans || []);
+    if (!hasCompleteExelyRatePlanSelection(mappings)) {
+      toast.error('Her Exely oda eslemesi icin fiyat plani secilmelidir');
+      return;
+    }
     setAutoMapLoading(true);
     try {
       const payload = {
         provider: 'exely',
-        mappings: selectedSuggestions.map(s => ({
-          pms_room_type: s.pms_room_type,
-          provider_room_code: s.provider_room_code,
-          provider_room_name: s.provider_room_name,
-          provider_rate_plan_code: s.provider_rate_plan_code,
-          provider_rate_plan_name: s.provider_rate_plan_name
-        }))
+        mappings
       };
       const {
         data
@@ -664,6 +679,13 @@ const ExelyIntegration = ({
                                 <div>
                                   <p className="font-medium text-sm">{s.provider_room_name}</p>
                                   <p className="text-xs text-slate-500">Exely ({s.provider_room_code})</p>
+                                  <select className="mt-2 h-8 rounded border border-slate-300 bg-white px-2 text-xs" aria-label={`${s.pms_room_name} fiyat plani`} value={s.provider_rate_plan_code || autoMapRateSelections[s.provider_room_code] || ''} onChange={event => setAutoMapRateSelections(previous => ({
+                              ...previous,
+                              [s.provider_room_code]: event.target.value
+                            }))}>
+                                    <option value="">Fiyat plani secin</option>
+                                    {(autoMapSuggestions.provider_rate_plans || []).map(plan => <option key={plan.code} value={plan.code}>{plan.name}</option>)}
+                                  </select>
                                 </div>
                               </div>
                               <Badge className={s.confidence === 'high' ? 'bg-emerald-100 text-emerald-800' : s.confidence === 'medium' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'}>
@@ -671,7 +693,7 @@ const ExelyIntegration = ({
                               </Badge>
                             </div>)}
                         </div>
-                        <Button className="w-full" onClick={() => handleAutoMapApply(autoMapSuggestions.suggestions)} disabled={autoMapLoading} data-testid="auto-map-apply-btn">
+                        <Button className="w-full" onClick={() => handleAutoMapApply(autoMapSuggestions.suggestions)} disabled={autoMapLoading || !hasCompleteExelyRatePlanSelection(buildExelyAutoMapPayload(autoMapSuggestions.suggestions, autoMapRateSelections, autoMapSuggestions.provider_rate_plans || []))} data-testid="auto-map-apply-btn">
                           {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
                           {t('cm.pages_ExelyIntegration.tum_onerileri_uygula')}{autoMapSuggestions.suggestions.length})
                         </Button>
