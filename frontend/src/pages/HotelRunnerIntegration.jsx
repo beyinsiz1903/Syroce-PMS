@@ -12,6 +12,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink, Building2, ArrowDownUp, CalendarCheck, Clock, Activity, AlertTriangle, Loader2, Save, Trash2, Plus, Check, Wand2, KeyRound, Copy } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 const API = "";
+
+export const buildHotelRunnerRequestConfig = user => {
+  const token = user?.token || user?.access_token;
+  return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+};
+
 const HotelRunnerIntegration = ({
   user,
   tenant,
@@ -47,15 +53,15 @@ const HotelRunnerIntegration = ({
     auto_confirm_delivery: false,
     sync_interval_minutes: 15
   });
-  const headers = {
-    Authorization: `Bearer ${user?.token || user?.access_token}`
-  };
+  // Cookie-authenticated sessions do not expose the access token on the
+  // canonical user. Avoid replacing that valid session with "Bearer undefined".
+  const requestConfig = buildHotelRunnerRequestConfig(user);
   const fetchConnection = useCallback(async () => {
     try {
       const {
         data
       } = await axios.get(`/channel-manager/hotelrunner/connection`, {
-        headers
+        ...requestConfig
       });
       setConnection(data);
     } catch {
@@ -69,37 +75,37 @@ const HotelRunnerIntegration = ({
     if (!connection?.connected) return;
     try {
       const [mappingsRes, logsRes, reservationsRes, channelsRes, pmsTypesRes, cachedRoomsRes] = await Promise.all([axios.get(`/channel-manager/hotelrunner/room-mappings`, {
-        headers
+        ...requestConfig
       }).catch(() => ({
         data: {
           mappings: []
         }
       })), axios.get(`/channel-manager/hotelrunner/sync-logs?limit=20`, {
-        headers
+        ...requestConfig
       }).catch(() => ({
         data: {
           logs: []
         }
       })), axios.get(`/channel-manager/hotelrunner/reservations/local`, {
-        headers
+        ...requestConfig
       }).catch(() => ({
         data: {
           reservations: []
         }
       })), axios.get(`/channel-manager/hotelrunner/channels/connected`, {
-        headers
+        ...requestConfig
       }).catch(() => ({
         data: {
           channels: []
         }
       })), axios.get(`/channel-manager/hotelrunner/pms-room-types`, {
-        headers
+        ...requestConfig
       }).catch(() => ({
         data: {
           room_types: []
         }
       })), axios.get(`/channel-manager/hotelrunner/cached-rooms`, {
-        headers
+        ...requestConfig
       }).catch(() => ({
         data: {
           rooms: []
@@ -129,7 +135,7 @@ const HotelRunnerIntegration = ({
       const {
         data
       } = await axios.get(`/channel-manager/auto-map/status/hotelrunner`, {
-        headers
+        ...requestConfig
       });
       setMappingStatus(data);
     } catch (e) {
@@ -148,7 +154,7 @@ const HotelRunnerIntegration = ({
       const {
         data
       } = await axios.get(`/channel-manager/hotelrunner/webhook-secret`, {
-        headers
+        ...requestConfig
       });
       setWebhookSecretStatus(data);
     } catch {/* ignore */}
@@ -165,7 +171,7 @@ const HotelRunnerIntegration = ({
       const {
         data
       } = await axios.post(`/channel-manager/hotelrunner/webhook-secret/rotate`, {}, {
-        headers
+        ...requestConfig
       });
       setWebhookSecretValue(data.webhook_secret || '');
       toast.success(data.message || 'Webhook secret olusturuldu');
@@ -192,7 +198,7 @@ const HotelRunnerIntegration = ({
       } = await axios.post(`/channel-manager/auto-map/suggest`, {
         provider: 'hotelrunner'
       }, {
-        headers
+        ...requestConfig
       });
       setAutoMapSuggestions(data);
       setAutoMapOpen(true);
@@ -219,7 +225,7 @@ const HotelRunnerIntegration = ({
       const {
         data
       } = await axios.post(`/channel-manager/auto-map/apply`, payload, {
-        headers
+        ...requestConfig
       });
       toast.success(data.message);
       setAutoMapOpen(false);
@@ -241,7 +247,7 @@ const HotelRunnerIntegration = ({
       const {
         data
       } = await axios.post(`/channel-manager/hotelrunner/connect`, connectForm, {
-        headers
+        ...requestConfig
       });
       toast.success(data.message);
       setConnection({
@@ -259,7 +265,7 @@ const HotelRunnerIntegration = ({
   const handleDisconnect = async () => {
     try {
       await axios.delete(`/channel-manager/hotelrunner/disconnect`, {
-        headers
+        ...requestConfig
       });
       toast.success('Bağlantı kesildi');
       setConnection({
@@ -275,7 +281,7 @@ const HotelRunnerIntegration = ({
       const {
         data
       } = await axios.post(`/channel-manager/hotelrunner/test`, {}, {
-        headers
+        ...requestConfig
       });
       if (data.connected) toast.success(`Bağlantı basarili (${data.duration_ms}ms)`);else toast.error(`Bağlantı hatası: ${data.error}`);
     } catch (e) {
@@ -290,7 +296,7 @@ const HotelRunnerIntegration = ({
       const {
         data
       } = await axios.get(`/channel-manager/hotelrunner/rooms`, {
-        headers
+        ...requestConfig
       });
       setRooms(data.rooms || []);
       toast.success(`${data.count} oda/fiyat plani yüklendi`);
@@ -306,7 +312,7 @@ const HotelRunnerIntegration = ({
       const {
         data
       } = await axios.post(`/channel-manager/hotelrunner/reservations/sync`, {}, {
-        headers
+        ...requestConfig
       });
       toast.success(data.message);
       fetchAll();
@@ -335,7 +341,7 @@ const HotelRunnerIntegration = ({
         sync_price: draft?.sync_price ?? true,
         sync_restrictions: draft?.sync_restrictions ?? true
       }, {
-        headers
+        ...requestConfig
       });
       toast.success(`${room.name} → ${pmsType} eslendi`);
       fetchAll();
@@ -348,7 +354,7 @@ const HotelRunnerIntegration = ({
   const handleDeleteMapping = async mappingId => {
     try {
       await axios.delete(`/channel-manager/hotelrunner/room-mappings/${mappingId}`, {
-        headers
+        ...requestConfig
       });
       toast.success('Esleme silindi');
       fetchAll();
@@ -382,7 +388,7 @@ const HotelRunnerIntegration = ({
       const {
         data
       } = await axios.post(`/channel-manager/hotelrunner/room-mappings/bulk`, payload, {
-        headers
+        ...requestConfig
       });
       toast.success(data.message);
       fetchAll();
