@@ -1,74 +1,81 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, FileText, Wallet, CheckCircle, AlertCircle, TrendingUp, TrendingDown, BookOpen, BarChart } from 'lucide-react';
 import axios from 'axios';
 
-// Mock data
-const mockVarianceData = {
-  start: "2026-07-01",
-  end: "2026-07-05",
-  theoretical_cost: 12450.00,
-  actual_cost: 12800.50,
-  variance_amount: 350.50,
-  details: [
-    { name: "Dana Kıyma (gr)", theoretical: 15000, actual: 15200, unit: "gr", variance: 200, cost_impact: 120.00 },
-    { name: "Hamburger Ekmeği (adet)", theoretical: 100, actual: 102, unit: "adet", variance: 2, cost_impact: 10.00 },
-    { name: "Patates (gr)", theoretical: 20000, actual: 20500, unit: "gr", variance: 500, cost_impact: 220.50 }
-  ]
+const isoDay = (date) => [
+  date.getFullYear(),
+  String(date.getMonth() + 1).padStart(2, '0'),
+  String(date.getDate()).padStart(2, '0')
+].join('-');
+
+const defaultPeriod = () => {
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - 6);
+  return { start: isoDay(start), end: isoDay(end) };
 };
 
-const mockRecipes = [
-  {
-    id: "r1",
-    menu_item_name: "Cheeseburger Menu",
-    yield_portions: 1,
-    ingredients: [
-      { name: "Dana Kıyma", quantity: 150, unit: "gr" },
-      { name: "Hamburger Ekmeği", quantity: 1, unit: "adet" },
-      { name: "Cheddar Peyniri", quantity: 20, unit: "gr" },
-      { name: "Patates", quantity: 200, unit: "gr" }
-    ]
-  },
-  {
-    id: "r2",
-    menu_item_name: "Sezar Salata",
-    yield_portions: 1,
-    ingredients: [
-      { name: "Tavuk Göğsü", quantity: 120, unit: "gr" },
-      { name: "Marul", quantity: 100, unit: "gr" },
-      { name: "Sezar Sos", quantity: 30, unit: "ml" }
-    ]
-  }
-];
+const emptyVariance = () => ({
+  ...defaultPeriod(),
+  theoretical_cost: 0,
+  actual_cost: 0,
+  variance_amount: 0,
+  details: []
+});
+
+const normalizeVariance = (data) => ({
+  start: data?.period?.start || defaultPeriod().start,
+  end: data?.period?.end || defaultPeriod().end,
+  theoretical_cost: Number(data?.totals?.theoretical_cost || 0),
+  actual_cost: Number(data?.totals?.actual_cost || 0),
+  variance_amount: Number(data?.totals?.variance_cost || 0),
+  details: (data?.rows || []).map((row) => ({
+    name: row.name,
+    unit: row.unit,
+    theoretical: row.theoretical_qty,
+    actual: row.actual_qty,
+    variance: row.variance_qty,
+    cost_impact: row.variance_cost
+  }))
+});
 
 export default function FnBCostingModule() {
   const [activeTab, setActiveTab] = useState(0);
   const [loading, setLoading] = useState(false);
   
-  const [variance, setVariance] = useState(mockVarianceData);
-  const [recipes, setRecipes] = useState(mockRecipes);
+  const [variance, setVariance] = useState(emptyVariance);
+  const [recipes, setRecipes] = useState([]);
   
   const [postDialog, setPostDialog] = useState(false);
   const [posting, setPosting] = useState(false);
   const [alertMsg, setAlertMsg] = useState(null);
 
-  const fetchVariance = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await axios.get('/fnb-cost/variance?start=2026-07-01&end=2026-07-05');
-      if (res.data) setVariance(res.data);
+      const period = defaultPeriod();
+      const [varianceResponse, recipesResponse] = await Promise.all([
+        axios.get('/fnb-cost/variance', { params: period }),
+        axios.get('/fnb-cost/recipes')
+      ]);
+      setVariance(normalizeVariance(varianceResponse.data));
+      setRecipes(recipesResponse.data?.recipes || []);
     } catch (err) {
-      console.error('Variance error:', err);
+      setAlertMsg({ type: 'error', text: err.response?.data?.detail || 'F&B maliyet verileri yüklenemedi.' });
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handlePostCost = async () => {
     try {
       setPosting(true);
-      const res = await axios.post('/fnb-cost/post-to-gl', {
-        start: variance.start,
-        end: variance.end
+      const res = await axios.post('/fnb-cost/post-to-gl', null, {
+        params: { start: variance.start, end: variance.end }
       });
       setAlertMsg({ type: 'success', text: res.data.message || 'Maliyet Yevmiye Fişi (740/150) başarıyla kesildi.' });
       setPostDialog(false);
@@ -85,7 +92,7 @@ export default function FnBCostingModule() {
         <h1 className="text-2xl font-bold text-gray-900">F&B Maliyet ve Reçete (Costing)</h1>
         {activeTab === 0 && (
           <button 
-            onClick={fetchVariance}
+            onClick={fetchData}
             disabled={loading}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
           >
@@ -169,7 +176,7 @@ export default function FnBCostingModule() {
                   </tr>
                 </thead>
                 <tbody className="divide-y text-sm">
-                  {variance.details.map((item, index) => (
+                  {(variance.details || []).map((item, index) => (
                     <tr key={index} className="hover:bg-gray-50">
                       <td className="p-3 font-medium text-gray-900">{item.name}</td>
                       <td className="p-3 text-gray-500">{item.unit}</td>
@@ -220,6 +227,11 @@ export default function FnBCostingModule() {
               </ul>
             </div>
           ))}
+          {recipes.length === 0 && (
+            <div className="col-span-full p-8 text-center text-gray-500 border rounded-lg bg-white">
+              Kayıtlı reçete bulunamadı.
+            </div>
+          )}
         </div>
       )}
 

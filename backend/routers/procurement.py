@@ -34,6 +34,7 @@ from modules.pms_core.role_permission_service import (  # v76 Bug DL
     RolePermissionService,
     require_op,
 )
+from shared_kernel.gl_posting import GLPostingError, post_journal_entry
 
 router = APIRouter(prefix="/api/procurement", tags=["procurement"])
 
@@ -975,56 +976,54 @@ async def procurement_summary(
         "open_commitment_value": round(commitment, 2),
     }
 
+
 # ─────────────────────────────────────────────────────────────────────
 # Fatura / Satın Alma Muhasebeleştirme
 # ─────────────────────────────────────────────────────────────────────
+class PurchaseOrderGLPostIn(BaseModel):
+    purchase_order_id: str = Field(min_length=1, max_length=64)
+
+
 @router.post("/post-invoice-to-gl")
 async def post_invoice_to_gl(
-    payload: dict,
+    payload: PurchaseOrderGLPostIn,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
 ):
-    """
-    Sisteme girilen tedarikçi faturasını Genel Muhasebe Mizanına işler.
-    153 Ticari Mallar (Borç) - 320 Satıcılar (Alacak)
-    """
-    require_op(current_user, ["proc_read"]) # using read as placeholder or could be proc_write
-
-    amount = float(payload.get("amount", 0))
-    supplier_name = payload.get("supplier_name", "Bilinmeyen Tedarikçi")
-    invoice_no = payload.get("invoice_no", "FAT-000")
-
+    """Post a received PO using server-owned totals; duplicate clicks are idempotent."""
+    require_procurement(current_user)
+    db = get_system_db()
+    tenant_id = current_user.tenant_id
+    po = await db.proc_purchase_orders.find_one(
+        {"id": payload.purchase_order_id, "tenant_id": tenant_id},
+        {"_id": 0},
+    )
+    if not po:
+        raise HTTPException(status_code=404, detail="Satınalma siparişi bulunamadı")
+    if po.get("status") != "received":
+        raise HTTPException(status_code=409, detail="Yalnız tamamen teslim alınan sipariş muhasebeleştirilebilir")
+    amount = round(float(po.get("grand_total", 0) or 0), 2)
     if amount <= 0:
-        raise HTTPException(status_code=400, detail="Fatura tutarı 0'dan büyük olmalıdır.")
-
+        raise HTTPException(status_code=400, detail="Muhasebeleştirilecek sipariş tutarı bulunamadı")
     try:
-        import uuid
-        from datetime import datetime
-
-        from routers.finance.general_ledger import mock_db as gl_db
-
-        journal_entry = {
-            "id": str(uuid.uuid4()),
-            "date": datetime.utcnow().strftime("%Y-%m-%d"),
-            "type": "Alış Faturası",
-            "description": f"Tedarikçi Faturası: {supplier_name} ({invoice_no})",
-            "total": amount,
-            "timestamp": datetime.utcnow().isoformat(),
-            "lines": [
-                {
-                    "account_code": "153",
-                    "debit": amount,
-                    "credit": 0.0,
-                    "description": "Ticari Mallar Girişi"
-                },
-                {
-                    "account_code": "320",
-                    "debit": 0.0,
-                    "credit": amount,
-                    "description": f"Satıcılar: {supplier_name}"
-                }
-            ]
-        }
-        gl_db["journals"].append(journal_entry)
-        return {"status": "success", "message": f"{amount} TL tutarındaki fatura başarıyla muhasebeleştirildi (153/320)."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        entry = await post_journal_entry(
+            db,
+            tenant_id,
+            date=(po.get("last_received_at") or datetime.now(UTC).isoformat())[:10],
+            memo=f"Satınalma siparişi muhasebeleştirme ({po.get('po_no') or po['id']})",
+            lines=[
+                {"account_code": "153", "debit": amount, "memo": "Ticari mal girişi"},
+                {"account_code": "320", "credit": amount, "memo": "Tedarikçi borcu"},
+            ],
+            source="procurement",
+            source_ref=po["id"],
+            actor=str(getattr(current_user, "id", None) or "system"),
+            idempotency_key=f"procurement-po:{po['id']}",
+        )
+    except GLPostingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await db.proc_purchase_orders.update_one(
+        {"id": po["id"], "tenant_id": tenant_id},
+        {"$set": {"gl_journal_entry_id": entry["id"], "gl_posted_at": datetime.now(UTC).isoformat()}},
+    )
+    return {"status": "success", "journal_entry_id": entry["id"]}

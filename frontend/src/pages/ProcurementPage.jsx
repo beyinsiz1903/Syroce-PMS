@@ -447,9 +447,7 @@ const ProcurementPage = ({
   const handlePostToGL = async (po) => {
     try {
       await axios.post('/procurement/post-invoice-to-gl', {
-        amount: po.grand_total,
-        supplier_name: po.supplier_name,
-        invoice_no: `INV-${po.po_no}`
+        purchase_order_id: po.id
       });
       toast.success(`${po.grand_total} TL Fatura Başarıyla Muhasebeleştirildi (153/320).`);
       refresh();

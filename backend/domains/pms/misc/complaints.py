@@ -65,7 +65,7 @@ async def _push_history(complaint_id: str, tenant_id: str, entry: dict) -> None:
             {"$push": {"history": entry}},
         )
     except Exception as exc:  # pragma: no cover
-        logger.warning("[complaints] history push failed: %s", exc)
+        logger.warning("[complaints] history push failed: error_type=%s", type(exc).__name__)
 
 
 async def _notify_managers_of_escalation(complaint: dict, escalated_to: str, notes: str, actor: User) -> None:
@@ -82,7 +82,7 @@ async def _notify_managers_of_escalation(complaint: dict, escalated_to: str, not
             {"_id": 0, "id": 1, "email": 1, "full_name": 1},
         ).to_list(50)
     except Exception as exc:
-        logger.warning("[complaints] manager lookup failed: %s", exc)
+        logger.warning("[complaints] manager lookup failed: error_type=%s", type(exc).__name__)
         managers = []
 
     target_label = ESCALATION_TARGETS.get(escalated_to, escalated_to)
@@ -120,9 +120,12 @@ async def _notify_managers_of_escalation(complaint: dict, escalated_to: str, not
             try:
                 await send_email(m["email"], subject_line, html)
             except Exception as exc:
-                logger.warning("[complaints] escalation email to %s failed: %s", m.get("email"), exc)
+                logger.warning(
+                    "[complaints] escalation email failed: error_type=%s",
+                    type(exc).__name__,
+                )
     except Exception as exc:  # pragma: no cover
-        logger.warning("[complaints] email module unavailable: %s", exc)
+        logger.warning("[complaints] email module unavailable: error_type=%s", type(exc).__name__)
 
     # Channel 2 + 3: in-app bell + Expo push — best-effort, never raises.
     notif_priority = "high" if severity in ("critical", "high") else "normal"
@@ -166,7 +169,7 @@ async def _notify_managers_of_escalation(complaint: dict, escalated_to: str, not
                 }
             )
         except Exception as exc:
-            logger.warning("[complaints] notification insert for %s failed: %s", uid, exc)
+            logger.warning("[complaints] notification insert failed: error_type=%s", type(exc).__name__)
 
     if manager_user_ids:
         try:
@@ -185,14 +188,14 @@ async def _notify_managers_of_escalation(complaint: dict, escalated_to: str, not
                 priority="high" if notif_priority == "high" else "default",
             )
         except Exception as exc:
-            logger.warning("[complaints] expo push dispatch failed: %s", exc)
+            logger.warning("[complaints] expo push dispatch failed: error_type=%s", type(exc).__name__)
 
 
-async def _notify_guest_resolved(complaint: dict, resolution_notes: str, actor: User) -> None:
+async def _notify_guest_resolved(complaint: dict, resolution_notes: str, actor: User) -> bool:
     """E-mail the guest when their complaint is resolved (best-effort)."""
     guest_id = complaint.get("guest_id")
     if not guest_id:
-        return
+        return False
     try:
         from core.email import send_email
 
@@ -203,10 +206,10 @@ async def _notify_guest_resolved(complaint: dict, resolution_notes: str, actor: 
             )
         )
     except Exception as exc:
-        logger.warning("[complaints] guest lookup failed: %s", exc)
-        return
+        logger.warning("[complaints] guest lookup failed: error_type=%s", type(exc).__name__)
+        return False
     if not guest or not guest.get("email"):
-        return
+        return False
 
     safe_name = _html.escape(guest.get("name") or "Misafirimiz")
     safe_subject = _html.escape(complaint.get("subject") or "-")
@@ -224,9 +227,11 @@ async def _notify_guest_resolved(complaint: dict, resolution_notes: str, actor: 
     </div>
     """
     try:
-        await send_email(guest["email"], f"Şikayetiniz çözüldü: {complaint.get('subject', '')}", html)
+        result = await send_email(guest["email"], f"Şikayetiniz çözüldü: {complaint.get('subject', '')}", html)
+        return bool(result.get("sent")) if isinstance(result, dict) else False
     except Exception as exc:
-        logger.warning("[complaints] guest resolution email failed: %s", exc)
+        logger.warning("[complaints] guest resolution email failed: error_type=%s", type(exc).__name__)
+        return False
 
 
 # Tazminat tipi → folio ledger charge_code haritası.
@@ -274,7 +279,7 @@ async def _post_compensation_to_folio(complaint: dict, actor: User) -> dict:
             {"_id": 0, "id": 1, "folio_number": 1, "balance": 1},
         )
     except Exception as exc:
-        logger.warning("[complaints] folio lookup failed: %s", exc)
+        logger.warning("[complaints] folio lookup failed: error_type=%s", type(exc).__name__)
         return {"folio_adjusted": False, "reason": "Folyo sorgusu hata verdi"}
 
     if not folio:
@@ -318,7 +323,7 @@ async def _post_compensation_to_folio(complaint: dict, actor: User) -> dict:
                 {"$set": {"balance": new_balance, "updated_at": _now_iso()}},
             )
         except Exception as exc:
-            logger.warning("[complaints] folio balance snapshot failed: %s", exc)
+            logger.warning("[complaints] folio balance snapshot failed: error_type=%s", type(exc).__name__)
 
         return {
             "folio_adjusted": True,
@@ -329,8 +334,8 @@ async def _post_compensation_to_folio(complaint: dict, actor: User) -> dict:
             "new_balance": new_balance,
         }
     except Exception as exc:
-        logger.exception("[complaints] folio adjustment failed: %s", exc)
-        return {"folio_adjusted": False, "reason": f"Folyo işleme hatası: {exc}"}
+        logger.exception("[complaints] folio adjustment failed: error_type=%s", type(exc).__name__)
+        return {"folio_adjusted": False, "reason": "Folyo işleme hatası"}
 
 
 def _enrich_with_sla(complaint: dict) -> dict:
@@ -543,11 +548,12 @@ async def resolve_complaint(
             ),
         )
 
-    await _notify_guest_resolved(merged, resolution_notes, current_user)
+    guest_email_sent = await _notify_guest_resolved(merged, resolution_notes, current_user)
     return {
         "success": True,
         "message": "Şikayet çözüldü",
         "folio": folio_result,
+        "guest_email_sent": guest_email_sent,
     }
 
 

@@ -6,8 +6,53 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCurrency } from '@/context/CurrencyContext';
-import { formatAmount } from '@/lib/currency';
-import { Plus, Save, FileText, Check, AlertCircle } from 'lucide-react';
+import { Plus, Save, FileText, AlertCircle } from 'lucide-react';
+
+export const GL_ENDPOINTS = {
+  accounts: '/gl/accounts',
+  initializeAccounts: '/gl/accounts/initialize',
+  journal: '/gl/journal',
+  trialBalance: '/gl/trial-balance',
+};
+
+export const toJournalPayload = (journal) => ({
+  date: journal.date,
+  memo: journal.description.trim(),
+  source: 'manual',
+  source_ref: journal.type,
+  lines: journal.lines.map((line) => ({
+    account_code: line.account_code.trim(),
+    debit: Number(line.debit) || 0,
+    credit: Number(line.credit) || 0,
+    memo: line.description?.trim() || null,
+  })),
+});
+
+export const normalizeTrialBalance = (data = {}) => ({
+  lines: (data.rows || []).map((row) => ({
+    code: row.account_code,
+    name: row.account_name,
+    total_debit: row.total_debit || 0,
+    total_credit: row.total_credit || 0,
+    balance_type: row.debit_balance > 0 ? 'Borç' : row.credit_balance > 0 ? 'Alacak' : '-',
+    balance: row.debit_balance || row.credit_balance || 0,
+  })),
+  totals: {
+    total_debit: data.totals?.debit_balance || 0,
+    total_credit: data.totals?.credit_balance || 0,
+    balanced: data.totals?.balanced ?? true,
+  },
+});
+
+export const mergeAccountBalances = (accounts = [], trialBalance = {}) => {
+  const balances = new Map(
+    (trialBalance.rows || []).map((row) => [
+      row.account_code,
+      (Number(row.debit_balance) || 0) - (Number(row.credit_balance) || 0),
+    ])
+  );
+  return accounts.map((account) => ({ ...account, balance: balances.get(account.code) || 0 }));
+};
 
 const GeneralLedgerModule = () => {
   const { amount: fmtMoney } = useCurrency();
@@ -16,6 +61,7 @@ const GeneralLedgerModule = () => {
   const [accounts, setAccounts] = useState([]);
   const [journals, setJournals] = useState([]);
   const [trialBalance, setTrialBalance] = useState({ lines: [], totals: {} });
+  const [initializingAccounts, setInitializingAccounts] = useState(false);
   
   // New Journal Entry State
   const [newJournal, setNewJournal] = useState({
@@ -30,23 +76,45 @@ const GeneralLedgerModule = () => {
 
   const fetchAccounts = async () => {
     try {
-      const res = await axios.get('/gl/accounts');
-      setAccounts(res.data);
-    } catch (e) { console.error(e); }
+      const [accountsRes, balanceRes] = await Promise.all([
+        axios.get(GL_ENDPOINTS.accounts),
+        axios.get(GL_ENDPOINTS.trialBalance),
+      ]);
+      setAccounts(mergeAccountBalances(accountsRes.data?.accounts || [], balanceRes.data));
+    } catch {
+      toast.error('Hesap planı yüklenemedi.');
+    }
+  };
+
+  const initializeAccounts = async () => {
+    setInitializingAccounts(true);
+    try {
+      await axios.post(GL_ENDPOINTS.initializeAccounts);
+      await fetchAccounts();
+      toast.success('Standart hesap planı oluşturuldu.');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Hesap planı oluşturulamadı.');
+    } finally {
+      setInitializingAccounts(false);
+    }
   };
 
   const fetchJournals = async () => {
     try {
-      const res = await axios.get('/gl/journals');
-      setJournals(res.data);
-    } catch (e) { console.error(e); }
+      const res = await axios.get(GL_ENDPOINTS.journal);
+      setJournals(res.data?.entries || []);
+    } catch {
+      toast.error('Yevmiye fişleri yüklenemedi.');
+    }
   };
 
   const fetchTrialBalance = async () => {
     try {
-      const res = await axios.get('/gl/trial-balance');
-      setTrialBalance(res.data);
-    } catch (e) { console.error(e); }
+      const res = await axios.get(GL_ENDPOINTS.trialBalance);
+      setTrialBalance(normalizeTrialBalance(res.data));
+    } catch {
+      toast.error('Mizan yüklenemedi.');
+    }
   };
 
   useEffect(() => {
@@ -91,9 +159,13 @@ const GeneralLedgerModule = () => {
       toast.error('Fiş açıklaması zorunludur.');
       return;
     }
+    if (newJournal.lines.some((line) => !line.account_code.trim())) {
+      toast.error('Her satır için hesap kodu zorunludur.');
+      return;
+    }
 
     try {
-      await axios.post('/gl/journals', newJournal);
+      await axios.post(GL_ENDPOINTS.journal, toJournalPayload(newJournal));
       toast.success('Yevmiye fişi başarıyla kaydedildi.');
       setNewJournal({
         date: new Date().toISOString().split('T')[0],
@@ -152,7 +224,14 @@ const GeneralLedgerModule = () => {
                     </tr>
                   ))}
                   {accounts.length === 0 && (
-                    <tr><td colSpan="4" className="text-center p-8 text-gray-500">Kayıtlı hesap bulunamadı.</td></tr>
+                    <tr>
+                      <td colSpan="4" className="text-center p-8 text-gray-500">
+                        <p className="mb-3">Kayıtlı hesap bulunamadı.</p>
+                        <Button onClick={initializeAccounts} disabled={initializingAccounts} size="sm">
+                          {initializingAccounts ? 'Oluşturuluyor...' : 'Standart Hesap Planını Oluştur'}
+                        </Button>
+                      </td>
+                    </tr>
                   )}
                 </tbody>
               </table>
@@ -238,12 +317,12 @@ const GeneralLedgerModule = () => {
                     <div key={j.id} className="p-3 border rounded-lg hover:border-blue-300 transition-colors cursor-pointer bg-white">
                       <div className="flex justify-between items-start mb-2">
                         <div>
-                          <span className="text-xs font-bold px-2 py-1 bg-gray-100 text-gray-600 rounded-full">{j.type}</span>
+                          <span className="text-xs font-bold px-2 py-1 bg-gray-100 text-gray-600 rounded-full">{j.source_ref || j.source || 'Fiş'}</span>
                           <span className="text-xs text-gray-400 ml-2">{j.date}</span>
                         </div>
-                        <span className="font-bold text-gray-900">{fmtMoney(j.total)}</span>
+                        <span className="font-bold text-gray-900">{fmtMoney(j.total_debit)}</span>
                       </div>
-                      <p className="text-sm text-gray-600 truncate">{j.description}</p>
+                      <p className="text-sm text-gray-600 truncate">{j.memo}</p>
                     </div>
                   ))}
                   {journals.length === 0 && <p className="text-center text-sm text-gray-500 py-4">Henüz fiş girilmemiş.</p>}
@@ -302,7 +381,7 @@ const GeneralLedgerModule = () => {
                   </tfoot>
                 )}
               </table>
-              {trialBalance.totals && trialBalance.totals.total_debit !== trialBalance.totals.total_credit && (
+              {trialBalance.totals && !trialBalance.totals.balanced && (
                 <div className="mt-4 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg flex items-start gap-2">
                   <AlertCircle className="w-5 h-5 mt-0.5" />
                   <div>

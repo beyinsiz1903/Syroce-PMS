@@ -337,10 +337,10 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   idPhotoUploaded={booking?.online_checkin_id_photo_uploaded}
                   className="w-full h-8 text-xs justify-start bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
                 />
-                <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, 'Erken giriş yapıldı')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
+                <Button size="sm" variant="outline" onClick={() => action(`/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, 'Erken giriş yapıldı')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
                   <LogIn className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.erken_giris')}
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/late-checkout`, { extra_charge: 0 }, 'Geç çıkış kaydedildi')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
+                <Button size="sm" variant="outline" onClick={() => action(`/pms/reservations/${bookingId}/late-checkout`, { extra_charge: 0 }, 'Geç çıkış kaydedildi')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
                   <LogOut className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.gec_cikis')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setActiveTab('room_change')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
@@ -359,7 +359,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 }} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
                   <Star className="w-3 h-3 mr-2" /> {data?.guest?.vip_status ? 'VIP Kaldır' : 'VIP Yap'}
                 </Button>
-                <Button size="sm" variant="outline" onClick={async () => { if (await confirmDialog({ message: 'No-show olarak işaretlensin mi?', variant: 'danger' })) action(`/api/pms/reservations/${bookingId}/mark-noshow`, {}, 'No-show işaretlendi'); }} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50">
+                <Button size="sm" variant="outline" onClick={async () => { if (await confirmDialog({ message: 'No-show olarak işaretlensin mi?', variant: 'danger' })) action(`/pms/reservations/${bookingId}/mark-noshow`, {}, 'No-show işaretlendi'); }} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50">
                   <AlertTriangle className="w-3 h-3 mr-2" /> No-Show
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setActiveTab('cancel')} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50" data-testid="btn-cancel-reservation">
@@ -536,7 +536,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 <TabsContent value="guests" className="mt-0"><GuestsTab guests={guests} booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="online_payment" className="mt-0"><OnlinePaymentTab booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="vcc" className="mt-0"><VCCTab booking={booking} onRefresh={loadData} /></TabsContent>
-                <TabsContent value="folios" className="mt-0"><FoliosTab folios={folios} charges={charges} payments={payments} extra_charges={extra_charges} summary={summary} booking={booking} onRefresh={loadData} onSwitchTab={setActiveTab} /></TabsContent>
+                <TabsContent value="folios" className="mt-0"><FoliosTab folios={folios} charges={charges} payments={payments} extra_charges={extra_charges} summary={summary} booking={booking} guest={guest} room={room} onRefresh={loadData} onSwitchTab={setActiveTab} /></TabsContent>
                 <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="extras" className="mt-0"><ExtraChargesTab extra_charges={extra_charges} charges={charges} booking={booking} onRefresh={loadData} allBookings={allBookings} /></TabsContent>
                 <TabsContent value="room_change" className="mt-0"><RoomChangeTab booking={booking} room={room} roomMoves={room_moves} onRefresh={loadData} /></TabsContent>

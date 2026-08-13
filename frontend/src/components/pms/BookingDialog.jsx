@@ -278,17 +278,17 @@ const BookingDialog = ({
       <div className="grid grid-cols-2 gap-4">
         <div>
           <Label>Check-in *</Label>
-          <Input type="date" value={newBooking.check_in} onChange={e => setNewBooking({
-              ...newBooking,
+          <Input type="date" value={newBooking.check_in} onChange={e => setNewBooking(prev => ({
+              ...prev,
               check_in: e.target.value
-            })} required />
+            }))} required />
         </div>
         <div>
           <Label>Check-out *</Label>
-          <Input type="date" value={newBooking.check_out} onChange={e => setNewBooking({
-              ...newBooking,
+          <Input type="date" value={newBooking.check_out} onChange={e => setNewBooking(prev => ({
+              ...prev,
               check_out: e.target.value
-            })} required />
+            }))} required />
         </div>
       </div>
 
@@ -296,11 +296,11 @@ const BookingDialog = ({
       <div className="hidden">
         <Input type="number" min="1" value={newBooking.adults} onChange={e => {
             const adults = parseInt(e.target.value) || 1;
-            setNewBooking({
-              ...newBooking,
+            setNewBooking(prev => ({
+              ...prev,
               adults,
-              guests_count: adults + newBooking.children
-            });
+              guests_count: adults + prev.children
+            }));
           }} />
         <Input type="number" min="0" value={newBooking.children} onChange={e => handleChildrenChange(e.target.value)} />
       </div>

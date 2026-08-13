@@ -103,6 +103,25 @@ describe('FoliosTab — Folyo Böl akışı (Task #419)', () => {
     expect(screen.getAllByText(/F-001/).length).toBeGreaterThan(0);
   });
 
+  it('booking denormalize alanları yoksa misafir ve odayı detay nesnelerinden gösterir', () => {
+    render(
+      <FoliosTab
+        {...singleFolioProps({
+          booking: { id: 'bk-1' },
+          guest: { name: 'Ada Lovelace' },
+          room: { room_number: '101' },
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId('btn-folyo-bol'));
+    const panel = screen.getByTestId('split-folio-panel');
+    expect(within(panel).getByText('Ada Lovelace')).toBeInTheDocument();
+    expect(within(panel).getByText('101')).toBeInTheDocument();
+    expect(within(panel).queryByText('N/A')).toBeNull();
+    expect(within(panel).getByText('Folyo Bakiyesi')).toBeInTheDocument();
+  });
+
   it('kaleme göre bölme: kalem + sebep ile /pms-core/folio/split doğru payload çağrılır ve onRefresh tetiklenir', async () => {
     const onRefresh = vi.fn();
     render(<FoliosTab {...singleFolioProps({ onRefresh })} />);

@@ -696,7 +696,7 @@ const FrontdeskTab = ({
                             if (isDirty) {
                               if (!await confirmDialog({ message: tf('dirtyWarning'), variant: 'danger' })) return;
                             }
-                            handleCheckIn(booking.id);
+                            await handleCheckIn(booking.id, isDirty);
                           }} data-testid={`checkin-${booking.id}`}>
                           <LogIn className="w-4 h-4 mr-1.5" /> {isDirty ? tf('checkinDirty') : tf('checkin')}
                         </Button>

@@ -10,7 +10,7 @@ import {
 import { API, fmtTL, fmtTs, SummaryCard, FormField, SelectField, FormPanel } from './helpers';
 import SplitFolioDialog from '@/components/SplitFolioDialog';
 
-export function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, onRefresh, onSwitchTab }) {
+export function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, guest, room, onRefresh, onSwitchTab }) {
   const { t } = useTranslation();
   const [showPayment, setShowPayment] = useState(false);
   const [showCari, setShowCari] = useState(false);
@@ -53,12 +53,12 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
     return {
       id: src.id,
       folio_number: src.folio_number,
-      guest_name: booking?.guest_name,
-      room_number: booking?.room_number,
+      guest_name: guest?.name || guest?.full_name || booking?.guest_name,
+      room_number: room?.room_number || room?.number || booking?.room_number,
       balance: src.balance,
       charges: [...folioItems, ...extraItems],
     };
-  }, [splitSourceId, defaultSourceId, folioList, charges, extra_charges, booking]);
+  }, [splitSourceId, defaultSourceId, folioList, charges, extra_charges, booking, guest, room]);
 
   const hasCharges = useMemo(
     () => (charges || []).some(c => !c.voided) || (extra_charges || []).some(c => !c.voided),

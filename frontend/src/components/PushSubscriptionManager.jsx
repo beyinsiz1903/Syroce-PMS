@@ -21,6 +21,42 @@ const CHANNEL_OPTIONS = [
 ];
 
 const DEVICE_ID_STORAGE_KEY = 'syroce_push_device_id';
+const STATUS_CACHE_KEY = 'push_status_cache_v1';
+const STATUS_CACHE_TTL_MS = 60000;
+
+const currentUserId = () => {
+  try {
+    const user = JSON.parse(localStorage.getItem('user') || 'null');
+    return user?.id || user?._id || null;
+  } catch {
+    return null;
+  }
+};
+
+export const readPushStatusCache = () => {
+  try {
+    const raw = sessionStorage.getItem(STATUS_CACHE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    if (Date.now() - (cached.cached_at || 0) > STATUS_CACHE_TTL_MS) return null;
+    if (cached.user_id && cached.user_id !== currentUserId()) return null;
+    return cached.data || null;
+  } catch {
+    return null;
+  }
+};
+
+const writePushStatusCache = (data) => {
+  try {
+    sessionStorage.setItem(STATUS_CACHE_KEY, JSON.stringify({
+      user_id: currentUserId(),
+      cached_at: Date.now(),
+      data,
+    }));
+  } catch {
+    // Private mode or storage quota: the status can still be used in memory.
+  }
+};
 
 const getDeviceId = () => {
   if (typeof window === 'undefined') return 'server';
@@ -47,23 +83,30 @@ const PushSubscriptionManager = () => {
     return 'Notification' in window && 'serviceWorker' in navigator;
   }, []);
 
-  const loadStatus = useCallback(async () => {
+  const applyStatus = useCallback((data) => {
+    setDevices(data.devices || []);
+    setSubscriptions(data.subscriptions || CHANNEL_OPTIONS.map((c) => c.id));
+    setStatus(data.enabled ? 'enabled' : 'disabled');
+  }, []);
+
+  const loadStatus = useCallback(async ({ force = false } = {}) => {
     if (!supportPush) {
       setStatus('unsupported');
       return;
     }
+    const cached = !force ? readPushStatusCache() : null;
+    if (cached) {
+      applyStatus(cached);
+      return;
+    }
     try {
       const res = await axios.get('/notifications/push-status');
-      setDevices(res.data.devices || []);
-      setSubscriptions(res.data.subscriptions || CHANNEL_OPTIONS.map((c) => c.id));
-      setStatus(res.data.enabled ? 'enabled' : 'disabled');
-    } catch (error) {
-      console.error('Push status load failed', error);
+      writePushStatusCache(res.data);
+      applyStatus(res.data);
+    } catch {
       setStatus('error');
-    
-      toast.error('İşlem başarısız oldu');
     }
-  }, [supportPush]);
+  }, [applyStatus, supportPush]);
 
   useEffect(() => {
     loadStatus();
@@ -103,9 +146,8 @@ const PushSubscriptionManager = () => {
       });
 
       toast.success('Push bildirimleri aktif edildi');
-      await loadStatus();
-    } catch (error) {
-      console.error('Push registration failed', error);
+      await loadStatus({ force: true });
+    } catch {
       toast.error(t('push.registerFailed'));
     } finally {
       setRegistering(false);
@@ -121,9 +163,9 @@ const PushSubscriptionManager = () => {
     try {
       setSaving(true);
       await axios.post('/notifications/push/subscriptions', { channels: next });
+      writePushStatusCache({ enabled: status === 'enabled', devices, subscriptions: next });
       toast.success(t('push.prefsUpdated'));
-    } catch (error) {
-      console.error('Subscription update failed', error);
+    } catch {
       toast.error(t('push.prefsFailed'));
     } finally {
       setSaving(false);

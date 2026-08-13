@@ -38,6 +38,7 @@ from core.tenant_db import get_system_db
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v94 DW
 from shared_kernel import index_backstops as _index_backstops
+from shared_kernel.gl_posting import GLPostingError, post_journal_entry
 from shared_kernel.idempotency import (
     claim_idempotency,
     complete_idempotency,
@@ -2754,39 +2755,43 @@ async def sign_public_beo(payload: SignatureSubmitIn):
 @router.post("/events/{event_id}/post-to-folio")
 async def post_beo_to_folio(
     event_id: str,
-    payload: dict,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
 ):
-    """
-    Etkinlik toplam tutarını (BEO) Şirket veya Müşteri Folyosuna işler.
-    """
-    amount = float(payload.get("amount", 0))
+    """Post a confirmed BEO using its server-owned total."""
+    require_finance(current_user)
+    db = get_system_db()
+    tenant_id = current_user.tenant_id
+    event_doc = await db.mice_events.find_one(
+        {"id": event_id, "tenant_id": tenant_id},
+        {"_id": 0},
+    )
+    if not event_doc:
+        raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+    if event_doc.get("status") not in {"definite", "confirmed", "completed"}:
+        raise HTTPException(status_code=409, detail="Yalnız kesinleşmiş etkinlik muhasebeleştirilebilir")
+    amount = round(float((event_doc.get("totals") or {}).get("grand_total", 0) or 0), 2)
     if amount <= 0:
-        raise HTTPException(status_code=400, detail="Etkinlik tutarı 0'dan büyük olmalıdır.")
-
+        raise HTTPException(status_code=400, detail="Muhasebeleştirilecek etkinlik tutarı bulunamadı")
     try:
-        import uuid
-        from datetime import datetime
-
-        from routers.finance.general_ledger import mock_db as gl_db
-
-        # Etkinlik bilgilerini al
-        event_doc = await db.mice_events.find_one({"_id": event_id})
-        event_name = event_doc.get("name", "Bilinmeyen Etkinlik") if event_doc else "Bilinmeyen Etkinlik"
-
-        journal_entry = {
-            "id": str(uuid.uuid4()),
-            "date": datetime.utcnow().strftime("%Y-%m-%d"),
-            "type": "Etkinlik Geliri",
-            "description": f"BEO Şirket Folyosuna İşlendi: {event_name}",
-            "total": amount,
-            "timestamp": datetime.utcnow().isoformat(),
-            "lines": [
-                {"account_code": "120", "debit": amount, "credit": 0.0, "description": "Alıcılar (Şirket/Folyo)"},
-                {"account_code": "600", "debit": 0.0, "credit": amount, "description": "Yurtiçi Satışlar (Ziyafet/Etkinlik Geliri)"},
+        entry = await post_journal_entry(
+            db,
+            tenant_id,
+            date=(event_doc.get("end_date") or datetime.now(UTC).isoformat())[:10],
+            memo=f"BEO muhasebeleştirme ({event_id})",
+            lines=[
+                {"account_code": "120", "debit": amount, "memo": "Etkinlik alacağı"},
+                {"account_code": "600", "credit": amount, "memo": "Etkinlik geliri"},
             ],
-        }
-        gl_db["journals"].append(journal_entry)
-        return {"status": "success", "message": f"{amount} TL tutarındaki etkinlik faturası şirket folyosuna işlendi (120/600)."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+            source="mice",
+            source_ref=event_id,
+            actor=str(getattr(current_user, "id", None) or "system"),
+            idempotency_key=f"mice-event:{event_id}",
+        )
+    except GLPostingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await db.mice_events.update_one(
+        {"id": event_id, "tenant_id": tenant_id},
+        {"$set": {"gl_journal_entry_id": entry["id"], "gl_posted_at": datetime.now(UTC).isoformat()}},
+    )
+    return {"status": "success", "journal_entry_id": entry["id"]}

@@ -2,17 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { RefreshCw, Landmark, FileText, CheckCircle, AlertCircle } from 'lucide-react';
 import axios from 'axios';
 
-// Varsayılan açık faturalar (Cari hesaplar) - Mock data
-const mockPendingInvoices = [
-  { id: 'inv-1', number: 'INV-2026-001', clientName: 'Booking.com B.V.', amount: 15000.00, status: 'pending' },
-  { id: 'inv-2', number: 'INV-2026-002', clientName: 'Expedia Inc.', amount: 8400.00, status: 'pending' },
-  { id: 'inv-3', number: 'FOL-8493', clientName: 'Ahmet Yılmaz', amount: 2450.50, status: 'pending' },
-  { id: 'inv-4', number: 'INV-2026-003', clientName: 'Jolly Tur', amount: 35000.00, status: 'pending' },
-];
-
 export default function BankReconciliationModule() {
   const [transactions, setTransactions] = useState([]);
-  const [invoices, setInvoices] = useState(mockPendingInvoices);
+  const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   
   const [selectedTxn, setSelectedTxn] = useState(null);
@@ -23,30 +15,20 @@ export default function BankReconciliationModule() {
   const [alertMsg, setAlertMsg] = useState(null);
 
   useEffect(() => {
-    fetchTransactions();
+    fetchData();
   }, []);
 
-  const fetchTransactions = async () => {
+  const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await axios.get('/banking/transactions');
-      setTransactions(res.data);
+      const [transactionsRes, invoicesRes] = await Promise.all([
+        axios.get('/banking/transactions'),
+        axios.get('/banking/open-invoices'),
+      ]);
+      setTransactions(transactionsRes.data || []);
+      setInvoices(invoicesRes.data || []);
     } catch (err) {
-      console.error('Banka hareketleri alınamadı', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSyncBank = async () => {
-    try {
-      setLoading(true);
-      const res = await axios.post('/banking/sync');
-      if (res.data?.status === 'success') {
-        fetchTransactions();
-      }
-    } catch (err) {
-      console.error('Banka entegrasyonu hatası', err);
+      setAlertMsg({ type: 'error', text: err.response?.data?.detail || 'Mutabakat verileri alınamadı.' });
     } finally {
       setLoading(false);
     }
@@ -60,16 +42,10 @@ export default function BankReconciliationModule() {
       await axios.post('/banking/reconcile', {
         transaction_id: selectedTxn.id,
         invoice_id: selectedInvoice.id,
-        invoice_number: selectedInvoice.number,
-        amount_paid: selectedTxn.amount,
-        client_name: selectedInvoice.clientName
       });
       
-      setAlertMsg({ type: 'success', text: `Mutabakat başarılı! ${selectedInvoice.number} kapatıldı ve Yevmiye Fişi kesildi.` });
-      
-      // Remove or mark matched on client side
-      setTransactions(prev => prev.map(t => t.id === selectedTxn.id ? { ...t, status: 'matched', matched_with: selectedInvoice.number } : t));
-      setInvoices(prev => prev.filter(i => i.id !== selectedInvoice.id));
+      setAlertMsg({ type: 'success', text: `Mutabakat başarılı! ${selectedInvoice.number} işlendi ve yevmiye fişi kesildi.` });
+      await fetchData();
       
       setSelectedTxn(null);
       setSelectedInvoice(null);
@@ -86,12 +62,12 @@ export default function BankReconciliationModule() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Açık Bankacılık & Mutabakat</h1>
         <button 
-          onClick={handleSyncBank}
+          onClick={fetchData}
           disabled={loading}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Bankadan Çek (Simülasyon)
+          Yenile
         </button>
       </div>
 
@@ -163,7 +139,7 @@ export default function BankReconciliationModule() {
                       </div>
                       <div className="text-sm text-gray-600 mb-2">{txn.description}</div>
                       <div className="flex justify-between items-center text-xs">
-                        <span className="text-gray-400">{txn.date} | IBAN: {txn.sender_iban}</span>
+                        <span className="text-gray-400">{txn.date}{txn.sender_account_masked ? ` | Hesap: ${txn.sender_account_masked}` : ''}</span>
                         {isMatched ? (
                           <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-[10px] font-medium border border-green-200">
                             Eşleşti: {txn.matched_with}
@@ -204,7 +180,7 @@ export default function BankReconciliationModule() {
                     }`}
                   >
                     <div className="flex justify-between items-start mb-1">
-                      <span className="font-bold text-gray-900">{inv.clientName}</span>
+                      <span className="font-bold text-gray-900">{inv.client_name}</span>
                       <span className="font-bold text-red-600">{inv.amount.toLocaleString('tr-TR')} ₺</span>
                     </div>
                     <div className="flex justify-between items-center text-xs mt-2">

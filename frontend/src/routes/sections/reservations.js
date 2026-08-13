@@ -1,6 +1,6 @@
 import {
   ReservationCalendar, ReservationLineage, GroupBookingsPage, DepositTrackingPage,
-  GroupFolioPage, NoShowAnalytics, GroupReservations, ArrivalList, DepartureList,
+  GroupFolioPage, NoShowAnalytics, ArrivalList, DepartureList,
   NoShowToday,
 } from "./lazyPages";
 
@@ -13,7 +13,7 @@ export function reservationRoutes({ p }) {
     { path: "/deposit-tracking", ...p(DepositTrackingPage), wrapLayout: true, layoutModule: "deposits" },
     { path: "/group-folio", ...p(GroupFolioPage), wrapLayout: true, layoutModule: "group_folio" },
     { path: "/no-show-analytics", ...p(NoShowAnalytics) },
-    { path: "/group-reservations", ...p(GroupReservations) },
+    { path: "/group-reservations", ...p(GroupBookingsPage), wrapLayout: true, layoutModule: "group-bookings" },
     { path: "/arrival-list", ...p(ArrivalList), wrapLayout: true, layoutModule: "pms" },
     { path: "/departure-list", ...p(DepartureList), wrapLayout: true, layoutModule: "departure_list" },
     { path: "/no-show-today", ...p(NoShowToday), wrapLayout: true, layoutModule: "no_show_today" },

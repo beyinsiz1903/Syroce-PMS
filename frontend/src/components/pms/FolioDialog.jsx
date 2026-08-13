@@ -15,28 +15,41 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
   const [newPayment, setNewPayment] = useState({
     amount: 0, method: 'card', reference: '', notes: ''
   });
+  const [chargeSubmitting, setChargeSubmitting] = useState(false);
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
 
   const handleAddCharge = async (e) => {
     e.preventDefault();
+    if (chargeSubmitting) return;
+    setChargeSubmitting(true);
     try {
-      await axios.post(`/frontdesk/folio/${bookingId}/charge`, null, { params: newCharge });
+      const idempotencyKey = window.crypto?.randomUUID?.() || `folio-charge-${Date.now()}-${Math.random()}`;
+      await axios.post(`/frontdesk/folio/${bookingId}/charge`, newCharge, {
+        headers: { 'Idempotency-Key': idempotencyKey },
+      });
       toast.success('Charge added');
-      onFolioUpdated();
+      await onFolioUpdated?.();
       setNewCharge({ charge_type: 'food', description: '', amount: 0, quantity: 1 });
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to add charge');
+    } finally {
+      setChargeSubmitting(false);
     }
   };
 
   const handleProcessPayment = async (e) => {
     e.preventDefault();
+    if (paymentSubmitting) return;
+    setPaymentSubmitting(true);
     try {
-      await axios.post(`/frontdesk/payment/${bookingId}`, null, { params: newPayment });
+      await axios.post(`/frontdesk/folio/${bookingId}/payment`, newPayment);
       toast.success('Payment processed');
-      onFolioUpdated();
+      await onFolioUpdated?.();
       setNewPayment({ amount: 0, method: 'card', reference: '', notes: '' });
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to process payment');
+    } finally {
+      setPaymentSubmitting(false);
     }
   };
 
@@ -67,7 +80,7 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
 
               <form onSubmit={handleAddCharge} className="mt-4 p-4 bg-gray-50 rounded">
                 <div className="grid grid-cols-2 gap-4">
-                  <Select value={newCharge.charge_type} onValueChange={(v) => setNewCharge({...newCharge, charge_type: v})}>
+                  <Select value={newCharge.charge_type} onValueChange={(v) => setNewCharge((prev) => ({...prev, charge_type: v}))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="food">{t('pms.foodBeverage', 'Food & Beverage')}</SelectItem>
@@ -81,7 +94,7 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
                   <Input
                     placeholder={t("common.description")}
                     value={newCharge.description}
-                    onChange={(e) => setNewCharge({...newCharge, description: e.target.value})}
+                    onChange={(e) => setNewCharge((prev) => ({...prev, description: e.target.value}))}
                     required
                   />
                   <Input
@@ -89,10 +102,12 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
                     step="0.01"
                     placeholder={t('common.amount', 'Amount')}
                     value={newCharge.amount}
-                    onChange={(e) => setNewCharge({...newCharge, amount: parseFloat(e.target.value)})}
+                    onChange={(e) => setNewCharge((prev) => ({...prev, amount: Number(e.target.value) || 0}))}
                     required
                   />
-                  <Button type="submit">{t('pms.addCharge', 'Add Charge')}</Button>
+                  <Button type="submit" disabled={chargeSubmitting}>
+                    {t('pms.addCharge', 'Add Charge')}
+                  </Button>
                 </div>
               </form>
             </div>
@@ -118,10 +133,10 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
                     step="0.01"
                     placeholder={t('common.amount', 'Amount')}
                     value={newPayment.amount}
-                    onChange={(e) => setNewPayment({...newPayment, amount: parseFloat(e.target.value)})}
+                    onChange={(e) => setNewPayment((prev) => ({...prev, amount: Number(e.target.value) || 0}))}
                     required
                   />
-                  <Select value={newPayment.method} onValueChange={(v) => setNewPayment({...newPayment, method: v})}>
+                  <Select value={newPayment.method} onValueChange={(v) => setNewPayment((prev) => ({...prev, method: v}))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="cash">{t('pms.cash', 'Cash')}</SelectItem>
@@ -133,9 +148,11 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
                   <Input
                     placeholder={t('pms.referenceOptional', 'Reference (optional)')}
                     value={newPayment.reference}
-                    onChange={(e) => setNewPayment({...newPayment, reference: e.target.value})}
+                    onChange={(e) => setNewPayment((prev) => ({...prev, reference: e.target.value}))}
                   />
-                  <Button type="submit">{t('pms.processPayment', 'Process Payment')}</Button>
+                  <Button type="submit" disabled={paymentSubmitting}>
+                    {t('pms.processPayment', 'Process Payment')}
+                  </Button>
                 </div>
               </form>
             </div>

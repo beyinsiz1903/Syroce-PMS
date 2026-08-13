@@ -314,7 +314,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
             <p className="font-semibold text-gray-900 text-sm">{folio.room_number || 'N/A'}</p>
           </div>
           <div className="px-4 flex flex-col justify-center">
-            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{t('cm.components_SplitFolioDialog.toplam_bakiye')}</p>
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">Folyo Bakiyesi</p>
             <p className="font-bold text-emerald-600 text-lg tabular-nums">{fmtTL(folioBalance)} ₺</p>
             {extraChargesTotal > 0 && (
               <p className="text-[10px] text-gray-500 mt-1 leading-tight">

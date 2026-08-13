@@ -580,11 +580,8 @@ const HRComplete = () => {
 
   const handlePostPayrollToGL = async (run) => {
     try {
-      await axios.post('/hr/post-payroll-to-gl', {
-        amount: run.total_net_pay || run.total_gross_pay || 0,
-        month: run.month
-      });
-      toast.success(`${run.month} Bordrosu Başarıyla Muhasebeleştirildi (770/335).`);
+      await axios.post(`/payroll-gl/${run.id}/post`);
+      toast.success(`${run.period_month || run.month} Bordrosu Başarıyla Muhasebeleştirildi (770/335).`);
       await loadPayrollRuns(exportMonth);
     } catch (error) {
       toast.error(error.response?.data?.detail || "Muhasebeleştirme başarısız.");

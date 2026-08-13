@@ -29,13 +29,31 @@ from shared_kernel.gl_posting import (
     normal_balance,
     post_journal_entry,
 )
+from shared_kernel.pos_idem import ensure_compound_unique
 
 logger = logging.getLogger("domains.accounting.gl")
 
 router = APIRouter(prefix="/api/gl", tags=["Accounting / GL"])
 
-_GL_ROLES = {"super_admin", "admin", "accountant"}
-_READ_ROLES = {"super_admin", "admin", "accountant", "supervisor"}
+_GL_ROLES = {"super_admin", "admin", "finance"}
+_READ_ROLES = {"super_admin", "admin", "finance", "supervisor"}
+
+_DEFAULT_CHART_OF_ACCOUNTS = (
+    ("100", "Kasa", "asset"),
+    ("102", "Bankalar", "asset"),
+    ("108", "Diğer Hazır Değerler (Kredi Kartı)", "asset"),
+    ("120", "Alıcılar", "asset"),
+    ("150", "İlk Madde ve Malzeme", "asset"),
+    ("153", "Ticari Mallar", "asset"),
+    ("320", "Satıcılar", "liability"),
+    ("335", "Personele Borçlar", "liability"),
+    ("336", "Diğer Çeşitli Borçlar", "liability"),
+    ("360", "Ödenecek Vergi ve Fonlar", "liability"),
+    ("391", "Hesaplanan KDV", "liability"),
+    ("600", "Yurtiçi Satışlar (Oda/F&B Geliri)", "revenue"),
+    ("740", "Hizmet Üretim Maliyeti", "expense"),
+    ("770", "Genel Yönetim Giderleri", "expense"),
+)
 
 
 def _now_iso() -> str:
@@ -125,6 +143,69 @@ async def create_account(payload: AccountIn, current_user: User = Depends(get_cu
     await db.gl_accounts.insert_one(dict(doc))
     doc.pop("_id", None)
     return {"account": doc}
+
+
+@router.post("/accounts/initialize")
+async def initialize_chart_of_accounts(current_user: User = Depends(get_current_user)):
+    """Create the tenant's standard TDHP accounts without overwriting custom data."""
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    await ensure_compound_unique(
+        db.gl_accounts,
+        [("tenant_id", 1), ("code", 1)],
+        name="ux_gl_accounts_tenant_code",
+    )
+    created = 0
+    for code, name, account_type in _DEFAULT_CHART_OF_ACCOUNTS:
+        now = _now_iso()
+        result = await db.gl_accounts.update_one(
+            {"tenant_id": tenant_id, "code": code},
+            {
+                "$setOnInsert": {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "code": code,
+                    "name": name,
+                    "type": account_type,
+                    "normal_balance": normal_balance(account_type),
+                    "parent_code": None,
+                    "active": True,
+                    "created_at": now,
+                    "updated_at": now,
+                    "created_by": _actor_id(current_user),
+                }
+            },
+            upsert=True,
+        )
+        if getattr(result, "upserted_id", None) is not None:
+            created += 1
+    mapping_created = False
+    existing_mapping = await db.payroll_gl_mapping.find_one(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "tenant_id": 1},
+    )
+    if not existing_mapping:
+        now = _now_iso()
+        mapping_result = await db.payroll_gl_mapping.update_one(
+            {"tenant_id": tenant_id},
+            {
+                "$setOnInsert": {
+                    "tenant_id": tenant_id,
+                    "wage_expense_code": "770",
+                    "withholding_payable_code": "360",
+                    "net_payable_code": "335",
+                    "updated_at": now,
+                    "updated_by": _actor_id(current_user),
+                }
+            },
+            upsert=True,
+        )
+        mapping_created = getattr(mapping_result, "upserted_id", None) is not None
+    return {
+        "created": created,
+        "total": len(_DEFAULT_CHART_OF_ACCOUNTS),
+        "payroll_mapping_created": mapping_created,
+    }
 
 
 @router.put("/accounts/{code}")

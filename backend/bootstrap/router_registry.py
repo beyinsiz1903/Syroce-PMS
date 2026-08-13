@@ -60,8 +60,6 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.finance", "router", ["finance"], None, None),
     ("routers.finance.folio_einvoice_public", "router", ["e-Fatura"], None, None),
     ("routers.finance.einvoice", "router", ["e-Fatura"], None, None),
-    ("routers.finance.general_ledger", "router", ["Genel Muhasebe"], None, None),
-    ("routers.finance.open_banking", "router", ["Açık Bankacılık"], None, None),
     ("api.routes.invoice_integrations", "router", ["Integrations", "Reconciliation"], None, None),
     ("api.routes.incoming_invoice_integrations", "router", ["Integrations", "Reconciliation"], None, None),
     ("routers.reports", "router", ["reports"], None, None),
