@@ -19,12 +19,21 @@ export const buildHotelRunnerRequestConfig = user => {
   return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
 };
 
-export const parseHotelRunnerConnectionTestResult = data => {
-  const providerData = data?.data || {};
-  const connected = Boolean(data?.connected ?? providerData.connected);
+export const normalizeHotelRunnerConnectionTest = (data = {}) => {
+  const nested = data.data && typeof data.data === 'object' ? data.data : {};
+  const connected = data.connected === true || data.success === true && nested.connected !== false;
   return {
     connected,
-    durationMs: data?.duration_ms ?? providerData.duration_ms ?? 0,
+    durationMs: data.duration_ms ?? nested.duration_ms ?? 0,
+    error: data.error_type || data.error || 'Bağlantı doğrulanamadı'
+  };
+};
+
+export const parseHotelRunnerConnectionTestResult = data => {
+  const result = normalizeHotelRunnerConnectionTest(data);
+  return {
+    connected: result.connected,
+    durationMs: result.durationMs,
     errorCode: data?.error_type || data?.error || 'CONNECTION_TEST_FAILED'
   };
 };
@@ -35,7 +44,6 @@ export const getHotelRunnerErrorMessage = (error, fallback) => {
   if (detail?.error_code) return detail.error_code;
   return fallback;
 };
-
 const HotelRunnerIntegration = ({
   user,
   tenant,
@@ -309,8 +317,8 @@ const HotelRunnerIntegration = ({
       } = await axios.post(`/channel-manager/hotelrunner/test`, {}, {
         ...requestConfig
       });
-      const result = parseHotelRunnerConnectionTestResult(data);
-      if (result.connected) toast.success(`Bağlantı basarili (${result.durationMs}ms)`);else toast.error(`Bağlantı hatası: ${result.errorCode}`);
+      const result = normalizeHotelRunnerConnectionTest(data);
+      if (result.connected) toast.success(`Bağlantı basarili (${result.durationMs}ms)`);else toast.error(`Bağlantı hatası: ${result.error}`);
     } catch (e) {
       toast.error(getHotelRunnerErrorMessage(e, 'Bağlantı testi tamamlanamadı'));
     } finally {
