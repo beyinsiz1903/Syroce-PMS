@@ -1,4 +1,8 @@
-"""GET-only Nilvera CreateReturn draft-contract metadata diagnostics."""
+"""GET-only Nilvera CreateReturn draft-contract metadata diagnostics.
+
+Provider access in this module is GET-only. The GL verification writes only to
+an isolated CI Mongo tenant and never calls Nilvera.
+"""
 
 import hashlib
 import hmac
@@ -9,8 +13,10 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from core.integrations.invoice_gl_bridge import reverse_incoming_invoice_gl_for_return
 from core.integrations.nilvera.config import NilveraEndpoints
 from core.integrations.nilvera.errors import NilveraApiError, NilveraNotFoundError
+from core.tenant_db import get_db_for_tenant
 from tests.integration.test_nilvera_sandbox_e2e import (
     _collect_uuid_values,
     _created_return_detail_matches,
@@ -70,9 +76,103 @@ def _metadata_signature(payload: object) -> set[str]:
     return paths
 
 
+async def _verify_provider_free_gl_reversal() -> None:
+    """Prove exact reversal + idempotency using isolated CI Mongo only."""
+    tenant_id = "nilvera-return-gl-provider-free-e2e"
+    source_invoice_id = "historical-ambiguity-source"
+    action_id = "historical-ambiguity-action"
+    synthetic_provider_uuid = "00000000-0000-4000-8000-000000000001"
+    db = get_db_for_tenant(tenant_id)
+
+    await db.gl_journal_entries.delete_many({"tenant_id": tenant_id})
+    await db.gl_accounts.delete_many({"tenant_id": tenant_id})
+    await db.gl_accounts.insert_many(
+        [
+            {
+                "tenant_id": tenant_id,
+                "code": "E2E-PURCHASE",
+                "name": "Provider-free Purchase",
+                "type": "expense",
+                "active": True,
+            },
+            {
+                "tenant_id": tenant_id,
+                "code": "E2E-VAT",
+                "name": "Provider-free Input VAT",
+                "type": "asset",
+                "active": True,
+            },
+            {
+                "tenant_id": tenant_id,
+                "code": "E2E-PAYABLE",
+                "name": "Provider-free Payable",
+                "type": "liability",
+                "active": True,
+            },
+        ]
+    )
+    await db.gl_journal_entries.insert_one(
+        {
+            "id": "provider-free-source-journal",
+            "tenant_id": tenant_id,
+            "entry_no": "JE-PROVIDER-FREE-SOURCE",
+            "date": "2026-08-12",
+            "memo": "Provider-free source invoice",
+            "status": "posted",
+            "source": "nilvera_incoming",
+            "source_ref": source_invoice_id,
+            "idempotency_key": f"nilvera-incoming:{source_invoice_id}",
+            "lines": [
+                {"account_code": "E2E-PURCHASE", "debit": 100.0, "credit": 0.0, "memo": "base"},
+                {"account_code": "E2E-VAT", "debit": 20.0, "credit": 0.0, "memo": "vat"},
+                {"account_code": "E2E-PAYABLE", "debit": 0.0, "credit": 120.0, "memo": "vendor"},
+            ],
+        }
+    )
+
+    first = await reverse_incoming_invoice_gl_for_return(
+        tenant_id,
+        source_invoice_id,
+        action_id=action_id,
+        generated_provider_uuid=synthetic_provider_uuid,
+        actor="provider-free-e2e",
+    )
+    if first is None:
+        pytest.fail("BLOCKED_PROVIDER_FREE_GL_SOURCE_MISSING", pytrace=False)
+
+    observed = [
+        (line.get("account_code"), float(line.get("debit", 0)), float(line.get("credit", 0)))
+        for line in (first.get("lines") or [])
+    ]
+    expected = [
+        ("E2E-PURCHASE", 0.0, 100.0),
+        ("E2E-VAT", 0.0, 20.0),
+        ("E2E-PAYABLE", 120.0, 0.0),
+    ]
+    if observed != expected:
+        pytest.fail("BLOCKED_PROVIDER_FREE_GL_REVERSAL_MISMATCH", pytrace=False)
+    if first.get("reverses_entry_id") != "provider-free-source-journal":
+        pytest.fail("BLOCKED_PROVIDER_FREE_GL_SOURCE_LINK_MISMATCH", pytrace=False)
+    if first.get("nilvera_generated_provider_uuid") != synthetic_provider_uuid:
+        pytest.fail("BLOCKED_PROVIDER_FREE_GL_RESULT_LINK_MISMATCH", pytrace=False)
+
+    second = await reverse_incoming_invoice_gl_for_return(
+        tenant_id,
+        source_invoice_id,
+        action_id=action_id,
+        generated_provider_uuid=synthetic_provider_uuid,
+        actor="provider-free-e2e",
+    )
+    reversal_count = await db.gl_journal_entries.count_documents(
+        {"tenant_id": tenant_id, "idempotency_key": f"nilvera-return:{action_id}"}
+    )
+    if second is None or second.get("id") != first.get("id") or reversal_count != 1:
+        pytest.fail("BLOCKED_PROVIDER_FREE_GL_IDEMPOTENCY_MISMATCH", pytrace=False)
+
+
 @pytest.mark.external
 async def test_sandbox_diagnose_create_return_draft_contract_metadata(record_property):
-    """Compare two matching return drafts through /Draft/{UUID}/model using GET only."""
+    """Compare historical return drafts via GET and fail closed on duplicates."""
     allowed = os.environ.get("NILVERA_E2E_CREATE_RETURN_RECONCILIATION_ALLOWED", "false")
     if allowed.lower() != "true":
         pytest.skip("CreateReturn draft-contract diagnostic requires read-only reconciliation mode")
@@ -182,9 +282,7 @@ async def test_sandbox_diagnose_create_return_draft_contract_metadata(record_pro
                 )
 
             signatures = [_metadata_signature(detail) for detail in matches]
-            only_left = signatures[0] - signatures[1]
-            only_right = signatures[1] - signatures[0]
-            differences = sorted(only_left | only_right)
+            differences = sorted((signatures[0] - signatures[1]) | (signatures[1] - signatures[0]))
             metadata_equal = not differences
             safe_difference_fields = ",".join(differences[:25]) if differences else "NONE"
 
@@ -193,17 +291,29 @@ async def test_sandbox_diagnose_create_return_draft_contract_metadata(record_pro
             record_property("metadata_difference_fields", safe_difference_fields)
             record_property("provider_write_count", "0")
 
+            await _verify_provider_free_gl_reversal()
+            record_property("gl_reversal_provider_write_count", "0")
+            record_property("gl_reversal_status", "posted")
+            record_property("gl_reversal_idempotent", "true")
+
             diagnostic = (
                 f"raw_match_count=2, draft_model_contract_count=2, "
                 f"metadata_signature_equal={str(metadata_equal).lower()}, "
                 f"metadata_difference_count={len(differences)}, "
-                f"metadata_difference_fields={safe_difference_fields}, write_count=0"
+                f"metadata_difference_fields={safe_difference_fields}, "
+                f"gl_reversal_status=posted, gl_reversal_idempotent=true, write_count=0"
             )
             print(f"CREATE_RETURN_DRAFT_CONTRACT_DIAGNOSTIC {diagnostic}")
 
             if metadata_equal:
-                pytest.fail(f"CONFLICT_CREATE_RETURN_DRAFT_METADATA_IDENTICAL ({diagnostic})", pytrace=False)
-            pytest.fail(f"BLOCKED_CREATE_RETURN_DRAFT_METADATA_DIFFERENCES_FOUND ({diagnostic})", pytrace=False)
+                pytest.fail(
+                    f"AMBIGUOUS_DUPLICATE_RETURN_DRAFTS ({diagnostic})",
+                    pytrace=False,
+                )
+            pytest.fail(
+                f"CONFLICT_CREATE_RETURN_DRAFT_METADATA_DIFFERENCES ({diagnostic})",
+                pytrace=False,
+            )
 
     except Exception as exc:
         http_status = exc.http_status if isinstance(exc, NilveraApiError) else None
