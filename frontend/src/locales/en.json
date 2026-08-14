@@ -2470,6 +2470,9 @@
       "cleanupEmpty": "Delete Empty",
       "cleanupDone": "{{count}} empty tasks deleted",
       "cleanupError": "Failed to delete empty tasks",
+      "cleanupConfirmTitle": "Delete all empty tasks?",
+      "cleanupConfirmDescription": "Every incomplete task without usable content will be permanently deleted. This action cannot be undone.",
+      "cleanupConfirmAction": "Delete empty tasks",
       "descriptionRequired": "Description *",
       "descriptionPlaceholder": "Enter task details...",
       "createTask": "Create Task",
@@ -2506,7 +2509,13 @@
       "taskStarted": "Task started",
       "updateError": "Could not update task",
       "taskDeleted": "Task deleted",
-      "deleteError": "Could not delete task"
+      "deleteError": "Could not delete task",
+      "deleteTaskAria": "Delete task",
+      "deleteConfirmTitle": "Delete this task?",
+      "deleteConfirmDescription": "{{title}} will be permanently deleted. This action cannot be undone.",
+      "deleteConfirmAction": "Delete",
+      "cancel": "Cancel",
+      "untitledTask": "Untitled task"
     },
     "feedback": {
       "title": "Guest Feedback",

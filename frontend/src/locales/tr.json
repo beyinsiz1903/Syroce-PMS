@@ -2515,6 +2515,9 @@
       "cleanupEmpty": "Boşları Sil",
       "cleanupDone": "{{count}} boş görev silindi",
       "cleanupError": "Boş görevler silinemedi",
+      "cleanupConfirmTitle": "Tüm boş görevler silinsin mi?",
+      "cleanupConfirmDescription": "Kullanılabilir içeriği olmayan tüm tamamlanmamış görevler kalıcı olarak silinecek. Bu işlem geri alınamaz.",
+      "cleanupConfirmAction": "Boş görevleri sil",
       "assignedStaff": "Atanan Personel",
       "staffPlaceholder": "Personel adı",
       "descriptionField": "Açıklama (Opsiyonel)",
@@ -2554,7 +2557,13 @@
       "taskStarted": "Görev başlatıldı",
       "updateError": "Görev güncellenemedi",
       "taskDeleted": "Görev silindi",
-      "deleteError": "Görev silinemedi"
+      "deleteError": "Görev silinemedi",
+      "deleteTaskAria": "Görevi sil",
+      "deleteConfirmTitle": "Bu görev silinsin mi?",
+      "deleteConfirmDescription": "{{title}} kalıcı olarak silinecek. Bu işlem geri alınamaz.",
+      "deleteConfirmAction": "Sil",
+      "cancel": "İptal",
+      "untitledTask": "Başlıksız görev"
     },
     "feedback": {
       "title": "Misafir Geri Bildirimleri",

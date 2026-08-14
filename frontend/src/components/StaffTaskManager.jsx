@@ -11,6 +11,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Wrench, CheckCircle, Clock, AlertCircle, Plus, Search,
   ClipboardList, Filter, RefreshCw, Trash2, User, BedDouble
 } from 'lucide-react';
@@ -39,6 +49,8 @@ const StaffTaskManager = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
+  const [taskToDelete, setTaskToDelete] = useState(null);
+  const [cleanupConfirmOpen, setCleanupConfirmOpen] = useState(false);
   const emptyForm = {
     task_type: 'maintenance', department: 'engineering', title: '', room_id: '',
     priority: 'normal', description: '', assigned_to: ''
@@ -77,6 +89,7 @@ const StaffTaskManager = () => {
     try {
       const res = await axios.delete('/pms/staff-tasks/cleanup-empty');
       toast.success(ts('cleanupDone', { count: res.data?.deleted_count ?? 0 }));
+      setCleanupConfirmOpen(false);
       loadTasks();
     } catch {
       toast.error(ts('cleanupError'));
@@ -97,6 +110,7 @@ const StaffTaskManager = () => {
     try {
       await axios.delete(`/pms/staff-tasks/${taskId}`);
       toast.success(ts('taskDeleted'));
+      setTaskToDelete(null);
       loadTasks();
     } catch {
       toast.error(ts('deleteError'));
@@ -135,7 +149,7 @@ const StaffTaskManager = () => {
           <Button variant="outline" size="sm" onClick={loadTasks} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> {ts('refresh')}
           </Button>
-          <Button variant="outline" size="sm" onClick={cleanupEmpty} className="text-red-600 hover:text-red-700">
+          <Button variant="outline" size="sm" onClick={() => setCleanupConfirmOpen(true)} className="text-red-600 hover:text-red-700">
             <Trash2 className="w-4 h-4 mr-1" /> {ts('cleanupEmpty')}
           </Button>
           <Button onClick={() => setShowDialog(true)}>
@@ -271,7 +285,13 @@ const StaffTaskManager = () => {
                       {task.status === 'completed' && (
                         <Badge className="bg-green-100 text-green-700">{ts('completed')}</Badge>
                       )}
-                      <Button size="sm" variant="ghost" className="ml-auto text-red-500 hover:text-red-700" onClick={() => deleteTask(task.id)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="ml-auto text-red-500 hover:text-red-700"
+                        aria-label={ts('deleteTaskAria')}
+                        onClick={() => setTaskToDelete(task)}
+                      >
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
@@ -355,6 +375,41 @@ const StaffTaskManager = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={Boolean(taskToDelete)} onOpenChange={(open) => !open && setTaskToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{ts('deleteConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {ts('deleteConfirmDescription', { title: taskToDelete?.title || ts('untitledTask') })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{ts('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={() => taskToDelete && deleteTask(taskToDelete.id)}
+            >
+              {ts('deleteConfirmAction')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={cleanupConfirmOpen} onOpenChange={setCleanupConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{ts('cleanupConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{ts('cleanupConfirmDescription')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{ts('cancel')}</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" onClick={cleanupEmpty}>
+              {ts('cleanupConfirmAction')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
