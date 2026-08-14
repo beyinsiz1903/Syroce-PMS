@@ -12,6 +12,7 @@ from typing import Any
 from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
 from common.result import ServiceResult
+from domains.pms.frontdesk_financials import calculate_departure_balance
 from domains.pms.lock_bridge.service import CMD_ENCODE, CMD_REVOKE, enqueue_lock_command
 
 logger = logging.getLogger(__name__)
@@ -570,13 +571,13 @@ class FrontdeskService:
 
     async def get_departures(self, ctx: OperationContext, date_str: str | None = None) -> ServiceResult:
         target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(UTC).date()
-        start = datetime.combine(target_date, datetime.min.time())
-        end = datetime.combine(target_date, datetime.max.time())
+        start = target_date.isoformat()
+        end = (target_date + timedelta(days=1)).isoformat()
         bookings = await self._db.bookings.find(
             {
                 "tenant_id": ctx.tenant_id,
                 "status": "checked_in",
-                "check_out": {"$gte": start.isoformat(), "$lte": end.isoformat()},
+                "check_out": {"$gte": start, "$lt": end},
             },
             {"_id": 0},
         ).to_list(1000)
@@ -588,7 +589,7 @@ class FrontdeskService:
         room_ids = list({b["room_id"] for b in bookings if b.get("room_id")})
 
         guest_map, room_map = {}, {}
-        charges_by_booking, payments_by_booking = {}, {}
+        charges_by_booking, payments_by_booking, extras_by_booking = {}, {}, {}
 
         if guest_ids:
             async for g in self._db.guests.find({"id": {"$in": guest_ids}, "tenant_id": ctx.tenant_id}, {"_id": 0}):
@@ -601,17 +602,28 @@ class FrontdeskService:
                 charges_by_booking.setdefault(c["booking_id"], []).append(c)
             async for p in self._db.payments.find({"booking_id": {"$in": booking_ids}, "tenant_id": ctx.tenant_id}, {"_id": 0}):
                 payments_by_booking.setdefault(p["booking_id"], []).append(p)
+            async for charge in self._db.extra_charges.find(
+                {"booking_id": {"$in": booking_ids}, "tenant_id": ctx.tenant_id},
+                {"_id": 0},
+            ):
+                extras_by_booking.setdefault(charge["booking_id"], []).append(charge)
 
         enriched = []
         for b in bookings:
             charges = charges_by_booking.get(b["id"], [])
             payments = payments_by_booking.get(b["id"], [])
-            balance = sum(c.get("total", 0) for c in charges) - sum(p.get("amount", 0) for p in payments if p.get("status") == "paid")
+            extras = extras_by_booking.get(b["id"], [])
+            balance = calculate_departure_balance(charges, payments, extras)
+            guest = guest_map.get(b.get("guest_id")) or {}
+            room = room_map.get(b.get("room_id")) or {}
+            guest_name = guest.get("name") or f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip()
             enriched.append(
                 {
                     **b,
-                    "guest": guest_map.get(b.get("guest_id")),
-                    "room": room_map.get(b.get("room_id")),
+                    "guest": guest or None,
+                    "room": room or None,
+                    "guest_name": guest_name or b.get("guest_name"),
+                    "room_number": room.get("room_number") or b.get("room_number"),
                     "balance": balance,
                 }
             )

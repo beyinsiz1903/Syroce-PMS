@@ -47,9 +47,10 @@ const MicePage = ({
   const concurrentEventsUsed = entitlements?.mice?.usage?.concurrent_events ?? 0;
   const eventsLimitReached = concurrentEventsLimit !== null && concurrentEventsUsed >= concurrentEventsLimit;
 
-  const hasBanquet = entitlements?.mice?.features?.includes('banquet_operations');
-  const hasProposals = entitlements?.mice?.features?.includes('proposals_contracts');
-  const hasAdvancedReporting = entitlements?.mice?.features?.includes('advanced_reporting');
+  const miceFeatures = Array.isArray(entitlements?.mice?.features) ? entitlements.mice.features : [];
+  const hasBanquet = miceFeatures.includes('banquet_operations');
+  const hasProposals = miceFeatures.includes('proposals_contracts');
+  const hasAdvancedReporting = miceFeatures.includes('advanced_reporting');
 
   const [events, setEvents] = useState([]);
   const [summary, setSummary] = useState({});

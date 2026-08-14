@@ -114,7 +114,10 @@ export default function ModuleStorePage({
       setPaymentReady(!!p.data.payment_ready);
       setSubs(s.data.subscriptions || []);
     } catch (e) {
-      console.error(e);
+      console.error('Module store load failed', {
+        status: e?.response?.status ?? 'NOT_RECORDED',
+        type: e?.name ?? 'Error',
+      });
       toast.error("Veriler yüklenemedi");
     }
     setLoading(false);

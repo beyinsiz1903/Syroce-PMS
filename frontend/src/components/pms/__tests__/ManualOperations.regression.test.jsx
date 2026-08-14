@@ -89,6 +89,45 @@ describe('PMS manually discovered operation regressions', () => {
     expect(booking.check_out).toBe('2026-08-14');
   });
 
+  it('renders one age input per child without dereferencing placeholder values', () => {
+    const booking = {
+      guest_id: '', check_in: '', check_out: '', adults: 1, children: 2,
+      children_ages: [7, 10], guests_count: 3, channel: 'direct', company_id: '',
+      rate_type: '', market_segment: '', cancellation_policy: '',
+      billing_address: '', billing_tax_number: '', billing_contact_person: '',
+      override_reason: '',
+    };
+
+    render(
+      <BookingDialog
+        open
+        onClose={() => {}}
+        guests={[]}
+        rooms={[]}
+        companies={[]}
+        ratePlans={[]}
+        packages={[]}
+        newBooking={booking}
+        setNewBooking={() => {}}
+        multiRoomBooking={[]}
+        handleCreateBooking={() => {}}
+        handleCompanySelect={() => {}}
+        handleContractedRateSelect={() => {}}
+        handleChildrenChange={() => {}}
+        handleChildAgeChange={() => {}}
+        addRoomToMultiBooking={() => {}}
+        removeRoomFromMultiBooking={() => {}}
+        updateMultiRoomField={() => {}}
+        updateMultiRoomChildrenAges={() => {}}
+        updateMultiRoomChildAge={() => {}}
+        setOpenDialog={() => {}}
+      />,
+    );
+
+    expect(screen.getByPlaceholderText('Child 1 age')).toHaveValue(7);
+    expect(screen.getByPlaceholderText('Child 2 age')).toHaveValue(10);
+  });
+
   it('posts charge and payment JSON to the active frontdesk contract', async () => {
     const onFolioUpdated = vi.fn();
     render(

@@ -89,4 +89,25 @@ describe('MicePage entitlement usage contract', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'MICE & Banquet' })).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /yeni_etkinlik/ })).toBeDisabled();
   });
+
+  it('fails closed without crashing when the feature payload is malformed', async () => {
+    mockEntitlements.mockReturnValue({
+      entitlements: {
+        mice: {
+          features: { banquet_operations: true },
+          limits: { spaces_limit: 10, concurrent_events: 50 },
+          usage: { spaces_limit: 2, concurrent_events: 3 },
+        },
+      },
+    });
+
+    render(
+      <MemoryRouter>
+        <MicePage user={{}} tenant={{}} onLogout={vi.fn()} />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'MICE & Banquet' })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /gunun_ops_sheet_i/ })).not.toBeInTheDocument();
+  });
 });

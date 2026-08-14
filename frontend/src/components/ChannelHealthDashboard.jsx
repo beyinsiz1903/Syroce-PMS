@@ -403,7 +403,7 @@ export function ChannelHealth() {
     return <div className="space-y-4" data-testid="channel-health-loading">
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">{Array.from({
           length: 5
-        }).map((_, i) => <Skeleton key={_.id || i} className="h-28 bg-gray-100 dark:bg-slate-800" />)}</div>
+        }).map((_, i) => <Skeleton key={i} className="h-28 bg-gray-100 dark:bg-slate-800" />)}</div>
         <Skeleton className="h-64 bg-gray-100 dark:bg-slate-800" />
         <Skeleton className="h-48 bg-gray-100 dark:bg-slate-800" />
       </div>;

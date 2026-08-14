@@ -59,7 +59,7 @@ class BookingCreate(BaseModel):
     virtual_card_expiry: str | None = None
 
 
-class Booking(BaseModel):
+class BookingBase(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -75,7 +75,7 @@ class Booking(BaseModel):
 REJECTED_STATUS = "rejected"
 
 
-class BookingExtended(BaseModel):
+class Booking(BookingBase):
     """Extended booking model with CM/integration fields"""
 
     # CM / integration semantics (defaults chosen by user)
@@ -124,3 +124,7 @@ class BookingExtended(BaseModel):
     checked_in_at: datetime | None = None
     checked_out_at: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+# Backwards-compatible name retained for older imports.
+BookingExtended = Booking

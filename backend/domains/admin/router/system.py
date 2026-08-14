@@ -22,6 +22,7 @@ from core.security import (
     _is_super_admin,
     get_current_user,
 )
+from domains.admin.log_normalization import normalize_audit_log
 
 try:
     from cache_manager import cache as _cache_mgr
@@ -474,6 +475,11 @@ async def get_system_logs(
     """
     Get system logs with filtering
     """
+    normalized_level = level.upper() if level else None
+    if normalized_level and normalized_level not in {"ERROR", "WARN", "INFO", "DEBUG"}:
+        raise HTTPException(status_code=400, detail="Invalid log level")
+    limit = max(1, min(limit, 500))
+
     try:
         # Read from audit logs and create application logs
         logs = []
@@ -487,27 +493,7 @@ async def get_system_logs(
 
         audit_logs = await db.audit_logs.find(filter_dict).sort("timestamp", -1).limit(limit).to_list(limit)
 
-        for log in audit_logs:
-            # Convert audit log to application log format
-            log_entry = {
-                "id": log["id"],
-                "level": "INFO",
-                "timestamp": log["timestamp"],
-                "message": f"{log['user_name']} performed {log['action']} on {log['entity_type']}",
-                "user": log.get("user_name", "System"),
-                "action": log["action"],
-                "entity_type": log.get("entity_type"),
-                "entity_id": log.get("entity_id"),
-                "details": log.get("changes", {}),
-            }
-
-            # Determine log level based on action
-            if "DELETE" in log["action"] or "VOID" in log["action"]:
-                log_entry["level"] = "WARN"
-            elif "ERROR" in log["action"] or "FAIL" in log["action"]:
-                log_entry["level"] = "ERROR"
-
-            logs.append(log_entry)
+        logs.extend(normalize_audit_log(log) for log in audit_logs)
 
         # Add some system logs
         system_logs = [
@@ -535,13 +521,13 @@ async def get_system_logs(
         logs.sort(key=lambda x: x["timestamp"], reverse=True)
 
         # Filter by level if specified (after adding all logs)
-        if level:
-            logs = [log for log in logs if log["level"] == level.upper()]
+        if normalized_level:
+            logs = [log for log in logs if log["level"] == normalized_level]
 
         return {
             "logs": logs[:limit],
             "count": len(logs),
-            "filters": {"level": level, "search": search, "limit": limit},
+            "filters": {"level": normalized_level, "search_applied": bool(search), "limit": limit},
             "log_levels": {
                 "ERROR": len([l for l in logs if l["level"] == "ERROR"]),
                 "WARN": len([l for l in logs if l["level"] == "WARN"]),
@@ -550,8 +536,14 @@ async def get_system_logs(
             },
         }
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve logs: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning(
+            "System log retrieval failed",
+            extra={"error_type": type(exc).__name__},
+        )
+        raise HTTPException(status_code=503, detail="System logs are temporarily unavailable") from None
 
 
 # ── GET /system/health ──

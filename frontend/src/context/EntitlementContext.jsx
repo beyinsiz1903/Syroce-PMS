@@ -136,7 +136,8 @@ export const EntitlementProvider = ({ children, currentTenantId, isSuperAdmin })
     const moduleEntitlements = state.entitlements?.[moduleKey];
     if (!moduleEntitlements) return false;
     
-    return moduleEntitlements.features?.includes(featureKey) ?? false;
+    const features = moduleEntitlements.features;
+    return Array.isArray(features) ? features.includes(featureKey) : false;
   }, [isSuperAdmin, state.loading, isStateValid, state.entitlements]);
 
   const getLimit = useCallback((moduleKey, limitKey) => {
