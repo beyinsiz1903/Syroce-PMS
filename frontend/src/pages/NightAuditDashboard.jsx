@@ -20,6 +20,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { confirmDialog } from "@/lib/dialogs";
+import { emitBusinessDateChanged } from "@/lib/businessDateEvents";
+import {
+  NIGHT_AUDIT_RUN_TIMEOUT_MS,
+  confirmsNightAuditAdvance,
+  isNightAuditTimeout,
+} from "@/lib/nightAuditRunSafety";
 
 import {
   StatusBadge, SeverityBadge, StatCard, IntegrityBadge,
@@ -77,10 +83,14 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const fetchBusinessDate = useCallback(async () => {
     try {
       const res = await axios.get("/night-audit/business-date");
-      setBusinessDate(res.data.business_date);
+      const nextBusinessDate = res.data.business_date;
+      setBusinessDate(nextBusinessDate);
       setPreviousDate(res.data.previous_business_date);
+      emitBusinessDateChanged(nextBusinessDate);
+      return nextBusinessDate;
     } catch (err) {
       console.error("Business date fetch failed:", err);
+      return null;
     }
   }, []);
 
@@ -221,6 +231,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
 
   const handleRunAudit = async () => {
     setRunning(true);
+    const requestedBusinessDate = businessDate;
     try {
       const payload = {
         business_date: businessDate,
@@ -229,18 +240,47 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
         dry_run: runOptions.dry_run,
         reason: runOptions.reason || null,
       };
-      const res = await axios.post("/night-audit/run", payload);
+      const res = await axios.post("/night-audit/run", payload, {
+        timeout: NIGHT_AUDIT_RUN_TIMEOUT_MS,
+      });
       const result = res.data;
+      const postedChargeCount = result.charges_posted ?? result.run?.processed_count ?? 0;
       toast.success(
         runOptions.dry_run
           ? `Simülasyon tamamlandı: ${result.rooms_processed} oda işlendi`
-          : `Gece denetimi tamamlandı: ${result.charges_posted} masraf kaydedildi`
+          : `Gece denetimi tamamlandı: ${postedChargeCount} masraf kaydedildi`
       );
       setShowRunDialog(false);
       setRunOptions({ force_rerun: false, skip_validations: false, dry_run: false, reason: "" });
       await loadAll();
       setPrepRefreshKey((k) => k + 1);
     } catch (err) {
+      if (isNightAuditTimeout(err)) {
+        try {
+          const verification = await axios.get("/night-audit/business-date", {
+            _noCache: true,
+            timeout: 30_000,
+          });
+          const verifiedDate = verification.data?.business_date;
+          if (confirmsNightAuditAdvance(requestedBusinessDate, verifiedDate)) {
+            emitBusinessDateChanged(verifiedDate);
+            toast.success("Gece denetiminin sunucuda tamamlandığı doğrulandı");
+            setShowRunDialog(false);
+            setRunOptions({ force_rerun: false, skip_validations: false, dry_run: false, reason: "" });
+            await loadAll();
+            setPrepRefreshKey((k) => k + 1);
+            return;
+          }
+        } catch {
+          // The mutation outcome remains ambiguous; do not retry it here.
+        }
+        setShowRunDialog(false);
+        toast.error(
+          "Gece denetimi sonucu henüz doğrulanamadı. Yeniden başlatmayın; durumu Yenile ile kontrol edin.",
+          { duration: 8000 },
+        );
+        return;
+      }
       const detail = err.response?.data?.detail;
       // BLOCKED: backend yapılandırılmış nesne döner ({success:false, code:"BLOCKED", error, run:{errors,warnings}})
       if (typeof detail === "object" && detail) {
