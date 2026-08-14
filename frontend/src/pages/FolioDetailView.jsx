@@ -562,7 +562,11 @@ export default function FolioDetailView({
     }
     setVoidLoading(true);
     try {
-      await axios.post("/cashier/peer-verify", { pin: supervisorPin.trim() });
+      await axios.post(
+        "/cashier/peer-verify",
+        { pin: supervisorPin.trim() },
+        { _skipAuthRetry: true },
+      );
       await axios.post(`/folio/${folio.id}/payment/${voidTarget.id}/void`, {
         reason: voidReason.trim()
       });

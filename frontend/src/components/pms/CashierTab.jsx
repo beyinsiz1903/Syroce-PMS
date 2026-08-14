@@ -85,7 +85,11 @@ const CashierTab = () => {
     if (!pin) { toast.error('PIN gerekli'); return; }
     setPinSubmitting(true);
     try {
-      await axios.post('/cashier/peer-verify', { pin });
+      await axios.post(
+        '/cashier/peer-verify',
+        { pin },
+        { _skipAuthRetry: true },
+      );
       const cb = pinGate.onVerified;
       closePinGate();
       if (cb) await cb();
