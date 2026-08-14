@@ -192,6 +192,35 @@ describe('PMS manually discovered operation regressions', () => {
     await waitFor(() => expect(handleCheckIn).toHaveBeenCalledWith('booking-dirty', true));
   });
 
+  it('renders a localized close action for the expanded no-show list', () => {
+    render(
+      <MemoryRouter>
+        <Tabs defaultValue="frontdesk">
+          <FrontdeskTab
+            arrivals={[]}
+            departures={[]}
+            inhouse={[]}
+            bookings={[{
+              id: 'booking-noshow', status: 'confirmed',
+              check_in: '2026-08-12', check_out: '2026-08-13',
+              guest: { name: 'TEST GUEST' },
+              room: { room_number: '105', room_type: 'Standard' },
+            }]}
+            rooms={[]}
+            guests={[]}
+            handleCheckIn={() => {}}
+            handleCheckOut={() => {}}
+            loadFolio={() => {}}
+            loading={false}
+          />
+        </Tabs>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('kpi-noshow'));
+    expect(screen.getByRole('button', { name: 'Kapat' })).toBeInTheDocument();
+  });
+
   it('normalizes both list and paginated search response shapes', () => {
     expect(normalizeSearchResults([{ id: 'g1' }], 'guests')).toEqual([{ id: 'g1' }]);
     expect(normalizeSearchResults({ bookings: [{ id: 'b1' }], total: 1 }, 'bookings')).toEqual([{ id: 'b1' }]);
