@@ -162,8 +162,16 @@ function VoidDetailsPanel({
     </div>;
 }
 
-// Mongo ObjectId formatı: tam olarak 24 hex karakter
+// Folio records can use legacy Mongo ObjectIds or the UUID identifiers emitted
+// by the current PMS folio service.
 const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+const UUID_RE = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
+
+export function isSupportedFolioId(value) {
+  const id = String(value || "").trim();
+  return OBJECT_ID_RE.test(id) || UUID_RE.test(id);
+}
+
 export default function FolioDetailView({
   user,
   tenant,
@@ -196,12 +204,13 @@ export default function FolioDetailView({
     if (!id) return;
     setNotFound(false);
     setNotFoundReason("");
-    // 2026-05-13 UX guard: invalid ObjectId formatı backend'e bile gitmeden NotFound göster
+    // Reject malformed external input before it reaches the backend while
+    // accepting both identifier formats persisted by the PMS.
     // (P2 cleanup — sahte/yanıltıcı sayfa shell render etmesin).
     // Mevcut `data` sadece kesin NotFound (invalid format / 404 / 401 / 403) durumunda
     // veya başarılı fetch'te değişir; transient 5xx/network hatasında önceki folio
     // ekrandan kaybolmaz (refresh sırasında boş shell regression riski yok).
-    if (!OBJECT_ID_RE.test(String(id).trim())) {
+    if (!isSupportedFolioId(id)) {
       setData(null);
       setNotFound(true);
       setNotFoundReason("invalid_format");
@@ -259,7 +268,7 @@ export default function FolioDetailView({
               {notFoundReason === "forbidden" ? "Erişim yetkisi yok" : "Folio bulunamadı"}
             </h2>
             <p className="text-sm text-gray-500 mb-4">
-              {notFoundReason === "invalid_format" && "Geçersiz folio ID formatı (24 karakter hex bekleniyor)."}
+              {notFoundReason === "invalid_format" && "Geçersiz folio kimliği formatı."}
               {notFoundReason === "not_found" && "Bu ID ile bir folio kaydı bulunamadı veya farklı bir tenant'a ait."}
               {notFoundReason === "forbidden" && "Bu folioyu görüntüleme yetkiniz yok (403)."}
             </p>
