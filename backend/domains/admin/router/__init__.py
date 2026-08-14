@@ -5,6 +5,8 @@ Public API: from domains.admin.router import router
 
 from fastapi import APIRouter
 
+from api.routes.nilvera_credit_pool import router as _nilvera_credit_pool_r
+
 from .compliance import router as _compliance_r
 from .demo import router as _demo_r
 from .hotel import router as _hotel_r
@@ -35,3 +37,4 @@ router.include_router(_ops_r)
 router.include_router(_stress_r)
 router.include_router(_pilot_fixtures_r)
 router.include_router(_site_content_r)
+router.include_router(_nilvera_credit_pool_r)
