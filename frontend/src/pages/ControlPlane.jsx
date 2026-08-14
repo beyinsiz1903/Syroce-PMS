@@ -410,7 +410,7 @@ function MetricCard({
 }
 
 // ─── Live Feed ───────────────────────────────────────────────────
-function LiveFeed() {
+export function LiveFeed() {
   const { t, i18n } = useTranslation();
   const [events, setEvents] = useState([]);
   const [total, setTotal] = useState(0);
@@ -439,7 +439,7 @@ function LiveFeed() {
   }, [fetchEvents, autoRefresh]);
   if (loading) return <div className="space-y-2">{Array.from({
       length: 8
-    }).map((_, i) => <Skeleton key={_.id || i} className="h-10 bg-gray-50" />)}</div>;
+    }).map((_, i) => <Skeleton key={i} className="h-10 bg-gray-50" />)}</div>;
   return <div className="space-y-3" data-testid="live-feed">
       {/* Header */}
       <div className="flex items-center justify-between">

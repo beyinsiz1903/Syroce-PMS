@@ -311,7 +311,14 @@ export default function FolioDetailView({
               </div>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowChargeForm(true)} className="border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowChargeForm(true)}
+                disabled={folio?.status !== "open"}
+                title={folio?.status !== "open" ? "Kapalı folyoya masraf eklenemez" : undefined}
+                className="border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+              >
                 <Plus className="w-4 h-4 mr-2" /> Masraf Ekle
               </Button>
               <Button variant="outline" size="sm" onClick={() => printFolio(data, tenant)} className="border-blue-200 text-blue-700 hover:bg-blue-50">
@@ -469,20 +476,29 @@ export default function FolioDetailView({
         </>}
     </div>;
   const postCharge = async () => {
+    if (!folio?.id || folio.status !== "open") {
+      toast.error("Kapalı folyoya masraf eklenemez");
+      setShowChargeForm(false);
+      return;
+    }
     if (!chargeForm.description || !chargeForm.amount) {
       toast.error("Açıklama ve tutar zorunludur");
       return;
     }
     setChargeLoading(true);
     try {
-      await axios.post(`/frontdesk/folio/${folio?.booking_id}/charge`, {
+      const idempotencyKey = window.crypto?.randomUUID?.() || `folio-charge-${Date.now()}`;
+      const response = await axios.post(`/folio/${folio.id}/charge`, {
         charge_category: chargeForm.category,
         description: chargeForm.description,
         amount: parseFloat(chargeForm.amount) * (parseInt(chargeForm.quantity) || 1),
         quantity: parseInt(chargeForm.quantity) || 1
       }, {
-        headers: {}
+        headers: { "Idempotency-Key": idempotencyKey }
       });
+      if (!response?.data?.id) {
+        throw new Error("CHARGE_WRITE_NOT_CONFIRMED");
+      }
       toast.success("Masraf eklendi");
       setShowChargeForm(false);
       setChargeForm({

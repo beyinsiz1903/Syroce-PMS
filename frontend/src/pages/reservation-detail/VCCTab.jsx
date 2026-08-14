@@ -249,7 +249,7 @@ export function VCCTab({
               <div className="flex gap-1">
                 {Array.from({
               length: maxViews
-            }).map((_, i) => <div key={_.id || i} className={`h-2 flex-1 rounded ${i < viewCount ? 'bg-red-400' : 'bg-green-400'}`} />)}
+            }).map((_, i) => <div key={i} className={`h-2 flex-1 rounded ${i < viewCount ? 'bg-red-400' : 'bg-green-400'}`} />)}
               </div>
             </div>
 

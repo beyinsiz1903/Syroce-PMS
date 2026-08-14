@@ -16,6 +16,7 @@ const MobileLogViewer = ({ user }) => {
   const [logLevels, setLogLevels] = useState({});
   const [selectedLevel, setSelectedLevel] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     loadLogs();
@@ -25,6 +26,7 @@ const MobileLogViewer = ({ user }) => {
   const loadLogs = async () => {
     try {
       setLoading(true);
+      setLoadError(false);
       const params = new URLSearchParams();
       if (selectedLevel) params.append('level', selectedLevel);
       params.append('limit', '50');
@@ -32,11 +34,15 @@ const MobileLogViewer = ({ user }) => {
       const res = await axios.get(`/system/logs?${params.toString()}`);
       setLogs(res.data.logs || []);
       setLogLevels(res.data.log_levels || {});
-      setLoading(false);
-      setRefreshing(false);
     } catch (error) {
-      console.error('Failed to load logs:', error);
+      setLoadError(true);
+      console.error('Failed to load logs', {
+        status: error?.response?.status || null,
+        type: error?.name || 'Error',
+      });
       toast.error('Loglar yüklenemedi');
+    } finally {
+      setLoading(false);
       setRefreshing(false);
     }
   };
@@ -104,6 +110,15 @@ const MobileLogViewer = ({ user }) => {
       </div>
 
       <div className="p-4 space-y-4">
+        {loadError && (
+          <Card className="border-red-200 bg-red-50" role="alert">
+            <CardContent className="p-6 text-center">
+              <AlertCircle className="w-8 h-8 text-red-600 mx-auto mb-3" />
+              <p className="text-sm text-red-800 mb-4">Sistem logları yüklenemedi.</p>
+              <Button onClick={handleRefresh} variant="outline">Tekrar Dene</Button>
+            </CardContent>
+          </Card>
+        )}
         {/* Level Filters */}
         <div className="flex gap-2 overflow-x-auto">
           <Button
@@ -139,7 +154,7 @@ const MobileLogViewer = ({ user }) => {
 
         {/* Logs List */}
         <div className="space-y-2">
-          {logs.length === 0 ? (
+          {!loadError && logs.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center">
                 <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />

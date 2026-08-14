@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, Suspense, lazy } from "react";
 import "@/App.css";
-import "@/config/axiosConfig";
+import { keepActiveSessionAlive } from "@/config/axiosConfig";
 import axios from "axios";
 import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from "react-router-dom";
 import PlanRouteGuard from "@/components/PlanRouteGuard";
@@ -117,9 +117,35 @@ function App() {
           setIsAuthenticated(true);
           prefetchHeavyModules();
         })
-        .catch(() => {
-          clearAuthStorage();
-          setIsAuthenticated(false);
+        .catch((error) => {
+          const status = error?.response?.status;
+          if (status === 401 || status === 403) {
+            clearAuthStorage();
+            setIsAuthenticated(false);
+            return;
+          }
+
+          // A deployment restart or a short network outage must not turn
+          // into an implicit logout. Keep the last verified local identity;
+          // API authorization remains enforced by the server and the global
+          // interceptor will still hard-logout on a definitive 401/403.
+          try {
+            const cachedUser = JSON.parse(storedUser);
+            const cachedTenant = storedTenant && storedTenant !== "null"
+              ? JSON.parse(storedTenant)
+              : null;
+            const cachedModules = storedModules ? JSON.parse(storedModules) : null;
+            setUser(cachedUser);
+            setModules(cachedModules);
+            setTenant(cachedTenant && cachedModules
+              ? { ...cachedTenant, modules: cachedModules }
+              : cachedTenant);
+            setIsAuthenticated(true);
+          } catch {
+            // Corrupt cached identity is not a valid session fallback.
+            clearAuthStorage();
+            setIsAuthenticated(false);
+          }
         })
         .finally(() => setLoading(false));
     } else {
@@ -127,6 +153,32 @@ function App() {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+
+    const keepAlive = () => {
+      keepActiveSessionAlive().catch(() => {
+        // Ağ veya dağıtım kesintisi oturumu sonlandırmaz. Bir sonraki periyodik
+        // kontrol tekrar dener; geçersiz oturum kararı merkezi auth katmanındadır.
+      });
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") keepAlive();
+    };
+
+    const intervalId = window.setInterval(keepAlive, 5 * 60 * 1000);
+    window.addEventListener("focus", keepAlive);
+    window.addEventListener("online", keepAlive);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", keepAlive);
+      window.removeEventListener("online", keepAlive);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [isAuthenticated]);
 
   const handleLogin = async (token, userData, tenantData, refreshToken) => {
     // clearAuthStorage() içinden notifyServiceWorkerAuthChanged() çağrılıyor

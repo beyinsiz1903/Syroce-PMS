@@ -86,6 +86,7 @@ axios.interceptors.request.use(
 // Aynı anda gelen birden çok 401, tek bir refresh isteği bekler;
 // başarılıysa hepsi yeni token ile retry edilir.
 let _refreshInFlight = null;
+const ACTIVE_SESSION_REFRESH_AFTER_MS = 90 * 60 * 1000;
 const _isRefreshableUrl = (url = "") =>
   !url.includes("/auth/login") &&
   !url.includes("/auth/refresh-token") &&
@@ -175,6 +176,27 @@ async function _attemptRefresh(retryCount = 0) {
   } finally {
     _refreshInFlight = null;
   }
+}
+
+export function shouldRefreshActiveSession(now = Date.now()) {
+  const sessionStartedAt = Number(localStorage.getItem("token_ts"));
+  return Boolean(
+    localStorage.getItem("user") &&
+    Number.isFinite(sessionStartedAt) &&
+    sessionStartedAt > 0 &&
+    now - sessionStartedAt >= ACTIVE_SESSION_REFRESH_AFTER_MS
+  );
+}
+
+export async function keepActiveSessionAlive() {
+  if (!shouldRefreshActiveSession()) return { skipped: true };
+
+  const result = await _attemptRefresh();
+  if (result?.token) return { refreshed: true };
+  if (result?.transient) return { transient: true };
+
+  _hardLogout();
+  return { invalid: true };
 }
 
 // Response interceptor — 401 handling + Pydantic error normalization

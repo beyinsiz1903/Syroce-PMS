@@ -91,7 +91,7 @@ export function WeeklyProof() {
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           {Array.from({
           length: 5
-        }).map((_, i) => <Skeleton key={_.id || i} className="h-28 bg-gray-100" />)}
+        }).map((_, i) => <Skeleton key={i} className="h-28 bg-gray-100" />)}
         </div>
         <Skeleton className="h-64 bg-gray-100" />
       </div>;

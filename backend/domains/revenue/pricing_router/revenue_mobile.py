@@ -20,6 +20,11 @@ from core.security import (
     get_current_user,
     security,
 )
+from domains.revenue.revenue_report_normalization import (
+    calculate_booking_revenue,
+    cancellation_lead_bucket,
+    safe_amount,
+)
 from models.enums import CancellationPolicyType, ChannelType, MarketSegment, RateType
 from modules.pms_core.role_permission_service import require_op  # v92 DW
 
@@ -648,14 +653,27 @@ async def get_cancellation_report_mobile(start_date: str | None = None, end_date
 
     # Default to last 30 days
     if start_date and end_date:
-        start = datetime.fromisoformat(start_date)
-        end = datetime.fromisoformat(end_date)
+        try:
+            start = datetime.fromisoformat(start_date)
+            end = datetime.fromisoformat(end_date)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="INVALID_DATE_RANGE") from exc
+        if start > end:
+            raise HTTPException(status_code=400, detail="INVALID_DATE_RANGE")
     else:
         end = datetime.now(UTC)
         start = end - timedelta(days=30)
 
     # Get all bookings in date range
-    all_bookings = await db.bookings.find({"tenant_id": current_user.tenant_id, "check_in": {"$gte": start.isoformat(), "$lte": end.isoformat()}}).to_list(10000)
+    all_bookings = await db.bookings.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "check_in": {
+                "$gte": start.strftime("%Y-%m-%d"),
+                "$lte": end.isoformat(),
+            },
+        }
+    ).to_list(10000)
 
     # Get cancelled bookings
     cancelled_bookings = [b for b in all_bookings if b.get("status") == "cancelled"]
@@ -671,17 +689,6 @@ async def get_cancellation_report_mobile(start_date: str | None = None, end_date
     cancellation_rate = round((cancellation_count / total_bookings * 100), 2) if total_bookings > 0 else 0
     no_show_rate = round((no_show_count / total_bookings * 100), 2) if total_bookings > 0 else 0
 
-    # Calculate lost revenue
-    def calculate_booking_revenue(booking):
-        if "total_amount" in booking:
-            return booking["total_amount"]
-        # Calculate from rate and nights
-        check_in = datetime.fromisoformat(booking.get("check_in", start.isoformat()))
-        check_out = datetime.fromisoformat(booking.get("check_out", (start + timedelta(days=1)).isoformat()))
-        nights = max((check_out - check_in).days, 1)
-        rate = booking.get("rate_per_night", 0)
-        return rate * nights
-
     cancelled_revenue = sum(calculate_booking_revenue(b) for b in cancelled_bookings)
     no_show_revenue = sum(calculate_booking_revenue(b) for b in no_show_bookings)
     total_lost_revenue = cancelled_revenue + no_show_revenue
@@ -689,8 +696,11 @@ async def get_cancellation_report_mobile(start_date: str | None = None, end_date
     # Calculate cancellation fees collected
     cancellation_fees = 0
     for booking in cancelled_bookings:
-        fees = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "booking_id": booking["id"], "charge_type": "cancellation_fee", "voided": False}).to_list(100)
-        cancellation_fees += sum(f.get("total", 0) for f in fees)
+        booking_id = booking.get("id")
+        if not booking_id:
+            continue
+        fees = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "booking_id": booking_id, "charge_type": "cancellation_fee", "voided": False}).to_list(100)
+        cancellation_fees += sum((safe_amount(f.get("total")) for f in fees), start=safe_amount(0))
 
     # Analyze by channel
     channel_analysis = {}
@@ -726,23 +736,11 @@ async def get_cancellation_report_mobile(start_date: str | None = None, end_date
     channels.sort(key=lambda x: x["total_issues"], reverse=True)
 
     # Analyze by lead time (how far in advance cancelled)
-    lead_time_analysis = {"same_day": 0, "1_3_days": 0, "4_7_days": 0, "8_14_days": 0, "15_plus_days": 0}
+    lead_time_analysis = {"same_day": 0, "1_3_days": 0, "4_7_days": 0, "8_14_days": 0, "15_plus_days": 0, "unclassified": 0}
 
     for booking in cancelled_bookings:
-        check_in = datetime.fromisoformat(booking["check_in"])
-        cancelled_at = datetime.fromisoformat(booking.get("cancelled_at", booking.get("updated_at", booking.get("created_at"))))
-        days_before = (check_in - cancelled_at).days
-
-        if days_before == 0:
-            lead_time_analysis["same_day"] += 1
-        elif days_before <= 3:
-            lead_time_analysis["1_3_days"] += 1
-        elif days_before <= 7:
-            lead_time_analysis["4_7_days"] += 1
-        elif days_before <= 14:
-            lead_time_analysis["8_14_days"] += 1
-        else:
-            lead_time_analysis["15_plus_days"] += 1
+        bucket = cancellation_lead_bucket(booking)
+        lead_time_analysis[bucket or "unclassified"] += 1
 
     return {
         "period": {"start_date": start.strftime("%Y-%m-%d"), "end_date": end.strftime("%Y-%m-%d")},

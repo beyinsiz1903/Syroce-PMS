@@ -87,7 +87,10 @@ export default function CostAnalyticsView() {
       const res = await axios.get('/accounting/expenses', { params });
       setExpenses(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
-      console.error('Cost analytics load failed:', err);
+      console.error('Cost analytics load failed', {
+        status: err?.response?.status ?? 'NOT_RECORDED',
+        type: err?.name ?? 'Error',
+      });
       toast.error(t('costAnalytics.loadError'));
       setExpenses([]);
     } finally {

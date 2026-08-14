@@ -35,6 +35,11 @@ const sanitizePhone = (raw) => (raw ? String(raw).replace(/[^\d+]/g, '') : '');
 const PRIMARY_LABEL = (b) =>
   b.room_number ? `Oda ${b.room_number}` : (b.confirmation_number || (b.id || '').substring(0, 8).toUpperCase());
 
+export const normalizeDepartureResponse = (payload) => {
+  const rows = payload?.departures || payload?.bookings || payload?.items || payload || [];
+  return Array.isArray(rows) ? rows : [];
+};
+
 const DepartureList = () => {
   const { t, i18n } = useTranslation();
   const [date, setDate] = useState(() => localISODate(new Date()));
@@ -67,11 +72,8 @@ const DepartureList = () => {
     setLoading(true);
     setSelected(new Set());
     try {
-      const res = await axios.get(
-        `/pms/bookings?status=checked_in&check_out_from=${date}&check_out_to=${date}&limit=300`,
-      );
-      const list = res.data?.bookings || res.data?.items || res.data || [];
-      setDepartures(Array.isArray(list) ? list : []);
+      const res = await axios.get(`/frontdesk/departures?date=${encodeURIComponent(date)}`);
+      setDepartures(normalizeDepartureResponse(res.data));
     } catch (e) {
       toast.error('Çıkış listesi yüklenemedi');
       setDepartures([]);

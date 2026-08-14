@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import axios from 'axios';
 import { render, waitFor, screen } from '@testing-library/react';
 import App from '../App';
+import { keepActiveSessionAlive, shouldRefreshActiveSession } from '@/config/axiosConfig';
 
 // Mock the axios module
 vi.mock('axios', () => {
@@ -76,12 +77,12 @@ describe('Auth Cookie Flow in App.jsx', () => {
     });
   });
 
-  it('should clear token_ts if /auth/me fails', async () => {
+  it('should clear token_ts if /auth/me definitively rejects the session', async () => {
     localStorage.setItem('token_ts', Date.now().toString());
     localStorage.setItem('user', JSON.stringify({ name: 'Test User' }));
     
     // Mock a failed backend verification (e.g. cookie expired)
-    axios.get.mockRejectedValueOnce(new Error('401 Unauthorized'));
+    axios.get.mockRejectedValueOnce({ response: { status: 401 } });
     
     try {
       render(<App />);
@@ -94,6 +95,26 @@ describe('Auth Cookie Flow in App.jsx', () => {
       // Auth storage should be cleared
       expect(localStorage.getItem('token_ts')).toBeNull();
       expect(localStorage.getItem('user')).toBeNull();
+    });
+  });
+
+  it('should preserve the verified local session during a transient backend outage', async () => {
+    localStorage.setItem('token_ts', Date.now().toString());
+    localStorage.setItem('user', JSON.stringify({ id: 'u1', name: 'Test User' }));
+    localStorage.setItem('tenant', JSON.stringify({ id: 't1', name: 'Test Hotel' }));
+
+    axios.get.mockRejectedValueOnce({ response: { status: 503 } });
+
+    try {
+      render(<App />);
+    } catch (e) {
+      // Providers are intentionally minimal in this focused auth test.
+    }
+
+    await waitFor(() => {
+      expect(axios.get).toHaveBeenCalledWith('/auth/me');
+      expect(localStorage.getItem('token_ts')).not.toBeNull();
+      expect(localStorage.getItem('user')).not.toBeNull();
     });
   });
 
@@ -113,5 +134,51 @@ describe('Auth Cookie Flow in App.jsx', () => {
       expect(axios.get).toHaveBeenCalledWith('/auth/me');
       expect(localStorage.getItem('token_ts')).toBe(String(eightDaysAgo));
     });
+  });
+
+  it('should renew an active session before the access token expires', () => {
+    const ninetyOneMinutesAgo = Date.now() - (91 * 60 * 1000);
+    localStorage.setItem('token_ts', String(ninetyOneMinutesAgo));
+    localStorage.setItem('user', JSON.stringify({ id: 'u1' }));
+
+    expect(shouldRefreshActiveSession()).toBe(true);
+  });
+
+  it('should not renew a fresh session unnecessarily', () => {
+    localStorage.setItem('token_ts', String(Date.now()));
+    localStorage.setItem('user', JSON.stringify({ id: 'u1' }));
+
+    expect(shouldRefreshActiveSession()).toBe(false);
+  });
+
+  it('should rotate an old active session without logging the user out', async () => {
+    const oldMarker = Date.now() - (91 * 60 * 1000);
+    localStorage.setItem('token_ts', String(oldMarker));
+    localStorage.setItem('user', JSON.stringify({ id: 'u1' }));
+    localStorage.setItem('refresh_token', 'test-refresh-token');
+    axios.post.mockResolvedValueOnce({
+      data: { access_token: 'new-access-token', refresh_token: 'new-refresh-token' },
+    });
+
+    await expect(keepActiveSessionAlive()).resolves.toEqual({ refreshed: true });
+    expect(axios.post).toHaveBeenCalledWith(
+      '/auth/refresh-token',
+      { refresh_token: 'test-refresh-token' },
+      { _skipAuthRetry: true },
+    );
+    expect(localStorage.getItem('refresh_token')).toBe('new-refresh-token');
+    expect(Number(localStorage.getItem('token_ts'))).toBeGreaterThan(oldMarker);
+    expect(localStorage.getItem('user')).not.toBeNull();
+  });
+
+  it('should preserve an old active session when renewal is temporarily unavailable', async () => {
+    const oldMarker = Date.now() - (91 * 60 * 1000);
+    localStorage.setItem('token_ts', String(oldMarker));
+    localStorage.setItem('user', JSON.stringify({ id: 'u1' }));
+    axios.post.mockRejectedValueOnce({ response: { status: 503 } });
+
+    await expect(keepActiveSessionAlive()).resolves.toEqual({ transient: true });
+    expect(localStorage.getItem('token_ts')).toBe(String(oldMarker));
+    expect(localStorage.getItem('user')).not.toBeNull();
   });
 });

@@ -8,7 +8,7 @@
  *   Layout'u dışarıdan sarar. Mevcut sayfalar (Layout'u içinde sarıyorlar)
  *   bu flag olmadan eskisi gibi çalışır — geriye uyumlu, incremental migration.
  */
-import { Suspense, lazy } from "react";
+import { cloneElement, isValidElement, Suspense, lazy } from "react";
 import { Navigate } from "react-router-dom";
 import { useEntitlements } from "@/context/EntitlementContext";
 
@@ -22,9 +22,12 @@ const LoadingFallback = () => (
 
 function withOptionalLayout(element, { wrapLayout, layoutModule, user, tenant, onLogout }) {
   if (!wrapLayout) return element;
+  const embeddedElement = isValidElement(element)
+    ? cloneElement(element, { embedded: true })
+    : element;
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule={layoutModule}>
-      {element}
+      {embeddedElement}
     </Layout>
   );
 }

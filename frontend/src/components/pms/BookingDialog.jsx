@@ -311,7 +311,7 @@ const BookingDialog = ({
           <div className="grid grid-cols-4 gap-2 mt-2">
             {Array.from({
               length: newBooking.children
-            }).map((_, index) => <Input key={_.id || index} type="number" min="0" max="17" placeholder={`Child ${index + 1} age`} value={newBooking.children_ages[index] || ''} onChange={e => handleChildAgeChange(index, e.target.value)} />)}
+            }).map((_, index) => <Input key={index} type="number" min="0" max="17" placeholder={`Child ${index + 1} age`} value={newBooking.children_ages[index] || ''} onChange={e => handleChildAgeChange(index, e.target.value)} />)}
           </div>
         </div>}
 

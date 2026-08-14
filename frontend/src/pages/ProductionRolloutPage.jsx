@@ -92,8 +92,8 @@ function SectionHeader({
 
 export default function ProductionRolloutDashboard() {
   const navigate = useNavigate();
-  const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
 
   // Data states
@@ -108,16 +108,12 @@ export default function ProductionRolloutDashboard() {
   const [maturityScore, setMaturityScore] = useState(null);
   const [successCriteria, setSuccessCriteria] = useState(null);
   const [runningAction, setRunningAction] = useState(null);
-  useEffect(() => {
-    const t = localStorage.getItem("token");
-    if (t) setToken(t);
-  }, []);
   const headers = useCallback(() => ({}), []);
   const loadData = useCallback(async () => {
-    if (!token) return;
     setLoading(true);
+    setLoadError(false);
     try {
-      const [envRes, planRes, statusRes, onbRes, monRes, loadRes, isoRes, plRes, matRes, scRes] = await Promise.allSettled([axios.get(`/production/env/validate`, {
+      const results = await Promise.allSettled([axios.get(`/production/env/validate`, {
         headers: headers()
       }), axios.get(`/production/canary/plan`, {
         headers: headers()
@@ -138,6 +134,8 @@ export default function ProductionRolloutDashboard() {
       }), axios.get(`/production/pilot/success-criteria`, {
         headers: headers()
       })]);
+      const [envRes, planRes, statusRes, onbRes, monRes, loadRes, isoRes, plRes, matRes, scRes] = results;
+      setLoadError(results.every(result => result.status === "rejected"));
       if (envRes.status === "fulfilled") setEnvValidation(envRes.value.data?.data);
       if (planRes.status === "fulfilled") setCanaryPlan(planRes.value.data?.data);
       if (statusRes.status === "fulfilled") setCanaryStatus(statusRes.value.data?.data);
@@ -148,11 +146,16 @@ export default function ProductionRolloutDashboard() {
       if (plRes.status === "fulfilled") setPostLaunch(plRes.value.data?.data);
       if (matRes.status === "fulfilled") setMaturityScore(matRes.value.data?.data);
       if (scRes.status === "fulfilled") setSuccessCriteria(scRes.value.data?.data);
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      setLoadError(true);
+      console.error("Production rollout load failed", {
+        status: error?.response?.status || null,
+        type: error?.name || "Error"
+      });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [headers, token]);
+  }, [headers]);
   useEffect(() => {
     loadData();
   }, [loadData]);
@@ -166,8 +169,11 @@ export default function ProductionRolloutDashboard() {
       });
       await loadData();
       return res.data;
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      console.error("Production rollout action failed", {
+        status: error?.response?.status || null,
+        type: error?.name || "Error"
+      });
     } finally {
       setRunningAction(null);
     }
@@ -208,6 +214,19 @@ export default function ProductionRolloutDashboard() {
   if (loading && !envValidation) {
     return <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-zinc-500" />
+      </div>;
+  }
+  if (loadError && !envValidation) {
+    return <div className="min-h-screen bg-zinc-950 flex items-center justify-center px-4">
+        <Card className="max-w-md border-zinc-800 bg-zinc-900 text-zinc-100">
+          <CardContent className="p-6 text-center">
+            <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto mb-3" />
+            <p className="text-sm text-zinc-300 mb-4">Production rollout data could not be loaded.</p>
+            <Button onClick={loadData} data-testid="rollout-retry-btn">
+              <RefreshCw className="w-4 h-4 mr-2" /> Retry
+            </Button>
+          </CardContent>
+        </Card>
       </div>;
   }
   return <div data-testid="production-rollout-dashboard" className="min-h-screen bg-zinc-950 text-zinc-100">
