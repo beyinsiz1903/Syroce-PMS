@@ -14,8 +14,8 @@ import re
 
 from core.integrations.nilvera.client import NilveraHttpClient
 from core.integrations.nilvera.config import (
-    NilveraEndpoints,
     get_nilvera_config,
+    NilveraEndpoints,
 )
 from core.integrations.nilvera.errors import NilveraApiError
 
