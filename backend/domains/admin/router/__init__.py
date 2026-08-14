@@ -5,12 +5,11 @@ Public API: from domains.admin.router import router
 
 from fastapi import APIRouter
 
-from api.routes.nilvera_credit_pool import router as _nilvera_credit_pool_r
-
 from .compliance import router as _compliance_r
 from .demo import router as _demo_r
 from .hotel import router as _hotel_r
 from .leads import router as _leads_r
+from .nilvera_credits import router as _nilvera_credit_pool_r
 from .ops import router as _ops_r
 from .pilot_fixtures import router as _pilot_fixtures_r
 from .rbac import router as _rbac_r
