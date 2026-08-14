@@ -17,6 +17,7 @@ from core.integrations.nilvera.return_adapter import NilveraReturnAdapter
 from tests.integration.test_nilvera_sandbox_e2e import new_sandbox_client
 from tests.nilvera_sandbox_fixture import (
     FOUND,
+    ReadOnlySandboxClient,
     SandboxFixtureError,
     build_fixture_identity,
     build_fixture_request_uuid,
@@ -60,8 +61,8 @@ async def test_sandbox_create_return_contract_discovery_v2(record_property):
     try:
         async with sender_client as sender, receiver_client as receiver:
             reconciliation = await reconcile_incoming_commercial_fixture(
-                sender_client=sender,
-                receiver_client=receiver,
+                sender_client=ReadOnlySandboxClient(sender),
+                receiver_client=ReadOnlySandboxClient(receiver),
                 sender_key=sender_key,
                 receiver_key=receiver_key,
                 hmac_key=hmac_key,
