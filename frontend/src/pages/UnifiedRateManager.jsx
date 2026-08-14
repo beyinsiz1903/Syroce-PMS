@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { confirmDialog } from '@/lib/dialogs';
 import MaybeLayout from '@/components/MaybeLayout';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,6 +16,24 @@ import { CalendarGridView } from './rate-manager/CalendarGridView';
 import { StopSalePanel } from './rate-manager/StopSalePanel';
 import { useTranslation } from 'react-i18next';
 const UNIFIED_PREFIX = '/channel-manager/unified-rate-manager';
+
+export const confirmUnifiedRateMutation = ({ roomCount, dateFrom, dateTo }) => confirmDialog({
+  title: 'Kanal güncellemesini onayla',
+  message: `${roomCount} oda tipi için ${dateFrom} - ${dateTo} tarihleri arasındaki yerel kayıtlar güncellenecek ve kanal yöneticisine teslimat başlatılacak. Kuyruğa alınması provider tarafından uygulandığı anlamına gelmez. Devam edilsin mi?`,
+  confirmText: 'Güncellemeyi Başlat',
+  cancelText: 'Vazgeç',
+  variant: 'danger'
+});
+
+export const getUnifiedRateDeliveryFeedback = data => {
+  if (data?.provider_verified === true) {
+    return { level: 'success', message: `${data.saved || 0} kayıt güncellendi ve provider teslimatı doğrulandı.` };
+  }
+  if (data?.provider_delivery_state === 'SCHEDULED' || data?.provider_delivery_state === 'QUEUED' || data?.provider_delivery_state === 'PENDING') {
+    return { level: 'warning', message: `${data.saved || 0} yerel kayıt güncellendi; provider teslimatı henüz doğrulanmadı.` };
+  }
+  return { level: 'warning', message: `${data?.saved || 0} yerel kayıt güncellendi; provider teslimatı yapılmadı.` };
+};
 const UnifiedRateManager = ({
   user,
   tenant,
@@ -445,6 +464,11 @@ const UnifiedRateManager = ({
       toast.error('Lutfen en az bir oda tipi için değer girin');
       return;
     }
+    if (!await confirmUnifiedRateMutation({
+      roomCount: selectedRoomCodes.length,
+      dateFrom,
+      dateTo
+    })) return;
     setSaving(true);
     try {
       const perRoomValues = selectedRoomCodes.map(rtCode => {
@@ -475,19 +499,8 @@ const UnifiedRateManager = ({
       }, {
         headers
       });
-      const providerLabel = 'Kanal yöneticisi';
-      const breakerState = activeBreaker?.state;
-      if (data.channel_push_count > 0 && breakerState === 'open') {
-        toast.warning(`${data.saved} kayıt veritabanına yazıldı, ancak ${providerLabel} şu an erişilemez (devre OPEN). Push tekrar denenecek.`, {
-          duration: 8000
-        });
-      } else if (data.channel_push_count > 0 && breakerState === 'half_open') {
-        toast.warning(`${data.saved} kayıt yazıldı; ${providerLabel} kısmen yanıt veriyor (devre HALF_OPEN). Push gönderildi, sonuç birkaç saniye içinde netleşir.`, {
-          duration: 6000
-        });
-      } else {
-        toast.success(data.message || `${data.saved} kayıt güncellendi`);
-      }
+      const feedback = getUnifiedRateDeliveryFeedback(data);
+      toast[feedback.level](feedback.message, { duration: 8000 });
       if (data.agency_push_count > 0) {
         toast.success(`${data.agency_push_count} acente için kaydedildi (webhook bildirimleri gönderildi)`, {
           duration: 5000
@@ -496,7 +509,9 @@ const UnifiedRateManager = ({
       fetchGrid();
       setTimeout(fetchBreakers, 1500);
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Güncelleme hatası');
+      const detail = e.response?.data?.detail;
+      const safeCode = typeof detail === 'object' && typeof detail?.error_code === 'string' ? detail.error_code : null;
+      toast.error(safeCode ? `Güncelleme engellendi: ${safeCode}` : 'Güncelleme hatası');
     }
     setSaving(false);
   };

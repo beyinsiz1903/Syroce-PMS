@@ -36,7 +36,13 @@ from cache_manager import cached
 from core.database import db
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
+from domains.channel_manager.providers.exely.production_safety import (
+    ari_write_block_reason as exely_ari_write_block_reason,
+)
 from domains.channel_manager.providers.exely.security import exely_connection_projection
+from domains.channel_manager.providers.hotelrunner.production_safety import (
+    ari_write_block_reason as hotelrunner_ari_write_block_reason,
+)
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v96 DW
 from services.cm_provider import _detect_active_provider, _tenant_configured_provider
@@ -110,6 +116,39 @@ class PricingSettingItem(BaseModel):
 
 class PricingSettingsRequest(BaseModel):
     settings: list[PricingSettingItem]
+
+
+def _ari_write_block_for_targets(targets: list[dict]) -> str:
+    """Resolve runtime write gates without credentials or provider access."""
+    for target in targets:
+        provider = target.get("provider")
+        if provider == "hotelrunner":
+            reason = hotelrunner_ari_write_block_reason()
+        elif provider == "exely":
+            reason = exely_ari_write_block_reason()
+        else:
+            reason = "UNSUPPORTED_CHANNEL_PROVIDER"
+        if reason:
+            return reason
+    return ""
+
+
+def _provider_delivery_summary(results: list[dict]) -> dict:
+    pending = [result for result in results if result.get("task_count", 0) > 0]
+    if not pending:
+        return {
+            "provider_verified": False,
+            "provider_delivery_state": "NOT_SENT",
+            "provider_write_count": 0,
+        }
+
+    states = {result["delivery_state"] for result in pending}
+    return {
+        "provider_verified": False,
+        "provider_delivery_state": states.pop() if len(states) == 1 else "PENDING",
+        # Scheduled or durable-queued work is not proof of a provider mutation.
+        "provider_write_count": None,
+    }
 
 
 # ── Provider Detection ───────────────────────────────────────────
@@ -587,6 +626,18 @@ async def unified_bulk_grid_update(
     if not targets:
         raise HTTPException(status_code=404, detail="Aktif kanal saglayici bulunamadi")
 
+    runtime_block = _ari_write_block_for_targets(targets)
+    if runtime_block:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": runtime_block,
+                "delivery_state": "BLOCKED",
+                "provider_status_class": "NOT_SENT",
+                "provider_write_count": 0,
+            },
+        )
+
     logger.info(
         "[UNIFIED] bulk-grid-update fan-out targets=%s tenant=%s primary=%s",
         [t["provider"] for t in targets],
@@ -692,7 +743,7 @@ async def unified_bulk_grid_update(
 
     # Push to every resolved channel provider (background)
     channel_push_count = 0
-    pushed_providers: list[str] = []
+    provider_delivery_results: list[dict] = []
     for tgt in targets:
         try:
             if tgt["provider"] == "hotelrunner":
@@ -704,6 +755,7 @@ async def unified_bulk_grid_update(
                     update_fields,
                     selected_days_set,
                 )
+                delivery_state = "SCHEDULED" if cnt else "NOT_SENT"
             else:
                 cnt = await _push_to_exely(
                     tenant_id,
@@ -714,10 +766,24 @@ async def unified_bulk_grid_update(
                     update_fields,
                     selected_days_set,
                 )
+                delivery_state = "QUEUED" if cnt else "NOT_SENT"
             channel_push_count += cnt or 0
-            pushed_providers.append(tgt["provider"])
+            provider_delivery_results.append(
+                {
+                    "provider": tgt["provider"],
+                    "delivery_state": delivery_state,
+                    "task_count": cnt or 0,
+                }
+            )
         except Exception as e:
-            logger.error("[UNIFIED] %s push exception: %s", tgt["provider"], e)
+            logger.error("[UNIFIED] %s push exception_class=%s", tgt["provider"], type(e).__name__)
+            provider_delivery_results.append(
+                {
+                    "provider": tgt["provider"],
+                    "delivery_state": "NOT_SENT",
+                    "task_count": 0,
+                }
+            )
 
     # Push to agencies (background)
     agency_push_count = 0
@@ -736,15 +802,19 @@ async def unified_bulk_grid_update(
 
     msg = f"{saved} kayit guncellendi"
     if channel_push_count > 0:
-        provider_name = "HotelRunner" if provider_type == "hotelrunner" else "Exely"
-        msg += f", {provider_name}'a push gonderiliyor"
+        msg += ", kanal teslimati kuyruga alindi; provider sonucu henuz dogrulanmadi"
+    else:
+        msg += ", provider teslimati baslatilmadi"
     if agency_push_count > 0:
         msg += f", {agency_push_count} acenteye fiyat iletildi"
 
+    delivery_summary = _provider_delivery_summary(provider_delivery_results)
     return {
         "saved": saved,
         "provider": provider_type,
         "channel_push_count": channel_push_count,
+        "provider_delivery": provider_delivery_results,
+        **delivery_summary,
         "agency_push_count": agency_push_count,
         "total_room_types": len(total_room_types_set),
         "message": msg,
@@ -1074,12 +1144,13 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
 
     if push_tasks:
         results = await asyncio.gather(*push_tasks, return_exceptions=True)
-        failures = sum(1 for result in results if isinstance(result, Exception))
+        failures = sum(1 for result in results if isinstance(result, Exception) or result is None)
         if failures:
             logger.error("[UNIFIED] Exely queue_failed count=%d", failures)
         logger.info("[UNIFIED] Exely durable queue completed: %d tasks", len(results))
+        return sum(int(result.get("queued_operation_count", 0)) for result in results if isinstance(result, dict) and result.get("accepted") is True)
 
-    return len(push_tasks)
+    return 0
 
 
 async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map, request, update_fields, selected_days_set, now, user_id):
