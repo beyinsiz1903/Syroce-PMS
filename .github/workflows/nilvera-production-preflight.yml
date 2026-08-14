@@ -1,0 +1,162 @@
+name: Nilvera Production Read-Only Preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_head_sha:
+        description: "Exact main SHA approved for this read-only production preflight"
+        required: true
+        type: string
+      confirm_read_only_preflight:
+        description: "I approve production GET-only Nilvera preflight checks"
+        required: true
+        default: false
+        type: boolean
+      confirm_no_provider_write:
+        description: "I confirm no Nilvera provider write is authorized by this workflow"
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: nilvera-production-read-only-preflight
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fail-closed exact-head and read-only guard
+        shell: bash
+        env:
+          APPROVED_HEAD_SHA: ${{ inputs.approved_head_sha }}
+          CONFIRM_READ_ONLY_PREFLIGHT: ${{ inputs.confirm_read_only_preflight }}
+          CONFIRM_NO_PROVIDER_WRITE: ${{ inputs.confirm_no_provider_write }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          test "${{ github.ref_name }}" = "main" || {
+            echo "::error::BLOCKED_MAIN_REQUIRED"
+            exit 1
+          }
+          test "$APPROVED_HEAD_SHA" = "${{ github.sha }}" || {
+            echo "::error::BLOCKED_EXACT_HEAD_MISMATCH"
+            exit 1
+          }
+          test "$CONFIRM_READ_ONLY_PREFLIGHT" = "true" || {
+            echo "::error::BLOCKED_READ_ONLY_PREFLIGHT_CONFIRMATION_REQUIRED"
+            exit 1
+          }
+          test "$CONFIRM_NO_PROVIDER_WRITE" = "true" || {
+            echo "::error::BLOCKED_NO_PROVIDER_WRITE_ATTESTATION_REQUIRED"
+            exit 1
+          }
+          test "$RUN_ATTEMPT" = "1" || {
+            echo "::error::BLOCKED_PREFLIGHT_RERUN"
+            exit 1
+          }
+
+      - name: Validate production preflight secrets
+        shell: bash
+        env:
+          NILVERA_PRODUCTION_API_KEY: ${{ secrets.NILVERA_PRODUCTION_API_KEY }}
+          NILVERA_PRODUCTION_TENANT_ID: ${{ secrets.NILVERA_PRODUCTION_TENANT_ID }}
+          NILVERA_PRODUCTION_SELLER_VKN: ${{ secrets.NILVERA_PRODUCTION_SELLER_VKN }}
+        run: |
+          set -euo pipefail
+          test -n "$NILVERA_PRODUCTION_API_KEY" || {
+            echo "::error::BLOCKED_NILVERA_PRODUCTION_API_KEY_MISSING"
+            exit 1
+          }
+          test -n "$NILVERA_PRODUCTION_TENANT_ID" || {
+            echo "::error::BLOCKED_NILVERA_PRODUCTION_TENANT_ID_MISSING"
+            exit 1
+          }
+          test -n "$NILVERA_PRODUCTION_SELLER_VKN" || {
+            echo "::error::BLOCKED_NILVERA_PRODUCTION_SELLER_VKN_MISSING"
+            exit 1
+          }
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements/all.txt
+
+      - name: Install minimal backend dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd backend
+          pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+          bash scripts/post_install.sh
+
+      - name: Assert preflight implementation is provider read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("backend/scripts/nilvera_production_preflight.py")
+          source = path.read_text()
+          forbidden = (
+              ".post(",
+              ".put(",
+              ".patch(",
+              ".delete(",
+              "CREATE_PURCHASE_RETURN",
+              "SEND_ANSWER",
+              "SEND_INVOICE_MODEL",
+          )
+          found = [token for token in forbidden if token in source]
+          if found:
+              raise SystemExit("BLOCKED_PROVIDER_MUTATION_TOKEN_PRESENT")
+          if source.count("await client.get(") != 2:
+              raise SystemExit("BLOCKED_PROVIDER_READ_COUNT_CONTRACT")
+          PY
+
+      - name: Run Nilvera production GET-only preflight
+        shell: bash
+        env:
+          NILVERA_ENABLED: "true"
+          NILVERA_ENV: production
+          NILVERA_RETRY_MAX: "0"
+          NILVERA_INCOMING_ANSWER_ENABLED: "false"
+          NILVERA_CREATE_RETURN_ENABLED: "false"
+          NILVERA_PRODUCTION_API_KEY: ${{ secrets.NILVERA_PRODUCTION_API_KEY }}
+          NILVERA_PRODUCTION_TENANT_ID: ${{ secrets.NILVERA_PRODUCTION_TENANT_ID }}
+          NILVERA_PRODUCTION_SELLER_VKN: ${{ secrets.NILVERA_PRODUCTION_SELLER_VKN }}
+        run: |
+          set -euo pipefail
+          cd backend
+          python scripts/nilvera_production_preflight.py
+
+      - name: Write safe preflight summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "### Nilvera Production Read-Only Preflight"
+            echo "- exact_head_match: true"
+            echo "- production_endpoint_verified: true"
+            echo "- credential_present: true"
+            echo "- tenant_context_present: true"
+            echo "- incoming_answer_enabled: false"
+            echo "- create_return_enabled: false"
+            echo "- provider_read_count: 2"
+            echo "- provider_write_count: 0"
+            echo "- deploy_count: 0"
+            echo "- production_config_mutation_count: 0"
+          } >> "$GITHUB_STEP_SUMMARY"
