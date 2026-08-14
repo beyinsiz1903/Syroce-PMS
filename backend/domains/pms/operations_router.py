@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
@@ -642,14 +642,20 @@ async def update_guest_preferences(
         update_fields["id_number"] = body["id_number"]
     if "birth_date" in body:
         update_fields["birth_date"] = body["birth_date"]
-    update_fields["preferences_updated_at"] = datetime.utcnow().isoformat()
+    update_fields["preferences_updated_at"] = datetime.now(UTC).isoformat()
 
     # Encrypt PII (id_number) + _hash_ token before persistence. No name field
     # in update_fields -> existing doc not required.
     from security.guest_write import encrypt_guest_update
 
     update_fields = encrypt_guest_update(update_fields)
-    result = await db.guests.update_one({"_id": guest_id, "tenant_id": current_user.tenant_id}, {"$set": update_fields})
+    result = await db.guests.update_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "$or": [{"id": guest_id}, {"_id": guest_id}],
+        },
+        {"$set": update_fields},
+    )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Guest not found")
 
@@ -660,7 +666,7 @@ async def update_guest_preferences(
             "action": "Misafir tercihleri guncellendi",
             "user": current_user.email,
             "target": guest_id,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
     )
 

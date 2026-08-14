@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +14,8 @@ const GuestCreateDialog = ({ open, onClose, onGuestCreated }) => {
   const [newGuest, setNewGuest] = useState({
     name: '', email: '', phone: '', id_number: '', address: '', kvkk_consent: false, scanned_via_quick_id: false
   });
+  const [submitting, setSubmitting] = useState(false);
+  const idempotencyKeyRef = useRef(null);
 
   const handleScanSuccess = (doc) => {
     setNewGuest(prev => ({
@@ -28,19 +30,36 @@ const GuestCreateDialog = ({ open, onClose, onGuestCreated }) => {
 
   const handleCreateGuest = async (e) => {
     e.preventDefault();
+    const requiredValues = [newGuest.name, newGuest.email, newGuest.phone, newGuest.id_number];
+    if (requiredValues.some((value) => !String(value || '').trim())) {
+      toast.error(t('pms.guestRequiredFields', 'Ad soyad, e-posta, telefon ve kimlik/pasaport numarası zorunludur.'));
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newGuest.email.trim())) {
+      toast.error(t('pms.invalidGuestEmail', 'Geçerli bir e-posta adresi girin.'));
+      return;
+    }
     if (!newGuest.kvkk_consent) {
       toast.error(t('pms.kvkkRequired', 'KVKK onay metnini kabul etmeniz zorunludur.'));
       return;
     }
 
+    if (submitting) return;
+    setSubmitting(true);
+    idempotencyKeyRef.current ||= crypto.randomUUID();
     try {
-      await axios.post('/pms/guests', newGuest);
+      await axios.post('/pms/guests', newGuest, {
+        headers: { 'Idempotency-Key': idempotencyKeyRef.current },
+      });
       toast.success(t('pms.guestCreated', 'Misafir başarıyla oluşturuldu'));
       onClose();
       onGuestCreated();
       setNewGuest({ name: '', email: '', phone: '', id_number: '', address: '', kvkk_consent: false, scanned_via_quick_id: false });
+      idempotencyKeyRef.current = null;
     } catch (error) {
       toast.error(error.response?.data?.detail || t('pms.createFailed', 'Misafir oluşturulamadı'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -58,21 +77,21 @@ const GuestCreateDialog = ({ open, onClose, onGuestCreated }) => {
           <IDScanner onScanSuccess={handleScanSuccess} />
         </div>
 
-        <form onSubmit={handleCreateGuest} className="space-y-4">
+        <form onSubmit={handleCreateGuest} noValidate className="space-y-4">
           <div>
-            <Label>{t('pms.fullName', 'Full Name')}</Label>
+            <Label>{t('pms.fullName', 'Full Name')} *</Label>
             <Input value={newGuest.name} onChange={(e) => setNewGuest({...newGuest, name: e.target.value})} required />
           </div>
           <div>
-            <Label>{t('common.email', 'Email')}</Label>
+            <Label>{t('common.email', 'Email')} *</Label>
             <Input type="email" value={newGuest.email} onChange={(e) => setNewGuest({...newGuest, email: e.target.value})} required />
           </div>
           <div>
-            <Label>{t('common.phone', 'Phone')}</Label>
+            <Label>{t('common.phone', 'Phone')} *</Label>
             <Input value={newGuest.phone} onChange={(e) => setNewGuest({...newGuest, phone: e.target.value})} required />
           </div>
           <div>
-            <Label>{t('pms.idPassport', 'ID / Passport No')}</Label>
+            <Label>{t('pms.idPassport', 'ID / Passport No')} *</Label>
             <Input value={newGuest.id_number} onChange={(e) => setNewGuest({...newGuest, id_number: e.target.value})} required />
           </div>
           <div>
@@ -99,7 +118,7 @@ const GuestCreateDialog = ({ open, onClose, onGuestCreated }) => {
             </div>
           </div>
 
-          <Button type="submit" className="w-full">{t('pms.saveGuest', 'Save Guest')}</Button>
+          <Button type="submit" className="w-full" disabled={submitting}>{t('pms.saveGuest', 'Save Guest')}</Button>
         </form>
       </DialogContent>
     </Dialog>
