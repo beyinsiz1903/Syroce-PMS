@@ -20,6 +20,19 @@ export const buildExelyRequestConfig = user => {
   return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
 };
 
+export const parseExelyConnectionTestResult = data => ({
+  connected: Boolean(data?.connected),
+  durationMs: data?.duration_ms ?? 0,
+  errorCode: data?.error_type || 'CONNECTION_TEST_FAILED'
+});
+
+export const getExelyErrorMessage = (error, fallback) => {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (detail?.error_code) return detail.error_code;
+  return fallback;
+};
+
 export const buildExelyAutoMapPayload = (suggestions, rateSelections, ratePlans) => suggestions.map(suggestion => {
   const selectedCode = suggestion.provider_rate_plan_code || rateSelections[suggestion.provider_room_code];
   const selectedPlan = ratePlans.find(plan => plan.code === selectedCode);
@@ -253,9 +266,10 @@ const ExelyIntegration = ({
       const {
         data
       } = await axios.post(`/channel-manager/exely/test`, {}, requestConfig);
-      if (data.connected) toast.success(`Bağlantı basarili (${data.duration_ms}ms)`);else toast.error(`Bağlantı hatası: ${data.error}`);
+      const result = parseExelyConnectionTestResult(data);
+      if (result.connected) toast.success(`Bağlantı basarili (${result.durationMs}ms)`);else toast.error(`Bağlantı hatası: ${result.errorCode}`);
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Test hatası');
+      toast.error(getExelyErrorMessage(e, 'Bağlantı testi tamamlanamadı'));
     } finally {
       setLoading(false);
     }
@@ -270,7 +284,7 @@ const ExelyIntegration = ({
       setRatePlans(data.rate_plans || []);
       toast.success(`${(data.room_types || []).length} oda tipi, ${(data.rate_plans || []).length} fiyat plani kesfedildi`);
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Kesfetme hatası');
+      toast.error(getExelyErrorMessage(e, 'Oda ve fiyat planı keşfi tamamlanamadı; bağlantı ve canlı erişim anahtarlarını kontrol edin'));
     } finally {
       setLoading(false);
     }
@@ -284,7 +298,7 @@ const ExelyIntegration = ({
       toast.success(data.message);
       fetchAll();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Pull hatası');
+      toast.error(getExelyErrorMessage(e, 'Rezervasyon çekme tamamlanamadı; bağlantı ve canlı senkronizasyon anahtarlarını kontrol edin'));
     } finally {
       setLoading(false);
     }
