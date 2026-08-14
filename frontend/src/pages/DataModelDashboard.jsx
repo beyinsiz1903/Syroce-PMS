@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Database, Link2, Grid3X3, FileText, GitBranch, AlertTriangle, RefreshCw, Trash2, CheckCircle, Loader2, Server, Layers, ArrowRightLeft, Clock, Play, Repeat, Download, Activity, Shield, Eye, XCircle, Search, BarChart3, Bell, Radio, Zap, Heart } from 'lucide-react';
+import { confirmDialog } from '@/lib/dialogs';
 const API = "";
 const ProviderBadge = ({
   provider
@@ -339,6 +340,12 @@ const DataModelDashboard = ({
     }
   };
   const deleteConnection = async id => {
+    if (!(await confirmDialog({
+      title: 'Bağlantıyı sil?',
+      description: 'Bu işlem veri modeli bağlantısını kalıcı olarak siler.',
+      confirmText: 'Bağlantıyı Sil',
+      variant: 'danger'
+    }))) return;
     try {
       await axios.delete(`/channel-manager/model/connections/${id}`, {
         headers: headers()
@@ -513,6 +520,12 @@ const DataModelDashboard = ({
     }
   };
   const deleteCredentials = async provider => {
+    if (!(await confirmDialog({
+      title: `${provider} kimlik bilgilerini sil?`,
+      description: 'Provider erişimi durur. Yeniden bağlanmak için kimlik bilgileri tekrar girilmelidir.',
+      confirmText: 'Kimlik Bilgilerini Sil',
+      variant: 'danger'
+    }))) return;
     try {
       await axios.delete(`/channel-manager/config/providers/${provider}/credentials`, {
         headers: headers()
