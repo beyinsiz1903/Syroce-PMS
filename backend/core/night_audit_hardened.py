@@ -1254,6 +1254,12 @@ async def resume_night_audit(
         return {"success": False, "error": "Run not found", "code": "NOT_FOUND"}
     if run["status"] not in (S_FAILED, S_PARTIAL, S_BLOCKED):
         return {"success": False, "error": f"Run status is {run['status']}, cannot resume", "code": "INVALID_STATE"}
+    if run.get("dry_run"):
+        return {
+            "success": False,
+            "error": "Dry-run audits cannot be resumed; abort this run and start a new audit",
+            "code": "DRY_RUN_NOT_RESUMABLE",
+        }
 
     # Reset failed items to pending
     await db.night_audit_run_items.update_many(
