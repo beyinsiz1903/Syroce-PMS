@@ -46,6 +46,29 @@ def get_checklist(provider: str) -> list:
     return []
 
 
+def build_execution_metadata(provider_client=None) -> dict:
+    execution_mode = "provider" if provider_client is not None else "dry_run"
+    return {
+        "execution_mode": execution_mode,
+        "provider_verified": False,
+        "provider_write_count": 0 if execution_mode == "dry_run" else None,
+    }
+
+
+def summarize_results(results: list, provider_client=None) -> dict:
+    passed = sum(1 for result in results if result["success"])
+    failed = len(results) - passed
+    metadata = build_execution_metadata(provider_client)
+    metadata["provider_verified"] = metadata["execution_mode"] == "provider" and failed == 0
+    metadata["summary"] = {
+        "total": len(results),
+        "passed": passed,
+        "failed": failed,
+        "offline_checks_passed": metadata["execution_mode"] == "dry_run" and failed == 0,
+    }
+    return metadata
+
+
 # ── HotelRunner Test Runner ─────────────────────────────────────────
 
 

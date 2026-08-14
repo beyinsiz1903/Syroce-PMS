@@ -237,8 +237,8 @@ const ARIPushDashboard = ({
   };
   const runProviderTest = async provider => {
     const ok = await confirmDialog({
-      title: 'Test paketi',
-      message: `${provider} sağlayıcısının doğrulama testleri çalıştırılacak. ` + `Bu testler GERÇEK sağlayıcıya istek atar (sandbox veya canlı, ortam yapılandırmasına bağlı). ` + `Devam edilsin mi?`,
+      title: 'Offline kontrol paketi',
+      message: `${provider} için offline dry-run kontrolleri çalıştırılacak. ` + 'Gerçek sağlayıcıya istek atılmaz; sonuç provider doğrulaması sayılmaz.',
       confirmText: 'Çalıştır',
       cancelText: 'Vazgeç'
     });
@@ -253,7 +253,13 @@ const ARIPushDashboard = ({
         [provider]: data
       }));
       const s = data.summary;
-      if (s.failed === 0) toast.success(`${provider}: ${s.total} testin tümü geçti`);else toast.warning(`${provider}: ${s.passed}/${s.total} geçti, ${s.failed} başarısız`);
+      if (data.execution_mode === 'dry_run') {
+        if (s.failed === 0) toast.info(`${provider}: ${s.total} offline kontrol tamamlandı; provider doğrulanmadı`);else toast.warning(`${provider}: ${s.passed}/${s.total} offline kontrol geçti, ${s.failed} başarısız`);
+      } else if (data.provider_verified) {
+        toast.success(`${provider}: ${s.total} provider kontrolünün tümü geçti`);
+      } else {
+        toast.warning(`${provider}: ${s.passed}/${s.total} provider kontrolü geçti, ${s.failed} başarısız`);
+      }
     } catch (e) {
       const detail = e?.response?.data?.detail || e?.message || '';
       toast.error(`${provider} testi başarısız ${detail ? '— ' + detail : ''}`);
@@ -623,6 +629,9 @@ const ARIPushDashboard = ({
                 </CardHeader>
                 <CardContent className="px-4 pb-4">
                   {testResults[provider]?.results ? <div className="space-y-1.5">
+                      {testResults[provider].execution_mode === 'dry_run' && <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid={`dry-run-warning-${provider}`}>
+                          Offline dry-run · provider doğrulanmadı · provider write 0
+                        </div>}
                       {testResults[provider].results.map((r, i) => <div key={r.id || i} className="flex items-center justify-between py-1.5 px-2 rounded bg-slate-50 text-xs">
                           <div className="flex items-center gap-2">
                             {r.success ? <CheckCircle className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" /> : <XCircle className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" />}
@@ -634,7 +643,7 @@ const ARIPushDashboard = ({
                           </div>
                         </div>)}
                       {testResults[provider].summary && <div className="mt-2 pt-2 border-t border-slate-200 flex gap-3 text-xs">
-                          <span className="text-emerald-700">{testResults[provider].summary.passed} {t('cm.pages_ARIPushDashboard.gecti')}</span>
+                          <span className="text-emerald-700">{testResults[provider].summary.passed} {testResults[provider].execution_mode === 'dry_run' ? 'offline geçti' : t('cm.pages_ARIPushDashboard.gecti')}</span>
                           <span className="text-rose-700">{testResults[provider].summary.failed} {t('cm.pages_ARIPushDashboard.basarisiz_f592b')}</span>
                           <span className="text-slate-500">/ toplam {testResults[provider].summary.total}</span>
                         </div>}
