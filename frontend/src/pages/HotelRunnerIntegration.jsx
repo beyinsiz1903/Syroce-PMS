@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink, Building2, ArrowDownUp, CalendarCheck, Clock, Activity, AlertTriangle, Loader2, Save, Trash2, Plus, Check, Wand2, KeyRound, Copy } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { confirmDialog } from '@/lib/dialogs';
 const API = "";
 
 export const buildHotelRunnerRequestConfig = user => {
@@ -166,6 +167,10 @@ const HotelRunnerIntegration = ({
     if (connection?.connected) fetchWebhookSecretStatus();
   }, [connection?.connected]);
   const handleRotateWebhookSecret = async () => {
+    if (webhookSecretStatus?.configured && !(await confirmDialog({
+      message: 'Webhook imza anahtarı yenilenecek. HotelRunner paneli yeni anahtarla güncellenene kadar gelen bildirimler doğrulanamaz. Devam edilsin mi?',
+      variant: 'danger'
+    }))) return;
     setRotatingSecret(true);
     try {
       const {
@@ -263,6 +268,10 @@ const HotelRunnerIntegration = ({
     }
   };
   const handleDisconnect = async () => {
+    if (!(await confirmDialog({
+      message: 'HotelRunner bağlantısı kesilecek. Rezervasyon senkronizasyonu ve ARI aktarımı durur. Devam edilsin mi?',
+      variant: 'danger'
+    }))) return;
     try {
       await axios.delete(`/channel-manager/hotelrunner/disconnect`, {
         ...requestConfig
@@ -352,6 +361,10 @@ const HotelRunnerIntegration = ({
     }
   };
   const handleDeleteMapping = async mappingId => {
+    if (!(await confirmDialog({
+      message: 'Bu HotelRunner oda ve fiyat eşlemesi kalıcı olarak silinecek. Devam edilsin mi?',
+      variant: 'danger'
+    }))) return;
     try {
       await axios.delete(`/channel-manager/hotelrunner/room-mappings/${mappingId}`, {
         ...requestConfig

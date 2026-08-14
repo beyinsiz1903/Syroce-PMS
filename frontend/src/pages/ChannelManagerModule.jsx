@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { confirmDialog } from '@/lib/dialogs';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -237,6 +238,12 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
   };
 
   const handleDeleteRoomMapping = async (mappingId) => {
+    if (!(await confirmDialog({
+      title: 'Oda eşlemesini sil?',
+      description: 'Bu işlem rezervasyon ve müsaitlik eşleşmesini bozabilir ve geri alınamaz.',
+      confirmText: 'Eşlemeyi Sil',
+      variant: 'danger'
+    }))) return;
     try {
       await axios.delete(`/channel-manager/room-mappings/${mappingId}`);
       toast.success('Room mapping deleted');

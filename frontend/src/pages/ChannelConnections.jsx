@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink, Building2, ArrowDownUp, Loader2, Eye, EyeOff, Info, Wifi, WifiOff, MapPin, Layers, ExternalLink, Settings2, ShieldCheck, Clock, AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { confirmDialog } from '@/lib/dialogs';
 const API = "";
 export default function ChannelConnections({
   user,
@@ -186,6 +187,12 @@ export default function ChannelConnections({
 
   // ── Disconnect ──
   const disconnect = async provider => {
+    if (!(await confirmDialog({
+      title: `${provider === 'hotelrunner' ? 'HotelRunner' : 'Exely'} bağlantısını kes?`,
+      description: 'Rezervasyon ve ARI senkronizasyonu durur. Yeniden bağlanmak için geçerli kimlik bilgileri gerekir.',
+      confirmText: 'Bağlantıyı Kes',
+      variant: 'danger'
+    }))) return;
     setDisconnecting(provider);
     try {
       const endpoint = provider === 'hotelrunner' ? `/channel-manager/hotelrunner/disconnect` : `/channel-manager/exely/disconnect`;

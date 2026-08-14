@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label';
 import { ArrowLeftRight, CheckCircle, XCircle, AlertTriangle, RefreshCw, Plus, Trash2, ShieldCheck, ArrowLeft, Loader2, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { confirmDialog } from '@/lib/dialogs';
 const API = "";
 const ENTITY_TYPE_LABELS = {
   room_type: 'Oda Tipi',
@@ -153,6 +154,12 @@ const MappingManager = ({
     }
   };
   const handleDeleteMapping = async mappingId => {
+    if (!(await confirmDialog({
+      title: 'Eşlemeyi sil?',
+      description: 'Bu işlem kanal senkronizasyonunu durdurabilir ve geri alınamaz.',
+      confirmText: 'Eşlemeyi Sil',
+      variant: 'danger'
+    }))) return;
     try {
       await axios.delete(`/channel-manager/v2/mappings/${mappingId}`, {
         headers

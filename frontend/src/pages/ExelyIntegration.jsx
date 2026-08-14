@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink, Building2, ArrowDownUp, CalendarCheck, Activity, AlertTriangle, Loader2, Search, Download, ExternalLink, FlaskConical, Wand2, Trash2 } from 'lucide-react';
 import TestBookingVerification from '@/components/TestBookingVerification';
 import { useTranslation } from 'react-i18next';
+import { confirmDialog } from '@/lib/dialogs';
 const API = "";
 
 export const buildExelyRequestConfig = user => {
@@ -174,6 +175,10 @@ const ExelyIntegration = ({
     }
   };
   const handleDeleteMapping = async mappingId => {
+    if (!(await confirmDialog({
+      message: 'Bu Exely oda ve fiyat planı eşlemesi kalıcı olarak silinecek. Devam edilsin mi?',
+      variant: 'danger'
+    }))) return;
     try {
       await axios.delete(`/channel-manager/exely/room-mappings/${mappingId}`, requestConfig);
       toast.success('Esleme silindi');
@@ -213,6 +218,10 @@ const ExelyIntegration = ({
     }
   };
   const handleDisconnect = async () => {
+    if (!(await confirmDialog({
+      message: 'Exely bağlantısı kesilecek. Rezervasyon çekme ve ARI aktarımı durur. Devam edilsin mi?',
+      variant: 'danger'
+    }))) return;
     try {
       await axios.delete(`/channel-manager/exely/disconnect`, requestConfig);
       toast.success('Exely baglantisi kesildi');
@@ -221,6 +230,21 @@ const ExelyIntegration = ({
       });
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Hata');
+    }
+  };
+  const handleCurrencyChange = async newCurrency => {
+    if (!(await confirmDialog({
+      message: `Exely para birimi ${newCurrency} olarak değiştirilecek. Yeni ARI fiyatları bu para birimiyle gönderilir. Devam edilsin mi?`,
+      variant: 'danger'
+    }))) return;
+    try {
+      await axios.patch(`/channel-manager/exely/currency`, {
+        currency: newCurrency
+      }, requestConfig);
+      toast.success(`Para birimi ${newCurrency} olarak güncellendi`);
+      fetchConnection();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Para birimi güncellenemedi');
     }
   };
   const handleTest = async () => {
@@ -395,18 +419,12 @@ const ExelyIntegration = ({
                       </Button>
                       <div className="flex items-center gap-2 ml-auto">
                         <Label className="text-sm text-slate-600 whitespace-nowrap">Para Birimi:</Label>
-                        <select data-testid="exely-currency-change" value={connection.connection?.currency || 'TRY'} onChange={async e => {
-                      const newCurrency = e.target.value;
-                      try {
-                        await axios.patch(`/channel-manager/exely/currency`, {
-                          currency: newCurrency
-                        }, requestConfig);
-                        toast.success(`Para birimi ${newCurrency} olarak güncellendi`);
-                        fetchConnection();
-                      } catch (err) {
-                        toast.error(err.response?.data?.detail || 'Para birimi güncellenemedi');
-                      }
-                    }} className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                        <select
+                          data-testid="exely-currency-change"
+                          value={connection.connection?.currency || 'TRY'}
+                          onChange={e => handleCurrencyChange(e.target.value)}
+                          className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        >
                           <option value="TRY">TRY</option>
                           <option value="USD">USD</option>
                           <option value="EUR">EUR</option>
