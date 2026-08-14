@@ -40,7 +40,13 @@ def _get_snapshot_adapter(provider: str):
     raise UnsupportedProvider(f"Unknown provider: {provider}")
 
 
-from .provider_test_harness import ExelyTestRunner, HotelRunnerTestRunner, get_checklist
+from .provider_test_harness import (
+    ExelyTestRunner,
+    HotelRunnerTestRunner,
+    build_execution_metadata,
+    get_checklist,
+    summarize_results,
+)
 from .schemas import (
     DriftCheckRequest,
     PublishARIEventRequest,
@@ -406,7 +412,12 @@ async def get_provider_checklist(
     checklist = get_checklist(provider)
     if not checklist:
         raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
-    return {"provider": provider, "steps": checklist, "total": len(checklist)}
+    return {
+        "provider": provider,
+        "steps": checklist,
+        "total": len(checklist),
+        **build_execution_metadata(),
+    }
 
 
 @router.post("/test-harness/run/{provider}")
@@ -425,17 +436,18 @@ async def run_provider_test(
 
     if step:
         result = await runner.run_step(step)
-        return {"provider": provider, "results": [result]}
+        metadata = build_execution_metadata(runner._client)
+        metadata["provider_verified"] = metadata["execution_mode"] == "provider" and result["success"]
+        return {
+            "provider": provider,
+            "results": [result],
+            **metadata,
+        }
     results = await runner.run_all()
-    passed = sum(1 for r in results if r["success"])
     return {
         "provider": provider,
         "results": results,
-        "summary": {
-            "total": len(results),
-            "passed": passed,
-            "failed": len(results) - passed,
-        },
+        **summarize_results(results, runner._client),
     }
 
 

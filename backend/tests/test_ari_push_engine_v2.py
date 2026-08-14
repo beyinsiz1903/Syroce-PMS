@@ -39,6 +39,9 @@ class TestProviderTestHarnessChecklist:
         assert response.status_code == 200
         data = response.json()
         assert data["provider"] == "hotelrunner"
+        assert data["execution_mode"] == "dry_run"
+        assert data["provider_verified"] is False
+        assert data["provider_write_count"] == 0
         assert data["total"] == 9
         assert len(data["steps"]) == 9
         # Verify expected steps exist
@@ -54,6 +57,9 @@ class TestProviderTestHarnessChecklist:
         assert response.status_code == 200
         data = response.json()
         assert data["provider"] == "exely"
+        assert data["execution_mode"] == "dry_run"
+        assert data["provider_verified"] is False
+        assert data["provider_write_count"] == 0
         assert data["total"] == 6
         assert len(data["steps"]) == 6
         # Verify expected steps exist
@@ -90,6 +96,10 @@ class TestProviderTestHarnessRun:
         # In DRY-RUN mode, all should pass
         assert data["summary"]["passed"] == 9
         assert data["summary"]["failed"] == 0
+        assert data["execution_mode"] == "dry_run"
+        assert data["provider_verified"] is False
+        assert data["provider_write_count"] == 0
+        assert data["summary"]["offline_checks_passed"] is True
     
     def test_run_exely_all_tests(self, api_client):
         """POST /api/channel-manager/ari/test-harness/run/exely runs all 6 tests."""
@@ -103,6 +113,10 @@ class TestProviderTestHarnessRun:
         # In DRY-RUN mode, all should pass
         assert data["summary"]["passed"] == 6
         assert data["summary"]["failed"] == 0
+        assert data["execution_mode"] == "dry_run"
+        assert data["provider_verified"] is False
+        assert data["provider_write_count"] == 0
+        assert data["summary"]["offline_checks_passed"] is True
     
     def test_run_unknown_provider_returns_404(self, api_client):
         """POST /api/channel-manager/ari/test-harness/run/unknown returns 404."""
