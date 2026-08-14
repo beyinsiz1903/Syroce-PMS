@@ -66,24 +66,14 @@ jobs:
             exit 1
           }
 
-      - name: Validate production preflight secrets
+      - name: Validate central Nilvera production credential
         shell: bash
         env:
           NILVERA_PRODUCTION_API_KEY: ${{ secrets.NILVERA_PRODUCTION_API_KEY }}
-          NILVERA_PRODUCTION_TENANT_ID: ${{ secrets.NILVERA_PRODUCTION_TENANT_ID }}
-          NILVERA_PRODUCTION_SELLER_VKN: ${{ secrets.NILVERA_PRODUCTION_SELLER_VKN }}
         run: |
           set -euo pipefail
           test -n "$NILVERA_PRODUCTION_API_KEY" || {
             echo "::error::BLOCKED_NILVERA_PRODUCTION_API_KEY_MISSING"
-            exit 1
-          }
-          test -n "$NILVERA_PRODUCTION_TENANT_ID" || {
-            echo "::error::BLOCKED_NILVERA_PRODUCTION_TENANT_ID_MISSING"
-            exit 1
-          }
-          test -n "$NILVERA_PRODUCTION_SELLER_VKN" || {
-            echo "::error::BLOCKED_NILVERA_PRODUCTION_SELLER_VKN_MISSING"
             exit 1
           }
 
@@ -123,10 +113,10 @@ jobs:
           if found:
               raise SystemExit("BLOCKED_PROVIDER_MUTATION_TOKEN_PRESENT")
           if source.count("await client.get(") != 2:
-              raise SystemExit("BLOCKED_PROVIDER_READ_COUNT_CONTRACT")
+              raise SystemExit("BLOCKED_PROVIDER_READ_CONTRACT")
           PY
 
-      - name: Run Nilvera production GET-only preflight
+      - name: Run Nilvera central production credential preflight
         shell: bash
         env:
           NILVERA_ENABLED: "true"
@@ -135,8 +125,6 @@ jobs:
           NILVERA_INCOMING_ANSWER_ENABLED: "false"
           NILVERA_CREATE_RETURN_ENABLED: "false"
           NILVERA_PRODUCTION_API_KEY: ${{ secrets.NILVERA_PRODUCTION_API_KEY }}
-          NILVERA_PRODUCTION_TENANT_ID: ${{ secrets.NILVERA_PRODUCTION_TENANT_ID }}
-          NILVERA_PRODUCTION_SELLER_VKN: ${{ secrets.NILVERA_PRODUCTION_SELLER_VKN }}
         run: |
           set -euo pipefail
           cd backend
@@ -150,12 +138,14 @@ jobs:
             echo "### Nilvera Production Read-Only Preflight"
             echo "- exact_head_match: true"
             echo "- production_endpoint_verified: true"
-            echo "- credential_present: true"
-            echo "- tenant_context_present: true"
+            echo "- central_credential_present: true"
+            echo "- tenant_context_present: false"
+            echo "- seller_identity_format_valid: false"
             echo "- incoming_answer_enabled: false"
             echo "- create_return_enabled: false"
-            echo "- provider_read_count: 2"
+            echo "- provider_read_count: 1"
             echo "- provider_write_count: 0"
             echo "- deploy_count: 0"
             echo "- production_config_mutation_count: 0"
+            echo "- tenant_onboarding_source: syroce_tenant_settings"
           } >> "$GITHUB_STEP_SUMMARY"
