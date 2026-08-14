@@ -9,6 +9,7 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
 from core.database import db
 from core.folio_ledger_service import FolioLedgerService
 from core.security import get_current_user
+from core.tenant_db import get_current_tenant_id, get_system_db
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 from modules.pms_core.role_permission_service import require_op  # v94 DW
@@ -392,19 +393,37 @@ async def peer_verify(
 
 
 async def _find_peer_verify_user(current_user: User) -> dict | None:
-    """Load the authenticated user's credential row without identity fallback."""
-    if not current_user.tenant_id or not current_user.id:
+    """Load the signed-in user's credential row within the active hotel context."""
+    active_tenant_id = get_current_tenant_id()
+    if not active_tenant_id or not current_user.id:
         return None
 
-    return await db.users.find_one(
+    system_db = get_system_db()
+    credential_row = await system_db.users.find_one(
         {
-            "tenant_id": current_user.tenant_id,
             "$or": [
                 {"id": current_user.id},
                 {"user_id": current_user.id},
             ],
         }
     )
+    if not credential_row:
+        return None
+
+    credential_tenant_id = credential_row.get("tenant_id")
+    if credential_tenant_id:
+        if credential_tenant_id != active_tenant_id:
+            return None
+        if current_user.tenant_id and current_user.tenant_id != active_tenant_id:
+            return None
+        return credential_row
+
+    current_role = getattr(current_user.role, "value", current_user.role)
+    credential_role = getattr(credential_row.get("role"), "value", credential_row.get("role"))
+    if current_role == "super_admin" and credential_role == "super_admin":
+        return credential_row
+
+    return None
 
 
 @router.post("/cashier/manual-transaction")
