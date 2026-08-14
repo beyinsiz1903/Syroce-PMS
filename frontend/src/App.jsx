@@ -52,10 +52,6 @@ function DigitalKeyRoute() {
   return <DigitalKeyPage bookingId={bookingId} />;
 }
 
-// 7 gün — silent-refresh akışı varken bile, refresh token ömrü dolmuş
-// (30 gün) bir cihazda yerel kontrol ek bir savunma katmanı sağlıyor.
-const TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-
 function notifyServiceWorkerAuthChanged() {
   // SW v1.1.0+ AUTH_CHANGED mesajına karşılık tüm `hotel-pms-*` cache'leri
   // siler. Login/logout/clearAuthStorage akışlarından çağrılır → cross-user
@@ -84,12 +80,6 @@ function clearAuthStorage() {
   notifyServiceWorkerAuthChanged();
 }
 
-function isTokenExpiredLocally() {
-  const ts = localStorage.getItem("token_ts");
-  if (!ts) return true;
-  return Date.now() - Number(ts) > TOKEN_MAX_AGE_MS;
-}
-
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
@@ -105,7 +95,11 @@ function App() {
     const storedTenant = localStorage.getItem("tenant");
     const storedModules = localStorage.getItem("modules");
 
-    if (hasAuthCookieSession && storedUser && !isTokenExpiredLocally()) {
+    // Do not impose a client-side absolute session age. The server remains
+    // authoritative and the 401 interceptor rotates the refresh token while
+    // the account is active. This keeps an explicitly authenticated browser
+    // session alive until logout, account revocation, or refresh rejection.
+    if (hasAuthCookieSession && storedUser) {
       axios.get("/auth/me")
         .then((meResponse) => {
           const freshUser = meResponse.data;

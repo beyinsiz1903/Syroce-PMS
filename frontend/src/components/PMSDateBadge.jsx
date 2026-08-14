@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { Calendar, AlertTriangle } from "lucide-react";
 import api from "@/api/axios";
 import { prefetchNightAudit } from "@/lib/prefetch";
+import { BUSINESS_DATE_CHANGED_EVENT } from "@/lib/businessDateEvents";
 import { useTranslation } from 'react-i18next';
 
 const MONTHS_TR = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
@@ -66,6 +67,27 @@ export default function PMSDateBadge() {
       }
     }
   }, []);
+
+  useEffect(() => {
+    const handleBusinessDateChanged = (event) => {
+      const value = event?.detail?.businessDate;
+      if (!value) {
+        fetchBD();
+        return;
+      }
+      setBd(value);
+      setHidden(false);
+      try {
+        sessionStorage.setItem(BD_CACHE_KEY, JSON.stringify({
+          bd: value,
+          tid: currentTenantId(),
+          t: Date.now(),
+        }));
+      } catch { /* sessionStorage quota / private mode — ignore */ }
+    };
+    window.addEventListener(BUSINESS_DATE_CHANGED_EVENT, handleBusinessDateChanged);
+    return () => window.removeEventListener(BUSINESS_DATE_CHANGED_EVENT, handleBusinessDateChanged);
+  }, [fetchBD]);
 
   useEffect(() => {
     // Cache taze ise mount fetch'i atla — interval 5dk'da bir zaten yenileyecek

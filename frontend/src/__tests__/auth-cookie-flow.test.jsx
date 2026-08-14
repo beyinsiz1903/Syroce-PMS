@@ -96,4 +96,22 @@ describe('Auth Cookie Flow in App.jsx', () => {
       expect(localStorage.getItem('user')).toBeNull();
     });
   });
+
+  it('should verify an old session marker instead of logging out locally', async () => {
+    const eightDaysAgo = Date.now() - (8 * 24 * 60 * 60 * 1000);
+    localStorage.setItem('token_ts', String(eightDaysAgo));
+    localStorage.setItem('user', JSON.stringify({ name: 'Long Session User' }));
+    axios.get.mockResolvedValueOnce({ data: { id: 'u1', name: 'Long Session User' } });
+
+    try {
+      render(<App />);
+    } catch (e) {
+      // Providers are intentionally minimal in this focused auth test.
+    }
+
+    await waitFor(() => {
+      expect(axios.get).toHaveBeenCalledWith('/auth/me');
+      expect(localStorage.getItem('token_ts')).toBe(String(eightDaysAgo));
+    });
+  });
 });
