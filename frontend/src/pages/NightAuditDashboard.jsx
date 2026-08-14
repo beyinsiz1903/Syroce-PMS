@@ -90,6 +90,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       const normalizedRuns = (res.data.runs || []).map((run) => ({
         ...run,
         audit_id: run.audit_id || run.id,
+        is_dry_run: Boolean(run.is_dry_run ?? run.dry_run),
         rooms_processed: run.rooms_processed ?? run.processed_count ?? 0,
         charges_posted: run.charges_posted ?? run.processed_count ?? 0,
         total_room_revenue: Number(run.total_room_revenue ?? run.total_amount ?? 0),

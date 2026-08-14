@@ -564,6 +564,47 @@ async def test_blocked_dry_run_cannot_resume_as_real_audit():
         c.close()
 
 
+@pytest.mark.asyncio
+async def test_aborted_dry_run_is_superseded_by_fresh_real_audit():
+    """A terminal simulation must not deadlock the real audit for that date."""
+    c, db = await _get_db()
+    try:
+        await _cleanup(db)
+        await _call_engine("ensure_night_audit_indexes", c, db)
+        dry_run_id = str(uuid.uuid4())
+        now = _now_iso()
+        await db.night_audit_runs.insert_one({
+            "id": dry_run_id, "tenant_id": TENANT, "property_id": PROPERTY,
+            "business_date": BD, "status": S_FAILED, "stage": ST_VALIDATING,
+            "trigger_source": "test", "started_by": {}, "dry_run": True,
+            "lock_token": str(uuid.uuid4()),
+            "candidate_count": 0, "processed_count": 0,
+            "failed_count": 0, "skipped_count": 0,
+            "warnings": [], "errors": ["Aborted by test"],
+            "started_at": now, "completed_at": now,
+            "last_heartbeat_at": now, "created_at": now, "updated_at": now,
+        })
+        await db.tenant_settings.insert_one({
+            "tenant_id": TENANT,
+            "business_date": BD,
+        })
+
+        result = await _call_engine("start_night_audit", c, db, TENANT, PROPERTY, BD)
+
+        assert result["success"] is True
+        assert result["run"]["status"] == S_COMPLETED
+        old_run = await db.night_audit_runs.find_one({"id": dry_run_id}, {"_id": 0})
+        assert old_run["status"] == "rerun_superseded"
+        assert "property_id" not in old_run
+        assert old_run["supersede_reason"] == "auto_after_dry_run_terminal_state"
+        settings = await db.tenant_settings.find_one({"tenant_id": TENANT}, {"_id": 0})
+        assert settings["business_date"] == BD_NEXT
+        assert await db.folio_charges.count_documents({"tenant_id": TENANT}) == 0
+    finally:
+        await _cleanup(db)
+        c.close()
+
+
 # ═══════════════════════════════════════════════════════════════
 #  G. NO DOUBLE CLOSE
 # ═══════════════════════════════════════════════════════════════
