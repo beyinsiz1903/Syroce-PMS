@@ -92,15 +92,14 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: backend/requirements/all.txt
+          cache-dependency-path: backend/requirements/base.txt
 
       - name: Install minimal backend dependencies
         shell: bash
         run: |
           set -euo pipefail
           cd backend
-          pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
-          bash scripts/post_install.sh
+          pip install -r requirements/base.txt
 
       - name: Assert preflight implementation is provider read-only
         shell: bash
