@@ -15,14 +15,11 @@ import pytest
 from core.integrations.nilvera.errors import NilveraApiError
 from core.integrations.nilvera.return_adapter import NilveraReturnAdapter
 from tests.integration.test_nilvera_sandbox_e2e import new_sandbox_client
+from tests.nilvera_create_return_source import resolve_create_return_source_direct
 from tests.nilvera_sandbox_fixture import (
-    FOUND,
     ReadOnlySandboxClient,
     SandboxFixtureError,
-    build_fixture_identity,
-    build_fixture_request_uuid,
     pilot_invoice_datetime,
-    reconcile_incoming_commercial_fixture,
 )
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.nilvera_sandbox]
@@ -51,8 +48,6 @@ async def test_sandbox_create_return_contract_discovery_v2(record_property):
         fixture_time = pilot_invoice_datetime(os.environ.get("NILVERA_PILOT_INVOICE_DATE"))
         if fixture_time.year != reference_time.year:
             raise ValueError
-        identity = build_fixture_identity(year=fixture_time.year, run_id=source_run_id, hmac_key=hmac_key)
-        source_provider_uuid = str(build_fixture_request_uuid(identity, hmac_key))
     except (SandboxFixtureError, ValueError):
         pytest.fail("BLOCKED_INVALID_CREATE_RETURN_FIXTURE_SOURCE", pytrace=False)
 
@@ -60,7 +55,7 @@ async def test_sandbox_create_return_contract_discovery_v2(record_property):
     receiver_client = new_sandbox_client(receiver_key)
     try:
         async with sender_client as sender, receiver_client as receiver:
-            reconciliation = await reconcile_incoming_commercial_fixture(
+            source = await resolve_create_return_source_direct(
                 sender_client=ReadOnlySandboxClient(sender),
                 receiver_client=ReadOnlySandboxClient(receiver),
                 sender_key=sender_key,
@@ -70,32 +65,18 @@ async def test_sandbox_create_return_contract_discovery_v2(record_property):
                 seller_tax_number=seller_tax_number,
                 buyer_tax_number=buyer_tax_number,
                 reference_time=reference_time,
-                delivery_diagnostics=True,
             )
-            answer_states = {
-                reconciliation.receiver_status_answer_state,
-                reconciliation.receiver_detail_answer_state,
-            }
-            source_terminal = bool(answer_states & {"APPROVED", "ANSWERED_AUTOMATICALLY"}) or (
-                reconciliation.receiver_answered_automatically is True
-            )
-            source_ready = (
-                reconciliation.match_count_class == "ONE"
-                and reconciliation.receiver_visibility == FOUND
-                and reconciliation.receiver_status_ready is True
-                and reconciliation.receiver_alias_match is True
-                and source_terminal
-            )
-            record_property("source_fixture_ready", str(source_ready).lower())
-            if not source_ready:
+            record_property("source_lookup_contract", "DETERMINISTIC_DIRECT_GET")
+            record_property("source_fixture_ready", str(source.ready).lower())
+            if not source.ready:
                 pytest.fail("BLOCKED_CREATE_RETURN_SOURCE_NOT_READY", pytrace=False)
 
             adapter = NilveraReturnAdapter(receiver)
             with patch.object(receiver, "post", wraps=receiver.post) as provider_post:
                 try:
                     created = await adapter.create_return(
-                        source_provider_uuid,
-                        correlation_id=reconciliation.correlation_label,
+                        source.source_provider_uuid,
+                        correlation_id=source.correlation_label,
                     )
                 except Exception as exc:
                     provider_write_count = provider_post.await_count
@@ -116,7 +97,7 @@ async def test_sandbox_create_return_contract_discovery_v2(record_property):
             try:
                 await adapter.verify_return_draft(
                     str(created.provider_uuid),
-                    correlation_id=reconciliation.correlation_label,
+                    correlation_id=source.correlation_label,
                 )
             except Exception as exc:
                 http_status = exc.http_status if isinstance(exc, NilveraApiError) else None
