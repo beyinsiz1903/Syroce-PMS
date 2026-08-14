@@ -501,7 +501,7 @@ async def _handle_duplicate_run(tenant_id: str, prop_id: str, bd: str) -> dict:
         return {"success": False, "error": "Concurrent insert conflict", "code": "CONFLICT"}
 
     st = existing["status"]
-    if st == "dry_run_completed":
+    if st == "dry_run_completed" or (existing.get("dry_run") and st in (S_BLOCKED, S_FAILED, S_PARTIAL)):
         # Dry-run kayitlari finansal yan etki uretmedigi icin otomatik supersede edilir;
         # bu sayede operator dry-run sonrasi gercek run'i ayrica force_rerun
         # gerektirmeden baslatabilir. Eski kayit unique index disina cikarilir.
@@ -513,7 +513,7 @@ async def _handle_duplicate_run(tenant_id: str, prop_id: str, bd: str) -> dict:
                     "updated_at": _now_iso(),
                     "superseded_at": _now_iso(),
                     "superseded_property_id": prop_id,
-                    "supersede_reason": "auto_after_dry_run",
+                    "supersede_reason": "auto_after_dry_run_terminal_state",
                 },
                 "$unset": {"property_id": ""},
             },
