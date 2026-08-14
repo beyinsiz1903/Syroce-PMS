@@ -19,7 +19,6 @@ from core.integrations.nilvera.config import (
 )
 from core.integrations.nilvera.errors import NilveraApiError
 
-
 _VKN = re.compile(r"^\d{10,11}$")
 
 
