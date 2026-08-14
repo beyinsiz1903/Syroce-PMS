@@ -38,13 +38,13 @@ const MicePage = ({
 }) => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { entitlements, getQuotaUsage } = useEntitlements();
+  const { entitlements } = useEntitlements();
   const spacesLimit = entitlements?.mice?.limits?.spaces_limit ?? null;
-  const spacesUsed = getQuotaUsage('mice', 'spaces_limit');
+  const spacesUsed = entitlements?.mice?.usage?.spaces_limit ?? 0;
   const spacesLimitReached = spacesLimit !== null && spacesUsed >= spacesLimit;
 
   const concurrentEventsLimit = entitlements?.mice?.limits?.concurrent_events ?? null;
-  const concurrentEventsUsed = getQuotaUsage('mice', 'concurrent_events');
+  const concurrentEventsUsed = entitlements?.mice?.usage?.concurrent_events ?? 0;
   const eventsLimitReached = concurrentEventsLimit !== null && concurrentEventsUsed >= concurrentEventsLimit;
 
   const hasBanquet = entitlements?.mice?.features?.includes('banquet_operations');
@@ -210,9 +210,9 @@ const MicePage = ({
       setLoading(false);
     }
   };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- yalnız ilk açılışta başlangıç verisini yükler
   }, []);
 
   // Tab open → fetch on first reveal only. Mutation handlers call the

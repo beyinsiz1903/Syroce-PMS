@@ -18,31 +18,39 @@ const FloatingActionButton = ({ actions = [] }) => {
       {/* Action Items (shown when open) */}
       {isOpen && (
         <div className="absolute bottom-20 right-0 space-y-3 mb-2 flex flex-col items-end">
-          {actions.map((action, idx) => (
-            <div
-              key={idx}
-              className="flex items-center justify-end gap-2 animate-in slide-in-from-bottom duration-200"
-              style={{ animationDelay: `${idx * 50}ms` }}
-            >
-              {/* Action Label */}
-              <div className="bg-gray-900 text-white text-xs px-3 py-1.5 rounded-full shadow-lg whitespace-nowrap">
-                {action.label}
-              </div>
+          {actions.map((action, idx) => {
+            const ActionIcon = action.icon;
 
-              {/* Action Button */}
-              <Button
-                size="icon"
-                onClick={() => {
-                  action.onClick();
-                  setIsOpen(false);
-                }}
-                className={`w-11 h-11 rounded-full shadow-lg ${action.color || 'bg-blue-600 hover:bg-blue-700'}`}
-                title={action.label}
+            return (
+              <div
+                key={idx}
+                className="flex items-center justify-end gap-2 animate-in slide-in-from-bottom duration-200"
+                style={{ animationDelay: `${idx * 50}ms` }}
               >
-                {action.icon}
-              </Button>
-            </div>
-          ))}
+                {/* Action Label */}
+                <div className="bg-gray-900 text-white text-xs px-3 py-1.5 rounded-full shadow-lg whitespace-nowrap">
+                  {action.label}
+                </div>
+
+                {/* Action Button */}
+                <Button
+                  size="icon"
+                  onClick={() => {
+                    action.onClick();
+                    setIsOpen(false);
+                  }}
+                  className={`w-11 h-11 rounded-full shadow-lg ${action.color || 'bg-blue-600 hover:bg-blue-700'}`}
+                  title={action.label}
+                >
+                  {React.isValidElement(ActionIcon)
+                    ? ActionIcon
+                    : ActionIcon
+                      ? <ActionIcon className="w-5 h-5" />
+                      : null}
+                </Button>
+              </div>
+            );
+          })}
         </div>
       )}
 
