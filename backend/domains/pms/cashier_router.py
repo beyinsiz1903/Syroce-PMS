@@ -369,9 +369,7 @@ async def peer_verify(
         raise HTTPException(status_code=400, detail="PIN gerekli")
 
     pwd_ctx = BcryptContext()
-    me = await db.users.find_one({"_id": current_user.id})
-    if not me:
-        me = await db.users.find_one({"email": current_user.email, "tenant_id": current_user.tenant_id})
+    me = await _find_peer_verify_user(current_user)
     if not me:
         raise HTTPException(status_code=401, detail="Kullanici dogrulanamadi")
 
@@ -391,6 +389,22 @@ async def peer_verify(
         pass
 
     return {"ok": True, "verified_at": datetime.utcnow().isoformat()}
+
+
+async def _find_peer_verify_user(current_user: User) -> dict | None:
+    """Load the authenticated user's credential row without identity fallback."""
+    if not current_user.tenant_id or not current_user.id:
+        return None
+
+    return await db.users.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "$or": [
+                {"id": current_user.id},
+                {"user_id": current_user.id},
+            ],
+        }
+    )
 
 
 @router.post("/cashier/manual-transaction")
