@@ -19,6 +19,23 @@ export const buildHotelRunnerRequestConfig = user => {
   return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
 };
 
+export const parseHotelRunnerConnectionTestResult = data => {
+  const providerData = data?.data || {};
+  const connected = Boolean(data?.connected ?? providerData.connected);
+  return {
+    connected,
+    durationMs: data?.duration_ms ?? providerData.duration_ms ?? 0,
+    errorCode: data?.error_type || data?.error || 'CONNECTION_TEST_FAILED'
+  };
+};
+
+export const getHotelRunnerErrorMessage = (error, fallback) => {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (detail?.error_code) return detail.error_code;
+  return fallback;
+};
+
 const HotelRunnerIntegration = ({
   user,
   tenant,
@@ -292,9 +309,10 @@ const HotelRunnerIntegration = ({
       } = await axios.post(`/channel-manager/hotelrunner/test`, {}, {
         ...requestConfig
       });
-      if (data.connected) toast.success(`Bağlantı basarili (${data.duration_ms}ms)`);else toast.error(`Bağlantı hatası: ${data.error}`);
+      const result = parseHotelRunnerConnectionTestResult(data);
+      if (result.connected) toast.success(`Bağlantı basarili (${result.durationMs}ms)`);else toast.error(`Bağlantı hatası: ${result.errorCode}`);
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Test hatası');
+      toast.error(getHotelRunnerErrorMessage(e, 'Bağlantı testi tamamlanamadı'));
     } finally {
       setLoading(false);
     }
@@ -326,7 +344,7 @@ const HotelRunnerIntegration = ({
       toast.success(data.message);
       fetchAll();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Senkronizasyon hatası');
+      toast.error(getHotelRunnerErrorMessage(e, 'Rezervasyon senkronizasyonu tamamlanamadı; bağlantı ve canlı senkronizasyon anahtarlarını kontrol edin'));
     } finally {
       setLoading(false);
     }
