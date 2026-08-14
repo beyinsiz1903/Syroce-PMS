@@ -13,7 +13,8 @@ import FolioWindowsPanel from "@/components/folio/FolioWindowsPanel";
 const API = "";
 function TimelineItem({
   event,
-  t
+  t,
+  onVoidPayment
 }) {
   const typeConfig = {
     charge: {
@@ -54,7 +55,18 @@ function TimelineItem({
         </div>
         <div className="flex items-center justify-between mt-1">
           <span className="text-xs text-gray-400">{event.timestamp?.slice(0, 19).replace("T", " ")}</span>
-          <span className="text-xs text-gray-500">{t("folio.balance")}: {event.running_balance?.toFixed(2)}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">{t("folio.balance")}: {event.running_balance?.toFixed(2)}</span>
+            {event.type === "payment" && !event.voided && onVoidPayment && <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 border-red-200 px-2 text-xs text-red-700 hover:bg-red-50"
+              onClick={() => onVoidPayment(event)}
+            >
+              <Ban className="mr-1 h-3 w-3" /> İade
+            </Button>}
+          </div>
         </div>
         {event.voided && event.void_reason && <div className="mt-1.5 text-xs bg-red-50 border border-red-200 rounded px-2 py-1">
             <span className="text-red-600 font-medium">{t("folio.reason")}: </span>
@@ -200,6 +212,10 @@ export default function FolioDetailView({
     quantity: 1
   });
   const [chargeLoading, setChargeLoading] = useState(false);
+  const [voidTarget, setVoidTarget] = useState(null);
+  const [voidReason, setVoidReason] = useState("");
+  const [supervisorPin, setSupervisorPin] = useState("");
+  const [voidLoading, setVoidLoading] = useState(false);
   const fetchDetail = useCallback(async id => {
     if (!id) return;
     setNotFound(false);
@@ -372,7 +388,7 @@ export default function FolioDetailView({
                 <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm text-gray-500">{t("folio.folioTimeline")} ({data?.timeline?.length || 0} {t("folio.events")})</CardTitle></CardHeader>
                 <CardContent className="px-4 pb-4">
                   <div className="space-y-2 max-h-[600px] overflow-y-auto">
-                    {data?.timeline?.length ? data.timeline.map(e => <TimelineItem key={e.id} event={e} t={t} />) : <p className="text-sm text-gray-400 py-4">{t("folio.noTransactions")}</p>}
+                    {data?.timeline?.length ? data.timeline.map(e => <TimelineItem key={e.id} event={e} t={t} onVoidPayment={setVoidTarget} />) : <p className="text-sm text-gray-400 py-4">{t("folio.noTransactions")}</p>}
                   </div>
                 </CardContent>
               </Card>
@@ -534,8 +550,65 @@ export default function FolioDetailView({
         </div>
       </div>
     </div>;
+  const closeVoidPanel = () => {
+    setVoidTarget(null);
+    setVoidReason("");
+    setSupervisorPin("");
+  };
+  const voidPayment = async () => {
+    if (!folio?.id || !voidTarget?.id || !voidReason.trim() || !supervisorPin.trim()) {
+      toast.error("İade nedeni ve yetkili PIN'i zorunludur");
+      return;
+    }
+    setVoidLoading(true);
+    try {
+      await axios.post("/cashier/peer-verify", { pin: supervisorPin.trim() });
+      await axios.post(`/folio/${folio.id}/payment/${voidTarget.id}/void`, {
+        reason: voidReason.trim()
+      });
+      toast.success("Ödeme iade edildi");
+      closeVoidPanel();
+      await fetchDetail(propFolioId || folioId);
+    } catch (e) {
+      if (e?.response?.status === 429) {
+        toast.error(e.response?.data?.detail || "Çok fazla PIN denemesi, lütfen bekleyin");
+      } else if (e?.response?.status === 401) {
+        toast.error(e.response?.data?.detail || "PIN hatalı");
+      } else {
+        toast.error(e.response?.data?.detail || "İade tamamlanamadı; otomatik tekrar yapılmadı");
+      }
+      setSupervisorPin("");
+    } finally {
+      setVoidLoading(false);
+    }
+  };
+  const voidPaymentPanel = voidTarget && <div role="dialog" aria-modal="true" aria-label="Ödeme İadesi" className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 px-4">
+      <div className="w-full max-w-md space-y-4 rounded-xl bg-white p-6 shadow-2xl">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900">Ödeme İadesi</h3>
+          <p className="mt-1 text-sm text-gray-500">
+            {voidTarget.method?.toUpperCase()} ödemesi {Math.abs(voidTarget.amount || 0).toFixed(2)} TL iade edilecek.
+            {voidTarget.method === "cash" && " Nakit iadesi için açık vardiya gerekir."}
+          </p>
+        </div>
+        <div>
+          <label htmlFor="folio-void-reason" className="text-xs text-gray-600">İade Nedeni *</label>
+          <textarea id="folio-void-reason" rows={3} className="mt-1 w-full rounded-md border p-2 text-sm" value={voidReason} onChange={e => setVoidReason(e.target.value)} placeholder="Ör: yanlış tutar" />
+        </div>
+        <div>
+          <label htmlFor="folio-void-pin" className="text-xs text-gray-600">Yetkili PIN *</label>
+          <input id="folio-void-pin" type="password" autoComplete="off" className="mt-1 w-full rounded-md border p-2 text-sm" value={supervisorPin} onChange={e => setSupervisorPin(e.target.value)} />
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={closeVoidPanel} disabled={voidLoading}>Vazgeç</Button>
+          <Button type="button" className="bg-red-600 text-white hover:bg-red-700" onClick={voidPayment} disabled={voidLoading || !voidReason.trim() || !supervisorPin.trim()}>
+            {voidLoading ? "İşleniyor..." : "İadeyi Onayla"}
+          </Button>
+        </div>
+      </div>
+    </div>;
   if (user && tenant) {
-    return <>{content}{chargeFormPanel}</>;
+    return <>{content}{chargeFormPanel}{voidPaymentPanel}</>;
   }
-  return <>{content}{chargeFormPanel}</>;
+  return <>{content}{chargeFormPanel}{voidPaymentPanel}</>;
 }
