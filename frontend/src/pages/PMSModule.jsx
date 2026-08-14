@@ -917,7 +917,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             </TabsContent>
           )}
           {activeTab === 'guests' && (
-            <GuestsTab guests={guests} setOpenDialog={setOpenDialog} setSelectedGuest360={setSelectedGuest360} loadGuest360={loadGuest360} setNewBooking={setNewBooking} t={t} />
+            <GuestsTab guests={guests} setOpenDialog={setOpenDialog} setSelectedGuest360={setSelectedGuest360} loadGuest360={loadGuest360} setNewBooking={setNewBooking} onGuestsChanged={loadData} t={t} />
           )}
           {activeTab === 'bookings' && (
             <BookingsTab bookingStats={bookingStats} bookings={bookings} groupedBookings={groupedBookings} guests={guests} rooms={rooms} companies={companies} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadBookingFolios={loadBookingFolios} loadGuest360={loadGuest360} setSelectedGuest360={setSelectedGuest360} setOpenDialog={setOpenDialog} setSelectedBooking={setSelectedBooking} setSelectedBookingDetail={setSelectedBookingDetail} setReservationDetailId={setReservationDetailId} toast={toast} isLite={isLite} roomsCount={roomsCount} activeTab={activeTab} />

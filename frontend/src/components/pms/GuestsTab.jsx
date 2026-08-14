@@ -1,6 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { toast } from 'sonner';
+import { confirmDialog } from '@/lib/dialogs';
 import { TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, User, Search, Star, Phone, Mail, CreditCard, MapPin, Merge, Settings, UserCheck } from 'lucide-react';
 
-const GuestsTab = ({ guests, setOpenDialog, setSelectedGuest360, loadGuest360, setNewBooking }) => {
+const GuestsTab = ({ guests, setOpenDialog, setSelectedGuest360, loadGuest360, setNewBooking, onGuestsChanged }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const tc = (k) => t(`pmsComponents.guests.${k}`);
@@ -21,8 +24,10 @@ const GuestsTab = ({ guests, setOpenDialog, setSelectedGuest360, loadGuest360, s
   const [showMergeDialog, setShowMergeDialog] = useState(false);
   const [mergeGuest1, setMergeGuest1] = useState('');
   const [mergeGuest2, setMergeGuest2] = useState('');
+  const [mergeSaving, setMergeSaving] = useState(false);
   const [showPreferencesDialog, setShowPreferencesDialog] = useState(false);
   const [selectedGuestForPref, setSelectedGuestForPref] = useState(null);
+  const [preferencesSaving, setPreferencesSaving] = useState(false);
   const [preferences, setPreferences] = useState({
     pillow_type: '', room_temperature: '', floor_preference: '',
     newspaper: '', minibar_preference: '', smoking: false,
@@ -56,6 +61,54 @@ const GuestsTab = ({ guests, setOpenDialog, setSelectedGuest360, loadGuest360, s
     { key: 'email', label: tc('email') },
     { key: 'id', label: tc('idNumber') },
   ];
+
+  const mergeGuests = async () => {
+    if (!mergeGuest1 || !mergeGuest2 || mergeGuest1 === mergeGuest2 || mergeSaving) return;
+    setMergeSaving(true);
+    const confirmed = await confirmDialog({
+      title: tc('mergeTitle'),
+      message: 'İkinci misafir profili arşivlenecek; rezervasyonları ve folyoları ana profile taşınacak. Bu işlem geri alınamaz.',
+      confirmText: tc('merge'),
+      variant: 'danger',
+    });
+    if (!confirmed) {
+      setMergeSaving(false);
+      return;
+    }
+
+    try {
+      await axios.post(`/cross-property/guests/${mergeGuest1}/merge`, {
+        target_guest_id: mergeGuest2,
+      });
+      toast.success('Misafir profilleri birleştirildi');
+      setShowMergeDialog(false);
+      setMergeGuest1('');
+      setMergeGuest2('');
+      await onGuestsChanged?.();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Misafir profilleri birleştirilemedi');
+    } finally {
+      setMergeSaving(false);
+    }
+  };
+
+  const savePreferences = async () => {
+    if (!selectedGuestForPref?.id || preferencesSaving) return;
+    setPreferencesSaving(true);
+    try {
+      await axios.patch(`/pms/guests/${selectedGuestForPref.id}/preferences`, {
+        preferences,
+        preference_notes: preferences.notes || '',
+      });
+      toast.success('Misafir tercihleri kaydedildi');
+      setShowPreferencesDialog(false);
+      await onGuestsChanged?.();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Misafir tercihleri kaydedilemedi');
+    } finally {
+      setPreferencesSaving(false);
+    }
+  };
 
   return (
     <TabsContent value="guests" className="space-y-4">
@@ -151,7 +204,7 @@ const GuestsTab = ({ guests, setOpenDialog, setSelectedGuest360, loadGuest360, s
                 </div>
                 <div className="flex gap-2 pt-2 border-t">
                   <Button size="sm" variant="outline" className="flex-1 h-7 text-xs"
-                    onClick={() => { setNewBooking(prev => ({ ...prev, guest_id: guest.id })); setOpenDialog('newbooking'); }}
+                    onClick={() => { setNewBooking(prev => ({ ...prev, guest_id: guest.id })); setOpenDialog('booking'); }}
                     data-testid={`guest-new-booking-btn-${guest.id}`}>
                     <Plus className="w-3 h-3 mr-1" /> {tc('newBookingFor')}
                   </Button>
@@ -187,8 +240,8 @@ const GuestsTab = ({ guests, setOpenDialog, setSelectedGuest360, loadGuest360, s
                 {guests.filter(g => g.id !== mergeGuest1).map(g => <option key={g.id} value={g.id}>{g.name} - {g.email || g.phone || '-'}</option>)}
               </select>
             </div>
-            <Button className="w-full" disabled={!mergeGuest1 || !mergeGuest2}
-              onClick={() => { setShowMergeDialog(false); }}>
+            <Button className="w-full" disabled={!mergeGuest1 || !mergeGuest2 || mergeSaving}
+              onClick={mergeGuests}>
               <Merge className="w-4 h-4 mr-2" /> {tc('merge')}
             </Button>
           </div>
@@ -255,7 +308,7 @@ const GuestsTab = ({ guests, setOpenDialog, setSelectedGuest360, loadGuest360, s
               <Label>{tc('notes')}</Label>
               <Textarea value={preferences.notes || ''} onChange={e => setPreferences(p => ({ ...p, notes: e.target.value }))} rows={2} />
             </div>
-            <Button className="w-full" onClick={() => { setShowPreferencesDialog(false); }}>
+            <Button className="w-full" disabled={preferencesSaving} onClick={savePreferences}>
               {tc('save')}
             </Button>
           </div>
