@@ -83,6 +83,23 @@ folio_balance_read_service = FolioBalanceReadService()
 open_folio_service = OpenFolioService()
 
 
+async def _decrement_booking_paid_amount(tenant_id: str, booking_id: str, amount: float) -> float:
+    """Reverse only the amount previously credited to a booking payment total."""
+    booking = await db.bookings.find_one(
+        {"id": booking_id, "tenant_id": tenant_id},
+        {"_id": 0, "paid_amount": 1},
+    )
+    if not booking:
+        return 0.0
+    adjustment = min(float(booking.get("paid_amount") or 0), float(amount or 0))
+    if adjustment:
+        await db.bookings.update_one(
+            {"id": booking_id, "tenant_id": tenant_id},
+            {"$inc": {"paid_amount": -adjustment}},
+        )
+    return adjustment
+
+
 @router.post("/folio/create", response_model=Folio)
 async def create_folio(
     folio_data: FolioCreate,
@@ -1063,14 +1080,33 @@ async def void_payment(
         raise HTTPException(status_code=409, detail="Ödeme zaten iade edilmiş veya değiştirildi")
 
     new_balance = await calculate_folio_balance(folio_id, current_user.tenant_id)
-    await db.folios.update_one({"id": folio_id}, {"$set": {"balance": new_balance}})
+    await db.folios.update_one(
+        {"id": folio_id, "tenant_id": current_user.tenant_id},
+        {"$set": {"balance": new_balance}},
+    )
+
+    booking_paid_adjustment = 0.0
+    if payment.get("booking_id"):
+        booking_paid_adjustment = await _decrement_booking_paid_amount(
+            current_user.tenant_id,
+            payment["booking_id"],
+            float(payment.get("amount") or 0),
+        )
 
     async def _rollback_void():
         await db.payments.update_one(
             {"id": payment_id, "tenant_id": current_user.tenant_id}, {"$set": {"voided": False}, "$unset": {"void_reason": "", "voided_by": "", "voided_by_name": "", "voided_at": ""}}
         )
         restored = await calculate_folio_balance(folio_id, current_user.tenant_id)
-        await db.folios.update_one({"id": folio_id}, {"$set": {"balance": restored}})
+        await db.folios.update_one(
+            {"id": folio_id, "tenant_id": current_user.tenant_id},
+            {"$set": {"balance": restored}},
+        )
+        if booking_paid_adjustment and payment.get("booking_id"):
+            await db.bookings.update_one(
+                {"id": payment["booking_id"], "tenant_id": current_user.tenant_id},
+                {"$inc": {"paid_amount": booking_paid_adjustment}},
+            )
 
     # Kasaya iade kaydı (negatif/out) — başarısızsa void'i geri al (compensation)
     try:

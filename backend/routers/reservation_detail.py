@@ -37,6 +37,48 @@ from security.field_encryption import get_field_encryption_service
 _create_reservation_service = CreateReservationService()
 _field_enc = get_field_encryption_service()
 
+
+def _build_financial_summary(
+    booking: dict,
+    charges: list[dict],
+    payments: list[dict],
+    extra_charges: list[dict],
+    deposits: list[dict],
+) -> dict:
+    """Build the reservation summary without counting posted room revenue twice."""
+    active_charges = [charge for charge in charges if not charge.get("voided")]
+    total_charges = sum(charge.get("total", charge.get("amount", 0)) for charge in active_charges)
+    total_payments = sum(payment.get("amount", 0) for payment in payments if not payment.get("voided"))
+    total_extra = sum(charge.get("charge_amount", charge.get("amount", 0)) for charge in extra_charges if not charge.get("voided"))
+    total_deposits = sum(deposit.get("amount", 0) for deposit in deposits if deposit.get("status") != "refunded")
+
+    room_charge_posted = any(charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room" for charge in active_charges)
+    unposted_room_total = 0 if room_charge_posted else booking.get("total_amount", 0)
+    balance = unposted_room_total + total_charges + total_extra - total_payments
+
+    return {
+        "total_amount": booking.get("total_amount", 0),
+        "total_charges": round(total_charges, 2),
+        "total_payments": round(total_payments, 2),
+        "total_extra": round(total_extra, 2),
+        "total_deposits": round(total_deposits, 2),
+        "balance": round(balance, 2),
+        "paid_amount": booking.get("paid_amount", 0),
+    }
+
+
+async def _refresh_cached_folio_balance(tenant_id: str, folio_id: str) -> float:
+    """Keep the operational checkout cache aligned with durable folio rows."""
+    from core.utils import calculate_folio_balance
+
+    balance = await calculate_folio_balance(folio_id, tenant_id)
+    await db.folios.update_one(
+        {"id": folio_id, "tenant_id": tenant_id},
+        {"$set": {"balance": balance}},
+    )
+    return balance
+
+
 # ── Group bookings cache (TTL 30s) ─────────────────────────────
 # /pms/group-bookings list endpoint'i her grup için bookings.find()
 # çağırıyordu (N+1). Single-query bucket pattern'a geçirdikten sonra
@@ -237,14 +279,8 @@ async def _log_activity(tenant_id: str, booking_id: str, action: str, actor: str
 # ── Endpoints ──
 
 
-
-
 @router.get("/reservations/{booking_id}/full-detail")
-async def get_reservation_full_detail(
-    booking_id: str,
-    current_user: User = Depends(get_current_user),
-    target_tenant: str | None = Header(None, alias="X-Tenant-ID")
-):
+async def get_reservation_full_detail(booking_id: str, current_user: User = Depends(get_current_user), target_tenant: str | None = Header(None, alias="X-Tenant-ID")):
     """Get comprehensive reservation detail with all related data."""
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
@@ -258,6 +294,7 @@ async def get_reservation_full_detail(
         is_cross_tenant = True
 
     from core.tenant_db import tenant_context
+
     with tenant_context(tid):
         booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
         if not booking:
@@ -356,13 +393,7 @@ async def get_reservation_full_detail(
         async for dep in db.deposits.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
             deposits.append(dep)
 
-    # Calculate totals
-    total_charges = sum(c.get("total", c.get("amount", 0)) for c in charges if not c.get("voided"))
-    total_payments = sum(p.get("amount", 0) for p in payments if not p.get("voided"))
-    total_extra = sum(ec.get("charge_amount", ec.get("amount", 0)) for ec in extra_charges)
-    total_deposits = sum(dep.get("amount", 0) for dep in deposits if dep.get("status") != "refunded")
-    room_total = booking.get("total_amount", 0)
-    balance = room_total + total_charges + total_extra - total_payments
+    summary = _build_financial_summary(booking, charges, payments, extra_charges, deposits)
 
     # Decrypt PII fields for authorized response (KVKK: only after auth/perm checks)
     try:
@@ -378,13 +409,9 @@ async def get_reservation_full_detail(
     if is_cross_tenant:
         # Execute outside of the with block so it logs to the Super Admin's tenant
         with tenant_context(current_user.tenant_id):
-            await db.audit_logs.insert_one({
-                "event_type": "super_admin_cross_tenant_access",
-                "user_id": current_user.id,
-                "resource": f"booking:{booking_id}",
-                "target_tenant": target_tenant,
-                "tenant_id": current_user.tenant_id
-            })
+            await db.audit_logs.insert_one(
+                {"event_type": "super_admin_cross_tenant_access", "user_id": current_user.id, "resource": f"booking:{booking_id}", "target_tenant": target_tenant, "tenant_id": current_user.tenant_id}
+            )
 
     return {
         "booking": booking,
@@ -402,15 +429,7 @@ async def get_reservation_full_detail(
         "guests": guests_list,
         "communication_logs": communication_logs,
         "deposits": deposits,
-        "summary": {
-            "total_amount": booking.get("total_amount", 0),
-            "total_charges": round(total_charges, 2),
-            "total_payments": round(total_payments, 2),
-            "total_extra": round(total_extra, 2),
-            "total_deposits": round(total_deposits, 2),
-            "balance": round(balance, 2),
-            "paid_amount": booking.get("paid_amount", 0),
-        },
+        "summary": summary,
     }
 
 
@@ -454,6 +473,7 @@ async def record_payment(
                     status_code=409,
                     detail="Duplicate payment reference with different payload",
                 )
+            await _refresh_cached_folio_balance(tid, existing["folio_id"])
             return {"success": True, "payment": existing, "idempotent": True}
 
     # No explicit reference -> server-side short-window guard so a double-click
@@ -527,6 +547,7 @@ async def record_payment(
                 {"_id": 0},
             )
             if existing:
+                await _refresh_cached_folio_balance(tid, existing["folio_id"])
                 return {"success": True, "payment": existing, "idempotent": True}
             raise HTTPException(status_code=409, detail="Duplicate payment reference") from exc
         # Payment never became durable -> free the auto-dedup slot for a retry.
@@ -540,6 +561,7 @@ async def record_payment(
         {"id": booking_id, "tenant_id": tid},
         {"$set": {"paid_amount": round(new_paid, 2)}},
     )
+    await _refresh_cached_folio_balance(tid, folio["id"])
 
     await _log_activity(
         tid,
