@@ -230,7 +230,7 @@ export default function ModuleStorePage({
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {Array.from({
                 length: 8
-              }).map((_, i) => <SkeletonCard key={_.id || i} />)}
+              }).map((_, i) => <SkeletonCard key={i} />)}
                 </div>
               </section> : products.length === 0 ? <Card>
                 <CardContent className="pt-6 text-center text-slate-500">
@@ -259,7 +259,7 @@ export default function ModuleStorePage({
             {loading ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {Array.from({
               length: 3
-            }).map((_, i) => <SkeletonCard key={_.id || i} />)}
+            }).map((_, i) => <SkeletonCard key={i} />)}
               </div> : subs.length === 0 ? <Card>
                 <CardContent className="pt-6 text-center text-slate-500">
                   {t('cm.pages_ModuleStorePage.henuz_aktif_aboneliginiz_yok')}

@@ -9,6 +9,14 @@ import domains.admin.router.subscription as sub_router
 from domains.admin.router.subscription import _get_full_entitlements
 
 
+def _mock_quota_usage(*docs):
+    cursor = MagicMock()
+    cursor.to_list = AsyncMock(return_value=list(docs))
+    mock_db = MagicMock()
+    mock_db.entitlement_quota_usage.find.return_value = cursor
+    return um.patch.object(sub_router, "db", mock_db)
+
+
 @pytest.mark.asyncio
 async def test_full_entitlements_no_subscription():
     mock_get_editions = AsyncMock(return_value=[])
@@ -26,22 +34,20 @@ async def test_full_entitlements_no_subscription():
 async def test_full_entitlements_basic():
     original_registry = sub_router.ENTITLEMENT_REGISTRY
 
-    sub_router.ENTITLEMENT_REGISTRY = {
-        "pos_fnb": MagicMock(editions={
-            "basic": MagicMock(features=["orders"], limits={"outlets": 1})
-        })
-    }
+    sub_router.ENTITLEMENT_REGISTRY = {"pos_fnb": MagicMock(editions={"basic": MagicMock(features=["orders"], limits={"outlets": 1})})}
 
     orig_get_editions = sub_router.get_tenant_active_editions
     sub_router.get_tenant_active_editions = AsyncMock(return_value=["basic"])
 
-    res = await _get_full_entitlements("tenant_123")
+    with _mock_quota_usage():
+        res = await _get_full_entitlements("tenant_123")
 
     assert "pos_fnb" in res
     assert res["pos_fnb"]["editions"] == ["basic"]
     assert "orders" in res["pos_fnb"]["features"]
     assert "kds" not in res["pos_fnb"]["features"]
     assert res["pos_fnb"]["limits"]["outlets"] == 1
+    assert res["pos_fnb"]["usage"]["outlets"] == 0
 
     sub_router.ENTITLEMENT_REGISTRY = original_registry
     sub_router.get_tenant_active_editions = orig_get_editions
@@ -51,16 +57,13 @@ async def test_full_entitlements_basic():
 async def test_full_entitlements_pro():
     original_registry = sub_router.ENTITLEMENT_REGISTRY
 
-    sub_router.ENTITLEMENT_REGISTRY = {
-        "pos_fnb": MagicMock(editions={
-            "pro": MagicMock(features=["orders", "kds"], limits={"outlets": 5})
-        })
-    }
+    sub_router.ENTITLEMENT_REGISTRY = {"pos_fnb": MagicMock(editions={"pro": MagicMock(features=["orders", "kds"], limits={"outlets": 5})})}
 
     orig_get_editions = sub_router.get_tenant_active_editions
     sub_router.get_tenant_active_editions = AsyncMock(return_value=["pro"])
 
-    res = await _get_full_entitlements("tenant_123")
+    with _mock_quota_usage():
+        res = await _get_full_entitlements("tenant_123")
 
     assert res["pos_fnb"]["editions"] == ["pro"]
     assert "kds" in res["pos_fnb"]["features"]
@@ -68,6 +71,80 @@ async def test_full_entitlements_pro():
 
     sub_router.ENTITLEMENT_REGISTRY = original_registry
     sub_router.get_tenant_active_editions = orig_get_editions
+
+
+@pytest.mark.asyncio
+async def test_full_entitlements_returns_sanitized_quota_usage():
+    original_registry = sub_router.ENTITLEMENT_REGISTRY
+    orig_get_editions = sub_router.get_tenant_active_editions
+    sub_router.ENTITLEMENT_REGISTRY = {
+        "mice": MagicMock(
+            editions={
+                "basic": MagicMock(
+                    features=["events"],
+                    limits={"spaces_limit": 2, "concurrent_events": 5},
+                )
+            }
+        )
+    }
+    sub_router.get_tenant_active_editions = AsyncMock(return_value=["basic"])
+
+    quota_doc = {
+        "tenant_id": "tenant_123",
+        "module_key": "mice",
+        "metric": "concurrent_events",
+        "used": 3,
+        "resources": ["sensitive-resource-id"],
+    }
+    try:
+        with _mock_quota_usage(quota_doc) as mock_db:
+            res = await _get_full_entitlements("tenant_123")
+
+        assert res["mice"]["usage"] == {
+            "spaces_limit": 0,
+            "concurrent_events": 3,
+        }
+        assert "resources" not in res["mice"]
+        mock_db.entitlement_quota_usage.find.assert_called_once_with(
+            {"tenant_id": "tenant_123"},
+            {"_id": 0, "module_key": 1, "metric": 1, "used": 1},
+        )
+    finally:
+        sub_router.ENTITLEMENT_REGISTRY = original_registry
+        sub_router.get_tenant_active_editions = orig_get_editions
+
+
+@pytest.mark.asyncio
+async def test_full_entitlements_ignores_invalid_usage_values():
+    original_registry = sub_router.ENTITLEMENT_REGISTRY
+    orig_get_editions = sub_router.get_tenant_active_editions
+    sub_router.ENTITLEMENT_REGISTRY = {
+        "mice": MagicMock(
+            editions={
+                "basic": MagicMock(
+                    features=[],
+                    limits={"spaces_limit": 2, "concurrent_events": 5},
+                )
+            }
+        )
+    }
+    sub_router.get_tenant_active_editions = AsyncMock(return_value=["basic"])
+
+    try:
+        with _mock_quota_usage(
+            {"module_key": "mice", "metric": "spaces_limit", "used": -4},
+            {"module_key": "mice", "metric": "concurrent_events", "used": "3"},
+            {"module_key": "mice", "metric": "unknown", "used": 99},
+        ):
+            res = await _get_full_entitlements("tenant_123")
+
+        assert res["mice"]["usage"] == {
+            "spaces_limit": 0,
+            "concurrent_events": 0,
+        }
+    finally:
+        sub_router.ENTITLEMENT_REGISTRY = original_registry
+        sub_router.get_tenant_active_editions = orig_get_editions
 
 
 # ── GET /subscription/current — HTTP endpoint tests ────────────────────────
@@ -134,7 +211,6 @@ async def test_subscription_current_entitlements_is_dict_not_none(mock_sub_db, m
     result = await get_current_subscription(current_user=_MockUser())
     assert result["entitlements"] is not None
     assert isinstance(result["entitlements"], dict)
-
 
 
 @pytest.mark.asyncio

@@ -253,7 +253,6 @@ async def get_feature_comparison_endpoint():
     return {"features": get_feature_comparison(), "tiers": [tier.value for tier in SubscriptionTier]}
 
 
-
 from core.entitlements.enforcement import get_tenant_active_editions
 from core.entitlements.registry import ENTITLEMENT_REGISTRY
 
@@ -277,9 +276,28 @@ async def _get_full_entitlements(tenant_id: str) -> dict:
         result[mod_key] = {
             "editions": editions,
             "features": list(features),
-            "limits": limits
+            "limits": limits,
+            "usage": dict.fromkeys(limits, 0),
         }
+
+    if not result:
+        return result
+
+    usage_docs = await db.entitlement_quota_usage.find(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "module_key": 1, "metric": 1, "used": 1},
+    ).to_list(length=None)
+    for usage_doc in usage_docs:
+        module_key = usage_doc.get("module_key")
+        metric = usage_doc.get("metric")
+        used = usage_doc.get("used")
+        entitlement = result.get(module_key)
+        if not entitlement or metric not in entitlement["limits"] or isinstance(used, bool) or not isinstance(used, int):
+            continue
+        entitlement["usage"][metric] = max(used, 0)
+
     return result
+
 
 # ── GET /subscription/current ──
 @router.get("/subscription/current")
