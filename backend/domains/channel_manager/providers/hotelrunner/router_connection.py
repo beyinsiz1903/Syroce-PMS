@@ -164,7 +164,16 @@ async def test_connection(
 
     provider, conn = await get_provider(tid)
     result = await provider.test_connection()
-    return result
+    result_data = result.data if isinstance(result.data, dict) else {}
+    connected = bool(result.success and result_data.get("connected", True))
+    safe_error_type = result.error_type or "ProviderConnectionError"
+    return {
+        "success": bool(result.success),
+        "connected": connected,
+        "duration_ms": result.duration_ms,
+        "error": "" if connected else safe_error_type,
+        "error_type": "" if connected else safe_error_type,
+    }
 
 
 @router.delete("/disconnect")
