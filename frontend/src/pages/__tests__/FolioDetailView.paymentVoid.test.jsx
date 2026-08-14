@@ -84,7 +84,12 @@ describe('FolioDetailView payment void', () => {
     fireEvent.click(confirm);
 
     await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
-    expect(post).toHaveBeenNthCalledWith(1, '/cashier/peer-verify', { pin: 'test-pin' });
+    expect(post).toHaveBeenNthCalledWith(
+      1,
+      '/cashier/peer-verify',
+      { pin: 'test-pin' },
+      { _skipAuthRetry: true },
+    );
     expect(post).toHaveBeenNthCalledWith(
       2,
       `/folio/${folioId}/payment/${paymentId}/void`,
@@ -113,5 +118,35 @@ describe('FolioDetailView payment void', () => {
     await screen.findByText('CASH');
     expect(screen.queryByRole('button', { name: 'İade' })).not.toBeInTheDocument();
     expect(post).not.toHaveBeenCalled();
+  });
+
+  it('does not submit a void when peer PIN verification is rejected', async () => {
+    post.mockRejectedValueOnce({
+      response: { status: 401, data: { detail: 'PIN hatalı' } },
+    });
+
+    render(
+      <MemoryRouter>
+        <FolioDetailView folioId={folioId} />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'İade' }));
+    fireEvent.change(screen.getByLabelText('İade Nedeni *'), {
+      target: { value: 'Yanlış tutar düzeltmesi' },
+    });
+    fireEvent.change(screen.getByLabelText('Yetkili PIN *'), {
+      target: { value: 'wrong-pin' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'İadeyi Onayla' }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post).toHaveBeenCalledWith(
+      '/cashier/peer-verify',
+      { pin: 'wrong-pin' },
+      { _skipAuthRetry: true },
+    );
+    expect(screen.getByRole('dialog', { name: 'Ödeme İadesi' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Yetkili PIN *')).toHaveValue('');
   });
 });
