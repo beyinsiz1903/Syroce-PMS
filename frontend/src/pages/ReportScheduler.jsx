@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { confirmDialog } from '@/lib/dialogs';
 import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
@@ -312,7 +312,7 @@ export default function ReportScheduler() {
         <span className="ml-3 text-slate-500 text-sm">{t('cm.pages_ReportScheduler.yukleniyor')}</span>
       </div>;
   }
-  return <>
+  return <TooltipProvider>
     <div className="space-y-6 p-4 md:p-6 max-w-7xl mx-auto">
       {error && <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
@@ -671,5 +671,5 @@ export default function ReportScheduler() {
         </DialogContent>
       </Dialog>
     </div>
-    </>;
+    </TooltipProvider>;
 }
