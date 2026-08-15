@@ -125,6 +125,13 @@ const CORRELATION_INFERENCE = {
     cls: "text-red-600"
   }
 };
+
+export function compactObjectRecords(value) {
+  return Array.isArray(value)
+    ? value.filter(item => item && typeof item === "object")
+    : [];
+}
+
 function ChartTooltip({
   active,
   payload,
@@ -133,10 +140,11 @@ function ChartTooltip({
   const {
     t
   } = useTranslation();
-  if (!active || !payload?.length) return null;
+  const items = compactObjectRecords(payload);
+  if (!active || items.length === 0) return null;
   return <div className="bg-white border border-gray-300 rounded-lg px-3 py-2 shadow-xl">
       <p className="text-[10px] text-gray-500 mb-1">{label}</p>
-      {payload.map((p, i) => <div key={p.id || i} className="flex items-center gap-2 text-xs">
+      {items.map((p, i) => <div key={p.id || i} className="flex items-center gap-2 text-xs">
           <div className="w-2 h-2 rounded-full" style={{
         backgroundColor: p.color
       }} />
@@ -157,7 +165,7 @@ function ChannelHealthBlock({
   if (!data) return <Skeleton className="h-40 bg-gray-100" />;
   const style = ALIGNMENT_STYLES[data.alignment_status] || ALIGNMENT_STYLES.no_data;
   const Icon = style.icon;
-  const providers = data.provider_breakdown || [];
+  const providers = compactObjectRecords(data.provider_breakdown);
   return <Card className="bg-white border-gray-200" data-testid="channel-health-block">
       <CardHeader className="pb-2 pt-4 px-4">
         <div className="flex items-center justify-between">
@@ -298,8 +306,8 @@ function DriftAlertPanel({
             </div> : <span className="text-xs text-gray-500">{t('cm.components_UnifiedOpsView.aktif_drift_alarmi_yok')}</span>}
         </div>
 
-        {alerts && alerts.length > 0 && <div className="space-y-2">
-            {alerts.slice(0, 5).map((alert, i) => {
+        {compactObjectRecords(alerts).length > 0 && <div className="space-y-2">
+            {compactObjectRecords(alerts).slice(0, 5).map((alert, i) => {
           const alertStyle = DRIFT_SEVERITY_STYLES[alert.severity] || DRIFT_SEVERITY_STYLES.warning;
           const AlertIcon = alertStyle.icon;
           const payload = alert.payload || {};
@@ -372,7 +380,7 @@ function KpiDashboard({
   const kpis = kpiData?.field_kpis || {};
   const autoActions = kpiData?.auto_actions || {};
   const driftAlerts = kpiData?.drift_alerts || {};
-  const driftTrend = kpiData?.drift_trend || [];
+  const driftTrend = compactObjectRecords(kpiData?.drift_trend);
   const doraMetrics = dora?.metrics || {};
 
   // Parse KPI values
@@ -382,7 +390,7 @@ function KpiDashboard({
   const mttrPrev = kpis.mttr_hours?.previous;
   const driftReduction = kpis.drift_reduction?.current ?? 0;
   const pushSla = kpis.push_sla_compliance?.current ?? 100;
-  const correlations = correlation?.correlations || [];
+  const correlations = compactObjectRecords(correlation?.correlations);
   return <Card className="bg-white border-gray-200" data-testid="kpi-dashboard">
       <CardHeader className="pb-2 pt-4 px-4">
         <div className="flex items-center justify-between">
@@ -507,7 +515,7 @@ export function UnifiedOpsView() {
       if (corrRes.status === "fulfilled") setCorrelation(corrRes.value.data);
       if (statsRes.status === "fulfilled") setDeployStats(statsRes.value.data);
       if (driftSumRes.status === "fulfilled") setDriftSummary(driftSumRes.value.data);
-      if (driftAlertsRes.status === "fulfilled") setDriftAlerts(driftAlertsRes.value.data?.alerts || []);
+      if (driftAlertsRes.status === "fulfilled") setDriftAlerts(compactObjectRecords(driftAlertsRes.value.data?.alerts));
       if (kpiRes.status === "fulfilled") setKpiData(kpiRes.value.data);
     } catch (err) {
       toast.error("Ops verisi yüklenemedi");
@@ -528,7 +536,7 @@ export function UnifiedOpsView() {
       }
       const [sumRes, alertsRes, kpiRes] = await Promise.allSettled([axios.get("/ops/dashboard/drift-alerts/summary"), axios.get("/ops/dashboard/drift-alerts?acknowledged=false&limit=10"), axios.get("/ops/dashboard/ops-kpis")]);
       if (sumRes.status === "fulfilled") setDriftSummary(sumRes.value.data);
-      if (alertsRes.status === "fulfilled") setDriftAlerts(alertsRes.value.data?.alerts || []);
+      if (alertsRes.status === "fulfilled") setDriftAlerts(compactObjectRecords(alertsRes.value.data?.alerts));
       if (kpiRes.status === "fulfilled") setKpiData(kpiRes.value.data);
     } catch (err) {
       toast.error("Drift degerlendirmesi başarısız");

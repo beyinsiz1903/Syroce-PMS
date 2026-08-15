@@ -340,7 +340,7 @@ const FrontdeskTab = ({
                 </Badge>
               </span>
               <Button variant="ghost" size="sm" className="h-7 text-xs text-gray-500" onClick={() => setExpandedKpi(null)}>
-                <XCircle className="w-3.5 h-3.5 mr-1" /> {tf('close')}
+                <XCircle className="w-3.5 h-3.5 mr-1" /> {t('common.close', 'Kapat')}
               </Button>
             </CardTitle>
           </CardHeader>

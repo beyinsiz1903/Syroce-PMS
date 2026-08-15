@@ -14,6 +14,21 @@ import { Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink, Building2, Arr
 import { useTranslation } from 'react-i18next';
 import { confirmDialog } from '@/lib/dialogs';
 const API = "";
+
+export function buildChannelConnectionsRequestConfig(user) {
+  const token = user?.token || user?.access_token;
+  return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+}
+
+export function getChannelConnectionsErrorMessage(error, fallback = 'Bağlantı durumu alınamadı') {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail && typeof detail === 'object') {
+    return detail.error_code || detail.code || detail.error || detail.message || fallback;
+  }
+  return error?.message?.includes('Network') ? 'Sunucuya ulaşılamıyor' : fallback;
+}
+
 export default function ChannelConnections({
   user,
   tenant,
@@ -47,9 +62,7 @@ export default function ChannelConnections({
     auto_sync_reservations: true,
     sync_interval_minutes: 15
   });
-  const headers = {
-    Authorization: `Bearer ${user?.token || user?.access_token}`
-  };
+  const requestConfig = buildChannelConnectionsRequestConfig(user);
   const fetchOverview = useCallback(async ({
     silent = false
   } = {}) => {
@@ -57,9 +70,7 @@ export default function ChannelConnections({
     // 3 deneme + exponential backoff (500ms, 1500ms, 4500ms). Gerçek 4xx
     // hemen kırılır. Mount sırasında (silent) toast yerine içerik banner'ı
     // gösterilir; kullanıcı tetiklediği Yenile'de toast da gösterilir.
-    const tryOnce = () => axios.get(`/channel-manager/connections/overview`, {
-      headers
-    });
+    const tryOnce = () => axios.get(`/channel-manager/connections/overview`, requestConfig);
     const delays = [500, 1500, 4500];
     let lastErr = null;
     setLoading(true);
@@ -80,15 +91,14 @@ export default function ChannelConnections({
         }
       }
     }
-    // eslint-disable-next-line no-console
-    console.error('[CM Connections] fetch failed after retries:', lastErr?.response?.status, lastErr?.response?.data || lastErr?.message);
-    const detail = lastErr?.response?.data?.detail || (lastErr?.message?.includes('Network') ? 'Sunucuya ulaşılamıyor' : null);
-    setFetchError(detail || 'Bağlantı durumu alınamadı');
+    console.error('[CM Connections] fetch failed after retries:', lastErr?.response?.status || 'NETWORK_ERROR');
+    const detail = getChannelConnectionsErrorMessage(lastErr);
+    setFetchError(detail);
     if (!silent) {
       toast.error(detail ? `Bağlantı durumu alınamadı: ${detail}` : 'Bağlantı durumu alınamadı');
     }
     setLoading(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- headers stable per mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- request config stable per mount
   }, []);
   useEffect(() => {
     fetchOverview({
@@ -110,9 +120,7 @@ export default function ChannelConnections({
       } = await axios.post(`/channel-manager/hotelrunner/connect`, {
         ...hrForm,
         environment: 'production'
-      }, {
-        headers
-      });
+      }, requestConfig);
       toast.success('HotelRunner bağlantısı başarıyla kuruldu!');
       setConnectDialog(null);
       setHrForm({
@@ -124,7 +132,7 @@ export default function ChannelConnections({
       });
       fetchOverview();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'HotelRunner bağlantı hatası');
+      toast.error(getChannelConnectionsErrorMessage(err, 'HotelRunner bağlantı hatası'));
     } finally {
       setConnecting(false);
     }
@@ -140,9 +148,7 @@ export default function ChannelConnections({
     try {
       const {
         data
-      } = await axios.post(`/channel-manager/exely/connect`, exelyForm, {
-        headers
-      });
+      } = await axios.post(`/channel-manager/exely/connect`, exelyForm, requestConfig);
       toast.success('Exely bağlantısı başarıyla kuruldu!');
       setConnectDialog(null);
       setExelyForm({
@@ -157,7 +163,7 @@ export default function ChannelConnections({
       });
       fetchOverview();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Exely bağlantı hatası');
+      toast.error(getChannelConnectionsErrorMessage(err, 'Exely bağlantı hatası'));
     } finally {
       setConnecting(false);
     }
@@ -170,16 +176,14 @@ export default function ChannelConnections({
       const endpoint = provider === 'hotelrunner' ? `/channel-manager/hotelrunner/test` : `/channel-manager/exely/test`;
       const {
         data
-      } = await axios.post(endpoint, {}, {
-        headers
-      });
+      } = await axios.post(endpoint, {}, requestConfig);
       if (data.success || data.connected) {
         toast.success(`${provider === 'hotelrunner' ? 'HotelRunner' : 'Exely'} bağlantısı aktif ve çalışıyor!`);
       } else {
         toast.error(`Bağlantı testi başarısız: ${data.error || 'Bilinmeyen hata'}`);
       }
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Bağlantı testi başarısız');
+      toast.error(getChannelConnectionsErrorMessage(err, 'Bağlantı testi başarısız'));
     } finally {
       setTesting(null);
     }
@@ -196,13 +200,11 @@ export default function ChannelConnections({
     setDisconnecting(provider);
     try {
       const endpoint = provider === 'hotelrunner' ? `/channel-manager/hotelrunner/disconnect` : `/channel-manager/exely/disconnect`;
-      await axios.delete(endpoint, {
-        headers
-      });
+      await axios.delete(endpoint, requestConfig);
       toast.success(`${provider === 'hotelrunner' ? 'HotelRunner' : 'Exely'} bağlantısı kesildi`);
       fetchOverview();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Bağlantı kesilirken hata oluştu');
+      toast.error(getChannelConnectionsErrorMessage(err, 'Bağlantı kesilirken hata oluştu'));
     } finally {
       setDisconnecting(null);
     }
