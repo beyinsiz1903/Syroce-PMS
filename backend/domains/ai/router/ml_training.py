@@ -199,6 +199,7 @@ def _dispatch_ml_training(model: str, params: dict) -> dict:
             "celery_tasks.ml_training_task",
             args=[model, params],
             queue="ml",
+            ignore_result=False,
         )
     except Exception as e:  # noqa: BLE001 - broker/worker unavailable → degrade
         logger.warning("[ai/ml] training dispatch failed for model=%s: %s", model, e)

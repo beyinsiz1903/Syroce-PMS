@@ -3,6 +3,7 @@ import asyncio
 import pytest
 
 from infra.horizontal_scaling import HorizontalScalingManager
+from infra.redis_capacity import classify_redis_failure, redis_memory_capacity
 from infra.redis_cluster import RedisClusterManager
 
 
@@ -72,3 +73,113 @@ async def test_heartbeat_persistent_disconnect_escalates_after_threshold(monkeyp
 
     assert manager._heartbeat_failures == 3
     assert "Heartbeat failed repeatedly (3 consecutive)" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_maxmemory_heartbeat_fails_readiness_without_logging_raw_error(monkeypatch, caplog):
+    manager = HorizontalScalingManager()
+    manager._heartbeat_interval = 0
+
+    class _FullRedis:
+        async def hset(self, *args, **kwargs):
+            raise RuntimeError("command not allowed when used memory > 'maxmemory'; private-marker")
+
+        async def hgetall(self, *args, **kwargs):
+            return {}
+
+    manager._redis = _FullRedis()
+    sleep_calls = 0
+
+    async def _sleep(_delay):
+        nonlocal sleep_calls
+        sleep_calls += 1
+        if sleep_calls >= 4:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(asyncio, "sleep", _sleep)
+
+    await manager._heartbeat_loop()
+
+    assert manager.readiness_check()["ready"] is False
+    assert manager.readiness_check()["heartbeat"]["failure_class"] == "REDIS_MAXMEMORY"
+    assert "failure_class=REDIS_MAXMEMORY" in caplog.text
+    assert "private-marker" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_initial_registration_failure_keeps_recovery_loop_running():
+    manager = HorizontalScalingManager()
+
+    class _FullRedis:
+        async def hset(self, *args, **kwargs):
+            raise RuntimeError("OOM command not allowed when used memory > 'maxmemory'")
+
+        async def hgetall(self, *args, **kwargs):
+            return {}
+
+    await manager.initialize(_FullRedis())
+
+    try:
+        assert manager._heartbeat_task is not None
+        assert manager._heartbeat_task.done() is False
+        assert manager._heartbeat_failures == 1
+    finally:
+        await manager.deregister()
+
+
+@pytest.mark.asyncio
+async def test_registry_prune_removes_stale_and_malformed_instances():
+    manager = HorizontalScalingManager()
+
+    class _Redis:
+        deleted = []
+
+        async def hgetall(self, *args, **kwargs):
+            return {
+                "stale": '{"last_heartbeat":"2000-01-01T00:00:00+00:00"}',
+                "malformed": "not-json",
+            }
+
+        async def hdel(self, _key, *instance_ids):
+            self.deleted.extend(instance_ids)
+
+    manager._redis = _Redis()
+
+    await manager._prune_stale_instances()
+
+    assert set(manager._redis.deleted) == {"stale", "malformed"}
+
+
+@pytest.mark.asyncio
+async def test_redis_cluster_health_fails_when_write_capacity_is_exhausted():
+    manager = RedisClusterManager()
+
+    class _Redis:
+        async def ping(self):
+            return True
+
+        async def info(self, *args):
+            return {
+                "used_memory": 256,
+                "maxmemory": 256,
+                "maxmemory_policy": "noeviction",
+            }
+
+    manager._redis = _Redis()
+    manager._connected = True
+
+    result = await manager.health_check()
+
+    assert result["status"] == "unhealthy"
+    assert result["memory_capacity"]["state"] == "exhausted"
+
+
+def test_redis_capacity_and_failure_contracts():
+    assert classify_redis_failure(RuntimeError("OOM command not allowed when used memory > 'maxmemory'")) == "REDIS_MAXMEMORY"
+    assert redis_memory_capacity({"used_memory": 100, "maxmemory": 100, "maxmemory_policy": "noeviction"}) == {
+        "state": "exhausted",
+        "used_memory_bytes": 100,
+        "maxmemory_bytes": 100,
+        "usage_ratio": 1.0,
+        "policy": "noeviction",
+    }

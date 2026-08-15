@@ -8,11 +8,14 @@ Environment:
 """
 
 import asyncio
+import json
 import logging
 import os
 import uuid
 from datetime import UTC, datetime
 from typing import Any
+
+from infra.redis_capacity import classify_redis_failure
 
 logger = logging.getLogger("infra.scaling")
 
@@ -53,6 +56,9 @@ class HorizontalScalingManager:
         self._stale_threshold = 90  # seconds
         self._heartbeat_failures = 0
         self._heartbeat_error_threshold = 3
+        self._heartbeat_failure_class: str | None = None
+        self._heartbeat_count = 0
+        self._registry_prune_interval = 20
 
     @property
     def instance_id(self) -> str:
@@ -67,20 +73,56 @@ class HorizontalScalingManager:
         self._redis = redis_client
         if self._redis:
             try:
-                import json
-
-                await self._redis.hset(
-                    self._registry_key,
-                    self._instance_id,
-                    json.dumps(self._instance_info.to_dict()),
-                )
-                self._heartbeat_failures = 0
-                self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+                await self._prune_stale_instances()
+                await self._write_heartbeat()
                 logger.info(f"Instance registered: {self._instance_id}")
             except Exception as e:
-                logger.warning(f"Instance registration failed: {e}")
+                self._record_heartbeat_failure(e, phase="registration")
+            finally:
+                # Registration can fail temporarily (including maxmemory). Keep
+                # probing so the process can recover without a restart.
+                if self._heartbeat_task is None or self._heartbeat_task.done():
+                    self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         else:
             logger.info(f"Single-instance mode: {self._instance_id}")
+
+    async def _write_heartbeat(self) -> None:
+        self._instance_info.last_heartbeat = datetime.now(UTC).isoformat()
+        await self._redis.hset(
+            self._registry_key,
+            self._instance_id,
+            json.dumps(self._instance_info.to_dict()),
+        )
+        if self._heartbeat_failures:
+            logger.info(
+                "Heartbeat recovered after %s consecutive failures",
+                self._heartbeat_failures,
+            )
+        self._heartbeat_failures = 0
+        self._heartbeat_failure_class = None
+        self._heartbeat_count += 1
+
+    def _record_heartbeat_failure(self, exc: BaseException, *, phase: str) -> None:
+        self._heartbeat_failures += 1
+        self._heartbeat_failure_class = classify_redis_failure(exc)
+        metadata = (
+            self._heartbeat_failures,
+            self._heartbeat_error_threshold,
+            self._heartbeat_failure_class,
+            phase,
+        )
+        if self._heartbeat_failures == self._heartbeat_error_threshold or self._heartbeat_failures % 10 == 0:
+            logger.error(
+                "Heartbeat failed repeatedly (%s consecutive): failure_class=%s phase=%s",
+                self._heartbeat_failures,
+                self._heartbeat_failure_class,
+                phase,
+            )
+        else:
+            logger.warning(
+                "Heartbeat transient failure (%s/%s): failure_class=%s phase=%s",
+                *metadata,
+            )
 
     async def _heartbeat_loop(self):
         """Periodically update heartbeat in Redis."""
@@ -88,32 +130,41 @@ class HorizontalScalingManager:
             try:
                 await asyncio.sleep(self._heartbeat_interval)
                 if self._redis:
-                    import json
-
-                    self._instance_info.last_heartbeat = datetime.now(UTC).isoformat()
-                    await self._redis.hset(
-                        self._registry_key,
-                        self._instance_id,
-                        json.dumps(self._instance_info.to_dict()),
-                    )
-                    self._heartbeat_failures = 0
+                    await self._write_heartbeat()
+                    if self._heartbeat_count % self._registry_prune_interval == 0:
+                        await self._prune_stale_instances()
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                self._heartbeat_failures += 1
-                if self._heartbeat_failures >= self._heartbeat_error_threshold:
-                    logger.error(
-                        "Heartbeat failed repeatedly (%s consecutive): %s",
-                        self._heartbeat_failures,
-                        e,
-                    )
-                else:
-                    logger.warning(
-                        "Heartbeat transient failure (%s/%s): %s",
-                        self._heartbeat_failures,
-                        self._heartbeat_error_threshold,
-                        e,
-                    )
+                self._record_heartbeat_failure(e, phase="heartbeat")
+                if self._heartbeat_failure_class == "REDIS_MAXMEMORY":
+                    await self._prune_stale_instances()
+
+    async def _prune_stale_instances(self) -> None:
+        """Bound the shared registry even when its dashboard is never opened."""
+        if not self._redis:
+            return
+        try:
+            all_instances = await self._redis.hgetall(self._registry_key)
+            now = datetime.now(UTC)
+            stale_ids = []
+            for inst_id, data_str in all_instances.items():
+                try:
+                    data = json.loads(data_str)
+                    last_hb = datetime.fromisoformat(data["last_heartbeat"])
+                    age_sec = (now - last_hb).total_seconds()
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                    stale_ids.append(inst_id)
+                    continue
+                if age_sec > self._stale_threshold * 3:
+                    stale_ids.append(inst_id)
+            if stale_ids:
+                await self._redis.hdel(self._registry_key, *stale_ids)
+        except Exception as exc:
+            logger.warning(
+                "Instance registry prune failed: failure_class=%s",
+                classify_redis_failure(exc),
+            )
 
     async def get_active_instances(self) -> list[dict[str, Any]]:
         """Get all active instances from registry."""
@@ -121,8 +172,6 @@ class HorizontalScalingManager:
             return [self._instance_info.to_dict()]
 
         try:
-            import json
-
             all_instances = await self._redis.hgetall(self._registry_key)
             active = []
             now = datetime.now(UTC)
@@ -144,7 +193,10 @@ class HorizontalScalingManager:
 
             return active
         except Exception as e:
-            logger.error(f"Failed to fetch instances: {e}")
+            logger.error(
+                "Failed to fetch instances: failure_class=%s",
+                classify_redis_failure(e),
+            )
             return [self._instance_info.to_dict()]
 
     async def deregister(self):
@@ -177,11 +229,17 @@ class HorizontalScalingManager:
 
     def readiness_check(self) -> dict[str, Any]:
         """Load balancer readiness data."""
+        heartbeat_ready = not self._redis or self._heartbeat_failures < self._heartbeat_error_threshold
         return {
-            "ready": True,
+            "ready": heartbeat_ready,
             "instance_id": self._instance_id,
             "uptime_seconds": 0,
             "scaling_mode": self._scaling_mode,
+            "heartbeat": {
+                "status": "healthy" if heartbeat_ready else "unhealthy",
+                "consecutive_failures": self._heartbeat_failures,
+                "failure_class": self._heartbeat_failure_class,
+            },
             "timestamp": datetime.now(UTC).isoformat(),
         }
 

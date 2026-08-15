@@ -17,6 +17,8 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
+from infra.redis_capacity import classify_redis_failure, redis_memory_capacity
+
 logger = logging.getLogger("infra.redis_cluster")
 
 
@@ -178,9 +180,10 @@ class RedisClusterManager:
             latency_ms = round((time.time() - start) * 1000, 2)
 
             info = await self._redis.info("server", "memory", "clients", "stats")
+            capacity = redis_memory_capacity(info)
             result.update(
                 {
-                    "status": "healthy",
+                    "status": "unhealthy" if capacity["state"] == "exhausted" else "healthy",
                     "latency_ms": latency_ms,
                     "redis_version": info.get("redis_version", "unknown"),
                     "connected_clients": info.get("connected_clients", 0),
@@ -190,8 +193,11 @@ class RedisClusterManager:
                     "total_commands_processed": info.get("total_commands_processed", 0),
                     "keyspace_hits": info.get("keyspace_hits", 0),
                     "keyspace_misses": info.get("keyspace_misses", 0),
+                    "memory_capacity": capacity,
                 }
             )
+            if capacity["state"] == "exhausted":
+                self._metrics["health_failures"] += 1
 
             if self._mode == "cluster":
                 try:
@@ -208,7 +214,7 @@ class RedisClusterManager:
 
         except Exception as e:
             result["status"] = "unhealthy"
-            result["error"] = str(e)
+            result["failure_class"] = classify_redis_failure(e)
             self._metrics["health_failures"] += 1
 
         return result

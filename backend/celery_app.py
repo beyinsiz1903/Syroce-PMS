@@ -76,6 +76,12 @@ celery_app.conf.update(
     worker_prefetch_multiplier=4,
     worker_max_tasks_per_child=1000,
     # Result backend
+    # Periodic/operational task results are persisted durably by the tasks
+    # themselves and are never polled through Celery. Avoid duplicating every
+    # minute-level result in the shared Redis broker/cache. ML training opts
+    # back in explicitly because GET /api/ml/jobs/{task_id} consumes it.
+    task_ignore_result=True,
+    task_store_errors_even_if_ignored=False,
     result_expires=86400,  # 24 hours
     result_backend_transport_options={"master_name": "mymaster"},
     # Broker settings
