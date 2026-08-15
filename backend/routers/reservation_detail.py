@@ -609,6 +609,28 @@ async def transfer_to_cari(
     if not cari:
         raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
 
+    folio = await db.folios.find_one(
+        {"booking_id": booking_id, "tenant_id": tid, "status": "open"},
+        {"_id": 0},
+    )
+    if not folio:
+        from core.utils import generate_folio_number
+
+        folio = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tid,
+            "booking_id": booking_id,
+            "folio_number": await generate_folio_number(tid),
+            "folio_type": "guest",
+            "status": "open",
+            "guest_id": booking.get("guest_id"),
+            "balance": 0.0,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        await db.folios.insert_one({**folio})
+
+    now = datetime.now(UTC).isoformat()
+
     # Create cari transaction
     transaction = {
         "id": str(uuid.uuid4()),
@@ -619,14 +641,32 @@ async def transfer_to_cari(
         "amount": data.amount,
         "description": data.description or f"Rezervasyon {booking_id} - Cariye aktarım",
         "posted_by": current_user.name,
-        "created_at": datetime.now(UTC).isoformat(),
+        "created_at": now,
     }
     await db.cari_transactions.insert_one({**transaction})
 
-    # Update cari balance
+    payment = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "folio_id": folio["id"],
+        "booking_id": booking_id,
+        "amount": data.amount,
+        "method": "city_ledger",
+        "payment_type": "city_ledger_transfer",
+        "status": "paid",
+        "reference": data.cari_account_id,
+        "notes": data.description,
+        "processed_by": current_user.name,
+        "processed_at": now,
+        "voided": False,
+    }
+    await db.payments.insert_one({**payment})
+
+    # Keep both historical field names aligned while existing account rows are
+    # migrated lazily by normal operations.
     await db.cari_accounts.update_one(
         {"id": data.cari_account_id, "tenant_id": tid},
-        {"$inc": {"current_balance": data.amount}},
+        {"$inc": {"balance": data.amount, "current_balance": data.amount}},
     )
 
     # Mark as paid on the booking side (transferred to cari)
@@ -635,6 +675,7 @@ async def transfer_to_cari(
         {"id": booking_id, "tenant_id": tid},
         {"$set": {"paid_amount": round(new_paid, 2)}},
     )
+    await _refresh_cached_folio_balance(tid, folio["id"])
 
     await _log_activity(
         tid,
@@ -649,7 +690,8 @@ async def transfer_to_cari(
     )
 
     transaction.pop("_id", None)
-    return {"success": True, "transaction": transaction}
+    payment.pop("_id", None)
+    return {"success": True, "transaction": transaction, "payment": payment}
 
 
 @router.post("/reservations/{booking_id}/record-agency-payment")
@@ -1541,6 +1583,7 @@ async def create_cari_account(
         "contact_phone": data.contact_phone,
         "credit_limit": data.credit_limit,
         "payment_terms_days": data.payment_terms_days,
+        "balance": 0.0,
         "current_balance": 0.0,
         "status": "active",
         "created_by": current_user.name,
@@ -1607,7 +1650,7 @@ async def reconcile_cari_account(
     # Update account balance
     await db.cari_accounts.update_one(
         {"id": account_id, "tenant_id": tid},
-        {"$inc": {"balance": -data.amount}},
+        {"$inc": {"balance": -data.amount, "current_balance": -data.amount}},
     )
 
     return {"success": True, "transaction": txn}
@@ -1667,8 +1710,14 @@ async def transfer_cari_to_agency(
     credit_txn.pop("_id", None)
 
     # Update balances
-    await db.cari_accounts.update_one({"id": account_id, "tenant_id": tid}, {"$inc": {"balance": -data.amount}})
-    await db.cari_accounts.update_one({"id": data.cari_account_id, "tenant_id": tid}, {"$inc": {"balance": data.amount}})
+    await db.cari_accounts.update_one(
+        {"id": account_id, "tenant_id": tid},
+        {"$inc": {"balance": -data.amount, "current_balance": -data.amount}},
+    )
+    await db.cari_accounts.update_one(
+        {"id": data.cari_account_id, "tenant_id": tid},
+        {"$inc": {"balance": data.amount, "current_balance": data.amount}},
+    )
 
     return {"success": True, "debit": debit_txn, "credit": credit_txn}
 
