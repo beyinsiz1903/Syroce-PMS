@@ -31,6 +31,7 @@ unaffected.
 
 import os
 import ssl
+from collections.abc import Mapping
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 _CERT_REQS_MAP = {
@@ -40,6 +41,19 @@ _CERT_REQS_MAP = {
 }
 
 _DEFAULT_CERT_REQS = "none"
+
+
+def resolve_celery_redis_urls(environ: Mapping[str, str]) -> tuple[str, str, str]:
+    """Resolve cache, Celery broker, and result URLs without exposing values.
+
+    Production may isolate the Celery broker from cache pressure. Existing
+    single-Redis deployments retain their current behavior when no explicit
+    Celery URL is configured.
+    """
+    cache_url = environ.get("REDIS_URL", "").strip() or "redis://localhost:6379/0"
+    broker_url = environ.get("CELERY_BROKER_URL", "").strip() or cache_url
+    result_backend_url = environ.get("CELERY_RESULT_BACKEND_URL", "").strip() or broker_url
+    return cache_url, broker_url, result_backend_url
 
 
 def _configured_cert_reqs_str() -> str:
