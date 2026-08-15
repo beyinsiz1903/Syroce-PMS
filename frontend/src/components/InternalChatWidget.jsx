@@ -46,7 +46,7 @@ const InternalChatWidget = ({ user }) => {
           role="dialog"
           aria-label="Personel Mesajlaşması"
           data-testid="internal-chat-widget-panel"
-          className="fixed bottom-24 right-6 z-50 flex flex-col w-[400px] max-w-[calc(100vw-2rem)] h-[600px] max-h-[calc(100vh-9rem)] rounded-2xl border bg-background shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200"
+          className="fixed bottom-40 right-6 z-50 flex flex-col w-[400px] max-w-[calc(100vw-2rem)] h-[600px] max-h-[calc(100vh-13rem)] rounded-2xl border bg-background shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200"
         >
           <div className="flex items-center gap-2 px-3 py-2.5 border-b bg-muted/40 shrink-0">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shrink-0">
@@ -90,7 +90,7 @@ const InternalChatWidget = ({ user }) => {
         data-testid="button-toggle-chat-widget"
         aria-expanded={open}
         aria-label={open ? 'Mesajlaşmayı kapat' : 'Personel mesajlaşmasını aç'}
-        className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full p-0 shadow-lg shadow-black/20 transition-transform hover:scale-105"
+        className="fixed bottom-24 right-6 z-50 h-14 w-14 rounded-full p-0 shadow-lg shadow-black/20 transition-transform hover:scale-105"
       >
         {open ? <X className="h-6 w-6" /> : <MessagesSquare className="h-6 w-6" />}
         {!open && unread > 0 && (
