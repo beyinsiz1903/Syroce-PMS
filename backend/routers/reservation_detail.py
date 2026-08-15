@@ -28,6 +28,16 @@ def _enforce_perm(role: str, op: str) -> None:
     _rps.enforce_permission(role, op)
 
 
+def _cari_balance(account: dict) -> float:
+    """Resolve legacy cari balance fields without losing posted receivables."""
+    values = [
+        float(account.get(field) or 0)
+        for field in ("balance", "current_balance")
+        if field in account
+    ]
+    return max(values, default=0.0)
+
+
 from models.schemas.bookings import BookingCreate
 from modules.reservations.services.create_reservation_service import (
     CreateReservationService,
@@ -609,6 +619,28 @@ async def transfer_to_cari(
     if not cari:
         raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
 
+    folio = await db.folios.find_one(
+        {"booking_id": booking_id, "tenant_id": tid, "status": "open"},
+        {"_id": 0},
+    )
+    if not folio:
+        from core.utils import generate_folio_number
+
+        folio = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tid,
+            "booking_id": booking_id,
+            "folio_number": await generate_folio_number(tid),
+            "folio_type": "guest",
+            "status": "open",
+            "guest_id": booking.get("guest_id"),
+            "balance": 0.0,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        await db.folios.insert_one({**folio})
+
+    now = datetime.now(UTC).isoformat()
+
     # Create cari transaction
     transaction = {
         "id": str(uuid.uuid4()),
@@ -619,14 +651,38 @@ async def transfer_to_cari(
         "amount": data.amount,
         "description": data.description or f"Rezervasyon {booking_id} - Cariye aktarım",
         "posted_by": current_user.name,
-        "created_at": datetime.now(UTC).isoformat(),
+        "created_at": now,
     }
     await db.cari_transactions.insert_one({**transaction})
 
-    # Update cari balance
+    payment = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "folio_id": folio["id"],
+        "booking_id": booking_id,
+        "amount": data.amount,
+        "method": "city_ledger",
+        "payment_type": "city_ledger_transfer",
+        "status": "paid",
+        "reference": data.cari_account_id,
+        "notes": data.description,
+        "processed_by": current_user.name,
+        "processed_at": now,
+        "voided": False,
+    }
+    await db.payments.insert_one({**payment})
+
+    # Keep both historical field names aligned while existing account rows are
+    # migrated lazily by normal operations.
+    new_cari_balance = _cari_balance(cari) + data.amount
     await db.cari_accounts.update_one(
         {"id": data.cari_account_id, "tenant_id": tid},
-        {"$inc": {"current_balance": data.amount}},
+        {
+            "$set": {
+                "balance": new_cari_balance,
+                "current_balance": new_cari_balance,
+            }
+        },
     )
 
     # Mark as paid on the booking side (transferred to cari)
@@ -635,6 +691,7 @@ async def transfer_to_cari(
         {"id": booking_id, "tenant_id": tid},
         {"$set": {"paid_amount": round(new_paid, 2)}},
     )
+    await _refresh_cached_folio_balance(tid, folio["id"])
 
     await _log_activity(
         tid,
@@ -649,7 +706,8 @@ async def transfer_to_cari(
     )
 
     transaction.pop("_id", None)
-    return {"success": True, "transaction": transaction}
+    payment.pop("_id", None)
+    return {"success": True, "transaction": transaction, "payment": payment}
 
 
 @router.post("/reservations/{booking_id}/record-agency-payment")
@@ -1541,6 +1599,7 @@ async def create_cari_account(
         "contact_phone": data.contact_phone,
         "credit_limit": data.credit_limit,
         "payment_terms_days": data.payment_terms_days,
+        "balance": 0.0,
         "current_balance": 0.0,
         "status": "active",
         "created_by": current_user.name,
@@ -1590,6 +1649,10 @@ async def reconcile_cari_account(
     if not account:
         raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
 
+    current_balance = _cari_balance(account)
+    if data.amount > current_balance:
+        raise HTTPException(status_code=422, detail="Mahsuplaştırma tutarı cari bakiyeyi aşamaz")
+
     txn = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
@@ -1607,7 +1670,12 @@ async def reconcile_cari_account(
     # Update account balance
     await db.cari_accounts.update_one(
         {"id": account_id, "tenant_id": tid},
-        {"$inc": {"balance": -data.amount}},
+        {
+            "$set": {
+                "balance": current_balance - data.amount,
+                "current_balance": current_balance - data.amount,
+            }
+        },
     )
 
     return {"success": True, "transaction": txn}
@@ -1632,6 +1700,11 @@ async def transfer_cari_to_agency(
     target = await db.cari_accounts.find_one({"id": data.cari_account_id, "tenant_id": tid}, {"_id": 0})
     if not target:
         raise HTTPException(status_code=404, detail="Hedef cari hesap bulunamadı")
+
+    source_balance = _cari_balance(source)
+    if data.amount > source_balance:
+        raise HTTPException(status_code=422, detail="Aktarım tutarı kaynak cari bakiyeyi aşamaz")
+    target_balance = _cari_balance(target)
 
     now = datetime.now(UTC).isoformat()
     actor = current_user.name or current_user.email
@@ -1667,8 +1740,24 @@ async def transfer_cari_to_agency(
     credit_txn.pop("_id", None)
 
     # Update balances
-    await db.cari_accounts.update_one({"id": account_id, "tenant_id": tid}, {"$inc": {"balance": -data.amount}})
-    await db.cari_accounts.update_one({"id": data.cari_account_id, "tenant_id": tid}, {"$inc": {"balance": data.amount}})
+    await db.cari_accounts.update_one(
+        {"id": account_id, "tenant_id": tid},
+        {
+            "$set": {
+                "balance": source_balance - data.amount,
+                "current_balance": source_balance - data.amount,
+            }
+        },
+    )
+    await db.cari_accounts.update_one(
+        {"id": data.cari_account_id, "tenant_id": tid},
+        {
+            "$set": {
+                "balance": target_balance + data.amount,
+                "current_balance": target_balance + data.amount,
+            }
+        },
+    )
 
     return {"success": True, "debit": debit_txn, "credit": credit_txn}
 

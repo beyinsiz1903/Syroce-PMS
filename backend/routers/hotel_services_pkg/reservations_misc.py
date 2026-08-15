@@ -194,6 +194,7 @@ async def create_cari_account(
         "phone": body.phone,
         "email": body.email,
         "balance": 0,
+        "current_balance": 0,
         "is_active": True,
         "created_at": datetime.now(UTC).isoformat(),
         "created_by": current_user.name,
