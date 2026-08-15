@@ -119,7 +119,7 @@ function App() {
         })
         .catch((error) => {
           const status = error?.response?.status;
-          if (status === 401 || status === 403) {
+          if (status === 401) {
             clearAuthStorage();
             setIsAuthenticated(false);
             return;
@@ -128,7 +128,7 @@ function App() {
           // A deployment restart or a short network outage must not turn
           // into an implicit logout. Keep the last verified local identity;
           // API authorization remains enforced by the server and the global
-          // interceptor will still hard-logout on a definitive 401/403.
+          // interceptor will still hard-logout on a definitive 401.
           try {
             const cachedUser = JSON.parse(storedUser);
             const cachedTenant = storedTenant && storedTenant !== "null"

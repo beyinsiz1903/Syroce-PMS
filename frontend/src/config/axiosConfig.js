@@ -111,7 +111,7 @@ function _hardLogout() {
 
 // Refresh sonucu üç durumdan biri:
 //   { token: string }  — başarılı, retry yapılır
-//   { transient: true } — 5xx/ağ; oturum SİLİNMEZ, istek reddedilir
+//   { transient: true } — geçici servis/ağ hatası; oturum SİLİNMEZ, istek reddedilir
 //   { invalid: true }  — 401/400; refresh token gerçekten ölmüş, hard logout
 async function _attemptRefresh(retryCount = 0) {
   const refreshToken = localStorage.getItem("refresh_token");
@@ -159,8 +159,8 @@ async function _attemptRefresh(retryCount = 0) {
         }
       }
       
-      if (!status || status >= 500) return { transient: true };
-      return { invalid: true };
+      if (status === 400 || status === 401) return { invalid: true };
+      return { transient: true };
     } finally {
       // Only clear if the current in-flight promise is still this execution's promise.
       // (If a retry was triggered, _refreshInFlight would have been re-assigned or set to null).
