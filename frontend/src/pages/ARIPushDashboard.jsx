@@ -189,6 +189,10 @@ const ARIPushDashboard = ({
     fetchTab(activeTab, false);
   }, [activeTab, scopeReady, fetchTab]);
   const pushPending = async () => {
+    if (Number(stats?.pending_changes ?? 0) === 0) {
+      toast.warning('Gönderilecek bekleyen değişiklik bulunmuyor.');
+      return;
+    }
     const ok = await confirmDialog({
       title: 'Bekleyenleri gönder',
       message: providerFilter === 'all' ? 'Tüm sağlayıcılara bekleyen değişiklik setleri gönderilecek. Onaylıyor musunuz?' : `${providerFilter} sağlayıcısına bekleyen değişiklik setleri gönderilecek. Onaylıyor musunuz?`,
@@ -292,7 +296,13 @@ const ARIPushDashboard = ({
   }
   return <div data-testid="ari-push-dashboard" className="space-y-5 p-4 sm:p-6">
       <PageHeader icon={Zap} title="ARI Push Motoru" subtitle={t('cm.pages_ARIPushDashboard.stok_fiyat_ve_kisitlama_itme_ardisik_duz_e1aae')} actions={<>
-            <Button data-testid="push-pending-btn" onClick={pushPending} size="sm">
+            <Button
+              data-testid="push-pending-btn"
+              onClick={pushPending}
+              size="sm"
+              disabled={loading || Number(stats?.pending_changes ?? 0) === 0}
+              title={Number(stats?.pending_changes ?? 0) === 0 ? 'Gönderilecek bekleyen değişiklik yok' : undefined}
+            >
               <Zap className="w-4 h-4 mr-1.5" /> {t('cm.pages_ARIPushDashboard.bekleyenleri_gonder')}
             </Button>
             <Button data-testid="refresh-btn" onClick={refreshActiveTab} variant="outline" size="sm" disabled={loading || refreshingTab}>

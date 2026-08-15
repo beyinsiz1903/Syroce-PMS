@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -11,6 +12,8 @@ import { DollarSign, AlertTriangle, Lightbulb } from 'lucide-react';
 
 const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPaymentForm, onPaymentDone }) => {
   const { t } = useTranslation();
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   const balance = selectedBooking
     ? Math.max(0, (selectedBooking.total_amount || 0) - (selectedBooking.paid_amount || 0))
@@ -19,11 +22,22 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
   const isOverPayment = paymentForm.amount > balance && balance > 0;
 
   const handleSubmit = async () => {
+    const amount = Number(paymentForm.amount);
+    if (submittingRef.current || !selectedBooking) return;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('Sıfırdan büyük ödeme tutarı gerekli');
+      return;
+    }
+    submittingRef.current = true;
+    setSubmitting(true);
     try {
       const folioRes = await axios.get(`/folio/booking/${selectedBooking.id}`);
       if (folioRes.data && folioRes.data.length > 0) {
         const folio = folioRes.data[0];
-        await axios.post(`/folio/${folio.id}/payment`, paymentForm);
+        const idempotencyKey = window.crypto?.randomUUID?.() || `payment-${Date.now()}-${Math.random()}`;
+        await axios.post(`/folio/${folio.id}/payment`, paymentForm, {
+          headers: { 'Idempotency-Key': idempotencyKey },
+        });
         toast.success(t('messages.success.saved'));
         onClose();
         setPaymentForm({ amount: 0, method: 'card', payment_type: 'interim', reference: '', notes: '' });
@@ -34,6 +48,9 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
     } catch (error) {
       toast.error(t('messages.error.saveFailed'));
       console.error(error);
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -133,7 +150,12 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
             </div>
             <div className="flex justify-end gap-2 pt-4 border-t">
               <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
-              <Button onClick={handleSubmit} className="bg-[#C09D63] hover:bg-[#B08D55] text-white" data-testid="payment-submit-btn">
+              <Button
+                onClick={handleSubmit}
+                disabled={submitting || !Number.isFinite(Number(paymentForm.amount)) || Number(paymentForm.amount) <= 0}
+                className="bg-[#C09D63] hover:bg-[#B08D55] text-white"
+                data-testid="payment-submit-btn"
+              >
                 <DollarSign className="w-4 h-4 mr-2" />
                 {t('folio.postPayment')}
               </Button>

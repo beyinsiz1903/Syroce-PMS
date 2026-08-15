@@ -326,6 +326,8 @@ const MobileFinance = ({ user }) => {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Button
+              aria-label="Geri"
+              title="Geri"
               variant="ghost"
               size="sm"
               onClick={() => navigate('/mobile')}
@@ -345,6 +347,7 @@ const MobileFinance = ({ user }) => {
               </div>
             )}
             <Button
+              aria-label="Ana Sayfa"
               variant="ghost"
               size="sm"
               onClick={() => navigate('/')}
@@ -354,6 +357,7 @@ const MobileFinance = ({ user }) => {
               <Home className="w-5 h-5" />
             </Button>
             <Button
+              aria-label="Aylık Özet PDF"
               variant="ghost"
               size="sm"
               onClick={downloadPLReport}
@@ -363,6 +367,8 @@ const MobileFinance = ({ user }) => {
               <FileDown className="w-5 h-5" />
             </Button>
             <Button
+              aria-label="Yenile"
+              title="Yenile"
               variant="ghost"
               size="sm"
               onClick={handleRefresh}
@@ -540,7 +546,7 @@ const MobileFinance = ({ user }) => {
                   <AlertTriangle className="w-5 h-5 mr-2 text-red-600" />
                   Risk Uyarıları ({riskAlerts.summary.total_alerts})
                 </div>
-                <Button size="sm" variant="ghost" onClick={loadRiskDetails}>
+                <Button aria-label="Risk ayrıntıları" title="Risk ayrıntıları" size="sm" variant="ghost" onClick={loadRiskDetails}>
                   <Eye className="w-4 h-4" />
                 </Button>
               </CardTitle>
@@ -581,7 +587,7 @@ const MobileFinance = ({ user }) => {
                   <Wallet className="w-5 h-5 mr-2 text-cyan-600" />
                   Bugünkü Nakit Akışı
                 </div>
-                <Button size="sm" variant="ghost" onClick={loadCashFlowDetail}>
+                <Button aria-label="Nakit akışı ayrıntıları" title="Nakit akışı ayrıntıları" size="sm" variant="ghost" onClick={loadCashFlowDetail}>
                   <ArrowUpCircle className="w-4 h-4" />
                 </Button>
               </CardTitle>

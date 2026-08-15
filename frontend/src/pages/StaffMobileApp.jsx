@@ -178,6 +178,8 @@ const StaffMobileApp = ({ user }) => {
                       Complete
                     </Button>
                     <Button
+                      aria-label="Göreve not ekle"
+                      title="Göreve not ekle"
                       size="sm"
                       variant="outline"
                       onClick={() => setSelectedTask(task)}

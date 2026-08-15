@@ -117,8 +117,6 @@ async def create_approval_request(
 # 2. GET /api/approvals/pending - Get pending approvals
 
 
-@router.get("/approvals/pending")
-@router.get("/approvals/my-requests")
 @router.put("/approvals/{approval_id}/approve")
 async def approve_request(
     approval_id: str,
@@ -181,8 +179,6 @@ async def approve_request(
 # 5. PUT /api/approvals/{approval_id}/reject - Reject request
 
 
-@router.get("/approvals/my-requests")
-@router.put("/approvals/{approval_id}/approve")
 async def approve_request_v2(
     approval_id: str,
     request: ApprovalActionRequest,
@@ -244,7 +240,6 @@ async def approve_request_v2(
 # 5. PUT /api/approvals/{approval_id}/reject - Reject request
 
 
-@router.put("/approvals/{approval_id}/approve")
 async def approve_request_v3(
     approval_id: str,
     request: ApprovalActionRequest,

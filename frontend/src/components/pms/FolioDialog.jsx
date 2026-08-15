@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
@@ -17,10 +17,17 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
   });
   const [chargeSubmitting, setChargeSubmitting] = useState(false);
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const chargeSubmittingRef = useRef(false);
+  const paymentSubmittingRef = useRef(false);
 
   const handleAddCharge = async (e) => {
     e.preventDefault();
-    if (chargeSubmitting) return;
+    if (chargeSubmittingRef.current) return;
+    if (!newCharge.description.trim() || !Number.isFinite(newCharge.amount) || newCharge.amount <= 0) {
+      toast.error('Açıklama ve sıfırdan büyük tutar gerekli');
+      return;
+    }
+    chargeSubmittingRef.current = true;
     setChargeSubmitting(true);
     try {
       const idempotencyKey = window.crypto?.randomUUID?.() || `folio-charge-${Date.now()}-${Math.random()}`;
@@ -33,22 +40,32 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to add charge');
     } finally {
+      chargeSubmittingRef.current = false;
       setChargeSubmitting(false);
     }
   };
 
   const handleProcessPayment = async (e) => {
     e.preventDefault();
-    if (paymentSubmitting) return;
+    if (paymentSubmittingRef.current) return;
+    if (!Number.isFinite(newPayment.amount) || newPayment.amount <= 0) {
+      toast.error('Sıfırdan büyük ödeme tutarı gerekli');
+      return;
+    }
+    paymentSubmittingRef.current = true;
     setPaymentSubmitting(true);
     try {
-      await axios.post(`/frontdesk/folio/${bookingId}/payment`, newPayment);
+      const idempotencyKey = window.crypto?.randomUUID?.() || `folio-payment-${Date.now()}-${Math.random()}`;
+      await axios.post(`/frontdesk/folio/${bookingId}/payment`, newPayment, {
+        headers: { 'Idempotency-Key': idempotencyKey },
+      });
       toast.success('Payment processed');
       await onFolioUpdated?.();
       setNewPayment({ amount: 0, method: 'card', reference: '', notes: '' });
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to process payment');
     } finally {
+      paymentSubmittingRef.current = false;
       setPaymentSubmitting(false);
     }
   };
@@ -105,7 +122,10 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
                     onChange={(e) => setNewCharge((prev) => ({...prev, amount: Number(e.target.value) || 0}))}
                     required
                   />
-                  <Button type="submit" disabled={chargeSubmitting}>
+                  <Button
+                    type="submit"
+                    disabled={chargeSubmitting || !newCharge.description.trim() || !Number.isFinite(newCharge.amount) || newCharge.amount <= 0}
+                  >
                     {t('pms.addCharge', 'Add Charge')}
                   </Button>
                 </div>
@@ -150,7 +170,10 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
                     value={newPayment.reference}
                     onChange={(e) => setNewPayment((prev) => ({...prev, reference: e.target.value}))}
                   />
-                  <Button type="submit" disabled={paymentSubmitting}>
+                  <Button
+                    type="submit"
+                    disabled={paymentSubmitting || !Number.isFinite(newPayment.amount) || newPayment.amount <= 0}
+                  >
                     {t('pms.processPayment', 'Process Payment')}
                   </Button>
                 </div>

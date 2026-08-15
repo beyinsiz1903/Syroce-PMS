@@ -73,4 +73,16 @@ describe('ARI provider test harness disclosure', () => {
     expect(toastInfo).toHaveBeenCalledWith(expect.stringContaining('provider doğrulanmadı'));
     expect(toastSuccess).not.toHaveBeenCalled();
   });
+
+  it('disables provider delivery when there are no pending changes', async () => {
+    render(<ARIPushDashboard user={{ tenant_id: 'tenant-1', hotel_id: 'hotel-1' }} tenant={{}} />);
+
+    const pushButton = await screen.findByTestId('push-pending-btn');
+    await waitFor(() => expect(pushButton).toBeDisabled());
+    expect(pushButton).toHaveAttribute('title', 'Gönderilecek bekleyen değişiklik yok');
+
+    fireEvent.click(pushButton);
+    expect(confirmDialog).not.toHaveBeenCalled();
+    expect(axiosPost).not.toHaveBeenCalled();
+  });
 });

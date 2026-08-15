@@ -158,6 +158,7 @@ describe('PMS manually discovered operation regressions', () => {
     await waitFor(() => expect(post).toHaveBeenCalledWith(
       '/frontdesk/folio/booking-test/payment',
       expect.objectContaining({ amount: 25, method: 'card' }),
+      expect.objectContaining({ headers: expect.objectContaining({ 'Idempotency-Key': expect.any(String) }) }),
     ));
     expect(onFolioUpdated).toHaveBeenCalledTimes(2);
   });

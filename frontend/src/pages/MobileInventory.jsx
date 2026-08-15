@@ -28,6 +28,7 @@ import {
   Activity
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { canAdjustMobileInventory } from '@/utils/mobilePermissions';
 
 const MobileInventory = ({ user }) => {
   const { t } = useTranslation();
@@ -186,15 +187,6 @@ const MobileInventory = ({ user }) => {
     }
   };
 
-  const canAdjustStock = () => {
-    const allowedRoles = ['admin', 'warehouse', 'fnb_manager', 'supervisor'];
-    if (user?.role === 'super_admin') return true;
-    if (Array.isArray(user?.roles) && user.roles.includes('super_admin')) return true;
-    if (allowedRoles.includes(user?.role)) return true;
-    if (Array.isArray(user?.roles) && user.roles.some((r) => allowedRoles.includes(r))) return true;
-    return false;
-  };
-
   // Stats
   const stats = {
     total: stockItems.length,
@@ -220,7 +212,7 @@ const MobileInventory = ({ user }) => {
       <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg transition">
+            <button aria-label="Geri" title="Geri" onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg transition">
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div>
@@ -231,6 +223,8 @@ const MobileInventory = ({ user }) => {
           
           <div className="flex items-center gap-2">
             <button
+              aria-label="Yenile"
+              title="Yenile"
               onClick={handleRefresh}
               className="p-2 hover:bg-white/20 rounded-lg transition"
               disabled={refreshing}
@@ -238,6 +232,8 @@ const MobileInventory = ({ user }) => {
               <RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
             <button
+              aria-label="Stok hareketleri"
+              title="Stok hareketleri"
               onClick={loadMovements}
               className="p-2 hover:bg-white/20 rounded-lg transition"
             >
@@ -352,7 +348,7 @@ const MobileInventory = ({ user }) => {
                 )}
 
                 {/* Adjust Stock Button (only for authorized roles) */}
-                {canAdjustStock() && (
+                {canAdjustMobileInventory(user) && (
                   <Button
                     size="sm"
                     onClick={() => openAdjustModal(item)}
@@ -548,6 +544,8 @@ const MobileInventory = ({ user }) => {
       {/* Quick Access Buttons */}
       <div className="fixed bottom-4 right-4 flex flex-col gap-2">
         <Button
+          aria-label="Düşük stok uyarıları"
+          title="Düşük stok uyarıları"
           onClick={() => setAlertsModalOpen(true)}
           className="rounded-full w-14 h-14 shadow-lg bg-amber-600 hover:bg-amber-700 relative"
         >
@@ -559,6 +557,8 @@ const MobileInventory = ({ user }) => {
           )}
         </Button>
         <Button
+          aria-label="Stok hareketleri"
+          title="Stok hareketleri"
           onClick={loadMovements}
           className="rounded-full w-14 h-14 shadow-lg bg-blue-600 hover:bg-blue-700"
         >

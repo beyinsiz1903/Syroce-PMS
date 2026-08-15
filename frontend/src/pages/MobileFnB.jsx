@@ -225,6 +225,8 @@ const MobileFnB = ({ user }) => {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <Button
+                aria-label="Geri"
+                title="Geri"
                 variant="ghost"
                 size="sm"
                 onClick={() => navigate('/mobile')}
@@ -239,6 +241,7 @@ const MobileFnB = ({ user }) => {
             </div>
             <div className="flex items-center space-x-2">
               <Button
+                aria-label="Ana Sayfa"
                 variant="ghost"
                 size="sm"
                 onClick={() => navigate('/')}
@@ -248,6 +251,8 @@ const MobileFnB = ({ user }) => {
                 <Home className="w-5 h-5" />
               </Button>
               <Button
+                aria-label="Yenile"
+                title="Yenile"
                 variant="ghost"
                 size="sm"
                 onClick={handleRefresh}
@@ -489,7 +494,7 @@ const MobileFnB = ({ user }) => {
                     <div className="flex items-center space-x-2">
                       {orderItems.find(i => i.item_id === item.id) && (
                         <>
-                          <Button size="sm" variant="outline" onClick={() => handleRemoveItem(item.id)}>
+                          <Button aria-label={`${item.name} azalt`} title={`${item.name} azalt`} size="sm" variant="outline" onClick={() => handleRemoveItem(item.id)}>
                             <Minus className="w-3 h-3" />
                           </Button>
                           <span className="text-sm font-bold">
@@ -497,7 +502,7 @@ const MobileFnB = ({ user }) => {
                           </span>
                         </>
                       )}
-                      <Button size="sm" onClick={() => handleAddItem(item)}>
+                      <Button aria-label={`${item.name} ekle`} title={`${item.name} ekle`} size="sm" onClick={() => handleAddItem(item)}>
                         <Plus className="w-3 h-3" />
                       </Button>
                     </div>

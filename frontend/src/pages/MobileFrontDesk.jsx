@@ -373,6 +373,8 @@ const MobileFrontDesk = ({ user }) => {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Button
+              aria-label="Geri"
+              title="Geri"
               variant="ghost"
               size="sm"
               onClick={() => navigate('/mobile')}
@@ -387,6 +389,7 @@ const MobileFrontDesk = ({ user }) => {
           </div>
           <div className="flex items-center space-x-2">
             <Button
+              aria-label="Ana Sayfa"
               variant="ghost"
               size="sm"
               onClick={() => navigate('/')}
@@ -396,6 +399,8 @@ const MobileFrontDesk = ({ user }) => {
               <Home className="w-5 h-5" />
             </Button>
             <Button
+              aria-label="Yenile"
+              title="Yenile"
               variant="ghost"
               size="sm"
               onClick={handleRefresh}
@@ -1014,7 +1019,7 @@ const MobileFrontDesk = ({ user }) => {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
               />
-              <Button onClick={handleSearch} className="bg-indigo-600">
+              <Button aria-label="Ara" title="Ara" onClick={handleSearch} className="bg-indigo-600">
                 <Search className="w-4 h-4" />
               </Button>
             </div>

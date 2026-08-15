@@ -119,7 +119,7 @@ const RevenueMobile = ({ user }) => {
       <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg">
+            <button aria-label="Geri" title="Geri" onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg">
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div>
@@ -127,7 +127,7 @@ const RevenueMobile = ({ user }) => {
               <p className="text-blue-100 text-sm">Revenue Management</p>
             </div>
           </div>
-          <button onClick={loadData} className="p-2 hover:bg-white/20 rounded-lg">
+          <button aria-label="Yenile" title="Yenile" onClick={loadData} className="p-2 hover:bg-white/20 rounded-lg">
             <RefreshCw className="h-5 w-5" />
           </button>
         </div>

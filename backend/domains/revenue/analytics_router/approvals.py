@@ -48,6 +48,23 @@ _SYSTEM_HEALTH_TTL = 5.0  # seconds
 
 router = APIRouter(prefix="/api", tags=["analytics"])
 
+APPROVAL_MANAGER_ROLES = {
+    "admin",
+    "manager",
+    "supervisor",
+    "fnb_manager",
+    "gm",
+    "finance_manager",
+}
+
+
+def can_manage_approvals(user) -> bool:
+    if _is_super_admin(user):
+        return True
+    roles = {getattr(user, "role", None)}
+    roles.update(getattr(user, "roles", None) or [])
+    return bool(APPROVAL_MANAGER_ROLES.intersection(roles))
+
 
 # ── POST /approvals/request ──
 @router.post("/approvals/request")
@@ -96,7 +113,7 @@ async def get_pending_approvals(credentials: HTTPAuthorizationCredentials = Depe
     current_user = await get_current_user(credentials)
 
     # Only managers and admins can see approvals (Sprint 33: super_admin included)
-    if not _is_super_admin(current_user) and current_user.role not in ["admin", "manager", "gm", "super_admin"]:
+    if not can_manage_approvals(current_user):
         raise HTTPException(status_code=403, detail="Access denied")
 
     approvals = []
@@ -153,7 +170,7 @@ async def approve_request(
     current_user = await get_current_user(credentials)
 
     # Only managers and admins can approve (super_admin always allowed)
-    if not _is_super_admin(current_user) and current_user.role not in ["admin", "manager", "gm"]:
+    if not can_manage_approvals(current_user):
         raise HTTPException(status_code=403, detail="Access denied")
 
     approval = await db.approval_requests.find_one({"id": approval_id, "tenant_id": current_user.tenant_id})
@@ -192,7 +209,7 @@ async def reject_request(
     current_user = await get_current_user(credentials)
 
     # Only managers and admins can reject (super_admin always allowed)
-    if not _is_super_admin(current_user) and current_user.role not in ["admin", "manager", "gm"]:
+    if not can_manage_approvals(current_user):
         raise HTTPException(status_code=403, detail="Access denied")
 
     approval = await db.approval_requests.find_one({"id": approval_id, "tenant_id": current_user.tenant_id})

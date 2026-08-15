@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -68,6 +68,7 @@ const CashierTab = () => {
   const [pinGate, setPinGate] = useState({ open: false, label: '', onVerified: null });
   const [pinValue, setPinValue] = useState('');
   const [pinSubmitting, setPinSubmitting] = useState(false);
+  const pinSubmittingRef = useRef(false);
 
   const requirePin = (label, onVerified) => {
     setPinValue('');
@@ -77,12 +78,15 @@ const CashierTab = () => {
   const closePinGate = () => {
     setPinGate({ open: false, label: '', onVerified: null });
     setPinValue('');
+    pinSubmittingRef.current = false;
     setPinSubmitting(false);
   };
 
   const verifyPin = async () => {
     const pin = pinValue.trim();
+    if (pinSubmittingRef.current) return;
     if (!pin) { toast.error('PIN gerekli'); return; }
+    pinSubmittingRef.current = true;
     setPinSubmitting(true);
     try {
       await axios.post(
@@ -106,6 +110,7 @@ const CashierTab = () => {
       } else {
         toast.error('PIN doğrulanamadı: ' + (e.response?.data?.detail || e.message));
       }
+      pinSubmittingRef.current = false;
       setPinSubmitting(false);
     }
   };
@@ -232,10 +237,14 @@ const CashierTab = () => {
     setLoading(false);
   };
 
-  const submitBankDeposit = async () => {
+  const submitBankDeposit = () => {
     const amt = parseFloat(bankDeposit.amount);
     if (!amt || amt <= 0) { toast.error('Tutar girin'); return; }
     if (!bankDeposit.bank_name.trim()) { toast.error('Banka adı zorunlu'); return; }
+    requirePin('Banka yatırma işleminden önce PIN doğrulayın', () => doSubmitBankDeposit(amt));
+  };
+
+  const doSubmitBankDeposit = async (amt) => {
     setLoading(true);
     try {
       const idemKey = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
