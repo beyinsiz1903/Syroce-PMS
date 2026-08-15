@@ -35,6 +35,10 @@ RUN groupadd -r celeryuser && useradd -r -g celeryuser -d /app -s /sbin/nologin 
 
 WORKDIR /app
 
+# Celery's prefork children must resolve the application modules even if the
+# process launcher changes their working directory.
+ENV PYTHONPATH=/app
+
 # Runtime system deps:
 #  - curl: kept for parity / debugging (health uses celery inspect below)
 #  - libgomp1 + libstdc++6: OpenMP + C++ runtime for xgboost/scikit-learn ('ml')
