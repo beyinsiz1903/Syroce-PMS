@@ -15,6 +15,11 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from common.legacy_data_normalization import (
+    normalize_dimension_label,
+    parse_utc_datetime,
+    safe_decimal,
+)
 from core.database import db
 from core.security import get_current_user
 from models.schemas import (
@@ -109,18 +114,23 @@ async def get_guest_360(guest_id: str, current_user: User = Depends(get_current_
     bookings = await db.bookings.find({"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).sort("check_in", -1).to_list(100)
 
     # Calculate stats
-    total_stays = len([b for b in bookings if b["status"] in ["checked_out", "checked_in"]])
+    total_stays = len([b for b in bookings if b.get("status") in ["checked_out", "checked_in"]])
     total_nights = 0
     lifetime_value = 0.0
     adr_values = []
 
     for booking in bookings:
-        if booking["status"] in ["checked_out", "checked_in", "confirmed"]:
-            nights = (datetime.fromisoformat(booking["check_out"]) - datetime.fromisoformat(booking["check_in"])).days
+        if booking.get("status") in ["checked_out", "checked_in", "confirmed"]:
+            check_in = parse_utc_datetime(booking.get("check_in"))
+            check_out = parse_utc_datetime(booking.get("check_out"))
+            if check_in is None or check_out is None:
+                continue
+            nights = (check_out.date() - check_in.date()).days
+            booking_total = float(safe_decimal(booking.get("total_amount")))
             total_nights += nights
-            lifetime_value += booking.get("total_amount", 0)
+            lifetime_value += booking_total
             if nights > 0:
-                adr_values.append(booking.get("total_amount", 0) / nights)
+                adr_values.append(booking_total / nights)
 
     average_adr = sum(adr_values) / len(adr_values) if adr_values else 0
 
@@ -155,12 +165,23 @@ async def get_guest_360(guest_id: str, current_user: User = Depends(get_current_
             "created_at": datetime.now(UTC).isoformat(),
             "updated_at": datetime.now(UTC).isoformat(),
         }
-        await db.guest_profiles.insert_one(profile)
+        await db.guest_profiles.update_one(
+            {"guest_id": guest_id, "tenant_id": current_user.tenant_id},
+            {"$setOnInsert": profile},
+            upsert=True,
+        )
+        profile = (
+            await db.guest_profiles.find_one(
+                {"guest_id": guest_id, "tenant_id": current_user.tenant_id},
+                {"_id": 0},
+            )
+            or profile
+        )
 
     # Channel distribution
     channel_mix = {}
     for booking in bookings:
-        channel = booking.get("ota_channel") or "direct"
+        channel = normalize_dimension_label(booking.get("ota_channel"))
         channel_mix[channel] = channel_mix.get(channel, 0) + 1
 
     # Recent upsells

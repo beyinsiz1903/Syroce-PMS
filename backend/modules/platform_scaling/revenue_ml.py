@@ -8,6 +8,7 @@ import asyncio
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+from common.legacy_data_normalization import normalize_dimension_label
 from core.database import db
 
 
@@ -326,7 +327,7 @@ class BookingProbabilityModel:
 
         by_source = {}
         for b in bookings:
-            src = b.get("source", "direct")
+            src = normalize_dimension_label(b.get("source"))
             if src not in by_source:
                 by_source[src] = {"total": 0, "cancelled": 0, "completed": 0}
             by_source[src]["total"] += 1

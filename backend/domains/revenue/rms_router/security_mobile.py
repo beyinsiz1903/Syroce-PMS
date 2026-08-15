@@ -12,8 +12,18 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from core.database import db
 from core.security import get_current_user, security
+from domains.revenue.revenue_report_normalization import parse_booking_datetime
 
 router = APIRouter(prefix="/api", tags=["rms-revenue"])
+
+
+def _activity_age(value, *, now: datetime) -> tuple[str | None, int | None]:
+    parsed = parse_booking_datetime(value)
+    if parsed is None:
+        return None, None
+    minutes_ago = max(int((now - parsed).total_seconds() / 60), 0)
+    return parsed.isoformat(), minutes_ago
+
 
 # ========================================
 
@@ -122,7 +132,8 @@ async def get_system_status_mobile(credentials: HTTPAuthorizationCredentials = D
     last_hour = datetime.now(UTC) - timedelta(hours=1)
 
     async for log in db.system_logs.find({"tenant_id": current_user.tenant_id, "log_level": "error", "created_at": {"$gte": last_hour}}).limit(10):
-        recent_errors.append({"component": log.get("component", "unknown"), "message": log.get("message", ""), "timestamp": log.get("created_at").isoformat()})
+        timestamp, _ = _activity_age(log.get("created_at"), now=datetime.now(UTC))
+        recent_errors.append({"component": log.get("component", "unknown"), "message": log.get("message", ""), "timestamp": timestamp})
 
         # Update system status if errors found
         component = log.get("component", "unknown")
@@ -153,13 +164,12 @@ async def get_connection_status_mobile(credentials: HTTPAuthorizationCredentials
     last_pos_transaction = await db.pos_transactions.find_one({"tenant_id": current_user.tenant_id}, sort=[("created_at", -1)])
 
     if last_pos_transaction:
-        last_activity = last_pos_transaction.get("created_at")
-        minutes_ago = (datetime.now(UTC) - last_activity).total_seconds() / 60
+        last_activity, minutes_ago = _activity_age(last_pos_transaction.get("created_at"), now=datetime.now(UTC))
 
         connections["pos"] = {
-            "status": "connected" if minutes_ago < 60 else "idle" if minutes_ago < 240 else "disconnected",
-            "last_activity": last_activity.isoformat(),
-            "minutes_since_activity": int(minutes_ago),
+            "status": "unknown" if minutes_ago is None else "connected" if minutes_ago < 60 else "idle" if minutes_ago < 240 else "disconnected",
+            "last_activity": last_activity,
+            "minutes_since_activity": minutes_ago,
         }
     else:
         connections["pos"] = {"status": "no_data", "last_activity": None, "minutes_since_activity": None}
@@ -168,13 +178,12 @@ async def get_connection_status_mobile(credentials: HTTPAuthorizationCredentials
     last_cm_sync = await db.channel_manager_syncs.find_one({"tenant_id": current_user.tenant_id}, sort=[("sync_timestamp", -1)])
 
     if last_cm_sync:
-        last_sync = last_cm_sync.get("sync_timestamp")
-        minutes_ago = (datetime.now(UTC) - last_sync).total_seconds() / 60
+        last_sync, minutes_ago = _activity_age(last_cm_sync.get("sync_timestamp"), now=datetime.now(UTC))
 
         connections["channel_manager"] = {
-            "status": "connected" if minutes_ago < 15 else "idle" if minutes_ago < 60 else "disconnected",
-            "last_sync": last_sync.isoformat(),
-            "minutes_since_sync": int(minutes_ago),
+            "status": "unknown" if minutes_ago is None else "connected" if minutes_ago < 15 else "idle" if minutes_ago < 60 else "disconnected",
+            "last_sync": last_sync,
+            "minutes_since_sync": minutes_ago,
             "sync_status": last_cm_sync.get("status", "unknown"),
         }
     else:

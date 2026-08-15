@@ -23,6 +23,8 @@ from core.security import (
 from domains.revenue.revenue_report_normalization import (
     calculate_booking_revenue,
     cancellation_lead_bucket,
+    normalize_dimension_label,
+    parse_booking_datetime,
     safe_amount,
 )
 from models.enums import CancellationPolicyType, ChannelType, MarketSegment, RateType
@@ -653,12 +655,9 @@ async def get_cancellation_report_mobile(start_date: str | None = None, end_date
 
     # Default to last 30 days
     if start_date and end_date:
-        try:
-            start = datetime.fromisoformat(start_date)
-            end = datetime.fromisoformat(end_date)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="INVALID_DATE_RANGE") from exc
-        if start > end:
+        start = parse_booking_datetime(start_date)
+        end = parse_booking_datetime(end_date)
+        if start is None or end is None or start > end:
             raise HTTPException(status_code=400, detail="INVALID_DATE_RANGE")
     else:
         end = datetime.now(UTC)
@@ -705,7 +704,7 @@ async def get_cancellation_report_mobile(start_date: str | None = None, end_date
     # Analyze by channel
     channel_analysis = {}
     for booking in cancelled_bookings + no_show_bookings:
-        source = booking.get("source", "direct")
+        source = normalize_dimension_label(booking.get("source"))
         status = booking.get("status")
 
         if source not in channel_analysis:
@@ -723,7 +722,7 @@ async def get_cancellation_report_mobile(start_date: str | None = None, end_date
     channels = []
     for channel, data in channel_analysis.items():
         # Count total bookings from this channel
-        channel_bookings = [b for b in all_bookings if b.get("source") == channel]
+        channel_bookings = [b for b in all_bookings if normalize_dimension_label(b.get("source")) == channel]
         channel_total = len(channel_bookings)
 
         rate = round((data["total"] / channel_total * 100), 2) if channel_total > 0 else 0
