@@ -253,9 +253,8 @@ jobs:
         id: pre_deploy
         run: |
           if [ -z "${{ secrets.KUBECONFIG }}" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::Production deployment skipped — KUBECONFIG not configured"
-            exit 0
+            echo "::error::KUBECONFIG not configured for this Kubernetes deploy workflow; use Deploy App Platform for DigitalOcean"
+            exit 1
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
@@ -288,8 +287,8 @@ jobs:
         id: smoke_test
         run: |
           if [ -z "${{ secrets.PRODUCTION_URL }}" ]; then
-            echo "::warning::Production smoke test skipped — PRODUCTION_URL not configured"
-            exit 0
+            echo "::error::PRODUCTION_URL not configured; production smoke test is mandatory"
+            exit 1
           fi
 
           echo "## Smoke Test — Production (Manual Deploy)" >> $GITHUB_STEP_SUMMARY
