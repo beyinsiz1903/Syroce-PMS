@@ -45,7 +45,7 @@ def get_db():
 # boylece API imaji ve varsayilan worker imaji bu bagimliliklari tasimaz.
 
 
-@celery_app.task(name="celery_tasks.ml_training_task", bind=True)
+@celery_app.task(name="celery_tasks.ml_training_task", bind=True, ignore_result=False)
 def ml_training_task(self, model: str = "all", params: dict[str, Any] | None = None):
     """ML model(ler)ini ML worker surecinde egitir.
 

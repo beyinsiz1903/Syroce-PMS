@@ -12,6 +12,8 @@ import psutil
 import redis
 from fastapi import APIRouter, Request, Response, status
 
+from infra.redis_capacity import classify_redis_failure, redis_memory_capacity
+
 logger = logging.getLogger(__name__)
 
 health_router = APIRouter(prefix="/api/health", tags=["health"])
@@ -89,19 +91,22 @@ async def check_redis(redis_client: redis.Redis) -> dict[str, Any]:
 
         # Get info
         info = redis_client.info()
+        capacity = redis_memory_capacity(info)
 
         response_time = (datetime.utcnow() - start_time).total_seconds() * 1000
 
         return {
-            "status": "healthy",
+            "status": "unhealthy" if capacity["state"] == "exhausted" else "healthy",
             "response_time_ms": round(response_time, 2),
             "connected_clients": info.get("connected_clients", 0),
             "used_memory": info.get("used_memory_human", "N/A"),
             "uptime_seconds": info.get("uptime_in_seconds", 0),
+            "memory_capacity": capacity,
         }
     except Exception as e:
-        logger.error(f"Redis health check failed: {e}")
-        return {"status": "unhealthy", "error": str(e)}
+        failure_class = classify_redis_failure(e)
+        logger.error("Redis health check failed: failure_class=%s", failure_class)
+        return {"status": "unhealthy", "failure_class": failure_class}
 
 
 def check_system_resources() -> dict[str, Any]:
@@ -340,24 +345,39 @@ async def deep_health_check(request: Request):
             overall_ok = False
         else:
             r.ping()
+            capacity = None
             used_memory = "?"
             try:
-                used_memory = r.info().get("used_memory_human", "?")
+                info = r.info()
+                capacity = redis_memory_capacity(info)
+                used_memory = info.get("used_memory_human", "?")
             except Exception:
                 pass
             if backend == "redis":
-                result["redis"] = {"status": "ok", "backend": backend, "used_memory": used_memory}
+                exhausted = capacity is not None and capacity["state"] == "exhausted"
+                result["redis"] = {
+                    "status": "fail" if exhausted else "ok",
+                    "backend": backend,
+                    "used_memory": used_memory,
+                    "memory_capacity": capacity,
+                }
+                if exhausted:
+                    overall_ok = False
             else:
                 # in-memory fallback: real outage in prod/staging, tolerated in dev
                 result["redis"] = {
                     "status": "fail" if redis_required else "degraded",
                     "backend": backend,
                     "used_memory": used_memory,
+                    "memory_capacity": capacity,
                 }
                 if redis_required:
                     overall_ok = False
     except Exception as e:
-        result["redis"] = {"status": "fail", "error": str(e)}
+        result["redis"] = {
+            "status": "fail",
+            "failure_class": classify_redis_failure(e),
+        }
         overall_ok = False
 
     # ── Outbox queue depth (OTA-002 enhanced) ──

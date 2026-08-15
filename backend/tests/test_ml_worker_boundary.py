@@ -12,13 +12,14 @@ Dogrular:
 Agir ML yigini (sklearn/xgboost/numpy/pandas) bu testlerde CALISTIRILMAZ;
 sadece sinir/dispatch davranisi test edilir.
 """
+
 import asyncio
 
 import pytest
 from fastapi import HTTPException
 
-
 # ── ml_service: routing boundary ──────────────────────────────────
+
 
 def test_run_training_routes_to_each_model(monkeypatch):
     import ml_service
@@ -36,6 +37,7 @@ def test_run_training_routes_to_each_model(monkeypatch):
             def _stub(params):
                 calls[n] = params
                 return {"success": True, "model": n}
+
             return _stub
 
         monkeypatch.setattr(ml_service, fn_name, make_stub(name))
@@ -78,6 +80,16 @@ def test_run_training_unknown_model_raises():
 
 # ── celery task: dispatches to ml_service ─────────────────────────
 
+
+def test_periodic_tasks_ignore_redis_results_but_ml_training_keeps_results():
+    from celery_app import celery_app
+    from celery_tasks import ml_training_task
+
+    assert celery_app.conf.task_ignore_result is True
+    assert celery_app.conf.task_store_errors_even_if_ignored is False
+    assert ml_training_task.ignore_result is False
+
+
 def test_ml_training_task_invokes_ml_service(monkeypatch):
     import ml_service
     from celery_tasks import ml_training_task
@@ -99,6 +111,7 @@ def test_ml_training_task_invokes_ml_service(monkeypatch):
 
 # ── router: dispatch envelope + degrade ───────────────────────────
 
+
 def test_dispatch_returns_queued_envelope(monkeypatch):
     import celery_app as celery_app_mod
     from domains.ai.router.ml_training import _dispatch_ml_training
@@ -110,6 +123,7 @@ def test_dispatch_returns_queued_envelope(monkeypatch):
         assert name == "celery_tasks.ml_training_task"
         assert queue == "ml"
         assert args == ["rms", {"historical_days": 730}]
+        assert kw["ignore_result"] is False
         return _R()
 
     monkeypatch.setattr(celery_app_mod.celery_app, "send_task", fake_send_task)
