@@ -971,7 +971,9 @@ jobs:
   deploy-production:
     runs-on: ubuntu-latest
     needs: [docker-build]
-    if: github.ref == 'refs/heads/main'
+    # Production currently runs on DigitalOcean App Platform. Keep this
+    # Kubernetes path dormant unless the repository explicitly selects it.
+    if: github.ref == 'refs/heads/main' && vars.PRODUCTION_DEPLOY_TARGET == 'kubernetes'
     environment: production
     steps:
       - uses: actions/checkout@v5
@@ -991,9 +993,8 @@ jobs:
         id: pre_deploy
         run: |
           if [ -z "${{ secrets.KUBECONFIG }}" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::Production deployment skipped — KUBECONFIG not configured"
-            exit 0
+            echo "::error::KUBECONFIG not configured for the selected Kubernetes production target"
+            exit 1
           fi
           echo "${{ secrets.KUBECONFIG }}" > /tmp/kubeconfig
           export KUBECONFIG=/tmp/kubeconfig
@@ -1022,8 +1023,8 @@ jobs:
         id: smoke_test
         run: |
           if [ -z "${{ secrets.PRODUCTION_URL }}" ]; then
-            echo "::warning::Smoke test skipped — PRODUCTION_URL not configured"
-            exit 0
+            echo "::error::PRODUCTION_URL not configured; production smoke test is mandatory"
+            exit 1
           fi
 
           echo "## Smoke Test — Production" >> $GITHUB_STEP_SUMMARY
