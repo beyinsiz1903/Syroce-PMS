@@ -6,6 +6,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { PageHeader } from '@/components/ui/page-header';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -51,13 +61,25 @@ const STATUS_INTENT = {
 const labelStatus = (s) => STATUS_TR[(s || '').toLowerCase()] || s || '—';
 const intentStatus = (s) => STATUS_INTENT[(s || '').toLowerCase()] || 'default';
 
-// B11: backend errors[] görünür dialog
+function normalizeBulkError(error) {
+  const value = String(error || '').toLowerCase();
+  if (value.includes('balance') || value.includes('folio')) return 'Açık folyo bakiyesi bulunuyor';
+  if (value.includes('room')) return 'Oda durumu işlem için uygun değil';
+  if (value.includes('status') || value.includes('checked_') || value.includes('no_show') || value.includes('cancel')) {
+    return 'Rezervasyon durumu işlem için uygun değil';
+  }
+  return 'İşlem tamamlanamadı';
+}
+
+// Provider/internal kimlikleri göstermeden toplu işlem sonucunu özetle.
 function showBulkErrors(title, errors) {
   if (!errors?.length) return;
-  const lines = errors.slice(0, 8).map(
-    (e) => `• ${(e.booking_id || '').slice(0, 8)} — ${e.error || 'bilinmeyen hata'}`
-  );
-  if (errors.length > 8) lines.push(`…ve ${errors.length - 8} hata daha`);
+  const reasonCounts = errors.reduce((counts, error) => {
+    const reason = normalizeBulkError(error?.error);
+    counts.set(reason, (counts.get(reason) || 0) + 1);
+    return counts;
+  }, new Map());
+  const lines = Array.from(reasonCounts, ([reason, count]) => `• ${count} rezervasyon: ${reason}`);
   toast.error(title, {
     description: lines.join('\n'),
     duration: 8000,
@@ -79,6 +101,8 @@ export default function GroupBookings({ user, tenant, onLogout }) {
   const [createMode, setCreateMode] = useState('existing'); // 'existing' | 'new'
   const [allRooms, setAllRooms] = useState([]);
   const [newRows, setNewRows] = useState([emptyRow()]);
+  const [pendingBulkAction, setPendingBulkAction] = useState(null);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
 
   const loadGroups = useCallback(async () => {
     setRefreshing(true);
@@ -192,7 +216,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
       loadGroups();
       if (showDetail) loadGroupDetail(groupId);
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('Toplu giriş tamamlanamadı');
     }
   };
 
@@ -207,7 +231,29 @@ export default function GroupBookings({ user, tenant, onLogout }) {
       loadGroups();
       if (showDetail) loadGroupDetail(groupId);
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('Toplu çıkış tamamlanamadı');
+    }
+  };
+
+  const requestBulkAction = (kind, group) => {
+    setPendingBulkAction({
+      kind,
+      groupId: group.id,
+      groupName: group.group_name || 'Seçili grup',
+      bookingCount: group.bookings?.length ?? group.total_rooms ?? group.booking_ids?.length ?? 0,
+    });
+  };
+
+  const confirmBulkAction = async () => {
+    if (!pendingBulkAction || bulkSubmitting) return;
+    const { kind, groupId } = pendingBulkAction;
+    setBulkSubmitting(true);
+    try {
+      if (kind === 'checkin') await handleGroupCheckin(groupId);
+      else await handleGroupCheckout(groupId);
+      setPendingBulkAction(null);
+    } finally {
+      setBulkSubmitting(false);
     }
   };
 
@@ -301,12 +347,12 @@ export default function GroupBookings({ user, tenant, onLogout }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleGroupCheckin(g.id); }}
-                    className="h-8 text-xs" data-testid={`group-checkin-${g.id}`}>
+                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); requestBulkAction('checkin', g); }}
+                    className="h-8 text-xs" data-testid={`group-checkin-${g.id}`} disabled={bulkSubmitting}>
                     <LogIn className="w-3 h-3 mr-1" /> {t('cm.pages_GroupBookings.toplu_giris')}
                   </Button>
-                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleGroupCheckout(g.id); }}
-                    className="h-8 text-xs" data-testid={`group-checkout-${g.id}`}>
+                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); requestBulkAction('checkout', g); }}
+                    className="h-8 text-xs" data-testid={`group-checkout-${g.id}`} disabled={bulkSubmitting}>
                     <LogOut className="w-3 h-3 mr-1" /> {t('cm.pages_GroupBookings.toplu_cikis')}
                   </Button>
                   <ChevronRight className="w-4 h-4 text-slate-400" />
@@ -487,10 +533,10 @@ export default function GroupBookings({ user, tenant, onLogout }) {
                 <KpiCard icon={CreditCard} label={t('cm.pages_GroupBookings.odenen_2beb0')} value={`${(showDetail.total_paid || 0).toLocaleString('tr-TR')} TL`} intent="warning" />
               </div>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => handleGroupCheckin(showDetail.id)} className="h-8 text-xs">
+                <Button size="sm" variant="outline" onClick={() => requestBulkAction('checkin', showDetail)} className="h-8 text-xs" disabled={bulkSubmitting}>
                   <LogIn className="w-3 h-3 mr-1" /> {t('cm.pages_GroupBookings.toplu_giris_dfd45')}
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => handleGroupCheckout(showDetail.id)} className="h-8 text-xs">
+                <Button size="sm" variant="outline" onClick={() => requestBulkAction('checkout', showDetail)} className="h-8 text-xs" disabled={bulkSubmitting}>
                   <LogOut className="w-3 h-3 mr-1" /> {t('cm.pages_GroupBookings.toplu_cikis_27723')}
                 </Button>
               </div>
@@ -529,6 +575,33 @@ export default function GroupBookings({ user, tenant, onLogout }) {
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={!!pendingBulkAction}
+        onOpenChange={(open) => {
+          if (!open && !bulkSubmitting) setPendingBulkAction(null);
+        }}
+      >
+        <AlertDialogContent className="z-[80]" data-testid="bulk-action-confirmation">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingBulkAction?.kind === 'checkin' ? 'Toplu Giriş Onayı' : 'Toplu Çıkış Onayı'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{pendingBulkAction?.groupName}</strong> grubundaki {pendingBulkAction?.bookingCount || 0} rezervasyon
+              için {pendingBulkAction?.kind === 'checkin' ? 'giriş' : 'çıkış'} işlemi denenecek. Yalnız uygun
+              durumdaki rezervasyonlar değiştirilecek; diğerleri güvenli biçimde reddedilecek.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkSubmitting}>Vazgeç</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmBulkAction} disabled={bulkSubmitting}>
+              {bulkSubmitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              {pendingBulkAction?.kind === 'checkin' ? 'Toplu Girişi Onayla' : 'Toplu Çıkışı Onayla'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
