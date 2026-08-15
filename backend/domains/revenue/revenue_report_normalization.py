@@ -2,44 +2,24 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 
+from common.legacy_data_normalization import (
+    normalize_dimension_label,
+)
+from common.legacy_data_normalization import (
+    parse_utc_datetime as parse_booking_datetime,
+)
+from common.legacy_data_normalization import (
+    safe_decimal as safe_amount,
+)
 
-def parse_booking_datetime(value: Any) -> datetime | None:
-    """Return a UTC-aware datetime for supported values, otherwise ``None``."""
-    if isinstance(value, datetime):
-        parsed = value
-    elif isinstance(value, date):
-        parsed = datetime.combine(value, datetime.min.time())
-    elif isinstance(value, str):
-        candidate = value.strip()
-        if not candidate:
-            return None
-        if candidate.endswith("Z"):
-            candidate = f"{candidate[:-1]}+00:00"
-        try:
-            parsed = datetime.fromisoformat(candidate)
-        except ValueError:
-            return None
-    else:
-        return None
-
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
-
-
-def safe_amount(value: Any) -> Decimal:
-    """Coerce stored numeric values without allowing malformed data to crash reports."""
-    if isinstance(value, bool) or value is None:
-        return Decimal("0")
-    try:
-        amount = Decimal(str(value))
-    except (InvalidOperation, ValueError, TypeError):
-        return Decimal("0")
-    return amount if amount.is_finite() else Decimal("0")
+__all__ = [
+    "normalize_dimension_label",
+    "parse_booking_datetime",
+    "safe_amount",
+]
 
 
 def calculate_booking_revenue(booking: dict[str, Any]) -> Decimal:

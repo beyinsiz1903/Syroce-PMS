@@ -4,6 +4,7 @@ from decimal import Decimal
 from domains.revenue.revenue_report_normalization import (
     calculate_booking_revenue,
     cancellation_lead_bucket,
+    normalize_dimension_label,
     parse_booking_datetime,
     safe_amount,
 )
@@ -50,3 +51,10 @@ def test_cancellation_lead_bucket_tracks_unclassifiable_rows():
         )
         == "same_day"
     )
+
+
+def test_normalize_dimension_label_handles_legacy_structured_values():
+    assert normalize_dimension_label({"name": "HotelRunner"}) == "HotelRunner"
+    assert normalize_dimension_label({"code": 42}) == "42"
+    assert normalize_dimension_label({"source": {"name": "nested"}}) == "direct"
+    assert normalize_dimension_label(["unsafe", "shape"]) == "direct"
