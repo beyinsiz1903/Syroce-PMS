@@ -84,6 +84,12 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
   };
 
+  const bookingStatus = String(data?.booking?.status || '').toLowerCase();
+  const canCheckIn = ['pending', 'confirmed', 'guaranteed'].includes(bookingStatus);
+  const canLateCheckout = bookingStatus === 'checked_in';
+  const canChangeRoom = ['pending', 'confirmed', 'guaranteed', 'checked_in'].includes(bookingStatus);
+  const canCancel = ['pending', 'confirmed', 'guaranteed'].includes(bookingStatus);
+
   if (loading) return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
       <div className="bg-white rounded-2xl p-8 flex flex-col items-center gap-3">
@@ -337,15 +343,21 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   idPhotoUploaded={booking?.online_checkin_id_photo_uploaded}
                   className="w-full h-8 text-xs justify-start bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
                 />
-                <Button size="sm" variant="outline" onClick={() => action(`/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, 'Erken giriş yapıldı')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
-                  <LogIn className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.erken_giris')}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => action(`/pms/reservations/${bookingId}/late-checkout`, { extra_charge: 0 }, 'Geç çıkış kaydedildi')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
-                  <LogOut className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.gec_cikis')}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setActiveTab('room_change')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
-                  <DoorOpen className="w-3 h-3 mr-2" /> Oda Değiştir
-                </Button>
+                {canCheckIn && (
+                  <Button size="sm" variant="outline" onClick={() => action(`/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, 'Erken giriş yapıldı')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50" data-testid="btn-early-checkin">
+                    <LogIn className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.erken_giris')}
+                  </Button>
+                )}
+                {canLateCheckout && (
+                  <Button size="sm" variant="outline" onClick={() => action(`/pms/reservations/${bookingId}/late-checkout`, { extra_charge: 0 }, 'Geç çıkış kaydedildi')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50" data-testid="btn-late-checkout">
+                    <LogOut className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.gec_cikis')}
+                  </Button>
+                )}
+                {canChangeRoom && (
+                  <Button size="sm" variant="outline" onClick={() => setActiveTab('room_change')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50" data-testid="btn-room-change">
+                    <DoorOpen className="w-3 h-3 mr-2" /> Oda Değiştir
+                  </Button>
+                )}
                 <Button size="sm" variant="outline" onClick={() => setActiveTab('notes')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
                   <FileText className="w-3 h-3 mr-2" /> Not Ekle
                 </Button>
@@ -359,12 +371,16 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 }} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
                   <Star className="w-3 h-3 mr-2" /> {data?.guest?.vip_status ? 'VIP Kaldır' : 'VIP Yap'}
                 </Button>
-                <Button size="sm" variant="outline" onClick={async () => { if (await confirmDialog({ message: 'No-show olarak işaretlensin mi?', variant: 'danger' })) action(`/pms/reservations/${bookingId}/mark-noshow`, {}, 'No-show işaretlendi'); }} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50">
-                  <AlertTriangle className="w-3 h-3 mr-2" /> No-Show
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setActiveTab('cancel')} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50" data-testid="btn-cancel-reservation">
-                  <X className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.iptal_et')}
-                </Button>
+                {canCancel && (
+                  <>
+                    <Button size="sm" variant="outline" onClick={async () => { if (await confirmDialog({ message: 'No-show olarak işaretlensin mi?', variant: 'danger' })) action(`/pms/reservations/${bookingId}/mark-noshow`, {}, 'No-show işaretlendi'); }} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50" data-testid="btn-mark-noshow">
+                      <AlertTriangle className="w-3 h-3 mr-2" /> No-Show
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setActiveTab('cancel')} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50" data-testid="btn-cancel-reservation">
+                      <X className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.iptal_et')}
+                    </Button>
+                  </>
+                )}
                 <Button size="sm" variant="outline" onClick={() => setActiveTab('voucher')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50" data-testid="btn-voucher">
                   <FileText className="w-3 h-3 mr-2" /> Voucher
                 </Button>

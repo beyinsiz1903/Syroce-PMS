@@ -9,8 +9,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
-from modules.pms_core.role_permission_service import require_module as require_module_v97
-from modules.pms_core.role_permission_service import require_op
+from modules.pms_core.role_permission_service import (
+    RolePermissionService,
+    require_op,
+)
+from modules.pms_core.role_permission_service import (
+    require_module as require_module_v97,
+)
 
 from ._common import (
     CancelReservationRequest,
@@ -19,6 +24,7 @@ from ._common import (
 
 logger = logging.getLogger(__name__)
 sub_router = APIRouter()
+_role_permissions = RolePermissionService()
 
 
 @sub_router.post("/reservations/{booking_id}/cancel")
@@ -28,12 +34,15 @@ async def cancel_reservation(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
+    _role_permissions.enforce_permission(current_user.role, "edit_booking")
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+    if str(booking.get("status") or "").lower() not in {"pending", "confirmed", "guaranteed"}:
+        raise HTTPException(status_code=409, detail="Bu rezervasyon mevcut durumunda iptal edilemez")
 
     update_data = {
         "status": "no_show" if body.apply_noshow else "cancelled",
