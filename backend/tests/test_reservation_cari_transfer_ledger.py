@@ -17,7 +17,13 @@ async def test_cari_transfer_posts_visible_folio_payment(monkeypatch):
         "guest_id": "guest-a",
         "paid_amount": 100.0,
     }
-    cari = {"id": "cari-a", "tenant_id": "tenant-a", "name": "Test Cari"}
+    cari = {
+        "id": "cari-a",
+        "tenant_id": "tenant-a",
+        "name": "Test Cari",
+        "balance": 50.0,
+        "current_balance": 75.0,
+    }
     folio = {
         "id": "folio-a",
         "tenant_id": "tenant-a",
@@ -76,7 +82,7 @@ async def test_cari_transfer_posts_visible_folio_payment(monkeypatch):
     payments.insert_one.assert_awaited_once()
     cari_accounts.update_one.assert_awaited_once_with(
         {"id": "cari-a", "tenant_id": "tenant-a"},
-        {"$inc": {"balance": 250.0, "current_balance": 250.0}},
+        {"$set": {"balance": 325.0, "current_balance": 325.0}},
     )
     bookings.update_one.assert_awaited_once_with(
         {"id": "booking-a", "tenant_id": "tenant-a"},
@@ -129,3 +135,9 @@ async def test_cari_transfer_does_not_write_without_owned_account(monkeypatch):
     payments.insert_one.assert_not_awaited()
     cari_transactions.insert_one.assert_not_awaited()
     bookings.update_one.assert_not_awaited()
+
+
+def test_cari_balance_preserves_larger_legacy_value():
+    assert reservation_detail._cari_balance({"balance": 0, "current_balance": 100}) == 100
+    assert reservation_detail._cari_balance({"balance": 75, "current_balance": 50}) == 75
+    assert reservation_detail._cari_balance({}) == 0
