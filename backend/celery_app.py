@@ -78,6 +78,9 @@ celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
+    # Workers consume the `default` queue. Celery's implicit queue name is
+    # otherwise `celery`, which leaves unrouted beat tasks permanently queued.
+    task_default_queue="default",
     timezone="UTC",
     enable_utc=True,
     # Task execution
