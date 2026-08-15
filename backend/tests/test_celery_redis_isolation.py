@@ -1,4 +1,20 @@
+import ast
+from pathlib import Path
+
 from redis_ssl import resolve_celery_redis_urls
+
+
+def test_unrouted_tasks_use_worker_default_queue():
+    source = Path(__file__).parents[1].joinpath("celery_app.py").read_text()
+    tree = ast.parse(source)
+    configured_queues = []
+
+    for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call)):
+        for keyword in call.keywords:
+            if keyword.arg == "task_default_queue":
+                configured_queues.append(ast.literal_eval(keyword.value))
+
+    assert configured_queues == ["default"]
 
 
 def test_celery_uses_explicit_broker_and_result_backend_urls():
