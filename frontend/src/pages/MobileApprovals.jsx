@@ -21,6 +21,24 @@ import {
   History
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { canApproveMobileRequest } from '@/utils/mobilePermissions';
+
+export const normalizeMobileApproval = (approval) => {
+  const createdAt = approval.created_at || approval.request_date;
+  const waitingHours = createdAt
+    ? Math.max(0, (Date.now() - new Date(createdAt).getTime()) / 3_600_000)
+    : 0;
+
+  return {
+    ...approval,
+    approval_type: approval.approval_type || approval.type,
+    requested_by: approval.requested_by_name || approval.requested_by || '',
+    requested_by_role: approval.requested_by_role || '',
+    request_date: approval.request_date || approval.created_at,
+    time_waiting_hours: approval.time_waiting_hours ?? Math.round(waitingHours * 10) / 10,
+    is_urgent: Boolean(approval.is_urgent || approval.priority === 'urgent' || waitingHours > 24),
+  };
+};
 
 const MobileApprovals = ({ user }) => {
   const { t } = useTranslation();
@@ -48,10 +66,10 @@ const MobileApprovals = ({ user }) => {
       
       if (activeTab === 'pending') {
         const response = await axios.get('/approvals/pending');
-        setPendingApprovals(response.data.approvals || []);
+        setPendingApprovals((response.data.approvals || []).map(normalizeMobileApproval));
       } else {
         const response = await axios.get('/approvals/my-requests');
-        setMyRequests(response.data.requests || []);
+        setMyRequests((response.data.requests || []).map(normalizeMobileApproval));
       }
     } catch (error) {
       console.error('Failed to load approvals:', error);
@@ -66,8 +84,8 @@ const MobileApprovals = ({ user }) => {
     if (!selectedApproval) return;
 
     try {
-      await axios.put(`/approvals/${selectedApproval.id}/approve`, {
-        notes: actionNotes
+      await axios.post(`/approvals/${selectedApproval.id}/approve`, {
+        note: actionNotes
       });
       
       toast.success(t('mobileApprovals.success.approved'));
@@ -87,9 +105,9 @@ const MobileApprovals = ({ user }) => {
     }
 
     try {
-      await axios.put(`/approvals/${selectedApproval.id}/reject`, {
-        rejection_reason: rejectionReason,
-        notes: actionNotes
+      await axios.post(`/approvals/${selectedApproval.id}/reject`, {
+        reason: rejectionReason,
+        note: actionNotes
       });
       
       toast.success(t('mobileApprovals.success.rejected'));
@@ -168,15 +186,6 @@ const MobileApprovals = ({ user }) => {
     return null;
   };
 
-  const canApprove = () => {
-    const allowedRoles = ['admin', 'supervisor', 'fnb_manager', 'gm', 'finance_manager'];
-    if (user?.role === 'super_admin') return true;
-    if (Array.isArray(user?.roles) && user.roles.includes('super_admin')) return true;
-    if (allowedRoles.includes(user?.role)) return true;
-    if (Array.isArray(user?.roles) && user.roles.some((r) => allowedRoles.includes(r))) return true;
-    return false;
-  };
-
   const stats = {
     pending: pendingApprovals.length,
     urgent: pendingApprovals.filter(a => a.is_urgent).length,
@@ -200,7 +209,7 @@ const MobileApprovals = ({ user }) => {
       <div className="bg-gradient-to-r from-indigo-600 to-pink-600 text-white p-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg transition">
+            <button aria-label="Geri" title="Geri" onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg transition">
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div>
@@ -210,6 +219,8 @@ const MobileApprovals = ({ user }) => {
           </div>
           
           <button
+            aria-label="Yenile"
+            title="Yenile"
             onClick={handleRefresh}
             className="p-2 hover:bg-white/20 rounded-lg transition"
             disabled={refreshing}
@@ -308,7 +319,7 @@ const MobileApprovals = ({ user }) => {
                       {approval.reason}
                     </div>
 
-                    {canApprove() && (
+                    {canApproveMobileRequest(user) && (
                       <div className="flex gap-2">
                         <Button
                           size="sm"

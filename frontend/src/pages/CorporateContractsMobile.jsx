@@ -47,10 +47,10 @@ const CorporateContractsMobile = ({ user }) => {
       <div className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white p-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg"><ArrowLeft className="h-5 w-5" /></button>
+            <button aria-label="Geri" title="Geri" onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg"><ArrowLeft className="h-5 w-5" /></button>
             <div><h1 className="text-xl font-bold">Kurumsal Anlaşmalar</h1><p className="text-violet-100 text-sm">{t('nav.corporate')}</p></div>
           </div>
-          <button onClick={loadData} className="p-2 hover:bg-white/20 rounded-lg"><RefreshCw className="h-5 w-5" /></button>
+          <button aria-label="Yenile" title="Yenile" onClick={loadData} className="p-2 hover:bg-white/20 rounded-lg"><RefreshCw className="h-5 w-5" /></button>
         </div>
         <div className="flex gap-2">
           {['contracts', 'customers', 'alerts'].map(view => (

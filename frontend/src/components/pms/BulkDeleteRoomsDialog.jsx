@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
@@ -10,8 +10,17 @@ import { Label } from '@/components/ui/label';
 const BulkDeleteRoomsDialog = ({ open, onClose, selectedRooms, rooms, onDeleted }) => {
   const { t } = useTranslation();
   const [confirmText, setConfirmText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   const handleDelete = async () => {
+    if (
+      submittingRef.current ||
+      selectedRooms.length === 0 ||
+      confirmText.trim().toUpperCase() !== 'DELETE'
+    ) return;
+    submittingRef.current = true;
+    setSubmitting(true);
     try {
       const res = await axios.post('/pms/rooms/bulk/delete', {
         ids: selectedRooms,
@@ -31,6 +40,9 @@ const BulkDeleteRoomsDialog = ({ open, onClose, selectedRooms, rooms, onDeleted 
       onClose();
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Bulk delete failed');
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -66,7 +78,7 @@ const BulkDeleteRoomsDialog = ({ open, onClose, selectedRooms, rooms, onDeleted 
             <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
             <Button
               variant="destructive"
-              disabled={selectedRooms.length === 0 || confirmText.trim().toUpperCase() !== 'DELETE'}
+              disabled={submitting || selectedRooms.length === 0 || confirmText.trim().toUpperCase() !== 'DELETE'}
               onClick={handleDelete}
             >
               {t('common.delete', 'Delete')}

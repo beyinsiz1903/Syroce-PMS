@@ -411,6 +411,8 @@ const MobileHousekeeping = ({ user }) => {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Button
+              aria-label="Geri"
+              title="Geri"
               variant="ghost"
               size="sm"
               onClick={() => navigate('/mobile')}
@@ -425,6 +427,7 @@ const MobileHousekeeping = ({ user }) => {
           </div>
           <div className="flex items-center space-x-2">
             <Button
+              aria-label="Ana Sayfa"
               variant="ghost"
               size="sm"
               onClick={() => navigate('/')}
@@ -434,6 +437,8 @@ const MobileHousekeeping = ({ user }) => {
               <Home className="w-5 h-5" />
             </Button>
             <Button
+              aria-label="Yenile"
+              title="Yenile"
               variant="ghost"
               size="sm"
               onClick={handleRefresh}

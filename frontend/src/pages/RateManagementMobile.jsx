@@ -50,10 +50,10 @@ const RateManagementMobile = ({ user }) => {
       <div className="bg-gradient-to-r from-amber-600 to-amber-600 text-white p-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg"><ArrowLeft className="h-5 w-5" /></button>
+            <button aria-label="Geri" title="Geri" onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg"><ArrowLeft className="h-5 w-5" /></button>
             <div><h1 className="text-xl font-bold">Fiyat Yönetimi</h1><p className="text-amber-100 text-sm">Kampanya & İndirim</p></div>
           </div>
-          <button onClick={loadData} className="p-2 hover:bg-white/20 rounded-lg"><RefreshCw className="h-5 w-5" /></button>
+          <button aria-label="Yenile" title="Yenile" onClick={loadData} className="p-2 hover:bg-white/20 rounded-lg"><RefreshCw className="h-5 w-5" /></button>
         </div>
         <div className="flex gap-2 overflow-x-auto">
           {['campaigns', 'codes', 'packages', 'promo'].map(view => (

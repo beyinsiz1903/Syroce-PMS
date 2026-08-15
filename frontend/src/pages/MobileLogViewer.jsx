@@ -85,6 +85,8 @@ const MobileLogViewer = ({ user }) => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Button
+              aria-label="Geri"
+              title="Geri"
               variant="ghost"
               size="sm"
               onClick={() => navigate('/mobile')}
@@ -98,6 +100,8 @@ const MobileLogViewer = ({ user }) => {
             </div>
           </div>
           <Button
+            aria-label="Yenile"
+            title="Yenile"
             variant="ghost"
             size="sm"
             onClick={handleRefresh}

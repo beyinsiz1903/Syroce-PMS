@@ -23,6 +23,7 @@ import {
   Store
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { canUpdateMobileOrderStatus } from '@/utils/mobilePermissions';
 
 const MobileOrderTracking = ({ user }) => {
   const { t } = useTranslation();
@@ -164,22 +165,6 @@ const MobileOrderTracking = ({ user }) => {
     return nextStatus ? getStatusLabel(nextStatus) : null;
   };
 
-  const canUpdateStatus = (order) => {
-    // Kitchen staff can move from pending to preparing to ready
-    // Service staff can move from ready to served
-    const userRole = user?.role || '';
-    
-    if (userRole === 'kitchen_staff' || userRole === 'fnb_supervisor' || userRole === 'fnb_manager' || userRole === 'admin') {
-      return ['pending', 'preparing', 'ready'].includes(order.status);
-    }
-    
-    if (userRole === 'service' || userRole === 'fnb_supervisor' || userRole === 'fnb_manager' || userRole === 'admin') {
-      return order.status === 'ready';
-    }
-    
-    return false;
-  };
-
   // Stats
   const stats = {
     total: activeOrders.length,
@@ -206,7 +191,7 @@ const MobileOrderTracking = ({ user }) => {
       <div className="bg-gradient-to-r from-amber-600 to-red-600 text-white p-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg transition">
+            <button aria-label="Geri" title="Geri" onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg transition">
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div>
@@ -217,6 +202,8 @@ const MobileOrderTracking = ({ user }) => {
           
           <div className="flex items-center gap-2">
             <button
+              aria-label="Yenile"
+              title="Yenile"
               onClick={handleRefresh}
               className="p-2 hover:bg-white/20 rounded-lg transition"
               disabled={refreshing}
@@ -224,6 +211,8 @@ const MobileOrderTracking = ({ user }) => {
               <RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
             <button
+              aria-label="Filtrele"
+              title="Filtrele"
               onClick={() => setFilterModalOpen(true)}
               className="p-2 hover:bg-white/20 rounded-lg transition"
             >
@@ -330,7 +319,7 @@ const MobileOrderTracking = ({ user }) => {
                     ₺{order.total_amount.toFixed(2)}
                   </div>
                   
-                  {canUpdateStatus(order) && getNextStatus(order.status) && (
+                  {canUpdateMobileOrderStatus(user, order.status) && getNextStatus(order.status) && (
                     <Button
                       size="sm"
                       onClick={(e) => {
@@ -433,7 +422,7 @@ const MobileOrderTracking = ({ user }) => {
               </div>
 
               {/* Status Update Buttons */}
-              {canUpdateStatus(selectedOrder) && getNextStatus(selectedOrder.status) && (
+              {canUpdateMobileOrderStatus(user, selectedOrder.status) && getNextStatus(selectedOrder.status) && (
                 <Button
                   className="w-full bg-amber-600 hover:bg-amber-700"
                   onClick={() => {
@@ -525,6 +514,8 @@ const MobileOrderTracking = ({ user }) => {
       {/* Quick Access Button */}
       <div className="fixed bottom-4 right-4">
         <Button
+          aria-label="Sipariş geçmişi"
+          title="Sipariş geçmişi"
           onClick={loadOrderHistory}
           className="rounded-full w-14 h-14 shadow-lg bg-amber-600 hover:bg-amber-700"
         >
