@@ -118,6 +118,26 @@ describe('Auth Cookie Flow in App.jsx', () => {
     });
   });
 
+  it('should preserve the verified local session when /auth/me denies an operation', async () => {
+    localStorage.setItem('token_ts', Date.now().toString());
+    localStorage.setItem('user', JSON.stringify({ id: 'u1', name: 'Test User' }));
+    localStorage.setItem('tenant', JSON.stringify({ id: 't1', name: 'Test Hotel' }));
+
+    axios.get.mockRejectedValueOnce({ response: { status: 403 } });
+
+    try {
+      render(<App />);
+    } catch (e) {
+      // Providers are intentionally minimal in this focused auth test.
+    }
+
+    await waitFor(() => {
+      expect(axios.get).toHaveBeenCalledWith('/auth/me');
+      expect(localStorage.getItem('token_ts')).not.toBeNull();
+      expect(localStorage.getItem('user')).not.toBeNull();
+    });
+  });
+
   it('should verify an old session marker instead of logging out locally', async () => {
     const eightDaysAgo = Date.now() - (8 * 24 * 60 * 60 * 1000);
     localStorage.setItem('token_ts', String(eightDaysAgo));
@@ -176,6 +196,17 @@ describe('Auth Cookie Flow in App.jsx', () => {
     localStorage.setItem('token_ts', String(oldMarker));
     localStorage.setItem('user', JSON.stringify({ id: 'u1' }));
     axios.post.mockRejectedValueOnce({ response: { status: 503 } });
+
+    await expect(keepActiveSessionAlive()).resolves.toEqual({ transient: true });
+    expect(localStorage.getItem('token_ts')).toBe(String(oldMarker));
+    expect(localStorage.getItem('user')).not.toBeNull();
+  });
+
+  it('should preserve an old active session when renewal is rate limited', async () => {
+    const oldMarker = Date.now() - (91 * 60 * 1000);
+    localStorage.setItem('token_ts', String(oldMarker));
+    localStorage.setItem('user', JSON.stringify({ id: 'u1' }));
+    axios.post.mockRejectedValueOnce({ response: { status: 429 } });
 
     await expect(keepActiveSessionAlive()).resolves.toEqual({ transient: true });
     expect(localStorage.getItem('token_ts')).toBe(String(oldMarker));

@@ -1252,11 +1252,13 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
 
     body = body or {}
 
-    submitted_refresh: str | None = request.cookies.get("refresh_token")
-    if not submitted_refresh and isinstance(body, dict):
+    submitted_refresh: str | None = None
+    if isinstance(body, dict):
         rt = body.get("refresh_token")
         if isinstance(rt, str) and rt.strip():
             submitted_refresh = rt.strip()
+    if not submitted_refresh:
+        submitted_refresh = request.cookies.get("refresh_token")
 
     user_id: str | None = None
     tenant_id: str | None = None
