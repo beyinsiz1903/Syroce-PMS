@@ -1,0 +1,112 @@
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+from fastapi import HTTPException
+
+
+def _user():
+    return SimpleNamespace(
+        id="operator",
+        tenant_id="tenant-a",
+        email="operator@example.test",
+        name="Operator",
+        role="admin",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["confirmed", "checked_out", "cancelled", "no_show"])
+async def test_late_checkout_requires_checked_in_status(monkeypatch, status):
+    import routers.reservation_detail as module
+
+    bookings = SimpleNamespace(
+        find_one=AsyncMock(return_value={"id": "booking-a", "tenant_id": "tenant-a", "status": status}),
+        update_one=AsyncMock(),
+    )
+    monkeypatch.setattr(module, "db", SimpleNamespace(bookings=bookings))
+    monkeypatch.setattr(module, "_enforce_perm", lambda *_: None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await module.late_checkout(
+            "booking-a",
+            module.LateCheckoutRequest(extra_charge=0),
+            current_user=_user(),
+            _perm=None,
+        )
+
+    assert exc_info.value.status_code == 409
+    bookings.update_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["checked_in", "checked_out", "cancelled", "no_show"])
+async def test_mark_noshow_rejects_ineligible_status_without_mutation(monkeypatch, status):
+    import routers.reservation_detail as module
+
+    bookings = SimpleNamespace(
+        find_one=AsyncMock(return_value={"id": "booking-a", "tenant_id": "tenant-a", "status": status}),
+        update_one=AsyncMock(),
+    )
+    monkeypatch.setattr(module, "db", SimpleNamespace(bookings=bookings))
+    monkeypatch.setattr(module, "_enforce_perm", lambda *_: None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await module.mark_noshow(
+            "booking-a",
+            current_user=_user(),
+            _perm=None,
+        )
+
+    assert exc_info.value.status_code == 409
+    bookings.update_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["checked_out", "cancelled", "no_show"])
+async def test_room_change_rejects_terminal_status_without_mutation(monkeypatch, status):
+    import routers.reservation_detail as module
+
+    bookings = SimpleNamespace(
+        find_one=AsyncMock(return_value={"id": "booking-a", "tenant_id": "tenant-a", "status": status}),
+        update_one=AsyncMock(),
+    )
+    rooms = SimpleNamespace(find_one=AsyncMock(), update_one=AsyncMock())
+    monkeypatch.setattr(module, "db", SimpleNamespace(bookings=bookings, rooms=rooms))
+    monkeypatch.setattr(module, "_enforce_perm", lambda *_: None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await module.room_change(
+            "booking-a",
+            module.RoomChangeRequest(new_room_id="room-b", reason="test"),
+            current_user=_user(),
+            _perm=None,
+        )
+
+    assert exc_info.value.status_code == 409
+    bookings.update_one.assert_not_awaited()
+    rooms.find_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["checked_in", "checked_out", "cancelled", "no_show"])
+async def test_cancel_rejects_ineligible_status_without_mutation(monkeypatch, status):
+    import routers.hotel_services_pkg.reservations_misc as module
+
+    bookings = SimpleNamespace(
+        find_one=AsyncMock(return_value={"id": "booking-a", "tenant_id": "tenant-a", "status": status}),
+        update_one=AsyncMock(),
+    )
+    monkeypatch.setattr(module, "db", SimpleNamespace(bookings=bookings))
+    monkeypatch.setattr(module._role_permissions, "enforce_permission", lambda *_: None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await module.cancel_reservation(
+            "booking-a",
+            module.CancelReservationRequest(reason="test", cancel_type="guest_request"),
+            current_user=_user(),
+            _perm=None,
+        )
+
+    assert exc_info.value.status_code == 409
+    bookings.update_one.assert_not_awaited()

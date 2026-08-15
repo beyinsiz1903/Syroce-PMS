@@ -65,4 +65,41 @@ describe('ReservationDetailModal operation URLs', () => {
     ));
     expect(post).not.toHaveBeenCalledWith(expect.stringContaining('/api/api/'), expect.anything());
   });
+
+  it('shows only lifecycle-eligible mutation buttons for a confirmed booking', async () => {
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('btn-early-checkin')).toBeInTheDocument();
+    expect(screen.getByTestId('btn-mark-noshow')).toBeInTheDocument();
+    expect(screen.getByTestId('btn-cancel-reservation')).toBeInTheDocument();
+    expect(screen.queryByTestId('btn-late-checkout')).not.toBeInTheDocument();
+  });
+
+  it('shows late checkout but hides arrival and cancellation actions after check-in', async () => {
+    get.mockResolvedValueOnce({
+      data: { ...detail, booking: { ...detail.booking, status: 'checked_in' } },
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('btn-late-checkout')).toBeInTheDocument();
+    expect(screen.queryByTestId('btn-early-checkin')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('btn-mark-noshow')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('btn-cancel-reservation')).not.toBeInTheDocument();
+  });
+
+  it('hides all lifecycle mutations for a checked-out booking', async () => {
+    get.mockResolvedValueOnce({
+      data: { ...detail, booking: { ...detail.booking, status: 'checked_out' } },
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    await screen.findByRole('button', { name: 'Not Ekle' });
+    expect(screen.queryByTestId('btn-early-checkin')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('btn-late-checkout')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('btn-room-change')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('btn-mark-noshow')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('btn-cancel-reservation')).not.toBeInTheDocument();
+  });
 });
