@@ -30,12 +30,17 @@ def _enforce_perm(role: str, op: str) -> None:
 
 def _cari_balance(account: dict) -> float:
     """Resolve legacy cari balance fields without losing posted receivables."""
-    values = [
-        float(account.get(field) or 0)
-        for field in ("balance", "current_balance")
-        if field in account
-    ]
+    values = [float(account.get(field) or 0) for field in ("balance", "current_balance") if field in account]
     return max(values, default=0.0)
+
+
+def _extra_charge_total(charge: dict) -> float:
+    """Resolve heterogeneous extra-charge totals while preserving an explicit zero."""
+    for field in ("total", "charge_amount", "amount"):
+        value = charge.get(field)
+        if value is not None:
+            return float(value)
+    return 0.0
 
 
 from models.schemas.bookings import BookingCreate
@@ -59,7 +64,7 @@ def _build_financial_summary(
     active_charges = [charge for charge in charges if not charge.get("voided")]
     total_charges = sum(charge.get("total", charge.get("amount", 0)) for charge in active_charges)
     total_payments = sum(payment.get("amount", 0) for payment in payments if not payment.get("voided"))
-    total_extra = sum(charge.get("charge_amount", charge.get("amount", 0)) for charge in extra_charges if not charge.get("voided"))
+    total_extra = sum(_extra_charge_total(charge) for charge in extra_charges if not charge.get("voided"))
     total_deposits = sum(deposit.get("amount", 0) for deposit in deposits if deposit.get("status") != "refunded")
 
     room_charge_posted = any(charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room" for charge in active_charges)
@@ -1698,6 +1703,9 @@ async def transfer_cari_to_agency(
     _enforce_perm(current_user.role, "post_payment")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
+
+    if account_id == data.cari_account_id:
+        raise HTTPException(status_code=422, detail="Kaynak ve hedef cari hesap farklı olmalı")
 
     source = await db.cari_accounts.find_one({"id": account_id, "tenant_id": tid}, {"_id": 0})
     if not source:

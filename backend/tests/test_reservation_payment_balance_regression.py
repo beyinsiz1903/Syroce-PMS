@@ -39,6 +39,60 @@ def test_summary_keeps_unposted_room_total_before_night_audit():
     assert summary["balance"] == 3100.0
 
 
+def test_summary_preserves_explicit_zero_after_extra_charge_split():
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 100.0, "paid_amount": 0.0},
+        [],
+        [],
+        [{"total": 0.0, "amount": 25.0, "voided": False}],
+        [],
+    )
+
+    assert summary["total_extra"] == 0.0
+    assert summary["balance"] == 100.0
+
+
+@pytest.mark.asyncio
+async def test_cari_transfer_rejects_same_source_and_target_before_db_access(monkeypatch):
+    find_one = AsyncMock()
+    insert_one = AsyncMock()
+    update_one = AsyncMock()
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_: None)
+    monkeypatch.setattr(
+        reservation_detail,
+        "db",
+        SimpleNamespace(
+            cari_accounts=SimpleNamespace(find_one=find_one, update_one=update_one),
+            cari_transactions=SimpleNamespace(insert_one=insert_one),
+        ),
+    )
+
+    user = SimpleNamespace(
+        role="super_admin",
+        tenant_id="tenant-a",
+        name="Test Operator",
+        email="operator@example.test",
+    )
+    payload = reservation_detail.CariTransfer(
+        amount=10.0,
+        cari_account_id="agency-a",
+    )
+
+    with pytest.raises(reservation_detail.HTTPException) as exc:
+        await reservation_detail.transfer_cari_to_agency(
+            "agency-a",
+            payload,
+            user,
+            None,
+        )
+
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "Kaynak ve hedef cari hesap farklı olmalı"
+    find_one.assert_not_awaited()
+    insert_one.assert_not_awaited()
+    update_one.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 async def test_payment_refreshes_tenant_scoped_checkout_balance(monkeypatch):
     calculate = AsyncMock(return_value=125.5)
