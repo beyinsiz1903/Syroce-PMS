@@ -26,7 +26,32 @@ vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-import MicePage from '@/pages/MicePage';
+import MicePage, { omitEmptySpaceBookings } from '@/pages/MicePage';
+
+describe('MicePage event payload normalization', () => {
+  it('omits the untouched convenience space row', () => {
+    expect(omitEmptySpaceBookings([
+      {
+        space_id: '',
+        starts_at: '',
+        ends_at: '',
+        setup_style: 'theatre',
+        expected_pax: 50,
+      },
+    ])).toEqual([]);
+  });
+
+  it('keeps configured and partially configured rows for server validation', () => {
+    const configured = {
+      space_id: 'space-1',
+      starts_at: '2026-08-20T10:00',
+      ends_at: '2026-08-20T12:00',
+    };
+    const partial = { space_id: 'space-2', starts_at: '', ends_at: '' };
+
+    expect(omitEmptySpaceBookings([configured, partial])).toEqual([configured, partial]);
+  });
+});
 
 describe('MicePage entitlement usage contract', () => {
   beforeEach(() => {
