@@ -49,10 +49,17 @@ const MaintenanceWorkOrders = ({ user, tenant, onLogout }) => {
 
   const handleUpdateStatus = async (id, newStatus) => {
     try {
-      await axios.patch(`/maintenance/work-orders/${id}`, { status: newStatus });
+      const response = await axios.patch(`/maintenance/work-orders/${id}`, null, {
+        params: { status: newStatus },
+      });
+      if (response.data?.updated !== true) {
+        throw new Error("Bakım iş emri güncellenemedi");
+      }
       await loadData();
+      toast.success(newStatus === "completed" ? "İş emri tamamlandı" : "İş emri başlatıldı");
     } catch (err) {
       console.error("Failed to update work order", err);
+      toast.error("İş emri durumu güncellenemedi");
     }
   };
 
