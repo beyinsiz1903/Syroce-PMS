@@ -87,7 +87,7 @@ async def _booking_push_async(tenant_id: str, payload: dict[str, Any]):
         await BookingIntegrationLogger.log_event(tenant_id, "ari_push", payload, "failed", message=str(e))
         return {"success": False, "error": str(e)}
     finally:
-        await client.close()
+        client.close()
 
 
 @celery_app.task(name="celery_tasks.booking_pull_task")
@@ -145,7 +145,7 @@ async def _booking_pull_async(tenant_id: str):
         await BookingIntegrationLogger.log_event(tenant_id, "reservation_pull", {}, "failed", message=str(e))
         return {"success": False, "error": str(e)}
     finally:
-        await client.close()
+        client.close()
 
 
 async def ensure_guest_record(db, mapper: BookingReservationMapper, reservation: dict[str, Any]) -> str | None:
@@ -1169,7 +1169,7 @@ async def _archive_old_data_async():
         logger.error(f"Data archival task failed: {e}")
         return {"success": False, "error": str(e)}
     finally:
-        await client.close()
+        client.close()
 
 
 # ============= CLEANUP TASKS =============
@@ -1198,7 +1198,7 @@ async def _clean_old_notifications_async():
         logger.error(f"Notification cleanup failed: {e}")
         return {"success": False, "error": str(e)}
     finally:
-        await client.close()
+        client.close()
 
 
 # ============= REPORTING TASKS =============
@@ -1259,7 +1259,7 @@ async def _generate_daily_reports_async():
         logger.error(f"Daily reports task failed: {e}")
         return {"success": False, "error": str(e)}
     finally:
-        await client.close()
+        client.close()
 
 
 # ============= OPTIMIZATION TASKS =============
@@ -1289,7 +1289,7 @@ async def _refresh_materialized_views_async():
         logger.error(f"Materialized views refresh failed: {e}")
         return {"success": False, "error": str(e)}
     finally:
-        await client.close()
+        client.close()
 
 
 @celery_app.task(name="celery_tasks.warm_cache")
@@ -1329,7 +1329,7 @@ async def _warm_cache_async():
         logger.error(f"Cache warming failed: {e}")
         return {"success": False, "error": str(e)}
     finally:
-        await client.close()
+        client.close()
 
 
 @celery_app.task(name="celery_tasks.archive_old_bookings")
@@ -1356,7 +1356,7 @@ async def _archive_old_bookings_async():
         logger.error(f"Archival failed: {e}")
         return {"success": False, "error": str(e)}
     finally:
-        await client.close()
+        client.close()
 
 
 @celery_app.task(name="celery_tasks.cleanup_old_cache")
@@ -1417,7 +1417,7 @@ async def _database_maintenance_async():
         logger.error(f"Database maintenance failed: {e}")
         return {"success": False, "error": str(e)}
     finally:
-        await client.close()
+        client.close()
 
 
 @celery_app.task(name="celery_tasks.generate_daily_report")
@@ -1459,7 +1459,7 @@ async def _generate_daily_report_async():
         logger.error(f"Daily report generation failed: {e}")
         return {"success": False, "error": str(e)}
     finally:
-        await client.close()
+        client.close()
 
 
 # ============= MAINTENANCE TASKS =============
@@ -1526,7 +1526,7 @@ async def _check_maintenance_sla_async():
         logger.error(f"SLA check task failed: {e}")
         return {"success": False, "error": str(e)}
     finally:
-        await client.close()
+        client.close()
 
 
 # ============= FORECAST TASKS =============
@@ -1580,7 +1580,7 @@ async def _update_occupancy_forecast_async():
         logger.error(f"Occupancy forecast task failed: {e}")
         return {"success": False, "error": str(e)}
     finally:
-        await client.close()
+        client.close()
 
 
 # ============= E-FATURA TASKS =============
@@ -1790,7 +1790,7 @@ async def _process_pending_efaturas_async():
             "error": str(e),
         }
     finally:
-        await client.close()
+        client.close()
 
 
 # ============= CACHE WARMING TASKS =============
@@ -1804,6 +1804,7 @@ def warm_cache_task():
 
 async def _warm_cache_async():
     """Async cache warming"""
+    client = None
     try:
         from cache_manager import warm_dashboard_cache, warm_room_cache
 
@@ -1815,13 +1816,14 @@ async def _warm_cache_async():
             await warm_dashboard_cache(tenant_id, db)
             await warm_room_cache(tenant_id, db)
 
-        await client.close()
-
         return {"success": True, "tenants_warmed": len(tenants), "timestamp": datetime.now(UTC).isoformat()}
 
     except Exception as e:
         logger.error(f"Cache warming task failed: {e}")
         return {"success": False, "error": str(e)}
+    finally:
+        if client is not None:
+            client.close()
 
 
 # ============= HEALTH CHECK TASKS =============
@@ -1853,13 +1855,13 @@ async def _database_health_check_async():
         # Store health check result
         await db.health_checks.insert_one(health_status)
 
-        await client.close()
-
         return health_status
 
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
         return {"status": "unhealthy", "error": str(e), "timestamp": datetime.now(UTC).isoformat()}
+    finally:
+        client.close()
 
 
 # ============= HRv2 SHADOW AUTOMATION TASKS =============
