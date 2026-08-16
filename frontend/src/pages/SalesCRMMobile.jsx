@@ -97,7 +97,15 @@ const SalesCRMMobile = ({ user }) => {
           </Card>
         ))}
 
-        {activeView === 'leads' && leads.map(lead => (
+        {activeView === 'leads' && leads.map(lead => {
+          const stage = typeof lead.stage === 'string' && lead.stage.trim()
+            ? lead.stage.trim().toLowerCase()
+            : 'unknown';
+          const expectedRevenue = Number.isFinite(Number(lead.expected_revenue))
+            ? Number(lead.expected_revenue)
+            : 0;
+
+          return (
           <Card key={lead.id} className="hover:shadow-lg transition">
             <CardContent className="p-4">
               <div className="flex justify-between items-start mb-2">
@@ -105,16 +113,17 @@ const SalesCRMMobile = ({ user }) => {
                   <div className="font-bold">{lead.guest_name}</div>
                   {lead.company && <div className="text-sm text-gray-600 flex items-center gap-1"><Building2 className="h-3 w-3" />{lead.company}</div>}
                 </div>
-                <Badge className={`${getStageColor(lead.stage)} text-white`}>{lead.stage.toUpperCase()}</Badge>
+                <Badge className={`${getStageColor(stage)} text-white`}>{stage.toUpperCase()}</Badge>
               </div>
               <div className="text-sm text-gray-700 mb-2">{lead.notes}</div>
               <div className="flex justify-between text-xs">
-                <span>Beklenen: ₺{lead.expected_revenue.toLocaleString()}</span>
+                <span>Beklenen: ₺{expectedRevenue.toLocaleString('tr-TR')}</span>
                 <span>{lead.expected_checkin}</span>
               </div>
             </CardContent>
           </Card>
-        ))}
+          );
+        })}
 
         {activeView === 'ota' && otaPricing.map((ota, idx) => (
           <Card key={idx}>
