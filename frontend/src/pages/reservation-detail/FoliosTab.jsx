@@ -193,6 +193,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <FormPanel color="indigo" title="Cariyi Acenteye Aktar" testid="cari-agency-transfer-form" onClose={() => setShowCariTransfer(false)} loading={loading}
           onSubmit={() => exec(async () => {
             if (!cariTransferForm.source_id || !cariTransferForm.target_id) { toast.error('Kaynak ve hedef cari hesap seciniz'); return; }
+            if (cariTransferForm.source_id === cariTransferForm.target_id) { toast.error('Kaynak ve hedef cari hesap farklı olmalı'); return; }
             await axios.post(`/pms/cari-accounts/${cariTransferForm.source_id}/transfer-to-agency`, {
               amount: parseFloat(cariTransferForm.amount),
               cari_account_id: cariTransferForm.target_id,
@@ -285,7 +286,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
                 <div className="text-xs text-gray-400">{fmtTs(item.created_at || item.processed_at)}{item.agency_name && <span className="ml-2 text-indigo-600">({item.agency_name})</span>}</div>
               </div>
               <div className={`text-sm font-bold ${item._type === 'payment' ? 'text-emerald-600' : 'text-amber-600'}`}>
-                {item._type === 'payment' ? '-' : '+'}{fmtTL(item.amount || item.total || item.charge_amount)} TL
+                {item._type === 'payment' ? '-' : '+'}{fmtTL(item.total ?? item.charge_amount ?? item.amount)} TL
               </div>
             </div>
           ))

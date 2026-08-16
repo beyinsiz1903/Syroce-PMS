@@ -199,8 +199,15 @@ export function ExtraChargesTab({
                   <div className="text-sm font-medium">{c.description || c.charge_name || '-'}</div>
                   <div className="text-xs text-gray-400">{cats[c.category || c.charge_category] || ''} {c.split_from_booking_id && <span className="text-blue-500">{t('cm.pages_reservationdetail_PricingTabs.aktarildi')}</span>}</div>
                 </div>
-                <div className="text-sm font-bold text-amber-700">{fmtTL(c.total || c.charge_amount || c.amount)} TL</div>
-                <Button size="sm" variant="ghost" onClick={() => setShowSplit(showSplit === c.id ? null : c.id)} className="h-7 px-2 text-xs text-blue-600"><ArrowRightLeft className="w-3 h-3" /></Button>
+                <div className="text-sm font-bold text-amber-700">{fmtTL(c.total ?? c.charge_amount ?? c.amount)} TL</div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setShowSplit(showSplit === c.id ? null : c.id)}
+                  className="h-7 px-2 text-xs text-blue-600"
+                  aria-label={`${c.description || c.charge_name || 'Masraf'} masrafını böl`}
+                  title="Masrafı böl"
+                ><ArrowRightLeft className="w-3 h-3" /></Button>
               </div>
               {showSplit === c.id && <div className="mt-3 border-t pt-3 space-y-2">
                   <div className="text-xs font-semibold text-gray-700">{t('cm.pages_reservationdetail_PricingTabs.masraf_bol')}</div>

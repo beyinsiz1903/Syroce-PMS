@@ -331,6 +331,8 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
                 disabled={deleting}
                 className="h-9 text-xs text-red-600 border-red-200 hover:bg-red-50"
                 data-testid="btn-delete-vcc"
+                aria-label="Sanal kartı sil"
+                title="Sanal kartı sil"
               >
                 {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
               </Button>
