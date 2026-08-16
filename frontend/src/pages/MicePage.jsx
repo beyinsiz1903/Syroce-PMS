@@ -18,6 +18,11 @@ import ResourcesView from '@/components/mice/ResourcesView';
 import { Stat } from '@/components/mice/_shared';
 // R4: Modal-bazlı render bloğu modals/ alt-paketine taşındı.
 import EventFormModal from '@/components/mice/modals/EventFormModal';
+
+export const omitEmptySpaceBookings = (spaceBookings = []) =>
+  spaceBookings.filter((booking) =>
+    Boolean(booking?.space_id || booking?.starts_at || booking?.ends_at),
+  );
 import MenuFormModal from '@/components/mice/modals/MenuFormModal';
 import BeoModal from '@/components/mice/modals/BeoModal';
 import KitchenModal from '@/components/mice/modals/KitchenModal';
@@ -290,6 +295,10 @@ const MicePage = ({
       const payload = {
         ...form
       };
+      // The form starts with one convenience row. Do not send that untouched
+      // row as a real booking because its required datetimes are intentionally
+      // empty until the user selects a space.
+      payload.space_bookings = omitEmptySpaceBookings(payload.space_bookings);
       const ent = payload.entertainment || {};
       if (!ent.type || ent.type === 'none') {
         payload.entertainment = null;
