@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Building2, Plus, Database, RefreshCw } from "lucide-react";
 import { useTranslation } from 'react-i18next';
+import { toast } from "sonner";
 
 const MaintenanceAssets = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -34,6 +35,7 @@ const MaintenanceAssets = ({ user, tenant, onLogout }) => {
       setItems(res.data.items || []);
     } catch (err) {
       console.error("Failed to load maintenance assets", err);
+      toast.error("Bakım varlıkları yüklenemedi");
     } finally {
       setLoading(false);
     }
@@ -41,13 +43,13 @@ const MaintenanceAssets = ({ user, tenant, onLogout }) => {
 
   useEffect(() => {
     loadData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- loadData intentionally follows the selected filter
+  }, [assetType]);
 
   const handleCreate = async () => {
     try {
       const payload = { ...form };
-      const res = await axios.post("/maintenance/assets", payload);
+      await axios.post("/maintenance/assets", payload);
       setDialogOpen(false);
       setForm({
         name: "",
@@ -59,8 +61,10 @@ const MaintenanceAssets = ({ user, tenant, onLogout }) => {
         serial_number: ""
       });
       await loadData();
+      toast.success("Bakım varlığı oluşturuldu");
     } catch (err) {
       console.error("Failed to create asset", err);
+      toast.error("Bakım varlığı oluşturulamadı");
     }
   };
 

@@ -8,10 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Calendar, Clock, RefreshCw, ListChecks } from "lucide-react";
 import { useTranslation } from 'react-i18next';
+import { toast } from "sonner";
 
 const MaintenancePlans = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const [items, setItems] = useState([]);
+  const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({
@@ -27,10 +29,15 @@ const MaintenancePlans = ({ user, tenant, onLogout }) => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const res = await axios.get("/maintenance/plans");
-      setItems(res.data.items || []);
+      const [plansResponse, assetsResponse] = await Promise.all([
+        axios.get("/maintenance/plans"),
+        axios.get("/maintenance/assets"),
+      ]);
+      setItems(plansResponse.data.items || []);
+      setAssets(assetsResponse.data.items || []);
     } catch (err) {
       console.error("Failed to load maintenance plans", err);
+      toast.error("Bakım planları yüklenemedi");
     } finally {
       setLoading(false);
     }
@@ -41,6 +48,11 @@ const MaintenancePlans = ({ user, tenant, onLogout }) => {
   }, []);
 
   const handleCreate = async () => {
+    if (!form.asset_id || !form.next_due_date || form.frequency_value < 1) {
+      toast.error("Varlık, tarih ve geçerli sıklık zorunludur");
+      return;
+    }
+
     try {
       const payload = {
         ...form,
@@ -59,17 +71,23 @@ const MaintenancePlans = ({ user, tenant, onLogout }) => {
         default_priority: "normal"
       });
       await loadData();
+      toast.success("Bakım planı oluşturuldu");
     } catch (err) {
       console.error("Failed to create plan", err);
+      toast.error("Bakım planı oluşturulamadı");
     }
   };
 
   const handleRunScheduler = async () => {
     try {
-      await axios.post("/maintenance/plans/run-scheduler");
+      const response = await axios.post("/maintenance/plans/run-scheduler");
       await loadData();
+      const created = response.data?.created_count ?? 0;
+      const skipped = response.data?.skipped_count ?? 0;
+      toast.success(`${created} iş emri oluşturuldu${skipped ? `, ${skipped} geçersiz plan atlandı` : ""}`);
     } catch (err) {
       console.error("Failed to run scheduler", err);
+      toast.error("Bakım planlayıcısı çalıştırılamadı");
     }
   };
 
@@ -158,11 +176,21 @@ const MaintenancePlans = ({ user, tenant, onLogout }) => {
             <div className="space-y-3 mt-2">
               <div>
                 <div className="text-xs text-gray-600 mb-1">Asset ID</div>
-                <Input
+                <Select
                   value={form.asset_id}
-                  onChange={(e) => setForm((p) => ({ ...p, asset_id: e.target.value }))}
-                  placeholder="İlgili asset id (şimdilik manuel)"
-                />
+                  onValueChange={(value) => setForm((p) => ({ ...p, asset_id: value }))}
+                >
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue placeholder="Bakım varlığı seçin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {assets.map((asset) => (
+                      <SelectItem key={asset.id} value={asset.id}>
+                        {asset.name}{asset.room_number ? ` · Oda ${asset.room_number}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
