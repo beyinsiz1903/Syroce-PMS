@@ -240,11 +240,11 @@ class FrontdeskService:
         except Exception as exc:  # pragma: no cover
             logger.warning("KVB auto_post (checkout) failed: %s", exc)
 
-        total_balance = 0.0
+        cached_folio_balance = 0.0
         folio_details = []
         for folio in folios:
             balance = folio.get("balance", 0.0)
-            total_balance += balance
+            cached_folio_balance += balance
             folio_details.append(
                 {
                     "folio_number": folio.get("folio_number"),
@@ -253,34 +253,46 @@ class FrontdeskService:
                 }
             )
 
-        # Also check booking-level balance (total_amount - paid_amount)
-        booking_total = booking.get("total_amount", 0) or 0
-        booking_paid = booking.get("paid_amount", 0) or 0
-        booking_balance = round(booking_total - booking_paid, 2)
-        effective_balance = max(total_balance, booking_balance)
+        # Cached folio/booking totals can drift after charge splits and legacy
+        # imports. Rebuild the checkout balance from the durable rows used by
+        # the reservation summary and departure queue.
+        ledger_filter = {"booking_id": booking_id, "tenant_id": ctx.tenant_id}
+        charges = await self._db.folio_charges.find(ledger_filter, {"_id": 0}).to_list(10_000)
+        payments = await self._db.payments.find(ledger_filter, {"_id": 0}).to_list(10_000)
+        extra_charges = await self._db.extra_charges.find(ledger_filter, {"_id": 0}).to_list(10_000)
+        effective_balance = round(
+            calculate_departure_balance(
+                charges,
+                payments,
+                extra_charges,
+                booking_total=booking.get("total_amount", 0),
+            ),
+            2,
+        )
 
         if effective_balance > 0.01 and not force:
             return ServiceResult.fail(
                 f"Outstanding balance: {effective_balance:.2f}",
                 "OUTSTANDING_BALANCE",
                 folio_details=folio_details,
-                booking_balance=booking_balance,
+                durable_balance=effective_balance,
+                cached_folio_balance=round(cached_folio_balance, 2),
             )
 
         if auto_close_folios and effective_balance <= 0.01:
             for folio in folios:
                 await self._db.folios.update_one(
-                    {"id": folio["id"]},
+                    {"id": folio["id"], "tenant_id": ctx.tenant_id},
                     {"$set": {"status": "closed", "balance": 0.0, "closed_at": datetime.now(UTC).isoformat()}},
                 )
 
         checked_out_time = datetime.now(UTC)
         await self._db.bookings.update_one(
-            {"id": booking_id},
+            {"id": booking_id, "tenant_id": ctx.tenant_id},
             {"$set": {"status": "checked_out", "checked_out_at": checked_out_time.isoformat()}},
         )
         await self._db.rooms.update_one(
-            {"id": booking["room_id"]},
+            {"id": booking["room_id"], "tenant_id": ctx.tenant_id},
             {"$set": {"status": "dirty", "current_booking_id": None}},
         )
 
@@ -300,7 +312,7 @@ class FrontdeskService:
             {
                 "message": "Check-out completed successfully",
                 "checked_out_at": checked_out_time.isoformat(),
-                "total_balance": total_balance,
+                "total_balance": effective_balance,
                 "folios_closed": len(folios) if auto_close_folios else 0,
                 "folio_details": folio_details,
             }
@@ -613,7 +625,12 @@ class FrontdeskService:
             charges = charges_by_booking.get(b["id"], [])
             payments = payments_by_booking.get(b["id"], [])
             extras = extras_by_booking.get(b["id"], [])
-            balance = calculate_departure_balance(charges, payments, extras)
+            balance = calculate_departure_balance(
+                charges,
+                payments,
+                extras,
+                booking_total=b.get("total_amount", 0),
+            )
             guest = guest_map.get(b.get("guest_id")) or {}
             room = room_map.get(b.get("room_id")) or {}
             guest_name = guest.get("name") or f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip()
