@@ -472,6 +472,14 @@ async def create_preventive_plan(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
+    if data.asset_id:
+        asset = await db.maintenance_assets.find_one(
+            {"tenant_id": current_user.tenant_id, "id": data.asset_id},
+            {"_id": 0, "id": 1},
+        )
+        if not asset:
+            raise HTTPException(status_code=400, detail="MAINTENANCE_ASSET_NOT_FOUND")
+
     plan = data.model_copy(
         update={
             "tenant_id": current_user.tenant_id,
@@ -510,11 +518,15 @@ async def run_preventive_maintenance_scheduler(
     due_plans_cursor = db.maintenance_plans.find({"tenant_id": tenant_id, "is_active": True, "next_due_date": {"$lte": now.isoformat()}}, {"_id": 0})
 
     created_orders = []
+    skipped_count = 0
 
     async for plan in due_plans_cursor:
         asset = None
         if plan.get("asset_id"):
             asset = await db.maintenance_assets.find_one({"tenant_id": tenant_id, "id": plan["asset_id"]}, {"_id": 0})
+            if not asset:
+                skipped_count += 1
+                continue
 
         room_id = asset.get("room_id") if asset else None
         room_number = asset.get("room_number") if asset else None
@@ -568,6 +580,7 @@ async def run_preventive_maintenance_scheduler(
 
     return {
         "created_count": len(created_orders),
+        "skipped_count": skipped_count,
         "orders": created_orders,
     }
 
