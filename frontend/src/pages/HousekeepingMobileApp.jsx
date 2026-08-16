@@ -8,6 +8,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { CheckCircle, Clock, Camera, MessageSquare, Sparkles, Zap, FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+export const getRoomHousekeepingStatus = (room) =>
+  room?.housekeeping_status ?? room?.hk_status ?? 'clean';
+
 const HousekeepingMobileApp = ({ user }) => {
   const { t } = useTranslation();
   const [rooms, setRooms] = useState([]);
@@ -178,7 +181,7 @@ const HousekeepingMobileApp = ({ user }) => {
               filter === 'dirty' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600'
             }`}
           >
-            To Clean ({rooms.filter(r => r.hk_status === 'dirty').length})
+            To Clean ({rooms.filter(r => getRoomHousekeepingStatus(r) === 'dirty').length})
           </button>
           <button
             onClick={() => setFilter('clean')}
@@ -209,8 +212,8 @@ const HousekeepingMobileApp = ({ user }) => {
                   <h3 className="text-2xl font-bold">Room {room.room_number}</h3>
                   <p className="text-sm text-gray-600">{room.room_type} - Floor {room.floor}</p>
                 </div>
-                <Badge className={getRoomStatusBadge(room.hk_status)}>
-                  {room.hk_status}
+                <Badge className={getRoomStatusBadge(getRoomHousekeepingStatus(room))}>
+                  {getRoomHousekeepingStatus(room)}
                 </Badge>
               </div>
 
@@ -228,7 +231,7 @@ const HousekeepingMobileApp = ({ user }) => {
               )}
 
               <div className="flex gap-2">
-                {room.hk_status === 'dirty' && (
+                {getRoomHousekeepingStatus(room) === 'dirty' && (
                   <>
                     <Button
                       size="sm"
@@ -248,7 +251,7 @@ const HousekeepingMobileApp = ({ user }) => {
                     </Button>
                   </>
                 )}
-                {room.hk_status === 'cleaning' && (
+                {getRoomHousekeepingStatus(room) === 'cleaning' && (
                   <Button
                     size="sm"
                     onClick={() => handleQuickStatusUpdate(room.id, room.room_number, 'inspected')}
@@ -257,7 +260,7 @@ const HousekeepingMobileApp = ({ user }) => {
                     Mark as Clean
                   </Button>
                 )}
-                {room.hk_status === 'inspected' && (
+                {getRoomHousekeepingStatus(room) === 'inspected' && (
                   <Button
                     size="sm"
                     onClick={() => handleQuickStatusUpdate(room.id, room.room_number, 'available')}

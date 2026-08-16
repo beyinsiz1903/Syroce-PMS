@@ -682,6 +682,7 @@ async def update_room_status_hk(
         {"id": room_id, "tenant_id": current_user.tenant_id},  # v109 round-9 IDOR
         {"$set": update_data},
     )
+    _invalidate_hk_caches(current_user.tenant_id)
 
     return {"message": f"Room {room['room_number']} status updated to {new_status}", "room_number": room["room_number"], "new_status": new_status}
 

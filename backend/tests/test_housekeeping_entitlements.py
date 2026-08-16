@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -47,6 +47,7 @@ def mock_db():
 
         db = MagicMock()
         db.rooms.find_one = AsyncMock(return_value={"id": "room_1", "tenant_id": "tenant_1"})
+        db.rooms.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
         db.housekeeping_tasks.find_one = AsyncMock(return_value={"id": "task_1", "task_type": "cleaning", "status": "pending"})
         db.housekeeping_tasks.insert_one = AsyncMock()
         db.housekeeping_tasks.delete_one = AsyncMock(return_value=MagicMock(deleted_count=1))
@@ -265,6 +266,25 @@ def test_hk_tenant_isolation(mock_db, override_auth, mock_require_module, client
     # Just verify that find_one is called with tenant_id="tenant_1"
     client.delete("/api/housekeeping/tasks/task_1")
     mock_db.housekeeping_tasks.find_one.assert_any_call({"id": "task_1", "tenant_id": "tenant_1"})
+
+
+def test_quick_room_status_update_invalidates_room_board_cache(mock_db, override_auth, mock_require_module, client):
+    mock_db.rooms.find_one.return_value = {
+        "id": "room_1",
+        "tenant_id": "tenant_1",
+        "room_number": "101",
+    }
+    cache = MagicMock()
+
+    with patch("routers.housekeeping.cache", cache):
+        res = client.put("/api/housekeeping/room/room_1/status", params={"new_status": "cleaning"})
+
+    assert res.status_code == 200
+    mock_db.rooms.update_one.assert_awaited_once_with(
+        {"id": "room_1", "tenant_id": "tenant_1"},
+        {"$set": {"status": "cleaning", "updated_at": ANY}},
+    )
+    cache.invalidate_tenant_cache.assert_any_call("tenant_1", "housekeeping_room_status")
 
 def test_hk_create_concurrent_same_idempotency_key(mock_db, override_auth, mock_require_module, client):
     # This is basically the same as in-flight
