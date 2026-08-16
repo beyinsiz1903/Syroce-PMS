@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import BulkDeleteRoomsDialog from '@/components/pms/BulkDeleteRoomsDialog';
 import CashierTab from '@/components/pms/CashierTab';
 import PaymentDialog from '@/components/pms/PaymentDialog';
+import { DepositsTab } from '@/pages/reservation-detail/DocumentTabs';
 
 const { get, post } = vi.hoisted(() => ({
   get: vi.fn(),
@@ -32,6 +33,28 @@ beforeEach(() => {
 });
 
 describe('financial and destructive mutation safety', () => {
+  it('keeps a partially refunded deposit available through an accessible refund action', () => {
+    render(
+      <DepositsTab
+        booking={{ id: 'booking-test' }}
+        deposits={[{
+          id: 'deposit-test',
+          amount: 100,
+          refunded_amount: 40,
+          status: 'partially_refunded',
+          method: 'cash',
+        }]}
+      />,
+    );
+
+    const refundButton = screen.getByRole('button', {
+      name: 'Depozito iade işlemini aç - 60 TL',
+    });
+    fireEvent.click(refundButton);
+
+    expect(screen.getByText('Depozito Iade')).toBeInTheDocument();
+  });
+
   it('requires the exact room deletion phrase and suppresses rapid duplicate submissions', async () => {
     let resolveDelete;
     const onDeleted = vi.fn();

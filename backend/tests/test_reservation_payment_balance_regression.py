@@ -93,6 +93,24 @@ async def test_cari_transfer_rejects_same_source_and_target_before_db_access(mon
     update_one.assert_not_awaited()
 
 
+def test_summary_reports_only_remaining_partial_deposit():
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 100.0, "paid_amount": 60.0},
+        [],
+        [{"amount": 60.0, "voided": False}],
+        [],
+        [
+            {
+                "amount": 100.0,
+                "refunded_amount": 40.0,
+                "status": "partially_refunded",
+            }
+        ],
+    )
+
+    assert summary["total_deposits"] == 60.0
+
+
 @pytest.mark.asyncio
 async def test_payment_refreshes_tenant_scoped_checkout_balance(monkeypatch):
     calculate = AsyncMock(return_value=125.5)
