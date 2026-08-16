@@ -217,7 +217,10 @@ export default function DepositTracking({
     return true;
   });
   const totalActive = deposits.filter(d => d.status === 'received').reduce((s, d) => s + (d.amount || 0), 0);
-  const totalRefunded = deposits.filter(d => d.status === 'refunded').reduce((s, d) => s + (d.amount || 0), 0);
+  const totalRefunded = deposits.reduce((sum, deposit) => {
+    if (deposit.refunded_amount != null) return sum + Number(deposit.refunded_amount || 0);
+    return sum + (deposit.status === 'refunded' ? Number(deposit.amount || 0) : 0);
+  }, 0);
   const totalPartial = deposits.filter(d => d.status === 'partially_refunded').reduce((s, d) => s + ((d.amount || 0) - (d.refunded_amount || 0)), 0);
   const totalAll = totalActive + totalPartial;
   return <>
@@ -296,7 +299,7 @@ export default function DepositTracking({
                     <td className="py-3 px-4 text-xs text-gray-500">{d.recorded_by || '-'}</td>
                     <td className="py-3 px-4">
                       <div className="flex items-center justify-center gap-1">
-                        {d.status === 'received' && <Button variant="ghost" size="sm" className="h-7 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-50" onClick={() => {
+                        {d.status !== 'refunded' && <Button variant="ghost" size="sm" className="h-7 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-50" onClick={() => {
                     setRefundTarget(d);
                     setRefundData({
                       amount: String(d.amount - (d.refunded_amount || 0)),
@@ -304,7 +307,7 @@ export default function DepositTracking({
                       reason: ''
                     });
                     setShowRefund(true);
-                  }} data-testid={`refund-btn-${d.id}`}>
+                  }} data-testid={`refund-btn-${d.id}`} aria-label={`Depozito iade işlemini aç - ${d.guest_name || 'misafir'}`}>
                             <RotateCcw className="w-3 h-3 mr-1" /> {t('cm.pages_DepositTracking.iade')}
                           </Button>}
                         {d.booking_id && <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => handleGenerateInvoice(d)} data-testid={`invoice-btn-${d.id}`}>

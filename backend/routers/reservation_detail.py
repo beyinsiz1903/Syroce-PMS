@@ -65,7 +65,14 @@ def _build_financial_summary(
     total_charges = sum(charge.get("total", charge.get("amount", 0)) for charge in active_charges)
     total_payments = sum(payment.get("amount", 0) for payment in payments if not payment.get("voided"))
     total_extra = sum(_extra_charge_total(charge) for charge in extra_charges if not charge.get("voided"))
-    total_deposits = sum(deposit.get("amount", 0) for deposit in deposits if deposit.get("status") != "refunded")
+    total_deposits = sum(
+        max(
+            0,
+            float(deposit.get("amount", 0) or 0) - float(deposit.get("refunded_amount", 0) or 0),
+        )
+        for deposit in deposits
+        if deposit.get("status") != "refunded"
+    )
 
     room_charge_posted = any(charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room" for charge in active_charges)
     unposted_room_total = 0 if room_charge_posted else booking.get("total_amount", 0)
@@ -1354,6 +1361,7 @@ async def record_deposit(
         "tenant_id": tid,
         "folio_id": "",
         "booking_id": booking_id,
+        "deposit_id": deposit["id"],
         "amount": data.amount,
         "method": data.method,
         "payment_type": "deposit",
@@ -2266,15 +2274,39 @@ async def refund_deposit(
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
-    deposit = await db.deposits.find_one({"id": data.deposit_id, "tenant_id": tid}, {"_id": 0})
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+
+    deposit = await db.deposits.find_one(
+        {
+            "id": data.deposit_id,
+            "booking_id": booking_id,
+            "tenant_id": tid,
+        },
+        {"_id": 0},
+    )
     if not deposit:
         raise HTTPException(status_code=404, detail="Depozito bulunamadi")
+    if deposit.get("status") == "refunded":
+        raise HTTPException(status_code=400, detail="Depozito tamamen iade edilmis")
 
-    if data.refund_amount > deposit.get("amount", 0):
-        raise HTTPException(status_code=400, detail="Iade tutari depozito tutarindan buyuk olamaz")
+    deposit_amount = round(float(deposit.get("amount", 0) or 0), 2)
+    refunded_before = round(float(deposit.get("refunded_amount", 0) or 0), 2)
+    refundable_amount = round(max(0.0, deposit_amount - refunded_before), 2)
+    if refundable_amount <= 0:
+        raise HTTPException(status_code=400, detail="Depozito tamamen iade edilmis")
+    if data.refund_amount > refundable_amount:
+        raise HTTPException(
+            status_code=400,
+            detail="Iade tutari kalan depozito bakiyesinden buyuk olamaz",
+        )
+
+    now = datetime.now(UTC).isoformat()
+    refund_id = str(uuid.uuid4())
 
     refund = {
-        "id": str(uuid.uuid4()),
+        "id": refund_id,
         "tenant_id": tid,
         "booking_id": booking_id,
         "deposit_id": data.deposit_id,
@@ -2283,16 +2315,48 @@ async def refund_deposit(
         "reason": data.reason,
         "status": "refunded",
         "refunded_by": current_user.name,
-        "refunded_at": datetime.now(UTC).isoformat(),
+        "refunded_at": now,
     }
     await db.deposit_refunds.insert_one({**refund})
 
-    # Update deposit status
-    remaining = deposit.get("amount", 0) - data.refund_amount
-    new_status = "refunded" if remaining <= 0 else "partially_refunded"
+    payment = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "folio_id": "",
+        "booking_id": booking_id,
+        "deposit_id": data.deposit_id,
+        "deposit_refund_id": refund_id,
+        "amount": -round(data.refund_amount, 2),
+        "method": data.refund_method,
+        "payment_type": "refund",
+        "status": "refunded",
+        "reference": deposit.get("reference"),
+        "notes": data.reason,
+        "processed_by": current_user.name,
+        "processed_at": now,
+        "voided": False,
+    }
+    await db.payments.insert_one({**payment})
+
+    refunded_total = round(refunded_before + data.refund_amount, 2)
+    remaining = round(max(0.0, deposit_amount - refunded_total), 2)
+    new_status = "refunded" if remaining == 0 else "partially_refunded"
     await db.deposits.update_one(
-        {"id": data.deposit_id, "tenant_id": tid},
-        {"$set": {"status": new_status, "refunded_amount": data.refund_amount}},
+        {
+            "id": data.deposit_id,
+            "booking_id": booking_id,
+            "tenant_id": tid,
+        },
+        {"$set": {"status": new_status, "refunded_amount": refunded_total}},
+    )
+
+    paid_amount = round(
+        max(0.0, float(booking.get("paid_amount", 0) or 0) - data.refund_amount),
+        2,
+    )
+    await db.bookings.update_one(
+        {"id": booking_id, "tenant_id": tid},
+        {"$set": {"paid_amount": paid_amount}},
     )
 
     await _log_activity(
@@ -2306,8 +2370,28 @@ async def refund_deposit(
         },
     )
 
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+
+    schedule_emit_reservation_updated(
+        tid,
+        booking_id,
+        "payment_refunded",
+        {
+            "payment_id": payment["id"],
+            "amount": data.refund_amount,
+            "method": data.refund_method,
+            "payment_type": "refund",
+        },
+    )
+
     refund.pop("_id", None)
-    return {"success": True, "refund": refund}
+    payment.pop("_id", None)
+    return {
+        "success": True,
+        "refund": refund,
+        "payment": payment,
+        "remaining_amount": remaining,
+    }
 
 
 @router.get("/deposits/all")

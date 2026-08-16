@@ -22,6 +22,49 @@ logger = logging.getLogger(__name__)
 sub_router = APIRouter()
 
 
+def _invoice_charge_amount(charge: dict) -> float:
+    for field in ("total", "charge_amount", "amount"):
+        if field in charge and charge[field] is not None:
+            return round(float(charge[field]), 2)
+    return 0.0
+
+
+def _invoice_charge_item(charge: dict) -> dict:
+    return {
+        "id": str(charge.get("id", "")),
+        "description": charge.get("description") or charge.get("name") or charge.get("category") or "Masraf",
+        "date": str(charge.get("posted_at") or charge.get("created_at") or "")[:10],
+        "amount": _invoice_charge_amount(charge),
+        "category": charge.get("charge_category") or charge.get("category") or charge.get("charge_type") or "other",
+    }
+
+
+async def _load_reservation_charge_items(booking_id: str, tenant_id: str) -> list[dict]:
+    """Read durable charge rows once, excluding voided and duplicate entries."""
+    items: list[dict] = []
+    seen_ids: set[str] = set()
+
+    for collection in (db.folio_charges, db.extra_charges):
+        cursor = collection.find(
+            {
+                "booking_id": booking_id,
+                "tenant_id": tenant_id,
+                "voided": {"$ne": True},
+            },
+            {"_id": 0},
+        ).sort("created_at", 1)
+        async for charge in cursor:
+            if charge.get("voided"):
+                continue
+            item = _invoice_charge_item(charge)
+            if not item["id"] or item["id"] in seen_ids:
+                continue
+            seen_ids.add(item["id"])
+            items.append(item)
+
+    return items
+
+
 @sub_router.get("/reservations/{booking_id}/invoice-pdf")
 async def generate_invoice_pdf(
     booking_id: str,
@@ -36,15 +79,13 @@ async def generate_invoice_pdf(
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
-    # Get folio entries
-    folios = []
-    async for f in db.folios.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", 1):
-        folios.append(f)
+    charge_items = await _load_reservation_charge_items(booking_id, tid)
 
     # Get payments
     payments = []
     async for p in db.payments.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", 1):
-        payments.append(p)
+        if not p.get("voided"):
+            payments.append(p)
 
     # Get hotel settings
     settings = await db.hotel_settings.find_one({"tenant_id": tid}, {"_id": 0})
@@ -92,13 +133,11 @@ async def generate_invoice_pdf(
             <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">{_e(currency)}{accommodation_total:,.2f}</td>
         </tr>"""
 
-    for f in folios:
-        if f.get("type") == "payment":
-            continue
+    for item in charge_items:
         folio_rows += f"""<tr>
-            <td style="padding:8px;border-bottom:1px solid #eee;">{_e(f.get("description", f.get("category", "Masraf")))}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee;">{_e((f.get("created_at", ""))[:10])}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">{_e(currency)}{f.get("amount", 0):,.2f}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;">{_e(item["description"])}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;">{_e(item["date"])}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">{_e(currency)}{item["amount"]:,.2f}</td>
         </tr>"""
 
     payment_rows = ""
@@ -110,7 +149,7 @@ async def generate_invoice_pdf(
             <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">{_e(currency)}{p.get("amount", 0):,.2f}</td>
         </tr>"""
 
-    grand_total = accommodation_total + sum(f.get("amount", 0) for f in folios if f.get("type") != "payment")
+    grand_total = accommodation_total + sum(item["amount"] for item in charge_items)
     balance = grand_total - total_payments
 
     guest_name = guest.get("name", booking.get("guest_name", "-")) if guest else booking.get("guest_name", "-")
@@ -360,27 +399,7 @@ async def generate_custom_invoice(
             }
         )
 
-    async for f in db.folios.find({"booking_id": booking_id, "tenant_id": tid, "type": {"$ne": "payment"}}, {"_id": 0}).sort("created_at", 1):
-        all_charges.append(
-            {
-                "id": f.get("id", ""),
-                "description": f.get("description", f.get("category", "Masraf")),
-                "date": str(f.get("created_at", ""))[:10],
-                "amount": f.get("amount", 0),
-                "category": f.get("category", "other"),
-            }
-        )
-
-    async for ec in db.extra_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", 1):
-        all_charges.append(
-            {
-                "id": ec.get("id", ""),
-                "description": ec.get("description", "Ekstra"),
-                "date": str(ec.get("created_at", ""))[:10],
-                "amount": ec.get("total", ec.get("amount", 0)),
-                "category": ec.get("category", "other"),
-            }
-        )
+    all_charges.extend(await _load_reservation_charge_items(booking_id, tid))
 
     if body.selected_charge_ids:
         selected = [c for c in all_charges if c["id"] in body.selected_charge_ids]
@@ -534,27 +553,7 @@ async def get_invoice_charges(
             }
         )
 
-    async for f in db.folios.find({"booking_id": booking_id, "tenant_id": tid, "type": {"$ne": "payment"}}, {"_id": 0}).sort("created_at", 1):
-        charges.append(
-            {
-                "id": f.get("id", ""),
-                "description": f.get("description", f.get("category", "Masraf")),
-                "category": f.get("category", "other"),
-                "amount": f.get("amount", 0),
-                "date": str(f.get("created_at", ""))[:10],
-            }
-        )
-
-    async for ec in db.extra_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", 1):
-        charges.append(
-            {
-                "id": ec.get("id", ""),
-                "description": ec.get("description", "Ekstra"),
-                "category": ec.get("category", "other"),
-                "amount": ec.get("total", ec.get("amount", 0)),
-                "date": str(ec.get("created_at", ""))[:10],
-            }
-        )
+    charges.extend(await _load_reservation_charge_items(booking_id, tid))
 
     return {"charges": charges}
 

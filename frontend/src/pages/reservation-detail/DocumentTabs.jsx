@@ -36,7 +36,10 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
   };
 
   const totalDeposits = (deposits || []).reduce((s, d) => s + (d.amount || 0), 0);
-  const totalRefunded = (deposits || []).filter(d => d.status === 'refunded').reduce((s, d) => s + (d.amount || 0), 0);
+  const totalRefunded = (deposits || []).reduce((sum, deposit) => {
+    if (deposit.refunded_amount != null) return sum + Number(deposit.refunded_amount || 0);
+    return sum + (deposit.status === 'refunded' ? Number(deposit.amount || 0) : 0);
+  }, 0);
 
   return (
     <div data-testid="deposits-tab" className="space-y-4">
@@ -83,7 +86,13 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
                   {d.status === 'refunded' ? 'Iade Edildi' : d.status === 'partially_refunded' ? 'Kismi Iade' : 'Aktif'}
                 </Badge>
                 {d.status !== 'refunded' && (
-                  <Button size="sm" variant="ghost" onClick={() => setShowRefund(showRefund === d.id ? null : d.id)} className="h-7 px-2 text-xs text-red-600">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowRefund(showRefund === d.id ? null : d.id)}
+                    className="h-7 px-2 text-xs text-red-600"
+                    aria-label={`Depozito iade işlemini aç - ${fmtTL((d.amount || 0) - (d.refunded_amount || 0))} TL`}
+                  >
                     <RefreshCw className="w-3 h-3" />
                   </Button>
                 )}
