@@ -317,6 +317,7 @@ const MobileFinance = ({ user }) => {
     loadData, handleRefresh, handleRecordPayment, formatCurrency, formatPercent,
     loadPLDetail, loadCashierShiftReport, loadCashFlowDetail, loadRiskDetails,
     loadFolioExtract, loadEnhancedInvoices,
+    getRiskColor, getRiskIcon, downloadPLReport,
   };
 
   return (
