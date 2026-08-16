@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { FileText, Download, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { confirmDialog } from '@/lib/dialogs';
 
 const EFaturaModule = () => {
   const { t } = useTranslation();
@@ -58,13 +59,45 @@ const EFaturaModule = () => {
   };
 
   const handlePOSClosure = async () => {
+    const confirmed = await confirmDialog({
+      title: 'Günlük POS kapanışı',
+      message: 'Otel iş günündeki kesinleşmiş POS işlemleri kapatılacak. Aynı iş günü için ikinci bir kapanış kaydı oluşturulmaz. Devam edilsin mi?',
+      confirmText: 'Kapanışı Tamamla',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
     try {
       const response = await axios.post('/pos/daily-closure');
-      toast.success(`Daily closure completed: ${response.data.total_sales} TL`);
-      loadData();
+      if (response.data.replayed) {
+        toast.info('Bu iş günü için POS kapanışı daha önce tamamlanmış');
+      } else {
+        toast.success(`Günlük kapanış tamamlandı: ${response.data.total_sales} TL`);
+      }
+      await loadData();
     } catch (error) {
-      toast.error('Kapanış tamamlanamadı');
+      toast.error(error.response?.data?.detail || 'Kapanış tamamlanamadı');
     }
+  };
+
+  const handleDownloadPOSClosureReport = (closure) => {
+    const columns = [
+      ['İş Günü', closure.closure_date],
+      ['İşlem Sayısı', closure.transaction_count],
+      ['Toplam Satış', closure.total_sales],
+      ['Nakit', closure.cash_sales],
+      ['Kart', closure.card_sales],
+      ['Diğer', closure.other_sales || 0],
+    ];
+    const csv = columns.map(([label, value]) => `"${label}","${value}"`).join('\n');
+    const url = window.URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `pos-closure-${closure.closure_date}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
   };
 
   const getStatusBadge = (status) => {
@@ -200,7 +233,7 @@ const EFaturaModule = () => {
                   <div className="text-2xl font-bold text-green-600">{closure.total_sales} TL</div>
                   <div className="text-xs text-gray-600">Cash: {closure.cash_sales} TL | Card: {closure.card_sales} TL</div>
                 </div>
-                <Button size="sm" variant="outline">
+                <Button size="sm" variant="outline" onClick={() => handleDownloadPOSClosureReport(closure)}>
                   <Download className="w-4 h-4 mr-1" />
                   Report
                 </Button>

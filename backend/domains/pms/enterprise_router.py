@@ -6,9 +6,11 @@ Critical features, task management, RBAC, enterprise audit logging.
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
+from pymongo.errors import DuplicateKeyError
 
 from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
@@ -315,6 +317,95 @@ async def get_deliveries(current_user: User = Depends(get_current_user)):
 
 
 # 7. E-Fatura & POS
+_FINAL_POS_STATUSES = {"closed", "completed", "paid", "settled"}
+_CARD_PAYMENT_METHODS = {"card", "credit_card", "debit_card"}
+
+
+def _pos_money(value: object) -> Decimal:
+    """Parse stored POS money without accepting malformed or non-finite values."""
+    try:
+        amount = Decimal(str(value if value is not None else 0))
+        amount = amount.quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError("INVALID_POS_MONETARY_VALUE") from exc
+    if not amount.is_finite() or amount < 0:
+        raise ValueError("INVALID_POS_MONETARY_VALUE")
+    return amount
+
+
+def _summarize_pos_closure_transactions(transactions: list[dict]) -> dict:
+    """Summarize finalized POS transactions, deduplicated across sources."""
+    seen: set[str] = set()
+    totals = {
+        "total_sales": Decimal("0.00"),
+        "cash_sales": Decimal("0.00"),
+        "card_sales": Decimal("0.00"),
+        "other_sales": Decimal("0.00"),
+        "transaction_count": 0,
+    }
+
+    for transaction in transactions:
+        status = str(transaction.get("status") or "").strip().lower()
+        if status not in _FINAL_POS_STATUSES:
+            continue
+
+        source = str(transaction.get("_closure_source") or "unknown")
+        transaction_id = transaction.get("id") or transaction.get("transaction_id")
+        stored_id = transaction.get("_id")
+        if transaction_id is None and stored_id is None:
+            raise ValueError("MISSING_POS_TRANSACTION_ID")
+        dedupe_key = str(transaction_id) if transaction_id else f"{source}:{stored_id}"
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+
+        amount = _pos_money(transaction.get("total_amount", transaction.get("amount", 0)))
+        payment_method = str(transaction.get("payment_method") or "other").strip().lower()
+        totals["total_sales"] += amount
+        if payment_method == "cash":
+            totals["cash_sales"] += amount
+        elif payment_method in _CARD_PAYMENT_METHODS:
+            totals["card_sales"] += amount
+        else:
+            totals["other_sales"] += amount
+        totals["transaction_count"] += 1
+
+    return {key: (float(value.quantize(Decimal("0.01"))) if isinstance(value, Decimal) else value) for key, value in totals.items()}
+
+
+async def _pos_business_date(tenant_id: str) -> str:
+    settings = await db.tenant_settings.find_one(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "business_date": 1},
+    )
+    business_date = str((settings or {}).get("business_date") or "").strip()
+    if business_date:
+        try:
+            parsed = datetime.fromisoformat(business_date).date()
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail="Gecersiz otel is gunu") from exc
+        return parsed.isoformat()
+    return datetime.now(UTC).date().isoformat()
+
+
+async def _load_finalized_pos_transactions(tenant_id: str, business_date: str) -> list[dict]:
+    query = {
+        "tenant_id": tenant_id,
+        "transaction_date": business_date,
+        "status": {"$in": sorted(_FINAL_POS_STATUSES)},
+    }
+    transactions: list[dict] = []
+    for source_name, collection in (
+        ("pos_transactions", db.pos_transactions),
+        ("pos_menu_transactions", db.pos_menu_transactions),
+    ):
+        rows = await collection.find(query).to_list(10_000)
+        for row in rows:
+            row["_closure_source"] = source_name
+        transactions.extend(rows)
+    return transactions
+
+
 @router.get("/pos/daily-closures")
 async def get_pos_closures(current_user: User = Depends(get_current_user)):
     closures = await db.pos_closures.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("closure_date", -1).limit(30).to_list(30)
@@ -326,23 +417,47 @@ async def create_pos_closure(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v99 DW
 ):
-    # Calculate today's sales
-    today = datetime.now(UTC).date().isoformat()
+    business_date = await _pos_business_date(current_user.tenant_id)
+    existing = await db.pos_closures.find_one(
+        {"tenant_id": current_user.tenant_id, "closure_date": business_date},
+        {"_id": 0},
+    )
+    if existing:
+        if existing.get("calculation_version") != "finalized_pos_transactions_v1":
+            raise HTTPException(status_code=409, detail="Mevcut POS kapanisi yeni hesaplama sozlesmesiyle dogrulanamadi")
+        return {**existing, "replayed": True}
+
+    transactions = await _load_finalized_pos_transactions(current_user.tenant_id, business_date)
+    try:
+        summary = _summarize_pos_closure_transactions(transactions)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail="POS kapanis tutarlari dogrulanamadi") from exc
+    if summary["transaction_count"] == 0:
+        raise HTTPException(status_code=409, detail="Kapanis icin kesinlesmis POS islemi bulunamadi")
+
+    closure_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"pos-closure:{current_user.tenant_id}:{business_date}"))
 
     closure = {
-        "id": str(uuid.uuid4()),
+        "_id": closure_id,
+        "id": closure_id,
         "tenant_id": current_user.tenant_id,
-        "closure_date": today,
-        "total_sales": 5420.50,
-        "cash_sales": 1200.00,
-        "card_sales": 4220.50,
-        "transaction_count": 45,
+        "closure_date": business_date,
+        **summary,
+        "calculation_version": "finalized_pos_transactions_v1",
         "closed_at": datetime.now(UTC).isoformat(),
         "closed_by": current_user.id,
     }
 
-    await db.pos_closures.insert_one(closure)
-    return closure
+    try:
+        await db.pos_closures.insert_one(closure.copy())
+    except DuplicateKeyError:
+        replay = await db.pos_closures.find_one({"_id": closure_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+        if not replay:
+            raise HTTPException(status_code=409, detail="POS kapanisi eszamanli islem nedeniyle tamamlanamadi") from None
+        return {**replay, "replayed": True}
+
+    closure.pop("_id")
+    return {**closure, "replayed": False}
 
 
 # ========================================
