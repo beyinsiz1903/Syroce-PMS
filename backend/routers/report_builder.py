@@ -29,9 +29,9 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 
+from core.security import get_current_user
 from modules.pms_core.role_permission_service import require_op  # v92 DW
 
 logger = logging.getLogger(__name__)
@@ -520,11 +520,11 @@ async def fetch_report_data(config: ReportConfig, tenant_id: str, has_pii: bool)
 
 @router.get("/config")
 async def get_builder_config(
-    credentials=Depends(HTTPBearer()),
+    current_user=Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),
 ):
     """Rapor oluşturucu için mevcut veri kaynaklarını ve sütun tanımlarını döndürür."""
-    await _get_current_user(credentials)
+    del current_user
     sources = {}
     for key, src in DATA_SOURCES.items():
         sources[key] = {
@@ -539,11 +539,10 @@ async def get_builder_config(
 @router.post("/generate")
 async def generate_report(
     config: ReportConfig,
-    credentials=Depends(HTTPBearer()),
+    current_user=Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),
 ):
     """Özel rapor verisini üretir."""
-    current_user = await _get_current_user(credentials)
     tenant_id = getattr(current_user, "tenant_id", None)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
@@ -690,11 +689,10 @@ def _coerce_excel_value(val):
 @router.post("/export/excel")
 async def export_report_excel(
     config: ReportConfig,
-    credentials=Depends(HTTPBearer()),
+    current_user=Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),
 ):
     """Özel raporu Excel formatında dışa aktarır."""
-    current_user = await _get_current_user(credentials)
     tenant_id = getattr(current_user, "tenant_id", None)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
@@ -871,11 +869,10 @@ async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii:
 @router.post("/export/pdf")
 async def export_report_pdf(
     config: ReportConfig,
-    credentials=Depends(HTTPBearer()),
+    current_user=Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),
 ):
     """Özel raporu PDF formatında dışa aktarır."""
-    current_user = await _get_current_user(credentials)
     tenant_id = getattr(current_user, "tenant_id", None)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
@@ -999,11 +996,10 @@ async def export_report_pdf(
 
 @router.get("/templates")
 async def list_templates(
-    credentials=Depends(HTTPBearer()),
+    current_user=Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),
 ):
     """Kayıtlı rapor şablonlarını listeler (tenant scoped)."""
-    current_user = await _get_current_user(credentials)
     db = get_db()
     tenant_id = getattr(current_user, "tenant_id", None)
     templates = (
@@ -1020,11 +1016,10 @@ async def list_templates(
 @router.post("/templates")
 async def save_template(
     template: SavedTemplate,
-    credentials=Depends(HTTPBearer()),
+    current_user=Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),
 ):
     """Rapor şablonunu kaydeder."""
-    current_user = await _get_current_user(credentials)
     db = get_db()
     tenant_id = getattr(current_user, "tenant_id", None)
     user_id = getattr(current_user, "id", None)
@@ -1055,13 +1050,12 @@ async def save_template(
 @router.delete("/templates/{template_id}")
 async def delete_template(
     template_id: str,
-    credentials=Depends(HTTPBearer()),
+    current_user=Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),
 ):
     """Rapor şablonunu siler. Sadece şablonu oluşturan kullanıcı veya
     admin/manager silebilir.
     """
-    current_user = await _get_current_user(credentials)
     db = get_db()
     tenant_id = getattr(current_user, "tenant_id", None)
     user_id = getattr(current_user, "id", None)
