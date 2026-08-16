@@ -20,18 +20,23 @@ def calculate_departure_balance(
     charges: list[dict[str, Any]],
     payments: list[dict[str, Any]],
     extra_charges: list[dict[str, Any]],
+    *,
+    booking_total: Any = 0,
 ) -> float:
-    """Return the durable open balance used by the departure queue."""
+    """Return the durable open balance used by departure and checkout."""
+    active_charges = [charge for charge in charges if not charge.get("voided")]
     charge_total = sum(
-        (_amount(charge.get("total", charge.get("amount"))) for charge in charges if not charge.get("voided")),
+        (_amount(charge.get("total", charge.get("amount"))) for charge in active_charges),
         start=Decimal("0"),
     )
     extra_total = sum(
-        (_amount(charge.get("charge_amount", charge.get("amount"))) for charge in extra_charges if not charge.get("voided")),
+        (_amount(charge.get("total", charge.get("charge_amount", charge.get("amount")))) for charge in extra_charges if not charge.get("voided")),
         start=Decimal("0"),
     )
     payment_total = sum(
         (_amount(payment.get("amount")) for payment in payments if not payment.get("voided") and payment.get("status") == "paid"),
         start=Decimal("0"),
     )
-    return float(charge_total + extra_total - payment_total)
+    room_charge_posted = any(charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room" for charge in active_charges)
+    unposted_room_total = Decimal("0") if room_charge_posted else _amount(booking_total)
+    return float(unposted_room_total + charge_total + extra_total - payment_total)

@@ -26,3 +26,35 @@ def test_departure_balance_tolerates_malformed_legacy_amounts():
         )
         == 0.0
     )
+
+
+def test_departure_balance_includes_unposted_booking_total():
+    balance = calculate_departure_balance(
+        charges=[{"total": "50", "charge_category": "minibar"}],
+        payments=[{"amount": "40", "status": "paid"}],
+        extra_charges=[{"charge_amount": "25"}],
+        booking_total="100",
+    )
+
+    assert balance == 135.0
+
+
+def test_departure_balance_does_not_double_count_posted_room_revenue():
+    balance = calculate_departure_balance(
+        charges=[{"total": "100", "charge_type": "room_charge"}],
+        payments=[{"amount": "100", "status": "paid"}],
+        extra_charges=[],
+        booking_total="100",
+    )
+
+    assert balance == 0.0
+
+
+def test_departure_balance_preserves_explicit_zero_after_extra_charge_split():
+    balance = calculate_departure_balance(
+        charges=[],
+        payments=[],
+        extra_charges=[{"total": 0, "charge_amount": 50}],
+    )
+
+    assert balance == 0.0
