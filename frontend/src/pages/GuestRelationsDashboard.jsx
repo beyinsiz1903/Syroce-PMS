@@ -57,8 +57,9 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
     try {
       setTriggering(true);
       const res = await axios.post('/guest-relations/preparations/trigger');
-      toast.success(`${res.data.triggered_count} adet oda hazırlık direktifi tetiklendi!`);
-      fetchDirectives();
+      const generatedCount = res.data?.directives_generated ?? 0;
+      toast.success(`${generatedCount} adet oda hazırlık direktifi tetiklendi!`);
+      await fetchDirectives();
     } catch (err) {
       console.error(err);
       toast.error('Direktifler tetiklenemedi.');
@@ -165,27 +166,39 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {directives.map((dir) => (
+                    {directives.map((dir) => {
+                      const status = dir.status || 'pending';
+                      const checkIn = dir.check_in || dir.check_in_date;
+                      const directiveText = dir.directives || [
+                        dir.pillow_preference && `Yastık: ${dir.pillow_preference}`,
+                        dir.minibar_preference && `Minibar: ${dir.minibar_preference}`,
+                        dir.spa_preference && `SPA: ${dir.spa_preference}`,
+                      ].filter(Boolean).join(' · ');
+
+                      return (
                       <div key={dir.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-white border rounded-xl hover:shadow-sm transition-all gap-4">
                         <div>
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold">Oda {dir.room_id}</span>
+                            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold">Oda {dir.room_number || dir.room_id || '-'}</span>
                             <span className="text-sm font-medium text-gray-900">{dir.guest_name}</span>
                           </div>
-                          <p className="text-sm text-gray-600">{dir.directives}</p>
-                          <p className="text-xs text-gray-400 mt-2 flex items-center gap-1">
-                            <Clock className="w-3 h-3" /> Check-in: {new Date(dir.check_in_date).toLocaleDateString()}
-                          </p>
+                          <p className="text-sm text-gray-600">{directiveText || 'Özel hazırlık direktifi'}</p>
+                          {checkIn && (
+                            <p className="text-xs text-gray-400 mt-2 flex items-center gap-1">
+                              <Clock className="w-3 h-3" /> Check-in: {new Date(checkIn).toLocaleDateString('tr-TR')}
+                            </p>
+                          )}
                         </div>
                         <div className="text-right flex-shrink-0">
                           <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            dir.status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                            status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
                           }`}>
-                            {dir.status === 'pending' ? 'Bekliyor' : 'Hazır'}
+                            {status === 'pending' ? 'Bekliyor' : 'Hazır'}
                           </span>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>
