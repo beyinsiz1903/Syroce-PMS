@@ -37,7 +37,7 @@ async def _get_active_kitchen_orders(tenant_id: str, statuses: list[str] | None 
     if statuses:
         query["status"] = {"$in": statuses}
     else:
-        query["status"] = {"$in": ["pending", "preparing"]}
+        query["status"] = {"$in": ["pending", "preparing", "ready"]}
     return await db.kitchen_orders.find(query, {"_id": 0}).sort([("priority", -1), ("ordered_at", 1)]).to_list(200)
 
 

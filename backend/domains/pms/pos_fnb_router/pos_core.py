@@ -268,9 +268,27 @@ def calculate_table_duration(opened_at: Any) -> int:
         return 0
 
 
-def create_default_table_layout() -> list[dict[str, Any]]:
-    """Return a generic 8-table layout for first-time setup."""
-    return [{"id": str(uuid.uuid4()), "number": str(i + 1), "capacity": 4, "status": "available", "zone": "main"} for i in range(8)]
+def create_default_table_layout(tenant_id: str, outlet_id: str) -> list[dict[str, Any]]:
+    """Return a persistable 8-table layout for a new outlet."""
+    now = datetime.now(UTC).isoformat()
+    return [
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "outlet_id": outlet_id,
+            "table_number": str(index + 1),
+            "seats": 4,
+            "position_x": (index % 4) * 160,
+            "position_y": (index // 4) * 120,
+            "shape": "rectangle",
+            "width": 120,
+            "height": 80,
+            "status": "available",
+            "server_assigned": None,
+            "created_at": now,
+        }
+        for index in range(8)
+    ]
 
 
 async def recalculate_folio_balance(folio_id: str, tenant_id: str) -> float:
