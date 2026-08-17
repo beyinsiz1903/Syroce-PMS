@@ -55,6 +55,11 @@ async def test_cari_transfer_posts_visible_folio_payment(monkeypatch):
     )
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
     monkeypatch.setattr(reservation_detail, "_log_activity", AsyncMock())
+    monkeypatch.setattr(
+        reservation_detail,
+        "_reservation_outstanding_balance",
+        AsyncMock(return_value=250.0),
+    )
     refresh = AsyncMock(return_value=250.0)
     monkeypatch.setattr(reservation_detail, "_refresh_cached_folio_balance", refresh)
 
@@ -114,6 +119,11 @@ async def test_cari_transfer_does_not_write_without_owned_account(monkeypatch):
         ),
     )
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
+    monkeypatch.setattr(
+        reservation_detail,
+        "_reservation_outstanding_balance",
+        AsyncMock(return_value=250.0),
+    )
 
     with pytest.raises(Exception) as exc:
         await reservation_detail.transfer_to_cari(
@@ -132,6 +142,57 @@ async def test_cari_transfer_does_not_write_without_owned_account(monkeypatch):
         )
 
     assert getattr(exc.value, "status_code", None) == 404
+    payments.insert_one.assert_not_awaited()
+    cari_transactions.insert_one.assert_not_awaited()
+    bookings.update_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outstanding,amount", [(0.0, 1.0), (-1.0, 1.0), (10.0, 10.01)])
+async def test_cari_transfer_rejects_absent_or_exceeded_balance_without_writes(
+    monkeypatch,
+    outstanding,
+    amount,
+):
+    bookings = SimpleNamespace(
+        find_one=AsyncMock(return_value={"id": "booking-a", "tenant_id": "tenant-a"}),
+        update_one=AsyncMock(),
+    )
+    cari_accounts = SimpleNamespace(find_one=AsyncMock(), update_one=AsyncMock())
+    payments = SimpleNamespace(insert_one=AsyncMock())
+    cari_transactions = SimpleNamespace(insert_one=AsyncMock())
+    monkeypatch.setattr(
+        reservation_detail,
+        "db",
+        SimpleNamespace(
+            bookings=bookings,
+            cari_accounts=cari_accounts,
+            payments=payments,
+            cari_transactions=cari_transactions,
+        ),
+    )
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
+    monkeypatch.setattr(
+        reservation_detail,
+        "_reservation_outstanding_balance",
+        AsyncMock(return_value=outstanding),
+    )
+
+    with pytest.raises(Exception) as exc:
+        await reservation_detail.transfer_to_cari(
+            "booking-a",
+            reservation_detail.CariTransfer(amount=amount, cari_account_id="cari-a"),
+            current_user=SimpleNamespace(
+                id="user-a",
+                tenant_id="tenant-a",
+                role="manager",
+                name="Test Operator",
+            ),
+            _perm=None,
+        )
+
+    assert getattr(exc.value, "status_code", None) == 409
+    cari_accounts.find_one.assert_not_awaited()
     payments.insert_one.assert_not_awaited()
     cari_transactions.insert_one.assert_not_awaited()
     bookings.update_one.assert_not_awaited()

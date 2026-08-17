@@ -75,7 +75,7 @@ class MultiRoomBooking(BaseModel):
 
 class ExtraChargeCreate(BaseModel):
     charge_name: str = Field(..., min_length=1, max_length=200)
-    charge_amount: float = Field(..., ge=0, le=1e9)
+    charge_amount: float = Field(..., gt=0, le=1e9)
     notes: str | None = Field(None, max_length=2000)
 
 

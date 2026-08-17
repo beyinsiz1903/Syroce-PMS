@@ -55,6 +55,26 @@ describe('financial and destructive mutation safety', () => {
     expect(screen.getByText('Depozito Iade')).toBeInTheDocument();
   });
 
+  it('disables new deposits for terminal reservations while keeping refunds available', () => {
+    render(
+      <DepositsTab
+        booking={{ id: 'booking-test', status: 'checked_out' }}
+        deposits={[{
+          id: 'deposit-test',
+          amount: 100,
+          refunded_amount: 40,
+          status: 'partially_refunded',
+          method: 'cash',
+        }]}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Depozito Al' })).toBeDisabled();
+    expect(screen.getByRole('button', {
+      name: 'Depozito iade işlemini aç - 60 TL',
+    })).toBeEnabled();
+  });
+
   it('requires the exact room deletion phrase and suppresses rapid duplicate submissions', async () => {
     let resolveDelete;
     const onDeleted = vi.fn();
