@@ -171,6 +171,41 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
     [customSplits]
   );
 
+  const canSubmitSplit = useMemo(() => {
+    if (!reason.trim()) return false;
+
+    if (mode === 'by_item') {
+      return (
+        selectedCharges.length > 0 &&
+        sourceCharges.length > 0 &&
+        selectedTotal > 0
+      );
+    }
+
+    if (mode === 'even') {
+      const transferredTotal = evenPerSplit * (evenSplits - 1);
+      return (
+        divisibleBalance > 0 &&
+        evenSplits >= 2 &&
+        evenPerSplit > 0 &&
+        transferredTotal > 0 &&
+        transferredTotal < divisibleBalance
+      );
+    }
+
+    return customTotal > 0 && customTotal < divisibleBalance;
+  }, [
+    customTotal,
+    divisibleBalance,
+    evenPerSplit,
+    evenSplits,
+    mode,
+    reason,
+    selectedCharges.length,
+    selectedTotal,
+    sourceCharges.length,
+  ]);
+
   const updateCustomRow = (idx, patch) =>
     setCustomSplits((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
 
@@ -567,7 +602,12 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
 
         {/* Actions */}
         <div className="flex space-x-3 pt-2">
-          <Button onClick={handleSplit} disabled={processing} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white shadow-sm h-11">
+          <Button
+            onClick={handleSplit}
+            disabled={processing || !canSubmitSplit}
+            data-testid="confirm-folio-split"
+            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white shadow-sm h-11"
+          >
             <CheckCircle className="w-5 h-5 mr-2" />
             <span className="font-semibold text-base">{processing ? 'Bölünüyor…' : 'Bölmeyi Onayla'}</span>
           </Button>
