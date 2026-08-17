@@ -272,7 +272,40 @@
     "pii_strict_mode": "وضع PII الصارم",
     "governance": "الحوكمة",
     "displacement_analysis": "تحليل الإزاحة",
-    "block_management": "Blok Yönetimi"
+    "block_management": "Blok Yönetimi",
+    "mailing": "التسويق عبر البريد الإلكتروني",
+    "room_qr_requests": "طلبات QR للغرفة",
+    "service_recovery": "إدارة الشكاوى",
+    "shift_handover": "تسليم التحول",
+    "academy": "الأكاديمية",
+    "room_map": "خريطة الغرفة",
+    "early_late_pricing": "التسعير المبكر/المتأخر",
+    "module_store": "متجر الوحدة النمطية",
+    "procurement": "شراء",
+    "revenue_hub": "مركز الإيرادات",
+    "eod_report": "تقرير التخلص من الذخائر المتفجرة",
+    "pci_compliance": "الامتثال PCI-DSS",
+    "report_scheduler": "تقرير جدولة",
+    "help_center": "مركز المساعدة",
+    "no_show_today": "في انتظار / عدم الحضور المرشحين",
+    "mice": "الاجتماعات والولائم",
+    "onboarding_wizard": "معالج الإعداد",
+    "hr_hub": "الموارد البشرية",
+    "afsadakat": "الولاء والبريد الوارد",
+    "xchange": "اكستشينج (SXI)",
+    "walkin": "تسجيل الوصول",
+    "incoming_agency_contracts": "طلبات الوكالة الواردة",
+    "group_reservations": "حجوزات المجموعة",
+    "cm_dashboard": "لوحة تحكم سم",
+    "mevzuat_raporlari": "التقارير التنظيمية",
+    "b2b_analytics": "تحليلات B2B",
+    "stock_rehber": "دليل الأسهم",
+    "go_live_readiness": "جاهزية البث المباشر",
+    "konaklama_vergisi": "ضريبة السكن",
+    "departure_list": "رحيلات اليوم",
+    "travel_agent_arap": "وكيل السفر AR/AP",
+    "supplies_market": "سوق اللوازم",
+    "channels_hub": "محور القنوات"
   },
   "auth": {
     "signIn": "تسجيل الدخول إلى حسابك أو إنشاء حساب جديد",
@@ -1085,7 +1118,126 @@
     "refreshInsights": "تحديث الرؤى",
     "poweredBy": "مدعوم بالذكاء الاصطناعي",
     "autoSummary": "ملخص تلقائي",
-    "dailySummary": "الملخص اليومي"
+    "dailySummary": "الملخص اليومي",
+    "whatsapp": {
+      "fastSetup": "الإعداد السريع مع ميتا",
+      "selectNumber": "حدد رقم الواتساب",
+      "integrationSettings": "إعدادات التكامل",
+      "moduleActive": "الوحدة نشطة",
+      "nlp": "معالجة اللغة الطبيعية",
+      "noDialogueFound": "لم يتم العثور على أي حوار",
+      "connectFb": "تواصل مع الفيسبوك",
+      "totalDialogues": "الحوارات الشاملة",
+      "connecting": "جارٍ الاتصال...",
+      "goBack": "عُد",
+      "dialogueHistory": "تاريخ الحوار",
+      "recommended": "(مُستَحسَن)",
+      "autoAction": "العمل الآلي",
+      "settingsTitle": "إعدادات تكامل واتساب",
+      "recentConversations": "المحادثات الأخيرة",
+      "saveManual": "حفظ الإعدادات اليدوية",
+      "systemLogged": "تم تسجيل النظام (لا توجد استجابة LLM)",
+      "verifyTokenDesc": "كلمة المرور المخصصة الخاصة بك لاستخدامها في التحقق من webhook.",
+      "examples": {
+        "towel": "أرسل منشفتين إلى غرفتي",
+        "spa": "أريد حجز موعد في المنتجع الصحي للغد",
+        "checkout": "تمديد وقت تسجيل المغادرة إلى الساعة 16:00",
+        "restaurant": "حجز المطعم الساعة 20:00"
+      },
+      "cancel": "يلغي",
+      "testNumber": "رقم الاختبار",
+      "phoneNumberId": "معرف رقم الهاتف",
+      "reflectedInPMS": "ينعكس في الدورة الشهرية",
+      "guestMessage": "رسالة الضيف",
+      "zeroWaitTime": "وقت الانتظار صفر",
+      "noConversations": "لا توجد محادثات حتى الآن",
+      "systemToken": "رمز مستخدم النظام/رمز الوصول",
+      "verifyToken": "التحقق من الرمز المميز",
+      "recordedInSystem": "مسجلة في النظام",
+      "fastSetupDesc": "قم بتوصيل WhatsApp Business API بنقرة واحدة عن طريق تسجيل الدخول إلى حسابك الحالي على Facebook أو Instagram.",
+      "records": "السجلات",
+      "noDialogueDesc": "لا توجد محادثة AI مسجلة في النظام. يمكنك إرسال رسالة اختبارية باستخدام جهاز المحاكاة الموجود على اليسار.",
+      "accountsFound": "تم العثور على حسابات",
+      "orManuel": "أو التكوين اليدوي",
+      "testArea": "منطقة الاختبار والمحاكاة",
+      "continuousService": "الخدمة المستمرة",
+      "selectNumberPlaceholder": "اختر رقما",
+      "simulate": "محاكاة",
+      "connectNumber": "رقم الاتصال",
+      "sendToAI": "أرسل إلى منظمة العفو الدولية",
+      "subtitle": "تواصل آلي وسلس مع الضيوف على مدار 24 ساعة طوال أيام الأسبوع",
+      "saveSettings": "حفظ الإعدادات",
+      "completeSelection": "اختيار كامل",
+      "simulator": "محاكي",
+      "processing": "يعالج...",
+      "saving": "توفير...",
+      "exampleScenarios": "سيناريوهات المثال:",
+      "accountsFoundDesc": "تم العثور على أرقام WhatsApp متعددة مرتبطة بحسابك على Facebook. الرجاء اختيار واحد للاستخدام.",
+      "gpt4Powered": "مدعوم بـ GPT-4",
+      "typeMessage": "اكتب رسالة (على سبيل المثال، \"أرسل المناشف إلى غرفتي\")",
+      "title": "AI WhatsApp الكونسيرج"
+    },
+    "rms": {
+      "marketCompression": "تحليل ضغط السوق",
+      "recommendations": "التوصيات:",
+      "elasticityNotCalculated": "لا يمكن حساب مرونة السعر",
+      "source": "مصدر",
+      "bookings": "الحجوزات",
+      "calculateElasticity": "حساب المرونة",
+      "autoPublish": "أسعار النشر التلقائي",
+      "scrapeCompetitorRates": "كشط أسعار المنافسين",
+      "fitR2": "صالح (R²)",
+      "elasticityCoefficient": "معامل المرونة",
+      "optimalPrice": "نقطة السعر الأمثل",
+      "competitor": "منافس",
+      "compressionScore": "نقاط الضغط",
+      "roomType": "نوع الغرفة",
+      "cityEvents": "أحداث المدينة",
+      "pricingOpportunity": "فرصة التسعير",
+      "cityOccupancy": "إشغال المدينة",
+      "dryRunPublish": "{{count}} معدلات محسوبة (التشغيل الجاف، غير منشورة)",
+      "publishErrorNoData": "لا يمكن نشر الأسعار: البيانات الحقيقية غير كافية",
+      "publishError": "لا يمكن نشر الأسعار",
+      "notEnoughDataForElasticity": "لا توجد بيانات كافية لمرونة الأسعار",
+      "priceElasticity": "تحليل مرونة الأسعار",
+      "revenueLift": "رفع الإيرادات",
+      "publishSuccess": "{{count}} الأسعار المنشورة • المتوسط. المعدل: ${{متوسط}}",
+      "competitorSourceNotConfigured": "لم يتم تكوين مصدر بيانات أسعار المنافسين",
+      "competitorRateIntelligence": "استخبارات أسعار المنافسين",
+      "rate": "معدل",
+      "publishing": "نشر...",
+      "marketDataNotConfigured": "لم يتم تكوين بيانات السوق",
+      "refreshCompression": "تحديث الضغط",
+      "title": "مركز الذكاء الاصطناعي RMS"
+    },
+    "radar": {
+      "aiGenerating": "الذكاء الاصطناعي يولد الاستجابة...",
+      "crisisAlertDetected": "تم اكتشاف تنبيه الأزمة",
+      "wifiPassword": "كلمة مرور الواي فاي",
+      "breakfastHours": "ساعات الإفطار",
+      "alertWifiAction": "إبلاغ الفريق الفني",
+      "title": "رادار وسائل التواصل الاجتماعي",
+      "replyWifi": "عزيزي الضيف، شبكة الواي فاي الحالية لدينا هي \"Syroce Guest\" وكلمة المرور هي \"Syroce2026\".",
+      "evaluation": "تقييم",
+      "chatReopened": "تم إعادة فتح الرسالة.",
+      "replyBreakfast": "يتم تقديم وجبة الإفطار كل صباح بين الساعة 7:00 ص والساعة 10:30 ص.",
+      "connectionsTab": "اتصالات",
+      "alertWifi": "شكوى Wi-Fi عبر منصات متعددة",
+      "chatResolved": "تمت أرشفة الرسالة وتم وضع علامة \"تم الحل\" عليها.",
+      "positive": "إيجابي",
+      "checkinCheckout": "تسجيل الوصول / المغادرة",
+      "neutral": "حيادي",
+      "totalMentions": "إجمالي الإشارات",
+      "inboxTab": "البريد الوارد الموحد",
+      "replyCheckin": "وقت دخولنا هو 14:00 ووقت الخروج هو 12:00.",
+      "sentimentAnalysis": "تحليل المشاعر (AI)",
+      "subtitle": "إدارة تفاعلات الضيوف عبر جميع القنوات من شاشة واحدة.",
+      "radarTab": "رادار",
+      "replySent": "لقد تم إرسال ردك إلى الضيف عبر المنصة المعنية!",
+      "recommendedAction": "الإجراء الموصى به",
+      "negative": "سلبي",
+      "automationTab": "قواعد الأتمتة"
+    }
   },
   "messages": {
     "success": {
@@ -1101,7 +1253,8 @@
       "loadFailed": "فشل تحميل البيانات",
       "deleteFailed": "فشل الحذف",
       "networkError": "حدث خطأ في الشبكة",
-      "validationError": "يرجى التحقق من مدخلاتك"
+      "validationError": "يرجى التحقق من مدخلاتك",
+      "fillAllFields": "يرجى ملء جميع الحقول."
     },
     "validation": {
       "required": "هذا الحقل مطلوب",
@@ -1972,7 +2125,13 @@
     "reports": "التقارير",
     "advanced": "متقدم",
     "infrastructure": "البنية التحتية",
-    "admin": "الإدارة"
+    "admin": "الإدارة",
+    "guest": "الضيف وإدارة علاقات العملاء",
+    "backoffice": "المكتب الخلفي",
+    "sales": "المبيعات والإيرادات",
+    "frontdesk": "مكتب الاستقبال والدقة.",
+    "fb": "المأكولات والمشروبات",
+    "system": "القنوات والنظام"
   },
   "commandCenter": {
     "loadingStatus": "جاري تحميل الحالة التشغيلية...",
@@ -2347,7 +2506,16 @@
       "roomRequired": "رقم الغرفة مطلوب",
       "titleField": "العنوان *",
       "titlePlaceholder": "عنوان المهمة (مثال: عطل في التكييف)",
-      "titleRequired": "يجب أن يكون العنوان 3 أحرف على الأقل"
+      "titleRequired": "يجب أن يكون العنوان 3 أحرف على الأقل",
+      "deleteConfirmDescription": "سيتم حذف {{title}} نهائيًا. لا يمكن التراجع عن هذا الإجراء.",
+      "cleanupConfirmAction": "حذف المهام الفارغة",
+      "untitledTask": "مهمة بلا عنوان",
+      "cancel": "يلغي",
+      "cleanupConfirmDescription": "سيتم حذف كل مهمة غير مكتملة بدون محتوى قابل للاستخدام نهائيًا. لا يمكن التراجع عن هذا الإجراء.",
+      "deleteConfirmAction": "يمسح",
+      "deleteConfirmTitle": "هل تريد حذف هذه المهمة؟",
+      "deleteTaskAria": "حذف المهمة",
+      "cleanupConfirmTitle": "هل تريد حذف جميع المهام الفارغة؟"
     },
     "feedback": {
       "title": "ملاحظات النزلاء",
@@ -3813,7 +3981,8 @@
       "guven": "· Güven: %",
       "canli": "Canlı:",
       "sahtekarlik_gostergeleri": "Sahtekarlık göstergeleri:",
-      "tamam": "Tamam"
+      "tamam": "Tamam",
+      "güven": "· يثق: ٪"
     },
     "components_BookingSearch": {
       "rezervasyon_arama": "Rezervasyon Arama",
@@ -4145,7 +4314,8 @@
       "yeni_kisi": "Yeni Kişi",
       "birincil_kisi": "Birincil kişi",
       "iptal_25174": "İptal",
-      "ekle": "Ekle"
+      "ekle": "Ekle",
+      "kişi": "شخص"
     },
     "components_mice_BanquetCompetitorTab": {
       "banket_pazarindaki_rakip_mekanlar_ve_fiy": "Banket pazarındaki rakip mekanlar ve fiyat snapshot'ları",
@@ -4553,7 +4723,8 @@
       "uyari_detayi": "Uyarı Detayı",
       "guven": "Güven:",
       "onerilen_aksiyon": "Önerilen Aksiyon:",
-      "etki_alani": "Etki Alanı:"
+      "etki_alani": "Etki Alanı:",
+      "güven": "يثق:"
     },
     "components_ops_IncidentDrilldownDrawer": {
       "yukleniyor": "Yükleniyor...",
@@ -4727,7 +4898,8 @@
       "giris_tl": "Giriş (TL)",
       "cikis_tl": "Çıkış (TL)",
       "giris_orj": "Giriş (orj)",
-      "cikis_orj": "Çıkış (orj)"
+      "cikis_orj": "Çıkış (orj)",
+      "folio_yonlendirme": "توجيه الورقة"
     },
     "components_PMSDateBadge": {
       "gun_sonu_islemini_baslat": "Gün sonu işlemini başlat"
@@ -5039,7 +5211,8 @@
       "gercek_ocr_icin_openai_api_key_veya_gemi": "Gerçek OCR için OPENAI_API_KEY veya GEMINI_API_KEY yapılandırılmalıdır.",
       "cekilen_kareyi_misafirin_profil_fotograf": "Çekilen kareyi misafirin profil fotoğrafı olarak kaydet",
       "kapat": "Kapat",
-      "taraniyor": "Taranıyor"
+      "taraniyor": "Taranıyor",
+      "güven": "يثق"
     },
     "components_RecipeCostingManager": {
       "toplam_recipe": "Toplam Recipe",
@@ -5070,7 +5243,8 @@
       "yukleniyor": "Yükleniyor...",
       "musait_oda_yok": "Müsait oda yok",
       "oda": "Oda",
-      "kisi": "kişi"
+      "kisi": "kişi",
+      "kişi": "شخص"
     },
     "components_SandboxDashboard": {
       "sandbox_regression_algilandi": "Sandbox Regression Algılandi",
@@ -5591,7 +5765,8 @@
       "bu_secenek": "Bu seçenek",
       "isaretlemezseniz_mevcut_yayinlar_korunur": ": işaretlemezseniz mevcut yayınlar korunur, sadece yeni acenteler eklenir.",
       "vazgec": "Vazgeç",
-      "onayla_ve_uygula": "Onayla ve Uygula"
+      "onayla_ve_uygula": "Onayla ve Uygula",
+      "seçili": "المحدد:"
     },
     "pages_AgencyManagement": {
       "acente_yonetimi": "Acente Yönetimi",
@@ -5637,7 +5812,8 @@
       "toplam_tutar_tl": "Toplam Tutar (TL)",
       "ozel_istek": "Özel İstek",
       "erken_giris_deniz_manzarasi": "Erken giriş, deniz manzarasi...",
-      "iptal": "İptal"
+      "iptal": "İptal",
+      "kişi": "شخص"
     },
     "pages_AIZekaPage": {
       "yukleniyor": "Yükleniyor...",
@@ -5886,7 +6062,8 @@
       "menu_kalemini_sil": "Menü kalemini sil?",
       "pasife_alinacak_mevcut_booking_atamalari": "\" pasife alınacak. Mevcut booking atamalarındaki referanslar korunur.",
       "vazgec": "Vazgeç",
-      "sil": "Sil"
+      "sil": "Sil",
+      "kişi": "شخص"
     },
     "pages_ChannelConnections": {
       "otelinizin_bagli_oldugu_satis_kanallari_": "Otelinizin bağlı oldugu satış kanalları ve acenteler",
@@ -6005,7 +6182,8 @@
       "toplam_odeme": "Toplam Ödeme",
       "bakiye_33769": "Bakiye",
       "folio_bilgisi_alinamadi": "Folio bilgisi alınamadı.",
-      "cikis_yap": "Çıkış Yap"
+      "cikis_yap": "Çıkış Yap",
+      "seçili": "مختارة"
     },
     "pages_DepositTracking": {
       "depozito_folio_yonetimi": "Depozito & Folio Yönetimi",
@@ -6244,7 +6422,8 @@
       "baslangic": "Başlangıç",
       "bitis": "Bitiş",
       "katilimci": "Katılımcı",
-      "vazgec_bf814": "Vazgeç"
+      "vazgec_bf814": "Vazgeç",
+      "kişi": "شخص"
     },
     "pages_GelirYonetimiPage": {
       "yukleniyor": "Yükleniyor...",
@@ -6356,7 +6535,9 @@
       "oda_e4b47": "Oda",
       "tarih": "Tarih",
       "durum": "Durum",
-      "tutar": "Tutar"
+      "tutar": "Tutar",
+      "seç": "يختار...",
+      "seçili": "محدد)"
     },
     "pages_GroupFolioPage": {
       "yukleniyor": "Yükleniyor...",
@@ -6677,7 +6858,15 @@
       "silme_gerekcesi_zorunlu": "Silme gerekçesi (zorunlu)",
       "orn_yanlis_yukleme_kvkk_silme_talebi_202": "örn. yanlış yükleme, KVKK silme talebi #2026-...",
       "vazgec": "Vazgeç",
-      "sil": "Sil"
+      "sil": "Sil",
+      "all": "الجميع",
+      "days_left": "الأيام المتبقية",
+      "apply": "يتقدم",
+      "within_duration": "خلال المدة",
+      "expired": "منتهي الصلاحية",
+      "days": "أيام",
+      "back": "خلف",
+      "bulk_delete": "حذف بالجملة"
     },
     "pages_IdPhotoViewReportPage": {
       "yenile": "Yenile",
@@ -6700,7 +6889,11 @@
       "onceki": "Önceki",
       "personel_siralamasi": "Personel sıralaması",
       "booking_siralamasi": "Booking sıralaması",
-      "saat_dagilimi_utc": "Saat dağılımı (UTC)"
+      "saat_dagilimi_utc": "Saat dağılımı (UTC)",
+      "export_csv": "تصدير CSV",
+      "back": "خلف",
+      "apply": "يتقدم",
+      "no_data": "لا توجد بيانات"
     },
     "pages_IntegrationCredentials": {
       "entegrasyon_anahtarlari": "Entegrasyon Anahtarları",
@@ -6919,7 +7112,8 @@
       "mailing_kredi_paketleri_artik": "Mailing kredi paketleri artık",
       "modul_pazari": "Modül Pazarı",
       "uzerinden_satiliyor_tek_vitrinden_tum_mo": "üzerinden satılıyor.\n                Tek vitrinden tüm modül, entegrasyon ve kredi paketlerinize ulaşabilirsiniz.\n                Mevcut krediniz ve geçmişiniz aynen korunuyor.",
-      "modul_pazari_na_git": "Modül Pazarı'na Git →"
+      "modul_pazari_na_git": "Modül Pazarı'na Git →",
+      "seçili": "مختارة"
     },
     "pages_MappingManager": {
       "gecerli": "Geçerli",
@@ -7052,7 +7246,8 @@
       "bu_modul_operasyonel_transactional_mesaj": "Bu modül operasyonel/transactional mesajlar (SMTP + WhatsApp, kredisiz)\n            içindir. Pazarlama kampanyaları ve toplu e-posta için",
       "modulunu_resend_tabanli_kredi_sistemli_k": "modülünü\n            (Resend tabanlı, kredi sistemli) kullanın. Şablonlar ve loglar iki sistemde ayrı tutulur.",
       "gonder": "Gönder",
-      "sablonlar": "Şablonlar"
+      "sablonlar": "Şablonlar",
+      "gönderilen": "مرسل"
     },
     "pages_MevzuatRaporlari": {
       "tuik_tga_bakanlik_denetim_hazirligi_ve_y": "TÜİK, TGA, Bakanlık denetim hazırlığı ve yıldız sınıflama self-check",
@@ -7155,7 +7350,8 @@
       "kisi": "/kişi",
       "kisi_94aaa": "kişi",
       "dk_hazirlik": "dk hazırlık",
-      "yukleniyor_b597b": "Yükleniyor…"
+      "yukleniyor_b597b": "Yükleniyor…",
+      "kişi": "/شخص"
     },
     "pages_ModuleDiscovery": {
       "modul_kesfi": "Modül Keşfi",
@@ -7305,7 +7501,8 @@
       "giris": "Giriş:",
       "cikis": "Çıkış:",
       "konuk_e5c88": "Konuk:",
-      "tutar_64d2c": "Tutar:"
+      "tutar_64d2c": "Tutar:",
+      "seçili": "مختارة"
     },
     "pages_PCIComplianceDashboard": {
       "rapor_mevcut_degil": "Rapor mevcut değil.",
@@ -7407,7 +7604,8 @@
       "tanimi_sil": "Tanımı sil?",
       "tanimi_pasife_alinacak_misafirlerdeki_me": "\" tanımı pasife alınacak. Misafirlerdeki mevcut değerler korunur ama UI'da görünmez.",
       "vazgec": "Vazgeç",
-      "sil": "Sil"
+      "sil": "Sil",
+      "seç": "يختار"
     },
     "pages_PublicReviewPage": {
       "yukleniyor": "Yükleniyor...",
@@ -7489,7 +7687,11 @@
       "onceki": "Önceki",
       "geri_alan_siralamasi": "Geri alan sıralaması",
       "oncelige_gore": "Önceliğe göre",
-      "saat_dagilimi_utc": "Saat dağılımı (UTC)"
+      "saat_dagilimi_utc": "Saat dağılımı (UTC)",
+      "message": "رسالة",
+      "back": "خلف",
+      "no_data": "لا توجد بيانات",
+      "export_csv": "تصدير CSV"
     },
     "pages_ReportScheduler": {
       "yukleniyor": "Yükleniyor...",
@@ -7547,14 +7749,16 @@
       "ek_dosya_sayisi": "Ek dosya sayısı:",
       "basarisiz_alicilar": "Başarısız alıcılar:",
       "rapor_ozeti": "Rapor özeti:",
-      "tekrar_deneme_sayisi": "Tekrar deneme sayısı:"
+      "tekrar_deneme_sayisi": "Tekrar deneme sayısı:",
+      "gönderilen": "مرسل"
     },
     "pages_reports_NationalitySection": {
       "milliyet_dagilimi": "Milliyet Dağılımı",
       "misafirlerin_ulke_bazli_dagilimi": "Misafirlerin ülke bazlı dağılımı",
       "milliyet_dagilimi_f8dc7": "Milliyet Dağılımı",
       "ulke_detaylari": "Ülke Detayları",
-      "kisi": "kişi"
+      "kisi": "kişi",
+      "kişi": "شخص"
     },
     "pages_reports_PeriodSection": {
       "donem_karsilastirma": "Dönem Karşılaştırma",
@@ -7665,7 +7869,8 @@
       "gec_cikis": "Geç Çıkış",
       "iptal_et": "İptal Et",
       "giris_yap": "Giriş Yap",
-      "cikis_yap": "Çıkış Yap"
+      "cikis_yap": "Çıkış Yap",
+      "gate_kontrolleri_gecmedi_gecis_engellidir": "لم يتم اجتياز عمليات فحص البوابة - تم حظر المرور. التجاوز اليدوي غير متوفر."
     },
     "pages_reservationdetail_OnlinePaymentTab": {
       "online_odeme_sanal_kart": "Online Ödeme / Sanal Kart",
@@ -8262,7 +8467,12 @@
       "secili_filtrelerle_eslesen_acil_mesaj_ka": "Seçili filtrelerle eşleşen acil mesaj kaydı yok.",
       "gonderen_siralamasi": "Gönderen sıralaması",
       "alici_departmanlar": "Alıcı departmanlar",
-      "saat_dagilimi_utc": "Saat dağılımı (UTC)"
+      "saat_dagilimi_utc": "Saat dağılımı (UTC)",
+      "urgent_messages": "رسائل عاجلة",
+      "back": "خلف",
+      "no_data": "لا توجد بيانات",
+      "message": "رسالة",
+      "apply": "يتقدم"
     },
     "pages_UrgentPermissionAdminPage": {
       "acil_mesaj_izni_yonetimi": "Acil Mesaj İzni Yönetimi",
@@ -8288,7 +8498,20 @@
       "yukleniyor_4deb0": "Yükleniyor...",
       "kayit_bulunamadi": "Kayıt bulunamadı.",
       "izinli": "İzinli",
-      "izin_ver": "İzin Ver"
+      "izin_ver": "İzin Ver",
+      "role_admin": "مسؤل",
+      "role_front_desk": "مكتب الاستقبال",
+      "role_housekeeping": "التدبير المنزلي",
+      "gönderilen": "مرسل",
+      "role_supervisor": "مشرف",
+      "assignable_permissions": "الأذونات القابلة للتعيين:",
+      "role_manager": "مدير",
+      "retry": "أعد المحاولة",
+      "role_super_admin": "المشرف الفائق",
+      "role_sales": "مبيعات",
+      "role_finance": "تمويل",
+      "role_revenue": "ربح",
+      "attempted": "تمت المحاولة"
     },
     "pages_VendorPortal": {
       "ana_sayfaya_don": "Ana sayfaya dön",
@@ -8351,7 +8574,8 @@
       "kaldir": "Kaldır",
       "jpg_png_webp_max_5_mb_birden_fazla_seceb": "JPG, PNG, WEBP · max 5 MB · birden fazla seçebilirsiniz",
       "aktif_otellerin_katalogunda_gorunur": "Aktif (otellerin kataloğunda görünür)",
-      "kaydet_a9270": "Kaydet"
+      "kaydet_a9270": "Kaydet",
+      "ürün": "منتج"
     },
     "pages_WakeUpCallsPage": {
       "uyandirma_cagrisi_yonetimi": "Uyandırma Çağrısı Yönetimi",
@@ -8409,7 +8633,8 @@
       "kredi_karti": "Kredi Kartı",
       "oda_062cb": "· Oda",
       "kisi": "kişi",
-      "toplam_68af4": "Toplam:"
+      "toplam_68af4": "Toplam:",
+      "kişi": "شخص"
     },
     "pages_WebhookOutboxAdmin": {
       "olay_kuyrugu_webhook_teslimatlari_ve_dlq": "Olay kuyruğu, webhook teslimatları ve DLQ yönetimi",
@@ -9032,7 +9257,8 @@
       "temizle": "Temizle",
       "son_adisyon": "Son Adisyon",
       "adisyon_no": "Adisyon No",
-      "is_gunu": "Is Gunu"
+      "is_gunu": "Is Gunu",
+      "kişi": "شخص"
     },
     "pages_PilotReadinessPage": {
       "back": "Back",
@@ -9476,6 +9702,22 @@
       "parola": "Parola",
       "otel_yöneticisi_misiniz": "Otel yöneticisi misiniz?",
       "otel_girişi_ne_geçin": "Otel Girişi'ne geçin"
+    },
+    "pages_GroupReservations": {
+      "gelismis_blok_yonetimi": "إدارة الكتلة المتقدمة",
+      "room_blocks": "كتل الغرفة"
+    },
+    "pages_BasicReports": {
+      "trial_balance": "ميزان المراجعة",
+      "trial_balance_desc": "الشيكات اليومية للإيرادات والدفع والرصيد",
+      "forecast_reports_desc": "توقعات الإشغال، وتحليل البيك اب والوتيرة",
+      "forecast_reports": "تقارير التوقعات"
+    },
+    "components_pms_GuestsTab": {
+      "profil_ozel_alanlari_udf": "الحقول المخصصة للملف الشخصي (UDF)"
+    },
+    "pages_SettingsRoomsTab": {
+      "suite_connecting_tanimlari": "جناح / ربط التعريفات"
     }
   },
   "rnlDuplicates": {

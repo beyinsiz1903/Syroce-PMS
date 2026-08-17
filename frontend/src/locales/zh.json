@@ -272,7 +272,40 @@
     "pii_strict_mode": "PII严格模式",
     "governance": "治理",
     "displacement_analysis": "置换分析",
-    "block_management": "Blok Yönetimi"
+    "block_management": "Blok Yönetimi",
+    "mailing": "电子邮件营销",
+    "room_qr_requests": "房间二维码请求",
+    "service_recovery": "投诉管理",
+    "shift_handover": "交接班",
+    "academy": "学院",
+    "room_map": "房间地图",
+    "early_late_pricing": "早/晚定价",
+    "module_store": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+    "procurement": "采购",
+    "revenue_hub": "税收中心",
+    "eod_report": "排爆报告",
+    "pci_compliance": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+    "report_scheduler": "报告调度程序",
+    "help_center": "帮助中心",
+    "no_show_today": "待定/未出现的候选人",
+    "mice": "会展及宴会",
+    "onboarding_wizard": "设置向导",
+    "hr_hub": "人力资源",
+    "afsadakat": "忠诚度和收件箱",
+    "xchange": "交换 (SXI)",
+    "walkin": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+    "incoming_agency_contracts": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+    "group_reservations": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+    "cm_dashboard": "CM仪表板",
+    "mevzuat_raporlari": "监管报告",
+    "b2b_analytics": "B2B 分析",
+    "stock_rehber": "库存指南",
+    "go_live_readiness": "上线准备情况",
+    "konaklama_vergisi": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+    "departure_list": "今日出发航班",
+    "travel_agent_arap": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+    "supplies_market": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+    "channels_hub": "渠道中心"
   },
   "auth": {
     "signIn": "登录您的账户或创建新账户",
@@ -1085,7 +1118,126 @@
     "refreshInsights": "刷新洞察",
     "poweredBy": "AI驱动",
     "autoSummary": "自动摘要",
-    "dailySummary": "每日摘要"
+    "dailySummary": "每日摘要",
+    "whatsapp": {
+      "fastSetup": "使用 Meta 进行快速设置",
+      "selectNumber": "选择 WhatsApp 号码",
+      "integrationSettings": "集成设置",
+      "moduleActive": "模块活跃",
+      "nlp": "自然语言处理",
+      "noDialogueFound": "未找到对话",
+      "connectFb": "与 Facebook 联系",
+      "totalDialogues": "总对话",
+      "connecting": "正在连接...",
+      "goBack": "回去",
+      "dialogueHistory": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "recommended": "（受到推崇的）",
+      "autoAction": "自动操作",
+      "settingsTitle": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "recentConversations": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "saveManual": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "systemLogged": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "verifyTokenDesc": "您在 Webhook 验证中使用的自定义密码。",
+      "examples": {
+        "towel": "送2条毛巾到我的房间",
+        "spa": "我想预订明天的水疗预约",
+        "checkout": "将退房时间延长至 16:00",
+        "restaurant": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know."
+      },
+      "cancel": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "testNumber": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "phoneNumberId": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "reflectedInPMS": "反映在经前综合症",
+      "guestMessage": "宾客留言",
+      "zeroWaitTime": "零等待时间",
+      "noConversations": "还没有对话",
+      "systemToken": "系统用户令牌/访问令牌",
+      "verifyToken": "验证令牌",
+      "recordedInSystem": "已记录在系统中",
+      "fastSetupDesc": "登录您现有的 Facebook 或 Instagram 企业帐户，一键连接 WhatsApp Business API。",
+      "records": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "noDialogueDesc": "系统中没有AI对话记录。您可以使用左侧的模拟器发送测试消息。",
+      "accountsFound": "找到账户",
+      "orManuel": "或手动配置",
+      "testArea": "测试及模拟区",
+      "continuousService": "持续服务",
+      "selectNumberPlaceholder": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "simulate": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "connectNumber": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "sendToAI": "发送至人工智能",
+      "subtitle": "24/7 无缝且自动化的宾客沟通",
+      "saveSettings": "保存设置",
+      "completeSelection": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "simulator": "模拟器",
+      "processing": "加工...",
+      "saving": "保存...",
+      "exampleScenarios": "示例场景：",
+      "accountsFoundDesc": "发现多个与您的 Facebook 帐户关联的 WhatsApp 号码。请选择一项来使用。",
+      "gpt4Powered": "GPT-4 供电",
+      "typeMessage": "输入消息（例如“将毛巾送到我的房间”）",
+      "title": "AI WhatsApp 礼宾服务"
+    },
+    "rms": {
+      "marketCompression": "市场压缩分析",
+      "recommendations": "建议：",
+      "elasticityNotCalculated": "无法计算价格弹性",
+      "source": "来源",
+      "bookings": "预订",
+      "calculateElasticity": "计算弹性",
+      "autoPublish": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "scrapeCompetitorRates": "抓取竞争对手的价格",
+      "fitR2": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "elasticityCoefficient": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "optimalPrice": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "competitor": "竞争者",
+      "compressionScore": "压缩分数",
+      "roomType": "房型",
+      "cityEvents": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "pricingOpportunity": "定价机会",
+      "cityOccupancy": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "dryRunPublish": "计算出 {{count}} 个比率（试运行，未发布）",
+      "publishErrorNoData": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "publishError": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "notEnoughDataForElasticity": "价格弹性数据不足",
+      "priceElasticity": "价格弹性分析",
+      "revenueLift": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "publishSuccess": "已发布 {{count}} 个费率 • 平均。费率：${{avg}}",
+      "competitorSourceNotConfigured": "未配置竞争对手价格数据源",
+      "competitorRateIntelligence": "竞争对手评分情报",
+      "rate": "速度",
+      "publishing": "出版...",
+      "marketDataNotConfigured": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "refreshCompression": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "title": "AI RMS 中心"
+    },
+    "radar": {
+      "aiGenerating": "AI 正在生成响应...",
+      "crisisAlertDetected": "检测到危机警报",
+      "wifiPassword": "无线网络密码",
+      "breakfastHours": "早餐时间",
+      "alertWifiAction": "通知技术团队",
+      "title": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "replyWifi": "尊敬的客人，我们当前的 Wi-Fi 网络是“Syroce Guest”，密码是“Syroce2026”。",
+      "evaluation": "评估",
+      "chatReopened": "该消息已重新打开。",
+      "replyBreakfast": "早餐每天早晨的供应时间为07:00至10:30。",
+      "connectionsTab": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "alertWifi": "跨多个平台的 Wi-Fi 投诉",
+      "chatResolved": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "positive": "积极的",
+      "checkinCheckout": "入住/退房",
+      "neutral": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "totalMentions": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "inboxTab": "统一收件箱",
+      "replyCheckin": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "sentimentAnalysis": "情感分析（人工智能）",
+      "subtitle": "从单个屏幕管理所有渠道的访客互动。",
+      "radarTab": "雷达",
+      "replySent": "您的回复已通过相应平台发送给客人！",
+      "recommendedAction": "建议采取的行动",
+      "negative": "消极的",
+      "automationTab": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know."
+    }
   },
   "messages": {
     "success": {
@@ -1101,7 +1253,8 @@
       "loadFailed": "数据加载失败",
       "deleteFailed": "删除失败",
       "networkError": "网络错误",
-      "validationError": "请检查您的输入"
+      "validationError": "请检查您的输入",
+      "fillAllFields": "请填写所有字段。"
     },
     "validation": {
       "required": "此字段为必填",
@@ -1972,7 +2125,13 @@
     "reports": "报告",
     "advanced": "高级",
     "infrastructure": "基础设施",
-    "admin": "管理"
+    "admin": "管理",
+    "guest": "访客与客户关系管理",
+    "backoffice": "后台",
+    "sales": "销售与收入",
+    "frontdesk": "前台和接待处。",
+    "fb": "餐饮",
+    "system": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know."
   },
   "commandCenter": {
     "loadingStatus": "加载运营状态...",
@@ -2347,7 +2506,16 @@
       "roomRequired": "房间号必填",
       "titleField": "标题 *",
       "titlePlaceholder": "任务标题（例如空调故障）",
-      "titleRequired": "标题至少需要3个字符"
+      "titleRequired": "标题至少需要3个字符",
+      "deleteConfirmDescription": "{{title}} 将被永久删除。此操作无法撤消。",
+      "cleanupConfirmAction": "删除空任务",
+      "untitledTask": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "cancel": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "cleanupConfirmDescription": "每个没有可用内容的未完成任务都将被永久删除。此操作无法撤消。",
+      "deleteConfirmAction": "删除",
+      "deleteConfirmTitle": "删除这个任务吗？",
+      "deleteTaskAria": "删除任务",
+      "cleanupConfirmTitle": "删除所有空任务？"
     },
     "feedback": {
       "title": "宾客反馈",
@@ -3813,7 +3981,8 @@
       "guven": "· Güven: %",
       "canli": "Canlı:",
       "sahtekarlik_gostergeleri": "Sahtekarlık göstergeleri:",
-      "tamam": "Tamam"
+      "tamam": "Tamam",
+      "güven": "· 相信： ％"
     },
     "components_BookingSearch": {
       "rezervasyon_arama": "Rezervasyon Arama",
@@ -4145,7 +4314,8 @@
       "yeni_kisi": "Yeni Kişi",
       "birincil_kisi": "Birincil kişi",
       "iptal_25174": "İptal",
-      "ekle": "Ekle"
+      "ekle": "Ekle",
+      "kişi": "人"
     },
     "components_mice_BanquetCompetitorTab": {
       "banket_pazarindaki_rakip_mekanlar_ve_fiy": "Banket pazarındaki rakip mekanlar ve fiyat snapshot'ları",
@@ -4553,7 +4723,8 @@
       "uyari_detayi": "Uyarı Detayı",
       "guven": "Güven:",
       "onerilen_aksiyon": "Önerilen Aksiyon:",
-      "etki_alani": "Etki Alanı:"
+      "etki_alani": "Etki Alanı:",
+      "güven": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know."
     },
     "components_ops_IncidentDrilldownDrawer": {
       "yukleniyor": "Yükleniyor...",
@@ -4727,7 +4898,8 @@
       "giris_tl": "Giriş (TL)",
       "cikis_tl": "Çıkış (TL)",
       "giris_orj": "Giriş (orj)",
-      "cikis_orj": "Çıkış (orj)"
+      "cikis_orj": "Çıkış (orj)",
+      "folio_yonlendirme": "对开路由"
     },
     "components_PMSDateBadge": {
       "gun_sonu_islemini_baslat": "Gün sonu işlemini başlat"
@@ -5039,7 +5211,8 @@
       "gercek_ocr_icin_openai_api_key_veya_gemi": "Gerçek OCR için OPENAI_API_KEY veya GEMINI_API_KEY yapılandırılmalıdır.",
       "cekilen_kareyi_misafirin_profil_fotograf": "Çekilen kareyi misafirin profil fotoğrafı olarak kaydet",
       "kapat": "Kapat",
-      "taraniyor": "Taranıyor"
+      "taraniyor": "Taranıyor",
+      "güven": "相信"
     },
     "components_RecipeCostingManager": {
       "toplam_recipe": "Toplam Recipe",
@@ -5070,7 +5243,8 @@
       "yukleniyor": "Yükleniyor...",
       "musait_oda_yok": "Müsait oda yok",
       "oda": "Oda",
-      "kisi": "kişi"
+      "kisi": "kişi",
+      "kişi": "人"
     },
     "components_SandboxDashboard": {
       "sandbox_regression_algilandi": "Sandbox Regression Algılandi",
@@ -5591,7 +5765,8 @@
       "bu_secenek": "Bu seçenek",
       "isaretlemezseniz_mevcut_yayinlar_korunur": ": işaretlemezseniz mevcut yayınlar korunur, sadece yeni acenteler eklenir.",
       "vazgec": "Vazgeç",
-      "onayla_ve_uygula": "Onayla ve Uygula"
+      "onayla_ve_uygula": "Onayla ve Uygula",
+      "seçili": "已选择："
     },
     "pages_AgencyManagement": {
       "acente_yonetimi": "Acente Yönetimi",
@@ -5637,7 +5812,8 @@
       "toplam_tutar_tl": "Toplam Tutar (TL)",
       "ozel_istek": "Özel İstek",
       "erken_giris_deniz_manzarasi": "Erken giriş, deniz manzarasi...",
-      "iptal": "İptal"
+      "iptal": "İptal",
+      "kişi": "人"
     },
     "pages_AIZekaPage": {
       "yukleniyor": "Yükleniyor...",
@@ -5886,7 +6062,8 @@
       "menu_kalemini_sil": "Menü kalemini sil?",
       "pasife_alinacak_mevcut_booking_atamalari": "\" pasife alınacak. Mevcut booking atamalarındaki referanslar korunur.",
       "vazgec": "Vazgeç",
-      "sil": "Sil"
+      "sil": "Sil",
+      "kişi": "人"
     },
     "pages_ChannelConnections": {
       "otelinizin_bagli_oldugu_satis_kanallari_": "Otelinizin bağlı oldugu satış kanalları ve acenteler",
@@ -6005,7 +6182,8 @@
       "toplam_odeme": "Toplam Ödeme",
       "bakiye_33769": "Bakiye",
       "folio_bilgisi_alinamadi": "Folio bilgisi alınamadı.",
-      "cikis_yap": "Çıkış Yap"
+      "cikis_yap": "Çıkış Yap",
+      "seçili": "已选择"
     },
     "pages_DepositTracking": {
       "depozito_folio_yonetimi": "Depozito & Folio Yönetimi",
@@ -6244,7 +6422,8 @@
       "baslangic": "Başlangıç",
       "bitis": "Bitiş",
       "katilimci": "Katılımcı",
-      "vazgec_bf814": "Vazgeç"
+      "vazgec_bf814": "Vazgeç",
+      "kişi": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know."
     },
     "pages_GelirYonetimiPage": {
       "yukleniyor": "Yükleniyor...",
@@ -6356,7 +6535,9 @@
       "oda_e4b47": "Oda",
       "tarih": "Tarih",
       "durum": "Durum",
-      "tutar": "Tutar"
+      "tutar": "Tutar",
+      "seç": "选择...",
+      "seçili": "已选择）"
     },
     "pages_GroupFolioPage": {
       "yukleniyor": "Yükleniyor...",
@@ -6677,7 +6858,15 @@
       "silme_gerekcesi_zorunlu": "Silme gerekçesi (zorunlu)",
       "orn_yanlis_yukleme_kvkk_silme_talebi_202": "örn. yanlış yükleme, KVKK silme talebi #2026-...",
       "vazgec": "Vazgeç",
-      "sil": "Sil"
+      "sil": "Sil",
+      "all": "全部",
+      "days_left": "剩余天数",
+      "apply": "申请",
+      "within_duration": "持续时间内",
+      "expired": "已到期",
+      "days": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "back": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "bulk_delete": "批量删除"
     },
     "pages_IdPhotoViewReportPage": {
       "yenile": "Yenile",
@@ -6700,7 +6889,11 @@
       "onceki": "Önceki",
       "personel_siralamasi": "Personel sıralaması",
       "booking_siralamasi": "Booking sıralaması",
-      "saat_dagilimi_utc": "Saat dağılımı (UTC)"
+      "saat_dagilimi_utc": "Saat dağılımı (UTC)",
+      "export_csv": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "back": "后退",
+      "apply": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "no_data": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know."
     },
     "pages_IntegrationCredentials": {
       "entegrasyon_anahtarlari": "Entegrasyon Anahtarları",
@@ -6919,7 +7112,8 @@
       "mailing_kredi_paketleri_artik": "Mailing kredi paketleri artık",
       "modul_pazari": "Modül Pazarı",
       "uzerinden_satiliyor_tek_vitrinden_tum_mo": "üzerinden satılıyor.\n                Tek vitrinden tüm modül, entegrasyon ve kredi paketlerinize ulaşabilirsiniz.\n                Mevcut krediniz ve geçmişiniz aynen korunuyor.",
-      "modul_pazari_na_git": "Modül Pazarı'na Git →"
+      "modul_pazari_na_git": "Modül Pazarı'na Git →",
+      "seçili": "已选择"
     },
     "pages_MappingManager": {
       "gecerli": "Geçerli",
@@ -7052,7 +7246,8 @@
       "bu_modul_operasyonel_transactional_mesaj": "Bu modül operasyonel/transactional mesajlar (SMTP + WhatsApp, kredisiz)\n            içindir. Pazarlama kampanyaları ve toplu e-posta için",
       "modulunu_resend_tabanli_kredi_sistemli_k": "modülünü\n            (Resend tabanlı, kredi sistemli) kullanın. Şablonlar ve loglar iki sistemde ayrı tutulur.",
       "gonder": "Gönder",
-      "sablonlar": "Şablonlar"
+      "sablonlar": "Şablonlar",
+      "gönderilen": "发送"
     },
     "pages_MevzuatRaporlari": {
       "tuik_tga_bakanlik_denetim_hazirligi_ve_y": "TÜİK, TGA, Bakanlık denetim hazırlığı ve yıldız sınıflama self-check",
@@ -7155,7 +7350,8 @@
       "kisi": "/kişi",
       "kisi_94aaa": "kişi",
       "dk_hazirlik": "dk hazırlık",
-      "yukleniyor_b597b": "Yükleniyor…"
+      "yukleniyor_b597b": "Yükleniyor…",
+      "kişi": "/人"
     },
     "pages_ModuleDiscovery": {
       "modul_kesfi": "Modül Keşfi",
@@ -7305,7 +7501,8 @@
       "giris": "Giriş:",
       "cikis": "Çıkış:",
       "konuk_e5c88": "Konuk:",
-      "tutar_64d2c": "Tutar:"
+      "tutar_64d2c": "Tutar:",
+      "seçili": "已选择"
     },
     "pages_PCIComplianceDashboard": {
       "rapor_mevcut_degil": "Rapor mevcut değil.",
@@ -7407,7 +7604,8 @@
       "tanimi_sil": "Tanımı sil?",
       "tanimi_pasife_alinacak_misafirlerdeki_me": "\" tanımı pasife alınacak. Misafirlerdeki mevcut değerler korunur ama UI'da görünmez.",
       "vazgec": "Vazgeç",
-      "sil": "Sil"
+      "sil": "Sil",
+      "seç": "选择"
     },
     "pages_PublicReviewPage": {
       "yukleniyor": "Yükleniyor...",
@@ -7489,7 +7687,11 @@
       "onceki": "Önceki",
       "geri_alan_siralamasi": "Geri alan sıralaması",
       "oncelige_gore": "Önceliğe göre",
-      "saat_dagilimi_utc": "Saat dağılımı (UTC)"
+      "saat_dagilimi_utc": "Saat dağılımı (UTC)",
+      "message": "信息",
+      "back": "后退",
+      "no_data": "无数据",
+      "export_csv": "导出 CSV"
     },
     "pages_ReportScheduler": {
       "yukleniyor": "Yükleniyor...",
@@ -7547,14 +7749,16 @@
       "ek_dosya_sayisi": "Ek dosya sayısı:",
       "basarisiz_alicilar": "Başarısız alıcılar:",
       "rapor_ozeti": "Rapor özeti:",
-      "tekrar_deneme_sayisi": "Tekrar deneme sayısı:"
+      "tekrar_deneme_sayisi": "Tekrar deneme sayısı:",
+      "gönderilen": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know."
     },
     "pages_reports_NationalitySection": {
       "milliyet_dagilimi": "Milliyet Dağılımı",
       "misafirlerin_ulke_bazli_dagilimi": "Misafirlerin ülke bazlı dağılımı",
       "milliyet_dagilimi_f8dc7": "Milliyet Dağılımı",
       "ulke_detaylari": "Ülke Detayları",
-      "kisi": "kişi"
+      "kisi": "kişi",
+      "kişi": "人"
     },
     "pages_reports_PeriodSection": {
       "donem_karsilastirma": "Dönem Karşılaştırma",
@@ -7665,7 +7869,8 @@
       "gec_cikis": "Geç Çıkış",
       "iptal_et": "İptal Et",
       "giris_yap": "Giriş Yap",
-      "cikis_yap": "Çıkış Yap"
+      "cikis_yap": "Çıkış Yap",
+      "gate_kontrolleri_gecmedi_gecis_engellidir": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know."
     },
     "pages_reservationdetail_OnlinePaymentTab": {
       "online_odeme_sanal_kart": "Online Ödeme / Sanal Kart",
@@ -8262,7 +8467,12 @@
       "secili_filtrelerle_eslesen_acil_mesaj_ka": "Seçili filtrelerle eşleşen acil mesaj kaydı yok.",
       "gonderen_siralamasi": "Gönderen sıralaması",
       "alici_departmanlar": "Alıcı departmanlar",
-      "saat_dagilimi_utc": "Saat dağılımı (UTC)"
+      "saat_dagilimi_utc": "Saat dağılımı (UTC)",
+      "urgent_messages": "紧急消息",
+      "back": "后退",
+      "no_data": "无数据",
+      "message": "信息",
+      "apply": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know."
     },
     "pages_UrgentPermissionAdminPage": {
       "acil_mesaj_izni_yonetimi": "Acil Mesaj İzni Yönetimi",
@@ -8288,7 +8498,20 @@
       "yukleniyor_4deb0": "Yükleniyor...",
       "kayit_bulunamadi": "Kayıt bulunamadı.",
       "izinli": "İzinli",
-      "izin_ver": "İzin Ver"
+      "izin_ver": "İzin Ver",
+      "role_admin": "行政",
+      "role_front_desk": "前台",
+      "role_housekeeping": "家政",
+      "gönderilen": "发送",
+      "role_supervisor": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "assignable_permissions": "可分配的权限：",
+      "role_manager": "经理",
+      "retry": "重试",
+      "role_super_admin": "超级管理员",
+      "role_sales": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
+      "role_finance": "金融",
+      "role_revenue": "收入",
+      "attempted": "尝试过"
     },
     "pages_VendorPortal": {
       "ana_sayfaya_don": "Ana sayfaya dön",
@@ -8351,7 +8574,8 @@
       "kaldir": "Kaldır",
       "jpg_png_webp_max_5_mb_birden_fazla_seceb": "JPG, PNG, WEBP · max 5 MB · birden fazla seçebilirsiniz",
       "aktif_otellerin_katalogunda_gorunur": "Aktif (otellerin kataloğunda görünür)",
-      "kaydet_a9270": "Kaydet"
+      "kaydet_a9270": "Kaydet",
+      "ürün": "产品"
     },
     "pages_WakeUpCallsPage": {
       "uyandirma_cagrisi_yonetimi": "Uyandırma Çağrısı Yönetimi",
@@ -8409,7 +8633,8 @@
       "kredi_karti": "Kredi Kartı",
       "oda_062cb": "· Oda",
       "kisi": "kişi",
-      "toplam_68af4": "Toplam:"
+      "toplam_68af4": "Toplam:",
+      "kişi": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know."
     },
     "pages_WebhookOutboxAdmin": {
       "olay_kuyrugu_webhook_teslimatlari_ve_dlq": "Olay kuyruğu, webhook teslimatları ve DLQ yönetimi",
@@ -9032,7 +9257,8 @@
       "temizle": "Temizle",
       "son_adisyon": "Son Adisyon",
       "adisyon_no": "Adisyon No",
-      "is_gunu": "Is Gunu"
+      "is_gunu": "Is Gunu",
+      "kişi": "人"
     },
     "pages_PilotReadinessPage": {
       "back": "Back",
@@ -9476,6 +9702,22 @@
       "parola": "Parola",
       "otel_yöneticisi_misiniz": "Otel yöneticisi misiniz?",
       "otel_girişi_ne_geçin": "Otel Girişi'ne geçin"
+    },
+    "pages_GroupReservations": {
+      "gelismis_blok_yonetimi": "高级区块管理",
+      "room_blocks": "房间块"
+    },
+    "pages_BasicReports": {
+      "trial_balance": "试算表",
+      "trial_balance_desc": "每日收入、付款和余额检查",
+      "forecast_reports_desc": "占用率预测、接送和节奏分析",
+      "forecast_reports": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know."
+    },
+    "components_pms_GuestsTab": {
+      "profil_ozel_alanlari_udf": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know."
+    },
+    "pages_SettingsRoomsTab": {
+      "suite_connecting_tanimlari": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know."
     }
   },
   "rnlDuplicates": {
