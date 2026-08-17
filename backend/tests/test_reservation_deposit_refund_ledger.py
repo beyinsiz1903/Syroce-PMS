@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
+from pymongo.errors import DuplicateKeyError
 
 os.environ.setdefault("JWT_SECRET", "unit-test-secret-key-at-least-32-chars!!")
 
@@ -47,7 +48,20 @@ def _patch(monkeypatch, database):
     monkeypatch.setattr(reservation_detail, "_log_activity", AsyncMock())
     emitted = MagicMock()
     monkeypatch.setattr(webhook_retry_service, "schedule_emit_reservation_updated", emitted)
-    return emitted
+    claim = AsyncMock(return_value={"status": "acquired", "lock_id": "lock-a"})
+    release = AsyncMock()
+
+    async def run_transaction(**kwargs):
+        return await kwargs["callback"]("session-a")
+
+    monkeypatch.setattr(reservation_detail, "claim_short_window_dedup", claim)
+    monkeypatch.setattr(reservation_detail, "release_idempotency", release)
+    monkeypatch.setattr(
+        reservation_detail,
+        "_run_reservation_financial_transaction",
+        run_transaction,
+    )
+    return emitted, claim, release
 
 
 @pytest.mark.asyncio
@@ -62,7 +76,7 @@ async def test_full_deposit_refund_posts_negative_payment(monkeypatch):
             "status": "received",
         }
     )
-    emitted = _patch(monkeypatch, database)
+    emitted, _claim, _release = _patch(monkeypatch, database)
 
     result = await reservation_detail.refund_deposit(
         "booking-a",
@@ -81,7 +95,13 @@ async def test_full_deposit_refund_posts_negative_payment(monkeypatch):
     assert result["payment"]["amount"] == -25.0
     assert result["payment"]["payment_type"] == "refund"
     assert result["payment"]["deposit_id"] == "deposit-a"
-    database.payments.insert_one.assert_awaited_once()
+    assert result["payment"]["reference"].startswith("deposit-refund:")
+    assert result["payment"]["reference"] != "reference-a"
+    assert result["refund"]["payment_id"] == result["payment"]["id"]
+    database.payments.insert_one.assert_awaited_once_with(
+        result["payment"],
+        session="session-a",
+    )
     database.deposits.update_one.assert_awaited_once_with(
         {
             "id": "deposit-a",
@@ -89,10 +109,12 @@ async def test_full_deposit_refund_posts_negative_payment(monkeypatch):
             "tenant_id": "tenant-a",
         },
         {"$set": {"status": "refunded", "refunded_amount": 25.0}},
+        session="session-a",
     )
     database.bookings.update_one.assert_awaited_once_with(
         {"id": "booking-a", "tenant_id": "tenant-a"},
         {"$set": {"paid_amount": 75.0}},
+        session="session-a",
     )
     emitted.assert_called_once()
 
@@ -130,6 +152,7 @@ async def test_partial_refund_accumulates_refunded_amount(monkeypatch):
             "tenant_id": "tenant-a",
         },
         {"$set": {"status": "partially_refunded", "refunded_amount": 50.0}},
+        session="session-a",
     )
 
 
@@ -162,6 +185,73 @@ async def test_refund_above_remaining_balance_fails_without_writes(monkeypatch):
     assert exc.value.status_code == 400
     database.deposit_refunds.insert_one.assert_not_awaited()
     database.payments.insert_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_refund_click_fails_before_financial_writes(monkeypatch):
+    database = _database(
+        deposit={
+            "id": "deposit-a",
+            "booking_id": "booking-a",
+            "tenant_id": "tenant-a",
+            "amount": 25.0,
+            "status": "received",
+        }
+    )
+    _emitted, claim, _release = _patch(monkeypatch, database)
+    claim.return_value = {"status": "duplicate", "lock_id": None}
+
+    with pytest.raises(HTTPException) as exc:
+        await reservation_detail.refund_deposit(
+            "booking-a",
+            reservation_detail.DepositRefund(
+                deposit_id="deposit-a",
+                refund_amount=25.0,
+                refund_method="cash",
+            ),
+            current_user=_user(),
+            _perm=None,
+        )
+
+    assert exc.value.status_code == 409
+    database.deposit_refunds.insert_one.assert_not_awaited()
+    database.payments.insert_one.assert_not_awaited()
+    database.deposits.update_one.assert_not_awaited()
+    database.bookings.update_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_refund_duplicate_key_is_safe_conflict(monkeypatch):
+    database = _database(
+        deposit={
+            "id": "deposit-a",
+            "booking_id": "booking-a",
+            "tenant_id": "tenant-a",
+            "amount": 25.0,
+            "status": "received",
+        }
+    )
+    _emitted, _claim, release = _patch(monkeypatch, database)
+    monkeypatch.setattr(
+        reservation_detail,
+        "_run_reservation_financial_transaction",
+        AsyncMock(side_effect=DuplicateKeyError("duplicate")),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await reservation_detail.refund_deposit(
+            "booking-a",
+            reservation_detail.DepositRefund(
+                deposit_id="deposit-a",
+                refund_amount=25.0,
+                refund_method="cash",
+            ),
+            current_user=_user(),
+            _perm=None,
+        )
+
+    assert exc.value.status_code == 409
+    release.assert_awaited_once_with(reservation_detail.db, lock_id="lock-a")
     database.deposits.update_one.assert_not_awaited()
     database.bookings.update_one.assert_not_awaited()
 
