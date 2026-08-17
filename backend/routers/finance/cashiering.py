@@ -253,32 +253,132 @@ async def get_credit_limit(account_id: str, credentials: HTTPAuthorizationCreden
 
 
 @router.post("/cashiering/direct-bill")
-async def post_to_city_ledger(booking_id: str, account_id: str, amount: float, description: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def post_to_city_ledger(
+    booking_id: str,
+    account_id: str,
+    amount: float,
+    description: str,
+    idempotency_key: str | None = None,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
     """Post charge to city ledger (direct billing)"""
     current_user = await get_current_user(credentials)
     _enforce(current_user.role, "post_direct_bill")  # Bug CT
 
-    # Verify account
+    if not math.isfinite(amount) or amount <= 0:
+        raise HTTPException(status_code=400, detail="Direct bill amount must be a finite positive amount")
+
+    description = str(description or "").strip()
+    if not description or len(description) > 2000:
+        raise HTTPException(status_code=400, detail="Direct bill description is required and must not exceed 2000 characters")
+
+    request_key = str(idempotency_key or uuid.uuid4()).strip()
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", request_key):
+        raise HTTPException(status_code=400, detail="Invalid idempotency key")
+
+    booking = await db.bookings.find_one(
+        {"id": booking_id, "tenant_id": current_user.tenant_id},
+        {"_id": 1},
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
     account = await db.city_ledger_accounts.find_one({"id": account_id, "tenant_id": current_user.tenant_id})
 
     if not account:
         raise HTTPException(status_code=404, detail="City ledger account not found")
 
-    # Check credit limit
-    if account["current_balance"] + amount > account["credit_limit"]:
-        raise HTTPException(status_code=400, detail=f"Credit limit exceeded. Available: {account['credit_limit'] - account['current_balance']}")
+    try:
+        current_balance = float(account.get("current_balance", 0))
+        credit_limit = float(account.get("credit_limit", 0))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail="City ledger account balance is invalid") from exc
+    if not math.isfinite(current_balance) or current_balance < 0 or not math.isfinite(credit_limit) or credit_limit < 0:
+        raise HTTPException(status_code=409, detail="City ledger account balance is invalid")
+    if current_balance + amount > credit_limit:
+        raise HTTPException(status_code=409, detail="Credit limit exceeded")
+
+    transaction_mongo_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"city-ledger-charge:{current_user.tenant_id}:{account_id}:{request_key}"))
+    existing = await db.city_ledger_transactions.find_one(
+        {"_id": transaction_mongo_id, "tenant_id": current_user.tenant_id},
+    )
+    if existing:
+        if existing.get("status") == "completed":
+            return {
+                "success": True,
+                "replayed": True,
+                "transaction_id": existing["id"],
+                "account_name": account["account_name"],
+                "amount_posted": existing["amount"],
+                "new_balance": existing["new_balance"],
+            }
+        raise HTTPException(status_code=409, detail="Direct bill is already being processed")
 
     # Create transaction
     transaction = CityLedgerTransaction(
-        tenant_id=current_user.tenant_id, account_id=account_id, booking_id=booking_id, transaction_type="charge", amount=amount, description=description, posted_by=current_user.name
+        tenant_id=current_user.tenant_id,
+        account_id=account_id,
+        transaction_type="charge",
+        amount=amount,
+        description=description,
+        posted_by=current_user.name,
     )
+    transaction_doc = transaction.model_dump()
+    transaction_doc.update(
+        {
+            "_id": transaction_mongo_id,
+            "booking_id": booking_id,
+            "idempotency_key": request_key,
+            "status": "pending",
+        }
+    )
+    try:
+        await db.city_ledger_transactions.insert_one(transaction_doc)
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="Direct bill is already being processed") from exc
 
-    await db.city_ledger_transactions.insert_one(transaction.model_dump())
+    new_balance = round(current_balance + amount, 2)
+    balance_update = await db.city_ledger_accounts.update_one(
+        {
+            "id": account_id,
+            "tenant_id": current_user.tenant_id,
+            "current_balance": current_balance,
+            "credit_limit": {"$gte": new_balance},
+        },
+        {"$inc": {"current_balance": amount}},
+    )
+    if balance_update.modified_count != 1:
+        await db.city_ledger_transactions.delete_one({"_id": transaction_mongo_id, "status": "pending"})
+        raise HTTPException(status_code=409, detail="City ledger balance changed; refresh and try again")
 
-    # Update account balance
-    await db.city_ledger_accounts.update_one({"id": account_id}, {"$inc": {"current_balance": amount}})
+    try:
+        transaction_update = await db.city_ledger_transactions.update_one(
+            {"_id": transaction_mongo_id, "status": "pending"},
+            {"$set": {"status": "completed", "new_balance": new_balance}},
+        )
+        if transaction_update.modified_count != 1:
+            raise RuntimeError("City ledger transaction finalization failed")
+    except Exception:
+        rollback = await db.city_ledger_accounts.update_one(
+            {
+                "id": account_id,
+                "tenant_id": current_user.tenant_id,
+                "current_balance": new_balance,
+            },
+            {"$inc": {"current_balance": -amount}},
+        )
+        if rollback.modified_count == 1:
+            await db.city_ledger_transactions.delete_one({"_id": transaction_mongo_id, "status": "pending"})
+        raise
 
-    return {"success": True, "transaction_id": transaction.id, "account_name": account["account_name"], "amount_posted": amount, "new_balance": account["current_balance"] + amount}
+    return {
+        "success": True,
+        "replayed": False,
+        "transaction_id": transaction.id,
+        "account_name": account["account_name"],
+        "amount_posted": amount,
+        "new_balance": new_balance,
+    }
 
 
 @router.get("/cashiering/outstanding-balance")
