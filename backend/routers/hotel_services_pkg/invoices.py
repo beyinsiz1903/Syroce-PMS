@@ -402,7 +402,14 @@ async def generate_custom_invoice(
     all_charges.extend(await _load_reservation_charge_items(booking_id, tid))
 
     if body.selected_charge_ids:
-        selected = [c for c in all_charges if c["id"] in body.selected_charge_ids]
+        requested_ids = set(body.selected_charge_ids)
+        selected = [c for c in all_charges if c["id"] in requested_ids]
+        resolved_ids = {c["id"] for c in selected}
+        if resolved_ids != requested_ids:
+            raise HTTPException(
+                status_code=409,
+                detail="Invoice charge selection changed; refresh and try again",
+            )
     else:
         selected = all_charges
 

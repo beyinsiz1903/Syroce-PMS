@@ -2,6 +2,7 @@ import os
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 os.environ.setdefault("JWT_SECRET", "unit-test-secret-key-at-least-32-chars!!")
 
@@ -175,6 +176,24 @@ async def test_generated_invoice_total_matches_selected_durable_charges(monkeypa
     assert "Minibar" in result["invoice_html"]
     assert "Duplicate migration row" not in result["invoice_html"]
     assert database.invoices.inserts[0]["item_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_generated_invoice_rejects_stale_charge_selection_without_write(monkeypatch):
+    database = _fake_db()
+    monkeypatch.setattr(invoices, "db", database)
+
+    with pytest.raises(HTTPException) as exc:
+        await invoices.generate_custom_invoice(
+            "booking-a",
+            InvoiceItemSelection(selected_charge_ids=["folio-charge-a", "missing-charge"]),
+            current_user=_user(),
+            _perm=None,
+        )
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "Invoice charge selection changed; refresh and try again"
+    assert database.invoices.inserts == []
 
 
 @pytest.mark.asyncio
