@@ -4009,7 +4009,8 @@
       "guven": "· Güven: %",
       "canli": "Canlı:",
       "sahtekarlik_gostergeleri": "Sahtekarlık göstergeleri:",
-      "tamam": "Tamam"
+      "tamam": "Tamam",
+      "güven": "· Trust: %"
     },
     "components_BookingSearch": {
       "rezervasyon_arama": "Rezervasyon Arama",
@@ -4341,7 +4342,8 @@
       "yeni_kisi": "Yeni Kişi",
       "birincil_kisi": "Birincil kişi",
       "iptal_25174": "İptal",
-      "ekle": "Ekle"
+      "ekle": "Ekle",
+      "kişi": "Person"
     },
     "components_mice_BanquetCompetitorTab": {
       "banket_pazarindaki_rakip_mekanlar_ve_fiy": "Banket pazarındaki rakip mekanlar ve fiyat snapshot'ları",
@@ -4749,7 +4751,8 @@
       "uyari_detayi": "Uyarı Detayı",
       "guven": "Güven:",
       "onerilen_aksiyon": "Önerilen Aksiyon:",
-      "etki_alani": "Etki Alanı:"
+      "etki_alani": "Etki Alanı:",
+      "güven": "Trust:"
     },
     "components_ops_IncidentDrilldownDrawer": {
       "yukleniyor": "Yükleniyor...",
@@ -4933,8 +4936,35 @@
       "trial_balance_desc": "Daily revenue, payment and balance checks"
     },
     "pages_MicePage": {
-      "salon_planlama": "Function Space Setup",
-      "catering_yonetimi": "Catering Management"
+      "yukleniyor": "Yükleniyor…",
+      "toplanti_konferans_gala_ve_dugun_etkinli": "Toplantı, konferans, gala ve düğün etkinliklerinin tam satış döngüsü.",
+      "gunun_ops_sheet_i": "Günün Ops Sheet'i",
+      "yenile": "Yenile",
+      "yeni_etkinlik": "Yeni Etkinlik",
+      "toplam_etkinlik": "Toplam Etkinlik",
+      "toplam_pipeline": "Toplam Pipeline",
+      "musteriler": "Müşteriler (",
+      "menuler_paketler": "Menüler & Paketler (",
+      "satis_pipeline": "Satış Pipeline",
+      "musteri": "Müşteri",
+      "tarih": "Tarih",
+      "tutar": "Tutar",
+      "durum": "Durum",
+      "islem": "İşlem",
+      "mutfak_fisi": "Mutfak Fişi",
+      "degisiklik_gecmisi": "Değişiklik Geçmişi",
+      "duzenle": "Düzenle",
+      "gunluk": "Günlük:",
+      "f_b_menuleri_av_ve_dekorasyon_paketleri_": "F&B menüleri, AV ve dekorasyon paketleri. Etkinlik kaynaklarına eklenir.",
+      "yeni_menu_paket": "Yeni Menü / Paket",
+      "henuz_menu_eklenmemis_yeni_menu_paket_bu": "Henüz menü eklenmemiş. \"Yeni Menü / Paket\" butonuyla ekleyin.",
+      "duzenle_cc6f2": "Düzenle",
+      "sil": "Sil",
+      "kisi": "/kişi",
+      "kisi_94aaa": "kişi",
+      "dk_hazirlik": "dk hazırlık",
+      "yukleniyor_b597b": "Yükleniyor…",
+      "kişi": "/person"
     },
     "components_PMSDateBadge": {
       "gun_sonu_islemini_baslat": "Gün sonu işlemini başlat"
@@ -5249,7 +5279,8 @@
       "gercek_ocr_icin_openai_api_key_veya_gemi": "Gerçek OCR için OPENAI_API_KEY veya GEMINI_API_KEY yapılandırılmalıdır.",
       "cekilen_kareyi_misafirin_profil_fotograf": "Çekilen kareyi misafirin profil fotoğrafı olarak kaydet",
       "kapat": "Kapat",
-      "taraniyor": "Taranıyor"
+      "taraniyor": "Taranıyor",
+      "güven": "Trust"
     },
     "components_RecipeCostingManager": {
       "toplam_recipe": "Toplam Recipe",
@@ -5280,7 +5311,8 @@
       "yukleniyor": "Yükleniyor...",
       "musait_oda_yok": "Müsait oda yok",
       "oda": "Oda",
-      "kisi": "kişi"
+      "kisi": "kişi",
+      "kişi": "person"
     },
     "components_SandboxDashboard": {
       "sandbox_regression_algilandi": "Sandbox Regression Algılandi",
@@ -5801,7 +5833,8 @@
       "bu_secenek": "Bu seçenek",
       "isaretlemezseniz_mevcut_yayinlar_korunur": ": işaretlemezseniz mevcut yayınlar korunur, sadece yeni acenteler eklenir.",
       "vazgec": "Vazgeç",
-      "onayla_ve_uygula": "Onayla ve Uygula"
+      "onayla_ve_uygula": "Onayla ve Uygula",
+      "seçili": "Selected:"
     },
     "pages_AgencyManagement": {
       "acente_yonetimi": "Acente Yönetimi",
@@ -5847,7 +5880,8 @@
       "toplam_tutar_tl": "Toplam Tutar (TL)",
       "ozel_istek": "Özel İstek",
       "erken_giris_deniz_manzarasi": "Erken giriş, deniz manzarasi...",
-      "iptal": "İptal"
+      "iptal": "İptal",
+      "kişi": "Person"
     },
     "pages_AIZekaPage": {
       "yukleniyor": "Yükleniyor...",
@@ -6096,7 +6130,8 @@
       "menu_kalemini_sil": "Menü kalemini sil?",
       "pasife_alinacak_mevcut_booking_atamalari": "\" pasife alınacak. Mevcut booking atamalarındaki referanslar korunur.",
       "vazgec": "Vazgeç",
-      "sil": "Sil"
+      "sil": "Sil",
+      "kişi": "Person"
     },
     "pages_ChannelConnections": {
       "otelinizin_bagli_oldugu_satis_kanallari_": "Otelinizin bağlı oldugu satış kanalları ve acenteler",
@@ -6215,7 +6250,8 @@
       "toplam_odeme": "Toplam Ödeme",
       "bakiye_33769": "Bakiye",
       "folio_bilgisi_alinamadi": "Folio bilgisi alınamadı.",
-      "cikis_yap": "Çıkış Yap"
+      "cikis_yap": "Çıkış Yap",
+      "seçili": "selected"
     },
     "pages_DepositTracking": {
       "depozito_folio_yonetimi": "Depozito & Folio Yönetimi",
@@ -6454,7 +6490,8 @@
       "baslangic": "Başlangıç",
       "bitis": "Bitiş",
       "katilimci": "Katılımcı",
-      "vazgec_bf814": "Vazgeç"
+      "vazgec_bf814": "Vazgeç",
+      "kişi": "Person"
     },
     "pages_GelirYonetimiPage": {
       "yukleniyor": "Yükleniyor...",
@@ -6566,7 +6603,9 @@
       "oda_e4b47": "Oda",
       "tarih": "Tarih",
       "durum": "Durum",
-      "tutar": "Tutar"
+      "tutar": "Tutar",
+      "seç": "Select...",
+      "seçili": "selected)"
     },
     "pages_GroupFolioPage": {
       "yukleniyor": "Yükleniyor...",
@@ -7148,7 +7187,8 @@
       "mailing_kredi_paketleri_artik": "Mailing kredi paketleri artık",
       "modul_pazari": "Modül Pazarı",
       "uzerinden_satiliyor_tek_vitrinden_tum_mo": "üzerinden satılıyor.\n                Tek vitrinden tüm modül, entegrasyon ve kredi paketlerinize ulaşabilirsiniz.\n                Mevcut krediniz ve geçmişiniz aynen korunuyor.",
-      "modul_pazari_na_git": "Modül Pazarı'na Git →"
+      "modul_pazari_na_git": "Modül Pazarı'na Git →",
+      "seçili": "selected"
     },
     "pages_MappingManager": {
       "gecerli": "Geçerli",
@@ -7281,7 +7321,8 @@
       "bu_modul_operasyonel_transactional_mesaj": "Bu modül operasyonel/transactional mesajlar (SMTP + WhatsApp, kredisiz)\n            içindir. Pazarlama kampanyaları ve toplu e-posta için",
       "modulunu_resend_tabanli_kredi_sistemli_k": "modülünü\n            (Resend tabanlı, kredi sistemli) kullanın. Şablonlar ve loglar iki sistemde ayrı tutulur.",
       "gonder": "Gönder",
-      "sablonlar": "Şablonlar"
+      "sablonlar": "Şablonlar",
+      "gönderilen": "sent"
     },
     "pages_MevzuatRaporlari": {
       "tuik_tga_bakanlik_denetim_hazirligi_ve_y": "TÜİK, TGA, Bakanlık denetim hazırlığı ve yıldız sınıflama self-check",
@@ -7355,36 +7396,6 @@
       "icin_zorunlu": "için zorunlu",
       "kismen": "~ Kısmen",
       "son_kayit": "Son kayıt:"
-    },
-    "pages_MicePage": {
-      "yukleniyor": "Yükleniyor…",
-      "toplanti_konferans_gala_ve_dugun_etkinli": "Toplantı, konferans, gala ve düğün etkinliklerinin tam satış döngüsü.",
-      "gunun_ops_sheet_i": "Günün Ops Sheet'i",
-      "yenile": "Yenile",
-      "yeni_etkinlik": "Yeni Etkinlik",
-      "toplam_etkinlik": "Toplam Etkinlik",
-      "toplam_pipeline": "Toplam Pipeline",
-      "musteriler": "Müşteriler (",
-      "menuler_paketler": "Menüler & Paketler (",
-      "satis_pipeline": "Satış Pipeline",
-      "musteri": "Müşteri",
-      "tarih": "Tarih",
-      "tutar": "Tutar",
-      "durum": "Durum",
-      "islem": "İşlem",
-      "mutfak_fisi": "Mutfak Fişi",
-      "degisiklik_gecmisi": "Değişiklik Geçmişi",
-      "duzenle": "Düzenle",
-      "gunluk": "Günlük:",
-      "f_b_menuleri_av_ve_dekorasyon_paketleri_": "F&B menüleri, AV ve dekorasyon paketleri. Etkinlik kaynaklarına eklenir.",
-      "yeni_menu_paket": "Yeni Menü / Paket",
-      "henuz_menu_eklenmemis_yeni_menu_paket_bu": "Henüz menü eklenmemiş. \"Yeni Menü / Paket\" butonuyla ekleyin.",
-      "duzenle_cc6f2": "Düzenle",
-      "sil": "Sil",
-      "kisi": "/kişi",
-      "kisi_94aaa": "kişi",
-      "dk_hazirlik": "dk hazırlık",
-      "yukleniyor_b597b": "Yükleniyor…"
     },
     "pages_ModuleDiscovery": {
       "modul_kesfi": "Modül Keşfi",
@@ -7534,7 +7545,8 @@
       "giris": "Giriş:",
       "cikis": "Çıkış:",
       "konuk_e5c88": "Konuk:",
-      "tutar_64d2c": "Tutar:"
+      "tutar_64d2c": "Tutar:",
+      "seçili": "selected"
     },
     "pages_PCIComplianceDashboard": {
       "rapor_mevcut_degil": "Rapor mevcut değil.",
@@ -7636,7 +7648,8 @@
       "tanimi_sil": "Tanımı sil?",
       "tanimi_pasife_alinacak_misafirlerdeki_me": "\" tanımı pasife alınacak. Misafirlerdeki mevcut değerler korunur ama UI'da görünmez.",
       "vazgec": "Vazgeç",
-      "sil": "Sil"
+      "sil": "Sil",
+      "seç": "Select"
     },
     "pages_PublicReviewPage": {
       "yukleniyor": "Yükleniyor...",
@@ -7780,14 +7793,16 @@
       "ek_dosya_sayisi": "Ek dosya sayısı:",
       "basarisiz_alicilar": "Başarısız alıcılar:",
       "rapor_ozeti": "Rapor özeti:",
-      "tekrar_deneme_sayisi": "Tekrar deneme sayısı:"
+      "tekrar_deneme_sayisi": "Tekrar deneme sayısı:",
+      "gönderilen": "sent"
     },
     "pages_reports_NationalitySection": {
       "milliyet_dagilimi": "Milliyet Dağılımı",
       "misafirlerin_ulke_bazli_dagilimi": "Misafirlerin ülke bazlı dağılımı",
       "milliyet_dagilimi_f8dc7": "Milliyet Dağılımı",
       "ulke_detaylari": "Ülke Detayları",
-      "kisi": "kişi"
+      "kisi": "kişi",
+      "kişi": "person"
     },
     "pages_reports_PeriodSection": {
       "donem_karsilastirma": "Dönem Karşılaştırma",
@@ -7898,7 +7913,8 @@
       "gec_cikis": "Geç Çıkış",
       "iptal_et": "İptal Et",
       "giris_yap": "Giriş Yap",
-      "cikis_yap": "Çıkış Yap"
+      "cikis_yap": "Çıkış Yap",
+      "gate_kontrolleri_gecmedi_gecis_engellidir": "Gate checks have not passed — passage is blocked. Manual override is not available."
     },
     "pages_reservationdetail_OnlinePaymentTab": {
       "online_odeme_sanal_kart": "Online Ödeme / Sanal Kart",
@@ -8538,7 +8554,8 @@
       "role_housekeeping": "Housekeeping",
       "role_finance": "Finance",
       "role_revenue": "Revenue",
-      "role_sales": "Sales"
+      "role_sales": "Sales",
+      "gönderilen": "sent"
     },
     "pages_VendorPortal": {
       "ana_sayfaya_don": "Ana sayfaya dön",
@@ -8601,7 +8618,8 @@
       "kaldir": "Kaldır",
       "jpg_png_webp_max_5_mb_birden_fazla_seceb": "JPG, PNG, WEBP · max 5 MB · birden fazla seçebilirsiniz",
       "aktif_otellerin_katalogunda_gorunur": "Aktif (otellerin kataloğunda görünür)",
-      "kaydet_a9270": "Kaydet"
+      "kaydet_a9270": "Kaydet",
+      "ürün": "Product"
     },
     "pages_WakeUpCallsPage": {
       "uyandirma_cagrisi_yonetimi": "Uyandırma Çağrısı Yönetimi",
@@ -8659,7 +8677,8 @@
       "kredi_karti": "Kredi Kartı",
       "oda_062cb": "· Oda",
       "kisi": "kişi",
-      "toplam_68af4": "Toplam:"
+      "toplam_68af4": "Toplam:",
+      "kişi": "person"
     },
     "pages_WebhookOutboxAdmin": {
       "olay_kuyrugu_webhook_teslimatlari_ve_dlq": "Olay kuyruğu, webhook teslimatları ve DLQ yönetimi",
@@ -9282,7 +9301,8 @@
       "temizle": "Temizle",
       "son_adisyon": "Son Adisyon",
       "adisyon_no": "Adisyon No",
-      "is_gunu": "Is Gunu"
+      "is_gunu": "Is Gunu",
+      "kişi": "person"
     },
     "pages_PilotReadinessPage": {
       "back": "Back",
