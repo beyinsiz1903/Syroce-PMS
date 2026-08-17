@@ -153,17 +153,76 @@ describe('FoliosTab — Folyo Böl akışı (Task #419)', () => {
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
   });
 
-  it('sebep boşken işlem reddedilir: axios.post çağrılmaz, toast.error gösterilir', () => {
+  it('geçerli sebep ve pozitif aktarım seçilene kadar onay düğmesini kapalı tutar', () => {
     render(<FoliosTab {...singleFolioProps()} />);
 
     fireEvent.click(screen.getByTestId('btn-folyo-bol'));
 
+    const confirmButton = screen.getByTestId('confirm-folio-split');
+    expect(confirmButton).toBeDisabled();
+
     // Kalem seç ama sebebi boş bırak
     fireEvent.click(screen.getByTestId('split-charge-c1'));
-    fireEvent.click(screen.getByRole('button', { name: /Bölmeyi Onayla/i }));
+    expect(confirmButton).toBeDisabled();
 
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'Şirket faturası ayrıştırma' },
+    });
+    expect(confirmButton).toBeEnabled();
     expect(axiosPost).not.toHaveBeenCalled();
-    expect(toast.error).toHaveBeenCalledWith('Bölme sebebini yazın');
+  });
+
+  it('tüm kalemleri hedefe taşıyınca onay düğmesini kapatır', () => {
+    render(<FoliosTab {...singleFolioProps()} />);
+
+    fireEvent.click(screen.getByTestId('btn-folyo-bol'));
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'Geçersiz tam aktarım denemesi' },
+    });
+
+    fireEvent.click(screen.getByTestId('split-charge-c1'));
+    expect(screen.getByTestId('confirm-folio-split')).toBeEnabled();
+
+    fireEvent.click(screen.getByTestId('split-charge-c2'));
+    expect(screen.getByTestId('confirm-folio-split')).toBeDisabled();
+    expect(axiosPost).not.toHaveBeenCalled();
+  });
+
+  it('sıfır tutarlı folyo bölmeyi hiçbir modda onaylatmaz', () => {
+    render(
+      <FoliosTab
+        {...singleFolioProps({
+          folios: [
+            {
+              id: 'f1',
+              folio_number: 'F-001',
+              folio_type: 'guest',
+              status: 'open',
+              balance: 0,
+            },
+          ],
+          charges: [
+            { id: 'c1', folio_id: 'f1', description: 'Sıfır Kalem', total: 0, voided: false },
+            { id: 'c2', folio_id: 'f1', description: 'Kalan Kalem', total: 0, voided: false },
+          ],
+          summary: { total_amount: 0, total_charges: 0, total_payments: 0, balance: 0 },
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId('btn-folyo-bol'));
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'Sıfır tutar reddi' },
+    });
+    fireEvent.click(screen.getByTestId('split-charge-c1'));
+    expect(screen.getByTestId('confirm-folio-split')).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Eşit Böl' }));
+    expect(screen.getByTestId('confirm-folio-split')).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Özel Tutar' }));
+    expect(screen.getByTestId('confirm-folio-split')).toBeDisabled();
+    expect(axiosPost).not.toHaveBeenCalled();
   });
 
   it('ekstra masraf (folio_id yok) bölme listesinde görünür ve charge_ids ile gönderilir (Task #425)', async () => {
