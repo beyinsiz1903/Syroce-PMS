@@ -1047,6 +1047,18 @@ async def void_payment(
     if payment.get("voided"):
         raise HTTPException(status_code=400, detail="Ödeme zaten iade edilmiş")
 
+    folio = await db.folios.find_one(
+        {"id": folio_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "status": 1},
+    )
+    if not folio:
+        raise HTTPException(status_code=404, detail="Folyo bulunamadı")
+    if folio.get("status") != "open":
+        raise HTTPException(
+            status_code=409,
+            detail="Kapalı folyodaki ödeme iade edilemez",
+        )
+
     method_str = payment.get("method") or "cash"
     if hasattr(method_str, "value"):
         method_str = method_str.value

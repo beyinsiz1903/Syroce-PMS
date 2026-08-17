@@ -56,8 +56,24 @@ class FolioDetailService:
         # Invoice association
         invoices = await self._get_associated_invoices(tenant_id, folio_id, folio.get("booking_id"))
 
-        # Audit trail
-        audit_trail = await db.pms_audit_trail.find({"tenant_id": tenant_id, "entity_id": folio_id}, {"_id": 0}).sort("timestamp", -1).to_list(100)
+        # Audit trail. Financial mutations are audited against either the folio
+        # itself or a child charge/payment. Include both legacy PMS audit rows
+        # and the tamper-evident core chain so the folio view does not hide a
+        # successful void/refund merely because its immutable target is the
+        # payment row.
+        financial_entity_ids = [folio_id]
+        financial_entity_ids.extend(c.get("id") for c in charges if c.get("id"))
+        financial_entity_ids.extend(p.get("id") for p in payments if p.get("id"))
+        audit_filter = {
+            "tenant_id": tenant_id,
+            "$or": [
+                {"entity_id": {"$in": financial_entity_ids}},
+                {"metadata.folio_id": folio_id},
+            ],
+        }
+        legacy_audit = await db.pms_audit_trail.find(audit_filter, {"_id": 0}).sort("timestamp", -1).to_list(100)
+        chained_audit = await db.audit_logs.find(audit_filter, {"_id": 0}).sort("timestamp", -1).to_list(100)
+        audit_trail = self._merge_audit_trails(legacy_audit, chained_audit)
 
         # Supervisor overrides and void details
         void_details = self._extract_void_details(charges, payments)
@@ -91,6 +107,30 @@ class FolioDetailService:
             "audit_trail": audit_trail,
             "void_details": void_details,
         }
+
+    @staticmethod
+    def _merge_audit_trails(legacy_entries: list[dict], chained_entries: list[dict]) -> list[dict]:
+        """Normalize and de-duplicate folio audit records newest-first."""
+        merged: dict[tuple, dict] = {}
+        for entry in [*legacy_entries, *chained_entries]:
+            normalized = {
+                **entry,
+                "action": entry.get("action") or entry.get("operation_name"),
+                "performed_by": entry.get("performed_by") or entry.get("actor_id") or entry.get("user_id"),
+                "timestamp": _ts_sort_key(entry.get("timestamp")),
+            }
+            key = (
+                normalized.get("id"),
+                normalized.get("action"),
+                normalized.get("entity_id") or normalized.get("target_id"),
+                normalized.get("timestamp"),
+            )
+            merged[key] = normalized
+        return sorted(
+            merged.values(),
+            key=lambda entry: entry.get("timestamp", ""),
+            reverse=True,
+        )[:100]
 
     def _build_timeline(self, charges: list[dict], payments: list[dict]) -> list[dict]:
         """Build a chronological timeline of all folio events with running balance."""

@@ -159,3 +159,50 @@ async def test_payment_void_reverses_tenant_scoped_booking_paid_amount(monkeypat
         {"id": "booking-a", "tenant_id": "tenant-a"},
         {"$inc": {"paid_amount": -125.0}},
     )
+
+
+@pytest.mark.asyncio
+async def test_finance_void_payment_blocks_closed_folio_before_writes(monkeypatch):
+    payment_update = AsyncMock()
+    folio_update = AsyncMock()
+    monkeypatch.setattr(
+        finance_folio,
+        "db",
+        SimpleNamespace(
+            payments=SimpleNamespace(
+                find_one=AsyncMock(
+                    return_value={
+                        "id": "payment-a",
+                        "folio_id": "folio-a",
+                        "tenant_id": "tenant-a",
+                        "voided": False,
+                        "amount": 1.0,
+                    }
+                ),
+                update_one=payment_update,
+            ),
+            folios=SimpleNamespace(
+                find_one=AsyncMock(return_value={"status": "closed"}),
+                update_one=folio_update,
+            ),
+        ),
+    )
+    user = SimpleNamespace(
+        role="super_admin",
+        tenant_id="tenant-a",
+        id="user-a",
+        name="Operator",
+        email="operator@example.test",
+    )
+
+    with pytest.raises(finance_folio.HTTPException) as exc:
+        await finance_folio.void_payment(
+            "folio-a",
+            "payment-a",
+            {"reason": "test"},
+            user,
+        )
+
+    assert exc.value.status_code == 409
+    payment_update.assert_not_awaited()
+    folio_update.assert_not_awaited()
