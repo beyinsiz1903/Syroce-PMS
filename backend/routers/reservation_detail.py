@@ -4,11 +4,13 @@ Provides full reservation detail view, folio operations, activity logging,
 payment processing, cari transfers, room changes, and front office operations.
 """
 
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
+from pymongo.errors import DuplicateKeyError
 
 from core.database import db
 from core.security import get_current_user
@@ -22,6 +24,7 @@ from shared_kernel.idempotency import claim_short_window_dedup, release_idempote
 
 # Bug CP fix — shared role-permission enforcement for financial endpoints
 _rps = RolePermissionService()
+logger = logging.getLogger(__name__)
 
 
 def _enforce_perm(role: str, op: str) -> None:
@@ -89,12 +92,18 @@ def _build_financial_summary(
     }
 
 
-async def _reservation_outstanding_balance(tenant_id: str, booking: dict) -> float:
+async def _reservation_outstanding_balance(
+    tenant_id: str,
+    booking: dict,
+    *,
+    session=None,
+) -> float:
     """Return the same booking-scoped balance shown by reservation detail."""
     query = {"booking_id": booking["id"], "tenant_id": tenant_id}
 
     async def collect(collection) -> list[dict]:
-        return [document async for document in collection.find(query, {"_id": 0})]
+        kwargs = {"session": session} if session is not None else {}
+        return [document async for document in collection.find(query, {"_id": 0}, **kwargs)]
 
     charges = await collect(db.folio_charges)
     payments = await collect(db.payments)
@@ -108,6 +117,50 @@ async def _reservation_outstanding_balance(tenant_id: str, booking: dict) -> flo
         deposits,
     )
     return float(summary["balance"])
+
+
+async def _run_reservation_financial_transaction(
+    *,
+    tenant_id: str,
+    booking_id: str,
+    resources: list[tuple[str, str]],
+    callback,
+):
+    """Serialize and atomically commit a reservation financial mutation."""
+    from core.booking_atomicity import with_resource_locks
+    from core.database import client
+
+    return await with_resource_locks(
+        client=client,
+        db=db,
+        tenant_id=tenant_id,
+        locks_collection="reservation_financial_locks",
+        resources=[("booking", booking_id), *resources],
+        callback=callback,
+    )
+
+
+async def _run_post_commit_hook(hook, *, operation: str) -> None:
+    """Keep non-authoritative cache/audit hooks from obscuring a durable commit."""
+    try:
+        await hook()
+    except Exception:
+        logger.warning(
+            "reservation financial post-commit hook failed",
+            extra={"operation": operation},
+        )
+
+
+async def _release_dedup_safely(lock_id: str | None, *, operation: str) -> None:
+    if not lock_id:
+        return
+    try:
+        await release_idempotency(db, lock_id=lock_id)
+    except Exception:
+        logger.warning(
+            "reservation financial dedup release failed",
+            extra={"operation": operation},
+        )
 
 
 async def _refresh_cached_folio_balance(tenant_id: str, folio_id: str) -> float:
@@ -662,91 +715,175 @@ async def transfer_to_cari(
         {"booking_id": booking_id, "tenant_id": tid, "status": "open"},
         {"_id": 0},
     )
+    prepared_folio_number = None
     if not folio:
         from core.utils import generate_folio_number
 
-        folio = {
-            "id": str(uuid.uuid4()),
-            "tenant_id": tid,
-            "booking_id": booking_id,
-            "folio_number": await generate_folio_number(tid),
-            "folio_type": "guest",
-            "status": "open",
-            "guest_id": booking.get("guest_id"),
-            "balance": 0.0,
-            "created_at": datetime.now(UTC).isoformat(),
-        }
-        await db.folios.insert_one({**folio})
+        prepared_folio_number = await generate_folio_number(tid)
+
+    dedup = await claim_short_window_dedup(
+        db,
+        tenant_id=tid,
+        scope=f"cari_transfer:booking:{booking_id}",
+        fingerprint=f"{round(float(data.amount), 2)}|{data.cari_account_id}",
+    )
+    if dedup["status"] == "duplicate":
+        raise HTTPException(
+            status_code=409,
+            detail="Olası çift cari aktarımı: aynı işlem saniyeler içinde tekrar gönderildi",
+        )
+    dedup_lock_id = dedup["lock_id"]
 
     now = datetime.now(UTC).isoformat()
+    transaction_id = str(uuid.uuid4())
+    payment_id = str(uuid.uuid4())
 
-    # Create cari transaction
-    transaction = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "cari_account_id": data.cari_account_id,
-        "booking_id": booking_id,
-        "transaction_type": "charge",
-        "amount": data.amount,
-        "description": data.description or f"Rezervasyon {booking_id} - Cariye aktarım",
-        "posted_by": current_user.name,
-        "created_at": now,
-    }
-    await db.cari_transactions.insert_one({**transaction})
+    async def _commit(session):
+        current_booking = await db.bookings.find_one(
+            {"id": booking_id, "tenant_id": tid},
+            {"_id": 0},
+            session=session,
+        )
+        if not current_booking:
+            raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
 
-    payment = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "folio_id": folio["id"],
-        "booking_id": booking_id,
-        "amount": data.amount,
-        "method": "city_ledger",
-        "payment_type": "city_ledger_transfer",
-        "status": "paid",
-        "reference": data.cari_account_id,
-        "notes": data.description,
-        "processed_by": current_user.name,
-        "processed_at": now,
-        "voided": False,
-    }
-    await db.payments.insert_one({**payment})
+        current_cari = await db.cari_accounts.find_one(
+            {"id": data.cari_account_id, "tenant_id": tid},
+            {"_id": 0},
+            session=session,
+        )
+        if not current_cari:
+            raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
 
-    # Keep both historical field names aligned while existing account rows are
-    # migrated lazily by normal operations.
-    new_cari_balance = _cari_balance(cari) + data.amount
-    await db.cari_accounts.update_one(
-        {"id": data.cari_account_id, "tenant_id": tid},
-        {
-            "$set": {
-                "balance": new_cari_balance,
-                "current_balance": new_cari_balance,
+        current_outstanding = await _reservation_outstanding_balance(
+            tid,
+            current_booking,
+            session=session,
+        )
+        if current_outstanding <= 0:
+            raise HTTPException(status_code=409, detail="Cariye aktarılacak açık bakiye bulunmuyor")
+        if data.amount - current_outstanding > 0.005:
+            raise HTTPException(status_code=409, detail="Cari aktarım tutarı açık bakiyeyi aşamaz")
+
+        current_folio = await db.folios.find_one(
+            {"booking_id": booking_id, "tenant_id": tid, "status": "open"},
+            {"_id": 0},
+            session=session,
+        )
+        if not current_folio:
+            current_folio = {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tid,
+                "booking_id": booking_id,
+                "folio_number": prepared_folio_number,
+                "folio_type": "guest",
+                "status": "open",
+                "guest_id": current_booking.get("guest_id"),
+                "balance": 0.0,
+                "created_at": now,
             }
-        },
-    )
+            await db.folios.insert_one({**current_folio}, session=session)
 
-    # Mark as paid on the booking side (transferred to cari)
-    new_paid = (booking.get("paid_amount", 0) or 0) + data.amount
-    await db.bookings.update_one(
-        {"id": booking_id, "tenant_id": tid},
-        {"$set": {"paid_amount": round(new_paid, 2)}},
-    )
-    await _refresh_cached_folio_balance(tid, folio["id"])
-
-    await _log_activity(
-        tid,
-        booking_id,
-        "transferred_to_cari",
-        current_user.name,
-        {
-            "amount": data.amount,
-            "cari_account": cari.get("name"),
+        transaction = {
+            "id": transaction_id,
+            "tenant_id": tid,
             "cari_account_id": data.cari_account_id,
-        },
+            "booking_id": booking_id,
+            "transaction_type": "charge",
+            "amount": data.amount,
+            "description": data.description or f"Rezervasyon {booking_id} - Cariye aktarım",
+            "posted_by": current_user.name,
+            "created_at": now,
+        }
+        await db.cari_transactions.insert_one({**transaction}, session=session)
+
+        payment = {
+            "id": payment_id,
+            "tenant_id": tid,
+            "folio_id": current_folio["id"],
+            "booking_id": booking_id,
+            "amount": data.amount,
+            "method": "city_ledger",
+            "payment_type": "city_ledger_transfer",
+            "status": "paid",
+            "reference": f"cari-transfer:{transaction_id}",
+            "cari_account_id": data.cari_account_id,
+            "notes": data.description,
+            "processed_by": current_user.name,
+            "processed_at": now,
+            "voided": False,
+        }
+        await db.payments.insert_one({**payment}, session=session)
+
+        new_cari_balance = _cari_balance(current_cari) + data.amount
+        await db.cari_accounts.update_one(
+            {"id": data.cari_account_id, "tenant_id": tid},
+            {
+                "$set": {
+                    "balance": new_cari_balance,
+                    "current_balance": new_cari_balance,
+                }
+            },
+            session=session,
+        )
+
+        new_paid = (current_booking.get("paid_amount", 0) or 0) + data.amount
+        await db.bookings.update_one(
+            {"id": booking_id, "tenant_id": tid},
+            {"$set": {"paid_amount": round(new_paid, 2)}},
+            session=session,
+        )
+
+        transaction.pop("_id", None)
+        payment.pop("_id", None)
+        return {
+            "success": True,
+            "transaction": transaction,
+            "payment": payment,
+            "folio_id": current_folio["id"],
+            "cari_name": current_cari.get("name"),
+        }
+
+    try:
+        result = await _run_reservation_financial_transaction(
+            tenant_id=tid,
+            booking_id=booking_id,
+            resources=[("cari_account", data.cari_account_id)],
+            callback=_commit,
+        )
+    except DuplicateKeyError:
+        await _release_dedup_safely(dedup_lock_id, operation="transfer_to_cari")
+        raise HTTPException(
+            status_code=409,
+            detail="Cari aktarımı eşzamanlı veya tekrarlanan işlem nedeniyle tamamlanamadı",
+        ) from None
+    except Exception:
+        await _release_dedup_safely(dedup_lock_id, operation="transfer_to_cari")
+        raise
+
+    await _run_post_commit_hook(
+        lambda: _refresh_cached_folio_balance(tid, result["folio_id"]),
+        operation="transfer_to_cari_cache",
     )
 
-    transaction.pop("_id", None)
-    payment.pop("_id", None)
-    return {"success": True, "transaction": transaction, "payment": payment}
+    await _run_post_commit_hook(
+        lambda: _log_activity(
+            tid,
+            booking_id,
+            "transferred_to_cari",
+            current_user.name,
+            {
+                "amount": data.amount,
+                "cari_account": result["cari_name"],
+                "cari_account_id": data.cari_account_id,
+            },
+        ),
+        operation="transfer_to_cari_activity",
+    )
+
+    result.pop("folio_id", None)
+    result.pop("cari_name", None)
+    return result
 
 
 @router.post("/reservations/{booking_id}/record-agency-payment")
@@ -2334,96 +2471,173 @@ async def refund_deposit(
             detail="Iade tutari kalan depozito bakiyesinden buyuk olamaz",
         )
 
+    dedup = await claim_short_window_dedup(
+        db,
+        tenant_id=tid,
+        scope=f"deposit_refund:booking:{booking_id}:deposit:{data.deposit_id}",
+        fingerprint=f"{round(float(data.refund_amount), 2)}|{data.refund_method}",
+    )
+    if dedup["status"] == "duplicate":
+        raise HTTPException(
+            status_code=409,
+            detail="Olası çift iade: aynı işlem saniyeler içinde tekrar gönderildi",
+        )
+    dedup_lock_id = dedup["lock_id"]
+
     now = datetime.now(UTC).isoformat()
     refund_id = str(uuid.uuid4())
+    payment_id = str(uuid.uuid4())
 
-    refund = {
-        "id": refund_id,
-        "tenant_id": tid,
-        "booking_id": booking_id,
-        "deposit_id": data.deposit_id,
-        "refund_amount": data.refund_amount,
-        "refund_method": data.refund_method,
-        "reason": data.reason,
-        "status": "refunded",
-        "refunded_by": current_user.name,
-        "refunded_at": now,
-    }
-    await db.deposit_refunds.insert_one({**refund})
+    async def _commit(session):
+        current_booking = await db.bookings.find_one(
+            {"id": booking_id, "tenant_id": tid},
+            {"_id": 0},
+            session=session,
+        )
+        if not current_booking:
+            raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
-    payment = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "folio_id": "",
-        "booking_id": booking_id,
-        "deposit_id": data.deposit_id,
-        "deposit_refund_id": refund_id,
-        "amount": -round(data.refund_amount, 2),
-        "method": data.refund_method,
-        "payment_type": "refund",
-        "status": "refunded",
-        "reference": deposit.get("reference"),
-        "notes": data.reason,
-        "processed_by": current_user.name,
-        "processed_at": now,
-        "voided": False,
-    }
-    await db.payments.insert_one({**payment})
+        current_deposit = await db.deposits.find_one(
+            {"id": data.deposit_id, "booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0},
+            session=session,
+        )
+        if not current_deposit:
+            raise HTTPException(status_code=404, detail="Depozito bulunamadi")
+        if current_deposit.get("status") == "refunded":
+            raise HTTPException(status_code=400, detail="Depozito tamamen iade edilmis")
 
-    refunded_total = round(refunded_before + data.refund_amount, 2)
-    remaining = round(max(0.0, deposit_amount - refunded_total), 2)
-    new_status = "refunded" if remaining == 0 else "partially_refunded"
-    await db.deposits.update_one(
-        {
-            "id": data.deposit_id,
-            "booking_id": booking_id,
+        current_amount = round(float(current_deposit.get("amount", 0) or 0), 2)
+        current_refunded = round(float(current_deposit.get("refunded_amount", 0) or 0), 2)
+        current_refundable = round(max(0.0, current_amount - current_refunded), 2)
+        if current_refundable <= 0:
+            raise HTTPException(status_code=400, detail="Depozito tamamen iade edilmis")
+        if data.refund_amount > current_refundable:
+            raise HTTPException(
+                status_code=400,
+                detail="Iade tutari kalan depozito bakiyesinden buyuk olamaz",
+            )
+
+        refund = {
+            "id": refund_id,
+            "payment_id": payment_id,
             "tenant_id": tid,
-        },
-        {"$set": {"status": new_status, "refunded_amount": refunded_total}},
-    )
-
-    paid_amount = round(
-        max(0.0, float(booking.get("paid_amount", 0) or 0) - data.refund_amount),
-        2,
-    )
-    await db.bookings.update_one(
-        {"id": booking_id, "tenant_id": tid},
-        {"$set": {"paid_amount": paid_amount}},
-    )
-
-    await _log_activity(
-        tid,
-        booking_id,
-        "deposit_refunded",
-        current_user.name,
-        {
+            "booking_id": booking_id,
             "deposit_id": data.deposit_id,
             "refund_amount": data.refund_amount,
-        },
-    )
+            "refund_method": data.refund_method,
+            "reason": data.reason,
+            "status": "refunded",
+            "refunded_by": current_user.name,
+            "refunded_at": now,
+        }
+        await db.deposit_refunds.insert_one({**refund}, session=session)
 
-    from routers.webhook_retry_service import schedule_emit_reservation_updated
-
-    schedule_emit_reservation_updated(
-        tid,
-        booking_id,
-        "payment_refunded",
-        {
-            "payment_id": payment["id"],
-            "amount": data.refund_amount,
+        payment = {
+            "id": payment_id,
+            "tenant_id": tid,
+            "folio_id": "",
+            "booking_id": booking_id,
+            "deposit_id": data.deposit_id,
+            "deposit_refund_id": refund_id,
+            "amount": -round(data.refund_amount, 2),
             "method": data.refund_method,
             "payment_type": "refund",
-        },
+            "status": "refunded",
+            "reference": f"deposit-refund:{refund_id}",
+            "notes": data.reason,
+            "processed_by": current_user.name,
+            "processed_at": now,
+            "voided": False,
+        }
+        await db.payments.insert_one({**payment}, session=session)
+
+        refunded_total = round(current_refunded + data.refund_amount, 2)
+        remaining = round(max(0.0, current_amount - refunded_total), 2)
+        new_status = "refunded" if remaining == 0 else "partially_refunded"
+        await db.deposits.update_one(
+            {
+                "id": data.deposit_id,
+                "booking_id": booking_id,
+                "tenant_id": tid,
+            },
+            {"$set": {"status": new_status, "refunded_amount": refunded_total}},
+            session=session,
+        )
+
+        paid_amount = round(
+            max(
+                0.0,
+                float(current_booking.get("paid_amount", 0) or 0) - data.refund_amount,
+            ),
+            2,
+        )
+        await db.bookings.update_one(
+            {"id": booking_id, "tenant_id": tid},
+            {"$set": {"paid_amount": paid_amount}},
+            session=session,
+        )
+
+        refund.pop("_id", None)
+        payment.pop("_id", None)
+        return {
+            "success": True,
+            "refund": refund,
+            "payment": payment,
+            "remaining_amount": remaining,
+        }
+
+    try:
+        result = await _run_reservation_financial_transaction(
+            tenant_id=tid,
+            booking_id=booking_id,
+            resources=[("deposit", data.deposit_id)],
+            callback=_commit,
+        )
+    except DuplicateKeyError:
+        await _release_dedup_safely(dedup_lock_id, operation="refund_deposit")
+        raise HTTPException(
+            status_code=409,
+            detail="Depozito iadesi eşzamanlı veya tekrarlanan işlem nedeniyle tamamlanamadı",
+        ) from None
+    except Exception:
+        await _release_dedup_safely(dedup_lock_id, operation="refund_deposit")
+        raise
+
+    await _run_post_commit_hook(
+        lambda: _log_activity(
+            tid,
+            booking_id,
+            "deposit_refunded",
+            current_user.name,
+            {
+                "deposit_id": data.deposit_id,
+                "refund_amount": data.refund_amount,
+            },
+        ),
+        operation="refund_deposit_activity",
     )
 
-    refund.pop("_id", None)
-    payment.pop("_id", None)
-    return {
-        "success": True,
-        "refund": refund,
-        "payment": payment,
-        "remaining_amount": remaining,
-    }
+    async def _emit_webhook():
+        from routers.webhook_retry_service import schedule_emit_reservation_updated
+
+        schedule_emit_reservation_updated(
+            tid,
+            booking_id,
+            "payment_refunded",
+            {
+                "payment_id": result["payment"]["id"],
+                "amount": data.refund_amount,
+                "method": data.refund_method,
+                "payment_type": "refund",
+            },
+        )
+
+    await _run_post_commit_hook(
+        _emit_webhook,
+        operation="refund_deposit_webhook",
+    )
+    return result
 
 
 @router.get("/deposits/all")
