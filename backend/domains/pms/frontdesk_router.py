@@ -7,6 +7,7 @@ import base64
 import io
 import json
 import logging
+import math
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -60,6 +61,23 @@ from domains.pms.schemas import (  # noqa: E402
     PassportScanRequest,
     WalkInBookingRequest,
 )
+
+
+def _normalize_walk_in_terms(req: WalkInBookingRequest, room: dict) -> tuple[int, float, float]:
+    """Return validated numeric terms for the walk-in booking boundary."""
+    try:
+        nights = int(req.nights)
+        raw_rate = req.rate_per_night if req.rate_per_night is not None else room.get("base_price", 100.0)
+        rate = float(raw_rate)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Walk-in nights and rate must be numeric") from exc
+
+    if not 1 <= nights <= 365:
+        raise HTTPException(status_code=400, detail="Walk-in nights must be between 1 and 365")
+    if not math.isfinite(rate) or rate <= 0:
+        raise HTTPException(status_code=400, detail="Walk-in rate must be a positive finite number")
+
+    return nights, rate, rate * nights
 
 
 @router.get("/arrivals/today")
@@ -902,6 +920,14 @@ async def create_walk_in_booking(
             await guard.release()
             raise HTTPException(status_code=400, detail=f"Room {room.get('room_number')} is not available (status: {room.get('status')})")
 
+        # Normalize values before the first durable write. Browser number inputs
+        # and legacy clients can still serialize them as strings.
+        try:
+            nights, rate, total_amount = _normalize_walk_in_terms(req, room)
+        except HTTPException:
+            await guard.release()
+            raise
+
         # 2. Create or find guest
         guest_email = req.guest_email or f"walkin_{uuid.uuid4().hex[:8]}@hotel.local"
 
@@ -939,10 +965,7 @@ async def create_walk_in_booking(
 
         # 3. Calculate dates and amount
         check_in = datetime.now(UTC).replace(hour=14, minute=0, second=0, microsecond=0)
-        check_out = check_in + timedelta(days=req.nights)
-
-        rate = req.rate_per_night or room.get("base_price", 100.0)
-        total_amount = rate * req.nights
+        check_out = check_in + timedelta(days=nights)
 
         # 4. Create booking
         new_booking = Booking(
@@ -1048,8 +1071,9 @@ async def create_walk_in_booking(
 
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Walk-in booking failed: {str(e)}")
+    except Exception:
+        logger.exception("walk_in_booking_failed")
+        raise HTTPException(status_code=500, detail="Walk-in booking failed")
 
 
 @router.get("/frontdesk/guest-alerts/{guest_id}")
