@@ -89,6 +89,27 @@ def _build_financial_summary(
     }
 
 
+async def _reservation_outstanding_balance(tenant_id: str, booking: dict) -> float:
+    """Return the same booking-scoped balance shown by reservation detail."""
+    query = {"booking_id": booking["id"], "tenant_id": tenant_id}
+
+    async def collect(collection) -> list[dict]:
+        return [document async for document in collection.find(query, {"_id": 0})]
+
+    charges = await collect(db.folio_charges)
+    payments = await collect(db.payments)
+    extra_charges = await collect(db.extra_charges)
+    deposits = await collect(db.deposits)
+    summary = _build_financial_summary(
+        booking,
+        charges,
+        payments,
+        extra_charges,
+        deposits,
+    )
+    return float(summary["balance"])
+
+
 async def _refresh_cached_folio_balance(tenant_id: str, folio_id: str) -> float:
     """Keep the operational checkout cache aligned with durable folio rows."""
     from core.utils import calculate_folio_balance
@@ -196,7 +217,7 @@ class DepositRecord(BaseModel):
 class DailyRateEntry(BaseModel):
     # Bug CP Round-3 — typed entries prevent untyped/negative rates bypassing override gate
     date: str = Field(..., min_length=8, max_length=32)
-    rate: float = Field(..., ge=0, le=1e9)
+    rate: float = Field(..., gt=0, le=1e9)
 
 
 class DailyRateUpdate(BaseModel):
@@ -217,7 +238,7 @@ class CariAccountCreate(BaseModel):
 class ExtraChargeAdd(BaseModel):
     description: str = Field(..., min_length=1, max_length=500)
     category: str = Field("other", max_length=50)  # room, food, beverage, minibar, spa, laundry, other
-    amount: float = Field(..., ge=0, le=1e9)
+    amount: float = Field(..., gt=0, le=1e9)
     quantity: float = Field(1.0, gt=0, le=1e6)
 
 
@@ -626,6 +647,12 @@ async def transfer_to_cari(
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+
+    outstanding_balance = await _reservation_outstanding_balance(tid, booking)
+    if outstanding_balance <= 0:
+        raise HTTPException(status_code=409, detail="Cariye aktarılacak açık bakiye bulunmuyor")
+    if data.amount - outstanding_balance > 0.005:
+        raise HTTPException(status_code=409, detail="Cari aktarım tutarı açık bakiyeyi aşamaz")
 
     cari = await db.cari_accounts.find_one({"id": data.cari_account_id, "tenant_id": tid}, {"_id": 0})
     if not cari:
@@ -1340,6 +1367,11 @@ async def record_deposit(
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    if booking.get("status") in {"checked_out", "cancelled", "no_show"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Tamamlanmış veya iptal edilmiş rezervasyona depozito alınamaz",
+        )
 
     deposit = {
         "id": str(uuid.uuid4()),

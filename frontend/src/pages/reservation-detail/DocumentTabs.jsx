@@ -14,8 +14,10 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
   const [depForm, setDepForm] = useState({ amount: '', method: 'cash', reference: '' });
   const [refundForm, setRefundForm] = useState({ refund_amount: '', refund_method: 'cash', reason: '' });
   const [loading, setLoading] = useState(false);
+  const depositLocked = ['checked_out', 'cancelled', 'no_show'].includes(booking?.status);
 
   const handleDeposit = async () => {
+    if (depositLocked) { toast.error('Tamamlanmış veya iptal edilmiş rezervasyona depozito alınamaz'); return; }
     if (!depForm.amount) { toast.error('Tutar giriniz'); return; }
     setLoading(true);
     try {
@@ -51,7 +53,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
 
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold text-gray-700">Depozitolar</span>
-        <Button size="sm" onClick={() => setShowDeposit(!showDeposit)} className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white"><Plus className="w-3 h-3 mr-1" /> Depozito Al</Button>
+        <Button size="sm" onClick={() => setShowDeposit(!showDeposit)} disabled={depositLocked} title={depositLocked ? 'Tamamlanmış rezervasyona depozito alınamaz' : undefined} className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white"><Plus className="w-3 h-3 mr-1" /> Depozito Al</Button>
       </div>
 
       {showDeposit && (

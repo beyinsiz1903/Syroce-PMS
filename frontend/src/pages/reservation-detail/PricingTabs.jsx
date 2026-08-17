@@ -22,6 +22,10 @@ export function DailyRatesTab({
     setRates(dailyRates || []);
   }, [dailyRates]);
   const handleSave = async () => {
+    if (rates.some(rate => !Number.isFinite(Number(rate.rate)) || Number(rate.rate) <= 0)) {
+      toast.error('Günlük fiyat sıfırdan büyük olmalıdır');
+      return;
+    }
     setSaving(true);
     try {
       await axios.put(`/pms/reservations/${booking.id}/daily-rates`, {
@@ -106,16 +110,18 @@ export function ExtraChargesTab({
     other: 'Diğer'
   };
   const handleAdd = async () => {
-    if (!form.description || !form.amount) {
-      toast.error('Açıklama ve tutar zorunlu');
+    const amount = Number(form.amount);
+    const quantity = Number(form.quantity);
+    if (!form.description || !Number.isFinite(amount) || amount <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
+      toast.error('Açıklama ile sıfırdan büyük tutar ve adet zorunlu');
       return;
     }
     setLoading(true);
     try {
       await axios.post(`/pms/reservations/${booking.id}/add-extra-charge`, {
         ...form,
-        amount: parseFloat(form.amount),
-        quantity: parseFloat(form.quantity) || 1
+        amount,
+        quantity
       });
       toast.success('Ekstra ücret eklendi');
       setShowAdd(false);

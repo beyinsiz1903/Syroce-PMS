@@ -35,7 +35,7 @@ vi.mock('axios', () => ({ default: axiosMock }));
 
 import { FoliosTab } from '@/pages/reservation-detail/FoliosTab';
 import { OnlinePaymentTab } from '@/pages/reservation-detail/OnlinePaymentTab';
-import { ExtraChargesTab } from '@/pages/reservation-detail/PricingTabs';
+import { DailyRatesTab, ExtraChargesTab } from '@/pages/reservation-detail/PricingTabs';
 
 beforeEach(() => {
   axiosGet.mockReset();
@@ -92,6 +92,41 @@ describe('reservation detail action feedback', () => {
     expect(screen.getByText('0 TL')).toBeInTheDocument();
     expect(screen.queryByText('25 TL')).toBeNull();
     expect(screen.getByRole('button', { name: 'Test Masrafı masrafını böl' })).toBeInTheDocument();
+  });
+
+  it('blocks zero extra charges before the API call', async () => {
+    render(
+      <ExtraChargesTab
+        extra_charges={[]}
+        charges={[]}
+        booking={{ id: 'booking-a' }}
+        allBookings={[]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
+    const inputs = screen.getAllByRole('spinbutton');
+    fireEvent.change(inputs[0], { target: { value: '0' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ekle' }).at(-1));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(axiosPost).not.toHaveBeenCalled();
+  });
+
+  it('blocks a zero daily rate before the API call', async () => {
+    render(
+      <DailyRatesTab
+        dailyRates={[{ id: 'rate-a', date: '2026-08-17', rate: 10 }]}
+        booking={{ id: 'booking-a' }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Düzenle' }));
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Günlük fiyat sıfırdan büyük olmalıdır'));
+    expect(axiosMock.put).not.toHaveBeenCalled();
   });
 
   it('exposes the virtual-card delete icon as a named action', async () => {
