@@ -19,6 +19,18 @@ import {
 import { useTranslation } from 'react-i18next';
 import EmptyState from '@/components/EmptyState';
 
+export const validateCityLedgerPayment = (amountValue, balanceValue) => {
+  const amount = Number(amountValue);
+  const outstandingBalance = Number(balanceValue);
+
+  if (!Number.isFinite(amount) || amount <= 0) return 'Geçerli bir ödeme tutarı girin';
+  if (!Number.isFinite(outstandingBalance) || outstandingBalance <= 0) {
+    return 'Bu hesabın ödenecek bakiyesi bulunmuyor';
+  }
+  if (amount > outstandingBalance) return 'Ödeme tutarı açık bakiyeyi aşamaz';
+  return null;
+};
+
 const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const [accounts, setAccounts] = useState([]);
@@ -29,6 +41,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('bank_transfer');
   const [paymentReference, setPaymentReference] = useState('');
+  const [paymentRequestId, setPaymentRequestId] = useState('');
   const [postingPayment, setPostingPayment] = useState(false);
 
   const [newAccountDialogOpen, setNewAccountDialogOpen] = useState(false);
@@ -75,17 +88,20 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
     setPaymentAmount('');
     setPaymentReference('');
     setPaymentMethod('bank_transfer');
+    setPaymentRequestId(globalThis.crypto?.randomUUID?.() || `payment-${Date.now()}`);
     setPaymentDialogOpen(true);
   };
 
   const handlePostPayment = async () => {
     if (!selectedAccount) return;
 
-    const amount = parseFloat(paymentAmount);
-    if (Number.isNaN(amount) || amount <= 0) {
-      toast.error('Geçerli bir ödeme tutarı girin');
+    const outstandingBalance = Number(selectedAccount.current_balance || 0);
+    const validationError = validateCityLedgerPayment(paymentAmount, outstandingBalance);
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
+    const amount = Number(paymentAmount);
 
     setPostingPayment(true);
     try {
@@ -93,6 +109,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
       params.append('account_id', selectedAccount.id);
       params.append('amount', amount.toString());
       params.append('payment_method', paymentMethod);
+      params.append('idempotency_key', paymentRequestId);
       if (paymentReference) params.append('reference', paymentReference);
 
       const response = await axios.post(`/cashiering/city-ledger-payment?${params.toString()}`);
@@ -105,7 +122,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
       }
     } catch (error) {
       console.error('Failed to post payment:', error);
-      toast.error('Ödeme kaydedilirken hata oluştu');
+      toast.error(error.response?.data?.detail || 'Ödeme kaydedilirken hata oluştu');
     } finally {
       setPostingPayment(false);
     }
@@ -281,6 +298,8 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                             variant="outline"
                             size="sm"
                             onClick={() => handleOpenPaymentDialog(account)}
+                            disabled={!Number.isFinite(Number(balance)) || Number(balance) <= 0}
+                            title={Number(balance) > 0 ? 'Post payment' : 'No outstanding balance'}
                           >
                             <CreditCard className="w-4 h-4 mr-1" />
                             Post Payment
