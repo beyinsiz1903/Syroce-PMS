@@ -438,9 +438,9 @@ def _password_hasher():
 
 
 def _load_db():
-    from core.database import db
+    from core.database import _raw_db
 
-    return db
+    return _raw_db
 
 
 async def _cursor_to_list(
