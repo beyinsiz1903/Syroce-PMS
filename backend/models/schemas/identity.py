@@ -61,6 +61,10 @@ class User(BaseModel):
     # operasyon-seviyesi izinler (ör. "send_urgent_message"). Boş liste
     # default — geriye dönük uyumlu, yalnız adminler doldurur.
     granted_permissions: list[str] = Field(default_factory=list)
+    # Opt-in kullanıcı modül allowlist'i. Boş liste eski rol/izin davranışını
+    # korur; en az bir değer olduğunda backend ve frontend fail-closed olarak
+    # yalnız listelenen modülleri açar. `*` ve `prefix.*` desteklenir.
+    module_scopes: list[str] = Field(default_factory=list)
 
 
 # Helper function (defined after User class)
