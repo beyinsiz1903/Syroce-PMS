@@ -288,30 +288,30 @@ async def post_outgoing_invoice_to_gl(
 
     vat_by_rate: dict[str, Decimal] = {}
     acc_tax_by_rate: dict[str, Decimal] = {}
-    
+
     base_revenue = Decimal("0")
     total_discount = Decimal("0")
-    
+
     items = invoice.get("items", [])
     if items:
         for item in items:
             qty = _money(item.get("quantity", 1))
             price = _money(item.get("unit_price", 0))
             gross = qty * price
-            
+
             disc = _money(item.get("discount_amount", 0))
             total_discount += disc
-            
+
             if discount_account:
                 base_revenue += gross
             else:
                 base_revenue += (gross - disc)
-                
+
             vat_amt = _money(item.get("kdv_amount", 0))
             if vat_amt > 0:
                 kdv_rate_str = str(int(item.get("kdv_rate", 0)))
                 vat_by_rate[kdv_rate_str] = vat_by_rate.get(kdv_rate_str, Decimal("0")) + vat_amt
-            
+
             other_taxes = item.get("other_taxes", [])
             for t in other_taxes:
                 if t.get("tax_code") == "0059":
@@ -319,7 +319,7 @@ async def post_outgoing_invoice_to_gl(
                     acc_tax_rate_str = str(int(t.get("rate", 0)))
                     acc_tax_by_rate[acc_tax_rate_str] = acc_tax_by_rate.get(acc_tax_rate_str, Decimal("0")) + acc_tax_amt
                 else:
-                    raise InvoiceGLBridgeError(f"Unsupported other tax code: {t.get("tax_code")}")
+                    raise InvoiceGLBridgeError(f"Unsupported other tax code: {t.get('tax_code')}")
     else:
         base_revenue = _money(invoice.get("subtotal", 0))
         tax = _money(invoice.get("tax", 0))
@@ -327,7 +327,7 @@ async def post_outgoing_invoice_to_gl(
             vat_by_rate["0"] = tax
 
     journal_lines: list[dict] = []
-    
+
     # 1. Receivable (Debit)
     journal_lines.append({
         "account_code": receivable_account,
@@ -335,7 +335,7 @@ async def post_outgoing_invoice_to_gl(
         "credit": 0,
         "memo": "Satış faturası alacağı"
     })
-    
+
     # 2. Revenue (Credit)
     journal_lines.append({
         "account_code": revenue_account,
@@ -380,10 +380,10 @@ async def post_outgoing_invoice_to_gl(
                 "credit": float(amt),
                 "memo": f"Satış faturası konaklama vergisi {rate}%"
             })
-        
+
     tot_debit = float(total) + (float(total_discount) if discount_account else 0)
     tot_credit = float(base_revenue) + float(sum(vat_by_rate.values())) + float(sum(acc_tax_by_rate.values()))
-    
+
     if abs(tot_debit - tot_credit) > 0.02:
         raise InvoiceGLBridgeError(f"Journal unbalanced: Debit {tot_debit} != Credit {tot_credit}")
 
@@ -392,7 +392,7 @@ async def post_outgoing_invoice_to_gl(
             db,
             tenant_id,
             date=datetime.now(UTC).date().isoformat(),
-            memo=f"Satış faturası {invoice.get("invoice_number", invoice_id)}",
+            memo=f"Satış faturası {invoice.get('invoice_number', invoice_id)}",
             lines=journal_lines,
             source="nilvera_outgoing",
             source_ref=invoice_id,

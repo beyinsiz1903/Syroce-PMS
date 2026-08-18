@@ -254,10 +254,10 @@ class NilveraOutgoingGLPostIn(BaseModel):
     revenue_account_code: str = Field(..., description="GL account for revenue/sales")
     receivable_account_code: str = Field(..., description="GL account for customer receivable")
     discount_account_code: str | None = Field(None, description="GL account for sales discounts")
-    
+
     vat_account_code: str | None = Field(None, description="Fallback GL account for calculated VAT")
     accommodation_tax_account_code: str | None = Field(None, description="Fallback GL account for Accommodation Tax (0059)")
-    
+
     vat_accounts_by_rate: dict[str, str] = Field(default_factory=dict, description="e.g. {'10': '391.10', '20': '391.20'}")
     accommodation_tax_accounts_by_rate: dict[str, str] = Field(default_factory=dict, description="e.g. {'1': '360.01', '2': '360.02'}")
 
