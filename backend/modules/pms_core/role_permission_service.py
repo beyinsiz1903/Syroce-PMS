@@ -5,6 +5,7 @@ Role & Permission Enforcement Service - Validates user permissions for PMS opera
 from fastapi import HTTPException, status
 
 from models.enums import ROLE_PERMISSIONS, Permission, UserRole
+from modules.pms_core.module_scope_service import module_scope_allows, normalize_module_scopes
 
 # Operation-to-permission mapping
 OPERATION_PERMISSIONS = {
@@ -162,10 +163,12 @@ def require_op(operation: str):
 
 
 def require_module(module: str):
-    """v89: FastAPI dependency factory — module-based access (role allowlist).
+    """FastAPI dependency factory for role- or user-scope module access.
 
-    Used for cross-domain endpoints where multiple roles legitimately operate
-    (e.g. housekeeping mobile usable by HK + MANAGER + ADMIN).
+    Legacy accounts without ``module_scopes`` continue to use the original
+    role allowlist.  A non-empty user scope list becomes authoritative and
+    permits least-privilege STAFF validation accounts without widening any
+    legacy role.
     """
     from fastapi import Depends as _Depends
     from fastapi import HTTPException as _HTTPException
@@ -181,11 +184,18 @@ def require_module(module: str):
     allowed_norm = {_norm(r) for r in allowed}
 
     async def _dep(current_user: _User = _Depends(get_current_user)) -> None:
-        # Super admin: full bypass on module-role allowlist (uniform check).
+        # Super admin: full bypass on module-role and user-scope allowlists.
         from core.security import _is_super_admin as _is_sa
 
         if _is_sa(current_user):
             return
+
+        scopes = normalize_module_scopes(getattr(current_user, "module_scopes", None))
+        if scopes:
+            if not module_scope_allows(scopes, module):
+                raise _HTTPException(status_code=403, detail=f"Module '{module}' access denied")
+            return
+
         if _norm(current_user.role) not in allowed_norm:
             raise _HTTPException(status_code=403, detail=f"Module '{module}' access denied")
 
