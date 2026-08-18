@@ -1,12 +1,15 @@
 """Fail-closed pre-pilot reset planning and module-user seeding.
 
 Nothing in this module runs on import.  The companion CLI defaults to dry-run
-and every write path requires explicit execution gates.  Provider APIs are not
-imported or called.
+and every write path requires explicit execution gates plus the exact SHA-256
+fingerprint emitted by a reviewed dry-run.  Provider APIs are not imported or
+called.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import uuid
 from collections.abc import Mapping, Sequence
@@ -20,6 +23,10 @@ from modules.pms_core.module_scope_service import normalize_module_scopes
 RESET_CONFIRMATION = "DELETE_PRELIVE_DATA_KEEP_SUPER_ADMIN"
 PRODUCTION_CONFIRMATION = "I_UNDERSTAND_PRE_PILOT_PRODUCTION_RESET"
 SEED_CONFIRMATION = "SEED_MODULE_SCOPED_USERS"
+SEED_PRODUCTION_CONFIRMATION = "I_UNDERSTAND_PRE_PILOT_PRODUCTION_RBAC_SEED"
+NON_PRODUCTION_ENVIRONMENTS = frozenset(
+    {"dev", "development", "local", "sandbox", "stage", "staging", "test", "testing"}
+)
 TENANT_MARKER_FIELDS = (
     "tenant_id",
     "tenantId",
@@ -236,6 +243,8 @@ MODULE_USER_PROFILES: tuple[ModuleUserProfile, ...] = (
             "room_map",
             "departure_list",
             "no_show_today",
+            "folio_management",
+            "folio_detail",
         ),
         _permission_values(
             Permission.VIEW_BOOKINGS,
@@ -332,13 +341,29 @@ MODULE_USER_PROFILES: tuple[ModuleUserProfile, ...] = (
     ModuleUserProfile(
         "reports",
         "Raporlar Test Kullanıcısı",
-        _COMMON_SCOPES + ("reports", "basic_reporting", "advanced_analytics", "analytics_export"),
+        _COMMON_SCOPES
+        + (
+            "reports",
+            "basic_reporting",
+            "advanced_analytics",
+            "analytics_export",
+            "eod_report",
+            "sustainability",
+            "no_show_analytics",
+            "mevzuat_raporlari",
+            "audit_timeline",
+            "urgent_message_report",
+            "recalled_messages_report",
+            "id_photo_view_report",
+            "report_builder",
+        ),
         _permission_values(Permission.VIEW_REPORTS, Permission.EXPORT_DATA),
     ),
     ModuleUserProfile(
         "channel",
         "Kanal Yöneticisi Test Kullanıcısı",
-        _COMMON_SCOPES + ("channel_manager", "channels", "channels_hub"),
+        _COMMON_SCOPES
+        + ("channel_manager", "channels", "channels_hub", "unified_rate_manager"),
         (),
     ),
     ModuleUserProfile(
@@ -360,7 +385,7 @@ MODULE_USER_PROFILES: tuple[ModuleUserProfile, ...] = (
     ModuleUserProfile(
         "maintenance",
         "Teknik Servis Test Kullanıcısı",
-        _COMMON_SCOPES + ("maintenance",),
+        _COMMON_SCOPES + ("maintenance", "maintenance_work_orders"),
         _permission_values(Permission.ASSIGN_TASK, Permission.UPDATE_ROOM_STATUS),
     ),
 )
@@ -396,6 +421,38 @@ class ResetPlan:
             blockers.append("BLOCKED_UNKNOWN_TENANT_COLLECTIONS")
         return tuple(blockers)
 
+    @property
+    def approval_sha256(self) -> str:
+        material = {
+            "database_name": self.database_name,
+            "super_admin_count": self.super_admin_count,
+            "super_admin_ids": list(self.super_admin_ids),
+            "protected_tenant_ids": list(self.protected_tenant_ids),
+            "non_super_admin_user_count": self.non_super_admin_user_count,
+            "removable_tenant_count": self.removable_tenant_count,
+            "collections": [
+                {
+                    "collection": item.collection,
+                    "delete_filter": item.delete_filter,
+                    "candidate_count": item.candidate_count,
+                    "protected_count": item.protected_count,
+                    "unscoped_count": item.unscoped_count,
+                }
+                for item in self.collections
+            ],
+            "unknown_tenant_collections": list(self.unknown_tenant_collections),
+            "unknown_tenant_document_count": self.unknown_tenant_document_count,
+            "blockers": list(self.blockers),
+        }
+        encoded = json.dumps(
+            material,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+            default=str,
+        ).encode()
+        return hashlib.sha256(encoded).hexdigest()
+
     def public_summary(self) -> dict[str, Any]:
         """Return a PII-free JSON-serializable summary."""
 
@@ -417,6 +474,7 @@ class ResetPlan:
             "unknown_tenant_collections": list(self.unknown_tenant_collections),
             "unknown_tenant_document_count": self.unknown_tenant_document_count,
             "blockers": list(self.blockers),
+            "approval_sha256": self.approval_sha256,
             "write_count": 0,
         }
 
@@ -436,6 +494,17 @@ class ModuleUserSpec:
         data = asdict(self)
         data.pop("email", None)
         return data
+
+
+def module_user_specs_approval_sha256(specs: Sequence[ModuleUserSpec]) -> str:
+    material = [asdict(spec) for spec in specs]
+    encoded = json.dumps(
+        material,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def super_admin_filter() -> dict[str, Any]:
@@ -621,13 +690,21 @@ def detect_environment(environ: Mapping[str, str] | None = None) -> str:
     return "unknown"
 
 
+def _validate_known_environment(environment: str) -> None:
+    if environment in {"prod", "production"}:
+        return
+    if environment not in NON_PRODUCTION_ENVIRONMENTS:
+        raise RuntimeError("BLOCKED_PRE_PILOT_ENVIRONMENT_UNKNOWN")
+
+
 def validate_reset_execution_guard(
     *,
     execute: bool,
     confirmation: str | None,
     production_confirmation: str | None,
     expected_database_name: str | None,
-    expected_super_admin_count: int,
+    expected_super_admin_count: int | None,
+    approved_plan_sha256: str | None,
     plan: ResetPlan,
     environ: Mapping[str, str] | None = None,
 ) -> None:
@@ -638,16 +715,23 @@ def validate_reset_execution_guard(
     env = environ or os.environ
     if env.get("PRE_PILOT_RESET_ALLOWED") != "1":
         raise RuntimeError("BLOCKED_PRE_PILOT_RESET_NOT_ALLOWED")
+    if env.get("PRE_PILOT_RESET_BACKUP_ATTESTED") != "1":
+        raise RuntimeError("BLOCKED_PRE_PILOT_RESET_BACKUP_NOT_ATTESTED")
     if confirmation != RESET_CONFIRMATION:
         raise RuntimeError("BLOCKED_PRE_PILOT_RESET_CONFIRMATION")
     if not expected_database_name or expected_database_name != plan.database_name:
         raise RuntimeError("BLOCKED_PRE_PILOT_RESET_DATABASE_MISMATCH")
-    if expected_super_admin_count < 1 or plan.super_admin_count != expected_super_admin_count:
+    if expected_super_admin_count is None or expected_super_admin_count < 1:
         raise RuntimeError("BLOCKED_PRE_PILOT_RESET_SUPER_ADMIN_COUNT")
+    if plan.super_admin_count != expected_super_admin_count:
+        raise RuntimeError("BLOCKED_PRE_PILOT_RESET_SUPER_ADMIN_COUNT")
+    if not approved_plan_sha256 or approved_plan_sha256 != plan.approval_sha256:
+        raise RuntimeError("BLOCKED_PRE_PILOT_RESET_PLAN_MISMATCH")
     if plan.blockers:
         raise RuntimeError(plan.blockers[0])
 
     environment = detect_environment(env)
+    _validate_known_environment(environment)
     if environment in {"prod", "production"}:
         if env.get("PRE_PILOT_RESET_PRODUCTION_ALLOWED") != "1":
             raise RuntimeError("BLOCKED_PRE_PILOT_PRODUCTION_RESET_NOT_ALLOWED")
@@ -659,8 +743,11 @@ def validate_seed_execution_guard(
     *,
     execute: bool,
     confirmation: str | None,
+    production_confirmation: str | None,
     expected_database_name: str | None,
     actual_database_name: str,
+    approved_plan_sha256: str | None,
+    actual_plan_sha256: str,
     environ: Mapping[str, str] | None = None,
 ) -> None:
     if not execute:
@@ -672,6 +759,16 @@ def validate_seed_execution_guard(
         raise RuntimeError("BLOCKED_PRE_PILOT_RBAC_SEED_CONFIRMATION")
     if not expected_database_name or expected_database_name != actual_database_name:
         raise RuntimeError("BLOCKED_PRE_PILOT_RBAC_SEED_DATABASE_MISMATCH")
+    if not approved_plan_sha256 or approved_plan_sha256 != actual_plan_sha256:
+        raise RuntimeError("BLOCKED_PRE_PILOT_RBAC_SEED_PLAN_MISMATCH")
+
+    environment = detect_environment(env)
+    _validate_known_environment(environment)
+    if environment in {"prod", "production"}:
+        if env.get("PRE_PILOT_RBAC_SEED_PRODUCTION_ALLOWED") != "1":
+            raise RuntimeError("BLOCKED_PRE_PILOT_RBAC_SEED_PRODUCTION_NOT_ALLOWED")
+        if production_confirmation != SEED_PRODUCTION_CONFIRMATION:
+            raise RuntimeError("BLOCKED_PRE_PILOT_RBAC_SEED_PRODUCTION_CONFIRMATION")
 
 
 def build_module_user_specs(tenant_id: str, email_domain: str) -> tuple[ModuleUserSpec, ...]:
@@ -700,11 +797,29 @@ def build_module_user_specs(tenant_id: str, email_domain: str) -> tuple[ModuleUs
     return tuple(specs)
 
 
-async def execute_reset(database: Any, plan: ResetPlan) -> dict[str, int]:
-    """Execute exactly the precomputed allowlisted plan."""
+async def execute_reset(
+    database: Any,
+    plan: ResetPlan,
+    *,
+    confirmation: str | None,
+    production_confirmation: str | None,
+    expected_database_name: str | None,
+    expected_super_admin_count: int | None,
+    approved_plan_sha256: str | None,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, int]:
+    """Execute exactly a reviewed and guard-approved allowlisted plan."""
 
-    if plan.blockers:
-        raise RuntimeError(plan.blockers[0])
+    validate_reset_execution_guard(
+        execute=True,
+        confirmation=confirmation,
+        production_confirmation=production_confirmation,
+        expected_database_name=expected_database_name,
+        expected_super_admin_count=expected_super_admin_count,
+        approved_plan_sha256=approved_plan_sha256,
+        plan=plan,
+        environ=environ,
+    )
 
     run_id = str(uuid.uuid4())
     started_at = datetime.now(UTC).isoformat()
@@ -715,15 +830,20 @@ async def execute_reset(database: Any, plan: ResetPlan) -> dict[str, int]:
             "started_at": started_at,
             "database_name": plan.database_name,
             "super_admin_count": plan.super_admin_count,
+            "approval_sha256": plan.approval_sha256,
         }
     )
 
     deleted: dict[str, int] = {}
     # Identity roots are removed last so tenant/user references remain available
-    # while operational collections are being cleared.
+    # while operational collections are being cleared. Users are deliberately
+    # deleted before tenants, after every operational collection.
     ordered = sorted(
         plan.collections,
-        key=lambda item: (item.collection in {"users", "tenants"}, item.collection),
+        key=lambda item: (
+            2 if item.collection == "tenants" else 1 if item.collection == "users" else 0,
+            item.collection,
+        ),
     )
     try:
         for item in ordered:
@@ -772,9 +892,26 @@ async def seed_module_users(
     tenant_id: str,
     email_domain: str,
     password: str,
+    confirmation: str | None,
+    production_confirmation: str | None,
+    expected_database_name: str | None,
+    approved_plan_sha256: str | None,
+    environ: Mapping[str, str] | None = None,
 ) -> dict[str, int]:
-    """Idempotently upsert deterministic, seed-managed module users."""
+    """Idempotently upsert deterministic, guard-approved module users."""
 
+    specs = build_module_user_specs(tenant_id, email_domain)
+    actual_plan_sha256 = module_user_specs_approval_sha256(specs)
+    validate_seed_execution_guard(
+        execute=True,
+        confirmation=confirmation,
+        production_confirmation=production_confirmation,
+        expected_database_name=expected_database_name,
+        actual_database_name=_database_name(database),
+        approved_plan_sha256=approved_plan_sha256,
+        actual_plan_sha256=actual_plan_sha256,
+        environ=environ,
+    )
     if len(password) < 12:
         raise RuntimeError("BLOCKED_PRE_PILOT_RBAC_SEED_PASSWORD_TOO_SHORT")
     tenant = await database.tenants.find_one(
@@ -791,7 +928,7 @@ async def seed_module_users(
     hashed_password = hash_password(password)
     created = 0
     updated = 0
-    for spec in build_module_user_specs(tenant_id, email_domain):
+    for spec in specs:
         username_collision = await database.users.find_one(
             {
                 "tenant_id": tenant_id,
