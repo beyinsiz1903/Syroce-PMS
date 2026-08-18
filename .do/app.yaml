@@ -95,6 +95,18 @@ envs:
   - key: DB_NAME
     value: syroce-pms
     scope: RUN_TIME
+  - key: MONGO_MAX_POOL_SIZE
+    value: "20"
+    scope: RUN_TIME
+  - key: MONGO_MIN_POOL_SIZE
+    value: "0"
+    scope: RUN_TIME
+  - key: MONGO_MAX_CONNECTING
+    value: "2"
+    scope: RUN_TIME
+  - key: MONGO_MAX_IDLE_TIME_MS
+    value: "30000"
+    scope: RUN_TIME
   - key: STRICT_TENANT_MODE
     value: "true"          # prod boot bunsuz REDDEDER (fail-closed)
     scope: RUN_TIME
