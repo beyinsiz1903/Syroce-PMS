@@ -8,8 +8,9 @@ Examples (read-only):
         --tenant-id <tenant-id> --email-domain pilot.example.com
 
 Write modes are intentionally inconvenient and require separate environment
-flags, exact confirmation strings, expected database name and (for reset)
-expected super-admin count.  This script never calls provider APIs.
+flags, exact confirmation strings, expected database identity, a reviewed
+SHA-256 dry-run fingerprint and (for reset) an exact super-admin count plus
+backup attestation.  This script never calls provider APIs.
 """
 
 from __future__ import annotations
@@ -27,12 +28,12 @@ from ops.pre_pilot_reset import (  # noqa: E402
     PRODUCTION_CONFIRMATION,
     RESET_CONFIRMATION,
     SEED_CONFIRMATION,
+    SEED_PRODUCTION_CONFIRMATION,
     build_module_user_specs,
     build_reset_plan,
     execute_reset,
+    module_user_specs_approval_sha256,
     seed_module_users,
-    validate_reset_execution_guard,
-    validate_seed_execution_guard,
 )
 
 
@@ -48,7 +49,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help=f"Additional production token: {PRODUCTION_CONFIRMATION}",
     )
     reset.add_argument("--expected-database", help="Exact MongoDB database name")
-    reset.add_argument("--expected-super-admin-count", type=int, default=1)
+    reset.add_argument("--expected-super-admin-count", type=int)
+    reset.add_argument(
+        "--approved-plan-sha256",
+        help="Exact approval_sha256 emitted by the reviewed reset dry-run",
+    )
 
     seed = subparsers.add_parser(
         "seed-module-users",
@@ -58,7 +63,15 @@ def _build_parser() -> argparse.ArgumentParser:
     seed.add_argument("--email-domain", required=True)
     seed.add_argument("--execute", action="store_true", help="Enable the guarded write path")
     seed.add_argument("--confirm", help=f"Exact token required for writes: {SEED_CONFIRMATION}")
+    seed.add_argument(
+        "--production-confirm",
+        help=f"Additional production token: {SEED_PRODUCTION_CONFIRMATION}",
+    )
     seed.add_argument("--expected-database", help="Exact MongoDB database name")
+    seed.add_argument(
+        "--approved-plan-sha256",
+        help="Exact approval_sha256 emitted by the reviewed seed dry-run",
+    )
 
     return parser
 
@@ -69,21 +82,24 @@ def _database_name(database: Any) -> str:
 
 async def _run_reset(args: argparse.Namespace, database: Any) -> dict[str, Any]:
     plan = await build_reset_plan(database)
-    validate_reset_execution_guard(
-        execute=args.execute,
+    output = plan.public_summary()
+    if not args.execute:
+        output["mode"] = "dry-run"
+        output["next_step"] = (
+            "Review blockers and candidate counts, keep approval_sha256, "
+            "take/verify a backup, then request separate execute approval."
+        )
+        return output
+
+    deleted = await execute_reset(
+        database,
+        plan,
         confirmation=args.confirm,
         production_confirmation=args.production_confirm,
         expected_database_name=args.expected_database,
         expected_super_admin_count=args.expected_super_admin_count,
-        plan=plan,
+        approved_plan_sha256=args.approved_plan_sha256,
     )
-    output = plan.public_summary()
-    if not args.execute:
-        output["mode"] = "dry-run"
-        output["next_step"] = "Review blockers and candidate counts; no records were changed."
-        return output
-
-    deleted = await execute_reset(database, plan)
     output.update(
         {
             "mode": "execute",
@@ -96,6 +112,7 @@ async def _run_reset(args: argparse.Namespace, database: Any) -> dict[str, Any]:
 
 async def _run_seed(args: argparse.Namespace, database: Any) -> dict[str, Any]:
     specs = build_module_user_specs(args.tenant_id, args.email_domain)
+    approval_sha256 = module_user_specs_approval_sha256(specs)
     tenant_exists = bool(
         await database.tenants.find_one(
             {"$or": [{"id": args.tenant_id}, {"_id": args.tenant_id}]},
@@ -114,17 +131,15 @@ async def _run_seed(args: argparse.Namespace, database: Any) -> dict[str, Any]:
         "create_candidate_count": len(specs) - existing_count,
         "update_candidate_count": existing_count,
         "profiles": [spec.public_summary() for spec in specs],
+        "approval_sha256": approval_sha256,
         "write_count": 0,
     }
 
-    validate_seed_execution_guard(
-        execute=args.execute,
-        confirmation=args.confirm,
-        expected_database_name=args.expected_database,
-        actual_database_name=_database_name(database),
-    )
     if not args.execute:
-        output["next_step"] = "Create the pilot tenant, review scopes, then use separately approved execute mode."
+        output["next_step"] = (
+            "Create the pilot tenant, review scopes and approval_sha256, "
+            "then request separate execute approval."
+        )
         return output
 
     password = os.environ.get("PRE_PILOT_MODULE_USER_PASSWORD", "")
@@ -133,6 +148,10 @@ async def _run_seed(args: argparse.Namespace, database: Any) -> dict[str, Any]:
         tenant_id=args.tenant_id,
         email_domain=args.email_domain,
         password=password,
+        confirmation=args.confirm,
+        production_confirmation=args.production_confirm,
+        expected_database_name=args.expected_database,
+        approved_plan_sha256=args.approved_plan_sha256,
     )
     output.update(result)
     output["write_count"] = result["total"]
