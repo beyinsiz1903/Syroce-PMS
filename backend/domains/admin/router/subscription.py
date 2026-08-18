@@ -23,6 +23,7 @@ from core.security import (
     _is_super_admin,
     get_current_user,
 )
+from modules.pms_core.module_scope_service import filter_modules_for_scopes
 from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 try:
@@ -326,7 +327,10 @@ async def get_current_subscription(current_user: User = Depends(get_current_user
         "valid_until": tenant.get("subscription_valid_until"),
         "rooms_count": await db.rooms.count_documents({"tenant_id": current_user.tenant_id}),
         "users_count": await db.users.count_documents({"tenant_id": current_user.tenant_id}),
-        "modules": get_tenant_modules(tenant),
+        "modules": filter_modules_for_scopes(
+            get_tenant_modules(tenant),
+            getattr(current_user, "module_scopes", None),
+        ),
         "entitlements": entitlements,
     }
 
