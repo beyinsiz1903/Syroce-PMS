@@ -29,7 +29,43 @@ class DisplacementEngine:
         )
         return max(count, 1)
 
-    async def _get_day_occupancy(self, tenant_id: str, day_str: str) -> dict[str, Any]:
+
+    async def _get_period_occupancy(self, tenant_id: str, check_in: str, check_out: str) -> dict:
+        bookings = await db.bookings.find(
+            {
+                "tenant_id": tenant_id,
+                "check_in": {"$lt": check_out},
+                "check_out": {"$gt": check_in},
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+            },
+            {"check_in": 1, "check_out": 1}
+        ).to_list(None)
+
+        blocks = await db.room_blocks.find(
+            {
+                "tenant_id": tenant_id,
+                "status": "active",
+                "start_date": {"$lt": check_out},
+                "$or": [{"end_date": None}, {"end_date": {"$gt": check_in}}],
+            },
+            {"start_date": 1, "end_date": 1}
+        ).to_list(None)
+
+        from datetime import date, timedelta
+        ci = date.fromisoformat(check_in)
+        co = date.fromisoformat(check_out)
+        num_nights = (co - ci).days
+
+        daily_counts = {}
+        for i in range(num_nights):
+            night_str = (ci + timedelta(days=i)).isoformat()
+            booked = sum(1 for b in bookings if b.get("check_in", "") <= night_str < b.get("check_out", ""))
+            blocked = sum(1 for b in blocks if b.get("start_date", "") <= night_str and (b.get("end_date") is None or b.get("end_date", "") > night_str))
+            daily_counts[night_str] = {"booked": booked, "blocked": blocked}
+
+        return daily_counts
+
+    async def _get_day_occupancy(self, tenant_id: str, day_str: str) -> dict:
         booked = await db.bookings.count_documents(
             {
                 "tenant_id": tenant_id,
@@ -167,8 +203,8 @@ class DisplacementEngine:
         group_name: str = "",
         ancillary_per_room: float = 0,
         commission_pct: float = 0,
+        _base_data: dict | None = None,
     ) -> dict[str, Any]:
-        total_rooms = await self._get_total_rooms(tenant_id)
         try:
             ci = date.fromisoformat(check_in)
             co = date.fromisoformat(check_out)
@@ -180,9 +216,22 @@ class DisplacementEngine:
         if num_nights > 90:
             return {"error": "Analysis limited to 90 nights maximum"}
 
-        historical_adr = await self._get_historical_adr(tenant_id)
-        dow_adr = await self._get_adr_by_dow(tenant_id)
-        cancel_rate = await self._get_cancellation_rate(tenant_id)
+        if _base_data:
+            total_rooms = _base_data["total_rooms"]
+            historical_adr = _base_data["historical_adr"]
+            dow_adr = _base_data["dow_adr"]
+            cancel_rate = _base_data["cancel_rate"]
+            occ_cache = _base_data["occ_cache"]
+        else:
+            total_rooms = await self._get_total_rooms(tenant_id)
+            historical_adr = await self._get_historical_adr(tenant_id)
+            dow_adr = await self._get_adr_by_dow(tenant_id)
+            cancel_rate = await self._get_cancellation_rate(tenant_id)
+
+            import asyncio as _asyncio
+            days = [ci + timedelta(days=i) for i in range(num_nights)]
+            occ_results = await _asyncio.gather(*[self._get_day_occupancy(tenant_id, d.isoformat()) for d in days])
+            occ_cache = {d.isoformat(): occ for d, occ in zip(days, occ_results)}
 
         daily_analysis = []
         total_displaced_revenue = 0
@@ -193,7 +242,7 @@ class DisplacementEngine:
         for i in range(num_nights):
             night = ci + timedelta(days=i)
             night_str = night.isoformat()
-            occ_data = await self._get_day_occupancy(tenant_id, night_str)
+            occ_data = occ_cache[night_str]
 
             booked = occ_data["booked"]
             blocked = occ_data["blocked"]
@@ -319,14 +368,16 @@ class DisplacementEngine:
         cancel_rate = await self._get_cancellation_rate(tenant_id)
         channel_mix = await self._get_channel_mix(tenant_id)
 
-        import asyncio as _asyncio
-
         today = date.today()
         days = [today + timedelta(days=i) for i in range(days_forward)]
-        # Run all per-day occupancy lookups in parallel.
-        occ_results = await _asyncio.gather(*[self._get_day_occupancy(tenant_id, d.isoformat()) for d in days])
+        ci = today.isoformat()
+        co = (today + timedelta(days=days_forward)).isoformat()
+
+        occ_cache = await self._get_period_occupancy(tenant_id, ci, co)
+
         forecast = []
-        for d, occ in zip(days, occ_results, strict=True):
+        for d in days:
+            occ = occ_cache.get(d.isoformat(), {"booked": 0, "blocked": 0})
             booked = occ["booked"]
             blocked = occ["blocked"]
             available = max(total_rooms - booked - blocked, 0)
@@ -379,6 +430,33 @@ class DisplacementEngine:
         rooms_requested: int,
         scenarios: list[dict],
     ) -> dict[str, Any]:
+        try:
+            ci = date.fromisoformat(check_in)
+            co = date.fromisoformat(check_out)
+        except:
+            return {"error": "Invalid date format"}
+        num_nights = (co - ci).days
+        if num_nights <= 0 or num_nights > 90:
+            return {"error": "Invalid dates or >90 nights"}
+
+        total_rooms = await self._get_total_rooms(tenant_id)
+        historical_adr = await self._get_historical_adr(tenant_id)
+        dow_adr = await self._get_adr_by_dow(tenant_id)
+        cancel_rate = await self._get_cancellation_rate(tenant_id)
+
+        import asyncio as _asyncio
+        days = [ci + timedelta(days=i) for i in range(num_nights)]
+        occ_results = await _asyncio.gather(*[self._get_day_occupancy(tenant_id, d.isoformat()) for d in days])
+        occ_cache = {d.isoformat(): occ for d, occ in zip(days, occ_results)}
+
+        base_data = {
+            "total_rooms": total_rooms,
+            "historical_adr": historical_adr,
+            "dow_adr": dow_adr,
+            "cancel_rate": cancel_rate,
+            "occ_cache": occ_cache,
+        }
+
         results = []
         for sc in scenarios[:5]:
             analysis = await self.analyze_displacement(
@@ -390,6 +468,7 @@ class DisplacementEngine:
                 group_name=sc.get("name", ""),
                 ancillary_per_room=sc.get("ancillary", 0),
                 commission_pct=sc.get("commission", 0),
+                _base_data=base_data,
             )
             results.append(
                 {
