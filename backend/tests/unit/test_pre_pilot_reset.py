@@ -147,3 +147,9 @@ def test_module_user_document_is_restricted_and_requires_password_change():
     assert document["tenant_id"] == "tenant-a"
     assert document["email"].endswith("@qa.example.com")
     assert "module:frontdesk" in document["granted_permissions"]
+
+
+def test_load_db_uses_raw_db():
+    from scripts.pre_pilot_reset import _load_db
+    from core.database import _raw_db
+    assert _load_db() is _raw_db
