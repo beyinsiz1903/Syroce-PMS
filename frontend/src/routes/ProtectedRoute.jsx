@@ -11,6 +11,7 @@
 import { cloneElement, isValidElement, Suspense, lazy } from "react";
 import { Navigate } from "react-router-dom";
 import { useEntitlements } from "@/context/EntitlementContext";
+import { hasModuleScope } from "@/utils/authRoles";
 
 const Layout = lazy(() => import("@/components/Layout"));
 
@@ -32,6 +33,18 @@ function withOptionalLayout(element, { wrapLayout, layoutModule, user, tenant, o
   );
 }
 
+function inferScopeFromPath(path) {
+  if (typeof path !== "string") return "";
+  const pathname = path.split("?", 1)[0];
+  const segments = pathname.split("/").filter(Boolean);
+  return segments.at(-1) || "";
+}
+
+function scopeDenied(user, ...scopeKeys) {
+  const keys = scopeKeys.filter(Boolean);
+  return keys.length > 0 && !keys.some((key) => hasModuleScope(user, key));
+}
+
 export function ProtectedRoute({
   isAuthenticated,
   element,
@@ -44,6 +57,9 @@ export function ProtectedRoute({
 }) {
   if (!isAuthenticated) {
     return <Navigate to={redirectTo} replace />;
+  }
+  if (scopeDenied(user, layoutModule)) {
+    return <Navigate to="/app/dashboard" replace />;
   }
   return (
     <Suspense fallback={<LoadingFallback />}>
@@ -67,6 +83,10 @@ export function ProtectedRouteWithMemory({
       sessionStorage.setItem("postLoginRedirect", targetPath);
     }
     return <Navigate to="/auth" replace state={{ redirectTo: targetPath }} />;
+  }
+  const inferredScope = inferScopeFromPath(targetPath);
+  if (scopeDenied(user, layoutModule, inferredScope)) {
+    return <Navigate to="/app/dashboard" replace />;
   }
   return (
     <Suspense fallback={<LoadingFallback />}>
@@ -98,6 +118,11 @@ export function ModuleGuardedRoute({
   // Prevent redirect loops by checking if the user is already on the fallback route
   const currentPath = window.location.pathname;
   const fallbackRoute = isSuperAdmin ? "/admin" : "/app/dashboard";
+
+  if (scopeDenied(user, moduleKey, layoutModule)) {
+    if (currentPath === fallbackRoute) return null;
+    return <Navigate to={fallbackRoute} replace />;
+  }
 
   if (moduleKey && !hasModule(moduleKey)) {
     if (currentPath === fallbackRoute) return null; // Avoid loop
