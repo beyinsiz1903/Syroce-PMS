@@ -11,6 +11,7 @@ from core.database import db
 from core.security import _is_super_admin, get_current_user
 from models.enums import UserRole
 from models.schemas import AuditLog, User
+from modules.pms_core.module_scope_service import module_scope_allows
 
 # ================== PLAN & FEATURES ==================
 
@@ -436,12 +437,23 @@ def invalidate_tenant_doc_cache(tenant_id: str | None = None) -> None:
 
 
 def require_module(module_name: str):
-    """Dependency to ensure the current hotel has a specific module enabled."""
+    """Dependency to ensure the hotel and current user can access a module."""
 
     async def dependency(current_user: User = Depends(get_current_user)) -> None:
-        # Super admin: bypass module-flag check and tenant requirement.
+        # Super admin: bypass module-flag and per-user scope checks.
         if _is_super_admin(current_user):
             return
+
+        # Empty module_scopes preserves the legacy role/tenant behaviour.
+        # Once a user has at least one scope, the allowlist is restrictive.
+        if not module_scope_allows(
+            getattr(current_user, "module_scopes", None),
+            module_name,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"{module_name} modulu bu kullanici icin yetkili degil",
+            )
 
         # Tenant context is mandatory for normal users: downstream handlers
         # rely on current_user.tenant_id and may otherwise read/write unscoped.
