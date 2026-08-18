@@ -245,10 +245,21 @@ class JournalIn(BaseModel):
 
 
 class NilveraIncomingGLPostIn(BaseModel):
-    purchase_account_code: str = Field(..., min_length=1, max_length=40)
-    vat_account_code: str = Field(..., min_length=1, max_length=40)
-    payable_account_code: str = Field(..., min_length=1, max_length=40)
+    purchase_account_code: str = Field(..., description="GL account for expense/asset")
+    vat_account_code: str = Field(..., description="GL account for deductible VAT")
+    payable_account_code: str = Field(..., description="GL account for vendor payable")
 
+
+class NilveraOutgoingGLPostIn(BaseModel):
+    revenue_account_code: str = Field(..., description="GL account for revenue/sales")
+    receivable_account_code: str = Field(..., description="GL account for customer receivable")
+    discount_account_code: str | None = Field(None, description="GL account for sales discounts")
+    
+    vat_account_code: str | None = Field(None, description="Fallback GL account for calculated VAT")
+    accommodation_tax_account_code: str | None = Field(None, description="Fallback GL account for Accommodation Tax (0059)")
+    
+    vat_accounts_by_rate: dict[str, str] = Field(default_factory=dict, description="e.g. {'10': '391.10', '20': '391.20'}")
+    accommodation_tax_accounts_by_rate: dict[str, str] = Field(default_factory=dict, description="e.g. {'1': '360.01', '2': '360.02'}")
 
 @router.get("/journal")
 async def list_journal(
@@ -350,3 +361,37 @@ async def trial_balance(
     _require_role(current_user, _READ_ROLES)
     tenant_id = _tenant_of(current_user)
     return await compute_trial_balance(db, tenant_id, as_of=as_of)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Nilvera outgoing invoice ↔ GL bridge
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/integrations/nilvera/outgoing/{invoice_id}/post")
+async def post_nilvera_outgoing_invoice_to_gl(
+    invoice_id: str,
+    payload: NilveraOutgoingGLPostIn,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    try:
+        from core.integrations.invoice_gl_bridge import post_outgoing_invoice_to_gl
+        entry = await post_outgoing_invoice_to_gl(
+            tenant_id,
+            invoice_id,
+            revenue_account_code=payload.revenue_account_code,
+            receivable_account_code=payload.receivable_account_code,
+            discount_account_code=payload.discount_account_code,
+            vat_account_code=payload.vat_account_code,
+            accommodation_tax_account_code=payload.accommodation_tax_account_code,
+            vat_accounts_by_rate=payload.vat_accounts_by_rate,
+            accommodation_tax_accounts_by_rate=payload.accommodation_tax_accounts_by_rate,
+            actor=_actor_id(current_user),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "NILVERA_GL_POSTING_BLOCKED", "detail": str(exc)},
+        ) from exc
+    return {"entry": entry}
+
