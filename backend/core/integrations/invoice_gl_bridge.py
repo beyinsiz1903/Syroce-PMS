@@ -258,3 +258,161 @@ async def get_incoming_invoice_gl_link(tenant_id: str, incoming_invoice_id: str)
     ).sort("created_at", -1)
     return_entries = tuple(await cursor.to_list(length=100))
     return InvoiceGLLink(source_entry=source_entry, return_entries=return_entries)
+
+async def post_outgoing_invoice_to_gl(
+    tenant_id: str,
+    invoice_id: str,
+    *,
+    revenue_account_code: str,
+    receivable_account_code: str,
+    discount_account_code: str | None = None,
+    vat_account_code: str | None = None,
+    accommodation_tax_account_code: str | None = None,
+    vat_accounts_by_rate: dict[str, str] | None = None,
+    accommodation_tax_accounts_by_rate: dict[str, str] | None = None,
+    actor: str,
+) -> dict:
+    """Post an outgoing invoice to GL with line-level tax and discount support."""
+    db = get_db_for_tenant(tenant_id)
+    invoice = await db.invoices.find_one({"tenant_id": tenant_id, "id": invoice_id})
+    if not invoice:
+        raise InvoiceGLBridgeError("Outgoing invoice not found")
+
+    total = _money(invoice.get("total", 0))
+    if total <= 0:
+        raise InvoiceGLBridgeError("Outgoing invoice total must be positive")
+
+    revenue_account = _clean_account(revenue_account_code, "Revenue")
+    receivable_account = _clean_account(receivable_account_code, "Receivable")
+    discount_account = _clean_account(discount_account_code, "Discount") if discount_account_code else None
+
+    vat_by_rate: dict[str, Decimal] = {}
+    acc_tax_by_rate: dict[str, Decimal] = {}
+
+    base_revenue = Decimal("0")
+    total_discount = Decimal("0")
+
+    items = invoice.get("items", [])
+    if items:
+        for item in items:
+            qty = _money(item.get("quantity", 1))
+            price = _money(item.get("unit_price", 0))
+            gross = qty * price
+
+            disc = _money(item.get("discount_amount", 0))
+            total_discount += disc
+
+            if discount_account:
+                base_revenue += gross
+            else:
+                base_revenue += (gross - disc)
+
+            vat_amt = _money(item.get("kdv_amount", 0))
+            if vat_amt > 0:
+                kdv_rate_str = str(int(item.get("kdv_rate", 0)))
+                vat_by_rate[kdv_rate_str] = vat_by_rate.get(kdv_rate_str, Decimal("0")) + vat_amt
+
+            other_taxes = item.get("other_taxes", [])
+            for t in other_taxes:
+                if t.get("tax_code") == "0059":
+                    acc_tax_amt = _money(t.get("amount", 0))
+                    acc_tax_rate_str = str(int(t.get("rate", 0)))
+                    acc_tax_by_rate[acc_tax_rate_str] = acc_tax_by_rate.get(acc_tax_rate_str, Decimal("0")) + acc_tax_amt
+                else:
+                    raise InvoiceGLBridgeError(f"Unsupported other tax code: {t.get('tax_code')}")
+    else:
+        base_revenue = _money(invoice.get("subtotal", 0))
+        tax = _money(invoice.get("tax", 0))
+        if tax > 0:
+            vat_by_rate["0"] = tax
+
+    journal_lines: list[dict] = []
+
+    # 1. Receivable (Debit)
+    journal_lines.append({
+        "account_code": receivable_account,
+        "debit": float(total),
+        "credit": 0,
+        "memo": "Satış faturası alacağı"
+    })
+
+    # 2. Revenue (Credit)
+    journal_lines.append({
+        "account_code": revenue_account,
+        "debit": 0,
+        "credit": float(base_revenue),
+        "memo": "Satış faturası geliri"
+    })
+
+    # 3. Discount (Debit)
+    if discount_account and total_discount > 0:
+        journal_lines.append({
+            "account_code": discount_account,
+            "debit": float(total_discount),
+            "credit": 0,
+            "memo": "Satış faturası iskontosu"
+        })
+
+    # 4. VAT (Credit) - Per Rate
+    vat_map = vat_accounts_by_rate or {}
+    for rate, amt in vat_by_rate.items():
+        if amt > 0:
+            acc = vat_map.get(rate) or vat_account_code
+            if not acc:
+                raise InvoiceGLBridgeError(f"No VAT account provided for rate {rate}%")
+            journal_lines.append({
+                "account_code": _clean_account(acc, f"VAT {rate}%"),
+                "debit": 0,
+                "credit": float(amt),
+                "memo": f"Satış faturası {rate}% KDV"
+            })
+
+    # 5. Accommodation Tax (Credit) - Per Rate
+    acc_tax_map = accommodation_tax_accounts_by_rate or {}
+    for rate, amt in acc_tax_by_rate.items():
+        if amt > 0:
+            acc = acc_tax_map.get(rate) or accommodation_tax_account_code
+            if not acc:
+                raise InvoiceGLBridgeError(f"No Accommodation Tax account provided for rate {rate}%")
+            journal_lines.append({
+                "account_code": _clean_account(acc, f"Acc Tax {rate}%"),
+                "debit": 0,
+                "credit": float(amt),
+                "memo": f"Satış faturası konaklama vergisi {rate}%"
+            })
+
+    tot_debit = float(total) + (float(total_discount) if discount_account else 0)
+    tot_credit = float(base_revenue) + float(sum(vat_by_rate.values())) + float(sum(acc_tax_by_rate.values()))
+
+    if abs(tot_debit - tot_credit) > 0.02:
+        raise InvoiceGLBridgeError(f"Journal unbalanced: Debit {tot_debit} != Credit {tot_credit}")
+
+    try:
+        entry = await post_journal_entry(
+            db,
+            tenant_id,
+            date=datetime.now(UTC).date().isoformat(),
+            memo=f"Satış faturası {invoice.get('invoice_number', invoice_id)}",
+            lines=journal_lines,
+            source="nilvera_outgoing",
+            source_ref=invoice_id,
+            actor=actor,
+            idempotency_key=f"nilvera-outgoing:{invoice_id}",
+        )
+    except GLPostingError as exc:
+        raise InvoiceGLBridgeError(str(exc)) from exc
+
+    await db.gl_journal_entries.update_one(
+        {"tenant_id": tenant_id, "id": entry["id"]},
+        {
+            "$set": {
+                "nilvera_source_invoice_id": invoice_id,
+                "nilvera_invoice_number": invoice.get("invoice_number"),
+                "integration_kind": "nilvera_outgoing",
+            }
+        },
+    )
+    return await db.gl_journal_entries.find_one(
+        {"tenant_id": tenant_id, "id": entry["id"]},
+        {"_id": 0},
+    ) or entry
