@@ -152,7 +152,6 @@ export const PMS_TAB_SCOPES = Object.freeze({
 export const SUPPLEMENTAL_MODULE_NAV_ITEMS = Object.freeze([
   { key: 'cashier_workspace', label: 'Kasa', path: '/app/cashier', navGroup: 'backoffice', moduleScopes: ['cashier'] },
   { key: 'tasks_workspace', label: 'Görevler', path: '/app/tasks', navGroup: 'operations', moduleScopes: ['tasks'] },
-  { key: 'stock_workspace', label: 'Stok', path: '/hotel-inventory', navGroup: 'backoffice', moduleScopes: ['stock'] },
 ]);
 
 export function normalizeModuleScope(scope) {
