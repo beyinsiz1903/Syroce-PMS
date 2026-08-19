@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from common.context import OperationContext
 from common.result import ServiceResult
+from core.business_date_guard import enforce_business_date_not_before
 from core.night_audit_hardened import (
     _normalize_booking_date,
     _partition_due_bookings,
@@ -219,3 +220,71 @@ def test_room_charge_stays_are_scoped_to_the_business_date():
     assert [booking["id"] for booking in future] == ["future"]
     assert [booking["id"] for booking in ended] == ["ended"]
     assert {booking["id"] for booking in invalid} == {"bad-order", "bad-date"}
+
+
+class _BusinessDateGuardError(Exception):
+    pass
+
+
+def _enforce_transition_date(business_date, boundary_date, operation, boundary_field):
+    enforce_business_date_not_before(
+        business_date=business_date,
+        boundary_date=boundary_date,
+        operation=operation,
+        boundary_field=boundary_field,
+        error_type=_BusinessDateGuardError,
+    )
+
+
+def test_atomic_checkin_business_date_blocks_future_arrival():
+    with pytest.raises(
+        _BusinessDateGuardError,
+        match=r"business_date 2026-08-14 is before check_in 2026-08-17",
+    ):
+        _enforce_transition_date(
+            "2026-08-14",
+            "2026-08-17",
+            "check in booking",
+            "check_in",
+        )
+
+
+def test_atomic_checkin_business_date_allows_arrival_day():
+    _enforce_transition_date(
+        "2026-08-17",
+        "2026-08-17",
+        "check in booking",
+        "check_in",
+    )
+
+
+def test_atomic_checkout_business_date_blocks_future_departure_even_for_normal_flow():
+    with pytest.raises(
+        _BusinessDateGuardError,
+        match=r"business_date 2026-08-17 is before check_out 2026-08-18",
+    ):
+        _enforce_transition_date(
+            "2026-08-17",
+            "2026-08-18",
+            "check out booking",
+            "check_out",
+        )
+
+
+def test_atomic_checkout_business_date_allows_departure_day():
+    _enforce_transition_date(
+        "2026-08-18",
+        "2026-08-18",
+        "check out booking",
+        "check_out",
+    )
+
+
+def test_business_date_guard_fails_closed_when_business_date_missing():
+    with pytest.raises(_BusinessDateGuardError, match="business_date is missing"):
+        _enforce_transition_date(
+            None,
+            "2026-08-17",
+            "check in booking",
+            "check_in",
+        )
