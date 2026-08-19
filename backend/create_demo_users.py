@@ -87,6 +87,7 @@ async def seed() -> None:
                 "gm_dashboards": True, "mobile_housekeeping": True,
                 "rate_management": True, "basic_reporting": True,
                 "revenue_management": True, "advanced_analytics": True,
+                "contact_center": True,
             },
         })
         log.info("created tenant hotel_id=%s id=%s", HOTEL_ID, tenant_id)
