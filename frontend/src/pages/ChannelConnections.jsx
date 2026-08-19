@@ -45,6 +45,7 @@ export default function ChannelConnections({
   const [disconnecting, setDisconnecting] = useState(null);
   const [showPassword, setShowPassword] = useState({});
   const isSuperAdmin = user?.role === 'super_admin' || Array.isArray(user?.roles) && user.roles.includes('super_admin');
+  const isAdmin = isSuperAdmin || user?.role === 'admin' || Array.isArray(user?.roles) && user.roles.includes('admin');
   const [hrForm, setHrForm] = useState({
     token: '',
     hr_id: '',
@@ -222,7 +223,7 @@ export default function ChannelConnections({
   }
 
   // ── HOTEL USER VIEW (non-superadmin) ──
-  if (!isSuperAdmin) {
+  if (!isAdmin) {
     return <Layout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout}>
         <div className="p-4 md:p-6 space-y-6 max-w-4xl mx-auto" data-testid="channel-connections-page">
 
