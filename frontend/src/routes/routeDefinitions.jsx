@@ -14,19 +14,14 @@
  *   "feature"    — Auth + feature flag required
  *   "memory"     — Auth required, saves redirect path on failure
  *   "redirect"   — Static redirect to another path
- *
- * Adding a route:
- *   - Lazy import the page in `sections/lazyPages.js`.
- *   - Append the route entry to the relevant `sections/*.js` file.
- *   - No edit needed here unless adding a new section.
- *
- * Split history: Was a single 595-line file (May 2026) — split into 15
- * section files + central lazy registry to make domain ownership clear and
- * keep the composer thin.
  */
+import React from "react";
+
 import {
   AuthPage, Dashboard, LandingPage, PrivacyPolicy, GuestPortal,
 } from "./sections/lazyPages";
+import ModuleScopeBoundary from "./ModuleScopeBoundary";
+import { moduleScopesForRoute } from "@/utils/moduleAccess";
 
 import { publicRoutes } from "./sections/public";
 import { coreOperationsRoutes } from "./sections/coreOperations";
@@ -43,9 +38,31 @@ import { infrastructureRoutes } from "./sections/infrastructure";
 import { hotelFeaturesAiRoutes } from "./sections/hotelFeaturesAi";
 import { securityAdminRoutes } from "./sections/securityAdmin";
 import { operaParityRoutes } from "./sections/operaParity";
+import { moduleWorkspaceRoutes } from "./sections/moduleWorkspaces";
 
 // Public re-exports for App.jsx (kept stable across the split).
 export { AuthPage, Dashboard, LandingPage, PrivacyPolicy, GuestPortal };
+
+function applyUserModuleScope(routeConfig) {
+  const scopes = moduleScopesForRoute(routeConfig);
+  if (!scopes.length || routeConfig.type === "public" || routeConfig.type === "redirect") {
+    return routeConfig;
+  }
+
+  const OriginalComponent = routeConfig.component;
+  const ScopedComponent = (props) => (
+    <ModuleScopeBoundary user={props.user} scopes={scopes}>
+      <OriginalComponent {...props} />
+    </ModuleScopeBoundary>
+  );
+  ScopedComponent.displayName = `ModuleScoped(${OriginalComponent?.displayName || OriginalComponent?.name || "Route"})`;
+
+  return {
+    ...routeConfig,
+    component: ScopedComponent,
+    moduleScopes: scopes,
+  };
+}
 
 /**
  * Build all route configs. Receives runtime state for conditional rendering.
@@ -78,9 +95,10 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
 
   const helpers = { p, pa, pm, modules };
 
-  return [
+  const routes = [
     ...publicRoutes(helpers),
     ...coreOperationsRoutes(helpers),
+    ...moduleWorkspaceRoutes(helpers),
     ...reservationRoutes(helpers),
     ...financeReportsRoutes(helpers),
     ...channelManagerRoutes(helpers),
@@ -95,4 +113,6 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     ...securityAdminRoutes(helpers),
     ...operaParityRoutes(helpers),
   ];
+
+  return routes.map(applyUserModuleScope);
 }

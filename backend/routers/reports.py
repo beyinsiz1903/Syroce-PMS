@@ -4,7 +4,9 @@ Eski 1887-satırlık dosya 4 sub-module'e bölündü. URL'ler aynı.
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from modules.pms_core.module_scope_service import require_module_scope
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["reports"])
@@ -15,4 +17,7 @@ from .reports_pkg.night_audit import sub_router as _na
 from .reports_pkg.standard_reports import sub_router as _sr
 
 for _r in (_fe, _sr, _dl, _na):
-    router.include_router(_r)
+    router.include_router(
+        _r,
+        dependencies=[Depends(require_module_scope("reports"))],
+    )

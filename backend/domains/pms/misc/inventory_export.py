@@ -10,6 +10,7 @@ from core.database import db
 from core.security import get_current_user
 from models.enums import Permission
 from models.schemas import User
+from modules.pms_core.module_scope_service import require_module_scope
 from modules.pms_core.role_permission_service import require_op
 
 from ._common import (
@@ -28,7 +29,10 @@ sub_router = APIRouter()
 
 
 @sub_router.get("/inventory/alerts")
-async def get_inventory_alerts(current_user: User = Depends(get_current_user)):
+async def get_inventory_alerts(
+    current_user: User = Depends(get_current_user),
+    _module=Depends(require_module_scope("stock")),
+):
     """Get low stock and critical stock alerts"""
     from domains.pms.hotel_inventory_system import get_suggested_orders
 
@@ -43,11 +47,15 @@ async def get_inventory_alerts(current_user: User = Depends(get_current_user)):
 
 
 @sub_router.get("/inventory/consumption-report")
-async def get_consumption_report(start_date: str | None = None, end_date: str | None = None, current_user: User = Depends(get_current_user)):
+async def get_consumption_report(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _module=Depends(require_module_scope("stock")),
+):
     """Get inventory consumption report"""
     query = {"tenant_id": current_user.tenant_id, "movement_type": "out"}
 
-    # Add date filter if provided
     if start_date:
         query["created_at"] = {"$gte": start_date}
     if end_date:
@@ -57,7 +65,6 @@ async def get_consumption_report(start_date: str | None = None, end_date: str | 
 
     movements = await db.stock_movements.find(query, {"_id": 0}).to_list(10000)
 
-    # Group by item
     consumption_by_item = {}
     for movement in movements:
         item_id = movement["item_id"]
@@ -77,6 +84,7 @@ async def get_consumption_report(start_date: str | None = None, end_date: str | 
 @sub_router.post("/inventory/seed-hotel-amenities")
 async def seed_hotel_amenities(
     current_user: User = Depends(get_current_user),
+    _module=Depends(require_module_scope("stock")),
     _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     """Seed database with common hotel amenities"""
@@ -107,7 +115,6 @@ async def seed_hotel_amenities(
 
     created_count = 0
     for amenity in amenities:
-        # Check if already exists
         existing = await db.inventory_items.find_one({"tenant_id": current_user.tenant_id, "name": amenity["name"]})
 
         if not existing:
@@ -140,24 +147,20 @@ async def export_folio_csv(
     import csv
     from io import StringIO
 
-    # Get folio details
     folio_details = await get_folio_details(folio_id, current_user)
     folio = folio_details["folio"]
     charges = folio_details["charges"]
     payments = folio_details["payments"]
 
-    # Create CSV — Bug AN: charge descriptions / payment refs are user-controlled.
     from core.csv_safe import safe_writerow
 
     output = StringIO()
     writer = csv.writer(output)
 
-    # Header
     safe_writerow(writer, [f"Folio Export - {folio['folio_number']}"])
     safe_writerow(writer, [f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}"])
     writer.writerow([])
 
-    # Charges
     safe_writerow(writer, ["CHARGES"])
     safe_writerow(writer, ["Date", "Category", "Description", "Quantity", "Unit Price", "Tax", "Total", "Voided"])
     for charge in charges:
@@ -177,7 +180,6 @@ async def export_folio_csv(
 
     writer.writerow([])
 
-    # Payments
     safe_writerow(writer, ["PAYMENTS"])
     safe_writerow(writer, ["Date", "Method", "Type", "Amount", "Reference"])
     for payment in payments:
