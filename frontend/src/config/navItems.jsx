@@ -586,7 +586,6 @@ export const NAV_ITEMS = [
     tier: "professional",
     group: "professional",
     navGroup: "system",
-    requireSuperAdmin: true,
     // /channel-connections → /channels?tab=connections redirect; aktif eşleşme tab ile.
     tabBase: ["/channels", "/app/channels"],
     tabKey: "connections",
