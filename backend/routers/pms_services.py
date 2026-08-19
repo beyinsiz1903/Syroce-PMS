@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.module_scope_service import require_module_scope
 from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 from modules.pms_core.role_permission_service import require_op  # v101 DW
 
@@ -99,8 +100,15 @@ async def update_room_service(
 
 
 @router.get("/pms/staff-tasks")
-async def get_staff_tasks(department: str | None = None, status: str | None = None, page: int = 1, page_size: int = 50, current_user: User = Depends(get_current_user)):
-    """Get staff tasks (engineering, housekeeping, maintenance)"""
+async def get_staff_tasks(
+    department: str | None = None,
+    status: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
+    current_user: User = Depends(get_current_user),
+    _module=Depends(require_module_scope("tasks")),
+):
+    """Get staff tasks (engineering, housekeeping, maintenance)."""
     query = {"tenant_id": current_user.tenant_id}
     if department:
         query["department"] = department
@@ -117,12 +125,11 @@ async def get_staff_tasks(department: str | None = None, status: str | None = No
 async def create_staff_task(
     task_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _module=Depends(require_module_scope("tasks")),
 ):
     """Create a new staff task. title ve room_id zorunlu — boş kayıt üretilmez."""
     raw_title = task_data.get("title")
     raw_room = task_data.get("room_id")
-    # int/float gibi tipler de güvenle string'e çevrilsin (500 yerine 400 dönsün)
     title = (str(raw_title) if raw_title is not None else "").strip()
     room_id = (str(raw_room) if raw_room is not None else "").strip()
     if len(title) < 3:
@@ -145,7 +152,6 @@ async def create_staff_task(
         "created_at": datetime.now(UTC).isoformat(),
     }
 
-    # Oda numarasını çöz (room_id ya UUID ya direkt oda no olabilir)
     room = await db.rooms.find_one({"$or": [{"id": room_id}, {"room_number": room_id}], "tenant_id": current_user.tenant_id}, {"_id": 0, "room_number": 1, "id": 1})
     if not room:
         raise HTTPException(status_code=400, detail=f"Oda bulunamadı: {room_id}")
@@ -154,7 +160,6 @@ async def create_staff_task(
 
     await db.staff_tasks.insert_one(task)
 
-    # Return the task without MongoDB ObjectId
     return {
         "id": task["id"],
         "tenant_id": task["tenant_id"],
@@ -175,7 +180,7 @@ async def create_staff_task(
 @router.delete("/pms/staff-tasks/cleanup-empty")
 async def cleanup_empty_staff_tasks(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),
+    _module=Depends(require_module_scope("tasks")),
 ):
     """Boş/geçersiz görevleri toplu sil (title yok veya 'x' gibi tek karakter)."""
     result = await db.staff_tasks.delete_many(
@@ -185,7 +190,7 @@ async def cleanup_empty_staff_tasks(
                 {"title": {"$exists": False}},
                 {"title": None},
                 {"title": ""},
-                {"title": {"$regex": r"^.{0,2}$"}},  # 0-2 karakter
+                {"title": {"$regex": r"^.{0,2}$"}},
                 {"title": "Staff Task"},
             ],
         }
@@ -198,17 +203,13 @@ async def update_staff_task(
     task_id: str,
     update_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _module=Depends(require_module_scope("tasks")),
 ):
     """Update staff task status"""
     await db.staff_tasks.update_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"$set": update_data})
-
-    # Return updated task
     updated_task = await db.staff_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
-
     if not updated_task:
         raise HTTPException(status_code=404, detail="Task not found")
-
     return updated_task
 
 
@@ -216,7 +217,7 @@ async def update_staff_task(
 async def delete_staff_task(
     task_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _module=Depends(require_module_scope("tasks")),
 ):
     result = await db.staff_tasks.delete_one({"id": task_id, "tenant_id": current_user.tenant_id})
     if result.deleted_count == 0:
@@ -256,27 +257,20 @@ async def get_allotment_contracts(page: int = 1, page_size: int = 50, current_us
         end_date = contract.get("end_date")
         tour_operator = (contract.get("tour_operator") or "").strip()
         contract_id = contract.get("id")
-
-        # Defaults if calculation can't run
         contract.setdefault("used_rooms", 0)
         contract["bookings_count"] = 0
         contract["total_revenue"] = 0.0
-
-        # Need at least date range + (tour_operator OR contract_id) to attribute bookings
         if not (room_type and start_date and end_date):
             continue
         if not tour_operator and not contract_id:
             continue
 
-        # Find rooms of this type
         room_ids = []
         async for room in db.rooms.find({"tenant_id": current_user.tenant_id, "room_type": room_type}, {"_id": 0, "id": 1}):
             room_ids.append(room["id"])
         if not room_ids:
             continue
 
-        # Build $or: explicit allotment_contract_id link AND/OR
-        # case-insensitive substring match on operator name across agency/channel fields.
         match_or = []
         if contract_id:
             match_or.append({"allotment_contract_id": contract_id})
@@ -292,7 +286,6 @@ async def get_allotment_contracts(page: int = 1, page_size: int = 50, current_us
                 ]
             )
 
-        # Single aggregation: count + revenue server-side (no cursor iteration)
         pipeline = [
             {
                 "$match": {
@@ -404,8 +397,6 @@ async def create_group_reservation(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
-    # Bug AR (mass-assignment): strip server-controlled keys before spread so
-    # caller cannot smuggle id/tenant_id/created_at into the persisted doc.
     from core.helpers import strip_reserved
 
     group_data = strip_reserved(group_data)
