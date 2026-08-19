@@ -21,6 +21,7 @@ from pymongo import ReadPreference
 from pymongo.read_concern import ReadConcern
 from pymongo.write_concern import WriteConcern
 
+from core.business_date_transition_guard import enforce_business_date_transition
 from core.database import client, db
 from core.tenant_db import tenant_context
 
@@ -84,6 +85,19 @@ async def check_in_booking_atomic(
             current_status = booking.get("status", "")
             if current_status not in CHECKIN_ELIGIBLE_STATUSES:
                 raise CheckInError(f"Cannot check in booking with status '{current_status}'. Eligible statuses: {CHECKIN_ELIGIBLE_STATUSES}")
+
+            # Business date is the operational clock. Wall-clock time must not
+            # allow a future arrival to be checked in while night audit is still
+            # on an earlier business date. Room override_reason does not bypass
+            # this date guard; early-arrival overrides require a separate flow.
+            await enforce_business_date_transition(
+                db,
+                tenant_id=tenant_id,
+                booking=booking,
+                operation="check_in",
+                error_cls=CheckInError,
+                session=session,
+            )
 
             room_id = booking.get("room_id")
             if not room_id:
@@ -303,6 +317,18 @@ async def check_out_booking_atomic(
             current_status = booking.get("status", "")
             if current_status != "checked_in":
                 raise CheckOutError(f"Cannot check out booking with status '{current_status}'. Only 'checked_in' bookings can be checked out.")
+
+            # force=True remains a folio-balance override only. It must not turn
+            # into an implicit early-departure override; the PMS business date
+            # still has to reach the scheduled checkout date.
+            await enforce_business_date_transition(
+                db,
+                tenant_id=tenant_id,
+                booking=booking,
+                operation="check_out",
+                error_cls=CheckOutError,
+                session=session,
+            )
 
             room_id = booking.get("room_id")
 
