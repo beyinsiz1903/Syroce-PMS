@@ -121,6 +121,7 @@ jobs:
             E2E_USERNAME: demo
             E2E_PASSWORD: demo123
             E2E_EMAIL: demo@syroce.com
+            DEMO_PASSWORD: demo123
         steps:
             - uses: actions/checkout@v5
             - name: Start MongoDB (single-node replica set, required for transactions)
