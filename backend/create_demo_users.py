@@ -11,7 +11,7 @@ import logging
 import os
 import sys
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 _BACKEND_DIR = os.path.abspath(os.path.dirname(__file__))
 if _BACKEND_DIR not in sys.path:
@@ -28,6 +28,13 @@ DEMO_EMAIL = "demo@syroce.com"
 DEMO_USERNAME = "demo"
 DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD")
 DEMO_HOTEL_NAME = "Syroce Demo Hotel"
+
+# Core PMS E2E intentionally creates bookings 30-365 days in the future to
+# avoid stale room-night locks after a failed local run. The production guard
+# now treats business_date as authoritative, so the isolated CI fixture must
+# establish an explicit operational date that has already reached those stays.
+# 400 days keeps the fixture deterministic without weakening the guard itself.
+E2E_BUSINESS_DATE_LEAD_DAYS = 400
 
 
 def _hash(password: str) -> str:
@@ -109,7 +116,35 @@ async def seed() -> None:
         })
         log.info("created demo user email=%s id=%s tenant_id=%s", DEMO_EMAIL, user_id, tenant_id)
 
+    await _ensure_business_date(db, tenant_id)
     await _ensure_rooms(db, tenant_id)
+
+
+async def _ensure_business_date(db, tenant_id: str) -> None:
+    """Seed the isolated E2E tenant's operational clock explicitly.
+
+    Production check-in/check-out now fail closed when `business_date` is
+    missing. CI must therefore model a valid hotel state rather than relying on
+    the old wall-clock fallback. This script is forbidden in production above,
+    so advancing the demo business date is confined to disposable E2E data.
+    """
+    now = datetime.now(UTC)
+    business_date = (now + timedelta(days=E2E_BUSINESS_DATE_LEAD_DAYS)).date().isoformat()
+    await db.tenant_settings.update_one(
+        {"tenant_id": tenant_id},
+        {
+            "$set": {
+                "business_date": business_date,
+                "business_date_updated_at": now.isoformat(),
+            },
+            "$setOnInsert": {
+                "tenant_id": tenant_id,
+                "previous_business_date": None,
+            },
+        },
+        upsert=True,
+    )
+    log.info("seeded E2E business_date tenant_id=%s date=%s", tenant_id, business_date)
 
 
 async def _ensure_rooms(db, tenant_id: str) -> None:
