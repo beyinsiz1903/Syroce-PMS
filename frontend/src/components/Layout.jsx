@@ -35,6 +35,11 @@ import PMSDateBadge from '@/components/PMSDateBadge';
 import { NAV_ITEMS, NAV_GROUPS } from '@/config/navItems';
 import { UpgradeBanner } from '@/components/UpgradeBanner';
 import SimulationOverlay from '@/components/academy/SimulationOverlay';
+import {
+  hasAnyModuleAccess,
+  moduleScopesForNavItem,
+  supplementalModuleNavItems,
+} from '@/utils/moduleAccess';
 
 const ICON_BY_KEY = {
   dashboard: Home,
@@ -85,6 +90,8 @@ const ICON_BY_KEY = {
   api_docs: FileText,
   pos_dashboard: ShoppingCart,
   contact_center_dashboard: Headset,
+  cashier_workspace: DollarSign,
+  tasks_workspace: ClipboardCheck,
 };
 
 const GROUP_ICONS = {
@@ -116,10 +123,6 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
   const navRef = useRef(null);
   const mainRef = useRef(null);
 
-  // Sayfa geçişlerinde içerik alanını en üste kaydır.
-  // <main> kendi `overflow-auto` scroll'una sahip olduğundan window.scrollTo
-  // yetmez; doğrudan elementin scrollTop'ı sıfırlanır.
-  // `#hash` deep-link'lerde reset atlanır — anchor'a doğal scroll çalışsın.
   useEffect(() => {
     if (location.hash) return;
     if (mainRef.current) {
@@ -142,7 +145,6 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
   const tierConfig = TIER_CONFIG[currentTier] || TIER_CONFIG.basic;
   const TierIcon = tierConfig.icon;
 
-  // Auto-scroll active nav button into view when route changes
   useEffect(() => {
     const nav = navRef.current;
     if (!nav) return;
@@ -157,10 +159,15 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
   const normalizeKey = (key) => key ? key.replace(/-/g, '_') : '';
   const normalizedCurrentModule = normalizeKey(currentModule);
 
+  const navCandidates = useMemo(
+    () => [...NAV_ITEMS, ...supplementalModuleNavItems(user)],
+    [user],
+  );
+
   const { visibleNav } = useMemo(() => {
     const visible = [];
 
-    NAV_ITEMS.forEach((item) => {
+    navCandidates.forEach((item) => {
       if (item.hidden) return;
       if (!isSuperAdmin && hiddenNavItems.has(item.key)) return;
       if (!isSuperAdmin && item.navGroup && hiddenNavGroups.has(item.navGroup)) return;
@@ -169,14 +176,17 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
         return;
       }
       if (item.moduleKey && !hasModule(item.moduleKey)) {
-        return; // Yetkisizse gizle (Kilit ikonunu kaldırdık)
+        return;
+      }
+      const moduleScopes = moduleScopesForNavItem(item);
+      if (moduleScopes.length > 0 && !hasAnyModuleAccess(user, moduleScopes)) {
+        return;
       }
       visible.push(item);
     });
 
     return { visibleNav: visible };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [hasModule, isSuperAdmin, hiddenNavGroups, hiddenNavItems]);
+  }, [hasModule, isSuperAdmin, hiddenNavGroups, hiddenNavItems, navCandidates, user]);
 
   const { standaloneItems, groupedItems } = useMemo(() => {
     const standalone = [];
@@ -194,18 +204,11 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
     return { standaloneItems: standalone, groupedItems: grouped };
   }, [visibleNav]);
 
-  // Tab-aware active match: bazı menü öğeleri /channels?tab=X gibi
-  // query-paramlı sayfalara redirect eder (örn. /cm-dashboard →
-  // /channels?tab=dashboard). Bu durumda location.pathname her zaman
-  // /channels olur ve sadece "Kanallar Hub" highlight olurdu.
-  // tabBase + tabKey alanları bunu çözer.
   const currentTabParam = new URLSearchParams(location.search).get('tab');
   const isItemPathActive = (item) => {
     if (item.tabBase) {
       const bases = Array.isArray(item.tabBase) ? item.tabBase : [item.tabBase];
       if (bases.includes(location.pathname)) {
-        // tabKey null → hub: yalnızca tab seçilmediğinde aktif (bilinen tab
-        // değerleri varsa hub asla highlight olmasın — sub-item highlight olur).
         if (item.tabKey == null) return !currentTabParam;
         return currentTabParam === item.tabKey;
       }
@@ -235,12 +238,6 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
     const active = isGroupActive(groupDef.id);
     const label = t(`navGroups.${groupDef.id}`, groupDef.label);
 
-    // Dropdown acilir acilmaz grubun TUM item'larini paralel preload et.
-    // Hover preload tek basina yeterli degil: kullanici dropdown'i tiklayip
-    // ardindan tek hareketle bir item'a geciyor — hover suresi <50ms olunca
-    // chunk indirme tikladiktan sonra basliyor ve gorunur gecikme yaratiyor.
-    // onOpenChange ile menu acildiginda tum chunk'lar arka planda inmeye
-    // baslar; kullanici tiklayinca cogu zaman hazir olur.
     const handleOpenChange = (open) => {
       if (!open) return;
       for (const it of items) {
@@ -334,11 +331,9 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:bg-none dark:bg-background flex flex-col" data-testid="app-shell">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm shrink-0">
         <div className="px-3 py-1.5">
           <div className="flex items-center min-h-[44px]">
-            {/* Logo area - fixed width */}
             <div
               className="flex items-center gap-2 shrink-0 cursor-pointer mr-3"
               onClick={() => navigate('/')}
@@ -352,9 +347,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
               </div>
             </div>
 
-            {/* Desktop Navigation - scrollable */}
             <nav ref={navRef} className="hidden md:flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto pb-1.5 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-gray-400" style={{ scrollbarWidth: 'auto', scrollbarColor: '#94a3b8 transparent' }}>
-              {/* Dashboard */}
               {standaloneItems.filter((item) => item.key === 'dashboard').map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
                 const isActive = normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item);
@@ -386,17 +379,11 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                 );
               })}
 
-              {/* Separator */}
               <div className="w-px h-5 bg-gray-200 mx-1 shrink-0" />
-
-              {/* Group dropdowns */}
               {NAV_GROUPS.filter(g => !hiddenNavGroups.has(g.id) || isSuperAdmin).map((groupDef) => renderGroupDropdown(groupDef))}
-
             </nav>
 
-            {/* Right utilities - fixed */}
             <div className="flex items-center gap-1.5 shrink-0 ml-2">
-              {/* Settings button - always visible */}
               {standaloneItems.filter((item) => item.key === 'settings').map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
                 const isActive = normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item);
@@ -434,7 +421,6 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
               <ThemeToggle />
               <NightScreen />
 
-              {/* Mobile hamburger */}
               <Button
                 variant="ghost"
                 size="sm"
@@ -445,7 +431,6 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                 {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
               </Button>
 
-              {/* User menu */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="h-8 px-2 text-xs dark:border-gray-600 dark:text-gray-100">
@@ -482,7 +467,6 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
             </div>
           </div>
 
-          {/* Mobile Navigation */}
           {mobileMenuOpen && (
             <nav className="md:hidden mt-2 pb-2 border-t pt-2 max-h-[70vh] overflow-y-auto" data-testid="mobile-nav">
               <div className="px-2 pb-2 flex items-center gap-2">
@@ -517,9 +501,6 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                       onClick={() => {
                         const opening = !isExpanded;
                         setExpandedMobileGroup(opening ? groupDef.id : null);
-                        // Mobilde hover yok — grup acildiginda tum chunk'lari
-                        // paralel olarak arka planda indirmeye basla. Desktop
-                        // dropdown'daki onOpenChange ile ayni mantik.
                         if (opening) {
                           for (const it of items) {
                             if (it?.path) preloadRoute(it.path);
@@ -579,7 +560,6 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
         </div>
       </header>
 
-      {/* Main Content - fills remaining viewport */}
       <main ref={mainRef} className="flex-1 max-w-7xl w-full mx-auto overflow-auto pb-28">
         <ErrorBoundary>
           {children}
