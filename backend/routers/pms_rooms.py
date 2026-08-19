@@ -20,7 +20,7 @@ from modules.pms_core.role_permission_service import require_op  # v101 DW
 logger = logging.getLogger(__name__)
 
 from core.database import db
-from core.helpers import require_module, require_super_admin_guard
+from core.helpers import require_module
 from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
 from models.enums import CompanyStatus
@@ -134,7 +134,6 @@ async def create_room(
     max_rooms = tenant.get("total_rooms", 50)
     current_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id, "is_active": True})
     if current_rooms >= max_rooms:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=f"Oda limitinizi aştınız! Mevcut paketiniz en fazla {max_rooms} odaya izin veriyor.")
     room = Room(tenant_id=current_user.tenant_id, **room_data.model_dump())
     room_dict = room.model_dump()
@@ -456,7 +455,6 @@ async def bulk_create_rooms_range(
     current_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id, "is_active": True})
     count_to_add = payload.end_number - payload.start_number + 1
     if current_rooms + count_to_add > max_rooms:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=f"Oda limitinizi aştınız! Mevcut paketiniz en fazla {max_rooms} odaya izin veriyor.")
     if payload.end_number < payload.start_number:
         raise HTTPException(status_code=400, detail="end_number start_number'dan kucuk olamaz")
@@ -521,7 +519,6 @@ async def bulk_create_rooms_template(
     current_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id, "is_active": True})
     count_to_add = len(payload.room_numbers)
     if current_rooms + count_to_add > max_rooms:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=f"Oda limitinizi aştınız! Mevcut paketiniz en fazla {max_rooms} odaya izin veriyor.")
     if payload.count <= 0:
         raise HTTPException(status_code=400, detail="count 0'dan buyuk olmali")
@@ -754,7 +751,6 @@ async def import_rooms_csv(
             existing_numbers.add(room_number)
             created += 1
             if current_rooms + created > max_rooms:
-                from fastapi import HTTPException
                 raise HTTPException(status_code=400, detail=f"Oda limitinizi aştınız! Mevcut paketiniz en fazla {max_rooms} odaya izin veriyor. Sadece ilk {created-1} oda eklenecek kapasite var.")
         except Exception as e:
             error_rows.append({"row_number": idx, "error": str(e)})
