@@ -36,16 +36,16 @@ export default function SettingsRoomsTab({ loadRooms, roomsLoading, setShowBulkR
                       <CardDescription>Otel odalarını ekleyin, düzenleyin veya silin</CardDescription>
                     </div>
                      <div className="flex gap-2 flex-wrap">
-                      <Button variant="outline" size="sm" onClick={() => navigate("/suite-connecting")} data-testid="btn-go-suite-connecting" disabled={!isSuperAdmin}>
+                      <Button variant="outline" size="sm" onClick={() => navigate("/suite-connecting")} data-testid="btn-go-suite-connecting" >
                         <DoorOpen className="w-4 h-4 mr-1.5" /> {t("cm.pages_SettingsRoomsTab.suite_connecting_tanimlari", "Suite / Connecting Tanımları")}
                       </Button>
                       <Button variant="outline" size="sm" onClick={loadRooms} disabled={roomsLoading}>
                         <RefreshCw className={`w-4 h-4 mr-1.5 ${roomsLoading ? 'animate-spin' : ''}`} /> Yenile
                       </Button>
-                      <Button variant="outline" size="sm" onClick={() => setShowBulkRoomsDialog(true)} data-testid="bulk-add-rooms-btn" disabled={!isSuperAdmin} title={!isSuperAdmin ? 'Yalnızca süper-admin' : undefined}>
+                      <Button variant="outline" size="sm" onClick={() => setShowBulkRoomsDialog(true)} data-testid="bulk-add-rooms-btn"  >
                         <Plus className="w-4 h-4 mr-1" /> Toplu Oda Ekle
                       </Button>
-                      <Button size="sm" onClick={() => setShowAddRoomDialog(true)} data-testid="add-room-btn" disabled={!isSuperAdmin} title={!isSuperAdmin ? 'Yalnızca süper-admin' : undefined}>
+                      <Button size="sm" onClick={() => setShowAddRoomDialog(true)} data-testid="add-room-btn"  >
                         <Plus className="w-4 h-4 mr-1" /> Tek Oda Ekle
                       </Button>
                     </div>

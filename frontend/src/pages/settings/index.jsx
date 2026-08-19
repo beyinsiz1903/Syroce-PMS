@@ -749,7 +749,7 @@ const Settings = ({
             </>} />
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className={`grid w-full ${isSuperAdmin ? 'grid-cols-7' : isAdmin ? 'grid-cols-6' : 'grid-cols-5'}`}>
+          <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-7' : 'grid-cols-5'}`}>
             <TabsTrigger value="team" className="flex items-center gap-1.5 text-xs sm:text-sm">
               <Users className="w-4 h-4" /> Ekip
             </TabsTrigger>
@@ -765,7 +765,7 @@ const Settings = ({
             <TabsTrigger value="invoice" className="flex items-center gap-1.5 text-xs sm:text-sm" data-testid="invoice-settings-tab">
               <FileText className="w-4 h-4" /> Fatura & Para Birimi
             </TabsTrigger>
-            {isSuperAdmin && <TabsTrigger value="rooms" className="flex items-center gap-1.5 text-xs sm:text-sm" data-testid="rooms-settings-tab">
+            {isAdmin && <TabsTrigger value="rooms" className="flex items-center gap-1.5 text-xs sm:text-sm" data-testid="rooms-settings-tab">
                 <DoorOpen className="w-4 h-4" /> Oda Yönetimi
               </TabsTrigger>}
             {isAdmin && <TabsTrigger value="b2b" className="flex items-center gap-1.5 text-xs sm:text-sm" data-testid="b2b-settings-tab">
@@ -789,7 +789,7 @@ const Settings = ({
           <SettingsInvoiceTab loadInvoiceSettings={loadInvoiceSettings} invoiceLoading={invoiceLoading} handleSaveInvoiceSettings={handleSaveInvoiceSettings} invoiceSaving={invoiceSaving} invoiceSettings={invoiceSettings} setInvoiceSettings={setInvoiceSettings} handleLogoUpload={handleLogoUpload} CURRENCY_OPTIONS={CURRENCY_OPTIONS} />
 
           {/* ═══════════ ROOMS MANAGEMENT TAB (super_admin only) ═══════════ */}
-          {isSuperAdmin && <SettingsRoomsTab loadRooms={loadRooms} roomsLoading={roomsLoading} setShowBulkRoomsDialog={setShowBulkRoomsDialog} isSuperAdmin={isSuperAdmin} setShowAddRoomDialog={setShowAddRoomDialog} roomsList={roomsList} handleDeleteRoom={handleDeleteRoom} />}
+          {isAdmin && <SettingsRoomsTab loadRooms={loadRooms} roomsLoading={roomsLoading} setShowBulkRoomsDialog={setShowBulkRoomsDialog} isSuperAdmin={isSuperAdmin} setShowAddRoomDialog={setShowAddRoomDialog} roomsList={roomsList} handleDeleteRoom={handleDeleteRoom} />}
 
           {/* ═══════════ B2B ENTEGRASYON TAB ═══════════ */}
           {isAdmin && <SettingsB2bTab b2bInfo={b2bInfo} copyToClipboard={copyToClipboard} b2bCodeOnce={b2bCodeOnce} setB2bCodeOnce={setB2bCodeOnce} handleRegenerateCode={handleRegenerateCode} b2bBusy={b2bBusy} loadB2B={loadB2B} b2bLoading={b2bLoading} b2bRequests={b2bRequests} handleApproveRequest={handleApproveRequest} handleRejectRequest={handleRejectRequest} />}
