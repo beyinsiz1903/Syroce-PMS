@@ -313,3 +313,72 @@ async def test_atomic_business_date_guard_fails_closed_without_business_date(set
             operation="check_in",
             error_cls=_TransitionError,
         )
+
+
+@pytest.mark.asyncio
+async def test_atomic_checkin_path_blocks_future_business_date_before_room_or_mutation(monkeypatch):
+    import core.atomic_checkin_checkout as atomic
+
+    fake_db = SimpleNamespace(
+        bookings=SimpleNamespace(
+            find_one=AsyncMock(
+                return_value={
+                    "id": "booking-a",
+                    "tenant_id": "tenant-a",
+                    "status": "confirmed",
+                    "check_in": "2026-08-17",
+                    "room_id": "room-a",
+                }
+            )
+        ),
+        tenant_settings=SimpleNamespace(
+            find_one=AsyncMock(return_value={"business_date": "2026-08-14"})
+        ),
+    )
+    monkeypatch.setattr(atomic, "db", fake_db)
+    monkeypatch.setenv("MONGO_DISABLE_TRANSACTIONS", "1")
+
+    with pytest.raises(
+        atomic.CheckInError,
+        match=r"Cannot check in.*business_date=2026-08-14.*check_in=2026-08-17",
+    ):
+        await atomic.check_in_booking_atomic(
+            "booking-a",
+            "tenant-a",
+            "operator",
+        )
+
+
+@pytest.mark.asyncio
+async def test_atomic_checkout_path_blocks_future_business_date_even_with_force(monkeypatch):
+    import core.atomic_checkin_checkout as atomic
+
+    fake_db = SimpleNamespace(
+        bookings=SimpleNamespace(
+            find_one=AsyncMock(
+                return_value={
+                    "id": "booking-a",
+                    "tenant_id": "tenant-a",
+                    "status": "checked_in",
+                    "check_out": "2026-08-18",
+                    "room_id": "room-a",
+                }
+            )
+        ),
+        tenant_settings=SimpleNamespace(
+            find_one=AsyncMock(return_value={"business_date": "2026-08-17"})
+        ),
+    )
+    monkeypatch.setattr(atomic, "db", fake_db)
+    monkeypatch.setenv("MONGO_DISABLE_TRANSACTIONS", "1")
+
+    with pytest.raises(
+        atomic.CheckOutError,
+        match=r"Cannot check out.*business_date=2026-08-17.*check_out=2026-08-18",
+    ):
+        await atomic.check_out_booking_atomic(
+            "booking-a",
+            "tenant-a",
+            "operator",
+            force=True,
+        )
