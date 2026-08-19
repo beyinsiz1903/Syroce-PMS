@@ -106,7 +106,7 @@ async def seed() -> None:
             "email": DEMO_EMAIL,
             "username": DEMO_USERNAME,
             "name": "Demo Admin",
-            "role": "demo_manager_readonly",
+            "role": "admin",
             "phone": "+905551234567",
             "is_active": True,
             "email_verified": True,
