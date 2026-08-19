@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from common.context import OperationContext
 from common.result import ServiceResult
+from core.business_date_transition_guard import enforce_business_date_transition
 from core.night_audit_hardened import (
     _normalize_booking_date,
     _partition_due_bookings,
@@ -219,3 +220,96 @@ def test_room_charge_stays_are_scoped_to_the_business_date():
     assert [booking["id"] for booking in future] == ["future"]
     assert [booking["id"] for booking in ended] == ["ended"]
     assert {booking["id"] for booking in invalid} == {"bad-order", "bad-date"}
+
+
+class _TransitionError(Exception):
+    pass
+
+
+def _business_date_guard_db(settings_doc):
+    return SimpleNamespace(
+        tenant_settings=SimpleNamespace(
+            find_one=AsyncMock(return_value=settings_doc),
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_atomic_business_date_guard_blocks_future_checkin():
+    db = _business_date_guard_db({"business_date": "2026-08-14"})
+
+    with pytest.raises(
+        _TransitionError,
+        match=r"Cannot check in.*business_date=2026-08-14.*check_in=2026-08-17",
+    ):
+        await enforce_business_date_transition(
+            db,
+            tenant_id="tenant-a",
+            booking={"check_in": "2026-08-17T14:00:00+00:00"},
+            operation="check_in",
+            error_cls=_TransitionError,
+        )
+
+
+@pytest.mark.asyncio
+async def test_atomic_business_date_guard_allows_checkin_on_arrival_date():
+    db = _business_date_guard_db({"business_date": "2026-08-17"})
+
+    business_date, scheduled_date = await enforce_business_date_transition(
+        db,
+        tenant_id="tenant-a",
+        booking={"check_in": "2026-08-17"},
+        operation="check_in",
+        error_cls=_TransitionError,
+    )
+
+    assert business_date == date(2026, 8, 17)
+    assert scheduled_date == date(2026, 8, 17)
+
+
+@pytest.mark.asyncio
+async def test_atomic_business_date_guard_blocks_future_checkout_even_if_force_is_used_upstream():
+    db = _business_date_guard_db({"business_date": "2026-08-17"})
+
+    with pytest.raises(
+        _TransitionError,
+        match=r"Cannot check out.*business_date=2026-08-17.*check_out=2026-08-18",
+    ):
+        await enforce_business_date_transition(
+            db,
+            tenant_id="tenant-a",
+            booking={"check_out": "2026-08-18T11:00:00Z"},
+            operation="check_out",
+            error_cls=_TransitionError,
+        )
+
+
+@pytest.mark.asyncio
+async def test_atomic_business_date_guard_allows_checkout_on_departure_date():
+    db = _business_date_guard_db({"business_date": "2026-08-18"})
+
+    business_date, scheduled_date = await enforce_business_date_transition(
+        db,
+        tenant_id="tenant-a",
+        booking={"check_out": "2026-08-18"},
+        operation="check_out",
+        error_cls=_TransitionError,
+    )
+
+    assert business_date == date(2026, 8, 18)
+    assert scheduled_date == date(2026, 8, 18)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("settings_doc", [None, {}, {"business_date": ""}])
+async def test_atomic_business_date_guard_fails_closed_without_business_date(settings_doc):
+    db = _business_date_guard_db(settings_doc)
+
+    with pytest.raises(_TransitionError, match="business_date.*missing"):
+        await enforce_business_date_transition(
+            db,
+            tenant_id="tenant-a",
+            booking={"check_in": "2026-08-17"},
+            operation="check_in",
+            error_cls=_TransitionError,
+        )
