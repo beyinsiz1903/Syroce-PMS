@@ -9,13 +9,9 @@ semantics and regression tests can exercise the boundary without database I/O.
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import TypeVar
 
 
-ErrorT = TypeVar("ErrorT", bound=Exception)
-
-
-def _as_date(value: object, *, field_name: str, error_type: type[ErrorT]) -> date:
+def _as_date(value: object, *, field_name: str, error_type: type[Exception]) -> date:
     """Normalize a stored PMS date value to ``date`` or fail closed."""
     if isinstance(value, datetime):
         return value.date()
@@ -42,7 +38,7 @@ def enforce_business_date_not_before(
     boundary_date: object,
     operation: str,
     boundary_field: str,
-    error_type: type[ErrorT],
+    error_type: type[Exception],
 ) -> None:
     """Reject a transition when hotel business date is before its boundary.
 
