@@ -13,8 +13,7 @@ transition is unsafe or cannot be validated.
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, Type
-
+from typing import Any
 
 _VALID_OPERATIONS = {
     "check_in": ("check_in", "check in", "check-in"),
@@ -22,7 +21,7 @@ _VALID_OPERATIONS = {
 }
 
 
-def _parse_date(value: Any, *, label: str, error_cls: Type[Exception]) -> date:
+def _parse_date(value: Any, *, label: str, error_cls: type[Exception]) -> date:
     """Parse a PMS date/datetime value into a calendar date, fail-closed."""
     if isinstance(value, datetime):
         return value.date()
@@ -47,12 +46,12 @@ async def enforce_business_date_transition(
     tenant_id: str,
     booking: dict[str, Any],
     operation: str,
-    error_cls: Type[Exception],
+    error_cls: type[Exception],
     session=None,
 ) -> tuple[date, date]:
     """Ensure business date has reached the booking's transition date.
 
-    ``operation`` is ``check_in`` or ``check_out``.  Equality is allowed; a
+    ``operation`` is ``check_in`` or ``check_out``. Equality is allowed; a
     later business date is also allowed (late arrival/departure handling stays
     unchanged). Missing/malformed business-date or booking-date state is denied
     so that the atomic transition cannot silently fall back to wall-clock time.
