@@ -14,7 +14,7 @@ const MAX_ROOMS_PER_BATCH = 200;
 
 const BulkRoomsDialog = ({ open, onClose, onRoomsCreated, user }) => {
   const { t } = useTranslation();
-  const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
+  const isAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin')) || user?.role === 'admin' || (Array.isArray(user?.roles) && user.roles.includes('admin'));
 
   const [bulkRoomTab, setBulkRoomTab] = useState('range');
   const [bulkRange, setBulkRange] = useState({ prefix: '', start_number: 101, end_number: 110, room_type: 'standard', floor: 1, capacity: 2, base_price: 150, view: '', bed_type: 'king', amenities: [] });
@@ -57,7 +57,7 @@ const BulkRoomsDialog = ({ open, onClose, onRoomsCreated, user }) => {
 
   const handleBulkCreateRange = async (e) => {
     e.preventDefault();
-    if (!isSuperAdmin) { toast.error('Oda oluşturma yetkisi yalnızca süper-admin kullanıcılara aittir.'); return; }
+    if (!isAdmin) { toast.error('Oda oluşturma yetkisi yöneticilere aittir.'); return; }
     if (rangePreview.error) { toast.error(rangePreview.error); return; }
     if (!confirmed) { toast.error('Lütfen oluşturulacak oda listesini onaylayın.'); return; }
     setSubmitting(true);
@@ -75,7 +75,7 @@ const BulkRoomsDialog = ({ open, onClose, onRoomsCreated, user }) => {
 
   const handleBulkCreateTemplate = async (e) => {
     e.preventDefault();
-    if (!isSuperAdmin) { toast.error('Oda oluşturma yetkisi yalnızca süper-admin kullanıcılara aittir.'); return; }
+    if (!isAdmin) { toast.error('Oda oluşturma yetkisi yöneticilere aittir.'); return; }
     if (templatePreview.error) { toast.error(templatePreview.error); return; }
     if (!confirmed) { toast.error('Lütfen oluşturulacak oda listesini onaylayın.'); return; }
     setSubmitting(true);
@@ -93,7 +93,7 @@ const BulkRoomsDialog = ({ open, onClose, onRoomsCreated, user }) => {
 
   const handleBulkImportCsv = async (e) => {
     e.preventDefault();
-    if (!isSuperAdmin) { toast.error('Oda oluşturma yetkisi yalnızca süper-admin kullanıcılara aittir.'); return; }
+    if (!isAdmin) { toast.error('Oda oluşturma yetkisi yöneticilere aittir.'); return; }
     if (!bulkCsvFile) return;
     if (!confirmed) { toast.error('CSV ile içe aktarma öncesi onayınız gerekli.'); return; }
     const formData = new FormData();
@@ -152,13 +152,13 @@ const BulkRoomsDialog = ({ open, onClose, onRoomsCreated, user }) => {
     </label>
   );
 
-  if (!isSuperAdmin) {
+  if (!isAdmin) {
     return (
       <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Lock className="w-5 h-5" /> Yetki Gerekli</DialogTitle>
-            <DialogDescription>Toplu oda oluşturma işlemi yalnızca süper-admin kullanıcılar tarafından yapılabilir.</DialogDescription>
+            <DialogDescription>Toplu oda oluşturma işlemi yönetici yetkisi gerektirir.</DialogDescription>
           </DialogHeader>
           <div className="pt-2 flex justify-end">
             <Button variant="outline" onClick={handleClose}>{t('common.close', 'Kapat')}</Button>
