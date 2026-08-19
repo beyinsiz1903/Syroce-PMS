@@ -125,9 +125,17 @@ class RoomBulkDeleteResponse(BaseModel):
 @router.post("/pms/rooms", response_model=Room)
 async def create_room(
     room_data: RoomCreate,
-    current_user: User = Depends(require_super_admin_guard(not_found=False)),
+    current_user: User = Depends(get_current_user),
+    _perm: None = Depends(require_op("manage_rooms")),
     _: None = Depends(require_module("pms")),
 ):
+    from core.database import db
+    tenant = await db.tenants.find_one({"id": current_user.tenant_id}) or {}
+    max_rooms = tenant.get("total_rooms", 50)
+    current_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id, "is_active": True})
+    if current_rooms >= max_rooms:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Oda limitinizi aştınız! Mevcut paketiniz en fazla {max_rooms} odaya izin veriyor.")
     room = Room(tenant_id=current_user.tenant_id, **room_data.model_dump())
     room_dict = room.model_dump()
     room_dict["created_at"] = room_dict["created_at"].isoformat()
@@ -438,9 +446,18 @@ async def get_rooms(
 @router.post("/pms/rooms/bulk/range", response_model=RoomBulkCreateResponse)
 async def bulk_create_rooms_range(
     payload: RoomBulkRangeRequest,
-    current_user: User = Depends(require_super_admin_guard(not_found=False)),
+    current_user: User = Depends(get_current_user),
+    _perm: None = Depends(require_op("manage_rooms")),
     _: None = Depends(require_module("pms")),
 ):
+    from core.database import db
+    tenant = await db.tenants.find_one({"id": current_user.tenant_id}) or {}
+    max_rooms = tenant.get("total_rooms", 50)
+    current_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id, "is_active": True})
+    count_to_add = payload.end_number - payload.start_number + 1
+    if current_rooms + count_to_add > max_rooms:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Oda limitinizi aştınız! Mevcut paketiniz en fazla {max_rooms} odaya izin veriyor.")
     if payload.end_number < payload.start_number:
         raise HTTPException(status_code=400, detail="end_number start_number'dan kucuk olamaz")
     if payload.end_number - payload.start_number + 1 > 2000:
@@ -494,9 +511,18 @@ async def bulk_create_rooms_range(
 @router.post("/pms/rooms/bulk/template", response_model=RoomBulkCreateResponse)
 async def bulk_create_rooms_template(
     payload: RoomBulkTemplateRequest,
-    current_user: User = Depends(require_super_admin_guard(not_found=False)),
+    current_user: User = Depends(get_current_user),
+    _perm: None = Depends(require_op("manage_rooms")),
     _: None = Depends(require_module("pms")),
 ):
+    from core.database import db
+    tenant = await db.tenants.find_one({"id": current_user.tenant_id}) or {}
+    max_rooms = tenant.get("total_rooms", 50)
+    current_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id, "is_active": True})
+    count_to_add = len(payload.room_numbers)
+    if current_rooms + count_to_add > max_rooms:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Oda limitinizi aştınız! Mevcut paketiniz en fazla {max_rooms} odaya izin veriyor.")
     if payload.count <= 0:
         raise HTTPException(status_code=400, detail="count 0'dan buyuk olmali")
     if payload.count > 2000:
@@ -561,7 +587,8 @@ async def bulk_create_rooms_template(
 @router.post("/pms/rooms/bulk/delete", response_model=RoomBulkDeleteResponse)
 async def bulk_delete_rooms(
     payload: RoomBulkDeleteRequest,
-    current_user: User = Depends(require_super_admin_guard(not_found=False)),
+    current_user: User = Depends(get_current_user),
+    _perm: None = Depends(require_op("manage_rooms")),
     _: None = Depends(require_module("pms")),
 ):
     # Permission: super_admin only
@@ -643,9 +670,17 @@ async def bulk_delete_rooms(
 @router.post("/pms/rooms/import-csv", response_model=RoomCsvImportResponse)
 async def import_rooms_csv(
     file: UploadFile = File(...),
-    current_user: User = Depends(require_super_admin_guard(not_found=False)),
+    current_user: User = Depends(get_current_user),
+    _perm: None = Depends(require_op("manage_rooms")),
     _: None = Depends(require_module("pms")),
 ):
+    from core.database import db
+    tenant = await db.tenants.find_one({"id": current_user.tenant_id}) or {}
+    max_rooms = tenant.get("total_rooms", 50)
+    current_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id, "is_active": True})
+    # Cannot easily check CSV row count here before reading, so we will check inside the loop or after reading
+    # For now, we allow the import up to the limit inside the function
+
     # CSV rows limit safety
     MAX_ROWS = 2000
 
@@ -718,6 +753,9 @@ async def import_rooms_csv(
             docs.append(room_dict)
             existing_numbers.add(room_number)
             created += 1
+            if current_rooms + created > max_rooms:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=400, detail=f"Oda limitinizi aştınız! Mevcut paketiniz en fazla {max_rooms} odaya izin veriyor. Sadece ilk {created-1} oda eklenecek kapasite var.")
         except Exception as e:
             error_rows.append({"row_number": idx, "error": str(e)})
 
