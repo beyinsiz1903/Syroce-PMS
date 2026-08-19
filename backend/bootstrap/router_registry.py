@@ -4,18 +4,18 @@ Centralised router mounting. Each router is imported and mounted
 with proper error isolation so one broken module cannot crash the app.
 """
 
-import logging
-import os
-
-logger = logging.getLogger(__name__)
 import asyncio
 import importlib
+import logging
+import os
 import traceback
 from typing import Callable
 
 from fastapi import Depends, FastAPI
 
 from modules.pms_core.module_scope_service import require_module_scope
+
+logger = logging.getLogger(__name__)
 
 
 # Dedicated human/UI routers that are safe to protect as a whole. Mixed
