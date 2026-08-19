@@ -21,6 +21,7 @@ from pymongo import ReadPreference
 from pymongo.read_concern import ReadConcern
 from pymongo.write_concern import WriteConcern
 
+from core.business_date_guard import enforce_business_date_not_before
 from core.database import client, db
 from core.tenant_db import tenant_context
 
@@ -84,6 +85,21 @@ async def check_in_booking_atomic(
             current_status = booking.get("status", "")
             if current_status not in CHECKIN_ELIGIBLE_STATUSES:
                 raise CheckInError(f"Cannot check in booking with status '{current_status}'. Eligible statuses: {CHECKIN_ELIGIBLE_STATUSES}")
+
+            # Business-date guard: wall-clock time must never make a future
+            # arrival eligible while the hotel's operational date is behind.
+            settings = await db.tenant_settings.find_one(
+                {"tenant_id": tenant_id},
+                {"_id": 0, "business_date": 1},
+                session=session,
+            )
+            enforce_business_date_not_before(
+                business_date=(settings or {}).get("business_date"),
+                boundary_date=booking.get("check_in"),
+                operation="check in booking",
+                boundary_field="check_in",
+                error_type=CheckInError,
+            )
 
             room_id = booking.get("room_id")
             if not room_id:
@@ -303,6 +319,21 @@ async def check_out_booking_atomic(
             current_status = booking.get("status", "")
             if current_status != "checked_in":
                 raise CheckOutError(f"Cannot check out booking with status '{current_status}'. Only 'checked_in' bookings can be checked out.")
+
+            # Business-date guard is independent from force=True. ``force`` is
+            # a folio-balance override, not permission to move the hotel clock.
+            settings = await db.tenant_settings.find_one(
+                {"tenant_id": tenant_id},
+                {"_id": 0, "business_date": 1},
+                session=session,
+            )
+            enforce_business_date_not_before(
+                business_date=(settings or {}).get("business_date"),
+                boundary_date=booking.get("check_out"),
+                operation="check out booking",
+                boundary_field="check_out",
+                error_type=CheckOutError,
+            )
 
             room_id = booking.get("room_id")
 
