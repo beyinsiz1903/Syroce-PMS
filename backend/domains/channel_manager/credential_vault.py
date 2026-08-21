@@ -74,6 +74,8 @@ async def store_secret(
     provider: str,
     property_id: str,
     credentials: dict[str, str],
+    *,
+    database=None,
 ) -> str:
     """Encrypt and store credentials. Returns secret_id (credentials_ref)."""
     secret_id = str(uuid.uuid4())
@@ -94,13 +96,14 @@ async def store_secret(
     }
 
     # Upsert: one secret per tenant+provider+property
-    existing = await db[COLL_PROVIDER_SECRETS].find_one(
+    target_db = database if database is not None else db
+    existing = await target_db[COLL_PROVIDER_SECRETS].find_one(
         {"tenant_id": tenant_id, "provider": provider, "property_id": property_id},
         _NO_ID,
     )
     if existing:
         secret_id = existing["id"]
-        await db[COLL_PROVIDER_SECRETS].update_one(
+        await target_db[COLL_PROVIDER_SECRETS].update_one(
             {"id": secret_id},
             {
                 "$set": {
@@ -114,7 +117,7 @@ async def store_secret(
         )
         logger.info("Rotated credentials for %s/%s", provider, property_id)
     else:
-        await db[COLL_PROVIDER_SECRETS].insert_one(doc)
+        await target_db[COLL_PROVIDER_SECRETS].insert_one(doc)
         logger.info("Stored new credentials for %s/%s", provider, property_id)
 
     return secret_id
@@ -144,9 +147,12 @@ async def get_masked_credentials(
     tenant_id: str,
     provider: str,
     property_id: str,
+    *,
+    database=None,
 ) -> dict[str, Any] | None:
     """Get masked credentials for display (never expose raw values)."""
-    doc = await db[COLL_PROVIDER_SECRETS].find_one(
+    target_db = database if database is not None else db
+    doc = await target_db[COLL_PROVIDER_SECRETS].find_one(
         {"tenant_id": tenant_id, "provider": provider, "property_id": property_id},
         _NO_ID,
     )

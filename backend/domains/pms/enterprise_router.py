@@ -263,16 +263,158 @@ async def complete_room_cleaning(
 
 # 4. Group & Block Reservations
 # 5. Multi-Property Management
+
+
+def _safe_decimal(value: object) -> Decimal:
+    try:
+        return Decimal(str(value or 0))
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal("0")
+
+
+async def _chain_scope(current_user: User) -> tuple[dict, list[dict]]:
+    """Resolve the caller's explicit chain. Never widen scope by role alone."""
+    from core.tenant_db import get_system_db
+
+    role = getattr(current_user.role, "value", str(current_user.role))
+    if role not in {"admin", "manager", "gm", "super_admin", "finance"}:
+        raise HTTPException(status_code=403, detail="Zincir görünümü yönetici yetkisi gerektirir")
+    sys_db = get_system_db()
+    own = await sys_db.tenants.find_one({"id": current_user.tenant_id}, {"_id": 0})
+    if not own:
+        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+    chain_id = own.get("chain_id")
+    if not chain_id:
+        return own, [own]
+    members = await sys_db.tenants.find({"chain_id": chain_id}, {"_id": 0}).sort("property_name", 1).to_list(500)
+    return own, members or [own]
+
+
+async def _chain_property_metrics(sys_db, tenant: dict, today_start: str, tomorrow_start: str) -> dict:
+    tenant_id = tenant["id"]
+    total_rooms = int(tenant.get("total_rooms") or 0)
+    if total_rooms <= 0:
+        total_rooms = await sys_db.rooms.count_documents({"tenant_id": tenant_id})
+    occupied_rooms = await sys_db.rooms.count_documents(
+        {"tenant_id": tenant_id, "$or": [{"status": "occupied"}, {"room_status": "occupied"}]}
+    )
+    total_guests = await sys_db.guests.count_documents({"tenant_id": tenant_id})
+    payments = await sys_db.payments.find(
+        {
+            "tenant_id": tenant_id,
+            "voided": {"$ne": True},
+            "status": {"$nin": ["voided", "refunded", "cancelled"]},
+            "$or": [
+                {"processed_at": {"$gte": today_start, "$lt": tomorrow_start}},
+                {"created_at": {"$gte": today_start, "$lt": tomorrow_start}},
+                {"payment_date": {"$gte": today_start[:10], "$lt": tomorrow_start[:10]}},
+            ],
+        },
+        {"_id": 0, "amount": 1, "total": 1},
+    ).to_list(10000)
+    revenue = sum((_safe_decimal(p.get("amount", p.get("total", 0))) for p in payments), Decimal("0"))
+    provider = tenant.get("channel_manager_provider")
+    connection = None
+    if provider:
+        connection = await sys_db.provider_connections.find_one(
+            {"tenant_id": tenant_id, "provider": provider, "property_id": "default"},
+            {"_id": 0, "status": 1, "last_successful_sync": 1, "last_error": 1},
+        )
+    nilvera = await sys_db.tenant_settings.find_one(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "nilvera.enabled": 1, "nilvera.api_key_enc": 1},
+    )
+    occupancy = round((occupied_rooms / total_rooms * 100) if total_rooms else 0, 1)
+    return {
+        "property_id": tenant_id,
+        "property_name": tenant.get("property_name") or tenant_id,
+        "name": tenant.get("property_name") or tenant_id,
+        "hotel_id": tenant.get("hotel_id"),
+        "location": tenant.get("location") or "",
+        "city": tenant.get("location") or "",
+        "total_rooms": total_rooms,
+        "occupied_rooms": occupied_rooms,
+        "occupancy_pct": occupancy,
+        "occupancy_rate": occupancy,
+        "today_revenue": float(revenue.quantize(Decimal("0.01"))),
+        "revenue_mtd": float(revenue.quantize(Decimal("0.01"))),
+        "adr": float((revenue / occupied_rooms).quantize(Decimal("0.01"))) if occupied_rooms else 0.0,
+        "total_guests": total_guests,
+        "is_headquarters": bool(tenant.get("is_chain_headquarters")),
+        "integrations": {
+            "channel_manager": {
+                "provider": provider,
+                "status": (connection or {}).get("status", "not_configured"),
+                "last_successful_sync": (connection or {}).get("last_successful_sync"),
+                "has_error": bool((connection or {}).get("last_error")),
+            },
+            "nilvera": {
+                "enabled": bool(((nilvera or {}).get("nilvera") or {}).get("enabled")),
+                "api_key_set": bool(((nilvera or {}).get("nilvera") or {}).get("api_key_enc")),
+            },
+        },
+    }
+
+
 @router.get("/multi-property/properties")
 async def get_properties(current_user: User = Depends(get_current_user)):
-    properties = await db.properties.find({"organization_id": current_user.tenant_id}, {"_id": 0}).to_list(100)
-    return {"properties": properties}
+    _, members = await _chain_scope(current_user)
+    return {
+        "properties": [
+            {
+                "id": member["id"],
+                "property_id": member["id"],
+                "name": member.get("property_name") or member["id"],
+                "property_name": member.get("property_name") or member["id"],
+                "city": member.get("location") or "",
+                "location": member.get("location") or "",
+                "total_rooms": int(member.get("total_rooms") or 0),
+                "is_headquarters": bool(member.get("is_chain_headquarters")),
+            }
+            for member in members
+        ]
+    }
 
 
 @router.get("/multi-property/dashboard")
 async def get_multi_property_dashboard(property_id: str | None = None, current_user: User = Depends(get_current_user)):
-    # Aggregate data across properties
-    return {"total_revenue": 125000, "avg_occupancy": 78.5, "total_guests": 450, "total_rooms": 250, "property_revenues": [45000, 35000, 25000, 20000], "property_occupancies": [82, 78, 75, 72]}
+    from core.tenant_db import get_system_db
+
+    own, members = await _chain_scope(current_user)
+    if property_id:
+        members = [member for member in members if member.get("id") == property_id]
+        if not members:
+            raise HTTPException(status_code=404, detail="Otel zincir kapsamınızda değil")
+    sys_db = get_system_db()
+    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow = today + timedelta(days=1)
+    properties = [
+        await _chain_property_metrics(sys_db, member, today.isoformat(), tomorrow.isoformat())
+        for member in members
+    ]
+    total_rooms = sum(p["total_rooms"] for p in properties)
+    occupied_rooms = sum(p["occupied_rooms"] for p in properties)
+    total_revenue = round(sum(p["today_revenue"] for p in properties), 2)
+    total_guests = sum(p["total_guests"] for p in properties)
+    avg_occupancy = round((occupied_rooms / total_rooms * 100) if total_rooms else 0, 1)
+    summary = {
+        "total_properties": len(properties),
+        "total_rooms": total_rooms,
+        "occupied_rooms": occupied_rooms,
+        "avg_occupancy": avg_occupancy,
+        "total_revenue": total_revenue,
+        "total_guests": total_guests,
+    }
+    return {
+        "chain_id": own.get("chain_id"),
+        "is_chain": bool(own.get("chain_id")),
+        "summary": summary,
+        "properties": properties,
+        # Backward-compatible fields for the older dashboard component.
+        **summary,
+        "property_revenues": [p["today_revenue"] for p in properties],
+        "property_occupancies": [p["occupancy_pct"] for p in properties],
+    }
 
 
 # 6. Marketplace Inventory

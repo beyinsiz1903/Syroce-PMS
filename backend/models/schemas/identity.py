@@ -40,6 +40,10 @@ class Tenant(BaseModel):
         }
     )
     features: dict[str, bool] | None = None
+    # Zincir oteller ayrı tenant olarak kalır; ortak chain_id yalnızca
+    # yetkili, salt-okunur konsolidasyon kapsamını belirler.
+    chain_id: str | None = None
+    is_chain_headquarters: bool = False
 
 
 class User(BaseModel):
@@ -93,6 +97,11 @@ class TenantRegister(BaseModel):
     # Kanal yoneticisi altyapisi secimi (super_admin tesis olustururken). None =
     # otomatik tespit; explicit deger fail-closed olarak yalnizca o saglayiciya baglar.
     channel_manager_provider: Literal["exely", "hotelrunner"] | None = None
+    # standalone: bağımsız otel, new_chain: yeni zincirin merkezi,
+    # existing_chain: daha önce oluşturulmuş zincire bağlı tesis.
+    chain_mode: Literal["standalone", "new_chain", "existing_chain"] = "standalone"
+    chain_id: str | None = None
+    chain_name: str | None = None
 
 
 class GuestRegister(BaseModel):

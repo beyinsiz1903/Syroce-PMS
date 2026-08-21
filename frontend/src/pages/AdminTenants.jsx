@@ -19,6 +19,7 @@ import {
   Calendar, Building2, ChevronDown, ChevronUp, Shield,
   Search, RefreshCw,
   Plus, Pencil, Users, UsersRound, ArrowUpDown,
+  Settings2,
 } from 'lucide-react';
 
 import { PLANS, MODULE_GROUPS, isModuleIncludedInPlan } from './admin/tenantConstants';
@@ -27,6 +28,7 @@ import EditTenantModal from './admin/EditTenantModal';
 import TeamManagementModal from './admin/TeamManagementModal';
 import AllUsersView from './admin/AllUsersView';
 import TenantStatsPanel from './admin/TenantStatsPanel';
+import TenantProvisioningModal from './admin/TenantProvisioningModal';
 import { useTranslation } from 'react-i18next';
 
 // Map plan tier → shared StatusBadge intent (palette-compliant)
@@ -76,6 +78,8 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
   const [planChangeTenant, setPlanChangeTenant] = useState(null);
   const [selectedNewPlan, setSelectedNewPlan] = useState('basic');
   const [resetModulesOnPlanChange, setResetModulesOnPlanChange] = useState(true);
+  const [showProvisioningModal, setShowProvisioningModal] = useState(false);
+  const [provisioningTenant, setProvisioningTenant] = useState(null);
 
   const loadTenants = async () => {
     setLoading(true);
@@ -338,6 +342,9 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
+                    <Button variant="outline" size="sm" className="text-xs h-8" onClick={(e) => { e.stopPropagation(); setProvisioningTenant(t); setShowProvisioningModal(true); }} data-testid={`provisioning-btn-${id}`}>
+                      <Settings2 className="w-3.5 h-3.5 mr-1" aria-hidden="true" /> Kurulum
+                    </Button>
                     <Button variant="ghost" size="sm" className="text-xs h-8 px-2" onClick={(e) => { e.stopPropagation(); setTeamTenant(t); setShowTeamModal(true); }} data-testid={`team-btn-${id}`}>
                       <Users className="w-3.5 h-3.5 mr-1" aria-hidden="true" /> Ekip
                     </Button>
@@ -408,9 +415,21 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
       )}
 
       {/* Modals */}
-      <CreateTenantModal open={showCreateModal} onOpenChange={setShowCreateModal} onSuccess={() => { toast.success('Yeni otel oluşturuldu'); loadTenants(); }} />
+      <CreateTenantModal
+        open={showCreateModal}
+        onOpenChange={setShowCreateModal}
+        onSuccess={(created) => {
+          toast.success('Yeni otel oluşturuldu; entegrasyon kurulumu açılıyor');
+          loadTenants();
+          if (created?.tenant_id) {
+            setProvisioningTenant({ id: created.tenant_id, property_name: created.property_name });
+            setShowProvisioningModal(true);
+          }
+        }}
+      />
       <EditTenantModal open={showEditModal} onOpenChange={setShowEditModal} tenant={editTenant} onSuccess={() => { toast.success('Otel bilgileri güncellendi'); loadTenants(); }} />
       <TeamManagementModal open={showTeamModal} onOpenChange={setShowTeamModal} tenant={teamTenant} />
+      <TenantProvisioningModal open={showProvisioningModal} onOpenChange={setShowProvisioningModal} tenant={provisioningTenant} onSuccess={loadTenants} />
 
       {/* Plan Change Modal */}
       <Dialog open={showPlanModal} onOpenChange={setShowPlanModal}>

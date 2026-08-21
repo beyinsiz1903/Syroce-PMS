@@ -52,6 +52,7 @@ const MultiPropertyDashboard = () => {
       const params = selectedProperty !== 'all' ? { property_id: selectedProperty } : {};
       const response = await axios.get('/multi-property/dashboard', { params });
       setDashboardData(response.data);
+      if (response.data?.properties) setProperties(response.data.properties);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {

@@ -101,22 +101,25 @@ async def get_quick_property_list(credentials: HTTPAuthorizationCredentials = De
             }
         )
 
-    # If no properties in DB, return sample data
+    # If no legacy properties exist, return the caller's real tenant instead of
+    # fabricated hotels. Chain members are followed from /multi-property;
+    # this switcher intentionally does not mint cross-tenant write access.
     if len(properties) == 0:
-        properties = [
-            {"id": str(uuid.uuid4()), "property_id": "property_1", "name": "Grand Hotel Istanbul", "location": "İstanbul, Türkiye", "type": "hotel", "logo": "", "is_active": True, "room_count": 120},
-            {
-                "id": str(uuid.uuid4()),
-                "property_id": "property_2",
-                "name": "Seaside Resort Antalya",
-                "location": "Antalya, Türkiye",
-                "type": "resort",
+        from core.tenant_db import get_system_db
+
+        tenant = await get_system_db().tenants.find_one({"id": current_user.tenant_id}, {"_id": 0})
+        if tenant:
+            properties = [{
+                "id": tenant["id"],
+                "property_id": tenant["id"],
+                "name": tenant.get("property_name") or tenant["id"],
+                "location": tenant.get("location") or "",
+                "type": tenant.get("property_type") or "hotel",
                 "logo": "",
-                "is_active": True,
-                "room_count": 250,
-            },
-            {"id": str(uuid.uuid4()), "property_id": "property_3", "name": "City Boutique Ankara", "location": "Ankara, Türkiye", "type": "boutique", "logo": "", "is_active": True, "room_count": 45},
-        ]
+                "is_active": tenant.get("subscription_status", "active") == "active",
+                "room_count": int(tenant.get("total_rooms") or 0),
+                "is_current_tenant": True,
+            }]
 
     # Get user's current property
     current_property_id = current_user.property_id if hasattr(current_user, "property_id") else None
