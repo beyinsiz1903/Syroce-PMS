@@ -132,6 +132,7 @@ class _FakeDB:
         self.gl_journal_entries = _Coll("gl_journal_entries", unique_key=("tenant_id", "idempotency_key"))
         self.gl_periods = _Coll("gl_periods")
         self.gl_sequence_reservations = _Coll("gl_sequence_reservations")
+        self.gl_year_end_closures = _Coll("gl_year_end_closures")
         self.payroll_gl_mapping = _Coll("payroll_gl_mapping")
 
 
@@ -150,6 +151,7 @@ def test_accounting_subledgers_are_strictly_tenant_scoped():
         "depreciation_entries",
         "gl_counters",
         "gl_sequence_reservations",
+        "gl_year_end_closures",
     }.issubset(TENANT_SCOPED_COLLECTIONS)
 
 
@@ -234,6 +236,19 @@ async def test_account_normal_balance_derived(_patch):
     assert out2["account"]["normal_balance"] == "credit"
 
 
+async def test_account_allows_explicit_contra_balance(_patch):
+    out = await gl.create_account(
+        gl.AccountIn(
+            code="257",
+            name="Birikmiş Amortismanlar",
+            type="asset",
+            normal_balance="credit",
+        ),
+        current_user=_user("finance"),
+    )
+    assert out["account"]["normal_balance"] == "credit"
+
+
 async def test_account_mutations_emit_audit_events(_patch, monkeypatch):
     events = []
 
@@ -253,9 +268,11 @@ async def test_initialize_chart_of_accounts_is_tenant_scoped_and_idempotent(_pat
     first = await gl.initialize_chart_of_accounts(current_user=_user("finance"))
     second = await gl.initialize_chart_of_accounts(current_user=_user("finance"))
 
-    assert first == {"created": 14, "total": 14, "payroll_mapping_created": True}
-    assert second == {"created": 0, "total": 14, "payroll_mapping_created": False}
-    assert len(_patch.gl_accounts.docs) == 14
+    assert first == {"created": 20, "total": 20, "payroll_mapping_created": True}
+    assert second == {"created": 0, "total": 20, "payroll_mapping_created": False}
+    assert len(_patch.gl_accounts.docs) == 20
+    assert next(row for row in _patch.gl_accounts.docs if row["code"] == "257")["normal_balance"] == "credit"
+    assert next(row for row in _patch.gl_accounts.docs if row["code"] == "591")["normal_balance"] == "debit"
     assert _patch.payroll_gl_mapping.docs[0]["withholding_payable_code"] == "360"
     assert {row["tenant_id"] for row in _patch.gl_accounts.docs} == {TENANT}
 
@@ -706,6 +723,98 @@ async def test_finance_role_cannot_reopen_closed_period(_patch):
     assert exc.value.status_code == 403
 
 
+async def test_year_end_close_posts_profit_and_prepares_opening_year(_patch):
+    await gl.initialize_chart_of_accounts(current_user=_user("finance"))
+    await gl.create_journal(
+        _journal(
+            [{"account_code": "100", "debit": 100}, {"account_code": "600", "credit": 100}],
+            date="2026-06-01",
+        ),
+        current_user=_user("finance"),
+    )
+    await gl.create_journal(
+        _journal(
+            [{"account_code": "740", "debit": 40}, {"account_code": "100", "credit": 40}],
+            date="2026-06-02",
+        ),
+        current_user=_user("finance"),
+    )
+    for month in range(1, 12):
+        await gl.close_period(
+            f"tenant-A:2026:{month:02d}",
+            gl.PeriodActionIn(reason="Aylık kapanış tamamlandı"),
+            current_user=_user("finance"),
+        )
+
+    result = await gl.close_fiscal_year(
+        gl.YearEndCloseIn(fiscal_year=2026, reason="Yasal yıl sonu kapanışı"),
+        current_user=_user("finance"),
+    )
+
+    closure = result["closure"]
+    assert result["already_closed"] is False
+    assert closure["net_income_minor"] == 6000
+    assert closure["closing_entry_no"] == "YEV-2026-00000003"
+    assert closure["opening_fiscal_year"] == 2027
+    assert closure["opening_carry_forward_mode"] == "continuous_ledger"
+    assert len([p for p in _patch.gl_periods.docs if p["fiscal_year"] == 2027]) == 12
+    assert next(p for p in _patch.gl_periods.docs if p["id"] == "tenant-A:2026:12")["status"] == "closed"
+
+    trial = await gl.trial_balance(as_of="2026-12-31", current_user=_user("finance"))
+    balances = {row["account_code"]: row for row in trial["rows"]}
+    assert balances["600"]["credit_balance_minor"] == 0
+    assert balances["740"]["debit_balance_minor"] == 0
+    assert balances["590"]["credit_balance_minor"] == 6000
+
+    status = await gl.get_year_end_status(2026, current_user=_user("supervisor"))
+    assert status["closed"] is True
+    retry = await gl.close_fiscal_year(
+        gl.YearEndCloseIn(fiscal_year=2026, reason="Tekrar güvenli kapanış"),
+        current_user=_user("finance"),
+    )
+    assert retry["already_closed"] is True
+    assert len(_patch.gl_year_end_closures.docs) == 1
+
+
+async def test_year_end_requires_first_eleven_periods_closed(_patch):
+    await gl.initialize_chart_of_accounts(current_user=_user("finance"))
+    with pytest.raises(HTTPException) as exc:
+        await gl.close_fiscal_year(
+            gl.YearEndCloseIn(fiscal_year=2026, reason="Erken kapanış denemesi"),
+            current_user=_user("finance"),
+        )
+    assert exc.value.status_code == 409
+    assert "Önce" in exc.value.detail
+
+
+async def test_year_end_close_posts_loss_to_contra_equity(_patch):
+    await gl.initialize_chart_of_accounts(current_user=_user("finance"))
+    await gl.create_journal(
+        _journal(
+            [{"account_code": "740", "debit": 25}, {"account_code": "100", "credit": 25}],
+            date="2026-06-02",
+        ),
+        current_user=_user("finance"),
+    )
+    for month in range(1, 12):
+        await gl.close_period(
+            f"tenant-A:2026:{month:02d}",
+            gl.PeriodActionIn(reason="Aylık kapanış tamamlandı"),
+            current_user=_user("finance"),
+        )
+
+    result = await gl.close_fiscal_year(
+        gl.YearEndCloseIn(fiscal_year=2026, reason="Zarar dönemi kapanışı"),
+        current_user=_user("finance"),
+    )
+    trial = await gl.trial_balance(as_of="2026-12-31", current_user=_user("finance"))
+    balances = {row["account_code"]: row for row in trial["rows"]}
+
+    assert result["closure"]["net_income_minor"] == -2500
+    assert balances["591"]["debit_balance_minor"] == 2500
+    assert balances["740"]["debit_balance_minor"] == 0
+
+
 # ---------------------------------------------------------------------------
 # Trial balance
 # ---------------------------------------------------------------------------
@@ -787,3 +896,27 @@ async def test_income_statement_honors_date_range(_patch):
         current_user=_user("finance"),
     )
     assert income["totals"]["revenue_minor"] == 0
+
+
+async def test_balance_sheet_presents_contra_asset_as_negative(_patch):
+    await gl.initialize_chart_of_accounts(current_user=_user("finance"))
+    await gl.create_journal(
+        _journal(
+            [
+                {"account_code": "100", "debit": 100},
+                {"account_code": "257", "credit": 40},
+                {"account_code": "590", "credit": 60},
+            ]
+        ),
+        current_user=_user("finance"),
+    )
+
+    balance = await gl.balance_sheet(as_of="2026-06-30", current_user=_user("finance"))
+    contra = next(row for row in balance["assets"] if row["account_code"] == "257")
+
+    assert contra["amount"] == -40.0
+    assert contra["normal_balance"] == "credit"
+    assert contra["is_contra"] is True
+    assert balance["totals"]["assets"] == 60.0
+    assert balance["totals"]["equity"] == 60.0
+    assert balance["totals"]["balanced"] is True

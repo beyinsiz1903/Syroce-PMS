@@ -333,6 +333,9 @@ async def compute_trial_balance(db, tenant_id: str, as_of: str | None = None) ->
     accts = await db.gl_accounts.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(5000)
     type_by_code = {a["code"]: a.get("type") for a in accts}
     name_by_code = {a["code"]: a.get("name") for a in accts}
+    normal_balance_by_code = {
+        a["code"]: a.get("normal_balance") or normal_balance(a.get("type")) for a in accts
+    }
 
     rows = []
     total_debit_balance_minor = total_credit_balance_minor = 0
@@ -349,6 +352,7 @@ async def compute_trial_balance(db, tenant_id: str, as_of: str | None = None) ->
                 "account_code": code,
                 "account_name": name_by_code.get(code) or agg[code].get("name") or code,
                 "account_type": type_by_code.get(code),
+                "normal_balance": normal_balance_by_code.get(code),
                 "total_debit": _minor_to_float(debit_minor),
                 "total_credit": _minor_to_float(credit_minor),
                 "debit_balance": _minor_to_float(debit_balance_minor),
@@ -425,6 +429,9 @@ async def compute_income_statement(
                 "account_name": account.get("name") or code,
                 "amount": _minor_to_float(amount_minor),
                 "amount_minor": amount_minor,
+                "normal_balance": account.get("normal_balance") or normal_balance(account.get("type")),
+                "is_contra": (account.get("normal_balance") or normal_balance(account.get("type")))
+                != normal_balance(account.get("type")),
             }
         )
     net_income_minor = total_revenue_minor - total_expense_minor
@@ -464,6 +471,9 @@ async def compute_balance_sheet(db, tenant_id: str, *, as_of: str | None = None)
                 "account_name": row["account_name"],
                 "amount": _minor_to_float(amount_minor),
                 "amount_minor": amount_minor,
+                "normal_balance": row.get("normal_balance") or normal_balance(row.get("account_type")),
+                "is_contra": (row.get("normal_balance") or normal_balance(row.get("account_type")))
+                != normal_balance(row.get("account_type")),
             }
         )
         totals_minor[section] += amount_minor
