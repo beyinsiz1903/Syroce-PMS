@@ -29,8 +29,8 @@ logger = logging.getLogger("domains.accounting.budget")
 
 router = APIRouter(prefix="/api/budget", tags=["Accounting / Budget"])
 
-_BUDGET_ROLES = {"super_admin", "admin", "accountant"}
-_READ_ROLES = {"super_admin", "admin", "accountant", "supervisor"}
+_BUDGET_ROLES = {"super_admin", "admin", "finance", "accountant"}
+_READ_ROLES = {"super_admin", "admin", "finance", "accountant", "supervisor"}
 
 _KIND_TO_TXN = {"expense": "expense", "revenue": "income"}
 

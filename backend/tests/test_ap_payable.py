@@ -85,7 +85,7 @@ class _FakeDB:
 TENANT = "tenant-A"
 
 
-def _user(role="accountant", *, super_admin=False, tenant=TENANT):
+def _user(role="finance", *, super_admin=False, tenant=TENANT):
     return SimpleNamespace(
         id="u1", user_id="u1", tenant_id=tenant, role=role, is_super_admin=super_admin,
     )
@@ -110,7 +110,7 @@ async def _mk_invoice(fake, total=1000.0, no="INV-1", user=None):
             supplier_id="sup1", invoice_no=no, due_date="2026-06-01",
             subtotal=total, tax=0,
         ),
-        current_user=user or _user("accountant"),
+        current_user=user or _user("finance"),
     ))["invoice"]
 
 
@@ -118,7 +118,7 @@ async def _pay(invoice_id, amount, user=None, **kw):
     return await ap.apply_payment(
         invoice_id=invoice_id,
         payload=ap.PaymentIn(amount=amount, **kw),
-        current_user=user or _user("accountant"),
+        current_user=user or _user("finance"),
     )
 
 
@@ -135,7 +135,7 @@ async def test_create_invoice_unknown_supplier_404(_patch):
     with pytest.raises(HTTPException) as exc:
         await ap.create_invoice(
             ap.InvoiceIn(supplier_id="ghost", invoice_no="X", due_date="2026-06-01", subtotal=10),
-            current_user=_user("accountant"),
+            current_user=_user("finance"),
         )
     assert exc.value.status_code == 404
 
@@ -151,7 +151,7 @@ async def test_create_invoice_total_includes_tax(_patch):
     inv = (await ap.create_invoice(
         ap.InvoiceIn(supplier_id="sup1", invoice_no="T1", due_date="2026-06-01",
                      subtotal=100, tax=18),
-        current_user=_user("accountant"),
+        current_user=_user("finance"),
     ))["invoice"]
     assert inv["total_amount"] == 118.0
     assert inv["balance"] == 118.0
@@ -180,7 +180,7 @@ async def test_overpayment_rejected(_patch):
         await _pay(inv["id"], 300)
     assert exc.value.status_code == 400
     # ledger unchanged beyond first payment
-    inv2 = await ap.get_invoice(inv["id"], current_user=_user("accountant"))
+    inv2 = await ap.get_invoice(inv["id"], current_user=_user("finance"))
     assert inv2["invoice"]["paid_amount"] == 300.0
 
 
@@ -198,7 +198,7 @@ async def test_payment_recalc_not_increment(_patch):
     inv = await _mk_invoice(_patch, total=1000.0)
     await _pay(inv["id"], 200)
     await _pay(inv["id"], 300)
-    final = await ap.get_invoice(inv["id"], current_user=_user("accountant"))
+    final = await ap.get_invoice(inv["id"], current_user=_user("finance"))
     assert final["invoice"]["paid_amount"] == 500.0
     assert len(final["payments"]) == 2
 
@@ -207,13 +207,13 @@ async def test_void_blocked_with_payments(_patch):
     inv = await _mk_invoice(_patch, total=1000.0)
     await _pay(inv["id"], 100)
     with pytest.raises(HTTPException) as exc:
-        await ap.void_invoice(inv["id"], current_user=_user("accountant"))
+        await ap.void_invoice(inv["id"], current_user=_user("finance"))
     assert exc.value.status_code == 409
 
 
 async def test_payment_on_void_blocked(_patch):
     inv = await _mk_invoice(_patch, total=1000.0)
-    await ap.void_invoice(inv["id"], current_user=_user("accountant"))
+    await ap.void_invoice(inv["id"], current_user=_user("finance"))
     with pytest.raises(HTTPException) as exc:
         await _pay(inv["id"], 100)
     assert exc.value.status_code == 409
@@ -229,10 +229,10 @@ async def test_aging_buckets(_patch):
     # second invoice due far future -> current
     fut = (await ap.create_invoice(
         ap.InvoiceIn(supplier_id="sup1", invoice_no="A2", due_date="2026-12-31", subtotal=500),
-        current_user=_user("accountant"),
+        current_user=_user("finance"),
     ))["invoice"]
     assert fut["status"] == "open"
-    out = await ap.aging(as_of="2026-06-20", current_user=_user("accountant"))
+    out = await ap.aging(as_of="2026-06-20", current_user=_user("finance"))
     assert out["buckets"]["d1_30"] == 800.0
     assert out["buckets"]["current"] == 500.0
     assert out["total_outstanding"] == 1300.0

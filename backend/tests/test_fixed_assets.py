@@ -74,7 +74,7 @@ class _FakeDB:
 TENANT = "tenant-A"
 
 
-def _user(role="accountant", *, super_admin=False, tenant=TENANT):
+def _user(role="finance", *, super_admin=False, tenant=TENANT):
     return SimpleNamespace(
         id="u1", user_id="u1", tenant_id=tenant, role=role, is_super_admin=super_admin,
     )
@@ -93,7 +93,7 @@ async def _mk_asset(user=None, **kw):
         "salvage_value": 0.0, "useful_life_months": 12, "method": "straight_line",
     }
     params.update(kw)
-    return (await fa.create_asset(fa.AssetIn(**params), current_user=user or _user("accountant")))["asset"]
+    return (await fa.create_asset(fa.AssetIn(**params), current_user=user or _user("finance")))["asset"]
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +128,7 @@ async def test_invalid_method_400(_patch):
 # ---------------------------------------------------------------------------
 async def test_straight_line_schedule(_patch):
     a = await _mk_asset(acquisition_cost=12000.0, salvage_value=0.0, useful_life_months=12)
-    out = await fa.asset_schedule(a["id"], current_user=_user("accountant"))
+    out = await fa.asset_schedule(a["id"], current_user=_user("finance"))
     sched = out["schedule"]
     assert len(sched) == 12
     assert sched[0]["depreciation"] == 1000.0
@@ -138,18 +138,18 @@ async def test_straight_line_schedule(_patch):
 
 async def test_run_depreciation_creates_entry_and_recalcs(_patch):
     a = await _mk_asset(acquisition_cost=12000.0, useful_life_months=12)
-    out = await fa.run_depreciation(period="2026-01", current_user=_user("accountant"))
+    out = await fa.run_depreciation(period="2026-01", current_user=_user("finance"))
     assert out["created"] == 1
     assert out["total_depreciation"] == 1000.0
-    got = await fa.get_asset(a["id"], current_user=_user("accountant"))
+    got = await fa.get_asset(a["id"], current_user=_user("finance"))
     assert got["asset"]["accumulated_depreciation"] == 1000.0
     assert got["asset"]["book_value"] == 11000.0
 
 
 async def test_run_depreciation_idempotent(_patch):
     a = await _mk_asset(acquisition_cost=12000.0, useful_life_months=12)
-    await fa.run_depreciation(period="2026-01", current_user=_user("accountant"))
-    second = await fa.run_depreciation(period="2026-01", current_user=_user("accountant"))
+    await fa.run_depreciation(period="2026-01", current_user=_user("finance"))
+    second = await fa.run_depreciation(period="2026-01", current_user=_user("finance"))
     assert second["created"] == 0
     assert second["skipped"] == 1
     entries = [e for e in _patch.depreciation_entries.docs if e["asset_id"] == a["id"]]
@@ -158,16 +158,16 @@ async def test_run_depreciation_idempotent(_patch):
 
 async def test_depreciation_accumulates_across_periods(_patch):
     a = await _mk_asset(acquisition_cost=12000.0, useful_life_months=12)
-    await fa.run_depreciation(period="2026-01", current_user=_user("accountant"))
-    await fa.run_depreciation(period="2026-02", current_user=_user("accountant"))
-    got = await fa.get_asset(a["id"], current_user=_user("accountant"))
+    await fa.run_depreciation(period="2026-01", current_user=_user("finance"))
+    await fa.run_depreciation(period="2026-02", current_user=_user("finance"))
+    got = await fa.get_asset(a["id"], current_user=_user("finance"))
     assert got["asset"]["accumulated_depreciation"] == 2000.0
     assert got["asset"]["book_value"] == 10000.0
 
 
 async def test_future_acquisition_skipped(_patch):
     await _mk_asset(acquisition_date="2026-05-01", acquisition_cost=12000.0, useful_life_months=12)
-    out = await fa.run_depreciation(period="2026-01", current_user=_user("accountant"))
+    out = await fa.run_depreciation(period="2026-01", current_user=_user("finance"))
     assert out["created"] == 0
     assert out["skipped"] == 1
 
@@ -181,7 +181,7 @@ async def test_declining_balance_first_month(_patch):
         acquisition_cost=10000.0, salvage_value=1000.0, useful_life_months=60,
         method="declining_balance", declining_rate=24.0,
     )
-    out = await fa.asset_schedule(a["id"], current_user=_user("accountant"))
+    out = await fa.asset_schedule(a["id"], current_user=_user("finance"))
     sched = out["schedule"]
     assert sched[0]["depreciation"] == 200.0
     assert sched[1]["depreciation"] == round((10000 - 200) * 0.02, 2)
@@ -193,7 +193,7 @@ async def test_salvage_clamp_straight_line(_patch):
     a = await _mk_asset(
         acquisition_cost=1000.0, salvage_value=100.0, useful_life_months=9,
     )
-    out = await fa.asset_schedule(a["id"], current_user=_user("accountant"))
+    out = await fa.asset_schedule(a["id"], current_user=_user("finance"))
     sched = out["schedule"]
     assert sched[0]["depreciation"] == 100.0  # (1000-100)/9
     assert sched[-1]["book_value"] >= 100.0 - 0.01
@@ -203,6 +203,6 @@ async def test_salvage_clamp_straight_line(_patch):
 
 async def test_dispose_stops_being_active(_patch):
     a = await _mk_asset()
-    await fa.dispose_asset(a["id"], current_user=_user("accountant"))
-    out = await fa.run_depreciation(period="2026-02", current_user=_user("accountant"))
+    await fa.dispose_asset(a["id"], current_user=_user("finance"))
+    out = await fa.run_depreciation(period="2026-02", current_user=_user("finance"))
     assert out["created"] == 0

@@ -30,8 +30,8 @@ logger = logging.getLogger("domains.accounting.ap")
 
 router = APIRouter(prefix="/api/ap", tags=["Accounting / AP"])
 
-_AP_ROLES = {"super_admin", "admin", "accountant"}
-_READ_ROLES = {"super_admin", "admin", "accountant", "supervisor"}
+_AP_ROLES = {"super_admin", "admin", "finance", "accountant"}
+_READ_ROLES = {"super_admin", "admin", "finance", "accountant", "supervisor"}
 _EPS = 0.005
 
 

@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCurrency } from '@/context/CurrencyContext';
-import { Plus, Save, FileText, AlertCircle, CalendarRange, LockKeyhole, Unlock, RotateCcw } from 'lucide-react';
+import { Plus, Save, FileText, AlertCircle, CalendarRange, LockKeyhole, Unlock, RotateCcw, Landmark, TrendingUp, PackageOpen } from 'lucide-react';
 
 export const GL_ENDPOINTS = {
   accounts: '/gl/accounts',
@@ -15,6 +15,8 @@ export const GL_ENDPOINTS = {
   trialBalance: '/gl/trial-balance',
   periods: '/gl/periods',
   initializePeriods: '/gl/periods/initialize',
+  incomeStatement: '/gl/statements/income-statement',
+  balanceSheet: '/gl/statements/balance-sheet',
 };
 
 export const toJournalPayload = (journal) => ({
@@ -87,6 +89,8 @@ const GeneralLedgerModule = () => {
   const [journalSaving, setJournalSaving] = useState(false);
   const [reversalBusy, setReversalBusy] = useState('');
   const reversalKeys = useRef({});
+  const [statements, setStatements] = useState({ income: null, balance: null });
+  const [workspace, setWorkspace] = useState({ aging: null, expenseBudget: null, revenueBudget: null, assets: [] });
   
   // New Journal Entry State
   const [newJournal, setNewJournal] = useState(emptyJournal);
@@ -143,6 +147,40 @@ const GeneralLedgerModule = () => {
     }
   };
 
+  const fetchStatements = async () => {
+    const today = new Date().toISOString().split('T')[0];
+    const start = `${today.slice(0, 4)}-01-01`;
+    try {
+      const [incomeRes, balanceRes] = await Promise.all([
+        axios.get(GL_ENDPOINTS.incomeStatement, { params: { start, end: today } }),
+        axios.get(GL_ENDPOINTS.balanceSheet, { params: { as_of: today } }),
+      ]);
+      setStatements({ income: incomeRes.data, balance: balanceRes.data });
+    } catch {
+      toast.error('Mali tablolar yüklenemedi.');
+    }
+  };
+
+  const fetchWorkspace = async () => {
+    const period = new Date().toISOString().slice(0, 7);
+    try {
+      const [agingRes, expenseRes, revenueRes, assetsRes] = await Promise.all([
+        axios.get('/ap/aging'),
+        axios.get('/budget/vs-actual', { params: { period, kind: 'expense' } }),
+        axios.get('/budget/vs-actual', { params: { period, kind: 'revenue' } }),
+        axios.get('/fixed-assets/assets'),
+      ]);
+      setWorkspace({
+        aging: agingRes.data,
+        expenseBudget: expenseRes.data,
+        revenueBudget: revenueRes.data,
+        assets: assetsRes.data?.assets || [],
+      });
+    } catch {
+      toast.error('Muhasebe alt defterleri yüklenemedi.');
+    }
+  };
+
   const initializePeriods = async () => {
     setPeriodBusy('initialize');
     try {
@@ -176,6 +214,8 @@ const GeneralLedgerModule = () => {
     if (activeTab === 'journals') fetchJournals();
     if (activeTab === 'trial-balance') fetchTrialBalance();
     if (activeTab === 'periods') fetchPeriods();
+    if (activeTab === 'statements') fetchStatements();
+    if (activeTab === 'workspace') fetchWorkspace();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, periodYear]);
 
@@ -270,6 +310,8 @@ const GeneralLedgerModule = () => {
           <TabsTrigger value="journals">Yevmiye Fişleri</TabsTrigger>
           <TabsTrigger value="trial-balance">Mizan</TabsTrigger>
           <TabsTrigger value="periods">Mali Dönemler</TabsTrigger>
+          <TabsTrigger value="statements">Mali Tablolar</TabsTrigger>
+          <TabsTrigger value="workspace">Alt Defterler</TabsTrigger>
         </TabsList>
 
         {/* TDHP Accounts */}
@@ -522,6 +564,46 @@ const GeneralLedgerModule = () => {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="statements">
+          <div className="grid lg:grid-cols-2 gap-5">
+            <Card>
+              <CardHeader><CardTitle>Gelir Tablosu · Yılbaşından Bugüne</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {(statements.income?.revenue || []).map((row) => <div key={row.account_code} className="flex justify-between text-sm"><span>{row.account_code} · {row.account_name}</span><span className="font-medium">{fmtMoney(row.amount)}</span></div>)}
+                <div className="border-t pt-2 flex justify-between font-semibold text-emerald-700"><span>Toplam Gelir</span><span>{fmtMoney(statements.income?.totals?.revenue || 0)}</span></div>
+                {(statements.income?.expenses || []).map((row) => <div key={row.account_code} className="flex justify-between text-sm"><span>{row.account_code} · {row.account_name}</span><span className="font-medium">{fmtMoney(row.amount)}</span></div>)}
+                <div className="border-t pt-2 flex justify-between font-semibold text-red-700"><span>Toplam Gider</span><span>{fmtMoney(statements.income?.totals?.expenses || 0)}</span></div>
+                <div className="rounded-lg bg-slate-900 text-white p-3 flex justify-between font-bold"><span>Net Dönem Kârı / Zararı</span><span>{fmtMoney(statements.income?.totals?.net_income || 0)}</span></div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader><CardTitle>Bilanço · Bugün</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {['assets', 'liabilities', 'equity'].map((section) => (
+                  <div key={section} className="space-y-1">
+                    <p className="text-xs font-bold uppercase text-slate-500">{section === 'assets' ? 'Varlıklar' : section === 'liabilities' ? 'Yükümlülükler' : 'Özkaynaklar'}</p>
+                    {(statements.balance?.[section] || []).map((row) => <div key={row.account_code} className="flex justify-between text-sm"><span>{row.account_code} · {row.account_name}</span><span>{fmtMoney(row.amount)}</span></div>)}
+                  </div>
+                ))}
+                <div className="flex justify-between text-sm border-t pt-2"><span>Cari dönem kârı/zararı</span><span>{fmtMoney(statements.balance?.current_earnings?.amount || 0)}</span></div>
+                <div className={`rounded-lg p-3 flex justify-between font-bold ${statements.balance?.totals?.balanced ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'}`}>
+                  <span>Bilanço dengesi</span><span>{statements.balance?.totals?.balanced ? 'Dengeli' : `Fark: ${fmtMoney(statements.balance?.totals?.difference || 0)}`}</span>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="workspace">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card><CardContent className="pt-6"><Landmark className="w-7 h-7 text-amber-600 mb-3" /><p className="text-sm text-slate-500">Tedarikçi Borçları</p><p className="text-2xl font-bold">{fmtMoney(workspace.aging?.total_outstanding || 0)}</p><p className="text-xs text-slate-500 mt-2">90+ gün: {fmtMoney(workspace.aging?.buckets?.d90_plus || 0)}</p></CardContent></Card>
+            <Card><CardContent className="pt-6"><TrendingUp className="w-7 h-7 text-red-600 mb-3" /><p className="text-sm text-slate-500">Gider Bütçesi · Bu Ay</p><p className="text-2xl font-bold">{fmtMoney(workspace.expenseBudget?.totals?.actual || 0)}</p><p className="text-xs text-slate-500 mt-2">Bütçe: {fmtMoney(workspace.expenseBudget?.totals?.budget || 0)}</p></CardContent></Card>
+            <Card><CardContent className="pt-6"><TrendingUp className="w-7 h-7 text-emerald-600 mb-3" /><p className="text-sm text-slate-500">Gelir Bütçesi · Bu Ay</p><p className="text-2xl font-bold">{fmtMoney(workspace.revenueBudget?.totals?.actual || 0)}</p><p className="text-xs text-slate-500 mt-2">Bütçe: {fmtMoney(workspace.revenueBudget?.totals?.budget || 0)}</p></CardContent></Card>
+            <Card><CardContent className="pt-6"><PackageOpen className="w-7 h-7 text-indigo-600 mb-3" /><p className="text-sm text-slate-500">Sabit Kıymetler</p><p className="text-2xl font-bold">{workspace.assets.length}</p><p className="text-xs text-slate-500 mt-2">Net defter değeri: {fmtMoney(workspace.assets.reduce((sum, item) => sum + (Number(item.book_value) || 0), 0))}</p></CardContent></Card>
+          </div>
+          <p className="text-xs text-slate-500 mt-4">Bu özetler AP, bütçe ve sabit kıymet alt defterlerindeki gerçek tenant verisinden okunur; örnek/sabit rakam kullanılmaz.</p>
         </TabsContent>
       </Tabs>
     </div>

@@ -30,8 +30,8 @@ logger = logging.getLogger("domains.accounting.fixed_asset")
 
 router = APIRouter(prefix="/api/fixed-assets", tags=["Accounting / Fixed Assets"])
 
-_ASSET_ROLES = {"super_admin", "admin", "accountant"}
-_READ_ROLES = {"super_admin", "admin", "accountant", "supervisor"}
+_ASSET_ROLES = {"super_admin", "admin", "finance", "accountant"}
+_READ_ROLES = {"super_admin", "admin", "finance", "accountant", "supervisor"}
 _METHODS = {"straight_line", "declining_balance"}
 _EPS = 0.005
 
