@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from core.audit import log_audit_event
 from core.database import db
 from core.integrations.invoice_gl_bridge import (
     InvoiceGLBridgeError,
@@ -22,6 +23,7 @@ from core.integrations.invoice_gl_bridge import (
 )
 from core.security import get_current_user
 from models.schemas import User
+from shared_kernel.gl_periods import GLPeriodError, ensure_calendar_year_periods
 from shared_kernel.gl_posting import (
     ACCOUNT_TYPES,
     GLPostingError,
@@ -37,6 +39,7 @@ router = APIRouter(prefix="/api/gl", tags=["Accounting / GL"])
 
 _GL_ROLES = {"super_admin", "admin", "finance"}
 _READ_ROLES = {"super_admin", "admin", "finance", "supervisor"}
+_REOPEN_ROLES = {"super_admin", "admin"}
 
 _DEFAULT_CHART_OF_ACCOUNTS = (
     ("100", "Kasa", "asset"),
@@ -81,6 +84,164 @@ def _require_role(user: User, allowed: set[str]) -> None:
 
 def _actor_id(user: User) -> str:
     return getattr(user, "id", None) or getattr(user, "user_id", None) or "system"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Mali dönemler
+# ─────────────────────────────────────────────────────────────────────
+class FiscalYearIn(BaseModel):
+    fiscal_year: int = Field(..., ge=2000, le=2100)
+
+
+class PeriodActionIn(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=500)
+
+
+@router.get("/periods")
+async def list_periods(
+    fiscal_year: int | None = Query(None, ge=2000, le=2100),
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _READ_ROLES)
+    tenant_id = _tenant_of(current_user)
+    query: dict = {"tenant_id": tenant_id}
+    if fiscal_year is not None:
+        query["fiscal_year"] = fiscal_year
+    rows = await db.gl_periods.find(query, {"_id": 0}).sort("start_date", -1).to_list(1200)
+    return {"periods": rows}
+
+
+@router.post("/periods/initialize")
+async def initialize_periods(payload: FiscalYearIn, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    try:
+        await ensure_calendar_year_periods(db, tenant_id, payload.fiscal_year, actor=_actor_id(current_user))
+    except GLPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    rows = await db.gl_periods.find(
+        {"tenant_id": tenant_id, "fiscal_year": payload.fiscal_year},
+        {"_id": 0},
+    ).sort("period_no", 1).to_list(12)
+    return {"periods": rows, "created_or_existing": len(rows)}
+
+
+@router.post("/periods/{period_id}/close")
+async def close_period(
+    period_id: str,
+    payload: PeriodActionIn,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    period = await db.gl_periods.find_one({"tenant_id": tenant_id, "id": period_id}, {"_id": 0})
+    if not period:
+        raise HTTPException(status_code=404, detail="Mali dönem bulunamadı")
+    if period.get("status") == "closed":
+        return {"period": period, "already_closed": True}
+    earlier_open = await db.gl_periods.find_one(
+        {
+            "tenant_id": tenant_id,
+            "fiscal_year": period["fiscal_year"],
+            "period_no": {"$lt": period["period_no"]},
+            "status": "open",
+        },
+        {"_id": 0, "name": 1},
+    )
+    if earlier_open:
+        raise HTTPException(status_code=409, detail=f"Önce {earlier_open.get('name')} dönemi kapatılmalıdır")
+    trial = await compute_trial_balance(db, tenant_id, as_of=period["end_date"])
+    if not trial.get("totals", {}).get("balanced", False):
+        raise HTTPException(status_code=409, detail="Mizan dengeli olmadığı için dönem kapatılamaz")
+    now = _now_iso()
+    result = await db.gl_periods.update_one(
+        {"tenant_id": tenant_id, "id": period_id, "status": "open"},
+        {
+            "$set": {
+                "status": "closed",
+                "closed_at": now,
+                "closed_by": _actor_id(current_user),
+                "close_reason": payload.reason.strip(),
+                "closing_trial_balance": trial["totals"],
+            }
+        },
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=409, detail="Dönem durumu eşzamanlı olarak değişti")
+    updated = await db.gl_periods.find_one({"tenant_id": tenant_id, "id": period_id}, {"_id": 0})
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=_actor_id(current_user),
+        action="gl_period_closed",
+        entity_type="gl_period",
+        entity_id=period_id,
+        details=f"{period.get('name')} mali dönemi kapatıldı",
+        before_value={"status": "open"},
+        after_value={"status": "closed", "reason": payload.reason.strip()},
+        db=db,
+    )
+    return {"period": updated, "already_closed": False}
+
+
+@router.post("/periods/{period_id}/reopen")
+async def reopen_period(
+    period_id: str,
+    payload: PeriodActionIn,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _REOPEN_ROLES)
+    tenant_id = _tenant_of(current_user)
+    period = await db.gl_periods.find_one({"tenant_id": tenant_id, "id": period_id}, {"_id": 0})
+    if not period:
+        raise HTTPException(status_code=404, detail="Mali dönem bulunamadı")
+    if period.get("status") == "open":
+        return {"period": period, "already_open": True}
+    later_closed = await db.gl_periods.find_one(
+        {
+            "tenant_id": tenant_id,
+            "fiscal_year": period["fiscal_year"],
+            "period_no": {"$gt": period["period_no"]},
+            "status": "closed",
+        },
+        {"_id": 0, "name": 1},
+    )
+    if later_closed:
+        raise HTTPException(status_code=409, detail=f"Önce {later_closed.get('name')} dönemi yeniden açılmalıdır")
+    now = _now_iso()
+    result = await db.gl_periods.update_one(
+        {"tenant_id": tenant_id, "id": period_id, "status": "closed"},
+        {
+            "$set": {
+                "status": "open",
+                "reopened_at": now,
+                "reopened_by": _actor_id(current_user),
+                "reopen_reason": payload.reason.strip(),
+            },
+            "$push": {
+                "reopen_history": {
+                    "at": now,
+                    "by": _actor_id(current_user),
+                    "reason": payload.reason.strip(),
+                }
+            },
+        },
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=409, detail="Dönem durumu eşzamanlı olarak değişti")
+    updated = await db.gl_periods.find_one({"tenant_id": tenant_id, "id": period_id}, {"_id": 0})
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=_actor_id(current_user),
+        action="gl_period_reopened",
+        entity_type="gl_period",
+        entity_id=period_id,
+        details=f"{period.get('name')} mali dönemi yeniden açıldı",
+        before_value={"status": "closed"},
+        after_value={"status": "open", "reason": payload.reason.strip()},
+        db=db,
+        severity="warning",
+    )
+    return {"period": updated, "already_open": False}
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -294,6 +455,9 @@ async def get_journal(entry_id: str, current_user: User = Depends(get_current_us
 async def create_journal(payload: JournalIn, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _GL_ROLES)
     tenant_id = _tenant_of(current_user)
+    idempotency_key = (payload.idempotency_key or "").strip() or None
+    if payload.source == "manual" and not idempotency_key:
+        raise HTTPException(status_code=422, detail="Manuel fiş için idempotency_key zorunludur")
     try:
         entry = await post_journal_entry(
             db,
@@ -304,10 +468,11 @@ async def create_journal(payload: JournalIn, current_user: User = Depends(get_cu
             source=payload.source,
             source_ref=payload.source_ref,
             actor=_actor_id(current_user),
-            idempotency_key=(payload.idempotency_key or "").strip() or None,
+            idempotency_key=idempotency_key,
         )
     except GLPostingError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        status_code = 409 if "dönemi kapalı" in str(exc) or "Idempotency anahtarı" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     return {"entry": entry}
 
 
@@ -394,4 +559,3 @@ async def post_nilvera_outgoing_invoice_to_gl(
             detail={"code": "NILVERA_GL_POSTING_BLOCKED", "detail": str(exc)},
         ) from exc
     return {"entry": entry}
-

@@ -128,6 +128,10 @@ TENANT_SCOPED_COLLECTIONS: set[str] = {
     "invoice_lifecycle_actions",
     "invoice_return_allocations",
     "invoice_return_balances",
+    "gl_accounts",
+    "gl_journal_entries",
+    "gl_periods",
+    "payroll_gl_mapping",
 }
 
 # ── Append-only audit collections (Task #568) ───────────────────

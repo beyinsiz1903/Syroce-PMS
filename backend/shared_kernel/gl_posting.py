@@ -16,11 +16,14 @@ Değişmezler:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from datetime import UTC, datetime
 
 from pymongo.errors import DuplicateKeyError
 
+from shared_kernel.gl_periods import GLPeriodError, assert_gl_period_open, normalize_posting_date
 from shared_kernel.pos_idem import ensure_compound_unique
 
 # Hesap tipleri ve normal bakiye yönü.
@@ -109,7 +112,41 @@ async def post_journal_entry(
 
     Döner: yazılan (veya idempotent mevcut) fiş dökümanı (_id'siz).
     """
+    posting_date = normalize_posting_date(date)
     norm_lines, tot_debit, tot_credit = _normalize_lines(lines)
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {
+                "date": posting_date,
+                "memo": memo,
+                "lines": norm_lines,
+                "source": source,
+                "source_ref": source_ref,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+    # An exact retry must remain idempotent even after its period is closed.
+    # Return the already-posted entry before evaluating the current lock state.
+    if idempotency_key:
+        await ensure_gl_idem_index(db)
+        existing = await db.gl_journal_entries.find_one(
+            {"tenant_id": tenant_id, "idempotency_key": idempotency_key},
+            {"_id": 0},
+        )
+        if existing:
+            existing_fingerprint = existing.get("idempotency_fingerprint")
+            if existing_fingerprint and existing_fingerprint != fingerprint:
+                raise GLPostingError("Idempotency anahtarı farklı bir fiş içeriğiyle yeniden kullanılamaz")
+            return existing
+
+    try:
+        period = await assert_gl_period_open(db, tenant_id, posting_date, actor=actor)
+    except GLPeriodError as exc:
+        raise GLPostingError(str(exc)) from exc
 
     # COA doğrulama — tüm hesaplar aktif olmalı; ad COA'dan doldurulur.
     codes = sorted({ln["account_code"] for ln in norm_lines})
@@ -125,15 +162,15 @@ async def post_journal_entry(
         if not ln.get("account_name"):
             ln["account_name"] = acct_by_code[ln["account_code"]].get("name")
 
-    if idempotency_key:
-        await ensure_gl_idem_index(db)
-
     now = _now_iso()
     doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
-        "entry_no": f"JE-{(date or now)[:10]}-{uuid.uuid4().hex[:8]}",
-        "date": date or now[:10],
+        "entry_no": f"JE-{posting_date}-{uuid.uuid4().hex[:8]}",
+        "date": posting_date,
+        "period_id": period.get("id"),
+        "fiscal_year": period.get("fiscal_year"),
+        "period_no": period.get("period_no"),
         "memo": memo,
         "lines": norm_lines,
         "total_debit": tot_debit,
@@ -142,6 +179,7 @@ async def post_journal_entry(
         "source_ref": source_ref,
         "status": "posted",
         "idempotency_key": idempotency_key,
+        "idempotency_fingerprint": fingerprint if idempotency_key else None,
         "created_at": now,
         "created_by": actor,
     }

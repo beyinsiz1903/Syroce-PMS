@@ -6,13 +6,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCurrency } from '@/context/CurrencyContext';
-import { Plus, Save, FileText, AlertCircle } from 'lucide-react';
+import { Plus, Save, FileText, AlertCircle, CalendarRange, LockKeyhole, Unlock } from 'lucide-react';
 
 export const GL_ENDPOINTS = {
   accounts: '/gl/accounts',
   initializeAccounts: '/gl/accounts/initialize',
   journal: '/gl/journal',
   trialBalance: '/gl/trial-balance',
+  periods: '/gl/periods',
+  initializePeriods: '/gl/periods/initialize',
 };
 
 export const toJournalPayload = (journal) => ({
@@ -20,12 +22,29 @@ export const toJournalPayload = (journal) => ({
   memo: journal.description.trim(),
   source: 'manual',
   source_ref: journal.type,
+  ...(journal.idempotency_key ? { idempotency_key: journal.idempotency_key } : {}),
   lines: journal.lines.map((line) => ({
     account_code: line.account_code.trim(),
     debit: Number(line.debit) || 0,
     credit: Number(line.credit) || 0,
     memo: line.description?.trim() || null,
   })),
+});
+
+const newRequestKey = () => {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `manual-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
+const emptyJournal = () => ({
+  date: new Date().toISOString().split('T')[0],
+  type: 'Mahsup',
+  description: '',
+  idempotency_key: newRequestKey(),
+  lines: [
+    { account_code: '', debit: 0, credit: 0, description: '' },
+    { account_code: '', debit: 0, credit: 0, description: '' }
+  ]
 });
 
 export const normalizeTrialBalance = (data = {}) => ({
@@ -62,17 +81,13 @@ const GeneralLedgerModule = () => {
   const [journals, setJournals] = useState([]);
   const [trialBalance, setTrialBalance] = useState({ lines: [], totals: {} });
   const [initializingAccounts, setInitializingAccounts] = useState(false);
+  const [periods, setPeriods] = useState([]);
+  const [periodYear, setPeriodYear] = useState(new Date().getFullYear());
+  const [periodBusy, setPeriodBusy] = useState('');
+  const [journalSaving, setJournalSaving] = useState(false);
   
   // New Journal Entry State
-  const [newJournal, setNewJournal] = useState({
-    date: new Date().toISOString().split('T')[0],
-    type: 'Mahsup',
-    description: '',
-    lines: [
-      { account_code: '', debit: 0, credit: 0, description: '' },
-      { account_code: '', debit: 0, credit: 0, description: '' }
-    ]
-  });
+  const [newJournal, setNewJournal] = useState(emptyJournal);
 
   const fetchAccounts = async () => {
     try {
@@ -117,11 +132,50 @@ const GeneralLedgerModule = () => {
     }
   };
 
+  const fetchPeriods = async () => {
+    try {
+      const res = await axios.get(GL_ENDPOINTS.periods, { params: { fiscal_year: periodYear } });
+      setPeriods(res.data?.periods || []);
+    } catch {
+      toast.error('Mali dönemler yüklenemedi.');
+    }
+  };
+
+  const initializePeriods = async () => {
+    setPeriodBusy('initialize');
+    try {
+      await axios.post(GL_ENDPOINTS.initializePeriods, { fiscal_year: Number(periodYear) });
+      toast.success(`${periodYear} mali dönemleri hazırlandı.`);
+      await fetchPeriods();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Mali dönemler oluşturulamadı.');
+    } finally {
+      setPeriodBusy('');
+    }
+  };
+
+  const changePeriodStatus = async (period, action) => {
+    const reason = window.prompt(action === 'close' ? 'Dönem kapatma gerekçesi:' : 'Yeniden açma gerekçesi:');
+    if (!reason || reason.trim().length < 3) return;
+    setPeriodBusy(`${period.id}:${action}`);
+    try {
+      await axios.post(`${GL_ENDPOINTS.periods}/${period.id}/${action}`, { reason: reason.trim() });
+      toast.success(action === 'close' ? 'Mali dönem kapatıldı.' : 'Mali dönem yeniden açıldı.');
+      await fetchPeriods();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Mali dönem güncellenemedi.');
+    } finally {
+      setPeriodBusy('');
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'accounts') fetchAccounts();
     if (activeTab === 'journals') fetchJournals();
     if (activeTab === 'trial-balance') fetchTrialBalance();
-  }, [activeTab]);
+    if (activeTab === 'periods') fetchPeriods();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, periodYear]);
 
   const handleAddJournalLine = () => {
     setNewJournal(prev => ({
@@ -164,21 +218,16 @@ const GeneralLedgerModule = () => {
       return;
     }
 
+    setJournalSaving(true);
     try {
       await axios.post(GL_ENDPOINTS.journal, toJournalPayload(newJournal));
       toast.success('Yevmiye fişi başarıyla kaydedildi.');
-      setNewJournal({
-        date: new Date().toISOString().split('T')[0],
-        type: 'Mahsup',
-        description: '',
-        lines: [
-          { account_code: '', debit: 0, credit: 0, description: '' },
-          { account_code: '', debit: 0, credit: 0, description: '' }
-        ]
-      });
+      setNewJournal(emptyJournal());
       fetchJournals();
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Fiş kaydedilirken hata oluştu.');
+    } finally {
+      setJournalSaving(false);
     }
   };
 
@@ -194,6 +243,7 @@ const GeneralLedgerModule = () => {
           <TabsTrigger value="accounts">Hesap Planı (TDHP)</TabsTrigger>
           <TabsTrigger value="journals">Yevmiye Fişleri</TabsTrigger>
           <TabsTrigger value="trial-balance">Mizan</TabsTrigger>
+          <TabsTrigger value="periods">Mali Dönemler</TabsTrigger>
         </TabsList>
 
         {/* TDHP Accounts */}
@@ -300,7 +350,7 @@ const GeneralLedgerModule = () => {
                   </div>
                   <div className="flex justify-between mt-4">
                     <Button variant="outline" onClick={handleAddJournalLine}><Plus className="w-4 h-4 mr-2" /> Satır Ekle</Button>
-                    <Button onClick={handleSubmitJournal} className="bg-blue-600 hover:bg-blue-700 text-white"><Save className="w-4 h-4 mr-2" /> Fişi Kaydet</Button>
+                    <Button onClick={handleSubmitJournal} disabled={journalSaving} className="bg-blue-600 hover:bg-blue-700 text-white"><Save className="w-4 h-4 mr-2" /> {journalSaving ? 'Kaydediliyor...' : 'Fişi Kaydet'}</Button>
                   </div>
                 </CardContent>
               </Card>
@@ -330,6 +380,54 @@ const GeneralLedgerModule = () => {
               </Card>
             </div>
           </div>
+        </TabsContent>
+
+        <TabsContent value="periods">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
+              <div>
+                <CardTitle className="flex items-center gap-2"><CalendarRange className="w-5 h-5" /> Mali Dönem Yönetimi</CardTitle>
+                <p className="text-sm text-gray-500 mt-1">Kapalı döneme yeni fiş veya entegrasyon kaydı gönderilemez.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Input className="w-28" type="number" min="2000" max="2100" value={periodYear} onChange={(e) => setPeriodYear(Number(e.target.value))} />
+                <Button variant="outline" onClick={initializePeriods} disabled={periodBusy === 'initialize'}>
+                  {periodBusy === 'initialize' ? 'Hazırlanıyor...' : '12 Dönemi Hazırla'}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {periods.length === 0 ? (
+                <div className="text-center py-10 text-gray-500">Bu mali yıl için dönem bulunamadı.</div>
+              ) : (
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {periods.map((period) => {
+                    const closed = period.status === 'closed';
+                    const action = closed ? 'reopen' : 'close';
+                    const busy = periodBusy === `${period.id}:${action}`;
+                    return (
+                      <div key={period.id} className={`rounded-lg border p-3 ${closed ? 'border-slate-300 bg-slate-50' : 'border-emerald-200 bg-emerald-50/40'}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-semibold text-gray-900">{period.name}</p>
+                            <p className="text-xs text-gray-500">{period.start_date} — {period.end_date}</p>
+                          </div>
+                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${closed ? 'bg-slate-200 text-slate-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                            {closed ? 'Kapalı' : 'Açık'}
+                          </span>
+                        </div>
+                        {closed && period.close_reason && <p className="mt-2 text-xs text-slate-600">Gerekçe: {period.close_reason}</p>}
+                        <Button className="w-full mt-3" size="sm" variant={closed ? 'outline' : 'default'} disabled={busy} onClick={() => changePeriodStatus(period, action)}>
+                          {closed ? <Unlock className="w-3.5 h-3.5 mr-1.5" /> : <LockKeyhole className="w-3.5 h-3.5 mr-1.5" />}
+                          {busy ? 'İşleniyor...' : closed ? 'Yeniden Aç' : 'Dönemi Kapat'}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Trial Balance */}
