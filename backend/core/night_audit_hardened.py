@@ -592,6 +592,26 @@ async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
         },
     )
 
+    # Accounting is a downstream, idempotent bridge. The operational close is
+    # never rolled back after room charges reconcile, but any GL failure is
+    # persisted visibly on the run for finance to retry.
+    try:
+        from core.integrations.operational_gl_bridge import post_night_audit_daily_to_gl
+
+        await post_night_audit_daily_to_gl(
+            db,
+            tenant_id,
+            bd,
+            run_id=run_id,
+            actor="night_audit",
+        )
+    except Exception as exc:
+        logger.exception("Night audit GL bridge failed for run=%s: %s", run_id, exc)
+        await db.night_audit_runs.update_one(
+            {"tenant_id": tenant_id, "id": run_id},
+            {"$set": {"gl_bridge_status": "failed", "gl_bridge_error": str(exc)[:500]}},
+        )
+
     # Record the daily high/urgent pending-task backlog snapshot so the GM
     # dashboard can show a real day-over-day delta for pending tasks. The
     # backlog is point-in-time only (no per-date history), so the night audit —

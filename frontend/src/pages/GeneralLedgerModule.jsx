@@ -24,6 +24,9 @@ export const GL_ENDPOINTS = {
   comparativeBalance: '/gl/statements/comparative-balance-sheet',
   exportReport: '/gl/reports/export',
   fxRevalue: '/gl/fx/revalue',
+  chainConsolidated: '/gl/chain/consolidated',
+  operationalMapping: '/gl/integrations/operational/mapping',
+  operationalStatus: '/gl/integrations/operational/status',
 };
 
 export const toJournalPayload = (journal) => ({
@@ -105,9 +108,12 @@ const GeneralLedgerModule = () => {
   const reversalKeys = useRef({});
   const [statements, setStatements] = useState({ income: null, balance: null });
   const [comparison, setComparison] = useState({ income: null, balance: null });
+  const [chainFinance, setChainFinance] = useState(null);
   const [fxForm, setFxForm] = useState({ date: new Date().toISOString().split('T')[0], currency: 'USD', closing_rate: '' });
   const [fxBusy, setFxBusy] = useState(false);
   const [workspace, setWorkspace] = useState({ aging: null, expenseBudget: null, revenueBudget: null, assets: [] });
+  const [operationalBridge, setOperationalBridge] = useState(null);
+  const [operationalBusy, setOperationalBusy] = useState(false);
   
   // New Journal Entry State
   const [newJournal, setNewJournal] = useState(emptyJournal);
@@ -179,12 +185,14 @@ const GeneralLedgerModule = () => {
     const previousStart = `${previousYear}-01-01`;
     const previousEnd = `${previousYear}${today.slice(4)}`;
     try {
-      const [incomeRes, balanceRes] = await Promise.all([
+      const [incomeRes, balanceRes, chainRes] = await Promise.all([
         axios.get(GL_ENDPOINTS.comparativeIncome, { params: { start, end: today, comparison_start: previousStart, comparison_end: previousEnd } }),
         axios.get(GL_ENDPOINTS.comparativeBalance, { params: { as_of: today, comparison_as_of: previousEnd } }),
+        axios.get(GL_ENDPOINTS.chainConsolidated, { params: { start, end: today, as_of: today } }),
       ]);
       setStatements({ income: incomeRes.data?.current, balance: balanceRes.data?.current });
       setComparison({ income: incomeRes.data, balance: balanceRes.data });
+      setChainFinance(chainRes.data || null);
     } catch {
       toast.error('Mali tablolar yüklenemedi.');
     }
@@ -232,11 +240,12 @@ const GeneralLedgerModule = () => {
   const fetchWorkspace = async () => {
     const period = new Date().toISOString().slice(0, 7);
     try {
-      const [agingRes, expenseRes, revenueRes, assetsRes] = await Promise.all([
+      const [agingRes, expenseRes, revenueRes, assetsRes, operationalRes] = await Promise.all([
         axios.get('/ap/aging'),
         axios.get('/budget/vs-actual', { params: { period, kind: 'expense' } }),
         axios.get('/budget/vs-actual', { params: { period, kind: 'revenue' } }),
         axios.get('/fixed-assets/assets'),
+        axios.get(GL_ENDPOINTS.operationalStatus),
       ]);
       setWorkspace({
         aging: agingRes.data,
@@ -244,8 +253,33 @@ const GeneralLedgerModule = () => {
         revenueBudget: revenueRes.data,
         assets: assetsRes.data?.assets || [],
       });
+      setOperationalBridge(operationalRes.data || null);
     } catch {
       toast.error('Muhasebe alt defterleri yüklenemedi.');
+    }
+  };
+
+  const enableOperationalBridge = async () => {
+    setOperationalBusy(true);
+    try {
+      const current = operationalBridge?.mapping || {};
+      await axios.put(GL_ENDPOINTS.operationalMapping, {
+        enabled: true,
+        auto_night_audit: current.auto_night_audit ?? true,
+        auto_pos: current.auto_pos ?? true,
+        receivable_account_code: current.receivable_account_code || '120',
+        revenue_account_code: current.revenue_account_code || '600',
+        tax_account_code: current.tax_account_code || '391',
+        cash_account_code: current.cash_account_code || '100',
+        card_account_code: current.card_account_code || '108',
+        bank_account_code: current.bank_account_code || '102',
+      });
+      toast.success('PMS/POS otomatik muhasebe köprüsü etkinleştirildi.');
+      await fetchWorkspace();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Operasyonel muhasebe köprüsü etkinleştirilemedi.');
+    } finally {
+      setOperationalBusy(false);
     }
   };
 
@@ -758,14 +792,36 @@ const GeneralLedgerModule = () => {
               </div>
             </CardContent>
           </Card>
+          {chainFinance?.property_count > 1 && (
+            <Card className="mt-5">
+              <CardHeader><CardTitle>Zincir Konsolide Finans · {chainFinance.property_count} Otel</CardTitle></CardHeader>
+              <CardContent>
+                <div className="grid sm:grid-cols-3 gap-3 mb-4">
+                  <div className="rounded-lg bg-emerald-50 p-3"><p className="text-xs text-slate-500">Toplam Gelir</p><p className="text-xl font-bold text-emerald-700">{fmtMoney(chainFinance.totals?.revenue?.amount || 0)}</p></div>
+                  <div className="rounded-lg bg-red-50 p-3"><p className="text-xs text-slate-500">Toplam Gider</p><p className="text-xl font-bold text-red-700">{fmtMoney(chainFinance.totals?.expenses?.amount || 0)}</p></div>
+                  <div className="rounded-lg bg-slate-100 p-3"><p className="text-xs text-slate-500">Konsolide Net Sonuç</p><p className="text-xl font-bold">{fmtMoney(chainFinance.totals?.net_income?.amount || 0)}</p></div>
+                </div>
+                <div className="space-y-2">
+                  {chainFinance.properties.map((property) => (
+                    <div key={property.tenant_id} className="flex items-center justify-between rounded border p-2 text-sm">
+                      <span>{property.property_name}</span>
+                      <span className="font-medium">{fmtMoney(property.income?.net_income || 0)}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-amber-700 mt-3">{chainFinance.consolidation?.warning}</p>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="workspace">
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
             <Card><CardContent className="pt-6"><Landmark className="w-7 h-7 text-amber-600 mb-3" /><p className="text-sm text-slate-500">Tedarikçi Borçları</p><p className="text-2xl font-bold">{fmtMoney(workspace.aging?.total_outstanding || 0)}</p><p className="text-xs text-slate-500 mt-2">90+ gün: {fmtMoney(workspace.aging?.buckets?.d90_plus || 0)}</p></CardContent></Card>
             <Card><CardContent className="pt-6"><TrendingUp className="w-7 h-7 text-red-600 mb-3" /><p className="text-sm text-slate-500">Gider Bütçesi · Bu Ay</p><p className="text-2xl font-bold">{fmtMoney(workspace.expenseBudget?.totals?.actual || 0)}</p><p className="text-xs text-slate-500 mt-2">Bütçe: {fmtMoney(workspace.expenseBudget?.totals?.budget || 0)}</p></CardContent></Card>
             <Card><CardContent className="pt-6"><TrendingUp className="w-7 h-7 text-emerald-600 mb-3" /><p className="text-sm text-slate-500">Gelir Bütçesi · Bu Ay</p><p className="text-2xl font-bold">{fmtMoney(workspace.revenueBudget?.totals?.actual || 0)}</p><p className="text-xs text-slate-500 mt-2">Bütçe: {fmtMoney(workspace.revenueBudget?.totals?.budget || 0)}</p></CardContent></Card>
             <Card><CardContent className="pt-6"><PackageOpen className="w-7 h-7 text-indigo-600 mb-3" /><p className="text-sm text-slate-500">Sabit Kıymetler</p><p className="text-2xl font-bold">{workspace.assets.length}</p><p className="text-xs text-slate-500 mt-2">Net defter değeri: {fmtMoney(workspace.assets.reduce((sum, item) => sum + (Number(item.book_value) || 0), 0))}</p></CardContent></Card>
+            <Card><CardContent className="pt-6"><Landmark className={`w-7 h-7 mb-3 ${operationalBridge?.healthy ? 'text-emerald-600' : 'text-amber-600'}`} /><p className="text-sm text-slate-500">PMS/POS Muhasebe Köprüsü</p><p className="text-lg font-bold">{operationalBridge?.healthy ? 'Sağlıklı' : operationalBridge?.configured ? 'İnceleme Gerekli' : 'Kapalı'}</p><p className="text-xs text-slate-500 mt-2">Gece: {operationalBridge?.failed?.night_audit || 0} · POS: {operationalBridge?.failed?.pos || 0} hata</p>{!operationalBridge?.configured && <Button size="sm" className="w-full mt-3" onClick={enableOperationalBridge} disabled={operationalBusy}>{operationalBusy ? 'Açılıyor...' : 'Standart Eşlemeyle Aç'}</Button>}</CardContent></Card>
           </div>
           <p className="text-xs text-slate-500 mt-4">Bu özetler AP, bütçe ve sabit kıymet alt defterlerindeki gerçek tenant verisinden okunur; örnek/sabit rakam kullanılmaz.</p>
         </TabsContent>

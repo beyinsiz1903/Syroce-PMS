@@ -25,6 +25,9 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       comparativeBalance: '/gl/statements/comparative-balance-sheet',
       exportReport: '/gl/reports/export',
       fxRevalue: '/gl/fx/revalue',
+      chainConsolidated: '/gl/chain/consolidated',
+      operationalMapping: '/gl/integrations/operational/mapping',
+      operationalStatus: '/gl/integrations/operational/status',
     });
   });
 
