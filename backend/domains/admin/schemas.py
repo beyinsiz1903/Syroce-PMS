@@ -21,6 +21,29 @@ class TenantModulesUpdate(BaseModel):
     channel_manager_provider: Literal["exely", "hotelrunner"] | None = None
 
 
+class TenantProvisioningUpdate(BaseModel):
+    """Superadmin tarafından hedef otelin kurulum kapsamını günceller."""
+
+    channel_manager_provider: Literal["exely", "hotelrunner"] | None = None
+    chain_id: str | None = None
+    is_chain_headquarters: bool | None = None
+
+
+class AdminProviderCredentialsRequest(BaseModel):
+    credentials: dict[str, str]
+
+
+class AdminNilveraProvisioningRequest(BaseModel):
+    enabled: bool | None = None
+    api_key: str | None = None
+    seller: dict | None = None
+
+
+class AdminCreateChainRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=120)
+    headquarters_tenant_id: str | None = None
+
+
 class SubscriptionUpdateRequest(BaseModel):
     subscription_days: int | None = None
     subscription_start_date: str | None = None

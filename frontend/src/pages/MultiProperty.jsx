@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Building, Home, MapPin, TrendingUp, Hotel, DollarSign, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Building, Home, MapPin, TrendingUp, Hotel, DollarSign, Loader2, AlertTriangle, RefreshCw, Link2, ReceiptText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const MultiProperty = () => {
@@ -37,8 +37,8 @@ const MultiProperty = () => {
             <Home className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">Multi-Property Dashboard</h1>
-            <p className="text-gray-600">Çoklu otel yönetimi ve konsolide raporlar</p>
+            <h1 className="text-3xl font-bold">Zincir Otel Yönetimi</h1>
+            <p className="text-gray-600">Yetkili olduğunuz zincirdeki otellerin konsolide, salt-okunur operasyon görünümü</p>
           </div>
         </div>
       </div>
@@ -107,6 +107,20 @@ const MultiProperty = () => {
                   <div>
                     <p className="text-xs text-gray-500">{t("finance.revenue")}</p>
                     <p className="text-lg font-bold">€{property.today_revenue}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t text-xs">
+                  <div className="rounded-md bg-slate-50 p-2">
+                    <div className="flex items-center gap-1 text-slate-500"><Link2 className="w-3.5 h-3.5" /> Kanal yöneticisi</div>
+                    <p className="font-semibold mt-1 capitalize">
+                      {property.integrations?.channel_manager?.provider || 'Kurulmadı'} · {property.integrations?.channel_manager?.status || 'not_configured'}
+                    </p>
+                  </div>
+                  <div className="rounded-md bg-slate-50 p-2">
+                    <div className="flex items-center gap-1 text-slate-500"><ReceiptText className="w-3.5 h-3.5" /> Nilvera</div>
+                    <p className={`font-semibold mt-1 ${property.integrations?.nilvera?.enabled ? 'text-emerald-700' : 'text-slate-600'}`}>
+                      {property.integrations?.nilvera?.enabled ? 'Etkin' : 'Kapalı'}
+                    </p>
                   </div>
                 </div>
               </CardContent>

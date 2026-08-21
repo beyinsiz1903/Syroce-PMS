@@ -85,13 +85,13 @@ async def _tenant_name_map(tenant_ids: list[str]) -> dict[str, str]:
     # v97 fix — match by either tenant_id or id (see above).
     cursor = db.tenants.find(
         {"$or": [{"tenant_id": {"$in": tenant_ids}}, {"id": {"$in": tenant_ids}}]},
-        {"_id": 0, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1},
+        {"_id": 0, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1, "property_name": 1},
     )
     out: dict[str, str] = {}
     async for t in cursor:
         tid = t.get("tenant_id") or t.get("id")
         if tid:
-            out[tid] = t.get("hotel_name") or t.get("name") or tid
+            out[tid] = t.get("property_name") or t.get("hotel_name") or t.get("name") or tid
     return out
 
 

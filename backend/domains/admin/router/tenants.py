@@ -98,10 +98,14 @@ def is_role_allowed_for_tier(role: str, tier: str) -> bool:
 
 from core.security import hash_password
 from domains.admin.schemas import (  # noqa: E402
+    AdminCreateChainRequest,
     AdminCreateTeamMemberRequest,
+    AdminNilveraProvisioningRequest,
+    AdminProviderCredentialsRequest,
     AdminUpdateTenantInfoRequest,
     SubscriptionUpdateRequest,
     TenantModulesUpdate,
+    TenantProvisioningUpdate,
     UpdateTeamMemberRoleRequest,
 )
 
@@ -240,6 +244,305 @@ except ImportError:
 # ──────────────────────────────────────────────────────────────────────────────
 
 router = APIRouter(prefix="/api", tags=["Admin / Operations"])
+
+
+CHANNEL_PROVIDER_FIELDS = {
+    "hotelrunner": {
+        "display_name": "HotelRunner",
+        "fields": [
+            {"key": "token", "label": "API Token", "type": "password", "required": True},
+            {"key": "hr_id", "label": "HR ID (Hotel ID)", "type": "text", "required": True},
+        ],
+    },
+    "exely": {
+        "display_name": "Exely",
+        "fields": [
+            {"key": "username", "label": "SOAP Username", "type": "text", "required": True},
+            {"key": "password", "label": "SOAP Password", "type": "password", "required": True},
+            {"key": "hotel_code", "label": "Hotel Code", "type": "text", "required": True},
+            {"key": "endpoint_url", "label": "SOAP Endpoint URL", "type": "text", "required": False},
+        ],
+    },
+}
+
+
+def _validate_provider_credentials(provider: str, credentials: dict[str, str]) -> dict[str, str]:
+    definition = CHANNEL_PROVIDER_FIELDS.get(provider)
+    if not definition:
+        raise HTTPException(status_code=400, detail="Desteklenmeyen kanal yöneticisi")
+    allowed = {field["key"] for field in definition["fields"]}
+    cleaned = {
+        key: str(value).strip()
+        for key, value in credentials.items()
+        if key in allowed and value is not None and str(value).strip()
+    }
+    missing = [field["label"] for field in definition["fields"] if field["required"] and not cleaned.get(field["key"])]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Zorunlu alanlar eksik: {', '.join(missing)}")
+    return cleaned
+
+
+async def _require_target_tenant(sys_db, tenant_id: str) -> dict:
+    tenant_doc = await sys_db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+    if not tenant_doc:
+        raise HTTPException(status_code=404, detail="Otel bulunamadı")
+    return tenant_doc
+
+
+@router.get("/admin/chains")
+async def list_hotel_chains(current_user: User = Depends(require_super_admin)):
+    """Süperadmin kurulum ekranı için zincirleri ve üye sayılarını döndürür."""
+    sys_db = get_system_db()
+    chains = await sys_db.hotel_chains.find({}, {"_id": 0}).sort("name", 1).to_list(1000)
+    for chain in chains:
+        chain["property_count"] = await sys_db.tenants.count_documents({"chain_id": chain["id"]})
+    return {"chains": chains}
+
+
+@router.post("/admin/chains")
+async def create_hotel_chain(
+    payload: AdminCreateChainRequest,
+    current_user: User = Depends(require_super_admin),
+):
+    from core.audit import log_audit_event
+
+    sys_db = get_system_db()
+    name = payload.name.strip()
+    existing = await sys_db.hotel_chains.find_one({"name_normalized": name.casefold()}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=409, detail="Bu isimde bir zincir zaten var")
+    if payload.headquarters_tenant_id:
+        target_tenant = await _require_target_tenant(sys_db, payload.headquarters_tenant_id)
+        if target_tenant.get("chain_id"):
+            raise HTTPException(status_code=409, detail="Otel zaten bir zincire bağlı; önce mevcut zincir üyeliğini kaldırın")
+    now = datetime.now(UTC).isoformat()
+    chain = {
+        "id": str(uuid.uuid4()),
+        "name": name,
+        "name_normalized": name.casefold(),
+        "headquarters_tenant_id": payload.headquarters_tenant_id,
+        "created_at": now,
+        "created_by": current_user.id,
+        "updated_at": now,
+    }
+    await sys_db.hotel_chains.insert_one(chain.copy())
+    if payload.headquarters_tenant_id:
+        await sys_db.tenants.update_one(
+            {"id": payload.headquarters_tenant_id},
+            {"$set": {"chain_id": chain["id"], "is_chain_headquarters": True, "modules.multi_property": True}},
+        )
+    await log_audit_event(
+        tenant_id=payload.headquarters_tenant_id or current_user.tenant_id,
+        user_id=current_user.id,
+        action="hotel_chain_created",
+        entity_type="hotel_chain",
+        entity_id=chain["id"],
+        details=f"{name} zinciri oluşturuldu",
+        after_value={"name": name, "headquarters_tenant_id": payload.headquarters_tenant_id},
+        db=sys_db,
+    )
+    return {"success": True, "chain": chain}
+
+
+@router.get("/admin/tenants/{tenant_id}/provisioning")
+async def get_tenant_provisioning(
+    tenant_id: str,
+    current_user: User = Depends(require_super_admin),
+):
+    """Hedef otele ait zincir ve entegrasyon durumunu, sırları açmadan döndürür."""
+    from core.integrations.nilvera.provisioner import get_nilvera_tenant_config
+    from domains.channel_manager import credential_vault as vault
+
+    sys_db = get_system_db()
+    tenant_doc = await _require_target_tenant(sys_db, tenant_id)
+    provider_summaries = []
+    for provider, definition in CHANNEL_PROVIDER_FIELDS.items():
+        masked = await vault.get_masked_credentials(tenant_id, provider, "default", database=sys_db)
+        connection = await sys_db.provider_connections.find_one(
+            {"tenant_id": tenant_id, "provider": provider, "property_id": "default"},
+            {"_id": 0, "status": 1, "last_successful_sync": 1, "last_error": 1},
+        )
+        provider_summaries.append(
+            {
+                "provider": provider,
+                "display_name": definition["display_name"],
+                "fields": definition["fields"],
+                "has_credentials": masked is not None,
+                "credentials": masked,
+                "connection": connection or {"status": "not_configured"},
+            }
+        )
+    chain = None
+    if tenant_doc.get("chain_id"):
+        chain = await sys_db.hotel_chains.find_one({"id": tenant_doc["chain_id"]}, {"_id": 0})
+    return {
+        "tenant": {
+            "id": tenant_doc.get("id"),
+            "hotel_id": tenant_doc.get("hotel_id"),
+            "property_name": tenant_doc.get("property_name"),
+            "channel_manager_provider": tenant_doc.get("channel_manager_provider"),
+            "chain_id": tenant_doc.get("chain_id"),
+            "is_chain_headquarters": bool(tenant_doc.get("is_chain_headquarters")),
+        },
+        "chain": chain,
+        "providers": provider_summaries,
+        "nilvera": await get_nilvera_tenant_config(tenant_id),
+    }
+
+
+@router.patch("/admin/tenants/{tenant_id}/provisioning")
+async def update_tenant_provisioning(
+    tenant_id: str,
+    payload: TenantProvisioningUpdate,
+    current_user: User = Depends(require_super_admin),
+):
+    """Sağlayıcı seçimi ve zincir üyeliğini günceller; dış sağlayıcı çağrısı yapmaz."""
+    from core.audit import log_audit_event
+
+    sys_db = get_system_db()
+    before = await _require_target_tenant(sys_db, tenant_id)
+    updates: dict[str, object] = {"provisioning_updated_at": datetime.now(UTC).isoformat()}
+    if "channel_manager_provider" in payload.model_fields_set:
+        updates["channel_manager_provider"] = payload.channel_manager_provider
+    if "chain_id" in payload.model_fields_set:
+        chain_id = (payload.chain_id or "").strip() or None
+        if chain_id:
+            chain = await sys_db.hotel_chains.find_one({"id": chain_id}, {"_id": 0})
+            if not chain:
+                raise HTTPException(status_code=404, detail="Zincir bulunamadı")
+        updates["chain_id"] = chain_id
+        if chain_id:
+            updates["modules.multi_property"] = True
+        if chain_id is None:
+            updates["is_chain_headquarters"] = False
+    if "is_chain_headquarters" in payload.model_fields_set:
+        if payload.is_chain_headquarters and not updates.get("chain_id", before.get("chain_id")):
+            raise HTTPException(status_code=400, detail="Merkez tesis için önce zincir seçilmelidir")
+        updates["is_chain_headquarters"] = bool(payload.is_chain_headquarters)
+    await sys_db.tenants.update_one({"id": tenant_id}, {"$set": updates})
+    after = await _require_target_tenant(sys_db, tenant_id)
+    before_chain_id = before.get("chain_id")
+    after_chain_id = after.get("chain_id")
+    if before.get("is_chain_headquarters") and before_chain_id and (
+        before_chain_id != after_chain_id or not after.get("is_chain_headquarters")
+    ):
+        await sys_db.hotel_chains.update_one(
+            {"id": before_chain_id, "headquarters_tenant_id": tenant_id},
+            {"$set": {"headquarters_tenant_id": None, "updated_at": datetime.now(UTC).isoformat()}},
+        )
+    if after.get("is_chain_headquarters") and after_chain_id:
+        await sys_db.tenants.update_many(
+            {"chain_id": after_chain_id, "id": {"$ne": tenant_id}},
+            {"$set": {"is_chain_headquarters": False}},
+        )
+        await sys_db.hotel_chains.update_one(
+            {"id": after_chain_id},
+            {"$set": {"headquarters_tenant_id": tenant_id, "updated_at": datetime.now(UTC).isoformat()}},
+        )
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=current_user.id,
+        action="tenant_provisioning_updated",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details="Süperadmin otel kurulum kapsamını güncelledi",
+        before_value={k: before.get(k) for k in ("channel_manager_provider", "chain_id", "is_chain_headquarters")},
+        after_value={k: after.get(k) for k in ("channel_manager_provider", "chain_id", "is_chain_headquarters")},
+        db=sys_db,
+    )
+    _invalidate_admin_tenants_cache(getattr(current_user, "tenant_id", None))
+    return {"success": True, "tenant": {k: after.get(k) for k in ("id", "channel_manager_provider", "chain_id", "is_chain_headquarters")}}
+
+
+@router.post("/admin/tenants/{tenant_id}/integrations/{provider}/credentials")
+async def save_target_provider_credentials(
+    tenant_id: str,
+    provider: str,
+    payload: AdminProviderCredentialsRequest,
+    current_user: User = Depends(require_super_admin),
+):
+    """Hedef otelin Exely/HotelRunner sırlarını şifreler; test veya sync çalıştırmaz."""
+    from core.audit import log_audit_event
+    from domains.channel_manager import credential_vault as vault
+
+    sys_db = get_system_db()
+    await _require_target_tenant(sys_db, tenant_id)
+    credentials = _validate_provider_credentials(provider, payload.credentials)
+    secret_id = await vault.store_secret(tenant_id, provider, "default", credentials, database=sys_db)
+    now = datetime.now(UTC).isoformat()
+    definition = CHANNEL_PROVIDER_FIELDS[provider]
+    await sys_db.provider_connections.update_one(
+        {"tenant_id": tenant_id, "provider": provider, "property_id": "default"},
+        {
+            "$set": {
+                "credentials_ref": secret_id,
+                "status": "draft",
+                "display_name": f"{definition['display_name']} - default",
+                "updated_at": now,
+                "updated_by": current_user.id,
+            },
+            "$setOnInsert": {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "provider": provider,
+                "property_id": "default",
+                "created_at": now,
+                "created_by": current_user.id,
+                "sync_inventory": True,
+                "sync_rates": True,
+                "sync_reservations": True,
+                "sync_restrictions": True,
+            },
+            "$unset": {"credentials": "", "token": "", "password": "", "username": ""},
+        },
+        upsert=True,
+    )
+    await sys_db.tenants.update_one({"id": tenant_id}, {"$set": {"channel_manager_provider": provider}})
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=current_user.id,
+        action="integration_credentials_stored",
+        entity_type="provider_connection",
+        entity_id=provider,
+        details=f"{definition['display_name']} kimlik bilgileri şifreli olarak kaydedildi; bağlantı testi çalıştırılmadı",
+        after_value={"provider": provider, "field_names": sorted(credentials), "status": "draft"},
+        db=sys_db,
+    )
+    return {"success": True, "provider": provider, "has_credentials": True, "status": "draft", "connection_tested": False}
+
+
+@router.put("/admin/tenants/{tenant_id}/integrations/nilvera")
+async def save_target_nilvera_config(
+    tenant_id: str,
+    payload: AdminNilveraProvisioningRequest,
+    current_user: User = Depends(require_super_admin),
+):
+    """Nilvera tenant ayarlarını şifreli kaydeder; Nilvera API çağrısı yapmaz."""
+    from core.audit import log_audit_event
+    from core.integrations.nilvera.provisioner import update_nilvera_tenant_config
+
+    sys_db = get_system_db()
+    await _require_target_tenant(sys_db, tenant_id)
+    try:
+        summary = await update_nilvera_tenant_config(
+            tenant_id,
+            enabled=payload.enabled,
+            api_key=payload.api_key,
+            seller=payload.seller,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=current_user.id,
+        action="nilvera_provisioning_updated",
+        entity_type="integration",
+        entity_id="nilvera",
+        details="Nilvera ayarları güncellendi; dış servis çağrısı yapılmadı",
+        after_value={"enabled": summary["enabled"], "api_key_set": summary["api_key_set"], "seller_configured": bool(summary["seller"])},
+        db=sys_db,
+    )
+    return {"success": True, "nilvera": summary, "connection_tested": False}
 
 
 # ── GET /admin/property-types ──
@@ -397,9 +700,41 @@ async def create_tenant(payload: TenantRegister, current_user: User = Depends(re
             except Exception:
                 continue
 
+    if payload.chain_mode != "standalone":
+        combined_modules["multi_property"] = True
+
     from core.hotel_ids import generate_unique_hotel_id
 
     new_hotel_id = await generate_unique_hotel_id(sys_db)
+
+    chain_id = None
+    new_chain_doc = None
+    is_chain_headquarters = False
+    if payload.chain_mode == "existing_chain":
+        if not payload.chain_id:
+            raise HTTPException(status_code=400, detail="Mevcut zincir seçilmelidir")
+        chain = await sys_db.hotel_chains.find_one({"id": payload.chain_id}, {"_id": 0})
+        if not chain:
+            raise HTTPException(status_code=404, detail="Zincir bulunamadı")
+        chain_id = payload.chain_id
+    elif payload.chain_mode == "new_chain":
+        chain_name = (payload.chain_name or "").strip()
+        if len(chain_name) < 2:
+            raise HTTPException(status_code=400, detail="Zincir adı en az 2 karakter olmalıdır")
+        duplicate_chain = await sys_db.hotel_chains.find_one({"name_normalized": chain_name.casefold()}, {"_id": 0, "id": 1})
+        if duplicate_chain:
+            raise HTTPException(status_code=409, detail="Bu isimde bir zincir zaten var")
+        chain_id = str(uuid.uuid4())
+        is_chain_headquarters = True
+        new_chain_doc = {
+            "id": chain_id,
+            "name": chain_name,
+            "name_normalized": chain_name.casefold(),
+            "headquarters_tenant_id": None,
+            "created_at": start_date.isoformat(),
+            "created_by": current_user.id,
+            "updated_at": start_date.isoformat(),
+        }
 
     new_tenant = Tenant(
         hotel_id=new_hotel_id,
@@ -417,6 +752,8 @@ async def create_tenant(payload: TenantRegister, current_user: User = Depends(re
         subscription_plan=normalized_plan,
         modules=combined_modules,
         features=special_settings,
+        chain_id=chain_id,
+        is_chain_headquarters=is_chain_headquarters,
     )
 
     tenant_dict = new_tenant.model_dump()
@@ -430,6 +767,9 @@ async def create_tenant(payload: TenantRegister, current_user: User = Depends(re
     if payload.channel_manager_provider:
         tenant_dict["channel_manager_provider"] = payload.channel_manager_provider
     await sys_db.tenants.insert_one(tenant_dict)
+    if new_chain_doc:
+        new_chain_doc["headquarters_tenant_id"] = new_tenant.id
+        await sys_db.hotel_chains.insert_one(new_chain_doc)
 
     # B2B connect code: yeni otel icin otele ozel baglanti kodu uret (Secenek B
     # oto-saglama). Best-effort — kod uretimi otel kurulumunu engellemez.

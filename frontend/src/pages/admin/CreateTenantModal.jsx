@@ -89,6 +89,10 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
   const [modulesMap, setModulesMap] = useState({});
   // Kanal yoneticisi altyapisi secimi (super_admin). '' = otomatik tespit.
   const [channelProvider, setChannelProvider] = useState('');
+  const [chains, setChains] = useState([]);
+  const [chainMode, setChainMode] = useState('standalone');
+  const [chainId, setChainId] = useState('');
+  const [chainName, setChainName] = useState('');
   const [form, setForm] = useState({
     property_name: '',
     property_type: '',
@@ -111,6 +115,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
       }).catch((e) => {
         console.warn('[CreateTenantModal] property-types fetch failed:', e?.response?.status ?? e?.message);
       });
+      axios.get('/admin/chains').then(r => setChains(r.data?.chains || [])).catch(() => setChains([]));
     }
   }, [open]);
 
@@ -176,6 +181,14 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
       setError('Lütfen zorunlu alanları doldurun');
       return;
     }
+    if (chainMode === 'new_chain' && chainName.trim().length < 2) {
+      setError('Lütfen zincir adını girin');
+      return;
+    }
+    if (chainMode === 'existing_chain' && !chainId) {
+      setError('Lütfen eklenecek zinciri seçin');
+      return;
+    }
     setError(null);
     setStep(3);
   };
@@ -190,8 +203,11 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
       // Always send the explicit module map so backend uses operator's choices.
       payload.modules = modulesMap;
       payload.channel_manager_provider = channelProvider || null;
-      await axios.post('/admin/tenants', payload);
-      onSuccess?.();
+      payload.chain_mode = chainMode;
+      if (chainMode === 'existing_chain') payload.chain_id = chainId;
+      if (chainMode === 'new_chain') payload.chain_name = chainName.trim();
+      const response = await axios.post('/admin/tenants', payload);
+      onSuccess?.({ ...response.data, property_name: form.property_name });
       onOpenChange(false);
       resetForm();
     } catch (err) {
@@ -205,6 +221,9 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
     setStep(1);
     setSelectedType(null);
     setChannelProvider('');
+    setChainMode('standalone');
+    setChainId('');
+    setChainName('');
     setError(null);
     setModulesMap({});
     setModulesTouched(false);
@@ -404,6 +423,40 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                     <option value="365">{t('cm.pages_admin_CreateTenantModal.1_yil')}</option>
                     <option value="">{t('cm.pages_admin_CreateTenantModal.sinirsiz')}</option>
                   </select>
+                </div>
+                <div className="col-span-2 rounded-lg border border-slate-200 p-3 space-y-3">
+                  <div>
+                    <Label>Zincir otel yapısı</Label>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Her otel ayrı veri alanında kalır; zincir müdürü konsolide ekran üzerinden takip eder.</p>
+                  </div>
+                  <div className="grid sm:grid-cols-3 gap-2">
+                    {[
+                      ['standalone', 'Bağımsız otel'],
+                      ['new_chain', 'Yeni zincir merkezi'],
+                      ['existing_chain', 'Mevcut zincire ekle'],
+                    ].map(([value, label]) => (
+                      <button
+                        type="button"
+                        key={value}
+                        onClick={() => setChainMode(value)}
+                        className={`rounded-lg border px-3 py-2 text-xs font-medium ${chainMode === value ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600'}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {chainMode === 'new_chain' && (
+                    <div><Label>Yeni zincir adı *</Label><input className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={chainName} onChange={(e) => setChainName(e.target.value)} placeholder="Syroce Hotels" /></div>
+                  )}
+                  {chainMode === 'existing_chain' && (
+                    <div>
+                      <Label>Zincir seçin *</Label>
+                      <select className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={chainId} onChange={(e) => setChainId(e.target.value)}>
+                        <option value="">Seçiniz</option>
+                        {chains.map((chain) => <option key={chain.id} value={chain.id}>{chain.name} ({chain.property_count || 0} otel)</option>)}
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
 
