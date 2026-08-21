@@ -29,7 +29,10 @@ from shared_kernel import gl_posting
 
 def _match(doc: dict, flt: dict) -> bool:
     for k, v in flt.items():
-        if isinstance(v, dict) and "$in" in v:
+        if k == "$or":
+            if not any(_match(doc, clause) for clause in v):
+                return False
+        elif isinstance(v, dict) and "$in" in v:
             if doc.get(k) not in v["$in"]:
                 return False
         elif isinstance(v, dict) and ("$gte" in v or "$lte" in v or "$gt" in v or "$lt" in v):
@@ -130,10 +133,12 @@ class _FakeDB:
         self.gl_accounts = _Coll("gl_accounts")
         self.gl_counters = _Coll("gl_counters")
         self.gl_journal_entries = _Coll("gl_journal_entries", unique_key=("tenant_id", "idempotency_key"))
+        self.gl_operational_mappings = _Coll("gl_operational_mappings")
         self.gl_periods = _Coll("gl_periods")
         self.gl_sequence_reservations = _Coll("gl_sequence_reservations")
         self.gl_year_end_closures = _Coll("gl_year_end_closures")
         self.payroll_gl_mapping = _Coll("payroll_gl_mapping")
+        self.tenants = _Coll("tenants")
 
 
 TENANT = "tenant-A"
@@ -152,6 +157,7 @@ def test_accounting_subledgers_are_strictly_tenant_scoped():
         "gl_counters",
         "gl_sequence_reservations",
         "gl_year_end_closures",
+        "gl_operational_mappings",
     }.issubset(TENANT_SCOPED_COLLECTIONS)
 
 
@@ -169,6 +175,7 @@ def _user(role="finance", *, super_admin=False, tenant=TENANT):
 def _patch(monkeypatch):
     fake = _FakeDB()
     monkeypatch.setattr(gl, "db", fake)
+    monkeypatch.setattr(gl, "_system_db", fake)
 
     async def _noop(*_args, **_kwargs):
         return None
@@ -292,6 +299,19 @@ async def test_initialize_chart_backfills_legacy_monetary_flags(_patch):
     await gl.initialize_chart_of_accounts(current_user=_user("finance"))
 
     assert next(row for row in _patch.gl_accounts.docs if row["code"] == "102")["monetary"] is True
+
+
+async def test_operational_bridge_mapping_validates_and_persists_accounts(_patch):
+    await gl.initialize_chart_of_accounts(current_user=_user("finance"))
+
+    result = await gl.update_operational_gl_mapping(
+        gl.OperationalMappingIn(enabled=True),
+        current_user=_user("finance"),
+    )
+
+    assert result["mapping"]["enabled"] is True
+    assert result["mapping"]["receivable_account_code"] == "120"
+    assert _patch.gl_operational_mappings.docs[0]["tenant_id"] == TENANT
 
 
 async def test_account_reads_require_accounting_read_role(_patch):
@@ -1038,3 +1058,37 @@ async def test_comparative_income_statement_and_exports(_patch):
     assert xlsx.media_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     assert pdf.media_type == "application/pdf"
     assert pdf.body.startswith(b"%PDF")
+
+
+async def test_chain_consolidation_is_strictly_chain_scoped(_patch):
+    _patch.tenants.docs.extend(
+        [
+            {"id": "tenant-A", "chain_id": "chain-1", "hotel_name": "Otel A"},
+            {"id": "tenant-B", "chain_id": "chain-1", "hotel_name": "Otel B"},
+            {"id": "tenant-X", "chain_id": "chain-2", "hotel_name": "Yabancı Otel"},
+        ]
+    )
+    for tenant, amount in (("tenant-A", 100), ("tenant-B", 50), ("tenant-X", 999)):
+        user = _user("finance", tenant=tenant)
+        await _mk_account("100", "Kasa", "asset", user=user)
+        await _mk_account("600", "Satış", "revenue", user=user)
+        await gl.create_journal(
+            _journal(
+                [{"account_code": "100", "debit": amount}, {"account_code": "600", "credit": amount}],
+                date="2026-06-01",
+            ),
+            current_user=user,
+        )
+
+    result = await gl.chain_consolidated_finance(
+        start="2026-01-01",
+        end="2026-12-31",
+        as_of="2026-12-31",
+        current_user=_user("finance", tenant="tenant-A"),
+    )
+
+    assert result["scope"] == "chain"
+    assert result["property_count"] == 2
+    assert {row["tenant_id"] for row in result["properties"]} == {"tenant-A", "tenant-B"}
+    assert result["totals"]["revenue"]["amount"] == 150.0
+    assert result["consolidation"]["intercompany_eliminations_applied"] is False

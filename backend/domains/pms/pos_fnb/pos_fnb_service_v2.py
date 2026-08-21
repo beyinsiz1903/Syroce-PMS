@@ -284,6 +284,24 @@ class PosFnbServiceV2:
             },
         )
 
+        try:
+            from core.integrations.operational_gl_bridge import post_direct_pos_to_gl
+
+            await post_direct_pos_to_gl(
+                self._db,
+                ctx.tenant_id,
+                transaction=txn_doc,
+                order=order,
+                posted_to_folio=post_to_folio and folio_charge_id is not None,
+                actor=ctx.actor_id,
+            )
+        except Exception as exc:  # noqa: BLE001 — completed payment must remain completed
+            logger.exception("POS GL bridge failed for order=%s tenant=%s: %s", order_id, ctx.tenant_id, exc)
+            await self._db.pos_transactions.update_one(
+                {"tenant_id": ctx.tenant_id, "id": txn_id},
+                {"$set": {"gl_bridge_status": "failed", "gl_bridge_error": str(exc)[:500]}},
+            )
+
         # Release table
         if order.get("table_number") and order.get("outlet_id"):
             await self._db.table_layouts.update_one(

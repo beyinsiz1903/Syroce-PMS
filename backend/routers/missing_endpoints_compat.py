@@ -23,8 +23,9 @@ or be deleted. New endpoints SHOULD NOT be added to this file.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -32,9 +33,11 @@ from pydantic import BaseModel, Field, field_validator
 
 from core.database import db
 from core.security import get_current_user
+from core.tenant_db import get_system_db
 from modules.pms_core.role_permission_service import require_op
 
 router = APIRouter(prefix="/api", tags=["compat"])
+_system_db = get_system_db()
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -106,46 +109,145 @@ async def gdpr_retention(current_user=Depends(get_current_user)):
 # ─────────────────────────────────────────────────────────────────────
 # CENTRAL OFFICE (multi-property HQ view)
 # ─────────────────────────────────────────────────────────────────────
-# STATUS: partial — real properties read; KPIs hard-coded to 0.
-#                   Aggregation across hotels not implemented.
+async def _central_chain_properties(current_user) -> list[dict]:
+    tenant_id = current_user.tenant_id
+    own = await _system_db.tenants.find_one(
+        {"$or": [{"tenant_id": tenant_id}, {"id": tenant_id}]},
+        {"_id": 0, "chain_id": 1, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1},
+    )
+    chain_id = (own or {}).get("chain_id")
+    if chain_id:
+        tenants = await _system_db.tenants.find(
+            {"chain_id": chain_id},
+            {"_id": 0, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1},
+        ).to_list(500)
+    else:
+        tenants = [own or {"id": tenant_id, "name": tenant_id}]
+    return [
+        {
+            "tenant_id": tenant.get("tenant_id") or tenant.get("id"),
+            "property_name": tenant.get("hotel_name") or tenant.get("name") or tenant.get("tenant_id") or tenant.get("id"),
+        }
+        for tenant in tenants
+        if tenant.get("tenant_id") or tenant.get("id")
+    ]
+
+
+async def _central_property_metrics(property_doc: dict, period_start: str, period_end: str, today: str) -> dict:
+    tenant_id = property_doc["tenant_id"]
+    rooms = await _system_db.rooms.find({"tenant_id": tenant_id}, {"_id": 0, "status": 1}).to_list(10000)
+    occupied = sum(1 for room in rooms if room.get("status") == "occupied")
+    charges = await _system_db.folio_charges.find(
+        {
+            "tenant_id": tenant_id,
+            "voided": {"$ne": True},
+            "$or": [
+                {"business_date": {"$gte": period_start, "$lt": period_end}},
+                {"date": {"$gte": period_start, "$lt": period_end}},
+            ],
+        },
+        {"_id": 0, "total": 1, "amount": 1},
+    ).to_list(100000)
+    revenue = round(sum(float(row.get("total", row.get("amount", 0)) or 0) for row in charges), 2)
+    today_checkins = await _system_db.bookings.count_documents(
+        {"tenant_id": tenant_id, "check_in": today, "status": {"$ne": "cancelled"}}
+    )
+    total_guests = await _system_db.guests.count_documents({"tenant_id": tenant_id})
+    total_rooms = len(rooms)
+    return {
+        **property_doc,
+        "id": tenant_id,
+        "total_rooms": total_rooms,
+        "occupied_rooms": occupied,
+        "available_rooms": max(0, total_rooms - occupied),
+        "occupancy_rate": round((occupied / total_rooms) * 100, 2) if total_rooms else 0.0,
+        "today_checkins": today_checkins,
+        "total_guests": total_guests,
+        "total_revenue": revenue,
+    }
+
+
 @router.get("/central-office/dashboard")
 async def central_office_dashboard(current_user=Depends(get_current_user)):
-    tid = current_user.tenant_id
-    properties: list[dict] = []
-    async for h in db.hotels.find(
-        {"tenant_id": tid},
-        {"_id": 0, "id": 1, "hotel_name": 1, "code": 1, "city": 1, "is_active": 1},
-    ).limit(100):
-        properties.append(h)
+    now = datetime.now(UTC)
+    today = now.date().isoformat()
+    month_start = now.date().replace(day=1).isoformat()
+    tomorrow = (now.date() + timedelta(days=1)).isoformat()
+    properties = await _central_chain_properties(current_user)
+    breakdown = await asyncio.gather(
+        *(_central_property_metrics(property_doc, month_start, tomorrow, today) for property_doc in properties)
+    )
+    total_rooms = sum(row["total_rooms"] for row in breakdown)
+    occupied = sum(row["occupied_rooms"] for row in breakdown)
+    total_revenue = round(sum(row["total_revenue"] for row in breakdown), 2)
     return {
-        "properties": properties,
-        "total_properties": len(properties),
+        "properties": breakdown,
+        "property_breakdown": breakdown,
+        "chain_kpi": {
+            "total_properties": len(breakdown),
+            "total_rooms": total_rooms,
+            "chain_occupancy_rate": round((occupied / total_rooms) * 100, 2) if total_rooms else 0.0,
+            "today_checkins": sum(row["today_checkins"] for row in breakdown),
+            "total_guests": sum(row["total_guests"] for row in breakdown),
+        },
+        "total_properties": len(breakdown),
         "kpis": {
-            "total_revenue_mtd": 0.0,
-            "total_bookings_mtd": 0,
-            "average_occupancy": 0.0,
-            "average_adr": 0.0,
+            "total_revenue_mtd": total_revenue,
+            "average_occupancy": round((occupied / total_rooms) * 100, 2) if total_rooms else 0.0,
         },
     }
 
 
-# STATUS: stub — empty alerts. Needs alert engine wired to ops/incident bus.
 @router.get("/central-office/alerts")
 async def central_office_alerts(current_user=Depends(get_current_user)):
-    return {"alerts": [], "total": 0}
+    properties = await _central_chain_properties(current_user)
+    alerts = []
+    for property_doc in properties:
+        tenant_id = property_doc["tenant_id"]
+        failed_night = await _system_db.night_audit_runs.count_documents(
+            {"tenant_id": tenant_id, "gl_bridge_status": "failed"}
+        )
+        failed_pos = await _system_db.pos_transactions.count_documents(
+            {"tenant_id": tenant_id, "gl_bridge_status": "failed"}
+        )
+        if failed_night or failed_pos:
+            alerts.append(
+                {
+                    "id": f"gl:{tenant_id}",
+                    "property": property_doc["property_name"],
+                    "type": "Muhasebe Köprüsü",
+                    "severity": "warning",
+                    "message": f"{failed_night} gece denetimi ve {failed_pos} POS aktarımı bekliyor.",
+                }
+            )
+    return {"alerts": alerts, "total": len(alerts)}
 
 
-# STATUS: stub — empty comparison. Needs cross-property occupancy aggregator.
 @router.get("/central-office/occupancy-comparison")
 async def central_office_occupancy(current_user=Depends(get_current_user)):
-    return {"properties": [], "period": {"start": None, "end": None}}
+    now = datetime.now(UTC)
+    today = now.date().isoformat()
+    tomorrow = (now.date() + timedelta(days=1)).isoformat()
+    properties = await _central_chain_properties(current_user)
+    comparison = await asyncio.gather(*(_central_property_metrics(row, today, tomorrow, today) for row in properties))
+    return {"comparison": comparison, "properties": comparison, "period": {"start": today, "end": today}}
 
 
-# STATUS: stub — empty revenue. Needs cross-property revenue aggregator
-#                (folio totals × tenant_id × period).
 @router.get("/central-office/revenue-report")
 async def central_office_revenue(current_user=Depends(get_current_user)):
-    return {"properties": [], "totals": {"revenue": 0.0, "bookings": 0}}
+    now = datetime.now(UTC)
+    today = now.date().isoformat()
+    start = now.date().replace(day=1).isoformat()
+    end = (now.date() + timedelta(days=1)).isoformat()
+    properties = await _central_chain_properties(current_user)
+    rows = await asyncio.gather(*(_central_property_metrics(row, start, end, today) for row in properties))
+    total = round(sum(row["total_revenue"] for row in rows), 2)
+    return {
+        "properties": rows,
+        "total_chain_revenue": total,
+        "totals": {"revenue": total},
+        "period": {"start": start, "end": today},
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────

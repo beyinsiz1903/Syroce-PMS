@@ -7,6 +7,7 @@ mizan (trial balance) raporu. Posting çekirdeği shared_kernel.gl_posting'tedir
 Tüm uçlar tenant-scoped; mutasyonlar muhasebe seviyesi RBAC. PII/secret loglanmaz.
 """
 
+import asyncio
 import io
 import logging
 import uuid
@@ -26,7 +27,14 @@ from core.integrations.invoice_gl_bridge import (
     get_incoming_invoice_gl_link,
     post_incoming_invoice_to_gl,
 )
+from core.integrations.operational_gl_bridge import (
+    DEFAULT_MAPPING,
+    OperationalGLBridgeError,
+    get_operational_mapping,
+    post_night_audit_daily_to_gl,
+)
 from core.security import get_current_user
+from core.tenant_db import get_system_db
 from core.utils import create_excel_workbook, excel_response
 from models.schemas import User
 from shared_kernel.gl_periods import GLPeriodError, ensure_calendar_year_periods
@@ -44,6 +52,7 @@ from shared_kernel.pos_idem import ensure_compound_unique
 logger = logging.getLogger("domains.accounting.gl")
 
 router = APIRouter(prefix="/api/gl", tags=["Accounting / GL"])
+_system_db = get_system_db()
 
 _GL_ROLES = {"super_admin", "admin", "finance"}
 _READ_ROLES = {"super_admin", "admin", "finance", "supervisor"}
@@ -691,6 +700,18 @@ class FXRevaluationIn(BaseModel):
     loss_account_code: str = Field("656", min_length=1, max_length=40)
 
 
+class OperationalMappingIn(BaseModel):
+    enabled: bool = False
+    auto_night_audit: bool = True
+    auto_pos: bool = True
+    receivable_account_code: str = Field("120", min_length=1, max_length=40)
+    revenue_account_code: str = Field("600", min_length=1, max_length=40)
+    tax_account_code: str = Field("391", min_length=1, max_length=40)
+    cash_account_code: str = Field("100", min_length=1, max_length=40)
+    card_account_code: str = Field("108", min_length=1, max_length=40)
+    bank_account_code: str = Field("102", min_length=1, max_length=40)
+
+
 class NilveraIncomingGLPostIn(BaseModel):
     purchase_account_code: str = Field(..., description="GL account for expense/asset")
     vat_account_code: str = Field(..., description="GL account for deductible VAT")
@@ -898,6 +919,98 @@ async def revalue_foreign_currency(
         db=db,
     )
     return {"entry": entry, "positions": result_positions}
+
+
+@router.get("/integrations/operational/mapping")
+async def get_operational_gl_mapping(current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _READ_ROLES)
+    return {"mapping": await get_operational_mapping(db, _tenant_of(current_user))}
+
+
+@router.put("/integrations/operational/mapping")
+async def update_operational_gl_mapping(
+    payload: OperationalMappingIn,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    account_codes = {
+        value.strip()
+        for key, value in payload.model_dump().items()
+        if key.endswith("_account_code")
+    }
+    accounts = await db.gl_accounts.find(
+        {"tenant_id": tenant_id, "active": True, "code": {"$in": sorted(account_codes)}},
+        {"_id": 0, "code": 1},
+    ).to_list(100)
+    missing = sorted(account_codes - {account["code"] for account in accounts})
+    if missing:
+        raise HTTPException(status_code=409, detail=f"Operasyonel köprü için eksik hesap kodları: {', '.join(missing)}")
+    now = _now_iso()
+    mapping = {**payload.model_dump(), "tenant_id": tenant_id, "updated_at": now, "updated_by": _actor_id(current_user)}
+    await db.gl_operational_mappings.update_one(
+        {"tenant_id": tenant_id},
+        {"$set": mapping, "$setOnInsert": {"created_at": now}},
+        upsert=True,
+    )
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=_actor_id(current_user),
+        action="gl_operational_mapping_updated",
+        entity_type="gl_operational_mapping",
+        entity_id=tenant_id,
+        details="PMS/POS otomatik muhasebe eşlemesi güncellendi",
+        after_value={key: mapping[key] for key in DEFAULT_MAPPING},
+        db=db,
+    )
+    return {"mapping": mapping}
+
+
+@router.get("/integrations/operational/status")
+async def operational_gl_status(current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _READ_ROLES)
+    tenant_id = _tenant_of(current_user)
+    mapping = await get_operational_mapping(db, tenant_id)
+    failed_night_audits = await db.night_audit_runs.count_documents(
+        {"tenant_id": tenant_id, "gl_bridge_status": "failed"}
+    )
+    failed_pos = await db.pos_transactions.count_documents(
+        {"tenant_id": tenant_id, "gl_bridge_status": "failed"}
+    )
+    latest = await db.night_audit_runs.find_one(
+        {"tenant_id": tenant_id, "status": "completed"},
+        {"_id": 0, "id": 1, "business_date": 1, "gl_bridge_status": 1, "gl_entry_no": 1},
+        sort=[("business_date", -1)],
+    )
+    return {
+        "configured": bool(mapping["enabled"]),
+        "mapping": mapping,
+        "failed": {"night_audit": failed_night_audits, "pos": failed_pos},
+        "latest_night_audit": latest,
+        "healthy": bool(mapping["enabled"]) and failed_night_audits == 0 and failed_pos == 0,
+    }
+
+
+@router.post("/integrations/operational/night-audit/{run_id}/retry")
+async def retry_night_audit_gl_bridge(run_id: str, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    run = await db.night_audit_runs.find_one(
+        {"tenant_id": tenant_id, "id": run_id, "status": "completed"},
+        {"_id": 0},
+    )
+    if not run:
+        raise HTTPException(status_code=404, detail="Tamamlanmış gece denetimi bulunamadı")
+    try:
+        return await post_night_audit_daily_to_gl(
+            db,
+            tenant_id,
+            run["business_date"],
+            run_id=run_id,
+            actor=_actor_id(current_user),
+        )
+    except OperationalGLBridgeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/journal")
@@ -1172,6 +1285,84 @@ async def comparative_balance_sheet(
                 int(round(comparison["totals"][key] * 100)),
             )
             for key in ("assets", "liabilities", "equity", "liabilities_and_equity")
+        },
+    }
+
+
+async def _chain_properties(current_user: User) -> list[dict]:
+    tenant_id = _tenant_of(current_user)
+    own = await _system_db.tenants.find_one(
+        {"$or": [{"tenant_id": tenant_id}, {"id": tenant_id}]},
+        {"_id": 0, "chain_id": 1, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1},
+    )
+    chain_id = (own or {}).get("chain_id")
+    if not chain_id:
+        return [
+            {
+                "tenant_id": tenant_id,
+                "property_name": (own or {}).get("hotel_name") or (own or {}).get("name") or tenant_id,
+            }
+        ]
+    tenants = await _system_db.tenants.find(
+        {"chain_id": chain_id},
+        {"_id": 0, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1},
+    ).to_list(500)
+    return [
+        {
+            "tenant_id": tenant.get("tenant_id") or tenant.get("id"),
+            "property_name": tenant.get("hotel_name") or tenant.get("name") or tenant.get("tenant_id") or tenant.get("id"),
+        }
+        for tenant in tenants
+        if tenant.get("tenant_id") or tenant.get("id")
+    ]
+
+
+@router.get("/chain/consolidated")
+async def chain_consolidated_finance(
+    start: str = Query(...),
+    end: str = Query(...),
+    as_of: str = Query(...),
+    current_user: User = Depends(get_current_user),
+):
+    """Chain-scoped consolidated statements; never widens beyond the user's chain_id."""
+    _require_role(current_user, _READ_ROLES)
+    properties = await _chain_properties(current_user)
+
+    async def _property_finance(property_doc: dict) -> dict:
+        tenant_id = property_doc["tenant_id"]
+        income, balance = await asyncio.gather(
+            compute_income_statement(_system_db, tenant_id, start=start, end=end),
+            compute_balance_sheet(_system_db, tenant_id, as_of=as_of),
+        )
+        return {**property_doc, "income": income["totals"], "balance": balance["totals"]}
+
+    property_rows = await asyncio.gather(*(_property_finance(property_doc) for property_doc in properties))
+    totals_minor = {
+        "revenue": sum(row["income"]["revenue_minor"] for row in property_rows),
+        "expenses": sum(row["income"]["expenses_minor"] for row in property_rows),
+        "net_income": sum(row["income"]["net_income_minor"] for row in property_rows),
+        "assets": int(round(sum(row["balance"]["assets"] for row in property_rows) * 100)),
+        "liabilities": int(round(sum(row["balance"]["liabilities"] for row in property_rows) * 100)),
+        "equity": int(round(sum(row["balance"]["equity"] for row in property_rows) * 100)),
+        "liabilities_and_equity": int(
+            round(sum(row["balance"]["liabilities_and_equity"] for row in property_rows) * 100)
+        ),
+    }
+    return {
+        "scope": "chain" if len(property_rows) > 1 else "single_property",
+        "property_count": len(property_rows),
+        "start": start,
+        "end": end,
+        "as_of": as_of,
+        "properties": property_rows,
+        "totals": {
+            key: {"amount_minor": value, "amount": float(Decimal(value) / 100)}
+            for key, value in totals_minor.items()
+        },
+        "consolidation": {
+            "mode": "aggregation",
+            "intercompany_eliminations_applied": False,
+            "warning": "Grup içi cari hesap eliminasyonları tanımlanmadıysa toplamlar brüt görünür.",
         },
     }
 
