@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import uuid
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
+from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from shared_kernel.gl_periods import GLPeriodError, assert_gl_period_open, normalize_posting_date
@@ -33,6 +35,7 @@ _NORMAL_DEBIT = {"asset", "expense"}
 _NORMAL_CREDIT = {"liability", "equity", "revenue"}
 
 _CENT = Decimal("0.01")
+logger = logging.getLogger("shared_kernel.gl_posting")
 
 
 class GLPostingError(ValueError):
@@ -59,6 +62,58 @@ async def ensure_gl_idem_index(db) -> None:
         partial_filter={"idempotency_key": {"$type": "string"}},
         name="ux_gl_journal_idem",
     )
+
+
+async def _allocate_journal_sequence(db, tenant_id: str, fiscal_year: int, entry_id: str, now: str) -> tuple[int, str]:
+    """Reserve a monotonic tenant/year journal ordinal with a durable trace.
+
+    A reservation is written before the journal insert. If a concurrent
+    idempotent request wins, the losing reservation is marked ``void`` rather
+    than disappearing as an unexplained gap.
+    """
+    counter_id = f"gl-journal-counter:{tenant_id}:{fiscal_year}"
+    counter = await db.gl_counters.find_one_and_update(
+        {"_id": counter_id, "tenant_id": tenant_id},
+        {
+            "$inc": {"value": 1},
+            "$setOnInsert": {
+                "tenant_id": tenant_id,
+                "fiscal_year": fiscal_year,
+                "created_at": now,
+            },
+            "$set": {"updated_at": now},
+        },
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    sequence = int(counter["value"])
+    reservation_id = f"gl-journal-sequence:{tenant_id}:{fiscal_year}:{sequence:08d}"
+    await db.gl_sequence_reservations.insert_one(
+        {
+            "_id": reservation_id,
+            "id": reservation_id,
+            "tenant_id": tenant_id,
+            "fiscal_year": fiscal_year,
+            "sequence": sequence,
+            "entry_id": entry_id,
+            "status": "reserved",
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+    return sequence, reservation_id
+
+
+async def _mark_sequence_reservation(db, tenant_id: str, reservation_id: str, status: str, now: str, **extra) -> None:
+    try:
+        await db.gl_sequence_reservations.update_one(
+            {"_id": reservation_id, "tenant_id": tenant_id},
+            {"$set": {"status": status, "updated_at": now, **extra}},
+        )
+    except Exception as exc:
+        # The reservation remains visibly ``reserved`` and can be reconciled;
+        # never mask the journal insert result after money has been posted.
+        logger.warning("GL sequence reservation status update failed: %s", exc)
 
 
 def _money_to_minor(value: object) -> int:
@@ -186,10 +241,16 @@ async def post_journal_entry(
             ln["account_name"] = acct_by_code[ln["account_code"]].get("name")
 
     now = _now_iso()
+    entry_id = str(uuid.uuid4())
+    fiscal_year = int(period.get("fiscal_year") or posting_date[:4])
+    sequence, reservation_id = await _allocate_journal_sequence(db, tenant_id, fiscal_year, entry_id, now)
     doc = {
-        "id": str(uuid.uuid4()),
+        "id": entry_id,
         "tenant_id": tenant_id,
-        "entry_no": f"JE-{posting_date}-{uuid.uuid4().hex[:8]}",
+        "entry_no": f"YEV-{fiscal_year}-{sequence:08d}",
+        "posting_sequence": sequence,
+        "sequence_scope": f"{tenant_id}:{fiscal_year}",
+        "sequence_reservation_id": reservation_id,
         "date": posting_date,
         "period_id": period.get("id"),
         "fiscal_year": period.get("fiscal_year"),
@@ -214,10 +275,40 @@ async def post_journal_entry(
     try:
         await db.gl_journal_entries.insert_one(dict(doc))
     except DuplicateKeyError:
-        existing = await db.gl_journal_entries.find_one({"tenant_id": tenant_id, "idempotency_key": idempotency_key}, {"_id": 0})
-        if existing:
-            return existing
+        await _mark_sequence_reservation(
+            db,
+            tenant_id,
+            reservation_id,
+            "void",
+            _now_iso(),
+            void_reason="idempotency_race",
+        )
+        if idempotency_key:
+            existing = await db.gl_journal_entries.find_one(
+                {"tenant_id": tenant_id, "idempotency_key": idempotency_key},
+                {"_id": 0},
+            )
+            if existing:
+                return existing
         raise
+    except Exception:
+        await _mark_sequence_reservation(
+            db,
+            tenant_id,
+            reservation_id,
+            "void",
+            _now_iso(),
+            void_reason="journal_insert_failed",
+        )
+        raise
+    await _mark_sequence_reservation(
+        db,
+        tenant_id,
+        reservation_id,
+        "posted",
+        _now_iso(),
+        entry_no=doc["entry_no"],
+    )
     doc.pop("_id", None)
     return doc
 

@@ -309,6 +309,16 @@ async def create_account(payload: AccountIn, current_user: User = Depends(get_cu
     }
     await db.gl_accounts.insert_one(dict(doc))
     doc.pop("_id", None)
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=_actor_id(current_user),
+        action="gl_account_created",
+        entity_type="gl_account",
+        entity_id=doc["id"],
+        details=f"{code} hesap kodu oluşturuldu",
+        after_value={key: doc.get(key) for key in ("code", "name", "type", "parent_code", "active")},
+        db=db,
+    )
     return {"account": doc}
 
 
@@ -368,17 +378,32 @@ async def initialize_chart_of_accounts(current_user: User = Depends(get_current_
             upsert=True,
         )
         mapping_created = getattr(mapping_result, "upserted_id", None) is not None
-    return {
+    response = {
         "created": created,
         "total": len(_DEFAULT_CHART_OF_ACCOUNTS),
         "payroll_mapping_created": mapping_created,
     }
+    if created or mapping_created:
+        await log_audit_event(
+            tenant_id=tenant_id,
+            user_id=_actor_id(current_user),
+            action="gl_chart_initialized",
+            entity_type="gl_chart_of_accounts",
+            entity_id=tenant_id,
+            details="Standart hesap planı ve varsayılan bordro eşlemesi hazırlandı",
+            after_value=response,
+            db=db,
+        )
+    return response
 
 
 @router.put("/accounts/{code}")
 async def update_account(code: str, payload: AccountUpdate, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _GL_ROLES)
     tenant_id = _tenant_of(current_user)
+    before = await db.gl_accounts.find_one({"tenant_id": tenant_id, "code": code}, {"_id": 0})
+    if not before:
+        raise HTTPException(status_code=404, detail="Hesap bulunamadı")
     updates = dict(payload.model_dump(exclude_unset=True))
     if "name" in updates and updates["name"]:
         updates["name"] = updates["name"].strip()
@@ -387,8 +412,19 @@ async def update_account(code: str, payload: AccountUpdate, current_user: User =
     updates["updated_at"] = _now_iso()
     res = await db.gl_accounts.update_one({"tenant_id": tenant_id, "code": code}, {"$set": updates})
     if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Hesap bulunamadı")
+        raise HTTPException(status_code=409, detail="Hesap eşzamanlı olarak değişti")
     doc = await db.gl_accounts.find_one({"tenant_id": tenant_id, "code": code}, {"_id": 0})
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=_actor_id(current_user),
+        action="gl_account_updated",
+        entity_type="gl_account",
+        entity_id=before.get("id") or code,
+        details=f"{code} hesap kodu güncellendi",
+        before_value={key: before.get(key) for key in ("name", "parent_code", "active")},
+        after_value={key: doc.get(key) for key in ("name", "parent_code", "active")},
+        db=db,
+    )
     return {"account": doc}
 
 
@@ -469,6 +505,46 @@ async def get_journal(entry_id: str, current_user: User = Depends(get_current_us
     return {"entry": doc}
 
 
+@router.get("/sequence-audit")
+async def sequence_audit(
+    fiscal_year: int | None = Query(None, ge=2000, le=2100),
+    current_user: User = Depends(get_current_user),
+):
+    """Expose posted/void/reserved journal ordinals without mutating them."""
+    _require_role(current_user, _READ_ROLES)
+    tenant_id = _tenant_of(current_user)
+    query: dict = {"tenant_id": tenant_id}
+    if fiscal_year is not None:
+        query["fiscal_year"] = fiscal_year
+    rows = await db.gl_sequence_reservations.find(query, {"_id": 0}).sort(
+        [("fiscal_year", -1), ("sequence", 1)]
+    ).to_list(100000)
+    counters = await db.gl_counters.find(query, {"_id": 0}).to_list(1000)
+    counts = {"posted": 0, "void": 0, "reserved": 0}
+    sequences_by_year: dict[int, set[int]] = {}
+    for row in rows:
+        status = row.get("status", "reserved")
+        counts[status] = counts.get(status, 0) + 1
+        sequences_by_year.setdefault(int(row["fiscal_year"]), set()).add(int(row["sequence"]))
+    missing_by_year: dict[str, list[int]] = {}
+    missing_count = 0
+    for counter in counters:
+        year = int(counter["fiscal_year"])
+        allocated = int(counter.get("value") or 0)
+        present = sequences_by_year.get(year, set())
+        missing = [number for number in range(1, allocated + 1) if number not in present]
+        if missing:
+            missing_count += len(missing)
+            missing_by_year[str(year)] = missing[:100]
+    return {
+        "fiscal_year": fiscal_year,
+        "reservations": rows,
+        "totals": {"count": len(rows), **counts, "missing": missing_count},
+        "missing_sequences": missing_by_year,
+        "healthy": counts.get("reserved", 0) == 0 and missing_count == 0,
+    }
+
+
 @router.post("/journal")
 async def create_journal(payload: JournalIn, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _GL_ROLES)
@@ -491,6 +567,22 @@ async def create_journal(payload: JournalIn, current_user: User = Depends(get_cu
     except GLPostingError as exc:
         status_code = 409 if "dönemi kapalı" in str(exc) or "Idempotency anahtarı" in str(exc) else 400
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=_actor_id(current_user),
+        action="gl_manual_journal_posted",
+        entity_type="gl_journal_entry",
+        entity_id=entry["id"],
+        details=f"{entry.get('entry_no') or entry['id']} manuel yevmiye fişi kaydedildi",
+        after_value={
+            "entry_no": entry.get("entry_no"),
+            "date": entry.get("date"),
+            "total_debit_minor": entry.get("total_debit_minor"),
+            "total_credit_minor": entry.get("total_credit_minor"),
+            "idempotency_key": entry.get("idempotency_key"),
+        },
+        db=db,
+    )
     return {"entry": entry}
 
 
