@@ -860,6 +860,7 @@ code {
 .dark .bg-indigo-50\/60 { background-color: rgb(30 27 75 / 0.6); }
 .dark .bg-indigo-100\/70 { background-color: rgb(49 46 129 / 0.7); }
 .dark .bg-violet-50\/30 { background-color: rgb(46 16 101 / 0.3); }
+.dark .bg-violet-50\/50 { background-color: rgb(46 16 101 / 0.5); }
 .dark .bg-rose-50\/30 { background-color: rgb(76 5 25 / 0.3); }
 .dark .bg-rose-50\/40 { background-color: rgb(76 5 25 / 0.4); }
 .dark .bg-rose-50\/50 { background-color: rgb(76 5 25 / 0.5); }
