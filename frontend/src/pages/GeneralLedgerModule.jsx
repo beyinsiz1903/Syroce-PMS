@@ -20,6 +20,10 @@ export const GL_ENDPOINTS = {
   closeYear: '/gl/year-end/close',
   incomeStatement: '/gl/statements/income-statement',
   balanceSheet: '/gl/statements/balance-sheet',
+  comparativeIncome: '/gl/statements/comparative-income-statement',
+  comparativeBalance: '/gl/statements/comparative-balance-sheet',
+  exportReport: '/gl/reports/export',
+  fxRevalue: '/gl/fx/revalue',
 };
 
 export const toJournalPayload = (journal) => ({
@@ -33,6 +37,11 @@ export const toJournalPayload = (journal) => ({
     debit: Number(line.debit) || 0,
     credit: Number(line.credit) || 0,
     memo: line.description?.trim() || null,
+    ...(line.currency ? {
+      currency: line.currency.trim().toUpperCase(),
+      foreign_amount: Number(line.foreign_amount),
+      exchange_rate: Number(line.exchange_rate),
+    } : {}),
   })),
 });
 
@@ -47,8 +56,8 @@ const emptyJournal = () => ({
   description: '',
   idempotency_key: newRequestKey(),
   lines: [
-    { account_code: '', debit: 0, credit: 0, description: '' },
-    { account_code: '', debit: 0, credit: 0, description: '' }
+    { account_code: '', debit: 0, credit: 0, description: '', currency: '', foreign_amount: '', exchange_rate: '' },
+    { account_code: '', debit: 0, credit: 0, description: '', currency: '', foreign_amount: '', exchange_rate: '' }
   ]
 });
 
@@ -95,6 +104,9 @@ const GeneralLedgerModule = () => {
   const [reversalBusy, setReversalBusy] = useState('');
   const reversalKeys = useRef({});
   const [statements, setStatements] = useState({ income: null, balance: null });
+  const [comparison, setComparison] = useState({ income: null, balance: null });
+  const [fxForm, setFxForm] = useState({ date: new Date().toISOString().split('T')[0], currency: 'USD', closing_rate: '' });
+  const [fxBusy, setFxBusy] = useState(false);
   const [workspace, setWorkspace] = useState({ aging: null, expenseBudget: null, revenueBudget: null, assets: [] });
   
   // New Journal Entry State
@@ -163,14 +175,57 @@ const GeneralLedgerModule = () => {
   const fetchStatements = async () => {
     const today = new Date().toISOString().split('T')[0];
     const start = `${today.slice(0, 4)}-01-01`;
+    const previousYear = Number(today.slice(0, 4)) - 1;
+    const previousStart = `${previousYear}-01-01`;
+    const previousEnd = `${previousYear}${today.slice(4)}`;
     try {
       const [incomeRes, balanceRes] = await Promise.all([
-        axios.get(GL_ENDPOINTS.incomeStatement, { params: { start, end: today } }),
-        axios.get(GL_ENDPOINTS.balanceSheet, { params: { as_of: today } }),
+        axios.get(GL_ENDPOINTS.comparativeIncome, { params: { start, end: today, comparison_start: previousStart, comparison_end: previousEnd } }),
+        axios.get(GL_ENDPOINTS.comparativeBalance, { params: { as_of: today, comparison_as_of: previousEnd } }),
       ]);
-      setStatements({ income: incomeRes.data, balance: balanceRes.data });
+      setStatements({ income: incomeRes.data?.current, balance: balanceRes.data?.current });
+      setComparison({ income: incomeRes.data, balance: balanceRes.data });
     } catch {
       toast.error('Mali tablolar yüklenemedi.');
+    }
+  };
+
+  const revalueCurrency = async () => {
+    if (!fxForm.closing_rate || Number(fxForm.closing_rate) <= 0) {
+      toast.error('Pozitif bir dönem sonu kuru girin.');
+      return;
+    }
+    setFxBusy(true);
+    try {
+      const res = await axios.post(GL_ENDPOINTS.fxRevalue, {
+        ...fxForm,
+        currency: fxForm.currency.trim().toUpperCase(),
+        closing_rate: Number(fxForm.closing_rate),
+      });
+      toast.success(res.data?.entry ? `Kur değerleme fişi oluşturuldu: ${res.data.entry.entry_no}` : res.data?.message || 'Kur farkı oluşmadı.');
+      await fetchStatements();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Kur değerlemesi yapılamadı.');
+    } finally {
+      setFxBusy(false);
+    }
+  };
+
+  const downloadReport = async (report, format) => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const response = await axios.get(GL_ENDPOINTS.exportReport, {
+        params: { report, format, as_of: today, start: `${today.slice(0, 4)}-01-01`, end: today },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `gl-${report}-${today}.${format}`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Rapor indirilemedi.');
     }
   };
 
@@ -254,7 +309,7 @@ const GeneralLedgerModule = () => {
   const handleAddJournalLine = () => {
     setNewJournal(prev => ({
       ...prev,
-      lines: [...prev.lines, { account_code: '', debit: 0, credit: 0, description: '' }]
+      lines: [...prev.lines, { account_code: '', debit: 0, credit: 0, description: '', currency: '', foreign_amount: '', exchange_rate: '' }]
     }));
   };
 
@@ -289,6 +344,10 @@ const GeneralLedgerModule = () => {
     }
     if (newJournal.lines.some((line) => !line.account_code.trim())) {
       toast.error('Her satır için hesap kodu zorunludur.');
+      return;
+    }
+    if (newJournal.lines.some((line) => line.currency && (!Number(line.foreign_amount) || !Number(line.exchange_rate)))) {
+      toast.error('Dövizli satırlarda yabancı tutar ve kur zorunludur.');
       return;
     }
 
@@ -353,8 +412,14 @@ const GeneralLedgerModule = () => {
         {/* TDHP Accounts */}
         <TabsContent value="accounts">
           <Card>
-            <CardHeader>
-              <CardTitle>Tek Düzen Hesap Planı</CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
+              <div>
+                <CardTitle>Tek Düzen Hesap Planı</CardTitle>
+                <p className="text-xs text-slate-500 mt-1">Standart plan mevcut özel hesapları değiştirmeden eksik TDHP ve parasal hesap işaretlerini tamamlar.</p>
+              </div>
+              <Button variant="outline" onClick={initializeAccounts} disabled={initializingAccounts} size="sm">
+                {initializingAccounts ? 'Güncelleniyor...' : 'Standart Planı Tamamla'}
+              </Button>
             </CardHeader>
             <CardContent>
               <table className="w-full text-sm text-left">
@@ -363,6 +428,7 @@ const GeneralLedgerModule = () => {
                     <th className="p-3 font-semibold rounded-tl-lg">Hesap Kodu</th>
                     <th className="p-3 font-semibold">Hesap Adı</th>
                     <th className="p-3 font-semibold">Tip</th>
+                    <th className="p-3 font-semibold">Nitelik</th>
                     <th className="p-3 font-semibold text-right rounded-tr-lg">Güncel Bakiye</th>
                   </tr>
                 </thead>
@@ -372,6 +438,7 @@ const GeneralLedgerModule = () => {
                       <td className="p-3 font-medium text-blue-600">{acc.code}</td>
                       <td className="p-3 text-gray-800">{acc.name}</td>
                       <td className="p-3 text-gray-500">{acc.type}</td>
+                      <td className="p-3 text-xs text-slate-600">{acc.monetary ? 'Parasal' : acc.normal_balance === 'credit' && acc.type === 'asset' ? 'Ters bakiye' : 'Standart'}</td>
                       <td className="p-3 text-right font-medium">
                         {acc.balance !== 0 ? fmtMoney(Math.abs(acc.balance)) : '-'}
                       </td>
@@ -379,7 +446,7 @@ const GeneralLedgerModule = () => {
                   ))}
                   {accounts.length === 0 && (
                     <tr>
-                      <td colSpan="4" className="text-center p-8 text-gray-500">
+                      <td colSpan="5" className="text-center p-8 text-gray-500">
                         <p className="mb-3">Kayıtlı hesap bulunamadı.</p>
                         <Button onClick={initializeAccounts} disabled={initializingAccounts} size="sm">
                           {initializingAccounts ? 'Oluşturuluyor...' : 'Standart Hesap Planını Oluştur'}
@@ -429,6 +496,9 @@ const GeneralLedgerModule = () => {
                         <tr>
                           <th className="p-2 text-left w-32">Hesap Kodu</th>
                           <th className="p-2 text-left">Açıklama</th>
+                          <th className="p-2 text-left w-20">Döviz</th>
+                          <th className="p-2 text-right w-28">Yabancı Tutar</th>
+                          <th className="p-2 text-right w-24">Kur</th>
                           <th className="p-2 text-right w-32">Borç (₺)</th>
                           <th className="p-2 text-right w-32">Alacak (₺)</th>
                         </tr>
@@ -438,6 +508,9 @@ const GeneralLedgerModule = () => {
                           <tr key={idx} className="border-b">
                             <td className="p-1"><Input className="h-8" value={line.account_code} onChange={e => handleLineChange(idx, 'account_code', e.target.value)} placeholder="100, 120" /></td>
                             <td className="p-1"><Input className="h-8" value={line.description} onChange={e => handleLineChange(idx, 'description', e.target.value)} /></td>
+                            <td className="p-1"><Input className="h-8 uppercase" maxLength={3} value={line.currency} onChange={e => handleLineChange(idx, 'currency', e.target.value)} placeholder="USD" /></td>
+                            <td className="p-1"><Input type="number" className="h-8 text-right" value={line.foreign_amount} onChange={e => handleLineChange(idx, 'foreign_amount', e.target.value)} /></td>
+                            <td className="p-1"><Input type="number" className="h-8 text-right" value={line.exchange_rate} onChange={e => handleLineChange(idx, 'exchange_rate', e.target.value)} /></td>
                             <td className="p-1"><Input type="number" className="h-8 text-right bg-red-50" value={line.debit || ''} onChange={e => handleLineChange(idx, 'debit', e.target.value)} /></td>
                             <td className="p-1"><Input type="number" className="h-8 text-right bg-green-50" value={line.credit || ''} onChange={e => handleLineChange(idx, 'credit', e.target.value)} /></td>
                           </tr>
@@ -445,7 +518,7 @@ const GeneralLedgerModule = () => {
                       </tbody>
                       <tfoot className="bg-gray-50 font-bold">
                         <tr>
-                          <td colSpan="2" className="p-2 text-right">TOPLAM:</td>
+                          <td colSpan="5" className="p-2 text-right">TOPLAM:</td>
                           <td className="p-2 text-right text-red-600">{newJournal.lines.reduce((a, b) => a + (parseFloat(b.debit)||0), 0).toFixed(2)}</td>
                           <td className="p-2 text-right text-green-600">{newJournal.lines.reduce((a, b) => a + (parseFloat(b.credit)||0), 0).toFixed(2)}</td>
                         </tr>
@@ -638,15 +711,22 @@ const GeneralLedgerModule = () => {
         </TabsContent>
 
         <TabsContent value="statements">
+          <div className="flex flex-wrap gap-2 mb-4">
+            <Button variant="outline" onClick={() => downloadReport('trial_balance', 'xlsx')}>Mizan Excel</Button>
+            <Button variant="outline" onClick={() => downloadReport('income_statement', 'xlsx')}>Gelir Tablosu Excel</Button>
+            <Button variant="outline" onClick={() => downloadReport('balance_sheet', 'pdf')}>Bilanço PDF</Button>
+            <Button variant="outline" onClick={() => downloadReport('journal', 'pdf')}>Yevmiye PDF</Button>
+          </div>
           <div className="grid lg:grid-cols-2 gap-5">
             <Card>
               <CardHeader><CardTitle>Gelir Tablosu · Yılbaşından Bugüne</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 {(statements.income?.revenue || []).map((row) => <div key={row.account_code} className="flex justify-between text-sm"><span>{row.account_code} · {row.account_name}</span><span className="font-medium">{fmtMoney(row.amount)}</span></div>)}
-                <div className="border-t pt-2 flex justify-between font-semibold text-emerald-700"><span>Toplam Gelir</span><span>{fmtMoney(statements.income?.totals?.revenue || 0)}</span></div>
+                <div className="border-t pt-2 flex justify-between font-semibold text-emerald-700"><span>Toplam Gelir</span><span>{fmtMoney(statements.income?.totals?.revenue || 0)} <small>({comparison.income?.variance?.revenue?.percent ?? '—'}%)</small></span></div>
                 {(statements.income?.expenses || []).map((row) => <div key={row.account_code} className="flex justify-between text-sm"><span>{row.account_code} · {row.account_name}</span><span className="font-medium">{fmtMoney(row.amount)}</span></div>)}
-                <div className="border-t pt-2 flex justify-between font-semibold text-red-700"><span>Toplam Gider</span><span>{fmtMoney(statements.income?.totals?.expenses || 0)}</span></div>
-                <div className="rounded-lg bg-slate-900 text-white p-3 flex justify-between font-bold"><span>Net Dönem Kârı / Zararı</span><span>{fmtMoney(statements.income?.totals?.net_income || 0)}</span></div>
+                <div className="border-t pt-2 flex justify-between font-semibold text-red-700"><span>Toplam Gider</span><span>{fmtMoney(statements.income?.totals?.expenses || 0)} <small>({comparison.income?.variance?.expenses?.percent ?? '—'}%)</small></span></div>
+                <div className="rounded-lg bg-slate-900 text-white p-3 flex justify-between font-bold"><span>Net Dönem Kârı / Zararı</span><span>{fmtMoney(statements.income?.totals?.net_income || 0)} <small>({comparison.income?.variance?.net_income?.percent ?? '—'}%)</small></span></div>
+                <p className="text-xs text-slate-500">Parantez içindeki oranlar önceki yılın aynı dönemine göre değişimi gösterir.</p>
               </CardContent>
             </Card>
             <Card>
@@ -662,9 +742,22 @@ const GeneralLedgerModule = () => {
                 <div className={`rounded-lg p-3 flex justify-between font-bold ${statements.balance?.totals?.balanced ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'}`}>
                   <span>Bilanço dengesi</span><span>{statements.balance?.totals?.balanced ? 'Dengeli' : `Fark: ${fmtMoney(statements.balance?.totals?.difference || 0)}`}</span>
                 </div>
+                <p className="text-xs text-slate-500">Varlık değişimi: {comparison.balance?.variance?.assets?.percent ?? '—'}% · Özkaynak değişimi: {comparison.balance?.variance?.equity?.percent ?? '—'}%</p>
               </CardContent>
             </Card>
           </div>
+          <Card className="mt-5">
+            <CardHeader><CardTitle>Dönem Sonu Kur Değerlemesi</CardTitle></CardHeader>
+            <CardContent>
+              <p className="text-sm text-slate-500 mb-3">Yabancı para hareketi bulunan “parasal” hesapları girilen kapanış kuruyla değerler; canlı kur servisi çağrılmaz.</p>
+              <div className="grid sm:grid-cols-4 gap-3">
+                <Input type="date" value={fxForm.date} onChange={(e) => setFxForm({ ...fxForm, date: e.target.value })} />
+                <Input maxLength={3} className="uppercase" value={fxForm.currency} onChange={(e) => setFxForm({ ...fxForm, currency: e.target.value })} placeholder="USD" />
+                <Input type="number" min="0" step="0.000001" value={fxForm.closing_rate} onChange={(e) => setFxForm({ ...fxForm, closing_rate: e.target.value })} placeholder="Kapanış kuru" />
+                <Button onClick={revalueCurrency} disabled={fxBusy}>{fxBusy ? 'Değerleniyor...' : 'Kur Farkı Fişi Oluştur'}</Button>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="workspace">

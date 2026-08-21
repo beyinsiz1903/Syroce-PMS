@@ -7,13 +7,15 @@ mizan (trial balance) raporu. Posting çekirdeği shared_kernel.gl_posting'tedir
 Tüm uçlar tenant-scoped; mutasyonlar muhasebe seviyesi RBAC. PII/secret loglanmaz.
 """
 
+import io
 import logging
 import uuid
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
@@ -25,6 +27,7 @@ from core.integrations.invoice_gl_bridge import (
     post_incoming_invoice_to_gl,
 )
 from core.security import get_current_user
+from core.utils import create_excel_workbook, excel_response
 from models.schemas import User
 from shared_kernel.gl_periods import GLPeriodError, ensure_calendar_year_periods
 from shared_kernel.gl_posting import (
@@ -64,10 +67,14 @@ _DEFAULT_CHART_OF_ACCOUNTS = (
     ("590", "Dönem Net Kârı", "equity"),
     ("591", "Dönem Net Zararı", "equity", "debit"),
     ("600", "Yurtiçi Satışlar (Oda/F&B Geliri)", "revenue"),
+    ("646", "Kambiyo Kârları", "revenue"),
+    ("656", "Kambiyo Zararları", "expense"),
     ("690", "Dönem Kârı veya Zararı", "equity"),
     ("740", "Hizmet Üretim Maliyeti", "expense"),
     ("770", "Genel Yönetim Giderleri", "expense"),
 )
+
+_DEFAULT_MONETARY_ACCOUNTS = {"102", "108", "120", "320", "335", "336"}
 
 
 def _now_iso() -> str:
@@ -457,6 +464,7 @@ class AccountIn(BaseModel):
     parent_code: str | None = Field(None, max_length=40)
     active: bool = True
     normal_balance: Literal["debit", "credit"] | None = None
+    monetary: bool = False
 
 
 class AccountUpdate(BaseModel):
@@ -464,6 +472,7 @@ class AccountUpdate(BaseModel):
     parent_code: str | None = Field(None, max_length=40)
     active: bool | None = None
     normal_balance: Literal["debit", "credit"] | None = None
+    monetary: bool | None = None
 
 
 @router.get("/accounts")
@@ -503,6 +512,7 @@ async def create_account(payload: AccountIn, current_user: User = Depends(get_cu
         "normal_balance": payload.normal_balance or normal_balance(payload.type),
         "parent_code": (payload.parent_code or "").strip() or None,
         "active": payload.active,
+        "monetary": payload.monetary,
         "created_at": now,
         "updated_at": now,
         "created_by": _actor_id(current_user),
@@ -516,7 +526,7 @@ async def create_account(payload: AccountIn, current_user: User = Depends(get_cu
         entity_type="gl_account",
         entity_id=doc["id"],
         details=f"{code} hesap kodu oluşturuldu",
-        after_value={key: doc.get(key) for key in ("code", "name", "type", "parent_code", "active")},
+        after_value={key: doc.get(key) for key in ("code", "name", "type", "parent_code", "active", "normal_balance", "monetary")},
         db=db,
     )
     return {"account": doc}
@@ -536,6 +546,10 @@ async def initialize_chart_of_accounts(current_user: User = Depends(get_current_
     for account_definition in _DEFAULT_CHART_OF_ACCOUNTS:
         code, name, account_type, *balance_override = account_definition
         now = _now_iso()
+        existing_account = await db.gl_accounts.find_one(
+            {"tenant_id": tenant_id, "code": code},
+            {"_id": 0, "monetary": 1},
+        )
         result = await db.gl_accounts.update_one(
             {"tenant_id": tenant_id, "code": code},
             {
@@ -548,6 +562,7 @@ async def initialize_chart_of_accounts(current_user: User = Depends(get_current_
                     "normal_balance": balance_override[0] if balance_override else normal_balance(account_type),
                     "parent_code": None,
                     "active": True,
+                    "monetary": code in _DEFAULT_MONETARY_ACCOUNTS,
                     "created_at": now,
                     "updated_at": now,
                     "created_by": _actor_id(current_user),
@@ -557,6 +572,11 @@ async def initialize_chart_of_accounts(current_user: User = Depends(get_current_
         )
         if getattr(result, "upserted_id", None) is not None:
             created += 1
+        elif existing_account is not None and "monetary" not in existing_account:
+            await db.gl_accounts.update_one(
+                {"tenant_id": tenant_id, "code": code},
+                {"$set": {"monetary": code in _DEFAULT_MONETARY_ACCOUNTS, "updated_at": now}},
+            )
     mapping_created = False
     existing_mapping = await db.payroll_gl_mapping.find_one(
         {"tenant_id": tenant_id},
@@ -624,8 +644,8 @@ async def update_account(code: str, payload: AccountUpdate, current_user: User =
         entity_type="gl_account",
         entity_id=before.get("id") or code,
         details=f"{code} hesap kodu güncellendi",
-        before_value={key: before.get(key) for key in ("name", "parent_code", "active", "normal_balance")},
-        after_value={key: doc.get(key) for key in ("name", "parent_code", "active", "normal_balance")},
+        before_value={key: before.get(key) for key in ("name", "parent_code", "active", "normal_balance", "monetary")},
+        after_value={key: doc.get(key) for key in ("name", "parent_code", "active", "normal_balance", "monetary")},
         db=db,
     )
     return {"account": doc}
@@ -639,6 +659,9 @@ class JournalLineIn(BaseModel):
     debit: Decimal = Field(Decimal("0"), ge=0, max_digits=18)
     credit: Decimal = Field(Decimal("0"), ge=0, max_digits=18)
     memo: str | None = Field(None, max_length=300)
+    currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
+    foreign_amount: Decimal | None = Field(None, gt=0, max_digits=18)
+    exchange_rate: Decimal | None = Field(None, gt=0, max_digits=18)
 
 
 class JournalIn(BaseModel):
@@ -658,6 +681,14 @@ class JournalReversalIn(BaseModel):
     date: str | None = Field(None, max_length=40)
     reason: str = Field(..., min_length=3, max_length=500)
     idempotency_key: str = Field(..., min_length=8, max_length=120)
+
+
+class FXRevaluationIn(BaseModel):
+    date: str = Field(..., min_length=10, max_length=10, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    currency: str = Field(..., min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
+    closing_rate: Decimal = Field(..., gt=0, max_digits=18)
+    gain_account_code: str = Field("646", min_length=1, max_length=40)
+    loss_account_code: str = Field("656", min_length=1, max_length=40)
 
 
 class NilveraIncomingGLPostIn(BaseModel):
@@ -746,6 +777,127 @@ async def sequence_audit(
         "missing_sequences": missing_by_year,
         "healthy": counts.get("reserved", 0) == 0 and missing_count == 0,
     }
+
+
+@router.post("/fx/revalue")
+async def revalue_foreign_currency(
+    payload: FXRevaluationIn,
+    current_user: User = Depends(get_current_user),
+):
+    """Revalue foreign-currency monetary accounts using an operator-supplied closing rate."""
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    currency = payload.currency.upper()
+    if currency in {"TRY", "TRL"}:
+        raise HTTPException(status_code=400, detail="TRY için döviz değerlemesi yapılamaz")
+
+    monetary_accounts = await db.gl_accounts.find(
+        {"tenant_id": tenant_id, "active": True, "monetary": True},
+        {"_id": 0},
+    ).to_list(5000)
+    account_by_code = {account["code"]: account for account in monetary_accounts}
+    if not account_by_code:
+        raise HTTPException(status_code=409, detail="Değerleme için parasal hesap tanımlanmamış")
+    entries = await db.gl_journal_entries.find(
+        {"tenant_id": tenant_id, "status": "posted", "date": {"$lte": payload.date}},
+        {"_id": 0},
+    ).to_list(100000)
+    positions: dict[str, dict[str, int]] = {}
+    for entry in entries:
+        for line in entry.get("lines", []):
+            code = line.get("account_code")
+            if code not in account_by_code:
+                continue
+            if line.get("currency") != currency:
+                if entry.get("revaluation_currency") == currency:
+                    position = positions.setdefault(code, {"foreign_minor": 0, "carrying_minor": 0})
+                    position["carrying_minor"] += int(line.get("debit_minor") or 0) - int(
+                        line.get("credit_minor") or 0
+                    )
+                continue
+            foreign_minor = int(line.get("foreign_amount_minor") or 0)
+            if not foreign_minor:
+                continue
+            sign = 1 if int(line.get("debit_minor") or 0) > 0 else -1
+            position = positions.setdefault(code, {"foreign_minor": 0, "carrying_minor": 0})
+            position["foreign_minor"] += sign * foreign_minor
+            position["carrying_minor"] += int(line.get("debit_minor") or 0) - int(line.get("credit_minor") or 0)
+
+    rate = Decimal(str(payload.closing_rate))
+    lines: list[dict] = []
+    result_positions: list[dict] = []
+    total_gain_minor = total_loss_minor = 0
+    for code in sorted(positions):
+        position = positions[code]
+        target_minor = int(
+            (Decimal(position["foreign_minor"]) * rate).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        )
+        difference_minor = target_minor - position["carrying_minor"]
+        result_positions.append(
+            {
+                "account_code": code,
+                "account_name": account_by_code[code].get("name"),
+                "foreign_amount": float(Decimal(position["foreign_minor"]) / 100),
+                "carrying_amount": float(Decimal(position["carrying_minor"]) / 100),
+                "revalued_amount": float(Decimal(target_minor) / 100),
+                "difference": float(Decimal(difference_minor) / 100),
+            }
+        )
+        if difference_minor > 0:
+            amount = float(Decimal(difference_minor) / 100)
+            lines.append({"account_code": code, "debit": amount, "memo": f"{currency} kur değerlemesi"})
+            total_gain_minor += difference_minor
+        elif difference_minor < 0:
+            amount = float(Decimal(abs(difference_minor)) / 100)
+            lines.append({"account_code": code, "credit": amount, "memo": f"{currency} kur değerlemesi"})
+            total_loss_minor += abs(difference_minor)
+    if total_gain_minor:
+        lines.append(
+            {
+                "account_code": payload.gain_account_code.strip(),
+                "credit": float(Decimal(total_gain_minor) / 100),
+                "memo": f"{currency} kambiyo kârı",
+            }
+        )
+    if total_loss_minor:
+        lines.append(
+            {
+                "account_code": payload.loss_account_code.strip(),
+                "debit": float(Decimal(total_loss_minor) / 100),
+                "memo": f"{currency} kambiyo zararı",
+            }
+        )
+    if not lines:
+        return {"entry": None, "positions": result_positions, "message": "Değerleme farkı oluşmadı"}
+    try:
+        entry = await post_journal_entry(
+            db,
+            tenant_id,
+            date=payload.date,
+            memo=f"{payload.date} {currency} dönem sonu kur değerlemesi",
+            lines=lines,
+            source="fx_revaluation",
+            source_ref=f"{currency}:{payload.date}",
+            actor=_actor_id(current_user),
+            idempotency_key=f"gl-fx-revaluation:{currency}:{payload.date}",
+        )
+    except GLPostingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await db.gl_journal_entries.update_one(
+        {"tenant_id": tenant_id, "id": entry["id"]},
+        {"$set": {"revaluation_currency": currency, "closing_rate": str(rate), "revaluation_positions": result_positions}},
+    )
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=_actor_id(current_user),
+        action="gl_fx_revaluation_posted",
+        entity_type="gl_journal_entry",
+        entity_id=entry["id"],
+        details=f"{currency} {payload.date} kur değerlemesi kaydedildi",
+        after_value={"entry_no": entry.get("entry_no"), "currency": currency, "closing_rate": str(rate)},
+        db=db,
+    )
+    return {"entry": entry, "positions": result_positions}
 
 
 @router.post("/journal")
@@ -960,6 +1112,191 @@ async def balance_sheet(
         return await compute_balance_sheet(db, tenant_id, as_of=as_of)
     except GLPeriodError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _variance(current: int, comparison: int) -> dict:
+    difference = current - comparison
+    percent = None if comparison == 0 else round((difference / abs(comparison)) * 100, 2)
+    return {"current_minor": current, "comparison_minor": comparison, "difference_minor": difference, "percent": percent}
+
+
+@router.get("/statements/comparative-income-statement")
+async def comparative_income_statement(
+    start: str = Query(...),
+    end: str = Query(...),
+    comparison_start: str = Query(...),
+    comparison_end: str = Query(...),
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _READ_ROLES)
+    tenant_id = _tenant_of(current_user)
+    try:
+        current = await compute_income_statement(db, tenant_id, start=start, end=end)
+        comparison = await compute_income_statement(
+            db,
+            tenant_id,
+            start=comparison_start,
+            end=comparison_end,
+        )
+    except GLPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "current": current,
+        "comparison": comparison,
+        "variance": {
+            key: _variance(current["totals"][f"{key}_minor"], comparison["totals"][f"{key}_minor"])
+            for key in ("revenue", "expenses", "net_income")
+        },
+    }
+
+
+@router.get("/statements/comparative-balance-sheet")
+async def comparative_balance_sheet(
+    as_of: str = Query(...),
+    comparison_as_of: str = Query(...),
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _READ_ROLES)
+    tenant_id = _tenant_of(current_user)
+    try:
+        current = await compute_balance_sheet(db, tenant_id, as_of=as_of)
+        comparison = await compute_balance_sheet(db, tenant_id, as_of=comparison_as_of)
+    except GLPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "current": current,
+        "comparison": comparison,
+        "variance": {
+            key: _variance(
+                int(round(current["totals"][key] * 100)),
+                int(round(comparison["totals"][key] * 100)),
+            )
+            for key in ("assets", "liabilities", "equity", "liabilities_and_equity")
+        },
+    }
+
+
+async def _export_rows(tenant_id: str, report: str, start: str | None, end: str | None, as_of: str | None):
+    if report == "trial_balance":
+        data = await compute_trial_balance(db, tenant_id, as_of=as_of)
+        return (
+            "Mizan",
+            ["Hesap Kodu", "Hesap Adı", "Borç Toplamı", "Alacak Toplamı", "Borç Bakiye", "Alacak Bakiye"],
+            [
+                [
+                    row["account_code"],
+                    row["account_name"],
+                    row["total_debit"],
+                    row["total_credit"],
+                    row["debit_balance"],
+                    row["credit_balance"],
+                ]
+                for row in data["rows"]
+            ],
+        )
+    if report == "income_statement":
+        data = await compute_income_statement(db, tenant_id, start=start, end=end)
+        rows = [
+            ["Gelir", row["account_code"], row["account_name"], row["amount"]] for row in data["revenue"]
+        ] + [["Gider", row["account_code"], row["account_name"], row["amount"]] for row in data["expenses"]]
+        return "Gelir Tablosu", ["Bölüm", "Hesap Kodu", "Hesap Adı", "Tutar"], rows
+    if report == "balance_sheet":
+        data = await compute_balance_sheet(db, tenant_id, as_of=as_of)
+        section_names = {"assets": "Varlık", "liabilities": "Yükümlülük", "equity": "Özkaynak"}
+        rows = [
+            [section_names[section], row["account_code"], row["account_name"], row["amount"]]
+            for section in ("assets", "liabilities", "equity")
+            for row in data[section]
+        ]
+        return "Bilanço", ["Bölüm", "Hesap Kodu", "Hesap Adı", "Tutar"], rows
+    query: dict = {"tenant_id": tenant_id, "status": "posted"}
+    if start or end:
+        query["date"] = {}
+        if start:
+            query["date"]["$gte"] = start
+        if end:
+            query["date"]["$lte"] = end
+    entries = await db.gl_journal_entries.find(query, {"_id": 0}).sort(
+        [("date", 1), ("posting_sequence", 1)]
+    ).to_list(100000)
+    rows = [
+        [
+            entry.get("entry_no"),
+            entry.get("date"),
+            entry.get("memo"),
+            line.get("line_no", 0) + 1,
+            line.get("account_code"),
+            line.get("account_name"),
+            line.get("debit", 0),
+            line.get("credit", 0),
+            entry.get("source"),
+        ]
+        for entry in entries
+        for line in entry.get("lines", [])
+    ]
+    return (
+        "Yevmiye Defteri",
+        ["Fiş No", "Tarih", "Açıklama", "Satır", "Hesap Kodu", "Hesap Adı", "Borç", "Alacak", "Kaynak"],
+        rows,
+    )
+
+
+@router.get("/reports/export")
+async def export_gl_report(
+    report: Literal["trial_balance", "income_statement", "balance_sheet", "journal"] = Query(...),
+    format: Literal["xlsx", "pdf"] = Query("xlsx"),
+    start: str | None = Query(None),
+    end: str | None = Query(None),
+    as_of: str | None = Query(None),
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _READ_ROLES)
+    tenant_id = _tenant_of(current_user)
+    title, headers, rows = await _export_rows(tenant_id, report, start, end, as_of)
+    if format == "pdf" and len(rows) > 10000:
+        raise HTTPException(status_code=413, detail="PDF dışa aktarma 10.000 satırla sınırlıdır; Excel kullanın")
+    filename = f"gl-{report}-{as_of or end or datetime.now(UTC).date().isoformat()}"
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=_actor_id(current_user),
+        action="gl_report_exported",
+        entity_type="gl_report",
+        entity_id=filename,
+        details=f"{report} raporu {format} olarak dışa aktarıldı",
+        after_value={"report": report, "format": format, "row_count": len(rows), "start": start, "end": end, "as_of": as_of},
+        db=db,
+    )
+    if format == "xlsx":
+        workbook = create_excel_workbook(title, headers, rows, sheet_name=title[:31])
+        return excel_response(workbook, f"{filename}.xlsx")
+
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
+
+    output = io.BytesIO()
+    document = SimpleDocTemplate(output, pagesize=landscape(A4), leftMargin=24, rightMargin=24, topMargin=24, bottomMargin=24)
+    styles = getSampleStyleSheet()
+    table = Table([headers, *rows], repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A5F")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 7),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    document.build([Paragraph(title, styles["Title"]), table])
+    return Response(
+        content=output.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.pdf"'},
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────

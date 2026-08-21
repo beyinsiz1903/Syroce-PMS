@@ -268,11 +268,12 @@ async def test_initialize_chart_of_accounts_is_tenant_scoped_and_idempotent(_pat
     first = await gl.initialize_chart_of_accounts(current_user=_user("finance"))
     second = await gl.initialize_chart_of_accounts(current_user=_user("finance"))
 
-    assert first == {"created": 20, "total": 20, "payroll_mapping_created": True}
-    assert second == {"created": 0, "total": 20, "payroll_mapping_created": False}
-    assert len(_patch.gl_accounts.docs) == 20
+    assert first == {"created": 22, "total": 22, "payroll_mapping_created": True}
+    assert second == {"created": 0, "total": 22, "payroll_mapping_created": False}
+    assert len(_patch.gl_accounts.docs) == 22
     assert next(row for row in _patch.gl_accounts.docs if row["code"] == "257")["normal_balance"] == "credit"
     assert next(row for row in _patch.gl_accounts.docs if row["code"] == "591")["normal_balance"] == "debit"
+    assert next(row for row in _patch.gl_accounts.docs if row["code"] == "102")["monetary"] is True
     assert _patch.payroll_gl_mapping.docs[0]["withholding_payable_code"] == "360"
     assert {row["tenant_id"] for row in _patch.gl_accounts.docs} == {TENANT}
 
@@ -282,6 +283,15 @@ async def test_initialize_chart_of_accounts_denies_front_desk(_patch):
         await gl.initialize_chart_of_accounts(current_user=_user("front_desk"))
     assert exc.value.status_code == 403
     assert _patch.gl_accounts.docs == []
+
+
+async def test_initialize_chart_backfills_legacy_monetary_flags(_patch):
+    await _mk_account("102", "Bankalar", "asset")
+    _patch.gl_accounts.docs[0].pop("monetary")
+
+    await gl.initialize_chart_of_accounts(current_user=_user("finance"))
+
+    assert next(row for row in _patch.gl_accounts.docs if row["code"] == "102")["monetary"] is True
 
 
 async def test_account_reads_require_accounting_read_role(_patch):
@@ -920,3 +930,111 @@ async def test_balance_sheet_presents_contra_asset_as_negative(_patch):
     assert balance["totals"]["assets"] == 60.0
     assert balance["totals"]["equity"] == 60.0
     assert balance["totals"]["balanced"] is True
+
+
+async def test_foreign_currency_line_requires_matching_try_value(_patch):
+    await gl.initialize_chart_of_accounts(current_user=_user("finance"))
+    with pytest.raises(HTTPException) as exc:
+        await gl.create_journal(
+            _journal(
+                [
+                    {
+                        "account_code": "102",
+                        "debit": 3000,
+                        "currency": "USD",
+                        "foreign_amount": 100,
+                        "exchange_rate": 32,
+                    },
+                    {"account_code": "590", "credit": 3000},
+                ]
+            ),
+            current_user=_user("finance"),
+        )
+    assert exc.value.status_code == 400
+    assert "uyuşmuyor" in exc.value.detail
+
+
+async def test_fx_revaluation_posts_incremental_gain(_patch):
+    await gl.initialize_chart_of_accounts(current_user=_user("finance"))
+    await gl.create_journal(
+        _journal(
+            [
+                {
+                    "account_code": "102",
+                    "debit": 3200,
+                    "currency": "USD",
+                    "foreign_amount": 100,
+                    "exchange_rate": 32,
+                },
+                {"account_code": "590", "credit": 3200},
+            ]
+        ),
+        current_user=_user("finance"),
+    )
+
+    first = await gl.revalue_foreign_currency(
+        gl.FXRevaluationIn(date="2026-06-30", currency="usd", closing_rate=33),
+        current_user=_user("finance"),
+    )
+    second = await gl.revalue_foreign_currency(
+        gl.FXRevaluationIn(date="2026-07-31", currency="USD", closing_rate=34),
+        current_user=_user("finance"),
+    )
+
+    assert first["positions"][0]["difference"] == 100.0
+    assert second["positions"][0]["carrying_amount"] == 3300.0
+    assert second["positions"][0]["difference"] == 100.0
+    assert first["entry"]["source"] == "fx_revaluation"
+    assert [line["account_code"] for line in first["entry"]["lines"]] == ["102", "646"]
+
+
+async def test_comparative_income_statement_and_exports(_patch):
+    await gl.initialize_chart_of_accounts(current_user=_user("finance"))
+    await gl.create_journal(
+        _journal(
+            [{"account_code": "100", "debit": 50}, {"account_code": "600", "credit": 50}],
+            date="2025-06-01",
+        ),
+        current_user=_user("finance"),
+    )
+    await gl.create_journal(
+        _journal(
+            [{"account_code": "100", "debit": 100}, {"account_code": "600", "credit": 100}],
+            date="2026-06-01",
+        ),
+        current_user=_user("finance"),
+    )
+
+    comparison = await gl.comparative_income_statement(
+        start="2026-01-01",
+        end="2026-12-31",
+        comparison_start="2025-01-01",
+        comparison_end="2025-12-31",
+        current_user=_user("finance"),
+    )
+    xlsx = await gl.export_gl_report(
+        report="trial_balance",
+        format="xlsx",
+        start=None,
+        end=None,
+        as_of="2026-12-31",
+        current_user=_user("finance"),
+    )
+    pdf = await gl.export_gl_report(
+        report="journal",
+        format="pdf",
+        start="2026-01-01",
+        end="2026-12-31",
+        as_of=None,
+        current_user=_user("finance"),
+    )
+
+    assert comparison["variance"]["revenue"] == {
+        "current_minor": 10000,
+        "comparison_minor": 5000,
+        "difference_minor": 5000,
+        "percent": 100.0,
+    }
+    assert xlsx.media_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    assert pdf.media_type == "application/pdf"
+    assert pdf.body.startswith(b"%PDF")
