@@ -30,6 +30,12 @@ def _match(doc: dict, flt: dict) -> bool:
         if isinstance(v, dict) and "$in" in v:
             if doc.get(k) not in v["$in"]:
                 return False
+        elif isinstance(v, dict) and ("$gte" in v or "$lte" in v):
+            value = doc.get(k)
+            if "$gte" in v and (value is None or value < v["$gte"]):
+                return False
+            if "$lte" in v and (value is None or value > v["$lte"]):
+                return False
         elif doc.get(k) != v:
             return False
     return True
@@ -79,6 +85,7 @@ class _Coll:
                 return SimpleNamespace(matched_count=1, modified_count=1)
         if upsert:
             doc = dict(flt)
+            doc.update(update.get("$setOnInsert", {}))
             doc.update(update.get("$set", {}))
             self.docs.append(doc)
             return SimpleNamespace(matched_count=0, modified_count=0, upserted_id="x")
@@ -91,6 +98,7 @@ class _FakeDB:
         self.gl_journal_entries = _Coll(
             "gl_journal_entries", unique_key=("tenant_id", "idempotency_key")
         )
+        self.gl_periods = _Coll("gl_periods")
         self.payroll_runs = _Coll("payroll_runs")
         self.payroll_gl_mapping = _Coll("payroll_gl_mapping")
 

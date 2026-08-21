@@ -20,6 +20,7 @@ import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from pymongo.errors import DuplicateKeyError
 
@@ -31,7 +32,7 @@ ACCOUNT_TYPES = {"asset", "liability", "equity", "revenue", "expense"}
 _NORMAL_DEBIT = {"asset", "expense"}
 _NORMAL_CREDIT = {"liability", "equity", "revenue"}
 
-_EPS = 0.005
+_CENT = Decimal("0.01")
 
 
 class GLPostingError(ValueError):
@@ -60,40 +61,58 @@ async def ensure_gl_idem_index(db) -> None:
     )
 
 
+def _money_to_minor(value: object) -> int:
+    try:
+        amount = Decimal(str(value or 0))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise GLPostingError("Geçersiz parasal tutar") from exc
+    if not amount.is_finite():
+        raise GLPostingError("Parasal tutar sonlu olmalıdır")
+    if abs(amount) > Decimal("999999999999999.99"):
+        raise GLPostingError("Parasal tutar izin verilen sınırı aşıyor")
+    return int((amount.quantize(_CENT, rounding=ROUND_HALF_UP) * 100).to_integral_exact())
+
+
+def _minor_to_float(value: int) -> float:
+    return float(Decimal(value) / 100)
+
+
 def _normalize_lines(lines: list[dict]) -> tuple[list[dict], float, float]:
     if not lines:
         raise GLPostingError("Fiş satırı yok")
     out: list[dict] = []
-    tot_debit = tot_credit = 0.0
+    total_debit_minor = total_credit_minor = 0
     for idx, ln in enumerate(lines):
         code = (ln.get("account_code") or "").strip()
         if not code:
             raise GLPostingError(f"Satır {idx}: hesap kodu zorunlu")
-        debit = round(float(ln.get("debit", 0) or 0), 2)
-        credit = round(float(ln.get("credit", 0) or 0), 2)
-        if debit < 0 or credit < 0:
+        debit_minor = _money_to_minor(ln.get("debit", 0))
+        credit_minor = _money_to_minor(ln.get("credit", 0))
+        if debit_minor < 0 or credit_minor < 0:
             raise GLPostingError(f"Satır {idx}: negatif tutar")
-        if (debit > 0) == (credit > 0):
+        if (debit_minor > 0) == (credit_minor > 0):
             raise GLPostingError(f"Satır {idx}: debit XOR credit (>0) olmalı")
-        tot_debit += debit
-        tot_credit += credit
+        total_debit_minor += debit_minor
+        total_credit_minor += credit_minor
         out.append(
             {
                 "line_no": idx,
                 "account_code": code,
                 "account_name": (ln.get("account_name") or "").strip() or None,
-                "debit": debit,
-                "credit": credit,
+                "debit": _minor_to_float(debit_minor),
+                "credit": _minor_to_float(credit_minor),
+                "debit_minor": debit_minor,
+                "credit_minor": credit_minor,
                 "memo": (ln.get("memo") or "").strip() or None,
             }
         )
-    tot_debit = round(tot_debit, 2)
-    tot_credit = round(tot_credit, 2)
-    if tot_debit <= 0:
+    if total_debit_minor <= 0:
         raise GLPostingError("Toplam tutar sıfır")
-    if abs(tot_debit - tot_credit) > _EPS:
-        raise GLPostingError(f"Fiş dengesiz: debit={tot_debit} credit={tot_credit}")
-    return out, tot_debit, tot_credit
+    if total_debit_minor != total_credit_minor:
+        raise GLPostingError(
+            f"Fiş dengesiz: debit={_minor_to_float(total_debit_minor)} credit={_minor_to_float(total_credit_minor)}"
+        )
+    return out, _minor_to_float(total_debit_minor), _minor_to_float(total_credit_minor)
 
 
 async def post_journal_entry(
@@ -107,6 +126,8 @@ async def post_journal_entry(
     source_ref: str | None = None,
     actor: str = "system",
     idempotency_key: str | None = None,
+    reverses_entry_id: str | None = None,
+    reversal_reason: str | None = None,
 ) -> dict:
     """Dengeli yevmiye fişini doğrular, COA'ya göre zenginleştirir ve yazar.
 
@@ -122,6 +143,8 @@ async def post_journal_entry(
                 "lines": norm_lines,
                 "source": source,
                 "source_ref": source_ref,
+                "reverses_entry_id": reverses_entry_id,
+                "reversal_reason": reversal_reason,
             },
             ensure_ascii=False,
             sort_keys=True,
@@ -175,6 +198,8 @@ async def post_journal_entry(
         "lines": norm_lines,
         "total_debit": tot_debit,
         "total_credit": tot_credit,
+        "total_debit_minor": _money_to_minor(tot_debit),
+        "total_credit_minor": _money_to_minor(tot_credit),
         "source": source,
         "source_ref": source_ref,
         "status": "posted",
@@ -183,6 +208,9 @@ async def post_journal_entry(
         "created_at": now,
         "created_by": actor,
     }
+    if reverses_entry_id:
+        doc["reverses_entry_id"] = reverses_entry_id
+        doc["reversal_reason"] = (reversal_reason or "").strip() or None
     try:
         await db.gl_journal_entries.insert_one(dict(doc))
     except DuplicateKeyError:
@@ -205,41 +233,47 @@ async def compute_trial_balance(db, tenant_id: str, as_of: str | None = None) ->
     for e in entries:
         for ln in e.get("lines", []):
             code = ln.get("account_code")
-            row = agg.setdefault(code, {"debit": 0.0, "credit": 0.0, "name": ln.get("account_name")})
-            row["debit"] += float(ln.get("debit", 0) or 0)
-            row["credit"] += float(ln.get("credit", 0) or 0)
+            row = agg.setdefault(code, {"debit_minor": 0, "credit_minor": 0, "name": ln.get("account_name")})
+            debit_minor = ln.get("debit_minor")
+            credit_minor = ln.get("credit_minor")
+            row["debit_minor"] += int(debit_minor) if debit_minor is not None else _money_to_minor(ln.get("debit", 0))
+            row["credit_minor"] += int(credit_minor) if credit_minor is not None else _money_to_minor(ln.get("credit", 0))
 
     accts = await db.gl_accounts.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(5000)
     type_by_code = {a["code"]: a.get("type") for a in accts}
     name_by_code = {a["code"]: a.get("name") for a in accts}
 
     rows = []
-    tot_debit_bal = tot_credit_bal = 0.0
+    total_debit_balance_minor = total_credit_balance_minor = 0
     for code in sorted(agg):
-        d = round(agg[code]["debit"], 2)
-        c = round(agg[code]["credit"], 2)
-        net = round(d - c, 2)
-        debit_bal = net if net > 0 else 0.0
-        credit_bal = -net if net < 0 else 0.0
-        tot_debit_bal += debit_bal
-        tot_credit_bal += credit_bal
+        debit_minor = agg[code]["debit_minor"]
+        credit_minor = agg[code]["credit_minor"]
+        net_minor = debit_minor - credit_minor
+        debit_balance_minor = net_minor if net_minor > 0 else 0
+        credit_balance_minor = -net_minor if net_minor < 0 else 0
+        total_debit_balance_minor += debit_balance_minor
+        total_credit_balance_minor += credit_balance_minor
         rows.append(
             {
                 "account_code": code,
                 "account_name": name_by_code.get(code) or agg[code].get("name") or code,
                 "account_type": type_by_code.get(code),
-                "total_debit": d,
-                "total_credit": c,
-                "debit_balance": round(debit_bal, 2),
-                "credit_balance": round(credit_bal, 2),
+                "total_debit": _minor_to_float(debit_minor),
+                "total_credit": _minor_to_float(credit_minor),
+                "debit_balance": _minor_to_float(debit_balance_minor),
+                "credit_balance": _minor_to_float(credit_balance_minor),
+                "debit_balance_minor": debit_balance_minor,
+                "credit_balance_minor": credit_balance_minor,
             }
         )
     return {
         "as_of": as_of,
         "rows": rows,
         "totals": {
-            "debit_balance": round(tot_debit_bal, 2),
-            "credit_balance": round(tot_credit_bal, 2),
-            "balanced": abs(tot_debit_bal - tot_credit_bal) <= _EPS,
+            "debit_balance": _minor_to_float(total_debit_balance_minor),
+            "credit_balance": _minor_to_float(total_credit_balance_minor),
+            "debit_balance_minor": total_debit_balance_minor,
+            "credit_balance_minor": total_credit_balance_minor,
+            "balanced": total_debit_balance_minor == total_credit_balance_minor,
         },
     }
