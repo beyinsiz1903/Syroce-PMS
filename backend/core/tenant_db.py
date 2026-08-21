@@ -137,8 +137,10 @@ TENANT_SCOPED_COLLECTIONS: set[str] = {
     "invoice_return_allocations",
     "invoice_return_balances",
     "gl_accounts",
+    "gl_counters",
     "gl_journal_entries",
     "gl_periods",
+    "gl_sequence_reservations",
     "payroll_gl_mapping",
 }
 

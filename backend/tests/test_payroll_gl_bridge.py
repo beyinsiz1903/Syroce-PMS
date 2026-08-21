@@ -91,14 +91,34 @@ class _Coll:
             return SimpleNamespace(matched_count=0, modified_count=0, upserted_id="x")
         return SimpleNamespace(matched_count=0, modified_count=0)
 
+    async def find_one_and_update(self, flt, update, upsert=False, return_document=None):
+        del return_document
+        for d in self.docs:
+            if _match(d, flt):
+                for key, value in update.get("$inc", {}).items():
+                    d[key] = d.get(key, 0) + value
+                d.update(update.get("$set", {}))
+                return dict(d)
+        if not upsert:
+            return None
+        doc = dict(flt)
+        doc.update(update.get("$setOnInsert", {}))
+        for key, value in update.get("$inc", {}).items():
+            doc[key] = doc.get(key, 0) + value
+        doc.update(update.get("$set", {}))
+        self.docs.append(doc)
+        return dict(doc)
+
 
 class _FakeDB:
     def __init__(self):
         self.gl_accounts = _Coll("gl_accounts")
+        self.gl_counters = _Coll("gl_counters")
         self.gl_journal_entries = _Coll(
             "gl_journal_entries", unique_key=("tenant_id", "idempotency_key")
         )
         self.gl_periods = _Coll("gl_periods")
+        self.gl_sequence_reservations = _Coll("gl_sequence_reservations")
         self.payroll_runs = _Coll("payroll_runs")
         self.payroll_gl_mapping = _Coll("payroll_gl_mapping")
 
@@ -106,7 +126,7 @@ class _FakeDB:
 TENANT = "tenant-A"
 
 
-def _user(role="accountant", *, super_admin=False, tenant=TENANT):
+def _user(role="finance", *, super_admin=False, tenant=TENANT):
     return SimpleNamespace(
         id="u1", user_id="u1", tenant_id=tenant, role=role,
         is_super_admin=super_admin,
@@ -122,17 +142,21 @@ def _patch(monkeypatch):
     async def _noop(_db):
         return None
 
+    async def _noop_audit(*_args, **_kwargs):
+        return None
+
     monkeypatch.setattr(gl_posting, "ensure_gl_idem_index", _noop)
+    monkeypatch.setattr(gl, "log_audit_event", _noop_audit)
     return fake
 
 
 async def _seed_coa():
     await gl.create_account(gl.AccountIn(code="770", name="Ücret Gideri", type="expense"),
-                            current_user=_user("accountant"))
+                            current_user=_user("finance"))
     await gl.create_account(gl.AccountIn(code="335", name="Personele Borç", type="liability"),
-                            current_user=_user("accountant"))
+                            current_user=_user("finance"))
     await gl.create_account(gl.AccountIn(code="360", name="Vergi/SGK Yükümlülük", type="liability"),
-                            current_user=_user("accountant"))
+                            current_user=_user("finance"))
 
 
 async def _set_mapping(user=None):
@@ -142,7 +166,7 @@ async def _set_mapping(user=None):
             withholding_payable_code="360",
             net_payable_code="335",
         ),
-        current_user=user or _user("accountant"),
+        current_user=user or _user("finance"),
     )
 
 
@@ -170,7 +194,7 @@ async def test_mapping_rejects_unknown_account(_patch):
         await pg.set_mapping(
             pg.MappingIn(wage_expense_code="770", withholding_payable_code="360",
                          net_payable_code="999"),
-            current_user=_user("accountant"),
+            current_user=_user("finance"),
         )
     assert exc.value.status_code == 400
 
@@ -178,7 +202,7 @@ async def test_mapping_rejects_unknown_account(_patch):
 async def test_mapping_set_and_get(_patch):
     await _seed_coa()
     await _set_mapping()
-    out = await pg.get_mapping(current_user=_user("accountant"))
+    out = await pg.get_mapping(current_user=_user("finance"))
     assert out["mapping"]["wage_expense_code"] == "770"
 
 
@@ -190,7 +214,7 @@ async def test_post_requires_locked_run(_patch):
     await _set_mapping()
     _seed_run(_patch, status="draft")
     with pytest.raises(HTTPException) as exc:
-        await pg.post_payroll("run-1", current_user=_user("accountant"))
+        await pg.post_payroll("run-1", current_user=_user("finance"))
     assert exc.value.status_code == 409
 
 
@@ -198,7 +222,7 @@ async def test_post_missing_run_404(_patch):
     await _seed_coa()
     await _set_mapping()
     with pytest.raises(HTTPException) as exc:
-        await pg.post_payroll("nope", current_user=_user("accountant"))
+        await pg.post_payroll("nope", current_user=_user("finance"))
     assert exc.value.status_code == 404
 
 
@@ -206,7 +230,7 @@ async def test_post_requires_mapping(_patch):
     await _seed_coa()
     _seed_run(_patch)
     with pytest.raises(HTTPException) as exc:
-        await pg.post_payroll("run-1", current_user=_user("accountant"))
+        await pg.post_payroll("run-1", current_user=_user("finance"))
     assert exc.value.status_code == 409
 
 
@@ -223,7 +247,7 @@ async def test_post_balanced_three_lines(_patch):
     await _seed_coa()
     await _set_mapping()
     _seed_run(_patch, gross=10000.0, net=7500.0)
-    out = await pg.post_payroll("run-1", current_user=_user("accountant"))
+    out = await pg.post_payroll("run-1", current_user=_user("finance"))
     e = out["entry"]
     assert e["total_debit"] == 10000.0
     assert e["total_credit"] == 10000.0
@@ -237,7 +261,7 @@ async def test_post_zero_withholding_two_lines(_patch):
     await _seed_coa()
     await _set_mapping()
     _seed_run(_patch, gross=5000.0, net=5000.0)
-    out = await pg.post_payroll("run-1", current_user=_user("accountant"))
+    out = await pg.post_payroll("run-1", current_user=_user("finance"))
     e = out["entry"]
     assert len(e["lines"]) == 2
     assert e["total_debit"] == 5000.0
@@ -247,8 +271,8 @@ async def test_post_idempotent_no_double(_patch):
     await _seed_coa()
     await _set_mapping()
     _seed_run(_patch)
-    first = await pg.post_payroll("run-1", current_user=_user("accountant"))
-    second = await pg.post_payroll("run-1", current_user=_user("accountant"))
+    first = await pg.post_payroll("run-1", current_user=_user("finance"))
+    second = await pg.post_payroll("run-1", current_user=_user("finance"))
     assert first["entry"]["id"] == second["entry"]["id"]
     assert len(_patch.gl_journal_entries.docs) == 1
 
@@ -258,7 +282,7 @@ async def test_post_zero_gross_rejected(_patch):
     await _set_mapping()
     _seed_run(_patch, gross=0.0, net=0.0)
     with pytest.raises(HTTPException) as exc:
-        await pg.post_payroll("run-1", current_user=_user("accountant"))
+        await pg.post_payroll("run-1", current_user=_user("finance"))
     assert exc.value.status_code == 400
 
 
@@ -267,7 +291,7 @@ async def test_post_tenant_isolated(_patch):
     await _set_mapping()
     _seed_run(_patch, tenant="other")
     with pytest.raises(HTTPException) as exc:
-        await pg.post_payroll("run-1", current_user=_user("accountant"))
+        await pg.post_payroll("run-1", current_user=_user("finance"))
     assert exc.value.status_code == 404
 
 
@@ -275,7 +299,7 @@ async def test_status_reports_posted(_patch):
     await _seed_coa()
     await _set_mapping()
     _seed_run(_patch)
-    await pg.post_payroll("run-1", current_user=_user("accountant"))
-    st = await pg.posting_status("run-1", current_user=_user("accountant"))
+    await pg.post_payroll("run-1", current_user=_user("finance"))
+    st = await pg.posting_status("run-1", current_user=_user("finance"))
     assert st["posted"] is True
     assert st["entry"]["idempotency_key"] == "payroll:run-1"

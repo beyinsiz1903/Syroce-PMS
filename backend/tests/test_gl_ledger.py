@@ -99,6 +99,24 @@ class _Coll:
             return SimpleNamespace(matched_count=0, modified_count=0, upserted_id="x")
         return SimpleNamespace(matched_count=0, modified_count=0)
 
+    async def find_one_and_update(self, flt, update, upsert=False, return_document=None):
+        del return_document
+        for d in self.docs:
+            if _match(d, flt):
+                for key, value in update.get("$inc", {}).items():
+                    d[key] = d.get(key, 0) + value
+                d.update(update.get("$set", {}))
+                return {kk: vv for kk, vv in d.items() if kk != "_id"} | ({"_id": d["_id"]} if "_id" in d else {})
+        if not upsert:
+            return None
+        doc = dict(flt)
+        doc.update(update.get("$setOnInsert", {}))
+        for key, value in update.get("$inc", {}).items():
+            doc[key] = doc.get(key, 0) + value
+        doc.update(update.get("$set", {}))
+        self.docs.append(doc)
+        return dict(doc)
+
     async def delete_one(self, flt):
         for i, d in enumerate(self.docs):
             if _match(d, flt):
@@ -110,8 +128,10 @@ class _Coll:
 class _FakeDB:
     def __init__(self):
         self.gl_accounts = _Coll("gl_accounts")
+        self.gl_counters = _Coll("gl_counters")
         self.gl_journal_entries = _Coll("gl_journal_entries", unique_key=("tenant_id", "idempotency_key"))
         self.gl_periods = _Coll("gl_periods")
+        self.gl_sequence_reservations = _Coll("gl_sequence_reservations")
         self.payroll_gl_mapping = _Coll("payroll_gl_mapping")
 
 
@@ -128,6 +148,8 @@ def test_accounting_subledgers_are_strictly_tenant_scoped():
         "finance_budgets",
         "fixed_assets",
         "depreciation_entries",
+        "gl_counters",
+        "gl_sequence_reservations",
     }.issubset(TENANT_SCOPED_COLLECTIONS)
 
 
@@ -212,6 +234,21 @@ async def test_account_normal_balance_derived(_patch):
     assert out2["account"]["normal_balance"] == "credit"
 
 
+async def test_account_mutations_emit_audit_events(_patch, monkeypatch):
+    events = []
+
+    async def _record(**kwargs):
+        events.append(kwargs)
+
+    monkeypatch.setattr(gl, "log_audit_event", _record)
+    await _mk_account("100", "Kasa", "asset")
+    await gl.update_account("100", gl.AccountUpdate(name="Merkez Kasa"), current_user=_user("finance"))
+
+    assert [event["action"] for event in events] == ["gl_account_created", "gl_account_updated"]
+    assert events[1]["before_value"]["name"] == "Kasa"
+    assert events[1]["after_value"]["name"] == "Merkez Kasa"
+
+
 async def test_initialize_chart_of_accounts_is_tenant_scoped_and_idempotent(_patch):
     first = await gl.initialize_chart_of_accounts(current_user=_user("finance"))
     second = await gl.initialize_chart_of_accounts(current_user=_user("finance"))
@@ -259,7 +296,29 @@ async def test_balanced_journal_posts(_patch):
     assert e["total_debit"] == 100.0
     assert e["total_credit"] == 100.0
     assert e["status"] == "posted"
+    assert e["entry_no"] == "YEV-2026-00000001"
+    assert e["posting_sequence"] == 1
     assert len(_patch.gl_journal_entries.docs) == 1
+    assert _patch.gl_sequence_reservations.docs[0]["status"] == "posted"
+
+
+async def test_manual_journal_emits_tamper_evident_audit_event(_patch, monkeypatch):
+    await _seed_basic_coa()
+    events = []
+
+    async def _record(**kwargs):
+        events.append(kwargs)
+
+    monkeypatch.setattr(gl, "log_audit_event", _record)
+    out = await gl.create_journal(
+        _journal([{"account_code": "100", "debit": 10}, {"account_code": "600", "credit": 10}]),
+        current_user=_user("finance"),
+    )
+
+    assert len(events) == 1
+    assert events[0]["action"] == "gl_manual_journal_posted"
+    assert events[0]["entity_id"] == out["entry"]["id"]
+    assert events[0]["after_value"]["entry_no"] == "YEV-2026-00000001"
 
 
 async def test_unbalanced_journal_rejected(_patch):
@@ -349,6 +408,47 @@ async def test_idempotency_key_dedups(_patch):
     second = await gl.create_journal(j, current_user=_user("finance"))
     assert first["entry"]["id"] == second["entry"]["id"]
     assert len(_patch.gl_journal_entries.docs) == 1
+    assert len(_patch.gl_sequence_reservations.docs) == 1
+    assert _patch.gl_counters.docs[0]["value"] == 1
+
+
+async def test_journal_sequence_is_monotonic_per_fiscal_year(_patch):
+    await _seed_basic_coa()
+    first = await gl.create_journal(
+        _journal([{"account_code": "100", "debit": 10}, {"account_code": "600", "credit": 10}]),
+        current_user=_user("finance"),
+    )
+    second = await gl.create_journal(
+        _journal([{"account_code": "100", "debit": 20}, {"account_code": "600", "credit": 20}]),
+        current_user=_user("finance"),
+    )
+    assert first["entry"]["entry_no"] == "YEV-2026-00000001"
+    assert second["entry"]["entry_no"] == "YEV-2026-00000002"
+
+    audit = await gl.sequence_audit(fiscal_year=2026, current_user=_user("supervisor"))
+    assert audit["healthy"] is True
+    assert audit["totals"] == {"count": 2, "posted": 2, "void": 0, "reserved": 0, "missing": 0}
+
+
+async def test_sequence_audit_detects_counter_gap(_patch):
+    await _seed_basic_coa()
+    await gl.create_journal(
+        _journal([{"account_code": "100", "debit": 10}, {"account_code": "600", "credit": 10}]),
+        current_user=_user("finance"),
+    )
+    _patch.gl_counters.docs[0]["value"] = 2
+
+    audit = await gl.sequence_audit(fiscal_year=2026, current_user=_user("finance"))
+
+    assert audit["healthy"] is False
+    assert audit["totals"]["missing"] == 1
+    assert audit["missing_sequences"] == {"2026": [2]}
+
+
+async def test_sequence_audit_requires_accounting_read_role(_patch):
+    with pytest.raises(HTTPException) as exc:
+        await gl.sequence_audit(fiscal_year=2026, current_user=_user("front_desk"))
+    assert exc.value.status_code == 403
 
 
 async def test_idempotency_key_reuse_with_different_payload_is_rejected(_patch):

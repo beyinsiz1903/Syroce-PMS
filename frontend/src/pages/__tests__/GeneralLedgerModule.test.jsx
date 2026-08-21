@@ -13,6 +13,7 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       accounts: '/gl/accounts',
       initializeAccounts: '/gl/accounts/initialize',
       journal: '/gl/journal',
+      sequenceAudit: '/gl/sequence-audit',
       trialBalance: '/gl/trial-balance',
       periods: '/gl/periods',
       initializePeriods: '/gl/periods/initialize',

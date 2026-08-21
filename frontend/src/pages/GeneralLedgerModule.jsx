@@ -12,6 +12,7 @@ export const GL_ENDPOINTS = {
   accounts: '/gl/accounts',
   initializeAccounts: '/gl/accounts/initialize',
   journal: '/gl/journal',
+  sequenceAudit: '/gl/sequence-audit',
   trialBalance: '/gl/trial-balance',
   periods: '/gl/periods',
   initializePeriods: '/gl/periods/initialize',
@@ -81,6 +82,7 @@ const GeneralLedgerModule = () => {
   
   const [accounts, setAccounts] = useState([]);
   const [journals, setJournals] = useState([]);
+  const [sequenceAudit, setSequenceAudit] = useState(null);
   const [trialBalance, setTrialBalance] = useState({ lines: [], totals: {} });
   const [initializingAccounts, setInitializingAccounts] = useState(false);
   const [periods, setPeriods] = useState([]);
@@ -122,8 +124,12 @@ const GeneralLedgerModule = () => {
 
   const fetchJournals = async () => {
     try {
-      const res = await axios.get(GL_ENDPOINTS.journal);
-      setJournals(res.data?.entries || []);
+      const [journalRes, auditRes] = await Promise.all([
+        axios.get(GL_ENDPOINTS.journal),
+        axios.get(GL_ENDPOINTS.sequenceAudit, { params: { fiscal_year: new Date().getFullYear() } }),
+      ]);
+      setJournals(journalRes.data?.entries || []);
+      setSequenceAudit(auditRes.data || null);
     } catch {
       toast.error('Yevmiye fişleri yüklenemedi.');
     }
@@ -426,6 +432,19 @@ const GeneralLedgerModule = () => {
 
             {/* Recent Journals */}
             <div>
+              {sequenceAudit && (
+                <div className={`mb-4 rounded-lg border p-3 ${sequenceAudit.healthy ? 'border-emerald-200 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-gray-900">Yevmiye sıra denetimi</p>
+                    <span className={`text-xs font-semibold ${sequenceAudit.healthy ? 'text-emerald-700' : 'text-amber-700'}`}>
+                      {sequenceAudit.healthy ? 'Sağlıklı' : 'İnceleme gerekli'}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-600">
+                    {sequenceAudit.totals?.posted || 0} kayıt · {sequenceAudit.totals?.void || 0} iptal · {sequenceAudit.totals?.reserved || 0} bekleyen · {sequenceAudit.totals?.missing || 0} eksik sıra
+                  </p>
+                </div>
+              )}
               <Card>
                 <CardHeader>
                   <CardTitle>Son Fişler</CardTitle>
@@ -435,7 +454,7 @@ const GeneralLedgerModule = () => {
                     <div key={j.id} className="p-3 border rounded-lg hover:border-blue-300 transition-colors bg-white">
                       <div className="flex justify-between items-start mb-2">
                         <div>
-                          <span className="text-xs font-bold px-2 py-1 bg-gray-100 text-gray-600 rounded-full">{j.source === 'reversal' ? 'Ters Kayıt' : j.source_ref || j.source || 'Fiş'}</span>
+                          <span className="text-xs font-bold px-2 py-1 bg-gray-100 text-gray-600 rounded-full">{j.entry_no || (j.source === 'reversal' ? 'Ters Kayıt' : j.source_ref || j.source || 'Fiş')}</span>
                           <span className="text-xs text-gray-400 ml-2">{j.date}</span>
                         </div>
                         <span className="font-bold text-gray-900">{fmtMoney(j.total_debit)}</span>
