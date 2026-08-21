@@ -149,6 +149,34 @@ def _normalize_lines(lines: list[dict]) -> tuple[list[dict], float, float]:
             raise GLPostingError(f"Satır {idx}: debit XOR credit (>0) olmalı")
         total_debit_minor += debit_minor
         total_credit_minor += credit_minor
+        currency = (ln.get("currency") or "").strip().upper() or None
+        foreign_amount = ln.get("foreign_amount")
+        exchange_rate = ln.get("exchange_rate")
+        foreign_amount_minor = None
+        normalized_rate = None
+        if currency:
+            if len(currency) != 3 or not currency.isascii() or not currency.isalpha():
+                raise GLPostingError(f"Satır {idx}: geçersiz para birimi")
+            if currency in {"TRY", "TRL"}:
+                raise GLPostingError(f"Satır {idx}: yabancı para alanları TRY için kullanılamaz")
+            if foreign_amount is None or exchange_rate is None:
+                raise GLPostingError(f"Satır {idx}: yabancı tutar ve kur zorunludur")
+            foreign_amount_minor = _money_to_minor(foreign_amount)
+            try:
+                rate_decimal = Decimal(str(exchange_rate))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise GLPostingError(f"Satır {idx}: geçersiz döviz kuru") from exc
+            if not rate_decimal.is_finite() or rate_decimal <= 0:
+                raise GLPostingError(f"Satır {idx}: döviz kuru pozitif olmalıdır")
+            normalized_rate = str(rate_decimal.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP))
+            expected_base_minor = int(
+                (Decimal(foreign_amount_minor) * rate_decimal).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            )
+            base_minor = debit_minor or credit_minor
+            if abs(expected_base_minor - base_minor) > 1:
+                raise GLPostingError(f"Satır {idx}: yabancı tutar × kur TL tutarıyla uyuşmuyor")
+        elif foreign_amount is not None or exchange_rate is not None:
+            raise GLPostingError(f"Satır {idx}: yabancı tutar ve kur için para birimi zorunludur")
         out.append(
             {
                 "line_no": idx,
@@ -159,6 +187,10 @@ def _normalize_lines(lines: list[dict]) -> tuple[list[dict], float, float]:
                 "debit_minor": debit_minor,
                 "credit_minor": credit_minor,
                 "memo": (ln.get("memo") or "").strip() or None,
+                "currency": currency,
+                "foreign_amount": _minor_to_float(foreign_amount_minor) if foreign_amount_minor is not None else None,
+                "foreign_amount_minor": foreign_amount_minor,
+                "exchange_rate": normalized_rate,
             }
         )
     if total_debit_minor <= 0:

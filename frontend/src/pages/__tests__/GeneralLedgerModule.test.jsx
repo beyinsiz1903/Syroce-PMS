@@ -21,6 +21,10 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       closeYear: '/gl/year-end/close',
       incomeStatement: '/gl/statements/income-statement',
       balanceSheet: '/gl/statements/balance-sheet',
+      comparativeIncome: '/gl/statements/comparative-income-statement',
+      comparativeBalance: '/gl/statements/comparative-balance-sheet',
+      exportReport: '/gl/reports/export',
+      fxRevalue: '/gl/fx/revalue',
     });
   });
 
@@ -56,6 +60,20 @@ describe('GeneralLedgerModule persistent GL contract', () => {
         { account_code: '600', debit: 0, credit: 100, memo: null },
       ],
     });
+  });
+
+  it('adds validated foreign-currency metadata when present', () => {
+    const payload = toJournalPayload({
+      date: '2026-08-13',
+      type: 'Mahsup',
+      description: 'USD banka',
+      lines: [
+        { account_code: '102', debit: 3200, credit: 0, description: '', currency: 'usd', foreign_amount: '100', exchange_rate: '32' },
+        { account_code: '590', debit: 0, credit: 3200, description: '' },
+      ],
+    });
+    expect(payload.lines[0]).toMatchObject({ currency: 'USD', foreign_amount: 100, exchange_rate: 32 });
+    expect(payload.lines[1]).not.toHaveProperty('currency');
   });
 
   it('normalizes the persistent trial-balance response for the table', () => {
