@@ -384,7 +384,7 @@ const Dashboard = ({
     title: t('dashboard.multiProperty'),
     description: t('dashboard.multiPropertyDesc'),
     icon: Building,
-    path: '/multi-property',
+    path: '/app/multi-property',
     color: '#06b6d4',
     badge: 'NEW',
     category: 'management'

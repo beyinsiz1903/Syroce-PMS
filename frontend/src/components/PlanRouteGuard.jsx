@@ -59,7 +59,7 @@ function isAlwaysAllowed(pathname) {
   );
 }
 
-function getRequiredModule(pathname) {
+export function getRequiredModule(pathname) {
   for (const [path, moduleKey] of Object.entries(PATH_MODULE_MAP)) {
     if (pathname === path || pathname.startsWith(path + "/")) {
       return moduleKey;
