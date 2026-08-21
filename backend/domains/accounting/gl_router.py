@@ -53,12 +53,18 @@ _DEFAULT_CHART_OF_ACCOUNTS = (
     ("120", "Alıcılar", "asset"),
     ("150", "İlk Madde ve Malzeme", "asset"),
     ("153", "Ticari Mallar", "asset"),
+    ("257", "Birikmiş Amortismanlar", "asset", "credit"),
     ("320", "Satıcılar", "liability"),
     ("335", "Personele Borçlar", "liability"),
     ("336", "Diğer Çeşitli Borçlar", "liability"),
     ("360", "Ödenecek Vergi ve Fonlar", "liability"),
     ("391", "Hesaplanan KDV", "liability"),
+    ("570", "Geçmiş Yıllar Kârları", "equity"),
+    ("580", "Geçmiş Yıllar Zararları", "equity", "debit"),
+    ("590", "Dönem Net Kârı", "equity"),
+    ("591", "Dönem Net Zararı", "equity", "debit"),
     ("600", "Yurtiçi Satışlar (Oda/F&B Geliri)", "revenue"),
+    ("690", "Dönem Kârı veya Zararı", "equity"),
     ("740", "Hizmet Üretim Maliyeti", "expense"),
     ("770", "Genel Yönetim Giderleri", "expense"),
 )
@@ -99,6 +105,11 @@ class FiscalYearIn(BaseModel):
 
 
 class PeriodActionIn(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=500)
+
+
+class YearEndCloseIn(BaseModel):
+    fiscal_year: int = Field(..., ge=2000, le=2099)
     reason: str = Field(..., min_length=3, max_length=500)
 
 
@@ -249,6 +260,193 @@ async def reopen_period(
     return {"period": updated, "already_open": False}
 
 
+@router.get("/year-end/{fiscal_year}")
+async def get_year_end_status(
+    fiscal_year: int,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _READ_ROLES)
+    tenant_id = _tenant_of(current_user)
+    closure = await db.gl_year_end_closures.find_one(
+        {"tenant_id": tenant_id, "fiscal_year": fiscal_year},
+        {"_id": 0},
+    )
+    return {"fiscal_year": fiscal_year, "closed": closure is not None, "closure": closure}
+
+
+@router.post("/year-end/close")
+async def close_fiscal_year(
+    payload: YearEndCloseIn,
+    current_user: User = Depends(get_current_user),
+):
+    """Close P&L into 590/591 and record continuous-ledger opening carry-forward."""
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    existing = await db.gl_year_end_closures.find_one(
+        {"tenant_id": tenant_id, "fiscal_year": payload.fiscal_year},
+        {"_id": 0},
+    )
+    if existing:
+        return {"closure": existing, "already_closed": True}
+
+    await ensure_calendar_year_periods(db, tenant_id, payload.fiscal_year, actor=_actor_id(current_user))
+    periods = await db.gl_periods.find(
+        {"tenant_id": tenant_id, "fiscal_year": payload.fiscal_year},
+        {"_id": 0},
+    ).sort("period_no", 1).to_list(12)
+    periods_by_no = {int(period["period_no"]): period for period in periods}
+    if len(periods_by_no) != 12:
+        raise HTTPException(status_code=409, detail="Mali yılın 12 dönemi eksiksiz oluşturulmalıdır")
+    earlier_open = [period["name"] for no, period in periods_by_no.items() if no < 12 and period.get("status") != "closed"]
+    if earlier_open:
+        raise HTTPException(status_code=409, detail=f"Önce {earlier_open[0]} dönemi kapatılmalıdır")
+    december = periods_by_no[12]
+    if december.get("status") != "open":
+        raise HTTPException(status_code=409, detail="Aralık dönemi kapanış fişi için açık olmalıdır")
+
+    accounts = await db.gl_accounts.find({"tenant_id": tenant_id, "active": True}, {"_id": 0}).to_list(5000)
+    account_codes = {account["code"] for account in accounts}
+    required_codes = {"570", "580", "590", "591", "690"}
+    missing_codes = sorted(required_codes - account_codes)
+    if missing_codes:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Yıl sonu için eksik hesap kodları: {', '.join(missing_codes)}. Standart hesap planını hazırlayın.",
+        )
+
+    year_start = f"{payload.fiscal_year}-01-01"
+    year_end = f"{payload.fiscal_year}-12-31"
+    income = await compute_income_statement(db, tenant_id, start=year_start, end=year_end)
+    pre_close_trial = await compute_trial_balance(db, tenant_id, as_of=year_end)
+    pre_close_by_code = {row["account_code"]: row for row in pre_close_trial["rows"]}
+    lines: list[dict] = []
+    prior_profit = pre_close_by_code.get("590", {})
+    if prior_profit.get("credit_balance_minor"):
+        amount = prior_profit["credit_balance"]
+        lines.extend(
+            [
+                {"account_code": "590", "debit": amount, "memo": "Önceki dönem kârı devri"},
+                {"account_code": "570", "credit": amount, "memo": "Geçmiş yıllar kârları"},
+            ]
+        )
+    prior_loss = pre_close_by_code.get("591", {})
+    if prior_loss.get("debit_balance_minor"):
+        amount = prior_loss["debit_balance"]
+        lines.extend(
+            [
+                {"account_code": "591", "credit": amount, "memo": "Önceki dönem zararı devri"},
+                {"account_code": "580", "debit": amount, "memo": "Geçmiş yıllar zararları"},
+            ]
+        )
+    for row in income["revenue"]:
+        amount = row["amount"]
+        if amount > 0:
+            lines.append({"account_code": row["account_code"], "debit": amount, "memo": "Gelir hesabı kapanışı"})
+        elif amount < 0:
+            lines.append({"account_code": row["account_code"], "credit": abs(amount), "memo": "Gelir hesabı kapanışı"})
+    for row in income["expenses"]:
+        amount = row["amount"]
+        if amount > 0:
+            lines.append({"account_code": row["account_code"], "credit": amount, "memo": "Gider hesabı kapanışı"})
+        elif amount < 0:
+            lines.append({"account_code": row["account_code"], "debit": abs(amount), "memo": "Gider hesabı kapanışı"})
+
+    net_income = income["totals"]["net_income"]
+    if net_income > 0:
+        lines.extend(
+            [
+                {"account_code": "690", "credit": net_income, "memo": "Dönem kârı"},
+                {"account_code": "690", "debit": net_income, "memo": "Net kâr devri"},
+                {"account_code": "590", "credit": net_income, "memo": "Dönem net kârı"},
+            ]
+        )
+    elif net_income < 0:
+        loss = abs(net_income)
+        lines.extend(
+            [
+                {"account_code": "690", "debit": loss, "memo": "Dönem zararı"},
+                {"account_code": "690", "credit": loss, "memo": "Net zarar devri"},
+                {"account_code": "591", "debit": loss, "memo": "Dönem net zararı"},
+            ]
+        )
+
+    closing_entry = None
+    if lines:
+        try:
+            closing_entry = await post_journal_entry(
+                db,
+                tenant_id,
+                date=year_end,
+                memo=f"{payload.fiscal_year} mali yıl kapanışı",
+                lines=lines,
+                source="year_end_close",
+                source_ref=str(payload.fiscal_year),
+                actor=_actor_id(current_user),
+                idempotency_key=f"gl-year-end-close:{payload.fiscal_year}",
+            )
+        except GLPostingError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    await close_period(
+        december["id"],
+        PeriodActionIn(reason=payload.reason.strip()),
+        current_user=current_user,
+    )
+    await ensure_calendar_year_periods(db, tenant_id, payload.fiscal_year + 1, actor=_actor_id(current_user))
+    closing_trial = await compute_trial_balance(db, tenant_id, as_of=year_end)
+    opening_balances = [
+        {
+            "account_code": row["account_code"],
+            "account_name": row["account_name"],
+            "account_type": row["account_type"],
+            "debit_balance_minor": row["debit_balance_minor"],
+            "credit_balance_minor": row["credit_balance_minor"],
+        }
+        for row in closing_trial["rows"]
+        if row.get("account_type") in {"asset", "liability", "equity"}
+        and (row["debit_balance_minor"] or row["credit_balance_minor"])
+    ]
+    now = _now_iso()
+    closure = {
+        "id": f"{tenant_id}:{payload.fiscal_year}",
+        "tenant_id": tenant_id,
+        "fiscal_year": payload.fiscal_year,
+        "status": "closed",
+        "closed_at": now,
+        "closed_by": _actor_id(current_user),
+        "reason": payload.reason.strip(),
+        "closing_entry_id": closing_entry.get("id") if closing_entry else None,
+        "closing_entry_no": closing_entry.get("entry_no") if closing_entry else None,
+        "net_income_minor": income["totals"]["net_income_minor"],
+        "opening_fiscal_year": payload.fiscal_year + 1,
+        "opening_carry_forward_mode": "continuous_ledger",
+        "opening_balances": opening_balances,
+    }
+    try:
+        await db.gl_year_end_closures.insert_one(dict(closure))
+    except DuplicateKeyError:
+        closure = await db.gl_year_end_closures.find_one(
+            {"tenant_id": tenant_id, "fiscal_year": payload.fiscal_year},
+            {"_id": 0},
+        )
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=_actor_id(current_user),
+        action="gl_fiscal_year_closed",
+        entity_type="gl_year_end_closure",
+        entity_id=closure["id"],
+        details=f"{payload.fiscal_year} mali yılı kapatıldı ve açılış bakiyeleri devredildi",
+        after_value={
+            "closing_entry_no": closure.get("closing_entry_no"),
+            "net_income_minor": closure["net_income_minor"],
+            "opening_fiscal_year": closure["opening_fiscal_year"],
+            "opening_balance_count": len(closure["opening_balances"]),
+        },
+        db=db,
+    )
+    return {"closure": closure, "already_closed": False}
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Hesap planı (Chart of Accounts)
 # ─────────────────────────────────────────────────────────────────────
@@ -258,12 +456,14 @@ class AccountIn(BaseModel):
     type: str = Field(..., max_length=20)
     parent_code: str | None = Field(None, max_length=40)
     active: bool = True
+    normal_balance: Literal["debit", "credit"] | None = None
 
 
 class AccountUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=200)
     parent_code: str | None = Field(None, max_length=40)
     active: bool | None = None
+    normal_balance: Literal["debit", "credit"] | None = None
 
 
 @router.get("/accounts")
@@ -300,7 +500,7 @@ async def create_account(payload: AccountIn, current_user: User = Depends(get_cu
         "code": code,
         "name": payload.name.strip(),
         "type": payload.type,
-        "normal_balance": normal_balance(payload.type),
+        "normal_balance": payload.normal_balance or normal_balance(payload.type),
         "parent_code": (payload.parent_code or "").strip() or None,
         "active": payload.active,
         "created_at": now,
@@ -333,7 +533,8 @@ async def initialize_chart_of_accounts(current_user: User = Depends(get_current_
         name="ux_gl_accounts_tenant_code",
     )
     created = 0
-    for code, name, account_type in _DEFAULT_CHART_OF_ACCOUNTS:
+    for account_definition in _DEFAULT_CHART_OF_ACCOUNTS:
+        code, name, account_type, *balance_override = account_definition
         now = _now_iso()
         result = await db.gl_accounts.update_one(
             {"tenant_id": tenant_id, "code": code},
@@ -344,7 +545,7 @@ async def initialize_chart_of_accounts(current_user: User = Depends(get_current_
                     "code": code,
                     "name": name,
                     "type": account_type,
-                    "normal_balance": normal_balance(account_type),
+                    "normal_balance": balance_override[0] if balance_override else normal_balance(account_type),
                     "parent_code": None,
                     "active": True,
                     "created_at": now,
@@ -407,6 +608,8 @@ async def update_account(code: str, payload: AccountUpdate, current_user: User =
     updates = dict(payload.model_dump(exclude_unset=True))
     if "name" in updates and updates["name"]:
         updates["name"] = updates["name"].strip()
+    if "normal_balance" in updates and updates["normal_balance"] is None:
+        updates["normal_balance"] = normal_balance(before["type"])
     if not updates:
         raise HTTPException(status_code=400, detail="Güncellenecek alan yok")
     updates["updated_at"] = _now_iso()
@@ -421,8 +624,8 @@ async def update_account(code: str, payload: AccountUpdate, current_user: User =
         entity_type="gl_account",
         entity_id=before.get("id") or code,
         details=f"{code} hesap kodu güncellendi",
-        before_value={key: before.get(key) for key in ("name", "parent_code", "active")},
-        after_value={key: doc.get(key) for key in ("name", "parent_code", "active")},
+        before_value={key: before.get(key) for key in ("name", "parent_code", "active", "normal_balance")},
+        after_value={key: doc.get(key) for key in ("name", "parent_code", "active", "normal_balance")},
         db=db,
     )
     return {"account": doc}

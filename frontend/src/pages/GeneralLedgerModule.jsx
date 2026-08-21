@@ -16,6 +16,8 @@ export const GL_ENDPOINTS = {
   trialBalance: '/gl/trial-balance',
   periods: '/gl/periods',
   initializePeriods: '/gl/periods/initialize',
+  yearEnd: '/gl/year-end',
+  closeYear: '/gl/year-end/close',
   incomeStatement: '/gl/statements/income-statement',
   balanceSheet: '/gl/statements/balance-sheet',
 };
@@ -88,6 +90,7 @@ const GeneralLedgerModule = () => {
   const [periods, setPeriods] = useState([]);
   const [periodYear, setPeriodYear] = useState(new Date().getFullYear());
   const [periodBusy, setPeriodBusy] = useState('');
+  const [yearEndStatus, setYearEndStatus] = useState(null);
   const [journalSaving, setJournalSaving] = useState(false);
   const [reversalBusy, setReversalBusy] = useState('');
   const reversalKeys = useRef({});
@@ -146,8 +149,12 @@ const GeneralLedgerModule = () => {
 
   const fetchPeriods = async () => {
     try {
-      const res = await axios.get(GL_ENDPOINTS.periods, { params: { fiscal_year: periodYear } });
-      setPeriods(res.data?.periods || []);
+      const [periodRes, yearEndRes] = await Promise.all([
+        axios.get(GL_ENDPOINTS.periods, { params: { fiscal_year: periodYear } }),
+        axios.get(`${GL_ENDPOINTS.yearEnd}/${periodYear}`),
+      ]);
+      setPeriods(periodRes.data?.periods || []);
+      setYearEndStatus(yearEndRes.data || null);
     } catch {
       toast.error('Mali dönemler yüklenemedi.');
     }
@@ -210,6 +217,25 @@ const GeneralLedgerModule = () => {
       await fetchPeriods();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Mali dönem güncellenemedi.');
+    } finally {
+      setPeriodBusy('');
+    }
+  };
+
+  const closeFiscalYear = async () => {
+    const reason = window.prompt(`${periodYear} mali yıl kapanış gerekçesi:`);
+    if (!reason || reason.trim().length < 3) return;
+    setPeriodBusy('year-end');
+    try {
+      const res = await axios.post(GL_ENDPOINTS.closeYear, {
+        fiscal_year: Number(periodYear),
+        reason: reason.trim(),
+      });
+      const entryNo = res.data?.closure?.closing_entry_no;
+      toast.success(`${periodYear} kapatıldı; ${periodYear + 1} açılış bakiyeleri devredildi${entryNo ? ` (${entryNo})` : ''}.`);
+      await fetchPeriods();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Mali yıl kapatılamadı.');
     } finally {
       setPeriodBusy('');
     }
@@ -302,6 +328,10 @@ const GeneralLedgerModule = () => {
       setReversalBusy('');
     }
   };
+
+  const yearEndReady = periods.length === 12
+    && periods.filter((period) => Number(period.period_no) < 12).every((period) => period.status === 'closed')
+    && periods.find((period) => Number(period.period_no) === 12)?.status === 'open';
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -490,6 +520,28 @@ const GeneralLedgerModule = () => {
               </div>
             </CardHeader>
             <CardContent>
+              <div className={`mb-4 rounded-lg border p-4 ${yearEndStatus?.closed ? 'border-slate-300 bg-slate-50' : 'border-blue-200 bg-blue-50/50'}`}>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-gray-900">{periodYear} yıl sonu kapanışı</p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      {yearEndStatus?.closed
+                        ? `${yearEndStatus.closure?.closing_entry_no || 'Kapanış fişi olmadan'} kapatıldı; ${yearEndStatus.closure?.opening_fiscal_year} açılış bakiyeleri hazır.`
+                        : 'İlk 11 dönem kapandıktan sonra gelir/gider hesapları 690 üzerinden 590/591’e devredilir.'}
+                    </p>
+                  </div>
+                  <Button onClick={closeFiscalYear} disabled={yearEndStatus?.closed || periodBusy === 'year-end' || !yearEndReady}>
+                    <Landmark className="w-4 h-4 mr-2" />
+                    {yearEndStatus?.closed
+                      ? 'Yıl Kapatıldı'
+                      : periodBusy === 'year-end'
+                        ? 'Kapatılıyor...'
+                        : yearEndReady
+                          ? 'Yıl Sonunu Kapat ve Devret'
+                          : 'Önce Aylık Dönemleri Kapat'}
+                  </Button>
+                </div>
+              </div>
               {periods.length === 0 ? (
                 <div className="text-center py-10 text-gray-500">Bu mali yıl için dönem bulunamadı.</div>
               ) : (

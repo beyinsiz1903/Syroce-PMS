@@ -17,6 +17,8 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       trialBalance: '/gl/trial-balance',
       periods: '/gl/periods',
       initializePeriods: '/gl/periods/initialize',
+      yearEnd: '/gl/year-end',
+      closeYear: '/gl/year-end/close',
       incomeStatement: '/gl/statements/income-statement',
       balanceSheet: '/gl/statements/balance-sheet',
     });

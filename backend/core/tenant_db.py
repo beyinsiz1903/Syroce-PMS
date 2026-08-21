@@ -141,6 +141,7 @@ TENANT_SCOPED_COLLECTIONS: set[str] = {
     "gl_journal_entries",
     "gl_periods",
     "gl_sequence_reservations",
+    "gl_year_end_closures",
     "payroll_gl_mapping",
 }
 
