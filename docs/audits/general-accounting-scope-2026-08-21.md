@@ -1,11 +1,13 @@
 # Genel Muhasebe Kapsam Denetimi — 2026-08-21
 
-## Sonuç
+## Sonuç ve 2026-08-22 iyileştirme durumu
 
-Mevcut sistem, çift taraflı kayıt çekirdeği ve bazı alt defter köprüleri sayesinde
-işlevsel bir **GL temeli** sunuyor; ancak bugün itibarıyla uçtan uca, kapanış
-kontrollü bir genel muhasebe ürünü sayılmamalı. Otel kullanıcısına açılan
-`Genel Muhasebe` ekranı backend kapsamının yalnızca küçük bir bölümünü gösteriyor.
+Sistem artık çift taraflı kayıt, dönem kilidi, bağlı ters kayıt, tekrar güvenli
+posting, minor-unit para aritmetiği, bilanço ve gelir tablosu ile kapanış kontrollü
+bir **GL çekirdeği** sunuyor. AP, bütçe ve sabit kıymet özetleri de aynı Genel
+Muhasebe çalışma alanından erişilebilir. Bu çekirdek operasyonel muhasebe için
+işlevseldir; e-Defter/berat, döviz değerleme ve hazırlayan-onaylayan yaşam döngüsü
+tamamlanmadan mevzuat uçtan uca tamamlandı kabul edilmemelidir.
 
 ## Mevcut ve doğrulanan kapsam
 
@@ -15,38 +17,36 @@ kontrollü bir genel muhasebe ürünü sayılmamalı. Otel kullanıcısına aç�
 | Çift taraflı yevmiye | Var | `shared_kernel/gl_posting.py`, `/api/gl/journal` |
 | Mizan | Var | `/api/gl/trial-balance` ve `GeneralLedgerModule.jsx` |
 | Nilvera alış/satış faturası → GL | Var | `backend/core/integrations/invoice_gl_bridge.py`, GL entegrasyon uçları |
-| Satıcı faturaları / ödemeler / yaşlandırma | Backend var | `backend/domains/accounting/ap_router.py` |
-| Bütçe / gerçekleşen karşılaştırması | Backend var | `backend/domains/accounting/budget_router.py` |
-| Sabit kıymet / amortisman | Backend var | `backend/domains/accounting/fixed_asset_router.py` |
+| Mali dönem ve kilit | Hazır | PR #360; sıralı kapatma, kontrollü yeniden açma ve audit |
+| Bağlı ters kayıt | Hazır | PR #361; özgün fiş değişmeden karşı fiş üretimi |
+| Satıcı faturaları / ödemeler / yaşlandırma | Backend + çalışma alanı özeti hazır | `backend/domains/accounting/ap_router.py`, `GeneralLedgerModule.jsx` |
+| Bütçe / gerçekleşen karşılaştırması | Backend + çalışma alanı özeti hazır | `backend/domains/accounting/budget_router.py`, `GeneralLedgerModule.jsx` |
+| Sabit kıymet / amortisman | Backend + çalışma alanı özeti hazır | `backend/domains/accounting/fixed_asset_router.py`, `GeneralLedgerModule.jsx` |
+| Gelir tablosu / bilanço | Hazır | `/api/gl/statements/*`, minor-unit hesaplama ve Genel Muhasebe ekranı |
 | Bordro → GL | Backend var | `backend/domains/accounting/payroll_gl_router.py`; İK ekranından tetikleniyor |
 | Banka mutabakatı | Ayrı ekran var | `/app/bank-reconciliation` |
 
 ## Eksikler ve öncelik
 
-### P0 — Muhasebe bütünlüğü / kapanış güvenliği
+### Tamamlanan P0 — Muhasebe bütünlüğü / kapanış güvenliği
 
-1. **Dönem yönetimi ve dönem kilidi yok.** Açık/kapalı mali dönem modeli,
-   kapanmış döneme kayıt engeli ve kontrollü yeniden açma/audit akışı bulunmuyor.
-2. **Standart ters kayıt/iptal fişi akışı yok.** Yevmiye için kullanıcıya açık,
-   özgün kayda bağlı ve denetlenebilir reversal endpoint/UI sözleşmesi bulunmuyor.
-3. **Manuel fişte idempotency zorunlu değil.** Backend anahtar kabul ediyor fakat
-   `GeneralLedgerModule.jsx` manuel kayıtta anahtar göndermiyor; ağ tekrarları çift
-   kayıt riski yaratabilir.
-4. **Parasal alanlar float.** GL giriş modellerinde `float` kullanımı kuruş ve
-   yuvarlama tutarlılığı açısından finansal kayıt için yeterli güvence vermiyor;
-   Decimal/minor-unit standardı gerekli.
+1. Dönem modeli, sıralı kapatma, ters sırada yeniden açma ve audit eklendi.
+2. Özgün fişe bağlı, değiştirilemez ve idempotent ters kayıt eklendi.
+3. Manuel posting idempotency anahtarı zorunlu ve içerik parmak iziyle korumalı.
+4. GL parasal doğruluk kaynağı `debit_minor` / `credit_minor`; API uyumluluğu için
+   eski ondalık görünüm türetilmiş çıktı olarak korunuyor.
 
-### P1 — Ürün kapsamı / erişilebilirlik
+### Tamamlanan P1 çekirdeği — Ürün kapsamı / erişilebilirlik
 
-1. **Backend alt modülleri Genel Muhasebe ekranında yok.** AP, bütçe, sabit kıymet
-   ve amortisman uçları mevcut olmasına rağmen tek kullanıcı çalışma alanında
-   menü/sekmelerle erişilemiyor.
-2. **Temel mali tablolar yok.** Bilanço ve gelir tablosu endpoint/UI çıktısı yok;
-   yalnızca mizan mevcut.
-3. **Yevmiye detay ve filtre deneyimi eksik.** Backend tarih filtresi ve detay ucu
-   sağlıyor; UI bunları tam kullanmıyor, dışa aktarma da sunmuyor.
-4. **Hesap planı yönetimi eksik.** Backend hesap oluşturma/güncelleme sunuyor;
-   UI sadece ilk kurulum ve listeleme yapıyor.
+1. AP yaşlandırma, aylık gelir/gider bütçe karşılaştırması ve sabit kıymet özeti
+   Genel Muhasebe içindeki `Alt Defterler` sekmesine bağlandı.
+2. Yılbaşından bugüne gelir tablosu ve tarih itibarıyla bilanço endpoint/UI'ı eklendi.
+3. Gerçek `finance` rolünün AP/bütçe/sabit kıymet erişimi düzeltildi; ilgili sekiz
+   koleksiyon sıkı tenant kapsamına alındı.
+
+Kalan ürün deneyimi işi: yevmiye detay/filtre/dışa aktarma ve hesap planı
+oluşturma-güncelleme formlarının arayüze taşınmasıdır. Bunlar veri bütünlüğü
+engeli değil, kullanım kolaylığı kapsamıdır.
 
 ### P2 — Mevzuat ve operasyon olgunluğu
 
@@ -57,12 +57,12 @@ kontrollü bir genel muhasebe ürünü sayılmamalı. Otel kullanıcısına aç�
    bakiyeleri görünür değil.
 4. Onay matrisi (hazırlayan/onaylayan) ve fiş taslak-onay-posting yaşam döngüsü yok.
 
-## Önerilen teslim sırası
+## Kalan teslim sırası
 
-1. P0: mali dönem kilidi + reversal + zorunlu idempotency + Decimal para modeli.
-2. P1: mevcut AP/bütçe/sabit kıymet yeteneklerini tek Muhasebe çalışma alanına
-   bağlama; bilanço ve gelir tablosu.
-3. P2: e-Defter/resmi çıktılar, dövizli muhasebe ve onay iş akışı.
+1. Yevmiye filtre/detay/dışa aktarma ve hesap planı yönetim ekranları.
+2. Hazırlayan-onaylayan ayrılığı ve fiş taslak/onay/posting yaşam döngüsü.
+3. Çoklu para birimi, kur farkı, tahakkuk ve otomatik kapanış fişleri.
+4. Mali müşavir ve mevzuat doğrulamasıyla e-Defter/resmi çıktı paketi.
 
 Bu denetim yalnızca kod ve route kapsamını değerlendirir; provider write veya
 production işlemi yapılmamıştır.

@@ -89,7 +89,7 @@ class _FakeDB:
 TENANT = "tenant-A"
 
 
-def _user(role="accountant", *, super_admin=False, tenant=TENANT):
+def _user(role="finance", *, super_admin=False, tenant=TENANT):
     return SimpleNamespace(
         id="u1", user_id="u1", tenant_id=tenant, role=role, is_super_admin=super_admin,
     )
@@ -105,7 +105,7 @@ def _patch(monkeypatch):
 async def _set_budget(period, category, amount, kind="expense", user=None):
     return (await bud.upsert_budget(
         bud.BudgetIn(period=period, category=category, kind=kind, budget_amount=amount),
-        current_user=user or _user("accountant"),
+        current_user=user or _user("finance"),
     ))["budget"]
 
 
@@ -146,7 +146,7 @@ async def test_invalid_period_400(_patch):
 
 async def test_delete_budget(_patch):
     b = await _set_budget("2026-06", "fnb", 1000)
-    out = await bud.delete_budget(b["id"], current_user=_user("accountant"))
+    out = await bud.delete_budget(b["id"], current_user=_user("finance"))
     assert out["ok"] is True
     assert _patch.finance_budgets.docs == []
 
@@ -157,7 +157,7 @@ async def test_delete_budget(_patch):
 async def test_expense_variance_saving_is_favorable(_patch):
     await _set_budget("2026-06", "fnb", 1000)
     _flow(_patch, "fnb", 800, txn="expense")  # under budget -> saving 200
-    out = await bud.budget_vs_actual(period="2026-06", kind="expense", current_user=_user("accountant"))
+    out = await bud.budget_vs_actual(period="2026-06", kind="expense", current_user=_user("finance"))
     row = next(r for r in out["rows"] if r["category"] == "fnb")
     assert row["budget"] == 1000.0
     assert row["actual"] == 800.0
@@ -169,7 +169,7 @@ async def test_expense_variance_saving_is_favorable(_patch):
 async def test_expense_overrun_is_unfavorable(_patch):
     await _set_budget("2026-06", "fnb", 1000)
     _flow(_patch, "fnb", 1200, txn="expense")
-    out = await bud.budget_vs_actual(period="2026-06", kind="expense", current_user=_user("accountant"))
+    out = await bud.budget_vs_actual(period="2026-06", kind="expense", current_user=_user("finance"))
     row = next(r for r in out["rows"] if r["category"] == "fnb")
     assert row["variance"] == -200.0
     assert row["favorable"] is False
@@ -179,7 +179,7 @@ async def test_revenue_variance_uses_income_flows(_patch):
     await _set_budget("2026-06", "rooms", 5000, kind="revenue")
     _flow(_patch, "rooms", 6000, txn="income")
     _flow(_patch, "rooms", 999, txn="expense")  # must be ignored for revenue
-    out = await bud.budget_vs_actual(period="2026-06", kind="revenue", current_user=_user("accountant"))
+    out = await bud.budget_vs_actual(period="2026-06", kind="revenue", current_user=_user("finance"))
     row = next(r for r in out["rows"] if r["category"] == "rooms")
     assert row["actual"] == 6000.0
     assert row["variance"] == 1000.0  # actual - budget
@@ -189,14 +189,14 @@ async def test_revenue_variance_uses_income_flows(_patch):
 async def test_actuals_outside_period_excluded(_patch):
     await _set_budget("2026-06", "fnb", 1000)
     _flow(_patch, "fnb", 500, txn="expense", date="2026-07-02T10:00:00")
-    out = await bud.budget_vs_actual(period="2026-06", kind="expense", current_user=_user("accountant"))
+    out = await bud.budget_vs_actual(period="2026-06", kind="expense", current_user=_user("finance"))
     row = next(r for r in out["rows"] if r["category"] == "fnb")
     assert row["actual"] == 0.0
     assert row["variance"] == 1000.0
 
 
 async def test_no_budget_no_actual_data_unavailable(_patch):
-    out = await bud.budget_vs_actual(period="2026-06", kind="expense", current_user=_user("accountant"))
+    out = await bud.budget_vs_actual(period="2026-06", kind="expense", current_user=_user("finance"))
     assert out["data_available"] is False
     assert out["rows"] == []
 

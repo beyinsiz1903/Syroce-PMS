@@ -29,6 +29,8 @@ from shared_kernel.gl_periods import GLPeriodError, ensure_calendar_year_periods
 from shared_kernel.gl_posting import (
     ACCOUNT_TYPES,
     GLPostingError,
+    compute_balance_sheet,
+    compute_income_statement,
     compute_trial_balance,
     normal_balance,
     post_journal_entry,
@@ -628,6 +630,33 @@ async def trial_balance(
     _require_role(current_user, _READ_ROLES)
     tenant_id = _tenant_of(current_user)
     return await compute_trial_balance(db, tenant_id, as_of=as_of)
+
+
+@router.get("/statements/income-statement")
+async def income_statement(
+    start: str | None = Query(None),
+    end: str | None = Query(None),
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _READ_ROLES)
+    tenant_id = _tenant_of(current_user)
+    try:
+        return await compute_income_statement(db, tenant_id, start=start, end=end)
+    except GLPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/statements/balance-sheet")
+async def balance_sheet(
+    as_of: str | None = Query(None),
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _READ_ROLES)
+    tenant_id = _tenant_of(current_user)
+    try:
+        return await compute_balance_sheet(db, tenant_id, as_of=as_of)
+    except GLPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # ─────────────────────────────────────────────────────────────────────

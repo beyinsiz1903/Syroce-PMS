@@ -21,6 +21,7 @@ import pytest
 from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
+from core.tenant_db import TENANT_SCOPED_COLLECTIONS
 from domains.accounting import gl_router as gl
 from shared_kernel import gl_posting
 
@@ -114,6 +115,19 @@ class _FakeDB:
 
 
 TENANT = "tenant-A"
+
+
+def test_accounting_subledgers_are_strictly_tenant_scoped():
+    assert {
+        "ap_invoices",
+        "ap_payments",
+        "proc_purchase_orders",
+        "proc_suppliers",
+        "cash_flow",
+        "finance_budgets",
+        "fixed_assets",
+        "depreciation_entries",
+    }.issubset(TENANT_SCOPED_COLLECTIONS)
 
 
 def _user(role="finance", *, super_admin=False, tenant=TENANT):
@@ -582,3 +596,53 @@ async def test_trial_balance_balanced(_patch):
     assert tb["totals"]["debit_balance"] == 100.0
     assert tb["totals"]["credit_balance"] == 100.0
     assert tb["totals"]["balanced"] is True
+
+
+async def test_income_statement_and_balance_sheet_are_derived_from_posted_ledger(_patch):
+    await _seed_basic_coa()
+    await gl.create_journal(
+        _journal(
+            [{"account_code": "100", "debit": 100}, {"account_code": "600", "credit": 100}],
+            date="2026-06-01",
+        ),
+        current_user=_user("finance"),
+    )
+    await gl.create_journal(
+        _journal(
+            [{"account_code": "740", "debit": 40}, {"account_code": "100", "credit": 40}],
+            date="2026-06-02",
+        ),
+        current_user=_user("finance"),
+    )
+
+    income = await gl.income_statement(
+        start="2026-06-01",
+        end="2026-06-30",
+        current_user=_user("finance"),
+    )
+    assert income["totals"]["revenue_minor"] == 10000
+    assert income["totals"]["expenses_minor"] == 4000
+    assert income["totals"]["net_income_minor"] == 6000
+
+    balance = await gl.balance_sheet(as_of="2026-06-30", current_user=_user("finance"))
+    assert balance["totals"]["assets"] == 60.0
+    assert balance["current_earnings"]["amount"] == 60.0
+    assert balance["totals"]["liabilities_and_equity"] == 60.0
+    assert balance["totals"]["balanced"] is True
+
+
+async def test_income_statement_honors_date_range(_patch):
+    await _seed_basic_coa()
+    await gl.create_journal(
+        _journal(
+            [{"account_code": "100", "debit": 25}, {"account_code": "600", "credit": 25}],
+            date="2026-05-31",
+        ),
+        current_user=_user("finance"),
+    )
+    income = await gl.income_statement(
+        start="2026-06-01",
+        end="2026-06-30",
+        current_user=_user("finance"),
+    )
+    assert income["totals"]["revenue_minor"] == 0

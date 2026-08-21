@@ -277,3 +277,123 @@ async def compute_trial_balance(db, tenant_id: str, as_of: str | None = None) ->
             "balanced": total_debit_balance_minor == total_credit_balance_minor,
         },
     }
+
+
+async def compute_income_statement(
+    db,
+    tenant_id: str,
+    *,
+    start: str | None = None,
+    end: str | None = None,
+) -> dict:
+    """Return revenue/expense activity for a date range using minor units."""
+    query: dict = {"tenant_id": tenant_id, "status": "posted"}
+    if start or end:
+        date_query: dict = {}
+        if start:
+            date_query["$gte"] = normalize_posting_date(start)
+        if end:
+            date_query["$lte"] = normalize_posting_date(end)
+        query["date"] = date_query
+    entries = await db.gl_journal_entries.find(query, {"_id": 0}).to_list(100000)
+    accounts = await db.gl_accounts.find(
+        {"tenant_id": tenant_id, "type": {"$in": ["revenue", "expense"]}},
+        {"_id": 0},
+    ).to_list(5000)
+    account_by_code = {account["code"]: account for account in accounts}
+    activity: dict[str, dict[str, int]] = {}
+    for entry in entries:
+        for line in entry.get("lines", []):
+            code = line.get("account_code")
+            account = account_by_code.get(code)
+            if not account:
+                continue
+            row = activity.setdefault(code, {"debit_minor": 0, "credit_minor": 0})
+            debit_minor = line.get("debit_minor")
+            credit_minor = line.get("credit_minor")
+            row["debit_minor"] += int(debit_minor) if debit_minor is not None else _money_to_minor(line.get("debit", 0))
+            row["credit_minor"] += int(credit_minor) if credit_minor is not None else _money_to_minor(line.get("credit", 0))
+
+    revenue_rows = []
+    expense_rows = []
+    total_revenue_minor = total_expense_minor = 0
+    for code in sorted(activity):
+        account = account_by_code[code]
+        amounts = activity[code]
+        if account.get("type") == "revenue":
+            amount_minor = amounts["credit_minor"] - amounts["debit_minor"]
+            total_revenue_minor += amount_minor
+            target = revenue_rows
+        else:
+            amount_minor = amounts["debit_minor"] - amounts["credit_minor"]
+            total_expense_minor += amount_minor
+            target = expense_rows
+        target.append(
+            {
+                "account_code": code,
+                "account_name": account.get("name") or code,
+                "amount": _minor_to_float(amount_minor),
+                "amount_minor": amount_minor,
+            }
+        )
+    net_income_minor = total_revenue_minor - total_expense_minor
+    return {
+        "start": start,
+        "end": end,
+        "revenue": revenue_rows,
+        "expenses": expense_rows,
+        "totals": {
+            "revenue": _minor_to_float(total_revenue_minor),
+            "revenue_minor": total_revenue_minor,
+            "expenses": _minor_to_float(total_expense_minor),
+            "expenses_minor": total_expense_minor,
+            "net_income": _minor_to_float(net_income_minor),
+            "net_income_minor": net_income_minor,
+        },
+    }
+
+
+async def compute_balance_sheet(db, tenant_id: str, *, as_of: str | None = None) -> dict:
+    """Return assets = liabilities + equity + current earnings."""
+    trial = await compute_trial_balance(db, tenant_id, as_of=as_of)
+    sections = {"assets": [], "liabilities": [], "equity": []}
+    totals_minor = {"assets": 0, "liabilities": 0, "equity": 0}
+    section_by_type = {"asset": "assets", "liability": "liabilities", "equity": "equity"}
+    for row in trial["rows"]:
+        section = section_by_type.get(row.get("account_type"))
+        if not section:
+            continue
+        if section == "assets":
+            amount_minor = row["debit_balance_minor"] - row["credit_balance_minor"]
+        else:
+            amount_minor = row["credit_balance_minor"] - row["debit_balance_minor"]
+        sections[section].append(
+            {
+                "account_code": row["account_code"],
+                "account_name": row["account_name"],
+                "amount": _minor_to_float(amount_minor),
+                "amount_minor": amount_minor,
+            }
+        )
+        totals_minor[section] += amount_minor
+
+    income = await compute_income_statement(db, tenant_id, end=as_of)
+    current_earnings_minor = income["totals"]["net_income_minor"]
+    right_side_minor = totals_minor["liabilities"] + totals_minor["equity"] + current_earnings_minor
+    difference_minor = totals_minor["assets"] - right_side_minor
+    return {
+        "as_of": as_of,
+        **sections,
+        "current_earnings": {
+            "amount": _minor_to_float(current_earnings_minor),
+            "amount_minor": current_earnings_minor,
+        },
+        "totals": {
+            "assets": _minor_to_float(totals_minor["assets"]),
+            "liabilities": _minor_to_float(totals_minor["liabilities"]),
+            "equity": _minor_to_float(totals_minor["equity"]),
+            "liabilities_and_equity": _minor_to_float(right_side_minor),
+            "difference": _minor_to_float(difference_minor),
+            "balanced": difference_minor == 0,
+        },
+    }
