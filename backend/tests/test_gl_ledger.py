@@ -19,6 +19,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
 
 from core.tenant_db import TENANT_SCOPED_COLLECTIONS
@@ -229,6 +230,17 @@ async def test_initialize_chart_of_accounts_denies_front_desk(_patch):
     assert _patch.gl_accounts.docs == []
 
 
+async def test_account_reads_require_accounting_read_role(_patch):
+    await _mk_account("100", "Kasa", "asset")
+
+    with pytest.raises(HTTPException) as exc:
+        await gl.list_accounts(include_inactive=True, type=None, current_user=_user("front_desk"))
+    assert exc.value.status_code == 403
+
+    result = await gl.list_accounts(include_inactive=True, type=None, current_user=_user("supervisor"))
+    assert [row["code"] for row in result["accounts"]] == ["100"]
+
+
 # ---------------------------------------------------------------------------
 # Journal posting
 # ---------------------------------------------------------------------------
@@ -365,6 +377,35 @@ async def test_manual_journal_requires_idempotency_key(_patch):
     with pytest.raises(HTTPException) as exc:
         await gl.create_journal(payload, current_user=_user("finance"))
     assert exc.value.status_code == 422
+
+
+def test_manual_journal_source_cannot_impersonate_an_integration():
+    with pytest.raises(ValidationError):
+        _journal(
+            [{"account_code": "100", "debit": 10}, {"account_code": "600", "credit": 10}],
+            source="payroll",
+        )
+
+
+async def test_journal_reads_require_accounting_read_role(_patch):
+    await _seed_basic_coa()
+    posted = await gl.create_journal(
+        _journal([{"account_code": "100", "debit": 10}, {"account_code": "600", "credit": 10}]),
+        current_user=_user("finance"),
+    )
+
+    with pytest.raises(HTTPException) as list_exc:
+        await gl.list_journal(start=None, end=None, limit=200, current_user=_user("front_desk"))
+    assert list_exc.value.status_code == 403
+
+    with pytest.raises(HTTPException) as detail_exc:
+        await gl.get_journal(posted["entry"]["id"], current_user=_user("front_desk"))
+    assert detail_exc.value.status_code == 403
+
+    listed = await gl.list_journal(start=None, end=None, limit=200, current_user=_user("supervisor"))
+    detail = await gl.get_journal(posted["entry"]["id"], current_user=_user("supervisor"))
+    assert [row["id"] for row in listed["entries"]] == [posted["entry"]["id"]]
+    assert detail["entry"]["id"] == posted["entry"]["id"]
 
 
 async def test_money_is_rounded_and_balanced_in_minor_units(_patch):

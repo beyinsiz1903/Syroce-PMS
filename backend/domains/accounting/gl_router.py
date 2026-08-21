@@ -11,6 +11,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -271,6 +272,7 @@ async def list_accounts(
     type: str | None = Query(None),
     current_user: User = Depends(get_current_user),
 ):
+    _require_role(current_user, _READ_ROLES)
     tenant_id = _tenant_of(current_user)
     q: dict = {"tenant_id": tenant_id}
     if not include_inactive:
@@ -404,7 +406,11 @@ class JournalIn(BaseModel):
     date: str | None = Field(None, max_length=40)
     memo: str = Field(..., min_length=1, max_length=500)
     lines: list[JournalLineIn] = Field(..., min_length=2, max_length=500)
-    source: str = Field("manual", max_length=40)
+    # This public endpoint is exclusively for operator-entered vouchers.
+    # Domain bridges post with trusted sources by calling the shared kernel;
+    # accepting an arbitrary source here would let a client bypass manual-post
+    # controls and impersonate an integration.
+    source: Literal["manual"] = "manual"
     source_ref: str | None = Field(None, max_length=120)
     idempotency_key: str | None = Field(None, max_length=120)
 
@@ -439,6 +445,7 @@ async def list_journal(
     limit: int = Query(200, ge=1, le=1000),
     current_user: User = Depends(get_current_user),
 ):
+    _require_role(current_user, _READ_ROLES)
     tenant_id = _tenant_of(current_user)
     q: dict = {"tenant_id": tenant_id}
     if start or end:
@@ -454,6 +461,7 @@ async def list_journal(
 
 @router.get("/journal/{entry_id}")
 async def get_journal(entry_id: str, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _READ_ROLES)
     tenant_id = _tenant_of(current_user)
     doc = await db.gl_journal_entries.find_one({"tenant_id": tenant_id, "id": entry_id}, {"_id": 0})
     if not doc:
@@ -466,7 +474,7 @@ async def create_journal(payload: JournalIn, current_user: User = Depends(get_cu
     _require_role(current_user, _GL_ROLES)
     tenant_id = _tenant_of(current_user)
     idempotency_key = (payload.idempotency_key or "").strip() or None
-    if payload.source == "manual" and not idempotency_key:
+    if not idempotency_key:
         raise HTTPException(status_code=422, detail="Manuel fiş için idempotency_key zorunludur")
     try:
         entry = await post_journal_entry(
@@ -475,7 +483,7 @@ async def create_journal(payload: JournalIn, current_user: User = Depends(get_cu
             date=payload.date,
             memo=payload.memo.strip(),
             lines=[ln.model_dump() for ln in payload.lines],
-            source=payload.source,
+            source="manual",
             source_ref=payload.source_ref,
             actor=_actor_id(current_user),
             idempotency_key=idempotency_key,
