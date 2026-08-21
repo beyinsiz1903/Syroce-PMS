@@ -353,6 +353,106 @@ async def test_manual_journal_requires_idempotency_key(_patch):
     assert exc.value.status_code == 422
 
 
+async def test_money_is_rounded_and_balanced_in_minor_units(_patch):
+    await _seed_basic_coa()
+    payload = _journal(
+        [{"account_code": "100", "debit": "0.105"}, {"account_code": "600", "credit": "0.11"}],
+    )
+    out = await gl.create_journal(payload, current_user=_user("finance"))
+    entry = out["entry"]
+    assert entry["total_debit"] == 0.11
+    assert entry["total_debit_minor"] == 11
+    assert entry["lines"][0]["debit_minor"] == 11
+    assert entry["lines"][1]["credit_minor"] == 11
+
+
+# ---------------------------------------------------------------------------
+# Journal reversal
+# ---------------------------------------------------------------------------
+async def test_reversal_creates_linked_contra_entry_and_preserves_source(_patch):
+    await _seed_basic_coa()
+    original = await gl.create_journal(
+        _journal([{"account_code": "100", "debit": 75}, {"account_code": "600", "credit": 75}]),
+        current_user=_user("finance"),
+    )
+    original_id = original["entry"]["id"]
+    out = await gl.reverse_journal(
+        original_id,
+        gl.JournalReversalIn(
+            date="2026-06-02",
+            reason="Hatalı hesap seçimi",
+            idempotency_key="reverse-request-001",
+        ),
+        current_user=_user("finance"),
+    )
+    reversal = out["entry"]
+    assert reversal["reverses_entry_id"] == original_id
+    assert reversal["lines"][0]["credit_minor"] == 7500
+    assert reversal["lines"][1]["debit_minor"] == 7500
+    source = await _patch.gl_journal_entries.find_one({"id": original_id})
+    assert source["status"] == "posted"
+    assert source["reversal_status"] == "reversed"
+    assert source["reversed_by_entry_id"] == reversal["id"]
+    trial = await gl.trial_balance(as_of=None, current_user=_user("finance"))
+    assert trial["totals"]["debit_balance_minor"] == 0
+    assert trial["totals"]["credit_balance_minor"] == 0
+
+
+async def test_reversal_is_single_and_idempotent(_patch):
+    await _seed_basic_coa()
+    original = await gl.create_journal(
+        _journal([{"account_code": "100", "debit": 10}, {"account_code": "600", "credit": 10}]),
+        current_user=_user("finance"),
+    )
+    original_id = original["entry"]["id"]
+    request = gl.JournalReversalIn(
+        date="2026-06-02",
+        reason="Mükerrer kayıt",
+        idempotency_key="reverse-request-002",
+    )
+    first = await gl.reverse_journal(original_id, request, current_user=_user("finance"))
+    retry = await gl.reverse_journal(original_id, request, current_user=_user("finance"))
+    assert retry["entry"]["id"] == first["entry"]["id"]
+    with pytest.raises(HTTPException) as exc:
+        await gl.reverse_journal(
+            original_id,
+            gl.JournalReversalIn(
+                date="2026-06-02",
+                reason="İkinci ters kayıt",
+                idempotency_key="reverse-request-other",
+            ),
+            current_user=_user("finance"),
+        )
+    assert exc.value.status_code == 409
+
+
+async def test_reversal_date_must_be_in_open_period(_patch):
+    await _seed_basic_coa()
+    original = await gl.create_journal(
+        _journal(
+            [{"account_code": "100", "debit": 10}, {"account_code": "600", "credit": 10}],
+            date="2026-01-15",
+        ),
+        current_user=_user("finance"),
+    )
+    await gl.close_period(
+        original["entry"]["period_id"],
+        gl.PeriodActionIn(reason="Ocak kapanışı"),
+        current_user=_user("finance"),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await gl.reverse_journal(
+            original["entry"]["id"],
+            gl.JournalReversalIn(
+                date="2026-01-31",
+                reason="Kapalı döneme ters kayıt",
+                idempotency_key="reverse-request-003",
+            ),
+            current_user=_user("finance"),
+        )
+    assert exc.value.status_code == 409
+
+
 # ---------------------------------------------------------------------------
 # Fiscal periods
 # ---------------------------------------------------------------------------

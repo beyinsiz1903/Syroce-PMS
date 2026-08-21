@@ -10,9 +10,11 @@ Tüm uçlar tenant-scoped; mutasyonlar muhasebe seviyesi RBAC. PII/secret loglan
 import logging
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from pymongo.errors import DuplicateKeyError
 
 from core.audit import log_audit_event
 from core.database import db
@@ -391,8 +393,8 @@ async def update_account(code: str, payload: AccountUpdate, current_user: User =
 # ─────────────────────────────────────────────────────────────────────
 class JournalLineIn(BaseModel):
     account_code: str = Field(..., min_length=1, max_length=40)
-    debit: float = Field(0, ge=0)
-    credit: float = Field(0, ge=0)
+    debit: Decimal = Field(Decimal("0"), ge=0, max_digits=18)
+    credit: Decimal = Field(Decimal("0"), ge=0, max_digits=18)
     memo: str | None = Field(None, max_length=300)
 
 
@@ -403,6 +405,12 @@ class JournalIn(BaseModel):
     source: str = Field("manual", max_length=40)
     source_ref: str | None = Field(None, max_length=120)
     idempotency_key: str | None = Field(None, max_length=120)
+
+
+class JournalReversalIn(BaseModel):
+    date: str | None = Field(None, max_length=40)
+    reason: str = Field(..., min_length=3, max_length=500)
+    idempotency_key: str = Field(..., min_length=8, max_length=120)
 
 
 class NilveraIncomingGLPostIn(BaseModel):
@@ -474,6 +482,100 @@ async def create_journal(payload: JournalIn, current_user: User = Depends(get_cu
         status_code = 409 if "dönemi kapalı" in str(exc) or "Idempotency anahtarı" in str(exc) else 400
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     return {"entry": entry}
+
+
+@router.post("/journal/{entry_id}/reverse")
+async def reverse_journal(
+    entry_id: str,
+    payload: JournalReversalIn,
+    current_user: User = Depends(get_current_user),
+):
+    """Create an immutable, linked contra-entry; never edit/delete the source."""
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    original = await db.gl_journal_entries.find_one(
+        {"tenant_id": tenant_id, "id": entry_id, "status": "posted"},
+        {"_id": 0},
+    )
+    if not original:
+        raise HTTPException(status_code=404, detail="Ters kayıt yapılacak fiş bulunamadı")
+    if original.get("reverses_entry_id"):
+        raise HTTPException(status_code=409, detail="Bir ters kayıt fişi yeniden ters kayda alınamaz")
+
+    reversed_lines = [
+        {
+            "account_code": line.get("account_code"),
+            "debit": line.get("credit", 0),
+            "credit": line.get("debit", 0),
+            "memo": f"Ters kayıt: {line.get('memo') or original.get('memo') or ''}".strip(),
+        }
+        for line in original.get("lines", [])
+    ]
+    if not reversed_lines:
+        raise HTTPException(status_code=409, detail="Kaynak fişin ters çevrilecek satırı yok")
+
+    idempotency_key = payload.idempotency_key.strip()
+    existing_reversal = await db.gl_journal_entries.find_one(
+        {"tenant_id": tenant_id, "reverses_entry_id": entry_id},
+        {"_id": 0},
+    )
+    if existing_reversal and existing_reversal.get("idempotency_key") != idempotency_key:
+        raise HTTPException(status_code=409, detail="Bu fiş için daha önce ters kayıt oluşturulmuş")
+
+    await ensure_compound_unique(
+        db.gl_journal_entries,
+        [("tenant_id", 1), ("reverses_entry_id", 1)],
+        partial_filter={"reverses_entry_id": {"$type": "string"}},
+        name="ux_gl_single_reversal",
+    )
+    try:
+        reversal = await post_journal_entry(
+            db,
+            tenant_id,
+            date=payload.date,
+            memo=f"{original.get('entry_no') or entry_id} ters kaydı — {payload.reason.strip()}",
+            lines=reversed_lines,
+            source="reversal",
+            source_ref=entry_id,
+            actor=_actor_id(current_user),
+            idempotency_key=idempotency_key,
+            reverses_entry_id=entry_id,
+            reversal_reason=payload.reason.strip(),
+        )
+    except GLPostingError as exc:
+        status_code = 409 if "dönemi kapalı" in str(exc) or "Idempotency anahtarı" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="Bu fiş için eşzamanlı olarak ters kayıt oluşturulmuş") from exc
+
+    await db.gl_journal_entries.update_one(
+        {"tenant_id": tenant_id, "id": entry_id},
+        {
+            "$set": {
+                "reversal_status": "reversed",
+                "reversed_by_entry_id": reversal["id"],
+                "reversed_at": reversal["created_at"],
+                "reversed_by": _actor_id(current_user),
+            }
+        },
+    )
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=_actor_id(current_user),
+        action="gl_journal_reversed",
+        entity_type="gl_journal_entry",
+        entity_id=entry_id,
+        details=f"{original.get('entry_no') or entry_id} için bağlı ters kayıt oluşturuldu",
+        before_value={"reversal_status": original.get("reversal_status")},
+        after_value={
+            "reversal_status": "reversed",
+            "reversal_entry_id": reversal["id"],
+            "reason": payload.reason.strip(),
+        },
+        db=db,
+        severity="warning",
+    )
+    return {"entry": reversal, "original_entry_id": entry_id}
 
 
 # ─────────────────────────────────────────────────────────────────────

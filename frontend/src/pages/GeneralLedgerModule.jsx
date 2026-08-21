@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCurrency } from '@/context/CurrencyContext';
-import { Plus, Save, FileText, AlertCircle, CalendarRange, LockKeyhole, Unlock } from 'lucide-react';
+import { Plus, Save, FileText, AlertCircle, CalendarRange, LockKeyhole, Unlock, RotateCcw } from 'lucide-react';
 
 export const GL_ENDPOINTS = {
   accounts: '/gl/accounts',
@@ -85,6 +85,8 @@ const GeneralLedgerModule = () => {
   const [periodYear, setPeriodYear] = useState(new Date().getFullYear());
   const [periodBusy, setPeriodBusy] = useState('');
   const [journalSaving, setJournalSaving] = useState(false);
+  const [reversalBusy, setReversalBusy] = useState('');
+  const reversalKeys = useRef({});
   
   // New Journal Entry State
   const [newJournal, setNewJournal] = useState(emptyJournal);
@@ -231,6 +233,30 @@ const GeneralLedgerModule = () => {
     }
   };
 
+  const reverseJournal = async (journal) => {
+    const reason = window.prompt('Ters kayıt gerekçesi:');
+    if (!reason || reason.trim().length < 3) return;
+    const reversalDate = window.prompt('Ters kayıt tarihi (YYYY-MM-DD):', new Date().toISOString().split('T')[0]);
+    if (!reversalDate) return;
+    const key = reversalKeys.current[journal.id] || newRequestKey();
+    reversalKeys.current[journal.id] = key;
+    setReversalBusy(journal.id);
+    try {
+      await axios.post(`${GL_ENDPOINTS.journal}/${journal.id}/reverse`, {
+        date: reversalDate,
+        reason: reason.trim(),
+        idempotency_key: key,
+      });
+      delete reversalKeys.current[journal.id];
+      toast.success('Bağlı ters kayıt fişi oluşturuldu.');
+      await fetchJournals();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Ters kayıt oluşturulamadı.');
+    } finally {
+      setReversalBusy('');
+    }
+  };
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-8">
@@ -364,15 +390,21 @@ const GeneralLedgerModule = () => {
                 </CardHeader>
                 <CardContent className="space-y-4 max-h-[600px] overflow-y-auto">
                   {journals.map(j => (
-                    <div key={j.id} className="p-3 border rounded-lg hover:border-blue-300 transition-colors cursor-pointer bg-white">
+                    <div key={j.id} className="p-3 border rounded-lg hover:border-blue-300 transition-colors bg-white">
                       <div className="flex justify-between items-start mb-2">
                         <div>
-                          <span className="text-xs font-bold px-2 py-1 bg-gray-100 text-gray-600 rounded-full">{j.source_ref || j.source || 'Fiş'}</span>
+                          <span className="text-xs font-bold px-2 py-1 bg-gray-100 text-gray-600 rounded-full">{j.source === 'reversal' ? 'Ters Kayıt' : j.source_ref || j.source || 'Fiş'}</span>
                           <span className="text-xs text-gray-400 ml-2">{j.date}</span>
                         </div>
                         <span className="font-bold text-gray-900">{fmtMoney(j.total_debit)}</span>
                       </div>
                       <p className="text-sm text-gray-600 truncate">{j.memo}</p>
+                      {j.reversal_status === 'reversed' && <p className="text-xs text-amber-700 mt-2">Bu fiş için ters kayıt oluşturuldu.</p>}
+                      {j.source !== 'reversal' && j.reversal_status !== 'reversed' && (
+                        <Button size="sm" variant="outline" className="w-full mt-3" disabled={reversalBusy === j.id} onClick={() => reverseJournal(j)}>
+                          <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> {reversalBusy === j.id ? 'Oluşturuluyor...' : 'Ters Kayıt Oluştur'}
+                        </Button>
+                      )}
                     </div>
                   ))}
                   {journals.length === 0 && <p className="text-center text-sm text-gray-500 py-4">Henüz fiş girilmemiş.</p>}
