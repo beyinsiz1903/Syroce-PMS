@@ -137,6 +137,7 @@ const EXACT_ROUTE_SCOPES = Object.freeze({
   '/app/incoming-agency-contracts': ['channel_manager'],
   '/agency-content': ['channel_manager'],
   '/b2b-analytics': ['channel_manager'],
+  '/app/integration-hub': ['channel_manager', 'invoice'],
 
   '/pos': ['pos'],
   '/pos/terminal': ['pos'],
@@ -187,6 +188,7 @@ const NAV_KEY_SCOPES = Object.freeze({
   incoming_agency_contracts: ['channel_manager'],
   agency_content: ['channel_manager'],
   b2b_analytics: ['channel_manager'],
+  integration_hub: ['channel_manager', 'invoice'],
   reports: ['reports'],
   reports_basic: ['reports'],
   report_builder: ['reports'],

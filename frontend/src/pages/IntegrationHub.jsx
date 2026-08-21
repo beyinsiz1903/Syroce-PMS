@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 
@@ -21,6 +22,30 @@ import {
 } from 'lucide-react';
 
 const API_BASE = '/channel-manager/v2';
+
+const PROVIDER_SETTINGS = [
+  {
+    key: 'hotelrunner',
+    name: 'HotelRunner',
+    description: 'Bağlantı, kimlik bilgileri, oda eşleştirmeleri ve senkron ayarları',
+    path: '/hotelrunner',
+    tone: 'border-blue-200 bg-blue-50/50',
+  },
+  {
+    key: 'exely',
+    name: 'Exely',
+    description: 'SOAP bağlantısı, otel kodu, oda ve fiyat planı eşleştirmeleri',
+    path: '/exely',
+    tone: 'border-violet-200 bg-violet-50/50',
+  },
+  {
+    key: 'nilvera',
+    name: 'Nilvera',
+    description: 'E-Fatura durumu, şirket bilgileri ve belge işlem ekranı',
+    path: '/efatura',
+    tone: 'border-emerald-200 bg-emerald-50/50',
+  },
+];
 
 import { HealthBadge, StatusBadge, AckBadge } from '@/components/integration-hub/badges';
 import DashboardTab from '@/components/integration-hub/tabs/DashboardTab';
@@ -359,8 +384,8 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
       <div data-testid="integration-hub" className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-800">{t("techDashboards.integrationHub")}</h1>
-            <p className="text-sm text-slate-500 mt-1">Channel Manager &middot; Connector Architecture</p>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-800">Entegrasyon Merkezi</h1>
+            <p className="text-sm text-slate-500 mt-1">Otelinizin kanal ve e-belge sağlayıcılarını tek yerden yönetin.</p>
           </div>
           <div className="flex items-center gap-3">
             <Button data-testid="refresh-btn" variant="outline" size="sm" onClick={fetchData} className="border-slate-200 text-slate-600">
@@ -371,6 +396,31 @@ const IntegrationHub = ({ user, tenant, onLogout }) => {
             </Button>
           </div>
         </div>
+
+        <section aria-labelledby="provider-settings-title" className="space-y-3">
+          <div>
+            <h2 id="provider-settings-title" className="text-lg font-semibold text-slate-900">Sağlayıcı ayarları</h2>
+            <p className="text-sm text-slate-500">Ayarlarını görüntülemek veya güncellemek istediğiniz sağlayıcıyı seçin.</p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            {PROVIDER_SETTINGS.map((provider) => (
+              <Card key={provider.key} className={provider.tone} data-testid={`provider-settings-${provider.key}`}>
+                <CardContent className="flex h-full flex-col gap-3 p-4">
+                  <div className="flex items-center gap-2">
+                    <Settings className="h-5 w-5 text-slate-600" aria-hidden="true" />
+                    <h3 className="font-semibold text-slate-900">{provider.name}</h3>
+                  </div>
+                  <p className="flex-1 text-sm text-slate-600">{provider.description}</p>
+                  <Button asChild variant="outline" size="sm" className="w-full bg-white">
+                    <Link to={provider.path} aria-label={`${provider.name} ayarlarını aç`}>
+                      Ayarları aç <ChevronRight className="ml-1 h-4 w-4" aria-hidden="true" />
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
