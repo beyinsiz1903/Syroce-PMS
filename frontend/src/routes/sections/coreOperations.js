@@ -51,7 +51,7 @@ export function coreOperationsRoutes({ p, pa, pm, modules }) {
     { path: "/app/migration-observability", ...p(MigrationObservabilityPage), wrapLayout: true, layoutModule: "reports" },
     { path: "/app/sustainability", ...p(SustainabilityReport), wrapLayout: true, layoutModule: "reports" },
     { path: "/app/wbe-settings", ...pa(WBESettings), wrapLayout: true, layoutModule: "wbe" },
-    { path: "/app/integration-hub", ...pa(IntegrationHub), wrapLayout: true, layoutModule: "integration-hub" },
+    { path: "/app/integration-hub", ...p(IntegrationHub), wrapLayout: true, layoutModule: "integration-hub" },
     { path: "/app/admin-control-panel", ...pa(AdminControlPanel), wrapLayout: true, layoutModule: "admin_control_panel" },
 
     // ── Core Operations (Dashboard module cards) ──────

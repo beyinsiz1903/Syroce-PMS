@@ -472,6 +472,7 @@ export const NAV_ITEMS = [
     // /cm-dashboard → /channels?tab=dashboard redirect; aktif eşleşme tab ile.
     tabBase: ["/channels", "/app/channels"],
     tabKey: "dashboard",
+    hidden: true,
   },
   {
     key: "go_live_readiness",
@@ -481,6 +482,7 @@ export const NAV_ITEMS = [
     tier: "professional",
     group: "professional",
     navGroup: "system",
+    hidden: true,
   },
   {
     key: "channel_manager",
@@ -490,6 +492,7 @@ export const NAV_ITEMS = [
     tier: "professional",
     group: "professional",
     navGroup: "system",
+    hidden: true,
   },
   {
     key: "unified_rate_manager",
@@ -589,6 +592,7 @@ export const NAV_ITEMS = [
     // /channel-connections → /channels?tab=connections redirect; aktif eşleşme tab ile.
     tabBase: ["/channels", "/app/channels"],
     tabKey: "connections",
+    hidden: true,
   },
   {
     key: "wire_failures",
@@ -623,14 +627,12 @@ export const NAV_ITEMS = [
 
   {
     key: "integration_hub",
-    label: "Integration Hub",
+    label: "Entegrasyon Merkezi",
     path: "/app/integration-hub",
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
     navGroup: "system",
-    requireSuperAdmin: true,
-    hidden: true,
   },
   {
     key: "admin_hub",
