@@ -14,6 +14,7 @@ enforces the idempotency unique constraint so the dedup path is exercised.
 
 from __future__ import annotations
 
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -29,11 +30,15 @@ def _match(doc: dict, flt: dict) -> bool:
         if isinstance(v, dict) and "$in" in v:
             if doc.get(k) not in v["$in"]:
                 return False
-        elif isinstance(v, dict) and ("$gte" in v or "$lte" in v):
+        elif isinstance(v, dict) and ("$gte" in v or "$lte" in v or "$gt" in v or "$lt" in v):
             val = doc.get(k)
             if "$gte" in v and (val is None or val < v["$gte"]):
                 return False
             if "$lte" in v and (val is None or val > v["$lte"]):
+                return False
+            if "$gt" in v and (val is None or val <= v["$gt"]):
+                return False
+            if "$lt" in v and (val is None or val >= v["$lt"]):
                 return False
         elif doc.get(k) != v:
             return False
@@ -81,6 +86,8 @@ class _Coll:
         for d in self.docs:
             if _match(d, flt):
                 d.update(update.get("$set", {}))
+                for key, value in update.get("$push", {}).items():
+                    d.setdefault(key, []).append(value)
                 return SimpleNamespace(matched_count=1, modified_count=1)
         if upsert:
             doc = dict(flt)
@@ -102,6 +109,7 @@ class _FakeDB:
     def __init__(self):
         self.gl_accounts = _Coll("gl_accounts")
         self.gl_journal_entries = _Coll("gl_journal_entries", unique_key=("tenant_id", "idempotency_key"))
+        self.gl_periods = _Coll("gl_periods")
         self.payroll_gl_mapping = _Coll("payroll_gl_mapping")
 
 
@@ -128,6 +136,7 @@ def _patch(monkeypatch):
 
     monkeypatch.setattr(gl_posting, "ensure_gl_idem_index", _noop)
     monkeypatch.setattr(gl, "ensure_compound_unique", _noop)
+    monkeypatch.setattr(gl, "log_audit_event", _noop)
     return fake
 
 
@@ -155,7 +164,7 @@ def _journal(lines, **kw):
         date=kw.get("date", "2026-06-01"),
         lines=[gl.JournalLineIn(**ln) for ln in lines],
         source=kw.get("source", "manual"),
-        idempotency_key=kw.get("idempotency_key"),
+        idempotency_key=kw.get("idempotency_key", str(uuid.uuid4())),
     )
 
 
@@ -314,6 +323,132 @@ async def test_idempotency_key_dedups(_patch):
     second = await gl.create_journal(j, current_user=_user("finance"))
     assert first["entry"]["id"] == second["entry"]["id"]
     assert len(_patch.gl_journal_entries.docs) == 1
+
+
+async def test_idempotency_key_reuse_with_different_payload_is_rejected(_patch):
+    await _seed_basic_coa()
+    first = _journal(
+        [{"account_code": "100", "debit": 10}, {"account_code": "600", "credit": 10}],
+        idempotency_key="manual-key-1",
+    )
+    second = _journal(
+        [{"account_code": "100", "debit": 20}, {"account_code": "600", "credit": 20}],
+        idempotency_key="manual-key-1",
+    )
+    await gl.create_journal(first, current_user=_user("finance"))
+    with pytest.raises(HTTPException) as exc:
+        await gl.create_journal(second, current_user=_user("finance"))
+    assert exc.value.status_code == 409
+    assert len(_patch.gl_journal_entries.docs) == 1
+
+
+async def test_manual_journal_requires_idempotency_key(_patch):
+    await _seed_basic_coa()
+    payload = _journal(
+        [{"account_code": "100", "debit": 10}, {"account_code": "600", "credit": 10}],
+        idempotency_key=None,
+    )
+    with pytest.raises(HTTPException) as exc:
+        await gl.create_journal(payload, current_user=_user("finance"))
+    assert exc.value.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Fiscal periods
+# ---------------------------------------------------------------------------
+async def test_initialize_fiscal_year_creates_twelve_open_periods(_patch):
+    out = await gl.initialize_periods(gl.FiscalYearIn(fiscal_year=2026), current_user=_user("finance"))
+    assert len(out["periods"]) == 12
+    assert {period["status"] for period in out["periods"]} == {"open"}
+    assert out["periods"][0]["start_date"] == "2026-01-01"
+    assert out["periods"][-1]["end_date"] == "2026-12-31"
+
+
+async def test_closed_period_blocks_new_post_but_allows_exact_retry(_patch):
+    await _seed_basic_coa()
+    key = "close-retry-key"
+    payload = _journal(
+        [{"account_code": "100", "debit": 10}, {"account_code": "600", "credit": 10}],
+        date="2026-01-15",
+        idempotency_key=key,
+    )
+    first = await gl.create_journal(payload, current_user=_user("finance"))
+    period_id = first["entry"]["period_id"]
+    await gl.close_period(
+        period_id,
+        gl.PeriodActionIn(reason="Ocak kapanışı"),
+        current_user=_user("finance"),
+    )
+
+    retry = await gl.create_journal(payload, current_user=_user("finance"))
+    assert retry["entry"]["id"] == first["entry"]["id"]
+
+    new_payload = _journal(
+        [{"account_code": "100", "debit": 5}, {"account_code": "600", "credit": 5}],
+        date="2026-01-20",
+    )
+    with pytest.raises(HTTPException) as exc:
+        await gl.create_journal(new_payload, current_user=_user("finance"))
+    assert exc.value.status_code == 409
+
+
+async def test_periods_must_close_and_reopen_in_order(_patch):
+    await gl.initialize_periods(gl.FiscalYearIn(fiscal_year=2026), current_user=_user("finance"))
+    january = "tenant-A:2026:01"
+    february = "tenant-A:2026:02"
+    with pytest.raises(HTTPException) as exc:
+        await gl.close_period(
+            february,
+            gl.PeriodActionIn(reason="Şubat kapanışı"),
+            current_user=_user("finance"),
+        )
+    assert exc.value.status_code == 409
+
+    await gl.close_period(
+        january,
+        gl.PeriodActionIn(reason="Ocak kapanışı"),
+        current_user=_user("finance"),
+    )
+    await gl.close_period(
+        february,
+        gl.PeriodActionIn(reason="Şubat kapanışı"),
+        current_user=_user("finance"),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await gl.reopen_period(
+            january,
+            gl.PeriodActionIn(reason="Düzeltme gerekiyor"),
+            current_user=_user("admin"),
+        )
+    assert exc.value.status_code == 409
+    await gl.reopen_period(
+        february,
+        gl.PeriodActionIn(reason="Düzeltme gerekiyor"),
+        current_user=_user("admin"),
+    )
+    reopened = await gl.reopen_period(
+        january,
+        gl.PeriodActionIn(reason="Düzeltme gerekiyor"),
+        current_user=_user("admin"),
+    )
+    assert reopened["period"]["status"] == "open"
+
+
+async def test_finance_role_cannot_reopen_closed_period(_patch):
+    await gl.initialize_periods(gl.FiscalYearIn(fiscal_year=2026), current_user=_user("finance"))
+    january = "tenant-A:2026:01"
+    await gl.close_period(
+        january,
+        gl.PeriodActionIn(reason="Ocak kapanışı"),
+        current_user=_user("finance"),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await gl.reopen_period(
+            january,
+            gl.PeriodActionIn(reason="Yetkisiz açma"),
+            current_user=_user("finance"),
+        )
+    assert exc.value.status_code == 403
 
 
 # ---------------------------------------------------------------------------

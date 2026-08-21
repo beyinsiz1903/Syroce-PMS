@@ -14,7 +14,22 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       initializeAccounts: '/gl/accounts/initialize',
       journal: '/gl/journal',
       trialBalance: '/gl/trial-balance',
+      periods: '/gl/periods',
+      initializePeriods: '/gl/periods/initialize',
     });
+  });
+
+  it('passes the stable manual-post idempotency key to the backend', () => {
+    expect(toJournalPayload({
+      date: '2026-08-13',
+      type: 'Mahsup',
+      description: 'Tekrar güvenli fiş',
+      idempotency_key: 'manual-request-123',
+      lines: [
+        { account_code: '100', debit: 10, credit: 0, description: '' },
+        { account_code: '600', debit: 0, credit: 10, description: '' },
+      ],
+    }).idempotency_key).toBe('manual-request-123');
   });
 
   it('maps the form to the durable journal payload', () => {
