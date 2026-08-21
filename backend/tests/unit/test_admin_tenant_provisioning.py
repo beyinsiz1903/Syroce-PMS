@@ -2,6 +2,7 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
+from core import provider_credential_vault
 from domains.admin.router.tenants import _validate_provider_credentials, router
 from models.schemas.identity import TenantRegister
 
@@ -68,3 +69,8 @@ def test_admin_provisioning_routes_are_registered_without_provider_test_route():
     assert ("/api/admin/tenants/{tenant_id}/integrations/{provider}/credentials", "POST") in routes
     assert ("/api/admin/tenants/{tenant_id}/integrations/nilvera", "PUT") in routes
     assert all("test-connection" not in path and "validate" not in path for path, _ in routes)
+
+
+def test_admin_uses_domain_neutral_encrypted_provider_vault():
+    assert callable(provider_credential_vault.store_secret)
+    assert callable(provider_credential_vault.get_masked_credentials)

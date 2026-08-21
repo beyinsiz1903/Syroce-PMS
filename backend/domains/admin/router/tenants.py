@@ -350,8 +350,8 @@ async def get_tenant_provisioning(
     current_user: User = Depends(require_super_admin),
 ):
     """Hedef otele ait zincir ve entegrasyon durumunu, sırları açmadan döndürür."""
+    from core import provider_credential_vault as vault
     from core.integrations.nilvera.provisioner import get_nilvera_tenant_config
-    from domains.channel_manager import credential_vault as vault
 
     sys_db = get_system_db()
     tenant_doc = await _require_target_tenant(sys_db, tenant_id)
@@ -462,8 +462,8 @@ async def save_target_provider_credentials(
     current_user: User = Depends(require_super_admin),
 ):
     """Hedef otelin Exely/HotelRunner sırlarını şifreler; test veya sync çalıştırmaz."""
+    from core import provider_credential_vault as vault
     from core.audit import log_audit_event
-    from domains.channel_manager import credential_vault as vault
 
     sys_db = get_system_db()
     await _require_target_tenant(sys_db, tenant_id)
