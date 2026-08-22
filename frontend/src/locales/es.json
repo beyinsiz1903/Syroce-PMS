@@ -2131,7 +2131,24 @@
     "sales": "Ventas e ingresos",
     "frontdesk": "Recepción y Res.",
     "fb": "PENSIÓN COMPLETA",
-    "system": "Canales y sistema"
+    "system": "Canales e integraciones"
+  },
+  "navSections": {
+    "system": {
+      "channels": "Gestión de canales",
+      "distribution": "Distribución y ventas",
+      "integrations": "Integraciones",
+      "setup": "Configuración y soporte",
+      "growth": "Marketing y automatización",
+      "compliance": "Comunicación y cumplimiento"
+    },
+    "admin": {
+      "centers": "Centros de gestión",
+      "properties": "Hoteles y socios",
+      "integrations": "Operaciones de integración",
+      "platform": "Operaciones de plataforma",
+      "governance": "Acceso, contenido y desarrollo"
+    }
   },
   "commandCenter": {
     "loadingStatus": "Cargando estado operacional...",

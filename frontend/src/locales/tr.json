@@ -2179,7 +2179,24 @@
     "guest": "Misafir & CRM",
     "fb": "Restoran & F&B",
     "backoffice": "Arka Ofis",
-    "system": "Kanallar & Sistem"
+    "system": "Kanallar & Entegrasyonlar"
+  },
+  "navSections": {
+    "system": {
+      "channels": "Kanal Yönetimi",
+      "distribution": "Dağıtım & Satış",
+      "integrations": "Entegrasyonlar",
+      "setup": "Kurulum & Destek",
+      "growth": "Pazarlama & Otomasyon",
+      "compliance": "İletişim & Uyum"
+    },
+    "admin": {
+      "centers": "Yönetim Merkezleri",
+      "properties": "Oteller & İş Ortakları",
+      "integrations": "Entegrasyon Operasyonları",
+      "platform": "Platform Operasyonları",
+      "governance": "Yetki, İçerik & Geliştirici"
+    }
   },
   "commandCenter": {
     "loadingStatus": "Operasyonel durum yükleniyor...",

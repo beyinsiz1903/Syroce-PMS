@@ -32,7 +32,7 @@ import NightScreen from '@/components/NightScreen';
 import ThemeToggle from '@/components/ThemeToggle';
 import PushSubscriptionManager from '@/components/PushSubscriptionManager';
 import PMSDateBadge from '@/components/PMSDateBadge';
-import { NAV_ITEMS, NAV_GROUPS } from '@/config/navItems';
+import { NAV_ITEMS, NAV_GROUPS, NAV_GROUP_SECTIONS } from '@/config/navItems';
 import { UpgradeBanner } from '@/components/UpgradeBanner';
 import SimulationOverlay from '@/components/academy/SimulationOverlay';
 import {
@@ -110,6 +110,25 @@ const TIER_CONFIG = {
   basic: { label: 'Basic', icon: Building2, cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
   professional: { label: 'Pro', icon: Zap, cls: 'bg-blue-100 text-blue-700 border-blue-200' },
   enterprise: { label: 'Enterprise', icon: Crown, cls: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
+};
+
+export const sectionNavItems = (groupId, items) => {
+  const definitions = NAV_GROUP_SECTIONS[groupId] || [];
+  if (definitions.length === 0) return [{ id: 'all', label: null, items }];
+
+  const knownSectionIds = new Set(definitions.map(({ id }) => id));
+  const sections = definitions
+    .map((definition) => ({
+      ...definition,
+      items: items.filter((item) => item.navSection === definition.id),
+    }))
+    .filter((section) => section.items.length > 0);
+  const unsectioned = items.filter((item) => !knownSectionIds.has(item.navSection));
+
+  if (unsectioned.length > 0) {
+    sections.push({ id: 'other', label: 'Diğer', items: unsectioned });
+  }
+  return sections;
 };
 
 const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
@@ -237,6 +256,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
     const GroupIcon = GROUP_ICONS[groupDef.id] || Home;
     const active = isGroupActive(groupDef.id);
     const label = t(`navGroups.${groupDef.id}`, groupDef.label);
+    const sections = sectionNavItems(groupDef.id, items);
 
     const handleOpenChange = (open) => {
       if (!open) return;
@@ -272,14 +292,18 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
-        <DropdownMenuContent align="start" className="min-w-[190px]">
+        <DropdownMenuContent align="start" className="min-w-[230px] max-h-[70vh] overflow-y-auto p-1.5">
           {(() => {
-            const normalItems = items.filter(i => !i.requireSuperAdmin);
-            const adminItems = items.filter(i => i.requireSuperAdmin);
             const groupHasPathMatch = items.some(i => isItemPathActive(i));
-            return (
-              <>
-                {normalItems.map((item) => {
+            return sections.map((section, sectionIndex) => (
+              <React.Fragment key={section.id}>
+                {sectionIndex > 0 && <DropdownMenuSeparator />}
+                {section.label && (
+                  <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    {t(`navSections.${groupDef.id}.${section.id}`, section.label)}
+                  </DropdownMenuLabel>
+                )}
+                {section.items.map((item) => {
                   const Icon = ICON_BY_KEY[item.key] || Home;
                   const isItemActive = isItemPathActive(item) || (!groupHasPathMatch && normalizedCurrentModule === normalizeKey(item.key));
                   return (
@@ -292,37 +316,12 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                       data-testid={`nav-${item.key}-button`}
                     >
                       <Icon className={`w-3.5 h-3.5 ${isItemActive ? 'text-blue-600' : 'text-gray-400'}`} />
-                      <span className="text-sm">{t(`navKeys.${item.key}`, item.label)}</span>
+                      <span className="text-sm leading-5">{t(`navKeys.${item.key}`, item.label)}</span>
                     </DropdownMenuItem>
                   );
                 })}
-                {adminItems.length > 0 && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuLabel className="text-[10px] text-gray-400 font-normal uppercase tracking-wider px-2">
-                      Teknik Yönetim
-                    </DropdownMenuLabel>
-                    {adminItems.map((item) => {
-                      const Icon = ICON_BY_KEY[item.key] || Home;
-                      const isItemActive = isItemPathActive(item) || (!groupHasPathMatch && normalizedCurrentModule === normalizeKey(item.key));
-                      return (
-                        <DropdownMenuItem
-                          key={item.key}
-                          onClick={() => handleNavigate(item.path)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
-                          className={`flex items-center gap-2 cursor-pointer text-gray-500 ${
-                            isItemActive ? 'bg-blue-50 text-blue-700 font-semibold' : ''
-                          }`}
-                          data-testid={`nav-${item.key}-button`}
-                        >
-                          <Icon className={`w-3.5 h-3.5 ${isItemActive ? 'text-blue-600' : 'text-gray-400'}`} />
-                          <span className="text-sm">{t(`navKeys.${item.key}`, item.label)}</span>
-                        </DropdownMenuItem>
-                      );
-                    })}
-                  </>
-                )}
-              </>
-            );
+              </React.Fragment>
+            ));
           })()}
         </DropdownMenuContent>
       </DropdownMenu>
@@ -495,6 +494,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                 const GroupIcon = GROUP_ICONS[groupDef.id] || Home;
                 const active = isGroupActive(groupDef.id);
                 const isExpanded = expandedMobileGroup === groupDef.id;
+                const sections = sectionNavItems(groupDef.id, items);
                 return (
                   <div key={groupDef.id} className="mb-0.5">
                     <Button variant="ghost" size="sm"
@@ -515,19 +515,30 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                       <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                     </Button>
                     {isExpanded && (
-                      <div className="pl-4 py-1 space-y-0.5">
-                        {items.map((item) => {
-                          const Icon = ICON_BY_KEY[item.key] || Home;
-                          const isItemActive = normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item);
-                          return (
-                            <Button key={item.key} variant="ghost" size="sm"
-                              onClick={() => handleNavigate(item.path, true)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
-                              className={`w-full justify-start py-1.5 text-sm ${isItemActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-50 dark:text-gray-100'}`}
-                              data-testid={`nav-${item.key}-button`}>
-                              <Icon className="w-3.5 h-3.5 mr-2" />{t(`navKeys.${item.key}`, item.label)}
-                            </Button>
-                          );
-                        })}
+                      <div className="pl-4 py-1">
+                        {sections.map((section, sectionIndex) => (
+                          <div key={section.id} className={sectionIndex > 0 ? 'mt-2' : ''}>
+                            {section.label && (
+                              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                                {t(`navSections.${groupDef.id}.${section.id}`, section.label)}
+                              </p>
+                            )}
+                            <div className="space-y-0.5">
+                              {section.items.map((item) => {
+                                const Icon = ICON_BY_KEY[item.key] || Home;
+                                const isItemActive = normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item);
+                                return (
+                                  <Button key={item.key} variant="ghost" size="sm"
+                                    onClick={() => handleNavigate(item.path, true)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
+                                    className={`w-full justify-start py-1.5 text-sm ${isItemActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-50 dark:text-gray-100'}`}
+                                    data-testid={`nav-${item.key}-button`}>
+                                    <Icon className="w-3.5 h-3.5 mr-2" />{t(`navKeys.${item.key}`, item.label)}
+                                  </Button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>

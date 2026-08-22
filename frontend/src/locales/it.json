@@ -2131,7 +2131,24 @@
     "sales": "Vendite e ricavi",
     "frontdesk": "Reception e ris.",
     "fb": "Cibo e bevande",
-    "system": "Canali e sistema"
+    "system": "Canali e integrazioni"
+  },
+  "navSections": {
+    "system": {
+      "channels": "Gestione canali",
+      "distribution": "Distribuzione e vendite",
+      "integrations": "Integrazioni",
+      "setup": "Configurazione e supporto",
+      "growth": "Marketing e automazione",
+      "compliance": "Comunicazione e conformità"
+    },
+    "admin": {
+      "centers": "Centri di gestione",
+      "properties": "Hotel e partner",
+      "integrations": "Operazioni di integrazione",
+      "platform": "Operazioni di piattaforma",
+      "governance": "Accesso, contenuti e sviluppatori"
+    }
   },
   "commandCenter": {
     "loadingStatus": "Caricamento stato operativo...",

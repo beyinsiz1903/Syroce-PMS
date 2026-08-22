@@ -2131,7 +2131,24 @@
     "sales": "Ventes et revenus",
     "frontdesk": "Réception et Rés.",
     "fb": "Restauration",
-    "system": "Canaux et système"
+    "system": "Canaux et intégrations"
+  },
+  "navSections": {
+    "system": {
+      "channels": "Gestion des canaux",
+      "distribution": "Distribution et ventes",
+      "integrations": "Intégrations",
+      "setup": "Configuration et assistance",
+      "growth": "Marketing et automatisation",
+      "compliance": "Communication et conformité"
+    },
+    "admin": {
+      "centers": "Centres de gestion",
+      "properties": "Hôtels et partenaires",
+      "integrations": "Opérations d’intégration",
+      "platform": "Opérations de plateforme",
+      "governance": "Accès, contenu et développeur"
+    }
   },
   "commandCenter": {
     "loadingStatus": "Chargement de l'état opérationnel...",

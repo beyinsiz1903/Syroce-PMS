@@ -2131,7 +2131,24 @@
     "sales": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.",
     "frontdesk": "Rezeption & Res.",
     "fb": "F&B",
-    "system": "Kanäle und System"
+    "system": "Kanäle & Integrationen"
+  },
+  "navSections": {
+    "system": {
+      "channels": "Kanalverwaltung",
+      "distribution": "Vertrieb & Verkauf",
+      "integrations": "Integrationen",
+      "setup": "Einrichtung & Support",
+      "growth": "Marketing & Automatisierung",
+      "compliance": "Kommunikation & Compliance"
+    },
+    "admin": {
+      "centers": "Verwaltungszentren",
+      "properties": "Hotels & Partner",
+      "integrations": "Integrationsbetrieb",
+      "platform": "Plattformbetrieb",
+      "governance": "Zugriff, Inhalte & Entwickler"
+    }
   },
   "commandCenter": {
     "loadingStatus": "Betriebsstatus wird geladen...",
