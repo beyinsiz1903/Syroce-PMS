@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  compactGuestName,
   formatGuestName,
   normalizeRoomType,
   roomIsFreeForBooking,
@@ -12,6 +13,12 @@ describe('room type matching', () => {
     expect(formatGuestName('yusuf ünal')).toBe('Yusuf Ünal');
     expect(formatGuestName('DERİN BERK BABACAN')).toBe('Derin Berk Babacan');
     expect(formatGuestName('McDonald Smith')).toBe('McDonald Smith');
+  });
+
+  it('dar takvim kartinda anlamsiz uc nokta yerine ad ve soyad bas harfini gosterir', () => {
+    expect(compactGuestName('Ahmet Mehmet Yılmaz', 10)).toBe('Ahmet Y.');
+    expect(compactGuestName('Derin Berk Babacan', 10)).toBe('Derin B.');
+    expect(compactGuestName('Mustafa Tosun', 20)).toBe('Mustafa Tosun');
   });
 
   it('Türkçe karakter ve büyük/küçük harf farklarını normalize eder', () => {

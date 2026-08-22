@@ -11,6 +11,7 @@ import {
 } from "./calendarHelpers";
 import { useTranslation } from 'react-i18next';
 import OccupancyBand from "./OccupancyBand";
+import { compactGuestName, formatGuestName } from './roomTypeMatching';
 
 // Compact grid constants
 const CELL_W = 72;  // px per day column (was 96)
@@ -350,13 +351,15 @@ const CalendarGrid = ({
                             const span = Math.max(endIdx - startIdx, 1);
                             const urgency = getUnassignedUrgency(booking);
                             const uColors = getUrgencyBarColors(urgency);
+                            const fullGuestName = formatGuestName(booking.guest_name) || 'Misafir';
+                            const displayGuestName = compactGuestName(fullGuestName, span === 1 ? 10 : 20);
                             return (
                               <div
                                 key={booking.id}
                                 draggable
                                 tabIndex={0}
                                 role="button"
-                                aria-label={`${booking.guest_name || 'Misafir'}, ${urgency.label}, atanmamış — odaya sürükleyin`}
+                                aria-label={`${fullGuestName}, ${urgency.label}, atanmamış — odaya sürükleyin`}
                                 onDragStart={(e) => onDragStart(e, booking)}
                                 onDragEnd={onDragEnd}
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
@@ -371,19 +374,22 @@ const CalendarGrid = ({
                                   borderColor: uColors.border,
                                 }}
                                 data-testid={`unassigned-booking-${booking.id}`}
-                                title={`${booking.guest_name} — ${urgency.label} — Odaya surukleyin`}
+                                title={`${fullGuestName} — ${urgency.label} — Odaya sürükleyin`}
                               >
                                 <div className="flex h-full overflow-hidden">
                                   <div className="w-[3px] rounded-l shrink-0" style={{ backgroundColor: uColors.stripe }}></div>
-                                  <div className="px-1 py-0.5 flex-1 min-w-0 flex items-center justify-between">
-                                    <div className="min-w-0">
+                                  <div className="px-1 py-0.5 flex-1 min-w-0 flex items-center gap-1">
+                                    <div className="min-w-0 flex-1">
                                       <div className="font-extrabold text-[10px] truncate leading-tight" style={{ color: uColors.text }}>
-                                        {booking.guest_name || 'Misafir'}
+                                        {displayGuestName}
                                       </div>
                                     </div>
-                                    <div className={`${uColors.badge} text-white text-[7px] font-bold px-1 py-0 rounded shrink-0 ml-0.5 leading-tight`}>
-                                      {urgency.label}
-                                    </div>
+                                    <span
+                                      className={`w-2 h-2 rounded-full shrink-0 ${uColors.badge}`}
+                                      title={urgency.label}
+                                      aria-hidden="true"
+                                    />
+                                    <span className="sr-only">{urgency.label}</span>
                                   </div>
                                 </div>
                               </div>
@@ -562,14 +568,16 @@ const CalendarGrid = ({
                             const statusColor = getBookingStatusColor(booking, refTodayStr);
                             const conflictInfo = getConflictInfo(room.id, booking);
                             const arrivalInView = startIdx >= 0 && checkInStr === toDateStringUTC(dateRange[startIdx]);
+                            const fullGuestName = formatGuestName(booking.guest_name) || 'Misafir';
                             const conflictTitle = conflictInfo
                               ? `⚠ Çakışma: Bu oda ${formatConflictRange(conflictInfo.overlap_start, conflictInfo.overlap_end)} tarihlerinde iki rezervasyona sahip (${conflictInfo.guest1 || 'Misafir'} ↔ ${conflictInfo.guest2 || 'Misafir'}). Lütfen birini başka odaya taşıyın.`
-                              : `${booking.guest_name || 'Misafir'}`;
+                              : fullGuestName;
                             const isDragging = draggingBooking?.id === booking.id;
                             const isDeparted = booking.status === 'checked_out' || checkOutStr <= refTodayStr;
                             const paxCount = (booking.adults || 0) + (booking.children || 0);
                             const fmtCardDate = (d) => { try { return new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }); } catch { return ''; } };
-                            const cardAria = `${booking.guest_name || 'Misafir'}, ${getSourceColor(booking).label}${paxCount ? `, ${paxCount} kişi` : ''}, ${fmtCardDate(booking.check_in)} – ${fmtCardDate(booking.check_out)}`;
+                            const displayGuestName = compactGuestName(fullGuestName, span === 1 ? 10 : span === 2 ? 18 : 40);
+                            const cardAria = `${fullGuestName}, ${getSourceColor(booking).label}${paxCount ? `, ${paxCount} kişi` : ''}, ${fmtCardDate(booking.check_in)} – ${fmtCardDate(booking.check_out)}`;
                             return (
                               <div
                                 key={booking.id}
@@ -606,7 +614,7 @@ const CalendarGrid = ({
                                 )}
                                 <div className="px-1.5 py-0.5 relative overflow-hidden" style={{ height: `${BOOKING_H}px` }}>
                                   <div className="font-bold text-[11px] truncate pr-3 text-white leading-tight">
-                                    {booking.guest_name || 'Misafir'}
+                                    {displayGuestName}
                                   </div>
                                   <div className="text-[9px] text-white/85 truncate flex items-center gap-1 leading-tight">
                                     <span className="font-semibold">{getSourceColor(booking).label}</span>
