@@ -232,10 +232,8 @@ async def process_nilvera_gl_queue_item(tenant_id: str, item_id: str, *, actor: 
             },
         )
         logger.warning(
-            "Nilvera GL posting blocked tenant=%s direction=%s invoice=%s error_type=%s",
-            tenant_id,
+            "Nilvera GL posting blocked direction=%s error_type=%s",
             claimed.get("direction"),
-            claimed.get("invoice_id"),
             type(exc).__name__,
         )
         return await db.gl_nilvera_queue.find_one(
@@ -367,9 +365,7 @@ async def handle_outgoing_invoice_cancelled(
             upsert=True,
         )
         logger.error(
-            "Nilvera outgoing GL reversal blocked tenant=%s invoice=%s error_type=%s",
-            tenant_id,
-            invoice_id,
+            "Nilvera outgoing GL reversal blocked error_type=%s",
             type(exc).__name__,
         )
         return None

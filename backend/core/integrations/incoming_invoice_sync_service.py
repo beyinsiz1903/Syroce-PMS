@@ -170,9 +170,7 @@ class IncomingInvoiceSyncService:
                 # a closed GL period or an incomplete account mapping.  The GL
                 # automation layer persists its own blocked review item.
                 logger.warning(
-                    "Incoming invoice GL candidate registration failed tenant=%s invoice=%s error_type=%s",
-                    tenant_id,
-                    invoice.id,
+                    "Incoming invoice GL candidate registration failed error_type=%s",
                     type(exc).__name__,
                 )
 

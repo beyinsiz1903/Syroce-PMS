@@ -151,9 +151,7 @@ class InvoiceStatusService:
                     await handle_outgoing_invoice_accepted(record.tenant_id, record.invoice_id)
                 except Exception as exc:
                     logger.warning(
-                        "Outgoing invoice GL candidate registration failed tenant=%s invoice=%s error_type=%s",
-                        record.tenant_id,
-                        record.invoice_id,
+                        "Outgoing invoice GL candidate registration failed error_type=%s",
                         type(exc).__name__,
                     )
                 await event_bus.publish("invoice.accepted", {"dispatch_id": record.id, "tenant_id": record.tenant_id})
@@ -181,9 +179,7 @@ class InvoiceStatusService:
                     )
                 except Exception as exc:
                     logger.error(
-                        "Outgoing invoice GL cancellation handling failed tenant=%s invoice=%s error_type=%s",
-                        record.tenant_id,
-                        record.invoice_id,
+                        "Outgoing invoice GL cancellation handling failed error_type=%s",
                         type(exc).__name__,
                     )
                 await event_bus.publish("invoice.cancelled", {"dispatch_id": record.id, "tenant_id": record.tenant_id})
