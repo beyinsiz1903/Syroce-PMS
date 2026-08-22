@@ -593,7 +593,7 @@ class ReservationImportService:
         canonical: CanonicalReservation,
         pms_room_type: str,
     ) -> str:
-        """Create a booking in the PMS from a canonical reservation."""
+        """Create and safely auto-place a booking from a canonical reservation."""
         booking_id = str(uuid.uuid4())
         guest_id = await self._find_or_create_guest(tenant_id, canonical)
 
@@ -619,17 +619,28 @@ class ReservationImportService:
             "created_at": datetime.now(UTC).isoformat(),
             "created_by": "channel_manager",
         }
-        from core.atomic_booking import BookingConflictError, assert_pending_assignment, create_booking_atomic
+        from core.atomic_booking import create_booking_atomic
+        from core.room_auto_assignment import create_booking_with_auto_assignment
 
-        try:
-            await create_booking_atomic(tenant_id=tenant_id, booking_doc=booking)
-        except BookingConflictError:
-            logger.warning("OTA import conflict for %s, creating without room assignment", canonical.external_id)
-            booking["room_id"] = None
-            booking["allocation_source"] = "pending_assignment"
-            assert_pending_assignment(booking)
-            await db.bookings.insert_one(booking)
-            booking.pop("_id", None)
+        # The shared helper applies assert_pending_assignment before its
+        # no-room fallback is persisted; keep the Bug DAE guard centralized.
+        _, assigned_room = await create_booking_with_auto_assignment(
+            database=db,
+            tenant_id=tenant_id,
+            booking_doc=booking,
+            create_booking=create_booking_atomic,
+        )
+        if assigned_room:
+            logger.info(
+                "OTA reservation %s auto-assigned to room %s",
+                canonical.external_id,
+                assigned_room.get("room_number") or assigned_room.get("id"),
+            )
+        else:
+            logger.warning(
+                "OTA reservation %s retained as pending assignment; no sellable room",
+                canonical.external_id,
+            )
         logger.info("Created PMS booking %s from external %s", booking_id, canonical.external_id)
         return booking_id
 

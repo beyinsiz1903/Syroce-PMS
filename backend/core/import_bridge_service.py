@@ -20,12 +20,13 @@ from typing import Any
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from core.atomic_booking import BookingConflictError, create_booking_atomic
+from core.atomic_booking import create_booking_atomic
 from core.database import db
 from core.import_decision import (
     COLL_IMPORTED,
     check_booking_source_exists,
 )
+from core.room_auto_assignment import create_booking_with_auto_assignment
 
 logger = logging.getLogger("core.import_bridge_service")
 
@@ -680,20 +681,28 @@ async def auto_import_reservation_to_pms(
                 guest_doc.pop("_id", None)
                 booking_doc["guest_id"] = guest_id
 
-        # Assign room_id only if we have a specific room (not just type)
-        # OTA imports should NOT auto-assign rooms — user wants manual placement
-        # Reservations arrive as "unassigned" and user places them on the calendar
-
-        # ── 6. Create booking via atomic core ────────────────────
-        try:
-            await create_booking_atomic(tenant_id=tenant_id, booking_doc=booking_doc)
-        except BookingConflictError as e:
-            await _mark_review(
-                imported_reservation_id,
-                "booking_conflict",
-                f"Room conflict: {str(e)[:500]}",
+        # ── 6. Auto-place and create via atomic core ─────────────
+        # Provider inventory is room-type based. Select the first sellable
+        # physical room for the whole stay, then let create_booking_atomic make
+        # the race-safe night claim. If all rooms are occupied/blocked, retain
+        # the reservation as pending_assignment for a manual calendar move.
+        _, assigned_room = await create_booking_with_auto_assignment(
+            database=db,
+            tenant_id=tenant_id,
+            booking_doc=booking_doc,
+            create_booking=create_booking_atomic,
+        )
+        if assigned_room:
+            logger.info(
+                "[IMPORT-BRIDGE] OTA reservation %s auto-assigned to room %s",
+                ext_res_id,
+                assigned_room.get("room_number") or assigned_room.get("id"),
             )
-            return False, f"Review required: booking conflict — {str(e)[:200]}"
+        else:
+            logger.warning(
+                "[IMPORT-BRIDGE] OTA reservation %s retained as pending assignment; no sellable room",
+                ext_res_id,
+            )
 
         # Gercek booking durable olduktan sonra gecici hold'u serbest birak.
         # Bu sira, booking create hatasinda hold'un kaybolmasini onler.
