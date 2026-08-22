@@ -264,6 +264,15 @@ class ReservationPullScheduler:
         provider = HotelRunnerProvider(token=token, hr_id=hr_id, max_retries=retries)
         pull_start = datetime.now(UTC)
 
+        # Mapping UI and durable import historically used separate collections.
+        # Backfill locally before processing any reservation; no provider write.
+        from domains.channel_manager.providers.hotelrunner.mapping_bridge import backfill_hotelrunner_mappings
+
+        await backfill_hotelrunner_mappings(tenant_id)
+        prior_cursor = await db.hotelrunner_pull_cursors.find_one(
+            {"tenant_id": tenant_id}, {"_id": 0, "last_pull_at": 1}
+        )
+
         phase_a_result = await run_phase_a(tenant_id, provider, safety_window_minutes, is_manual)
         if not phase_a_result["success"]:
             if phase_a_result.get("rate_limited"):
@@ -300,7 +309,7 @@ class ReservationPullScheduler:
             run_b = False
             logger.info("[PULL] Skipping Phase B — rate limit backoff active (consecutive: %d)", self._consecutive_rate_limits)
         else:
-            run_b = self._cycle_count % 10 == 0
+            run_b = is_manual or not prior_cursor or self._cycle_count % 10 == 0
         if not run_b:
             logger.debug(f"[PULL] Skipping Phase B (cycle {self._cycle_count}, runs every 10th)")
         else:

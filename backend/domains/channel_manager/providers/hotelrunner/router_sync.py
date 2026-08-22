@@ -195,6 +195,11 @@ async def sync_reservations(
     """Pull all undelivered reservations and store them for PMS import."""
     provider, conn = await get_provider(current_user.tenant_id)
 
+    from domains.channel_manager.providers.hotelrunner.mapping_bridge import backfill_hotelrunner_mappings
+    from domains.channel_manager.providers.sync_engine import run_phase_b
+
+    await backfill_hotelrunner_mappings(current_user.tenant_id)
+
     result = await provider.sync_reservations()
     if not result["success"]:
         raise HTTPException(status_code=502, detail=f"Senkronizasyon hatasi: {result['error']}")
@@ -256,10 +261,20 @@ async def sync_reservations(
 
     await log_sync(current_user.tenant_id, "reservation_sync", "success", records=imported, user_name=current_user.name)
 
+    # A manual sync is an operator-requested full reconciliation, not merely an
+    # undelivered-queue poll. Phase B is read-only against HotelRunner and
+    # imports reservations missing from the PMS durable pipeline.
+    catchup_imported, catchup_updated = await run_phase_b(current_user.tenant_id, provider)
+
     return {
-        "message": f"{imported} yeni rezervasyon senkronize edildi",
+        "message": (
+            f"{catchup_imported} yeni, {catchup_updated} guncellenen "
+            "PMS rezervasyonu uzlastirildi"
+        ),
         "total_fetched": result["count"],
         "new_imported": imported,
+        "catchup_imported": catchup_imported,
+        "catchup_updated": catchup_updated,
     }
 
 
