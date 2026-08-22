@@ -25,6 +25,10 @@ export const GL_ENDPOINTS = {
   exportReport: '/gl/reports/export',
   fxRevalue: '/gl/fx/revalue',
   chainConsolidated: '/gl/chain/consolidated',
+  intercompanyRules: '/gl/chain/intercompany-rules',
+  eledgerSettings: '/gl/e-ledger/settings',
+  eledgerPreflight: '/gl/e-ledger/preflight',
+  eledgerSourcePackage: '/gl/e-ledger/source-package',
   operationalMapping: '/gl/integrations/operational/mapping',
   operationalStatus: '/gl/integrations/operational/status',
 };
@@ -109,6 +113,13 @@ const GeneralLedgerModule = () => {
   const [statements, setStatements] = useState({ income: null, balance: null });
   const [comparison, setComparison] = useState({ income: null, balance: null });
   const [chainFinance, setChainFinance] = useState(null);
+  const [intercompany, setIntercompany] = useState({ rules: [], properties: [], can_manage: false });
+  const [intercompanyForm, setIntercompanyForm] = useState({ name: '', kind: 'balance', tenant_a_id: '', account_a_code: '', tenant_b_id: '', account_b_code: '' });
+  const [intercompanyBusy, setIntercompanyBusy] = useState(false);
+  const [eledgerPeriod, setEledgerPeriod] = useState(new Date().toISOString().slice(0, 7));
+  const [eledgerSettings, setEledgerSettings] = useState({ taxpayer_id: '', legal_name: '', source_application: 'Syroce PMS', source_application_version: '', software_approval_reference: '' });
+  const [eledgerPreflight, setEledgerPreflight] = useState(null);
+  const [eledgerBusy, setEledgerBusy] = useState('');
   const [fxForm, setFxForm] = useState({ date: new Date().toISOString().split('T')[0], currency: 'USD', closing_rate: '' });
   const [fxBusy, setFxBusy] = useState(false);
   const [workspace, setWorkspace] = useState({ aging: null, expenseBudget: null, revenueBudget: null, assets: [] });
@@ -185,14 +196,25 @@ const GeneralLedgerModule = () => {
     const previousStart = `${previousYear}-01-01`;
     const previousEnd = `${previousYear}${today.slice(4)}`;
     try {
-      const [incomeRes, balanceRes, chainRes] = await Promise.all([
+      const [incomeRes, balanceRes, chainRes, rulesRes, eledgerSettingsRes, eledgerPreflightRes] = await Promise.all([
         axios.get(GL_ENDPOINTS.comparativeIncome, { params: { start, end: today, comparison_start: previousStart, comparison_end: previousEnd } }),
         axios.get(GL_ENDPOINTS.comparativeBalance, { params: { as_of: today, comparison_as_of: previousEnd } }),
         axios.get(GL_ENDPOINTS.chainConsolidated, { params: { start, end: today, as_of: today } }),
+        axios.get(GL_ENDPOINTS.intercompanyRules),
+        axios.get(GL_ENDPOINTS.eledgerSettings),
+        axios.get(GL_ENDPOINTS.eledgerPreflight, { params: { period: eledgerPeriod } }),
       ]);
       setStatements({ income: incomeRes.data?.current, balance: balanceRes.data?.current });
       setComparison({ income: incomeRes.data, balance: balanceRes.data });
       setChainFinance(chainRes.data || null);
+      setIntercompany(rulesRes.data || { rules: [], properties: [], can_manage: false });
+      if (eledgerSettingsRes.data?.settings) {
+        setEledgerSettings({
+          taxpayer_id: '', legal_name: '', source_application: 'Syroce PMS', source_application_version: '', software_approval_reference: '',
+          ...eledgerSettingsRes.data.settings,
+        });
+      }
+      setEledgerPreflight(eledgerPreflightRes.data || null);
     } catch {
       toast.error('Mali tablolar yüklenemedi.');
     }
@@ -216,6 +238,97 @@ const GeneralLedgerModule = () => {
       toast.error(error.response?.data?.detail || 'Kur değerlemesi yapılamadı.');
     } finally {
       setFxBusy(false);
+    }
+  };
+
+  const createIntercompanyRule = async () => {
+    if (!intercompanyForm.name.trim() || !intercompanyForm.tenant_a_id || !intercompanyForm.tenant_b_id || !intercompanyForm.account_a_code.trim() || !intercompanyForm.account_b_code.trim()) {
+      toast.error('Eliminasyon adı, iki otel ve iki hesap kodu zorunludur.');
+      return;
+    }
+    setIntercompanyBusy(true);
+    try {
+      await axios.post(GL_ENDPOINTS.intercompanyRules, {
+        ...intercompanyForm,
+        name: intercompanyForm.name.trim(),
+        account_a_code: intercompanyForm.account_a_code.trim(),
+        account_b_code: intercompanyForm.account_b_code.trim(),
+        active: true,
+      });
+      toast.success('Grup içi eliminasyon kuralı oluşturuldu.');
+      setIntercompanyForm({ name: '', kind: 'balance', tenant_a_id: '', account_a_code: '', tenant_b_id: '', account_b_code: '' });
+      await fetchStatements();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Eliminasyon kuralı oluşturulamadı.');
+    } finally {
+      setIntercompanyBusy(false);
+    }
+  };
+
+  const deleteIntercompanyRule = async (ruleId) => {
+    if (!window.confirm('Bu eliminasyon kuralı kaldırılsın mı?')) return;
+    setIntercompanyBusy(true);
+    try {
+      await axios.delete(`${GL_ENDPOINTS.intercompanyRules}/${ruleId}`);
+      toast.success('Eliminasyon kuralı kaldırıldı.');
+      await fetchStatements();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Eliminasyon kuralı kaldırılamadı.');
+    } finally {
+      setIntercompanyBusy(false);
+    }
+  };
+
+  const refreshEledgerPreflight = async () => {
+    setEledgerBusy('preflight');
+    try {
+      const response = await axios.get(GL_ENDPOINTS.eledgerPreflight, { params: { period: eledgerPeriod } });
+      setEledgerPreflight(response.data);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'e-Defter ön kontrolü çalıştırılamadı.');
+    } finally {
+      setEledgerBusy('');
+    }
+  };
+
+  const saveEledgerSettings = async () => {
+    setEledgerBusy('settings');
+    try {
+      const response = await axios.put(GL_ENDPOINTS.eledgerSettings, {
+        taxpayer_id: eledgerSettings.taxpayer_id,
+        legal_name: eledgerSettings.legal_name,
+        source_application: eledgerSettings.source_application,
+        source_application_version: eledgerSettings.source_application_version,
+        software_approval_reference: eledgerSettings.software_approval_reference?.trim() || null,
+      });
+      setEledgerSettings(response.data.settings);
+      toast.success('e-Defter hazırlık bilgileri kaydedildi.');
+      await refreshEledgerPreflight();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'e-Defter hazırlık bilgileri kaydedilemedi.');
+    } finally {
+      setEledgerBusy('');
+    }
+  };
+
+  const downloadEledgerSourcePackage = async () => {
+    setEledgerBusy('download');
+    try {
+      const response = await axios.get(GL_ENDPOINTS.eledgerSourcePackage, {
+        params: { period: eledgerPeriod },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `syroce-eledger-source-${eledgerPeriod}.zip`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success('Kaynak paket indirildi; mali mühür veya GİB gönderimi yapılmadı.');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Kaynak paket indirilemedi.');
+    } finally {
+      setEledgerBusy('');
     }
   };
 
@@ -801,6 +914,24 @@ const GeneralLedgerModule = () => {
                   <div className="rounded-lg bg-red-50 p-3"><p className="text-xs text-slate-500">Toplam Gider</p><p className="text-xl font-bold text-red-700">{fmtMoney(chainFinance.totals?.expenses?.amount || 0)}</p></div>
                   <div className="rounded-lg bg-slate-100 p-3"><p className="text-xs text-slate-500">Konsolide Net Sonuç</p><p className="text-xl font-bold">{fmtMoney(chainFinance.totals?.net_income?.amount || 0)}</p></div>
                 </div>
+                <div className="rounded-lg border bg-slate-50 p-3 mb-4 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-semibold">Grup içi eliminasyon</span>
+                    <span className={chainFinance.consolidation?.intercompany_eliminations_applied ? 'text-emerald-700' : 'text-amber-700'}>
+                      {chainFinance.consolidation?.applied_rule_count || 0}/{chainFinance.consolidation?.rule_count || 0} kural uygulandı
+                    </span>
+                  </div>
+                  {chainFinance.consolidation?.intercompany_eliminations_applied && (
+                    <p className="text-xs text-slate-600 mt-1">
+                      Brüt gelir {fmtMoney(chainFinance.raw_totals?.revenue?.amount || 0)} → net {fmtMoney(chainFinance.totals?.revenue?.amount || 0)} · Brüt varlık {fmtMoney(chainFinance.raw_totals?.assets?.amount || 0)} → net {fmtMoney(chainFinance.totals?.assets?.amount || 0)}
+                    </p>
+                  )}
+                  {(chainFinance.consolidation?.eliminations || []).map((item) => (
+                    <div key={item.rule_id} className="flex justify-between border-t mt-2 pt-2 text-xs">
+                      <span>{item.name}</span><span>{item.status === 'applied' ? fmtMoney(item.matched_amount) : 'Eşleşen bakiye yok'}</span>
+                    </div>
+                  ))}
+                </div>
                 <div className="space-y-2">
                   {chainFinance.properties.map((property) => (
                     <div key={property.tenant_id} className="flex items-center justify-between rounded border p-2 text-sm">
@@ -810,9 +941,72 @@ const GeneralLedgerModule = () => {
                   ))}
                 </div>
                 <p className="text-xs text-amber-700 mt-3">{chainFinance.consolidation?.warning}</p>
+                <div className="mt-5 border-t pt-4 space-y-3">
+                  <h4 className="font-semibold">Eliminasyon Kuralları</h4>
+                  {(intercompany.rules || []).map((rule) => (
+                    <div key={rule.id} className="flex items-center justify-between gap-3 rounded border p-2 text-xs">
+                      <span><strong>{rule.name}</strong> · {rule.tenant_a_id}/{rule.account_a_code} ↔ {rule.tenant_b_id}/{rule.account_b_code}</span>
+                      {intercompany.can_manage && <Button size="sm" variant="outline" disabled={intercompanyBusy} onClick={() => deleteIntercompanyRule(rule.id)}>Kaldır</Button>}
+                    </div>
+                  ))}
+                  {intercompany.can_manage && (
+                    <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-2 rounded-lg bg-slate-50 p-3">
+                      <Input value={intercompanyForm.name} onChange={(e) => setIntercompanyForm({ ...intercompanyForm, name: e.target.value })} placeholder="Kural adı" />
+                      <select className="rounded-md border px-3 py-2 text-sm" value={intercompanyForm.kind} onChange={(e) => setIntercompanyForm({ ...intercompanyForm, kind: e.target.value })}>
+                        <option value="balance">Varlık / borç</option><option value="income">Gelir / gider</option>
+                      </select>
+                      <select className="rounded-md border px-3 py-2 text-sm" value={intercompanyForm.tenant_a_id} onChange={(e) => setIntercompanyForm({ ...intercompanyForm, tenant_a_id: e.target.value })}>
+                        <option value="">Birinci otel</option>{(intercompany.properties || []).map((property) => <option key={property.tenant_id} value={property.tenant_id}>{property.property_name}</option>)}
+                      </select>
+                      <Input value={intercompanyForm.account_a_code} onChange={(e) => setIntercompanyForm({ ...intercompanyForm, account_a_code: e.target.value })} placeholder="Birinci hesap" />
+                      <select className="rounded-md border px-3 py-2 text-sm" value={intercompanyForm.tenant_b_id} onChange={(e) => setIntercompanyForm({ ...intercompanyForm, tenant_b_id: e.target.value })}>
+                        <option value="">İkinci otel</option>{(intercompany.properties || []).map((property) => <option key={property.tenant_id} value={property.tenant_id}>{property.property_name}</option>)}
+                      </select>
+                      <Input value={intercompanyForm.account_b_code} onChange={(e) => setIntercompanyForm({ ...intercompanyForm, account_b_code: e.target.value })} placeholder="İkinci hesap" />
+                      <Button className="lg:col-span-2" disabled={intercompanyBusy} onClick={createIntercompanyRule}>{intercompanyBusy ? 'Kaydediliyor...' : 'Eliminasyon Kuralı Ekle'}</Button>
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           )}
+          <Card className="mt-5">
+            <CardHeader><CardTitle>e-Defter Hazırlık ve Kaynak Paketi</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                Bu alan XBRL-GL e-Defter veya berat üretmez; mali mühür/e-imza ve GİB gönderimi yapmaz. Kapalı dönemin doğrulanmış kaynak verisini, SHA-256 bütünlük manifestiyle uyumlu yazılıma aktarır.
+              </div>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <Input value={eledgerSettings.taxpayer_id || ''} onChange={(e) => setEledgerSettings({ ...eledgerSettings, taxpayer_id: e.target.value })} placeholder="VKN / TCKN" maxLength={11} />
+                <Input value={eledgerSettings.legal_name || ''} onChange={(e) => setEledgerSettings({ ...eledgerSettings, legal_name: e.target.value })} placeholder="Yasal unvan" />
+                <Input value={eledgerSettings.source_application || ''} onChange={(e) => setEledgerSettings({ ...eledgerSettings, source_application: e.target.value })} placeholder="Kaynak uygulama" />
+                <Input value={eledgerSettings.source_application_version || ''} onChange={(e) => setEledgerSettings({ ...eledgerSettings, source_application_version: e.target.value })} placeholder="Uygulama sürümü" />
+                <Input value={eledgerSettings.software_approval_reference || ''} onChange={(e) => setEledgerSettings({ ...eledgerSettings, software_approval_reference: e.target.value })} placeholder="GİB uyumluluk onayı referansı (varsa)" />
+                <Button variant="outline" disabled={eledgerBusy === 'settings'} onClick={saveEledgerSettings}>{eledgerBusy === 'settings' ? 'Kaydediliyor...' : 'Hazırlık Bilgilerini Kaydet'}</Button>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Input type="month" className="w-44" value={eledgerPeriod} onChange={(e) => setEledgerPeriod(e.target.value)} />
+                <Button variant="outline" disabled={eledgerBusy === 'preflight'} onClick={refreshEledgerPreflight}>{eledgerBusy === 'preflight' ? 'Kontrol ediliyor...' : 'Ön Kontrolü Çalıştır'}</Button>
+                <Button disabled={!eledgerPreflight?.ready_for_source_export || eledgerBusy === 'download'} onClick={downloadEledgerSourcePackage}>{eledgerBusy === 'download' ? 'Hazırlanıyor...' : 'Kaynak ZIP İndir'}</Button>
+                <span className={`text-sm font-semibold ${eledgerPreflight?.ready_for_source_export ? 'text-emerald-700' : 'text-amber-700'}`}>
+                  {eledgerPreflight?.ready_for_source_export ? 'Kaynak aktarımına hazır' : 'Hazır değil'}
+                </span>
+              </div>
+              {eledgerPreflight && (
+                <div className="grid md:grid-cols-2 gap-3 text-xs">
+                  <div className="rounded border p-3">
+                    <p className="font-semibold mb-2">Kontrol sonucu · {eledgerPreflight.entry_count || 0} fiş / {eledgerPreflight.line_count || 0} satır</p>
+                    {(eledgerPreflight.blockers || []).length === 0 ? <p className="text-emerald-700">Muhasebe bütünlüğü engeli yok.</p> : (eledgerPreflight.blockers || []).map((item) => <p key={item.code} className="text-red-700">• {item.message}</p>)}
+                    {(eledgerPreflight.warnings || []).map((item) => <p key={item.code} className="text-amber-700">• {item.message}</p>)}
+                  </div>
+                  <div className="rounded border p-3">
+                    <p className="font-semibold mb-2">Resmi e-Defter için dış gereksinimler</p>
+                    {(eledgerPreflight.external_requirements || []).map((item) => <p key={item}>• {item}</p>)}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="workspace">

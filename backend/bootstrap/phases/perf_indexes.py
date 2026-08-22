@@ -71,6 +71,13 @@ async def ensure_performance_indexes():
         ("audit_logs", [("tenant_id", 1), ("timestamp", -1)], "idx_audit_log_timestamp", {}),
         ("audit_logs", [("tenant_id", 1), ("action", 1), ("timestamp", -1)], "idx_audit_log_action", {}),
         ("tenants", [("chain_id", 1), ("parent_tenant_id", 1)], "idx_tenant_chain", {}),
+        (
+            "gl_intercompany_rules",
+            [("chain_id", 1), ("pair_key", 1)],
+            "idx_gl_intercompany_chain_pair",
+            {"unique": True},
+        ),
+        ("gl_eledger_settings", [("tenant_id", 1)], "idx_gl_eledger_settings_tenant", {"unique": True}),
         ("hotelrunner_connections", [("tenant_id", 1), ("status", 1)], "idx_hr_status", {}),
         ("cm_imported_reservations", [("tenant_id", 1), ("source_property_id", 1), ("channel", 1)], "idx_cm_source_channel", {}),
         ("outbox_events", [("processed", 1), ("created_at", 1)], "idx_outbox_processed_created", {}),
@@ -461,4 +468,3 @@ async def ensure_performance_indexes():
         raise
     except Exception as e:
         logger.warning(f"Failed to verify index existence: {e}")
-

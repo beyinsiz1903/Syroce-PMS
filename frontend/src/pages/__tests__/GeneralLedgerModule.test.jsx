@@ -26,6 +26,10 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       exportReport: '/gl/reports/export',
       fxRevalue: '/gl/fx/revalue',
       chainConsolidated: '/gl/chain/consolidated',
+      intercompanyRules: '/gl/chain/intercompany-rules',
+      eledgerSettings: '/gl/e-ledger/settings',
+      eledgerPreflight: '/gl/e-ledger/preflight',
+      eledgerSourcePackage: '/gl/e-ledger/source-package',
       operationalMapping: '/gl/integrations/operational/mapping',
       operationalStatus: '/gl/integrations/operational/status',
     });

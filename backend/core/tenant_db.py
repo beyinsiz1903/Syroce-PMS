@@ -140,6 +140,8 @@ TENANT_SCOPED_COLLECTIONS: set[str] = {
     "gl_counters",
     "gl_journal_entries",
     "gl_operational_mappings",
+    "gl_intercompany_rules",
+    "gl_eledger_settings",
     "gl_periods",
     "gl_sequence_reservations",
     "gl_year_end_closures",
