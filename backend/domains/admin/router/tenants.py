@@ -9,18 +9,27 @@ Admin / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
+import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import jwt
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
+from common.request_context import get_client_ip, get_user_agent
 from core.database import db
 from core.helpers import (
     get_tenant_modules,
     require_super_admin_guard,
 )
 from core.security import (
+    JWT_ALGORITHM,
+    JWT_EXPIRATION_MINUTES,
+    JWT_SECRET,
     _is_super_admin,
+    create_admin_tenant_context_token,
+    create_token,
+    revoke_jti,
 )
 from core.tenant_db import get_system_db
 
@@ -89,6 +98,97 @@ ROLES_BY_TIER = {
     "professional": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit", "finance", "procurement"],
     "enterprise": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit", "gm", "super_admin", "finance", "procurement", "supervisor", "sales"],
 }
+
+_env_mode = (os.environ.get("ENVIRONMENT") or os.environ.get("APP_ENV") or os.environ.get("ENV") or "development").lower()
+_cookie_secure = _env_mode != "development"
+
+
+def _set_access_cookie(response: Response, token: str, max_age: int) -> None:
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        secure=_cookie_secure,
+        samesite="none" if _cookie_secure else "lax",
+        max_age=max_age,
+        path="/",
+    )
+    response.headers["Cache-Control"] = "no-store"
+
+
+def _safe_context_user(
+    current_user: User,
+    *,
+    tenant_id: str,
+    is_impersonating: bool,
+    actor_tenant_id: str | None = None,
+    target_name: str | None = None,
+    expires_at: int | None = None,
+) -> dict:
+    raw = current_user.model_dump()
+    safe = {key: value for key, value in raw.items() if key in User.model_fields}
+    safe.update(
+        {
+            "tenant_id": tenant_id,
+            "is_impersonating": is_impersonating,
+            "actor_tenant_id": actor_tenant_id if is_impersonating else None,
+            "impersonated_tenant_name": target_name if is_impersonating else None,
+            "impersonation_expires_at": expires_at if is_impersonating else None,
+        }
+    )
+    return User(**safe).model_dump(exclude={"password"})
+
+
+def _tenant_session_payload(tenant_doc: dict) -> dict:
+    source = dict(tenant_doc)
+    source["modules"] = get_tenant_modules(tenant_doc)
+    safe = {key: value for key, value in source.items() if key in Tenant.model_fields}
+    return Tenant(**safe).model_dump()
+
+
+def _request_access_claims(request: Request) -> dict:
+    token = request.cookies.get("access_token")
+    if not token:
+        authorization = request.headers.get("authorization") or ""
+        if authorization.lower().startswith("bearer "):
+            token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        return {}
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.InvalidTokenError:
+        return {}
+
+
+async def _write_tenant_context_audit(
+    *,
+    sys_db,
+    actor: User,
+    action: str,
+    actor_tenant_id: str,
+    target_tenant_id: str,
+    target_name: str,
+    expires_at: int | None = None,
+) -> None:
+    await sys_db.audit_logs.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": target_tenant_id,
+            "actor_tenant_id": actor_tenant_id,
+            "target_tenant_id": target_tenant_id,
+            "user_id": actor.id,
+            "user_email": actor.email,
+            "user_role": getattr(actor.role, "value", actor.role),
+            "action": action,
+            "resource_type": "admin_tenant_context",
+            "resource_id": target_tenant_id,
+            "details": f"Superadmin hotel context: {target_name}",
+            "expires_at": expires_at,
+            "ip_address": get_client_ip(),
+            "user_agent": get_user_agent(),
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )
 
 
 def is_role_allowed_for_tier(role: str, tier: str) -> bool:
@@ -599,6 +699,169 @@ async def get_property_type_detail(property_type: str):
         "key": property_type,
         **profile,
         "dashboard_layout": profile.get("dashboard_layout", "standard"),
+    }
+
+
+# ── SUPERADMIN HOTEL WORKSPACE CONTEXT ──
+@router.post("/admin/tenants/{tenant_id}/context")
+async def enter_tenant_context(
+    tenant_id: str,
+    response: Response,
+    current_user: User = Depends(require_super_admin),
+):
+    """Enter a short-lived hotel workspace without sharing hotel passwords.
+
+    Only the effective tenant scope changes. The real superadmin user id and
+    role remain authoritative and are recorded on every enter/exit event.
+    """
+    if current_user.is_impersonating:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Önce mevcut otel çalışma alanından çıkın.",
+        )
+
+    actor_tenant_id = current_user.tenant_id
+    if not actor_tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Süperadmin ana otel bağlamı bulunamadı.",
+        )
+    if tenant_id == actor_tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Zaten bu otelin çalışma alanındasınız.",
+        )
+
+    sys_db = get_system_db()
+    target = await sys_db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+    origin = await sys_db.tenants.find_one({"id": actor_tenant_id}, {"_id": 0})
+    target_status = str((target or {}).get("status") or "").lower()
+    if (
+        not target
+        or target.get("is_active") is False
+        or target_status in {"deleted", "archived"}
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Otel bulunamadı veya kullanılamıyor.")
+    if not origin:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Süperadmin ana oteli bulunamadı.")
+
+    access_token, expires_at = create_admin_tenant_context_token(
+        current_user.id,
+        actor_tenant_id,
+        tenant_id,
+    )
+    _set_access_cookie(response, access_token, max_age=max(1, expires_at - int(datetime.now(UTC).timestamp())))
+
+    target_name = target.get("property_name") or "Otel"
+    target_user = _safe_context_user(
+        current_user,
+        tenant_id=tenant_id,
+        is_impersonating=True,
+        actor_tenant_id=actor_tenant_id,
+        target_name=target_name,
+        expires_at=expires_at,
+    )
+    origin_user = _safe_context_user(
+        current_user,
+        tenant_id=actor_tenant_id,
+        is_impersonating=False,
+    )
+    target_payload = _tenant_session_payload(target)
+    origin_payload = _tenant_session_payload(origin)
+
+    await _write_tenant_context_audit(
+        sys_db=sys_db,
+        actor=current_user,
+        action="admin_tenant_context_enter",
+        actor_tenant_id=actor_tenant_id,
+        target_tenant_id=tenant_id,
+        target_name=target_name,
+        expires_at=expires_at,
+    )
+
+    return {
+        "success": True,
+        "access_token": access_token,
+        "expires_at": expires_at,
+        "user": target_user,
+        "tenant": target_payload,
+        "modules": target_payload.get("modules") or {},
+        "origin": {
+            "user": origin_user,
+            "tenant": origin_payload,
+            "modules": origin_payload.get("modules") or {},
+        },
+    }
+
+
+@router.post("/admin/tenant-context/exit")
+async def exit_tenant_context(
+    request: Request,
+    response: Response,
+    current_user: User = Depends(require_super_admin),
+):
+    """Revoke the active hotel context and return to the actor's tenant."""
+    if not current_user.is_impersonating or not current_user.actor_tenant_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Etkin otel çalışma bağlamı yok.")
+
+    claims = _request_access_claims(request)
+    if (
+        claims.get("purpose") != "admin_tenant_context"
+        or claims.get("impersonation") is not True
+        or claims.get("user_id") != current_user.id
+        or claims.get("tenant_id") != current_user.tenant_id
+        or claims.get("actor_tenant_id") != current_user.actor_tenant_id
+    ):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Geçersiz otel çalışma bağlamı.")
+
+    jti = claims.get("jti")
+    exp = claims.get("exp")
+    if not jti or not exp:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bağlam belirteci iptal edilemiyor.")
+    try:
+        revoked = await revoke_jti(
+            jti,
+            int(exp),
+            user_id=current_user.id,
+            tenant_id=current_user.tenant_id,
+            reason="admin_tenant_context_exit",
+        )
+    except Exception as exc:
+        logger.error("admin tenant context revoke failed: %s", exc)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Otel bağlamından güvenli çıkış yapılamadı.")
+    if not revoked:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Otel çalışma bağlamı daha önce kapatılmış.")
+
+    sys_db = get_system_db()
+    origin = await sys_db.tenants.find_one({"id": current_user.actor_tenant_id}, {"_id": 0})
+    if not origin:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Süperadmin ana oteli bulunamadı.")
+
+    origin_token = create_token(current_user.id, current_user.actor_tenant_id)
+    _set_access_cookie(response, origin_token, max_age=JWT_EXPIRATION_MINUTES * 60)
+    origin_user = _safe_context_user(
+        current_user,
+        tenant_id=current_user.actor_tenant_id,
+        is_impersonating=False,
+    )
+    origin_payload = _tenant_session_payload(origin)
+    target_name = current_user.impersonated_tenant_name or "Otel"
+
+    await _write_tenant_context_audit(
+        sys_db=sys_db,
+        actor=current_user,
+        action="admin_tenant_context_exit",
+        actor_tenant_id=current_user.actor_tenant_id,
+        target_tenant_id=current_user.tenant_id,
+        target_name=target_name,
+    )
+
+    return {
+        "success": True,
+        "access_token": origin_token,
+        "user": origin_user,
+        "tenant": origin_payload,
+        "modules": origin_payload.get("modules") or {},
     }
 
 

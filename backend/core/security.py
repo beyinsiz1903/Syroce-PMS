@@ -164,6 +164,24 @@ JWT_EXPIRATION_HOURS = max(1, round(JWT_EXPIRATION_MINUTES / 60))
 # 15-minute access-token lifetime from the user's session lifetime.
 REFRESH_TOKEN_EXPIRATION_DAYS = max(1, int(os.environ.get("REFRESH_TOKEN_EXPIRATION_DAYS", "30")))
 
+
+def _resolve_admin_context_lifetime_minutes() -> int:
+    """Resolve a deliberately short superadmin tenant-context lifetime.
+
+    Cross-tenant access is more sensitive than an ordinary staff session, so
+    it never inherits the (potentially deployment-overridden) access-token
+    lifetime. Five to sixty minutes is the supported operational window.
+    """
+    try:
+        configured = int(os.environ.get("ADMIN_TENANT_CONTEXT_MINUTES", "30"))
+    except (TypeError, ValueError):
+        configured = 30
+    return max(5, min(configured, 60))
+
+
+ADMIN_TENANT_CONTEXT_MINUTES = _resolve_admin_context_lifetime_minutes()
+
+
 class CookieHTTPBearer(HTTPBearer):
     async def __call__(self, request: Request) -> HTTPAuthorizationCredentials | None:
         res = await super().__call__(request)
@@ -282,6 +300,34 @@ def create_token(user_id: str, tenant_id: str | None = None) -> str:
         "type": "access",
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def create_admin_tenant_context_token(
+    user_id: str,
+    actor_tenant_id: str,
+    target_tenant_id: str,
+) -> tuple[str, int]:
+    """Mint a short-lived, signed cross-tenant context for a superadmin.
+
+    This token is accepted only when the referenced user is still a
+    superadmin, ``actor_tenant_id`` still matches the user's stored tenant and
+    ``target_tenant_id`` still resolves to a live tenant. Those invariants are
+    re-checked by :func:`get_current_user` on every request.
+    """
+    now_ts = datetime.now(UTC).timestamp()
+    exp_ts = int(now_ts + ADMIN_TENANT_CONTEXT_MINUTES * 60)
+    payload = {
+        "user_id": user_id,
+        "tenant_id": target_tenant_id,
+        "actor_tenant_id": actor_tenant_id,
+        "impersonation": True,
+        "purpose": "admin_tenant_context",
+        "iat": now_ts,
+        "jti": secrets.token_urlsafe(24),
+        "exp": exp_ts,
+        "type": "access",
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM), exp_ts
 
 
 def create_refresh_token(user_id: str, tenant_id: str | None = None) -> tuple[str, int]:
@@ -417,10 +463,70 @@ async def get_current_user(
         jwt_tenant = payload.get("tenant_id")
         doc_tenant = user_doc.get("tenant_id")
         if jwt_tenant and doc_tenant and jwt_tenant != doc_tenant:
-            logger.warning(f"JWT tenant mismatch: user={user_id} jwt_tenant={jwt_tenant} doc_tenant={doc_tenant}")
+            role = getattr(user_doc.get("role"), "value", user_doc.get("role"))
+            roles = {
+                getattr(item, "value", item)
+                for item in (user_doc.get("roles") or [])
+            }
+            is_stored_super_admin = role == "super_admin" or "super_admin" in roles
+            is_admin_context = (
+                payload.get("impersonation") is True
+                and payload.get("purpose") == "admin_tenant_context"
+                and payload.get("actor_tenant_id") == doc_tenant
+                and is_stored_super_admin
+            )
+
+            if not is_admin_context:
+                logger.warning(f"JWT tenant mismatch: user={user_id} jwt_tenant={jwt_tenant} doc_tenant={doc_tenant}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token-tenant mismatch - please login again",
+                )
+
+            # A signed context token is necessary but not sufficient: the
+            # target tenant must still exist and must not have been disabled
+            # since the token was minted. This check intentionally uses the
+            # raw system DB because the middleware has already selected the
+            # target tenant context for downstream tenant-scoped queries.
+            from core.tenant_db import get_system_db
+
+            target_tenant = await get_system_db().tenants.find_one(
+                {"id": jwt_tenant},
+                {
+                    "_id": 0,
+                    "id": 1,
+                    "property_name": 1,
+                    "is_active": 1,
+                    "status": 1,
+                },
+            )
+            target_status = str((target_tenant or {}).get("status") or "").lower()
+            if (
+                not target_tenant
+                or target_tenant.get("is_active") is False
+                or target_status in {"deleted", "archived"}
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Target hotel is unavailable",
+                )
+
+            # Preserve the real actor identity and role while replacing only
+            # the effective tenant scope used by route handlers. No user
+            # document is mutated.
+            user_doc = dict(user_doc)
+            user_doc["tenant_id"] = jwt_tenant
+            user_doc["is_impersonating"] = True
+            user_doc["actor_tenant_id"] = doc_tenant
+            user_doc["impersonated_tenant_name"] = target_tenant.get("property_name")
+            user_doc["impersonation_expires_at"] = int(payload.get("exp") or 0) or None
+        elif payload.get("impersonation"):
+            # Context tokens must always cross from the actor tenant to a
+            # different target. Reject malformed/same-tenant variants rather
+            # than silently treating them as ordinary access tokens.
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token-tenant mismatch - please login again",
+                detail="Invalid admin hotel context",
             )
 
         user_doc = decrypt_user_doc(user_doc)

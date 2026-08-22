@@ -65,6 +65,14 @@ class User(BaseModel):
     # operasyon-seviyesi izinler (ör. "send_urgent_message"). Boş liste
     # default — geriye dönük uyumlu, yalnız adminler doldurur.
     granted_permissions: list[str] = Field(default_factory=list)
+    # Süperadminin kendi hesabından çıkmadan belirli bir otelin çalışma
+    # alanına geçebilmesi için sunucu tarafından türetilen, salt-okunur oturum
+    # bağlamı. Bu alanlar kullanıcı belgesine yazılmaz; yalnızca imzalı kısa
+    # ömürlü bağlam token'ı doğrulandıktan sonra response modeline eklenir.
+    is_impersonating: bool = False
+    actor_tenant_id: str | None = None
+    impersonated_tenant_name: str | None = None
+    impersonation_expires_at: int | None = None
 
 
 # Helper function (defined after User class)

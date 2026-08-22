@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import axios from 'axios';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { preloadRoute } from '@/routes/preload';
 import { useEntitlements } from '@/context/EntitlementContext';
 import { Button } from '@/components/ui/button';
@@ -22,7 +24,7 @@ import {
   Home, Hotel, FileText, TrendingUp, ShoppingCart, Headset,
   User, LogOut, Menu, Calendar, DollarSign, Settings as SettingsIcon,
   Layers, BarChart3, Bot, Building2, Zap, Crown, Shield, Users, ClipboardCheck,
-  ChevronDown, Server, CalendarCheck, X,
+  ChevronDown, Server, CalendarCheck, X, Undo2,
   BrainCircuit, MessageSquare, Clock, Rocket, Download
 , Utensils, Briefcase, ConciergeBell} from 'lucide-react';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -40,6 +42,7 @@ import {
   moduleScopesForNavItem,
   supplementalModuleNavItems,
 } from '@/utils/moduleAccess';
+import { persistExitedTenantContext } from '@/lib/adminTenantContext';
 
 const ICON_BY_KEY = {
   dashboard: Home,
@@ -137,6 +140,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
   const { t } = useTranslation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [expandedMobileGroup, setExpandedMobileGroup] = useState(null);
+  const [exitingTenantContext, setExitingTenantContext] = useState(false);
 
   const { isSuperAdmin, hasModule } = useEntitlements();
   const navRef = useRef(null);
@@ -247,6 +251,19 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
   const handleNavigate = (path, closeMobile = false) => {
     navigate(path);
     if (closeMobile) setMobileMenuOpen(false);
+  };
+
+  const exitHotelWorkspace = async () => {
+    setExitingTenantContext(true);
+    try {
+      const response = await axios.post('/admin/tenant-context/exit');
+      persistExitedTenantContext(response.data);
+      toast.success('Süperadmin görünümüne dönülüyor');
+      window.location.assign('/admin/tenants');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Otel çalışma alanından çıkılamadı');
+      setExitingTenantContext(false);
+    }
   };
 
   const renderGroupDropdown = (groupDef) => {
@@ -569,6 +586,31 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
             </nav>
           )}
         </div>
+        {user?.is_impersonating && (
+          <div
+            className="flex flex-col gap-2 border-t border-amber-200 bg-amber-50 px-3 py-2 text-amber-950 sm:flex-row sm:items-center sm:justify-between"
+            data-testid="admin-tenant-context-banner"
+          >
+            <div className="flex items-center gap-2 text-xs sm:text-sm">
+              <Shield className="h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
+              <span>
+                <strong>{tenant?.property_name || user?.impersonated_tenant_name || 'Seçili otel'}</strong> adına işlem yapıyorsunuz.
+                {' '}Gerçek kullanıcı: {user?.name || user?.email}
+              </span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 border-amber-300 bg-white text-xs text-amber-900 hover:bg-amber-100"
+              onClick={exitHotelWorkspace}
+              disabled={exitingTenantContext}
+              data-testid="exit-admin-tenant-context"
+            >
+              <Undo2 className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+              {exitingTenantContext ? 'Dönülüyor...' : 'Süperadmin görünümüne dön'}
+            </Button>
+          </div>
+        )}
       </header>
 
       <main ref={mainRef} className="flex-1 max-w-7xl w-full mx-auto overflow-auto pb-28">

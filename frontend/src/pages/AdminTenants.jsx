@@ -19,7 +19,7 @@ import {
   Calendar, Building2, ChevronDown, ChevronUp, Shield,
   Search, RefreshCw,
   Plus, Pencil, Users, UsersRound, ArrowUpDown,
-  Settings2,
+  Settings2, LogIn,
 } from 'lucide-react';
 
 import { PLANS, MODULE_GROUPS, isModuleIncludedInPlan } from './admin/tenantConstants';
@@ -30,6 +30,7 @@ import AllUsersView from './admin/AllUsersView';
 import TenantStatsPanel from './admin/TenantStatsPanel';
 import TenantProvisioningModal from './admin/TenantProvisioningModal';
 import { useTranslation } from 'react-i18next';
+import { persistEnteredTenantContext } from '@/lib/adminTenantContext';
 
 // Map plan tier → shared StatusBadge intent (palette-compliant)
 const TIER_INTENT = {
@@ -80,6 +81,8 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
   const [resetModulesOnPlanChange, setResetModulesOnPlanChange] = useState(true);
   const [showProvisioningModal, setShowProvisioningModal] = useState(false);
   const [provisioningTenant, setProvisioningTenant] = useState(null);
+  const [contextTarget, setContextTarget] = useState(null);
+  const [switchingContext, setSwitchingContext] = useState(false);
 
   const loadTenants = async () => {
     setLoading(true);
@@ -166,6 +169,21 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
     setSelectedNewPlan(t.subscription_tier || 'basic');
     setResetModulesOnPlanChange(true);
     setShowPlanModal(true);
+  };
+
+  const enterHotelWorkspace = async () => {
+    const targetId = contextTarget?.id || contextTarget?._id;
+    if (!targetId) return;
+    setSwitchingContext(true);
+    try {
+      const response = await axios.post(`/admin/tenants/${targetId}/context`);
+      persistEnteredTenantContext(response.data);
+      toast.success(`${contextTarget.property_name || 'Otel'} çalışma alanına geçiliyor`);
+      window.location.assign('/app/dashboard');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Otel çalışma alanına geçilemedi');
+      setSwitchingContext(false);
+    }
   };
 
   const toggleSort = (field) => {
@@ -342,6 +360,17 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs h-8 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                      onClick={(e) => { e.stopPropagation(); setContextTarget(t); }}
+                      disabled={id === tenant?.id}
+                      data-testid={`enter-context-btn-${id}`}
+                      title={id === tenant?.id ? 'Zaten bu oteldesiniz' : 'Bu otelin çalışma alanına geç'}
+                    >
+                      <LogIn className="w-3.5 h-3.5 mr-1" aria-hidden="true" /> Otele Geç
+                    </Button>
                     <Button variant="outline" size="sm" className="text-xs h-8" onClick={(e) => { e.stopPropagation(); setProvisioningTenant(t); setShowProvisioningModal(true); }} data-testid={`provisioning-btn-${id}`}>
                       <Settings2 className="w-3.5 h-3.5 mr-1" aria-hidden="true" /> Kurulum
                     </Button>
@@ -430,6 +459,30 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
       <EditTenantModal open={showEditModal} onOpenChange={setShowEditModal} tenant={editTenant} onSuccess={() => { toast.success('Otel bilgileri güncellendi'); loadTenants(); }} />
       <TeamManagementModal open={showTeamModal} onOpenChange={setShowTeamModal} tenant={teamTenant} />
       <TenantProvisioningModal open={showProvisioningModal} onOpenChange={setShowProvisioningModal} tenant={provisioningTenant} onSuccess={loadTenants} />
+
+      <Dialog open={!!contextTarget} onOpenChange={(open) => { if (!open && !switchingContext) setContextTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LogIn className="w-5 h-5 text-indigo-600" aria-hidden="true" /> Otel çalışma alanına geç
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-950">
+              <strong>{contextTarget?.property_name || 'Seçili otel'}</strong> adına işlem yapacaksınız. Süperadmin hesabınız açık kalır ve tüm işlemler denetim kaydına yazılır.
+            </div>
+            <p className="text-xs text-slate-500">
+              Çalışma bağlamı güvenlik için kısa sürelidir. Üst menüdeki “Süperadmin görünümüne dön” düğmesiyle istediğiniz zaman çıkabilirsiniz.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setContextTarget(null)} disabled={switchingContext}>İptal</Button>
+              <Button onClick={enterHotelWorkspace} disabled={switchingContext} data-testid="confirm-enter-context">
+                {switchingContext ? 'Geçiliyor...' : 'Otele Geç'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Plan Change Modal */}
       <Dialog open={showPlanModal} onOpenChange={setShowPlanModal}>
