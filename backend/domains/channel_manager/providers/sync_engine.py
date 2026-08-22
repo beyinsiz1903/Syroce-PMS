@@ -402,8 +402,42 @@ async def run_phase_a6(tenant_id: str) -> int:
 
 
 async def run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
+    from domains.channel_manager.providers.hotelrunner.mapping_bridge import backfill_hotelrunner_mappings
+
+    await backfill_hotelrunner_mappings(tenant_id)
     catchup_imported = 0
     catchup_updated = 0
+
+    # Mappings may have been completed after earlier reservations were parked
+    # for review. Replay those local holds before comparing provider history.
+    from core.import_bridge_service import replay_reviewed_mapping_import
+    from core.import_decision import check_booking_source_exists
+
+    review_rows = await db.imported_reservations.find(
+        {
+            "tenant_id": tenant_id,
+            "provider": "hotelrunner",
+            "import_status": "review_required",
+            "review_reason": {"$in": ["unmapped_room_type", "unmapped_rate_plan"]},
+        },
+        {"_id": 0, "external_reservation_id": 1},
+    ).to_list(500)
+    for review in review_rows:
+        external_id = review.get("external_reservation_id")
+        if not external_id:
+            continue
+        was_durable = await check_booking_source_exists(
+            tenant_id,
+            "hotelrunner",
+            external_id,
+        )
+        replay = await replay_reviewed_mapping_import(
+            tenant_id=tenant_id,
+            provider="hotelrunner",
+            external_reservation_id=external_id,
+        )
+        if not was_durable and replay.get("status") == "durable":
+            catchup_imported += 1
 
     all_page = 1
     all_total_pages = 1

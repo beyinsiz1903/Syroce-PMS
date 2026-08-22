@@ -1,6 +1,4 @@
-import i18n from '@/i18n';
 import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
-import { FixedSizeList } from 'react-window';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -35,6 +33,7 @@ import { useTranslation } from 'react-i18next';
 
 import { parseBookingConflict } from '@/lib/bookingConflict';
 import { getRoomBlockForDate } from './calendar/calendarHelpers';
+import { formatGuestName, roomIsFreeForBooking, roomMatchesBookingType } from './calendar/roomTypeMatching';
 
 const ReservationSidebar = lazy(() => import('@/components/ReservationSidebar'));
 const FolioDetailView = lazy(() => import('@/pages/FolioDetailView'));
@@ -42,7 +41,6 @@ const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal
 const BookingConflictDialog = lazy(() => import('@/components/pms/BookingConflictDialog'));
 
 // ── Unassigned panel constants & virtualized row ──────────────────────────
-const UA_ITEM_H = 152; // px per unassigned booking card
 const UA_BORDER = {
   overdue: 'border-l-red-500',
   today: 'border-l-amber-500',
@@ -66,20 +64,21 @@ const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }
   const urgency = getUnassignedUrgency(booking);
   const borderColor = UA_BORDER[urgency.level] || 'border-l-blue-400';
   const badgeColor = UA_BADGE[urgency.level] || 'bg-blue-100 text-blue-700';
-  const bCheckIn = new Date(booking.check_in);
-  const bCheckOut = new Date(booking.check_out);
-  const matchingRooms = rooms.filter(r =>
-    (r.room_type || '').toLowerCase() === (booking.room_type || '').toLowerCase() &&
-    !bookings.some(ob =>
-      ob.room_id === r.id && ob.id !== booking.id &&
-      ob.status !== 'cancelled' && ob.status !== 'checked_out' && ob.status !== 'no_show' &&
-      new Date(ob.check_in) < bCheckOut && new Date(ob.check_out) > bCheckIn
-    )
-  );
+  const sameTypeRooms = rooms.filter(r => roomMatchesBookingType(r, booking));
+  const matchingRooms = sameTypeRooms.filter(r => roomIsFreeForBooking(r, booking, bookings));
+  const guestCount = Number(booking.adults || 0) + Number(booking.children || 0);
+  const currency = booking.currency || 'TRY';
+  const formattedAmount = new Intl.NumberFormat('tr-TR', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(Number(booking.total_amount || 0));
+  const externalId = booking.external_reservation_id || booking.source?.external_reservation_id;
   return (
     <div style={{ ...style, padding: '6px 16px 0' }}>
       <div
-        className={`bg-white border rounded-lg p-4 hover:shadow-md transition-shadow border-l-4 ${borderColor} ${urgency.level === 'overdue' ? 'ring-1 ring-red-200' : ''}`}
+        className={`bg-white border rounded-lg p-3 hover:shadow-md transition-shadow border-l-4 ${borderColor} ${urgency.level === 'overdue' ? 'ring-1 ring-red-200' : ''}`}
         data-testid={`unassigned-item-${index}`}
       >
         <div className="flex items-start justify-between mb-2">
@@ -92,7 +91,7 @@ const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }
             </div>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-800 truncate" data-testid={`unassigned-guest-${index}`}>
-                {booking.guest_name || 'Bilinmeyen Misafir'}
+                {formatGuestName(booking.guest_name) || 'Bilinmeyen Misafir'}
               </p>
               <p className="text-xs text-gray-400 truncate">{booking.room_type || ''}</p>
             </div>
@@ -101,7 +100,7 @@ const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }
             {urgency.label}
           </span>
         </div>
-        <div className="flex items-center gap-4 text-xs text-gray-500 mt-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 mt-2">
           <div className="flex items-center gap-1">
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
             <span>{checkIn}</span>
@@ -109,9 +108,14 @@ const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }
             <span>{checkOut}</span>
           </div>
           {booking.total_amount > 0 && (
-            <span className="font-medium text-gray-700">{booking.total_amount.toLocaleString(i18n.language)} TL</span>
+            <span className="font-medium text-gray-700">{formattedAmount}</span>
           )}
+          {guestCount > 0 && <span>{guestCount} misafir</span>}
+          {booking.channel && <span className="capitalize">{booking.channel}</span>}
         </div>
+        {externalId && (
+          <p className="mt-1 text-[10px] text-gray-400 truncate" title={externalId}>Rezervasyon: {externalId}</p>
+        )}
         <div className="mt-3 flex items-center gap-2">
           {matchingRooms.length > 0 ? (
             <div className="flex items-center gap-1.5 flex-1">
@@ -129,7 +133,9 @@ const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }
               <span className="text-[10px] text-green-600 font-medium">{matchingRooms.length} {t('cm.pages_ReservationCalendar.musait_873fb')}</span>
             </div>
           ) : (
-            <span className="text-[10px] text-red-500 font-medium">{t('cm.pages_ReservationCalendar.musait_oda_yok')}</span>
+            <span className="text-[10px] text-red-500 font-medium">
+              {sameTypeRooms.length === 0 ? 'Oda tipi eşleşmesi bulunamadı' : 'Bu tarihlerde uygun oda yok'}
+            </span>
           )}
           <button
             type="button"
@@ -1263,7 +1269,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                 )}
               </div>
 
-              {/* Virtualized booking list — only visible cards are rendered */}
+              {/* Natural scrolling prevents the first card from being clipped by
+                  a viewport/header height mismatch and keeps variable metadata visible. */}
               {(() => {
                 if (sorted.length === 0) {
                   return (
@@ -1276,8 +1283,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                     </div>
                   );
                 }
-                const panelHeaderH = allUnassigned.length > 0 ? 228 : 80;
-                const listH = Math.max(300, (typeof window !== 'undefined' ? window.innerHeight : 800) - panelHeaderH);
                 const listItemData = {
                   sorted,
                   rooms,
@@ -1296,15 +1301,16 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                   t,
                 };
                 return (
-                  <FixedSizeList
-                    height={listH}
-                    itemCount={sorted.length}
-                    itemSize={UA_ITEM_H}
-                    itemData={listItemData}
-                    width="100%"
-                  >
-                    {UnassignedCard}
-                  </FixedSizeList>
+                  <div className="flex-1 min-h-0 overflow-y-auto pb-24" data-testid="unassigned-list">
+                    {sorted.map((booking, index) => (
+                      <UnassignedCard
+                        key={booking.id || booking.external_reservation_id || index}
+                        data={listItemData}
+                        index={index}
+                        style={{}}
+                      />
+                    ))}
+                  </div>
                 );
               })()}
             </div>

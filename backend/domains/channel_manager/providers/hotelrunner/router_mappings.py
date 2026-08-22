@@ -17,6 +17,7 @@ from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v96 DW
 
+from .mapping_bridge import mirror_hotelrunner_mapping, remove_mirrored_mapping
 from .router_schemas import HRRoomMapping
 
 router = APIRouter()
@@ -42,6 +43,7 @@ async def create_room_mapping(
             {
                 "$set": {
                     "pms_room_type": payload.pms_room_type,
+                    "pms_room_type_name": payload.pms_room_type,
                     "hr_room_name": payload.hr_room_name,
                     "sync_availability": payload.sync_availability,
                     "sync_price": payload.sync_price,
@@ -51,12 +53,15 @@ async def create_room_mapping(
                 }
             },
         )
+        updated = {**existing, **payload.model_dump(), "pms_room_type_name": payload.pms_room_type}
+        await mirror_hotelrunner_mapping(current_user.tenant_id, updated)
         return {"message": "Oda eslemesi guncellendi", "mapping_id": existing.get("id")}
 
     mapping = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
         "pms_room_type": payload.pms_room_type,
+        "pms_room_type_name": payload.pms_room_type,
         "hr_inv_code": payload.hr_inv_code,
         "hr_rate_code": payload.hr_rate_code,
         "hr_room_name": payload.hr_room_name,
@@ -68,6 +73,7 @@ async def create_room_mapping(
     }
 
     await db.hotelrunner_room_mappings.insert_one(mapping)
+    await mirror_hotelrunner_mapping(current_user.tenant_id, mapping)
     mapping.pop("_id", None)
     return {"message": "Oda eslemesi olusturuldu", "mapping": mapping}
 
@@ -95,6 +101,7 @@ async def bulk_create_room_mappings(
                 {
                     "$set": {
                         "pms_room_type": m.pms_room_type,
+                        "pms_room_type_name": m.pms_room_type,
                         "hr_room_name": m.hr_room_name,
                         "sync_availability": m.sync_availability,
                         "sync_price": m.sync_price,
@@ -104,12 +111,17 @@ async def bulk_create_room_mappings(
                     }
                 },
             )
+            await mirror_hotelrunner_mapping(
+                current_user.tenant_id,
+                {**existing, **m.model_dump(), "pms_room_type_name": m.pms_room_type},
+            )
             updated += 1
         else:
             doc = {
                 "id": str(uuid.uuid4()),
                 "tenant_id": current_user.tenant_id,
                 "pms_room_type": m.pms_room_type,
+                "pms_room_type_name": m.pms_room_type,
                 "hr_inv_code": m.hr_inv_code,
                 "hr_rate_code": m.hr_rate_code,
                 "hr_room_name": m.hr_room_name,
@@ -120,6 +132,7 @@ async def bulk_create_room_mappings(
                 "created_by": current_user.name,
             }
             await db.hotelrunner_room_mappings.insert_one(doc)
+            await mirror_hotelrunner_mapping(current_user.tenant_id, doc)
             created += 1
 
     return {"message": f"{created} yeni, {updated} guncellenen esleme", "created": created, "updated": updated}
@@ -142,12 +155,14 @@ async def delete_room_mapping(
     _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Delete a room mapping."""
-    result = await db.hotelrunner_room_mappings.delete_one(
+    mapping = await db.hotelrunner_room_mappings.find_one(
         {
             "id": mapping_id,
             "tenant_id": current_user.tenant_id,
         }
     )
-    if result.deleted_count == 0:
+    if not mapping:
         raise HTTPException(status_code=404, detail="Esleme bulunamadi")
+    await db.hotelrunner_room_mappings.delete_one({"_id": mapping["_id"]})
+    await remove_mirrored_mapping(current_user.tenant_id, mapping)
     return {"message": "Esleme silindi"}
