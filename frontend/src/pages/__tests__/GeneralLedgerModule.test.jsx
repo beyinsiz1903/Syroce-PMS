@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  collectIntegrationAccountCodes,
+  formatAccountMapping,
+  getJournalValidationError,
   GL_ENDPOINTS,
   mergeAccountBalances,
   normalizeTrialBalance,
+  parseAccountMapping,
   toJournalPayload,
 } from '@/pages/GeneralLedgerModule';
 
@@ -73,6 +77,17 @@ describe('GeneralLedgerModule persistent GL contract', () => {
     });
   });
 
+  it('keeps the journal save action disabled until the form is valid', () => {
+    expect(getJournalValidationError({ description: '', lines: [
+      { account_code: '', debit: 0, credit: 0 },
+      { account_code: '', debit: 0, credit: 0 },
+    ] })).toBe('Fiş toplamı 0 olamaz.');
+    expect(getJournalValidationError({ description: 'Dengeli fiş', lines: [
+      { account_code: '100', debit: 100, credit: 0 },
+      { account_code: '600', debit: 0, credit: 100 },
+    ] })).toBe('');
+  });
+
   it('adds validated foreign-currency metadata when present', () => {
     const payload = toJournalPayload({
       date: '2026-08-13',
@@ -124,5 +139,28 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       { code: '100', name: 'Kasa', balance: 125 },
       { code: '600', name: 'Satışlar', balance: -125 },
     ]);
+  });
+
+  it('round-trips Nilvera code and rate account mappings', () => {
+    const mapping = parseAccountMapping('20=391.20, 10:391.10\n1=391.01', 'KDV');
+    expect(mapping).toEqual({ 20: '391.20', 10: '391.10', 1: '391.01' });
+    expect(formatAccountMapping(mapping)).toBe('1=391.01, 10=391.10, 20=391.20');
+  });
+
+  it('rejects malformed Nilvera account mappings before saving', () => {
+    expect(() => parseAccountMapping('20-391.20', 'KDV')).toThrow('kod=hesap');
+  });
+
+  it('lists every direct and granular integration account once', () => {
+    expect(collectIntegrationAccountCodes(
+      {
+        incoming_purchase_account_code: '153',
+        incoming_vat_account_code: '191',
+        outgoing_vat_account_code: '391',
+        outgoing_vat_accounts_by_rate: { 20: '391.20' },
+      },
+      { expense_account_code: '770', input_vat_account_code: '191' },
+      { accumulated_depreciation_account_code: '257' },
+    )).toEqual(['153', '191', '257', '391', '391.20', '770']);
   });
 });

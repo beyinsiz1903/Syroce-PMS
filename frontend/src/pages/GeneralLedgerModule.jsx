@@ -71,6 +71,68 @@ const DEFAULT_FIXED_ASSET_GL_MAPPING = {
   accumulated_depreciation_account_code: '257',
 };
 
+const EMPTY_NILVERA_MAPPING_TEXT = {
+  incoming_other_tax_accounts_by_code: '',
+  incoming_deduction_accounts_by_code: '',
+  outgoing_vat_accounts_by_rate: '',
+  outgoing_accommodation_tax_accounts_by_rate: '',
+};
+
+export const formatAccountMapping = (mapping = {}) => Object.entries(mapping)
+  .sort(([left], [right]) => left.localeCompare(right, 'tr'))
+  .map(([key, account]) => `${key}=${account}`)
+  .join(', ');
+
+export const parseAccountMapping = (value, label = 'Hesap eşlemesi') => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return {};
+
+  return normalized.split(/[;,\n]+/).reduce((mapping, token) => {
+    const pair = token.trim().split(/\s*(?:=|:)\s*/);
+    if (pair.length !== 2 || !pair[0] || !pair[1]) {
+      throw new Error(`${label}: eşlemeleri kod=hesap biçiminde girin.`);
+    }
+    if (pair[0].length > 40 || pair[1].length > 40) {
+      throw new Error(`${label}: kod ve hesap en fazla 40 karakter olabilir.`);
+    }
+    mapping[pair[0]] = pair[1];
+    return mapping;
+  }, {});
+};
+
+export const collectIntegrationAccountCodes = (nilvera = {}, ap = {}, fixedAsset = {}) => {
+  const directKeys = [
+    'incoming_purchase_account_code',
+    'incoming_vat_account_code',
+    'incoming_payable_account_code',
+    'incoming_other_tax_account_code',
+    'incoming_deduction_account_code',
+    'outgoing_revenue_account_code',
+    'outgoing_receivable_account_code',
+    'outgoing_discount_account_code',
+    'outgoing_vat_account_code',
+    'outgoing_accommodation_tax_account_code',
+  ];
+  const mappedKeys = [
+    'incoming_other_tax_accounts_by_code',
+    'incoming_deduction_accounts_by_code',
+    'outgoing_vat_accounts_by_rate',
+    'outgoing_accommodation_tax_accounts_by_rate',
+  ];
+  const candidates = [
+    ...directKeys.map((key) => nilvera[key]),
+    ...mappedKeys.flatMap((key) => Object.values(nilvera[key] || {})),
+    ap.expense_account_code,
+    ap.input_vat_account_code,
+    ap.payable_account_code,
+    ap.bank_account_code,
+    ap.cash_account_code,
+    fixedAsset.depreciation_expense_account_code,
+    fixedAsset.accumulated_depreciation_account_code,
+  ];
+  return [...new Set(candidates.map((value) => String(value || '').trim()).filter(Boolean))].sort();
+};
+
 export const toJournalPayload = (journal) => ({
   date: journal.date,
   memo: journal.description.trim(),
@@ -89,6 +151,23 @@ export const toJournalPayload = (journal) => ({
     } : {}),
   })),
 });
+
+export const getJournalValidationError = (journal) => {
+  const lines = journal.lines || [];
+  const totalDebit = lines.reduce((sum, line) => sum + (Number(line.debit) || 0), 0);
+  const totalCredit = lines.reduce((sum, line) => sum + (Number(line.credit) || 0), 0);
+  if (Math.abs(totalDebit - totalCredit) > 0.01) return `Borç (${totalDebit}) ve Alacak (${totalCredit}) toplamları eşit olmalıdır.`;
+  if (totalDebit <= 0) return 'Fiş toplamı 0 olamaz.';
+  if (!String(journal.description || '').trim()) return 'Fiş açıklaması zorunludur.';
+  if (lines.some((line) => !String(line.account_code || '').trim())) return 'Her satır için hesap kodu zorunludur.';
+  if (lines.some((line) => (Number(line.debit) > 0) === (Number(line.credit) > 0))) {
+    return 'Her satırda yalnızca borç veya alacak tutarı olmalıdır.';
+  }
+  if (lines.some((line) => line.currency && (!Number(line.foreign_amount) || !Number(line.exchange_rate)))) {
+    return 'Dövizli satırlarda yabancı tutar ve kur zorunludur.';
+  }
+  return '';
+};
 
 const newRequestKey = () => {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -164,6 +243,7 @@ const GeneralLedgerModule = () => {
   const [operationalBridge, setOperationalBridge] = useState(null);
   const [operationalBusy, setOperationalBusy] = useState(false);
   const [nilveraGL, setNilveraGL] = useState({ settings: DEFAULT_NILVERA_GL_SETTINGS, queue: [], counts: {} });
+  const [nilveraMappingText, setNilveraMappingText] = useState(EMPTY_NILVERA_MAPPING_TEXT);
   const [apGLMapping, setApGLMapping] = useState(DEFAULT_AP_GL_MAPPING);
   const [fixedAssetGLMapping, setFixedAssetGLMapping] = useState(DEFAULT_FIXED_ASSET_GL_MAPPING);
   const [integrationBusy, setIntegrationBusy] = useState('');
@@ -446,10 +526,17 @@ const GeneralLedgerModule = () => {
         axios.get(GL_ENDPOINTS.apGLMapping),
         axios.get(GL_ENDPOINTS.fixedAssetGLMapping),
       ]);
+      const settings = { ...DEFAULT_NILVERA_GL_SETTINGS, ...(nilveraSettingsRes.data?.settings || {}) };
       setNilveraGL({
-        settings: { ...DEFAULT_NILVERA_GL_SETTINGS, ...(nilveraSettingsRes.data?.settings || {}) },
+        settings,
         queue: nilveraQueueRes.data?.items || [],
         counts: nilveraQueueRes.data?.counts || {},
+      });
+      setNilveraMappingText({
+        incoming_other_tax_accounts_by_code: formatAccountMapping(settings.incoming_other_tax_accounts_by_code),
+        incoming_deduction_accounts_by_code: formatAccountMapping(settings.incoming_deduction_accounts_by_code),
+        outgoing_vat_accounts_by_rate: formatAccountMapping(settings.outgoing_vat_accounts_by_rate),
+        outgoing_accommodation_tax_accounts_by_rate: formatAccountMapping(settings.outgoing_accommodation_tax_accounts_by_rate),
       });
       setApGLMapping({ ...DEFAULT_AP_GL_MAPPING, ...(apRes.data?.mapping || {}) });
       setFixedAssetGLMapping({ ...DEFAULT_FIXED_ASSET_GL_MAPPING, ...(fixedAssetRes.data?.mapping || {}) });
@@ -464,6 +551,10 @@ const GeneralLedgerModule = () => {
       const settings = nilveraGL.settings;
       const response = await axios.put(GL_ENDPOINTS.nilveraSettings, {
         ...settings,
+        incoming_other_tax_accounts_by_code: parseAccountMapping(nilveraMappingText.incoming_other_tax_accounts_by_code, 'Diğer vergi kodu eşlemesi'),
+        incoming_deduction_accounts_by_code: parseAccountMapping(nilveraMappingText.incoming_deduction_accounts_by_code, 'Tevkifat/kesinti kodu eşlemesi'),
+        outgoing_vat_accounts_by_rate: parseAccountMapping(nilveraMappingText.outgoing_vat_accounts_by_rate, 'KDV oranı eşlemesi'),
+        outgoing_accommodation_tax_accounts_by_rate: parseAccountMapping(nilveraMappingText.outgoing_accommodation_tax_accounts_by_rate, 'Konaklama vergisi oranı eşlemesi'),
         incoming_other_tax_account_code: settings.incoming_other_tax_account_code?.trim() || null,
         incoming_deduction_account_code: settings.incoming_deduction_account_code?.trim() || null,
         outgoing_discount_account_code: settings.outgoing_discount_account_code?.trim() || null,
@@ -474,7 +565,7 @@ const GeneralLedgerModule = () => {
       toast.success('Nilvera muhasebe eşlemesi kaydedildi.');
       await fetchAccountingIntegrations();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Nilvera muhasebe eşlemesi kaydedilemedi.');
+      toast.error(error.response?.data?.detail || error.message || 'Nilvera muhasebe eşlemesi kaydedilemedi.');
     } finally {
       setIntegrationBusy('');
     }
@@ -599,28 +690,9 @@ const GeneralLedgerModule = () => {
   };
 
   const handleSubmitJournal = async () => {
-    // Calculate total debit and credit
-    const tDebit = newJournal.lines.reduce((acc, l) => acc + (parseFloat(l.debit) || 0), 0);
-    const tCredit = newJournal.lines.reduce((acc, l) => acc + (parseFloat(l.credit) || 0), 0);
-    
-    if (Math.abs(tDebit - tCredit) > 0.01) {
-      toast.error(`Borç (${tDebit}) ve Alacak (${tCredit}) toplamları eşit olmalıdır!`);
-      return;
-    }
-    if (tDebit === 0) {
-      toast.error('Fiş toplamı 0 olamaz.');
-      return;
-    }
-    if (!newJournal.description) {
-      toast.error('Fiş açıklaması zorunludur.');
-      return;
-    }
-    if (newJournal.lines.some((line) => !line.account_code.trim())) {
-      toast.error('Her satır için hesap kodu zorunludur.');
-      return;
-    }
-    if (newJournal.lines.some((line) => line.currency && (!Number(line.foreign_amount) || !Number(line.exchange_rate)))) {
-      toast.error('Dövizli satırlarda yabancı tutar ve kur zorunludur.');
+    const validationError = getJournalValidationError(newJournal);
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
 
@@ -664,29 +736,38 @@ const GeneralLedgerModule = () => {
   const yearEndReady = periods.length === 12
     && periods.filter((period) => Number(period.period_no) < 12).every((period) => period.status === 'closed')
     && periods.find((period) => Number(period.period_no) === 12)?.status === 'open';
+  const knownAccountCodes = new Set(accounts.filter((account) => account.active !== false).map((account) => account.code));
+  const missingIntegrationAccountCodes = collectIntegrationAccountCodes(
+    nilveraGL.settings,
+    apGLMapping,
+    fixedAssetGLMapping,
+  ).filter((code) => !knownAccountCodes.has(code));
+  const journalValidationError = getJournalValidationError(newJournal);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto overflow-x-hidden">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Genel Muhasebe</h1>
         <p className="text-gray-500 mt-1">Tek Düzen Hesap Planı, Yevmiye Kayıtları ve Mizan</p>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="mb-4">
-          <TabsTrigger value="accounts">Hesap Planı (TDHP)</TabsTrigger>
-          <TabsTrigger value="journals">Yevmiye Fişleri</TabsTrigger>
-          <TabsTrigger value="trial-balance">Mizan</TabsTrigger>
-          <TabsTrigger value="periods">Mali Dönemler</TabsTrigger>
-          <TabsTrigger value="statements">Mali Tablolar</TabsTrigger>
-          <TabsTrigger value="workspace">Alt Defterler</TabsTrigger>
-          <TabsTrigger value="integrations">Muhasebe Entegrasyonları</TabsTrigger>
-        </TabsList>
+        <div className="-mx-1 overflow-x-auto px-1 pb-1" data-testid="gl-tab-scroll">
+          <TabsList className="mb-3 min-w-max justify-start">
+            <TabsTrigger value="accounts">Hesap Planı (TDHP)</TabsTrigger>
+            <TabsTrigger value="journals">Yevmiye Fişleri</TabsTrigger>
+            <TabsTrigger value="trial-balance">Mizan</TabsTrigger>
+            <TabsTrigger value="periods">Mali Dönemler</TabsTrigger>
+            <TabsTrigger value="statements">Mali Tablolar</TabsTrigger>
+            <TabsTrigger value="workspace">Alt Defterler</TabsTrigger>
+            <TabsTrigger value="integrations">Muhasebe Entegrasyonları</TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* TDHP Accounts */}
         <TabsContent value="accounts">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-3">
+            <CardHeader className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
               <div>
                 <CardTitle>Tek Düzen Hesap Planı</CardTitle>
                 <p className="text-xs text-slate-500 mt-1">Standart plan mevcut özel hesapları değiştirmeden eksik TDHP ve parasal hesap işaretlerini tamamlar.</p>
@@ -696,7 +777,8 @@ const GeneralLedgerModule = () => {
               </Button>
             </CardHeader>
             <CardContent>
-              <table className="w-full text-sm text-left">
+              <div className="overflow-x-auto">
+              <table className="min-w-[680px] w-full text-sm text-left">
                 <thead className="bg-gray-50 text-gray-600">
                   <tr>
                     <th className="p-3 font-semibold rounded-tl-lg">Hesap Kodu</th>
@@ -730,6 +812,7 @@ const GeneralLedgerModule = () => {
                   )}
                 </tbody>
               </table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -745,7 +828,7 @@ const GeneralLedgerModule = () => {
                   <CardTitle>Yeni Fiş Girişi</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid gap-4 sm:grid-cols-3">
                     <div>
                       <label className="text-sm font-medium mb-1 block">Tarih</label>
                       <Input type="date" value={newJournal.date} onChange={e => setNewJournal({...newJournal, date: e.target.value})} />
@@ -764,8 +847,8 @@ const GeneralLedgerModule = () => {
                     </div>
                   </div>
 
-                  <div className="border rounded-md overflow-hidden mt-4">
-                    <table className="w-full text-sm">
+                  <div className="border rounded-md overflow-x-auto mt-4">
+                    <table className="min-w-[780px] w-full text-sm">
                       <thead className="bg-gray-100">
                         <tr>
                           <th className="p-2 text-left w-32">Hesap Kodu</th>
@@ -799,10 +882,11 @@ const GeneralLedgerModule = () => {
                       </tfoot>
                     </table>
                   </div>
-                  <div className="flex justify-between mt-4">
+                  <div className="flex flex-wrap justify-between gap-3 mt-4">
                     <Button variant="outline" onClick={handleAddJournalLine}><Plus className="w-4 h-4 mr-2" /> Satır Ekle</Button>
-                    <Button onClick={handleSubmitJournal} disabled={journalSaving} className="bg-blue-600 hover:bg-blue-700 text-white"><Save className="w-4 h-4 mr-2" /> {journalSaving ? 'Kaydediliyor...' : 'Fişi Kaydet'}</Button>
+                    <Button onClick={handleSubmitJournal} disabled={journalSaving || !!journalValidationError} title={journalValidationError || undefined} className="bg-blue-600 hover:bg-blue-700 text-white"><Save className="w-4 h-4 mr-2" /> {journalSaving ? 'Kaydediliyor...' : 'Fişi Kaydet'}</Button>
                   </div>
+                  {journalValidationError && <p className="text-xs text-slate-500" role="status">{journalValidationError}</p>}
                 </CardContent>
               </Card>
             </div>
@@ -854,12 +938,12 @@ const GeneralLedgerModule = () => {
 
         <TabsContent value="periods">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-3">
+            <CardHeader className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
               <div>
                 <CardTitle className="flex items-center gap-2"><CalendarRange className="w-5 h-5" /> Mali Dönem Yönetimi</CardTitle>
                 <p className="text-sm text-gray-500 mt-1">Kapalı döneme yeni fiş veya entegrasyon kaydı gönderilemez.</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Input className="w-28" type="number" min="2000" max="2100" value={periodYear} onChange={(e) => setPeriodYear(Number(e.target.value))} />
                 <Button variant="outline" onClick={initializePeriods} disabled={periodBusy === 'initialize'}>
                   {periodBusy === 'initialize' ? 'Hazırlanıyor...' : '12 Dönemi Hazırla'}
@@ -930,7 +1014,8 @@ const GeneralLedgerModule = () => {
               <Button variant="outline" size="sm" onClick={() => window.print()}><FileText className="w-4 h-4 mr-2" />Yazdır</Button>
             </CardHeader>
             <CardContent>
-              <table className="w-full text-sm text-left">
+              <div className="overflow-x-auto">
+              <table className="min-w-[760px] w-full text-sm text-left">
                 <thead className="bg-gray-800 text-white">
                   <tr>
                     <th className="p-3 font-semibold rounded-tl-lg">Hesap</th>
@@ -971,6 +1056,7 @@ const GeneralLedgerModule = () => {
                   </tfoot>
                 )}
               </table>
+              </div>
               {trialBalance.totals && !trialBalance.totals.balanced && (
                 <div className="mt-4 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg flex items-start gap-2">
                   <AlertCircle className="w-5 h-5 mt-0.5" />
@@ -1153,6 +1239,20 @@ const GeneralLedgerModule = () => {
               <CardTitle className="flex items-center gap-2"><Cable className="w-5 h-5 text-blue-600" /> Nilvera → Genel Muhasebe</CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
+              {missingIntegrationAccountCodes.length > 0 && (
+                <div className="flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between" role="alert">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p>
+                      Eşlemelerde kullanılan şu hesaplar aktif hesap planında yok: <strong>{missingIntegrationAccountCodes.join(', ')}</strong>.
+                      Otomatik muhasebeleştirmeyi açmadan önce standart planı tamamlayın; özel alt hesapları ayrıca oluşturun.
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" className="shrink-0" onClick={initializeAccounts} disabled={initializingAccounts}>
+                    {initializingAccounts ? 'Tamamlanıyor...' : 'Standart Planı Tamamla'}
+                  </Button>
+                </div>
+              )}
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
                 İnceleme modunda belgeler fiş oluşturulmadan kuyruğa alınır. Otomatik mod yalnızca yerel muhasebe fişi üretir; Nilvera’ya veya GİB’e yazma işlemi yapmaz.
               </div>
@@ -1178,6 +1278,26 @@ const GeneralLedgerModule = () => {
                     <Input value={nilveraGL.settings.incoming_other_tax_account_code || ''} onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, incoming_other_tax_account_code: event.target.value } }))} placeholder="Diğer Vergi (opsiyonel)" />
                     <Input value={nilveraGL.settings.incoming_deduction_account_code || ''} onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, incoming_deduction_account_code: event.target.value } }))} placeholder="Tevkifat/Kesinti (360)" />
                   </div>
+                  <div className="grid gap-3 border-t pt-3 sm:grid-cols-2">
+                    <label className="space-y-1 text-xs text-slate-600">
+                      <span>Vergi koduna göre hesap</span>
+                      <Input
+                        aria-label="Nilvera alış diğer vergi kodu hesap eşlemeleri"
+                        value={nilveraMappingText.incoming_other_tax_accounts_by_code}
+                        onChange={(event) => setNilveraMappingText((current) => ({ ...current, incoming_other_tax_accounts_by_code: event.target.value }))}
+                        placeholder="0015=360.15, 0073=360.73"
+                      />
+                    </label>
+                    <label className="space-y-1 text-xs text-slate-600">
+                      <span>Tevkifat/kesinti koduna göre hesap</span>
+                      <Input
+                        aria-label="Nilvera alış tevkifat kodu hesap eşlemeleri"
+                        value={nilveraMappingText.incoming_deduction_accounts_by_code}
+                        onChange={(event) => setNilveraMappingText((current) => ({ ...current, incoming_deduction_accounts_by_code: event.target.value }))}
+                        placeholder="601=360.601, 603=360.603"
+                      />
+                    </label>
+                  </div>
                 </div>
                 <div className="rounded-lg border p-4 space-y-3">
                   <div className="flex items-center justify-between gap-3">
@@ -1199,6 +1319,26 @@ const GeneralLedgerModule = () => {
                     <Input value={nilveraGL.settings.outgoing_discount_account_code || ''} onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, outgoing_discount_account_code: event.target.value } }))} placeholder="İskonto (611)" />
                     <Input value={nilveraGL.settings.outgoing_vat_account_code || ''} onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, outgoing_vat_account_code: event.target.value } }))} placeholder="Hesaplanan KDV (391)" />
                     <Input value={nilveraGL.settings.outgoing_accommodation_tax_account_code || ''} onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, outgoing_accommodation_tax_account_code: event.target.value } }))} placeholder="Konaklama Vergisi (360)" />
+                  </div>
+                  <div className="grid gap-3 border-t pt-3 sm:grid-cols-2">
+                    <label className="space-y-1 text-xs text-slate-600">
+                      <span>KDV oranına göre hesap</span>
+                      <Input
+                        aria-label="Nilvera satış KDV oranı hesap eşlemeleri"
+                        value={nilveraMappingText.outgoing_vat_accounts_by_rate}
+                        onChange={(event) => setNilveraMappingText((current) => ({ ...current, outgoing_vat_accounts_by_rate: event.target.value }))}
+                        placeholder="10=391.10, 20=391.20"
+                      />
+                    </label>
+                    <label className="space-y-1 text-xs text-slate-600">
+                      <span>Konaklama vergisi oranına göre hesap</span>
+                      <Input
+                        aria-label="Nilvera konaklama vergisi oranı hesap eşlemeleri"
+                        value={nilveraMappingText.outgoing_accommodation_tax_accounts_by_rate}
+                        onChange={(event) => setNilveraMappingText((current) => ({ ...current, outgoing_accommodation_tax_accounts_by_rate: event.target.value }))}
+                        placeholder="2=360.02"
+                      />
+                    </label>
                   </div>
                 </div>
               </div>
