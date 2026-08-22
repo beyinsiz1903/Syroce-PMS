@@ -7,7 +7,8 @@ import {
   Building2, Home, TreePalm, Bed, Car, Building, Gem, Tent,
   Briefcase, Sun, Snowflake, Droplets, Star, Crown, ChevronRight,
   ChevronLeft, Check, Users, DoorOpen, Sparkles, ArrowRight,
-  RotateCcw,
+  RotateCcw, CalendarDays, UserRound, Plug, WalletCards,
+  SlidersHorizontal, Search, ChevronDown, Info,
 } from 'lucide-react';
 import { MODULE_GROUPS, isModuleIncludedInPlan } from './tenantConstants';
 import { useTranslation } from 'react-i18next';
@@ -23,6 +24,49 @@ const TIER_LABELS = {
   professional: { label: 'Professional', color: 'bg-sky-50 text-sky-700 border-sky-200' },
   enterprise: { label: 'Enterprise', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
 };
+
+// The creation wizard should expose commercial choices, not every internal
+// feature flag. Core plan modules, navigation sub-tabs, report entries and
+// platform/security switches are derived from the selected plan and remain
+// manageable from the tenant detail screen after creation.
+const OPTIONAL_MODULE_GROUP_IDS = new Set([
+  'enterprise',
+  'ai',
+  'mobile',
+  'operations',
+  'addons',
+]);
+
+const PLAN_HIGHLIGHTS = [
+  {
+    id: 'front-office',
+    title: 'Ön Büro & Rezervasyon',
+    description: 'Takvim, oda blokajı ve konaklama akışı',
+    icon: CalendarDays,
+    keys: ['pms', 'reservation_calendar'],
+  },
+  {
+    id: 'guest-operations',
+    title: 'Misafir & Operasyon',
+    description: 'Misafir profili ve kat hizmetleri',
+    icon: UserRound,
+    keys: ['guests', 'housekeeping'],
+  },
+  {
+    id: 'channels',
+    title: 'Satış & Kanallar',
+    description: 'Kanal yöneticisi ve doğrudan satış',
+    icon: Plug,
+    keys: ['channel_manager_lite', 'channel_manager', 'booking_engine'],
+  },
+  {
+    id: 'finance',
+    title: 'Finans & Raporlama',
+    description: 'Folyo, fatura, gün sonu ve raporlar',
+    icon: WalletCards,
+    keys: ['folio_basic', 'folio_management', 'invoices_basic', 'invoices', 'basic_reporting', 'reports'],
+  },
+];
 
 
 const PROPERTY_CATEGORIES = [
@@ -87,6 +131,10 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
   const [propertyTypes, setPropertyTypes] = useState([]);
   const [selectedType, setSelectedType] = useState(null);
   const [modulesMap, setModulesMap] = useState({});
+  const [advancedModulesOpen, setAdvancedModulesOpen] = useState(false);
+  const [moduleSearch, setModuleSearch] = useState('');
+  const [showSelectedModulesOnly, setShowSelectedModulesOnly] = useState(false);
+  const [expandedModuleGroups, setExpandedModuleGroups] = useState([]);
   // Kanal yoneticisi altyapisi secimi (super_admin). '' = otomatik tespit.
   const [channelProvider, setChannelProvider] = useState('');
   const [chains, setChains] = useState([]);
@@ -137,6 +185,10 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
     // baseline (otherwise stale defaults persist into step 3).
     setModulesMap(buildDefaultModules(pt, tier));
     setModulesTouched(false);
+    setAdvancedModulesOpen(false);
+    setModuleSearch('');
+    setShowSelectedModulesOnly(false);
+    setExpandedModuleGroups([]);
   };
 
   // When operator changes the tier in step 2, refresh module defaults so
@@ -227,6 +279,10 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
     setError(null);
     setModulesMap({});
     setModulesTouched(false);
+    setAdvancedModulesOpen(false);
+    setModuleSearch('');
+    setShowSelectedModulesOnly(false);
+    setExpandedModuleGroups([]);
     setForm({
       property_name: '', property_type: '', email: '', password: '', name: '', phone: '',
       address: '', location: '', total_rooms: '', description: '', subscription_tier: 'basic', subscription_days: 30,
@@ -237,10 +293,36 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
     return propertyTypes.filter(pt => categoryTypes.includes(pt.key));
   };
 
-  // Enabled count for the step-3 summary line.
-  const enabledCount = useMemo(() => {
-    return Object.values(modulesMap).filter(Boolean).length;
+  const optionalModuleGroups = useMemo(() => {
+    const search = moduleSearch.trim().toLocaleLowerCase('tr-TR');
+    return MODULE_GROUPS
+      .filter((group) => OPTIONAL_MODULE_GROUP_IDS.has(group.id))
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => {
+          if (showSelectedModulesOnly && !modulesMap[item.key]) return false;
+          if (!search) return true;
+          return `${item.label} ${item.hint || ''}`.toLocaleLowerCase('tr-TR').includes(search);
+        }),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [moduleSearch, modulesMap, showSelectedModulesOnly]);
+
+  const optionalEnabledCount = useMemo(() => {
+    return MODULE_GROUPS
+      .filter((group) => OPTIONAL_MODULE_GROUP_IDS.has(group.id))
+      .flatMap((group) => group.items)
+      .filter((item) => modulesMap[item.key])
+      .length;
   }, [modulesMap]);
+
+  const toggleExpandedModuleGroup = (groupId) => {
+    setExpandedModuleGroups((current) => (
+      current.includes(groupId)
+        ? current.filter((id) => id !== groupId)
+        : [...current, groupId]
+    ));
+  };
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) resetForm(); }}>
@@ -261,7 +343,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
             {[
               { n: 1, label: 'Tesis Tipi' },
               { n: 2, label: 'Tesis Bilgileri' },
-              { n: 3, label: 'Modüller' },
+              { n: 3, label: 'Kurulum Özeti' },
             ].map((s, i, arr) => (
               <React.Fragment key={s.n}>
                 <div className={`flex items-center gap-1.5 text-xs font-medium ${step === s.n ? 'text-indigo-600' : (step > s.n ? 'text-slate-600' : 'text-slate-400')}`}>
@@ -478,78 +560,56 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
 
           {step === 3 && (
             <div className="space-y-4">
-              <div className="flex items-start justify-between gap-3 bg-sky-50 border border-sky-200 rounded-lg p-3">
-                <div className="flex items-start gap-2 min-w-0">
-                  <Sparkles size={16} className="text-sky-600 mt-0.5 shrink-0" />
-                  <div className="text-xs text-sky-800">
-                    <div className="font-semibold">{selectedType?.name_tr} {t('cm.pages_admin_CreateTenantModal.icin_onerilen_moduller_isaretli')}</div>
-                    <div className="text-sky-600 mt-0.5">{t('cm.pages_admin_CreateTenantModal.istediginiz_modulleri_tek_tek_ac_kapat')} {enabledCount} {t('cm.pages_admin_CreateTenantModal.modul_secili')}</div>
-                  </div>
-                </div>
-                <Button variant="outline" size="sm" onClick={resetModulesToDefaults} className="shrink-0 gap-1">
-                  <RotateCcw size={12} /> {t('cm.pages_admin_CreateTenantModal.varsayilan')}
-                </Button>
-              </div>
-
-              <div className="space-y-4">
-                {MODULE_GROUPS.map((group) => {
-                  const allOn = group.items.every(it => modulesMap[it.key]);
-                  const allOff = group.items.every(it => !modulesMap[it.key]);
-                  return (
-                    <div key={group.id} className="border border-slate-200 rounded-lg p-3">
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <div className="min-w-0">
-                          <h4 className="text-sm font-semibold text-slate-800">{group.title}</h4>
-                          {group.description && <p className="text-[11px] text-slate-500 mt-0.5">{group.description}</p>}
-                        </div>
-                        <div className="flex gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => setGroupAll(group, true)}
-                            disabled={allOn}
-                            className="text-[11px] px-2 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            Hepsi
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setGroupAll(group, false)}
-                            disabled={allOff}
-                            className="text-[11px] px-2 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            {t('cm.pages_admin_CreateTenantModal.hicbiri')}
-                          </button>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                        {group.items.map((item) => {
-                          const checked = !!modulesMap[item.key];
-                          return (
-                            <label
-                              key={item.key}
-                              className={`flex items-start gap-2 p-2 rounded border cursor-pointer transition-colors ${
-                                checked
-                                  ? 'border-indigo-300 bg-indigo-50/60'
-                                  : 'border-slate-200 bg-white hover:bg-slate-50'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggleModule(item.key)}
-                                className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                              />
-                              <div className="min-w-0 flex-1">
-                                <div className="text-xs font-medium text-slate-800 leading-tight">{item.label}</div>
-                                {item.hint && <div className="text-[10px] text-slate-500 mt-0.5">{item.hint}</div>}
-                              </div>
-                            </label>
-                          );
-                        })}
-                      </div>
+              <div data-testid="tenant-module-summary" className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="rounded-lg bg-indigo-600 p-2 text-white shrink-0">
+                      <Sparkles size={18} />
                     </div>
-                  );
-                })}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-semibold text-slate-900">Önerilen kurulum hazır</h3>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${TIER_LABELS[form.subscription_tier]?.color || TIER_LABELS.basic.color}`}>
+                          {TIER_LABELS[form.subscription_tier]?.label || 'Basic'} plan
+                        </span>
+                        {modulesTouched && (
+                          <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                            Özelleştirildi
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-600">
+                        {selectedType?.name_tr} için gerekli çekirdek özellikler, menüler ve raporlar planınıza göre otomatik yapılandırılacak.
+                      </p>
+                    </div>
+                  </div>
+                  {modulesTouched && (
+                    <Button variant="outline" size="sm" onClick={resetModulesToDefaults} className="shrink-0 gap-1 bg-white">
+                      <RotateCcw size={12} /> Önerilene dön
+                    </Button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
+                  {PLAN_HIGHLIGHTS.map((highlight) => {
+                    const HighlightIcon = highlight.icon;
+                    const active = highlight.keys.some((key) => modulesMap[key]);
+                    return (
+                      <div key={highlight.id} className={`flex items-start gap-2 rounded-lg border p-2.5 ${active ? 'border-emerald-200 bg-white' : 'border-slate-200 bg-slate-50'}`}>
+                        <div className={`rounded-md p-1.5 ${active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                          <HighlightIcon size={14} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
+                            {highlight.title}
+                            {active && <Check size={12} className="text-emerald-600" />}
+                          </div>
+                          <p className="mt-0.5 text-[10px] text-slate-500">{highlight.description}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               {(modulesMap.channel_manager || modulesMap.channel_manager_lite) && (
@@ -570,6 +630,139 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                   </select>
                 </div>
               )}
+
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <button
+                  type="button"
+                  data-testid="tenant-module-customize-toggle"
+                  aria-expanded={advancedModulesOpen}
+                  onClick={() => setAdvancedModulesOpen((value) => !value)}
+                  className="flex w-full items-center justify-between gap-3 p-4 text-left hover:bg-slate-50"
+                >
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="rounded-lg bg-slate-100 p-2 text-slate-600 shrink-0">
+                      <SlidersHorizontal size={16} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-slate-900">İsteğe bağlı özellikler</div>
+                      <div className="mt-0.5 text-[11px] text-slate-500">
+                        Kurumsal, yapay zekâ, mobil, entegrasyon ve ek ücretli ürünleri özelleştirin.
+                        {optionalEnabledCount > 0 && ` ${optionalEnabledCount} özellik seçili.`}
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronDown size={18} className={`shrink-0 text-slate-400 transition-transform ${advancedModulesOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {advancedModulesOpen && (
+                  <div data-testid="tenant-module-customization" className="border-t border-slate-200 p-4 space-y-3">
+                    <div className="flex items-start gap-2 rounded-lg border border-sky-100 bg-sky-50 p-3 text-[11px] text-sky-800">
+                      <Info size={14} className="mt-0.5 shrink-0" />
+                      <p>
+                        Paket kapsamındaki çekirdek modüller, alt menüler, rapor listeleri ve platform güvenlik ayarları otomatik yönetilir. Tüm ayrıntıları tesisi oluşturduktan sonra <span className="font-semibold">Otel & Modül Yönetimi</span> ekranından değiştirebilirsiniz.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <label className="relative flex-1">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          value={moduleSearch}
+                          onChange={(event) => setModuleSearch(event.target.value)}
+                          placeholder="İsteğe bağlı özellik ara..."
+                          className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-xs focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        aria-pressed={showSelectedModulesOnly}
+                        onClick={() => setShowSelectedModulesOnly((value) => !value)}
+                        className={`rounded-lg border px-3 py-2 text-xs font-medium ${showSelectedModulesOnly ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        Yalnızca seçilenler
+                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      {optionalModuleGroups.map((group) => {
+                        const sourceGroup = MODULE_GROUPS.find((candidate) => candidate.id === group.id) || group;
+                        const selectedCount = sourceGroup.items.filter((item) => modulesMap[item.key]).length;
+                        const allOn = sourceGroup.items.every((item) => modulesMap[item.key]);
+                        const allOff = sourceGroup.items.every((item) => !modulesMap[item.key]);
+                        const expanded = moduleSearch.trim().length > 0 || expandedModuleGroups.includes(group.id);
+                        return (
+                          <div key={group.id} className="overflow-hidden rounded-lg border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => toggleExpandedModuleGroup(group.id)}
+                              className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-slate-50"
+                            >
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold text-slate-800">{group.title}</div>
+                                <div className="mt-0.5 text-[10px] text-slate-500">{selectedCount} / {sourceGroup.items.length} seçili</div>
+                              </div>
+                              <ChevronDown size={15} className={`shrink-0 text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {expanded && (
+                              <div className="border-t border-slate-200 bg-slate-50/50 p-3">
+                                <div className="mb-2 flex items-start justify-between gap-2">
+                                  {group.description ? <p className="text-[10px] text-slate-500">{group.description}</p> : <span />}
+                                  <div className="flex shrink-0 gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setGroupAll(sourceGroup, true)}
+                                      disabled={allOn}
+                                      className="rounded border border-slate-200 bg-white px-2 py-1 text-[10px] text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                      Hepsi
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setGroupAll(sourceGroup, false)}
+                                      disabled={allOff}
+                                      className="rounded border border-slate-200 bg-white px-2 py-1 text-[10px] text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                      Hiçbiri
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                  {group.items.map((item) => {
+                                    const checked = !!modulesMap[item.key];
+                                    return (
+                                      <label
+                                        key={item.key}
+                                        className={`flex cursor-pointer items-start gap-2 rounded border p-2 transition-colors ${checked ? 'border-indigo-300 bg-indigo-50/60' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={() => toggleModule(item.key)}
+                                          className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                          <div className="text-xs font-medium leading-tight text-slate-800">{item.label}</div>
+                                          {item.hint && <div className="mt-0.5 text-[10px] text-slate-500">{item.hint}</div>}
+                                        </div>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {optionalModuleGroups.length === 0 && (
+                        <div className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-xs text-slate-500">
+                          Aramanızla eşleşen isteğe bağlı özellik bulunamadı.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {error && <div className="p-2 rounded bg-red-50 text-red-700 text-sm">{error}</div>}
 
