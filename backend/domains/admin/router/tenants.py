@@ -17,7 +17,6 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from common.request_context import get_client_ip, get_user_agent
-
 from core.database import db
 from core.helpers import (
     get_tenant_modules,
