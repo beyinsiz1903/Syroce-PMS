@@ -33,7 +33,12 @@ import { useTranslation } from 'react-i18next';
 
 import { parseBookingConflict } from '@/lib/bookingConflict';
 import { getRoomBlockForDate } from './calendar/calendarHelpers';
-import { formatGuestName, roomIsFreeForBooking, roomMatchesBookingType } from './calendar/roomTypeMatching';
+import {
+  formatGuestName,
+  roomIsFreeForBooking,
+  roomMatchesBookingType,
+  roomMoveRequiresReason,
+} from './calendar/roomTypeMatching';
 
 const ReservationSidebar = lazy(() => import('@/components/ReservationSidebar'));
 const FolioDetailView = lazy(() => import('@/pages/FolioDetailView'));
@@ -681,6 +686,38 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
   };
 
+  const executeRoomMove = async (data, reason) => {
+    if (!data?.booking) return false;
+
+    try {
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-move-${Date.now()}-${Math.random()}`;
+      await axios.put(`/pms/bookings/${data.booking.id}`, {
+        room_id: data.newRoomId,
+        check_in: data.newCheckIn,
+        check_out: data.newCheckOut
+      }, { headers: { 'Idempotency-Key': idempotencyKey } });
+
+      await axios.post('/pms/room-move-history', {
+        booking_id: data.booking.id,
+        old_room: data.oldRoom, new_room: data.newRoom,
+        old_check_in: data.oldCheckIn, new_check_in: data.newCheckIn,
+        reason, moved_by: user?.name || user?.email || 'System',
+        timestamp: new Date().toISOString()
+      }).catch(() => { /* history logging best-effort, silent on failure */ });
+
+      toast.success(`Rezervasyon ${data.newRoom} numarali odaya tasindi!`);
+      setShowMoveReasonDialog(false);
+      setMoveReason('');
+      setMoveData(null);
+      loadCalendarData();
+      return true;
+    } catch (error) {
+      toast.error('Rezervasyon taşınamadı');
+      console.error('Move booking error:', error);
+      return false;
+    }
+  };
+
   const handleDrop = async (e, newRoomId, newDate) => {
     e.preventDefault();
     setDragOverCell(null);
@@ -714,45 +751,28 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     const oldRoom = rooms.find(r => r.id === oldRoomId);
     const newRoom = rooms.find(r => r.id === newRoomId);
 
-    setMoveData({
+    const nextMoveData = {
       booking: draggingBooking,
       oldRoom: oldRoom?.room_number, newRoom: newRoom?.room_number,
       oldCheckIn: draggingBooking.check_in,
       newCheckIn: newCheckIn.toISOString().split('T')[0],
       newCheckOut: newCheckOut.toISOString().split('T')[0],
       newRoomId
-    });
-    setShowMoveReasonDialog(true);
+    };
     setDraggingBooking(null);
+
+    if (!roomMoveRequiresReason(oldRoom, newRoom)) {
+      await executeRoomMove(nextMoveData, 'Aynı oda tipi içinde taşıma');
+      return;
+    }
+
+    setMoveData(nextMoveData);
+    setShowMoveReasonDialog(true);
   };
 
   const handleConfirmMove = async () => {
     if (!moveReason.trim()) { toast.error('Please provide a reason for the room move'); return; }
-    try {
-      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-move-${Date.now()}-${Math.random()}`;
-      await axios.put(`/pms/bookings/${moveData.booking.id}`, {
-        room_id: moveData.newRoomId,
-        check_in: moveData.newCheckIn,
-        check_out: moveData.newCheckOut
-      }, { headers: { 'Idempotency-Key': idempotencyKey } });
-
-      await axios.post('/pms/room-move-history', {
-        booking_id: moveData.booking.id,
-        old_room: moveData.oldRoom, new_room: moveData.newRoom,
-        old_check_in: moveData.oldCheckIn, new_check_in: moveData.newCheckIn,
-        reason: moveReason, moved_by: user.name,
-        timestamp: new Date().toISOString()
-      }).catch(() => { /* history logging best-effort, silent on failure */ });
-
-      toast.success(`Rezervasyon ${moveData.newRoom} numarali odaya tasindi!`);
-      setShowMoveReasonDialog(false);
-      setMoveReason('');
-      setMoveData(null);
-      loadCalendarData();
-    } catch (error) {
-      toast.error('Rezervasyon taşınamadı');
-      console.error('Move booking error:', error);
-    }
+    await executeRoomMove(moveData, moveReason.trim());
   };
 
   // ─── Find Room ─────────────────────────────────────────────

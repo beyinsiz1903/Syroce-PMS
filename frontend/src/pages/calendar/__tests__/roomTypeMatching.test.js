@@ -5,6 +5,7 @@ import {
   formatGuestName,
   normalizeRoomType,
   roomIsFreeForBooking,
+  roomMoveRequiresReason,
   roomMatchesBookingType,
 } from '../roomTypeMatching';
 
@@ -45,5 +46,23 @@ describe('room type matching', () => {
     expect(roomIsFreeForBooking(room, booking, [
       { id: 'old', room_id: 'room-1', check_in: '2026-08-23', check_out: '2026-08-25', status: 'cancelled' },
     ])).toBe(true);
+  });
+
+  it('aynı oda tipi içindeki taşımada gerekçe istemez', () => {
+    const sourceRoom = { room_type_id: 'type-1', room_type: 'Standart Oda' };
+    const targetRoom = { room_type_id: 'type-1', room_type: 'standard oda' };
+
+    expect(roomMoveRequiresReason(sourceRoom, targetRoom)).toBe(false);
+  });
+
+  it('oda tipi değiştiğinde veya doğrulanamadığında gerekçe ister', () => {
+    expect(roomMoveRequiresReason(
+      { room_type_id: 'type-1', room_type: 'Standart Oda' },
+      { room_type_id: 'type-2', room_type: 'Deluxe Oda' },
+    )).toBe(true);
+    expect(roomMoveRequiresReason(
+      { room_number: '201' },
+      { room_number: '202' },
+    )).toBe(true);
   });
 });

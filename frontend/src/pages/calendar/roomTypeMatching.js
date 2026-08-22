@@ -43,6 +43,19 @@ export const roomMatchesBookingType = (room, booking) => {
   return bookingTypes.some(type => roomTypes.includes(type));
 };
 
+export const roomMoveRequiresReason = (sourceRoom, targetRoom) => {
+  const sourceTypes = [sourceRoom?.room_type_id, sourceRoom?.room_type]
+    .map(normalizeRoomType)
+    .filter(Boolean);
+  const targetTypes = [targetRoom?.room_type_id, targetRoom?.room_type]
+    .map(normalizeRoomType)
+    .filter(Boolean);
+
+  if (sourceTypes.length === 0 || targetTypes.length === 0) return true;
+
+  return !sourceTypes.some(type => targetTypes.includes(type));
+};
+
 export const roomIsFreeForBooking = (room, booking, bookings) => {
   const checkIn = new Date(booking?.check_in);
   const checkOut = new Date(booking?.check_out);
