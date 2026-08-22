@@ -1,3 +1,4 @@
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -26,6 +27,8 @@ from models.schemas.incoming_invoice import (
     IncomingInvoiceProviderStatus,
 )
 from models.schemas.invoice_sync import InvoiceProvider
+
+logger = logging.getLogger("core.integrations.incoming_invoice_sync_service")
 
 
 @dataclass(frozen=True)
@@ -158,6 +161,18 @@ class IncomingInvoiceSyncService:
             unknown += int(invoice.provider_status == IncomingInvoiceProviderStatus.UNKNOWN)
             pending += int(invoice.provider_status == IncomingInvoiceProviderStatus.WAITING)
             provider_errors += int(invoice.provider_status == IncomingInvoiceProviderStatus.ERROR)
+            try:
+                from core.integrations.nilvera_gl_automation import handle_incoming_invoice_synced
+
+                await handle_incoming_invoice_synced(tenant_id, invoice.id)
+            except Exception as exc:
+                # Provider read/snapshot persistence must not be rolled back by
+                # a closed GL period or an incomplete account mapping.  The GL
+                # automation layer persists its own blocked review item.
+                logger.warning(
+                    "Incoming invoice GL candidate registration failed error_type=%s",
+                    type(exc).__name__,
+                )
 
         return IncomingInvoiceSyncResult(
             invoices_seen=len(summaries),
@@ -206,6 +221,7 @@ class IncomingInvoiceSyncService:
             received_at=now,
             payable_amount=summary.payable_amount,
             currency=detail.currency,
+            exchange_rate=xml_invoice.exchange_rate,
             created_at=now,
             updated_at=now,
         )
@@ -261,6 +277,11 @@ class IncomingInvoiceSyncService:
             raise NilveraValidationError("Incoming invoice sources have different currencies")
         if any(line.currency != detail.currency for line in xml_invoice.lines):
             raise NilveraValidationError("Incoming invoice line currency does not match the invoice")
+        if xml_invoice.exchange_rate is not None:
+            if xml_invoice.exchange_rate_source_currency != detail.currency:
+                raise NilveraValidationError("Incoming invoice exchange-rate source currency does not match the invoice")
+            if xml_invoice.exchange_rate_target_currency not in {"TRY", "TRL"}:
+                raise NilveraValidationError("Incoming invoice exchange-rate target currency must be TRY")
         if detail.number_of_items != len(xml_invoice.lines):
             raise NilveraValidationError("Incoming invoice line count does not match the detail")
 

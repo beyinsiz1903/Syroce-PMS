@@ -4,10 +4,11 @@
 
 Sistem artık çift taraflı kayıt, dönem kilidi, bağlı ters kayıt, tekrar güvenli
 posting, minor-unit para aritmetiği, bilanço ve gelir tablosu ile kapanış kontrollü
-bir **GL çekirdeği** sunuyor. AP, bütçe ve sabit kıymet özetleri de aynı Genel
-Muhasebe çalışma alanından erişilebilir. Bu çekirdek operasyonel muhasebe için
-işlevseldir; e-Defter/berat, döviz değerleme ve hazırlayan-onaylayan yaşam döngüsü
-tamamlanmadan mevzuat uçtan uca tamamlandı kabul edilmemelidir.
+bir **GL çekirdeği** sunuyor. AP faturası/ödemesi, sabit kıymet amortismanı,
+PMS/POS ve Nilvera belgeleri otel bazlı, opt-in hesap eşlemeleriyle aynı çekirdeğe
+bağlıdır. Kur değerleme, karşılaştırmalı rapor, zincir eliminasyonu ve doğrulanmış
+e-Defter kaynak paketi hazırdır. Resmî XBRL-GL/berat, mali mühür ve GİB gönderimi
+haricî uyumluluk/onay sınırında kalır.
 
 ## Mevcut ve doğrulanan kapsam
 
@@ -16,12 +17,12 @@ tamamlanmadan mevzuat uçtan uca tamamlandı kabul edilmemelidir.
 | Tek Düzen hesap planı | Var | `backend/domains/accounting/gl_router.py` — hesap listeleme, oluşturma, ilk kurulum ve güncelleme |
 | Çift taraflı yevmiye | Var | `shared_kernel/gl_posting.py`, `/api/gl/journal` |
 | Mizan | Var | `/api/gl/trial-balance` ve `GeneralLedgerModule.jsx` |
-| Nilvera alış/satış faturası → GL | Var | `backend/core/integrations/invoice_gl_bridge.py`, GL entegrasyon uçları |
+| Nilvera alış/satış faturası → GL | Hazır | Otel bazlı eşleme, review/automatic kuyruk, vergi/tevkifat, alış dövizi, satış iptal ters kaydı |
 | Mali dönem ve kilit | Hazır | PR #360; sıralı kapatma, kontrollü yeniden açma ve audit |
 | Bağlı ters kayıt | Hazır | PR #361; özgün fiş değişmeden karşı fiş üretimi |
-| Satıcı faturaları / ödemeler / yaşlandırma | Backend + çalışma alanı özeti hazır | `backend/domains/accounting/ap_router.py`, `GeneralLedgerModule.jsx` |
+| Satıcı faturaları / ödemeler / yaşlandırma | GL bağlantısı hazır | Opt-in hesap eşlemesi, idempotent fatura/ödeme fişi, void ters kaydı ve retry |
 | Bütçe / gerçekleşen karşılaştırması | Backend + çalışma alanı özeti hazır | `backend/domains/accounting/budget_router.py`, `GeneralLedgerModule.jsx` |
-| Sabit kıymet / amortisman | Backend + çalışma alanı özeti hazır | `backend/domains/accounting/fixed_asset_router.py`, `GeneralLedgerModule.jsx` |
+| Sabit kıymet / amortisman | GL bağlantısı hazır | Kıymet/dönem bazlı idempotent amortisman fişi ve hata sonrası retry |
 | Gelir tablosu / bilanço | Hazır | `/api/gl/statements/*`, minor-unit hesaplama ve Genel Muhasebe ekranı |
 | Bordro → GL | Backend var | `backend/domains/accounting/payroll_gl_router.py`; İK ekranından tetikleniyor |
 | Banka mutabakatı | Ayrı ekran var | `/app/bank-reconciliation` |
@@ -50,19 +51,17 @@ engeli değil, kullanım kolaylığı kapsamıdır.
 
 ### P2 — Mevzuat ve operasyon olgunluğu
 
-1. Büyük defter/yevmiye defteri resmi çıktıları ve berat/e-Defter süreci yok.
-2. Kur farkı, yeniden değerleme, tahakkuk/gelecek aylara ait gider ve otomatik
-   kapanış fişleri yok.
-3. Çoklu para birimli GL kayıt politikası ve fonksiyonel/işlem para birimi
-   bakiyeleri görünür değil.
-4. Onay matrisi (hazırlayan/onaylayan) ve fiş taslak-onay-posting yaşam döngüsü yok.
+1. Resmî XBRL-GL dosyaları, berat, mali mühür/e-imza ve GİB gönderimi yok; mevcut
+   çıktı yalnızca bütünlük manifestli mali müşavir/uyumlu yazılım kaynak paketidir.
+2. Genel fiş hazırlayan-onaylayan ayrılığı ve taslak/onay/posting yaşam döngüsü yok.
+3. Nilvera dışındaki yabancı para alt defterlerinde kur kaynağı/eşlemesi ürün
+   bazında ayrıca tanımlanmalıdır; GL satırları işlem para birimini korur.
 
 ## Kalan teslim sırası
 
-1. Yevmiye filtre/detay/dışa aktarma ve hesap planı yönetim ekranları.
-2. Hazırlayan-onaylayan ayrılığı ve fiş taslak/onay/posting yaşam döngüsü.
-3. Çoklu para birimi, kur farkı, tahakkuk ve otomatik kapanış fişleri.
-4. Mali müşavir ve mevzuat doğrulamasıyla e-Defter/resmi çıktı paketi.
+1. Hazırlayan-onaylayan ayrılığı ve fiş taslak/onay/posting yaşam döngüsü.
+2. Mali müşavir doğrulaması, uyumlu yazılım/onay, mali mühür ve resmî e-Defter
+   berat entegrasyonu.
 
 Bu denetim yalnızca kod ve route kapsamını değerlendirir; provider write veya
 production işlemi yapılmamıştır.

@@ -55,6 +55,7 @@ class IncomingInvoice(BaseModel):
 
     payable_amount: Decimal | None = None
     currency: str | None = None
+    exchange_rate: Decimal | None = None
 
     created_at: datetime
     updated_at: datetime

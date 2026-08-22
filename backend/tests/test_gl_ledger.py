@@ -283,9 +283,9 @@ async def test_initialize_chart_of_accounts_is_tenant_scoped_and_idempotent(_pat
     first = await gl.initialize_chart_of_accounts(current_user=_user("finance"))
     second = await gl.initialize_chart_of_accounts(current_user=_user("finance"))
 
-    assert first == {"created": 22, "total": 22, "payroll_mapping_created": True}
-    assert second == {"created": 0, "total": 22, "payroll_mapping_created": False}
-    assert len(_patch.gl_accounts.docs) == 22
+    assert first == {"created": 24, "total": 24, "payroll_mapping_created": True}
+    assert second == {"created": 0, "total": 24, "payroll_mapping_created": False}
+    assert len(_patch.gl_accounts.docs) == 24
     assert next(row for row in _patch.gl_accounts.docs if row["code"] == "257")["normal_balance"] == "credit"
     assert next(row for row in _patch.gl_accounts.docs if row["code"] == "591")["normal_balance"] == "debit"
     assert next(row for row in _patch.gl_accounts.docs if row["code"] == "102")["monetary"] is True

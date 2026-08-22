@@ -100,6 +100,7 @@ from core.security import hash_password
 from domains.admin.schemas import (  # noqa: E402
     AdminCreateChainRequest,
     AdminCreateTeamMemberRequest,
+    AdminNilveraGLProvisioningRequest,
     AdminNilveraProvisioningRequest,
     AdminProviderCredentialsRequest,
     AdminUpdateTenantInfoRequest,
@@ -352,6 +353,7 @@ async def get_tenant_provisioning(
     """Hedef otele ait zincir ve entegrasyon durumunu, sırları açmadan döndürür."""
     from core import provider_credential_vault as vault
     from core.integrations.nilvera.provisioner import get_nilvera_tenant_config
+    from core.integrations.nilvera_gl_automation import get_nilvera_gl_settings
 
     sys_db = get_system_db()
     tenant_doc = await _require_target_tenant(sys_db, tenant_id)
@@ -387,6 +389,7 @@ async def get_tenant_provisioning(
         "chain": chain,
         "providers": provider_summaries,
         "nilvera": await get_nilvera_tenant_config(tenant_id),
+        "nilvera_accounting": await get_nilvera_gl_settings(tenant_id),
     }
 
 
@@ -543,6 +546,39 @@ async def save_target_nilvera_config(
         db=sys_db,
     )
     return {"success": True, "nilvera": summary, "connection_tested": False}
+
+
+@router.put("/admin/tenants/{tenant_id}/integrations/nilvera-accounting")
+async def save_target_nilvera_accounting_config(
+    tenant_id: str,
+    payload: AdminNilveraGLProvisioningRequest,
+    current_user: User = Depends(require_super_admin),
+):
+    """Hedef otelin GL eşlemesini kaydeder; provider/GİB çağrısı yapmaz."""
+    from core.audit import log_audit_event
+    from core.integrations.nilvera_gl_automation import save_nilvera_gl_settings
+
+    sys_db = get_system_db()
+    await _require_target_tenant(sys_db, tenant_id)
+    try:
+        settings = await save_nilvera_gl_settings(
+            tenant_id,
+            payload.model_dump(),
+            actor=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=current_user.id,
+        action="nilvera_gl_provisioning_updated",
+        entity_type="gl_nilvera_settings",
+        entity_id=tenant_id,
+        details="Nilvera muhasebe eşlemesi kaydedildi; dış servis çağrısı yapılmadı",
+        after_value={"incoming_mode": settings["incoming_mode"], "outgoing_mode": settings["outgoing_mode"]},
+        db=sys_db,
+    )
+    return {"success": True, "settings": settings, "provider_write": False}
 
 
 # ── GET /admin/property-types ──

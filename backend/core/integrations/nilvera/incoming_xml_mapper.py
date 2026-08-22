@@ -32,6 +32,9 @@ class IncomingInvoiceXml:
     supplier_tax_number: str
     supplier_name: str
     lines: tuple[IncomingInvoiceXmlLine, ...]
+    exchange_rate: Decimal | None = None
+    exchange_rate_source_currency: str | None = None
+    exchange_rate_target_currency: str | None = None
 
 
 class NilveraIncomingXmlMapper:
@@ -155,12 +158,33 @@ class NilveraIncomingXmlMapper:
             raise NilveraValidationError("Incoming invoice XML has no invoice lines")
 
         lines = tuple(cls._map_line(element, index) for index, element in enumerate(line_elements, start=1))
+        exchange_path = "cac:PricingExchangeRate"
+        exchange_rate = cls._optional_decimal(root, f"{exchange_path}/cbc:CalculationRate", "pricing exchange rate")
+        if exchange_rate is None:
+            exchange_path = "cac:PaymentExchangeRate"
+            exchange_rate = cls._optional_decimal(root, f"{exchange_path}/cbc:CalculationRate", "payment exchange rate")
+        exchange_rate_source_currency = None
+        exchange_rate_target_currency = None
+        if exchange_rate is not None:
+            exchange_rate_source_currency = cls._text(
+                root,
+                f"{exchange_path}/cbc:SourceCurrencyCode",
+                "exchange-rate source currency",
+            )
+            exchange_rate_target_currency = cls._text(
+                root,
+                f"{exchange_path}/cbc:TargetCurrencyCode",
+                "exchange-rate target currency",
+            )
         return IncomingInvoiceXml(
             provider_uuid=provider_uuid,
             invoice_number=invoice_number,
             supplier_tax_number=supplier_tax_number,
             supplier_name=supplier_name,
             lines=lines,
+            exchange_rate=exchange_rate,
+            exchange_rate_source_currency=exchange_rate_source_currency,
+            exchange_rate_target_currency=exchange_rate_target_currency,
         )
 
     @classmethod

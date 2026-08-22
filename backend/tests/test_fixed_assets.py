@@ -69,6 +69,7 @@ class _FakeDB:
     def __init__(self):
         self.fixed_assets = _Coll()
         self.depreciation_entries = _Coll()
+        self.fixed_asset_gl_mapping = _Coll()
 
 
 TENANT = "tenant-A"
@@ -144,6 +145,32 @@ async def test_run_depreciation_creates_entry_and_recalcs(_patch):
     got = await fa.get_asset(a["id"], current_user=_user("finance"))
     assert got["asset"]["accumulated_depreciation"] == 1000.0
     assert got["asset"]["book_value"] == 11000.0
+
+
+async def test_run_depreciation_posts_each_asset_to_gl_when_enabled(_patch, monkeypatch):
+    _patch.fixed_asset_gl_mapping.docs.append({
+        "tenant_id": TENANT,
+        "enabled": True,
+        "depreciation_expense_account_code": "770",
+        "accumulated_depreciation_account_code": "257",
+    })
+    await _mk_asset(acquisition_cost=12000.0, useful_life_months=12)
+    captured = []
+
+    async def _post(_db, tenant_id, **kwargs):
+        captured.append(kwargs)
+        return {"id": "je-dep", "tenant_id": tenant_id, **kwargs}
+
+    monkeypatch.setattr(fa, "post_journal_entry", _post)
+    out = await fa.run_depreciation(period="2026-01", current_user=_user("finance"))
+    assert out["gl"]["status"] == "posted"
+    assert out["gl"]["posted"] == 1
+    assert captured[0]["source"] == "fixed_asset_depreciation"
+    assert captured[0]["lines"] == [
+        {"account_code": "770", "debit": 1000.0, "credit": 0, "memo": "Dönem amortisman gideri"},
+        {"account_code": "257", "debit": 0, "credit": 1000.0, "memo": "Birikmiş amortisman"},
+    ]
+    assert _patch.depreciation_entries.docs[0]["gl_status"] == "posted"
 
 
 async def test_run_depreciation_idempotent(_patch):

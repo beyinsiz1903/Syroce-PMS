@@ -67,6 +67,7 @@ class IncomingInvoiceRepository:
         "issue_date_timezone_assumed",
         "payable_amount",
         "currency",
+        "exchange_rate",
     )
     _LINE_MUTABLE_FIELDS = (
         "provider_line_id",

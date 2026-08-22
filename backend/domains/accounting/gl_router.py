@@ -32,6 +32,12 @@ from core.integrations.invoice_gl_bridge import (
     get_incoming_invoice_gl_link,
     post_incoming_invoice_to_gl,
 )
+from core.integrations.nilvera_gl_automation import (
+    get_nilvera_gl_settings,
+    list_nilvera_gl_queue,
+    process_nilvera_gl_queue_item,
+    save_nilvera_gl_settings,
+)
 from core.integrations.operational_gl_bridge import (
     DEFAULT_MAPPING,
     OperationalGLBridgeError,
@@ -70,6 +76,7 @@ _DEFAULT_CHART_OF_ACCOUNTS = (
     ("120", "Alıcılar", "asset"),
     ("150", "İlk Madde ve Malzeme", "asset"),
     ("153", "Ticari Mallar", "asset"),
+    ("191", "İndirilecek KDV", "asset"),
     ("257", "Birikmiş Amortismanlar", "asset", "credit"),
     ("320", "Satıcılar", "liability"),
     ("335", "Personele Borçlar", "liability"),
@@ -81,6 +88,7 @@ _DEFAULT_CHART_OF_ACCOUNTS = (
     ("590", "Dönem Net Kârı", "equity"),
     ("591", "Dönem Net Zararı", "equity", "debit"),
     ("600", "Yurtiçi Satışlar (Oda/F&B Geliri)", "revenue"),
+    ("611", "Satış İskontoları", "revenue", "debit"),
     ("646", "Kambiyo Kârları", "revenue"),
     ("656", "Kambiyo Zararları", "expense"),
     ("690", "Dönem Kârı veya Zararı", "equity"),
@@ -739,6 +747,10 @@ class NilveraIncomingGLPostIn(BaseModel):
     purchase_account_code: str = Field(..., description="GL account for expense/asset")
     vat_account_code: str = Field(..., description="GL account for deductible VAT")
     payable_account_code: str = Field(..., description="GL account for vendor payable")
+    other_tax_account_code: str | None = Field(None, description="Fallback GL account for additive purchase taxes")
+    deduction_account_code: str | None = Field(None, description="Fallback GL account for deductions/withholding")
+    other_tax_accounts_by_code: dict[str, str] = Field(default_factory=dict)
+    deduction_accounts_by_code: dict[str, str] = Field(default_factory=dict)
 
 
 class NilveraOutgoingGLPostIn(BaseModel):
@@ -751,6 +763,25 @@ class NilveraOutgoingGLPostIn(BaseModel):
 
     vat_accounts_by_rate: dict[str, str] = Field(default_factory=dict, description="e.g. {'10': '391.10', '20': '391.20'}")
     accommodation_tax_accounts_by_rate: dict[str, str] = Field(default_factory=dict, description="e.g. {'1': '360.01', '2': '360.02'}")
+
+
+class NilveraGLSettingsIn(BaseModel):
+    incoming_mode: Literal["disabled", "review", "automatic"] = "review"
+    outgoing_mode: Literal["disabled", "review", "automatic"] = "review"
+    incoming_purchase_account_code: str = Field("153", min_length=1, max_length=40)
+    incoming_vat_account_code: str = Field("191", min_length=1, max_length=40)
+    incoming_payable_account_code: str = Field("320", min_length=1, max_length=40)
+    incoming_other_tax_account_code: str | None = Field(None, max_length=40)
+    incoming_deduction_account_code: str | None = Field(None, max_length=40)
+    incoming_other_tax_accounts_by_code: dict[str, str] = Field(default_factory=dict)
+    incoming_deduction_accounts_by_code: dict[str, str] = Field(default_factory=dict)
+    outgoing_revenue_account_code: str = Field("600", min_length=1, max_length=40)
+    outgoing_receivable_account_code: str = Field("120", min_length=1, max_length=40)
+    outgoing_discount_account_code: str | None = Field("611", max_length=40)
+    outgoing_vat_account_code: str | None = Field("391", max_length=40)
+    outgoing_accommodation_tax_account_code: str | None = Field("360", max_length=40)
+    outgoing_vat_accounts_by_rate: dict[str, str] = Field(default_factory=dict)
+    outgoing_accommodation_tax_accounts_by_rate: dict[str, str] = Field(default_factory=dict)
 
 
 @router.get("/journal")
@@ -1175,6 +1206,77 @@ async def reverse_journal(
 # ─────────────────────────────────────────────────────────────────────
 # Nilvera incoming invoice ↔ GL bridge
 # ─────────────────────────────────────────────────────────────────────
+@router.get("/integrations/nilvera/settings")
+async def get_nilvera_accounting_settings(
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _READ_ROLES)
+    return {"settings": await get_nilvera_gl_settings(_tenant_of(current_user))}
+
+
+@router.put("/integrations/nilvera/settings")
+async def update_nilvera_accounting_settings(
+    payload: NilveraGLSettingsIn,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    before = await get_nilvera_gl_settings(tenant_id)
+    try:
+        settings = await save_nilvera_gl_settings(
+            tenant_id,
+            payload.model_dump(),
+            actor=_actor_id(current_user),
+        )
+    except InvoiceGLBridgeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=_actor_id(current_user),
+        action="gl_nilvera_mapping_updated",
+        entity_type="gl_nilvera_settings",
+        entity_id=tenant_id,
+        details="Nilvera muhasebe eşlemesi ve otomasyon modu güncellendi",
+        before_value=before,
+        after_value=settings,
+        db=db,
+    )
+    return {"settings": settings}
+
+
+@router.get("/integrations/nilvera/queue")
+async def get_nilvera_accounting_queue(
+    status: Literal["pending", "processing", "posted", "blocked", "reversed", "not_applicable"] | None = Query(None),
+    limit: int = Query(200, ge=1, le=1000),
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _READ_ROLES)
+    tenant_id = _tenant_of(current_user)
+    items = await list_nilvera_gl_queue(tenant_id, status=status, limit=limit)
+    counts: dict[str, int] = {}
+    for item in items:
+        key = item.get("status") or "unknown"
+        counts[key] = counts.get(key, 0) + 1
+    return {"items": items, "counts": counts}
+
+
+@router.post("/integrations/nilvera/queue/{item_id}/post")
+async def post_nilvera_accounting_queue_item(
+    item_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _GL_ROLES)
+    try:
+        item = await process_nilvera_gl_queue_item(
+            _tenant_of(current_user),
+            item_id,
+            actor=_actor_id(current_user),
+        )
+    except InvoiceGLBridgeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"item": item}
+
+
 @router.post("/integrations/nilvera/incoming/{invoice_id}/post")
 async def post_nilvera_incoming_invoice_to_gl(
     invoice_id: str,
@@ -1190,6 +1292,10 @@ async def post_nilvera_incoming_invoice_to_gl(
             purchase_account_code=payload.purchase_account_code,
             vat_account_code=payload.vat_account_code,
             payable_account_code=payload.payable_account_code,
+            other_tax_account_code=payload.other_tax_account_code,
+            deduction_account_code=payload.deduction_account_code,
+            other_tax_accounts_by_code=payload.other_tax_accounts_by_code,
+            deduction_accounts_by_code=payload.deduction_accounts_by_code,
             actor=_actor_id(current_user),
         )
     except InvoiceGLBridgeError as exc:

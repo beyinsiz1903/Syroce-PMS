@@ -68,6 +68,7 @@ def test_admin_provisioning_routes_are_registered_without_provider_test_route():
     assert ("/api/admin/tenants/{tenant_id}/provisioning", "PATCH") in routes
     assert ("/api/admin/tenants/{tenant_id}/integrations/{provider}/credentials", "POST") in routes
     assert ("/api/admin/tenants/{tenant_id}/integrations/nilvera", "PUT") in routes
+    assert ("/api/admin/tenants/{tenant_id}/integrations/nilvera-accounting", "PUT") in routes
     assert all("test-connection" not in path and "validate" not in path for path, _ in routes)
 
 
