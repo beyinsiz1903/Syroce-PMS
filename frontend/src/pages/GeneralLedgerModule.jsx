@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useCurrency } from '@/context/CurrencyContext';
 import { Plus, Save, FileText, AlertCircle, CalendarRange, LockKeyhole, Unlock, RotateCcw, Landmark, TrendingUp, PackageOpen, Cable, ReceiptText } from 'lucide-react';
 
@@ -224,6 +225,8 @@ const GeneralLedgerModule = () => {
   const [periodYear, setPeriodYear] = useState(new Date().getFullYear());
   const [periodBusy, setPeriodBusy] = useState('');
   const [yearEndStatus, setYearEndStatus] = useState(null);
+  const [periodActionDialog, setPeriodActionDialog] = useState(null);
+  const [periodActionReason, setPeriodActionReason] = useState('');
   const [journalSaving, setJournalSaving] = useState(false);
   const [reversalBusy, setReversalBusy] = useState('');
   const reversalKeys = useRef({});
@@ -625,24 +628,22 @@ const GeneralLedgerModule = () => {
     }
   };
 
-  const changePeriodStatus = async (period, action) => {
-    const reason = window.prompt(action === 'close' ? 'Dönem kapatma gerekçesi:' : 'Yeniden açma gerekçesi:');
-    if (!reason || reason.trim().length < 3) return;
+  const changePeriodStatus = async (period, action, reason) => {
     setPeriodBusy(`${period.id}:${action}`);
     try {
       await axios.post(`${GL_ENDPOINTS.periods}/${period.id}/${action}`, { reason: reason.trim() });
       toast.success(action === 'close' ? 'Mali dönem kapatıldı.' : 'Mali dönem yeniden açıldı.');
       await fetchPeriods();
+      return true;
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Mali dönem güncellenemedi.');
+      return false;
     } finally {
       setPeriodBusy('');
     }
   };
 
-  const closeFiscalYear = async () => {
-    const reason = window.prompt(`${periodYear} mali yıl kapanış gerekçesi:`);
-    if (!reason || reason.trim().length < 3) return;
+  const closeFiscalYear = async (reason) => {
     setPeriodBusy('year-end');
     try {
       const res = await axios.post(GL_ENDPOINTS.closeYear, {
@@ -652,10 +653,32 @@ const GeneralLedgerModule = () => {
       const entryNo = res.data?.closure?.closing_entry_no;
       toast.success(`${periodYear} kapatıldı; ${periodYear + 1} açılış bakiyeleri devredildi${entryNo ? ` (${entryNo})` : ''}.`);
       await fetchPeriods();
+      return true;
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Mali yıl kapatılamadı.');
+      return false;
     } finally {
       setPeriodBusy('');
+    }
+  };
+
+  const requestPeriodAction = (action, period = null) => {
+    setPeriodActionReason('');
+    setPeriodActionDialog({ action, period });
+  };
+
+  const confirmPeriodAction = async () => {
+    const reason = periodActionReason.trim();
+    if (reason.length < 3) {
+      toast.error('Gerekçe en az 3 karakter olmalıdır.');
+      return;
+    }
+    const completed = periodActionDialog.action === 'year-end'
+      ? await closeFiscalYear(reason)
+      : await changePeriodStatus(periodActionDialog.period, periodActionDialog.action, reason);
+    if (completed) {
+      setPeriodActionDialog(null);
+      setPeriodActionReason('');
     }
   };
 
@@ -961,7 +984,7 @@ const GeneralLedgerModule = () => {
                         : 'İlk 11 dönem kapandıktan sonra gelir/gider hesapları 690 üzerinden 590/591’e devredilir.'}
                     </p>
                   </div>
-                  <Button onClick={closeFiscalYear} disabled={yearEndStatus?.closed || periodBusy === 'year-end' || !yearEndReady}>
+                  <Button onClick={() => requestPeriodAction('year-end')} disabled={yearEndStatus?.closed || periodBusy === 'year-end' || !yearEndReady}>
                     <Landmark className="w-4 h-4 mr-2" />
                     {yearEndStatus?.closed
                       ? 'Yıl Kapatıldı'
@@ -993,7 +1016,7 @@ const GeneralLedgerModule = () => {
                           </span>
                         </div>
                         {closed && period.close_reason && <p className="mt-2 text-xs text-slate-600">Gerekçe: {period.close_reason}</p>}
-                        <Button className="w-full mt-3" size="sm" variant={closed ? 'outline' : 'default'} disabled={busy} onClick={() => changePeriodStatus(period, action)}>
+                        <Button className="w-full mt-3" size="sm" variant={closed ? 'outline' : 'default'} disabled={busy} onClick={() => requestPeriodAction(action, period)}>
                           {closed ? <Unlock className="w-3.5 h-3.5 mr-1.5" /> : <LockKeyhole className="w-3.5 h-3.5 mr-1.5" />}
                           {busy ? 'İşleniyor...' : closed ? 'Yeniden Aç' : 'Dönemi Kapat'}
                         </Button>
@@ -1406,6 +1429,52 @@ const GeneralLedgerModule = () => {
           </div>
         </TabsContent>
       </Tabs>
+
+      <Dialog
+        open={Boolean(periodActionDialog)}
+        onOpenChange={(open) => {
+          if (!open && !periodBusy) {
+            setPeriodActionDialog(null);
+            setPeriodActionReason('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md" data-testid="gl-period-action-dialog">
+          <DialogHeader>
+            <DialogTitle>
+              {periodActionDialog?.action === 'year-end'
+                ? `${periodYear} Mali Yılını Kapat`
+                : periodActionDialog?.action === 'reopen'
+                  ? `${periodActionDialog?.period?.name || 'Dönem'} Dönemini Yeniden Aç`
+                  : `${periodActionDialog?.period?.name || 'Dönem'} Dönemini Kapat`}
+            </DialogTitle>
+            <DialogDescription>
+              {periodActionDialog?.action === 'year-end'
+                ? `Gelir ve gider hesapları kapatılacak, ${periodYear + 1} açılış bakiyeleri oluşturulacak.`
+                : periodActionDialog?.action === 'reopen'
+                  ? 'Bu dönem yeniden fiş ve entegrasyon kaydı kabul edecektir.'
+                  : 'Kapalı döneme yeni fiş veya entegrasyon kaydı gönderilemez.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium" htmlFor="gl-period-action-reason">Gerekçe</label>
+            <Input
+              id="gl-period-action-reason"
+              autoFocus
+              value={periodActionReason}
+              onChange={(event) => setPeriodActionReason(event.target.value)}
+              placeholder="En az 3 karakter"
+              disabled={Boolean(periodBusy)}
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setPeriodActionDialog(null)} disabled={Boolean(periodBusy)}>Vazgeç</Button>
+            <Button onClick={confirmPeriodAction} disabled={Boolean(periodBusy) || periodActionReason.trim().length < 3}>
+              {periodBusy ? 'İşleniyor...' : periodActionDialog?.action === 'reopen' ? 'Yeniden Aç' : 'Kapat ve Onayla'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
