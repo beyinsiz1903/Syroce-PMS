@@ -4,6 +4,11 @@
  */
 import axios from "axios";
 import { installAxiosCache, clearAxiosCache } from "@/lib/axios-cache";
+import {
+  ADMIN_TENANT_CONTEXT_KEY,
+  isAdminTenantContextActive,
+  restoreOriginTenantContext,
+} from "@/lib/adminTenantContext";
 
 const RAW_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "/api";
 const BACKEND_URL = RAW_BACKEND_URL.endsWith("/api")
@@ -101,6 +106,7 @@ function _hardLogout() {
   localStorage.removeItem("user");
   localStorage.removeItem("tenant");
   localStorage.removeItem("modules");
+  localStorage.removeItem(ADMIN_TENANT_CONTEXT_KEY);
   // Eski oturum cache'i yeni kullanıcıya sızmasın.
   clearAxiosCache();
   delete axios.defaults.headers.common["Authorization"];
@@ -115,6 +121,7 @@ function _hardLogout() {
 //   { invalid: true }  — 401/400; refresh token gerçekten ölmüş, hard logout
 async function _attemptRefresh(retryCount = 0) {
   const refreshToken = localStorage.getItem("refresh_token");
+  const wasAdminTenantContext = isAdminTenantContextActive();
   
   if (_refreshInFlight) {
     return _refreshInFlight;
@@ -139,6 +146,16 @@ async function _attemptRefresh(retryCount = 0) {
 
       if (window.navigator.webdriver || import.meta.env.DEV) {
         localStorage.setItem("token", newAccess);
+      }
+
+      // The long-lived refresh token belongs to the real superadmin tenant,
+      // never to the short-lived hotel workspace. If that workspace expires,
+      // restore the matching origin UI snapshot before navigating back; this
+      // prevents an origin API session from being displayed under a stale
+      // target-hotel header.
+      if (wasAdminTenantContext && restoreOriginTenantContext()) {
+        window.location.assign("/admin/tenants");
+        return { contextRestored: true };
       }
 
       return { token: newAccess };
@@ -193,6 +210,7 @@ export async function keepActiveSessionAlive() {
 
   const result = await _attemptRefresh();
   if (result?.token) return { refreshed: true };
+  if (result?.contextRestored) return { contextRestored: true };
   if (result?.transient) return { transient: true };
 
   _hardLogout();
@@ -219,6 +237,9 @@ axios.interceptors.response.use(
         // by _attemptRefresh, so subsequent calls are also covered.
         original.headers.Authorization = `Bearer ${result.token}`;
         return axios(original);
+      }
+      if (result?.contextRestored) {
+        return Promise.reject(error);
       }
       if (result?.transient) {
         console.warn("Refresh transient failure (5xx/network); session preserved");

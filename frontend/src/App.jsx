@@ -26,6 +26,10 @@ import { registerRoutes } from "@/routes/preload";
 import { EntitlementProvider } from "@/context/EntitlementContext";
 import { prefetchHeavyModules } from "@/lib/prefetch";
 import { websocket } from "@/lib/websocket";
+import {
+  ADMIN_TENANT_CONTEXT_KEY,
+  reconcileAdminTenantContext,
+} from "@/lib/adminTenantContext";
 
 // Sesli softphone (Contact Center Faz 2) — yalnızca personel için, lazy.
 // Twilio Voice SDK + mikrofon izni operatör "Aktifleştir"e basınca yüklenir.
@@ -71,6 +75,7 @@ function clearAuthStorage() {
   localStorage.removeItem("user");
   localStorage.removeItem("tenant");
   localStorage.removeItem("modules");
+  localStorage.removeItem(ADMIN_TENANT_CONTEXT_KEY);
   // SessionStorage cache'leri de sil — aynı tab'da hesap değişiminde
   // önceki kullanıcının notification/business-date verisi sızmasın.
   try {
@@ -103,17 +108,24 @@ function App() {
       axios.get("/auth/me")
         .then((meResponse) => {
           const freshUser = meResponse.data;
-          localStorage.setItem("user", JSON.stringify(freshUser));
-          setUser(freshUser);
           let parsedTenant = null;
           if (storedTenant && storedTenant !== "null") {
             try { parsedTenant = JSON.parse(storedTenant); } catch { /* ignore parse error */ }
           }
           let parsedModules = null;
           if (storedModules) {
-            try { parsedModules = JSON.parse(storedModules); setModules(parsedModules); } catch { /* ignore parse error */ }
+            try { parsedModules = JSON.parse(storedModules); } catch { /* ignore parse error */ }
           }
-          setTenant(parsedTenant ? (parsedModules ? { ...parsedTenant, modules: parsedModules } : parsedTenant) : null);
+          const reconciled = reconcileAdminTenantContext(freshUser, parsedTenant, parsedModules);
+          const reconciledTenant = reconciled.tenant
+            ? (reconciled.modules ? { ...reconciled.tenant, modules: reconciled.modules } : reconciled.tenant)
+            : null;
+          localStorage.setItem("user", JSON.stringify(reconciled.user));
+          localStorage.setItem("tenant", reconciled.tenant ? JSON.stringify(reconciled.tenant) : "null");
+          if (reconciled.modules) localStorage.setItem("modules", JSON.stringify(reconciled.modules));
+          setUser(reconciled.user);
+          setModules(reconciled.modules);
+          setTenant(reconciledTenant);
           setIsAuthenticated(true);
           prefetchHeavyModules();
         })
@@ -292,7 +304,7 @@ function App() {
 
   const hasFeature = (key) => {
     if (!key) return true;
-    if ((user?.roles || []).includes("super_admin") || user?.role === "super_admin") return true;
+    if (!user?.is_impersonating && ((user?.roles || []).includes("super_admin") || user?.role === "super_admin")) return true;
     return !!tenant?.features?.[key];
   };
 
@@ -355,9 +367,10 @@ function App() {
   const uRoles = (user?.roles || []).map(r => r.toLowerCase());
   const uRole = (user?.role || "").toLowerCase();
   const isSuperAdminUser = uRoles.includes("super_admin") || uRole === "super_admin" || uRole === "demo_manager_readonly";
+  const isPlatformSuperAdmin = isSuperAdminUser && !user?.is_impersonating;
 
   return (
-    <EntitlementProvider currentTenantId={tenant?.id} isSuperAdmin={isSuperAdminUser}>
+    <EntitlementProvider currentTenantId={tenant?.id} isSuperAdmin={isPlatformSuperAdmin}>
       <NotificationProvider>
       <CurrencyProvider isAuthenticated={isAuthenticated}>
       <QueryClientProvider client={queryClient}>
@@ -427,7 +440,7 @@ function App() {
                     } else if (rc.requireSuperAdmin) {
                       const uRoles = (user?.roles || []).map(r => r.toLowerCase());
                       const uRole = (user?.role || "").toLowerCase();
-                      const isSuperAdmin = uRoles.includes("super_admin") || uRole === "super_admin" || uRole === "demo_manager_readonly";
+                      const isSuperAdmin = !user?.is_impersonating && (uRoles.includes("super_admin") || uRole === "super_admin" || uRole === "demo_manager_readonly");
                       if (!isAuthenticated) {
                         element = <Navigate to="/auth" replace />;
                       } else if (!isSuperAdmin) {
