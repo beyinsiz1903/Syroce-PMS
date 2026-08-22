@@ -31,6 +31,26 @@ UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", str(Path(__file__).resolve().pare
 router = APIRouter(prefix="/api", tags=["pms"])
 
 
+def _invalidate_room_list_caches(tenant_id: str) -> None:
+    """Drop room-list snapshots after a room configuration mutation."""
+    if not tenant_id or not all(ch.isalnum() or ch in {"-", "_"} for ch in tenant_id):
+        return
+    try:
+        from redis_cache import redis_cache
+
+        if redis_cache:
+            redis_cache.clear_pattern(f"rooms:{tenant_id}:*")
+    except Exception:
+        logger.debug("pms_rooms: redis room cache invalidation failed", exc_info=True)
+    try:
+        from cache_warmer import cache_warmer
+
+        if cache_warmer:
+            cache_warmer.invalidate(f"rooms:{tenant_id}", f"room_map:{tenant_id}")
+    except Exception:
+        logger.debug("pms_rooms: warmed room cache invalidation failed", exc_info=True)
+
+
 # ── Local models ──
 
 
@@ -139,6 +159,7 @@ async def create_room(
     room_dict = room.model_dump()
     room_dict["created_at"] = room_dict["created_at"].isoformat()
     await db.rooms.insert_one(room_dict)
+    _invalidate_room_list_caches(current_user.tenant_id)
     return room
 
 
@@ -816,7 +837,9 @@ _ROOM_UPDATE_ALLOWED = {
     "room_number",
     "floor",
     "room_type",
+    "capacity",
     "view",
+    "bed_type",
     "amenities",
     "status",
     "price",
@@ -848,6 +871,35 @@ async def update_room(
         raise HTTPException(status_code=400, detail="Gecersiz guncelleme verisi")
     # Sadece izinli alanlari ele al — mass-assignment ve gecersiz status'u DB'ye yazmasin
     safe = {k: v for k, v in updates.items() if k in _ROOM_UPDATE_ALLOWED}
+    for field, max_length in {
+        "room_number": 50,
+        "room_type": 120,
+        "view": 120,
+        "bed_type": 80,
+    }.items():
+        if field not in safe:
+            continue
+        if safe[field] is None and field in {"view", "bed_type"}:
+            continue
+        normalized = str(safe[field]).strip()
+        if field in {"room_number", "room_type"} and not normalized:
+            raise HTTPException(status_code=422, detail=f"{field} bos olamaz")
+        if len(normalized) > max_length:
+            raise HTTPException(status_code=422, detail=f"{field} en fazla {max_length} karakter olabilir")
+        safe[field] = normalized or None
+    for field, minimum in {"floor": 0, "capacity": 1}.items():
+        if field not in safe:
+            continue
+        value = safe[field]
+        if isinstance(value, bool):
+            raise HTTPException(status_code=422, detail=f"{field} sayi olmali")
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail=f"{field} sayi olmali")
+        if parsed < minimum:
+            raise HTTPException(status_code=422, detail=f"{field} en az {minimum} olmali")
+        safe[field] = parsed
     if "status" in safe and safe["status"] not in _ROOM_VALID_STATUS:
         raise HTTPException(status_code=422, detail=f"Gecersiz oda durumu: izinli={sorted(_ROOM_VALID_STATUS)}")
     if "price" in safe:
@@ -870,6 +922,18 @@ async def update_room(
             raise HTTPException(status_code=422, detail="base_price sayi olmali")
     if not safe:
         raise HTTPException(status_code=400, detail="Guncellenecek izinli alan yok")
+    if "room_number" in safe:
+        duplicate = await db.rooms.find_one(
+            {
+                "tenant_id": current_user.tenant_id,
+                "room_number": safe["room_number"],
+                "id": {"$ne": room_id},
+                "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
+            },
+            {"_id": 0, "id": 1},
+        )
+        if duplicate:
+            raise HTTPException(status_code=409, detail="Bu oda numarasi zaten kullaniliyor")
     result = await db.rooms.update_one(
         {"id": room_id, "tenant_id": current_user.tenant_id},
         {"$set": safe},
@@ -882,6 +946,7 @@ async def update_room(
     room_doc = await db.rooms.find_one({"id": room_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not room_doc:
         raise HTTPException(status_code=404, detail="Oda bulunamadi")
+    _invalidate_room_list_caches(current_user.tenant_id)
     return room_doc
 
 

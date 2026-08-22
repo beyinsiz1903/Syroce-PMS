@@ -21,7 +21,17 @@ import { useCurrency } from '@/context/CurrencyContext';
 import { formatCurrency } from '@/lib/currency';
 import { confirmDialog } from '@/lib/dialogs';
 
-export default function SettingsRoomsTab({ loadRooms, roomsLoading, setShowBulkRoomsDialog, isSuperAdmin, setShowAddRoomDialog, roomsList, handleDeleteRoom }) {
+const BED_TYPE_LABELS = {
+  king: 'King',
+  queen: 'Queen',
+  twin: 'Twin / İki Tek Kişilik Yatak',
+  double: 'Double',
+  single: 'Tek Kişilik Yatak',
+  bunk: 'Ranza',
+  sofa_bed: 'Çekyat',
+};
+
+export default function SettingsRoomsTab({ loadRooms, roomsLoading, setShowBulkRoomsDialog, setShowAddRoomDialog, roomsList, handleDeleteRoom, onEditRoom }) {
     const { t } = useTranslation();
     const navigate = useNavigate();
     return (
@@ -67,11 +77,17 @@ export default function SettingsRoomsTab({ loadRooms, roomsLoading, setShowBulkR
                               <div>
                                 <p className="text-sm font-medium">{room.room_type}</p>
                                 <p className="text-xs text-slate-500">Kat {room.floor} - {room.capacity} kişi</p>
+                                {(room.view || room.bed_type) && <p className="mt-0.5 text-xs text-slate-500">
+                                  {[room.view, BED_TYPE_LABELS[room.bed_type] || room.bed_type].filter(Boolean).join(' · ')}
+                                </p>}
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
                               <Badge variant="outline" className="text-xs">{room.status}</Badge>
-                              <Button variant="ghost" size="sm" className="text-rose-500 hover:text-rose-700 hover:bg-rose-50" onClick={() => handleDeleteRoom(room.id, room.room_number)} data-testid={`delete-room-${room.room_number}`}>
+                              <Button variant="ghost" size="sm" onClick={() => onEditRoom(room)} aria-label={`${room.room_number} numaralı odayı düzenle`} data-testid={`edit-room-${room.room_number}`}>
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                              <Button variant="ghost" size="sm" className="text-rose-500 hover:text-rose-700 hover:bg-rose-50" onClick={() => handleDeleteRoom(room.id, room.room_number)} aria-label={`${room.room_number} numaralı odayı sil`} data-testid={`delete-room-${room.room_number}`}>
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             </div>

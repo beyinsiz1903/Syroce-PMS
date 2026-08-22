@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { BedTypeSelect, RoomTypeInput } from '@/components/pms/RoomConfigurationFields';
 import { Download, Lock, AlertTriangle } from 'lucide-react';
 
 const MAX_ROOMS_PER_BATCH = 200;
@@ -191,17 +191,7 @@ const BulkRoomsDialog = ({ open, onClose, onRoomsCreated, user }) => {
                 <div><Label>End</Label><Input type="number" value={bulkRange.end_number} onChange={(e) => { setBulkRange(p => ({...p, end_number: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div><Label>{t('booking.roomType')}</Label>
-                  <Select value={bulkRange.room_type} onValueChange={(v) => { setBulkRange(p => ({...p, room_type: v})); resetConfirmOnChange(); }}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="standard">Standard</SelectItem>
-                      <SelectItem value="deluxe">Deluxe</SelectItem>
-                      <SelectItem value="suite">Suite</SelectItem>
-                      <SelectItem value="presidential">Presidential</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <RoomTypeInput value={bulkRange.room_type} onChange={(v) => { setBulkRange(p => ({...p, room_type: v})); resetConfirmOnChange(); }} testId="bulk-range-room-type" idPrefix="bulk-range-room-type" />
                 <div><Label>Floor</Label><Input type="number" value={bulkRange.floor} onChange={(e) => { setBulkRange(p => ({...p, floor: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
               </div>
               <div className="grid grid-cols-3 gap-3">
@@ -209,6 +199,7 @@ const BulkRoomsDialog = ({ open, onClose, onRoomsCreated, user }) => {
                 <div><Label>Base Price</Label><Input type="number" step="0.01" value={bulkRange.base_price} onChange={(e) => { setBulkRange(p => ({...p, base_price: parseFloat(e.target.value)})); resetConfirmOnChange(); }} /></div>
                 <div><Label>View</Label><Input value={bulkRange.view} onChange={(e) => { setBulkRange(p => ({...p, view: e.target.value})); resetConfirmOnChange(); }} placeholder="sea/city" /></div>
               </div>
+              <BedTypeSelect value={bulkRange.bed_type} onChange={(v) => { setBulkRange(p => ({...p, bed_type: v})); resetConfirmOnChange(); }} testId="bulk-range-bed-type" />
 
               <PreviewBox preview={rangePreview} />
               <ConfirmCheckbox count={rangePreview.count} disabled={!!rangePreview.error} />
@@ -228,17 +219,7 @@ const BulkRoomsDialog = ({ open, onClose, onRoomsCreated, user }) => {
                 <div><Label>Count</Label><Input type="number" value={bulkTemplate.count} onChange={(e) => { setBulkTemplate(p => ({...p, count: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div><Label>{t('booking.roomType')}</Label>
-                  <Select value={bulkTemplate.room_type} onValueChange={(v) => { setBulkTemplate(p => ({...p, room_type: v})); resetConfirmOnChange(); }}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="standard">Standard</SelectItem>
-                      <SelectItem value="deluxe">Deluxe</SelectItem>
-                      <SelectItem value="suite">Suite</SelectItem>
-                      <SelectItem value="presidential">Presidential</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <RoomTypeInput value={bulkTemplate.room_type} onChange={(v) => { setBulkTemplate(p => ({...p, room_type: v})); resetConfirmOnChange(); }} testId="bulk-template-room-type" idPrefix="bulk-template-room-type" />
                 <div><Label>Floor</Label><Input type="number" value={bulkTemplate.floor} onChange={(e) => { setBulkTemplate(p => ({...p, floor: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
               </div>
               <div className="grid grid-cols-3 gap-3">
@@ -246,6 +227,7 @@ const BulkRoomsDialog = ({ open, onClose, onRoomsCreated, user }) => {
                 <div><Label>Base Price</Label><Input type="number" step="0.01" value={bulkTemplate.base_price} onChange={(e) => { setBulkTemplate(p => ({...p, base_price: parseFloat(e.target.value)})); resetConfirmOnChange(); }} /></div>
                 <div><Label>View</Label><Input value={bulkTemplate.view} onChange={(e) => { setBulkTemplate(p => ({...p, view: e.target.value})); resetConfirmOnChange(); }} placeholder="sea/city" /></div>
               </div>
+              <BedTypeSelect value={bulkTemplate.bed_type} onChange={(v) => { setBulkTemplate(p => ({...p, bed_type: v})); resetConfirmOnChange(); }} testId="bulk-template-bed-type" />
 
               <PreviewBox preview={templatePreview} />
               <ConfirmCheckbox count={templatePreview.count} disabled={!!templatePreview.error} />
