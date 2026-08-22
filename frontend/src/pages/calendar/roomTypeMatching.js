@@ -18,6 +18,21 @@ export const formatGuestName = (value) => {
     .join(' ');
 };
 
+export const compactGuestName = (value, maxLength = 12) => {
+  const name = formatGuestName(value);
+  if (!name || name.length <= maxLength) return name;
+
+  const parts = name.split(' ');
+  if (parts.length > 1) {
+    const firstName = parts[0];
+    const lastInitial = parts.at(-1).charAt(0);
+    const firstAndInitial = `${firstName} ${lastInitial}.`;
+    if (firstAndInitial.length <= maxLength) return firstAndInitial;
+  }
+
+  return `${name.slice(0, Math.max(maxLength - 1, 1)).trimEnd()}…`;
+};
+
 export const roomMatchesBookingType = (room, booking) => {
   const bookingTypes = [booking?.room_type_id, booking?.room_type]
     .map(normalizeRoomType)
