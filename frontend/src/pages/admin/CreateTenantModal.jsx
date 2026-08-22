@@ -733,7 +733,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                                     return (
                                       <label
                                         key={item.key}
-                                        className={`flex cursor-pointer items-start gap-2 rounded border p-2 transition-colors ${checked ? 'border-indigo-300 bg-indigo-50/70' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+                                        className={`flex cursor-pointer items-start gap-2 rounded border p-2 transition-colors ${checked ? 'border-indigo-300 bg-indigo-50/60' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
                                       >
                                         <input
                                           type="checkbox"
