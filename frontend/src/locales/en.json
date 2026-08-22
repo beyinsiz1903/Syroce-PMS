@@ -2131,7 +2131,24 @@
     "guest": "Guest & CRM",
     "fb": "F&B",
     "backoffice": "Back Office",
-    "system": "Channels & System"
+    "system": "Channels & Integrations"
+  },
+  "navSections": {
+    "system": {
+      "channels": "Channel Management",
+      "distribution": "Distribution & Sales",
+      "integrations": "Integrations",
+      "setup": "Setup & Support",
+      "growth": "Marketing & Automation",
+      "compliance": "Communications & Compliance"
+    },
+    "admin": {
+      "centers": "Management Centers",
+      "properties": "Hotels & Partners",
+      "integrations": "Integration Operations",
+      "platform": "Platform Operations",
+      "governance": "Access, Content & Developer"
+    }
   },
   "commandCenter": {
     "loadingStatus": "Loading operational status...",

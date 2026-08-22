@@ -13,9 +13,29 @@ export const NAV_GROUPS = [
   { id: "fb", label: "Restoran & F&B", icon: "Utensils" },
   { id: "backoffice", label: "Arka Ofis", icon: "Briefcase" },
   { id: "reports", label: "Raporlar", icon: "BarChart3" },
-  { id: "system", label: "Kanallar & Sistem", icon: "Settings" },
+  { id: "system", label: "Kanallar & Entegrasyonlar", icon: "Settings" },
   { id: "admin", label: "Sistem Yönetimi", icon: "Shield" },
 ];
+
+// Long menus are split into task-oriented sections. Keeping the section model
+// in configuration makes desktop and mobile navigation tell the same story.
+export const NAV_GROUP_SECTIONS = {
+  system: [
+    { id: "channels", label: "Kanal Yönetimi" },
+    { id: "distribution", label: "Dağıtım & Satış" },
+    { id: "integrations", label: "Entegrasyonlar" },
+    { id: "setup", label: "Kurulum & Destek" },
+    { id: "growth", label: "Pazarlama & Otomasyon" },
+    { id: "compliance", label: "İletişim & Uyum" },
+  ],
+  admin: [
+    { id: "centers", label: "Yönetim Merkezleri" },
+    { id: "properties", label: "Oteller & İş Ortakları" },
+    { id: "integrations", label: "Entegrasyon Operasyonları" },
+    { id: "platform", label: "Platform Operasyonları" },
+    { id: "governance", label: "Yetki, İçerik & Geliştirici" },
+  ],
+};
 
 export const NAV_ITEMS = [
   // ──── STANDALONE (shown as direct buttons) ─────────
@@ -79,6 +99,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "system",
+    navSection: "channels",
     // Hub yalnızca tab seçilmediğinde (ya da sub-item'la eşleşmeyen tab'da)
     // aktif görünsün; sub-item seçildiğinde alttaki cm_dashboard /
     // channel_connections / channel_ops aktif olur.
@@ -131,6 +152,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "system",
+    navSection: "compliance",
   },
   {
     // Task #28: kullanıcı bazında acil mesaj iznini açıp/kapatma sayfası.
@@ -140,6 +162,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "system",
+    navSection: "compliance",
   },
   {
     key: "contact_center_dashboard",
@@ -147,7 +170,8 @@ export const NAV_ITEMS = [
     path: "/admin/contact-center",
     tier: "basic",
     group: "core",
-    navGroup: "system",
+    navGroup: "admin",
+    navSection: "platform",
     requireSuperAdmin: true,
   },
   {
@@ -157,7 +181,8 @@ export const NAV_ITEMS = [
     path: "/admin/voice-numbers",
     tier: "basic",
     group: "core",
-    navGroup: "system",
+    navGroup: "admin",
+    navSection: "platform",
     requireSuperAdmin: true,
   },
 
@@ -169,6 +194,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "system",
+    navSection: "distribution",
   },
   {
     key: "reservation_calendar",
@@ -231,6 +257,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "settings",
     navGroup: "system",
+    navSection: "distribution",
   },
   {
     key: "eod_report",
@@ -449,6 +476,7 @@ export const NAV_ITEMS = [
     tier: "starter",
     group: "starter",
     navGroup: "system",
+    navSection: "setup",
   },
   {
     key: "academy",
@@ -457,6 +485,7 @@ export const NAV_ITEMS = [
     tier: "addon",
     group: "core",
     navGroup: "system",
+    navSection: "setup",
     moduleKey: "academy",
   },
 
@@ -502,6 +531,7 @@ export const NAV_ITEMS = [
     tier: "professional",
     group: "professional",
     navGroup: "system",
+    navSection: "channels",
   },
   {
     key: "room_mapping_wizard",
@@ -511,6 +541,7 @@ export const NAV_ITEMS = [
     tier: "professional",
     group: "professional",
     navGroup: "system",
+    navSection: "channels",
   },
   {
     key: "travel_agent_arap",
@@ -575,7 +606,8 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
-    navGroup: "system",
+    navGroup: "admin",
+    navSection: "integrations",
     requireSuperAdmin: true,
     // /channel-ops → /channels?tab=ops redirect; aktif eşleşme tab ile.
     tabBase: ["/channels", "/app/channels"],
@@ -601,7 +633,8 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
-    navGroup: "system",
+    navGroup: "admin",
+    navSection: "integrations",
     requireSuperAdmin: true,
   },
   {
@@ -611,7 +644,8 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
-    navGroup: "system",
+    navGroup: "admin",
+    navSection: "integrations",
     requireSuperAdmin: true,
   },
   {
@@ -621,7 +655,8 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
-    navGroup: "system",
+    navGroup: "admin",
+    navSection: "integrations",
     requireSuperAdmin: true,
   },
 
@@ -633,6 +668,7 @@ export const NAV_ITEMS = [
     tier: "professional",
     group: "professional",
     navGroup: "system",
+    navSection: "integrations",
   },
   {
     key: "admin_hub",
@@ -641,7 +677,8 @@ export const NAV_ITEMS = [
     moduleKey: "admin_panel",
     tier: "professional",
     group: "professional",
-    navGroup: "system",
+    navGroup: "admin",
+    navSection: "centers",
     requireSuperAdmin: true,
   },
   {
@@ -651,7 +688,8 @@ export const NAV_ITEMS = [
     moduleKey: "channel_manager",
     tier: "professional",
     group: "professional",
-    navGroup: "system",
+    navGroup: "admin",
+    navSection: "centers",
     requireSuperAdmin: true,
   },
   {
@@ -661,7 +699,8 @@ export const NAV_ITEMS = [
     moduleKey: "admin_panel",
     tier: "professional",
     group: "professional",
-    navGroup: "system",
+    navGroup: "admin",
+    navSection: "centers",
     requireSuperAdmin: true,
   },
   {
@@ -671,7 +710,8 @@ export const NAV_ITEMS = [
     moduleKey: "admin_panel",
     tier: "professional",
     group: "professional",
-    navGroup: "system",
+    navGroup: "admin",
+    navSection: "integrations",
     requireSuperAdmin: true,
   },
   {
@@ -681,7 +721,8 @@ export const NAV_ITEMS = [
     moduleKey: "admin_panel",
     tier: "professional",
     group: "professional",
-    navGroup: "system",
+    navGroup: "admin",
+    navSection: "integrations",
     requireSuperAdmin: true,
   },
 
@@ -723,6 +764,7 @@ export const NAV_ITEMS = [
     group: "advanced",
     moduleKey: "ai",
     navGroup: "system",
+    navSection: "growth",
   },
   {
     key: "mailing",
@@ -731,6 +773,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "system",
+    navSection: "growth",
   },
   {
     key: "onboarding_wizard",
@@ -739,6 +782,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "system",
+    navSection: "setup",
   },
   {
     key: "module_store",
@@ -747,6 +791,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "system",
+    navSection: "setup",
   },
   {
     key: "pci_compliance",
@@ -755,6 +800,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "system",
+    navSection: "compliance",
   },
   {
     key: "webhook_outbox_admin",
@@ -763,6 +809,7 @@ export const NAV_ITEMS = [
     tier: "professional",
     group: "core",
     navGroup: "admin",
+    navSection: "platform",
     requireSuperAdmin: true,
   },
   {
@@ -772,6 +819,7 @@ export const NAV_ITEMS = [
     tier: "professional",
     group: "core",
     navGroup: "admin",
+    navSection: "platform",
     requireSuperAdmin: true,
   },
   {
@@ -781,6 +829,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "admin",
+    navSection: "platform",
     requireSuperAdmin: true,
   },
   {
@@ -790,6 +839,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "system",
+    navSection: "integrations",
   },
   {
     key: "pos_dashboard",
@@ -988,6 +1038,7 @@ export const NAV_ITEMS = [
     requireSuperAdmin: true,
     group: "admin",
     navGroup: "admin",
+    navSection: "properties",
   },
   {
     key: "admin_vendors",
@@ -996,6 +1047,7 @@ export const NAV_ITEMS = [
     requireSuperAdmin: true,
     group: "admin",
     navGroup: "admin",
+    navSection: "properties",
   },
   {
     key: "admin_module_report",
@@ -1004,6 +1056,7 @@ export const NAV_ITEMS = [
     requireSuperAdmin: true,
     group: "admin",
     navGroup: "admin",
+    navSection: "properties",
   },
   {
     key: "admin_leads",
@@ -1012,6 +1065,7 @@ export const NAV_ITEMS = [
     requireSuperAdmin: true,
     group: "admin",
     navGroup: "admin",
+    navSection: "properties",
   },
   {
     key: "governance",
@@ -1020,6 +1074,7 @@ export const NAV_ITEMS = [
     requireSuperAdmin: true,
     group: "admin",
     navGroup: "admin",
+    navSection: "governance",
   },
   {
     key: "site_content",
@@ -1028,6 +1083,7 @@ export const NAV_ITEMS = [
     requireSuperAdmin: true,
     group: "admin",
     navGroup: "admin",
+    navSection: "governance",
   },
   {
     key: "quick_id_settings",
@@ -1036,6 +1092,7 @@ export const NAV_ITEMS = [
     requireSuperAdmin: true,
     group: "admin",
     navGroup: "admin",
+    navSection: "governance",
   },
   {
     key: "room_qr_requests",
@@ -1065,6 +1122,7 @@ export const NAV_ITEMS = [
     requireSuperAdmin: true,
     group: "admin",
     navGroup: "admin",
+    navSection: "governance",
   },
 ];
 

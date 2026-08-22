@@ -2131,7 +2131,24 @@
     "sales": "Vendas e receita",
     "frontdesk": "Recepção e Res.",
     "fb": "A&B",
-    "system": "Canais e Sistema"
+    "system": "Canais e integrações"
+  },
+  "navSections": {
+    "system": {
+      "channels": "Gestão de canais",
+      "distribution": "Distribuição e vendas",
+      "integrations": "Integrações",
+      "setup": "Configuração e suporte",
+      "growth": "Marketing e automação",
+      "compliance": "Comunicação e conformidade"
+    },
+    "admin": {
+      "centers": "Centros de gestão",
+      "properties": "Hotéis e parceiros",
+      "integrations": "Operações de integração",
+      "platform": "Operações da plataforma",
+      "governance": "Acesso, conteúdo e desenvolvimento"
+    }
   },
   "commandCenter": {
     "loadingStatus": "Carregando status operacional...",

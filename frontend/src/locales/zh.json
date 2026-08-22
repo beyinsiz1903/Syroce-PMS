@@ -2131,7 +2131,24 @@
     "sales": "销售与收入",
     "frontdesk": "前台和接待处。",
     "fb": "餐饮",
-    "system": "Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know."
+    "system": "渠道与集成"
+  },
+  "navSections": {
+    "system": {
+      "channels": "渠道管理",
+      "distribution": "分销与销售",
+      "integrations": "集成",
+      "setup": "设置与支持",
+      "growth": "营销与自动化",
+      "compliance": "沟通与合规"
+    },
+    "admin": {
+      "centers": "管理中心",
+      "properties": "酒店与合作伙伴",
+      "integrations": "集成运营",
+      "platform": "平台运营",
+      "governance": "权限、内容与开发"
+    }
   },
   "commandCenter": {
     "loadingStatus": "加载运营状态...",
