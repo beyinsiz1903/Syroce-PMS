@@ -20,6 +20,11 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
+from core.accounting.eledger_source_package import (
+    ELedgerSourceError,
+    build_eledger_source_package,
+    preflight_eledger_source,
+)
 from core.audit import log_audit_event
 from core.database import db
 from core.integrations.invoice_gl_bridge import (
@@ -712,6 +717,24 @@ class OperationalMappingIn(BaseModel):
     bank_account_code: str = Field("102", min_length=1, max_length=40)
 
 
+class IntercompanyRuleIn(BaseModel):
+    name: str = Field(..., min_length=2, max_length=120)
+    kind: Literal["balance", "income"]
+    tenant_a_id: str = Field(..., min_length=1, max_length=80)
+    account_a_code: str = Field(..., min_length=1, max_length=40)
+    tenant_b_id: str = Field(..., min_length=1, max_length=80)
+    account_b_code: str = Field(..., min_length=1, max_length=40)
+    active: bool = True
+
+
+class ELedgerSettingsIn(BaseModel):
+    taxpayer_id: str = Field(..., min_length=10, max_length=11, pattern=r"^\d{10,11}$")
+    legal_name: str = Field(..., min_length=2, max_length=240)
+    source_application: str = Field("Syroce PMS", min_length=2, max_length=120)
+    source_application_version: str = Field(..., min_length=1, max_length=40)
+    software_approval_reference: str | None = Field(None, max_length=120)
+
+
 class NilveraIncomingGLPostIn(BaseModel):
     purchase_account_code: str = Field(..., description="GL account for expense/asset")
     vat_account_code: str = Field(..., description="GL account for deductible VAT")
@@ -728,6 +751,7 @@ class NilveraOutgoingGLPostIn(BaseModel):
 
     vat_accounts_by_rate: dict[str, str] = Field(default_factory=dict, description="e.g. {'10': '391.10', '20': '391.20'}")
     accommodation_tax_accounts_by_rate: dict[str, str] = Field(default_factory=dict, description="e.g. {'1': '360.01', '2': '360.02'}")
+
 
 @router.get("/journal")
 async def list_journal(
@@ -1289,32 +1313,321 @@ async def comparative_balance_sheet(
     }
 
 
+@router.get("/e-ledger/settings")
+async def get_eledger_settings(current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _READ_ROLES)
+    settings = await db.gl_eledger_settings.find_one(
+        {"tenant_id": _tenant_of(current_user)},
+        {"_id": 0},
+    )
+    return {"settings": settings}
+
+
+@router.put("/e-ledger/settings")
+async def update_eledger_settings(
+    payload: ELedgerSettingsIn,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _REOPEN_ROLES)
+    tenant_id = _tenant_of(current_user)
+    before = await db.gl_eledger_settings.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    now = _now_iso()
+    settings = {
+        "tenant_id": tenant_id,
+        **payload.model_dump(),
+        "updated_at": now,
+        "updated_by": _actor_id(current_user),
+    }
+    if before and before.get("created_at"):
+        settings["created_at"] = before["created_at"]
+        settings["created_by"] = before.get("created_by")
+    else:
+        settings["created_at"] = now
+        settings["created_by"] = _actor_id(current_user)
+    await db.gl_eledger_settings.update_one(
+        {"tenant_id": tenant_id},
+        {"$set": settings},
+        upsert=True,
+    )
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=_actor_id(current_user),
+        action="gl_eledger_settings_updated",
+        entity_type="gl_eledger_settings",
+        entity_id=tenant_id,
+        details="e-Defter kaynak paket hazırlık bilgileri güncellendi",
+        before_value=before,
+        after_value=settings,
+        db=db,
+    )
+    return {"settings": settings}
+
+
+@router.get("/e-ledger/preflight")
+async def eledger_preflight(
+    period: str = Query(..., pattern=r"^20\d{2}-(0[1-9]|1[0-2])$"),
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _READ_ROLES)
+    tenant_id = _tenant_of(current_user)
+    try:
+        return await preflight_eledger_source(db, tenant_id, period)
+    except ELedgerSourceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/e-ledger/source-package")
+async def download_eledger_source_package(
+    period: str = Query(..., pattern=r"^20\d{2}-(0[1-9]|1[0-2])$"),
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    settings = await db.gl_eledger_settings.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    if not settings:
+        raise HTTPException(status_code=400, detail="Önce e-Defter hazırlık bilgilerini kaydedin")
+    try:
+        package, manifest = await build_eledger_source_package(db, tenant_id, period, settings)
+    except ELedgerSourceError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=_actor_id(current_user),
+        action="gl_eledger_source_package_downloaded",
+        entity_type="gl_eledger_source_package",
+        entity_id=f"{tenant_id}:{period}",
+        details=f"{period} kaynak veri paketi indirildi; GİB gönderimi yapılmadı",
+        after_value={
+            "period": period,
+            "entry_count": manifest["entry_count"],
+            "line_count": manifest["line_count"],
+            "official_edefter": False,
+        },
+        db=db,
+    )
+    filename = f"syroce-eledger-source-{period}.zip"
+    return Response(
+        content=package,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Syroce-Official-Edefter": "false",
+        },
+    )
+
+
 async def _chain_properties(current_user: User) -> list[dict]:
     tenant_id = _tenant_of(current_user)
     own = await _system_db.tenants.find_one(
         {"$or": [{"tenant_id": tenant_id}, {"id": tenant_id}]},
-        {"_id": 0, "chain_id": 1, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1},
+        {
+            "_id": 0,
+            "chain_id": 1,
+            "tenant_id": 1,
+            "id": 1,
+            "hotel_name": 1,
+            "name": 1,
+            "property_name": 1,
+            "is_chain_headquarters": 1,
+        },
     )
     chain_id = (own or {}).get("chain_id")
     if not chain_id:
         return [
             {
                 "tenant_id": tenant_id,
-                "property_name": (own or {}).get("hotel_name") or (own or {}).get("name") or tenant_id,
+                "property_name": (own or {}).get("property_name") or (own or {}).get("hotel_name") or (own or {}).get("name") or tenant_id,
             }
         ]
     tenants = await _system_db.tenants.find(
         {"chain_id": chain_id},
-        {"_id": 0, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1},
+        {"_id": 0, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1, "property_name": 1},
     ).to_list(500)
     return [
         {
             "tenant_id": tenant.get("tenant_id") or tenant.get("id"),
-            "property_name": tenant.get("hotel_name") or tenant.get("name") or tenant.get("tenant_id") or tenant.get("id"),
+            "property_name": tenant.get("property_name") or tenant.get("hotel_name") or tenant.get("name") or tenant.get("tenant_id") or tenant.get("id"),
         }
         for tenant in tenants
         if tenant.get("tenant_id") or tenant.get("id")
     ]
+
+
+async def _chain_scope(current_user: User) -> dict:
+    tenant_id = _tenant_of(current_user)
+    own = await _system_db.tenants.find_one(
+        {"$or": [{"tenant_id": tenant_id}, {"id": tenant_id}]},
+        {"_id": 0, "chain_id": 1, "is_chain_headquarters": 1},
+    )
+    chain_id = (own or {}).get("chain_id")
+    properties = await _chain_properties(current_user)
+    headquarters_tenant_id = None
+    if chain_id:
+        chain = await _system_db.hotel_chains.find_one(
+            {"id": chain_id},
+            {"_id": 0, "headquarters_tenant_id": 1},
+        )
+        headquarters_tenant_id = (chain or {}).get("headquarters_tenant_id")
+        if not headquarters_tenant_id and (own or {}).get("is_chain_headquarters"):
+            headquarters_tenant_id = tenant_id
+    return {
+        "tenant_id": tenant_id,
+        "chain_id": chain_id,
+        "properties": properties,
+        "headquarters_tenant_id": headquarters_tenant_id,
+    }
+
+
+def _require_chain_rule_admin(current_user: User, scope: dict) -> None:
+    _require_role(current_user, _REOPEN_ROLES)
+    if not scope["chain_id"] or len(scope["properties"]) < 2:
+        raise HTTPException(status_code=400, detail="Eliminasyon için en az iki otelli bir zincir gerekir")
+    if getattr(current_user, "is_super_admin", False):
+        return
+    headquarters_tenant_id = scope.get("headquarters_tenant_id")
+    if headquarters_tenant_id and headquarters_tenant_id != scope["tenant_id"]:
+        raise HTTPException(status_code=403, detail="Eliminasyon kurallarını yalnız zincir merkezi yönetebilir")
+
+
+@router.get("/chain/intercompany-rules")
+async def list_intercompany_rules(current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _READ_ROLES)
+    scope = await _chain_scope(current_user)
+    if not scope["chain_id"]:
+        return {"chain_id": None, "rules": [], "can_manage": False}
+    rules = (
+        await _system_db.gl_intercompany_rules.find(
+            {"chain_id": scope["chain_id"]},
+            {"_id": 0},
+        )
+        .sort("name", 1)
+        .to_list(1000)
+    )
+    can_manage = bool(
+        getattr(current_user, "is_super_admin", False)
+        or (_role_of(current_user) in _REOPEN_ROLES and (not scope.get("headquarters_tenant_id") or scope["headquarters_tenant_id"] == scope["tenant_id"]))
+    )
+    return {
+        "chain_id": scope["chain_id"],
+        "headquarters_tenant_id": scope.get("headquarters_tenant_id"),
+        "properties": scope["properties"],
+        "rules": rules,
+        "can_manage": can_manage,
+    }
+
+
+@router.post("/chain/intercompany-rules")
+async def create_intercompany_rule(
+    payload: IntercompanyRuleIn,
+    current_user: User = Depends(get_current_user),
+):
+    scope = await _chain_scope(current_user)
+    _require_chain_rule_admin(current_user, scope)
+    if payload.tenant_a_id == payload.tenant_b_id:
+        raise HTTPException(status_code=400, detail="Eliminasyonun iki tarafı farklı oteller olmalıdır")
+    member_ids = {item["tenant_id"] for item in scope["properties"]}
+    if payload.tenant_a_id not in member_ids or payload.tenant_b_id not in member_ids:
+        raise HTTPException(status_code=400, detail="Eliminasyon tarafları aynı zincirin üyeleri olmalıdır")
+
+    account_a, account_b = await asyncio.gather(
+        _system_db.gl_accounts.find_one(
+            {"tenant_id": payload.tenant_a_id, "code": payload.account_a_code},
+            {"_id": 0},
+        ),
+        _system_db.gl_accounts.find_one(
+            {"tenant_id": payload.tenant_b_id, "code": payload.account_b_code},
+            {"_id": 0},
+        ),
+    )
+    if not account_a or not account_b or account_a.get("active") is False or account_b.get("active") is False:
+        raise HTTPException(status_code=400, detail="Eliminasyon hesaplarından biri aktif hesap planında bulunamadı")
+    required_types = {"asset", "liability"} if payload.kind == "balance" else {"revenue", "expense"}
+    actual_types = {account_a.get("type"), account_b.get("type")}
+    if actual_types != required_types:
+        expected = "varlık/borç" if payload.kind == "balance" else "gelir/gider"
+        raise HTTPException(status_code=400, detail=f"Bu eliminasyon türü bir {expected} hesap çifti gerektirir")
+
+    pair_key = "|".join(
+        sorted(
+            (
+                f"{payload.tenant_a_id}:{payload.account_a_code}",
+                f"{payload.tenant_b_id}:{payload.account_b_code}",
+            )
+        )
+    )
+    duplicate = await _system_db.gl_intercompany_rules.find_one(
+        {"chain_id": scope["chain_id"], "pair_key": pair_key},
+        {"_id": 0, "id": 1},
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Bu hesap çifti için eliminasyon kuralı zaten var")
+
+    now = _now_iso()
+    rule = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": scope.get("headquarters_tenant_id") or scope["tenant_id"],
+        "chain_id": scope["chain_id"],
+        "pair_key": pair_key,
+        **payload.model_dump(),
+        "account_a_type": account_a["type"],
+        "account_b_type": account_b["type"],
+        "created_at": now,
+        "created_by": _actor_id(current_user),
+        "updated_at": now,
+    }
+    try:
+        await _system_db.gl_intercompany_rules.insert_one(rule.copy())
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="Bu hesap çifti için eliminasyon kuralı zaten var") from exc
+    await log_audit_event(
+        tenant_id=scope["tenant_id"],
+        user_id=_actor_id(current_user),
+        action="gl_intercompany_rule_created",
+        entity_type="gl_intercompany_rule",
+        entity_id=rule["id"],
+        details=f"{payload.name} eliminasyon kuralı oluşturuldu",
+        after_value={key: rule[key] for key in ("chain_id", "kind", "tenant_a_id", "account_a_code", "tenant_b_id", "account_b_code")},
+        db=db,
+    )
+    rule.pop("_id", None)
+    return {"rule": rule}
+
+
+@router.delete("/chain/intercompany-rules/{rule_id}")
+async def delete_intercompany_rule(rule_id: str, current_user: User = Depends(get_current_user)):
+    scope = await _chain_scope(current_user)
+    _require_chain_rule_admin(current_user, scope)
+    existing = await _system_db.gl_intercompany_rules.find_one(
+        {"id": rule_id, "chain_id": scope["chain_id"]},
+        {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Eliminasyon kuralı bulunamadı")
+    await _system_db.gl_intercompany_rules.delete_one({"id": rule_id, "chain_id": scope["chain_id"]})
+    await log_audit_event(
+        tenant_id=scope["tenant_id"],
+        user_id=_actor_id(current_user),
+        action="gl_intercompany_rule_deleted",
+        entity_type="gl_intercompany_rule",
+        entity_id=rule_id,
+        details=f"{existing.get('name') or rule_id} eliminasyon kuralı kaldırıldı",
+        before_value=existing,
+        db=db,
+    )
+    return {"success": True, "id": rule_id}
+
+
+def _report_account_amount(report: dict, account_type: str, account_code: str) -> int:
+    if account_type == "asset":
+        rows = report.get("assets", [])
+    elif account_type == "liability":
+        rows = report.get("liabilities", [])
+    elif account_type == "revenue":
+        rows = report.get("revenue", [])
+    else:
+        rows = report.get("expenses", [])
+    row = next((item for item in rows if item.get("account_code") == account_code), None)
+    return max(int((row or {}).get("amount_minor") or 0), 0)
 
 
 @router.get("/chain/consolidated")
@@ -1326,7 +1639,8 @@ async def chain_consolidated_finance(
 ):
     """Chain-scoped consolidated statements; never widens beyond the user's chain_id."""
     _require_role(current_user, _READ_ROLES)
-    properties = await _chain_properties(current_user)
+    scope = await _chain_scope(current_user)
+    properties = scope["properties"]
 
     async def _property_finance(property_doc: dict) -> dict:
         tenant_id = property_doc["tenant_id"]
@@ -1334,35 +1648,109 @@ async def chain_consolidated_finance(
             compute_income_statement(_system_db, tenant_id, start=start, end=end),
             compute_balance_sheet(_system_db, tenant_id, as_of=as_of),
         )
-        return {**property_doc, "income": income["totals"], "balance": balance["totals"]}
+        return {**property_doc, "income_report": income, "balance_report": balance}
 
     property_rows = await asyncio.gather(*(_property_finance(property_doc) for property_doc in properties))
-    totals_minor = {
-        "revenue": sum(row["income"]["revenue_minor"] for row in property_rows),
-        "expenses": sum(row["income"]["expenses_minor"] for row in property_rows),
-        "net_income": sum(row["income"]["net_income_minor"] for row in property_rows),
-        "assets": int(round(sum(row["balance"]["assets"] for row in property_rows) * 100)),
-        "liabilities": int(round(sum(row["balance"]["liabilities"] for row in property_rows) * 100)),
-        "equity": int(round(sum(row["balance"]["equity"] for row in property_rows) * 100)),
-        "liabilities_and_equity": int(
-            round(sum(row["balance"]["liabilities_and_equity"] for row in property_rows) * 100)
-        ),
+    raw_totals_minor = {
+        "revenue": sum(row["income_report"]["totals"]["revenue_minor"] for row in property_rows),
+        "expenses": sum(row["income_report"]["totals"]["expenses_minor"] for row in property_rows),
+        "net_income": sum(row["income_report"]["totals"]["net_income_minor"] for row in property_rows),
+        "assets": int(round(sum(row["balance_report"]["totals"]["assets"] for row in property_rows) * 100)),
+        "liabilities": int(round(sum(row["balance_report"]["totals"]["liabilities"] for row in property_rows) * 100)),
+        "equity": int(round(sum(row["balance_report"]["totals"]["equity"] for row in property_rows) * 100)),
+        "liabilities_and_equity": int(round(sum(row["balance_report"]["totals"]["liabilities_and_equity"] for row in property_rows) * 100)),
     }
+    totals_minor = dict(raw_totals_minor)
+    rules = []
+    if scope["chain_id"]:
+        rules = (
+            await _system_db.gl_intercompany_rules.find(
+                {"chain_id": scope["chain_id"], "active": True},
+                {"_id": 0},
+            )
+            .sort("name", 1)
+            .to_list(1000)
+        )
+    row_by_tenant = {row["tenant_id"]: row for row in property_rows}
+    elimination_details = []
+    remaining_amounts: dict[tuple[str, str, str], int] = {}
+    for rule in rules:
+        row_a = row_by_tenant.get(rule.get("tenant_a_id"))
+        row_b = row_by_tenant.get(rule.get("tenant_b_id"))
+        if not row_a or not row_b:
+            continue
+        if rule.get("kind") == "balance":
+            report_a = row_a["balance_report"]
+            report_b = row_b["balance_report"]
+        else:
+            report_a = row_a["income_report"]
+            report_b = row_b["income_report"]
+        key_a = (rule.get("tenant_a_id"), rule.get("account_a_type"), rule.get("account_a_code"))
+        key_b = (rule.get("tenant_b_id"), rule.get("account_b_type"), rule.get("account_b_code"))
+        if key_a not in remaining_amounts:
+            remaining_amounts[key_a] = _report_account_amount(
+                report_a,
+                rule.get("account_a_type"),
+                rule.get("account_a_code"),
+            )
+        if key_b not in remaining_amounts:
+            remaining_amounts[key_b] = _report_account_amount(
+                report_b,
+                rule.get("account_b_type"),
+                rule.get("account_b_code"),
+            )
+        amount_a = remaining_amounts[key_a]
+        amount_b = remaining_amounts[key_b]
+        matched_minor = min(amount_a, amount_b)
+        remaining_amounts[key_a] -= matched_minor
+        remaining_amounts[key_b] -= matched_minor
+        if rule.get("kind") == "balance":
+            totals_minor["assets"] -= matched_minor
+            totals_minor["liabilities"] -= matched_minor
+            totals_minor["liabilities_and_equity"] -= matched_minor
+        else:
+            totals_minor["revenue"] -= matched_minor
+            totals_minor["expenses"] -= matched_minor
+            totals_minor["net_income"] = totals_minor["revenue"] - totals_minor["expenses"]
+        elimination_details.append(
+            {
+                "rule_id": rule.get("id"),
+                "name": rule.get("name"),
+                "kind": rule.get("kind"),
+                "amount_a_minor": amount_a,
+                "amount_b_minor": amount_b,
+                "matched_minor": matched_minor,
+                "matched_amount": float(Decimal(matched_minor) / 100),
+                "status": "applied" if matched_minor > 0 else "no_matching_balance",
+            }
+        )
+    response_properties = [
+        {
+            "tenant_id": row["tenant_id"],
+            "property_name": row["property_name"],
+            "income": row["income_report"]["totals"],
+            "balance": row["balance_report"]["totals"],
+        }
+        for row in property_rows
+    ]
+    applied_count = sum(1 for item in elimination_details if item["matched_minor"] > 0)
     return {
-        "scope": "chain" if len(property_rows) > 1 else "single_property",
-        "property_count": len(property_rows),
+        "scope": "chain" if len(response_properties) > 1 else "single_property",
+        "chain_id": scope["chain_id"],
+        "property_count": len(response_properties),
         "start": start,
         "end": end,
         "as_of": as_of,
-        "properties": property_rows,
-        "totals": {
-            key: {"amount_minor": value, "amount": float(Decimal(value) / 100)}
-            for key, value in totals_minor.items()
-        },
+        "properties": response_properties,
+        "raw_totals": {key: {"amount_minor": value, "amount": float(Decimal(value) / 100)} for key, value in raw_totals_minor.items()},
+        "totals": {key: {"amount_minor": value, "amount": float(Decimal(value) / 100)} for key, value in totals_minor.items()},
         "consolidation": {
-            "mode": "aggregation",
-            "intercompany_eliminations_applied": False,
-            "warning": "Grup içi cari hesap eliminasyonları tanımlanmadıysa toplamlar brüt görünür.",
+            "mode": "eliminated" if applied_count else "aggregation",
+            "rule_count": len(rules),
+            "applied_rule_count": applied_count,
+            "intercompany_eliminations_applied": applied_count > 0,
+            "eliminations": elimination_details,
+            "warning": (None if applied_count else "Aktif ve eşleşen grup içi hesap bakiyesi bulunmadığı için toplamlar brüt görünür."),
         },
     }
 

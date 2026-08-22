@@ -14,7 +14,10 @@ enforces the idempotency unique constraint so the dedup path is exercised.
 
 from __future__ import annotations
 
+import io
+import json
 import uuid
+import zipfile
 from types import SimpleNamespace
 
 import pytest
@@ -134,11 +137,14 @@ class _FakeDB:
         self.gl_counters = _Coll("gl_counters")
         self.gl_journal_entries = _Coll("gl_journal_entries", unique_key=("tenant_id", "idempotency_key"))
         self.gl_operational_mappings = _Coll("gl_operational_mappings")
+        self.gl_intercompany_rules = _Coll("gl_intercompany_rules")
+        self.gl_eledger_settings = _Coll("gl_eledger_settings")
         self.gl_periods = _Coll("gl_periods")
         self.gl_sequence_reservations = _Coll("gl_sequence_reservations")
         self.gl_year_end_closures = _Coll("gl_year_end_closures")
         self.payroll_gl_mapping = _Coll("payroll_gl_mapping")
         self.tenants = _Coll("tenants")
+        self.hotel_chains = _Coll("hotel_chains")
 
 
 TENANT = "tenant-A"
@@ -158,6 +164,8 @@ def test_accounting_subledgers_are_strictly_tenant_scoped():
         "gl_sequence_reservations",
         "gl_year_end_closures",
         "gl_operational_mappings",
+        "gl_intercompany_rules",
+        "gl_eledger_settings",
     }.issubset(TENANT_SCOPED_COLLECTIONS)
 
 
@@ -1092,3 +1100,187 @@ async def test_chain_consolidation_is_strictly_chain_scoped(_patch):
     assert {row["tenant_id"] for row in result["properties"]} == {"tenant-A", "tenant-B"}
     assert result["totals"]["revenue"]["amount"] == 150.0
     assert result["consolidation"]["intercompany_eliminations_applied"] is False
+
+
+async def test_chain_consolidation_applies_balanced_intercompany_rules(_patch):
+    _patch.tenants.docs.extend(
+        [
+            {"id": "tenant-A", "chain_id": "chain-1", "property_name": "Otel A", "is_chain_headquarters": True},
+            {"id": "tenant-B", "chain_id": "chain-1", "property_name": "Otel B"},
+        ]
+    )
+    _patch.hotel_chains.docs.append({"id": "chain-1", "name": "Test Zinciri", "headquarters_tenant_id": "tenant-A"})
+    for code, name, account_type in (("120", "Grup İçi Alıcı", "asset"), ("600", "Grup İçi Gelir", "revenue")):
+        await _mk_account(code, name, account_type, user=_user("admin", tenant="tenant-A"))
+    for code, name, account_type in (("320", "Grup İçi Satıcı", "liability"), ("740", "Grup İçi Gider", "expense")):
+        await _mk_account(code, name, account_type, user=_user("admin", tenant="tenant-B"))
+    await gl.create_journal(
+        _journal(
+            [{"account_code": "120", "debit": 100}, {"account_code": "600", "credit": 100}],
+            date="2026-06-01",
+        ),
+        current_user=_user("finance", tenant="tenant-A"),
+    )
+    await gl.create_journal(
+        _journal(
+            [{"account_code": "740", "debit": 100}, {"account_code": "320", "credit": 100}],
+            date="2026-06-01",
+        ),
+        current_user=_user("finance", tenant="tenant-B"),
+    )
+    admin = _user("admin", tenant="tenant-A")
+    await gl.create_intercompany_rule(
+        gl.IntercompanyRuleIn(
+            name="Grup içi cari",
+            kind="balance",
+            tenant_a_id="tenant-A",
+            account_a_code="120",
+            tenant_b_id="tenant-B",
+            account_b_code="320",
+        ),
+        current_user=admin,
+    )
+    await gl.create_intercompany_rule(
+        gl.IntercompanyRuleIn(
+            name="Grup içi hizmet",
+            kind="income",
+            tenant_a_id="tenant-A",
+            account_a_code="600",
+            tenant_b_id="tenant-B",
+            account_b_code="740",
+        ),
+        current_user=admin,
+    )
+
+    result = await gl.chain_consolidated_finance(
+        start="2026-01-01",
+        end="2026-12-31",
+        as_of="2026-12-31",
+        current_user=_user("finance", tenant="tenant-B"),
+    )
+
+    assert result["raw_totals"]["revenue"]["amount"] == 100.0
+    assert result["raw_totals"]["assets"]["amount"] == 100.0
+    assert result["totals"]["revenue"]["amount"] == 0.0
+    assert result["totals"]["expenses"]["amount"] == 0.0
+    assert result["totals"]["assets"]["amount"] == 0.0
+    assert result["totals"]["liabilities"]["amount"] == 0.0
+    assert result["consolidation"]["mode"] == "eliminated"
+    assert result["consolidation"]["applied_rule_count"] == 2
+
+
+async def test_intercompany_rule_write_is_headquarters_and_chain_scoped(_patch):
+    _patch.tenants.docs.extend(
+        [
+            {"id": "tenant-A", "chain_id": "chain-1", "is_chain_headquarters": True},
+            {"id": "tenant-B", "chain_id": "chain-1"},
+            {"id": "tenant-X", "chain_id": "chain-2"},
+        ]
+    )
+    _patch.hotel_chains.docs.extend(
+        [
+            {"id": "chain-1", "headquarters_tenant_id": "tenant-A"},
+            {"id": "chain-2", "headquarters_tenant_id": "tenant-X"},
+        ]
+    )
+    await _mk_account("120", "Alıcı", "asset", user=_user("admin", tenant="tenant-A"))
+    await _mk_account("320", "Satıcı", "liability", user=_user("admin", tenant="tenant-B"))
+    await _mk_account("320", "Yabancı Satıcı", "liability", user=_user("admin", tenant="tenant-X"))
+
+    payload = gl.IntercompanyRuleIn(
+        name="Yetki testi",
+        kind="balance",
+        tenant_a_id="tenant-A",
+        account_a_code="120",
+        tenant_b_id="tenant-B",
+        account_b_code="320",
+    )
+    with pytest.raises(HTTPException) as non_hq:
+        await gl.create_intercompany_rule(payload, current_user=_user("admin", tenant="tenant-B"))
+    assert non_hq.value.status_code == 403
+
+    cross_chain = payload.model_copy(update={"tenant_b_id": "tenant-X"})
+    with pytest.raises(HTTPException) as foreign_member:
+        await gl.create_intercompany_rule(cross_chain, current_user=_user("admin", tenant="tenant-A"))
+    assert foreign_member.value.status_code == 400
+
+
+async def test_eledger_preflight_and_source_package_are_honestly_labelled(_patch):
+    await _mk_account("100", "Kasa", "asset")
+    await _mk_account("600", "Satış", "revenue")
+    await gl.create_journal(
+        _journal(
+            [{"account_code": "100", "debit": 250}, {"account_code": "600", "credit": 250}],
+            date="2026-06-15",
+        ),
+        current_user=_user("finance"),
+    )
+    await _patch.gl_periods.update_one(
+        {"tenant_id": TENANT, "fiscal_year": 2026, "period_no": 6},
+        {"$set": {"status": "closed"}, "$setOnInsert": {"id": "period-6"}},
+        upsert=True,
+    )
+    await gl.update_eledger_settings(
+        gl.ELedgerSettingsIn(
+            taxpayer_id="1234567890",
+            legal_name="Syroce Test Oteli AŞ",
+            source_application="Syroce PMS",
+            source_application_version="2026.08",
+            software_approval_reference=None,
+        ),
+        current_user=_user("admin"),
+    )
+
+    preflight = await gl.eledger_preflight(period="2026-06", current_user=_user("finance"))
+    assert preflight["blockers"] == []
+    response = await gl.download_eledger_source_package(period="2026-06", current_user=_user("finance"))
+
+    assert preflight["ready_for_source_export"] is True
+    assert preflight["official_edefter"] is False
+    assert preflight["entry_count"] == 1
+    assert preflight["warnings"][0]["code"] == "software_approval_unverified"
+    assert response.media_type == "application/zip"
+    assert response.headers["x-syroce-official-edefter"] == "false"
+    with zipfile.ZipFile(io.BytesIO(response.body)) as archive:
+        assert set(archive.namelist()) == {"journal.csv", "general_ledger.csv", "README.txt", "manifest.json"}
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["official_edefter"] is False
+        assert manifest["entry_count"] == 1
+        assert manifest["files"]["journal.csv"]["sha256"]
+
+
+async def test_eledger_preflight_blocks_unexplained_journal_sequence_gap(_patch):
+    await _mk_account("100", "Kasa", "asset")
+    await _mk_account("600", "Satış", "revenue")
+    for amount in (10, 20, 30):
+        await gl.create_journal(
+            _journal(
+                [{"account_code": "100", "debit": amount}, {"account_code": "600", "credit": amount}],
+                date="2026-07-15",
+            ),
+            current_user=_user("finance"),
+        )
+    _patch.gl_journal_entries.docs = [
+        item for item in _patch.gl_journal_entries.docs if item.get("posting_sequence") != 2
+    ]
+    _patch.gl_sequence_reservations.docs = [
+        item for item in _patch.gl_sequence_reservations.docs if item.get("sequence") != 2
+    ]
+    await _patch.gl_periods.update_one(
+        {"tenant_id": TENANT, "fiscal_year": 2026, "period_no": 7},
+        {"$set": {"status": "closed"}},
+    )
+    await gl.update_eledger_settings(
+        gl.ELedgerSettingsIn(
+            taxpayer_id="1234567890",
+            legal_name="Syroce Test Oteli AŞ",
+            source_application_version="2026.08",
+        ),
+        current_user=_user("admin"),
+    )
+
+    preflight = await gl.eledger_preflight(period="2026-07", current_user=_user("finance"))
+
+    gap = next(item for item in preflight["blockers"] if item["code"] == "unexplained_sequence_gap")
+    assert gap["sequence_numbers"] == [2]
+    assert preflight["ready_for_source_export"] is False
