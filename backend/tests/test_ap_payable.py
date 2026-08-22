@@ -78,11 +78,20 @@ class _FakeDB:
     def __init__(self):
         self.ap_invoices = _Coll("ap_invoices")
         self.ap_payments = _Coll("ap_payments", unique_key=("tenant_id", "idempotency_key"))
+        self.ap_gl_mapping = _Coll("ap_gl_mapping")
+        self.gl_journal_entries = _Coll("gl_journal_entries")
         self.proc_suppliers = _Coll("proc_suppliers")
         self.proc_purchase_orders = _Coll("proc_purchase_orders")
 
 
 TENANT = "tenant-A"
+_AP_GL_MAPPING = {
+    "expense_account_code": "770",
+    "input_vat_account_code": "191",
+    "payable_account_code": "320",
+    "bank_account_code": "102",
+    "cash_account_code": "100",
+}
 
 
 def _user(role="finance", *, super_admin=False, tenant=TENANT):
@@ -158,6 +167,38 @@ async def test_create_invoice_total_includes_tax(_patch):
     assert inv["status"] == "open"
 
 
+async def test_create_invoice_posts_balanced_gl_when_mapping_enabled(_patch, monkeypatch):
+    _patch.ap_gl_mapping.docs.append({
+        "tenant_id": TENANT,
+        "enabled": True,
+        "expense_account_code": "770",
+        "input_vat_account_code": "191",
+        "payable_account_code": "320",
+        "bank_account_code": "102",
+        "cash_account_code": "100",
+    })
+    captured = {}
+
+    async def _post(_db, tenant_id, **kwargs):
+        captured.update(kwargs)
+        return {"id": "je-ap", "tenant_id": tenant_id, **kwargs}
+
+    monkeypatch.setattr(ap, "post_journal_entry", _post)
+    inv = (await ap.create_invoice(
+        ap.InvoiceIn(supplier_id="sup1", invoice_no="GL-1", due_date="2026-06-01", subtotal=100, tax=20),
+        current_user=_user("finance"),
+    ))["invoice"]
+
+    assert captured["idempotency_key"].startswith("ap-invoice:")
+    assert captured["lines"] == [
+        {"account_code": "770", "debit": 100.0, "credit": 0, "memo": "Tedarikçi faturası gider/maliyet"},
+        {"account_code": "191", "debit": 20.0, "credit": 0, "memo": "Tedarikçi faturası indirilecek KDV"},
+        {"account_code": "320", "debit": 0, "credit": 120.0, "memo": "Tedarikçi borcu"},
+    ]
+    assert inv["gl_status"] == "posted"
+    assert inv["gl_journal_entry_id"] == "je-ap"
+
+
 # ---------------------------------------------------------------------------
 # Payments
 # ---------------------------------------------------------------------------
@@ -171,6 +212,23 @@ async def test_partial_then_full_payment_status(_patch):
     assert r2["invoice"]["paid_amount"] == 1000.0
     assert r2["invoice"]["status"] == "paid"
     assert r2["invoice"]["balance"] == 0.0
+
+
+async def test_payment_posts_payable_to_bank_when_mapping_enabled(_patch, monkeypatch):
+    inv = await _mk_invoice(_patch, total=500.0)
+    _patch.ap_gl_mapping.docs.append({**_AP_GL_MAPPING, "tenant_id": TENANT, "enabled": True})
+    captured = {}
+
+    async def _post(_db, tenant_id, **kwargs):
+        captured.update(kwargs)
+        return {"id": "je-payment", "tenant_id": tenant_id, **kwargs}
+
+    monkeypatch.setattr(ap, "post_journal_entry", _post)
+    result = await _pay(inv["id"], 200, method="bank_transfer")
+    assert captured["lines"][0]["account_code"] == "320"
+    assert captured["lines"][0]["debit"] == 200.0
+    assert captured["lines"][1]["account_code"] == "102"
+    assert result["payment"]["gl_status"] == "posted"
 
 
 async def test_overpayment_rejected(_patch):
@@ -190,6 +248,15 @@ async def test_payment_idempotent_replay(_patch):
     r2 = await _pay(inv["id"], 400, idempotency_key="pmt-1")
     assert r2.get("idempotent_replay") is True
     assert r2["invoice"]["paid_amount"] == 400.0
+    assert len(_patch.ap_payments.docs) == 1
+
+
+async def test_full_payment_idempotent_replay_does_not_look_like_overpayment(_patch):
+    inv = await _mk_invoice(_patch, total=400.0)
+    await _pay(inv["id"], 400, idempotency_key="pmt-full")
+    replay = await _pay(inv["id"], 400, idempotency_key="pmt-full")
+    assert replay["idempotent_replay"] is True
+    assert replay["invoice"]["status"] == "paid"
     assert len(_patch.ap_payments.docs) == 1
 
 

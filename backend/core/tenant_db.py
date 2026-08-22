@@ -140,12 +140,16 @@ TENANT_SCOPED_COLLECTIONS: set[str] = {
     "gl_counters",
     "gl_journal_entries",
     "gl_operational_mappings",
+    "gl_nilvera_settings",
+    "gl_nilvera_queue",
     "gl_intercompany_rules",
     "gl_eledger_settings",
     "gl_periods",
     "gl_sequence_reservations",
     "gl_year_end_closures",
     "payroll_gl_mapping",
+    "ap_gl_mapping",
+    "fixed_asset_gl_mapping",
 }
 
 # ── Append-only audit collections (Task #568) ───────────────────

@@ -145,6 +145,17 @@ class InvoiceStatusService:
                 update_fields["accepted_at"] = now
                 update_fields["next_status_check_at"] = None
                 await InvoiceStatusRepository.update_status_poll_result(record.tenant_id, record.id, worker_id, update_fields)
+                try:
+                    from core.integrations.nilvera_gl_automation import handle_outgoing_invoice_accepted
+
+                    await handle_outgoing_invoice_accepted(record.tenant_id, record.invoice_id)
+                except Exception as exc:
+                    logger.warning(
+                        "Outgoing invoice GL candidate registration failed tenant=%s invoice=%s error_type=%s",
+                        record.tenant_id,
+                        record.invoice_id,
+                        type(exc).__name__,
+                    )
                 await event_bus.publish("invoice.accepted", {"dispatch_id": record.id, "tenant_id": record.tenant_id})
 
             elif outcome == ProviderInvoiceOutcome.REJECTED:
@@ -159,6 +170,22 @@ class InvoiceStatusService:
                 update_fields["cancelled_at"] = now
                 update_fields["next_status_check_at"] = None
                 await InvoiceStatusRepository.update_status_poll_result(record.tenant_id, record.id, worker_id, update_fields)
+                try:
+                    from core.integrations.nilvera_gl_automation import handle_outgoing_invoice_cancelled
+
+                    await handle_outgoing_invoice_cancelled(
+                        record.tenant_id,
+                        record.invoice_id,
+                        event_ref=f"nilvera-status:{record.id}:cancelled",
+                        reason="Nilvera belge durumu iptal edildi",
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Outgoing invoice GL cancellation handling failed tenant=%s invoice=%s error_type=%s",
+                        record.tenant_id,
+                        record.invoice_id,
+                        type(exc).__name__,
+                    )
                 await event_bus.publish("invoice.cancelled", {"dispatch_id": record.id, "tenant_id": record.tenant_id})
 
             elif outcome == ProviderInvoiceOutcome.UNKNOWN:

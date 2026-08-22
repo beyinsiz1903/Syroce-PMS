@@ -24,6 +24,7 @@ from pymongo.errors import DuplicateKeyError
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from shared_kernel.gl_posting import GLPostingError, post_journal_entry
 from shared_kernel.pos_idem import ensure_compound_unique
 
 logger = logging.getLogger("domains.accounting.ap")
@@ -33,6 +34,15 @@ router = APIRouter(prefix="/api/ap", tags=["Accounting / AP"])
 _AP_ROLES = {"super_admin", "admin", "finance", "accountant"}
 _READ_ROLES = {"super_admin", "admin", "finance", "accountant", "supervisor"}
 _EPS = 0.005
+
+_AP_GL_DEFAULTS = {
+    "enabled": False,
+    "expense_account_code": "770",
+    "input_vat_account_code": "191",
+    "payable_account_code": "320",
+    "bank_account_code": "102",
+    "cash_account_code": "100",
+}
 
 
 def _now_iso() -> str:
@@ -133,6 +143,170 @@ class PaymentIn(BaseModel):
     idempotency_key: str | None = Field(None, max_length=120)
 
 
+class APGLMappingIn(BaseModel):
+    enabled: bool = False
+    expense_account_code: str = Field("770", min_length=1, max_length=40)
+    input_vat_account_code: str = Field("191", min_length=1, max_length=40)
+    payable_account_code: str = Field("320", min_length=1, max_length=40)
+    bank_account_code: str = Field("102", min_length=1, max_length=40)
+    cash_account_code: str = Field("100", min_length=1, max_length=40)
+
+
+async def _get_gl_mapping(tenant_id: str) -> dict:
+    doc = await db.ap_gl_mapping.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    return {**_AP_GL_DEFAULTS, **(doc or {})}
+
+
+async def _post_invoice_to_gl(tenant_id: str, invoice: dict, actor: str) -> dict | None:
+    mapping = await _get_gl_mapping(tenant_id)
+    if not mapping.get("enabled"):
+        return None
+    if str(invoice.get("currency") or "TRY").upper() not in {"TRY", "TRL"}:
+        await db.ap_invoices.update_one(
+            {"tenant_id": tenant_id, "id": invoice["id"]},
+            {"$set": {"gl_status": "blocked", "gl_error": "Yabancı para AP faturası için kur eşlemesi gerekli"}},
+        )
+        return None
+    lines = [
+        {
+            "account_code": mapping["expense_account_code"],
+            "debit": invoice["subtotal"],
+            "credit": 0,
+            "memo": "Tedarikçi faturası gider/maliyet",
+        },
+    ]
+    if float(invoice.get("tax", 0) or 0) > _EPS:
+        lines.append(
+            {
+                "account_code": mapping["input_vat_account_code"],
+                "debit": invoice["tax"],
+                "credit": 0,
+                "memo": "Tedarikçi faturası indirilecek KDV",
+            }
+        )
+    lines.append(
+        {
+            "account_code": mapping["payable_account_code"],
+            "debit": 0,
+            "credit": invoice["total_amount"],
+            "memo": "Tedarikçi borcu",
+        }
+    )
+    try:
+        entry = await post_journal_entry(
+            db,
+            tenant_id,
+            date=str(invoice.get("issue_date") or _today())[:10],
+            memo=f"AP faturası {invoice.get('invoice_no') or invoice['id']}",
+            lines=lines,
+            source="ap_invoice",
+            source_ref=invoice["id"],
+            actor=actor,
+            idempotency_key=f"ap-invoice:{invoice['id']}",
+        )
+    except GLPostingError as exc:
+        await db.ap_invoices.update_one(
+            {"tenant_id": tenant_id, "id": invoice["id"]},
+            {"$set": {"gl_status": "blocked", "gl_error": str(exc)[:500], "updated_at": _now_iso()}},
+        )
+        return None
+    await db.ap_invoices.update_one(
+        {"tenant_id": tenant_id, "id": invoice["id"]},
+        {"$set": {"gl_status": "posted", "gl_journal_entry_id": entry["id"], "gl_error": None, "updated_at": _now_iso()}},
+    )
+    return entry
+
+
+async def _post_payment_to_gl(tenant_id: str, invoice: dict, payment: dict, actor: str) -> dict | None:
+    mapping = await _get_gl_mapping(tenant_id)
+    if not mapping.get("enabled"):
+        return None
+    method = str(payment.get("method") or "").lower()
+    credit_account = mapping["cash_account_code"] if method in {"cash", "nakit"} else mapping["bank_account_code"]
+    try:
+        entry = await post_journal_entry(
+            db,
+            tenant_id,
+            date=str(payment.get("paid_at") or _today())[:10],
+            memo=f"AP ödemesi {invoice.get('invoice_no') or invoice['id']}",
+            lines=[
+                {"account_code": mapping["payable_account_code"], "debit": payment["amount"], "credit": 0, "memo": "Satıcı borcu kapama"},
+                {"account_code": credit_account, "debit": 0, "credit": payment["amount"], "memo": "Tedarikçi ödemesi"},
+            ],
+            source="ap_payment",
+            source_ref=payment["id"],
+            actor=actor,
+            idempotency_key=f"ap-payment:{payment['id']}",
+        )
+    except GLPostingError as exc:
+        await db.ap_payments.update_one(
+            {"tenant_id": tenant_id, "id": payment["id"]},
+            {"$set": {"gl_status": "blocked", "gl_error": str(exc)[:500]}},
+        )
+        return None
+    await db.ap_payments.update_one(
+        {"tenant_id": tenant_id, "id": payment["id"]},
+        {"$set": {"gl_status": "posted", "gl_journal_entry_id": entry["id"], "gl_error": None}},
+    )
+    return entry
+
+
+async def _reverse_invoice_gl(tenant_id: str, invoice: dict, actor: str) -> dict | None:
+    entry_id = invoice.get("gl_journal_entry_id")
+    if not entry_id:
+        return None
+    original = await db.gl_journal_entries.find_one(
+        {"tenant_id": tenant_id, "id": entry_id, "status": "posted"},
+        {"_id": 0},
+    )
+    if not original:
+        raise HTTPException(status_code=409, detail="AP kaynak GL fişi bulunamadı")
+    lines = [
+        {
+            "account_code": line["account_code"],
+            "debit": float(line.get("credit", 0) or 0),
+            "credit": float(line.get("debit", 0) or 0),
+            "memo": "AP fatura iptal ters kaydı",
+        }
+        for line in original.get("lines") or []
+    ]
+    try:
+        return await post_journal_entry(
+            db,
+            tenant_id,
+            date=_today(),
+            memo=f"AP fatura iptali {invoice.get('invoice_no') or invoice['id']}",
+            lines=lines,
+            source="ap_invoice_reversal",
+            source_ref=invoice["id"],
+            actor=actor,
+            idempotency_key=f"ap-invoice-reversal:{invoice['id']}",
+            reverses_entry_id=entry_id,
+            reversal_reason="AP faturası void edildi",
+        )
+    except GLPostingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/gl-mapping")
+async def get_ap_gl_mapping(current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _READ_ROLES)
+    return {"mapping": await _get_gl_mapping(_tenant_of(current_user))}
+
+
+@router.put("/gl-mapping")
+async def update_ap_gl_mapping(payload: APGLMappingIn, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _AP_ROLES)
+    tenant_id = _tenant_of(current_user)
+    now = _now_iso()
+    await db.ap_gl_mapping.update_one(
+        {"tenant_id": tenant_id},
+        {"$set": {**payload.model_dump(), "updated_at": now, "updated_by": _actor_id(current_user)}, "$setOnInsert": {"tenant_id": tenant_id, "created_at": now}},
+        upsert=True,
+    )
+    return {"mapping": await _get_gl_mapping(tenant_id)}
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Fatura defteri
 # ─────────────────────────────────────────────────────────────────────
@@ -198,8 +372,9 @@ async def create_invoice(payload: InvoiceIn, current_user: User = Depends(get_cu
         "created_by": _actor_id(current_user),
     }
     await db.ap_invoices.insert_one(dict(doc))
-    doc.pop("_id", None)
-    return {"invoice": doc}
+    await _post_invoice_to_gl(tenant_id, doc, _actor_id(current_user))
+    stored = await db.ap_invoices.find_one({"tenant_id": tenant_id, "id": doc["id"]}, {"_id": 0})
+    return {"invoice": stored or doc}
 
 
 @router.get("/invoices/{invoice_id}")
@@ -210,6 +385,38 @@ async def get_invoice(invoice_id: str, current_user: User = Depends(get_current_
         raise HTTPException(status_code=404, detail="Fatura bulunamadı")
     payments = await db.ap_payments.find({"tenant_id": tenant_id, "invoice_id": invoice_id}, {"_id": 0}).to_list(10000)
     return {"invoice": inv, "payments": payments}
+
+
+@router.post("/invoices/{invoice_id}/post-to-gl")
+async def retry_invoice_gl(invoice_id: str, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _AP_ROLES)
+    tenant_id = _tenant_of(current_user)
+    inv = await db.ap_invoices.find_one({"tenant_id": tenant_id, "id": invoice_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Fatura bulunamadı")
+    if inv.get("status") == "void":
+        raise HTTPException(status_code=409, detail="Void fatura muhasebeleştirilemez")
+    entry = await _post_invoice_to_gl(tenant_id, inv, _actor_id(current_user))
+    stored = await db.ap_invoices.find_one({"tenant_id": tenant_id, "id": invoice_id}, {"_id": 0})
+    return {"invoice": stored or inv, "entry": entry}
+
+
+@router.post("/payments/{payment_id}/post-to-gl")
+async def retry_payment_gl(payment_id: str, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _AP_ROLES)
+    tenant_id = _tenant_of(current_user)
+    payment = await db.ap_payments.find_one({"tenant_id": tenant_id, "id": payment_id}, {"_id": 0})
+    if not payment:
+        raise HTTPException(status_code=404, detail="Ödeme bulunamadı")
+    inv = await db.ap_invoices.find_one(
+        {"tenant_id": tenant_id, "id": payment["invoice_id"]},
+        {"_id": 0},
+    )
+    if not inv:
+        raise HTTPException(status_code=404, detail="Fatura bulunamadı")
+    entry = await _post_payment_to_gl(tenant_id, inv, payment, _actor_id(current_user))
+    stored = await db.ap_payments.find_one({"tenant_id": tenant_id, "id": payment_id}, {"_id": 0})
+    return {"payment": stored or payment, "entry": entry}
 
 
 @router.post("/invoices/{invoice_id}/void")
@@ -224,9 +431,16 @@ async def void_invoice(invoice_id: str, current_user: User = Depends(get_current
     payments = await db.ap_payments.find({"tenant_id": tenant_id, "invoice_id": invoice_id}, {"_id": 0}).to_list(1)
     if payments:
         raise HTTPException(status_code=409, detail="Ödemesi olan fatura void edilemez")
+    reversal = await _reverse_invoice_gl(tenant_id, inv, _actor_id(current_user))
     await db.ap_invoices.update_one(
         {"tenant_id": tenant_id, "id": invoice_id},
-        {"$set": {"status": "void", "updated_at": _now_iso(), "voided_by": _actor_id(current_user)}},
+        {"$set": {
+            "status": "void",
+            "updated_at": _now_iso(),
+            "voided_by": _actor_id(current_user),
+            "gl_reversal_entry_id": reversal.get("id") if reversal else None,
+            "gl_status": "reversed" if reversal else inv.get("gl_status"),
+        }},
     )
     inv = await db.ap_invoices.find_one({"tenant_id": tenant_id, "id": invoice_id}, {"_id": 0})
     return {"invoice": inv}
@@ -243,6 +457,17 @@ async def apply_payment(invoice_id: str, payload: PaymentIn, current_user: User 
     if inv.get("status") == "void":
         raise HTTPException(status_code=409, detail="Void faturaya ödeme yapılamaz")
 
+    idem = (payload.idempotency_key or "").strip() or None
+    if idem:
+        await _ensure_payment_idem(tenant_id)
+        existing = await db.ap_payments.find_one(
+            {"tenant_id": tenant_id, "idempotency_key": idem},
+            {"_id": 0},
+        )
+        if existing:
+            inv = await _recalc_invoice(tenant_id, invoice_id)
+            return {"invoice": inv, "payment": existing, "idempotent_replay": True}
+
     total = float(inv.get("total_amount", 0) or 0)
     already = float(inv.get("paid_amount", 0) or 0)
     remaining = round(total - already, 2)
@@ -252,10 +477,6 @@ async def apply_payment(invoice_id: str, payload: PaymentIn, current_user: User 
             status_code=400,
             detail=f"Ödeme kalan bakiyeyi aşıyor (kalan={remaining})",
         )
-
-    idem = (payload.idempotency_key or "").strip() or None
-    if idem:
-        await _ensure_payment_idem(tenant_id)
 
     now = _now_iso()
     payment = {
@@ -278,9 +499,13 @@ async def apply_payment(invoice_id: str, payload: PaymentIn, current_user: User 
         inv = await _recalc_invoice(tenant_id, invoice_id)
         return {"invoice": inv, "payment": existing, "idempotent_replay": True}
 
+    await _post_payment_to_gl(tenant_id, inv, payment, _actor_id(current_user))
     inv = await _recalc_invoice(tenant_id, invoice_id)
-    payment.pop("_id", None)
-    return {"invoice": inv, "payment": payment}
+    stored_payment = await db.ap_payments.find_one(
+        {"tenant_id": tenant_id, "id": payment["id"]},
+        {"_id": 0},
+    )
+    return {"invoice": inv, "payment": stored_payment or payment}
 
 
 # ─────────────────────────────────────────────────────────────────────

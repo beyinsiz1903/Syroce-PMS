@@ -62,6 +62,10 @@ async def post_incoming_invoice_to_gl(
     purchase_account_code: str,
     vat_account_code: str,
     payable_account_code: str,
+    other_tax_account_code: str | None = None,
+    deduction_account_code: str | None = None,
+    other_tax_accounts_by_code: dict[str, str] | None = None,
+    deduction_accounts_by_code: dict[str, str] | None = None,
     actor: str,
 ) -> dict:
     """Post a simple Nilvera purchase invoice to GL using explicit accounts.
@@ -74,8 +78,16 @@ async def post_incoming_invoice_to_gl(
         raise InvoiceGLBridgeError("Incoming invoice not found")
 
     currency = (invoice.currency or "").strip().upper()
+    if len(currency) != 3 or not currency.isascii() or not currency.isalpha():
+        raise InvoiceGLBridgeError("Incoming invoice currency is invalid")
+    exchange_rate: Decimal | None = None
     if currency not in _ALLOWED_TRY_CODES:
-        raise InvoiceGLBridgeError("Only TRY incoming invoices can be posted to GL automatically")
+        raw_rate = getattr(invoice, "exchange_rate", None)
+        if raw_rate is None:
+            raise InvoiceGLBridgeError("Foreign-currency incoming invoice requires a TRY exchange rate")
+        exchange_rate = Decimal(str(raw_rate))
+        if not exchange_rate.is_finite() or exchange_rate <= 0:
+            raise InvoiceGLBridgeError("Incoming invoice exchange rate must be positive")
 
     payable = _money(invoice.payable_amount)
     if payable <= 0:
@@ -86,12 +98,28 @@ async def post_incoming_invoice_to_gl(
     if not active_lines:
         raise InvoiceGLBridgeError("Incoming invoice has no active lines")
 
-    if any(getattr(line, "other_taxes", None) for line in active_lines):
-        raise InvoiceGLBridgeError("Incoming invoice contains unsupported other taxes or deductions")
-
     base_total = sum((_money(line.line_extension_amount) for line in active_lines), Decimal("0"))
     vat_total = sum((_money(line.kdv_amount) for line in active_lines), Decimal("0"))
-    calculated_total = (base_total + vat_total).quantize(Decimal("0.01"))
+    other_taxes: dict[str, Decimal] = {}
+    deductions: dict[str, Decimal] = {}
+    for line in active_lines:
+        for tax in getattr(line, "other_taxes", None) or []:
+            if isinstance(tax, dict):
+                code = str(tax.get("tax_code") or "").strip()
+                amount = _money(tax.get("amount"))
+                is_deduction = bool(tax.get("is_deduction"))
+            else:
+                code = str(getattr(tax, "tax_code", "") or "").strip()
+                amount = _money(getattr(tax, "amount", None))
+                is_deduction = bool(getattr(tax, "is_deduction", False))
+            if not code or amount <= 0:
+                raise InvoiceGLBridgeError("Incoming invoice contains unsupported other taxes or deductions")
+            target = deductions if is_deduction else other_taxes
+            target[code] = target.get(code, Decimal("0")) + amount
+
+    other_tax_total = sum(other_taxes.values(), Decimal("0"))
+    deduction_total = sum(deductions.values(), Decimal("0"))
+    calculated_total = (base_total + vat_total + other_tax_total - deduction_total).quantize(Decimal("0.01"))
     if abs(calculated_total - payable) > _ROUNDING_TOLERANCE:
         raise InvoiceGLBridgeError(
             "Incoming invoice totals do not reconcile to payable amount; accounting mapping is required"
@@ -118,6 +146,32 @@ async def post_incoming_invoice_to_gl(
                 "memo": "Nilvera indirilecek KDV",
             }
         )
+    other_tax_map = other_tax_accounts_by_code or {}
+    for code, amount in sorted(other_taxes.items()):
+        account = other_tax_map.get(code) or other_tax_account_code
+        if not account:
+            raise InvoiceGLBridgeError(f"No incoming other-tax account provided for code {code}")
+        journal_lines.append(
+            {
+                "account_code": _clean_account(account, f"Other tax {code}"),
+                "debit": float(amount),
+                "credit": 0,
+                "memo": f"Nilvera alış faturası vergi {code}",
+            }
+        )
+    deduction_map = deduction_accounts_by_code or {}
+    for code, amount in sorted(deductions.items()):
+        account = deduction_map.get(code) or deduction_account_code
+        if not account:
+            raise InvoiceGLBridgeError(f"No incoming deduction account provided for code {code}")
+        journal_lines.append(
+            {
+                "account_code": _clean_account(account, f"Deduction {code}"),
+                "debit": 0,
+                "credit": float(amount),
+                "memo": f"Nilvera alış faturası kesinti/tevkifat {code}",
+            }
+        )
     journal_lines.append(
         {
             "account_code": payable_account,
@@ -126,6 +180,31 @@ async def post_incoming_invoice_to_gl(
             "memo": "Nilvera satıcı borcu",
         }
     )
+
+    if exchange_rate is not None:
+        # GL is kept in TRY while preserving the provider currency snapshot on
+        # every line.  The payable line absorbs at most one kuruş of component
+        # rounding; larger drift fails closed instead of inventing an FX gain.
+        for line in journal_lines:
+            foreign_debit = _money(line.get("debit"))
+            foreign_credit = _money(line.get("credit"))
+            foreign_amount = foreign_debit or foreign_credit
+            base_amount = (foreign_amount * exchange_rate).quantize(Decimal("0.01"))
+            line["debit"] = float(base_amount) if foreign_debit > 0 else 0
+            line["credit"] = float(base_amount) if foreign_credit > 0 else 0
+            line["currency"] = currency
+            line["foreign_amount"] = float(foreign_amount)
+            line["exchange_rate"] = str(exchange_rate)
+
+        total_debit_base = sum((_money(line["debit"]) for line in journal_lines), Decimal("0"))
+        total_credit_base = sum((_money(line["credit"]) for line in journal_lines), Decimal("0"))
+        rounding_delta = total_debit_base - total_credit_base
+        payable_line = journal_lines[-1]
+        adjusted_payable = _money(payable_line["credit"]) + rounding_delta
+        expected_payable = (payable * exchange_rate).quantize(Decimal("0.01"))
+        if adjusted_payable <= 0 or abs(adjusted_payable - expected_payable) > Decimal("0.01"):
+            raise InvoiceGLBridgeError("Foreign-currency invoice has an unsupported TRY rounding difference")
+        payable_line["credit"] = float(adjusted_payable)
 
     db = get_db_for_tenant(tenant_id)
     try:
@@ -278,6 +357,10 @@ async def post_outgoing_invoice_to_gl(
     if not invoice:
         raise InvoiceGLBridgeError("Outgoing invoice not found")
 
+    currency = str(invoice.get("currency") or "TRY").strip().upper()
+    if currency not in _ALLOWED_TRY_CODES:
+        raise InvoiceGLBridgeError("Only TRY outgoing invoices can be posted to GL automatically")
+
     total = _money(invoice.get("total", 0))
     if total <= 0:
         raise InvoiceGLBridgeError("Outgoing invoice total must be positive")
@@ -387,11 +470,19 @@ async def post_outgoing_invoice_to_gl(
     if abs(tot_debit - tot_credit) > 0.02:
         raise InvoiceGLBridgeError(f"Journal unbalanced: Debit {tot_debit} != Credit {tot_credit}")
 
+    issue_date = invoice.get("issue_date")
+    if isinstance(issue_date, datetime):
+        posting_date = issue_date.date().isoformat()
+    elif isinstance(issue_date, str) and len(issue_date) >= 10:
+        posting_date = issue_date[:10]
+    else:
+        posting_date = datetime.now(UTC).date().isoformat()
+
     try:
         entry = await post_journal_entry(
             db,
             tenant_id,
-            date=datetime.now(UTC).date().isoformat(),
+            date=posting_date,
             memo=f"Satış faturası {invoice.get('invoice_number', invoice_id)}",
             lines=journal_lines,
             source="nilvera_outgoing",
@@ -416,3 +507,106 @@ async def post_outgoing_invoice_to_gl(
         {"tenant_id": tenant_id, "id": entry["id"]},
         {"_id": 0},
     ) or entry
+
+
+async def reverse_outgoing_invoice_gl(
+    tenant_id: str,
+    invoice_id: str,
+    *,
+    event_ref: str,
+    reason: str,
+    actor: str = "system",
+) -> dict | None:
+    """Reverse an accepted Nilvera sales invoice journal exactly once.
+
+    Cancellation/rejection can arrive more than once through status polling or
+    a local invoice update.  The event reference makes the reversal replay-safe
+    while ``reversal_status`` on the source prevents a second event from
+    reversing the same sale twice.
+    """
+    db = get_db_for_tenant(tenant_id)
+    original = await db.gl_journal_entries.find_one(
+        {
+            "tenant_id": tenant_id,
+            "idempotency_key": f"nilvera-outgoing:{invoice_id}",
+            "source": "nilvera_outgoing",
+            "status": "posted",
+        },
+        {"_id": 0},
+    )
+    if original is None:
+        return None
+    if original.get("reversal_status") == "reversed" and original.get("reversal_entry_id"):
+        return await db.gl_journal_entries.find_one(
+            {"tenant_id": tenant_id, "id": original["reversal_entry_id"]},
+            {"_id": 0},
+        )
+
+    original_lines = original.get("lines") or []
+    if not original_lines:
+        raise InvoiceGLBridgeError("Source outgoing GL journal has no lines")
+    reversal_lines: list[dict] = []
+    for line in original_lines:
+        debit = round(float(line.get("debit", 0) or 0), 2)
+        credit = round(float(line.get("credit", 0) or 0), 2)
+        if (debit > 0) == (credit > 0):
+            raise InvoiceGLBridgeError("Source outgoing GL journal line is not reversible")
+        reversal_line = {
+            "account_code": line.get("account_code"),
+            "debit": credit,
+            "credit": debit,
+            "memo": f"Satış iptal/iade ters kaydı: {line.get('memo') or ''}"[:300],
+        }
+        if line.get("currency"):
+            reversal_line.update(
+                {
+                    "currency": line.get("currency"),
+                    "foreign_amount": line.get("foreign_amount"),
+                    "exchange_rate": line.get("exchange_rate"),
+                }
+            )
+        reversal_lines.append(reversal_line)
+
+    try:
+        reversal = await post_journal_entry(
+            db,
+            tenant_id,
+            date=datetime.now(UTC).date().isoformat(),
+            memo=f"Nilvera satış iptal/iade ters kaydı: {original.get('entry_no') or invoice_id}",
+            lines=reversal_lines,
+            source="nilvera_outgoing_reversal",
+            source_ref=event_ref,
+            actor=actor,
+            idempotency_key=f"nilvera-outgoing-reversal:{invoice_id}",
+            reverses_entry_id=original.get("id"),
+            reversal_reason=reason,
+        )
+    except GLPostingError as exc:
+        raise InvoiceGLBridgeError(str(exc)) from exc
+
+    now = datetime.now(UTC).isoformat()
+    await db.gl_journal_entries.update_one(
+        {"tenant_id": tenant_id, "id": reversal["id"]},
+        {
+            "$set": {
+                "nilvera_source_invoice_id": invoice_id,
+                "nilvera_cancellation_event_ref": event_ref,
+                "integration_kind": "nilvera_outgoing_reversal",
+            }
+        },
+    )
+    await db.gl_journal_entries.update_one(
+        {"tenant_id": tenant_id, "id": original["id"]},
+        {
+            "$set": {
+                "reversal_status": "reversed",
+                "reversal_entry_id": reversal["id"],
+                "reversed_at": now,
+                "reversed_by": actor,
+            }
+        },
+    )
+    return await db.gl_journal_entries.find_one(
+        {"tenant_id": tenant_id, "id": reversal["id"]},
+        {"_id": 0},
+    ) or reversal

@@ -13,6 +13,16 @@ const emptyNilveraSeller = {
   vkn: '', name: '', tax_office: '', address: '', city: '', country: 'Türkiye',
 };
 
+const defaultNilveraAccounting = {
+  incoming_mode: 'review', outgoing_mode: 'review',
+  incoming_purchase_account_code: '153', incoming_vat_account_code: '191', incoming_payable_account_code: '320',
+  incoming_other_tax_account_code: '', incoming_deduction_account_code: '',
+  incoming_other_tax_accounts_by_code: {}, incoming_deduction_accounts_by_code: {},
+  outgoing_revenue_account_code: '600', outgoing_receivable_account_code: '120', outgoing_discount_account_code: '611',
+  outgoing_vat_account_code: '391', outgoing_accommodation_tax_account_code: '360',
+  outgoing_vat_accounts_by_rate: {}, outgoing_accommodation_tax_accounts_by_rate: {},
+};
+
 const TenantProvisioningModal = ({ open, onOpenChange, tenant, onSuccess }) => {
   const tenantId = tenant?.id || tenant?._id;
   const [loading, setLoading] = useState(false);
@@ -27,6 +37,7 @@ const TenantProvisioningModal = ({ open, onOpenChange, tenant, onSuccess }) => {
   const [nilveraEnabled, setNilveraEnabled] = useState(false);
   const [nilveraApiKey, setNilveraApiKey] = useState('');
   const [nilveraSeller, setNilveraSeller] = useState(emptyNilveraSeller);
+  const [nilveraAccounting, setNilveraAccounting] = useState(defaultNilveraAccounting);
 
   const selectedProvider = useMemo(
     () => data?.providers?.find((item) => item.provider === provider),
@@ -49,6 +60,7 @@ const TenantProvisioningModal = ({ open, onOpenChange, tenant, onSuccess }) => {
       setIsHeadquarters(!!next.tenant?.is_chain_headquarters);
       setNilveraEnabled(!!next.nilvera?.enabled);
       setNilveraSeller({ ...emptyNilveraSeller, ...(next.nilvera?.seller || {}) });
+      setNilveraAccounting({ ...defaultNilveraAccounting, ...(next.nilvera_accounting || {}) });
       setCredentials({});
       setNilveraApiKey('');
     } catch (error) {
@@ -142,6 +154,27 @@ const TenantProvisioningModal = ({ open, onOpenChange, tenant, onSuccess }) => {
       await load();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Nilvera ayarları kaydedilemedi');
+    } finally {
+      setSaving('');
+    }
+  };
+
+  const saveNilveraAccounting = async () => {
+    setSaving('nilvera-accounting');
+    try {
+      const payload = {
+        ...nilveraAccounting,
+        incoming_other_tax_account_code: nilveraAccounting.incoming_other_tax_account_code?.trim() || null,
+        incoming_deduction_account_code: nilveraAccounting.incoming_deduction_account_code?.trim() || null,
+        outgoing_discount_account_code: nilveraAccounting.outgoing_discount_account_code?.trim() || null,
+        outgoing_vat_account_code: nilveraAccounting.outgoing_vat_account_code?.trim() || null,
+        outgoing_accommodation_tax_account_code: nilveraAccounting.outgoing_accommodation_tax_account_code?.trim() || null,
+      };
+      const response = await axios.put(`/admin/tenants/${tenantId}/integrations/nilvera-accounting`, payload);
+      setNilveraAccounting(response.data.settings);
+      toast.success('Otel Nilvera muhasebe eşlemesi kaydedildi; dış servis çağrısı yapılmadı');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Nilvera muhasebe eşlemesi kaydedilemedi');
     } finally {
       setSaving('');
     }
@@ -282,6 +315,39 @@ const TenantProvisioningModal = ({ open, onOpenChange, tenant, onSuccess }) => {
                 <Button variant="outline" onClick={saveNilvera} disabled={saving === 'nilvera'}>
                   {saving === 'nilvera' ? 'Kaydediliyor...' : 'Nilvera ayarlarını kaydet'}
                 </Button>
+              </div>
+              <div className="border-t pt-4 space-y-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-900">Genel Muhasebe eşlemesi</h4>
+                  <p className="text-xs text-slate-500">İnceleme modu varsayılandır. Otomatik mod yalnızca yerel GL fişi üretir.</p>
+                </div>
+                <div className="grid md:grid-cols-2 gap-3">
+                  {[
+                    ['incoming_mode', 'Alış faturası modu'], ['outgoing_mode', 'Satış faturası modu'],
+                  ].map(([key, label]) => (
+                    <div key={key}>
+                      <Label>{label}</Label>
+                      <select className="mt-1 w-full rounded-md border px-3 py-2 text-sm" value={nilveraAccounting[key]} onChange={(event) => setNilveraAccounting((current) => ({ ...current, [key]: event.target.value }))}>
+                        <option value="disabled">Kapalı</option><option value="review">İnceleme Kuyruğu</option><option value="automatic">Otomatik</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid md:grid-cols-3 gap-3">
+                  {[
+                    ['incoming_purchase_account_code', 'Alış gider/stok'], ['incoming_vat_account_code', 'İndirilecek KDV'], ['incoming_payable_account_code', 'Satıcılar'],
+                    ['incoming_other_tax_account_code', 'Diğer alış vergisi'], ['incoming_deduction_account_code', 'Tevkifat/kesinti'],
+                    ['outgoing_revenue_account_code', 'Satış geliri'], ['outgoing_receivable_account_code', 'Alıcılar'], ['outgoing_discount_account_code', 'Satış iskontosu'],
+                    ['outgoing_vat_account_code', 'Hesaplanan KDV'], ['outgoing_accommodation_tax_account_code', 'Konaklama vergisi'],
+                  ].map(([key, label]) => (
+                    <div key={key}><Label>{label}</Label><Input className="mt-1" value={nilveraAccounting[key] || ''} onChange={(event) => setNilveraAccounting((current) => ({ ...current, [key]: event.target.value }))} /></div>
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <Button variant="outline" onClick={saveNilveraAccounting} disabled={saving === 'nilvera-accounting'}>
+                    {saving === 'nilvera-accounting' ? 'Kaydediliyor...' : 'Muhasebe eşlemesini kaydet'}
+                  </Button>
+                </div>
               </div>
             </section>
 

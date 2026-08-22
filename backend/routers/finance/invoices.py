@@ -106,13 +106,18 @@ async def update_invoice(
     if not invoice_doc:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
+    old_status = (before_doc or {}).get("status")
+    new_status = invoice_doc.get("status")
+    is_cancellation = (
+        old_status != new_status
+        and isinstance(new_status, str)
+        and new_status.lower() in {"cancelled", "canceled", "void", "voided", "iptal"}
+    )
+
     # Task #578 — fatura durumu değişikliklerini (özellikle iptal/void)
     # tamper-evident audit trail'e before/after snapshot ile yaz. İptale
     # geçişlerde severity yükseltilir; diğer güncellemeler "info" kalır.
     try:
-        old_status = (before_doc or {}).get("status")
-        new_status = invoice_doc.get("status")
-        is_cancellation = old_status != new_status and isinstance(new_status, str) and new_status.lower() in {"cancelled", "canceled", "void", "voided", "iptal"}
         from core.audit import log_audit_event
 
         await log_audit_event(
@@ -134,6 +139,32 @@ async def update_invoice(
         import logging
 
         logging.getLogger(__name__).exception("audit log for update_invoice failed")
+
+    if is_cancellation:
+        try:
+            from core.integrations.nilvera_gl_automation import handle_outgoing_invoice_cancelled
+
+            reversal = await handle_outgoing_invoice_cancelled(
+                current_user.tenant_id,
+                invoice_id,
+                event_ref=f"local-invoice-cancel:{invoice_id}",
+                reason=f"Yerel fatura durumu {old_status} -> {new_status}",
+                actor=current_user.id,
+            )
+            await db.invoices.update_one(
+                tenant_filter,
+                {
+                    "$set": {
+                        "gl_reversal_status": "reversed" if reversal else "not_applicable_or_queued",
+                        "gl_reversal_entry_id": reversal.get("id") if reversal else None,
+                    }
+                },
+            )
+            invoice_doc = await db.invoices.find_one(tenant_filter, {"_id": 0}) or invoice_doc
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).exception("GL reversal registration for invoice cancellation failed")
 
     return invoice_doc
 

@@ -155,6 +155,21 @@ def test_maps_negative_other_tax_amount_as_explicit_deduction():
     assert tax.is_deduction is True
 
 
+def test_maps_pricing_exchange_rate_for_foreign_currency_gl():
+    exchange = b"""
+    <cac:PricingExchangeRate>
+      <cbc:SourceCurrencyCode>EUR</cbc:SourceCurrencyCode>
+      <cbc:TargetCurrencyCode>TRY</cbc:TargetCurrencyCode>
+      <cbc:CalculationRate>40.125000</cbc:CalculationRate>
+    </cac:PricingExchangeRate>
+    """
+    content = _invoice_xml().replace(b"<cac:InvoiceLine>", exchange + b"<cac:InvoiceLine>", 1)
+    result = NilveraIncomingXmlMapper.map_document(content)
+    assert result.exchange_rate == Decimal("40.125000")
+    assert result.exchange_rate_source_currency == "EUR"
+    assert result.exchange_rate_target_currency == "TRY"
+
+
 def test_rejects_negative_non_tax_amount_without_exposing_value():
     content = _invoice_xml().replace(
         b'<cbc:LineExtensionAmount currencyID="TRY">100.00',

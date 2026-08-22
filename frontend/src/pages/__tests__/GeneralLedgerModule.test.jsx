@@ -32,6 +32,10 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       eledgerSourcePackage: '/gl/e-ledger/source-package',
       operationalMapping: '/gl/integrations/operational/mapping',
       operationalStatus: '/gl/integrations/operational/status',
+      nilveraSettings: '/gl/integrations/nilvera/settings',
+      nilveraQueue: '/gl/integrations/nilvera/queue',
+      apGLMapping: '/ap/gl-mapping',
+      fixedAssetGLMapping: '/fixed-assets/gl-mapping',
     });
   });
 

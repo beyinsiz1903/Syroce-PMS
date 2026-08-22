@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCurrency } from '@/context/CurrencyContext';
-import { Plus, Save, FileText, AlertCircle, CalendarRange, LockKeyhole, Unlock, RotateCcw, Landmark, TrendingUp, PackageOpen } from 'lucide-react';
+import { Plus, Save, FileText, AlertCircle, CalendarRange, LockKeyhole, Unlock, RotateCcw, Landmark, TrendingUp, PackageOpen, Cable, ReceiptText } from 'lucide-react';
 
 export const GL_ENDPOINTS = {
   accounts: '/gl/accounts',
@@ -31,6 +31,44 @@ export const GL_ENDPOINTS = {
   eledgerSourcePackage: '/gl/e-ledger/source-package',
   operationalMapping: '/gl/integrations/operational/mapping',
   operationalStatus: '/gl/integrations/operational/status',
+  nilveraSettings: '/gl/integrations/nilvera/settings',
+  nilveraQueue: '/gl/integrations/nilvera/queue',
+  apGLMapping: '/ap/gl-mapping',
+  fixedAssetGLMapping: '/fixed-assets/gl-mapping',
+};
+
+const DEFAULT_NILVERA_GL_SETTINGS = {
+  incoming_mode: 'review',
+  outgoing_mode: 'review',
+  incoming_purchase_account_code: '153',
+  incoming_vat_account_code: '191',
+  incoming_payable_account_code: '320',
+  incoming_other_tax_account_code: '',
+  incoming_deduction_account_code: '',
+  incoming_other_tax_accounts_by_code: {},
+  incoming_deduction_accounts_by_code: {},
+  outgoing_revenue_account_code: '600',
+  outgoing_receivable_account_code: '120',
+  outgoing_discount_account_code: '611',
+  outgoing_vat_account_code: '391',
+  outgoing_accommodation_tax_account_code: '360',
+  outgoing_vat_accounts_by_rate: {},
+  outgoing_accommodation_tax_accounts_by_rate: {},
+};
+
+const DEFAULT_AP_GL_MAPPING = {
+  enabled: false,
+  expense_account_code: '770',
+  input_vat_account_code: '191',
+  payable_account_code: '320',
+  bank_account_code: '102',
+  cash_account_code: '100',
+};
+
+const DEFAULT_FIXED_ASSET_GL_MAPPING = {
+  enabled: false,
+  depreciation_expense_account_code: '770',
+  accumulated_depreciation_account_code: '257',
 };
 
 export const toJournalPayload = (journal) => ({
@@ -125,6 +163,10 @@ const GeneralLedgerModule = () => {
   const [workspace, setWorkspace] = useState({ aging: null, expenseBudget: null, revenueBudget: null, assets: [] });
   const [operationalBridge, setOperationalBridge] = useState(null);
   const [operationalBusy, setOperationalBusy] = useState(false);
+  const [nilveraGL, setNilveraGL] = useState({ settings: DEFAULT_NILVERA_GL_SETTINGS, queue: [], counts: {} });
+  const [apGLMapping, setApGLMapping] = useState(DEFAULT_AP_GL_MAPPING);
+  const [fixedAssetGLMapping, setFixedAssetGLMapping] = useState(DEFAULT_FIXED_ASSET_GL_MAPPING);
+  const [integrationBusy, setIntegrationBusy] = useState('');
   
   // New Journal Entry State
   const [newJournal, setNewJournal] = useState(emptyJournal);
@@ -396,6 +438,89 @@ const GeneralLedgerModule = () => {
     }
   };
 
+  const fetchAccountingIntegrations = async () => {
+    try {
+      const [nilveraSettingsRes, nilveraQueueRes, apRes, fixedAssetRes] = await Promise.all([
+        axios.get(GL_ENDPOINTS.nilveraSettings),
+        axios.get(GL_ENDPOINTS.nilveraQueue),
+        axios.get(GL_ENDPOINTS.apGLMapping),
+        axios.get(GL_ENDPOINTS.fixedAssetGLMapping),
+      ]);
+      setNilveraGL({
+        settings: { ...DEFAULT_NILVERA_GL_SETTINGS, ...(nilveraSettingsRes.data?.settings || {}) },
+        queue: nilveraQueueRes.data?.items || [],
+        counts: nilveraQueueRes.data?.counts || {},
+      });
+      setApGLMapping({ ...DEFAULT_AP_GL_MAPPING, ...(apRes.data?.mapping || {}) });
+      setFixedAssetGLMapping({ ...DEFAULT_FIXED_ASSET_GL_MAPPING, ...(fixedAssetRes.data?.mapping || {}) });
+    } catch {
+      toast.error('Muhasebe entegrasyon ayarları yüklenemedi.');
+    }
+  };
+
+  const saveNilveraGL = async () => {
+    setIntegrationBusy('nilvera-settings');
+    try {
+      const settings = nilveraGL.settings;
+      const response = await axios.put(GL_ENDPOINTS.nilveraSettings, {
+        ...settings,
+        incoming_other_tax_account_code: settings.incoming_other_tax_account_code?.trim() || null,
+        incoming_deduction_account_code: settings.incoming_deduction_account_code?.trim() || null,
+        outgoing_discount_account_code: settings.outgoing_discount_account_code?.trim() || null,
+        outgoing_vat_account_code: settings.outgoing_vat_account_code?.trim() || null,
+        outgoing_accommodation_tax_account_code: settings.outgoing_accommodation_tax_account_code?.trim() || null,
+      });
+      setNilveraGL((current) => ({ ...current, settings: response.data.settings }));
+      toast.success('Nilvera muhasebe eşlemesi kaydedildi.');
+      await fetchAccountingIntegrations();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Nilvera muhasebe eşlemesi kaydedilemedi.');
+    } finally {
+      setIntegrationBusy('');
+    }
+  };
+
+  const processNilveraQueueItem = async (itemId) => {
+    setIntegrationBusy(`nilvera:${itemId}`);
+    try {
+      const response = await axios.post(`${GL_ENDPOINTS.nilveraQueue}/${itemId}/post`);
+      const status = response.data?.item?.status;
+      if (status === 'posted') toast.success('Nilvera belgesi Genel Muhasebeye işlendi.');
+      else toast.error(response.data?.item?.error_detail || 'Belge inceleme kuyruğunda kaldı.');
+      await fetchAccountingIntegrations();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Nilvera belgesi muhasebeleştirilemedi.');
+    } finally {
+      setIntegrationBusy('');
+    }
+  };
+
+  const saveAPGLMapping = async () => {
+    setIntegrationBusy('ap');
+    try {
+      const response = await axios.put(GL_ENDPOINTS.apGLMapping, apGLMapping);
+      setApGLMapping(response.data.mapping);
+      toast.success('Tedarikçi alt defteri GL eşlemesi kaydedildi.');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'AP muhasebe eşlemesi kaydedilemedi.');
+    } finally {
+      setIntegrationBusy('');
+    }
+  };
+
+  const saveFixedAssetGLMapping = async () => {
+    setIntegrationBusy('fixed-assets');
+    try {
+      const response = await axios.put(GL_ENDPOINTS.fixedAssetGLMapping, fixedAssetGLMapping);
+      setFixedAssetGLMapping(response.data.mapping);
+      toast.success('Amortisman GL eşlemesi kaydedildi.');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Amortisman muhasebe eşlemesi kaydedilemedi.');
+    } finally {
+      setIntegrationBusy('');
+    }
+  };
+
   const initializePeriods = async () => {
     setPeriodBusy('initialize');
     try {
@@ -450,6 +575,7 @@ const GeneralLedgerModule = () => {
     if (activeTab === 'periods') fetchPeriods();
     if (activeTab === 'statements') fetchStatements();
     if (activeTab === 'workspace') fetchWorkspace();
+    if (activeTab === 'integrations') fetchAccountingIntegrations();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, periodYear]);
 
@@ -554,6 +680,7 @@ const GeneralLedgerModule = () => {
           <TabsTrigger value="periods">Mali Dönemler</TabsTrigger>
           <TabsTrigger value="statements">Mali Tablolar</TabsTrigger>
           <TabsTrigger value="workspace">Alt Defterler</TabsTrigger>
+          <TabsTrigger value="integrations">Muhasebe Entegrasyonları</TabsTrigger>
         </TabsList>
 
         {/* TDHP Accounts */}
@@ -1018,6 +1145,125 @@ const GeneralLedgerModule = () => {
             <Card><CardContent className="pt-6"><Landmark className={`w-7 h-7 mb-3 ${operationalBridge?.healthy ? 'text-emerald-600' : 'text-amber-600'}`} /><p className="text-sm text-slate-500">PMS/POS Muhasebe Köprüsü</p><p className="text-lg font-bold">{operationalBridge?.healthy ? 'Sağlıklı' : operationalBridge?.configured ? 'İnceleme Gerekli' : 'Kapalı'}</p><p className="text-xs text-slate-500 mt-2">Gece: {operationalBridge?.failed?.night_audit || 0} · POS: {operationalBridge?.failed?.pos || 0} hata</p>{!operationalBridge?.configured && <Button size="sm" className="w-full mt-3" onClick={enableOperationalBridge} disabled={operationalBusy}>{operationalBusy ? 'Açılıyor...' : 'Standart Eşlemeyle Aç'}</Button>}</CardContent></Card>
           </div>
           <p className="text-xs text-slate-500 mt-4">Bu özetler AP, bütçe ve sabit kıymet alt defterlerindeki gerçek tenant verisinden okunur; örnek/sabit rakam kullanılmaz.</p>
+        </TabsContent>
+
+        <TabsContent value="integrations" className="space-y-5">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Cable className="w-5 h-5 text-blue-600" /> Nilvera → Genel Muhasebe</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                İnceleme modunda belgeler fiş oluşturulmadan kuyruğa alınır. Otomatik mod yalnızca yerel muhasebe fişi üretir; Nilvera’ya veya GİB’e yazma işlemi yapmaz.
+              </div>
+              <div className="grid lg:grid-cols-2 gap-5">
+                <div className="rounded-lg border p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="font-semibold">Alış Faturaları</h3>
+                    <select
+                      aria-label="Nilvera alış muhasebe modu"
+                      className="rounded-md border px-3 py-2 text-sm"
+                      value={nilveraGL.settings.incoming_mode}
+                      onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, incoming_mode: event.target.value } }))}
+                    >
+                      <option value="disabled">Kapalı</option>
+                      <option value="review">İnceleme Kuyruğu</option>
+                      <option value="automatic">Otomatik</option>
+                    </select>
+                  </div>
+                  <div className="grid sm:grid-cols-3 gap-2">
+                    <Input value={nilveraGL.settings.incoming_purchase_account_code} onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, incoming_purchase_account_code: event.target.value } }))} placeholder="Gider/Stok (153)" />
+                    <Input value={nilveraGL.settings.incoming_vat_account_code} onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, incoming_vat_account_code: event.target.value } }))} placeholder="İndirilecek KDV (191)" />
+                    <Input value={nilveraGL.settings.incoming_payable_account_code} onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, incoming_payable_account_code: event.target.value } }))} placeholder="Satıcılar (320)" />
+                    <Input value={nilveraGL.settings.incoming_other_tax_account_code || ''} onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, incoming_other_tax_account_code: event.target.value } }))} placeholder="Diğer Vergi (opsiyonel)" />
+                    <Input value={nilveraGL.settings.incoming_deduction_account_code || ''} onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, incoming_deduction_account_code: event.target.value } }))} placeholder="Tevkifat/Kesinti (360)" />
+                  </div>
+                </div>
+                <div className="rounded-lg border p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="font-semibold">Satış Faturaları</h3>
+                    <select
+                      aria-label="Nilvera satış muhasebe modu"
+                      className="rounded-md border px-3 py-2 text-sm"
+                      value={nilveraGL.settings.outgoing_mode}
+                      onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, outgoing_mode: event.target.value } }))}
+                    >
+                      <option value="disabled">Kapalı</option>
+                      <option value="review">İnceleme Kuyruğu</option>
+                      <option value="automatic">Otomatik</option>
+                    </select>
+                  </div>
+                  <div className="grid sm:grid-cols-3 gap-2">
+                    <Input value={nilveraGL.settings.outgoing_revenue_account_code || ''} onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, outgoing_revenue_account_code: event.target.value } }))} placeholder="Gelir (600)" />
+                    <Input value={nilveraGL.settings.outgoing_receivable_account_code || ''} onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, outgoing_receivable_account_code: event.target.value } }))} placeholder="Alıcılar (120)" />
+                    <Input value={nilveraGL.settings.outgoing_discount_account_code || ''} onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, outgoing_discount_account_code: event.target.value } }))} placeholder="İskonto (611)" />
+                    <Input value={nilveraGL.settings.outgoing_vat_account_code || ''} onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, outgoing_vat_account_code: event.target.value } }))} placeholder="Hesaplanan KDV (391)" />
+                    <Input value={nilveraGL.settings.outgoing_accommodation_tax_account_code || ''} onChange={(event) => setNilveraGL((current) => ({ ...current, settings: { ...current.settings, outgoing_accommodation_tax_account_code: event.target.value } }))} placeholder="Konaklama Vergisi (360)" />
+                  </div>
+                </div>
+              </div>
+              <Button onClick={saveNilveraGL} disabled={integrationBusy === 'nilvera-settings'}>
+                <Save className="w-4 h-4 mr-2" /> {integrationBusy === 'nilvera-settings' ? 'Kaydediliyor...' : 'Nilvera Muhasebe Eşlemesini Kaydet'}
+              </Button>
+
+              <div className="border-t pt-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                  <h3 className="font-semibold">Muhasebe İnceleme Kuyruğu</h3>
+                  <p className="text-xs text-slate-500">Bekleyen: {nilveraGL.counts.pending || 0} · Engelli: {nilveraGL.counts.blocked || 0} · İşlenen: {nilveraGL.counts.posted || 0}</p>
+                </div>
+                <div className="space-y-2">
+                  {nilveraGL.queue.slice(0, 20).map((item) => (
+                    <div key={item.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border p-3 text-sm">
+                      <div>
+                        <p className="font-medium">{item.direction === 'incoming' ? 'Alış' : 'Satış'} · {item.invoice_id}</p>
+                        <p className={`text-xs ${item.status === 'blocked' ? 'text-red-700' : item.status === 'posted' || item.status === 'reversed' ? 'text-emerald-700' : 'text-amber-700'}`}>
+                          {item.status}{item.error_detail ? ` · ${item.error_detail}` : ''}
+                        </p>
+                      </div>
+                      {item.operation === 'post' && ['pending', 'blocked'].includes(item.status) && (
+                        <Button size="sm" variant="outline" disabled={integrationBusy === `nilvera:${item.id}`} onClick={() => processNilveraQueueItem(item.id)}>
+                          {integrationBusy === `nilvera:${item.id}` ? 'İşleniyor...' : 'Kontrol Et ve Muhasebeleştir'}
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  {nilveraGL.queue.length === 0 && <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">İncelenecek Nilvera belgesi bulunmuyor.</p>}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="grid lg:grid-cols-2 gap-5">
+            <Card>
+              <CardHeader><CardTitle className="flex items-center gap-2"><ReceiptText className="w-5 h-5 text-amber-600" /> Tedarikçi Alt Defteri → GL</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <select aria-label="AP GL durumu" className="w-full rounded-md border px-3 py-2 text-sm" value={apGLMapping.enabled ? 'enabled' : 'disabled'} onChange={(event) => setApGLMapping({ ...apGLMapping, enabled: event.target.value === 'enabled' })}>
+                  <option value="disabled">Otomatik Muhasebe Kapalı</option><option value="enabled">Otomatik Muhasebe Açık</option>
+                </select>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  <Input value={apGLMapping.expense_account_code} onChange={(event) => setApGLMapping({ ...apGLMapping, expense_account_code: event.target.value })} placeholder="Gider (770)" />
+                  <Input value={apGLMapping.input_vat_account_code} onChange={(event) => setApGLMapping({ ...apGLMapping, input_vat_account_code: event.target.value })} placeholder="İndirilecek KDV (191)" />
+                  <Input value={apGLMapping.payable_account_code} onChange={(event) => setApGLMapping({ ...apGLMapping, payable_account_code: event.target.value })} placeholder="Satıcılar (320)" />
+                  <Input value={apGLMapping.bank_account_code} onChange={(event) => setApGLMapping({ ...apGLMapping, bank_account_code: event.target.value })} placeholder="Banka (102)" />
+                  <Input value={apGLMapping.cash_account_code} onChange={(event) => setApGLMapping({ ...apGLMapping, cash_account_code: event.target.value })} placeholder="Kasa (100)" />
+                </div>
+                <Button variant="outline" onClick={saveAPGLMapping} disabled={integrationBusy === 'ap'}>{integrationBusy === 'ap' ? 'Kaydediliyor...' : 'AP Eşlemesini Kaydet'}</Button>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader><CardTitle className="flex items-center gap-2"><PackageOpen className="w-5 h-5 text-indigo-600" /> Amortisman → GL</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <select aria-label="Amortisman GL durumu" className="w-full rounded-md border px-3 py-2 text-sm" value={fixedAssetGLMapping.enabled ? 'enabled' : 'disabled'} onChange={(event) => setFixedAssetGLMapping({ ...fixedAssetGLMapping, enabled: event.target.value === 'enabled' })}>
+                  <option value="disabled">Otomatik Muhasebe Kapalı</option><option value="enabled">Otomatik Muhasebe Açık</option>
+                </select>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  <Input value={fixedAssetGLMapping.depreciation_expense_account_code} onChange={(event) => setFixedAssetGLMapping({ ...fixedAssetGLMapping, depreciation_expense_account_code: event.target.value })} placeholder="Amortisman Gideri (770)" />
+                  <Input value={fixedAssetGLMapping.accumulated_depreciation_account_code} onChange={(event) => setFixedAssetGLMapping({ ...fixedAssetGLMapping, accumulated_depreciation_account_code: event.target.value })} placeholder="Birikmiş Amortisman (257)" />
+                </div>
+                <Button variant="outline" onClick={saveFixedAssetGLMapping} disabled={integrationBusy === 'fixed-assets'}>{integrationBusy === 'fixed-assets' ? 'Kaydediliyor...' : 'Amortisman Eşlemesini Kaydet'}</Button>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

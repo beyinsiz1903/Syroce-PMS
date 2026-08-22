@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from shared_kernel.gl_posting import GLPostingError, post_journal_entry
 
 logger = logging.getLogger("domains.accounting.fixed_asset")
 
@@ -34,6 +35,12 @@ _ASSET_ROLES = {"super_admin", "admin", "finance", "accountant"}
 _READ_ROLES = {"super_admin", "admin", "finance", "accountant", "supervisor"}
 _METHODS = {"straight_line", "declining_balance"}
 _EPS = 0.005
+
+_FIXED_ASSET_GL_DEFAULTS = {
+    "enabled": False,
+    "depreciation_expense_account_code": "770",
+    "accumulated_depreciation_account_code": "257",
+}
 
 
 def _now_iso() -> str:
@@ -145,6 +152,104 @@ class AssetIn(BaseModel):
     useful_life_months: int = Field(..., ge=1, le=1200)
     method: str = Field("straight_line", max_length=30)
     declining_rate: float = Field(0, ge=0, le=100)
+
+
+class FixedAssetGLMappingIn(BaseModel):
+    enabled: bool = False
+    depreciation_expense_account_code: str = Field("770", min_length=1, max_length=40)
+    accumulated_depreciation_account_code: str = Field("257", min_length=1, max_length=40)
+
+
+async def _get_gl_mapping(tenant_id: str) -> dict:
+    doc = await db.fixed_asset_gl_mapping.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    return {**_FIXED_ASSET_GL_DEFAULTS, **(doc or {})}
+
+
+async def _post_period_depreciation_gl(tenant_id: str, period: str, actor: str) -> dict | None:
+    mapping = await _get_gl_mapping(tenant_id)
+    if not mapping.get("enabled"):
+        return {"status": "disabled", "posted": 0, "blocked": 0, "journal_entry_ids": []}
+    entries = await db.depreciation_entries.find(
+        {"tenant_id": tenant_id, "period": period},
+        {"_id": 0},
+    ).to_list(50000)
+    year, month = (int(value) for value in period.split("-")[:2])
+    posting_date = f"{year:04d}-{month:02d}-{monthrange(year, month)[1]:02d}"
+    posted = blocked = 0
+    journal_entry_ids: list[str] = []
+    for row in entries:
+        if row.get("gl_status") == "posted" and row.get("gl_journal_entry_id"):
+            journal_entry_ids.append(row["gl_journal_entry_id"])
+            continue
+        amount = round(float(row.get("depreciation", 0) or 0), 2)
+        if amount <= _EPS:
+            continue
+        try:
+            journal = await post_journal_entry(
+                db,
+                tenant_id,
+                date=posting_date,
+                memo=f"{period} amortismanı · {row.get('asset_name') or row['asset_id']}",
+                lines=[
+                    {
+                        "account_code": mapping["depreciation_expense_account_code"],
+                        "debit": amount,
+                        "credit": 0,
+                        "memo": "Dönem amortisman gideri",
+                    },
+                    {
+                        "account_code": mapping["accumulated_depreciation_account_code"],
+                        "debit": 0,
+                        "credit": amount,
+                        "memo": "Birikmiş amortisman",
+                    },
+                ],
+                source="fixed_asset_depreciation",
+                source_ref=row["id"],
+                actor=actor,
+                idempotency_key=f"fixed-asset-depreciation:{row['id']}",
+            )
+        except GLPostingError as exc:
+            blocked += 1
+            await db.depreciation_entries.update_one(
+                {"tenant_id": tenant_id, "id": row["id"]},
+                {"$set": {"gl_status": "blocked", "gl_error": str(exc)[:500]}},
+            )
+            continue
+        posted += 1
+        journal_entry_ids.append(journal["id"])
+        await db.depreciation_entries.update_one(
+            {"tenant_id": tenant_id, "id": row["id"]},
+            {"$set": {"gl_status": "posted", "gl_journal_entry_id": journal["id"], "gl_error": None}},
+        )
+    return {
+        "status": "blocked" if blocked else "posted",
+        "posted": posted,
+        "blocked": blocked,
+        "journal_entry_ids": journal_entry_ids,
+    }
+
+
+@router.get("/gl-mapping")
+async def get_fixed_asset_gl_mapping(current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _READ_ROLES)
+    return {"mapping": await _get_gl_mapping(_tenant_of(current_user))}
+
+
+@router.put("/gl-mapping")
+async def update_fixed_asset_gl_mapping(
+    payload: FixedAssetGLMappingIn,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _ASSET_ROLES)
+    tenant_id = _tenant_of(current_user)
+    now = _now_iso()
+    await db.fixed_asset_gl_mapping.update_one(
+        {"tenant_id": tenant_id},
+        {"$set": {**payload.model_dump(), "updated_at": now, "updated_by": _actor_id(current_user)}, "$setOnInsert": {"tenant_id": tenant_id, "created_at": now}},
+        upsert=True,
+    )
+    return {"mapping": await _get_gl_mapping(tenant_id)}
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -304,9 +409,11 @@ async def run_depreciation(
         created += 1
         total_depreciation += dep
 
+    gl_result = await _post_period_depreciation_gl(tenant_id, period, _actor_id(current_user))
     return {
         "period": period,
         "created": created,
         "skipped": skipped,
         "total_depreciation": round(total_depreciation, 2),
+        "gl": gl_result,
     }

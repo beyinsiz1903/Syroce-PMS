@@ -39,6 +39,25 @@ class AdminNilveraProvisioningRequest(BaseModel):
     seller: dict | None = None
 
 
+class AdminNilveraGLProvisioningRequest(BaseModel):
+    incoming_mode: Literal["disabled", "review", "automatic"] = "review"
+    outgoing_mode: Literal["disabled", "review", "automatic"] = "review"
+    incoming_purchase_account_code: str = Field("153", min_length=1, max_length=40)
+    incoming_vat_account_code: str = Field("191", min_length=1, max_length=40)
+    incoming_payable_account_code: str = Field("320", min_length=1, max_length=40)
+    incoming_other_tax_account_code: str | None = Field(None, max_length=40)
+    incoming_deduction_account_code: str | None = Field(None, max_length=40)
+    incoming_other_tax_accounts_by_code: dict[str, str] = Field(default_factory=dict)
+    incoming_deduction_accounts_by_code: dict[str, str] = Field(default_factory=dict)
+    outgoing_revenue_account_code: str = Field("600", min_length=1, max_length=40)
+    outgoing_receivable_account_code: str = Field("120", min_length=1, max_length=40)
+    outgoing_discount_account_code: str | None = Field("611", max_length=40)
+    outgoing_vat_account_code: str | None = Field("391", max_length=40)
+    outgoing_accommodation_tax_account_code: str | None = Field("360", max_length=40)
+    outgoing_vat_accounts_by_rate: dict[str, str] = Field(default_factory=dict)
+    outgoing_accommodation_tax_accounts_by_rate: dict[str, str] = Field(default_factory=dict)
+
+
 class AdminCreateChainRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=120)
     headquarters_tenant_id: str | None = None
