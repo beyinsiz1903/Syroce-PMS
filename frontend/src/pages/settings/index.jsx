@@ -16,6 +16,12 @@ import { PageHeader } from '@/components/ui/page-header';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import BulkRoomsDialog from '@/components/pms/BulkRoomsDialog';
+import RoomConfigurationFields, {
+  EMPTY_ROOM_CONFIGURATION,
+  normalizeRoomConfiguration,
+  roomToConfiguration,
+  validateRoomConfiguration,
+} from '@/components/pms/RoomConfigurationFields';
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatCurrency } from '@/lib/currency';
 import { confirmDialog } from '@/lib/dialogs';
@@ -210,7 +216,7 @@ const Settings = ({
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [invoiceSaving, setInvoiceSaving] = useState(false);
 
-  // Room management (super_admin only)
+  // Room management (admin + super_admin)
   const isSuperAdmin = user?.role === 'super_admin' || Array.isArray(user?.roles) && user.roles.includes('super_admin');
   // Misafir Talepleri görünürlük ayarı: admin + super_admin yapılandırabilir.
   const isAdmin = isSuperAdmin || user?.role === 'admin' || Array.isArray(user?.roles) && user.roles.includes('admin');
@@ -218,14 +224,14 @@ const Settings = ({
   const [roomsLoading, setRoomsLoading] = useState(false);
   const [showBulkRoomsDialog, setShowBulkRoomsDialog] = useState(false);
   const [showAddRoomDialog, setShowAddRoomDialog] = useState(false);
-  const [newRoom, setNewRoom] = useState({
-    room_number: '',
-    room_type: 'standard',
-    floor: 1,
-    capacity: 2,
-    base_price: 100
-  });
+  const [newRoom, setNewRoom] = useState(() => ({ ...EMPTY_ROOM_CONFIGURATION }));
+  const [editingRoom, setEditingRoom] = useState(null);
+  const [editRoomForm, setEditRoomForm] = useState(() => ({ ...EMPTY_ROOM_CONFIGURATION }));
   const [roomSaving, setRoomSaving] = useState(false);
+  const roomTypeSuggestions = useMemo(
+    () => roomsList.map(room => room.room_type).filter(Boolean),
+    [roomsList]
+  );
 
   // Misafir Talepleri görünürlüğü (admin)
   const [grSettings, setGrSettings] = useState({
@@ -314,7 +320,7 @@ const Settings = ({
     }
   }, []);
   const loadRooms = useCallback(async () => {
-    if (!isSuperAdmin) return;
+    if (!isAdmin) return;
     setRoomsLoading(true);
     try {
       const res = await axios.get('/pms/rooms?limit=500');
@@ -325,7 +331,7 @@ const Settings = ({
     } finally {
       setRoomsLoading(false);
     }
-  }, [isSuperAdmin]);
+  }, [isAdmin]);
   const loadB2B = useCallback(async () => {
     if (!isAdmin) return;
     setB2bLoading(true);
@@ -664,40 +670,53 @@ const Settings = ({
     reader.readAsDataURL(file);
   };
 
-  // Room CRUD (super_admin)
+  // Room CRUD (admin + super_admin)
   const handleCreateRoom = async e => {
     e.preventDefault();
-    if (!newRoom.room_number?.toString().trim()) {
-      toast.error('Oda numarası zorunludur');
-      return;
-    }
-    if (!Number.isFinite(newRoom.floor) || newRoom.floor < 0) {
-      toast.error('Kat negatif olamaz');
-      return;
-    }
-    if (!Number.isFinite(newRoom.capacity) || newRoom.capacity < 1) {
-      toast.error('Kapasite en az 1 olmalıdır');
-      return;
-    }
-    if (!Number.isFinite(newRoom.base_price) || newRoom.base_price < 0) {
-      toast.error('Taban fiyat negatif olamaz');
+    const validationError = validateRoomConfiguration(newRoom);
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
     setRoomSaving(true);
     try {
-      await axios.post('/pms/rooms', newRoom);
+      await axios.post('/pms/rooms', normalizeRoomConfiguration(newRoom));
       toast.success('Oda oluşturuldu');
       setShowAddRoomDialog(false);
-      setNewRoom({
-        room_number: '',
-        room_type: 'standard',
-        floor: 1,
-        capacity: 2,
-        base_price: 100
-      });
-      loadRooms();
+      setNewRoom({ ...EMPTY_ROOM_CONFIGURATION });
+      await loadRooms();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Oda oluşturulamadı');
+    } finally {
+      setRoomSaving(false);
+    }
+  };
+  const openRoomEditor = room => {
+    setEditingRoom(room);
+    setEditRoomForm(roomToConfiguration(room));
+  };
+  const closeRoomEditor = () => {
+    if (roomSaving) return;
+    setEditingRoom(null);
+    setEditRoomForm({ ...EMPTY_ROOM_CONFIGURATION });
+  };
+  const handleUpdateRoom = async e => {
+    e.preventDefault();
+    if (!editingRoom?.id) return;
+    const validationError = validateRoomConfiguration(editRoomForm);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
+    setRoomSaving(true);
+    try {
+      await axios.put(`/pms/rooms/${editingRoom.id}`, normalizeRoomConfiguration(editRoomForm));
+      toast.success(`Oda ${editRoomForm.room_number} güncellendi`);
+      setEditingRoom(null);
+      setEditRoomForm({ ...EMPTY_ROOM_CONFIGURATION });
+      await loadRooms();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Oda güncellenemedi');
     } finally {
       setRoomSaving(false);
     }
@@ -788,8 +807,8 @@ const Settings = ({
           {/* ═══════════ INVOICE SETTINGS TAB ═══════════ */}
           <SettingsInvoiceTab loadInvoiceSettings={loadInvoiceSettings} invoiceLoading={invoiceLoading} handleSaveInvoiceSettings={handleSaveInvoiceSettings} invoiceSaving={invoiceSaving} invoiceSettings={invoiceSettings} setInvoiceSettings={setInvoiceSettings} handleLogoUpload={handleLogoUpload} CURRENCY_OPTIONS={CURRENCY_OPTIONS} />
 
-          {/* ═══════════ ROOMS MANAGEMENT TAB (super_admin only) ═══════════ */}
-          {isAdmin && <SettingsRoomsTab loadRooms={loadRooms} roomsLoading={roomsLoading} setShowBulkRoomsDialog={setShowBulkRoomsDialog} isSuperAdmin={isSuperAdmin} setShowAddRoomDialog={setShowAddRoomDialog} roomsList={roomsList} handleDeleteRoom={handleDeleteRoom} />}
+          {/* ═══════════ ROOMS MANAGEMENT TAB (admin + super_admin) ═══════════ */}
+          {isAdmin && <SettingsRoomsTab loadRooms={loadRooms} roomsLoading={roomsLoading} setShowBulkRoomsDialog={setShowBulkRoomsDialog} setShowAddRoomDialog={setShowAddRoomDialog} roomsList={roomsList} handleDeleteRoom={handleDeleteRoom} onEditRoom={openRoomEditor} />}
 
           {/* ═══════════ B2B ENTEGRASYON TAB ═══════════ */}
           {isAdmin && <SettingsB2bTab b2bInfo={b2bInfo} copyToClipboard={copyToClipboard} b2bCodeOnce={b2bCodeOnce} setB2bCodeOnce={setB2bCodeOnce} handleRegenerateCode={handleRegenerateCode} b2bBusy={b2bBusy} loadB2B={loadB2B} b2bLoading={b2bLoading} b2bRequests={b2bRequests} handleApproveRequest={handleApproveRequest} handleRejectRequest={handleRejectRequest} />}
@@ -901,56 +920,12 @@ const Settings = ({
         </DialogContent>
       </Dialog>
 
-      {/* ─── Add Single Room Modal (super_admin) ─── */}
+      {/* ─── Add Single Room Modal ─── */}
       <Dialog open={showAddRoomDialog} onOpenChange={setShowAddRoomDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><DoorOpen className="w-5 h-5" /> Yeni Oda Ekle</DialogTitle></DialogHeader>
           <form onSubmit={handleCreateRoom} className="space-y-3">
-            <div>
-              <Label>Oda Numarası *</Label>
-              <Input value={newRoom.room_number} onChange={e => setNewRoom({
-              ...newRoom,
-              room_number: e.target.value
-            })} placeholder="101" required data-testid="new-room-number" />
-            </div>
-            <div>
-              <Label>Oda Tipi</Label>
-              <Select value={newRoom.room_type} onValueChange={v => setNewRoom({
-              ...newRoom,
-              room_type: v
-            })}>
-                <SelectTrigger data-testid="new-room-type"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="standard">Standard</SelectItem>
-                  <SelectItem value="deluxe">Deluxe</SelectItem>
-                  <SelectItem value="suite">Suite</SelectItem>
-                  <SelectItem value="presidential">Presidential</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Kat</Label>
-                <Input type="number" min={0} value={newRoom.floor} onChange={e => setNewRoom({
-                ...newRoom,
-                floor: parseInt(e.target.value) || 0
-              })} required />
-              </div>
-              <div>
-                <Label>Kapasite</Label>
-                <Input type="number" min={1} value={newRoom.capacity} onChange={e => setNewRoom({
-                ...newRoom,
-                capacity: parseInt(e.target.value) || 1
-              })} required />
-              </div>
-            </div>
-            <div>
-              <Label>Taban Fiyat</Label>
-              <Input type="number" min={0} step="0.01" value={newRoom.base_price} onChange={e => setNewRoom({
-              ...newRoom,
-              base_price: parseFloat(e.target.value) || 0
-            })} required />
-            </div>
+            <RoomConfigurationFields value={newRoom} onChange={setNewRoom} roomTypeSuggestions={roomTypeSuggestions} testIdPrefix="new-room" />
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" onClick={() => setShowAddRoomDialog(false)}>İptal</Button>
               <Button type="submit" disabled={roomSaving} data-testid="create-room-submit">{roomSaving ? 'Oluşturuluyor...' : 'Oda Oluştur'}</Button>
@@ -959,7 +934,28 @@ const Settings = ({
         </DialogContent>
       </Dialog>
 
-      {/* ─── Bulk Rooms Dialog (super_admin) ─── */}
+      {/* ─── Edit Room Modal ─── */}
+      <Dialog open={Boolean(editingRoom)} onOpenChange={open => !open && closeRoomEditor()}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="w-5 h-5" /> Odayı Düzenle · {editingRoom?.room_number}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleUpdateRoom} className="space-y-3">
+            <RoomConfigurationFields value={editRoomForm} onChange={setEditRoomForm} roomTypeSuggestions={roomTypeSuggestions} testIdPrefix="edit-room" />
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Oda kimliği ve rezervasyon bağları korunur. Kanal yöneticisindeki oda tipi eşlemesini değişiklikten sonra ayrıca kontrol edin.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={closeRoomEditor} disabled={roomSaving}>İptal</Button>
+              <Button type="submit" disabled={roomSaving} data-testid="update-room-submit">{roomSaving ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Bulk Rooms Dialog ─── */}
       <BulkRoomsDialog open={showBulkRoomsDialog} onClose={() => setShowBulkRoomsDialog(false)} onRoomsCreated={loadRooms} user={user} />
     </>;
 };
