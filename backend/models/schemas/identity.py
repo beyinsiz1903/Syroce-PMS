@@ -1,11 +1,13 @@
 """Auto-split from schemas.py — domain: identity."""
 
+from __future__ import annotations
+
 import uuid
 from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from models.enums import (
     UserRole,
@@ -110,6 +112,48 @@ class TenantRegister(BaseModel):
     chain_mode: Literal["standalone", "new_chain", "existing_chain"] = "standalone"
     chain_id: str | None = None
     chain_name: str | None = None
+    commercial_quote: CommercialQuote | None = None
+
+
+class CommercialQuoteLineItem(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    module_key: str = Field(min_length=1, max_length=100)
+    label: str = Field(min_length=1, max_length=160)
+    monthly: float = Field(ge=0)
+    setup: float = Field(ge=0)
+    included: bool = False
+    usage_note: str | None = Field(default=None, max_length=500)
+
+
+class CommercialQuote(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    pricing_version: str = Field(min_length=1, max_length=40)
+    currency: Literal["EUR"] = "EUR"
+    plan_key: Literal["mini", "basic", "professional", "enterprise"]
+    plan_label: str = Field(min_length=1, max_length=80)
+    base_monthly: float = Field(ge=0)
+    addon_monthly: float = Field(ge=0)
+    list_monthly_total: float = Field(ge=0)
+    list_setup_total: float = Field(ge=0)
+    final_monthly_total: float = Field(ge=0)
+    final_setup_total: float = Field(ge=0)
+    override_reason: str | None = Field(default=None, max_length=1000)
+    line_items: list[CommercialQuoteLineItem] = Field(default_factory=list, max_length=100)
+    quoted_at: datetime | None = None
+    quoted_by: str | None = None
+
+    @model_validator(mode="after")
+    def require_override_reason(self):
+        changed = (
+            abs(self.final_monthly_total - self.list_monthly_total) > 0.001
+            or abs(self.final_setup_total - self.list_setup_total) > 0.001
+        )
+        if changed and not (self.override_reason or "").strip():
+            raise ValueError("Fiyat değişikliği nedeni zorunludur")
+        return self
+
+
+TenantRegister.model_rebuild()
 
 
 class GuestRegister(BaseModel):
