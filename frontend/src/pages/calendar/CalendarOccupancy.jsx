@@ -3,19 +3,26 @@ import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
 const CalendarOccupancy = ({ dateRange, getOccupancyForDate, showDeluxePanel, onToggleDeluxe, collapsed = false, onToggleCollapse }) => {
+  const values = dateRange.map((date) => Math.max(0, Math.min(100, Number(getOccupancyForDate(date)) || 0)));
+  const average = values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
+  const peak = values.length ? Math.round(Math.max(...values)) : 0;
   return (
-    <div className="flex-none bg-white border rounded-lg px-4 py-2" data-testid="occupancy-chart">
+    <div className="flex-none bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm" data-testid="occupancy-chart">
       <div className="flex items-center justify-between">
         <button
           type="button"
           onClick={onToggleCollapse}
-          className="flex items-center gap-1 text-xs font-semibold text-gray-500 tracking-wider hover:text-gray-800 select-none"
+          className="flex items-center gap-2 text-xs font-extrabold text-slate-700 tracking-wider hover:text-blue-700 select-none"
           data-testid="occupancy-toggle"
         >
           {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          Doluluk
+          Doluluk görünümü
         </button>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
+          <div className="hidden sm:flex items-center gap-3 text-[11px]">
+            <span className="text-slate-400">Ortalama <b className="text-blue-700 text-sm ml-1">%{average}</b></span>
+            <span className="text-slate-400">Zirve <b className="text-amber-600 text-sm ml-1">%{peak}</b></span>
+          </div>
           <Button
             size="sm"
             variant={showDeluxePanel ? "default" : "outline"}

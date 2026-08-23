@@ -2,7 +2,7 @@ import React from "react";
 import { isToday, isWeekend, isPastDate } from "./calendarHelpers";
 
 // Compact, grid-aligned occupancy band rendered on top of the calendar grid.
-// Column model mirrors CalendarGrid exactly: a w-28 (112px) left label column
+// Column model mirrors CalendarGrid exactly: a w-36 (144px) left label column
 // followed by `daysToShow` day cells of `cellW` px each — so it lives inside
 // the grid's horizontal scroll container and stays perfectly aligned with the
 // date header and room rows. UI only: occupancy is computed frontend-side via
@@ -36,7 +36,7 @@ const OccupancyBand = ({ dateRange = [], daysToShow, cellW = 72, getOccupancyFor
   if (roomsCount <= 0) {
     return (
       <div className="flex bg-white border-b border-gray-200" data-testid="occupancy-band">
-        <div className="w-28 flex-shrink-0 border-r border-gray-200 px-2 flex items-center" style={{ height: `${BAND_H}px` }}>
+        <div className="w-36 sticky left-0 z-30 flex-shrink-0 border-r border-slate-200 bg-slate-50 px-3 flex items-center" style={{ height: `${BAND_H}px` }}>
           <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Doluluk</span>
         </div>
         <div className="flex items-center justify-center" style={{ width: `${chartW}px`, height: `${BAND_H}px` }}>
@@ -68,11 +68,11 @@ const OccupancyBand = ({ dateRange = [], daysToShow, cellW = 72, getOccupancyFor
   };
 
   return (
-    <div className="flex bg-white border-b border-gray-200 select-none" data-testid="occupancy-band">
-      {/* Left label column — aligns with the grid's w-28 room-label column */}
-      <div className="w-28 flex-shrink-0 border-r border-gray-200 px-2 flex flex-col justify-center" style={{ height: `${BAND_H}px` }}>
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 leading-tight">Doluluk</span>
-        <span className="text-[9px] text-gray-400 leading-tight">% / gün</span>
+    <div className="flex bg-white border-b border-slate-200 select-none" data-testid="occupancy-band">
+      {/* Left label column — aligns with the grid's w-36 room-label column */}
+      <div className="w-36 sticky left-0 z-30 flex-shrink-0 border-r border-slate-200 bg-slate-50 px-3 flex flex-col justify-center" style={{ height: `${BAND_H}px` }}>
+        <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-700 leading-tight">Doluluk eğrisi</span>
+        <span className="text-[9px] text-slate-400 leading-tight mt-0.5">Günlük satılabilir oda</span>
       </div>
 
       {/* Day columns + chart overlay */}
@@ -89,12 +89,12 @@ const OccupancyBand = ({ dateRange = [], daysToShow, cellW = 72, getOccupancyFor
         >
           <defs>
             <linearGradient id="occBandGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#6366f1" stopOpacity="0.28" />
-              <stop offset="100%" stopColor="#6366f1" stopOpacity="0.02" />
+              <stop offset="0%" stopColor="#2563eb" stopOpacity="0.34" />
+              <stop offset="100%" stopColor="#2563eb" stopOpacity="0.03" />
             </linearGradient>
           </defs>
           <path d={buildPath(true)} fill="url(#occBandGradient)" />
-          <path d={buildPath(false)} fill="none" stroke="#6366f1" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+          <path d={buildPath(false)} fill="none" stroke="#2563eb" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
           {points.map((p, idx) => (
             <circle key={idx} cx={p.x} cy={p.y} r={2.5} fill={levelDotColor(p.occ)} stroke="#ffffff" strokeWidth="1" />
           ))}
