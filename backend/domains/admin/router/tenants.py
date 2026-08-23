@@ -99,6 +99,77 @@ ROLES_BY_TIER = {
     "enterprise": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit", "gm", "super_admin", "finance", "procurement", "supervisor", "sales"],
 }
 
+PLAN_MONTHLY_PRICES = {"mini": 35.0, "basic": 79.0, "professional": 299.0, "enterprise": 799.0}
+PLAN_LABELS = {"mini": "Mini", "basic": "Basic", "professional": "Professional", "enterprise": "Enterprise"}
+TIER_RANK = {"mini": 0, "basic": 1, "professional": 2, "enterprise": 3}
+COMMERCIAL_PRICING_VERSION = "2026-08-23"
+COMMERCIAL_ADDONS = {
+    "quick_id": ("Kimlik Tarama (Quick-ID)", 19.0, 0.0, None, "Kullanım/OCR sağlayıcı bedeli ayrıca yansıtılır."),
+    "ai_chatbot": ("AI Chatbot", 49.0, 0.0, None, None),
+    "ai_pricing": ("AI Dynamic Pricing", 69.0, 0.0, None, None),
+    "ai_predictive": ("AI Tahminler", 39.0, 0.0, None, None),
+    "ai_whatsapp": ("AI WhatsApp Concierge", 79.0, 0.0, None, "Mesajlaşma/sağlayıcı kullanımı ayrıca yansıtılır."),
+    "ai_reputation": ("AI İtibar Yönetimi", 39.0, 0.0, None, None),
+    "ai_revenue_autopilot": ("AI Revenue Autopilot", 99.0, 0.0, None, None),
+    "ai_social_radar": ("AI Social Radar", 39.0, 0.0, None, None),
+    "spa": ("Spa & Wellness", 39.0, 99.0, None, None),
+    "mice": ("MICE & Banquet", 59.0, 149.0, None, None),
+    "academy": ("Syroce Academy", 19.0, 0.0, None, None),
+    "contact_center": ("Syroce Contact Center", 89.0, 199.0, None, "Telefon ve mesaj kullanımı ayrıca yansıtılır."),
+    "revenue_management": ("Revenue Management", 79.0, 0.0, "enterprise", None),
+    "multi_property": ("Multi-Property", 99.0, 0.0, "enterprise", None),
+    "group_sales": ("Grup Satış & MICE", 39.0, 0.0, "enterprise", None),
+    "sales_crm": ("Satış CRM", 39.0, 0.0, "enterprise", None),
+    "loyalty_program": ("Sadakat Programı", 29.0, 0.0, "enterprise", None),
+    "api_access": ("API Erişimi", 49.0, 0.0, "enterprise", None),
+    "audit_trail": ("Audit Trail", 29.0, 0.0, "enterprise", None),
+    "gm_dashboards": ("GM / Yönetici Dashboardları", 39.0, 0.0, "enterprise", None),
+    "white_label": ("White Label", 99.0, 199.0, "enterprise", None),
+    "mobile_housekeeping": ("Mobil Housekeeping", 15.0, 0.0, "professional", None),
+    "mobile_revenue": ("Mobil Revenue", 29.0, 0.0, "enterprise", None),
+    "af_sadakat": ("Sadakat & Inbox", 39.0, 0.0, "enterprise", None),
+}
+
+
+def _build_commercial_quote(payload_quote, modules: dict[str, bool], tier: str, actor_id: str, quoted_at: datetime) -> dict:
+    if payload_quote is None:
+        raise HTTPException(status_code=400, detail="Ticari teklif zorunludur")
+    if payload_quote.plan_key != tier or payload_quote.pricing_version != COMMERCIAL_PRICING_VERSION:
+        raise HTTPException(status_code=400, detail="Teklif planı veya fiyat sürümü geçersiz")
+
+    line_items = []
+    addon_monthly = 0.0
+    setup_total = 0.0
+    for key, (label, monthly, setup, included_tier, usage_note) in COMMERCIAL_ADDONS.items():
+        if not modules.get(key):
+            continue
+        included = included_tier is not None and TIER_RANK[tier] >= TIER_RANK[included_tier]
+        charged_monthly = 0.0 if included else monthly
+        charged_setup = 0.0 if included else setup
+        addon_monthly += charged_monthly
+        setup_total += charged_setup
+        line_items.append({
+            "module_key": key, "label": label, "monthly": charged_monthly,
+            "setup": charged_setup, "included": included, "usage_note": usage_note,
+        })
+
+    base_monthly = PLAN_MONTHLY_PRICES[tier]
+    monthly_total = base_monthly + addon_monthly
+    supplied = (payload_quote.base_monthly, payload_quote.addon_monthly, payload_quote.list_monthly_total, payload_quote.list_setup_total)
+    expected = (base_monthly, addon_monthly, monthly_total, setup_total)
+    if any(abs(actual - wanted) > 0.001 for actual, wanted in zip(supplied, expected, strict=True)):
+        raise HTTPException(status_code=400, detail="Teklif liste toplamları güncel fiyat kataloğuyla eşleşmiyor")
+
+    return {
+        "pricing_version": COMMERCIAL_PRICING_VERSION, "currency": "EUR", "plan_key": tier,
+        "plan_label": PLAN_LABELS[tier], "base_monthly": base_monthly, "addon_monthly": addon_monthly,
+        "list_monthly_total": monthly_total, "list_setup_total": setup_total,
+        "final_monthly_total": payload_quote.final_monthly_total,
+        "final_setup_total": payload_quote.final_setup_total,
+        "override_reason": (payload_quote.override_reason or "").strip() or None,
+        "line_items": line_items, "quoted_at": quoted_at.isoformat(), "quoted_by": actor_id,
+    }
+
 _env_mode = (os.environ.get("ENVIRONMENT") or os.environ.get("APP_ENV") or os.environ.get("ENV") or "development").lower()
 _cookie_secure = _env_mode != "development"
 
@@ -1001,6 +1072,10 @@ async def create_tenant(payload: TenantRegister, current_user: User = Depends(re
 
     if payload.chain_mode != "standalone":
         combined_modules["multi_property"] = True
+    if any(combined_modules.get(key) for key in COMMERCIAL_ADDONS if key.startswith("ai_")):
+        combined_modules["ai"] = True
+
+    commercial_quote = _build_commercial_quote(payload.commercial_quote, combined_modules, tier, current_user.id, start_date)
 
     from core.hotel_ids import generate_unique_hotel_id
 
@@ -1063,6 +1138,7 @@ async def create_tenant(payload: TenantRegister, current_user: User = Depends(re
     tenant_dict["dashboard_layout"] = dashboard_layout
     tenant_dict["hidden_nav_groups"] = nav_config.get("hidden_nav_groups", [])
     tenant_dict["hidden_nav_items"] = nav_config.get("hidden_nav_items", [])
+    tenant_dict["commercial_quote"] = commercial_quote
     if payload.channel_manager_provider:
         tenant_dict["channel_manager_provider"] = payload.channel_manager_provider
     await sys_db.tenants.insert_one(tenant_dict)

@@ -99,4 +99,30 @@ describe('CreateTenantModal professional module wizard', () => {
     expect(screen.queryByText('Rapor Listesi (Excel Raporları)')).not.toBeInTheDocument();
     expect(screen.queryByText('System Health')).not.toBeInTheDocument();
   });
+
+  it('prices paid add-ons live and automatically enables the AI parent module', async () => {
+    await reachInstallationSummary();
+    expect(screen.getByTestId('commercial-quote-summary')).toHaveTextContent('€79/ay');
+
+    fireEvent.click(screen.getByTestId('tenant-module-customize-toggle'));
+    fireEvent.click(screen.getByRole('button', { name: /AI Modülleri/ }));
+    fireEvent.click(screen.getByLabelText(/AI Chatbot/));
+
+    expect(screen.getByTestId('commercial-quote-summary')).toHaveTextContent('€128/ay');
+    axios.post.mockResolvedValue({ data: { success: true } });
+    fireEvent.click(screen.getByTestId('create-tenant-submit'));
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    const payload = axios.post.mock.calls[0][1];
+    expect(payload.modules.ai).toBe(true);
+    expect(payload.commercial_quote.list_monthly_total).toBe(128);
+    expect(payload.commercial_quote.line_items).toEqual(expect.arrayContaining([expect.objectContaining({ module_key: 'ai_chatbot', monthly: 49 })]));
+  });
+
+  it('requires a reason when the final price is overridden', async () => {
+    await reachInstallationSummary();
+    fireEvent.change(screen.getByTestId('final-monthly-total'), { target: { value: '70' } });
+    fireEvent.click(screen.getByTestId('create-tenant-submit'));
+    expect(await screen.findByText('Liste fiyatı değiştirildiğinde fiyat değişikliği nedeni zorunludur')).toBeInTheDocument();
+    expect(axios.post).not.toHaveBeenCalled();
+  });
 });

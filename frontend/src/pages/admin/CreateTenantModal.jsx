@@ -10,7 +10,7 @@ import {
   RotateCcw, CalendarDays, UserRound, Plug, WalletCards,
   SlidersHorizontal, Search, ChevronDown, Info,
 } from 'lucide-react';
-import { MODULE_GROUPS, isModuleIncludedInPlan } from './tenantConstants';
+import { MODULE_GROUPS, PLANS, isModuleIncludedInPlan } from './tenantConstants';
 import { useTranslation } from 'react-i18next';
 
 const ICON_MAP = {
@@ -135,6 +135,9 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
   const [moduleSearch, setModuleSearch] = useState('');
   const [showSelectedModulesOnly, setShowSelectedModulesOnly] = useState(false);
   const [expandedModuleGroups, setExpandedModuleGroups] = useState([]);
+  const [finalMonthly, setFinalMonthly] = useState(null);
+  const [finalSetup, setFinalSetup] = useState(null);
+  const [overrideReason, setOverrideReason] = useState('');
   // Kanal yoneticisi altyapisi secimi (super_admin). '' = otomatik tespit.
   const [channelProvider, setChannelProvider] = useState('');
   const [chains, setChains] = useState([]);
@@ -201,7 +204,11 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
 
   const toggleModule = (key) => {
     setModulesTouched(true);
-    setModulesMap((prev) => ({ ...prev, [key]: !prev[key] }));
+    setModulesMap((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      if (key.startsWith('ai_') && !prev[key]) next.ai = true;
+      return next;
+    });
   };
 
   const setGroupAll = (group, value) => {
@@ -246,6 +253,14 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
   };
 
   const handleSubmit = async () => {
+    if (quote.finalMonthly < 0 || quote.finalSetup < 0 || !Number.isFinite(quote.finalMonthly) || !Number.isFinite(quote.finalSetup)) {
+      setError('Nihai fiyatlar sıfır veya daha büyük geçerli sayılar olmalıdır');
+      return;
+    }
+    if (quote.isOverridden && !overrideReason.trim()) {
+      setError('Liste fiyatı değiştirildiğinde fiyat değişikliği nedeni zorunludur');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -254,6 +269,20 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
       else delete payload.total_rooms;
       // Always send the explicit module map so backend uses operator's choices.
       payload.modules = modulesMap;
+      payload.commercial_quote = {
+        pricing_version: '2026-08-23',
+        currency: 'EUR',
+        plan_key: form.subscription_tier,
+        plan_label: PLANS[form.subscription_tier]?.label || form.subscription_tier,
+        base_monthly: quote.baseMonthly,
+        addon_monthly: quote.addonMonthly,
+        list_monthly_total: quote.listMonthly,
+        list_setup_total: quote.listSetup,
+        final_monthly_total: quote.finalMonthly,
+        final_setup_total: quote.finalSetup,
+        override_reason: overrideReason.trim() || null,
+        line_items: quote.lineItems,
+      };
       payload.channel_manager_provider = channelProvider || null;
       payload.chain_mode = chainMode;
       if (chainMode === 'existing_chain') payload.chain_id = chainId;
@@ -283,6 +312,9 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
     setModuleSearch('');
     setShowSelectedModulesOnly(false);
     setExpandedModuleGroups([]);
+    setFinalMonthly(null);
+    setFinalSetup(null);
+    setOverrideReason('');
     setForm({
       property_name: '', property_type: '', email: '', password: '', name: '', phone: '',
       address: '', location: '', total_rooms: '', description: '', subscription_tier: 'basic', subscription_days: 30,
@@ -315,6 +347,36 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
       .filter((item) => modulesMap[item.key])
       .length;
   }, [modulesMap]);
+
+  const quote = useMemo(() => {
+    const baseMonthly = PLANS[form.subscription_tier]?.monthlyPrice || 0;
+    const pricedItems = MODULE_GROUPS.flatMap((group) => group.items)
+      .filter((item) => (modulesMap[item.key] || (item.key === 'multi_property' && chainMode !== 'standalone')) && item.monthly != null)
+      .map((item) => {
+        const included = isModuleIncludedInPlan(item, form.subscription_tier);
+        return {
+          module_key: item.key,
+          label: item.label,
+          monthly: included ? 0 : item.monthly,
+          setup: included ? 0 : (item.setup || 0),
+          included,
+          usage_note: item.usageNote || null,
+        };
+      });
+    const addonMonthly = pricedItems.reduce((sum, item) => sum + item.monthly, 0);
+    const listMonthly = baseMonthly + addonMonthly;
+    const listSetup = pricedItems.reduce((sum, item) => sum + item.setup, 0);
+    const resolvedMonthly = finalMonthly === null ? listMonthly : Number(finalMonthly);
+    const resolvedSetup = finalSetup === null ? listSetup : Number(finalSetup);
+    return {
+      baseMonthly, addonMonthly, listMonthly, listSetup,
+      finalMonthly: resolvedMonthly,
+      finalSetup: resolvedSetup,
+      isOverridden: resolvedMonthly !== listMonthly || resolvedSetup !== listSetup,
+      lineItems: pricedItems,
+      usageNotes: pricedItems.filter((item) => item.usage_note).map((item) => item.usage_note),
+    };
+  }, [chainMode, finalMonthly, finalSetup, form.subscription_tier, modulesMap]);
 
   const toggleExpandedModuleGroup = (groupId) => {
     setExpandedModuleGroups((current) => (
@@ -742,8 +804,19 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                                           className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                                         />
                                         <div className="min-w-0 flex-1">
-                                          <div className="text-xs font-medium leading-tight text-slate-800">{item.label}</div>
+                                          <div className="flex flex-wrap items-center gap-1 text-xs font-medium leading-tight text-slate-800">
+                                            <span>{item.label}</span>
+                                            {isModuleIncludedInPlan(item, form.subscription_tier) ? (
+                                              <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">Pakete dahil</span>
+                                            ) : item.monthly != null ? (
+                                              <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-700">€{item.monthly}/ay</span>
+                                            ) : null}
+                                            {!isModuleIncludedInPlan(item, form.subscription_tier) && item.setup > 0 && (
+                                              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">Kurulum €{item.setup}</span>
+                                            )}
+                                          </div>
                                           {item.hint && <div className="mt-0.5 text-[10px] text-slate-500">{item.hint}</div>}
+                                          {item.usageNote && <div className="mt-1 text-[9px] font-medium text-amber-700">{item.usageNote}</div>}
                                         </div>
                                       </label>
                                     );
@@ -764,13 +837,43 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                 )}
               </div>
 
+              <div data-testid="commercial-quote-summary" className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">Ticari teklif özeti</h3>
+                  <p className="mt-0.5 text-[11px] text-slate-500">Bu kayıt yalnızca teklif niteliğindedir; ödeme veya tahsilat başlatmaz.</p>
+                </div>
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between"><span>{PLANS[form.subscription_tier]?.label} paket bedeli</span><strong>€{quote.baseMonthly}/ay</strong></div>
+                  {quote.lineItems.filter((item) => !item.included && (item.monthly || item.setup)).map((item) => (
+                    <div key={item.module_key} className="flex justify-between gap-3 text-slate-600">
+                      <span>{item.label}</span><span>{item.monthly ? `€${item.monthly}/ay` : ''}{item.monthly && item.setup ? ' + ' : ''}{item.setup ? `€${item.setup} kurulum` : ''}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between border-t pt-2"><span>Liste aylık toplamı</span><strong>€{quote.listMonthly}/ay</strong></div>
+                  <div className="flex justify-between"><span>Liste kurulum toplamı</span><strong>€{quote.listSetup}</strong></div>
+                </div>
+                {quote.usageNotes.length > 0 && (
+                  <div className="rounded-lg bg-amber-50 p-2 text-[10px] text-amber-800">
+                    <strong>Kullanıma bağlı giderler:</strong> {[...new Set(quote.usageNotes)].join(' ')}
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div><Label>Nihai aylık (€)</Label><input data-testid="final-monthly-total" type="number" min="0" step="0.01" className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" value={finalMonthly === null ? quote.listMonthly : finalMonthly} onChange={(event) => setFinalMonthly(event.target.value)} /></div>
+                  <div><Label>Nihai kurulum (€)</Label><input data-testid="final-setup-total" type="number" min="0" step="0.01" className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" value={finalSetup === null ? quote.listSetup : finalSetup} onChange={(event) => setFinalSetup(event.target.value)} /></div>
+                </div>
+                {quote.isOverridden && (
+                  <div><Label>Fiyat değişikliği nedeni *</Label><textarea data-testid="quote-override-reason" className="mt-1 min-h-20 w-full rounded-lg border px-3 py-2 text-sm" value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="İndirim/onay gerekçesini yazın" /></div>
+                )}
+              </div>
+
               {error && <div className="p-2 rounded bg-red-50 text-red-700 text-sm">{error}</div>}
 
               <div className="flex justify-between pt-2 sticky bottom-0 bg-white border-t -mx-6 px-6 py-3">
                 <Button variant="outline" onClick={() => { setStep(2); setError(null); }} className="gap-1.5">
                   <ChevronLeft size={15} /> Geri
                 </Button>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="hidden text-right text-xs sm:block"><div className="font-semibold text-slate-900">€{quote.finalMonthly}/ay</div><div className="text-slate-500">Kurulum €{quote.finalSetup}</div></div>
                   <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>{t('cm.pages_admin_CreateTenantModal.iptal_25174')}</Button>
                   <Button data-testid="create-tenant-submit" onClick={handleSubmit} disabled={saving}>
                     {saving ? 'Oluşturuluyor...' : 'Tesis Oluştur'}

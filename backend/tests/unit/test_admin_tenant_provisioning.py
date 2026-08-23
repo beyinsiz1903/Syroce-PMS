@@ -3,7 +3,9 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from core import provider_credential_vault
-from domains.admin.router.tenants import _validate_provider_credentials, router
+from datetime import UTC, datetime
+
+from domains.admin.router.tenants import _build_commercial_quote, _validate_provider_credentials, router
 from models.schemas.identity import TenantRegister
 
 
@@ -42,6 +44,38 @@ def test_tenant_register_accepts_explicit_chain_and_provider():
 def test_tenant_register_rejects_unknown_provider():
     with pytest.raises(ValidationError):
         TenantRegister(**_tenant_payload(channel_manager_provider="unknown"))
+
+
+def _quote(**overrides):
+    quote = {
+        "pricing_version": "2026-08-23", "currency": "EUR", "plan_key": "basic",
+        "plan_label": "Basic", "base_monthly": 79, "addon_monthly": 49,
+        "list_monthly_total": 128, "list_setup_total": 0,
+        "final_monthly_total": 128, "final_setup_total": 0,
+        "override_reason": None,
+        "line_items": [{"module_key": "ai_chatbot", "label": "AI Chatbot", "monthly": 49, "setup": 0, "included": False}],
+    }
+    quote.update(overrides)
+    return quote
+
+
+def test_commercial_quote_requires_reason_for_override():
+    with pytest.raises(ValidationError, match="Fiyat değişikliği nedeni zorunludur"):
+        TenantRegister(**_tenant_payload(commercial_quote=_quote(final_monthly_total=99)))
+
+
+def test_backend_recalculates_quote_and_sets_audit_fields():
+    payload = TenantRegister(**_tenant_payload(commercial_quote=_quote()))
+    quoted = _build_commercial_quote(payload.commercial_quote, {"ai_chatbot": True}, "basic", "super-1", datetime(2026, 8, 23, tzinfo=UTC))
+    assert quoted["list_monthly_total"] == 128
+    assert quoted["line_items"][0]["module_key"] == "ai_chatbot"
+    assert quoted["quoted_by"] == "super-1"
+
+
+def test_backend_rejects_tampered_list_totals():
+    payload = TenantRegister(**_tenant_payload(commercial_quote=_quote(addon_monthly=0, list_monthly_total=79, final_monthly_total=79)))
+    with pytest.raises(HTTPException, match="fiyat kataloğuyla eşleşmiyor"):
+        _build_commercial_quote(payload.commercial_quote, {"ai_chatbot": True}, "basic", "super-1", datetime.now(UTC))
 
 
 def test_provider_credentials_are_allowlisted_and_trimmed():

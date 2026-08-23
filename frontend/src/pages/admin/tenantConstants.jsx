@@ -17,6 +17,7 @@ export const PLANS = {
     maxRooms: 15,
     maxUsers: 2,
     price: '35€/ay',
+    monthlyPrice: 35,
   },
   basic: {
     key: 'basic',
@@ -29,6 +30,7 @@ export const PLANS = {
     maxRooms: 30,
     maxUsers: 4,
     price: '79€/ay',
+    monthlyPrice: 79,
   },
   professional: {
     key: 'professional',
@@ -41,6 +43,7 @@ export const PLANS = {
     maxRooms: 80,
     maxUsers: 15,
     price: '299€/ay',
+    monthlyPrice: 299,
   },
   enterprise: {
     key: 'enterprise',
@@ -53,6 +56,7 @@ export const PLANS = {
     maxRooms: null,
     maxUsers: null,
     price: '799€/ay',
+    monthlyPrice: 799,
   },
 };
 
@@ -117,15 +121,15 @@ export const MODULE_GROUPS = [
     icon: Crown,
     color: 'indigo',
     items: [
-      { key: 'revenue_management', label: 'Revenue Management', hint: 'Dinamik fiyatlandırma, RMS', tier: 'enterprise' },
-      { key: 'multi_property', label: 'Multi-Property', hint: 'Çoklu otel yönetimi', tier: 'enterprise' },
-      { key: 'group_sales', label: 'Grup Satış & MICE', hint: 'Grup rezervasyon, etkinlik', tier: 'enterprise' },
-      { key: 'sales_crm', label: 'Satış CRM', hint: 'Pipeline, lead yönetimi', tier: 'enterprise' },
-      { key: 'loyalty_program', label: 'Sadakat Programı', hint: 'Puan, tier, ödüller', tier: 'enterprise' },
-      { key: 'api_access', label: 'API Erişimi', hint: 'Open API, webhook', tier: 'enterprise' },
-      { key: 'audit_trail', label: 'Audit Trail', hint: 'Compliance logging', tier: 'enterprise' },
-      { key: 'gm_dashboards', label: 'GM / Yönetici Dashboardları', hint: 'Üst yönetim icra panelleri', tier: 'enterprise' },
-      { key: 'white_label', label: 'White Label', hint: 'Marka özelleştirme / beyaz etiket', tier: 'enterprise' },
+      { key: 'revenue_management', label: 'Revenue Management', hint: 'Dinamik fiyatlandırma, RMS', tier: 'enterprise', monthly: 79 },
+      { key: 'multi_property', label: 'Multi-Property', hint: 'Çoklu otel yönetimi', tier: 'enterprise', monthly: 99 },
+      { key: 'group_sales', label: 'Grup Satış & MICE', hint: 'Grup rezervasyon, etkinlik', tier: 'enterprise', monthly: 39 },
+      { key: 'sales_crm', label: 'Satış CRM', hint: 'Pipeline, lead yönetimi', tier: 'enterprise', monthly: 39 },
+      { key: 'loyalty_program', label: 'Sadakat Programı', hint: 'Puan, tier, ödüller', tier: 'enterprise', monthly: 29 },
+      { key: 'api_access', label: 'API Erişimi', hint: 'Open API, webhook', tier: 'enterprise', monthly: 49 },
+      { key: 'audit_trail', label: 'Audit Trail', hint: 'Compliance logging', tier: 'enterprise', monthly: 29 },
+      { key: 'gm_dashboards', label: 'GM / Yönetici Dashboardları', hint: 'Üst yönetim icra panelleri', tier: 'enterprise', monthly: 39 },
+      { key: 'white_label', label: 'White Label', hint: 'Marka özelleştirme / beyaz etiket', tier: 'enterprise', monthly: 99, setup: 199 },
     ],
   },
   {
@@ -153,13 +157,13 @@ export const MODULE_GROUPS = [
     color: 'amber',
     items: [
       { key: 'ai', label: 'AI Genel', hint: 'Tüm AI modüllerinin üst anahtarı', tier: 'enterprise' },
-      { key: 'ai_chatbot', label: 'AI Chatbot', hint: 'Akıllı misafir asistanı', tier: 'enterprise' },
-      { key: 'ai_pricing', label: 'AI Dynamic Pricing', hint: 'ML fiyat önerileri', tier: 'enterprise' },
-      { key: 'ai_predictive', label: 'AI Tahminler', hint: 'No-show, demand prediction', tier: 'enterprise' },
-      { key: 'ai_whatsapp', label: 'AI WhatsApp Concierge', hint: 'WhatsApp üzerinden otomatik misafir asistanı', tier: 'enterprise' },
-      { key: 'ai_reputation', label: 'AI İtibar Yönetimi', hint: 'Yorum/itibar analizi ve yanıt önerileri', tier: 'enterprise' },
-      { key: 'ai_revenue_autopilot', label: 'AI Revenue Autopilot', hint: 'Otomatik fiyat/gelir optimizasyonu', tier: 'enterprise' },
-      { key: 'ai_social_radar', label: 'AI Social Radar', hint: 'Sosyal medya sinyal takibi', tier: 'enterprise' },
+      { key: 'ai_chatbot', label: 'AI Chatbot', hint: 'Akıllı misafir asistanı', tier: 'enterprise', monthly: 49, alwaysPaid: true },
+      { key: 'ai_pricing', label: 'AI Dynamic Pricing', hint: 'ML fiyat önerileri', tier: 'enterprise', monthly: 69, alwaysPaid: true },
+      { key: 'ai_predictive', label: 'AI Tahminler', hint: 'No-show, demand prediction', tier: 'enterprise', monthly: 39, alwaysPaid: true },
+      { key: 'ai_whatsapp', label: 'AI WhatsApp Concierge', hint: 'WhatsApp üzerinden otomatik misafir asistanı', tier: 'enterprise', monthly: 79, alwaysPaid: true, usageNote: 'Mesajlaşma/sağlayıcı kullanımı ayrıca yansıtılır.' },
+      { key: 'ai_reputation', label: 'AI İtibar Yönetimi', hint: 'Yorum/itibar analizi ve yanıt önerileri', tier: 'enterprise', monthly: 39, alwaysPaid: true },
+      { key: 'ai_revenue_autopilot', label: 'AI Revenue Autopilot', hint: 'Otomatik fiyat/gelir optimizasyonu', tier: 'enterprise', monthly: 99, alwaysPaid: true },
+      { key: 'ai_social_radar', label: 'AI Social Radar', hint: 'Sosyal medya sinyal takibi', tier: 'enterprise', monthly: 39, alwaysPaid: true },
     ],
   },
   {
@@ -169,8 +173,8 @@ export const MODULE_GROUPS = [
     color: 'sky',
     description: 'Personel mobil uygulamasında hangi rol modüllerinin açılacağını seçin.',
     items: [
-      { key: 'mobile_housekeeping', label: 'Mobil Housekeeping', hint: 'Kat hizmetleri mobil uygulaması', tier: 'professional' },
-      { key: 'mobile_revenue', label: 'Mobil Revenue', hint: 'Gelir yönetimi mobil ekranları', tier: 'enterprise' },
+      { key: 'mobile_housekeeping', label: 'Mobil Housekeeping', hint: 'Kat hizmetleri mobil uygulaması', tier: 'professional', monthly: 15 },
+      { key: 'mobile_revenue', label: 'Mobil Revenue', hint: 'Gelir yönetimi mobil ekranları', tier: 'enterprise', monthly: 29 },
     ],
   },
   {
@@ -181,8 +185,8 @@ export const MODULE_GROUPS = [
     description: 'Misafir self-servis ve harici entegrasyon modülleri.',
     items: [
       { key: 'room_qr_requests', label: 'Oda QR Talepleri', hint: 'Misafir → departman QR talep sistemi', tier: 'mini' },
-      { key: 'quick_id', label: 'Kimlik Tarama (Quick-ID)', hint: 'Kimlik OCR + KBS bildirim akışı', tier: 'mini' },
-      { key: 'af_sadakat', label: 'Sadakat & Inbox', hint: 'Sadakat programı & misafir inbox entegrasyonu', tier: 'enterprise' },
+      { key: 'quick_id', label: 'Kimlik Tarama (Quick-ID)', hint: 'Kimlik OCR + KBS bildirim akışı', tier: 'mini', monthly: 19, alwaysPaid: true, usageNote: 'Kullanım/OCR sağlayıcı bedeli ayrıca yansıtılır.' },
+      { key: 'af_sadakat', label: 'Sadakat & Inbox', hint: 'Sadakat programı & misafir inbox entegrasyonu', tier: 'enterprise', monthly: 39 },
       { key: 'marketplace', label: 'Marketplace', hint: 'Modül / eklenti mağazası', tier: 'enterprise' },
     ],
   },
@@ -271,10 +275,10 @@ export const MODULE_GROUPS = [
     icon: Sparkles,
     color: 'pink',
     items: [
-      { key: 'spa', label: 'Spa & Wellness', hint: 'Hizmet kataloğu, terapist & oda yönetimi, randevu defteri, folio entegrasyonu', tier: 'addon', addon: true },
-      { key: 'mice', label: 'MICE & Banquet', hint: 'Toplantı/balo salonları, catering menüleri, kurumsal CRM, etkinlik yönetimi', tier: 'addon', addon: true },
-      { key: 'academy', label: 'Syroce Academy', hint: 'Departmana özel personel eğitimi, ders sonu sınav ve otomatik PDF sertifika', tier: 'addon', addon: true },
-      { key: 'contact_center', label: 'Syroce Contact Center', hint: 'Omnichannel iletişim — WhatsApp, çağrı, web, sosyal; tek gelen kutusu', tier: 'addon', addon: true },
+      { key: 'spa', label: 'Spa & Wellness', hint: 'Hizmet kataloğu, terapist & oda yönetimi, randevu defteri, folio entegrasyonu', tier: 'addon', addon: true, monthly: 39, setup: 99, alwaysPaid: true },
+      { key: 'mice', label: 'MICE & Banquet', hint: 'Toplantı/balo salonları, catering menüleri, kurumsal CRM, etkinlik yönetimi', tier: 'addon', addon: true, monthly: 59, setup: 149, alwaysPaid: true },
+      { key: 'academy', label: 'Syroce Academy', hint: 'Departmana özel personel eğitimi, ders sonu sınav ve otomatik PDF sertifika', tier: 'addon', addon: true, monthly: 19, alwaysPaid: true },
+      { key: 'contact_center', label: 'Syroce Contact Center', hint: 'Omnichannel iletişim — WhatsApp, çağrı, web, sosyal; tek gelen kutusu', tier: 'addon', addon: true, monthly: 89, setup: 199, alwaysPaid: true, usageNote: 'Telefon ve mesaj kullanımı ayrıca yansıtılır.' },
     ],
   },
 ];
@@ -297,7 +301,7 @@ export const tierRank = { mini: 0, basic: 1, professional: 2, enterprise: 3 };
 export const isModuleIncludedInPlan = (moduleItem, tenantTier) => {
   // Add-on modules are never "included" in any plan — they're always
   // upsell items that super_admin enables per-tenant.
-  if (moduleItem.addon || moduleItem.tier === 'addon') return false;
+  if (moduleItem.alwaysPaid || moduleItem.addon || moduleItem.tier === 'addon') return false;
   const moduleTier = moduleItem.tier || 'enterprise';
   // Higher tier always includes lower-tier modules; Mini (rank 0) is the
   // minimum baseline matching Elektraweb Mini's feature set.
