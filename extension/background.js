@@ -1,6 +1,6 @@
 "use strict";
 
-importScripts("jandarma-soap.js");
+importScripts("jandarma-soap.js", "egm-kbs.js");
 
 // Syroce KBS Gonderici - arka plan servis worker'i (Manifest V3).
 //
@@ -46,7 +46,7 @@ function normalizeAuthority(a) {
 function normalizeProfile(cfg) {
   const c = cfg && typeof cfg === "object" ? cfg : {};
   return {
-    mode: c.mode || "test", // test | cookie | token
+    mode: c.mode || "test", // test | egm-session | jandarma-soap | cookie | token
     endpoint: (c.endpoint || "").trim(),
     token: (c.token || "").trim(),
     requestFormat: c.requestFormat || "json", // json | form
@@ -100,6 +100,7 @@ function isAllowedHost(hostname, authority) {
 
 function configState(profile, hasSessionPassword = false) {
   if (profile.mode === "test") return "test";
+  if (profile.mode === "egm-session") return "configured";
   if (profile.mode === "jandarma-soap") {
     if (!profile.liveConfirmed) return "confirmation_required";
     if (!/^\d{11}$/.test(profile.userTc) || !/^\d{6}$/.test(profile.facilityCode)) return "unconfigured";
@@ -208,6 +209,10 @@ async function sendToKbs(body, authority) {
     }
   }
 
+  if (auth === "polis" && cfg.mode === "egm-session") {
+    return sendToEgmSession(body);
+  }
+
   let url;
   try {
     url = new URL(cfg.endpoint);
@@ -263,6 +268,77 @@ async function sendToKbs(body, authority) {
     return { ok: false, error: "no_reference_in_response" };
   }
   return { ok: true, reference };
+}
+
+function egmError(error) {
+  const message = typeof error === "string"
+    ? error
+    : (error && (error.message || error.title || error.detail)) || "egm_request_failed";
+  return String(message).slice(0, 500);
+}
+
+async function egmRequest(path, payload, method = "POST") {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), SEND_TIMEOUT_MS);
+  try {
+    const init = {
+      method, credentials: "include", signal: ctrl.signal,
+      headers: { Accept: "application/json, text/plain, */*" },
+    };
+    if (method !== "GET") {
+      init.headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(payload || {});
+    }
+    const resp = await fetch(`${SyroceEgmKbs.API_BASE}/${path}`, init);
+    const contentType = resp.headers.get("content-type") || "";
+    const raw = await resp.text();
+    if (resp.status === 401 || resp.status === 403 || /text\/html/i.test(contentType)) {
+      throw new Error("egm_login_required");
+    }
+    let data;
+    try { data = raw ? JSON.parse(raw) : {}; } catch (_e) { throw new Error("egm_invalid_response"); }
+    if (!resp.ok) throw new Error(`egm_http_${resp.status}: ${egmError(data)}`);
+    if (data && data.isSuccess === false) throw new Error(egmError(data));
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function sendToEgmSession(body) {
+  if (!validBody(body)) return { ok: false, error: "payload_incomplete" };
+  try {
+    if (body.action === "checkout") {
+      const filters = {};
+      if (body.room_number) filters.verilenOda = String(body.room_number).trim();
+      const active = await egmRequest("Konaklayan/AktifKonaklayanGetir", {
+        filters, pageNumber: 0, pageSize: 200,
+        sortField: "gelisTarihi", sortOrder: "desc",
+      });
+      const guest = SyroceEgmKbs.selectActiveGuest(active, body);
+      const guestId = guest && (guest.konaklayanId || guest.id);
+      if (!guestId) return { ok: false, error: "egm_active_guest_not_found" };
+      await egmRequest("Konaklayan/KonaklayanPasifYap", { konaklayanId: guestId });
+      return {
+        ok: true, reference: SyroceEgmKbs.localReceipt("CHECKOUT"),
+        officialReference: false,
+      };
+    }
+
+    let countries = [];
+    if (!SyroceEgmKbs.isTurkish(body.nationality) || !body.id_number) {
+      const countryResponse = await egmRequest("Ortak/UlkeGetir", null, "GET");
+      countries = Array.isArray(countryResponse?.data) ? countryResponse.data : [];
+    }
+    const request = SyroceEgmKbs.buildCheckin(body, countries);
+    await egmRequest(`Konaklayan/${request.operation}`, request.payload);
+    return {
+      ok: true, reference: SyroceEgmKbs.localReceipt("CHECKIN"),
+      officialReference: false,
+    };
+  } catch (e) {
+    return { ok: false, error: egmError(e) };
+  }
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

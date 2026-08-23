@@ -69,7 +69,7 @@ function buildProfile(a, status) {
     }
   }
 
-  if (mode !== "test") {
+  if (mode !== "test" && mode !== "egm-session") {
     let host = "";
     try {
       const u = new URL(endpoint);

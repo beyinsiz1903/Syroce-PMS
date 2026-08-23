@@ -526,6 +526,12 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
               <Download className={`w-3 h-3 mr-1 ${downloadingExt ? 'animate-pulse' : ''}`} />
               Eklentiyi indir
             </Button>
+            {authority === 'polis' && (
+              <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
+                onClick={() => window.open('https://kbs.egm.gov.tr/', '_blank', 'noopener,noreferrer')}>
+                EGM KBS girisini ac
+              </Button>
+            )}
             {extReady && (
               <>
                 <Button variant={autoSend ? 'default' : 'outline'} size="sm"
@@ -543,7 +549,9 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
         </div>
         <p className="text-[11px] text-gray-500 mt-1">
           {extInfo.present
-            ? `Bildirimler resepsiyon bilgisayarinin tarayicisindan (otelin IP adresi) secili makamin (${authority === 'jandarma' ? 'Jandarma' : 'Polis/Emniyet'}) KBS sistemine iletilir. Jandarma web servis sifresi tarayici kapaninca silinir ve yeniden girilmelidir.`
+            ? authority === 'polis'
+              ? 'Polis bildirimleri bu tarayicidaki EGM KBS oturumuyla iletilir. KBS sekmesinin acik kalmasi gerekmez; oturum sona ererse EGMSEC ile yeniden giris yapin. E-Devlet ve EGMSEC bilgileri Syroce tarafindan saklanmaz.'
+              : 'Bildirimler resepsiyon bilgisayarinin tarayicisindan Jandarma KBS sistemine iletilir. Web servis sifresi tarayici kapaninca silinir ve yeniden girilmelidir.'
             : 'Eklenti kurulu degil. "Eklentiyi indir" ile paketi alip Chrome/Edge > Eklentiler > Gelistirici modu > Paketlenmemis yukle ile kurun. Kuyruktaki bildirimler eklenti kurulup acilana kadar bekler.'}
           {lastDrain && ` Son gonderim: ${new Date(lastDrain.at).toLocaleTimeString()} - basarili ${lastDrain.ok}, hata ${lastDrain.fail}.`}
         </p>
