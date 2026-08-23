@@ -74,7 +74,7 @@ const CalendarHeader = ({
 
   return (
     <div
-      className="flex flex-wrap items-center gap-x-4 gap-y-2"
+      className="flex flex-wrap items-center gap-x-4 gap-y-3"
       data-testid="reservation-toolbar"
     >
       {/* ─── LEFT GROUP: title + date range + alert chips ─── */}
@@ -86,11 +86,11 @@ const CalendarHeader = ({
           data-testid="reservations-tab-btn"
           title="Rezervasyon listesi"
         >
-          <span className="flex items-center justify-center w-9 h-9 rounded-md bg-amber-50 text-amber-600 group-hover:bg-amber-100 transition-colors">
+          <span className="flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-sm group-hover:shadow-md transition-all">
             <CalendarIcon className="w-5 h-5" />
           </span>
           <span className="flex flex-col leading-tight text-left min-w-0">
-            <span className="text-base font-bold text-gray-900 group-hover:text-amber-600 transition-colors">
+            <span className="text-lg font-extrabold text-slate-900 group-hover:text-amber-600 transition-colors">
               Rezervasyonlar
             </span>
             {dateRangeLabel && (
@@ -237,7 +237,7 @@ const CalendarHeader = ({
 
         <Button
           onClick={onShowNewBookingDialog}
-          className="bg-amber-500 hover:bg-amber-600 text-white text-xs h-8 px-3.5 font-semibold shadow-sm"
+          className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs h-9 px-4 font-bold shadow-sm hover:shadow-md"
           data-testid="add-reservation-button"
         >
           <Plus className="w-3.5 h-3.5 mr-1" />

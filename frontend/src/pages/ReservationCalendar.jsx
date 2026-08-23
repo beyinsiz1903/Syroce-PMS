@@ -235,7 +235,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const finalizeDragSelectRef = useRef(() => {});
 
   const [showDeluxePanel, setShowDeluxePanel] = useState(false);
-  const [showOccupancyPanel, setShowOccupancyPanel] = useState(false);
+  const [showOccupancyPanel, setShowOccupancyPanel] = useState(true);
   const [groupBookings, setGroupBookings] = useState([]);
   const [oversellProtection, setOversellProtection] = useState([]);
   const [channelMixData, setChannelMixData] = useState(null);
@@ -927,9 +927,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // ─── Render ────────────────────────────────────────────────
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="calendar">
-      <div className="flex flex-col h-[calc(100vh-72px)] overflow-hidden -mb-28" role="main" aria-label="Rezervasyon takvimi">
+      <div className="flex flex-col h-[calc(100vh-72px)] overflow-hidden -mb-28 bg-slate-50" role="main" aria-label="Rezervasyon takvimi">
         <div
-          className="flex-none p-4 pb-3 bg-gray-50 border-b border-gray-200 space-y-3"
+          className="flex-none px-4 py-3 bg-white border-b border-slate-200 shadow-sm space-y-3"
           data-testid="calendar-sticky-header"
           role="toolbar"
           aria-label="Takvim kontrol araçları"
@@ -960,7 +960,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         />
         </div>
 
-        <div className="flex-1 flex flex-col min-h-0 px-4 pb-4 gap-3">
+        <div className="flex-1 flex flex-col min-h-0 px-4 pb-4 pt-3 gap-3">
         <CalendarOccupancy
           dateRange={dateRange}
           getOccupancyForDate={getOccupancyForDate}
@@ -972,27 +972,27 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
         {/* Compact Legend */}
         <div
-          className="flex-none bg-white border rounded-lg px-4 py-2"
+          className="flex-none bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm"
           data-testid="calendar-legend"
           role="region"
           aria-label="Renk kodu lejantı"
         >
-          <div className="flex items-center justify-between text-xs text-gray-500">
-            <ul className="flex items-center gap-4" role="list" aria-label="Rezervasyon durumu renk kodları">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+            <ul className="flex flex-wrap items-center gap-x-4 gap-y-2" role="list" aria-label="Rezervasyon durumu renk kodları">
               <li className="flex items-center gap-1.5" role="listitem">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#16a34a' }} aria-hidden="true"></div>
+                <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#16a34a' }} aria-hidden="true"></div>
                 <span>Iceride (Check-in)</span>
               </li>
               <li className="flex items-center gap-1.5" role="listitem">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#f97316' }} aria-hidden="true"></div>
+                <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#f97316' }} aria-hidden="true"></div>
                 <span>{t('cm.pages_ReservationCalendar.bugun_gelis')}</span>
               </li>
               <li className="flex items-center gap-1.5" role="listitem">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#2563eb' }} aria-hidden="true"></div>
+                <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#2563eb' }} aria-hidden="true"></div>
                 <span>Onaylanmis</span>
               </li>
               <li className="flex items-center gap-1.5" role="listitem">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#f87171' }} aria-hidden="true"></div>
+                <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#f87171' }} aria-hidden="true"></div>
                 <span>{t('cm.pages_ReservationCalendar.gecmis_check_out')}</span>
               </li>
               <li className="flex items-center gap-1.5" role="listitem">

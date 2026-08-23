@@ -13,13 +13,15 @@ import { useTranslation } from 'react-i18next';
 import OccupancyBand from "./OccupancyBand";
 import { compactGuestName, formatGuestName } from './roomTypeMatching';
 
-// Compact grid constants
-const CELL_W = 72;  // px per day column (was 96)
-const CELL_CLS = 'w-[72px]'; // Tailwind class matching CELL_W
-const CELL_H = 38;  // px room row height (was 52)
-const BOOKING_H = 30; // px booking bar height (was 46)
-const LANE_H = 32;  // px per unassigned lane (was 44)
-const LANE_BAR_H = 34;  // px per booking lane in a room row (BOOKING_H + 4px gap)
+// Readable grid constants. The old 72×38 cells made names and channel data
+// difficult to scan on a reception desk display.
+const CELL_W = 84;
+const CELL_CLS = 'w-[84px]';
+const LABEL_CLS = 'w-36';
+const CELL_H = 48;
+const BOOKING_H = 40;
+const LANE_H = 40;
+const LANE_BAR_H = 44;
 
 const CalendarGrid = ({
   rooms,
@@ -152,7 +154,7 @@ const CalendarGrid = ({
   });
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 relative flex flex-col h-full overflow-hidden" data-testid="calendar-grid">
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm relative flex flex-col h-full overflow-hidden" data-testid="calendar-grid">
       {/* Date Header Row - STICKY */}
       <div className="overflow-auto flex-1">
         <div className="min-w-max pb-12">
@@ -165,13 +167,13 @@ const CalendarGrid = ({
           />
           <div className="sticky top-0 z-40 bg-white border-b border-gray-300">
           <div className="flex">
-            <div className="w-28 flex-shrink-0 border-r border-gray-200"></div>
-            <div className="flex-1 text-center text-[10px] font-semibold text-gray-500 py-0.5">
+            <div className={`${LABEL_CLS} sticky left-0 z-50 flex-shrink-0 border-r border-slate-200 bg-slate-50`}></div>
+            <div className="flex-1 text-center text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 py-1.5 bg-slate-50">
               {dateRange.length > 0 && dateRange[Math.floor(dateRange.length / 2)].toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}
             </div>
           </div>
-          <div className="flex bg-white">
-            <div className="w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 text-[10px] text-gray-500 font-medium flex items-end">
+          <div className="flex bg-white shadow-[0_2px_6px_rgba(15,23,42,0.06)]">
+            <div className={`${LABEL_CLS} sticky left-0 z-50 flex-shrink-0 px-3 py-2 border-r border-slate-200 bg-white text-[11px] text-slate-500 font-semibold flex items-end`}>
               <button
                 type="button"
                 onClick={() => {
@@ -202,15 +204,15 @@ const CalendarGrid = ({
               return (
                 <div
                   key={idx}
-                  className={`${CELL_CLS} flex-shrink-0 py-1 border-r text-center ${
-                    today ? 'bg-blue-50 border-blue-200' : past ? 'bg-gray-100/60 border-gray-200' : weekend ? 'bg-amber-50 border-gray-200' : 'bg-white border-gray-200'
+                  className={`${CELL_CLS} flex-shrink-0 py-2 border-r text-center ${
+                    today ? 'bg-blue-100 border-blue-300 shadow-[inset_0_3px_0_#2563eb]' : past ? 'bg-slate-100 border-slate-200' : weekend ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200'
                   }`}
                   data-testid={`date-header-${dayNum}`}
                 >
-                  <div className={`text-[10px] font-semibold uppercase tracking-wide ${today ? 'text-blue-600' : past ? 'text-gray-400' : 'text-gray-500'}`}>
+                  <div className={`text-[10px] font-bold uppercase tracking-wide ${today ? 'text-blue-700' : past ? 'text-slate-400' : 'text-slate-500'}`}>
                     {dayName}
                   </div>
-                  <div className={`text-[15px] font-bold leading-tight ${today ? 'text-blue-600' : past ? 'text-gray-400' : 'text-gray-900'}`}>
+                  <div className={`text-[18px] font-extrabold leading-tight ${today ? 'text-blue-700' : past ? 'text-slate-400' : 'text-slate-900'}`}>
                     {dayNum}
                   </div>
                 </div>
@@ -233,13 +235,13 @@ const CalendarGrid = ({
               return (
                 <div key={roomType}>
                   {/* Room Type Header */}
-                  <div className="bg-blue-50/70 border-b border-blue-200" data-testid="room-type-row">
+                  <div className="bg-gradient-to-r from-slate-100 to-blue-50 border-b border-blue-200" data-testid="room-type-row">
                     <div className="flex">
-                      <div className="w-28 flex-shrink-0 px-2 py-1.5 border-r border-blue-200 flex items-center">
+                      <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-2 border-r border-blue-200 bg-slate-100 flex items-center`}>
                         <button
                           type="button"
                           onClick={() => toggleType(roomType)}
-                          className="flex items-center gap-1 font-bold text-[13px] text-gray-900 tracking-tight hover:text-blue-700 select-none"
+                          className="flex items-center gap-1.5 font-extrabold text-[13px] text-slate-900 tracking-tight hover:text-blue-700 select-none"
                           data-testid={`room-type-${roomType}`}
                           title={collapsedTypes.has(roomType) ? 'Aç' : 'Daralt'}
                         >
@@ -316,12 +318,12 @@ const CalendarGrid = ({
                     const sidebarBg = hasOverdue ? 'bg-red-50/60' : hasToday ? 'bg-amber-50/60' : 'bg-blue-50/40';
                     return (
                       <div className={`flex border-b border-dashed border-blue-200 ${rowBg}`} style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
-                        <div className={`w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 ${sidebarBg}`} style={{ height: `${rowHeight}px` }}>
+                        <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-2 border-r border-gray-200 ${sidebarBg}`} style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-1">
                             <div className={`w-2 h-2 ${dotColor} rounded-full ${hasOverdue || hasToday ? 'animate-pulse' : ''}`}></div>
                             <div className={`font-bold text-[9px] ${labelColor}`}>{t('cm.pages_calendar_CalendarGrid.atanmamis')}</div>
                           </div>
-                          <div className={`text-[8px] ml-3 ${hasOverdue ? 'text-red-500 font-semibold' : hasToday ? 'text-amber-500 font-semibold' : 'text-blue-500'}`}>
+                          <div className={`text-[10px] ml-3 ${hasOverdue ? 'text-red-500 font-semibold' : hasToday ? 'text-amber-500 font-semibold' : 'text-blue-500'}`}>
                             {unassignedForType.length} rez.
                           </div>
                         </div>
@@ -422,15 +424,18 @@ const CalendarGrid = ({
                     const roomDotStatus = roomBlockedStatus ? 'blocked' : hasBookingToday ? 'occupied' : 'free';
                     const roomDotColor = roomDotStatus === 'blocked' ? 'bg-slate-400' : roomDotStatus === 'occupied' ? 'bg-red-500' : 'bg-green-500';
                     return (
-                      <div key={room.id} className="flex border-b border-gray-100 hover:bg-gray-50/50 transition-colors" data-testid="room-row" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
-                        <div className="w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 bg-white flex items-center" style={{ height: `${rowHeight}px` }}>
-                          <div className="flex items-center gap-1">
+                      <div key={room.id} className="flex border-b border-slate-200 hover:bg-blue-50/30 transition-colors" data-testid="room-row" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
+                        <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-1 border-r border-slate-200 bg-white flex items-center shadow-[3px_0_8px_rgba(15,23,42,0.05)]`} style={{ height: `${rowHeight}px` }}>
+                          <div className="flex items-center gap-2">
                             <div
-                              className={`w-1.5 h-1.5 rounded-full ${roomDotColor}`}
+                              className={`w-2.5 h-2.5 rounded-full ring-2 ring-white shadow-sm ${roomDotColor}`}
                               title={roomDotStatus === 'blocked' ? 'Blok (OOO/OOS)' : roomDotStatus === 'occupied' ? 'Bugün dolu' : 'Boş'}
                               data-testid={`room-status-dot-${roomDotStatus}`}
                             ></div>
-                            <div className="font-bold text-[13px] text-gray-900" data-testid={`room-${room.room_number}`}>{room.room_number}</div>
+                            <div>
+                              <div className="font-extrabold text-[14px] leading-tight text-slate-900" data-testid={`room-${room.room_number}`}>{room.room_number}</div>
+                              <div className="text-[9px] font-medium text-slate-400 leading-tight">{roomType}</div>
+                            </div>
                           </div>
                         </div>
                         <div className="flex relative" style={{ width: `${daysToShow * CELL_W}px`, height: `${rowHeight}px` }}>
@@ -467,10 +472,10 @@ const CalendarGrid = ({
                             return (
                               <div
                                 key={idx}
-                                className={`${CELL_CLS} flex-shrink-0 border-r border-gray-100 relative transition-colors group/cell select-none ${
+                                className={`${CELL_CLS} flex-shrink-0 border-r border-slate-200 relative transition-colors group/cell select-none ${
                                   canCreate ? 'cursor-pointer' : 'cursor-default'
                                 } ${
-                                  past ? 'bg-gray-100/50' : isToday(date) ? 'bg-blue-50/60' : isWeekend(date) ? 'bg-amber-50/30' : 'bg-white hover:bg-gray-50'
+                                  past ? 'bg-slate-100/80' : isToday(date) ? 'bg-blue-100/70' : isWeekend(date) ? 'bg-amber-50/70' : 'bg-white hover:bg-blue-50/50'
                                 } ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''} ${
                                   inDragSel ? 'bg-indigo-100/70 ring-2 ring-inset ring-indigo-400 z-10' : ''
                                 }`}
@@ -589,10 +594,10 @@ const CalendarGrid = ({
                                 onDragEnd={onDragEnd}
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
-                                className={`absolute rounded-md text-white text-[10px] transition-all cursor-move z-20 group outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
+                                className={`absolute rounded-lg text-white text-[10px] transition-all cursor-move z-20 group outline-none border border-white/25 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
                                   isDragging
                                     ? 'opacity-90 ring-2 ring-blue-300 shadow-xl scale-[1.02] z-30'
-                                    : 'shadow-sm hover:shadow-lg hover:-translate-y-px hover:z-30'
+                                    : 'shadow-[0_2px_5px_rgba(15,23,42,0.24)] hover:shadow-lg hover:-translate-y-px hover:z-30'
                                 } ${conflictInfo ? 'ring-2 ring-red-500 animate-pulse' : ''} ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
                                 style={{
                                   left: `${startIdx * CELL_W + 2}px`,
@@ -600,7 +605,7 @@ const CalendarGrid = ({
                                   width: `${span * CELL_W - 4}px`,
                                   height: `${BOOKING_H}px`,
                                   backgroundColor: statusColor.bg,
-                                  borderLeft: `3px solid ${statusColor.border}`,
+                                  borderLeft: `4px solid ${statusColor.border}`,
                                 }}
                                 data-testid={isDragging ? 'reservation-card-dragging' : `booking-bar-${booking.id}`}
                                 title={conflictTitle}
@@ -612,11 +617,11 @@ const CalendarGrid = ({
                                     style={{ backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 5px, rgba(0,0,0,0.18) 5px, rgba(0,0,0,0.18) 6px)' }}
                                   />
                                 )}
-                                <div className="px-1.5 py-0.5 relative overflow-hidden" style={{ height: `${BOOKING_H}px` }}>
-                                  <div className="font-bold text-[11px] truncate pr-3 text-white leading-tight">
+                                <div className="px-2 py-1 relative overflow-hidden" style={{ height: `${BOOKING_H}px` }}>
+                                  <div className="font-extrabold text-[12px] truncate pr-4 text-white leading-tight drop-shadow-sm">
                                     {displayGuestName}
                                   </div>
-                                  <div className="text-[9px] text-white/85 truncate flex items-center gap-1 leading-tight">
+                                  <div className="text-[9px] text-white/90 truncate flex items-center gap-1 leading-tight mt-0.5">
                                     <span className="font-semibold">{getSourceColor(booking).label}</span>
                                     {(booking.adults || booking.children) ? <span className="opacity-80">· {(booking.adults || 0) + (booking.children || 0)} ks</span> : null}
                                   </div>
