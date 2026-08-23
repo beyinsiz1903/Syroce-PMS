@@ -57,6 +57,7 @@ class HorizontalScalingManager:
         self._heartbeat_failures = 0
         self._heartbeat_error_threshold = 3
         self._heartbeat_failure_class: str | None = None
+        self._heartbeat_escalated_failure_class: str | None = None
         self._heartbeat_count = 0
         self._registry_prune_interval = 20
 
@@ -100,6 +101,7 @@ class HorizontalScalingManager:
             )
         self._heartbeat_failures = 0
         self._heartbeat_failure_class = None
+        self._heartbeat_escalated_failure_class = None
         self._heartbeat_count += 1
 
     def _record_heartbeat_failure(self, exc: BaseException, *, phase: str) -> None:
@@ -111,9 +113,20 @@ class HorizontalScalingManager:
             self._heartbeat_failure_class,
             phase,
         )
-        if self._heartbeat_failures == self._heartbeat_error_threshold or self._heartbeat_failures % 10 == 0:
+        if (
+            self._heartbeat_failures >= self._heartbeat_error_threshold
+            and self._heartbeat_escalated_failure_class != self._heartbeat_failure_class
+        ):
             logger.error(
                 "Heartbeat failed repeatedly (%s consecutive): failure_class=%s phase=%s",
+                self._heartbeat_failures,
+                self._heartbeat_failure_class,
+                phase,
+            )
+            self._heartbeat_escalated_failure_class = self._heartbeat_failure_class
+        elif self._heartbeat_failures >= self._heartbeat_error_threshold:
+            logger.warning(
+                "Heartbeat remains unavailable (%s consecutive): failure_class=%s phase=%s",
                 self._heartbeat_failures,
                 self._heartbeat_failure_class,
                 phase,

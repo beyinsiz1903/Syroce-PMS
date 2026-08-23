@@ -27,6 +27,20 @@ _PMS_PENDING = "pending"
 _PMS_FAILED = "failed"
 
 
+def _classify_provider_pull_failure(error: Any) -> str:
+    """Return a bounded provider failure class without logging response details."""
+    message = str(error or "").lower()
+    if "429" in message or "rate limit" in message:
+        return "RATE_LIMITED"
+    if "timeout" in message or "timed out" in message:
+        return "TIMEOUT"
+    if any(marker in message for marker in ("401", "403", "unauthorized", "forbidden")):
+        return "AUTH_REJECTED"
+    if any(marker in message for marker in ("http 5", "status 5", "upstream 5")):
+        return "UPSTREAM_5XX"
+    return "PROVIDER_REJECTED"
+
+
 async def run_phase_a(
     tenant_id: str,
     provider,
@@ -45,9 +59,17 @@ async def run_phase_a(
                 page=page,
             )
             if not result.get("success"):
-                error_text = str(result.get("error", ""))
-                is_rate_limited = "429" in error_text or "rate limit" in error_text.lower()
-                logger.error("[PULL-A] Provider page fetch failed; no delivery ACKs sent")
+                failure_class = _classify_provider_pull_failure(result.get("error"))
+                is_rate_limited = failure_class == "RATE_LIMITED"
+                # A provider-declared failure is an expected upstream outcome. It
+                # must remain visible operationally, but should not create an
+                # application-error issue in Sentry. Invalid payloads and raised
+                # exceptions below remain ERROR events.
+                logger.warning(
+                    "[PULL-A] Provider page fetch failed; no delivery ACKs sent: "
+                    "failure_class=%s",
+                    failure_class,
+                )
                 await log_pull(tenant_id, "failed", 0, "PROVIDER_PULL_FAILED")
                 return {
                     "success": False,

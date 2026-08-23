@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -9,6 +9,7 @@ import { X, Calendar as CalendarIcon, User, MapPin, ArrowRight, Ban, ChevronDown
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { resetUnassignedListScroll } from './calendar/unassignedPanel';
 
 import {
   CalendarHeader,
@@ -204,6 +205,16 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [detailModalBookingId, setDetailModalBookingId] = useState(null);
   const [showUnassignedPanel, setShowUnassignedPanel] = useState(false);
   const [unassignedFilter, setUnassignedFilter] = useState('all');
+  const unassignedListRef = useRef(null);
+
+  // A previously scrolled drawer can keep its old offset when it is reopened or
+  // when the filter changes. Reset before paint so the first reservation header
+  // is never hidden behind the sticky summary area.
+  useLayoutEffect(() => {
+    if (showUnassignedPanel) {
+      resetUnassignedListScroll(unassignedListRef.current);
+    }
+  }, [showUnassignedPanel, unassignedFilter]);
 
   // No-Show Reason Dialog
   const [showNoShowDialog, setShowNoShowDialog] = useState(false);
@@ -1321,7 +1332,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                   t,
                 };
                 return (
-                  <div className="flex-1 min-h-0 overflow-y-auto pb-24" data-testid="unassigned-list">
+                  <div
+                    ref={unassignedListRef}
+                    className="flex-1 min-h-0 overflow-y-auto pt-1 pb-24"
+                    style={{ overflowAnchor: 'none' }}
+                    data-testid="unassigned-list"
+                  >
                     {sorted.map((booking, index) => (
                       <UnassignedCard
                         key={booking.id || booking.external_reservation_id || index}

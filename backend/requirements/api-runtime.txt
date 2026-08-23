@@ -35,3 +35,10 @@
 # API boot/runtime gaps found by Phase 6.0 AST scan
 celery==5.3.4
 psutil==7.2.2
+
+# Optional tracing runtime. These imports are feature-gated, but a clean
+# production image must contain them whenever an OTLP endpoint is configured.
+opentelemetry-api==1.44.0
+opentelemetry-sdk==1.44.0
+opentelemetry-exporter-otlp-proto-grpc==1.44.0
+opentelemetry-exporter-otlp-proto-common==1.44.0
