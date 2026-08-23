@@ -13,7 +13,6 @@ import { resetUnassignedListScroll } from './calendar/unassignedPanel';
 
 import {
   CalendarHeader,
-  CalendarOccupancy,
   CalendarGrid,
   CalendarDateScrubber,
   NewBookingDialog,
@@ -235,7 +234,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const finalizeDragSelectRef = useRef(() => {});
 
   const [showDeluxePanel, setShowDeluxePanel] = useState(false);
-  const [showOccupancyPanel, setShowOccupancyPanel] = useState(true);
   const [groupBookings, setGroupBookings] = useState([]);
   const [oversellProtection, setOversellProtection] = useState([]);
   const [channelMixData, setChannelMixData] = useState(null);
@@ -961,15 +959,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         </div>
 
         <div className="flex-1 flex flex-col min-h-0 px-4 pb-4 pt-3 gap-3">
-        <CalendarOccupancy
-          dateRange={dateRange}
-          getOccupancyForDate={getOccupancyForDate}
-          showDeluxePanel={showDeluxePanel}
-          onToggleDeluxe={toggleDeluxeMode}
-          collapsed={!showOccupancyPanel}
-          onToggleCollapse={() => setShowOccupancyPanel(v => !v)}
-        />
-
         {/* Compact Legend */}
         <div
           className="flex-none bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm"
@@ -1008,6 +997,15 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               <span>{t('cm.pages_ReservationCalendar.tikla_yeni_rez')}</span>
               <span>{t('cm.pages_ReservationCalendar.cift_tikla_detay')}</span>
               <span>{t('cm.pages_ReservationCalendar.surukle_tasi')}</span>
+              <Button
+                size="sm"
+                variant={showDeluxePanel ? 'default' : 'outline'}
+                onClick={toggleDeluxeMode}
+                className="h-7 text-[10px] px-2.5"
+                data-testid="calendar-deluxe-toggle"
+              >
+                Deluxe+
+              </Button>
             </div>
           </div>
         </div>
@@ -1243,7 +1241,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           <>
             <div className="fixed inset-0 bg-black/40 z-50 transition-opacity" onClick={() => { setShowUnassignedPanel(false); setUnassignedFilter('all'); }} data-testid="unassigned-panel-backdrop" />
             <div className="fixed top-0 right-0 h-full w-[560px] max-w-[90vw] bg-white z-50 shadow-2xl flex flex-col animate-in slide-in-from-right" data-testid="unassigned-panel">
-              <div className="sticky top-0 z-10 bg-white border-b">
+              <div className="sticky top-0 z-10 flex-none bg-white border-b">
                 <div className="px-5 py-4 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${overdueList.length > 0 ? 'bg-red-100' : todayList.length > 0 ? 'bg-amber-100' : 'bg-blue-100'}`}>
