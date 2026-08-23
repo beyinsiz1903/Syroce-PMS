@@ -75,7 +75,11 @@
                     'Unable to preload CSS',
                     // Resolved-but-invalid module (no default export) normalized
                     // by lazyWithPreload.js — keep in sync with INVALID_CHUNK_MODULE_MSG.
-                    'Dynamically imported module is invalid'
+                    'Dynamically imported module is invalid',
+                    // Raw WebKit/React.lazy failure when a resolved module has
+                    // no usable default export. Some component-level lazy imports
+                    // can throw this before our module guard gets control.
+                    '._result.default'
                 ];
                 function isChunkError(msg) {
                     if (!msg) return false;

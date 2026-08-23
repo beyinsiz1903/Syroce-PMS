@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { resetUnassignedListScroll } from './calendar/unassignedPanel';
+import { lazyWithPreload } from '@/routes/lazyWithPreload';
 
 import {
   CalendarHeader,
@@ -40,10 +41,10 @@ import {
   roomMoveRequiresReason,
 } from './calendar/roomTypeMatching';
 
-const ReservationSidebar = lazy(() => import('@/components/ReservationSidebar'));
-const FolioDetailView = lazy(() => import('@/pages/FolioDetailView'));
-const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal'));
-const BookingConflictDialog = lazy(() => import('@/components/pms/BookingConflictDialog'));
+const ReservationSidebar = lazyWithPreload(() => import('@/components/ReservationSidebar'));
+const FolioDetailView = lazyWithPreload(() => import('@/pages/FolioDetailView'));
+const ReservationDetailModal = lazyWithPreload(() => import('@/pages/ReservationDetailModal'));
+const BookingConflictDialog = lazyWithPreload(() => import('@/components/pms/BookingConflictDialog'));
 
 // ── Unassigned panel constants & virtualized row ──────────────────────────
 const UA_BORDER = {

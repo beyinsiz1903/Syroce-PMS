@@ -44,6 +44,9 @@ if (SENTRY_DSN) {
             // Resolved-but-invalid module (no default export) normalized by
             // lazyWithPreload.js — keep in sync with INVALID_CHUNK_MODULE_MSG.
             "Dynamically imported module is invalid",
+            // Raw WebKit/React.lazy resolved-but-invalid module failure.
+            // Keep in sync with frontend/index.html.
+            "._result.default",
           ];
           const ex = hint && hint.originalException;
           const msg =
