@@ -24,6 +24,11 @@ def _norm(v: object) -> str:
     return str(v).strip() if v is not None else ""
 
 
+def _is_turkish_nationality(value: object) -> bool:
+    normalized = _norm(value).upper().translate(str.maketrans("ÇĞİÖŞÜ", "CGIOSU"))
+    return normalized in {"", "TC", "TR", "TUR", "TURKIYE"}
+
+
 def validate_kbs_payload(snapshot: dict) -> tuple[bool, list[str]]:
     """Return (ok, missing_fields). Missing list boşsa payload uygundur."""
     missing: list[str] = []
@@ -31,11 +36,11 @@ def validate_kbs_payload(snapshot: dict) -> tuple[bool, list[str]]:
         if not _norm(snapshot.get(field)):
             missing.append(field)
 
-    nationality = _norm(snapshot.get("nationality")).upper() or "TC"
+    nationality = snapshot.get("nationality")
     id_number = _norm(snapshot.get("id_number"))
     passport_number = _norm(snapshot.get("passport_number"))
 
-    if nationality == "TC":
+    if _is_turkish_nationality(nationality):
         if not id_number:
             missing.append("id_number")
         elif not (id_number.isdigit() and len(id_number) == 11):

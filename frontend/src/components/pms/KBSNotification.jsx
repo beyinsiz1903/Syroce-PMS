@@ -501,7 +501,9 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
               }>
                 {authorityState === 'configured' ? `Bagli v${extInfo.version}`
                   : authorityState === 'test' ? `Test modu v${extInfo.version}`
-                    : 'Yapilandirilmamis'}
+                    : authorityState === 'password_required' ? 'Web servis sifresi gerekli'
+                      : authorityState === 'confirmation_required' ? 'Canli gonderim onayi gerekli'
+                        : 'Yapilandirilmamis'}
               </Badge>
             ) : (
               <Badge variant="outline" className="text-gray-500">Kurulu degil</Badge>
@@ -541,7 +543,7 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
         </div>
         <p className="text-[11px] text-gray-500 mt-1">
           {extInfo.present
-            ? `Bildirimler resepsiyon bilgisayarinin tarayicisindan (otelin IP adresi) secili makamin (${authority === 'jandarma' ? 'Jandarma' : 'Polis/Emniyet'}) KBS sistemine iletilir. Her makam icin uc ayri ayri yapilandirilir (eklenti ayarlari).`
+            ? `Bildirimler resepsiyon bilgisayarinin tarayicisindan (otelin IP adresi) secili makamin (${authority === 'jandarma' ? 'Jandarma' : 'Polis/Emniyet'}) KBS sistemine iletilir. Jandarma web servis sifresi tarayici kapaninca silinir ve yeniden girilmelidir.`
             : 'Eklenti kurulu degil. "Eklentiyi indir" ile paketi alip Chrome/Edge > Eklentiler > Gelistirici modu > Paketlenmemis yukle ile kurun. Kuyruktaki bildirimler eklenti kurulup acilana kadar bekler.'}
           {lastDrain && ` Son gonderim: ${new Date(lastDrain.at).toLocaleTimeString()} - basarili ${lastDrain.ok}, hata ${lastDrain.fail}.`}
         </p>

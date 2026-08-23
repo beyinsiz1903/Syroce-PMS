@@ -74,6 +74,7 @@ async def _build_payload_snapshot(tenant_id: str, booking_id: str) -> dict:
 
     return {
         "guest_name": booking.get("guest_name", ""),
+        "phone": booking.get("guest_phone", ""),
         "room_number": booking.get("room_number", ""),
         "check_in": booking.get("check_in", ""),
         "check_out": booking.get("check_out", ""),

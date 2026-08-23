@@ -434,11 +434,38 @@ alerting için bu alanı yüzeye çıkar.
      Backend de `KBS_TEST_MODE=1` ile uyumlu olmalı.
    - **Oturum çerezi**: aynı tarayıcıda KBS portalında açık oturum gerekir.
    - **API token**: entegratör/anahtar ile.
+   - **Resmi Jandarma SOAP web servisi**: Jandarma'nın tesis web servisini
+     doğrudan otelin kayıtlı IP'sinden çağırır. E-devlet parolası kullanılmaz.
 4. **KBS ucu (URL)**: Polis bölümünde yalnızca `https` + `*.egm.gov.tr`,
    Jandarma bölümünde yalnızca `https` + `*.jandarma.gov.tr` kabul edilir
    (başka host kaydedilmez — fail-closed, makam başına ayrı kontrol).
 5. Kaydet. PMS KBS panelinde **Makam** seçicisinden ilgili makamı seçtiğinde
    durum rozeti **Bağlı / Test modu** olmalı.
+
+#### Jandarma resmi web servisi
+
+1. KBS portalında **Web Servis İşlemleri** ekranından ekranda ifşa olmuş eski
+   şifreyi **Şifre Üret** ile değiştirip **Kaydet**. Yeni şifreyi destek
+   mesajlarına veya ekran görüntülerine koymayın.
+2. **Mevcut IP** alanını otelin sabit dış IP'siyle eşleştirin. Anlık IP farklıysa
+   servis `YetkiHatasi` döndürür; modem bağlantısına sabit IP tanımlatın.
+3. Eklenti ayarlarında Jandarma modu olarak **Resmi Jandarma SOAP web servisi**
+   seçin. Uç varsayılan olarak resmi
+   `https://vatandas.jandarma.gov.tr/KBS_Tesis_Servis/SrvShsYtkTml.svc`
+   adresidir.
+4. Yetkili kişinin 11 haneli T.C. numarası ile 6 haneli tesis kodunu yalnız
+   otel bilgisayarında girin. Web servis şifresi `chrome.storage.session`
+   içinde tutulur; tarayıcı kapanınca silinir ve yeniden girilmesi gerekir.
+5. Canlı kayıt onayını işaretleyip kaydedin. Önce sentetik rezervasyonlarla
+   **Test** modunu doğrulayın; canlı modda deneme amacıyla gerçek kişi kaydı
+   oluşturmayın.
+
+Eklenti, resmi WSDL'deki `MusteriKimlikNoGiris`, `MusteriKimlikNoCikis`,
+`MusteriYabanciGiris` ve `MusteriYabanciCikis` metotlarını kullanır. Yalnız
+`Basarili=true` ve başarı kodu `100/Basarili` döndüğünde PMS işi tamamlanır.
+Jandarma cevabı ayrı bir işlem numarası vermediği için PMS'deki
+`JANDARMA-...` değeri **yerel teslim makbuzudur**, resmi referans numarası
+değildir. Hata kodu ve mesajı yeniden deneme kaydına yazılır.
 
 ### Çalıştırma
 
@@ -493,6 +520,14 @@ KBS_AUTO_ENQUEUE=1       # check-in/out anında kuyruğa otomatik ekleme açık
   bölümünde uç + (token modunda) token girin. Rozet **seçili makama** göre
   yanar — diğer makam dolu olsa da seçili makam boşsa "Yapılandırılmamış"
   görünür.
+- **Rozet "Web servis şifresi gerekli":** Tarayıcı yeniden açılmıştır. Eklenti
+  seçeneklerinde yeni web servis şifresini tekrar girip kaydedin.
+- **`jandarma_YetkiHatasi`:** Yetkili T.C./tesis kodu/şifreyi yerelde kontrol
+  edin ve özellikle portalda kayıtlı IP ile otelin anlık dış IP'sinin aynı
+  olduğundan emin olun.
+- **`unsupported_foreign_country`:** PMS'deki uyruk değeri resmi Jandarma enum
+  adıyla eşleşmiyordur. Gerçek gönderim yapmadan önce uyruk verisini düzeltin;
+  iş kuyrukta kalır ve sahte başarı üretilmez.
 - **Gönderim "no_reference_in_response":** KBS yanıtından referans
   çıkarılamadı. Options'ta ilgili makamın **Referans regex** veya doğru
   **Alan eşleştirme** alanını girin.

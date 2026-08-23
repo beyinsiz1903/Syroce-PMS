@@ -1,5 +1,7 @@
 "use strict";
 
+importScripts("jandarma-soap.js");
+
 // Syroce KBS Gonderici - arka plan servis worker'i (Manifest V3).
 //
 // Gorev: PMS sayfasindan gelen KBS payload'ini secili makama (Polis/Emniyet
@@ -54,6 +56,10 @@ function normalizeProfile(cfg) {
         ? c.referenceKeys
         : DEFAULT_REFERENCE_KEYS,
     referenceRegex: (c.referenceRegex || "").trim(),
+    userTc: (c.userTc || "").trim(),
+    facilityCode: (c.facilityCode || "").trim(),
+    liveConfirmed: c.liveConfirmed === true,
+    countryMap: c.countryMap && typeof c.countryMap === "object" ? c.countryMap : null,
   };
 }
 
@@ -92,8 +98,13 @@ function isAllowedHost(hostname, authority) {
   return hostname === rule.exact || hostname.endsWith(rule.suffix);
 }
 
-function configState(profile) {
+function configState(profile, hasSessionPassword = false) {
   if (profile.mode === "test") return "test";
+  if (profile.mode === "jandarma-soap") {
+    if (!profile.liveConfirmed) return "confirmation_required";
+    if (!/^\d{11}$/.test(profile.userTc) || !/^\d{6}$/.test(profile.facilityCode)) return "unconfigured";
+    return hasSessionPassword ? "configured" : "password_required";
+  }
   if (!profile.endpoint) return "unconfigured";
   if (profile.mode === "token" && !profile.token) return "unconfigured";
   return "configured";
@@ -101,8 +112,9 @@ function configState(profile) {
 
 async function allStates() {
   const all = await getAllConfig();
+  const { jandarmaWebServicePassword } = await chrome.storage.session.get("jandarmaWebServicePassword");
   const states = {};
-  for (const a of AUTHORITIES) states[a] = configState(all[a]);
+  for (const a of AUTHORITIES) states[a] = configState(all[a], a === "jandarma" && Boolean(jandarmaWebServicePassword));
   return states;
 }
 
@@ -150,13 +162,50 @@ function validBody(body) {
 async function sendToKbs(body, authority) {
   const auth = normalizeAuthority(authority);
   const cfg = await getProfile(auth);
-  const state = configState(cfg);
+  const { jandarmaWebServicePassword } = await chrome.storage.session.get("jandarmaWebServicePassword");
+  const state = configState(cfg, Boolean(jandarmaWebServicePassword));
 
   if (state === "test") {
     return { ok: true, reference: "TEST-" + randHex(16), test: true };
   }
   if (state === "unconfigured") {
     return { ok: false, error: "unconfigured" };
+  }
+  if (state !== "configured") return { ok: false, error: state };
+
+  if (auth === "jandarma" && cfg.mode === "jandarma-soap") {
+    let request;
+    try {
+      request = SyroceJandarmaSoap.buildRequest(body, body.action, {
+        userTc: cfg.userTc,
+        facilityCode: cfg.facilityCode,
+        password: jandarmaWebServicePassword,
+        countryMap: cfg.countryMap,
+      });
+    } catch (e) {
+      return { ok: false, error: e && e.message ? e.message : String(e) };
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), SEND_TIMEOUT_MS);
+    try {
+      const resp = await fetch(cfg.endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: `"${request.soapAction}"` },
+        body: request.envelope,
+        signal: ctrl.signal,
+      });
+      const text = await resp.text();
+      if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}: ${text.slice(0, 300)}` };
+      const parsed = SyroceJandarmaSoap.parseResponse(text, request.method);
+      if (!parsed.ok) return parsed;
+      // The official response has no transaction id. Record a local receipt only
+      // after Basarili=true/code=100; never present it as an official reference.
+      return { ok: true, reference: `JANDARMA-${request.method}-${Date.now()}`, officialReference: false };
+    } catch (e) {
+      return { ok: false, error: "network: " + (e && e.message ? e.message : String(e)) };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   let url;
