@@ -98,6 +98,8 @@ async def download_kbs_extension(
         for path in sorted(ext_dir.rglob("*")):
             if not path.is_file() or path.suffix.lower() not in allowed_suffixes:
                 continue
+            if "tests" in path.relative_to(ext_dir).parts:
+                continue
             arcname = "syroce-kbs-eklentisi/" + path.relative_to(ext_dir).as_posix()
             zf.write(path, arcname)
             file_count += 1
@@ -465,6 +467,7 @@ async def _build_payload_snapshot(tenant_id: str, booking_id: str) -> tuple[dict
 
     snapshot = {
         "guest_name": booking.get("guest_name", ""),
+        "phone": booking.get("guest_phone", ""),
         "room_number": booking.get("room_number", ""),
         "check_in": booking.get("check_in", ""),
         "check_out": booking.get("check_out", ""),

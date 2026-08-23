@@ -1,0 +1,29 @@
+from core.kbs_payload_validation import validate_kbs_payload
+
+
+def _snapshot(**overrides):
+    payload = {
+        "guest_name": "Test Misafir",
+        "birth_date": "1990-01-01",
+        "check_in": "2026-08-23T14:00:00+03:00",
+        "check_out": "2026-08-24T11:00:00+03:00",
+        "nationality": "TC",
+        "id_number": "10000000146",
+        "passport_number": "",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_turkish_nationality_aliases_use_identity_number():
+    for nationality in ("TC", "TR", "TUR", "Türkiye", "TURKIYE"):
+        ok, missing = validate_kbs_payload(_snapshot(nationality=nationality))
+        assert ok, (nationality, missing)
+
+
+def test_foreign_guest_requires_passport():
+    ok, missing = validate_kbs_payload(
+        _snapshot(nationality="DE", id_number="", passport_number="")
+    )
+    assert not ok
+    assert "passport_number" in missing

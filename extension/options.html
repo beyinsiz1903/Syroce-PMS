@@ -44,6 +44,7 @@
         cursor: pointer;
       }
       #status { margin-left: 12px; font-size: 13px; }
+      input[type="checkbox"] { width: auto; margin-right: 6px; }
     </style>
   </head>
   <body>
@@ -106,6 +107,7 @@
       <label for="jandarma_mode">Mod</label>
       <select id="jandarma_mode">
         <option value="test">Test (gercek gonderim yok, TEST- referans)</option>
+        <option value="jandarma-soap">Resmi Jandarma SOAP web servisi</option>
         <option value="cookie">Oturum cerezi (KBS portalinda acik oturum)</option>
         <option value="token">API token</option>
       </select>
@@ -115,11 +117,23 @@
       </div>
 
       <label for="jandarma_endpoint">KBS ucu (URL)</label>
-      <input id="jandarma_endpoint" type="url" placeholder="https://...jandarma.gov.tr/..." />
+      <input id="jandarma_endpoint" type="url" placeholder="https://vatandas.jandarma.gov.tr/KBS_Tesis_Servis/SrvShsYtkTml.svc" />
       <div class="row-help">https ve *.jandarma.gov.tr disindaki adresler reddedilir.</div>
 
       <label for="jandarma_token">API token (yalnizca token modu)</label>
       <input id="jandarma_token" type="password" autocomplete="off" />
+
+      <label for="jandarma_userTc">Yetkili T.C. kimlik numarasi (yalniz bu bilgisayarda)</label>
+      <input id="jandarma_userTc" inputmode="numeric" maxlength="11" autocomplete="off" />
+
+      <label for="jandarma_facilityCode">Tesis kodu</label>
+      <input id="jandarma_facilityCode" inputmode="numeric" maxlength="6" autocomplete="off" />
+
+      <label for="jandarma_password">Yeni web servis sifresi (tarayici kapaninca silinir)</label>
+      <input id="jandarma_password" type="password" maxlength="50" autocomplete="new-password" />
+      <div class="row-help">E-devlet sifrenizi buraya girmeyin. Ekran goruntusunde gorunen eski sifreyi kullanmayin.</div>
+
+      <label><input id="jandarma_liveConfirmed" type="checkbox" /> Canli Jandarma bildirimlerinin hukuki kayit olusturacagini anliyorum.</label>
 
       <label for="jandarma_requestFormat">Istek bicimi</label>
       <select id="jandarma_requestFormat">

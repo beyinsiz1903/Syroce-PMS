@@ -14,15 +14,22 @@ const HOST_RULES = {
     test: (h) => h === "jandarma.gov.tr" || h.endsWith(".jandarma.gov.tr"),
   },
 };
+const JANDARMA_SOAP_ENDPOINT = "https://vatandas.jandarma.gov.tr/KBS_Tesis_Servis/SrvShsYtkTml.svc";
+let hasSessionPassword = false;
 
 function fillProfileForm(a, cfg) {
   const c = cfg || {};
   $(`${a}_mode`).value = c.mode || "test";
-  $(`${a}_endpoint`).value = c.endpoint || "";
+  $(`${a}_endpoint`).value = c.endpoint || (a === "jandarma" ? JANDARMA_SOAP_ENDPOINT : "");
   $(`${a}_token`).value = c.token || "";
   $(`${a}_requestFormat`).value = c.requestFormat || "json";
   $(`${a}_fieldMap`).value = c.fieldMap ? JSON.stringify(c.fieldMap, null, 2) : "";
   $(`${a}_referenceRegex`).value = c.referenceRegex || "";
+  if (a === "jandarma") {
+    $("jandarma_userTc").value = c.userTc || "";
+    $("jandarma_facilityCode").value = c.facilityCode || "";
+    $("jandarma_liveConfirmed").checked = c.liveConfirmed === true;
+  }
 }
 
 async function load() {
@@ -35,6 +42,9 @@ async function load() {
     if (isLegacyFlat && a === "polis") fillProfileForm(a, raw);
     else fillProfileForm(a, raw[a]);
   }
+  const { jandarmaWebServicePassword } = await chrome.storage.session.get("jandarmaWebServicePassword");
+  hasSessionPassword = Boolean(jandarmaWebServicePassword);
+  $("jandarma_password").placeholder = jandarmaWebServicePassword ? "Bu oturum icin yuklendi" : "Yeni web servis sifresi";
 }
 
 function buildProfile(a, status) {
@@ -77,7 +87,21 @@ function buildProfile(a, status) {
     }
   }
 
-  return { mode, endpoint, token, requestFormat, fieldMap, referenceRegex };
+  const userTc = a === "jandarma" ? $("jandarma_userTc").value.trim() : "";
+  const facilityCode = a === "jandarma" ? $("jandarma_facilityCode").value.trim() : "";
+  const liveConfirmed = a === "jandarma" && $("jandarma_liveConfirmed").checked;
+  if (mode === "jandarma-soap") {
+    if (!/^\d{11}$/.test(userTc) || !/^\d{6}$/.test(facilityCode)) {
+      status.textContent = "Jandarma: Yetkili T.C. 11, tesis kodu 6 hane olmalidir.";
+      return null;
+    }
+    if (!liveConfirmed) {
+      status.textContent = "Jandarma: Canli bildirim onay kutusunu isaretleyin.";
+      return null;
+    }
+  }
+
+  return { mode, endpoint, token, requestFormat, fieldMap, referenceRegex, userTc, facilityCode, liveConfirmed };
 }
 
 async function save() {
@@ -92,7 +116,14 @@ async function save() {
   }
 
   await chrome.storage.local.set({ kbsConfig: cfg });
-  status.textContent = "Kaydedildi.";
+  const password = $("jandarma_password").value;
+  if (password) {
+    await chrome.storage.session.set({ jandarmaWebServicePassword: password });
+    hasSessionPassword = true;
+  }
+  status.textContent = cfg.jandarma.mode === "jandarma-soap" && !password && !hasSessionPassword
+    ? "Ayarlar kaydedildi. Bu oturum icin web servis sifresini de girin."
+    : "Kaydedildi.";
 }
 
 document.addEventListener("DOMContentLoaded", () => {
