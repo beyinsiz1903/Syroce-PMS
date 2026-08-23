@@ -65,12 +65,14 @@
       <label for="polis_mode">Mod</label>
       <select id="polis_mode">
         <option value="test">Test (gercek gonderim yok, TEST- referans)</option>
+        <option value="egm-session">EGM KBS oturumu (onerilen, sekme acik kalmaz)</option>
         <option value="cookie">Oturum cerezi (KBS portalinda acik oturum)</option>
         <option value="token">API token</option>
       </select>
       <div class="row-help">
-        Test: prova icin. Oturum cerezi: ayni tarayicida KBS portalinda oturum
-        acik olmali. API token: entegrator/anahtar ile.
+        Onerilen modda kbs.egm.gov.tr'ye bu tarayicida bir kez giris yapilir.
+        KBS sekmesinin acik kalmasi gerekmez; oturum sona ererse yeniden giris istenir.
+        E-Devlet sifresi ve EGMSEC bilgisi eklentiye kaydedilmez.
       </div>
 
       <label for="polis_endpoint">KBS ucu (URL)</label>

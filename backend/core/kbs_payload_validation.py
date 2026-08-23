@@ -7,7 +7,8 @@ Kurallar (EGM/Jandarma KBS minimum şeması):
   * `guest_name`               — boş olamaz
   * `birth_date`               — boş olamaz (YYYY-MM-DD)
   * `nationality == "TC"`      → `id_number` 11 hane (numeric)
-  * `nationality != "TC"`      → `passport_number` boş olamaz
+  * `nationality != "TC"`      → `passport_number`, `gender`, `birth_place`
+                                  boş olamaz
   * `check_in` / `check_out`   — boş olamaz
 
 Yardımcı: `validate_or_raise()` 422 HTTPException fırlatır (router için).
@@ -48,6 +49,10 @@ def validate_kbs_payload(snapshot: dict) -> tuple[bool, list[str]]:
     else:
         if not passport_number:
             missing.append("passport_number")
+        if not _norm(snapshot.get("gender")):
+            missing.append("gender")
+        if not _norm(snapshot.get("birth_place")):
+            missing.append("birth_place")
 
     return (len(missing) == 0, missing)
 

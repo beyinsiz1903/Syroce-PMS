@@ -23,7 +23,22 @@ def test_turkish_nationality_aliases_use_identity_number():
 
 def test_foreign_guest_requires_passport():
     ok, missing = validate_kbs_payload(
-        _snapshot(nationality="DE", id_number="", passport_number="")
+        _snapshot(
+            nationality="DE", id_number="", passport_number="",
+            gender="female", birth_place="Berlin",
+        )
     )
     assert not ok
     assert "passport_number" in missing
+
+
+def test_foreign_guest_requires_gender_and_birth_place():
+    ok, missing = validate_kbs_payload(
+        _snapshot(
+            nationality="DE", id_number="", passport_number="C01X",
+            gender="", birth_place="",
+        )
+    )
+    assert not ok
+    assert "gender" in missing
+    assert "birth_place" in missing
