@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 import pytest
 
@@ -73,6 +74,43 @@ async def test_heartbeat_persistent_disconnect_escalates_after_threshold(monkeyp
 
     assert manager._heartbeat_failures == 3
     assert "Heartbeat failed repeatedly (3 consecutive)" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_continuing_outage_escalates_only_once_until_recovery(monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    manager = HorizontalScalingManager()
+    manager._heartbeat_interval = 0
+
+    class _RecoveringRedis:
+        calls = 0
+
+        async def hset(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls <= 12 or self.calls >= 14:
+                raise RuntimeError("unable to perform operation on <TCPTransport closed=True>")
+
+    manager._redis = _RecoveringRedis()
+    sleep_calls = 0
+
+    async def _sleep(_delay):
+        nonlocal sleep_calls
+        sleep_calls += 1
+        if sleep_calls >= 17:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(asyncio, "sleep", _sleep)
+
+    await manager._heartbeat_loop()
+
+    escalations = [
+        record
+        for record in caplog.records
+        if record.levelname == "ERROR" and "Heartbeat failed repeatedly" in record.message
+    ]
+    assert len(escalations) == 2
+    assert "Heartbeat recovered after 12 consecutive failures" in caplog.text
+    assert "failure_class=REDIS_CONNECTION" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -176,6 +214,8 @@ async def test_redis_cluster_health_fails_when_write_capacity_is_exhausted():
 
 def test_redis_capacity_and_failure_contracts():
     assert classify_redis_failure(RuntimeError("OOM command not allowed when used memory > 'maxmemory'")) == "REDIS_MAXMEMORY"
+    assert classify_redis_failure(RuntimeError("unable to perform operation on <TCPTransport closed=True>")) == "REDIS_CONNECTION"
+    assert classify_redis_failure(RuntimeError("command not allowed for this role")) == "REDIS_COMMAND_DENIED"
     assert redis_memory_capacity({"used_memory": 100, "maxmemory": 100, "maxmemory_policy": "noeviction"}) == {
         "state": "exhausted",
         "used_memory_bytes": 100,

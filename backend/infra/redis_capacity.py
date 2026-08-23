@@ -13,8 +13,15 @@ def classify_redis_failure(exc: BaseException) -> str:
         return "REDIS_MAXMEMORY"
     if isinstance(exc, (TimeoutError, asyncio.TimeoutError)) or "timeout" in message:
         return "REDIS_TIMEOUT"
-    if isinstance(exc, ConnectionError) or "connection" in message:
+    if (
+        isinstance(exc, ConnectionError)
+        or "connection" in message
+        or "closed=true" in message
+        or "transport closed" in message
+    ):
         return "REDIS_CONNECTION"
+    if "command not allowed" in message:
+        return "REDIS_COMMAND_DENIED"
     return f"REDIS_{type(exc).__name__.upper()[:40]}"
 
 

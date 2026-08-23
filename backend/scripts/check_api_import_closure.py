@@ -94,6 +94,7 @@ MANUAL_DIST_OVERRIDES: dict[str, str] = {
     "OpenSSL": "pyopenssl",
     "Crypto": "pycryptodome",
     "google": "google-api-core",
+    "opentelemetry": "opentelemetry-api",
     "reportlab": "reportlab",
     "win32api": "pywin32",
 }

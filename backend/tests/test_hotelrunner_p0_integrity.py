@@ -161,7 +161,7 @@ async def test_mapping_failure_creates_hold_and_alarm_but_never_acks(monkeypatch
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("provider_failure", ["http-500", "timeout"])
-async def test_provider_failure_never_acks(monkeypatch, provider_failure):
+async def test_provider_failure_never_acks(monkeypatch, provider_failure, caplog):
     provider = _Provider([])
     if provider_failure == "http-500":
         provider.get_reservations.return_value = {
@@ -177,6 +177,14 @@ async def test_provider_failure_never_acks(monkeypatch, provider_failure):
     assert result["success"] is False
     assert result["fired"] == 0
     provider.confirm_delivery.assert_not_awaited()
+    assert "HTTP 500" not in caplog.text
+    if provider_failure == "http-500":
+        assert "Provider page fetch failed" in caplog.text
+        assert "failure_class=UPSTREAM_5XX" in caplog.text
+        assert not any(record.levelname == "ERROR" for record in caplog.records)
+    else:
+        assert "Provider page fetch raised TimeoutError" in caplog.text
+        assert any(record.levelname == "ERROR" for record in caplog.records)
 
 
 @pytest.mark.asyncio
