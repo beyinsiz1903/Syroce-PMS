@@ -86,7 +86,7 @@ const CalendarHeader = ({
           data-testid="reservations-tab-btn"
           title="Rezervasyon listesi"
         >
-          <span className="flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-sm group-hover:shadow-md transition-all">
+          <span className="flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-sm group-hover:shadow-md transition-all">
             <CalendarIcon className="w-5 h-5" />
           </span>
           <span className="flex flex-col leading-tight text-left min-w-0">
@@ -237,7 +237,7 @@ const CalendarHeader = ({
 
         <Button
           onClick={onShowNewBookingDialog}
-          className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs h-9 px-4 font-bold shadow-sm hover:shadow-md"
+          className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs h-9 px-4 font-bold shadow-sm hover:shadow-md"
           data-testid="add-reservation-button"
         >
           <Plus className="w-3.5 h-3.5 mr-1" />

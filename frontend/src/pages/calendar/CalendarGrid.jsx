@@ -424,7 +424,7 @@ const CalendarGrid = ({
                     const roomDotStatus = roomBlockedStatus ? 'blocked' : hasBookingToday ? 'occupied' : 'free';
                     const roomDotColor = roomDotStatus === 'blocked' ? 'bg-slate-400' : roomDotStatus === 'occupied' ? 'bg-red-500' : 'bg-green-500';
                     return (
-                      <div key={room.id} className="flex border-b border-slate-200 hover:bg-blue-50/30 transition-colors" data-testid="room-row" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
+                      <div key={room.id} className="flex border-b border-slate-200 hover:bg-blue-50/50 transition-colors" data-testid="room-row" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
                         <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-1 border-r border-slate-200 bg-white flex items-center shadow-[3px_0_8px_rgba(15,23,42,0.05)]`} style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-2">
                             <div
@@ -475,7 +475,7 @@ const CalendarGrid = ({
                                 className={`${CELL_CLS} flex-shrink-0 border-r border-slate-200 relative transition-colors group/cell select-none ${
                                   canCreate ? 'cursor-pointer' : 'cursor-default'
                                 } ${
-                                  past ? 'bg-slate-100/80' : isToday(date) ? 'bg-blue-100/70' : isWeekend(date) ? 'bg-amber-50/70' : 'bg-white hover:bg-blue-50/50'
+                                  past ? 'bg-slate-100/80' : isToday(date) ? 'bg-blue-100/70 dark:bg-blue-950/70' : isWeekend(date) ? 'bg-amber-50/70 dark:bg-amber-950/70' : 'bg-white hover:bg-blue-50/50'
                                 } ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''} ${
                                   inDragSel ? 'bg-indigo-100/70 ring-2 ring-inset ring-indigo-400 z-10' : ''
                                 }`}
