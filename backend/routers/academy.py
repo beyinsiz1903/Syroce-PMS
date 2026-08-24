@@ -9,6 +9,7 @@ answer key never leaves the server and exam scores are computed server-side.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -17,6 +18,7 @@ from core import academy
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
+from security.encrypted_lookup import decrypt_user_doc
 
 logger = logging.getLogger("academy")
 
@@ -46,6 +48,25 @@ class ExamSubmission(BaseModel):
     answers: dict[str, int] = Field(default_factory=dict)
 
 
+class CourseAssignment(BaseModel):
+    user_id: str = Field(..., min_length=1, max_length=128)
+    course_id: str = Field(..., min_length=1, max_length=128)
+    source: str = Field(default="manager")
+    required: bool = True
+    priority: str = Field(default="normal")
+    due_at: datetime | None = None
+    reason: str | None = Field(default=None, max_length=500)
+    reference_id: str | None = Field(default=None, max_length=128)
+
+    @model_validator(mode="after")
+    def _validate_assignment(self):
+        if self.source == "warning" and not (self.reason or "").strip():
+            raise ValueError("Uyari sonrasi telafi egitimi icin neden zorunludur")
+        if self.due_at and self.due_at.tzinfo is None:
+            raise ValueError("Son tarih saat dilimi icermelidir")
+        return self
+
+
 # --------------------------------------------------------------------------- #
 # Student endpoints                                                            #
 # --------------------------------------------------------------------------- #
@@ -69,6 +90,12 @@ async def list_courses(current_user: User = Depends(get_current_user)) -> dict:
         }
         items.append(summary)
     return {"count": len(items), "items": items}
+
+
+@router.get("/learning-plan")
+async def learning_plan(current_user: User = Depends(get_current_user)) -> dict:
+    tenant_id = _require_tenant(current_user)
+    return await academy.get_learning_plan(tenant_id, current_user.id, _norm_role(current_user))
 
 
 async def _visible_course_or_404(
@@ -152,6 +179,10 @@ async def submit_exam(
 ) -> dict:
     tenant_id = _require_tenant(current_user)
     course = await _visible_course_or_404(tenant_id, course_id, current_user)
+    progress = await academy.get_progress(tenant_id, current_user.id, course_id)
+    required_lessons = {lesson.get("id") for lesson in course.get("lessons") or []}
+    if not required_lessons.issubset(set((progress or {}).get("completed_lessons") or [])):
+        raise HTTPException(status_code=409, detail="Sinavdan once tum dersleri tamamlayin")
     # Scoring is server-side ONLY; submission carries answers, never a score.
     result = academy.score_exam(course, submission.answers)
     outcome = await academy.record_attempt(
@@ -214,6 +245,64 @@ async def admin_report(current_user: User = Depends(get_current_user)) -> dict:
     if role not in academy.MANAGER_ROLES:
         raise HTTPException(status_code=403, detail="Bu rapor icin yetkiniz yok")
     return await academy.get_tenant_report(tenant_id)
+
+
+@router.post("/admin/assignments")
+async def create_assignment(
+    payload: CourseAssignment,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    tenant_id = _require_tenant(current_user)
+    if _norm_role(current_user) not in academy.MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="Egitim atama yetkiniz yok")
+    db = academy._db()
+    target = await db.users.find_one(
+        {"tenant_id": tenant_id, "id": payload.user_id},
+        {"_id": 0, "id": 1, "role": 1, "is_active": 1},
+    )
+    if not target or target.get("is_active") is False:
+        raise HTTPException(status_code=404, detail="Personel bulunamadi")
+    course = await academy.resolve_course(tenant_id, payload.course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Kurs bulunamadi")
+    try:
+        item = await academy.assign_course(
+            tenant_id, payload.user_id, payload.course_id,
+            assigned_by=current_user.id, source=payload.source,
+            required=payload.required, priority=payload.priority,
+            due_at=payload.due_at, reason=payload.reason,
+            reference_id=payload.reference_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"ok": True, "assignment": item}
+
+
+@router.get("/admin/assignment-options")
+async def assignment_options(current_user: User = Depends(get_current_user)) -> dict:
+    tenant_id = _require_tenant(current_user)
+    if _norm_role(current_user) not in academy.MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="Egitim atama yetkiniz yok")
+    db = academy._db()
+    users = []
+    async for raw in db.users.find(
+        {"tenant_id": tenant_id, "is_active": {"$ne": False}},
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1},
+    ):
+        row = decrypt_user_doc(dict(raw))
+        users.append({
+            "id": row.get("id"), "name": row.get("name") or row.get("email") or "—",
+            "role": _norm_role(row.get("role")),
+        })
+    courses = [academy.public_course_summary(c) for c in await academy.list_system_courses_for(tenant_id)]
+    courses.extend(
+        academy.public_course_summary(c)
+        for c in await academy.list_author_courses(tenant_id)
+        if not c.get("draft")
+    )
+    users.sort(key=lambda row: row["name"].lower())
+    courses.sort(key=lambda row: (row.get("department_label") or "", row.get("title") or ""))
+    return {"users": users, "courses": courses}
 
 
 # --------------------------------------------------------------------------- #

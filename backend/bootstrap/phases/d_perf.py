@@ -44,6 +44,15 @@ async def ensure_academy_indexes(db_handle) -> None:
         [("tenant_id", 1), ("user_id", 1), ("course_id", 1), ("created_at", -1)],
         name="idx_academy_attempts_tenant_user_course",
     )
+    await db_handle.academy_assignments.create_index(
+        [("tenant_id", 1), ("user_id", 1), ("course_id", 1)],
+        unique=True,
+        name="uniq_academy_assignment_tenant_user_course",
+    )
+    await db_handle.academy_assignments.create_index(
+        [("tenant_id", 1), ("due_at", 1), ("required", 1)],
+        name="idx_academy_assignment_due_compliance",
+    )
     # Tenant-custom courses (admin-authored). One row per (tenant, course id);
     # the engine reads/writes by exactly this key, and the namespaced custom id
     # makes the pair globally unique.
