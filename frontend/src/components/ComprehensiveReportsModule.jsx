@@ -237,7 +237,7 @@ const ComprehensiveReportsModule = () => {
                     </Card>
                     <Card className="bg-indigo-50">
                       <CardContent className="p-4">
-                        <div className="text-sm text-gray-600">Check-in Date</div>
+                        <div className="text-sm text-gray-600">Giriş Tarihi</div>
                         <div className="text-lg font-semibold">{compsetPrices.check_in_date}</div>
                       </CardContent>
                     </Card>

@@ -224,7 +224,7 @@ function RevenueTab() {
       {/* Demand Forecast Chart (table-style) */}
       <Card data-testid="demand-forecast">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Talep Tahmini (14 Gun)</CardTitle>
+          <CardTitle className="text-base">Talep Tahmini (14 Gün)</CardTitle>
         </CardHeader>
         <CardContent>
           {forecastList.length === 0 ? <EmptyState message="Tahmin verisi yok" /> : <div className="space-y-1.5">

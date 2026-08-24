@@ -10,7 +10,7 @@ const InternalChatTab = lazy(() => import('@/components/pms/InternalChatTab'));
  * balonu. Launcher hafif tutulur (anında görünür + okunmamış rozeti);
  * ağır sohbet paneli (InternalChatTab) yalnızca ilk açılışta lazy yüklenir.
  */
-const InternalChatWidget = ({ user }) => {
+const InternalChatWidget = ({ user, hideLauncher = false }) => {
   const [open, setOpen] = useState(false);
   const { internalUnreadCount } = useNotifications();
   const unread = internalUnreadCount || 0;
@@ -37,6 +37,17 @@ const InternalChatWidget = ({ user }) => {
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
 
+  useEffect(() => {
+    const openChat = () => setOpen(true);
+    const closeChat = () => setOpen(false);
+    window.addEventListener('syroce:open-internal-chat', openChat);
+    window.addEventListener('syroce:close-internal-chat', closeChat);
+    return () => {
+      window.removeEventListener('syroce:open-internal-chat', openChat);
+      window.removeEventListener('syroce:close-internal-chat', closeChat);
+    };
+  }, []);
+
   if (!user) return null;
 
   return (
@@ -46,7 +57,7 @@ const InternalChatWidget = ({ user }) => {
           role="dialog"
           aria-label="Personel Mesajlaşması"
           data-testid="internal-chat-widget-panel"
-          className="fixed bottom-40 right-6 z-50 flex flex-col w-[400px] max-w-[calc(100vw-2rem)] h-[600px] max-h-[calc(100vh-13rem)] rounded-2xl border bg-background shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200"
+          className={`communication-panel fixed z-50 flex flex-col w-[400px] max-w-[calc(100vw-2rem)] h-[600px] rounded-2xl border bg-background shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200 ${hideLauncher ? 'bottom-20 right-5 max-h-[calc(100vh-7rem)]' : 'bottom-40 right-6 max-h-[calc(100vh-13rem)]'}`}
         >
           <div className="flex items-center gap-2 px-3 py-2.5 border-b bg-muted/40 shrink-0">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shrink-0">
@@ -84,7 +95,7 @@ const InternalChatWidget = ({ user }) => {
         </div>
       )}
 
-      <Button
+      {!hideLauncher && <Button
         type="button"
         onClick={toggle}
         data-testid="button-toggle-chat-widget"
@@ -101,7 +112,7 @@ const InternalChatWidget = ({ user }) => {
             {unread > 99 ? '99+' : unread}
           </span>
         )}
-      </Button>
+      </Button>}
     </>
   );
 };

@@ -126,7 +126,7 @@ const RevenueManagementAdvanced = () => {
                     <Input value={roomType} onChange={e => setRoomType(e.target.value)} placeholder="e.g., Standard, Deluxe" />
                   </div>
                   <div>
-                    <Label>Check-in Date</Label>
+                    <Label>Giriş Tarihi</Label>
                     <Input type="date" value={checkInDate} onChange={e => setCheckInDate(e.target.value)} />
                   </div>
                 </div>

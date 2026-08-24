@@ -10,12 +10,12 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 const STATUS_META = {
-  assigned: { intent: "info", label: "Atandi" },
-  overdue: { intent: "danger", label: "Gecikmis" },
-  completed: { intent: "success", label: "Tamamlandi" },
+  assigned: { intent: "info", label: "Atandı" },
+  overdue: { intent: "danger", label: "Gecikmiş" },
+  completed: { intent: "success", label: "Tamamlandı" },
   not_started: {
     intent: "neutral",
-    label: "Baslanmadi"
+    label: "Başlanmadı"
   },
   in_progress: {
     intent: "info",
@@ -23,11 +23,11 @@ const STATUS_META = {
   },
   passed: {
     intent: "success",
-    label: "Gecti"
+    label: "Geçti"
   },
   failed: {
     intent: "danger",
-    label: "Kaldi"
+    label: "Kaldı"
   }
 };
 export default function AcademyReport() {
@@ -46,22 +46,22 @@ export default function AcademyReport() {
       setData(r.data);
       setOptions(optionResponse.data || { users: [], courses: [] });
     } catch (e) {
-      if (e?.response?.status === 403) setForbidden(true);else toast.error("Rapor yuklenemedi");
+      if (e?.response?.status === 403) setForbidden(true);else toast.error("Rapor yüklenemedi");
     } finally {
       setLoading(false);
     }
   }, []);
   const assignCourse = async () => {
-    if (!assignment.user_id || !assignment.course_id) return toast.error("Personel ve egitim secin");
-    if (assignment.source === "warning" && !assignment.reason.trim()) return toast.error("Telafi egitimi icin neden zorunludur");
+    if (!assignment.user_id || !assignment.course_id) return toast.error("Personel ve eğitim seçin");
+    if (assignment.source === "warning" && !assignment.reason.trim()) return toast.error("Telafi eğitimi için neden zorunludur");
     setAssigning(true);
     try {
       await axios.post("/academy/admin/assignments", { ...assignment, due_at: assignment.due_at ? `${assignment.due_at}T23:59:59Z` : null });
-      toast.success("Egitim personele atandi");
+      toast.success("Eğitim personele atandı");
       setAssignment(a => ({ ...a, course_id: "", reason: "" }));
       await load();
     } catch (e) {
-      toast.error(e?.response?.data?.detail || "Egitim atanamadi");
+      toast.error(e?.response?.data?.detail || "Eğitim atanamadı");
     } finally { setAssigning(false); }
   };
   useEffect(() => {
@@ -84,7 +84,7 @@ export default function AcademyReport() {
   const departments = data?.departments || [];
   const rows = data?.rows || [];
   return <div className="p-4 md:p-6 max-w-6xl mx-auto">
-      <PageHeader title={t("cm.pages_AcademyReport.akademi_yonetici_raporu")} subtitle="Departman ve personel bazinda egitim tamamlama, basari ve puanlar." actions={<Button variant="outline" onClick={() => navigate("/app/academy")}>
+      <PageHeader title={t("cm.pages_AcademyReport.akademi_yonetici_raporu")} subtitle="Departman ve personel bazında eğitim tamamlama, başarı ve puanlar." actions={<Button variant="outline" onClick={() => navigate("/app/academy")}>
             <ArrowLeft className="w-4 h-4 mr-2" />{t("cm.pages_AcademyReport.akademi")}</Button>} />
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
@@ -92,27 +92,27 @@ export default function AcademyReport() {
         <KpiCard icon={CheckCircle2} label={t("cm.pages_AcademyReport.gecen")} value={summary.passed || 0} intent="success" />
         <KpiCard icon={ClipboardList} label={t("cm.pages_AcademyReport.basari_orani")} value={`%${summary.pass_rate || 0}`} intent="neutral" />
         <KpiCard icon={Award} label={t("cm.pages_AcademyReport.sertifika")} value={summary.certificates || 0} intent="warning" />
-        <KpiCard icon={ClipboardList} label="Gecikmis" value={summary.overdue || 0} intent={summary.overdue ? "danger" : "neutral"} />
+        <KpiCard icon={ClipboardList} label="Gecikmiş" value={summary.overdue || 0} intent={summary.overdue ? "danger" : "neutral"} />
       </div>
 
       <Card className="mb-6 overflow-hidden">
         <div className="border-b bg-slate-50 px-5 py-4">
-          <div className="flex items-center gap-2 font-semibold text-slate-900"><UserPlus className="h-5 w-5 text-indigo-600" /> Personel egitim atamasi</div>
-          <p className="mt-1 text-sm text-slate-500">Oryantasyon, yonetici talebi veya bir uyari sonrasi zorunlu telafi egitimi atayin.</p>
+          <div className="flex items-center gap-2 font-semibold text-slate-900"><UserPlus className="h-5 w-5 text-indigo-600" /> Personel eğitim ataması</div>
+          <p className="mt-1 text-sm text-slate-500">Oryantasyon, yönetici talebi veya bir uyarı sonrası zorunlu telafi eğitimi atayın.</p>
         </div>
         <div className="grid gap-3 p-5 md:grid-cols-2 lg:grid-cols-4">
           <select className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm" value={assignment.user_id} onChange={e => setAssignment(a => ({ ...a, user_id: e.target.value }))}>
-            <option value="">Personel secin</option>{options.users.map(u => <option key={u.id} value={u.id}>{u.name} · {u.role}</option>)}
+            <option value="">Personel seçin</option>{options.users.map(u => <option key={u.id} value={u.id}>{u.name} · {u.role}</option>)}
           </select>
           <select className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm" value={assignment.course_id} onChange={e => setAssignment(a => ({ ...a, course_id: e.target.value }))}>
-            <option value="">Egitim secin</option>{options.courses.map(c => <option key={c.id} value={c.id}>{c.department_label} · {c.title}</option>)}
+            <option value="">Eğitim seçin</option>{options.courses.map(c => <option key={c.id} value={c.id}>{c.department_label} · {c.title}</option>)}
           </select>
           <select className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm" value={assignment.source} onChange={e => setAssignment(a => ({ ...a, source: e.target.value, priority: e.target.value === "warning" ? "high" : a.priority }))}>
-            <option value="manager">Yonetici atamasi</option><option value="onboarding">Oryantasyon</option><option value="warning">Uyari sonrasi telafi</option><option value="recertification">Yeniden belgelendirme</option>
+            <option value="manager">Yönetici ataması</option><option value="onboarding">Oryantasyon</option><option value="warning">Uyarı sonrası telafi</option><option value="recertification">Yeniden belgelendirme</option>
           </select>
           <input type="date" className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm" value={assignment.due_at} onChange={e => setAssignment(a => ({ ...a, due_at: e.target.value }))} aria-label="Son tarih" />
-          <input className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm md:col-span-2 lg:col-span-3" placeholder={assignment.source === "warning" ? "Telafi nedeni (zorunlu)" : "Atama notu (istege bagli)"} value={assignment.reason} onChange={e => setAssignment(a => ({ ...a, reason: e.target.value }))} />
-          <Button onClick={assignCourse} disabled={assigning}>{assigning && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Egitimi ata</Button>
+          <input className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm md:col-span-2 lg:col-span-3" placeholder={assignment.source === "warning" ? "Telafi nedeni (zorunlu)" : "Atama notu (isteğe bağlı)"} value={assignment.reason} onChange={e => setAssignment(a => ({ ...a, reason: e.target.value }))} />
+          <Button onClick={assignCourse} disabled={assigning}>{assigning && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Eğitimi ata</Button>
         </div>
       </Card>
 

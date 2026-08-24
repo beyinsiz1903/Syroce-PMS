@@ -35,6 +35,11 @@ import { useTranslation } from 'react-i18next';
 import { parseBookingConflict } from '@/lib/bookingConflict';
 import { getRoomBlockForDate } from './calendar/calendarHelpers';
 import {
+  applyCalendarViewPreference,
+  CALENDAR_VIEW_PREFERENCES_KEY,
+  readCalendarViewPreferences,
+} from './calendar/viewPreferences';
+import {
   formatGuestName,
   roomIsFreeForBooking,
   roomMatchesBookingType,
@@ -159,7 +164,6 @@ const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }
 });
 
 const DEBUG_ROOMS = false;
-
 // YYYY-MM-DD string'e UTC-guvenli gun ekle (tut-surukle cok-gece secimi icin)
 const addDaysToDateStr = (dStr, n) => {
   const d = new Date(`${dStr}T00:00:00Z`);
@@ -187,6 +191,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [daysToShow, setDaysToShow] = useState(14);
   const [calendarMeta, setCalendarMeta] = useState({});
   const [hotelBusinessDate, setHotelBusinessDate] = useState(null);
+  const [viewPreferences, setViewPreferences] = useState(readCalendarViewPreferences);
 
   // UI State
   const [selectedRoom, setSelectedRoom] = useState(null);
@@ -264,6 +269,21 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [showConflictsModal, setShowConflictsModal] = useState(false);
 
   const dateRange = getDateRange(currentDate, daysToShow);
+
+  useEffect(() => {
+    document.body.classList.add('syroce-dense-workspace');
+    return () => document.body.classList.remove('syroce-dense-workspace');
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CALENDAR_VIEW_PREFERENCES_KEY, JSON.stringify(viewPreferences));
+    } catch { /* private mode / storage quota */ }
+  }, [viewPreferences]);
+
+  const updateViewPreference = (key, value) => {
+    setViewPreferences((previous) => applyCalendarViewPreference(previous, key, value));
+  };
 
   // ─── Data Loading ─────────────────────────────────────────────
   // Race-safe + debounced: hızlı ok navigasyonunda her tıklama fetch tetiklemez,
@@ -962,13 +982,15 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           }}
           onShowUnassigned={() => setShowUnassignedPanel(true)}
           onShowConflicts={() => setShowConflictsModal(true)}
+          viewPreferences={viewPreferences}
+          onViewPreferenceChange={updateViewPreference}
         />
         </div>
 
         <div className="flex-1 flex flex-col min-h-0 px-4 pb-4 pt-3 gap-3">
         {/* Compact Legend */}
         <div
-          className="flex-none bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm"
+          className={`flex-none bg-white border border-slate-200 rounded-xl shadow-sm ${viewPreferences.compactMode ? 'px-3 py-1.5' : 'px-4 py-2'}`}
           data-testid="calendar-legend"
           role="region"
           aria-label="Renk kodu lejantı"
@@ -977,7 +999,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             <ul className="flex flex-wrap items-center gap-x-4 gap-y-2" role="list" aria-label="Rezervasyon durumu renk kodları">
               <li className="flex items-center gap-1.5" role="listitem">
                 <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#16a34a' }} aria-hidden="true"></div>
-                <span>Iceride (Check-in)</span>
+                <span>İçeride (Check-in)</span>
               </li>
               <li className="flex items-center gap-1.5" role="listitem">
                 <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#f97316' }} aria-hidden="true"></div>
@@ -985,7 +1007,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               </li>
               <li className="flex items-center gap-1.5" role="listitem">
                 <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#2563eb' }} aria-hidden="true"></div>
-                <span>Onaylanmis</span>
+                <span>Onaylanmış</span>
               </li>
               <li className="flex items-center gap-1.5" role="listitem">
                 <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#f87171' }} aria-hidden="true"></div>
@@ -1000,7 +1022,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                 <span>{t('cm.pages_ReservationCalendar.dolu')}</span>
               </li>
             </ul>
-            <div className="flex items-center gap-3 text-gray-400">
+            <div className={`items-center gap-3 text-gray-400 ${viewPreferences.compactMode ? 'hidden 2xl:flex' : 'flex'}`}>
               <span>{t('cm.pages_ReservationCalendar.tikla_yeni_rez')}</span>
               <span>{t('cm.pages_ReservationCalendar.cift_tikla_detay')}</span>
               <span>{t('cm.pages_ReservationCalendar.surukle_tasi')}</span>
@@ -1044,14 +1066,17 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onDrop={handleDrop}
           onDragEnd={handleDragEnd}
           onBookingDoubleClick={handleBookingDoubleClick}
+          showOccupancyBand={viewPreferences.showOccupancy && !viewPreferences.operationMode}
         />
         </div>
-        <CalendarDateScrubber
-          currentDate={currentDate}
-          daysToShow={daysToShow}
-          onChange={goToDate}
-          businessDate={hotelBusinessDate}
-        />
+        {viewPreferences.showTimeline && !viewPreferences.operationMode && (
+          <CalendarDateScrubber
+            currentDate={currentDate}
+            daysToShow={daysToShow}
+            onChange={goToDate}
+            businessDate={hotelBusinessDate}
+          />
+        )}
         </div>
       </div>
 

@@ -182,7 +182,7 @@ const RegistrationCard = ({
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-sm font-semibold text-gray-600">Check-in Date:</label>
+                <label className="text-sm font-semibold text-gray-600">Giriş Tarihi:</label>
                 <p className="text-lg font-medium">{formatDate(booking.check_in)}</p>
               </div>
               <div>

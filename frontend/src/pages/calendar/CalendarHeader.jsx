@@ -3,8 +3,16 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight,
-  Plus, RefreshCw, Loader2, AlertTriangle
+  Plus, RefreshCw, Loader2, AlertTriangle, SlidersHorizontal
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { getUnassignedUrgency } from "./calendarHelpers";
 import { useTranslation } from 'react-i18next';
 
@@ -23,6 +31,8 @@ const CalendarHeader = ({
   onShowNewBookingDialog,
   onShowUnassigned,
   onShowConflicts,
+  viewPreferences,
+  onViewPreferenceChange,
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -71,14 +81,15 @@ const CalendarHeader = ({
   const dateRangeLabel = dateRange.length > 0
     ? `${dateRange[0].toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })} – ${dateRange[dateRange.length - 1].toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}`
     : '';
+  const compactMode = viewPreferences?.compactMode !== false;
 
   return (
     <div
-      className="flex flex-wrap items-center gap-x-4 gap-y-3"
+      className={`flex items-center ${compactMode ? 'flex-nowrap gap-2' : 'flex-wrap gap-x-4 gap-y-3'}`}
       data-testid="reservation-toolbar"
     >
       {/* ─── LEFT GROUP: title + date range + alert chips ─── */}
-      <div className="flex items-center gap-3 min-w-0 mr-auto">
+      <div className={`flex items-center min-w-0 mr-auto ${compactMode ? 'gap-2' : 'gap-3'}`}>
         <button
           type="button"
           onClick={() => navigate('/pms?tab=bookings')}
@@ -86,14 +97,14 @@ const CalendarHeader = ({
           data-testid="reservations-tab-btn"
           title="Rezervasyon listesi"
         >
-          <span className="flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-sm group-hover:shadow-md transition-all">
+          <span className={`flex items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-sm group-hover:shadow-md transition-all ${compactMode ? 'h-9 w-9' : 'h-11 w-11'}`}>
             <CalendarIcon className="w-5 h-5" />
           </span>
           <span className="flex flex-col leading-tight text-left min-w-0">
-            <span className="text-lg font-extrabold text-slate-900 group-hover:text-amber-600 transition-colors">
+            <span className={`${compactMode ? 'text-base' : 'text-lg'} font-extrabold text-slate-900 group-hover:text-amber-600 transition-colors`}>
               Rezervasyonlar
             </span>
-            {dateRangeLabel && (
+            {dateRangeLabel && !compactMode && (
               <span className="text-xs text-gray-500 font-medium truncate" data-testid="toolbar-date-range">
                 {dateRangeLabel}
               </span>
@@ -191,7 +202,7 @@ const CalendarHeader = ({
       </div>
 
       {/* ─── RIGHT GROUP: sync / view / overview / status / primary CTA ─── */}
-      <div className="flex flex-wrap items-center gap-2 ml-auto">
+      <div className={`items-center ml-auto ${compactMode ? 'flex flex-nowrap gap-1.5' : 'flex flex-wrap gap-2'}`}>
         <Button
           variant="outline"
           size="sm"
@@ -201,7 +212,7 @@ const CalendarHeader = ({
           className="text-xs h-8"
         >
           {syncing ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
-          {syncing ? 'Senkronize...' : 'OTA Sync'}
+          <span className={compactMode ? 'hidden xl:inline' : ''}>{syncing ? 'Senkronize...' : 'OTA Sync'}</span>
         </Button>
 
         <select
@@ -210,9 +221,9 @@ const CalendarHeader = ({
           onChange={(e) => setDaysToShow(Number(e.target.value))}
           data-testid="reservation-view-range-select"
         >
-          <option value={7}>7 Gun</option>
-          <option value={14}>14 Gun</option>
-          <option value={30}>30 Gun</option>
+          <option value={7}>7 Gün</option>
+          <option value={14}>14 Gün</option>
+          <option value={30}>30 Gün</option>
         </select>
 
         <Button
@@ -226,7 +237,7 @@ const CalendarHeader = ({
         </Button>
 
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-600 whitespace-nowrap">{t('cm.pages_calendar_CalendarHeader.rezervasyon_durumu')}</span>
+          {!compactMode && <span className="text-xs text-gray-600 whitespace-nowrap">{t('cm.pages_calendar_CalendarHeader.rezervasyon_durumu')}</span>}
           <select
             className="border border-gray-300 rounded-md px-2 text-xs h-8 bg-white"
             data-testid="reservation-status-filter"
@@ -234,6 +245,53 @@ const CalendarHeader = ({
             <option>Hepsi</option>
           </select>
         </div>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="h-8 px-2" data-testid="calendar-view-settings" aria-label="Takvim görünüm ayarları">
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              {!compactMode && <span className="ml-1.5 text-xs">Görünüm</span>}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuLabel>Takvim görünümü</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              checked={Boolean(viewPreferences?.operationMode)}
+              onCheckedChange={(checked) => onViewPreferenceChange?.('operationMode', checked)}
+              data-testid="calendar-operation-mode"
+            >
+              Operasyon görünümü
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={compactMode}
+              onCheckedChange={(checked) => onViewPreferenceChange?.('compactMode', checked)}
+              data-testid="calendar-compact-mode"
+            >
+              Kompakt araç çubuğu
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              checked={Boolean(viewPreferences?.showOccupancy)}
+              onCheckedChange={(checked) => onViewPreferenceChange?.('showOccupancy', checked)}
+              disabled={Boolean(viewPreferences?.operationMode)}
+              data-testid="calendar-occupancy-toggle"
+            >
+              Doluluk eğrisi
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={Boolean(viewPreferences?.showTimeline)}
+              onCheckedChange={(checked) => onViewPreferenceChange?.('showTimeline', checked)}
+              disabled={Boolean(viewPreferences?.operationMode)}
+              data-testid="calendar-timeline-toggle"
+            >
+              Zaman çizelgesi
+            </DropdownMenuCheckboxItem>
+            <p className="px-2 py-1.5 text-[11px] leading-4 text-slate-500">
+              Tercihleriniz bu tarayıcıda otomatik olarak hatırlanır.
+            </p>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <Button
           onClick={onShowNewBookingDialog}

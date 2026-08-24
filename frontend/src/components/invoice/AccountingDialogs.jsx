@@ -93,9 +93,9 @@ export const ExpenseDialog = ({ open, onClose, suppliers }) => {
             <Input type="date" value={form.date} onChange={(e) => setForm({...form, date: e.target.value})} required />
           </div>
           <div>
-            <Label>{t('invoice.supplierOptional', 'Supplier (Optional)')}</Label>
+            <Label>{t('invoice.supplierOptional', 'Tedarikçi (isteğe bağlı)')}</Label>
             <Select value={form.supplier_id} onValueChange={(v) => setForm({...form, supplier_id: v})}>
-              <SelectTrigger><SelectValue placeholder={t('invoice.selectSupplier', 'Select supplier')} /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t('invoice.selectSupplier', 'Tedarikçi seçin')} /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">{t('common.none', 'None')}</SelectItem>
                 {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}

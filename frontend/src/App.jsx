@@ -9,6 +9,7 @@ import { queryClient } from "@/lib/queryClient";
 import usePushNotifications from "@/hooks/usePushNotifications";
 import { NotificationProvider, notifyAuthChanged } from "@/context/NotificationContext";
 import InternalChatWidget from "@/components/InternalChatWidget";
+import CommunicationCenter from "@/components/CommunicationCenter";
 import { CurrencyProvider } from "@/context/CurrencyContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Toaster } from "@/components/ui/sonner";
@@ -463,12 +464,13 @@ function App() {
             </ErrorBoundary>
             </SimulationProvider>
           </BrowserRouter>
-          {isAuthenticated && user && <InternalChatWidget user={user} />}
+          {isAuthenticated && user && <InternalChatWidget user={user} hideLauncher />}
           {isAuthenticated && user && (
             <Suspense fallback={null}>
-              <Softphone user={user} />
+              <Softphone user={user} hideLauncher />
             </Suspense>
           )}
+          {isAuthenticated && user && <CommunicationCenter user={user} />}
         </div>
       </QueryClientProvider>
       </CurrencyProvider>

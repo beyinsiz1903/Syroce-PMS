@@ -82,7 +82,7 @@ const STATUS_LABEL = {
 };
 
 
-export default function Softphone({ user }) {
+export default function Softphone({ user, hideLauncher = false }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState("dialer");
   const [status, setStatus] = useState("idle");
@@ -127,6 +127,17 @@ export default function Softphone({ user }) {
 
   const role = user?.role || (user?.roles && user.roles[0]);
   const isStaff = role && role !== "guest";
+
+  useEffect(() => {
+    const openPhone = () => setOpen(true);
+    const closePhone = () => setOpen(false);
+    window.addEventListener('syroce:open-softphone', openPhone);
+    window.addEventListener('syroce:close-softphone', closePhone);
+    return () => {
+      window.removeEventListener('syroce:open-softphone', openPhone);
+      window.removeEventListener('syroce:close-softphone', closePhone);
+    };
+  }, []);
 
   const fetchToken = useCallback(() => {
     axios.post("/contact-center/voice/token")
@@ -767,7 +778,7 @@ export default function Softphone({ user }) {
   };
 
   return (
-    <div className="fixed bottom-4 left-4 z-50 flex gap-4 items-end">
+    <div className={`communication-panel fixed z-50 flex gap-4 items-end ${hideLauncher ? 'bottom-20 right-5' : 'bottom-4 left-4'}`}>
       {open ? (
         <div className="relative w-72 rounded-lg border border-gray-200 bg-white shadow-xl">
           <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
@@ -1226,7 +1237,7 @@ export default function Softphone({ user }) {
             </div>
           )}
         </div>
-      ) : (
+      ) : hideLauncher ? null : (
         <button
           type="button"
           onClick={() => setOpen(true)}
