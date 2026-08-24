@@ -562,8 +562,8 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
         {businessDateMeta?.is_initialized && (
           <Card
             className={businessDateMeta.update_source === "night_audit"
-              ? "border-emerald-200 bg-emerald-50/60"
-              : "border-amber-300 bg-amber-50/70"}
+              ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-800 dark:bg-emerald-950/60"
+              : "border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/70"}
             data-testid="business-date-origin"
           >
             <CardContent className="py-3 flex items-start gap-3">
