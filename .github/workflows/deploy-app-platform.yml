@@ -116,6 +116,27 @@ jobs:
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           version: 1.164.0
+          no_auth: true
+
+      - name: Authenticate doctl with retry
+        shell: bash
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          for ATTEMPT in 1 2 3 4 5; do
+            echo "DigitalOcean token validation attempt ${ATTEMPT}/5..."
+            if timeout 120 doctl auth init -t "$DO_TOKEN"; then
+              exit 0
+            fi
+
+            if [ "$ATTEMPT" -eq 5 ]; then
+              echo "::error::DigitalOcean token validation failed after 5 attempts."
+              exit 1
+            fi
+
+            sleep "$((ATTEMPT * 15))"
+          done
 
       - name: Trigger App Platform Deployment
         env:
