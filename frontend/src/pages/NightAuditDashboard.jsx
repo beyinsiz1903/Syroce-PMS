@@ -41,6 +41,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
   const [businessDate, setBusinessDate] = useState(null);
   const [previousDate, setPreviousDate] = useState(null);
+  const [businessDateMeta, setBusinessDateMeta] = useState(null);
   const [history, setHistory] = useState([]);
   const [historyTotal, setHistoryTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -86,7 +87,8 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       const nextBusinessDate = res.data.business_date;
       setBusinessDate(nextBusinessDate);
       setPreviousDate(res.data.previous_business_date);
-      emitBusinessDateChanged(nextBusinessDate);
+      setBusinessDateMeta(res.data);
+      emitBusinessDateChanged(nextBusinessDate, res.data);
       return nextBusinessDate;
     } catch (err) {
       console.error("Business date fetch failed:", err);
@@ -263,7 +265,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
           });
           const verifiedDate = verification.data?.business_date;
           if (confirmsNightAuditAdvance(requestedBusinessDate, verifiedDate)) {
-            emitBusinessDateChanged(verifiedDate);
+            emitBusinessDateChanged(verifiedDate, verification.data);
             toast.success("Gece denetiminin sunucuda tamamlandığı doğrulandı");
             setShowRunDialog(false);
             setRunOptions({ force_rerun: false, skip_validations: false, dry_run: false, reason: "" });
@@ -426,7 +428,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
     t,
     StatusBadge, SeverityBadge, StatCard, IntegrityBadge,
     statusConfig, severityConfig, categoryLabels, paymentMethodLabels,
-    businessDate, previousDate, history, historyTotal, loading, running,
+    businessDate, previousDate, businessDateMeta, history, historyTotal, loading, running,
     expandedRun, exceptions, schedule, scheduleStatus, scheduleLoading,
     showRunDialog, setShowRunDialog, showScheduleDialog, setShowScheduleDialog,
     activeTab, setActiveTab, runOptions, setRunOptions,
@@ -556,6 +558,49 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
             sub={lastRun ? `${lastRun.rooms_processed || 0} oda işlendi` : undefined}
           />
         </div>
+
+        {businessDateMeta?.is_initialized && (
+          <Card
+            className={businessDateMeta.update_source === "night_audit"
+              ? "border-emerald-200 bg-emerald-50/60"
+              : "border-amber-300 bg-amber-50/70"}
+            data-testid="business-date-origin"
+          >
+            <CardContent className="py-3 flex items-start gap-3">
+              {businessDateMeta.update_source === "night_audit" ? (
+                <CheckCircle2 className="w-4 h-4 mt-0.5 text-emerald-700 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 mt-0.5 text-amber-700 shrink-0" />
+              )}
+              <div className="min-w-0 text-xs text-slate-700">
+                <p className="font-semibold text-slate-900">
+                  {businessDateMeta.update_source === "night_audit"
+                    ? "PMS iş günü tamamlanan Night Audit ile ilerletildi"
+                    : businessDateMeta.update_source === "legacy_record"
+                      ? "PMS iş günü eski sistem kaydından geliyor"
+                      : "PMS iş günü güvenli başlangıç kaydından oluşturuldu"}
+                </p>
+                <p className="mt-0.5">
+                  {businessDateMeta.initialization_reason === "earliest_unresolved_arrival" && "Başlangıç noktası: çözülmemiş en eski aktif rezervasyon. "}
+                  {businessDateMeta.initialization_reason === "night_audit_history" && "Başlangıç noktası: son başarılı Night Audit’in ertesi günü. "}
+                  {businessDateMeta.initialization_reason === "first_operational_use" && "Başlangıç noktası: ilk operasyonel kullanım günü. "}
+                  {businessDateMeta.initialization_reason === "tenant_provisioning" && "Başlangıç noktası: tesis kurulum günü. "}
+                  {businessDateMeta.update_source === "legacy_record" && "Eski kayıtta işlemi yapan kullanıcı veya Night Audit kimliği bulunmuyor. "}
+                  {businessDateMeta.updated_at && `Son kayıt: ${new Date(businessDateMeta.updated_at).toLocaleString("tr-TR")}. `}
+                  {businessDateMeta.trigger_source === "scheduler" && "Kaynak: otomatik zamanlama. "}
+                  {businessDateMeta.trigger_source === "manual" && "Kaynak: manuel Night Audit. "}
+                  {businessDateMeta.updated_by && `İşlemi yapan: ${businessDateMeta.updated_by}. `}
+                  {businessDateMeta.audit_run_id && `Denetim: ${businessDateMeta.audit_run_id}.`}
+                </p>
+                {businessDateMeta.update_source !== "night_audit" && (
+                  <p className="mt-1 font-medium text-amber-800">
+                    Bu kayıt tek başına Night Audit yapılmış olduğu anlamına gelmez; açık iş günü bundan sonra yalnızca başarılı denetimle ilerler.
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>

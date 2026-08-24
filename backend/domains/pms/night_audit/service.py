@@ -13,6 +13,7 @@ from typing import Any
 from common.audit_hook import SEVERITY_CRITICAL, audited
 from common.context import OperationContext
 from common.result import ServiceResult
+from core.business_date_service import ensure_business_date_initialized
 from domains.pms.night_audit.validations import validate_pre_audit
 
 logger = logging.getLogger(__name__)
@@ -76,7 +77,10 @@ class NightAuditCoreService:
         reason: str | None = None,
     ) -> ServiceResult:
         start_ts = time.monotonic()
-        bd = business_date or datetime.now(UTC).date().isoformat()
+        if business_date:
+            bd = business_date
+        else:
+            bd = (await ensure_business_date_initialized(self._db, ctx.tenant_id))["business_date"]
 
         # 1. Idempotency: check previous successful run
         if not force_rerun:
@@ -165,7 +169,7 @@ class NightAuditCoreService:
 
             # 6. Business date roll
             if not dry_run:
-                await self._roll_business_date(ctx, bd)
+                await self._roll_business_date(ctx, bd, audit_id)
 
             # 7. Finalize
             duration_ms = int((time.monotonic() - start_ts) * 1000)
@@ -615,7 +619,7 @@ class NightAuditCoreService:
             )
 
     # ── Step: Business date roll ───────────────────────────────────────
-    async def _roll_business_date(self, ctx: OperationContext, current_bd: str):
+    async def _roll_business_date(self, ctx: OperationContext, current_bd: str, audit_id: str):
         next_bd = (datetime.fromisoformat(current_bd) + timedelta(days=1)).date().isoformat()
         await self._db.tenant_settings.update_one(
             {"tenant_id": ctx.tenant_id},
@@ -624,6 +628,10 @@ class NightAuditCoreService:
                     "business_date": next_bd,
                     "previous_business_date": current_bd,
                     "business_date_updated_at": datetime.now(UTC).isoformat(),
+                    "business_date_update_source": "night_audit",
+                    "business_date_updated_by": ctx.actor_id,
+                    "business_date_audit_run_id": audit_id,
+                    "business_date_trigger_source": "manual",
                 }
             },
             upsert=True,
@@ -665,18 +673,12 @@ class NightAuditCoreService:
 
     # ── Get current business date ──────────────────────────────────────
     async def get_business_date(self, ctx: OperationContext) -> ServiceResult:
-        settings = await self._db.tenant_settings.find_one(
-            {"tenant_id": ctx.tenant_id},
-            {"_id": 0},
+        payload = await ensure_business_date_initialized(
+            self._db,
+            ctx.tenant_id,
+            actor_id=ctx.actor_id,
         )
-        bd = (settings or {}).get("business_date", datetime.now(UTC).date().isoformat())
-        return ServiceResult.success(
-            {
-                "business_date": bd,
-                "previous_business_date": (settings or {}).get("previous_business_date"),
-                "updated_at": (settings or {}).get("business_date_updated_at"),
-            }
-        )
+        return ServiceResult.success(payload)
 
     # ── Schedule CRUD ────────────────────────────────────────────────
     async def get_schedule(self, ctx: OperationContext) -> ServiceResult:

@@ -26,6 +26,7 @@ from pymongo.errors import DuplicateKeyError
 from pymongo.read_concern import ReadConcern
 from pymongo.write_concern import WriteConcern
 
+from core.business_date_service import ensure_business_date_initialized
 from core.database import client, db
 
 logger = logging.getLogger("core.night_audit_hardened")
@@ -309,14 +310,10 @@ async def start_night_audit(
     # Bug fix: business_date verilmediginde takvim tarihine dusulmemeli; otelin
     # acik is gunu (tenant_settings.business_date) kullanilmali. Aksi halde gece
     # denetimi gercek is gununden farkli bir tarihi kapatir ve tarih ileri sicrar.
-    if not business_date:
-        ts = await db.tenant_settings.find_one(
-            {"tenant_id": tenant_id},
-            {"_id": 0, "business_date": 1},
-        )
-        bd = (ts or {}).get("business_date") or _now().date().isoformat()
-    else:
+    if business_date:
         bd = business_date
+    else:
+        bd = (await ensure_business_date_initialized(db, tenant_id))["business_date"]
     actor = actor or {}
     run_id = str(uuid.uuid4())
     now = _now_iso()
@@ -574,7 +571,7 @@ async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
     # ── Stage: Roll business date ──
     try:
         await _set_stage(run_id, ST_ROLLING)
-        await _roll_business_date(tenant_id, bd)
+        await _roll_business_date(tenant_id, bd, run_id)
     except Exception as e:
         await _fail_run(run_id, ST_ROLLING, f"Date roll error: {e}")
         return {"success": False, "error": str(e), "code": "DATE_ROLL_ERROR", "run_id": run_id}
@@ -1235,9 +1232,14 @@ async def _reconcile(run_id: str) -> dict[str, Any]:
 # ═══════════════════════════════════════════════════════════════
 
 
-async def _roll_business_date(tenant_id: str, current_bd: str):
+async def _roll_business_date(tenant_id: str, current_bd: str, run_id: str):
     """Advance the business date. Only called after successful reconciliation."""
     next_bd = _next_date(current_bd)
+    run = await db.night_audit_runs.find_one(
+        {"tenant_id": tenant_id, "id": run_id},
+        {"_id": 0, "trigger_source": 1, "started_by": 1},
+    ) or {}
+    actor = run.get("started_by") or {}
     await db.tenant_settings.update_one(
         {"tenant_id": tenant_id},
         {
@@ -1245,6 +1247,10 @@ async def _roll_business_date(tenant_id: str, current_bd: str):
                 "business_date": next_bd,
                 "previous_business_date": current_bd,
                 "business_date_updated_at": _now_iso(),
+                "business_date_update_source": "night_audit",
+                "business_date_updated_by": actor.get("id") or actor.get("email") or "system",
+                "business_date_audit_run_id": run_id,
+                "business_date_trigger_source": run.get("trigger_source") or "manual",
             }
         },
         upsert=True,

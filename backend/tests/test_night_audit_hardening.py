@@ -15,10 +15,9 @@ J. Query endpoints
 K. Health metrics
 L. No-show handling
 """
-import asyncio
 import os
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -100,7 +99,7 @@ async def _seed_booking(db, room_rate=1000.0, status="checked_in", booking_id=No
 
 
 def _now_iso():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 async def _call_engine(func_name, test_client, test_db, *args, **kwargs):
@@ -108,9 +107,16 @@ async def _call_engine(func_name, test_client, test_db, *args, **kwargs):
     with patch("core.night_audit_hardened.db", test_db), \
          patch("core.night_audit_hardened.client", test_client):
         from core.night_audit_hardened import (
-            start_night_audit, resume_night_audit, abort_night_audit,
-            get_run_status, get_runs, get_run_detail, get_run_items,
-            detect_stale_runs, get_health_metrics, ensure_night_audit_indexes,
+            abort_night_audit,
+            detect_stale_runs,
+            ensure_night_audit_indexes,
+            get_health_metrics,
+            get_run_detail,
+            get_run_items,
+            get_run_status,
+            get_runs,
+            resume_night_audit,
+            start_night_audit,
         )
         fn_map = {
             "start_night_audit": start_night_audit,
@@ -168,6 +174,10 @@ async def test_successful_full_audit():
         # Verify business date advanced
         settings = await db.tenant_settings.find_one({"tenant_id": TENANT}, {"_id": 0})
         assert settings["business_date"] == BD_NEXT
+        assert settings["business_date_update_source"] == "night_audit"
+        assert settings["business_date_updated_by"] == "tester"
+        assert settings["business_date_audit_run_id"] == run["id"]
+        assert settings["business_date_trigger_source"] == "manual"
 
         # Verify audit trail
         journal = await db.pms_audit_trail.find_one({
@@ -332,7 +342,7 @@ async def test_stale_run_detection():
     c, db = await _get_db()
     try:
         await _cleanup(db)
-        stale_time = (datetime.now(timezone.utc) - timedelta(seconds=STALE_THRESHOLD_SECONDS + 60)).isoformat()
+        stale_time = (datetime.now(UTC) - timedelta(seconds=STALE_THRESHOLD_SECONDS + 60)).isoformat()
         await db.night_audit_runs.insert_one({
             "id": str(uuid.uuid4()), "tenant_id": TENANT,
             "property_id": PROPERTY, "business_date": BD,
@@ -362,7 +372,7 @@ async def test_stale_run_auto_recovery():
     try:
         await _cleanup(db)
         await _call_engine("ensure_night_audit_indexes", c, db)
-        stale_time = (datetime.now(timezone.utc) - timedelta(seconds=STALE_THRESHOLD_SECONDS + 120)).isoformat()
+        stale_time = (datetime.now(UTC) - timedelta(seconds=STALE_THRESHOLD_SECONDS + 120)).isoformat()
         stale_id = str(uuid.uuid4())
         await db.night_audit_runs.insert_one({
             "id": stale_id, "tenant_id": TENANT,

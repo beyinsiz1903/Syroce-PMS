@@ -52,6 +52,7 @@ export default function PMSDateBadge() {
   const location = useLocation();
   const cached = readBdCache();
   const [bd, setBd] = useState(cached?.bd || null);
+  const [bdMeta, setBdMeta] = useState(cached?.meta || null);
   const [hidden, setHidden] = useState(false);
 
   const fetchBD = useCallback(async () => {
@@ -59,7 +60,8 @@ export default function PMSDateBadge() {
       const r = await api.get("/night-audit/business-date");
       const v = r?.data?.business_date || null;
       setBd(v);
-      try { sessionStorage.setItem(BD_CACHE_KEY, JSON.stringify({ bd: v, tid: currentTenantId(), t: Date.now() })); } catch { /* sessionStorage quota / private mode — ignore */ }
+      setBdMeta(r?.data || null);
+      try { sessionStorage.setItem(BD_CACHE_KEY, JSON.stringify({ bd: v, meta: r?.data || null, tid: currentTenantId(), t: Date.now() })); } catch { /* sessionStorage quota / private mode — ignore */ }
     } catch (e) {
       const code = e?.response?.status;
       if (code === 401 || code === 403 || code === 404) {
@@ -76,10 +78,12 @@ export default function PMSDateBadge() {
         return;
       }
       setBd(value);
+      if (event?.detail?.metadata) setBdMeta(event.detail.metadata);
       setHidden(false);
       try {
         sessionStorage.setItem(BD_CACHE_KEY, JSON.stringify({
           bd: value,
+          meta: event?.detail?.metadata || bdMeta,
           tid: currentTenantId(),
           t: Date.now(),
         }));
@@ -87,7 +91,7 @@ export default function PMSDateBadge() {
     };
     window.addEventListener(BUSINESS_DATE_CHANGED_EVENT, handleBusinessDateChanged);
     return () => window.removeEventListener(BUSINESS_DATE_CHANGED_EVENT, handleBusinessDateChanged);
-  }, [fetchBD]);
+  }, [fetchBD, bdMeta]);
 
   useEffect(() => {
     // Cache taze ise mount fetch'i atla — interval 5dk'da bir zaten yenileyecek
@@ -144,7 +148,16 @@ export default function PMSDateBadge() {
     : "flex items-center gap-2 px-3 py-1 rounded-full bg-white/90 text-slate-700 text-xs shadow-sm border border-slate-200 backdrop-blur-sm";
 
   return (
-    <div className="fixed bottom-3 left-3 z-40 select-none">
+    <div
+      className="fixed bottom-3 left-3 z-40 select-none"
+      title={bdMeta?.update_source === "initialization"
+        ? "İş günü başlangıç kaydından oluşturuldu; Night Audit değildir."
+        : bdMeta?.update_source === "legacy_record"
+          ? "İş günü eski kayıttan geliyor; Night Audit kaynağı bilinmiyor."
+        : bdMeta?.audit_run_id
+          ? `Son Night Audit: ${bdMeta.audit_run_id}`
+          : undefined}
+    >
       <div className={containerClass} data-testid="pms-date-badge">
         {isStale ? (
           <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />

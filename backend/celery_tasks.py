@@ -340,8 +340,9 @@ async def _night_audit_for_tenant_async(tenant_id: str) -> dict[str, Any]:
     saved_client, saved_db = engine.client, engine.db
     engine.client, engine.db = client, proxy
     try:
-        settings = await raw_db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "business_date": 1})
-        bd = (settings or {}).get("business_date") or datetime.now(UTC).date().isoformat()
+        from core.business_date_service import ensure_business_date_initialized
+
+        bd = (await ensure_business_date_initialized(raw_db, tenant_id))["business_date"]
 
         with tenant_context(tenant_id):
             result = await engine.start_night_audit(
