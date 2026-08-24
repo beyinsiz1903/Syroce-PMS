@@ -1,7 +1,6 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { lazy, Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { toast } from 'sonner';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,44 +13,18 @@ import { useTranslation } from 'react-i18next';
 
 const ACTION_LABELS = {
   edit_booking: 'Rezervasyona git',
-  checkout_or_extend: 'Folyoya git',
+  checkout_or_extend: 'Check-out / uzatma',
   checkin_or_no_show: 'Check-in / no-show',
   assign_room: 'Oda ata',
   open_run: 'Açık denetimi aç',
 };
 
+const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal'));
+
 function bookingHref(item) {
   if (item.run_id) return null;
   if (item.id) return `/app/pms?edit=${item.id}#bookings`;
   return null;
-}
-
-// Rezervasyon detay ekranına deep-link ile git. Örneklem kaydı
-// sessionStorage'a koyarak detay diyaloğunun, rezervasyon PMS modülünün
-// yüklü tarih aralığı dışında olsa bile (geçmiş tarihli bekleyen gelişler)
-// açılmasını garanti et.
-function goToBookingDetail(item, navigate) {
-  if (!item?.id) return;
-  try {
-    window.sessionStorage?.setItem('pms_edit_booking', JSON.stringify(item));
-  } catch { /* sessionStorage erişilemezse yine de deep-link dene */ }
-  navigate(`/app/pms?edit=${item.id}#bookings`);
-}
-
-async function openFolioForBooking(bookingId, navigate) {
-  try {
-    const { data } = await axios.get(`/folio/booking/${bookingId}`);
-    const list = Array.isArray(data) ? data : (data?.folios || []);
-    const open = list.find((f) => f.status === 'open') || list[0];
-    const folioId = open?.id || open?.folio_id;
-    if (folioId) {
-      navigate(`/folio-detail/${folioId}`);
-    } else {
-      toast.error('Bu rezervasyon için açık folyo bulunamadı');
-    }
-  } catch (e) {
-    toast.error('Folyo açılamadı: ' + (e.response?.data?.detail || e.message));
-  }
 }
 
 function StatTile({ icon: Icon, label, value, hint, tone = 'gray' }) {
@@ -84,6 +57,7 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
+  const [selectedBookingId, setSelectedBookingId] = useState(null);
 
   // Stable ref so callback identity changes do not retrigger the effect.
   const onPreviewLoadedRef = useRef(onPreviewLoaded);
@@ -106,6 +80,16 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
   }, []);
 
   useEffect(() => { load(); }, [load, refreshKey]);
+
+  const closeInlineBooking = useCallback(() => {
+    setSelectedBookingId(null);
+    void load();
+  }, [load]);
+
+  const completeInlineOperation = useCallback(async () => {
+    setSelectedBookingId(null);
+    await load();
+  }, [load]);
 
   if (loading && !data) {
     return (
@@ -263,16 +247,12 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
                                   size="sm" variant="ghost"
                                   className="h-7 px-2 text-indigo-700 hover:text-indigo-900"
                                   onClick={() => {
-                                    if (it.id && b.action === 'checkin_or_no_show') {
-                                      // Bekleyen geliş: henüz check-in yapılmadığı
-                                      // için folyo YOK (folyo check-in anında
-                                      // oluşur). Folyo açma akışına değil,
-                                      // rezervasyon detayına yönlendir — oradan
-                                      // check-in / no-show / iptal yapılabilir.
-                                      goToBookingDetail(it, navigate);
-                                    } else if (it.id && b.action === 'checkout_or_extend') {
-                                      // Geç çıkış: folyosu var, doğrudan aç.
-                                      openFolioForBooking(it.id, navigate);
+                                    if (it.id && (b.action === 'checkin_or_no_show' || b.action === 'checkout_or_extend')) {
+                                      // Night Audit hazırlık akışını terk etmeden
+                                      // rezervasyon operasyonlarını sayfa içinde
+                                      // tamamla. Başarılı işlemden sonra preview
+                                      // yenilenir ve sıradaki engelleyici görünür.
+                                      setSelectedBookingId(it.id);
                                     } else if (it.run_id && b.action === 'open_run') {
                                       onOpenRun?.(it.run_id);
                                     } else if (href) {
@@ -327,6 +307,23 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
         <p className="text-xs text-gray-500 px-1" data-testid="ready-hint">
           {t('cm.components_nightaudit_tabs_PreparationTab.ipucu_ilk_kez_calistiriyorsaniz_once_sim')}
         </p>
+      )}
+
+      {selectedBookingId && (
+        <Suspense fallback={(
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+            <div className="rounded-xl bg-white px-6 py-4 text-sm text-gray-600 shadow-xl">
+              Rezervasyon detayı yükleniyor...
+            </div>
+          </div>
+        )}>
+          <ReservationDetailModal
+            bookingId={selectedBookingId}
+            onClose={closeInlineBooking}
+            onOperationComplete={completeInlineOperation}
+            allBookings={blockers.flatMap((blocker) => blocker.items || [])}
+          />
+        </Suspense>
       )}
     </div>
   );

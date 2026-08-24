@@ -28,6 +28,11 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (_key, fallback) => fallback || _key }),
 }));
+vi.mock('@/components/GuestAlertModal', () => ({
+  default: ({ open, onConfirm }) => (
+    open ? <button type="button" onClick={onConfirm}>Girişi onayla</button> : null
+  ),
+}));
 
 const detail = {
   booking: {
@@ -66,6 +71,48 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(post).not.toHaveBeenCalledWith(expect.stringContaining('/api/api/'), expect.anything());
   });
 
+  it('notifies an inline parent after completing a no-show operation', async () => {
+    const onOperationComplete = vi.fn();
+    render(
+      <ReservationDetailModal
+        bookingId="booking-test"
+        onClose={() => {}}
+        onOperationComplete={onOperationComplete}
+        allBookings={[]}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'No-Show' }));
+
+    await waitFor(() => expect(onOperationComplete).toHaveBeenCalledWith({
+      bookingId: 'booking-test',
+      operation: 'no_show',
+    }));
+  });
+
+  it('notifies an inline parent after a successful check-in', async () => {
+    const onOperationComplete = vi.fn();
+    render(
+      <ReservationDetailModal
+        bookingId="booking-test"
+        onClose={() => {}}
+        onOperationComplete={onOperationComplete}
+        allBookings={[]}
+      />,
+    );
+
+    fireEvent.click(await screen.findByTestId('btn-checkin'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Girişi onayla' }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/frontdesk/checkin/booking-test?create_folio=true&force_clean=true',
+    ));
+    await waitFor(() => expect(onOperationComplete).toHaveBeenCalledWith({
+      bookingId: 'booking-test',
+      operation: 'checked_in',
+    }));
+  });
+
   it('shows only lifecycle-eligible mutation buttons for a confirmed booking', async () => {
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
 
@@ -86,6 +133,32 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.queryByTestId('btn-early-checkin')).not.toBeInTheDocument();
     expect(screen.queryByTestId('btn-mark-noshow')).not.toBeInTheDocument();
     expect(screen.queryByTestId('btn-cancel-reservation')).not.toBeInTheDocument();
+  });
+
+  it('notifies an inline parent after a successful check-out', async () => {
+    const onOperationComplete = vi.fn();
+    get.mockResolvedValueOnce({
+      data: { ...detail, booking: { ...detail.booking, status: 'checked_in' } },
+    });
+
+    render(
+      <ReservationDetailModal
+        bookingId="booking-test"
+        onClose={() => {}}
+        onOperationComplete={onOperationComplete}
+        allBookings={[]}
+      />,
+    );
+
+    fireEvent.click(await screen.findByTestId('btn-checkout'));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/frontdesk/checkout/booking-test?auto_close_folios=true',
+    ));
+    await waitFor(() => expect(onOperationComplete).toHaveBeenCalledWith({
+      bookingId: 'booking-test',
+      operation: 'checked_out',
+    }));
   });
 
   it('hides all lifecycle mutations for a checked-out booking', async () => {
