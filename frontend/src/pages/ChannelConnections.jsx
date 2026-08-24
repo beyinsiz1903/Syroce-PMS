@@ -254,6 +254,18 @@ export default function ChannelConnections({
               </CardContent>
             </Card>}
 
+          {!loading && hr?.connected && hr?.channels_stale && <Card className="border-amber-200 bg-amber-50/60" data-testid="active-channels-stale-banner">
+              <CardContent className="p-4 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                <div className="text-sm">
+                  <p className="font-semibold text-amber-900">Aktif kanal listesi şu anda yenilenemedi</p>
+                  <p className="text-amber-800 mt-0.5">
+                    HotelRunner katalog listesi aktifmiş gibi gösterilmez. Varsa son doğrulanmış aktif kanal listesi gösteriliyor.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>}
+
           {loading ? <div className="flex items-center justify-center py-16">
               <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
             </div> : allConnectedChannels.length > 0 ? <>

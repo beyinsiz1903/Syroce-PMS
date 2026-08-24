@@ -56,6 +56,8 @@ const UnifiedRateManager = ({
   const [pricingSettings, setPricingSettings] = useState({});
   const [currency, setCurrency] = useState('TRY');
   const [pushProviders, setPushProviders] = useState([]);
+  const [activeChannels, setActiveChannels] = useState([]);
+  const [activeChannelsStale, setActiveChannelsStale] = useState(false);
 
   // Agencies
   const [agencies, setAgencies] = useState([]);
@@ -176,6 +178,27 @@ const UnifiedRateManager = ({
       console.warn('[UnifiedRateManager] fetchPushProviders failed (non-critical):', e?.response?.status ?? e?.message); toast.error('Bildirim saglayicilar yuklenemedi');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+  }, [provider]);
+
+  // HotelRunner's /infos/channels response is the complete catalogue, not the
+  // hotel's active destinations. The connections overview exposes only the
+  // provider-verified connected_channels list.
+  useEffect(() => {
+    if (provider !== 'hotelrunner') {
+      setActiveChannels([]);
+      setActiveChannelsStale(false);
+      return;
+    }
+    axios.get('/channel-manager/connections/overview', { headers }).then(res => {
+      const hotelrunner = (res.data?.providers || []).find(item => item.provider === 'hotelrunner');
+      setActiveChannels(Array.isArray(hotelrunner?.channels) ? hotelrunner.channels : []);
+      setActiveChannelsStale(hotelrunner?.channels_stale === true);
+    }).catch(error => {
+      console.warn('[UnifiedRateManager] active HotelRunner channels unavailable:', error?.response?.status ?? error?.message);
+      setActiveChannels([]);
+      setActiveChannelsStale(true);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cookie auth headers are stable for this mounted view
   }, [provider]);
 
   // Fetch agencies
@@ -589,7 +612,7 @@ const UnifiedRateManager = ({
     shadow: {
       className: 'bg-amber-500 text-white',
       icon: <Eye className="w-3 h-3 mr-1" />,
-      label: 'Shadow Mode'
+      label: 'Gönderim Kapalı'
     },
     inactive: {
       className: 'bg-slate-400 text-white',
@@ -652,6 +675,14 @@ const UnifiedRateManager = ({
           </div>
         </div>
 
+        {pushProviders.some(item => item.mode === 'shadow' || item.mode === 'read_only') && <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" data-testid="unified-push-disabled-notice">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            <div>
+              <span className="font-semibold">HotelRunner'a canlı gönderim kapalı.</span>{' '}
+              Fiyat ve kontenjan güncellemeleri sağlayıcıya iletilmez; güvenlik doğrulaması tamamlandığında canlı gönderim ayrıca açılır.
+            </div>
+          </div>}
+
         {/* Circuit breaker status pills (CM-Hardening Stop-Sale, May 2026) */}
         {breakers.some(b => b.state !== 'closed') && <div className="flex flex-wrap items-center gap-2" data-testid="circuit-breaker-pills">
             <span className="text-xs text-zinc-500">Kanal sağlığı:</span>
@@ -676,7 +707,7 @@ const UnifiedRateManager = ({
               </TabsList>
 
               <TabsContent value="bulk" className="mt-4">
-                <BulkUpdatePanel roomTypeTree={roomTypeTree} roomTypes={roomTypes} ratePlans={ratePlans} enabledFields={enabledFields} toggleField={toggleField} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} allDays={allDays} selectedDays={selectedDays} toggleDay={toggleDay} toggleAllDays={toggleAllDays} selections={selections} toggleRoomType={toggleRoomType} toggleAllRoomTypes={toggleAllRoomTypes} toggleRatePlan={toggleRatePlan} isRoomTypeSelected={isRoomTypeSelected} isRoomTypeFullySelected={isRoomTypeFullySelected} isRatePlanSelected={isRatePlanSelected} roomValues={roomValues} updateRoomValue={updateRoomValue} getDefaultValues={getDefaultValues} applyToAllSelected={applyToAllSelected} expandedRoomTypes={expandedRoomTypes} toggleExpanded={toggleExpanded} pricingSettings={pricingSettings} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType} currencySymbol={currencySymbol} currency={currency} totalSelectedRoomTypes={totalSelectedRoomTypes} totalSelectedPlans={totalSelectedPlans} saving={saving} handleBulkUpdate={handleBulkUpdate} handleReset={handleReset} loading={loading} />
+                <BulkUpdatePanel roomTypeTree={roomTypeTree} roomTypes={roomTypes} ratePlans={ratePlans} enabledFields={enabledFields} toggleField={toggleField} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} allDays={allDays} selectedDays={selectedDays} toggleDay={toggleDay} toggleAllDays={toggleAllDays} selections={selections} toggleRoomType={toggleRoomType} toggleAllRoomTypes={toggleAllRoomTypes} toggleRatePlan={toggleRatePlan} isRoomTypeSelected={isRoomTypeSelected} isRoomTypeFullySelected={isRoomTypeFullySelected} isRatePlanSelected={isRatePlanSelected} roomValues={roomValues} updateRoomValue={updateRoomValue} getDefaultValues={getDefaultValues} applyToAllSelected={applyToAllSelected} expandedRoomTypes={expandedRoomTypes} toggleExpanded={toggleExpanded} pricingSettings={pricingSettings} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType} currencySymbol={currencySymbol} currency={currency} totalSelectedRoomTypes={totalSelectedRoomTypes} totalSelectedPlans={totalSelectedPlans} saving={saving} handleBulkUpdate={handleBulkUpdate} handleReset={handleReset} loading={loading} activeChannels={activeChannels} activeChannelsStale={activeChannelsStale} channelProvider={provider} />
               </TabsContent>
 
               <TabsContent value="grid" className="mt-4">
