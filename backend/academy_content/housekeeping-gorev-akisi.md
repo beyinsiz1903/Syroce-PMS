@@ -1,20 +1,20 @@
-# Gorev Atama ve Kontrol Listesi
+# Görev Atama ve Kontrol Listesi
 
-> Taslak icerik — operator incelemesi gerekir. Kaynak: PMS Yardim Merkezi (Housekeeping).
+> Taslak içerik — operatör incelemesi gerekir. Kaynak: PMS Yardım Merkezi (Kat Hizmetleri).
 
-## Gorev Atama
+## Görev Atama
 
-- Supervisor, oda bazinda **gorevli ata** ile bir personeli secer; mobil uygulamadan gorevliye bildirim duser.
-- Akilli dagitim: sistem kalan gorevleri hiz + uzaklik + departman dengeli olacak sekilde otomatik atayabilir.
+- Amir, oda bazında **görevli ata** ile bir personeli seçer; mobil uygulamadan görevliye bildirim düşer.
+- Akıllı dağıtım: sistem kalan görevleri hız + uzaklık + departman dengeli olacak şekilde otomatik atayabilir.
 
 ## Kontrol Listesi
 
-Her oda tipi icin yapilandirilabilir checklist (yatak, banyo, mini bar sayim, amenities yenileme). Gorevli her maddeyi mobil uygulamada isaretler.
+Her oda tipi için yapılandırılabilir kontrol listesi (yatak, banyo, mini bar sayımı, buklet malzemesi yenileme). Görevli her maddeyi mobil uygulamada işaretler.
 
 ## Mini Bar
 
-Gorevli mini bar sayimini yaparak eksik urunleri secer; sistem otomatik olarak misafir folio'suna adisyon ekler.
+Görevli mini bar sayımını yaparak eksik ürünleri seçer; sistem otomatik olarak misafir folio'suna adisyon ekler.
 
-## Kayip Esya
+## Kayıp Eşya
 
-Temizlik sirasinda bulunan esyalar **Kayip Esya** moduline kaydedilir.
+Temizlik sırasında bulunan eşyalar **Kayıp Eşya** modülüne kaydedilir.
