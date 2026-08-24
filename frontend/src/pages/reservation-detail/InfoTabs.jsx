@@ -82,7 +82,6 @@ export function GeneralInfoTab({
   const [editing, setEditing] = useState(false);
   const [guestForm, setGuestForm] = useState({});
   const [highlights, setHighlights] = useState(null);
-  const [risk, setRisk] = useState(null);
   useEffect(() => {
     if (guest) setGuestForm({
       ...guest
@@ -93,15 +92,6 @@ export function GeneralInfoTab({
     if (!gid) return;
     api.get(`/pms/guests/${gid}/highlights`).then(r => setHighlights(r.data)).catch(() => setHighlights(null));
   }, [guest?.id, booking?.guest_id]);
-  useEffect(() => {
-    if (!booking?.id) return;
-    const st = (booking.status || '').toLowerCase();
-    if (['checked_in', 'in_house', 'checked_out', 'cancelled', 'no_show'].includes(st)) {
-      setRisk(null);
-      return;
-    }
-    api.get(`/pms/no-show-risk/${booking.id}`).then(r => setRisk(r.data)).catch(() => setRisk(null));
-  }, [booking?.id, booking?.status]);
   const handleSave = async () => {
     try {
       await axios.put(`/pms/reservations/${booking.id}/update-guest`, guestForm);
@@ -140,15 +130,6 @@ export function GeneralInfoTab({
   const recentHistory = (history || []).slice(0, 3);
   return <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" data-testid="general-info-tab">
       <div className="lg:col-span-2 space-y-5">
-        {risk && <div className={`flex items-start gap-2 px-3 py-2 rounded-lg border text-sm ${risk.level === 'high' ? 'bg-red-50 border-red-300 text-red-800' : risk.level === 'medium' ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`} data-testid="no-show-risk-banner">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-            <div className="flex-1">
-              <div className="font-semibold">No-Show Risk Skoru: {risk.score}/100 — {risk.level === 'high' ? 'Yüksek' : risk.level === 'medium' ? 'Orta' : 'Düşük'}</div>
-              {risk.factors?.length > 0 && <div className="text-xs mt-1 opacity-90">
-                  {risk.factors.slice(0, 4).map((f, i) => <span key={f.id || i} className="mr-2">· {f.label} ({f.delta > 0 ? '+' : ''}{f.delta})</span>)}
-                </div>}
-            </div>
-          </div>}
         {highlights?.has_alerts && <div className="space-y-1.5" data-testid="guest-highlights-banner">
             {highlights.alerts.map((a, i) => {
           const Icon = ALERT_ICON[a.type] || AlertTriangle;
