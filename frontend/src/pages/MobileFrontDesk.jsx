@@ -230,9 +230,12 @@ const MobileFrontDesk = ({ user }) => {
 
   const assignRoom = async (roomId) => {
     try {
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `mobile-room-${selectedBookingForRoom.id}-${roomId}-${Date.now()}`;
       await axios.post('/frontdesk/assign-room', {
         booking_id: selectedBookingForRoom.id,
         room_id: roomId
+      }, {
+        headers: { 'Idempotency-Key': idempotencyKey }
       });
       toast.success('Oda atandı');
       setRoomAssignModalOpen(false);

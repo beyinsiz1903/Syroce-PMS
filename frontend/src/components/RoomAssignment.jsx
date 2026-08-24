@@ -35,9 +35,12 @@ const RoomAssignment = ({ booking }) => {
 
   const handleAssignRoom = async (roomId, roomNumber) => {
     try {
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `frontdesk-room-${booking.id}-${roomId}-${Date.now()}`;
       await axios.post('/frontdesk/assign-room', {
         booking_id: booking.id,
         room_id: roomId
+      }, {
+        headers: { 'Idempotency-Key': idempotencyKey }
       });
       toast.success(`Oda ${roomNumber} atandı`);
       setDialogOpen(false);
