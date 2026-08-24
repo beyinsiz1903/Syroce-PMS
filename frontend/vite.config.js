@@ -98,6 +98,32 @@ function hmrReloadGuard() {
   };
 }
 
+/**
+ * Emits a same-origin inventory of every generated application asset.
+ *
+ * The service worker cannot discover lazy route chunks from index.html because
+ * those files are only requested after a user opens the route.  Keeping this
+ * inventory build-native means a signed-in browser can install the complete UI
+ * shell once and subsequently open any PMS screen without a network connection.
+ */
+function offlineAssetManifest() {
+  return {
+    name: 'syroce-offline-asset-manifest',
+    generateBundle(_options, bundle) {
+      const assets = Object.values(bundle)
+        .map((entry) => `/${entry.fileName}`)
+        .filter((fileName) => !fileName.endsWith('.map'))
+        .sort();
+
+      this.emitFile({
+        type: 'asset',
+        fileName: 'offline-assets.json',
+        source: JSON.stringify({ schema_version: 1, assets }, null, 2),
+      });
+    },
+  };
+}
+
 export default defineConfig(async () => {
   // Bundle analiz çıktısı: yalnızca ANALYZE=1 ile etkin.
   // build sonrası frontend/build/stats.html üretir (gzip/brotli boyut treemap).
@@ -117,6 +143,7 @@ export default defineConfig(async () => {
   return {
   plugins: [
     hmrReloadGuard(),
+    offlineAssetManifest(),
     react({
       include: /\.(jsx|tsx)$/,
     }),

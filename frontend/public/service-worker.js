@@ -5,11 +5,13 @@
 
 // Bumped when caching topology değişiyor — eski client'lar otomatik yeni
 // CACHE_NAME'e geçer (activate handler eskileri siler).
-// v1.3.0: çevrimdışı oda-durumu + çıkış kuyrukları (roomStatusQueue/checkoutQueue)
-// eklendi + #3 finansal-detay cache sızıntısı kapatıldı (full-detail/folios/payments
-// NO_CACHE). Bump → eski client'lar yeni SW'ye geçer ve eski cache'i siler.
-const CACHE_VERSION = 'v1.3.0';
-const CACHE_NAME = `hotel-pms-${CACHE_VERSION}`;
+// v1.4.0: tüm Vite lazy-route varlıklarının build manifestinden precache'i,
+// çevrimdışı SPA navigation fallback'i ve static/data cache ayrımı eklendi.
+const CACHE_VERSION = 'v1.4.0';
+const STATIC_CACHE_NAME = `hotel-pms-static-${CACHE_VERSION}`;
+const DATA_CACHE_NAME = `hotel-pms-data-${CACHE_VERSION}`;
+const CACHE_PREFIX = 'hotel-pms-';
+const OFFLINE_ASSET_MANIFEST = '/offline-assets.json';
 // Auth ayrımı: kullanıcı değişimi sonrası tüm cache'i drop edebilmek için
 // client'lar `postMessage({ type: 'AUTH_CHANGED' })` gönderir → SW siler.
 const OFFLINE_DB_NAME = 'SyroceOffline';
@@ -55,7 +57,58 @@ const MAX_CHECKOUT_ATTEMPTS = 8;
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
+  '/manifest.webmanifest',
+  '/favicon.ico',
+  '/syroce-icon.svg',
+  '/syroce-circle-256.webp',
+  '/syroce-circle-512.webp',
 ];
+
+function cacheNameFor(request) {
+  try {
+    return new URL(request.url).pathname.startsWith('/api/')
+      ? DATA_CACHE_NAME
+      : STATIC_CACHE_NAME;
+  } catch {
+    return STATIC_CACHE_NAME;
+  }
+}
+
+async function fetchOfflineAssetInventory() {
+  try {
+    const response = await fetch(OFFLINE_ASSET_MANIFEST, { cache: 'no-store' });
+    if (!response.ok) return [];
+    const payload = await response.json();
+    return Array.isArray(payload?.assets)
+      ? payload.assets.filter((asset) => typeof asset === 'string' && asset.startsWith('/'))
+      : [];
+  } catch (error) {
+    console.warn('[SW] Offline asset inventory unavailable:', error && error.message);
+    return [];
+  }
+}
+
+async function addAssetsResiliently(cache, assets, concurrency = 8) {
+  const uniqueAssets = [...new Set(assets)];
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < uniqueAssets.length) {
+      const index = cursor;
+      cursor += 1;
+      const asset = uniqueAssets[index];
+      try {
+        const response = await fetch(asset, { cache: 'no-store' });
+        if (response.ok) await cache.put(asset, response);
+      } catch (error) {
+        console.warn('[SW] Precache atlandı:', asset, error && error.message);
+      }
+    }
+  }
+
+  const workerCount = Math.min(concurrency, Math.max(uniqueAssets.length, 1));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+}
 
 // Cache strategies
 const CACHE_STRATEGIES = {
@@ -163,20 +216,17 @@ self.addEventListener('install', (event) => {
   console.log('[SW] Installing service worker...');
   
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
+    caches.open(STATIC_CACHE_NAME).then(async (cache) => {
       console.log('[SW] Precaching assets');
       // cache.addAll() atomiktir: TEK bir varlık 404/başarısız olursa TÜM
       // promise reddolur → install başarısız → skipWaiting() çalışmaz → YENİ SW
       // hiç aktive olmaz ve kullanıcı eski SW'de takılı kalır (beyaz ekran).
       // Bu yüzden her varlığı tek tek, hataya dayanıklı ekliyoruz: biri 404
       // verse bile install tamamlanır ve skipWaiting() garanti çalışır.
-      return Promise.allSettled(
-        PRECACHE_ASSETS.map((asset) =>
-          cache.add(asset).catch((err) => {
-            console.warn('[SW] Precache atlandı:', asset, err && err.message);
-            return null;
-          })
-        )
+      const generatedAssets = await fetchOfflineAssetInventory();
+      await addAssetsResiliently(
+        cache,
+        [...PRECACHE_ASSETS, OFFLINE_ASSET_MANIFEST, ...generatedAssets],
       );
     }).then(() => {
       console.log('[SW] Installation complete');
@@ -193,7 +243,11 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
+          if (
+            cacheName.startsWith(CACHE_PREFIX) &&
+            cacheName !== STATIC_CACHE_NAME &&
+            cacheName !== DATA_CACHE_NAME
+          ) {
             console.log('[SW] Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
@@ -218,6 +272,14 @@ self.addEventListener('fetch', (event) => {
   
   // Skip cross-origin requests
   if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  // BrowserRouter deep links (ör. /app/reservation-calendar) index.html'de
+  // fiziksel bir dosya değildir. Çevrimdışı yenilemede o rota daha önce hiç
+  // açılmamış olsa bile önceden yüklenen SPA kabuğunu döndür.
+  if (request.mode === 'navigate') {
+    event.respondWith(navigationNetworkFirst(request));
     return;
   }
 
@@ -272,7 +334,7 @@ self.addEventListener('fetch', (event) => {
 // Strategy implementations
 
 async function networkFirst(request, cacheDuration) {
-  const cache = await caches.open(CACHE_NAME);
+  const cache = await caches.open(cacheNameFor(request));
   
   try {
     const networkResponse = await fetch(request);
@@ -282,7 +344,7 @@ async function networkFirst(request, cacheDuration) {
     // tarayıcı/Sentry instrumentation ile race'e girip "Failed to execute 'clone' on
     // 'Response': Response body is already used" üretebiliyor. MDN standardı: clone'u
     // doğrudan cache.put'a ver. Timestamp için yan-channel kullanıyoruz (timestampCache).
-    if (networkResponse.ok) {
+    if (isCacheableResponse(networkResponse)) {
       const clone = networkResponse.clone();
       cache.put(request, clone).then(() => {
         recordCacheTimestamp(request.url, Date.now());
@@ -311,7 +373,7 @@ async function networkFirst(request, cacheDuration) {
 }
 
 async function cacheFirst(request, cacheDuration) {
-  const cache = await caches.open(CACHE_NAME);
+  const cache = await caches.open(cacheNameFor(request));
   const cachedResponse = await cache.match(request);
   
   if (cachedResponse) {
@@ -327,7 +389,7 @@ async function cacheFirst(request, cacheDuration) {
   try {
     const networkResponse = await fetch(request);
 
-    if (networkResponse.ok) {
+    if (isCacheableResponse(networkResponse)) {
       const clone = networkResponse.clone();
       cache.put(request, clone).then(() => {
         recordCacheTimestamp(request.url, Date.now());
@@ -346,7 +408,7 @@ async function cacheFirst(request, cacheDuration) {
 }
 
 async function staleWhileRevalidate(request, cacheDuration) {
-  const cache = await caches.open(CACHE_NAME);
+  const cache = await caches.open(cacheNameFor(request));
   const cachedResponse = await cache.match(request);
 
   // Cache TTL aşıldıysa "stale" sayma — fetch sonucunu bekle.
@@ -362,7 +424,7 @@ async function staleWhileRevalidate(request, cacheDuration) {
   const fetchPromise = fetch(request)
     .then((networkResponse) => {
       // Hatalı yanıtları ASLA cache'leme (401/403/5xx leak'ini engelle).
-      if (networkResponse && networkResponse.ok) {
+      if (isCacheableResponse(networkResponse)) {
         // Cache-Control: no-store / private respect
         const cc = (networkResponse.headers.get('Cache-Control') || '').toLowerCase();
         if (!cc.includes('no-store') && !cc.includes('private')) {
@@ -391,13 +453,44 @@ async function staleWhileRevalidate(request, cacheDuration) {
   });
 }
 
+function isCacheableResponse(response) {
+  if (!response || !response.ok) return false;
+  const cacheControl = (response.headers.get('Cache-Control') || '').toLowerCase();
+  return !cacheControl.includes('no-store') && !cacheControl.includes('private');
+}
+
+async function navigationNetworkFirst(request) {
+  const cache = await caches.open(STATIC_CACHE_NAME);
+  try {
+    const response = await fetch(request);
+    if (isCacheableResponse(response)) {
+      cache.put('/index.html', response.clone()).catch(() => {});
+    }
+    return response;
+  } catch (error) {
+    return (
+      (await cache.match('/index.html')) ||
+      (await cache.match('/')) ||
+      new Response('Syroce PMS çevrimdışı kabuğu henüz hazırlanmamış.', {
+        status: 503,
+        headers: new Headers({ 'Content-Type': 'text/plain; charset=utf-8' }),
+      })
+    );
+  }
+}
+
 // Auth değişiminde tüm dynamic cache'i drop et — cross-user data leak guard.
 self.addEventListener('message', (event) => {
   const data = event.data || {};
-  if (data.type === 'AUTH_CHANGED' || data.type === 'CLEAR_CACHE') {
+  if (data.type === 'AUTH_CHANGED') {
+    // Kullanıcı/tenant verisini sil, ancak uygulama kodunu koru. Böylece hesap
+    // değişiminde veri sızıntısı olmaz ve PMS kabuğu çevrimdışı açılmaya devam eder.
+    event.waitUntil(caches.delete(DATA_CACHE_NAME));
+  }
+  if (data.type === 'CLEAR_CACHE') {
     event.waitUntil(
       caches.keys().then((names) =>
-        Promise.all(names.filter((n) => n.startsWith('hotel-pms-')).map((n) => caches.delete(n)))
+        Promise.all(names.filter((n) => n.startsWith(CACHE_PREFIX)).map((n) => caches.delete(n)))
       )
     );
   }
