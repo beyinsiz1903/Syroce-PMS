@@ -3,16 +3,17 @@ Battle Tests: Cancellation Edge Cases
 =======================================
 Tests for all cancellation scenarios in a real hotel environment.
 """
-import pytest
-import httpx
 import os
-import uuid
 import random
-from datetime import datetime, timedelta, timezone
+import uuid
+
+import httpx
+import pytest
 
 API_URL = os.environ.get("VITE_BACKEND_URL", "http://localhost:8001")
 
 _cached_headers = None
+_run_year = random.randint(2100, 9000)
 
 
 async def get_auth_headers():
@@ -23,54 +24,63 @@ async def get_auth_headers():
         resp = await client.post(f"{API_URL}/api/auth/login", json={
             "email": "demo@hotel.com", "password": "demo123",
         })
+        assert resp.status_code == 200, f"Login failed: {resp.text}"
         data = resp.json()
         token = data.get("access_token") or data.get("token", "")
+        assert token, f"Login response did not include a token: {data}"
         _cached_headers = {"Authorization": f"Bearer {token}"}
         return _cached_headers
 
 
 async def create_test_booking(client, headers, days_offset=40):
-    """Create a test booking with correct fields."""
+    """Create an isolated far-future booking or fail with diagnostics.
+
+    Room ``status`` only describes the current operational state; it does not
+    prove that a room is free for an arbitrary future stay.  These battle tests
+    share one seeded database, so choosing one random room/date made setup
+    intermittently collide with bookings created by other tests.  Try every
+    operationally usable room across isolated future years instead.
+    """
     rooms_resp = await client.get(f"{API_URL}/api/pms/rooms", headers=headers)
-    rooms = rooms_resp.json() if rooms_resp.status_code == 200 else []
+    assert rooms_resp.status_code == 200, f"Rooms request failed: {rooms_resp.text}"
+    rooms = rooms_resp.json()
     if isinstance(rooms, dict):
         rooms = rooms.get("rooms", rooms.get("data", []))
-    available_rooms = [r for r in rooms if r.get("status") == "available"]
-    if not available_rooms:
-        return None
+    available_rooms = [
+        room for room in rooms
+        if room.get("status") in ("available", "clean", None) and room.get("id")
+    ]
+    assert available_rooms, f"No operationally usable room in seed data: {rooms!r}"
 
-    guests_resp = await client.get(f"{API_URL}/api/pms/guests?limit=1", headers=headers)
-    guests = guests_resp.json() if isinstance(guests_resp.json(), list) else []
-    if not guests:
-        return None
+    month = max(1, min(12, days_offset // 10))
+    failures = []
+    for year_offset in range(3):
+        check_in = f"{_run_year + year_offset}-{month:02d}-10"
+        check_out = f"{_run_year + year_offset}-{month:02d}-12"
+        for room in available_rooms:
+            booking_resp = await client.post(
+                f"{API_URL}/api/pms/quick-booking",
+                headers={**headers, "Idempotency-Key": str(uuid.uuid4())},
+                json={
+                    "room_id": room["id"],
+                    "guest_name": "Cancellation Battle Test",
+                    "check_in": check_in,
+                    "check_out": check_out,
+                    "total_amount": 200.0,
+                },
+            )
+            if booking_resp.status_code in (200, 201):
+                data = booking_resp.json()
+                return data.get("booking", data)
+            failures.append(
+                f"room={room['id']} stay={check_in}/{check_out} "
+                f"status={booking_resp.status_code} body={booking_resp.text[:300]}"
+            )
 
-    today = datetime.now(timezone.utc)
-    # Use random offset to avoid conflicts
-    random_extra = random.randint(0, 100)
-    check_in = (today + timedelta(days=days_offset + random_extra)).strftime("%Y-%m-%d")
-    check_out = (today + timedelta(days=days_offset + random_extra + 2)).strftime("%Y-%m-%d")
-
-    # Pick a random available room
-    room = random.choice(available_rooms)
-    req_headers = {**headers, "Idempotency-Key": str(uuid.uuid4())}
-    booking_resp = await client.post(
-        f"{API_URL}/api/pms/bookings",
-        headers=req_headers,
-        json={
-            "room_id": room["id"],
-            "guest_id": guests[0]["id"],
-            "guest_name": guests[0].get("name", "Test Guest"),
-            "guests_count": 1,
-            "check_in": check_in,
-            "check_out": check_out,
-            "total_amount": 200.0,
-            "status": "confirmed",
-        },
+    pytest.fail(
+        "Could not create isolated cancellation test booking after "
+        f"{len(failures)} attempts:\n" + "\n".join(failures)
     )
-    if booking_resp.status_code in (200, 201):
-        data = booking_resp.json()
-        return data.get("booking", data)
-    return None
 
 
 @pytest.mark.asyncio
@@ -79,10 +89,9 @@ async def test_cancel_confirmed_booking():
     headers = await get_auth_headers()
     async with httpx.AsyncClient(timeout=15) as client:
         booking = await create_test_booking(client, headers, days_offset=40)
-        if not booking:
-            pytest.skip("Could not create test booking")
 
         booking_id = booking.get("id")
+        assert booking_id, f"Create response did not include booking id: {booking}"
         cancel_headers = {**headers, "Idempotency-Key": str(uuid.uuid4())}
         cancel_resp = await client.put(
             f"{API_URL}/api/pms/bookings/{booking_id}",
@@ -102,10 +111,9 @@ async def test_double_cancel_is_idempotent():
     headers = await get_auth_headers()
     async with httpx.AsyncClient(timeout=15) as client:
         booking = await create_test_booking(client, headers, days_offset=50)
-        if not booking:
-            pytest.skip("Could not create test booking")
 
         booking_id = booking.get("id")
+        assert booking_id, f"Create response did not include booking id: {booking}"
 
         # First cancel
         resp1 = await client.put(
