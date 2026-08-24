@@ -1331,7 +1331,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                   onNoShow: (booking) => { setNoShowBookingId(booking.id); setNoShowReason('misafir_gelmedi'); setShowNoShowDialog(true); },
                   onAssign: async (bookingId, roomId, guestName) => {
                     try {
-                      await axios.put(`/pms/bookings/${bookingId}`, { room_id: roomId });
+                      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `unassigned-room-${bookingId}-${roomId}-${Date.now()}`;
+                      await axios.put(`/pms/bookings/${bookingId}`, { room_id: roomId }, {
+                        headers: { 'Idempotency-Key': idempotencyKey },
+                      });
                       toast.success(`${guestName || 'Misafir'} odaya atandı`);
                       loadCalendarData();
                     } catch (err) {
