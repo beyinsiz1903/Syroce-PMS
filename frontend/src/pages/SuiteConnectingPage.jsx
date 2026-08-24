@@ -28,11 +28,14 @@ import { useTranslation } from 'react-i18next';
 export default function SuiteConnectingPage({ user }) {
   const { t } = useTranslation();
   const { toast } = useToast();
-  const [tab, setTab] = useState("suites");
+  const [tab, setTab] = useState("connecting");
 
   const uRoles = (user?.roles || []).map(r => r.toLowerCase());
   const uRole = (user?.role || "").toLowerCase();
-  const isSuperAdmin = uRoles.includes("super_admin") || uRole === "super_admin" || uRole === "demo_manager_readonly";
+  const isSuperAdmin = uRoles.includes("super_admin") || uRole === "super_admin";
+  const canManageConnections = isSuperAdmin
+    || uRoles.some((role) => ["admin", "supervisor"].includes(role))
+    || ["admin", "supervisor"].includes(uRole);
 
   const [rooms, setRooms] = useState([]);
   const [suites, setSuites] = useState([]);
@@ -73,17 +76,17 @@ export default function SuiteConnectingPage({ user }) {
   }, [handleErr]);
 
   useEffect(() => {
-    if (isSuperAdmin) {
+    if (canManageConnections) {
       loadAll();
     }
-  }, [loadAll, isSuperAdmin]);
+  }, [loadAll, canManageConnections]);
 
-  if (!isSuperAdmin) {
+  if (!canManageConnections) {
     return (
       <div className="flex flex-col items-center justify-center h-[50vh] space-y-4">
         <Shield className="w-16 h-16 text-rose-500" />
         <h2 className="text-xl font-bold">Yetkisiz Erişim</h2>
-        <p className="text-slate-500">Bu sayfayı görüntülemek için süper-yönetici yetkisine sahip olmalısınız.</p>
+        <p className="text-slate-500">Bu sayfayı kullanmak için otel yöneticisi veya süpervizör yetkisi gereklidir.</p>
       </div>
     );
   }
@@ -160,10 +163,10 @@ export default function SuiteConnectingPage({ user }) {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-2xl font-semibold flex items-center gap-2">
-            <Building2 className="h-6 w-6" /> Suite & Connecting Rooms
+            <Building2 className="h-6 w-6" /> Bağlantılı Odalar
           </h2>
           <p className="text-sm text-muted-foreground">
-            {t('cm.pages_SuiteConnectingPage.suite_tanimlari_master_bilesenler_ve_oda')}
+            Aralarında geçiş kapısı bulunan fiziksel odaları eşleştirin. Bu işlem fiyatı, müsaitliği veya envanteri değiştirmez.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={loadAll} disabled={loading}>
@@ -173,7 +176,9 @@ export default function SuiteConnectingPage({ user }) {
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="suites" data-testid="tab-suites">{t('cm.pages_SuiteConnectingPage.suite_tanimlari')}</TabsTrigger>
+          {isSuperAdmin && (
+            <TabsTrigger value="suites" data-testid="tab-suites">{t('cm.pages_SuiteConnectingPage.suite_tanimlari')}</TabsTrigger>
+          )}
           <TabsTrigger value="connecting" data-testid="tab-connecting">Connecting Pairs</TabsTrigger>
         </TabsList>
 

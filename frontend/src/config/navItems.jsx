@@ -313,6 +313,16 @@ export const NAV_ITEMS = [
     navGroup: "operations",
   },
   {
+    key: "connecting_rooms",
+    label: "Bağlantılı Odalar",
+    path: "/suite-connecting",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "core",
+    navGroup: "operations",
+    allowedRoles: ["admin", "supervisor", "super_admin"],
+  },
+  {
     key: "guest_journey",
     label: "Misafir Yolculuğu",
     path: "/guest-journey",
