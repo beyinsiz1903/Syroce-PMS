@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from core.database import _raw_db as raw_db
+from core.tenant_db import get_db_for_tenant
 from domains.guest.qr_catalogue_service import _utc_now, fetch_catalogue_data, is_service_available, resolve_catalogue_mode, validate_input_value
 from domains.guest.qr_constants import map_legacy_routing
 from domains.guest.qr_request_description import compute_payload_fingerprint, generate_deterministic_description
@@ -16,12 +16,21 @@ from models.schemas.qr_catalogue_submission import StructuredRequestSubmit
 
 logger = logging.getLogger(__name__)
 
+# Existing unit tests replace this seam with an isolated fake database.
+# Production requests always use the tenant-scoped database proxy.
+raw_db = None
+
+
+def _db_for_tenant(tenant_id: str):
+    return raw_db if raw_db is not None else get_db_for_tenant(tenant_id)
+
 def generate_public_reference(prefix="REQ"):
     chars = string.ascii_uppercase + string.digits
     suffix = "".join(secrets.choice(chars) for _ in range(8))
     return f"{prefix}-{suffix}"
 
 async def handle_structured_submission(tenant_id: str, property_id: str, room_id: str, booking_id: str, session_id: str, room_number: str, payload: StructuredRequestSubmit, guest_name: str | None, guest_phone: str | None):
+    tenant_db = _db_for_tenant(tenant_id)
     seen_codes = set()
     for it in payload.items:
         if it.service_code in seen_codes:
@@ -31,7 +40,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
     fingerprint = compute_payload_fingerprint(payload.language, payload.items)
 
     # 1. Lookup existing ledger
-    ledger = await raw_db["guest_service_submissions"].find_one({
+    ledger = await tenant_db["guest_service_submissions"].find_one({
         "tenant_id": tenant_id,
         "property_id": property_id,
         "booking_id": booking_id,
@@ -55,7 +64,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
         depts_data, services_data = await fetch_catalogue_data(tenant_id, property_id, mode)
         services_map = {s["service_code"]: s for s in services_data}
 
-        prop = await raw_db["properties"].find_one({"id": property_id, "tenant_id": tenant_id}) or {}
+        prop = await tenant_db["properties"].find_one({"id": property_id, "tenant_id": tenant_id}) or {}
         prop_tz = prop.get("timezone", "UTC")
         prop_lang = prop.get("default_language", "en")
 
@@ -198,7 +207,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
 
         # 3. Write Ledger
         try:
-            res = await raw_db["guest_service_submissions"].find_one_and_update(
+            res = await tenant_db["guest_service_submissions"].find_one_and_update(
                 {
                     "tenant_id": tenant_id,
                     "property_id": property_id,
@@ -219,7 +228,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                 raise HTTPException(status_code=503, detail="Sistem hatası")
         except DuplicateKeyError:
             for _ in range(5):
-                res = await raw_db["guest_service_submissions"].find_one({
+                res = await tenant_db["guest_service_submissions"].find_one({
                     "tenant_id": tenant_id,
                     "property_id": property_id,
                     "booking_id": booking_id,
@@ -240,7 +249,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
             if not submission_reference:
                 raise HTTPException(status_code=503, detail="Sistem hatası")
 
-    upd_res = await raw_db["guest_service_submissions"].update_one(
+    upd_res = await tenant_db["guest_service_submissions"].update_one(
         {
             "tenant_id": tenant_id,
             "property_id": property_id,
@@ -260,7 +269,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
     for item_doc in prepared_items:
         for attempt in range(3):
             try:
-                await raw_db["qr_requests"].insert_one(item_doc)
+                await tenant_db["qr_requests"].insert_one(item_doc)
                 docs_to_emit.append(item_doc)
                 created_count += 1
                 break
@@ -273,7 +282,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                     item_doc["request_reference"] = new_ref
 
                     # Update ledger so we know the new ref
-                    upd_res = await raw_db["guest_service_submissions"].update_one(
+                    upd_res = await tenant_db["guest_service_submissions"].update_one(
                         {
                             "tenant_id": tenant_id,
                             "property_id": property_id,
@@ -285,7 +294,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                     )
                     if upd_res.matched_count != 1:
                         raise HTTPException(status_code=503, detail="Sistem hatası")
-                    reread = await raw_db["guest_service_submissions"].find_one({
+                    reread = await tenant_db["guest_service_submissions"].find_one({
                         "tenant_id": tenant_id,
                         "property_id": property_id,
                         "booking_id": booking_id,
@@ -316,7 +325,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
     # 5. Convergence check
     expected_set = {it["service_code"] for it in prepared_items}
     expected_pairs = {(it["service_code"], it.get("request_reference")) for it in prepared_items}
-    actual_docs = await raw_db["qr_requests"].find({
+    actual_docs = await tenant_db["qr_requests"].find({
         "tenant_id": tenant_id,
         "submission_group_id": submission_group_id
     }).to_list(None)
@@ -329,7 +338,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
         len(actual_docs) == len(actual_set) and
         expected_pairs == actual_pairs
     ):
-        upd_res = await raw_db["guest_service_submissions"].update_one(
+        upd_res = await tenant_db["guest_service_submissions"].update_one(
             {
                 "tenant_id": tenant_id,
                 "property_id": property_id,
@@ -340,7 +349,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
         )
 
         if upd_res.matched_count == 1:
-            reread = await raw_db["guest_service_submissions"].find_one({
+            reread = await tenant_db["guest_service_submissions"].find_one({
                 "tenant_id": tenant_id,
                 "property_id": property_id,
                 "booking_id": booking_id,
@@ -370,7 +379,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
         raise HTTPException(status_code=503, detail="Talep işleme alınamadı, eksik kayıtlar var.")
     else:
         # Items are missing. Leave as pending, update last_error_code
-        await raw_db["guest_service_submissions"].update_one(
+        await tenant_db["guest_service_submissions"].update_one(
             {
                 "tenant_id": tenant_id,
                 "property_id": property_id,

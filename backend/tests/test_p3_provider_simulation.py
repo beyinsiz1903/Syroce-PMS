@@ -51,7 +51,7 @@ from domains.channel_manager.data_model import ErrorClass
 # Helpers
 # ═══════════════════════════════════════════════════════════════
 
-def _change_set(provider="exely", attempt=0):
+def _change_set(provider="hotelrunner", attempt=0):
     return {
         "id": "cs-sim-1",
         "tenant_id": "t1",
@@ -71,7 +71,7 @@ def _change_set(provider="exely", attempt=0):
 
 
 def _provider_result(
-    success=True, provider="exely", status_code=200,
+    success=True, provider="hotelrunner", status_code=200,
     error=None, duration_ms=150, retryable=False,
 ):
     return ProviderResult(
@@ -564,7 +564,7 @@ class TestOutboundLogAudit:
             mock_repo.insert_outbound_log.assert_called_once()
             log_arg = mock_repo.insert_outbound_log.call_args[0][0]
             assert log_arg["success"] is True
-            assert log_arg["provider"] == "exely"
+            assert log_arg["provider"] == cs["provider"]
 
     @pytest.mark.asyncio
     async def test_failure_logged(self):

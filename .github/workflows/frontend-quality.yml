@@ -52,9 +52,8 @@ jobs:
     # Pilot Readiness Checklist hard-blocker #2: frontend Vitest suite
     # was running locally (13 files, 117 tests, ~47s) but never gated
     # on PRs. This job blocks merges if any frontend unit test fails.
-    # Coverage thresholds intentionally deferred to a follow-up turn.
     vitest:
-        name: Frontend Unit Tests (Vitest)
+        name: Frontend Unit Tests + Coverage (Vitest)
         runs-on: ubuntu-latest
         timeout-minutes: 10
         steps:
@@ -67,8 +66,16 @@ jobs:
                   cache-dependency-path: frontend/yarn.lock
             - name: Install
               run: cd frontend && yarn install --ignore-engines --frozen-lockfile
-            - name: Run vitest (hard gate)
-              run: cd frontend && yarn test
+            - name: Enforce skip and test-inventory budgets
+              run: python3 scripts/check_skip_budget.py
+            - name: Run vitest with coverage thresholds (hard gate)
+              run: cd frontend && yarn test:coverage
+            - name: Upload frontend coverage report
+              uses: actions/upload-artifact@v5
+              if: always()
+              with:
+                  name: frontend-coverage
+                  path: frontend/coverage/
 
     # ============ MOBILE UNIT TESTS (HARD GATE) ============
     # Mobile date-math unit suite (DatePicker) via Node's built-in test

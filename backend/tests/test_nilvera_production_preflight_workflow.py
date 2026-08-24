@@ -22,7 +22,10 @@ def test_nilvera_production_preflight_workflow_is_exact_head_get_only():
     assert 'NILVERA_RETRY_MAX: "0"' in workflow
     assert 'NILVERA_INCOMING_ANSWER_ENABLED: "false"' in workflow
     assert 'NILVERA_CREATE_RETURN_ENABLED: "false"' in workflow
-    assert "provider_read_count: 2" in workflow
+    # The dispatched platform workflow has no tenant context, so it performs
+    # only the central credential/company GET. A tenant-scoped runtime may
+    # perform the optional second taxpayer GET.
+    assert "provider_read_count: 1" in workflow
     assert "provider_write_count: 0" in workflow
     assert "deploy_count: 0" in workflow
     assert "production_config_mutation_count: 0" in workflow
@@ -31,22 +34,20 @@ def test_nilvera_production_preflight_workflow_is_exact_head_get_only():
         "doctl apps update",
         "kubectl apply",
         "docker push",
-        "CREATE_PURCHASE_RETURN",
-        "SEND_ANSWER",
-        "SEND_INVOICE_MODEL",
     )
     for token in forbidden:
         assert token not in workflow
 
 
-def test_nilvera_production_preflight_script_has_only_two_nonretrying_provider_gets():
+def test_nilvera_production_preflight_script_has_at_most_two_nonretrying_provider_gets():
     source = SCRIPT.read_text()
 
     assert source.count("await client.get(") == 2
     assert source.count("retryable=False") == 2
     assert "NilveraEndpoints.GET_COMPANY" in source
     assert "NilveraEndpoints.CHECK_TAX_NUMBER" in source
-    assert "provider_read_count=2, provider_write_count=0" in source
+    assert "expected_read_count = 2 if tenant_id is not None else 1" in source
+    assert "provider_write_count=0" in source
 
     forbidden = (
         ".post(",

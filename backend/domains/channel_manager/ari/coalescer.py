@@ -81,13 +81,25 @@ def _merge_date_ranges(events: list[ARIChangeEvent]) -> list[dict]:
 def _apply_restriction_precedence(payloads: list[dict]) -> dict:
     """Apply restriction precedence rules: close > open, latest explicit wins."""
     result = {}
+    operations = {
+        str(payload["operation"])
+        for payload in payloads
+        if payload.get("operation")
+    }
+    if len(operations) > 1:
+        raise ValueError("Restriction operations must be coalesced separately")
+    if operations:
+        # Exely publishes one durable event per restriction operation and the
+        # buffer key includes this value. Preserve it through compaction so the
+        # provider compiler cannot receive an ambiguous restriction delta.
+        result["operation"] = operations.pop()
     for p in payloads:
         if "stop_sell" in p:
             if p["stop_sell"] is True:
                 result["stop_sell"] = True
             elif "stop_sell" not in result:
                 result["stop_sell"] = False
-        for key in ("min_los", "max_los"):
+        for key in ("min_los", "min_los_arrival", "max_los"):
             if key in p:
                 result[key] = p[key]
         for key in ("cta", "ctd"):

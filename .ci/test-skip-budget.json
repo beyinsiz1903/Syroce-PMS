@@ -1,0 +1,7 @@
+{
+  "backend_skip_constructs": 703,
+  "backend_module_level_skips": 33,
+  "frontend_unit_skip_constructs": 0,
+  "frontend_e2e_skip_constructs": 479,
+  "minimum_backend_test_files": 704
+}

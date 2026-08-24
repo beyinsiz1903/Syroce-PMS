@@ -49,12 +49,15 @@ def _make_booking(
     folio_id: str,
     status: str = "checked_in",
 ) -> dict:
+    today = datetime.now(UTC).date().isoformat()
     return {
         "id": booking_id,
         "tenant_id": tenant_id,
         "status": status,
         "room_id": str(uuid.uuid4()),
         "guest_id": str(uuid.uuid4()),
+        "check_in": today,
+        "check_out": today,
     }
 
 
@@ -161,6 +164,12 @@ class _FakeDb:
         # ── night_audit (lock check — not used in checkout) ───────────
         self.night_audit = MagicMock()
         self.night_audit.find_one = AsyncMock(return_value=None)
+
+        # ── tenant_settings (business-date transition guard) ─────────
+        self.tenant_settings = MagicMock()
+        self.tenant_settings.find_one = AsyncMock(
+            return_value={"business_date": booking_doc["check_out"]}
+        )
 
         # ── folio_charges / payments (legacy — must NOT be queried) ───
         self.folio_charges = MagicMock()

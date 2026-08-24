@@ -28,6 +28,31 @@ markers = [
     "side_effect: Tests that create real mutations/records on external platforms",
 ]
 
+[tool.coverage.run]
+source = [
+    "bootstrap",
+    "common",
+    "controlplane",
+    "core",
+    "domains",
+    "infra",
+    "models",
+    "modules",
+    "routers",
+    "security",
+]
+omit = [
+    "tests/*",
+    "*/__pycache__/*",
+    "_legacy/*",
+]
+
+[tool.coverage.report]
+fail_under = 46.0
+precision = 1
+show_missing = true
+skip_covered = false
+
 [tool.ruff]
 target-version = "py311"
 line-length = 200

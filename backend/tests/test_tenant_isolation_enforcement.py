@@ -20,9 +20,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # ── Fixtures ──────────────────────────────────────────────────
 
 @pytest.fixture(autouse=True)
-def clean_tenant_context():
+def clean_tenant_context(monkeypatch):
     """Ensure tenant context is cleared before/after each test."""
-    from core.tenant_db import clear_tenant_context
+    import core.database as database
+    from core.tenant_db import TenantAwareDBProxy, clear_tenant_context
+
+    # A few legacy wiring tests temporarily replace ``core.database`` in
+    # ``sys.modules``. Build a fresh proxy from the canonical raw database so
+    # these isolation tests never depend on cross-file import state.
+    monkeypatch.setattr(database, "db", TenantAwareDBProxy(database._raw_db))
     clear_tenant_context()
     yield
     clear_tenant_context()
