@@ -1,0 +1,29 @@
+{
+  "id": "/app/",
+  "name": "Syroce Hotel Management System",
+  "short_name": "Syroce PMS",
+  "description": "Otel operasyonları için çevrimdışı destekli Syroce PMS",
+  "lang": "tr",
+  "start_url": "/app/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f172a",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/syroce-circle-256.webp",
+      "sizes": "256x256",
+      "type": "image/webp",
+      "purpose": "any"
+    },
+    {
+      "src": "/syroce-circle-512.webp",
+      "sizes": "512x512",
+      "type": "image/webp",
+      "purpose": "any maskable"
+    }
+  ]
+}

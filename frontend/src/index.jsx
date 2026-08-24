@@ -4,6 +4,11 @@ import "@/index.css";
 import { initI18n } from "@/i18n";
 import { ThemeProvider } from "next-themes";
 import App from "@/App";
+import { register as registerServiceWorker } from "@/serviceWorkerRegistration";
+
+// Register before asynchronous i18n/bootstrap work so the window `load` hook
+// is never missed. Production-only gating lives in the registration module.
+registerServiceWorker();
 
 // Sentry lazy: DSN yoksa hiç indirme; varsa render'ı bloklamadan arka planda
 // idle'da yükle. Bu sayede @sentry/react (vendor-sentry ~84 KB gzip) entry
