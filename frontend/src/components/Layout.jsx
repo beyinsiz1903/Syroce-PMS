@@ -189,6 +189,10 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
 
   const { visibleNav } = useMemo(() => {
     const visible = [];
+    const userRoles = new Set([
+      user?.role,
+      ...(Array.isArray(user?.roles) ? user.roles : []),
+    ].filter(Boolean).map((role) => String(role).toLowerCase()));
 
     navCandidates.forEach((item) => {
       if (item.hidden) return;
@@ -196,6 +200,13 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
       if (!isSuperAdmin && item.navGroup && hiddenNavGroups.has(item.navGroup)) return;
       if (item.requireSuperAdmin) {
         if (isSuperAdmin) visible.push(item);
+        return;
+      }
+      if (
+        Array.isArray(item.allowedRoles)
+        && !isSuperAdmin
+        && !item.allowedRoles.some((role) => userRoles.has(String(role).toLowerCase()))
+      ) {
         return;
       }
       if (item.moduleKey && !hasModule(item.moduleKey)) {
