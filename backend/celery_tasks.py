@@ -2817,6 +2817,57 @@ async def _hrv2_retention_cleanup_async():
         return {"success": False, "error": str(e)}
 
 
+@celery_app.task(name="celery_tasks.gdpr_guest_retention_task")
+def gdpr_guest_retention_task():
+    """Daily bounded enforcement for tenants that explicitly opted in."""
+    return asyncio.run(_gdpr_guest_retention_async())
+
+
+async def _gdpr_guest_retention_async() -> dict[str, Any]:
+    from domains.compliance.retention_service import (
+        anonymization_runtime_enabled,
+        enforce_guest_retention,
+    )
+
+    if not anonymization_runtime_enabled():
+        return {"success": True, "enabled": False, "processed_tenants": 0, "anonymized_count": 0}
+    db, client = get_db()
+    processed = 0
+    anonymized = 0
+    errors: list[dict[str, str]] = []
+    try:
+        policies = await db.gdpr_retention_policies.find(
+            {"configured": True, "auto_anonymize": True},
+            {"_id": 0, "tenant_id": 1, "guest_data_retention_days": 1},
+        ).limit(500).to_list(500)
+        for policy in policies:
+            tenant_id = policy.get("tenant_id")
+            if not tenant_id:
+                continue
+            try:
+                result = await enforce_guest_retention(
+                    db,
+                    tenant_id=tenant_id,
+                    retention_days=int(policy.get("guest_data_retention_days", 730)),
+                    dry_run=False,
+                    limit=500,
+                )
+                processed += 1
+                anonymized += result["anonymized_count"]
+            except Exception as exc:  # isolate tenants; one bad policy cannot stop all
+                logger.exception("GDPR retention failed tenant=%s", tenant_id)
+                errors.append({"tenant_id": tenant_id, "error": str(exc)[:300]})
+        return {
+            "success": not errors,
+            "enabled": True,
+            "processed_tenants": processed,
+            "anonymized_count": anonymized,
+            "errors": errors,
+        }
+    finally:
+        client.close()
+
+
 # ── Outbox terminal-state retention (Atlas Query Targeting 2026-06-17) ──────
 # outbox_events accumulated terminal rows (processed/failed/parked) forever —
 # there was NO purge policy (migration_observability.py flagged the gap). The

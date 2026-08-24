@@ -50,6 +50,7 @@ const CalendarGrid = ({
   onDrop,
   onDragEnd,
   onBookingDoubleClick,
+  showOccupancyBand = false,
 }) => {
   const { t } = useTranslation();
   const [collapsedTypes, setCollapsedTypes] = useState(() => new Set());
@@ -158,13 +159,15 @@ const CalendarGrid = ({
       {/* Date Header Row - STICKY */}
       <div className="overflow-auto flex-1">
         <div className="min-w-max pb-12">
-          <OccupancyBand
-            dateRange={dateRange}
-            daysToShow={daysToShow}
-            cellW={CELL_W}
-            getOccupancyForDate={getOccupancyForDate}
-            roomsCount={Array.isArray(rooms) ? rooms.length : 0}
-          />
+          {showOccupancyBand && (
+            <OccupancyBand
+              dateRange={dateRange}
+              daysToShow={daysToShow}
+              cellW={CELL_W}
+              getOccupancyForDate={getOccupancyForDate}
+              roomsCount={Array.isArray(rooms) ? rooms.length : 0}
+            />
+          )}
           <div className="sticky top-0 z-40 bg-white border-b border-gray-300">
           <div className="flex">
             <div className={`${LABEL_CLS} sticky left-0 z-50 flex-shrink-0 border-r border-slate-200 bg-slate-50`}></div>

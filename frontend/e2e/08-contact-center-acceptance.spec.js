@@ -2,7 +2,6 @@ import { test, expect } from '@playwright/test';
 import { loginAsDemo, STORAGE_STATE, PASSWORD } from './fixtures/auth.js';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
-import path from 'node:path';
 
 test.use({ storageState: STORAGE_STATE });
 
@@ -11,17 +10,12 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
     let sessionToken;
     let testTenant;
 
-    test.beforeAll(async ({ playwright }) => {
-        const freshPath = path.resolve('./e2e/.auth/fresh_token.json');
-        if (fs.existsSync(freshPath)) {
-            try { fs.unlinkSync(freshPath); } catch {}
-        }
-
+    test.beforeAll(async () => {
         // Build a fake JWT that expires 1 hour from now so the UI considers it fresh
         const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString('base64');
         
         // Read the actual active user session token from state.json first as backup
-        const statePath = path.resolve(STORAGE_STATE);
+        const statePath = STORAGE_STATE;
         if (fs.existsSync(statePath)) {
             const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
             const cookie = state.cookies.find(c => c.name === 'access_token');
@@ -127,10 +121,14 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
         await page.goto('/');
         await page.waitForLoadState('networkidle');
 
-        // Click Softphone trigger button to open it
-        const softphoneTrigger = page.locator('button[aria-label="Softphone"], button[title="Softphone"]').first();
-        await expect(softphoneTrigger).toBeVisible();
-        await softphoneTrigger.click();
+        // Telefon artık bağımsız bir sabit buton yerine ortak iletişim
+        // merkezinden açılıyor. Test de kullanıcının gerçek yolunu izlesin.
+        const communicationLauncher = page.getByTestId('communication-center-launcher');
+        await expect(communicationLauncher).toBeVisible();
+        await communicationLauncher.click();
+        const phoneTrigger = page.getByTestId('communication-open-phone');
+        await expect(phoneTrigger).toBeVisible();
+        await phoneTrigger.click();
 
         // Check that the activate button "Müsait (Çevrimiçi Ol)" is visible
         const activateBtn = page.getByRole('button', { name: /Müsait \(Çevrimiçi Ol\)/i });
@@ -163,48 +161,35 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
         count = await page.evaluate(() => window.__getUserMediaCallCount);
         expect(count).toBe(1);
 
-        // Extract the fresh sessionToken from localStorage (or cookies as backup) to use for subsequent API tests
-        const tokenVal = await page.evaluate(() => localStorage.getItem('token') || localStorage.getItem('access_token'));
-        if (tokenVal) {
-            sessionToken = tokenVal;
-        } else {
-            const cookies = await page.context().cookies();
-            const accessCookie = cookies.find(c => c.name === 'access_token');
-            if (accessCookie) {
-                sessionToken = accessCookie.value;
+    });
+
+    test('2. Idempotency ve Webhook Akışı: Tek Dial Child, WhatsApp queued/sent/delivered ve Çağrı Geçmişi', async ({ playwright }) => {
+        // API kabul testi UI testinin sakladığı token'a bağımlı olmamalı.
+        // Önceki bir logout/parola değişikliği filigranı eski JWT'yi haklı
+        // olarak geçersiz kılabilir; bu senaryo kendi taze oturumunu açar.
+        const loginContext = await playwright.request.newContext({
+            baseURL: process.env.E2E_BASE_URL || 'http://localhost:3000',
+            extraHTTPHeaders: { 'Origin': 'http://localhost:3000' }
+        });
+        const loginResponse = await loginContext.post('/api/auth/login', {
+            data: {
+                email: process.env.E2E_EMAIL || 'demo@syroce.com',
+                password: PASSWORD
             }
-        }
+        });
+        expect(
+            loginResponse.ok(),
+            `Contact Center API login başarısız (${loginResponse.status()}): ${await loginResponse.text()}`
+        ).toBeTruthy();
+        const loginBody = await loginResponse.json();
+        sessionToken = loginBody.access_token || loginBody.token;
+        await loginContext.dispose();
 
         if (sessionToken) {
             const parts = sessionToken.split('.');
             if (parts.length === 3) {
                 const payloadJson = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
                 testTenant = payloadJson.tenant_id;
-            }
-            try {
-                fs.writeFileSync(path.resolve('./e2e/.auth/fresh_token.json'), JSON.stringify({ sessionToken, testTenant }));
-            } catch (err) {
-                console.error('Failed to write fresh token file:', err);
-            }
-        }
-    });
-
-    test('2. Idempotency ve Webhook Akışı: Tek Dial Child, WhatsApp queued/sent/delivered ve Çağrı Geçmişi', async ({ playwright }) => {
-        const freshPath = path.resolve('./e2e/.auth/fresh_token.json');
-        if (fs.existsSync(freshPath)) {
-            try {
-                const data = JSON.parse(fs.readFileSync(freshPath, 'utf8'));
-                sessionToken = data.sessionToken;
-                testTenant = data.testTenant;
-            } catch (err) {
-                console.error('Failed to read fresh token file:', err);
-            }
-        }
-
-        if (sessionToken) {
-            const parts = sessionToken.split('.');
-            if (parts.length === 3) {
-                const payloadJson = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
                 console.log('E2E_DEBUG: sessionToken payload in Test 2 iat:', payloadJson.iat, 'exp:', payloadJson.exp, 'tenant_id:', payloadJson.tenant_id, 'user_id:', payloadJson.user_id);
             }
         }

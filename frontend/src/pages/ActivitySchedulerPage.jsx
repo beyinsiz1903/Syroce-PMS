@@ -141,7 +141,12 @@ export default function ActivitySchedulerPage() {
     }
     setSubmittingBk(true);
     try {
-      await api.post("/activities/bookings", bkForm);
+      const offsetMinutes = -new Date(bkForm.starts_at).getTimezoneOffset();
+      const sign = offsetMinutes >= 0 ? '+' : '-';
+      const offsetHours = String(Math.floor(Math.abs(offsetMinutes) / 60)).padStart(2, '0');
+      const offsetRemainder = String(Math.abs(offsetMinutes) % 60).padStart(2, '0');
+      const startsAt = `${bkForm.starts_at}:00${sign}${offsetHours}:${offsetRemainder}`;
+      await api.post("/activities/bookings", { ...bkForm, starts_at: startsAt });
       toast({ title: "Rezervasyon oluşturuldu" });
       setBookingOpen(false);
       setBkForm({ activity_id: "", resource_id: "", guest_id: "", starts_at: "", note: "" });

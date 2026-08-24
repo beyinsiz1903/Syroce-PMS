@@ -57,6 +57,8 @@ export default function LoyaltyAdminPage() {
       guest_id: earnForm.guest_id,
       points: Number(earnForm.points),
       source: earnForm.source,
+    }, {
+      headers: { 'Idempotency-Key': crypto.randomUUID() }
     });
     await alertDialog({ message: `+${data.awarded} puan, yeni bakiye: ${data.balance}, tier: ${data.tier || "-"}` });
     reload();
@@ -79,7 +81,9 @@ export default function LoyaltyAdminPage() {
     const guest_id = await promptDialog({ message: "Misafir ID?" });
     if (!guest_id) return;
     try {
-      const { data } = await api.post("/loyalty/redeem", { guest_id, reward_id });
+      const { data } = await api.post("/loyalty/redeem", { guest_id, reward_id }, {
+        headers: { 'Idempotency-Key': crypto.randomUUID() }
+      });
       await alertDialog({ message: `Ödül kullanıldı. Kalan bakiye: ${data.balance_after}` });
       reload();
     } catch (e) {

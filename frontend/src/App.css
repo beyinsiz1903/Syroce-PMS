@@ -110,3 +110,23 @@ input, select, textarea {
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
+body.syroce-dense-workspace .communication-center {
+  bottom: 0.75rem;
+  right: 0.75rem;
+}
+
+body.syroce-dense-workspace .communication-center-launcher {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+body.syroce-dense-workspace .communication-center-label {
+  display: none;
+}
+
+body.syroce-dense-workspace .communication-panel {
+  bottom: 4rem;
+  right: 0.75rem;
+}

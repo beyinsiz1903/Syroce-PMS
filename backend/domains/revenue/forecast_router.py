@@ -21,7 +21,9 @@ router = APIRouter(prefix="/api/analytics", tags=["Revenue / Forecast"])
 async def _iter_bookings_in_range(db, tenant_id: str, start: datetime, end: datetime, segment: str | None = None):
     q: dict[str, Any] = {
         "tenant_id": tenant_id,
-        "check_in": {"$gte": start.isoformat(), "$lte": end.isoformat()},
+        # Include stays which started before the window but overlap it.
+        "check_in": {"$lt": end.isoformat()},
+        "check_out": {"$gt": start.isoformat()},
         "status": {"$nin": ["cancelled", "no_show"]},
     }
     if segment:
@@ -29,6 +31,107 @@ async def _iter_bookings_in_range(db, tenant_id: str, start: datetime, end: date
     cur = db.bookings.find(q)
     async for b in cur:
         yield b
+
+
+def _parse_booking_dates(booking: dict) -> tuple[datetime, datetime] | None:
+    try:
+        ci_raw = booking.get("check_in")
+        co_raw = booking.get("check_out")
+        if not ci_raw or not co_raw:
+            return None
+        ci = ci_raw if isinstance(ci_raw, datetime) else datetime.fromisoformat(str(ci_raw).replace("Z", "+00:00"))
+        co = co_raw if isinstance(co_raw, datetime) else datetime.fromisoformat(str(co_raw).replace("Z", "+00:00"))
+        if ci.tzinfo is None:
+            ci = ci.replace(tzinfo=UTC)
+        if co.tzinfo is None:
+            co = co.replace(tzinfo=UTC)
+        if co <= ci:
+            return None
+        return ci, co
+    except (TypeError, ValueError):
+        return None
+
+
+def _allocate_booking(booking: dict, start: datetime, end: datetime, daily: dict[str, dict[str, float]]) -> None:
+    dates = _parse_booking_dates(booking)
+    if not dates:
+        return
+    ci, co = dates
+    nights = max((co.date() - ci.date()).days, 1)
+    try:
+        amount = float(booking.get("total_amount") or booking.get("total") or 0)
+    except (TypeError, ValueError):
+        amount = 0.0
+    nightly_rate = amount / nights
+    cursor = max(ci.replace(hour=0, minute=0, second=0, microsecond=0), start)
+    stay_end = min(co.replace(hour=0, minute=0, second=0, microsecond=0), end)
+    while cursor < stay_end:
+        key = cursor.strftime("%Y-%m-%d")
+        if key in daily:
+            daily[key]["rooms"] += 1
+            daily[key]["revenue"] += nightly_rate
+        cursor += timedelta(days=1)
+
+
+def _build_forecast_rows(
+    daily_otb: dict[str, dict[str, float]],
+    historical_daily: dict[str, dict[str, float]],
+    total_rooms: int,
+    today: datetime,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    weekday_stats = {day: {"rooms": 0.0, "revenue": 0.0, "sample_days": 0} for day in range(7)}
+    for key, values in historical_daily.items():
+        weekday = datetime.fromisoformat(key).weekday()
+        weekday_stats[weekday]["rooms"] += values["rooms"]
+        weekday_stats[weekday]["revenue"] += values["revenue"]
+        weekday_stats[weekday]["sample_days"] += 1
+    historical_room_nights = int(sum(item["rooms"] for item in historical_daily.values()))
+    rows = []
+    for day_key in sorted(daily_otb):
+        values = daily_otb[day_key]
+        target = datetime.fromisoformat(day_key).replace(tzinfo=UTC)
+        stats = weekday_stats[target.weekday()]
+        sample_days = stats["sample_days"]
+        historical_rooms = stats["rooms"] / sample_days if sample_days else 0.0
+        historical_adr = stats["revenue"] / stats["rooms"] if stats["rooms"] else 0.0
+        rooms_otb = values["rooms"]
+        revenue_otb = values["revenue"]
+        if historical_room_nights:
+            rooms_forecast = min(float(total_rooms), max(rooms_otb, historical_rooms))
+            incremental_rooms = max(0.0, rooms_forecast - rooms_otb)
+            otb_adr = revenue_otb / rooms_otb if rooms_otb else 0.0
+            forecast_adr = historical_adr or otb_adr
+            revenue_forecast = revenue_otb + incremental_rooms * forecast_adr
+            source = "otb_plus_historical_weekday"
+        else:
+            rooms_forecast = min(float(total_rooms), rooms_otb)
+            revenue_forecast = revenue_otb
+            source = "on_the_books_only"
+        days_out = max(0, (target - today).days)
+        confidence = min(0.95, 0.35 + min(sample_days, 26) / 52 + (0.1 if days_out <= 14 else 0)) if historical_room_nights else 0.25
+        adr = revenue_forecast / rooms_forecast if rooms_forecast else 0.0
+        rows.append(
+            {
+                "date": day_key,
+                "rooms_otb": int(rooms_otb),
+                "rooms_forecast": round(rooms_forecast, 1),
+                "revenue_otb": round(revenue_otb, 2),
+                "revenue_forecast": round(revenue_forecast, 2),
+                "occupancy_pct": round((rooms_forecast / total_rooms) * 100, 1),
+                "adr": round(adr, 2),
+                "revpar": round(revenue_forecast / total_rooms, 2),
+                "historical_weekday_rooms": round(historical_rooms, 1) if historical_room_nights else None,
+                "confidence": round(confidence, 2),
+                "source": source,
+            }
+        )
+    quality = {
+        "historical_days": len(historical_daily),
+        "historical_room_nights": historical_room_nights,
+        "method": "otb_plus_historical_weekday" if historical_room_nights else "on_the_books_only",
+        "warning": None if historical_room_nights else "Geçmiş konaklama verisi yok; tahmin yalnız mevcut rezervasyonları gösterir.",
+    }
+    return rows, quality
 
 
 @router.get("/forecast")
@@ -58,62 +161,25 @@ async def forecast(
             d = (today + timedelta(days=i)).strftime("%Y-%m-%d")
             daily[d] = {"rooms": 0.0, "revenue": 0.0}
 
-        async for b in _iter_bookings_in_range(db, user.tenant_id, today, horizon, segment):
-            try:
-                ci_raw = b.get("check_in")
-                co_raw = b.get("check_out")
-                if not ci_raw or not co_raw:
-                    continue
-                ci = ci_raw if isinstance(ci_raw, datetime) else datetime.fromisoformat(str(ci_raw).replace("Z", "+00:00"))
-                co = co_raw if isinstance(co_raw, datetime) else datetime.fromisoformat(str(co_raw).replace("Z", "+00:00"))
-                if ci.tzinfo is None:
-                    ci = ci.replace(tzinfo=UTC)
-                if co.tzinfo is None:
-                    co = co.replace(tzinfo=UTC)
-            except Exception:
-                continue
-            nights = max((co - ci).days, 1)
-            try:
-                amt = float(b.get("total_amount") or b.get("total") or 0)
-            except (TypeError, ValueError):
-                amt = 0.0
-            rate = amt / nights if nights else 0
-            cur = ci.replace(hour=0, minute=0, second=0, microsecond=0)
-            while cur < co and cur <= horizon:
-                key = cur.strftime("%Y-%m-%d")
-                if key in daily:
-                    daily[key]["rooms"] += 1
-                    daily[key]["revenue"] += rate
-                cur += timedelta(days=1)
+        async for booking in _iter_bookings_in_range(db, user.tenant_id, today, horizon + timedelta(days=1), segment):
+            _allocate_booking(booking, today, horizon + timedelta(days=1), daily)
 
-        out = []
-        for d in sorted(daily.keys()):
-            rooms_otb = daily[d]["rooms"]
-            rev_otb = daily[d]["revenue"]
-            days_out = (datetime.fromisoformat(d).replace(tzinfo=UTC) - today).days
-            pickup_mult = 1.0 + min(max(days_out, 0) * 0.015, 0.6)
-            rooms_fcst = round(rooms_otb * pickup_mult, 1)
-            rev_fcst = round(rev_otb * pickup_mult, 2)
-            occupancy = round((rooms_fcst / total_rooms) * 100, 1)
-            adr = round((rev_fcst / rooms_fcst) if rooms_fcst else 0, 2)
-            revpar = round(rev_fcst / total_rooms, 2)
-            out.append(
-                {
-                    "date": d,
-                    "rooms_otb": int(rooms_otb),
-                    "rooms_forecast": rooms_fcst,
-                    "revenue_otb": round(rev_otb, 2),
-                    "revenue_forecast": rev_fcst,
-                    "occupancy_pct": occupancy,
-                    "adr": adr,
-                    "revpar": revpar,
-                }
-            )
+        history_start = today - timedelta(days=364)
+        historical_daily = {}
+        cursor = history_start
+        while cursor < today:
+            historical_daily[cursor.strftime("%Y-%m-%d")] = {"rooms": 0.0, "revenue": 0.0}
+            cursor += timedelta(days=1)
+        async for booking in _iter_bookings_in_range(db, user.tenant_id, history_start, today, segment):
+            _allocate_booking(booking, history_start, today, historical_daily)
+
+        out, data_quality = _build_forecast_rows(daily, historical_daily, total_rooms, today)
         return {
             "horizon_days": days,
             "segment": segment,
             "total_rooms": total_rooms,
             "generated_at": datetime.now(UTC).isoformat(),
+            "data_quality": data_quality,
             "daily": out,
         }
     except Exception as e:

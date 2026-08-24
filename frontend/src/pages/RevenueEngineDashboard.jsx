@@ -282,7 +282,7 @@ export default function RevenueEngineDashboard({
         {/* Forecast Tab */}
         {activeTab === 'forecast' && <div className="space-y-6">
             <Card>
-              <CardHeader><CardTitle className="text-base">Doluluk Tahmini (14 Gun)</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-base">Doluluk Tahmini (14 Gün)</CardTitle></CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={forecast?.forecast || []}>

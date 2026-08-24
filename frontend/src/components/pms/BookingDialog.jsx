@@ -318,7 +318,7 @@ const BookingDialog = ({
       {/* Company Selection */}
       <div>
         <div className="flex justify-between items-center mb-2">
-          <Label>Company (Optional)</Label>
+          <Label>Firma (isteğe bağlı)</Label>
           <Button type="button" variant="outline" size="sm" onClick={() => setOpenDialog('company')}>
             <Plus className="w-4 h-4 mr-1" />
             New Company

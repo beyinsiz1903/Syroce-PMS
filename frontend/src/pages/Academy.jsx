@@ -17,7 +17,7 @@ const AUTHOR_ROLES = new Set(["admin", "super_admin", "gm", "manager", "owner"])
 const STATUS_META = {
   not_started: {
     intent: "neutral",
-    label: "Baslanmadi"
+    label: "Başlanmadı"
   },
   in_progress: {
     intent: "info",
@@ -25,23 +25,23 @@ const STATUS_META = {
   },
   passed: {
     intent: "success",
-    label: "Gecti"
+    label: "Geçti"
   },
   failed: {
     intent: "danger",
-    label: "Kaldi"
+    label: "Kaldı"
   },
   assigned: {
     intent: "info",
-    label: "Atandi"
+    label: "Atandı"
   },
   completed: {
     intent: "success",
-    label: "Tamamlandi"
+    label: "Tamamlandı"
   },
   overdue: {
     intent: "danger",
-    label: "Gecikmis"
+    label: "Gecikmiş"
   }
 };
 
@@ -230,7 +230,7 @@ export default function Academy({
       setCourse(r.data);
       setView("course");
     } catch (e) {
-      toast.error("Kurs yuklenemedi");
+      toast.error("Kurs yüklenemedi");
     } finally {
       setLoading(false);
     }
@@ -260,7 +260,7 @@ export default function Academy({
       setResult(null);
       setView("exam");
     } catch (e) {
-      toast.error("Sinav yuklenemedi");
+      toast.error("Sınav yüklenemedi");
     } finally {
       setLoading(false);
     }
@@ -343,9 +343,9 @@ export default function Academy({
   };
   return <div className="p-4 md:p-6 max-w-5xl mx-auto">
       {view === "list" && <>
-          <PageHeader title={t("cm.pages_Academy.syroce_academy")} subtitle="Departmaniniza ozel egitimleri tamamlayin, sinava girin ve sertifika kazanin." actions={
+          <PageHeader icon={GraduationCap} title={t("cm.pages_Academy.syroce_academy")} subtitle="Departmanınıza özel eğitimleri tamamlayın, sınava girin ve sertifika kazanın." actions={
             <div className="flex items-center gap-2">
-                <Button variant="default" className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => navigate("/app/academy/simulator")}>
+                <Button variant="default" onClick={() => navigate("/app/academy/simulator")}>
                     <PlayCircle className="w-4 h-4 mr-2" /> İnteraktif Simülatör
                 </Button>
                 {isAuthor && <Button variant="outline" onClick={() => navigate("/app/academy-manage")}>
@@ -356,28 +356,28 @@ export default function Academy({
           } />
 
           {loadError ? renderLoadErrorState() : <>
-          <Card className="mb-6 overflow-hidden border-slate-200">
-            <div className="bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 p-6 text-white">
+          <Card className="mb-6 overflow-hidden border-slate-200 shadow-sm">
+            <div className="bg-white p-6">
               <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-indigo-200"><Trophy className="h-4 w-4" /> Kisisel gelisim yolunuz</div>
-                  <h2 className="text-2xl font-bold">Mesleki Yetkinlik Programi</h2>
-                  <p className="mt-1 max-w-xl text-sm text-slate-300">Rolunuze zorunlu egitimleri tamamlayin, uygulama bilgisini sinavla kanitlayin ve dogrulanabilir sertifika kazanin.</p>
+                  <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-700"><Trophy className="h-4 w-4" /> Kişisel gelişim yolunuz</div>
+                  <h2 className="text-2xl font-bold text-slate-900">Mesleki Yetkinlik Programı</h2>
+                  <p className="mt-1 max-w-xl text-sm text-slate-500">Rolünüze zorunlu eğitimleri tamamlayın, uygulama bilgisini sınavla kanıtlayın ve doğrulanabilir sertifika kazanın.</p>
                 </div>
-                <div className="min-w-48 rounded-xl border border-white/15 bg-white/10 p-4 backdrop-blur">
-                  <div className="flex items-end justify-between"><span className="text-sm text-slate-300">Uyum orani</span><strong className="text-3xl">%{planSummary.compliance_rate ?? 0}</strong></div>
-                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/15"><div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${planSummary.compliance_rate || 0}%` }} /></div>
-                  <div className="mt-2 text-xs text-slate-300">{planSummary.completed || 0} / {planSummary.required || 0} zorunlu egitim</div>
+                <div className="min-w-48 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-end justify-between"><span className="text-sm text-slate-500">Uyum oranı</span><strong className="text-3xl text-slate-900">%{planSummary.compliance_rate ?? 0}</strong></div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${planSummary.compliance_rate || 0}%` }} /></div>
+                  <div className="mt-2 text-xs text-slate-500">{planSummary.completed || 0} / {planSummary.required || 0} zorunlu eğitim</div>
                 </div>
               </div>
             </div>
           </Card>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-            <KpiCard icon={BookOpen} label="Zorunlu egitim" value={planSummary.required || 0} intent="info" />
+            <KpiCard icon={BookOpen} label="Zorunlu eğitim" value={planSummary.required || 0} intent="info" />
             <KpiCard icon={CheckCircle2} label={t("cm.pages_Academy.tamamlanan")} value={planSummary.completed || 0} intent="success" />
-            <KpiCard icon={AlertTriangle} label="Gecikmis" value={planSummary.overdue || 0} intent={planSummary.overdue ? "danger" : "neutral"} />
-            <KpiCard icon={Award} label={`Kazanilan puan · ${certCount} sertifika`} value={planSummary.earned_points || 0} intent="warning" />
+            <KpiCard icon={AlertTriangle} label="Gecikmiş" value={planSummary.overdue || 0} intent={planSummary.overdue ? "danger" : "neutral"} />
+            <KpiCard icon={Award} label={`Kazanılan puan · ${certCount} sertifika`} value={planSummary.earned_points || 0} intent="warning" />
           </div>
 
           {courses.length === 0 ? <Card className="p-8 text-center text-slate-500">{t("cm.pages_Academy.rolunuz_icin_atanmis_egitim_bu")}</Card> : <div className="space-y-3">
@@ -392,7 +392,7 @@ export default function Academy({
                         <h3 className="font-semibold text-slate-900">{c.title}</h3>
                         <StatusBadge intent={meta.intent}>{meta.label}</StatusBadge>
                         {assignment.required && <StatusBadge intent="warning">Zorunlu</StatusBadge>}
-                        {assignment.source === "warning" && <StatusBadge intent="danger">Telafi egitimi</StatusBadge>}
+                        {assignment.source === "warning" && <StatusBadge intent="danger">Telafi eğitimi</StatusBadge>}
                         {c.draft && <StatusBadge intent="warning">{t("cm.pages_Academy.taslak")}</StatusBadge>}
                       </div>
                       <p className="text-sm text-slate-500 mt-1">{c.summary}</p>
@@ -402,7 +402,7 @@ export default function Academy({
                       <div className={`mt-2 flex items-center gap-1 text-xs ${assignment.status === "overdue" ? "font-medium text-rose-600" : "text-slate-500"}`}><Clock3 className="h-3.5 w-3.5" /> {due ? `Son tarih: ${due}` : "Son tarih yok"}{assignment.reason ? ` · ${assignment.reason}` : ""}</div>
                     </div>
                     <Button onClick={() => openCourse(c.id)} className="flex-shrink-0">
-                      {c.progress?.status === "passed" ? "Incele" : "Egitime Git"}
+                      {c.progress?.status === "passed" ? "İncele" : "Eğitime Git"}
                     </Button>
                   </Card>;
           })}

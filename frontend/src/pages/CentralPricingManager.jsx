@@ -8,6 +8,7 @@ import MaybeLayout from '@/components/MaybeLayout';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 const BACKEND = "";
+const headers = {};
 export default function CentralPricingManager({
   user,
   tenant,
@@ -25,11 +26,12 @@ export default function CentralPricingManager({
     room_type: 'Standard',
     new_rate: '',
     adjustment_type: 'fixed',
-    effective_from: new Date().toISOString().split('T')[0]
+    effective_from: new Date().toISOString().split('T')[0],
+    reason: ''
   });
+  const [templateForm, setTemplateForm] = useState({ name: '', description: '', room_type: 'Standard', rate: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const headers = {};
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -47,15 +49,16 @@ export default function CentralPricingManager({
       console.error(e);
     }
     setLoading(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
   const handleBulkUpdate = async () => {
-    if (!bulkForm.new_rate) return;
+    if (bulkForm.new_rate === '' || (bulkForm.adjustment_type === 'fixed' && Number(bulkForm.new_rate) < 0) || !bulkForm.reason.trim()) {
+      setMessage('Geçerli fiyat ve değişiklik nedeni zorunludur.');
+      return;
+    }
     try {
       const res = await axios.post(`/central-pricing/bulk-update`, {
         ...bulkForm,
@@ -69,12 +72,31 @@ export default function CentralPricingManager({
       setMessage(e.response?.data?.detail || 'Hata');
     }
   };
+  const handleTemplateCreate = async () => {
+    if (!templateForm.name.trim() || !templateForm.room_type.trim() || templateForm.rate === '' || Number(templateForm.rate) < 0) {
+      setMessage('Şablon adı, oda tipi ve geçerli fiyat zorunludur.');
+      return;
+    }
+    try {
+      await axios.post('/central-pricing/rate-templates', {
+        name: templateForm.name,
+        description: templateForm.description,
+        rates: { [templateForm.room_type]: Number(templateForm.rate) },
+        currency: 'TRY'
+      }, { headers });
+      setTemplateForm({ name: '', description: '', room_type: 'Standard', rate: '' });
+      setMessage('Fiyat şablonu kaydedildi.');
+      fetchData();
+    } catch (error) {
+      setMessage(error.response?.data?.detail || 'Fiyat şablonu kaydedilemedi.');
+    }
+  };
   return <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout}>
       <div className="p-6 space-y-6">
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold">Merkezi Fiyat Yönetimi</h1>
-            <p className="text-gray-500">Zincir genelinde fiyat push ve bulk güncelleme</p>
+            <p className="text-gray-500">Zincir genelinde denetimli fiyat kararları ve toplu güncelleme</p>
           </div>
           <Button variant="outline" onClick={fetchData} disabled={loading}>
             {loading ? 'Yükleniyor...' : 'Yenile'}
@@ -87,7 +109,7 @@ export default function CentralPricingManager({
           <TabsList>
             <TabsTrigger value="rates">Güncel Fiyatlar</TabsTrigger>
             <TabsTrigger value="bulk">Toplu Güncelleme</TabsTrigger>
-            <TabsTrigger value="templates">Sablonlar</TabsTrigger>
+            <TabsTrigger value="templates">Şablonlar</TabsTrigger>
             <TabsTrigger value="history">Fiyat Geçmişi</TabsTrigger>
           </TabsList>
 
@@ -113,7 +135,7 @@ export default function CentralPricingManager({
             <Card>
               <CardHeader>
                 <CardTitle>Toplu Fiyat Güncelleme</CardTitle>
-                <CardDescription>Tüm otellerde seçilen oda tipi için fiyat degisikligi yapin</CardDescription>
+                <CardDescription>Tüm otellerde seçilen oda tipi için fiyat değişikliği kaydedin. Sağlayıcılara otomatik gönderim yapılmaz.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -138,28 +160,39 @@ export default function CentralPricingManager({
                     adjustment_type: e.target.value
                   })}>
                       <option value="fixed">Sabit Fiyat</option>
-                      <option value="percentage">Yuzde Degisim</option>
-                      <option value="increment">Artis/Azalis</option>
+                      <option value="percentage">Yüzde Değişim</option>
+                      <option value="increment">Artış/Azalış</option>
                     </select>
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Gecerlilik Tarihi</label>
+                    <label className="text-sm font-medium">Geçerlilik Tarihi</label>
                     <Input type="date" value={bulkForm.effective_from} onChange={e => setBulkForm({
                     ...bulkForm,
                     effective_from: e.target.value
                   })} />
                   </div>
+                  <div className="md:col-span-2">
+                    <label className="text-sm font-medium">Değişiklik Nedeni</label>
+                    <Input value={bulkForm.reason} onChange={e => setBulkForm({ ...bulkForm, reason: e.target.value })} placeholder="Örn. sezon fiyat stratejisi onayı" />
+                  </div>
                 </div>
-                <Button onClick={handleBulkUpdate} className="w-full">Tüm Otellere Uygula</Button>
+                <Button onClick={handleBulkUpdate} className="w-full">Tüm Oteller İçin Syroce Fiyat Kararı Oluştur</Button>
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="templates" className="space-y-4">
             <Card>
-              <CardHeader><CardTitle>Fiyat Sablonlari</CardTitle></CardHeader>
+              <CardHeader><CardTitle>Fiyat Şablonları</CardTitle></CardHeader>
               <CardContent>
-                {templates.length === 0 ? <p className="text-center py-8 text-gray-400">Henüz sablon olusturulmamis</p> : <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6 p-4 border rounded-lg bg-gray-50">
+                  <Input value={templateForm.name} onChange={e => setTemplateForm({ ...templateForm, name: e.target.value })} placeholder="Şablon adı" />
+                  <Input value={templateForm.description} onChange={e => setTemplateForm({ ...templateForm, description: e.target.value })} placeholder="Açıklama" />
+                  <Input value={templateForm.room_type} onChange={e => setTemplateForm({ ...templateForm, room_type: e.target.value })} placeholder="Oda tipi" />
+                  <Input type="number" min="0" value={templateForm.rate} onChange={e => setTemplateForm({ ...templateForm, rate: e.target.value })} placeholder="Fiyat (TRY)" />
+                  <div className="md:col-span-2 flex justify-end"><Button onClick={handleTemplateCreate}>Şablon Oluştur</Button></div>
+                </div>
+                {templates.length === 0 ? <p className="text-center py-8 text-gray-400">Henüz şablon oluşturulmamış</p> : <div className="space-y-3">
                     {templates.map((t, i) => <div key={t.id || i} className="p-4 border rounded">
                         <p className="font-medium">{t.name}</p>
                         <p className="text-sm text-gray-500">{t.description}</p>
@@ -174,7 +207,7 @@ export default function CentralPricingManager({
 
           <TabsContent value="history" className="space-y-4">
             <Card>
-              <CardHeader><CardTitle>Fiyat Degisiklik Geçmişi</CardTitle></CardHeader>
+              <CardHeader><CardTitle>Fiyat Değişiklik Geçmişi</CardTitle></CardHeader>
               <CardContent>
                 {history.length === 0 ? <p className="text-center py-8 text-gray-400">Fiyat geçmişi bulunamadı</p> : <div className="space-y-2">
                     {history.map((h, i) => <div key={h.id || i} className="flex justify-between p-3 bg-gray-50 rounded">
@@ -182,7 +215,10 @@ export default function CentralPricingManager({
                           <span className="font-medium">{h.room_type}</span>
                           <span className="text-gray-500 ml-2">{h.new_rate?.toLocaleString('tr-TR')} {h.currency}</span>
                         </div>
-                        <span className="text-sm text-gray-400">{h.updated_at ? new Date(h.updated_at).toLocaleString('tr-TR') : ''}</span>
+                        <div className="text-right">
+                          <p className="text-sm text-gray-500">{h.property_name}</p>
+                          <span className="text-sm text-gray-400">{h.updated_at ? new Date(h.updated_at).toLocaleString('tr-TR') : ''}</span>
+                        </div>
                       </div>)}
                   </div>}
               </CardContent>

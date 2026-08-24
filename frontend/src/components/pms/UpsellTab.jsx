@@ -336,7 +336,7 @@ const UpsellTab = ({
                         <p className="text-xs text-gray-500">{t('cm.components_pms_UpsellTab.oda')} {b.room_number} - {b.room_type}</p>
                       </div>
                       <Badge variant="outline" className="text-xs">
-                        {b.status === 'checked_in' ? 'Konaklama' : 'Onaylanmis'}
+                        {b.status === 'checked_in' ? 'Konaklama' : 'Onaylanmış'}
                       </Badge>
                     </div>
                     <div className="flex gap-3 mt-1 text-xs text-gray-400">

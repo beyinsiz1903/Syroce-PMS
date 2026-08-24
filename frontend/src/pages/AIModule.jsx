@@ -20,6 +20,7 @@ const PredictiveAnalytics = lazy(() => import('@/pages/PredictiveAnalytics'));
 const RevenueAutopilot = lazy(() => import('@/pages/RevenueAutopilot'));
 const SocialMediaRadar = lazy(() => import('@/pages/SocialMediaRadar'));
 const AIKnowledgeBase = lazy(() => import('@/pages/AIKnowledgeBase'));
+const ReputationManager = lazy(() => import('@/pages/ReputationManager'));
 
 const MODULE_COMPONENTS = {
   'ai-pms': AIEnhancedPMS,
@@ -29,7 +30,8 @@ const MODULE_COMPONENTS = {
   'predictive-analytics': PredictiveAnalytics,
   'revenue-autopilot': RevenueAutopilot,
   'social-media-radar': SocialMediaRadar,
-  'ai-knowledge-base': AIKnowledgeBase
+  'ai-knowledge-base': AIKnowledgeBase,
+  'reputation-manager': ReputationManager
 };
 
 const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
@@ -129,6 +131,13 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
       icon: Globe,
       color: 'from-sky-500 to-blue-500',
       iconColor: 'text-sky-600'
+    },
+    {
+      id: 'reputation-manager',
+      title: 'İtibar Yönetimi',
+      icon: Star,
+      color: 'from-amber-500 to-amber-600',
+      iconColor: 'text-amber-600'
     },
     {
       id: 'ai-knowledge-base',

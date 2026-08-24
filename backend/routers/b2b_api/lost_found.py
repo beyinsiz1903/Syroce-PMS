@@ -484,5 +484,7 @@ async def b2b_update_lost_found(
         updates["claimed_by"] = data.claimed_by
 
     await db.lost_found.update_one({"_id": item["_id"]}, {"$set": updates})
-    updated = await db.lost_found.find_one({"id": item_id}, {"_id": 0, "tenant_id": 0})
+    updated = await db.lost_found.find_one(
+        {"id": item_id, "tenant_id": tenant_id}, {"_id": 0, "tenant_id": 0}
+    )
     return {"ok": True, "item": updated}

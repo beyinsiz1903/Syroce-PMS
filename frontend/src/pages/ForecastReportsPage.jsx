@@ -165,6 +165,11 @@ export default function ForecastReportsPage() {
 
               {forecast?.daily?.length > 0 && (
                 <>
+                  {forecast.data_quality?.warning && <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{forecast.data_quality.warning}</div>}
+                  <div className="text-xs text-muted-foreground">
+                    Yöntem: {forecast.data_quality?.method === 'otb_plus_historical_weekday' ? 'Mevcut rezervasyon + son 364 günün hafta günü gerçekleşmeleri' : 'Yalnız mevcut rezervasyon'}
+                    {' · '}Tarihsel oda-gece: {forecast.data_quality?.historical_room_nights || 0}
+                  </div>
                   <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={forecast.daily}>
@@ -191,6 +196,7 @@ export default function ForecastReportsPage() {
                           <TableHead className="text-right">RevPAR</TableHead>
                           <TableHead className="text-right">OTB Gelir</TableHead>
                           <TableHead className="text-right">Forecast Gelir</TableHead>
+                          <TableHead className="text-right">Güven</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -204,6 +210,7 @@ export default function ForecastReportsPage() {
                             <TableCell className="text-right">{d.revpar}</TableCell>
                             <TableCell className="text-right">{d.revenue_otb}</TableCell>
                             <TableCell className="text-right">{d.revenue_forecast}</TableCell>
+                            <TableCell className="text-right">%{Math.round((d.confidence || 0) * 100)}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
