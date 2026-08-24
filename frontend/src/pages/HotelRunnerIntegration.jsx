@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink, Building2, ArrowDownUp, CalendarCheck, Clock, Activity, AlertTriangle, Loader2, Save, Trash2, Plus, Check, Wand2, KeyRound, Copy } from 'lucide-react';
+import { Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink, Building2, ArrowDownUp, CalendarCheck, Clock, Activity, AlertTriangle, Loader2, Save, Trash2, Plus, Check, Wand2, KeyRound, Copy, ShieldCheck, Play, RadioTower } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { confirmDialog } from '@/lib/dialogs';
 const API = "";
@@ -71,6 +71,9 @@ const HotelRunnerIntegration = ({
   const [webhookSecretStatus, setWebhookSecretStatus] = useState(null);
   const [webhookSecretValue, setWebhookSecretValue] = useState('');
   const [rotatingSecret, setRotatingSecret] = useState(false);
+  const [activationStatus, setActivationStatus] = useState(null);
+  const [runningActivationCheck, setRunningActivationCheck] = useState(false);
+  const [activatingLiveWrite, setActivatingLiveWrite] = useState(false);
   const [connectForm, setConnectForm] = useState({
     token: '',
     hr_id: '',
@@ -171,10 +174,9 @@ const HotelRunnerIntegration = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => {
     if (connection?.connected) fetchMappingStatus();
-  }, [connection?.connected]);
+  }, [connection?.connected, fetchMappingStatus]);
   const fetchWebhookSecretStatus = useCallback(async () => {
     try {
       const {
@@ -187,10 +189,66 @@ const HotelRunnerIntegration = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (connection?.connected) fetchWebhookSecretStatus();
-  }, [connection?.connected]);
+  }, [connection?.connected, fetchWebhookSecretStatus]);
+  const fetchActivationStatus = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`/channel/hotelrunner-v2/live-activation/status`, {
+        ...requestConfig
+      });
+      setActivationStatus(data);
+    } catch (e) {
+      console.error(e);
+      setActivationStatus(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (connection?.connected) fetchActivationStatus();
+  }, [connection?.connected, fetchActivationStatus]);
+
+  const handleRunActivationDryRun = async () => {
+    setRunningActivationCheck(true);
+    try {
+      const { data } = await axios.post(`/channel/hotelrunner-v2/dry-run/chain`, {}, {
+        ...requestConfig
+      });
+      if (!data?.success) throw new Error('Hazırlık zincirinin bir veya daha fazla adımı başarısız oldu');
+      toast.success(`Hazırlık zinciri başarılı (${data.success_count}/${data.step_count})`);
+      await fetchActivationStatus();
+    } catch (e) {
+      toast.error(getHotelRunnerErrorMessage(e, e.message || 'Hazırlık zinciri tamamlanamadı'));
+    } finally {
+      setRunningActivationCheck(false);
+    }
+  };
+
+  const handleEnableLiveWrite = async () => {
+    if (!(await confirmDialog({
+      message: 'HotelRunner canlı fiyat, müsaitlik ve kısıt gönderimi açılacak. Rezervasyon senkronizasyonu ayrı güvenlik anahtarında kapalı kalır. Devam edilsin mi?',
+      variant: 'danger'
+    }))) return;
+    setActivatingLiveWrite(true);
+    try {
+      const { data } = await axios.post(`/channel/hotelrunner-v2/live-activation/enable`, {
+        confirmation: 'ENABLE_HOTELRUNNER_ARI_WRITE'
+      }, {
+        ...requestConfig
+      });
+      if (!data?.enabled) throw new Error('Canlı gönderim açılamadı');
+      toast.success('HotelRunner canlı ARI gönderimi açıldı');
+      await fetchActivationStatus();
+    } catch (e) {
+      const detail = e?.response?.data?.detail;
+      const message = typeof detail === 'string' ? detail : detail?.code;
+      toast.error(message || e.message || 'Canlı gönderim açılamadı');
+      await fetchActivationStatus();
+    } finally {
+      setActivatingLiveWrite(false);
+    }
+  };
   const handleRotateWebhookSecret = async () => {
     if (webhookSecretStatus?.configured && !(await confirmDialog({
       message: 'Webhook imza anahtarı yenilenecek. HotelRunner paneli yeni anahtarla güncellenene kadar gelen bildirimler doğrulanamaz. Devam edilsin mi?',
@@ -575,6 +633,58 @@ const HotelRunnerIntegration = ({
                           {channels.map((ch, i) => <Badge key={ch.id || i} variant="secondary">{ch.name || ch.code}</Badge>)}
                         </div>
                       </div>}
+                  </CardContent>
+                </Card>
+
+                <Card data-testid="hr-live-activation-card">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <RadioTower className="w-5 h-5 text-indigo-600" /> Canlı Gönderim
+                    </CardTitle>
+                    <CardDescription>
+                      HotelRunner'a fiyat, müsaitlik ve kısıt gönderimini güvenli hazırlık kapılarıyla yönetin.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {!activationStatus ? <div className="text-sm text-slate-500">Canlı gönderim durumu yüklenemedi.</div> : <>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                          <div className="rounded-lg border p-3">
+                            <p className="text-slate-500">Hazırlık Kriterleri</p>
+                            <p className="font-semibold mt-1">{activationStatus.write_criteria?.met_count || 0}/{activationStatus.write_criteria?.total_criteria || 0}</p>
+                          </div>
+                          <div className="rounded-lg border p-3">
+                            <p className="text-slate-500">Oda Eşlemeleri</p>
+                            <p className="font-semibold mt-1">{activationStatus.mapping_ready ? 'Hazır' : 'Eksik'}</p>
+                          </div>
+                          <div className="rounded-lg border p-3">
+                            <p className="text-slate-500">Bekleyen Kuyruk</p>
+                            <p className="font-semibold mt-1">{activationStatus.queued_write_count || 0}</p>
+                          </div>
+                          <div className="rounded-lg border p-3">
+                            <p className="text-slate-500">Gönderim Durumu</p>
+                            <p className={`font-semibold mt-1 ${activationStatus.feature_flags?.write_enabled && !activationStatus.feature_flags?.shadow_mode ? 'text-emerald-600' : 'text-amber-600'}`}>
+                              {activationStatus.feature_flags?.write_enabled && !activationStatus.feature_flags?.shadow_mode ? 'Canlı' : 'Kapalı'}
+                            </p>
+                          </div>
+                        </div>
+                        {!activationStatus.runtime?.ari_write_allowed && <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                            Production genel ARI güvenlik anahtarı kapalı. Korunan cutover işlemi tamamlanmadan tesis gönderimi açılamaz.
+                          </div>}
+                        {activationStatus.write_criteria?.criteria?.filter(item => !item.met).map(item => <div key={item.name} className="text-sm text-slate-600 flex items-center gap-2">
+                            <XCircle className="w-4 h-4 text-amber-500" /> {item.label}
+                          </div>)}
+                        <div className="flex flex-wrap gap-3">
+                          <Button data-testid="hr-live-preflight-btn" variant="outline" onClick={handleRunActivationDryRun} disabled={runningActivationCheck}>
+                            {runningActivationCheck ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                            Güvenli Hazırlık Testini Çalıştır
+                          </Button>
+                          <Button data-testid="hr-enable-live-write-btn" onClick={handleEnableLiveWrite} disabled={activatingLiveWrite || !activationStatus.ready_to_activate || activationStatus.feature_flags?.write_enabled && !activationStatus.feature_flags?.shadow_mode} className="bg-emerald-600 hover:bg-emerald-700">
+                            {activatingLiveWrite ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-2" />}
+                            {activationStatus.feature_flags?.write_enabled && !activationStatus.feature_flags?.shadow_mode ? 'Canlı Gönderim Açık' : 'Canlı Gönderimi Aç'}
+                          </Button>
+                        </div>
+                      </>}
                   </CardContent>
                 </Card>
 

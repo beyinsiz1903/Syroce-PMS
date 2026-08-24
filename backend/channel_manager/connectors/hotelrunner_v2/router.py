@@ -38,6 +38,7 @@ Ops endpoints:
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -376,6 +377,196 @@ async def update_flags(
     from channel_manager.connectors.hotelrunner_v2.feature_flags import set_flags
 
     return await set_flags(tenant_id, body)
+
+
+async def _live_activation_snapshot(tenant_id: str) -> dict[str, Any]:
+    """Build the fail-closed, tenant-scoped ARI activation snapshot.
+
+    This helper is deliberately read-only.  It verifies that every PMS room
+    type has exactly one HotelRunner inventory mapping (multiple rate plans for
+    the same inventory are valid), that all mapping write scopes are enabled,
+    and that no old outbox work can be released when the gate opens.
+    """
+    from channel_manager.connectors.hotelrunner_v2.dry_run import check_write_enable_criteria
+    from channel_manager.connectors.hotelrunner_v2.feature_flags import get_flags
+    from core.database import db
+    from domains.channel_manager.providers.hotelrunner.production_safety import safe_runtime_state
+
+    connection = await db.hotelrunner_connections.find_one(
+        {"tenant_id": tenant_id, "is_active": True},
+        {"_id": 0, "environment": 1, "property_name": 1},
+    )
+    mappings = await db.hotelrunner_room_mappings.find(
+        {"tenant_id": tenant_id},
+        {
+            "_id": 0,
+            "pms_room_type": 1,
+            "hr_inv_code": 1,
+            "sync_availability": 1,
+            "sync_price": 1,
+            "sync_restrictions": 1,
+        },
+    ).to_list(200)
+    pms_room_types = {
+        value
+        for value in await db.rooms.distinct("room_type", {"tenant_id": tenant_id})
+        if value
+    }
+
+    inventories_by_pms: dict[str, set[str]] = {}
+    disabled_scopes = 0
+    for mapping in mappings:
+        pms_type = str(mapping.get("pms_room_type") or "").strip()
+        inventory = str(mapping.get("hr_inv_code") or "").strip()
+        if pms_type and inventory:
+            inventories_by_pms.setdefault(pms_type, set()).add(inventory)
+        if not all(
+            mapping.get(field, False)
+            for field in ("sync_availability", "sync_price", "sync_restrictions")
+        ):
+            disabled_scopes += 1
+
+    missing_room_types = sorted(pms_room_types - set(inventories_by_pms))
+    ambiguous_room_types = sorted(
+        room_type
+        for room_type, inventory_codes in inventories_by_pms.items()
+        if len(inventory_codes) != 1
+    )
+    mapping_ready = bool(pms_room_types) and not missing_room_types and not ambiguous_room_types and disabled_scopes == 0
+
+    queued_count = await db.outbox_events.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["pending", "processing", "retry"]},
+        }
+    )
+    criteria = await check_write_enable_criteria(tenant_id)
+    runtime = safe_runtime_state()
+    flags = await get_flags(tenant_id)
+    production_connection = bool(connection) and str(connection.get("environment") or "").lower() in {
+        "production",
+        "live",
+    }
+
+    return {
+        "tenant_id": tenant_id,
+        "connection_ready": production_connection,
+        "property_name": (connection or {}).get("property_name"),
+        "mapping_ready": mapping_ready,
+        "mapping_count": len(mappings),
+        "pms_room_type_count": len(pms_room_types),
+        "missing_room_types": missing_room_types,
+        "ambiguous_room_types": ambiguous_room_types,
+        "disabled_mapping_scopes": disabled_scopes,
+        "queued_write_count": queued_count,
+        "queue_ready": queued_count == 0,
+        "write_criteria": criteria,
+        "runtime": runtime,
+        "feature_flags": flags,
+        "ready_to_activate": bool(
+            production_connection
+            and mapping_ready
+            and queued_count == 0
+            and criteria.get("all_criteria_met", False)
+            and runtime.get("ari_write_allowed", False)
+        ),
+    }
+
+
+@router.get("/live-activation/status")
+async def get_live_activation_status(tenant_id: str = Depends(_resolved_tenant)):
+    """Return the complete read-only activation gate for one tenant."""
+    return await _live_activation_snapshot(tenant_id)
+
+
+@router.post("/live-activation/enable")
+async def enable_live_ari(
+    tenant_id: str = Depends(_resolved_tenant),
+    body: dict[str, Any] = Body(...),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),
+):
+    """Enable tenant ARI writes only after every production gate passes.
+
+    The endpoint itself performs no HotelRunner mutation.  It runs one
+    read-only connection probe, records an immutable audit event, and flips
+    tenant flags.  The global production kill switch remains independently
+    controlled by the protected cutover workflow.
+    """
+    if body.get("confirmation") != "ENABLE_HOTELRUNNER_ARI_WRITE":
+        raise HTTPException(status_code=400, detail="LIVE_ARI_CONFIRMATION_REQUIRED")
+
+    snapshot = await _live_activation_snapshot(tenant_id)
+    if not snapshot["ready_to_activate"]:
+        raise HTTPException(status_code=409, detail={"code": "LIVE_ARI_PREREQUISITES_NOT_MET", "snapshot": snapshot})
+
+    # Final credential/provider reachability probe is GET-only.
+    from domains.channel_manager.providers.hotelrunner.factory import get_provider
+
+    provider, _connection = await get_provider(tenant_id)
+    probe = await provider.test_connection()
+    if not probe.success:
+        raise HTTPException(status_code=409, detail="HOTELRUNNER_CONNECTION_PROBE_FAILED")
+
+    from channel_manager.connectors.hotelrunner_v2.feature_flags import get_flags, set_flags
+    from core.database import db
+    from shared_kernel.audit_helper import audit_log
+
+    previous_flags = await get_flags(tenant_id)
+    updates = {
+        "connector_enabled": True,
+        "shadow_mode": False,
+        "write_enabled": True,
+        "dry_run_mode": False,
+        "limited_scope": True,
+        "reconciliation_enabled": True,
+        "auto_fix_enabled": False,
+    }
+    try:
+        flags = await set_flags(tenant_id, updates)
+        await db.connector_flags.update_one(
+            {"tenant_id": tenant_id, "provider": "hotelrunner"},
+            {
+                "$set": {
+                    **updates,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                    "updated_by": current_user.name,
+                }
+            },
+            upsert=True,
+        )
+    except Exception:
+        # Best-effort rollback keeps the canonical flag collection fail-closed.
+        await set_flags(
+            tenant_id,
+            {
+                key: previous_flags.get(key)
+                for key in updates
+                if key in previous_flags
+            },
+        )
+        raise
+
+    await audit_log(
+        actor_id=str(getattr(current_user, "id", "") or ""),
+        tenant_id=tenant_id,
+        entity_type="channel_connector",
+        entity_id="hotelrunner_v2",
+        action="HOTELRUNNER_ARI_LIVE_ENABLED",
+        metadata={
+            "limited_scope": True,
+            "mapping_count": snapshot["mapping_count"],
+            "criteria_met": snapshot["write_criteria"].get("met_count"),
+            "provider_write_count": 0,
+        },
+    )
+    return {
+        "enabled": True,
+        "mode": "live",
+        "limited_scope": True,
+        "provider_write_count": 0,
+        "feature_flags": flags,
+    }
 
 
 # ── Metrics ───────────────────────────────────────────────────────────
