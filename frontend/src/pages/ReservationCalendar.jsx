@@ -1247,7 +1247,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         return (
           <>
             <div className="fixed inset-0 bg-black/40 z-50 transition-opacity" onClick={() => { setShowUnassignedPanel(false); setUnassignedFilter('all'); }} data-testid="unassigned-panel-backdrop" />
-            <div className="fixed top-0 right-0 h-full w-[560px] max-w-[90vw] bg-white z-50 shadow-2xl flex flex-col animate-in slide-in-from-right" data-testid="unassigned-panel">
+            <div
+              ref={unassignedListRef}
+              className="fixed top-0 right-0 h-full w-[560px] max-w-[90vw] bg-white z-50 shadow-2xl overflow-y-auto animate-in slide-in-from-right"
+              data-testid="unassigned-panel"
+            >
               <div className="sticky top-0 z-10 flex-none bg-white border-b">
                 <div className="px-5 py-4 flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -1310,7 +1314,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               {(() => {
                 if (sorted.length === 0) {
                   return (
-                    <div className="flex-1 flex items-center justify-center">
+                  <div className="min-h-[50vh] flex items-center justify-center">
                       <div className="text-center py-12 text-gray-400" data-testid="no-unassigned-msg">
                         <CalendarIcon className="w-10 h-10 mx-auto mb-3 opacity-40" />
                         <p className="text-sm font-medium">{activeFilter === 'all' ? 'Atanmamış rezervasyon yok' : 'Bu filtrede sonuc yok'}</p>
@@ -1338,8 +1342,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                 };
                 return (
                   <div
-                    ref={unassignedListRef}
-                    className="flex-1 min-h-0 overflow-y-auto pt-1 pb-24"
+                    className="pt-1 pb-24"
                     style={{ overflowAnchor: 'none' }}
                     data-testid="unassigned-list"
                   >
