@@ -15,7 +15,7 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
         const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString('base64');
         
         // Read the actual active user session token from state.json first as backup
-        const statePath = path.resolve(STORAGE_STATE);
+        const statePath = STORAGE_STATE;
         if (fs.existsSync(statePath)) {
             const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
             const cookie = state.cookies.find(c => c.name === 'access_token');
