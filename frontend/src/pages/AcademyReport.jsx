@@ -3,13 +3,16 @@ import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { ClipboardList, Users, CheckCircle2, Award, ArrowLeft, Loader2 } from "lucide-react";
+import { ClipboardList, Users, CheckCircle2, Award, ArrowLeft, Loader2, UserPlus } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 const STATUS_META = {
+  assigned: { intent: "info", label: "Atandi" },
+  overdue: { intent: "danger", label: "Gecikmis" },
+  completed: { intent: "success", label: "Tamamlandi" },
   not_started: {
     intent: "neutral",
     label: "Baslanmadi"
@@ -33,17 +36,34 @@ export default function AcademyReport() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [forbidden, setForbidden] = useState(false);
+  const [options, setOptions] = useState({ users: [], courses: [] });
+  const [assignment, setAssignment] = useState({ user_id: "", course_id: "", source: "manager", priority: "normal", required: true, due_at: "", reason: "" });
+  const [assigning, setAssigning] = useState(false);
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await axios.get("/academy/admin/report");
+      const [r, optionResponse] = await Promise.all([axios.get("/academy/admin/report"), axios.get("/academy/admin/assignment-options")]);
       setData(r.data);
+      setOptions(optionResponse.data || { users: [], courses: [] });
     } catch (e) {
       if (e?.response?.status === 403) setForbidden(true);else toast.error("Rapor yuklenemedi");
     } finally {
       setLoading(false);
     }
   }, []);
+  const assignCourse = async () => {
+    if (!assignment.user_id || !assignment.course_id) return toast.error("Personel ve egitim secin");
+    if (assignment.source === "warning" && !assignment.reason.trim()) return toast.error("Telafi egitimi icin neden zorunludur");
+    setAssigning(true);
+    try {
+      await axios.post("/academy/admin/assignments", { ...assignment, due_at: assignment.due_at ? `${assignment.due_at}T23:59:59Z` : null });
+      toast.success("Egitim personele atandi");
+      setAssignment(a => ({ ...a, course_id: "", reason: "" }));
+      await load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Egitim atanamadi");
+    } finally { setAssigning(false); }
+  };
   useEffect(() => {
     load();
   }, [load]);
@@ -67,12 +87,34 @@ export default function AcademyReport() {
       <PageHeader title={t("cm.pages_AcademyReport.akademi_yonetici_raporu")} subtitle="Departman ve personel bazinda egitim tamamlama, basari ve puanlar." actions={<Button variant="outline" onClick={() => navigate("/app/academy")}>
             <ArrowLeft className="w-4 h-4 mr-2" />{t("cm.pages_AcademyReport.akademi")}</Button>} />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
         <KpiCard icon={Users} label={t("cm.pages_AcademyReport.kayit")} value={summary.enrollments || 0} intent="info" />
         <KpiCard icon={CheckCircle2} label={t("cm.pages_AcademyReport.gecen")} value={summary.passed || 0} intent="success" />
         <KpiCard icon={ClipboardList} label={t("cm.pages_AcademyReport.basari_orani")} value={`%${summary.pass_rate || 0}`} intent="neutral" />
         <KpiCard icon={Award} label={t("cm.pages_AcademyReport.sertifika")} value={summary.certificates || 0} intent="warning" />
+        <KpiCard icon={ClipboardList} label="Gecikmis" value={summary.overdue || 0} intent={summary.overdue ? "danger" : "neutral"} />
       </div>
+
+      <Card className="mb-6 overflow-hidden">
+        <div className="border-b bg-slate-50 px-5 py-4">
+          <div className="flex items-center gap-2 font-semibold text-slate-900"><UserPlus className="h-5 w-5 text-indigo-600" /> Personel egitim atamasi</div>
+          <p className="mt-1 text-sm text-slate-500">Oryantasyon, yonetici talebi veya bir uyari sonrasi zorunlu telafi egitimi atayin.</p>
+        </div>
+        <div className="grid gap-3 p-5 md:grid-cols-2 lg:grid-cols-4">
+          <select className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm" value={assignment.user_id} onChange={e => setAssignment(a => ({ ...a, user_id: e.target.value }))}>
+            <option value="">Personel secin</option>{options.users.map(u => <option key={u.id} value={u.id}>{u.name} · {u.role}</option>)}
+          </select>
+          <select className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm" value={assignment.course_id} onChange={e => setAssignment(a => ({ ...a, course_id: e.target.value }))}>
+            <option value="">Egitim secin</option>{options.courses.map(c => <option key={c.id} value={c.id}>{c.department_label} · {c.title}</option>)}
+          </select>
+          <select className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm" value={assignment.source} onChange={e => setAssignment(a => ({ ...a, source: e.target.value, priority: e.target.value === "warning" ? "high" : a.priority }))}>
+            <option value="manager">Yonetici atamasi</option><option value="onboarding">Oryantasyon</option><option value="warning">Uyari sonrasi telafi</option><option value="recertification">Yeniden belgelendirme</option>
+          </select>
+          <input type="date" className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm" value={assignment.due_at} onChange={e => setAssignment(a => ({ ...a, due_at: e.target.value }))} aria-label="Son tarih" />
+          <input className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm md:col-span-2 lg:col-span-3" placeholder={assignment.source === "warning" ? "Telafi nedeni (zorunlu)" : "Atama notu (istege bagli)"} value={assignment.reason} onChange={e => setAssignment(a => ({ ...a, reason: e.target.value }))} />
+          <Button onClick={assignCourse} disabled={assigning}>{assigning && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Egitimi ata</Button>
+        </div>
+      </Card>
 
       {departments.length > 0 && <div className="mb-6">
           <h2 className="text-lg font-bold text-slate-900 mb-3">{t("cm.pages_AcademyReport.departman_ozeti")}</h2>

@@ -158,6 +158,9 @@ class FakeDB:
             unique_keys=("tenant_id", "user_id", "course_id") if unique_certs else None,
             yield_on_io=yield_certs,
         )
+        self.academy_assignments = FakeCollection(
+            unique_keys=("tenant_id", "user_id", "course_id"),
+        )
         # Tenant-custom curriculum + admin visibility overrides (data-driven
         # catalog). Empty by default — the security tests exercise the built-in
         # system courses only.
@@ -230,8 +233,52 @@ def test_public_exam_helper_omits_answers_even_with_answers_present():
 # ── 2. Server-side scoring: client score/passed are ignored ───────────
 
 
+def test_submit_rejects_exam_until_all_lessons_are_completed(monkeypatch):
+    fake_db = FakeDB()
+    client = _build_client(monkeypatch, fake_db, _user())
+    r = client.post(
+        f"/api/academy/courses/{COURSE_ID}/exam/submit",
+        json={"answers": CORRECT},
+    )
+    assert r.status_code == 409
+    assert fake_db.academy_attempts.docs == []
+    assert fake_db.academy_certificates.docs == []
+
+
+def test_learning_plan_materialises_required_role_assignments(monkeypatch):
+    fake_db = FakeDB()
+    client = _build_client(monkeypatch, fake_db, _user())
+    first = client.get("/api/academy/learning-plan")
+    second = client.get("/api/academy/learning-plan")
+    assert first.status_code == 200, first.text
+    assert first.json()["summary"]["required"] > 0
+    assert first.json()["summary"]["compliance_rate"] == 0
+    assert all(item["assignment"]["source"] == "role_path" for item in first.json()["items"])
+    assert len(fake_db.academy_assignments.docs) == len(second.json()["items"])
+
+
+def test_manager_can_assign_warning_remediation_with_reason(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.users.docs.append({"tenant_id": "t1", "id": "staff-1", "name": "Personel", "role": "front_desk", "is_active": True})
+    client = _build_client(monkeypatch, fake_db, _user(role="manager"))
+    missing_reason = client.post("/api/academy/admin/assignments", json={
+        "user_id": "staff-1", "course_id": COURSE_ID, "source": "warning",
+    })
+    assert missing_reason.status_code == 422
+    assigned = client.post("/api/academy/admin/assignments", json={
+        "user_id": "staff-1", "course_id": COURSE_ID, "source": "warning",
+        "priority": "high", "reason": "Check-in proseduru tekrar edilmeli",
+    })
+    assert assigned.status_code == 200, assigned.text
+    row = fake_db.academy_assignments.docs[0]
+    assert row["source"] == "warning"
+    assert row["required"] is True
+    assert row["reason"] == "Check-in proseduru tekrar edilmeli"
+
+
 def test_submit_ignores_client_score_and_recomputes(monkeypatch):
     fake_db = FakeDB()
+    fake_db.academy_progress.docs.append({"tenant_id": "t1", "user_id": "u1", "course_id": COURSE_ID, "completed_lessons": ["karsilama", "check-in", "check-out"]})
     client = _build_client(monkeypatch, fake_db, _user())
     # All-wrong answers, but the client lies about a perfect pass.
     r = client.post(
@@ -253,6 +300,7 @@ def test_submit_ignores_client_score_and_recomputes(monkeypatch):
 
 def test_submit_passes_and_issues_certificate_on_real_score(monkeypatch):
     fake_db = FakeDB()
+    fake_db.academy_progress.docs.append({"tenant_id": "t1", "user_id": "u1", "course_id": COURSE_ID, "completed_lessons": ["karsilama", "check-in", "check-out"]})
     client = _build_client(monkeypatch, fake_db, _user())
     # Correct answers but the client lies the OTHER way (claims a fail).
     r = client.post(
@@ -948,6 +996,8 @@ def test_submit_scores_via_override_answer_key(monkeypatch):
         json=_system_content_payload(),
     )
     student = _build_client(monkeypatch, fake_db, _user(role="front_desk"))
+    lesson_ids = [lesson["id"] for lesson in student.get(f"/api/academy/courses/{COURSE_ID}").json()["lessons"]]
+    fake_db.academy_progress.docs.append({"tenant_id": "t1", "user_id": "u1", "course_id": COURSE_ID, "completed_lessons": lesson_ids})
     qid = student.get(f"/api/academy/courses/{COURSE_ID}/exam").json()["questions"][0]["id"]
 
     good = student.post(
