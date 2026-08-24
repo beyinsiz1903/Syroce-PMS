@@ -58,7 +58,7 @@ def test_seed_rejects_wrong_tenant_id(stress_client, monkeypatch):
         json={"target_tenant_id": "00000000-0000-0000-0000-000000000000", "room_count": 1},
     )
     assert r.status_code == 403, r.text
-    assert "does not match" in r.json()["detail"]
+    assert "not an allowed stress tenant" in r.json()["detail"]
 
 
 def test_seed_rejects_pilot_tenant_id(stress_client, monkeypatch):
@@ -250,18 +250,31 @@ def test_cleanup_full_wipe_explicit_passes_gate(stress_client, monkeypatch):
     from contextlib import contextmanager
 
     class _StubColl:
+        def find(self, *_args, **_kwargs):
+            class Cursor:
+                async def to_list(self, **_kwargs):
+                    return []
+            return Cursor()
+
+        async def create_index(self, *_args, **_kwargs):
+            return "test-index"
+
         async def delete_many(self, flt):
             class R: deleted_count = 0
             return R()
 
     class _StubDb:
         def __getattr__(self, _name): return _StubColl()
+        def __getitem__(self, _name): return _StubColl()
 
     @contextmanager
     def _noop_ctx(_tid): yield
     monkeypatch.setattr(stress_mod, "tenant_context", _noop_ctx)
     import core.database as _coredb
-    monkeypatch.setattr(_coredb, "db", _StubDb())
+    stub_db = _StubDb()
+    monkeypatch.setattr(_coredb, "db", stub_db)
+    import core.tenant_db as _tenant_db
+    monkeypatch.setattr(_tenant_db, "get_system_db", lambda: stub_db)
 
     r = stress_client.post(
         CLEANUP_PATH,

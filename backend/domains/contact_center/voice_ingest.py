@@ -141,8 +141,21 @@ async def _record_call(
                 upsert=True,
                 return_document=ReturnDocument.AFTER,
             )
-        except DuplicateKeyError as de:
-            raise de
+        except DuplicateKeyError:
+            # Another webhook worker may win the unique-index upsert race for
+            # the same provider call. In that case this retry is successful
+            # and must return the canonical row id. A collision on another
+            # unique key (for example call_attempt_id) is still propagated so
+            # the outbound router can reject the duplicate dial attempt.
+            existing = await db[_COLLECTION].find_one(
+                {
+                    "tenant_id": tenant_id,
+                    "provider_call_sid": provider_call_sid,
+                }
+            )
+            if existing:
+                return existing.get("id")
+            raise
         return (doc or {}).get("id") or set_on_insert["id"]
     except DuplicateKeyError as de:
         raise de

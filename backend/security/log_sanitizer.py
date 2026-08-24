@@ -169,20 +169,10 @@ class SanitizedLogFilter(logging.Filter):
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if isinstance(record.msg, str):
-            record.msg = sanitize_string(record.msg)
-        if record.args:
-            if isinstance(record.args, dict):
-                record.args = sanitize_dict(record.args)
-            elif isinstance(record.args, tuple):
-                record.args = tuple(sanitize_string(a) if isinstance(a, str) else a for a in record.args)
-        # Backstop: render the final message and sanitize it so that *non-str*
-        # args are also scrubbed. The per-field pass above only inspects str
-        # args; an object arg (e.g. an httpx.URL carrying a "?token=..." query
-        # param — the way httpx logs every outbound request at INFO) slips
-        # through and would leak the credential once the handler formats the
-        # record. If the rendered text contains nothing sensitive we leave the
-        # record untouched to preserve structured-logging behaviour.
+        # Render before redaction. Sanitizing a %-style format template first
+        # can remove placeholders such as ``user=%s`` while leaving the args
+        # tuple intact, which makes the logging handler itself raise TypeError.
+        # Rendering first also covers non-string arguments such as httpx.URL.
         try:
             rendered = record.getMessage()
         except Exception:

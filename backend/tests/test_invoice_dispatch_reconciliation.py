@@ -61,7 +61,10 @@ async def setup_sync_record(request: pytest.FixtureRequest, mock_now: datetime) 
         sending_at=mock_now,
         last_attempt_at=mock_now,
     )
-    await sysdb.invoice_sync.insert_one(record.model_dump(mode="json"))
+    # The tenant-scoped and system handles point at the same physical
+    # collection. Insert once through the tenant guard; inserting through both
+    # handles violates the production unique invoice key and masks the actual
+    # reconciliation behaviour this fixture is meant to exercise.
     await db.invoice_sync.insert_one(record.model_dump(mode="json"))
     return record
 

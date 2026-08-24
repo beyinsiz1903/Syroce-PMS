@@ -144,11 +144,10 @@ class TestMultiRateChangesInWindow:
         assert change_sets[0]["compacted_payload"]["base_rate"] == 250
 
     def test_rate_change_compiled_to_exely(self):
-        """Final rate → correct Exely AmountAfterTax."""
+        """Final rate → normalized Exely rate operation."""
         cs = _cs(provider="exely", scope="rate", payload={"base_rate": 350, "currency": "EUR"})
         delta = compile_delta_exely(cs)
-        assert delta.payload["AmountAfterTax"] == "350"
-        assert delta.payload["CurrencyCode"] == "EUR"
+        assert delta.payload == {"operation": "rate", "value": 350, "currency": "EUR"}
 
     def test_rate_change_compiled_to_hotelrunner(self):
         """Final rate → correct HotelRunner price."""
@@ -195,16 +194,14 @@ class TestSimultaneousAvailAndRestriction:
 
     def test_avail_and_restriction_compile_correctly(self):
         """Both compile to valid provider-specific deltas."""
-        cs_a = _cs(provider="exely", scope="availability", payload={"availability": 0, "stop_sell": True})
-        cs_r = _cs(provider="exely", scope="restriction", payload={"min_los": 3, "cta": True})
+        cs_a = _cs(provider="exely", scope="availability", payload={"availability": 0})
+        cs_r = _cs(provider="exely", scope="restriction", payload={"operation": "min_los", "min_los": 3})
 
         d_a = compile_delta_exely(cs_a)
         d_r = compile_delta_exely(cs_r)
 
-        assert d_a.payload["BookingLimit"] == 0
-        assert d_a.payload["RestrictionStatus"] == "Close"
-        assert d_r.payload["MinLOS"] == 3
-        assert d_r.payload["ArrivalDateBased"] is False  # cta=True → !cta
+        assert d_a.payload == {"operation": "availability", "value": 0}
+        assert d_r.payload == {"operation": "min_los", "value": 3}
 
     def test_avail_restr_rate_triple_burst(self):
         """All 3 scopes change at once → 3 isolated change set groups."""
@@ -274,10 +271,10 @@ class TestCloseOpenClosePattern:
         assert result["stop_sell"] is True
 
     def test_close_open_close_compiles_to_exely(self):
-        """After precedence, Exely delta has RestrictionStatus=Close."""
-        cs = _cs(provider="exely", scope="restriction", payload={"stop_sell": True, "min_los": 1})
+        """After precedence, Exely emits an explicit stop-sell operation."""
+        cs = _cs(provider="exely", scope="restriction", payload={"operation": "stop_sell", "stop_sell": True})
         delta = compile_delta_exely(cs)
-        assert delta.payload["RestrictionStatus"] == "Close"
+        assert delta.payload == {"operation": "stop_sell", "value": True}
 
     def test_close_open_close_compiles_to_hotelrunner(self):
         """After precedence, HotelRunner delta has stop_sale=1."""
@@ -477,7 +474,7 @@ class TestBurstFinalPayload:
 
         # Compile to Exely
         delta = compile_delta_exely(cs[0])
-        assert delta.payload["BookingLimit"] == 19
+        assert delta.payload == {"operation": "availability", "value": 19}
 
     def test_burst_with_stop_sell_final(self):
         """Availability burst ending with stop_sell → Close status."""
@@ -534,29 +531,23 @@ class TestBurstFinalPayload:
 class TestDeltaOnlyPush:
     """Only changed data appears in compiled delta."""
 
-    def test_avail_only_has_booking_limit(self):
-        """Availability delta → only BookingLimit, no rate fields."""
+    def test_avail_only_has_normalized_operation(self):
+        """Availability delta → only the normalized operation/value fields."""
         cs = _cs(provider="exely", scope="availability", payload={"availability": 5})
         delta = compile_delta_exely(cs)
-        assert "BookingLimit" in delta.payload
-        assert "AmountAfterTax" not in delta.payload
-        assert "MinLOS" not in delta.payload
+        assert delta.payload == {"operation": "availability", "value": 5}
 
-    def test_rate_only_has_amount(self):
-        """Rate delta → only AmountAfterTax, no avail/restriction fields."""
+    def test_rate_only_has_normalized_operation(self):
+        """Rate delta → normalized rate fields only."""
         cs = _cs(provider="exely", scope="rate", payload={"base_rate": 200, "currency": "TRY"})
         delta = compile_delta_exely(cs)
-        assert "AmountAfterTax" in delta.payload
-        assert "BookingLimit" not in delta.payload
-        assert "MinLOS" not in delta.payload
+        assert delta.payload == {"operation": "rate", "value": 200, "currency": "TRY"}
 
-    def test_restriction_only_has_restriction_fields(self):
-        """Restriction delta → only restriction fields."""
-        cs = _cs(provider="exely", scope="restriction", payload={"min_los": 2})
+    def test_restriction_only_has_normalized_operation(self):
+        """Restriction delta → one explicit normalized operation."""
+        cs = _cs(provider="exely", scope="restriction", payload={"operation": "min_los", "min_los": 2})
         delta = compile_delta_exely(cs)
-        assert "MinLOS" in delta.payload
-        assert "BookingLimit" not in delta.payload
-        assert "AmountAfterTax" not in delta.payload
+        assert delta.payload == {"operation": "min_los", "value": 2}
 
     def test_hr_avail_delta_clean(self):
         """HotelRunner availability → only availability, no price."""
@@ -673,7 +664,7 @@ class TestEndToEndPipeline:
         )
         delta = compile_delta(cs[0])
         assert delta.provider == "exely"
-        assert delta.payload["BookingLimit"] == 3
+        assert delta.payload == {"operation": "availability", "value": 3}
 
     def test_rate_e2e_hotelrunner(self):
         """Rate events → coalesce → compile → HR delta correct."""
@@ -692,7 +683,7 @@ class TestEndToEndPipeline:
     def test_restriction_e2e_dual_provider(self):
         """Restriction events → coalesce → compile for both providers."""
         events = [
-            _ev(event_type="restriction", payload={"min_los": 2, "stop_sell": True}),
+            _ev(event_type="restriction", payload={"operation": "stop_sell", "stop_sell": True}),
         ]
         cs = coalesce_events(
             "t1|p1|DBL||2026-08-01:2026-08-07|restriction",
@@ -742,8 +733,8 @@ class TestConcurrentTripleScopeBurst:
         restr_cs = coalesce_events(
             "t1|p1|DBL||2026-08-01:2026-08-07|restriction",
             [
-                _ev(event_type="restriction", payload={"stop_sell": False, "min_los": 1}),
-                _ev(event_type="restriction", payload={"stop_sell": True, "min_los": 3}),
+                _ev(event_type="restriction", payload={"operation": "stop_sell", "stop_sell": False}),
+                _ev(event_type="restriction", payload={"operation": "stop_sell", "stop_sell": True}),
             ],
             ["exely"],
         )
@@ -754,15 +745,11 @@ class TestConcurrentTripleScopeBurst:
         d_restr = compile_delta(restr_cs[0])
 
         # Verify isolation
-        assert d_avail.payload["BookingLimit"] == 2
-        assert "AmountAfterTax" not in d_avail.payload
+        assert d_avail.payload == {"operation": "availability", "value": 2}
 
-        assert d_rate.payload["AmountAfterTax"] == "300"
-        assert "BookingLimit" not in d_rate.payload
+        assert d_rate.payload == {"operation": "rate", "value": 300, "currency": "TRY"}
 
-        assert d_restr.payload["RestrictionStatus"] == "Close"
-        assert d_restr.payload["MinLOS"] == 3
-        assert "BookingLimit" not in d_restr.payload
+        assert d_restr.payload == {"operation": "stop_sell", "value": True}
 
     def test_triple_scope_different_hashes(self):
         """All 3 scope deltas have different hashes."""
@@ -795,7 +782,7 @@ class TestMultiDayDeltaCompilation:
         delta = compile_delta_exely(cs)
         assert str(delta.date_from) == "2026-09-01"
         assert str(delta.date_to) == "2026-09-07"
-        assert delta.payload["BookingLimit"] == 4
+        assert delta.payload == {"operation": "availability", "value": 4}
 
     def test_merged_consecutive_days_produce_range(self):
         """7 consecutive same-value days → 1 merged range."""

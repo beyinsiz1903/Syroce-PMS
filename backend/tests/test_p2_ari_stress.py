@@ -293,21 +293,17 @@ class TestDeltaCompilation:
         cs = _change_set(provider="exely", scope="availability", payload={"availability": 5, "stop_sell": True})
         delta = compile_delta_exely(cs)
         assert delta.provider == "exely"
-        assert delta.payload["BookingLimit"] == 5
-        assert delta.payload["RestrictionStatus"] == "Close"
+        assert delta.payload == {"operation": "availability", "value": 5}
 
     def test_exely_rate_delta(self):
         cs = _change_set(provider="exely", scope="rate", payload={"base_rate": 200, "currency": "TRY"})
         delta = compile_delta_exely(cs)
-        assert delta.payload["AmountAfterTax"] == "200"
-        assert delta.payload["CurrencyCode"] == "TRY"
+        assert delta.payload == {"operation": "rate", "value": 200, "currency": "TRY"}
 
     def test_exely_restriction_delta(self):
-        cs = _change_set(provider="exely", scope="restriction", payload={"min_los": 3, "cta": True, "stop_sell": False})
+        cs = _change_set(provider="exely", scope="restriction", payload={"operation": "min_los", "min_los": 3})
         delta = compile_delta_exely(cs)
-        assert delta.payload["MinLOS"] == 3
-        assert delta.payload["ArrivalDateBased"] is False  # cta=True → ArrivalDateBased=False
-        assert delta.payload["RestrictionStatus"] == "Open"
+        assert delta.payload == {"operation": "min_los", "value": 3}
 
     def test_hotelrunner_availability_delta(self):
         cs = _change_set(provider="hotelrunner", scope="availability", payload={"availability": 8, "stop_sell": False})
@@ -346,8 +342,9 @@ class TestDeltaCompilation:
 
         assert d_ex.provider == "exely"
         assert d_hr.provider == "hotelrunner"
-        # Exely uses BookingLimit, HR uses availability
-        assert "BookingLimit" in d_ex.payload
+        # Exely preserves a normalized operation/value envelope; HotelRunner
+        # uses its REST field name.
+        assert d_ex.payload == {"operation": "availability", "value": 5}
         assert "availability" in d_hr.payload
 
 

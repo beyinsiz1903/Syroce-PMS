@@ -52,6 +52,9 @@ jobs:
 
       - name: Import boundary guard
         run: python backend/scripts/check_import_boundaries.py
+
+      - name: Test skip and inventory budget guard
+        run: python scripts/check_skip_budget.py
         
       # ---- Requirements split guards (Phase 7 of requirements split) ----
       # Both scripts are pure-stdlib (no pip install needed) and run in <1s.
@@ -377,6 +380,149 @@ jobs:
             backend/test-results-exely.xml
             backend/test-results-exely-failure-stress.xml
             backend/test-results-live-mongo.xml
+
+  # ============ COMPLETE OFFLINE BACKEND + COVERAGE (HARD GATE) ============
+  # The curated backend-test job remains the fast, high-signal gate. This job
+  # additionally discovers and executes every non-quarantined backend test that
+  # does not require a real provider, provider mutation, or scheduled chaos run.
+  backend-full-offline:
+    name: Backend Full Offline Suite + Coverage
+    runs-on: ubuntu-latest
+    needs: backend-lint
+    timeout-minutes: 30
+    env:
+      MONGO_URL: mongodb://localhost:27017/hotel_pms_test?replicaSet=rs0
+      DB_NAME: hotel_pms_test
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET: ci-test-secret-key-do-not-use-in-production
+      TESTING: "1"
+      NILVERA_ENABLED: "false"
+      VITE_BACKEND_URL: http://localhost:8001
+      TEST_API_URL: http://localhost:8001
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Start transaction-capable MongoDB replica set
+        run: |
+          docker run --detach --name syroce-full-mongo --publish 27017:27017 \
+            mongo:7.0 --replSet rs0 --bind_ip_all
+          ready=0
+          for i in $(seq 1 30); do
+            if docker exec syroce-full-mongo mongosh --quiet \
+              --eval 'db.adminCommand({ping:1}).ok' >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::MongoDB did not start within 60 seconds"
+            docker logs syroce-full-mongo
+            exit 1
+          fi
+          docker exec syroce-full-mongo mongosh --quiet --eval \
+            'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          primary=0
+          for i in $(seq 1 30); do
+            if docker exec syroce-full-mongo mongosh --quiet \
+              --eval 'quit(rs.status().myState === 1 ? 0 : 1)' >/dev/null 2>&1; then
+              primary=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$primary" -ne 1 ]; then
+            echo "::error::MongoDB replica set did not elect a primary"
+            docker logs syroce-full-mongo
+            exit 1
+          fi
+
+      - name: Install local MongoDB restore-drill binaries
+        run: |
+          for binary in mongod mongodump mongorestore; do
+            docker cp "syroce-full-mongo:/usr/bin/$binary" "/tmp/$binary"
+            sudo install -m 0755 "/tmp/$binary" "/usr/local/bin/$binary"
+            "$binary" --version
+          done
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+          bash scripts/post_install.sh
+          pip install pytest pytest-asyncio httpx pytest-cov pytest-timeout
+
+      - name: Seed isolated test database
+        run: |
+          cd backend
+          python scripts/create_test_user.py || python create_demo_users.py || { echo "::error::No seed script found"; exit 1; }
+
+      - name: Start isolated backend server
+        run: |
+          cd backend
+          uvicorn server:app --host 0.0.0.0 --port 8001 > full-suite-backend.log 2>&1 &
+          ready=0
+          for i in $(seq 1 30); do
+            if curl --fail --silent --show-error http://localhost:8001/health/ready >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::Backend did not become ready within 60 seconds"
+            cat full-suite-backend.log || true
+            exit 1
+          fi
+
+      - name: Run complete provider-safe backend suite with coverage
+        run: |
+          cd backend
+          env -u CI -u GITHUB_ACTIONS python -m pytest tests \
+            -m 'not live_server and not external and not side_effect and not hotelrunner_pilot and not exely_pilot and not nilvera_sandbox and not chaos_l3 and not chaos_l4' \
+            --strict-markers \
+            --tb=short -q --timeout=60 \
+            --cov --cov-config=pyproject.toml \
+            --cov-report=term \
+            --cov-report=json:coverage.json \
+            --cov-report=html:coverage-html \
+            --cov-fail-under=46 \
+            --junitxml=full-suite-results.xml
+      - name: Enforce complete-suite test and skip policy
+        run: |
+          python scripts/check_junit_policy.py backend/full-suite-results.xml \
+            --min-tests 6100 \
+            --max-skips 5 \
+            --allow-skip 'test_admin_panel_phases' \
+            --allow-skip 'test_mice_beo_pdf'
+
+      - name: Upload full-suite results, coverage, and backend log
+        uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: backend-full-offline-results
+          path: |
+            backend/full-suite-results.xml
+            backend/coverage.json
+            backend/coverage-html/
+            backend/full-suite-backend.log
 
   # ============ BATTLE E2E TESTS (HARD GATE) ============
   battle-e2e:

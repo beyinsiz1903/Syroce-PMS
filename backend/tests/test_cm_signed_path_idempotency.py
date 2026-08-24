@@ -20,6 +20,7 @@ import hashlib
 import hmac
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -34,6 +35,9 @@ class _FakeRequest:
         self._body = body
         self.query_params = {}
         self.path_params = {}
+        self.scope = {"type": "http", "req_id": "signed-path-test"}
+        self.client = SimpleNamespace(host="127.0.0.1")
+        self.state = SimpleNamespace()
 
     async def body(self):
         return self._body

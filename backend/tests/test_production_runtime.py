@@ -137,8 +137,9 @@ class TestRedisPubSub:
         assert metrics["dropped"] == 0
 
     @pytest.mark.asyncio
-    async def test_redis_unavailable_returns_none(self):
+    async def test_redis_unavailable_returns_none(self, monkeypatch):
         from modules.event_bus.redis_pubsub import try_init_redis_backend
+        monkeypatch.delenv("REDIS_URL", raising=False)
         result = await try_init_redis_backend(None)
         assert result is None
 

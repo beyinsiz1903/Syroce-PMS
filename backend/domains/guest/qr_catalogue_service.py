@@ -4,18 +4,27 @@ import zoneinfo
 
 from pydantic import ValidationError
 
-from core.database import _raw_db as raw_db
+from core.tenant_db import get_db_for_tenant
 from domains.guest.qr_catalogue_defaults import get_default_catalogue
 from models.schemas.qr_catalogue import ChoiceConfig, DateConstraints, DateTimeConstraints, GuestServiceCatalogueSettings, GuestServiceDepartment, GuestServiceItem, QuantityConfig, TimeConstraints
 
 logger = logging.getLogger(__name__)
+
+# Test seam for the existing isolated catalogue tests. Production code always
+# resolves a TenantScopedDB, so every query receives an enforced tenant filter.
+raw_db = None
+
+
+def _db_for_tenant(tenant_id: str):
+    return raw_db if raw_db is not None else get_db_for_tenant(tenant_id)
 
 def _utc_now():
     from datetime import UTC
     return dt.datetime.now(UTC)
 
 async def resolve_catalogue_mode(tenant_id: str, property_id: str) -> str:
-    raw_settings = await raw_db["guest_service_catalogue_settings"].find_one({"tenant_id": tenant_id, "property_id": property_id})
+    tenant_db = _db_for_tenant(tenant_id)
+    raw_settings = await tenant_db["guest_service_catalogue_settings"].find_one({"tenant_id": tenant_id, "property_id": property_id})
     mode = "default"
     if raw_settings:
         raw_settings.pop("_id", None)
@@ -55,6 +64,7 @@ def is_service_available(service_hours: dict | None, prop_tz: str) -> bool:
         return now_local >= start_t or now_local < end_t
 
 async def fetch_catalogue_data(tenant_id: str, property_id: str, mode: str) -> tuple[list[dict], list[dict]]:
+    tenant_db = _db_for_tenant(tenant_id)
     depts_out = []
     services_out = []
 
@@ -63,8 +73,8 @@ async def fetch_catalogue_data(tenant_id: str, property_id: str, mode: str) -> t
         depts_out = default_cat["departments"]
         services_out = default_cat["services"]
     elif mode == "configured":
-        raw_depts = await raw_db["guest_service_departments"].find({"tenant_id": tenant_id, "property_id": property_id}).to_list(length=None)
-        raw_items = await raw_db["guest_service_items"].find({"tenant_id": tenant_id, "property_id": property_id}).to_list(length=None)
+        raw_depts = await tenant_db["guest_service_departments"].find({"tenant_id": tenant_id, "property_id": property_id}).to_list(length=None)
+        raw_items = await tenant_db["guest_service_items"].find({"tenant_id": tenant_id, "property_id": property_id}).to_list(length=None)
 
         if not raw_depts and not raw_items:
             from fastapi import HTTPException

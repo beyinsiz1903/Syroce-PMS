@@ -8,12 +8,13 @@ ACIL alarm + rebind/iptal serbest birakma davranisini dogrular.
 Doktrin: pilot_drift=0 (rastgele test tenant + tam temizlik), fake-green YOK,
 assertion gevsetme YOK, gercek DB uzerinde (Atlas) calisir.
 """
+import sys
 import uuid
 
 import pytest
 
 from core.database import db
-from core.tenant_db import tenant_context
+from core.tenant_db import TenantAwareDBProxy, tenant_context
 from domains.channel_manager.providers.unmatched_hold import (
     ALARM_TITLE,
     UNMATCHED_HOLD_LOCK_TYPE,
@@ -39,8 +40,26 @@ async def _cleanup():
                 await db.rooms.delete_many({"tenant_id": TEST_TENANT})
 
 
+@pytest.fixture
+def _fresh_db_proxy(monkeypatch):
+    """Detach this real-DB suite from proxy replacements in earlier tests."""
+    import core.database as database
+
+    fresh = TenantAwareDBProxy(database._raw_db)
+    monkeypatch.setattr(database, "db", fresh)
+    monkeypatch.setattr(sys.modules[__name__], "db", fresh)
+    import core.import_decision as import_decision
+    import core.room_type_inventory_service as room_type_inventory
+    import domains.channel_manager.providers.unmatched_hold as unmatched_hold
+
+    monkeypatch.setattr(import_decision, "db", fresh)
+    monkeypatch.setattr(room_type_inventory, "db", fresh)
+    monkeypatch.setattr(unmatched_hold, "db", fresh)
+    return fresh
+
+
 @pytest.fixture(autouse=True)
-async def _around():
+async def _around(_fresh_db_proxy):
     await _cleanup()
     yield
     await _cleanup()

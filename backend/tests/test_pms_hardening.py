@@ -1,11 +1,6 @@
 """
 Comprehensive PMS Hardening Test Suite - Tests all 8 hardening areas.
 """
-import os
-import pytest
-if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
-    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
-
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -102,8 +97,12 @@ class TestFrontDeskService:
     async def test_checkout_folio_blocker(self):
         with patch('core.atomic_checkin_checkout.db') as mock_db:
             mock_db.bookings.find_one = AsyncMock(return_value={
-                "id": "b1", "status": "checked_in", "room_id": "r1"
+                "id": "b1", "status": "checked_in", "room_id": "r1",
+                "check_in": "2026-03-12", "check_out": "2026-03-14",
             })
+            mock_db.tenant_settings.find_one = AsyncMock(
+                return_value={"business_date": "2026-03-14"}
+            )
             mock_db.folios.find = MagicMock()
             mock_db.folios.find.return_value.to_list = AsyncMock(return_value=[
                 {"id": "f1", "status": "open", "folio_number": "F-001"}
@@ -114,6 +113,9 @@ class TestFrontDeskService:
             ])
             mock_db.payments.find = MagicMock()
             mock_db.payments.find.return_value.to_list = AsyncMock(return_value=[])
+            mock_db.folio_ledger.aggregate.return_value.to_list = AsyncMock(
+                return_value=[{"_id": None, "total": 500.0}]
+            )
 
             result = await self.fd.checkout("t1", "b1", "u1", "Admin", force=False)
             assert result["success"] is False
