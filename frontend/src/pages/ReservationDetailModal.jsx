@@ -40,7 +40,7 @@ const STATUS_PILL = {
   pending: 'bg-slate-100 text-slate-600 border border-slate-200',
 };
 
-export default function ReservationDetailModal({ bookingId, onClose, allBookings }) {
+export default function ReservationDetailModal({ bookingId, onClose, allBookings, onOperationComplete }) {
   const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -79,8 +79,21 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
 
   useEffect(() => { setLoading(true); loadData(); }, [loadData]);
 
-  const action = async (url, body = {}, msg = 'İşlem tamamlandı') => {
-    try { await axios.post(`${API}${url}`, body); toast.success(msg); loadData(); }
+  const finishOperation = useCallback(async (operation) => {
+    if (typeof onOperationComplete === 'function') {
+      await onOperationComplete({ bookingId, operation });
+      return;
+    }
+    await loadData();
+  }, [bookingId, loadData, onOperationComplete]);
+
+  const action = async (url, body = {}, msg = 'İşlem tamamlandı', operation = null) => {
+    try {
+      await axios.post(`${API}${url}`, body);
+      toast.success(msg);
+      if (operation) await finishOperation(operation);
+      else await loadData();
+    }
     catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
   };
 
@@ -373,7 +386,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 </Button>
                 {canCancel && (
                   <>
-                    <Button size="sm" variant="outline" onClick={async () => { if (await confirmDialog({ message: 'No-show olarak işaretlensin mi?', variant: 'danger' })) action(`/pms/reservations/${bookingId}/mark-noshow`, {}, 'No-show işaretlendi'); }} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50" data-testid="btn-mark-noshow">
+                    <Button size="sm" variant="outline" onClick={async () => { if (await confirmDialog({ message: 'No-show olarak işaretlensin mi?', variant: 'danger' })) await action(`/pms/reservations/${bookingId}/mark-noshow`, {}, 'No-show işaretlendi', 'no_show'); }} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50" data-testid="btn-mark-noshow">
                       <AlertTriangle className="w-3 h-3 mr-2" /> No-Show
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => setActiveTab('cancel')} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50" data-testid="btn-cancel-reservation">
@@ -489,7 +502,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       } else {
                         toast.success('Çıkış yapıldı');
                       }
-                      loadData();
+                      await finishOperation('checked_out');
                     } catch (e) {
                       const detail = e.response?.data?.detail || e.message;
                       if (e.response?.status === 402) {
@@ -578,7 +591,8 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
           setCheckinAlertOpen(false);
           try {
             await axios.post(`/frontdesk/checkin/${bookingId}?create_folio=true&force_clean=true`);
-            toast.success('Giriş yapıldı'); loadData();
+            toast.success('Giriş yapıldı');
+            await finishOperation('checked_in');
           } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
         }}
       />
