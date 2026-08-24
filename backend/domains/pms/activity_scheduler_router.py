@@ -9,11 +9,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from core.security import get_current_user
 from core.tenant_db import get_system_db
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op
 
 try:  # pragma: no cover - mirrors guest read-path import guard
     from security.field_encryption import get_field_encryption_service
@@ -69,9 +70,9 @@ class Activity(BaseModel):
     id: str | None = None
     name: str = Field(..., min_length=1)
     type: str = Field("other")
-    duration_min: int = 60
-    price: float = 0
-    capacity: int = 1
+    duration_min: int = Field(default=60, ge=15, le=1440)
+    price: float = Field(default=0, ge=0, le=10_000_000)
+    capacity: int = Field(default=1, ge=1, le=10_000)
     description: str | None = None
     active: bool = True
 
@@ -83,7 +84,7 @@ class ActivityResource(BaseModel):
     name: str
     kind: str = Field("instructor", pattern="^(instructor|venue|equipment)$")
     activity_types: list[str] = Field(default_factory=list)
-    capacity: int = 1
+    capacity: int = Field(default=1, ge=1, le=10_000)
     active: bool = True
 
 
@@ -92,8 +93,19 @@ class ActivityBookingCreate(BaseModel):
     resource_id: str
     guest_id: str
     starts_at: str  # ISO
-    duration_min: int | None = None
+    duration_min: int | None = Field(default=None, ge=15, le=1440)
     note: str | None = None
+
+    @field_validator("starts_at")
+    @classmethod
+    def validate_starts_at(cls, value: str) -> str:
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("starts_at ISO tarih-saat olmalıdır") from exc
+        if parsed.tzinfo is None:
+            raise ValueError("starts_at saat dilimi içermelidir")
+        return parsed.isoformat()
 
 
 class ActivityBooking(ActivityBookingCreate):
@@ -143,7 +155,7 @@ async def list_activities(type: str | None = None, user: User = Depends(get_curr
 
 
 @router.post("", response_model=Activity, status_code=201)
-async def create_activity(body: Activity, user: User = Depends(get_current_user)):
+async def create_activity(body: Activity, user: User = Depends(get_current_user), _perm=Depends(require_op("manage_guests"))):
     if body.type not in ACTIVITY_TYPES:
         raise HTTPException(400, f"Tip şunlardan biri olmalı: {ACTIVITY_TYPES}")
     db = get_system_db()
@@ -157,9 +169,11 @@ async def create_activity(body: Activity, user: User = Depends(get_current_user)
 
 
 @router.delete("/{activity_id}", status_code=204)
-async def delete_activity(activity_id: str, user: User = Depends(get_current_user)):
+async def delete_activity(activity_id: str, user: User = Depends(get_current_user), _perm=Depends(require_op("manage_guests"))):
     db = get_system_db()
-    await db.activities.update_one({"id": activity_id, "tenant_id": user.tenant_id}, {"$set": {"active": False}})
+    result = await db.activities.update_one({"id": activity_id, "tenant_id": user.tenant_id}, {"$set": {"active": False}})
+    if not result.matched_count:
+        raise HTTPException(404, "Aktivite bulunamadı")
     return None
 
 
@@ -178,7 +192,7 @@ async def list_resources(kind: str | None = None, user: User = Depends(get_curre
 
 
 @router.post("/resources", response_model=ActivityResource, status_code=201)
-async def create_resource(body: ActivityResource, user: User = Depends(get_current_user)):
+async def create_resource(body: ActivityResource, user: User = Depends(get_current_user), _perm=Depends(require_op("manage_guests"))):
     db = get_system_db()
     doc = body.model_dump()
     doc["id"] = doc.get("id") or str(uuid.uuid4())
@@ -190,9 +204,11 @@ async def create_resource(body: ActivityResource, user: User = Depends(get_curre
 
 
 @router.delete("/resources/{resource_id}", status_code=204)
-async def delete_resource(resource_id: str, user: User = Depends(get_current_user)):
+async def delete_resource(resource_id: str, user: User = Depends(get_current_user), _perm=Depends(require_op("manage_guests"))):
     db = get_system_db()
-    await db.activity_resources.update_one({"id": resource_id, "tenant_id": user.tenant_id}, {"$set": {"active": False}})
+    result = await db.activity_resources.update_one({"id": resource_id, "tenant_id": user.tenant_id}, {"$set": {"active": False}})
+    if not result.matched_count:
+        raise HTTPException(404, "Kaynak bulunamadı")
     return None
 
 
@@ -225,16 +241,27 @@ async def list_bookings(
 
 
 @router.post("/bookings", response_model=ActivityBooking, status_code=201)
-async def create_booking(body: ActivityBookingCreate, user: User = Depends(get_current_user)):
+async def create_booking(body: ActivityBookingCreate, user: User = Depends(get_current_user), _perm=Depends(require_op("manage_guests"))):
     await _ensure_indexes()
     db = get_system_db()
     activity = await db.activities.find_one({"id": body.activity_id, "tenant_id": user.tenant_id, "active": True})
     if not activity:
         raise HTTPException(404, "Aktivite bulunamadı")
+    resource = await db.activity_resources.find_one(
+        {"id": body.resource_id, "tenant_id": user.tenant_id, "active": True}
+    )
+    if not resource:
+        raise HTTPException(404, "Aktivite kaynağı bulunamadı")
+    supported_types = resource.get("activity_types") or []
+    if supported_types and activity.get("type") not in supported_types:
+        raise HTTPException(400, "Seçilen kaynak bu aktivite tipini desteklemiyor")
+    guest = await db.guests.find_one({"id": body.guest_id, "tenant_id": user.tenant_id}, {"_id": 0, "id": 1})
+    if not guest:
+        raise HTTPException(404, "Misafir bulunamadı")
     duration = body.duration_min or activity.get("duration_min", 60)
     ends_at = _add_minutes(body.starts_at, duration)
     # Çakışma kontrolü: aynı kaynak + zaman dilimi
-    clash = await db.activity_bookings.find_one(
+    overlaps = await db.activity_bookings.count_documents(
         {
             "tenant_id": user.tenant_id,
             "resource_id": body.resource_id,
@@ -243,8 +270,9 @@ async def create_booking(body: ActivityBookingCreate, user: User = Depends(get_c
             "ends_at": {"$gt": body.starts_at},
         }
     )
-    if clash:
-        raise HTTPException(409, "Kaynak bu zaman diliminde dolu")
+    capacity = min(int(resource.get("capacity", 1)), int(activity.get("capacity", resource.get("capacity", 1))))
+    if overlaps >= capacity:
+        raise HTTPException(409, f"Kaynak bu zaman diliminde dolu ({overlaps}/{capacity})")
     doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": user.tenant_id,
@@ -261,7 +289,7 @@ async def create_booking(body: ActivityBookingCreate, user: User = Depends(get_c
 
 
 @router.post("/bookings/{booking_id}/cancel")
-async def cancel_booking(booking_id: str, user: User = Depends(get_current_user)):
+async def cancel_booking(booking_id: str, user: User = Depends(get_current_user), _perm=Depends(require_op("manage_guests"))):
     db = get_system_db()
     res = await db.activity_bookings.update_one(
         {"id": booking_id, "tenant_id": user.tenant_id},

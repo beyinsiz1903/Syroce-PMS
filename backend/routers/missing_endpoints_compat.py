@@ -61,62 +61,20 @@ async def upsell_products(
 
 
 # ─────────────────────────────────────────────────────────────────────
-# GDPR / KVKK COMPLIANCE
-# ─────────────────────────────────────────────────────────────────────
-# STATUS: partial — real aggregation over guests/consents/erasure;
-#                   "status: active" hard-coded; no DPA upload/audit history.
-@router.get("/gdpr/compliance-status")
-async def gdpr_compliance_status(current_user=Depends(get_current_user)):
-    tid = current_user.tenant_id
-    guests = await db.guests.count_documents({"tenant_id": tid})
-    consents = await db.kvkk_consents.count_documents({"tenant_id": tid}) if tid else 0
-    erasure = await db.kvkk_erasure_requests.count_documents({"tenant_id": tid}) if tid else 0
-    score = 100 if guests == 0 else round(min(100, (consents / max(guests, 1)) * 100))
-    return {
-        "compliance_score": score,
-        "total_guests": guests,
-        "consented_guests": consents,
-        "erasure_requests": erasure,
-        "data_processing_agreements": 0,
-        "last_audit": None,
-        "status": "active",
-    }
-
-
-# STATUS: partial — real read of dpa_records; no create/sign workflow.
-@router.get("/gdpr/dpa")
-async def gdpr_dpa(current_user=Depends(get_current_user)):
-    items: list[dict] = []
-    async for d in db.dpa_records.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).limit(100):
-        items.append(d)
-    return {"agreements": items, "total": len(items)}
-
-
-# STATUS: stub — hard-coded retention list; should be tenant-configurable
-#                and persist edits + trigger anonymisation jobs.
-@router.get("/gdpr/retention-policy")
-async def gdpr_retention(current_user=Depends(get_current_user)):
-    return {
-        "policies": [
-            {"data_type": "guest_pii", "retention_days": 730, "auto_anonymize": True},
-            {"data_type": "booking_history", "retention_days": 1825, "auto_anonymize": False},
-            {"data_type": "payment_records", "retention_days": 3650, "auto_anonymize": False},
-            {"data_type": "marketing_consents", "retention_days": 365, "auto_anonymize": True},
-        ]
-    }
-
-
-# ─────────────────────────────────────────────────────────────────────
 # CENTRAL OFFICE (multi-property HQ view)
 # ─────────────────────────────────────────────────────────────────────
 async def _central_chain_properties(current_user) -> list[dict]:
     tenant_id = current_user.tenant_id
     own = await _system_db.tenants.find_one(
         {"$or": [{"tenant_id": tenant_id}, {"id": tenant_id}]},
-        {"_id": 0, "chain_id": 1, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1},
+        {"_id": 0, "chain_id": 1, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1, "is_chain_headquarters": 1},
     )
     chain_id = (own or {}).get("chain_id")
     if chain_id:
+        role = getattr(getattr(current_user, "role", None), "value", getattr(current_user, "role", None))
+        is_hq = bool(getattr(current_user, "is_chain_headquarters", False) or (own or {}).get("is_chain_headquarters"))
+        if role != "super_admin" and not is_hq:
+            raise HTTPException(403, "Zincir geneli merkezi ofis görünümü yalnız merkez tesis kullanıcılarına açıktır")
         tenants = await _system_db.tenants.find(
             {"chain_id": chain_id},
             {"_id": 0, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1},
@@ -168,7 +126,7 @@ async def _central_property_metrics(property_doc: dict, period_start: str, perio
 
 
 @router.get("/central-office/dashboard")
-async def central_office_dashboard(current_user=Depends(get_current_user)):
+async def central_office_dashboard(current_user=Depends(get_current_user), _perm=Depends(require_op("view_executive_reports"))):
     now = datetime.now(UTC)
     today = now.date().isoformat()
     month_start = now.date().replace(day=1).isoformat()
@@ -199,7 +157,7 @@ async def central_office_dashboard(current_user=Depends(get_current_user)):
 
 
 @router.get("/central-office/alerts")
-async def central_office_alerts(current_user=Depends(get_current_user)):
+async def central_office_alerts(current_user=Depends(get_current_user), _perm=Depends(require_op("view_executive_reports"))):
     properties = await _central_chain_properties(current_user)
     alerts = []
     for property_doc in properties:
@@ -224,7 +182,7 @@ async def central_office_alerts(current_user=Depends(get_current_user)):
 
 
 @router.get("/central-office/occupancy-comparison")
-async def central_office_occupancy(current_user=Depends(get_current_user)):
+async def central_office_occupancy(current_user=Depends(get_current_user), _perm=Depends(require_op("view_executive_reports"))):
     now = datetime.now(UTC)
     today = now.date().isoformat()
     tomorrow = (now.date() + timedelta(days=1)).isoformat()
@@ -234,7 +192,7 @@ async def central_office_occupancy(current_user=Depends(get_current_user)):
 
 
 @router.get("/central-office/revenue-report")
-async def central_office_revenue(current_user=Depends(get_current_user)):
+async def central_office_revenue(current_user=Depends(get_current_user), _perm=Depends(require_op("view_executive_reports"))):
     now = datetime.now(UTC)
     today = now.date().isoformat()
     start = now.date().replace(day=1).isoformat()
@@ -248,28 +206,6 @@ async def central_office_revenue(current_user=Depends(get_current_user)):
         "totals": {"revenue": total},
         "period": {"start": start, "end": today},
     }
-
-
-# ─────────────────────────────────────────────────────────────────────
-# CENTRAL PRICING
-# ─────────────────────────────────────────────────────────────────────
-# STATUS: stub — central pricing not implemented. Real implementation
-#                belongs in domains/revenue/pricing/ (cross-property tier).
-@router.get("/central-pricing/rates")
-async def central_pricing_rates(current_user=Depends(get_current_user)):
-    return {"rates": [], "total": 0}
-
-
-# STATUS: stub — see /central-pricing/rates above.
-@router.get("/central-pricing/rate-history")
-async def central_pricing_history(current_user=Depends(get_current_user)):
-    return {"history": [], "total": 0}
-
-
-# STATUS: stub — see /central-pricing/rates above.
-@router.get("/central-pricing/rate-templates")
-async def central_pricing_templates(current_user=Depends(get_current_user)):
-    return {"templates": [], "total": 0}
 
 
 # ─────────────────────────────────────────────────────────────────────

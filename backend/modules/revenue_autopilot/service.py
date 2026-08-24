@@ -3,6 +3,7 @@ Revenue Autopilot Service.
 Converts ML recommendations into auto-applied or queued pricing decisions.
 """
 
+import hashlib
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -55,6 +56,9 @@ def new_approval_item(
     reason: str,
     source_job_id: str | None = None,
 ) -> dict:
+    recommendation_key = hashlib.sha256(
+        f"{tenant_id}|{property_id or ''}|{room_type}|{target_date}|{current_price}|{recommended_price}|{source_job_id or ''}".encode()
+    ).hexdigest()
     return {
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
@@ -68,6 +72,7 @@ def new_approval_item(
         "reason": reason,
         "status": ApprovalStatus.PENDING,
         "source_job_id": source_job_id,
+        "recommendation_key": recommendation_key,
         "applied_at": None,
         "applied_by": None,
         "rejected_reason": None,
@@ -141,6 +146,20 @@ class RevenueAutopilotService:
         current_price = recommendation.get("current_price", 0)
         recommended_price = recommendation.get("recommended_price", 0)
         confidence = recommendation.get("confidence", 0)
+        recommendation_key = hashlib.sha256(
+            f"{tenant_id}|{policy.get('property_id') or ''}|{room_type}|{target_date}|{current_price}|{recommended_price}|{recommendation.get('source_job_id') or ''}".encode()
+        ).hexdigest()
+        existing = await self.db.revenue_approval_queue.find_one(
+            {"tenant_id": tenant_id, "recommendation_key": recommendation_key},
+            {"_id": 0, "id": 1, "status": 1},
+        )
+        if existing:
+            return {
+                "action": "duplicate",
+                "item_id": existing.get("id"),
+                "status": existing.get("status"),
+                "provider_write": False,
+            }
 
         # blackout check
         if target_date in policy.get("blackout_dates", []):
@@ -166,7 +185,7 @@ class RevenueAutopilotService:
                     recommendation.get("source_job_id"),
                 )
                 await self.db.revenue_approval_queue.insert_one(item)
-                return {"action": "queued", "reason": "Exceeds max change", "item_id": item["id"]}
+                return {"action": "queued", "reason": "Exceeds max change", "item_id": item["id"], "provider_write": False}
 
         mode = policy.get("mode", AutopilotMode.SUPERVISED)
         auto_threshold = policy.get("confidence_threshold_auto", 0.85)
@@ -195,7 +214,7 @@ class RevenueAutopilotService:
 
                 apply_doc = new_apply_result(tenant_id, item["id"], room_type, current_price, recommended_price, result.get("channels", []), True)
                 await self.db.revenue_apply_results.insert_one(apply_doc)
-                return {"action": "auto_applied", "item_id": item["id"], "result": result}
+                return {"action": "auto_applied", "item_id": item["id"], "result": result, "provider_write": False}
 
             # Apply did not actually change a rate plan (no matching plan or DB
             # error). Marking it AUTO_APPLIED would be a fake success, so queue
@@ -213,7 +232,7 @@ class RevenueAutopilotService:
                 recommendation.get("source_job_id"),
             )
             await self.db.revenue_approval_queue.insert_one(item)
-            return {"action": "queued", "reason": "auto_apply_failed", "item_id": item["id"], "result": result}
+            return {"action": "queued", "reason": "auto_apply_failed", "item_id": item["id"], "result": result, "provider_write": False}
 
         elif confidence >= queue_threshold:
             item = new_approval_item(
@@ -228,13 +247,13 @@ class RevenueAutopilotService:
                 recommendation.get("source_job_id"),
             )
             await self.db.revenue_approval_queue.insert_one(item)
-            return {"action": "queued", "item_id": item["id"]}
+            return {"action": "queued", "item_id": item["id"], "provider_write": False}
 
         else:
             return {"action": "rejected", "reason": f"Confidence {confidence} below threshold {queue_threshold}"}
 
     async def _apply_price(self, tenant_id: str, room_type: str, target_date: str, old_price: float, new_price: float) -> dict:
-        """Update the PMS-side rate plan base_price for the room type.
+        """Record a dated PMS-side rate override for the room type.
 
         Distribution to OTA channels is handled by the channel manager's own
         rate-push flow (unified rate manager), not here, so we report the local
@@ -242,14 +261,34 @@ class RevenueAutopilotService:
         happen (doctrine: no fake-green).
         """
         try:
-            res = await self.db.rate_plans.update_many(
-                {"tenant_id": tenant_id, "room_type": room_type},
-                {"$set": {"base_price": new_price, "updated_at": datetime.now(UTC).isoformat()}},
+            plan = await self.db.rate_plans.find_one(
+                {"tenant_id": tenant_id, "room_type": room_type, "is_active": {"$ne": False}},
+                {"_id": 0, "id": 1},
             )
-            # A price is only really "applied" when a rate plan for this room
-            # type actually exists and matched; matched_count==0 means nothing
-            # was changed, so we must NOT report success (doctrine: no fake-green).
-            applied = res.matched_count > 0
+            if not plan:
+                return {"success": False, "channels": [], "rate_plans_matched": 0, "rate_overrides_updated": 0, "provider_write": False}
+            now = datetime.now(UTC).isoformat()
+            override_query = {
+                "tenant_id": tenant_id,
+                "room_type": room_type,
+                "date": target_date,
+                "source": "revenue_autopilot",
+            }
+            res = await self.db.rate_overrides.update_one(
+                override_query,
+                {
+                    "$set": {
+                        "new_rate": new_price,
+                        "previous_rate": old_price,
+                        "status": "active",
+                        "provider_sync_status": "not_requested",
+                        "updated_at": now,
+                    },
+                    "$setOnInsert": {"id": str(uuid.uuid4()), "created_at": now},
+                },
+                upsert=True,
+            )
+            applied = bool(res.matched_count or getattr(res, "upserted_id", None))
             if applied:
                 # audit only an apply that actually matched a rate plan
                 await self.db.audit_logs.insert_one(
@@ -258,8 +297,8 @@ class RevenueAutopilotService:
                         "tenant_id": tenant_id,
                         "user_id": "autopilot",
                         "action": "revenue_autopilot_apply",
-                        "entity_type": "rate_plan",
-                        "entity_id": room_type,
+                        "entity_type": "rate_override",
+                        "entity_id": f"{room_type}:{target_date}",
                         "changes": {"old_price": old_price, "new_price": new_price, "target_date": target_date},
                         "timestamp": datetime.now(UTC).isoformat(),
                     }
@@ -267,12 +306,13 @@ class RevenueAutopilotService:
             return {
                 "success": applied,
                 "channels": [],
-                "rate_plans_matched": res.matched_count,
-                "rate_plans_updated": res.modified_count,
+                "rate_plans_matched": 1,
+                "rate_overrides_updated": res.modified_count,
+                "provider_write": False,
             }
         except Exception as e:
             logger.exception("Price apply error")
-            return {"success": False, "error": str(e)[:200], "channels": []}
+            return {"success": False, "error": str(e)[:200], "channels": [], "provider_write": False}
 
     async def approve_item(self, tenant_id: str, item_id: str, user_id: str) -> dict:
         item = await self.db.revenue_approval_queue.find_one({"id": item_id, "tenant_id": tenant_id, "status": ApprovalStatus.PENDING}, {"_id": 0})

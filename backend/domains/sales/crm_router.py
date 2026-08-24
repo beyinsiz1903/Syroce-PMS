@@ -277,7 +277,10 @@ async def update_lead_stage(
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
-    await db.leads.update_one({"id": lead_id}, {"$set": {"stage": request.stage.value, "notes": request.notes, "updated_at": datetime.now(UTC).isoformat(), "updated_by": current_user.name}})
+    await db.leads.update_one(
+        {"id": lead_id, "tenant_id": current_user.tenant_id},
+        {"$set": {"stage": request.stage.value, "notes": request.notes, "updated_at": datetime.now(UTC).isoformat(), "updated_by": current_user.name}},
+    )
 
     return {"message": "Lead stage updated", "lead_id": lead_id, "new_stage": request.stage.value}
 

@@ -60,8 +60,9 @@ def _require_hotel_admin(user: User) -> str:
         if not user.tenant_id:
             raise HTTPException(403, "Geçerli bir otel kiracısı yok")
         return user.tenant_id
-    if user.role in ("agency_admin", "agency_agent"):
-        raise HTTPException(403, "Acente kullanıcıları otel listing yönetemez")
+    role = getattr(user.role, "value", user.role)
+    if role not in ("admin", "super_admin", "supervisor"):
+        raise HTTPException(403, "Marketplace otel ayarlarını yalnız yönetici roller yönetebilir")
     if not user.tenant_id:
         raise HTTPException(403, "Geçerli bir otel kiracısı yok")
     return user.tenant_id
@@ -685,8 +686,12 @@ async def agency_hotel_rates(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
     room_type: str | None = Query(None),
-    _agency: dict = Depends(get_marketplace_agency),
+    agency: dict = Depends(get_marketplace_agency),
 ):
+    from routers.agency_contracts import has_active_contract
+
+    if not await has_active_contract(agency["agency_id"], tenant_id, on_date=start_date):
+        raise HTTPException(403, "Bu otelle aktif sözleşmeniz yok")
     await _get_listing_or_404(tenant_id)
     base_query = {
         "tenant_id": tenant_id,
@@ -740,10 +745,8 @@ async def agency_create_reservation(
     if co <= ci:
         raise HTTPException(400, "check_out, check_in'den sonra olmalı")
 
-    # NOTE: Mevcut /api/b2b/reservations ile paylaşılan davranış — "check-then-act"
-    # rezervasyon akışı, yüksek eş zamanlılıkta aynı son odaya çift booking
-    # üretebilir. Bu kapsamda kabul edilmiştir; gelecek sprint'te per-room
-    # atomic find_and_modify lock'a geçirilecek.
+    # Room selection is followed by create_booking_atomic below; its room-night
+    # lock is the authoritative race-safety guard under concurrent requests.
     with tenant_context(data.tenant_id):
         rooms = await db.rooms.find({"tenant_id": data.tenant_id, "room_type": data.room_type}, {"_id": 0}).to_list(500)
         if not rooms:
@@ -791,7 +794,7 @@ async def agency_create_reservation(
                     "id": guest_id,
                     "tenant_id": data.tenant_id,
                     "name": data.guest_name.strip(),
-                    "email": data.guest_email.strip() or f"mkt-{guest_id[:8]}@placeholder.local",
+                    "email": data.guest_email.strip(),
                     "phone": data.guest_phone.strip(),
                     "id_number": "",
                     "vip_status": False,

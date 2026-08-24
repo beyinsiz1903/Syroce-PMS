@@ -64,7 +64,9 @@ async def test_central_office_dashboard_aggregates_only_chain_properties(monkeyp
     monkeypatch.setattr(central, "_system_db", database)
 
     result = await central.central_office_dashboard(
-        current_user=SimpleNamespace(tenant_id="tenant-a")
+        current_user=SimpleNamespace(
+            tenant_id="tenant-a", role="admin", is_chain_headquarters=True
+        )
     )
 
     assert result["chain_kpi"] == {
@@ -76,3 +78,15 @@ async def test_central_office_dashboard_aggregates_only_chain_properties(monkeyp
     }
     assert result["kpis"]["total_revenue_mtd"] == 150.0
     assert {row["tenant_id"] for row in result["property_breakdown"]} == {"tenant-a", "tenant-b"}
+
+
+@pytest.mark.asyncio
+async def test_central_office_rejects_non_hq_property_user(monkeypatch):
+    monkeypatch.setattr(central, "_system_db", SimpleNamespace(tenants=_TenantCollection()))
+
+    with pytest.raises(Exception) as exc:
+        await central._central_chain_properties(
+            SimpleNamespace(tenant_id="tenant-a", role="admin", is_chain_headquarters=False)
+        )
+
+    assert getattr(exc.value, "status_code", None) == 403

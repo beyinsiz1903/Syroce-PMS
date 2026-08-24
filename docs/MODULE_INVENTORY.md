@@ -44,8 +44,8 @@ Etiketler **nominal**; ölçütler:
 | Reservation Detail | `routers/reservation_detail.py` | `production_ready` | |
 | Calendar | `domains/pms/calendar_router.py` | `production_ready` | TR locale fix tamamlandı |
 | Approvals | `domains/pms/approvals_router.py` | `production_ready` | |
-| Activity Scheduler | `domains/pms/activity_scheduler_router.py` | `partial` | |
-| Catering | `domains/pms/catering_router.py` | `partial` | |
+| Activity Scheduler | `domains/pms/activity_scheduler_router.py` | `production_ready` | Kaynak/konuk doğrulama, kapasite, saat dilimi ve tenant kapsamı testli |
+| Catering | `domains/pms/catering_router.py` | `production_ready` | Menü CRUD, rezervasyon atama, fiyat snapshot ve mixed-currency koruması testli |
 | Cashier | `domains/pms/cashier_router.py` | `production_ready` | PCI-DSS yönetimi var |
 
 ### Operations
@@ -67,13 +67,13 @@ Etiketler **nominal**; ölçütler:
 | Folio Ledger | `routers/folio_ledger.py` | `production_ready` | Append-only ledger; void/transfer var |
 | Folio dialog (UI) | `components/pms/FolioViewDialog.jsx` | `production_ready` | Loading/picker/empty state May 2026 |
 | Finance | `routers/finance/` (klasör; folio/invoices/...) | `production_ready` | |
-| Accounting Domain | `domains/accounting/` | `partial` | E-Fatura mevcut, e-Arşiv pending |
+| Accounting Domain | `domains/accounting/` + `routers/finance/accounting.py` | `production_ready` | GL/AP/bütçe/demirbaş ile e-Fatura/e-Arşiv lifecycle ve entegrasyon testleri mevcut |
 | Invoices (E-Fatura) | (frontend `EFaturaModule.jsx`) | `production_ready` | |
 | Pending AR | (frontend `PendingAR.jsx`) | `production_ready` | |
 | City Ledger | (frontend `CityLedgerAccounts.jsx`) | `production_ready` | |
 | Travel Agent A/R-A/P | `routers/travel_agent_arap.py` | `production_ready` | |
 | Deposit Tracking | (frontend `DepositTrackingPage.jsx`) | `production_ready` | Sprint A pilot |
-| VCC | `routers/vcc_router.py` | `partial` | |
+| VCC | `routers/vcc_router.py` | `production_ready` | AES-GCM, PCI görünüm limiti, Luhn/SKT/CVV doğrulama ve otomatik ekran temizleme |
 | Procurement | (frontend `ProcurementPage.jsx`) | `production_ready` | Action ghost→outline+icon migration done |
 
 ### Channel Manager
@@ -94,12 +94,12 @@ Etiketler **nominal**; ölçütler:
 | Modül | Dosya | Statü | Not |
 |---|---|---|---|
 | Revenue Management | `routers/revenue_management.py` | `production_ready` | |
-| Forecasting | `domains/revenue/forecasting/` + `forecast_router.py` | `partial` | Demo veri olmadan zayıf öneri |
-| Hurdle Rates | `domains/revenue/hurdle_router.py` | `partial` | |
-| Pricing | `domains/revenue/pricing_router/` | `partial` | |
-| Auto-Pricing | `domains/revenue/autopricing/` | `partial` | İlk versiyon "recommend + explain", autopilot kapatık |
+| Forecasting | `domains/revenue/forecasting/` + `forecast_router.py` | `production_ready` | OTB + geçen yıl aynı hafta günü; veri yoksa sentetik tahmin üretmez |
+| Hurdle Rates | `domains/revenue/hurdle_router.py` | `production_ready` | Tenant kapsamlı CRUD ve oda+kanal özgüllük öncelikli fiyat kontrolü testli |
+| Pricing | `domains/revenue/pricing_router/` | `production_ready` | Kampanya, indirim kodu, promosyon, rate plan ve paket kalıcı CRUD; tutar/tarih doğrulamalı |
+| Auto-Pricing | `domains/revenue/autopricing/` + `routers/revenue_autopilot_v2.py` | `production_ready` | İç öneri/onay akışı; provider write bilinçli olarak ayrı ve kapalı |
 | Displacement Analysis | `routers/displacement_analysis.py` | `production_ready` | |
-| Revenue Autopilot v2 | `routers/revenue_autopilot_v2.py` | `partial` | |
+| Revenue Autopilot v2 | `routers/revenue_autopilot_v2.py` | `production_ready` | Eşik politikaları, tekrar engeli, onay/red; tarihli override yazar, global planı bozmaz |
 | Banquet Competitor | `routers/banquet_competitor.py` | `partial` | |
 | Unified Rate Manager (UI) | `pages/UnifiedRateManager` | `production_ready` | |
 | RMS Module (UI) | `pages/RMSModule` | `production_ready` | Sprint A pilot |
@@ -109,23 +109,23 @@ Etiketler **nominal**; ölçütler:
 |---|---|---|---|
 | Guest Journey | `routers/guest_journey.py` | `partial` | |
 | Guest Messaging | `routers/guest_messaging.py` | `production_ready` | |
-| Loyalty | `domains/guest/loyalty_router.py` | `partial` | |
+| Loyalty | `domains/guest/loyalty_router.py` | `production_ready` | Tier/üye/ödül, atomik puan-stok ve idempotent kazanım/harcama |
 | Self Check-in / Pre-checkin | `domains/guest/checkin_router.py` | `production_ready` | KVKK ID-photo cleanup var |
-| Digital Key | (frontend) | `partial` | |
+| Digital Key | `domains/guest/operations_router.py` + `routers/door_reader.py` + frontend | `production_ready` | Konaklama süresine bağlı token, sahiplik/tenant, rotasyon ve okuyucu replay koruması testli |
 | Online Check-in | (frontend `OnlineCheckin.jsx`) | `production_ready` | |
 | Room QR Requests | (`/g/room/...` public route) | `production_ready` | |
 | Public Reviews | (`/review/:token` public route) | `production_ready` | |
 | Mailing | (`pages/MailingPage`) | `production_ready` | Sprint A pilot |
-| Reputation Manager | `domains/ai/router/pricing_reputation.py` | `partial` | |
+| Reputation Manager | `domains/ai/router/pricing_reputation.py` + `pages/ReputationManager.jsx` | `production_ready` | Tek review kaynağı, 5'lik ölçek normalizasyonu, trend/uyarı ve iç yanıt taslağı auditli |
 
 ### AI / ML
 | Modül | Dosya | Statü | Not |
 |---|---|---|---|
-| AI Module Hub | `pages/AIModule` | `partial` | |
-| Dynamic Pricing Engine | `domains/ai/dynamic_pricing_engine.py` | `partial` | "Recommend + explain" yaklaşımı |
-| Predictive Engine | `domains/ai/predictive_engine.py` | `partial` | |
-| Revenue Autopilot (AI) | `domains/ai/revenue_autopilot.py` | `partial` | |
-| Reputation Manager (AI) | `domains/ai/router/pricing_reputation.py` | `partial` | |
+| AI Module Hub | `pages/AIModule` | `production_ready` | Dynamic pricing, tahmin, autopilot ve reputation yönlendirmeleri aktif |
+| Dynamic Pricing Engine | `domains/ai/dynamic_pricing_engine.py` | `production_ready` | Gerçek veriye bağlı recommend+explain; veri yoksa fail-closed |
+| Predictive Engine | `domains/ai/predictive_engine.py` | `production_ready` | Tenant verisine bağlı tahmin akışı |
+| Revenue Autopilot (AI) | `domains/ai/revenue_autopilot.py` + `modules/revenue_autopilot/service.py` | `production_ready` | Güvenli iç onay kuyruğu; provider write yok |
+| Reputation Manager (AI) | `domains/ai/router/pricing_reputation.py` | `production_ready` | Review ingest, analiz, öneri ve auditli iç yanıt |
 | ML Scheduler | `routers/ml_scheduler.py` | `production_ready` | |
 | AI RMS Dashboard (UI) | (frontend) | `production_ready` | EN→TR + gradient kaldırma May 2026 |
 | Predictive Analytics (UI) | (frontend) | `production_ready` | |
@@ -134,12 +134,12 @@ Etiketler **nominal**; ölçütler:
 | Modül | Dosya | Statü | Not |
 |---|---|---|---|
 | Module Store (UI) | `pages/ModuleStorePage` | `production_ready` | |
-| Marketplace | (`/app/module-store`) | `partial` | |
-| B2B API | `routers/b2b_api/` | `partial` | |
-| B2B Analytics | `routers/b2b_analytics.py` | `partial` | |
+| Marketplace | `routers/marketplace_b2b.py` + `/app/module-store` | `production_ready` | Opt-in listing, sözleşmeli keşif/fiyat/müsaitlik ve atomik rezervasyon |
+| B2B API | `routers/b2b_api/` | `production_ready` | API key/scope, agency+tenant izolasyonu, booking/folio/grup/webhook akışları |
+| B2B Analytics | `routers/b2b_analytics.py` | `production_ready` | Özet, agency kırılımı, trend, kullanım ve export |
 | Agency Portal | `routers/agency_portal.py` | `production_ready` | |
 | Agency Contracts | `routers/agency_contracts.py` | `production_ready` | |
-| Agency Content | `routers/agency_content.py` | `partial` | |
+| Agency Content | `routers/agency_content.py` | `production_ready` | İçerik CRUD, dağıtım önizleme ve kontrollü dağıtım |
 | Hotel Booking Requests | `routers/missing_endpoints_compat.py` | `production_ready` | Compat dosyasında ama tam workflow var; taşınmalı |
 
 ### Compliance / Security / Admin
@@ -151,8 +151,8 @@ Etiketler **nominal**; ölçütler:
 | Admin Control Panel (UI hub) | `pages/AdminControlPanel.jsx` → `domains/admin/router/` alt-router'lar | `production_ready` | UI hub; backend tek dosya değil |
 | KVKK Manager | (frontend `KVKKManager.jsx`) | `production_ready` | |
 | KBS Notification | (frontend `KBSNotification.jsx`) | `production_ready` | |
-| GDPR Compliance | `routers/missing_endpoints_compat.py` (compliance-status, dpa) | `partial` | Compat dosyasında; gerçek workflow eksik |
-| GDPR Retention Policy | `routers/missing_endpoints_compat.py` | `stub` | Hard-coded liste |
+| GDPR Compliance | `domains/compliance/gdpr_router.py` | `production_ready` | Retention policy, DPA workflow, durum kontrolü ve audit |
+| GDPR Retention Policy | `domains/compliance/gdpr_router.py` + `retention_service.py` | `production_ready` | Tenant politikası, güvenli önizleme, çift fail-closed onay ve günlük bounded anonimleştirme |
 | Security IP Rules | `routers/missing_endpoints_compat.py` | `production_ready` | Tam CRUD; taşınmalı |
 | Security IP Check | `routers/missing_endpoints_compat.py` | `stub` | Her zaman allowed=true |
 | PCI Compliance Dashboard | (frontend) | `production_ready` | |
@@ -177,18 +177,18 @@ Etiketler **nominal**; ölçütler:
 | Modül | Dosya | Statü | Not |
 |---|---|---|---|
 | Cross-Property | `routers/cross_property.py` | `partial` | |
-| Central Office Dashboard | `routers/missing_endpoints_compat.py` | `partial` | Properties read OK, KPI'lar 0 |
-| Central Office Alerts/Occupancy/Revenue | `routers/missing_endpoints_compat.py` | `stub` | Hepsi boş |
-| Central Pricing (3 endpoint) | `routers/missing_endpoints_compat.py` | `stub` | Tümü boş |
+| Central Office Dashboard | `routers/missing_endpoints_compat.py` | `production_ready` | Zincir oda/doluluk/check-in/misafir/MTD gelir; yalnız HQ/süperadmin |
+| Central Office Alerts/Occupancy/Revenue | `routers/missing_endpoints_compat.py` | `production_ready` | Gerçek zincir verisi; finans köprüsü uyarıları ve karşılaştırmalar |
+| Central Pricing | `domains/revenue/central_pricing_router.py` | `production_ready` | Zincir oranları, bulk karar, geçmiş ve şablon; auditli, provider write yok |
 
 ### Add-on Domains
 | Modül | Dosya | Statü | Not |
 |---|---|---|---|
-| Spa | `domains/spa/router.py` | `partial` | |
-| Golf | `domains/golf/router.py` | `partial` | |
-| HR | `domains/hr/router.py` | `partial` | |
-| Sales / CRM | `domains/sales/crm_router.py` | `partial` | |
-| MICE / Banquet | (frontend `MicePage`) | `partial` | |
+| Spa | `domains/spa/router.py` | `production_ready` | 23 uç: katalog/kaynak/randevu/waitlist, kapasite ve folio idempotency |
+| Golf | `domains/golf/router.py` | `production_ready` | 14 uç: saha/oyuncu/tee-time, kapasite kilidi ve folio idempotency |
+| HR | `domains/hr/router.py` | `production_ready` | 117 uç: özlük/vardiya/izin/bordro/zimmet/offboarding; RBAC ve tenant kapsamı |
+| Sales / CRM | `domains/sales/crm_router.py` | `production_ready` | Lead pipeline, müşteri/şirket/kontrat/üretim; tenant-scoped mutations |
+| MICE / Banquet | `routers/mice.py` + `pages/MicePage` | `production_ready` | 42 uç: mekan/hesap/kişi/kaynak/etkinlik/BEO/F&B/ödeme; stok ve idempotency |
 
 ---
 
@@ -211,9 +211,9 @@ Etiketler **nominal**; ölçütler:
 | `/unified-rate-manager` | `production_ready` | |
 | `/control-plane` | `production_ready` | |
 | `/online-checkin` | `production_ready` | |
-| `/marketplace`, `/module-store` | `partial` | |
-| `/spa`, `/golf`, `/hr`, `/mice` | `partial` | |
-| `/ai-pms` | `partial` | |
+| `/marketplace`, `/module-store` | `production_ready` | Sözleşme ve rol kontrollü |
+| `/spa`, `/golf`, `/hr`, `/mice` | `production_ready` | Domain CRUD ve kritik finans/kapasite testleri mevcut |
+| `/ai-pms` | `production_ready` | Reputation dahil tüm ana AI yönlendirmeleri aktif |
 
 ### Sprint A pilot uygulanan 12 sayfa (May 2026)
 DepartureList, NoShowToday, WakeUpCallsPage, LostFoundPage, DepositTracking, ArrivalList, HousekeepingDashboard, MaintenanceWorkOrders, NightAuditDashboard, FrontdeskAuditChecklist, RMSModule, MailingPage. Hepsi `PageHeader/KpiCard/StatusBadge` standardına geçti.
@@ -235,13 +235,13 @@ DepartureList, NoShowToday, WakeUpCallsPage, LostFoundPage, DepositTracking, Arr
 
 ## Compatibility / Stub haritası
 
-`backend/routers/missing_endpoints_compat.py` — **20 endpoint**, geçici barınma noktası. Her endpoint dosya içinde `# STATUS: ...` ile etiketlendi (May 2026):
+`backend/routers/missing_endpoints_compat.py` — **14 endpoint**, geçici barınma noktası. GDPR ve merkezi fiyat uçları domain router'larına taşındı; merkezi ofis KPI uçları gerçek zincir verisine bağlandı:
 
 | Statü | Sayı | Hedef |
 |---|---|---|
-| `production_ready` | 6 | Domain router'a taşınmaya hazır (security/ip CRUD, agency booking workflow, booking guest patch) |
-| `partial` | 6 | Eksik workflow'lar tamamlanmalı (upsell, gdpr-status, gdpr-dpa, central-office-dashboard, media-list) |
-| `stub` | 8 | Gerçek implementasyon eksik (gdpr-retention, central-office-{alerts,occupancy,revenue}, central-pricing × 3, security-ip-check) |
+| `production_ready` | 11 | Merkezi ofis (4), security/IP CRUD (3), agency booking workflow (3), booking guest patch (1) |
+| `partial` | 2 | Upsell ürün yönetimi ve media upload/delete ayrı sprintte domain'e taşınmalı |
+| `stub` | 1 | Security IP check gerçek istemci IP değerlendirmesine taşınmalı |
 
 **Migration kuralı:** Bu dosyaya **yeni endpoint eklenmemeli**. Her **cleanup/refactor sprint**'inde en az 2 `production_ready` etiketli endpoint domain router'a taşınmalı (ürün/bugfix sprintlerinde zorunlu borç baskısı oluşturmamak için bu kural cleanup sprintlerine yönlendirildi).
 
@@ -264,14 +264,14 @@ Bu katman tek başına bir "modül" değil; ama birçok `production_ready` modü
 
 ---
 
-## Bilinen "demo / sentetik veri" alanları
+## Veri olgunluğu gerektiren alanlar
 
-Aşağıdakiler gerçek müşteri verisi olmadan zayıf çalışır; pilot/demo'da görünür ama go-live'da feature flag ile kapatılmalı:
+Bu alanlar sentetik veri üretmez ve veri yokluğunu açıkça gösterir; doğrulukları tenant geçmişi büyüdükçe artar:
 
-- AI Reputation Manager (review verisi yoksa)
-- Forecasting / Hurdle / Auto-Pricing (en az 90 gün rezervasyon geçmişi olmadan zayıf)
-- Predictive Analytics (no-show risk için en az 6 ay veri lazım)
-- Central Office KPI'ları (multi-property abonelik yoksa)
+- AI Reputation Manager: review yoksa boş durum ve `data_available=false`.
+- Forecasting: geçmiş yetersizse yalnız OTB sonucu, düşük güven ve veri kalitesi uyarısı.
+- Predictive Analytics: no-show risk doğruluğu için anlamlı rezervasyon geçmişi gerekir.
+- Central Office: yalnız zincire bağlı tesisleri toplar; tek tesis aboneliğinde kendi tesisiyle sınırlıdır.
 
 ---
 

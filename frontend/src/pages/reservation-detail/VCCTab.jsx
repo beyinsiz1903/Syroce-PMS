@@ -53,6 +53,22 @@ export function VCCTab({
   useEffect(() => {
     load();
   }, [load]);
+  useEffect(() => {
+    if (!revealed) return undefined;
+    const clearSensitiveData = () => {
+      setRevealed(null);
+      setRevealInfo(null);
+    };
+    const timeout = window.setTimeout(clearSensitiveData, 60_000);
+    const handleVisibility = () => {
+      if (document.hidden) clearSensitiveData();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.clearTimeout(timeout);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [revealed]);
   const handleStore = async () => {
     if (!form.card_holder || !form.card_number || !form.expiry) {
       toast.error('Kart sahibi, numara ve son kullanma zorunludur');
@@ -354,7 +370,7 @@ export function VCCTab({
                 </div>
               </div>
               <div className="bg-amber-50 border border-amber-200 rounded p-2 text-xs text-amber-800">
-                <strong>{t('cm.pages_reservationdetail_VCCTab.uyari')}</strong> {t('cm.pages_reservationdetail_VCCTab.bu_bilgi_tarayicida_saklanmaz_pencereyi_')} <strong>{revealInfo?.remaining_views ?? 0}</strong>.
+                <strong>{t('cm.pages_reservationdetail_VCCTab.uyari')}</strong> Bu bilgi tarayıcıda saklanmaz; sekme arka plana geçtiğinde veya 60 saniye sonra otomatik kapatılır. Kalan görüntüleme: <strong>{revealInfo?.remaining_views ?? 0}</strong>.
                 {revealInfo?.locked && <div className="mt-1 text-red-700 font-medium">
                     {t('cm.pages_reservationdetail_VCCTab.kart_artik_kilitlendi_bir_daha_goruntule')}
                   </div>}

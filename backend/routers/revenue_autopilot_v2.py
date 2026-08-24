@@ -2,8 +2,11 @@
 Revenue Autopilot Router - Policy, approval queue, apply, rollback, dashboard.
 """
 
+from datetime import date
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 from cache_manager import cached
 from core.security import get_current_user
@@ -43,12 +46,13 @@ async def get_policy(current_user: User = Depends(get_current_user)):
 
 @router.put("/policy")
 async def update_policy(
-    req: dict,
+    req: "AutopilotPolicyUpdate",
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     svc = _get_service()
-    return await svc.update_policy(current_user.tenant_id, req)
+    await svc.get_policy(current_user.tenant_id)
+    return await svc.update_policy(current_user.tenant_id, req.model_dump(exclude_unset=True, mode="json"))
 
 
 @router.get("/queue")
@@ -63,12 +67,33 @@ async def get_approval_queue(
 
 
 class ProcessRecommendationReq(BaseModel):
-    room_type: str = "Standard"
-    target_date: str = ""
-    current_price: float = 100.0
-    recommended_price: float = 110.0
-    confidence: float = 0.8
+    room_type: str = Field(min_length=1, max_length=160)
+    target_date: date
+    current_price: float = Field(gt=0, le=10_000_000)
+    recommended_price: float = Field(ge=0, le=10_000_000)
+    confidence: float = Field(ge=0, le=1)
     source_job_id: str | None = None
+
+
+class AutopilotPolicyUpdate(BaseModel):
+    mode: Literal["full_auto", "supervised", "advisory"] | None = None
+    confidence_threshold_auto: float | None = Field(default=None, ge=0, le=1)
+    confidence_threshold_queue: float | None = Field(default=None, ge=0, le=1)
+    max_price_change_pct: float | None = Field(default=None, ge=0, le=100)
+    blackout_dates: list[date] | None = Field(default=None, max_length=366)
+    protected_room_types: list[str] | None = Field(default=None, max_length=200)
+    enabled: bool | None = None
+    daily_summary_enabled: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_threshold_order(self):
+        if (
+            self.confidence_threshold_auto is not None
+            and self.confidence_threshold_queue is not None
+            and self.confidence_threshold_queue > self.confidence_threshold_auto
+        ):
+            raise ValueError("Kuyruk güven eşiği otomatik uygulama eşiğinden yüksek olamaz")
+        return self
 
 
 @router.post("/process")
@@ -78,7 +103,7 @@ async def process_recommendation(
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     svc = _get_service()
-    return await svc.process_recommendation(current_user.tenant_id, req.model_dump())
+    return await svc.process_recommendation(current_user.tenant_id, req.model_dump(mode="json"))
 
 
 @router.post("/queue/{item_id}/approve")
@@ -92,7 +117,7 @@ async def approve_item(
 
 
 class RejectReq(BaseModel):
-    reason: str = ""
+    reason: str = Field(min_length=3, max_length=500)
 
 
 @router.post("/queue/{item_id}/reject")

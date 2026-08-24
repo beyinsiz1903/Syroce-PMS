@@ -12,10 +12,11 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from pydantic import Field as _PydField
 
+from core.audit import log_audit_event
 from core.database import db
 from core.helpers import (
     require_module,
@@ -182,6 +183,25 @@ except ImportError:
 router = APIRouter(prefix="/api", tags=["AI / ML"])
 
 
+class ReviewIngest(BaseModel):
+    platform: str = Field(min_length=2, max_length=60)
+    external_id: str | None = Field(default=None, max_length=200)
+    author_name: str | None = Field(default=None, max_length=160)
+    review_text: str = Field(min_length=1, max_length=10000)
+    rating: float = Field(ge=0, le=10)
+    rating_scale: int = Field(default=5, ge=1, le=10)
+    review_date: datetime | None = None
+
+
+class ReviewResponseSuggestion(BaseModel):
+    review_text: str = Field(min_length=1, max_length=10000)
+    rating: float = Field(default=3, ge=0, le=10)
+
+
+class ReviewResponseSave(BaseModel):
+    response_text: str = Field(min_length=3, max_length=10000)
+
+
 # ── GET /pricing/ai-recommendation ──
 @router.get("/pricing/ai-recommendation")
 @cached(ttl=300, key_prefix="ai_pricing_rec")
@@ -256,6 +276,53 @@ async def get_reputation_overview(current_user: User = Depends(get_current_user)
     return overview
 
 
+@router.get("/reputation/reviews")
+async def list_reputation_reviews(
+    platform: str | None = None,
+    response_status: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    current_user: User = Depends(get_current_user),
+):
+    query = {"tenant_id": current_user.tenant_id}
+    if platform:
+        query["platform"] = platform
+    if response_status:
+        query["response_status"] = response_status
+    reviews = await db.external_reviews.find(query, {"_id": 0}).sort("review_date", -1).to_list(limit)
+    return {"reviews": reviews, "total": len(reviews)}
+
+
+@router.post("/reputation/reviews", status_code=201)
+async def ingest_reputation_review(
+    body: ReviewIngest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    if body.rating > body.rating_scale:
+        raise HTTPException(422, "Puan, puan ölçeğinden büyük olamaz")
+    if body.external_id:
+        duplicate = await db.external_reviews.find_one(
+            {"tenant_id": current_user.tenant_id, "platform": body.platform.lower(), "external_id": body.external_id}
+        )
+        if duplicate:
+            raise HTTPException(409, "Bu dış değerlendirme zaten kayıtlı")
+    now = datetime.now(UTC).isoformat()
+    review = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        **body.model_dump(mode="json"),
+        "platform": body.platform.strip().lower(),
+        "rating_5": round(body.rating * 5 / body.rating_scale, 2),
+        "review_date": (body.review_date or datetime.now(UTC)).isoformat(),
+        "received_at": now,
+        "response_status": "pending",
+        "source": "manual_import",
+        "created_by": current_user.id,
+    }
+    await db.external_reviews.insert_one(review.copy())
+    return {key: value for key, value in review.items() if key != "tenant_id"}
+
+
 # ── GET /reputation/trends ──
 @router.get("/reputation/trends")
 async def get_reputation_trends(days: int = 30, current_user: User = Depends(get_current_user)):
@@ -271,7 +338,7 @@ async def get_reputation_trends(days: int = 30, current_user: User = Depends(get
 # ── POST /reputation/suggest-response ──
 @router.post("/reputation/suggest-response")
 async def suggest_review_response(
-    review_data: dict,
+    review_data: ReviewResponseSuggestion,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
@@ -279,9 +346,50 @@ async def suggest_review_response(
     from domains.ai.reputation_manager import get_reputation_manager
 
     manager = get_reputation_manager(db)
-    response = await manager.suggest_response(review_data["review_text"], review_data.get("rating", 3))
+    sentiment = await manager.analyze_sentiment(review_data.review_text)
+    response = await manager.suggest_response(review_data.review_text, review_data.rating)
 
-    return {"suggested_response": response}
+    return {"suggested_response": response, "sentiment": sentiment, "generator": "rule_based_v1"}
+
+
+@router.post("/reputation/reviews/{review_id}/response")
+async def save_review_response(
+    review_id: str,
+    body: ReviewResponseSave,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    query = {"id": review_id, "tenant_id": current_user.tenant_id}
+    review = await db.external_reviews.find_one(query, {"_id": 0})
+    if not review:
+        raise HTTPException(404, "Değerlendirme bulunamadı")
+    now = datetime.now(UTC).isoformat()
+    changes = {
+        "response_text": body.response_text.strip(),
+        "response_status": "responded",
+        "responded_at": now,
+        "responded_by": current_user.id,
+        "provider_sync_status": "not_requested",
+    }
+    await db.external_reviews.update_one(query, {"$set": changes})
+    await log_audit_event(
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.id,
+        action="reputation.response.saved",
+        entity_type="external_review",
+        entity_id=review_id,
+        details=f"{review.get('platform', 'external')} değerlendirmesi için yanıt kaydedildi",
+        before_value={"response_status": review.get("response_status")},
+        after_value=changes,
+        db=db,
+    )
+    return {
+        "success": True,
+        "review_id": review_id,
+        "response_status": "responded",
+        "provider_write": False,
+        "message": "Yanıt Syroce içinde kaydedildi; platforma otomatik gönderilmedi.",
+    }
 
 
 # ── GET /reputation/negative-alerts ──

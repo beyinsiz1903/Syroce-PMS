@@ -179,6 +179,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.guest.messaging.router", "router", ["Guest / Messaging"], None, None),
     ("domains.guest.messaging.guest_requests_router", "router", ["Guest Requests"], None, None),
     ("domains.revenue.pricing_router", "router", ["Revenue / Pricing"], None, None),
+    ("domains.revenue.central_pricing_router", "router", ["Revenue / Central Pricing"], None, None),
+    ("domains.compliance.gdpr_router", "router", ["Compliance / GDPR"], None, None),
     ("domains.admin.router", "router", ["Admin / Operations"], None, None),
     ("domains.pms.notification_router", "router", ["PMS / Notifications"], None, None),
     ("domains.pms.dashboard_router", "router", ["PMS / Dashboard"], None, None),

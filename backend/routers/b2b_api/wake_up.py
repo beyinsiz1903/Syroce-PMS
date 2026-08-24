@@ -481,7 +481,9 @@ async def b2b_update_wake_up_call(
         updates["notes"] = data.notes
 
     await db.wake_up_calls.update_one({"_id": call["_id"]}, {"$set": updates})
-    updated = await db.wake_up_calls.find_one({"id": call_id}, {"_id": 0, "tenant_id": 0})
+    updated = await db.wake_up_calls.find_one(
+        {"id": call_id, "tenant_id": tenant_id}, {"_id": 0, "tenant_id": 0}
+    )
     return {"ok": True, "wake_up_call": updated}
 
 

@@ -12,10 +12,21 @@ class ReputationManager:
     def __init__(self, db):
         self.db = db
 
+    @staticmethod
+    def _rating_5(review: dict) -> float | None:
+        value = review.get("rating_5", review.get("rating"))
+        if not isinstance(value, (int, float)):
+            return None
+        scale = review.get("rating_scale") or (10 if value > 5 else 5)
+        return round(max(0.0, min(5.0, float(value) * 5 / float(scale))), 2)
+
     async def aggregate_reviews(self, tenant_id: str) -> dict:
         """Platform review ozeti — YALNIZCA gercek db.external_reviews kayitlari.
         Sabit TripAdvisor/Google/Booking/Expedia uydurma verisi kaldirildi; kayit yoksa fail-closed."""
-        reviews = await self.db.external_reviews.find({"tenant_id": tenant_id}, {"_id": 0, "platform": 1, "rating": 1, "review_date": 1, "received_at": 1}).to_list(10000)
+        reviews = await self.db.external_reviews.find(
+            {"tenant_id": tenant_id},
+            {"_id": 0, "platform": 1, "rating": 1, "rating_5": 1, "rating_scale": 1, "review_date": 1, "received_at": 1, "response_status": 1},
+        ).to_list(10000)
 
         if not reviews:
             return {
@@ -30,8 +41,8 @@ class ReputationManager:
         cutoff = (datetime.now(UTC) - timedelta(days=30)).isoformat()
         acc: dict = {}
         for r in reviews:
-            rt = r.get("rating")
-            if not isinstance(rt, (int, float)):
+            rt = self._rating_5(r)
+            if rt is None:
                 continue
             p = r.get("platform") or "unknown"
             st = acc.setdefault(p, {"rating_sum": 0.0, "total_reviews": 0, "recent_reviews": 0})
@@ -51,9 +62,7 @@ class ReputationManager:
                 continue
             avg = st["rating_sum"] / n
             platforms[p] = {"rating": round(avg, 2), "total_reviews": n, "recent_reviews": st["recent_reviews"]}
-            # genel skor icin 5-uzeri olcekleri 5'e normalize et (uydurma degil, olcek-birlestirme)
-            norm = avg if avg <= 5 else avg / 2
-            norm_weighted += norm * n
+            norm_weighted += avg * n
             norm_weight += n
             total_reviews += n
 
@@ -63,6 +72,7 @@ class ReputationManager:
             "overall_rating": round(norm_weighted / norm_weight, 2) if norm_weight else None,
             "total_reviews": total_reviews,
             "last_updated": datetime.now(UTC).isoformat(),
+            "responded_reviews": sum(1 for review in reviews if review.get("response_status") == "responded"),
         }
         if total_reviews == 0:
             out["message"] = "Dis platform review kaydi var ancak gecerli sayisal puan bulunmuyor."
@@ -121,30 +131,42 @@ Syroce Yönetim Ekibi"""
         """Son 24 saatteki negatif review'ları bul"""
         yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
 
-        reviews = await self.db.reviews.find({"tenant_id": tenant_id, "rating": {"$lte": 3}, "created_at": {"$gte": yesterday}}, {"_id": 0}).to_list(100)
-
-        return reviews
+        reviews = await self.db.external_reviews.find(
+            {
+                "tenant_id": tenant_id,
+                "$or": [{"review_date": {"$gte": yesterday}}, {"received_at": {"$gte": yesterday}}],
+            },
+            {"_id": 0},
+        ).to_list(500)
+        return [review for review in reviews if (self._rating_5(review) or 0) <= 3]
 
     async def get_reputation_trends(self, tenant_id: str, days: int = 30) -> dict:
         """Reputation trend analizi"""
         start_date = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
-        reviews = await self.db.reviews.find({"tenant_id": tenant_id, "created_at": {"$gte": start_date}}, {"_id": 0, "rating": 1, "created_at": 1}).to_list(1000)
+        reviews = await self.db.external_reviews.find(
+            {"tenant_id": tenant_id, "$or": [{"review_date": {"$gte": start_date}}, {"received_at": {"$gte": start_date}}]},
+            {"_id": 0, "rating": 1, "rating_5": 1, "rating_scale": 1, "review_date": 1, "received_at": 1},
+        ).to_list(1000)
 
         # Calculate trend
         if not reviews:
             return {"trend": "stable", "avg_rating": 0, "total_reviews": 0}
 
-        avg_rating = sum([r.get("rating", 3) for r in reviews]) / len(reviews)
+        reviews = sorted(reviews, key=lambda row: row.get("review_date") or row.get("received_at") or "")
+        ratings = [value for value in (self._rating_5(review) for review in reviews) if value is not None]
+        if not ratings:
+            return {"trend": "stable", "avg_rating": 0, "total_reviews": 0}
+        avg_rating = sum(ratings) / len(ratings)
 
         # Split into first half and second half
-        mid = len(reviews) // 2
-        first_half_avg = sum([r.get("rating", 3) for r in reviews[:mid]]) / mid if mid > 0 else 3
-        second_half_avg = sum([r.get("rating", 3) for r in reviews[mid:]]) / (len(reviews) - mid) if len(reviews) > mid else 3
+        mid = len(ratings) // 2
+        first_half_avg = sum(ratings[:mid]) / mid if mid > 0 else ratings[0]
+        second_half_avg = sum(ratings[mid:]) / (len(ratings) - mid) if len(ratings) > mid else ratings[-1]
 
         trend = "improving" if second_half_avg > first_half_avg else "declining" if second_half_avg < first_half_avg else "stable"
 
-        return {"trend": trend, "avg_rating": round(avg_rating, 2), "total_reviews": len(reviews), "first_period_avg": round(first_half_avg, 2), "second_period_avg": round(second_half_avg, 2)}
+        return {"trend": trend, "avg_rating": round(avg_rating, 2), "total_reviews": len(ratings), "first_period_avg": round(first_half_avg, 2), "second_period_avg": round(second_half_avg, 2)}
 
 
 # Global instance

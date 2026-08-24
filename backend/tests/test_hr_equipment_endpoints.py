@@ -76,8 +76,23 @@ def _make_db(*, equipment_rows: list[dict], staff_by_tenant: dict[tuple, dict]):
         matched = [dict(r) for r in rows if _match(r, q)]
         chain = MagicMock()
         chain.sort = MagicMock(return_value=chain)
+        chain.skip = MagicMock(return_value=chain)
+        chain.limit = MagicMock(return_value=chain)
         chain.to_list = AsyncMock(return_value=matched)
         return chain
+
+    async def _count_documents(q):
+        def _matches_with_operators(row, query):
+            for key, expected in query.items():
+                actual = row.get(key)
+                if isinstance(expected, dict) and "$in" in expected:
+                    if actual not in expected["$in"]:
+                        return False
+                elif actual != expected:
+                    return False
+            return True
+
+        return sum(1 for row in rows if _matches_with_operators(row, q))
 
     async def _find_one(q, _proj=None):
         for r in rows:
@@ -121,6 +136,7 @@ def _make_db(*, equipment_rows: list[dict], staff_by_tenant: dict[tuple, dict]):
     mock_db.staff_equipment.insert_one = AsyncMock(side_effect=_insert_one)
     mock_db.staff_equipment.update_one = AsyncMock(side_effect=_update_one)
     mock_db.staff_equipment.delete_one = AsyncMock(side_effect=_delete_one)
+    mock_db.staff_equipment.count_documents = AsyncMock(side_effect=_count_documents)
 
     async def _sm_find_one(q, _proj=None):
         sid = q.get("id")
@@ -236,6 +252,8 @@ async def test_list_staff_equipment_returns_only_own_tenant_rows():
         result = await hr_router.list_staff_equipment(
             staff_id=STAFF_ID,
             status=None,
+            page=1,
+            limit=25,
             current_user=_make_admin(),
         )
 
@@ -273,6 +291,8 @@ async def test_list_staff_equipment_status_filter_narrows_results():
         result = await hr_router.list_staff_equipment(
             staff_id=STAFF_ID,
             status="assigned",
+            page=1,
+            limit=25,
             current_user=_make_admin(),
         )
 

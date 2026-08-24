@@ -8,9 +8,10 @@ Every view is logged in the activity log for audit trail.
 
 import uuid
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from core.database import db
 from core.security import get_current_user
@@ -44,19 +45,63 @@ def _get_enc():
 
 
 class VCCStore(BaseModel):
-    card_holder: str
+    card_holder: str = Field(min_length=2, max_length=120)
     card_number: str
     expiry: str
     cvv: str | None = None
-    card_type: str = "virtual"  # virtual, credit, debit
+    card_type: Literal["virtual", "credit", "debit"] = "virtual"
 
+    @field_validator("card_holder")
+    @classmethod
+    def validate_holder(cls, value: str) -> str:
+        value = " ".join(value.strip().split())
+        if len(value) < 2:
+            raise ValueError("Kart sahibi zorunludur")
+        return value
 
-class VCCManualStore(BaseModel):
-    card_holder: str
-    card_number: str
-    expiry: str
-    cvv: str | None = None
-    card_type: str = "virtual"
+    @field_validator("card_number")
+    @classmethod
+    def validate_card_number(cls, value: str) -> str:
+        digits = "".join(char for char in value if char.isdigit())
+        if len(digits) < 12 or len(digits) > 19:
+            raise ValueError("Kart numarası 12-19 hane olmalıdır")
+        checksum = 0
+        parity = len(digits) % 2
+        for index, char in enumerate(digits):
+            digit = int(char)
+            if index % 2 == parity:
+                digit *= 2
+                if digit > 9:
+                    digit -= 9
+            checksum += digit
+        if checksum % 10:
+            raise ValueError("Kart numarası doğrulaması başarısız")
+        return digits
+
+    @field_validator("expiry")
+    @classmethod
+    def validate_expiry(cls, value: str) -> str:
+        normalized = value.strip().replace("-", "/")
+        parts = normalized.split("/")
+        if len(parts) != 2 or not all(part.isdigit() for part in parts):
+            raise ValueError("Son kullanma tarihi AA/YY biçiminde olmalıdır")
+        month = int(parts[0])
+        year = int(parts[1]) + (2000 if len(parts[1]) == 2 else 0)
+        if month < 1 or month > 12 or year < 2000:
+            raise ValueError("Son kullanma tarihi geçersiz")
+        now = datetime.now(UTC)
+        if (year, month) < (now.year, now.month):
+            raise ValueError("Kartın son kullanma tarihi geçmiş")
+        return f"{month:02d}/{str(year)[-2:]}"
+
+    @field_validator("cvv")
+    @classmethod
+    def validate_cvv(cls, value: str | None) -> str | None:
+        if value in (None, ""):
+            return None
+        if not value.isdigit() or len(value) not in (3, 4):
+            raise ValueError("CVV 3 veya 4 haneli olmalıdır")
+        return value
 
 
 def _mask_card(number: str) -> str:
