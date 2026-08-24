@@ -166,7 +166,7 @@ class NightAuditEngine:
                 audit_record["steps"].append({"step": "daily_snapshot", "result": {"snapshot_id": snapshot["id"]}})
 
                 # Step 8: Business date roll
-                await self._roll_business_date(tenant_id, business_date)
+                await self._roll_business_date(tenant_id, business_date, audit_id, started_by)
                 audit_record["steps"].append({"step": "business_date_roll", "result": {"new_business_date": self._next_date(business_date)}})
 
                 audit_record["status"] = "completed"
@@ -650,12 +650,24 @@ class NightAuditEngine:
         snapshot.pop("_id", None)
         return snapshot
 
-    async def _roll_business_date(self, tenant_id: str, current_date: str):
+    async def _roll_business_date(self, tenant_id: str, current_date: str, audit_id: str, started_by: str):
         """Advance the business date to the next day."""
         next_date = self._next_date(current_date)
+        now = datetime.now(UTC).isoformat()
         await db.tenant_settings.update_one(
             {"tenant_id": tenant_id},
-            {"$set": {"business_date": next_date, "last_audit_date": current_date}},
+            {
+                "$set": {
+                    "business_date": next_date,
+                    "previous_business_date": current_date,
+                    "last_audit_date": current_date,
+                    "business_date_updated_at": now,
+                    "business_date_update_source": "night_audit",
+                    "business_date_updated_by": started_by,
+                    "business_date_audit_run_id": audit_id,
+                    "business_date_trigger_source": "manual_legacy",
+                }
+            },
             upsert=True,
         )
 
@@ -665,10 +677,9 @@ class NightAuditEngine:
 
     async def get_business_date(self, tenant_id: str) -> str:
         """Get current business date for tenant."""
-        settings = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0})
-        if settings and settings.get("business_date"):
-            return settings["business_date"]
-        return datetime.now(UTC).date().isoformat()
+        from core.business_date_service import ensure_business_date_initialized
+
+        return (await ensure_business_date_initialized(db, tenant_id))["business_date"]
 
     async def get_audit_exceptions(self, tenant_id: str, status: str = "open") -> list[dict]:
         """Get audit exceptions queue."""

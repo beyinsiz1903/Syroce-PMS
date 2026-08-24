@@ -1142,6 +1142,29 @@ async def create_tenant(payload: TenantRegister, current_user: User = Depends(re
     if payload.channel_manager_provider:
         tenant_dict["channel_manager_provider"] = payload.channel_manager_provider
     await sys_db.tenants.insert_one(tenant_dict)
+
+    # Establish the authoritative PMS business date at provisioning time.
+    # Without this row older tenants silently displayed the wall-clock date as
+    # if a night audit had advanced it, even though no operational close ran.
+    provisioned_business_date = start_date.date().isoformat()
+    await sys_db.tenant_settings.update_one(
+        {"tenant_id": new_tenant.id},
+        {
+            "$setOnInsert": {
+                "tenant_id": new_tenant.id,
+                "business_date": provisioned_business_date,
+                "previous_business_date": None,
+                "business_date_initialized_at": start_date.isoformat(),
+                "business_date_initialization_reason": "tenant_provisioning",
+                "business_date_updated_at": start_date.isoformat(),
+                "business_date_update_source": "initialization",
+                "business_date_updated_by": current_user.id,
+                "business_date_audit_run_id": None,
+                "business_date_trigger_source": "tenant_provisioning",
+            }
+        },
+        upsert=True,
+    )
     if new_chain_doc:
         new_chain_doc["headquarters_tenant_id"] = new_tenant.id
         await sys_db.hotel_chains.insert_one(new_chain_doc)

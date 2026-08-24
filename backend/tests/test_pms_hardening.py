@@ -1,12 +1,13 @@
 """
 Comprehensive PMS Hardening Test Suite - Tests all 8 hardening areas.
 """
-import pytest
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch, MagicMock
-
-import sys
 import os
+import sys
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 
@@ -269,10 +270,13 @@ class TestNightAuditEngine:
 
     @pytest.mark.asyncio
     async def test_get_business_date_default(self):
-        with patch('modules.pms_core.night_audit_engine.db') as mock_db:
-            mock_db.tenant_settings.find_one = AsyncMock(return_value=None)
+        today = datetime.now(UTC).date().isoformat()
+        with patch(
+            'core.business_date_service.ensure_business_date_initialized',
+            new=AsyncMock(return_value={"business_date": today}),
+        ):
             bd = await self.na.get_business_date("t1")
-            assert bd == datetime.now(timezone.utc).date().isoformat()
+            assert bd == today
 
     @pytest.mark.asyncio
     async def test_get_business_date_from_settings(self):

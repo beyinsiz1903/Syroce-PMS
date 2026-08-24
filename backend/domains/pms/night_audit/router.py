@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from cache_manager import cache as _cache
 from cache_manager import cached
 from common.context import OperationContext
+from core.database import db
 from core.security import get_current_user
 from domains.pms.night_audit.schemas import NightAuditScheduleRequest, RunNightAuditRequest
 from models.schemas import User
@@ -84,7 +85,24 @@ async def run_night_audit(
 ):
     """Start a hardened night audit run."""
     _admin_guard(current_user)
+    from core.business_date_service import ensure_business_date_initialized
     from core.night_audit_hardened import start_night_audit
+
+    authoritative_bd = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
+    if request.business_date and request.business_date != authoritative_bd and not request.force_rerun:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "success": False,
+                "code": "BUSINESS_DATE_MISMATCH",
+                "error": (
+                    f"İstenen iş günü {request.business_date}, otelin açık iş günü "
+                    f"{authoritative_bd} ile eşleşmiyor. Yenileyip tekrar deneyin."
+                ),
+                "requested_business_date": request.business_date,
+                "current_business_date": authoritative_bd,
+            },
+        )
 
     result = await start_night_audit(
         tenant_id=current_user.tenant_id,
