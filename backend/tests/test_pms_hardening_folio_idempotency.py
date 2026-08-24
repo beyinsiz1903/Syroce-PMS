@@ -24,8 +24,8 @@ import pytest
 from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
-from routers import pms_hardening as router_mod
 from modules.pms_core import folio_hardening_service as fhs_mod
+from routers import pms_hardening as router_mod
 
 
 class _Coll:
@@ -37,7 +37,7 @@ class _Coll:
     async def find_one(self, flt, proj=None):
         for d in self.docs:
             if all(d.get(k) == v for k, v in flt.items()):
-                return {k: v for k, v in d.items()}
+                return dict(d)
         return None
 
     async def insert_one(self, doc, session=None):
@@ -150,8 +150,16 @@ def _patch(monkeypatch):
 
     stub_pkg = _types.ModuleType("domains.pms.night_audit.router")
     stub_pkg.invalidate_finance_cache = lambda *_a, **_kw: None
-    sys.modules.setdefault("domains.pms.night_audit", _types.ModuleType("domains.pms.night_audit"))
-    sys.modules["domains.pms.night_audit.router"] = stub_pkg
+    # Keep the import stub scoped to this test. Direct assignment here used to
+    # leak the fake router into every subsequently collected test in the full
+    # backend suite, making otherwise valid tests order-dependent.
+    if "domains.pms.night_audit" not in sys.modules:
+        monkeypatch.setitem(
+            sys.modules,
+            "domains.pms.night_audit",
+            _types.ModuleType("domains.pms.night_audit"),
+        )
+    monkeypatch.setitem(sys.modules, "domains.pms.night_audit.router", stub_pkg)
 
     return fake_db
 
