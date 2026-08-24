@@ -1,4 +1,4 @@
-import { DAYS, UPDATE_FIELDS, CHANNELS } from '../constants';
+import { DAYS, UPDATE_FIELDS } from '../constants';
 
 describe('rate-manager/constants', () => {
   describe('DAYS', () => {
@@ -47,30 +47,4 @@ describe('rate-manager/constants', () => {
     });
   });
 
-  describe('CHANNELS', () => {
-    it('has at least 10 channels', () => {
-      expect(CHANNELS.length).toBeGreaterThanOrEqual(10);
-    });
-
-    it('includes major OTAs', () => {
-      const keys = CHANNELS.map((c) => c.key);
-      expect(keys).toContain('booking_com');
-      expect(keys).toContain('expedia');
-      expect(keys).toContain('airbnb');
-    });
-
-    it('each channel has key and label', () => {
-      CHANNELS.forEach((channel) => {
-        expect(channel).toHaveProperty('key');
-        expect(channel).toHaveProperty('label');
-        expect(typeof channel.key).toBe('string');
-        expect(typeof channel.label).toBe('string');
-      });
-    });
-
-    it('has no duplicate keys', () => {
-      const keys = CHANNELS.map((c) => c.key);
-      expect(new Set(keys).size).toBe(keys.length);
-    });
-  });
 });

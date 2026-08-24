@@ -17,22 +17,3 @@ export const UPDATE_FIELDS = [
   { key: 'ctd', label: 'CTD (Cikisa Kapalı)' },
   { key: 'stop_sell', label: 'Satisi durdur' },
 ];
-
-export const CHANNELS = [
-  { key: 'online', label: 'Online' },
-  { key: 'booking_com', label: 'Booking.com' },
-  { key: 'expedia', label: 'Expedia' },
-  { key: 'hotelbeds', label: 'Hotelbeds' },
-  { key: 'tatilsepeti', label: 'Tatilsepeti.com' },
-  { key: 'jolly_tours', label: 'Jolly Tours' },
-  { key: 'airbnb', label: 'Airbnb - iCal' },
-  { key: 'etg', label: 'Emerging Travel Group' },
-  { key: 'agoda', label: 'Agoda' },
-  { key: 'etstur', label: 'Etstur' },
-  { key: 'tatilbudur', label: 'Tatilbudur.com' },
-  { key: 'setur', label: 'Setur' },
-  { key: 'otelz', label: 'Otelz.com V2' },
-  { key: 'namila', label: 'Namila Tour' },
-  { key: 'inhores', label: 'Inhores V2' },
-  { key: 'trip', label: 'Trip.com V2' },
-];
