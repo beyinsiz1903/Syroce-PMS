@@ -211,10 +211,16 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // when the filter changes. Reset before paint so the first reservation header
   // is never hidden behind the sticky summary area.
   useLayoutEffect(() => {
-    if (showUnassignedPanel) {
-      resetUnassignedListScroll(unassignedListRef.current);
-    }
-  }, [showUnassignedPanel, unassignedFilter]);
+    if (!showUnassignedPanel) return undefined;
+
+    // Safari may restore the old scroll position after layout/scroll anchoring,
+    // even when it was reset synchronously. Reset once before paint and once on
+    // the next frame, after the drawer and its reservation rows are committed.
+    const resetScroll = () => resetUnassignedListScroll(unassignedListRef.current);
+    resetScroll();
+    const frameId = window.requestAnimationFrame(resetScroll);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [showUnassignedPanel, unassignedFilter, bookings]);
 
   // No-Show Reason Dialog
   const [showNoShowDialog, setShowNoShowDialog] = useState(false);
@@ -915,7 +921,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // ─── Loading State ─────────────────────────────────────────
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reservation_calendar">
+      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reservation_calendar" fullWidth>
         <div className="flex items-center justify-center h-screen">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
         </div>
@@ -925,7 +931,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
   // ─── Render ────────────────────────────────────────────────
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="calendar">
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="calendar" fullWidth>
       <div className="flex flex-col h-[calc(100vh-72px)] overflow-hidden -mb-28 bg-slate-50" role="main" aria-label="Rezervasyon takvimi">
         <div
           className="flex-none px-4 py-3 bg-white border-b border-slate-200 shadow-sm space-y-3"
