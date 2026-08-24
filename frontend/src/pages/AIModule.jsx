@@ -136,7 +136,7 @@ const AIModule = ({ user, tenant, onLogout, embedded = false }) => {
       id: 'reputation-manager',
       title: 'İtibar Yönetimi',
       icon: Star,
-      color: 'from-amber-500 to-orange-500',
+      color: 'from-amber-500 to-amber-600',
       iconColor: 'text-amber-600'
     },
     {
