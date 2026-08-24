@@ -1,17 +1,17 @@
-# Misafir Karsilama Standartlari
+# Misafir Karşılama Standartları
 
-> Taslak icerik — operator incelemesi gerekir.
+> Taslak içerik — operatör incelemesi gerekir.
 
 @[youtube](dQw4w9WgXcQ)
 
-Resepsiyon, otelin ilk izlenimini belirleyen noktadir. Misafir karsilamada standart:
+Resepsiyon, otelin ilk izlenimini belirleyen noktadır. Misafir karşılamada standart:
 
-- Goz temasi kurun ve misafiri guler yuzle selamlayin.
-- Rezervasyon kodu veya soyad ile misafiri **Bugun Gelenler** listesinden bulun.
-- Bekleme suresini kisa tutun; islem uzayacaksa misafiri bilgilendirin.
-- Misafirin ozel taleplerini (kat tercihi, erken giris vb.) kayit altina alin.
+- Göz teması kurun ve misafiri güler yüzle selamlayın.
+- Rezervasyon kodu veya soyadı ile misafiri **Bugün Gelenler** listesinden bulun.
+- Bekleme süresini kısa tutun; işlem uzayacaksa misafiri bilgilendirin.
+- Misafirin özel taleplerini (kat tercihi, erken giriş vb.) kayıt altına alın.
 
-## Iletisim Dili
+## İletişim Dili
 
-- Operator ile tum iletisim Turkce yurutulur.
-- Misafire net, kisa ve nazik bilgi verin.
+- Operatör ile tüm iletişim Türkçe yürütülür.
+- Misafire net, kısa ve nazik bilgi verin.

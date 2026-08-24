@@ -1,13 +1,13 @@
-# Check-in Akisi
+# Check-in Akışı
 
-> Taslak icerik — operator incelemesi gerekir. Kaynak: PMS Yardim Merkezi (Check-in / Check-out).
+> Taslak içerik — operatör incelemesi gerekir. Kaynak: PMS Yardım Merkezi (Check-in / Check-out).
 
-1. **Bugun Gelenler** listesinden misafiri secin (veya rezervasyon kodu/soyad ile arayin).
-2. Kimlik bilgilerini dogrulayin. KBS bildirimi icin **T.C. Kimlik No / Pasaport No zorunludur**.
-3. Oda atamasini onaylayin. Oda hazir degilse **housekeeping ekrani** uyari gosterir.
-4. Garanti yontemini dogrulayin (kredi karti blokesi, depozito vb.).
-5. **Check-in** butonuna basin.
+1. **Bugün Gelenler** listesinden misafiri seçin (veya rezervasyon kodu/soyadı ile arayın).
+2. Kimlik bilgilerini doğrulayın. KBS bildirimi için **T.C. Kimlik No / Pasaport No zorunludur**.
+3. Oda atamasını onaylayın. Oda hazır değilse **Kat Hizmetleri ekranı** uyarı gösterir.
+4. Garanti yöntemini doğrulayın (kredi kartı blokesi, depozito vb.).
+5. **Check-in** butonuna basın.
 
 ## Online Check-in
 
-Misafir kendi cihazindan QR kod ile pre-check-in yaptiysa, resepsiyonda yalnizca **kimlik dogrulamasi ve oda anahtari** verilir.
+Misafir kendi cihazından QR kod ile ön check-in yaptıysa, resepsiyonda yalnızca **kimlik doğrulaması ve oda anahtarı** verilir.

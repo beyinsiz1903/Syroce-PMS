@@ -134,7 +134,10 @@ export default function PMSDateBadge() {
     return () => clearTimeout(id);
   }, [navigating]);
 
-  if (hidden || location.pathname === '/app/reservation-calendar') return null;
+  const isDenseContentPage = location.pathname === '/app/reservation-calendar'
+    || location.pathname.startsWith('/app/academy');
+
+  if (hidden || isDenseContentPage) return null;
 
   const containerClass = isStale
     ? "flex items-center gap-2 pl-3 pr-1 py-1 rounded-full bg-amber-50 text-amber-900 text-xs shadow-sm border border-amber-300"

@@ -1,14 +1,14 @@
-# Oda Durumlari
+# Oda Durumları
 
-> Taslak icerik — operator incelemesi gerekir. Kaynak: PMS Yardim Merkezi (Housekeeping).
+> Taslak içerik — operatör incelemesi gerekir. Kaynak: PMS Yardım Merkezi (Kat Hizmetleri).
 
-| Durum | Aciklama |
+| Durum | Açıklama |
 |-------|----------|
-| **Temiz / Hazir** | Misafir kabulune hazir |
-| **Kirli** | Misafir cikmis, temizlik bekliyor |
-| **Temizlikte** | Gorevli odada |
-| **Denetim Bekliyor** | Temizlik bitti, supervisor onayi gerekli |
-| **Bakim** | Ariza / bakim nedeniyle satisa kapali |
-| **OOO (Out of Order)** | Tamamen devre disi |
+| **Temiz / Hazır** | Misafir kabulüne hazır |
+| **Kirli** | Misafir çıkmış, temizlik bekliyor |
+| **Temizlikte** | Görevli odada |
+| **Denetim Bekliyor** | Temizlik bitti, amir onayı gerekli |
+| **Bakım** | Arıza / bakım nedeniyle satışa kapalı |
+| **OOO (Out of Order)** | Tamamen devre dışı |
 
-Housekeeping Dashboard ekrani tum odalarin durumunu kart/grid olarak gosterir.
+Kat Hizmetleri paneli tüm odaların durumunu kart/grid olarak gösterir.

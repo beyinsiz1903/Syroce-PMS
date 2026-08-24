@@ -37,3 +37,20 @@ describe("PMSDateBadge business-date synchronization", () => {
     expect(JSON.parse(sessionStorage.getItem("pms_bd_cache_v1")).bd).toBe("2026-08-14");
   });
 });
+
+describe("PMSDateBadge dense content safety", () => {
+  it.each([
+    "/app/reservation-calendar",
+    "/app/academy",
+    "/app/academy-report",
+    "/app/academy-manage",
+  ])("does not cover content on %s", (pathname) => {
+    render(
+      <MemoryRouter initialEntries={[pathname]}>
+        <PMSDateBadge />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByTestId("pms-date-badge")).not.toBeInTheDocument();
+  });
+});
