@@ -43,6 +43,14 @@ import MappingManager from '@/pages/MappingManager';
 
 const hotelRunnerResponse = (url) => {
   if (url.endsWith('/connection')) return { connected: true, connection: { property_name: 'Demo Hotel' } };
+  if (url.endsWith('/live-activation/status')) return {
+    ready_to_activate: true,
+    mapping_ready: true,
+    queued_write_count: 0,
+    runtime: { ari_write_allowed: true },
+    feature_flags: { write_enabled: false, shadow_mode: true },
+    write_criteria: { met_count: 6, total_criteria: 6, criteria: [] },
+  };
   if (url.endsWith('/webhook-secret')) return { configured: true };
   if (url.endsWith('/room-mappings')) return {
     mappings: [{ id: 'hr-map-1', hr_inv_code: 'STD', hr_rate_code: 'BASE', pms_room_type: 'standard' }],
@@ -80,7 +88,10 @@ describe('integration destructive action guards', () => {
     confirmDialog.mockReset();
     confirmDialog.mockResolvedValue(false);
     axiosGet.mockImplementation((url) => Promise.resolve({
-      data: url.includes('/hotelrunner/') ? hotelRunnerResponse(url) : exelyResponse(url),
+      data:
+        url.includes('/hotelrunner/') || url.includes('/hotelrunner-v2/')
+          ? hotelRunnerResponse(url)
+          : exelyResponse(url),
     }));
   });
 
@@ -101,6 +112,19 @@ describe('integration destructive action guards', () => {
     fireEvent.click(await screen.findByTestId('delete-mapping-STD'));
     await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(3));
     expect(axiosDelete).not.toHaveBeenCalled();
+  });
+
+  it('does not enable HotelRunner live writes without explicit confirmation', async () => {
+    render(<HotelRunnerIntegration user={{}} tenant={{}} />);
+
+    fireEvent.click(await screen.findByTestId('hr-enable-live-write-btn'));
+
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(1));
+    expect(axiosPost).not.toHaveBeenCalledWith(
+      expect.stringContaining('/live-activation/enable'),
+      expect.anything(),
+      expect.anything(),
+    );
   });
 
   it('does not disconnect, change currency, or delete mappings without Exely confirmation', async () => {
