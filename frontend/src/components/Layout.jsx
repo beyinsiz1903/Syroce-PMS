@@ -134,7 +134,7 @@ export const sectionNavItems = (groupId, items) => {
   return sections;
 };
 
-const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
+const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = false }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useTranslation();
@@ -613,7 +613,10 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
         )}
       </header>
 
-      <main ref={mainRef} className="flex-1 max-w-7xl w-full mx-auto overflow-auto pb-28">
+      <main
+        ref={mainRef}
+        className={`flex-1 w-full mx-auto overflow-auto pb-28 ${fullWidth ? 'max-w-none' : 'max-w-7xl'}`}
+      >
         <ErrorBoundary>
           {children}
         </ErrorBoundary>
