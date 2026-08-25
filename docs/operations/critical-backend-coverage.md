@@ -24,3 +24,9 @@ audit log serialization, permissions and filtering, error resolution, OTA/RMS an
 maintenance statistics, daily revenue/tax/payment summaries, payment reconciliation,
 duplicate and orphan charges, room-rate discrepancies, high-balance folios, financial
 reports, guest/room enrichment, integrity checks, and graceful database degradation.
+
+The third tranche raises the reservation-create service floor to 90%. It covers tenant
+and property isolation, idempotent replay and conflict handling, room and guest checks,
+business-date validation, rate overrides, booking and folio persistence, outbox and
+audit events, atomic room-night conflicts, optional integration failures, availability
+sync scheduling, and deterministic tenant-scoped request hashing.
