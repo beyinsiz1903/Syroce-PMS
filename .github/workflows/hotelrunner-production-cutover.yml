@@ -249,18 +249,6 @@ jobs:
 
           doctl apps spec get "$DO_APP_ID" --format json > /tmp/hotelrunner-spec.json
 
-          if [ "$OPERATION" = "enable_reservation_sync" ] || [ "$OPERATION" = "enable_live" ]; then
-            webhook_secret_count="$(
-              jq -r '[.services[]? | select(.name == "backend") | .envs[]? |
-                select(.key == "HOTELRUNNER_WEBHOOK_SECRET" and .type == "SECRET" and ((.value // "") | length) > 0)] | length' \
-                /tmp/hotelrunner-spec.json
-            )"
-            test "$webhook_secret_count" = "1" || {
-              echo "::error::BLOCKED_HOTELRUNNER_WEBHOOK_SECRET_MISSING_OR_NOT_SECRET"
-              exit 1
-            }
-          fi
-
           for component in backend frontend worker beat; do
             if [ "$component" = "backend" ] || [ "$component" = "frontend" ]; then
               list='.services[]?'
@@ -358,9 +346,7 @@ jobs:
             echo "- production_master_enabled: $MASTER_GATE"
             echo "- reservation_sync_disabled: $RESERVATION_STOP"
             echo "- ari_write_disabled: $ARI_STOP"
-            if [ "$OPERATION" = "enable_reservation_sync" ] || [ "$OPERATION" = "enable_live" ]; then
-              echo "- webhook_secret_configured_as_secret: true"
-            fi
+            echo "- official_callback_auth: token_plus_hr_id"
             echo "- nilvera_disabled: true"
             echo "- provider_read_count: 0"
             echo "- provider_write_count: 0"

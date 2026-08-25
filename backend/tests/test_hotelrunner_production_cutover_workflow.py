@@ -66,13 +66,11 @@ def test_live_stage_matrix_keeps_paths_independent() -> None:
     assert 'enable_live)\n              MASTER_GATE="true"\n              RESERVATION_STOP="false"\n              ARI_STOP="false"' in text
 
 
-def test_reservation_stages_require_webhook_secret_in_secret_storage() -> None:
+def test_cutover_uses_official_callback_auth_without_requiring_hmac_secret() -> None:
     text = _workflow_text()
 
-    assert '[ "$OPERATION" = "enable_reservation_sync" ] || [ "$OPERATION" = "enable_live" ]' in text
-    assert '.key == "HOTELRUNNER_WEBHOOK_SECRET" and .type == "SECRET"' in text
-    assert "BLOCKED_HOTELRUNNER_WEBHOOK_SECRET_MISSING_OR_NOT_SECRET" in text
-    assert "webhook_secret_configured_as_secret: true" in text
+    assert "BLOCKED_HOTELRUNNER_WEBHOOK_SECRET_MISSING_OR_NOT_SECRET" not in text
+    assert "official_callback_auth: token_plus_hr_id" in text
 
 
 def test_reservation_stages_require_exact_head_readonly_reconciliation_evidence() -> None:
