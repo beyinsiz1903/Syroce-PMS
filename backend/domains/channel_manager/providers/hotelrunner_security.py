@@ -162,8 +162,10 @@ def _verified_tenant(request: Request) -> str:
 # Therefore, we support dual-mode validation:
 # 1. Syroce Signed Webhook Mode (HMAC): Used internally and for secure mock tests.
 #    Enabled if `X-HotelRunner-Signature` is present.
-# 2. Official HotelRunner Callback Mode: Verifies `hr_id` and `token` against the DB,
-#    and validates the `{secret}` path parameter if HOTELRUNNER_CALLBACK_SECRET is set.
+# 2. Official HotelRunner Callback Mode: Verifies `hr_id` and `token` against the DB.
+#    Legacy callback URLs that contain a `{secret}` path segment validate that
+#    segment too, but a stored legacy secret never makes the official base URL
+#    unusable.
 
 async def _verify_hotelrunner_callback(request: Request) -> None:
     req_id = request.scope.get("req_id", "unknown")
@@ -280,11 +282,12 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     _logger.info(f"[DIAG] [{req_id}] Secret source type: {secret_source}")
 
     # HotelRunner's official real-time push protocol authenticates callbacks
-    # with token + hr_id. A callback path secret is an optional Syroce
-    # defence-in-depth layer: enforce it only when one has been configured.
-    if expected_secret:
-        path_secret = request.path_params.get("secret")
-        if not path_secret or not _hmac.compare_digest(str(path_secret), str(expected_secret)):
+    # with token + hr_id. Some older Syroce installations published a URL with
+    # an additional path secret. Preserve those URLs, but do not let a stale
+    # stored secret turn the official base callback URL into a 401.
+    path_secret = request.path_params.get("secret")
+    if path_secret:
+        if not expected_secret or not _hmac.compare_digest(str(path_secret), str(expected_secret)):
             _log_webhook_reject("invalid_callback_secret", source_ip, tenant_hint, hr_id_hint)
             raise HTTPException(status_code=401, detail="Invalid callback secret")
 

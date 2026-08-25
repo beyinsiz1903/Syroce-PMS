@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink, Building2, ArrowDownUp, CalendarCheck, Clock, Activity, AlertTriangle, Loader2, Save, Trash2, Plus, Check, Wand2, KeyRound, Copy, ShieldCheck, Play, RadioTower } from 'lucide-react';
+import { Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink, Building2, ArrowDownUp, CalendarCheck, Clock, Activity, AlertTriangle, Loader2, Save, Trash2, Plus, Check, Wand2, Copy, ShieldCheck, Play, RadioTower } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { confirmDialog } from '@/lib/dialogs';
 const API = "";
@@ -68,9 +68,7 @@ const HotelRunnerIntegration = ({
   const [autoMapSuggestions, setAutoMapSuggestions] = useState(null);
   const [autoMapLoading, setAutoMapLoading] = useState(false);
   const [mappingStatus, setMappingStatus] = useState(null);
-  const [webhookSecretStatus, setWebhookSecretStatus] = useState(null);
-  const [webhookSecretValue, setWebhookSecretValue] = useState('');
-  const [rotatingSecret, setRotatingSecret] = useState(false);
+  const [callbackStatus, setCallbackStatus] = useState(null);
   const [activationStatus, setActivationStatus] = useState(null);
   const [runningActivationCheck, setRunningActivationCheck] = useState(false);
   const [activatingLiveWrite, setActivatingLiveWrite] = useState(false);
@@ -177,21 +175,23 @@ const HotelRunnerIntegration = ({
   useEffect(() => {
     if (connection?.connected) fetchMappingStatus();
   }, [connection?.connected, fetchMappingStatus]);
-  const fetchWebhookSecretStatus = useCallback(async () => {
+  const fetchCallbackStatus = useCallback(async () => {
     try {
       const {
         data
-      } = await axios.get(`/channel-manager/hotelrunner/webhook-secret`, {
+      } = await axios.get(`/channel-manager/hotelrunner/callback-readiness`, {
         ...requestConfig
       });
-      setWebhookSecretStatus(data);
-    } catch {/* ignore */}
+      setCallbackStatus(data);
+    } catch {
+      setCallbackStatus(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (connection?.connected) fetchWebhookSecretStatus();
-  }, [connection?.connected, fetchWebhookSecretStatus]);
+    if (connection?.connected) fetchCallbackStatus();
+  }, [connection?.connected, fetchCallbackStatus]);
   const fetchActivationStatus = useCallback(async () => {
     try {
       const { data } = await axios.get(`/channel/hotelrunner-v2/live-activation/status`, {
@@ -249,33 +249,13 @@ const HotelRunnerIntegration = ({
       setActivatingLiveWrite(false);
     }
   };
-  const handleRotateWebhookSecret = async () => {
-    if (webhookSecretStatus?.configured && !(await confirmDialog({
-      message: 'Webhook imza anahtarı yenilenecek. HotelRunner paneli yeni anahtarla güncellenene kadar gelen bildirimler doğrulanamaz. Devam edilsin mi?',
-      variant: 'danger'
-    }))) return;
-    setRotatingSecret(true);
+  const handleCopyCallbackUrl = async () => {
+    if (!callbackStatus?.callback_url) return;
     try {
-      const {
-        data
-      } = await axios.post(`/channel-manager/hotelrunner/webhook-secret/rotate`, {}, {
-        ...requestConfig
-      });
-      setWebhookSecretValue(data.webhook_secret || '');
-      toast.success(data.message || 'Webhook secret olusturuldu');
-      fetchWebhookSecretStatus();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || 'Webhook secret olusturulamadi');
-    } finally {
-      setRotatingSecret(false);
-    }
-  };
-  const handleCopyWebhookSecret = async () => {
-    try {
-      await navigator.clipboard.writeText(webhookSecretValue);
-      toast.success('Webhook secret panoya kopyalandi');
+      await navigator.clipboard.writeText(callbackStatus.callback_url);
+      toast.success('Callback adresi panoya kopyalandı');
     } catch {
-      toast.error('Kopyalama basarisiz, lutfen manuel secip kopyalayin');
+      toast.error('Kopyalama başarısız; adresi elle seçip kopyalayın');
     }
   };
   const handleAutoMapSuggest = async () => {
@@ -688,51 +668,64 @@ const HotelRunnerIntegration = ({
                   </CardContent>
                 </Card>
 
-                <Card data-testid="hr-webhook-secret-card">
+                <Card data-testid="hr-callback-readiness-card">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <KeyRound className="w-5 h-5 text-slate-700" /> Webhook Imza Secret'i
+                      <RadioTower className="w-5 h-5 text-slate-700" /> Rezervasyon Callback'i
                     </CardTitle>
                     <CardDescription>
-                      Bu otele ozel webhook imza anahtaridir. HotelRunner panelindeki
-                      "Donus adresi" imza ayarina yapistirin. Gelen rezervasyon, degisiklik
-                      ve iptal bildirimleri bu anahtarla dogrulanir; otel kimligi anahtardan
-                      kriptografik olarak turetilir.
+                      HotelRunner'ın resmî gerçek zamanlı bildirimleri şifreli token ve HR_ID
+                      bilgileriyle doğrulanır. HotelRunner'dan ayrıca bir imza secret'i alınmaz.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="flex items-center gap-2 text-sm">
-                      {webhookSecretStatus?.configured ? <>
+                      {callbackStatus?.ready ? <>
                           <CheckCircle className="w-4 h-4 text-emerald-600" />
-                          <span className="text-slate-700">
-                            Webhook secret tanimli
-                            {webhookSecretStatus?.rotated_at ? ` (son guncelleme: ${new Date(webhookSecretStatus.rotated_at).toLocaleString('tr-TR')})` : ''}
-                          </span>
+                          <span className="text-slate-700">Şifreli HotelRunner kimlik bilgileri callback için hazır</span>
                         </> : <>
                           <AlertTriangle className="w-4 h-4 text-amber-600" />
-                          <span className="text-slate-700">
-                            Henuz webhook secret tanimlanmadi. Olusturup HotelRunner paneline girin.
-                          </span>
+                          <span className="text-slate-700">Callback kimlik bilgileri doğrulanamadı</span>
                         </>}
                     </div>
 
-                    {webhookSecretValue && <div className="rounded-md border border-amber-300 bg-amber-50 p-3 space-y-2">
-                        <p className="text-sm text-amber-800">
-                          Bu deger yalnizca bir kez gosterilir. Simdi kopyalayip HotelRunner
-                          paneline girin; sayfadan ayrildiginizda tekrar goremezsiniz.
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <Input data-testid="hr-webhook-secret-value" readOnly value={webhookSecretValue} className="font-mono text-xs" />
-                          <Button data-testid="hr-webhook-secret-copy-btn" variant="outline" onClick={handleCopyWebhookSecret}>
-                            <Copy className="w-4 h-4 mr-2" /> Kopyala
-                          </Button>
-                        </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="hotelrunner-callback-url">HotelRunner'a verilecek dönüş adresi</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id="hotelrunner-callback-url"
+                          data-testid="hr-callback-url"
+                          readOnly
+                          value={callbackStatus?.callback_url || ''}
+                          placeholder="Callback adresi hazırlanıyor"
+                          className="font-mono text-xs"
+                        />
+                        <Button
+                          data-testid="hr-callback-copy-btn"
+                          variant="outline"
+                          onClick={handleCopyCallbackUrl}
+                          disabled={!callbackStatus?.callback_url}
+                        >
+                          <Copy className="w-4 h-4 mr-2" /> Kopyala
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="outline">Kimlik doğrulama: token + HR_ID</Badge>
+                      <Badge variant="outline">Yöntem: HTTPS POST</Badge>
+                    </div>
+
+                    {callbackStatus?.legacy_path_secret_configured && <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                        Eski bir callback path secret kaydı bulundu. Bu kayıt standart callback
+                        adresini engellemez; secret içeren eski adresler de geriye uyumlu olarak doğrulanır.
                       </div>}
 
-                    <Button data-testid="hr-webhook-secret-rotate-btn" variant="outline" onClick={handleRotateWebhookSecret} disabled={rotatingSecret}>
-                      {rotatingSecret ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                      {webhookSecretStatus?.configured ? 'Secret\'i Yenile' : 'Secret Olustur'}
-                    </Button>
+                    <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+                      Bu adresin The Canyon tesisi için HotelRunner tarafında kayıtlı olduğu panelden
+                      veya HotelRunner destek ekibinden ayrıca teyit edilmelidir. Syroce bu haricî kaydı
+                      yalnızca gelen ilk başarılı bildirimle doğrulayabilir.
+                    </div>
                   </CardContent>
                 </Card>
               </div>}

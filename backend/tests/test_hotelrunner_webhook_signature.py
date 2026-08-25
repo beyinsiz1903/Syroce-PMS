@@ -10,13 +10,17 @@ CM webhook auth mode the stress spec classifies stays stable:
 
 import hashlib
 import hmac
+import json
 import time
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 import domains.channel_manager.providers.hotelrunner_security as hs
+import domains.channel_manager.providers.hotelrunner_webhook as hw
 from domains.channel_manager.providers.hotelrunner_security import (
     _verified_tenant,
     _verify_hotelrunner_callback,
@@ -285,23 +289,34 @@ async def test_webhook_official_production_secrets_manager_path(monkeypatch):
         await _verify_hotelrunner_callback(req_bad_token)
     assert ei.value.status_code == 401
 
-    # Test 3: Missing or wrong callback path secret -> 401
+    # Test 3: A stale stored path secret does not block the official base URL.
     req_no_secret = _FakeRequest(headers, raw, query_params={"token": "prod-sm-token"})
     req_no_secret.path_params = {}
     req_no_secret.url = SimpleNamespace(path="/api/channel-manager/hotelrunner/webhooks/reservations/")
 
+    await _verify_hotelrunner_callback(req_no_secret)
+    assert _verified_tenant(req_no_secret) == "tenant-prod"
+
+    # Test 4: A supplied legacy path secret is still verified.
+    req_wrong_secret = _FakeRequest(headers, raw, query_params={"token": "prod-sm-token"})
+    req_wrong_secret.path_params = {"secret": "wrong-callback-secret"}
     with pytest.raises(HTTPException) as ei:
-        await _verify_hotelrunner_callback(req_no_secret)
+        await _verify_hotelrunner_callback(req_wrong_secret)
     assert ei.value.status_code == 401
 
-    # Test 4: SecretsManager credential missing -> 503
+    # Test 5: SecretsManager credential missing -> 503
     class FakeEmptySecretsManager:
         async def get_provider_credentials(self, *args, **kwargs):
             return None
     monkeypatch.setattr(hs, "get_secrets_manager", lambda: FakeEmptySecretsManager())
 
+    req_missing_credentials = _FakeRequest(
+        headers,
+        raw,
+        query_params={"token": "prod-sm-token"},
+    )
     with pytest.raises(HTTPException) as ei:
-        await _verify_hotelrunner_callback(req)
+        await _verify_hotelrunner_callback(req_missing_credentials)
     assert ei.value.status_code == 503
 
 
@@ -333,6 +348,58 @@ async def test_webhook_official_production_accepts_token_and_hr_id_without_callb
 
     await _verify_hotelrunner_callback(req)
     assert _verified_tenant(req) == "tenant-prod"
+
+
+def test_official_form_callback_reaches_real_endpoint_without_callback_secret(monkeypatch):
+    """Exercise HotelRunner's documented form-urlencoded callback over HTTP."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("HOTELRUNNER_CALLBACK_SECRET", raising=False)
+    conn = {"tenant_id": "tenant-prod", "hr_id": "hotel-prod"}
+
+    async def _fake_lookup(hr_id_hint):
+        return conn if hr_id_hint == "hotel-prod" else None
+
+    class FakeSecretsManager:
+        async def get_provider_credentials(self, tenant_id, provider, property_id, actor="system"):
+            if (tenant_id, provider, property_id) == ("tenant-prod", "hotelrunner", "hotel-prod"):
+                return {"token": "prod-sm-token", "hr_id": "hotel-prod"}
+            return None
+
+    process_batch = AsyncMock()
+    monkeypatch.setattr(hs, "_lookup_signing_connection", _fake_lookup)
+    monkeypatch.setattr(hs, "get_secrets_manager", lambda: FakeSecretsManager())
+    monkeypatch.setattr(hw, "_process_webhook_batch", process_batch)
+
+    app = FastAPI()
+    app.include_router(hw.router)
+    payload = {
+        "hr_id": "hotel-prod",
+        "property_id": "hotel-prod",
+        "hr_number": "HR-OFFICIAL-1",
+        "state": "confirmed",
+    }
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/channel-manager/hotelrunner/callback",
+            params={"token": "prod-sm-token", "hr_id": "hotel-prod"},
+            data={"data": json.dumps(payload)},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "accepted",
+        "event_type": "reservation_create",
+        "count": 1,
+        "message": "1 rezervasyon alindi (reservation_create)",
+    }
+    process_batch.assert_awaited_once()
+    assert process_batch.await_args.args[:4] == (
+        "tenant-prod",
+        "hotel-prod",
+        [payload],
+        "reservation_create",
+    )
 
 
 @pytest.mark.asyncio

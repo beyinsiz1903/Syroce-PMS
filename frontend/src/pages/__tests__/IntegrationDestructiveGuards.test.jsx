@@ -51,7 +51,15 @@ const hotelRunnerResponse = (url) => {
     feature_flags: { write_enabled: false, shadow_mode: true },
     write_criteria: { met_count: 6, total_criteria: 6, criteria: [] },
   };
-  if (url.endsWith('/webhook-secret')) return { configured: true };
+  if (url.endsWith('/callback-readiness')) return {
+    ready: true,
+    official_auth: 'token_plus_hr_id',
+    callback_url: 'https://pms.syroce.com/api/channel-manager/hotelrunner/callback',
+    credentials_configured: true,
+    legacy_path_secret_configured: false,
+    registration_requires_provider_confirmation: true,
+    blockers: [],
+  };
   if (url.endsWith('/room-mappings')) return {
     mappings: [{ id: 'hr-map-1', hr_inv_code: 'STD', hr_rate_code: 'BASE', pms_room_type: 'standard' }],
   };
@@ -97,21 +105,28 @@ describe('integration destructive action guards', () => {
 
   afterEach(() => cleanup());
 
-  it('does not disconnect, rotate secrets, or delete mappings without HotelRunner confirmation', async () => {
+  it('does not disconnect or delete mappings without HotelRunner confirmation', async () => {
     render(<HotelRunnerIntegration user={{}} tenant={{}} />);
 
     fireEvent.click(await screen.findByTestId('hr-disconnect-btn'));
     await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(1));
     expect(axiosDelete).not.toHaveBeenCalled();
 
-    fireEvent.click(await screen.findByTestId('hr-webhook-secret-rotate-btn'));
-    await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(2));
-    expect(axiosPost).not.toHaveBeenCalled();
-
     fireEvent.click(screen.getByTestId('tab-mappings'));
     fireEvent.click(await screen.findByTestId('delete-mapping-STD'));
-    await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(2));
     expect(axiosDelete).not.toHaveBeenCalled();
+  });
+
+  it('shows the official HotelRunner callback contract without a secret action', async () => {
+    render(<HotelRunnerIntegration user={{}} tenant={{}} />);
+
+    expect(await screen.findByTestId('hr-callback-readiness-card')).toHaveTextContent('token + HR_ID');
+    expect(screen.getByTestId('hr-callback-url')).toHaveValue(
+      'https://pms.syroce.com/api/channel-manager/hotelrunner/callback',
+    );
+    expect(screen.queryByTestId('hr-webhook-secret-rotate-btn')).not.toBeInTheDocument();
+    expect(screen.queryByText(/HotelRunner paneline.*secret/i)).not.toBeInTheDocument();
   });
 
   it('does not enable HotelRunner live writes without explicit confirmation', async () => {
