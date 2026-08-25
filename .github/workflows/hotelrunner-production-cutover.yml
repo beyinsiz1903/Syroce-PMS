@@ -33,12 +33,18 @@ on:
         required: false
         default: ""
         type: string
+      reservation_reconciliation_run_id:
+        description: "Successful exact-head HotelRunner reservation reconciliation run; required for reservation/live stages"
+        required: false
+        default: ""
+        type: string
 
 concurrency:
   group: hotelrunner-production-cutover
   cancel-in-progress: false
 
 permissions:
+  actions: read
   contents: read
   packages: read
 
@@ -59,6 +65,7 @@ jobs:
           CONFIRM_PRODUCTION_CHANGE: ${{ inputs.confirm_production_change }}
           CONFIRM_PROVIDER_PREREQUISITES: ${{ inputs.confirm_provider_prerequisites }}
           ACTIVATION_CONFIRMATION: ${{ inputs.activation_confirmation }}
+          RESERVATION_RECONCILIATION_RUN_ID: ${{ inputs.reservation_reconciliation_run_id }}
           OPERATION: ${{ inputs.operation }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
@@ -91,6 +98,9 @@ jobs:
                 echo "::error::BLOCKED_PROVIDER_ACTIVATION_CONFIRMATION"
                 exit 1
               }
+              case "$RESERVATION_RECONCILIATION_RUN_ID" in
+                ''|*[!0-9]*) echo "::error::BLOCKED_RESERVATION_RECONCILIATION_RUN_REQUIRED"; exit 1 ;;
+              esac
               ;;
             enable_ari_write)
               test "$CONFIRM_PROVIDER_PREREQUISITES" = "true" || {
@@ -111,12 +121,68 @@ jobs:
                 echo "::error::BLOCKED_PROVIDER_ACTIVATION_CONFIRMATION"
                 exit 1
               }
+              case "$RESERVATION_RECONCILIATION_RUN_ID" in
+                ''|*[!0-9]*) echo "::error::BLOCKED_RESERVATION_RECONCILIATION_RUN_REQUIRED"; exit 1 ;;
+              esac
               ;;
             *)
               echo "::error::BLOCKED_UNKNOWN_OPERATION"
               exit 1
               ;;
           esac
+
+      - name: Verify exact-head reservation reconciliation evidence
+        if: inputs.operation == 'enable_reservation_sync' || inputs.operation == 'enable_live'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVIDENCE_RUN_ID: ${{ inputs.reservation_reconciliation_run_id }}
+        run: |
+          set -euo pipefail
+          umask 077
+          evidence_dir="$(mktemp -d)"
+          trap 'rm -rf "$evidence_dir"' EXIT
+
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${EVIDENCE_RUN_ID}")"
+          test "$(jq -r .path <<<"$run_json")" = ".github/workflows/hotelrunner-ari-pilot.yml" || {
+            echo "::error::BLOCKED_RESERVATION_RECONCILIATION_WORKFLOW_MISMATCH"
+            exit 1
+          }
+          test "$(jq -r .head_sha <<<"$run_json")" = "${GITHUB_SHA}" || {
+            echo "::error::BLOCKED_RESERVATION_RECONCILIATION_HEAD_MISMATCH"
+            exit 1
+          }
+          test "$(jq -r .event <<<"$run_json")" = "workflow_dispatch" \
+            && test "$(jq -r .conclusion <<<"$run_json")" = "success" \
+            && test "$(jq -r .run_attempt <<<"$run_json")" = "1" || {
+              echo "::error::BLOCKED_RESERVATION_RECONCILIATION_RUN_NOT_GREEN"
+              exit 1
+            }
+
+          gh run download "$EVIDENCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name hotelrunner-ari-pilot-results \
+            --dir "$evidence_dir"
+          python3 - "$evidence_dir/hotelrunner-ari-pilot-results.xml" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse(sys.argv[1]).getroot()
+          cases = root.findall(".//testcase")
+          if len(cases) != 1 or cases[0].get("name") != "test_hotelrunner_pilot_reservation_reconciliation":
+              raise SystemExit("BLOCKED_RESERVATION_RECONCILIATION_ARTIFACT_TARGET")
+          props = {item.get("name"): item.get("value") for item in cases[0].findall("./properties/property")}
+          required = {
+              "result": "PASS",
+              "operation": "reservation_reconciliation",
+              "provider_write_count": "0",
+              "undelivered_match_count_class": "ZERO",
+              "history_match_count_class": "ONE",
+              "pms_number_present": "True",
+          }
+          if any(props.get(key) != value for key, value in required.items()):
+              raise SystemExit("BLOCKED_RESERVATION_RECONCILIATION_ARTIFACT_EVIDENCE")
+          PY
 
       - name: Validate required configuration
         shell: bash
@@ -182,6 +248,18 @@ jobs:
           esac
 
           doctl apps spec get "$DO_APP_ID" --format json > /tmp/hotelrunner-spec.json
+
+          if [ "$OPERATION" = "enable_reservation_sync" ] || [ "$OPERATION" = "enable_live" ]; then
+            webhook_secret_count="$(
+              jq -r '[.services[]? | select(.name == "backend") | .envs[]? |
+                select(.key == "HOTELRUNNER_WEBHOOK_SECRET" and .type == "SECRET" and ((.value // "") | length) > 0)] | length' \
+                /tmp/hotelrunner-spec.json
+            )"
+            test "$webhook_secret_count" = "1" || {
+              echo "::error::BLOCKED_HOTELRUNNER_WEBHOOK_SECRET_MISSING_OR_NOT_SECRET"
+              exit 1
+            }
+          fi
 
           for component in backend frontend worker beat; do
             if [ "$component" = "backend" ] || [ "$component" = "frontend" ]; then
@@ -280,6 +358,9 @@ jobs:
             echo "- production_master_enabled: $MASTER_GATE"
             echo "- reservation_sync_disabled: $RESERVATION_STOP"
             echo "- ari_write_disabled: $ARI_STOP"
+            if [ "$OPERATION" = "enable_reservation_sync" ] || [ "$OPERATION" = "enable_live" ]; then
+              echo "- webhook_secret_configured_as_secret: true"
+            fi
             echo "- nilvera_disabled: true"
             echo "- provider_read_count: 0"
             echo "- provider_write_count: 0"

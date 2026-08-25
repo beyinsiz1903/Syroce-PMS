@@ -66,6 +66,31 @@ def test_live_stage_matrix_keeps_paths_independent() -> None:
     assert 'enable_live)\n              MASTER_GATE="true"\n              RESERVATION_STOP="false"\n              ARI_STOP="false"' in text
 
 
+def test_reservation_stages_require_webhook_secret_in_secret_storage() -> None:
+    text = _workflow_text()
+
+    assert '[ "$OPERATION" = "enable_reservation_sync" ] || [ "$OPERATION" = "enable_live" ]' in text
+    assert '.key == "HOTELRUNNER_WEBHOOK_SECRET" and .type == "SECRET"' in text
+    assert "BLOCKED_HOTELRUNNER_WEBHOOK_SECRET_MISSING_OR_NOT_SECRET" in text
+    assert "webhook_secret_configured_as_secret: true" in text
+
+
+def test_reservation_stages_require_exact_head_readonly_reconciliation_evidence() -> None:
+    workflow = _workflow()
+    text = _workflow_text()
+
+    inputs = workflow[True]["workflow_dispatch"]["inputs"]
+    assert "reservation_reconciliation_run_id" in inputs
+    assert workflow["permissions"]["actions"] == "read"
+    assert "BLOCKED_RESERVATION_RECONCILIATION_RUN_REQUIRED" in text
+    assert "BLOCKED_RESERVATION_RECONCILIATION_HEAD_MISMATCH" in text
+    assert "BLOCKED_RESERVATION_RECONCILIATION_RUN_NOT_GREEN" in text
+    assert "test_hotelrunner_pilot_reservation_reconciliation" in text
+    assert '"provider_write_count": "0"' in text
+    assert '"undelivered_match_count_class": "ZERO"' in text
+    assert '"history_match_count_class": "ONE"' in text
+
+
 def test_cutover_contains_no_hotelrunner_provider_call() -> None:
     text = _workflow_text().lower()
 
