@@ -1,0 +1,36 @@
+{
+  "critical_files": [
+    {
+      "path": "modules/pms_core/reservation_state_machine.py",
+      "minimum_percent": 90.0
+    },
+    {
+      "path": "domains/channel_manager/providers/hotelrunner_security.py",
+      "minimum_percent": 75.0
+    },
+    {
+      "path": "domains/pms/night_audit/financial_service.py",
+      "minimum_percent": 7.0
+    },
+    {
+      "path": "domains/pms/night_audit_service.py",
+      "minimum_percent": 12.0
+    },
+    {
+      "path": "modules/reservations/services/create_reservation_service.py",
+      "minimum_percent": 16.0
+    },
+    {
+      "path": "modules/reservations/services/update_reservation_service.py",
+      "minimum_percent": 12.0
+    },
+    {
+      "path": "routers/finance/folio.py",
+      "minimum_percent": 28.0
+    },
+    {
+      "path": "routers/auth.py",
+      "minimum_percent": 29.0
+    }
+  ]
+}

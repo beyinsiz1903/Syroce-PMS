@@ -505,6 +505,11 @@ jobs:
             --cov-report=html:coverage-html \
             --cov-fail-under=46 \
             --junitxml=full-suite-results.xml
+      - name: Enforce business-critical backend coverage floors
+        run: |
+          python scripts/check_critical_coverage.py \
+            backend/coverage.json \
+            scripts/critical_backend_coverage.json
       - name: Enforce complete-suite test and skip policy
         run: |
           python scripts/check_junit_policy.py backend/full-suite-results.xml \
