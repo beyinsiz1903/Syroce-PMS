@@ -433,7 +433,7 @@ class TestWebhookEndpoints:
         response = send_hr_webhook("/api/channel-manager/hotelrunner/callback", payload)
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
         data = response.json()
-        assert data.get("status") == "accepted"
+        assert data == {"status": "ok"}
 
     def test_webhook_unified_callback_modification(self):
         """POST /api/channel-manager/hotelrunner/callback should handle modifications"""
@@ -441,7 +441,7 @@ class TestWebhookEndpoints:
         response = send_hr_webhook("/api/channel-manager/hotelrunner/callback", payload)
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
         data = response.json()
-        assert data.get("status") == "accepted"
+        assert data == {"status": "ok"}
 
     def test_webhook_missing_tenant_succeeds(self):
         """Webhook without X-Tenant-ID should succeed via hr_id lookup"""

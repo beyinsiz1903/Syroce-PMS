@@ -179,7 +179,10 @@ async def unified_callback(
     to this one URL. Event type is auto-detected from the payload's state field.
 
     Accepts: JSON payload from HotelRunner
-    Returns: {"status": "accepted", "event_type": "...", "count": N}
+    Returns exactly {"status": "ok"}, as required by HotelRunner's REST
+    real-time push acknowledgement contract. Processing details remain in the
+    unified event log; returning an internal status such as ``accepted`` makes
+    HotelRunner retry and eventually move the reservation to its email queue.
 
     v106 Bug DAC follow-up (architect): /callback was the PRIMARY URL
     configured in the HR panel — previously left unsigned while
@@ -236,12 +239,7 @@ async def unified_callback(
     total_duration = time.time() - request.state.hr_diag.get("request_received", time.time())
     logger.info(f"[DIAG] [{req_id}] Final response status 200, total duration {total_duration*1000:.2f}ms")
 
-    return {
-        "status": "accepted",
-        "event_type": event_type,
-        "count": len(reservations),
-        "message": f"{len(reservations)} rezervasyon alindi ({event_type})",
-    }
+    return {"status": "ok"}
 
 
 # ── Webhook Endpoints ────────────────────────────────────────────────

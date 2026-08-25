@@ -66,6 +66,10 @@ Legacy URLs that already contain a path secret remain supported and validate
 that supplied segment, but a stale `HOTELRUNNER_CALLBACK_SECRET` cannot block
 the official base URL. `HOTELRUNNER_WEBHOOK_SECRET` applies only to Syroce's
 HMAC test/custom mode and is not a prerequisite for HotelRunner real-time push.
+The REST callback acknowledgement must be HTTP 200 with the exact JSON body
+`{"status":"ok"}`. A different application status (for example `accepted`)
+is treated as a failed delivery even when Syroce has persisted the reservation,
+causing retries and eventual fallback to HotelRunner's email queue.
 The read-only `/api/channel-manager/hotelrunner/callback-readiness` endpoint
 reports credential and legacy-path status without returning any secret. This
 enables only reservation synchronization, keeps ARI stopped, imports exactly one reservation,

@@ -387,12 +387,10 @@ def test_official_form_callback_reaches_real_endpoint_without_callback_secret(mo
         )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "status": "accepted",
-        "event_type": "reservation_create",
-        "count": 1,
-        "message": "1 rezervasyon alindi (reservation_create)",
-    }
+    # HotelRunner's REST real-time push contract requires this exact ACK.
+    # A 200 response with ``status=accepted`` is still treated as failed
+    # delivery and eventually placed in HotelRunner's email queue.
+    assert response.json() == {"status": "ok"}
     process_batch.assert_awaited_once()
     assert process_batch.await_args.args[:4] == (
         "tenant-prod",

@@ -436,6 +436,7 @@ class ReservationLineage(BaseModel):
     arrival_date: str = ""
     departure_date: str = ""
     room_type_code: str = ""
+    provider_room_number: str = ""
     rate_plan_code: str = ""
     adults: int = 1
     children: int = 0
@@ -486,6 +487,7 @@ class ReservationLineage(BaseModel):
             "arrival_date": canonical_data.get("arrival_date", ""),
             "departure_date": canonical_data.get("departure_date", ""),
             "room_type_code": canonical_data.get("room_type_code", ""),
+            "provider_room_number": canonical_data.get("provider_room_number", ""),
             "rate_plan_code": canonical_data.get("rate_plan_code", ""),
             "adults": canonical_data.get("adults", 1),
             "children": canonical_data.get("children", 0),
