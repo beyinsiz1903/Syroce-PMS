@@ -72,6 +72,13 @@
             // in-memory + URL-marker fallback) prevents a reload loop if a deploy
             // is genuinely broken — and lets the recurring error reach Sentry.
             (function () {
+                var CHUNK_RELOAD_KEY = 'syroce_chunk_reload_at';
+                // A broken deployment must not cause an automatic reload loop,
+                // but a tab can legitimately stay open across several deploys.
+                // Keep the loop guard only long enough to cover the reload that
+                // belongs to the current incident; do not poison the whole tab
+                // for the rest of its lifetime.
+                var CHUNK_RELOAD_COOLDOWN_MS = 60 * 1000;
                 var CHUNK_ERR = [
                     'Importing a module script failed',
                     'Failed to fetch dynamically imported module',
@@ -99,9 +106,26 @@
                 // surface to Sentry (window.__syroceChunkHealing stays false).
                 function alreadyHealed() {
                     if (window.__syroceChunkReloaded) return true;
-                    try { if (sessionStorage.getItem('syroce_chunk_reload_done') === '1') return true; } catch (_) {}
-                    // storage-denied fallback: a URL marker survives the reload.
-                    if (window.location.search.indexOf('_chunkreload=1') !== -1) return true;
+                    var now = Date.now();
+                    try {
+                        var storedAt = sessionStorage.getItem(CHUNK_RELOAD_KEY);
+                        if (storedAt) {
+                            var parsedAt = Number(storedAt);
+                            if (Number.isFinite(parsedAt) && now - parsedAt < CHUNK_RELOAD_COOLDOWN_MS) return true;
+                            // Includes the old permanent value ("1"). Migrate it
+                            // away so tabs opened before this fix can self-heal.
+                            sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+                            sessionStorage.removeItem('syroce_chunk_reload_done');
+                        } else if (sessionStorage.getItem('syroce_chunk_reload_done') === '1') {
+                            sessionStorage.removeItem('syroce_chunk_reload_done');
+                        }
+                    } catch (_) {}
+                    // storage-denied fallback: a timestamped URL marker survives
+                    // exactly one reload and expires with the same cooldown.
+                    try {
+                        var markerAt = Number(new URL(window.location.href).searchParams.get('_chunkreload'));
+                        if (Number.isFinite(markerAt) && now - markerAt < CHUNK_RELOAD_COOLDOWN_MS) return true;
+                    } catch (_) {}
                     return false;
                 }
                 // Returns true if it initiated a heal reload, false if the latch
@@ -111,7 +135,12 @@
                     window.__syroceChunkReloaded = true;   // in-memory latch (loop-safe even if storage denied)
                     window.__syroceChunkHealing = true;    // tells Sentry beforeSend this incident is benign
                     var stored = false;
-                    try { sessionStorage.setItem('syroce_chunk_reload_done', '1'); stored = true; } catch (_) {}
+                    var now = Date.now();
+                    try {
+                        sessionStorage.setItem(CHUNK_RELOAD_KEY, String(now));
+                        sessionStorage.removeItem('syroce_chunk_reload_done');
+                        stored = true;
+                    } catch (_) {}
                     if (stored) {
                         // The HMR reload guard (vite.config.js hmrReloadGuard) overrides
                         // location.reload() to a no-op unless the user interacted within
@@ -129,10 +158,23 @@
                     } else {
                         // No storage: pin the latch in the URL so the next load sees it.
                         var u = new URL(window.location.href);
-                        u.searchParams.set('_chunkreload', '1');
+                        u.searchParams.set('_chunkreload', String(now));
                         window.location.replace(u.toString());
                     }
                     return true;
+                }
+                // Explicit recovery for the ErrorBoundary action. User intent is
+                // allowed to bypass the automatic cooldown and cache-bust the SPA
+                // navigation, so Retry never retries the same invalid module.
+                function forceFreshReload() {
+                    try {
+                        sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+                        sessionStorage.removeItem('syroce_chunk_reload_done');
+                    } catch (_) {}
+                    var u = new URL(window.location.href);
+                    u.searchParams.delete('_chunkreload');
+                    u.searchParams.set('_appreload', String(Date.now()));
+                    window.location.replace(u.toString());
                 }
                 window.addEventListener('vite:preloadError', function (e) {
                     if (e && e.preventDefault) e.preventDefault();
@@ -153,6 +195,7 @@
                 // ErrorBoundary to call, keeping a single shared "reload once" guarantee.
                 window.__syroceIsChunkError = isChunkError;
                 window.__syroceChunkReloadOnce = reloadOnce;
+                window.__syroceForceFreshReload = forceFreshReload;
             })();
         </script>
     </head>
