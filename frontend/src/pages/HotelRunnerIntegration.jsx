@@ -722,8 +722,8 @@ const HotelRunnerIntegration = ({
                       </div>}
 
                     <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
-                      Bu adresin The Canyon tesisi için HotelRunner tarafında kayıtlı olduğu panelden
-                      veya HotelRunner destek ekibinden ayrıca teyit edilmelidir. Syroce bu haricî kaydı
+                      Bu adresin ilgili tesis için HotelRunner tarafında kayıtlı olduğu panelden veya
+                      HotelRunner destek ekibinden ayrıca teyit edilmelidir. Syroce bu haricî kaydı
                       yalnızca gelen ilk başarılı bildirimle doğrulayabilir.
                     </div>
                   </CardContent>
