@@ -564,7 +564,7 @@ class TestWSRedisAdapter:
         async def fake_unsubscribe(room):
             unsub_calls.append(room)
 
-        async def fake_resolve(_auth):
+        async def fake_resolve(_auth, _environ=None):
             return {
                 "user_id": "u1",
                 "tenant_id": "t1",
