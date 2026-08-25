@@ -19,6 +19,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from core.booking_realtime import publish_booking_change
 from core.database import db
 
 from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
@@ -641,6 +642,14 @@ class ReservationImportService:
                 "OTA reservation %s retained as pending assignment; no sellable room",
                 canonical.external_id,
             )
+        await publish_booking_change(
+            tenant_id=tenant_id,
+            booking_id=booking_id,
+            event_type="create",
+            status="confirmed",
+            source="reservation_import_service",
+            external_reservation_id=canonical.external_id,
+        )
         logger.info("Created PMS booking %s from external %s", booking_id, canonical.external_id)
         return booking_id
 
@@ -662,6 +671,13 @@ class ReservationImportService:
         await db.bookings.update_one(
             {"id": imported.pms_booking_id, "tenant_id": tenant_id},
             {"$set": updates},
+        )
+        await publish_booking_change(
+            tenant_id=tenant_id,
+            booking_id=imported.pms_booking_id,
+            event_type="update",
+            source="reservation_import_service",
+            external_reservation_id=imported.external_reservation_id,
         )
         logger.info("Modified PMS booking %s", imported.pms_booking_id)
 
@@ -707,6 +723,13 @@ class ReservationImportService:
             )
         except Exception:
             pass
+        await publish_booking_change(
+            tenant_id=tenant_id,
+            booking_id=pms_booking_id,
+            event_type="cancel",
+            status="cancelled",
+            source="reservation_import_service",
+        )
         logger.info("Cancelled PMS booking %s", pms_booking_id)
 
     async def _find_or_create_guest(self, tenant_id: str, canonical: CanonicalReservation) -> str:

@@ -7,6 +7,7 @@ import asyncio
 import logging
 from collections import defaultdict
 from datetime import datetime
+from http.cookies import SimpleCookie
 from typing import Any
 
 import socketio
@@ -145,13 +146,39 @@ _DEPARTMENT_BY_ROLE = {
 }
 
 
-async def _resolve_user_identity(auth: Any) -> dict[str, Any] | None:
+def _access_token_from_environ(environ: dict[str, Any] | None) -> str | None:
+    """Read the HttpOnly access cookie from the Socket.IO handshake.
+
+    Production web sessions intentionally do not expose access tokens to
+    JavaScript/localStorage. The browser still sends same-origin cookies on
+    the WebSocket handshake, so the server must support the same cookie auth
+    contract as normal HTTP requests.
+    """
+    if not environ:
+        return None
+    cookie_header = environ.get("HTTP_COOKIE") or environ.get("http_cookie")
+    if not cookie_header:
+        return None
+    try:
+        cookies = SimpleCookie()
+        cookies.load(cookie_header)
+        morsel = cookies.get("access_token")
+        return morsel.value if morsel else None
+    except Exception:
+        return None
+
+
+async def _resolve_user_identity(
+    auth: Any,
+    environ: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     """Async variant of _decode_socket_auth that fetches the user document
     for department resolution.
     """
-    if not isinstance(auth, dict):
-        return None
-    token = auth.get("token") or auth.get("Authorization")
+    token = None
+    if isinstance(auth, dict):
+        token = auth.get("token") or auth.get("Authorization")
+    token = token or _access_token_from_environ(environ)
     if not token:
         return None
     if isinstance(token, str) and token.lower().startswith("bearer "):
@@ -234,7 +261,7 @@ async def connect(sid, environ, auth):
     SUBSCRIBE per channel.
     """
     logger.info(f"Client connected: {sid}")
-    identity = await _resolve_user_identity(auth)
+    identity = await _resolve_user_identity(auth, environ)
     if identity and identity.get("tenant_id"):
         sid_identity[sid] = identity
         rooms = _internal_chat_rooms(identity["tenant_id"], identity["user_id"], identity.get("department"))

@@ -25,6 +25,7 @@ from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from core.booking_realtime import publish_booking_change
 from core.database import db
 from domains.channel_manager import unified_repository as repo
 from domains.channel_manager.data_model import (
@@ -918,6 +919,15 @@ async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) ->
         },
         {"_id": 0, "id": 1},
     )
+    if durable_booking:
+        await publish_booking_change(
+            tenant_id=tenant_id,
+            booking_id=durable_booking["id"],
+            event_type="cancel",
+            status="cancelled",
+            source="channel_manager_ingest",
+            external_reservation_id=ext_res_id,
+        )
     return durable_booking is not None
 
 

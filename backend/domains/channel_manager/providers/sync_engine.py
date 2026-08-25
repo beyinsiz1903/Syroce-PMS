@@ -12,6 +12,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from core.booking_realtime import publish_booking_change
 from core.database import db
 from domains.channel_manager.providers.hotelrunner_shared import (
     _persist_and_process,
@@ -833,6 +834,15 @@ async def sync_reservation_update(
             )
     except Exception as exc:
         logger.error("[PULL-SYNC] Notification creation raised %s", type(exc).__name__)
+
+    await publish_booking_change(
+        tenant_id=tenant_id,
+        booking_id=booking.get("id", ""),
+        event_type="cancel" if updates.get("status") == "cancelled" else "update",
+        status=updates.get("status", booking.get("status")),
+        source="hotelrunner_pull",
+        external_reservation_id=ext_reservation_id,
+    )
 
     return True
 

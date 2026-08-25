@@ -21,6 +21,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from core.atomic_booking import create_booking_atomic
+from core.booking_realtime import publish_booking_change
 from core.database import db
 from core.import_decision import (
     COLL_IMPORTED,
@@ -819,6 +820,15 @@ async def auto_import_reservation_to_pms(
             logger.info("Notification created for OTA import: booking=%s", booking_id)
         except Exception as e:
             logger.warning("Failed to create notification for import %s: %s", imported_reservation_id, e)
+
+        await publish_booking_change(
+            tenant_id=tenant_id,
+            booking_id=booking_id,
+            event_type="create",
+            status=booking_doc.get("status", "confirmed"),
+            source="import_bridge",
+            external_reservation_id=ext_res_id,
+        )
 
         # ── 10. Enqueue outbox event for confirmation ────────────
         try:
