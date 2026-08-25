@@ -47,4 +47,14 @@ describe('complete offline application shell contract', () => {
     expect(entry).toContain('register as registerServiceWorker');
     expect(entry).toContain('registerServiceWorker();');
   });
+
+  test('stale deployment chunks recover again after a bounded reload cooldown', () => {
+    const html = readProjectFile('../../../index.html');
+
+    expect(html).toContain("var CHUNK_RELOAD_KEY = 'syroce_chunk_reload_at'");
+    expect(html).toContain('var CHUNK_RELOAD_COOLDOWN_MS = 60 * 1000');
+    expect(html).toContain("sessionStorage.removeItem('syroce_chunk_reload_done')");
+    expect(html).toContain('window.__syroceForceFreshReload = forceFreshReload');
+    expect(html).toContain("u.searchParams.set('_appreload', String(Date.now()))");
+  });
 });
