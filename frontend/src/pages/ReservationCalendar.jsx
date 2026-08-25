@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { resetUnassignedListScroll } from './calendar/unassignedPanel';
 import { lazyWithPreload } from '@/routes/lazyWithPreload';
+import { useCalendarRealtime } from './calendar/useCalendarRealtime';
 
 import {
   CalendarHeader,
@@ -379,6 +380,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       setLoading(false);
     }
   };
+
+  useCalendarRealtime(loadCalendarData);
 
   // Opens Reports tab Pickup Pace for a given arrival date
   const openPickupPaceForDate = (dateStr) => {

@@ -58,6 +58,7 @@ class WebSocketManager {
 
       this.socket = io(WEBSOCKET_URL, {
         path: WEBSOCKET_PATH,
+        withCredentials: true,
         transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionDelay: 3000,
