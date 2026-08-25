@@ -79,7 +79,7 @@ class _WebhookRequest:
     def __init__(self):
         self.headers = {"content-type": "application/json"}
         self.query_params = _QueryParams({"token": "synthetic-plaintext-token"})
-        self.path_params = {"secret": "synthetic-plaintext-callback-secret"}
+        self.path_params = {}
         self.scope = {"type": "http", "req_id": "offline-security-test"}
         self.state = SimpleNamespace()
         self.client = SimpleNamespace(host="192.0.2.10")

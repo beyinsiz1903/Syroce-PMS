@@ -61,11 +61,14 @@ the run ID of a successful, first-attempt `reservation_reconciliation` pilot on
 the exact approved SHA. Its artifact must prove one history match, zero
 undelivered matches, a present PMS number, and zero provider writes. Official
 HotelRunner callbacks are authenticated with the property's encrypted `token`
-and `hr_id`. `HOTELRUNNER_CALLBACK_SECRET` is optional defence in depth; when
-configured, the same value must be present in the callback URL path.
-`HOTELRUNNER_WEBHOOK_SECRET` applies only to Syroce's HMAC test/custom mode and
-is not a prerequisite for HotelRunner real-time push. This enables only
-reservation synchronization, keeps ARI stopped, imports exactly one reservation,
+and `hr_id`. The official base callback URL never requires a third secret.
+Legacy URLs that already contain a path secret remain supported and validate
+that supplied segment, but a stale `HOTELRUNNER_CALLBACK_SECRET` cannot block
+the official base URL. `HOTELRUNNER_WEBHOOK_SECRET` applies only to Syroce's
+HMAC test/custom mode and is not a prerequisite for HotelRunner real-time push.
+The read-only `/api/channel-manager/hotelrunner/callback-readiness` endpoint
+reports credential and legacy-path status without returning any secret. This
+enables only reservation synchronization, keeps ARI stopped, imports exactly one reservation,
 verify durable PMS state, then permit one ACK after the durable result. Any
 timeout, 5xx, parse error, lock loss, mapping hold, or ambiguous outcome is
 **NO-GO** and must be reconciled read-only before further action.

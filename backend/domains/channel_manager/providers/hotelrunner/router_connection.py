@@ -12,6 +12,7 @@ parent router.
 """
 
 import logging
+import os
 import secrets
 import uuid
 from datetime import UTC, datetime
@@ -139,6 +140,67 @@ async def get_connection_status(current_user: User = Depends(get_current_user)):
     return {"connected": conn.get("is_active", False), "connection": conn}
 
 
+@router.get("/callback-readiness")
+async def get_callback_readiness(current_user: User = Depends(get_current_user)):
+    """Return a secret-safe readiness view for HotelRunner real-time push.
+
+    HotelRunner's official callback authenticates with ``token`` and ``hr_id``.
+    We never return either value.  Legacy path-secret presence is reported only
+    as a boolean so operators can identify old URLs without exposing secrets.
+    This endpoint is read-only and performs no provider call.
+    """
+    conn = await db.hotelrunner_connections.find_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"_id": 0, "hr_id": 1},
+    )
+    if not conn or not conn.get("hr_id"):
+        return {
+            "ready": False,
+            "official_auth": "token_plus_hr_id",
+            "callback_url": None,
+            "credentials_configured": False,
+            "legacy_path_secret_configured": False,
+            "legacy_path_secret_blocks_official_url": False,
+            "registration_requires_provider_confirmation": True,
+            "blockers": ["HOTELRUNNER_CONNECTION_MISSING"],
+        }
+
+    hr_id = str(conn["hr_id"])
+    try:
+        credentials = await get_secrets_manager().get_provider_credentials(
+            current_user.tenant_id,
+            "hotelrunner",
+            hr_id,
+            actor=current_user.name,
+        )
+    except Exception:
+        logger.exception("HotelRunner callback readiness credential lookup failed")
+        raise HTTPException(status_code=503, detail="HotelRunner credential service unavailable")
+
+    credentials = credentials or {}
+    stored_hr_id = str(credentials.get("hr_id") or "")
+    credentials_configured = bool(credentials.get("token")) and stored_hr_id == hr_id
+    legacy_path_secret_configured = bool(
+        credentials.get("callback_secret")
+        or os.environ.get("HOTELRUNNER_CALLBACK_SECRET")
+    )
+    callback_path = "/api/channel-manager/hotelrunner/callback"
+    public_base = (os.environ.get("PUBLIC_APP_URL") or "").strip().rstrip("/")
+    callback_url = f"{public_base}{callback_path}" if public_base else callback_path
+    blockers = [] if credentials_configured else ["HOTELRUNNER_ENCRYPTED_CREDENTIALS_MISSING"]
+
+    return {
+        "ready": credentials_configured,
+        "official_auth": "token_plus_hr_id",
+        "callback_url": callback_url,
+        "credentials_configured": credentials_configured,
+        "legacy_path_secret_configured": legacy_path_secret_configured,
+        "legacy_path_secret_blocks_official_url": False,
+        "registration_requires_provider_confirmation": True,
+        "blockers": blockers,
+    }
+
+
 @router.post("/test")
 async def test_connection(
     current_user: User = Depends(get_current_user),
@@ -192,15 +254,15 @@ async def disconnect(
     return {"message": "HotelRunner baglantisi kesildi"}
 
 
-# ── Webhook Signing Secret (Task #397) ───────────────────────────────
+# ── Custom HMAC Signing Secret (non-HotelRunner senders only) ────────
 
 
 @router.get("/webhook-secret")
 async def get_webhook_secret_status(current_user: User = Depends(get_current_user)):
-    """Return whether a per-property webhook signing secret is configured.
+    """Return whether the optional Syroce custom-HMAC secret is configured.
 
-    The secret VALUE is never returned here — only its configured state and
-    last rotation timestamp.
+    HotelRunner's official callback does not use this secret.  The secret value
+    is never returned here — only its configured state and rotation timestamp.
     """
     conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": current_user.tenant_id},
@@ -219,12 +281,12 @@ async def rotate_webhook_secret(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
-    """Generate (or rotate) the otel-specific webhook signing secret.
+    """Generate or rotate the optional Syroce custom-HMAC signing secret.
 
     The new secret is generated server-side, stored encrypted in the
     SecretsManager (never written to the connection document), and returned in
-    plaintext EXACTLY ONCE — the operator must copy it now and paste it into
-    the HotelRunner panel. It cannot be read again afterwards.
+    plaintext exactly once. HotelRunner's official real-time push does not use
+    this endpoint or this secret.
     """
     conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": current_user.tenant_id, "is_active": True},
@@ -267,7 +329,9 @@ async def rotate_webhook_secret(
     )
 
     return {
-        "message": ("Webhook imza secret'i olusturuldu. Bu degeri simdi kopyalayip HotelRunner paneline girin; tekrar gosterilmeyecektir."),
+        "message": ("Yalnizca ozel HMAC gondericileri icin imza secret'i olusturuldu. Resmi HotelRunner callback akisi bu degeri kullanmaz."),
+        "mode": "custom_hmac_only",
+        "hotelrunner_official": False,
         "webhook_secret": new_secret,
         "rotated_at": now,
     }
