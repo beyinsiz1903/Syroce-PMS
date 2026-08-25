@@ -10,11 +10,11 @@
     },
     {
       "path": "domains/pms/night_audit/financial_service.py",
-      "minimum_percent": 7.0
+      "minimum_percent": 90.0
     },
     {
       "path": "domains/pms/night_audit_service.py",
-      "minimum_percent": 12.0
+      "minimum_percent": 90.0
     },
     {
       "path": "modules/reservations/services/create_reservation_service.py",

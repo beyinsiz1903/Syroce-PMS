@@ -18,3 +18,9 @@ The first tranche raises `modules/pms_core/reservation_state_machine.py` from 26
 to at least 90%. It covers cancellation and no-show guards, room-night release,
 availability restoration, notifications, audit records, outbox events, room cleanup,
 and failure isolation for non-critical side effects.
+
+The second tranche raises both night-audit service floors to 90%. It covers BSON-safe
+audit log serialization, permissions and filtering, error resolution, OTA/RMS and
+maintenance statistics, daily revenue/tax/payment summaries, payment reconciliation,
+duplicate and orphan charges, room-rate discrepancies, high-balance folios, financial
+reports, guest/room enrichment, integrity checks, and graceful database degradation.
