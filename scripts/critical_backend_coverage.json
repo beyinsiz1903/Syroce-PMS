@@ -18,7 +18,7 @@
     },
     {
       "path": "modules/reservations/services/create_reservation_service.py",
-      "minimum_percent": 16.0
+      "minimum_percent": 90.0
     },
     {
       "path": "modules/reservations/services/update_reservation_service.py",
