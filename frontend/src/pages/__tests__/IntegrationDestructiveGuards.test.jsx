@@ -127,6 +127,8 @@ describe('integration destructive action guards', () => {
     );
     expect(screen.queryByTestId('hr-webhook-secret-rotate-btn')).not.toBeInTheDocument();
     expect(screen.queryByText(/HotelRunner paneline.*secret/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/The Canyon/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/ilgili tesis için HotelRunner tarafında kayıtlı/i)).toBeInTheDocument();
   });
 
   it('does not enable HotelRunner live writes without explicit confirmation', async () => {
