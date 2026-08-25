@@ -159,12 +159,27 @@ async def create_booking_with_auto_assignment(
         check_out=booking_doc.get("check_out") or booking_doc.get("check_out_date") or "",
     )
 
+    # A physical room received from HotelRunner is only a preference. The
+    # candidate query above has already proved tenant/property, room type,
+    # sellability and full-stay availability. Reordering that validated list
+    # preserves the provider's manual room choice without weakening safety.
+    preferred_room_number = str(booking_doc.get("preferred_room_number") or "").strip()
+    if preferred_room_number:
+        candidates.sort(
+            key=lambda room: (
+                str(room.get("room_number") or room.get("name") or "").strip()
+                != preferred_room_number,
+                _natural_room_key(room),
+            )
+        )
+
     conflict_count = 0
     for room in candidates:
         assigned = dict(booking_doc)
         assigned["room_id"] = room["id"]
         assigned["room_number"] = room.get("room_number") or room.get("name") or ""
         assigned["allocation_source"] = "ota_auto_assignment"
+        assigned.pop("preferred_room_number", None)
         assigned["auto_assigned_at"] = datetime.now(UTC).isoformat()
         try:
             created = await create_booking(tenant_id=tenant_id, booking_doc=assigned)
@@ -175,6 +190,7 @@ async def create_booking_with_auto_assignment(
             conflict_count += 1
 
     pending = dict(booking_doc)
+    pending.pop("preferred_room_number", None)
     pending["room_id"] = None
     pending.pop("room_number", None)
     pending["allocation_source"] = "pending_assignment"

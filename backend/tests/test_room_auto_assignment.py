@@ -118,6 +118,52 @@ async def test_atomic_conflict_tries_next_available_room(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_validated_provider_room_number_is_preferred(monkeypatch):
+    candidates = [
+        {"id": "room-201", "room_number": "201"},
+        {"id": "room-202", "room_number": "202"},
+    ]
+    monkeypatch.setattr(
+        "core.room_auto_assignment.find_auto_assignment_candidates",
+        AsyncMock(return_value=candidates),
+    )
+    creator = AsyncMock(return_value={"id": "booking-1"})
+    booking = {**_booking(), "preferred_room_number": "202"}
+
+    _, room = await create_booking_with_auto_assignment(
+        database=SimpleNamespace(),
+        tenant_id="tenant-1",
+        booking_doc=booking,
+        create_booking=creator,
+    )
+
+    assert room["room_number"] == "202"
+    created_doc = creator.await_args.kwargs["booking_doc"]
+    assert created_doc["room_id"] == "room-202"
+    assert created_doc["room_number"] == "202"
+    assert "preferred_room_number" not in created_doc
+
+
+@pytest.mark.asyncio
+async def test_unavailable_provider_room_falls_back_to_safe_candidate(monkeypatch):
+    monkeypatch.setattr(
+        "core.room_auto_assignment.find_auto_assignment_candidates",
+        AsyncMock(return_value=[{"id": "room-201", "room_number": "201"}]),
+    )
+    creator = AsyncMock(return_value={"id": "booking-1"})
+    booking = {**_booking(), "preferred_room_number": "202"}
+
+    _, room = await create_booking_with_auto_assignment(
+        database=SimpleNamespace(),
+        tenant_id="tenant-1",
+        booking_doc=booking,
+        create_booking=creator,
+    )
+
+    assert room["room_number"] == "201"
+
+
+@pytest.mark.asyncio
 async def test_no_available_room_keeps_reservation_pending(monkeypatch):
     monkeypatch.setattr(
         "core.room_auto_assignment.find_auto_assignment_candidates",

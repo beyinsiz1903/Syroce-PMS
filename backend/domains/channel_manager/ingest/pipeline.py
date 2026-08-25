@@ -80,6 +80,7 @@ def _safe_normalized_timeline_metadata(
         "check_in": canonical.get("check_in", ""),
         "check_out": canonical.get("check_out", ""),
         "room_type_code": canonical.get("room_type_code", ""),
+        "provider_room_number": canonical.get("provider_room_number", ""),
         "rate_plan_code": canonical.get("rate_plan_code", ""),
         "currency": canonical.get("currency", ""),
         "canonical_status": canonical.get("status", ""),
@@ -740,6 +741,7 @@ async def _create_lineage(
         arrival_date=canonical.get("check_in", ""),
         departure_date=canonical.get("check_out", ""),
         room_type_code=canonical.get("room_type_code", ""),
+        provider_room_number=canonical.get("provider_room_number", ""),
         rate_plan_code=canonical.get("rate_plan_code", ""),
         adults=canonical.get("adults", 1),
         children=canonical.get("children", 0),
@@ -781,6 +783,9 @@ async def _update_lineage(
     existing["arrival_date"] = canonical.get("check_in", existing.get("arrival_date", ""))
     existing["departure_date"] = canonical.get("check_out", existing.get("departure_date", ""))
     existing["room_type_code"] = canonical.get("room_type_code", existing.get("room_type_code", ""))
+    existing["provider_room_number"] = canonical.get(
+        "provider_room_number", existing.get("provider_room_number", "")
+    )
     existing["rate_plan_code"] = canonical.get("rate_plan_code", existing.get("rate_plan_code", ""))
     existing["adults"] = canonical.get("adults", existing.get("adults", 1))
     existing["children"] = canonical.get("children", existing.get("children", 0))
@@ -968,6 +973,7 @@ async def _trigger_import_bridge(
         "arrival_date": canonical.get("check_in", ""),
         "departure_date": canonical.get("check_out", ""),
         "room_type_code": canonical.get("room_type_code", ""),
+        "provider_room_number": canonical.get("provider_room_number", ""),
         "rate_plan_code": canonical.get("rate_plan_code", ""),
         "adults": canonical.get("adults", 1),
         "children": canonical.get("children", 0),

@@ -390,7 +390,7 @@ const HotelRunnerIntegration = ({
       toast.success(data.message);
       fetchAll();
     } catch (e) {
-      toast.error(getHotelRunnerErrorMessage(e, 'Rezervasyon senkronizasyonu tamamlanamadı; bağlantı ve canlı senkronizasyon anahtarlarını kontrol edin'));
+      toast.error(getHotelRunnerErrorMessage(e, 'HotelRunner rezervasyon kontrolü tamamlanamadı; bağlantı ve canlı senkronizasyon ayarlarını kontrol edin'));
     } finally {
       setLoading(false);
     }
@@ -787,13 +787,18 @@ const HotelRunnerIntegration = ({
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
-                  <CardTitle>HotelRunner Rezervasyonlari</CardTitle>
-                  <CardDescription>OTA kanallarindan gelen rezervasyonlar</CardDescription>
+                  <CardTitle>HotelRunner Rezervasyonları</CardTitle>
+                  <CardDescription>Gerçek zamanlı callback ve PMS aktarım durumu</CardDescription>
                 </div>
-                <Button data-testid="hr-sync-reservations-btn" onClick={handleSyncReservations} disabled={loading}>
-                  {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                  Senkronize Et
-                </Button>
+                <div className="flex gap-2">
+                  <Button onClick={fetchAll} disabled={loading} variant="outline">
+                    <RefreshCw className="w-4 h-4 mr-2" /> Kayıtları Yenile
+                  </Button>
+                  <Button data-testid="hr-sync-reservations-btn" onClick={handleSyncReservations} disabled={loading}>
+                    {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RadioTower className="w-4 h-4 mr-2" />}
+                    HotelRunner’dan Kontrol Et
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {reservations.length === 0 ? <p className="text-sm text-slate-500 text-center py-8">{t('cm.pages_HotelRunnerIntegration.henuz_rezervasyon_yok_senkronize_et_ile_')}</p> : <div className="overflow-x-auto">
@@ -803,6 +808,7 @@ const HotelRunnerIntegration = ({
                           <th className="pb-2 pr-4">HR No</th>
                           <th className="pb-2 pr-4">{t('cm.pages_HotelRunnerIntegration.misafir')}</th>
                           <th className="pb-2 pr-4">Kanal</th>
+                          <th className="pb-2 pr-4">Oda</th>
                           <th className="pb-2 pr-4">{t('cm.pages_HotelRunnerIntegration.giris')}</th>
                           <th className="pb-2 pr-4">{t('cm.pages_HotelRunnerIntegration.cikis')}</th>
                           <th className="pb-2 pr-4">{t('cm.pages_HotelRunnerIntegration.tutar')}</th>
@@ -815,6 +821,18 @@ const HotelRunnerIntegration = ({
                             <td className="py-2 pr-4 font-mono text-xs">{res.hr_number}</td>
                             <td className="py-2 pr-4 font-medium">{res.guest_name}</td>
                             <td className="py-2 pr-4"><Badge variant="outline">{res.channel_display || res.channel}</Badge></td>
+                            <td className="py-2 pr-4">
+                              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                <span>{res.provider_room_number || '—'}</span>
+                                {res.provider_room_number && res.pms_room_number && res.pms_room_number !== res.provider_room_number && <>
+                                    <span className="text-slate-400">→</span>
+                                    <span>{res.pms_room_number}</span>
+                                    <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700">Farklı</Badge>
+                                  </>}
+                                {res.provider_room_number && res.pms_room_number === res.provider_room_number && <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />}
+                                {!res.provider_room_number && res.pms_room_number && <span className="text-xs text-slate-500">PMS: {res.pms_room_number}</span>}
+                              </div>
+                            </td>
                             <td className="py-2 pr-4">{res.checkin_date}</td>
                             <td className="py-2 pr-4">{res.checkout_date}</td>
                             <td className="py-2 pr-4 font-medium">{res.total} {res.currency}</td>
@@ -1048,8 +1066,8 @@ const HotelRunnerIntegration = ({
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
-                  <CardTitle>Senkronizasyon Loglari</CardTitle>
-                  <CardDescription>{t('cm.pages_HotelRunnerIntegration.hotelrunner_api_islem_gecmisi')}</CardDescription>
+                  <CardTitle>Rezervasyon Akış Logları</CardTitle>
+                  <CardDescription>Callback’in alınması ve PMS’de işlenmesinin gerçek kayıtları</CardDescription>
                 </div>
                 <Button variant="outline" size="sm" onClick={fetchAll}>
                   <RefreshCw className="w-4 h-4 mr-1" /> {t('cm.pages_HotelRunnerIntegration.yenile')}
@@ -1062,7 +1080,7 @@ const HotelRunnerIntegration = ({
                           {log.status === 'success' ? <CheckCircle className="w-4 h-4 text-emerald-600" /> : <AlertTriangle className="w-4 h-4 text-red-500" />}
                           <div>
                             <p className="text-sm font-medium">{log.sync_type}</p>
-                            <p className="text-xs text-slate-500">{log.initiator} &middot; {log.records_synced} {t('cm.pages_HotelRunnerIntegration.kayit')}</p>
+                            <p className="text-xs text-slate-500">{log.initiator} &middot; {log.external_reservation_id || 'Rezervasyon numarası yok'} &middot; {log.processing_status}</p>
                           </div>
                         </div>
                         <div className="text-right">

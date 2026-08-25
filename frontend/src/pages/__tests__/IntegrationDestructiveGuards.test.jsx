@@ -67,6 +67,36 @@ const hotelRunnerResponse = (url) => {
     rooms: [{ inv_code: 'STD', rate_code: 'BASE', name: 'Standard', adult_capacity: 2, room_capacity: 2 }],
   };
   if (url.endsWith('/pms-room-types')) return { room_types: ['standard'] };
+  if (url.includes('/reservations/local')) return {
+    source: 'unified_ingest',
+    reservations: [{
+      id: 'event-1',
+      hr_number: 'R300461997',
+      guest_name: 'SYROCE CALLBACK TEST',
+      channel_display: 'Online',
+      provider_room_number: '202',
+      pms_room_number: '201',
+      checkin_date: '2026-08-31',
+      checkout_date: '2026-09-01',
+      total: 0,
+      currency: 'TRY',
+      state: 'confirmed',
+      pms_status: 'imported',
+    }],
+  };
+  if (url.includes('/sync-logs')) return {
+    source: 'unified_ingest',
+    logs: [{
+      id: 'event-1',
+      status: 'success',
+      sync_type: 'reservation_create',
+      initiator: 'webhook',
+      external_reservation_id: 'R300461997',
+      processing_status: 'processed',
+      timestamp: '2026-08-25T11:32:58Z',
+      duration_ms: 505,
+    }],
+  };
   return {};
 };
 
@@ -142,6 +172,19 @@ describe('integration destructive action guards', () => {
       expect.anything(),
       expect.anything(),
     );
+  });
+
+  it('shows unified callback reservations, room mismatch, and processing logs', async () => {
+    render(<HotelRunnerIntegration user={{}} tenant={{}} />);
+
+    fireEvent.click(await screen.findByTestId('tab-reservations'));
+    expect(await screen.findByText('R300461997')).toBeInTheDocument();
+    expect(screen.getByText('SYROCE CALLBACK TEST')).toBeInTheDocument();
+    expect(screen.getByText('Farklı')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('tab-logs'));
+    expect(await screen.findByText('reservation_create')).toBeInTheDocument();
+    expect(screen.getByText(/webhook.*R300461997.*processed/)).toBeInTheDocument();
   });
 
   it('does not disconnect, change currency, or delete mappings without Exely confirmation', async () => {

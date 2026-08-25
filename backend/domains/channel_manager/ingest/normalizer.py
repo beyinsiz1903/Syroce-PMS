@@ -31,6 +31,7 @@ def empty_canonical() -> dict[str, Any]:
         "adults": 1,
         "children": 0,
         "room_type_code": "",
+        "provider_room_number": "",
         "rate_plan_code": "",
         "currency": "TRY",
         "total_amount": 0.0,
@@ -130,6 +131,10 @@ def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
         "adults": adults,
         "children": children,
         "room_type_code": room_type,
+        # HotelRunner may include the physical room chosen in its own PMS
+        # calendar. Keep it separate from the inventory code: downstream code
+        # may prefer it only after tenant/type/availability validation.
+        "provider_room_number": _safe_str(first_room.get("number") or first_room.get("room_number", "")),
         "rate_plan_code": rate_plan,
         "currency": _safe_str(payload.get("currency", "TRY")),
         "total_amount": total_amount,
@@ -266,6 +271,7 @@ def compute_canonical_hash(canonical: dict[str, Any]) -> str:
         "check_in": canonical.get("check_in", ""),
         "check_out": canonical.get("check_out", ""),
         "room_type_code": canonical.get("room_type_code", ""),
+        "provider_room_number": canonical.get("provider_room_number", ""),
         "rate_plan_code": canonical.get("rate_plan_code", ""),
         "adults": canonical.get("adults", 1),
         "children": canonical.get("children", 0),
