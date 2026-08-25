@@ -306,6 +306,36 @@ async def test_webhook_official_production_secrets_manager_path(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_webhook_official_production_accepts_token_and_hr_id_without_callback_secret(monkeypatch):
+    """Official HotelRunner callbacks do not require a Syroce path secret."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("HOTELRUNNER_CALLBACK_SECRET", raising=False)
+    conn = {"tenant_id": "tenant-prod", "hr_id": "hotel-prod"}
+
+    async def _fake_lookup(hr_id_hint):
+        return conn if hr_id_hint == "hotel-prod" else None
+
+    class FakeSecretsManager:
+        async def get_provider_credentials(self, tenant_id, provider, property_id, actor="system"):
+            if tenant_id == "tenant-prod":
+                return {"token": "prod-sm-token", "hr_id": "hotel-prod"}
+            return None
+
+    monkeypatch.setattr(hs, "_lookup_signing_connection", _fake_lookup)
+    monkeypatch.setattr(hs, "get_secrets_manager", lambda: FakeSecretsManager())
+
+    raw = b'{"hr_id": "hotel-prod"}'
+    req = _FakeRequest(
+        {"Content-Type": "application/json"},
+        raw,
+        query_params={"token": "prod-sm-token", "hr_id": "hotel-prod"},
+    )
+
+    await _verify_hotelrunner_callback(req)
+    assert _verified_tenant(req) == "tenant-prod"
+
+
+@pytest.mark.asyncio
 async def test_hotelrunner_webhook_csrf_exemption(monkeypatch):
     """Ensure HotelRunner webhook endpoints bypass CSRF check."""
     from security.csrf_guard import csrf_guard_middleware

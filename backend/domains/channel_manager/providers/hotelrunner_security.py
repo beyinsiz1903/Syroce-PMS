@@ -9,7 +9,6 @@ from fastapi import HTTPException, Request
 
 from core.secrets import get_secrets_manager
 from core.tenant_db import get_system_db
-from infra.production_config import is_production_env
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +251,7 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
         _logger.info(f"[DIAG] [{req_id}] Signature verification (HMAC) end in {(_time.time() - t_sig_start)*1000:.2f}ms")
         return
 
-    # ── MODE 2: Official Callback Validation (Token + hr_id + callback_secret) ──
+    # ── MODE 2: Official Callback Validation (Token + hr_id) ──
 
     # 1. Callback Secret Validation
     # Priority: SecretsManager > global environment secret. Plaintext
@@ -280,13 +279,9 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
     request.state.hr_diag["secret_source_type"] = secret_source
     _logger.info(f"[DIAG] [{req_id}] Secret source type: {secret_source}")
 
-    # P1 Fix: Fail closed in production if no secret is configured at all
-    if is_production_env() and not expected_secret:
-        raise HTTPException(
-            status_code=503,
-            detail="HotelRunner callback secret not configured",
-        )
-
+    # HotelRunner's official real-time push protocol authenticates callbacks
+    # with token + hr_id. A callback path secret is an optional Syroce
+    # defence-in-depth layer: enforce it only when one has been configured.
     if expected_secret:
         path_secret = request.path_params.get("secret")
         if not path_secret or not _hmac.compare_digest(str(path_secret), str(expected_secret)):
@@ -341,4 +336,3 @@ async def _verify_hotelrunner_callback(request: Request) -> None:
 
 
 # ── Webhook Batch Processor ──────────────────────────────────────────
-

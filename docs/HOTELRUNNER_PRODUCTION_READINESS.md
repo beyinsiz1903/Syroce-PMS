@@ -59,10 +59,12 @@ Requires separate written approval and a known live booking window. Run
 `ENABLE_HOTELRUNNER_RESERVATION_SYNC` confirmation. The cutover also requires
 the run ID of a successful, first-attempt `reservation_reconciliation` pilot on
 the exact approved SHA. Its artifact must prove one history match, zero
-undelivered matches, a present PMS number, and zero provider writes. The
-production App Platform spec must contain exactly one non-empty
-`HOTELRUNNER_WEBHOOK_SECRET` entry on the backend and it must be stored with
-type `SECRET`; otherwise cutover stops before changing the deployment. This enables only
+undelivered matches, a present PMS number, and zero provider writes. Official
+HotelRunner callbacks are authenticated with the property's encrypted `token`
+and `hr_id`. `HOTELRUNNER_CALLBACK_SECRET` is optional defence in depth; when
+configured, the same value must be present in the callback URL path.
+`HOTELRUNNER_WEBHOOK_SECRET` applies only to Syroce's HMAC test/custom mode and
+is not a prerequisite for HotelRunner real-time push. This enables only
 reservation synchronization, keeps ARI stopped, imports exactly one reservation,
 verify durable PMS state, then permit one ACK after the durable result. Any
 timeout, 5xx, parse error, lock loss, mapping hold, or ambiguous outcome is
