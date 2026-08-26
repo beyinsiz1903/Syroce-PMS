@@ -10,6 +10,7 @@ from datetime import UTC, date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
+from core.business_date_transition_guard import enforce_business_date_transition
 from core.database import db
 from core.security import (
     generate_time_based_qr_token,
@@ -702,20 +703,40 @@ async def guest_self_checkin(booking_id: str, checkin_data: dict = {}, current_u
 
     guest_ids = [g["id"] for g in guest_records]
 
-    booking = await db.bookings.find_one({"id": booking_id, "guest_id": {"$in": guest_ids}})
+    booking = await db.bookings.find_one(
+        {
+            "id": booking_id,
+            "tenant_id": current_user.tenant_id,
+            "guest_id": {"$in": guest_ids},
+        }
+    )
 
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
+    try:
+        await enforce_business_date_transition(
+            db,
+            tenant_id=current_user.tenant_id,
+            booking=booking,
+            operation="check_in",
+            error_cls=ValueError,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     # Update booking status
     await db.bookings.update_one(
-        {"id": booking_id},
+        {"id": booking_id, "tenant_id": current_user.tenant_id},
         {"$set": {"status": "checked_in", "actual_check_in": datetime.now(UTC).isoformat(), "guest_info": checkin_data.get("guest_info"), "preferences": checkin_data.get("preferences")}},
     )
 
     # Update room status
     if booking.get("room_id"):
-        await db.rooms.update_one({"id": booking["room_id"]}, {"$set": {"status": "occupied", "current_booking_id": booking_id}})
+        await db.rooms.update_one(
+            {"id": booking["room_id"], "tenant_id": current_user.tenant_id},
+            {"$set": {"status": "occupied", "current_booking_id": booking_id}},
+        )
 
     # Generate digital key (bound + signed token; mirrors the get/refresh path).
     digital_key = _build_digital_key({**booking, "id": booking_id, "tenant_id": current_user.tenant_id})

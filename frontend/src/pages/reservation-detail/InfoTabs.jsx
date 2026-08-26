@@ -556,7 +556,7 @@ export function GuestsTab({
                 id_type: v
               }))}>
                         <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                        <SelectContent>{ID_TYPES.map(t => <SelectItem key={t.code} value={t.code}>{t.label}</SelectItem>)}</SelectContent>
+                        <SelectContent className="z-[70]">{ID_TYPES.map(t => <SelectItem key={t.code} value={t.code}>{t.label}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
                     <div><Label className="text-xs">Kimlik / Pasaport No</Label><Input value={form.id_number} onChange={e => setForm(p => ({
@@ -577,7 +577,7 @@ export function GuestsTab({
                 gender: v
               }))}>
                         <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Seçiniz" /></SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="z-[70]">
                           <SelectItem value="male">Erkek</SelectItem>
                           <SelectItem value="female">Kadın</SelectItem>
                           <SelectItem value="other">Diğer</SelectItem>

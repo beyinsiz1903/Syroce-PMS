@@ -12,6 +12,7 @@ from typing import Any
 from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
 from common.result import ServiceResult
+from core.business_date_transition_guard import enforce_business_date_transition
 from domains.pms.frontdesk_financials import calculate_departure_balance
 from domains.pms.lock_bridge.service import CMD_ENCODE, CMD_REVOKE, enqueue_lock_command
 
@@ -96,6 +97,17 @@ class FrontdeskService:
         room_id = booking.get("room_id")
         if not room_id:
             return ServiceResult.fail("Assign a room before check-in", "ROOM_ASSIGNMENT_REQUIRED")
+
+        try:
+            await enforce_business_date_transition(
+                self._db,
+                tenant_id=ctx.tenant_id,
+                booking=booking,
+                operation="check_in",
+                error_cls=ValueError,
+            )
+        except ValueError as exc:
+            return ServiceResult.fail(str(exc), "BUSINESS_DATE_MISMATCH")
 
         room = await self._db.rooms.find_one(
             {"id": room_id, "tenant_id": ctx.tenant_id},
@@ -329,8 +341,20 @@ class FrontdeskService:
         )
         if not booking:
             return ServiceResult.fail("QR code gecersiz", "INVALID_QR")
+        if booking.get("status") not in {"confirmed", "guaranteed"}:
+            return ServiceResult.fail("Rezervasyon check-in için uygun durumda değil", "INVALID_BOOKING_STATUS")
+        try:
+            await enforce_business_date_transition(
+                self._db,
+                tenant_id=ctx.tenant_id,
+                booking=booking,
+                operation="check_in",
+                error_cls=ValueError,
+            )
+        except ValueError as exc:
+            return ServiceResult.fail(str(exc), "BUSINESS_DATE_MISMATCH")
         await self._db.bookings.update_one(
-            {"id": booking["id"]},
+            {"id": booking["id"], "tenant_id": ctx.tenant_id},
             {"$set": {"status": "checked_in", "checked_in_at": datetime.now(UTC).isoformat()}},
         )
         return ServiceResult.success({"success": True, "message": "Express check-in tamamlandi", "booking": booking})

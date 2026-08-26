@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
 from common.result import ServiceResult
+from core.business_date_transition_guard import enforce_business_date_transition
 from domains.pms.lock_bridge.service import CMD_REVOKE, enqueue_lock_command
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,17 @@ class FrontdeskServiceV2:
         room = await self._db.rooms.find_one({"id": booking.get("room_id"), "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not room:
             return ServiceResult.fail("No room assigned to booking", "NO_ROOM")
+
+        try:
+            await enforce_business_date_transition(
+                self._db,
+                tenant_id=ctx.tenant_id,
+                booking=booking,
+                operation="check_in",
+                error_cls=ValueError,
+            )
+        except ValueError as exc:
+            return ServiceResult.fail(str(exc), "BUSINESS_DATE_MISMATCH")
 
         if room["status"] not in ("available", "inspected", "clean"):
             # Check pending HK tasks

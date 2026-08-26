@@ -51,7 +51,7 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="z-[80] max-w-md" overlayClassName="z-[70]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Clock className="w-5 h-5 text-amber-600" />

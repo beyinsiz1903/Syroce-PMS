@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
+from core.business_date_transition_guard import enforce_business_date_transition
 from core.cache import cached
 from core.database import db
 from core.security import get_current_user, security
@@ -412,6 +413,17 @@ async def mobile_checkin(
 
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
+
+    try:
+        await enforce_business_date_transition(
+            db,
+            tenant_id=current_user.tenant_id,
+            booking=booking,
+            operation="check_in",
+            error_cls=ValueError,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     # Get room
     room = await db.rooms.find_one({"id": room_id, "tenant_id": current_user.tenant_id})

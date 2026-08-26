@@ -207,7 +207,11 @@ const IdPhotoViewerButton = ({
         {loading ? loadingLabel : label}
       </Button>
       <Dialog open={reasonOpen} onOpenChange={(v) => { if (!v) closeReasonPrompt(); }}>
-        <DialogContent className="max-w-md" data-testid="dialog-id-photo-reason">
+        <DialogContent
+          className="z-[80] max-w-md"
+          overlayClassName="z-[70]"
+          data-testid="dialog-id-photo-reason"
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IdCard className="w-5 h-5 text-blue-600" />
@@ -278,7 +282,11 @@ const IdPhotoViewerButton = ({
         </DialogContent>
       </Dialog>
       <Dialog open={open} onOpenChange={(v) => { if (!v) closeModal(); }}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-id-photo">
+        <DialogContent
+          className="z-[80] max-w-2xl"
+          overlayClassName="z-[70]"
+          data-testid="dialog-id-photo"
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IdCard className="w-5 h-5 text-blue-600" />

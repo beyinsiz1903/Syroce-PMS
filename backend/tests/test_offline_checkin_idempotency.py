@@ -132,6 +132,10 @@ def _ctx():
 def _make_service():
     svc = FrontdeskServiceV2()
     svc._db = FakeDB()
+    svc._db.tenant_settings.docs.append({
+        "tenant_id": TENANT,
+        "business_date": "2026-08-17",
+    })
     return svc
 
 
@@ -143,6 +147,7 @@ def _seed_ready_booking(db, booking_id="bk-1", room_id="rm-1", status="confirmed
         "room_id": room_id,
         "guest_id": "guest-1",
         "currency": "TRY",
+        "check_in": "2026-08-17",
     })
     db.rooms.docs.append({
         "id": room_id,
@@ -166,6 +171,26 @@ async def test_first_checkin_succeeds_and_creates_single_folio():
     assert svc._db.rooms.docs[0]["status"] == "occupied"
     assert svc._db.guests.docs[0]["total_stays"] == 1
     assert svc._db.folios.insert_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_offline_replay_blocks_future_arrival_until_business_date_catches_up():
+    svc = _make_service()
+    _seed_ready_booking(svc._db)
+    svc._db.bookings.docs[0]["check_in"] = "2026-08-26"
+    svc._db.tenant_settings.docs[0]["business_date"] = "2026-08-23"
+
+    res = await svc.checkin(
+        _ctx(),
+        "bk-1",
+        idempotency_key="checkin-future-bk-1",
+    )
+
+    assert res.ok is False
+    assert res.code == "BUSINESS_DATE_MISMATCH"
+    assert svc._db.bookings.docs[0]["status"] == "confirmed"
+    assert svc._db.rooms.docs[0]["status"] == "available"
+    assert svc._db.folios.insert_calls == 0
 
 
 @pytest.mark.asyncio
