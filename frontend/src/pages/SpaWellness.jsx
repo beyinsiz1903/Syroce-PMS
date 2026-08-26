@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useEntitlements } from '@/context/EntitlementContext';
+import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
 
 const STATUS = {
   scheduled: { label: 'Planlandı', cls: 'bg-sky-100 text-sky-800' },
@@ -41,6 +42,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
   const [appointments, setAppointments] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [showBook, setShowBook] = useState(false);
   const [showServiceForm, setShowServiceForm] = useState(false);
   const [showTherapistForm, setShowTherapistForm] = useState(false);
@@ -64,6 +66,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       // Birincil veriler (4 endpoint): randevu listesi ve katalog (hizmet,
       // terapist, oda) — sayfa render'ı için kritik. Günlük özet (KPI rozeti)
@@ -86,6 +89,10 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
       if (aRes.status === 'fulfilled') setAppointments(aRes.value.data.appointments || []);
       else { setAppointments([]); failed.push('Randevular'); }
       if (failed.length) toast.error(`Yüklenemedi: ${failed.join(', ')}`);
+      if (failed.length === 4) {
+        const firstFailure = [sRes, thRes, rRes, aRes].find((result) => result.status === 'rejected');
+        setLoadError(firstFailure?.reason || new Error('Spa verileri yüklenemedi'));
+      }
 
       // Günlük özet — idle'da arka plandan yükle.
       runIdle(async () => {
@@ -154,6 +161,10 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
         </div>
       </>
     );
+  }
+
+  if (loadError) {
+    return <ModuleLoadError moduleName="Spa & Wellness" error={loadError} onRetry={load} />;
   }
 
   const maxTherapists = getLimit('spa', 'therapists');

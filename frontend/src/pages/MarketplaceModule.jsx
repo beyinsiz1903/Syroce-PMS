@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ShoppingCart, Package, Droplet, Gift, Plus, Minus } from 'lucide-react';
+import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
 
 const MarketplaceModule = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -15,6 +16,7 @@ const MarketplaceModule = ({ user, tenant, onLogout }) => {
   const [orders, setOrders] = useState([]);
   const [cart, setCart] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -46,6 +48,8 @@ const MarketplaceModule = ({ user, tenant, onLogout }) => {
   };
 
   const loadData = async () => {
+    setLoading(true);
+    setLoadError(null);
     try {
       const [productsRes, ordersRes] = await Promise.all([
         axios.get('/marketplace/products'),
@@ -65,6 +69,7 @@ const MarketplaceModule = ({ user, tenant, onLogout }) => {
       setOrders(extractOrders(ordersRes.data));
     } catch (error) {
       console.error('Marketplace load failed', error);
+      setLoadError(error);
       toast.error('Pazar yeri verileri yüklenemedi');
       setProducts([]);
       setOrders([]);
@@ -167,6 +172,10 @@ const MarketplaceModule = ({ user, tenant, onLogout }) => {
         <div className="p-6 text-center">{t("common.loading")}</div>
       </>
     );
+  }
+
+  if (loadError) {
+    return <ModuleLoadError moduleName="Pazar Yeri" error={loadError} onRetry={loadData} />;
   }
 
   return (

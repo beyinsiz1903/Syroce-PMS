@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { PageHeader } from '@/components/ui/page-header';
+import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { Line, Doughnut, Bar } from 'react-chartjs-2';
 import {
@@ -101,6 +102,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
   const [demoMode, setDemoMode] = useState(false);
   const [demoToggling, setDemoToggling] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [genLoading, setGenLoading] = useState(false);
   const [period, setPeriod] = useState('30');
 
@@ -122,6 +124,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
   );
 
   const loadData = useCallback(async (forceRefresh = false) => {
+    setLoadError(null);
     try {
       // `forceRefresh=true` (Yenile butonu) → backend `?refresh=1` query'siyle
       // `_nocache=True` kwarg'ını tetikler; cache_manager.cached wrapper cache hit
@@ -148,6 +151,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
       setDemoMode(typeof dmFromSettings === 'boolean' ? dmFromSettings : !!dmFromDash);
     } catch (e) {
       console.error('RMS data load error:', e);
+      setLoadError(e);
       // 403 → kullanıcının revenue dashboard yetkisi yok (RBAC: view_revenue).
       const msg = e?.response?.status === 403
         ? (t('rmsModule.forbidden') || 'Bu modülü görüntüleme yetkiniz yok.')
@@ -215,6 +219,19 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
       </div>
+    );
+  }
+
+  if (loadError) {
+    return wrap(
+      <ModuleLoadError
+        moduleName="Gelir Yönetimi (RMS)"
+        error={loadError}
+        onRetry={() => {
+          setLoading(true);
+          loadData(true);
+        }}
+      />
     );
   }
 

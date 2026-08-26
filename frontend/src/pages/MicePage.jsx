@@ -36,6 +36,7 @@ import { confirmDialog, promptDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useEntitlements } from '@/context/EntitlementContext';
+import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
 const MicePage = ({
   user,
   tenant,
@@ -71,6 +72,7 @@ const MicePage = ({
   // the default Etkinlikler tab listing); menus/resources are lazy.
   const [loadedTabs, setLoadedTabs] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [activeTab, setActiveTab] = useState('events');
   // Tur 5: TabsContent global forceMount yaptığı için lazy chunk'lar
   // panel mount olur olmaz indiriliyordu. visitedMiceTabs koşulu ile
@@ -208,9 +210,11 @@ const MicePage = ({
   // or starts the event form (which needs them for selection).
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       await Promise.all([loadEvents(), loadSpaces(), loadAccountsList()]);
     } catch (err) {
+      setLoadError(err);
       toast.error(err.response?.data?.detail || 'Yüklenemedi');
     } finally {
       setLoading(false);
@@ -602,6 +606,9 @@ const MicePage = ({
     return <div className="p-8 text-center text-gray-500">
       <RefreshCw className="w-6 h-6 animate-spin inline" /> {t('cm.pages_MicePage.yukleniyor')}
     </div>;
+  }
+  if (loadError) {
+    return <ModuleLoadError moduleName="MICE & Banquet" error={loadError} onRetry={load} />;
   }
   const totalPipeline = Object.values(summary).reduce((a, b) => a + (b.total_value || 0), 0);
   const psTotal = form.payment_schedule.reduce((a, p) => a + (Number(p.amount) || 0), 0);

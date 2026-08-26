@@ -4,6 +4,7 @@
  */
 import axios from "axios";
 import { installAxiosCache, clearAxiosCache } from "@/lib/axios-cache";
+import { installAxiosResilience } from "@/lib/httpResilience";
 import {
   ADMIN_TENANT_CONTEXT_KEY,
   isAdminTenantContextActive,
@@ -23,6 +24,11 @@ axios.defaults.withCredentials = true;
 // (sayfa geçişi, paralel bileşenler, KPI/Layout overlap) çağrılmasında
 // tek backend hit'e indirir. Mutation sonrası otomatik invalidate.
 installAxiosCache(axios);
+// İdempotent okuma isteklerinde merkezi transient retry. 429 yanıtında
+// Retry-After'a uyar; 408/425/502/503/504 ve ağ kesintilerinde jitter'lı
+// exponential backoff uygular. GET dedupe adapter'ı retry dalgalarını da
+// tek backend isteğinde birleştirir.
+installAxiosResilience(axios);
 
 // Request interceptor — token injection + cache headers
 axios.interceptors.request.use(

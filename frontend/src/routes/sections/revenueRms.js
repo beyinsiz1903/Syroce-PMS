@@ -23,7 +23,7 @@ export function revenueRmsRoutes({ p }) {
     { path: "/analytics-export", ...p(AnalyticsExportDashboard) },
 
     // ── RMS (feature-gated) ────────────────────────────
-    { path: "/rms", type: "feature", featureKey: "hidden_rms", ...p(RMSModule) },
-    { path: "/app/rms", type: "feature", featureKey: "hidden_rms", ...p(RMSModule) },
+    { path: "/rms", ...p(RMSModule), type: "feature", featureKey: "hidden_rms", moduleName: "Gelir Yönetimi (RMS)" },
+    { path: "/app/rms", ...p(RMSModule), type: "feature", featureKey: "hidden_rms", moduleName: "Gelir Yönetimi (RMS)" },
   ];
 }

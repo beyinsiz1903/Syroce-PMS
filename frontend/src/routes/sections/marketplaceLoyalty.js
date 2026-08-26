@@ -6,8 +6,8 @@ import {
 export function marketplaceLoyaltyRoutes({ p }) {
   return [
     // ── Marketplace ────────────────────────────────────
-    { path: "/marketplace", ...p(MarketplaceModule), wrapLayout: true, layoutModule: "marketplace" },
-    { path: "/app/marketplace", ...p(MarketplaceModule), wrapLayout: true, layoutModule: "marketplace" },
+    { path: "/marketplace", ...p(MarketplaceModule), type: "feature", featureKey: "hidden_marketplace", moduleName: "Pazar Yeri", wrapLayout: true, layoutModule: "marketplace" },
+    { path: "/app/marketplace", ...p(MarketplaceModule), type: "feature", featureKey: "hidden_marketplace", moduleName: "Pazar Yeri", wrapLayout: true, layoutModule: "marketplace" },
     { path: "/app/supplies-market", ...p(SuppliesMarket), wrapLayout: true, layoutModule: "supplies_market" },
     { path: "/vendor", type: "public", component: VendorPortal },
     { path: "/vendor/*", type: "public", component: VendorPortal },

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, Suspense, lazy } from "react";
 import "@/App.css";
 import { keepActiveSessionAlive } from "@/config/axiosConfig";
+import { clearAxiosCache } from "@/lib/axios-cache";
 import axios from "axios";
 import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from "react-router-dom";
 import PlanRouteGuard from "@/components/PlanRouteGuard";
@@ -12,6 +13,7 @@ import InternalChatWidget from "@/components/InternalChatWidget";
 import CommunicationCenter from "@/components/CommunicationCenter";
 import { CurrencyProvider } from "@/context/CurrencyContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ModuleAvailabilityState } from "@/components/shared/ModuleAvailabilityState";
 import { Toaster } from "@/components/ui/sonner";
 import DialogHost from "@/components/DialogHost";
 import OfflineStatusBar from "@/components/OfflineStatusBar";
@@ -77,6 +79,7 @@ function clearAuthStorage() {
   localStorage.removeItem("tenant");
   localStorage.removeItem("modules");
   localStorage.removeItem(ADMIN_TENANT_CONTEXT_KEY);
+  clearAxiosCache();
   // SessionStorage cache'leri de sil — aynı tab'da hesap değişiminde
   // önceki kullanıcının notification/business-date verisi sızmasın.
   try {
@@ -434,7 +437,22 @@ function App() {
                       if (!isAuthenticated) {
                         element = <Navigate to="/auth" replace />;
                       } else if (!hasFeature(rc.featureKey)) {
-                        element = <Navigate to="/" replace />;
+                        element = (
+                          <ProtectedRoute
+                            isAuthenticated={isAuthenticated}
+                            element={(
+                              <ModuleAvailabilityState
+                                moduleName={rc.moduleName || rc.layoutModule || "Bu modül"}
+                                reason="disabled"
+                              />
+                            )}
+                            wrapLayout={rc.wrapLayout}
+                            layoutModule={rc.layoutModule}
+                            user={user}
+                            tenant={tenant}
+                            onLogout={handleLogout}
+                          />
+                        );
                       } else {
                         element = <ProtectedRoute isAuthenticated={isAuthenticated} element={<rc.component {...rc.props} />} wrapLayout={rc.wrapLayout} layoutModule={rc.layoutModule} user={user} tenant={tenant} onLogout={handleLogout} />;
                       }

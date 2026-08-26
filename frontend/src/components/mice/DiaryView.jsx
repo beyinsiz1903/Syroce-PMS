@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CalendarDays } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
 
 const STATUS = {
   lead: { label: 'Lead', cls: 'bg-slate-100 text-slate-700' },
@@ -44,6 +45,8 @@ const DiaryView = ({ spaceById, spaces }) => {
   const [ganttDate, setGanttDate] = useState(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
   const [selectedBar, setSelectedBar] = useState(null);
   const [items, setItems] = useState([]);
+  const [loadError, setLoadError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const monthRange = useMemo(() => {
     const { year, month } = calMonth;
@@ -55,16 +58,20 @@ const DiaryView = ({ spaceById, spaces }) => {
 
   useEffect(() => {
     axios.get('/mice/diary', { params: { date_from: monthRange.from, date_to: monthRange.to } })
-      .then((r) => setItems(r.data.events || []))
+      .then((r) => {
+        setItems(r.data.events || []);
+        setLoadError(null);
+      })
       .catch((e) => {
         if (e.response && e.response.status === 403) {
           console.warn('Takvim görüntüleme yetkisi yok (403) - Sessizce yoksayılıyor.');
+          setLoadError(e);
           return;
         }
-        const msg = e.response ? `HTTP ${e.response.status}` : e.message;
-        toast.error(`Takvim yüklenemedi: ${msg}`);
+        setLoadError(e);
+        toast.error('Takvim şu anda yüklenemedi');
       });
-  }, [monthRange.from, monthRange.to]);
+  }, [monthRange.from, monthRange.to, reloadKey]);
 
   const eventsByDate = useMemo(() => {
     const map = {};
@@ -214,7 +221,17 @@ const DiaryView = ({ spaceById, spaces }) => {
         </div>
       </div>
 
-      {view === 'calendar' ? (
+      {loadError ? (
+        <ModuleLoadError
+          moduleName="MICE takvimi"
+          error={loadError}
+          compact
+          onRetry={() => {
+            setLoadError(null);
+            setReloadKey((current) => current + 1);
+          }}
+        />
+      ) : view === 'calendar' ? (
         <div className="grid md:grid-cols-[1fr_320px] gap-3">
           <div>
             <div className="grid grid-cols-7 gap-1 mb-1">

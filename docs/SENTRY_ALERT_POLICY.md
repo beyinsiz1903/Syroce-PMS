@@ -66,6 +66,7 @@ bu pakete dahil değil — manual rules pilot için yeterli).
 | KVKK ID photo TTL expiring (<24h)  | `subsystem:kvkk` AND `severity:warning`    | WARNING   | #pms-alerts              | daily                |
 | JWT secret weak / dev key in prod  | `subsystem:auth` AND message ~ "weak_jwt"  | CRITICAL  | PagerDuty                | none                 |
 | Frontend ChunkLoadError surge      | `level:error` AND message ~ "ChunkLoad"   | WARNING   | #pms-alerts              | 30-min digest        |
+| Modül okuma isteği retry sonrası başarısız | `subsystem:module-api`                | ERROR/WARNING | #pms-alerts + email   | 15-min cooldown      |
 
 ---
 
@@ -77,10 +78,11 @@ zaten `tags=` kwarg'ını destekliyor; çağrı tarafı şu sözleşmeye uymalı
 
 | Tag adı       | Zorunlu | Değerler                                                       |
 | ------------- | ------- | -------------------------------------------------------------- |
-| `subsystem`   | EVET    | `auth`, `rls`, `hotelrunner`, `exely`, `cm-backlog`, `cm-circuit`, `atlas-backup`, `kvkk`, `outbox`, `pms-frontdesk`, `pms-housekeeping`, `payment`, `night-audit` |
+| `subsystem`   | EVET    | `auth`, `rls`, `hotelrunner`, `exely`, `cm-backlog`, `cm-circuit`, `atlas-backup`, `kvkk`, `outbox`, `pms-frontdesk`, `pms-housekeeping`, `payment`, `night-audit`, `module-api` |
 | `severity`    | EVET    | `info`, `warning`, `error`, `fatal`                            |
 | `tenant_id`   | HAYIR   | **ASLA EKLEMEYİN** — PII; routing tenant-aware OLAMAZ          |
 | `property_id` | HAYIR   | Aynı şekilde ASLA                                              |
+| `tenant_scope`| Opsiyonel | Yalnız metrik gruplama için kararlı, tek yönlü özet; ham tenant kimliği gönderilmez ve alarm routing filtresinde kullanılmaz |
 | `feature_flag`| Opsiyonel | Kill-switch tetikleyebilecek özellik adı (`disable_quickid`)  |
 
 **Örnek (backend):**
@@ -173,7 +175,7 @@ Sentry-UI:
   - Data scrubbing: ek olarak `tenant_id`, `property_id`, `phone_e164`,
     `id_number` field name'lerini `Additional sensitive fields`'e ekle
 - [ ] **Sentry-UI → Alerts → New Alert Rule** (yukarıdaki Routing
-  Tablosu'ndaki 11 satırı tek tek oluştur)
+  Tablosu'ndaki 12 satırı tek tek oluştur)
 - [ ] **Sentry-UI → Crons → New Monitor**: `cm-backlog`, schedule
   `* * * * *`, failure threshold 1
 - [ ] **Slack**: `#pms-incidents` (CRITICAL) ve `#pms-alerts` (ERROR/WARNING)
