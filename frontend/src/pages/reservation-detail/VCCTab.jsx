@@ -287,7 +287,7 @@ export function VCCTab({
 
       {/* Confirm reveal */}
       <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
-        <AlertDialogContent>
+        <AlertDialogContent className="z-[80]" overlayClassName="z-[70]">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <ShieldAlert className="w-5 h-5 text-amber-600" />
@@ -307,7 +307,7 @@ export function VCCTab({
 
       {/* Confirm delete */}
       <AlertDialog open={showDelete} onOpenChange={setShowDelete}>
-        <AlertDialogContent>
+        <AlertDialogContent className="z-[80]" overlayClassName="z-[70]">
           <AlertDialogHeader>
             <AlertDialogTitle>{t('cm.pages_reservationdetail_VCCTab.karti_kalici_olarak_silmek_istiyor_musun')}</AlertDialogTitle>
             <AlertDialogDescription>
@@ -330,7 +330,7 @@ export function VCCTab({
         setRevealInfo(null);
       }
     }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="z-[80] max-w-md" overlayClassName="z-[70]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-green-600" />

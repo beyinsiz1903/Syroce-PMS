@@ -37,6 +37,9 @@ def _service_with_db(booking: dict, room: dict | None = None):
             insert_one=AsyncMock(),
         ),
         guests=SimpleNamespace(update_one=AsyncMock()),
+        tenant_settings=SimpleNamespace(
+            find_one=AsyncMock(return_value={"business_date": "2026-08-17"}),
+        ),
     )
     return service
 
@@ -49,6 +52,7 @@ async def test_confirmed_booking_without_room_returns_controlled_failure_without
             "tenant_id": "tenant-a",
             "status": "confirmed",
             "guest_id": "guest-a",
+            "check_in": "2026-08-17",
         }
     )
 
@@ -126,6 +130,7 @@ async def test_successful_checkin_scopes_room_folio_booking_and_guest_to_tenant(
             "status": "confirmed",
             "room_id": "room-a",
             "guest_id": "guest-a",
+            "check_in": "2026-08-17",
         },
         {
             "id": "room-a",
@@ -153,6 +158,40 @@ async def test_successful_checkin_scopes_room_folio_booking_and_guest_to_tenant(
         "id": "guest-a",
         "tenant_id": "tenant-a",
     }
+
+
+@pytest.mark.asyncio
+async def test_standard_frontdesk_checkin_blocks_future_arrival_for_business_date():
+    service = _service_with_db(
+        {
+            "id": "booking-future",
+            "tenant_id": "tenant-a",
+            "status": "confirmed",
+            "room_id": "room-a",
+            "guest_id": "guest-a",
+            "check_in": "2026-08-26",
+        },
+        {
+            "id": "room-a",
+            "tenant_id": "tenant-a",
+            "status": "available",
+            "room_number": "101",
+        },
+    )
+    service._db.tenant_settings.find_one.return_value = {"business_date": "2026-08-23"}
+
+    result = await FrontdeskService.checkin.__wrapped__(
+        service,
+        _context(),
+        "booking-future",
+    )
+
+    assert result.ok is False
+    assert result.code == "BUSINESS_DATE_MISMATCH"
+    assert "business_date=2026-08-23" in result.error
+    service._db.bookings.update_one.assert_not_awaited()
+    service._db.rooms.update_one.assert_not_awaited()
+    service._db.folios.insert_one.assert_not_awaited()
 
 
 @pytest.mark.parametrize(

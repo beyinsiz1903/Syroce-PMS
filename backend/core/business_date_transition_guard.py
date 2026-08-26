@@ -61,10 +61,11 @@ async def enforce_business_date_transition(
 
     booking_field, verb, display_field = _VALID_OPERATIONS[operation]
 
+    session_kwargs = {"session": session} if session is not None else {}
     settings = await db.tenant_settings.find_one(
         {"tenant_id": tenant_id},
         {"_id": 0, "business_date": 1},
-        session=session,
+        **session_kwargs,
     )
     business_date = _parse_date(
         (settings or {}).get("business_date"),

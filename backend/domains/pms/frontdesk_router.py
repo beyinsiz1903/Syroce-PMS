@@ -20,6 +20,7 @@ from core.booking_atomicity import (
     is_replica_set_unavailable,
     standalone_fallback_allowed,
 )
+from core.business_date_transition_guard import enforce_business_date_transition
 from core.database import db
 from core.security import (
     get_current_user,
@@ -116,6 +117,16 @@ async def kiosk_checkin(
         raise HTTPException(status_code=404, detail="Booking not found")
     if booking.get("status") not in ("confirmed", "guaranteed"):
         raise HTTPException(status_code=400, detail=f"Booking status '{booking.get('status')}' is not eligible for check-in")
+    try:
+        await enforce_business_date_transition(
+            db,
+            tenant_id=current_user.tenant_id,
+            booking=booking,
+            operation="check_in",
+            error_cls=ValueError,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     room_key = f"DK-{booking.get('room_number', 'X')}-{str(uuid.uuid4())[:6].upper()}"
     await db.bookings.update_one({"id": booking_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "checked_in", "checked_in_at": datetime.now(UTC).isoformat(), "kiosk_checkin": True}})
     return {
@@ -160,6 +171,7 @@ async def check_in_guest(
             "ROOM_ASSIGNMENT_REQUIRED": 400,
             "ROOM_NOT_READY": 400,
             "CHECKIN_STATE_CONFLICT": 409,
+            "BUSINESS_DATE_MISMATCH": 409,
         }
         raise HTTPException(status_code=code_map.get(result.code, 400), detail=result.error)
     return result.data
