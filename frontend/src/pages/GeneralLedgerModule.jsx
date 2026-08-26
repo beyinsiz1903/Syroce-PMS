@@ -7,9 +7,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useCurrency } from '@/context/CurrencyContext';
+import AccountingSetupWizard from '@/pages/accounting/AccountingSetupWizard';
 import { Plus, Save, FileText, AlertCircle, CalendarRange, LockKeyhole, Unlock, RotateCcw, Landmark, TrendingUp, PackageOpen, Cable, ReceiptText, Send, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
 
 export const GL_ENDPOINTS = {
+  setup: '/gl/setup',
+  setupProfile: '/gl/setup/profile',
+  setupInitialize: '/gl/setup/initialize',
+  setupOpeningBalances: '/gl/setup/opening-balances',
+  setupComplete: '/gl/setup/complete',
   accounts: '/gl/accounts',
   initializeAccounts: '/gl/accounts/initialize',
   journal: '/gl/journal',
@@ -268,7 +274,7 @@ export const mergeAccountBalances = (accounts = [], trialBalance = {}) => {
 
 const GeneralLedgerModule = () => {
   const { amount: fmtMoney } = useCurrency();
-  const [activeTab, setActiveTab] = useState('accounts');
+  const [activeTab, setActiveTab] = useState('setup');
   
   const [accounts, setAccounts] = useState([]);
   const [journals, setJournals] = useState([]);
@@ -745,6 +751,7 @@ const GeneralLedgerModule = () => {
   };
 
   useEffect(() => {
+    if (activeTab === 'setup') fetchAccounts();
     if (activeTab === 'accounts') fetchAccounts();
     if (activeTab === 'journals') fetchJournals();
     if (activeTab === 'trial-balance') fetchTrialBalance();
@@ -883,6 +890,7 @@ const GeneralLedgerModule = () => {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="-mx-1 overflow-x-auto px-1 pb-1" data-testid="gl-tab-scroll">
           <TabsList className="mb-3 min-w-max justify-start">
+            <TabsTrigger value="setup">Kurulum</TabsTrigger>
             <TabsTrigger value="accounts">Hesap Planı (TDHP)</TabsTrigger>
             <TabsTrigger value="journals">Yevmiye Fişleri</TabsTrigger>
             <TabsTrigger value="trial-balance">Mizan</TabsTrigger>
@@ -892,6 +900,10 @@ const GeneralLedgerModule = () => {
             <TabsTrigger value="integrations">Muhasebe Entegrasyonları</TabsTrigger>
           </TabsList>
         </div>
+
+        <TabsContent value="setup">
+          <AccountingSetupWizard onAccountsChanged={fetchAccounts} />
+        </TabsContent>
 
         {/* TDHP Accounts */}
         <TabsContent value="accounts">

@@ -154,6 +154,7 @@ export const BulkUpdatePanel = ({
                 toggleRoomType={toggleRoomType} toggleRatePlan={toggleRatePlan}
                 pricingSettings={pricingSettings} occupancyPricingRules={occupancyPricingRules} saveOccupancyPricingRule={saveOccupancyPricingRule} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType}
                 currencySymbol={currencySymbol} currency={currency}
+                channelProvider={channelProvider}
                 totalSelectedRoomTypes={Object.keys(selections).length}
               />
             )}
@@ -247,7 +248,7 @@ const RoomTypeList = ({
   roomTypeTree, enabledFields, selections, roomValues, updateRoomValue, getDefaultValues, applyToAllSelected,
   expandedRoomTypes, toggleExpanded, isRoomTypeSelected, isRoomTypeFullySelected, isRatePlanSelected,
   toggleRoomType, toggleRatePlan, pricingSettings, occupancyPricingRules, saveOccupancyPricingRule, getPricingLabel, togglePricingType, currencySymbol, currency,
-  totalSelectedRoomTypes,
+  totalSelectedRoomTypes, channelProvider,
 }) => {
   const { t } = useTranslation();
   const [editingRule, setEditingRule] = useState(null);
@@ -369,6 +370,7 @@ const RoomTypeList = ({
                 }}
                 currentBaseRate={rv.rate}
                 currencySymbol={currencySymbol}
+                channelProvider={channelProvider}
               />
             )}
 
@@ -404,13 +406,15 @@ const RoomTypeList = ({
   );
 };
 
-const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave, currentBaseRate, currencySymbol }) => {
+export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave, currentBaseRate, currencySymbol, channelProvider }) => {
   const initial = {
     base_occupancy: Number(rule?.base_occupancy ?? 2),
     extra_adult_rate: Number(rule?.extra_adult_rate ?? 0),
     extra_child_rate: Number(rule?.extra_child_rate ?? 0),
     child_free_age_max: Number(rule?.child_free_age_max ?? 0),
     max_occupancy: rule?.max_occupancy ?? '',
+    provider_pricing_verified: Boolean(rule?.provider_pricing_verified),
+    provider_pricing_note: rule?.provider_pricing_note || '',
   };
   const [draft, setDraft] = useState(initial);
   const [submitting, setSubmitting] = useState(false);
@@ -446,6 +450,28 @@ const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave, curren
           <p className="mt-2 text-[11px] leading-4 text-gray-500">
             Bu kural Syroce'de oluşturulan manuel/doğrudan rezervasyonların toplamını hesaplar. HotelRunner'a taban fiyat gönderilir; HotelRunner kişi farkı ayarı da aynı olmalıdır.
           </p>
+          {channelProvider === 'hotelrunner' && (
+            <div className={`mt-3 rounded-lg border p-3 ${draft.provider_pricing_verified ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+              <label className="flex cursor-pointer items-start gap-2 text-xs font-medium text-slate-800">
+                <Checkbox
+                  checked={draft.provider_pricing_verified}
+                  onCheckedChange={value => update('provider_pricing_verified', Boolean(value))}
+                  data-testid={`hotelrunner-pricing-attestation-${roomType.code}`}
+                />
+                <span>
+                  HotelRunner panelindeki dahil yetişkin, ek yetişkin, çocuk ücreti ve ücretsiz çocuk yaşı bu değerlerle eşleşiyor.
+                  <span className="mt-1 block font-normal text-slate-600">Bu onay olmadan HotelRunner'a taban fiyat gönderimi güvenlik amacıyla durdurulur.</span>
+                </span>
+              </label>
+              <Input
+                className="mt-2 h-8 bg-white text-xs"
+                value={draft.provider_pricing_note}
+                onChange={event => update('provider_pricing_note', event.target.value)}
+                placeholder="İsteğe bağlı kontrol notu"
+                maxLength={500}
+              />
+            </div>
+          )}
           <div className="mt-3 flex justify-end">
             <Button
               type="button"

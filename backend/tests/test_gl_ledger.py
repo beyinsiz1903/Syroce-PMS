@@ -38,6 +38,9 @@ def _match(doc: dict, flt: dict) -> bool:
         elif isinstance(v, dict) and "$in" in v:
             if doc.get(k) not in v["$in"]:
                 return False
+        elif isinstance(v, dict) and "$ne" in v:
+            if doc.get(k) == v["$ne"]:
+                return False
         elif isinstance(v, dict) and ("$gte" in v or "$lte" in v or "$gt" in v or "$lt" in v):
             val = doc.get(k)
             if "$gte" in v and (val is None or val < v["$gte"]):
@@ -132,6 +135,9 @@ class _Coll:
                 return SimpleNamespace(deleted_count=1)
         return SimpleNamespace(deleted_count=0)
 
+    async def count_documents(self, flt):
+        return sum(1 for doc in self.docs if _match(doc, flt))
+
 
 class _FakeDB:
     def __init__(self):
@@ -142,6 +148,7 @@ class _FakeDB:
         self.gl_operational_mappings = _Coll("gl_operational_mappings")
         self.gl_intercompany_rules = _Coll("gl_intercompany_rules")
         self.gl_eledger_settings = _Coll("gl_eledger_settings")
+        self.gl_setup_profiles = _Coll("gl_setup_profiles")
         self.gl_periods = _Coll("gl_periods")
         self.gl_sequence_reservations = _Coll("gl_sequence_reservations")
         self.gl_year_end_closures = _Coll("gl_year_end_closures")
@@ -169,6 +176,7 @@ def test_accounting_subledgers_are_strictly_tenant_scoped():
         "gl_operational_mappings",
         "gl_intercompany_rules",
         "gl_eledger_settings",
+        "gl_setup_profiles",
     }.issubset(TENANT_SCOPED_COLLECTIONS)
 
 
@@ -213,6 +221,77 @@ async def _seed_basic_coa():
 def test_gl_roles_follow_the_real_user_role_enum():
     assert gl._GL_ROLES == {"super_admin", "admin", "finance"}
     assert "accountant" not in gl._GL_ROLES
+
+
+def test_accounting_setup_profile_validates_tenant_specific_legal_data():
+    profile = gl.AccountingSetupProfileIn(
+        legal_name="The Canyon Turizm AŞ",
+        taxpayer_id="1234567890",
+        tax_office="Kartepe",
+        address="Kartepe Kocaeli",
+        city="Kocaeli",
+        fiscal_year=2026,
+        migration_date="2026-01-01",
+    )
+    assert profile.currency == "TRY"
+    assert profile.opening_balance_required is False
+
+    with pytest.raises(ValidationError):
+        gl.AccountingSetupProfileIn(
+            legal_name="The Canyon",
+            taxpayer_id="123",
+            tax_office="Kartepe",
+            address="Kartepe Kocaeli",
+            city="Kocaeli",
+            fiscal_year=2026,
+            migration_date="2026-01-01",
+        )
+
+
+@pytest.mark.asyncio
+async def test_accounting_setup_profile_is_tenant_scoped_and_reports_blockers(_patch):
+    response = await gl.save_accounting_setup_profile(
+        gl.AccountingSetupProfileIn(
+            legal_name="The Canyon Turizm AŞ",
+            taxpayer_id="1234567890",
+            tax_office="Kartepe",
+            address="Kartepe Kocaeli",
+            city="Kocaeli",
+            fiscal_year=2026,
+            migration_date="2026-01-01",
+            opening_balance_required=True,
+        ),
+        current_user=_user("finance"),
+    )
+
+    assert response["profile"]["tenant_id"] == TENANT
+    assert response["profile"]["taxpayer_id"] == "1234567890"
+    assert response["ready"] is False
+    assert {item["code"] for item in response["blockers"]} == {
+        "chart_of_accounts", "fiscal_periods", "operational_mapping", "opening_balance"
+    }
+    assert _patch.gl_eledger_settings.docs[0]["legal_name"] == "The Canyon Turizm AŞ"
+
+
+@pytest.mark.asyncio
+async def test_accounting_setup_opening_balance_is_draft_and_idempotent():
+    payload = gl.AccountingSetupOpeningBalanceIn(
+        date="2026-01-01",
+        memo="Kontrollü açılış bakiyesi",
+        idempotency_key="opening-import-2026",
+        lines=[
+            gl.JournalLineIn(account_code="100", debit=1000, credit=0),
+            gl.JournalLineIn(account_code="570", debit=0, credit=1000),
+        ],
+    )
+    first = await gl.create_accounting_setup_opening_balance(payload, current_user=_user("finance"))
+    replay = await gl.create_accounting_setup_opening_balance(payload, current_user=_user("finance"))
+
+    assert first["voucher"]["status"] == "draft"
+    assert first["voucher"]["voucher_type"] == "acilis"
+    assert first["idempotent_replay"] is False
+    assert replay["idempotent_replay"] is True
+    assert replay["voucher"]["id"] == first["voucher"]["id"]
 
 
 def _journal(lines, **kw):

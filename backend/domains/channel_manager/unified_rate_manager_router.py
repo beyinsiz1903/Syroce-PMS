@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from pymongo import UpdateOne
 
 from cache_manager import cached
+from core.audit import log_audit_event
 from core.database import db
 from core.occupancy_pricing import (
     OccupancyPricingError,
@@ -122,6 +123,8 @@ class PricingSettingItem(BaseModel):
     extra_child_rate: float = Field(0, ge=0, le=1e12)
     child_free_age_max: int = Field(0, ge=0, le=17)
     max_occupancy: int | None = Field(None, ge=1, le=50)
+    provider_pricing_verified: bool = False
+    provider_pricing_note: str | None = Field(None, max_length=500)
 
 
 class PricingSettingsRequest(BaseModel):
@@ -148,8 +151,39 @@ def _pricing_payload(docs: list[dict]) -> tuple[dict[str, str], dict[str, dict]]
         except (OccupancyPricingError, TypeError, ValueError):
             rule = normalize_occupancy_rule({"pricing_type": doc.get("pricing_type", "per_room")})
         settings[room_type_code] = rule["pricing_type"]
+        rule["provider_pricing_verified"] = bool(doc.get("provider_pricing_verified", False))
+        rule["provider_pricing_verified_at"] = doc.get("provider_pricing_verified_at")
+        rule["provider_pricing_verified_by"] = doc.get("provider_pricing_verified_by")
+        rule["provider_pricing_note"] = doc.get("provider_pricing_note")
+        rule["provider_sync_state"] = (
+            "VERIFIED" if rule["pricing_type"] != "per_person" or rule["provider_pricing_verified"]
+            else "MANUAL_CONFIGURATION_REQUIRED"
+        )
         rules[room_type_code] = rule
     return settings, rules
+
+
+def _unsafe_hotelrunner_room_types(
+    selected_room_types: list[str],
+    mappings: list[dict],
+    pricing_docs: list[dict],
+) -> list[str]:
+    """Return rate-write targets without a safe provider-side pricing attestation."""
+    remote_by_local = {
+        str(row["pms_room_type"]): str(row["hr_inv_code"])
+        for row in mappings
+        if row.get("pms_room_type") and row.get("hr_inv_code")
+    }
+    pricing_by_code = {str(row["room_type_code"]): row for row in pricing_docs if row.get("room_type_code")}
+    unsafe = []
+    for local_code in selected_room_types:
+        rule = pricing_by_code.get(local_code) or pricing_by_code.get(remote_by_local.get(local_code, ""))
+        if not rule or (
+            rule.get("pricing_type", "per_person") == "per_person"
+            and not rule.get("provider_pricing_verified", False)
+        ):
+            unsafe.append(local_code)
+    return unsafe
 
 
 async def _add_pms_rule_aliases(tenant_id: str, provider: str, rules: dict) -> dict:
@@ -738,6 +772,37 @@ async def unified_bulk_grid_update(
 
     selected_days_set = set(request.selected_days) if request.selected_days else None
     update_fields = set(request.update_fields)
+
+    # HotelRunner's public inventory API accepts only the base rate. Guest and
+    # child supplements are derived from the property's HotelRunner pricing
+    # setup. Fail closed for rate writes until an operator has explicitly
+    # attested that the provider-side rule matches the Syroce rule.
+    if "rate" in update_fields and any(t["provider"] == "hotelrunner" for t in targets):
+        selected_room_types = sorted({room_type for room_type, _ in pairs})
+        mappings = await db.hotelrunner_room_mappings.find(
+            {"tenant_id": tenant_id, "pms_room_type": {"$in": selected_room_types}},
+            {"_id": 0, "pms_room_type": 1, "hr_inv_code": 1},
+        ).to_list(200)
+        remote_by_local = {
+            str(row["pms_room_type"]): str(row["hr_inv_code"])
+            for row in mappings
+            if row.get("pms_room_type") and row.get("hr_inv_code")
+        }
+        candidate_codes = sorted(set(selected_room_types) | set(remote_by_local.values()))
+        pricing_docs = await db.hr_pricing_settings.find(
+            {"tenant_id": tenant_id, "room_type_code": {"$in": candidate_codes}},
+            {"_id": 0, "room_type_code": 1, "pricing_type": 1, "provider_pricing_verified": 1},
+        ).to_list(200)
+        unsafe_room_types = _unsafe_hotelrunner_room_types(selected_room_types, mappings, pricing_docs)
+        if unsafe_room_types:
+            codes = ", ".join(unsafe_room_types)
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "HotelRunner yalnız taban fiyat kabul eder. Önce HotelRunner panelindeki ek yetişkin/çocuk "
+                    f"kurallarının Syroce ile eşleştiğini doğrulayın: {codes}"
+                ),
+            )
 
     # Determine which calendar collection to use
     cal_collection = "hr_rate_calendar" if provider_type == "hotelrunner" else "rate_calendar"
@@ -1554,6 +1619,12 @@ async def update_pricing_settings(
             rule = normalize_occupancy_rule(item.model_dump())
         except OccupancyPricingError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        existing = await db[collection].find_one(
+            {"tenant_id": tenant_id, "room_type_code": item.room_type_code},
+            {"_id": 0, "provider_pricing_verified": 1},
+        )
+        verified = bool(item.provider_pricing_verified) if detection["provider"] == "hotelrunner" else True
+        verification_changed = verified != bool((existing or {}).get("provider_pricing_verified", False))
         await db[collection].update_one(
             {"tenant_id": tenant_id, "room_type_code": item.room_type_code},
             {
@@ -1561,12 +1632,27 @@ async def update_pricing_settings(
                     "tenant_id": tenant_id,
                     "room_type_code": item.room_type_code,
                     **rule,
+                    "provider_pricing_verified": verified,
+                    "provider_pricing_verified_at": now if verified else None,
+                    "provider_pricing_verified_by": current_user.id if verified else None,
+                    "provider_pricing_note": (item.provider_pricing_note or "").strip() or None,
                     "updated_at": now,
                     "updated_by": current_user.id,
                 }
             },
             upsert=True,
         )
+        if detection["provider"] == "hotelrunner" and verification_changed:
+            await log_audit_event(
+                tenant_id=tenant_id,
+                user_id=current_user.id,
+                action="hotelrunner_occupancy_pricing_attestation_updated",
+                entity_type="hr_pricing_setting",
+                entity_id=item.room_type_code,
+                details="HotelRunner kişi/çocuk fiyat kuralı doğrulaması güncellendi",
+                after_value={"provider_pricing_verified": verified},
+                db=db,
+            )
         updated += 1
 
     return {"updated": updated, "message": f"{updated} fiyatlandirma ayari guncellendi"}

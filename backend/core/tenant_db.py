@@ -145,6 +145,7 @@ TENANT_SCOPED_COLLECTIONS: set[str] = {
     "gl_nilvera_queue",
     "gl_intercompany_rules",
     "gl_eledger_settings",
+    "gl_setup_profiles",
     "gl_periods",
     "gl_sequence_reservations",
     "gl_year_end_closures",
