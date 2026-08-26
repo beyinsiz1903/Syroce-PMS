@@ -182,7 +182,7 @@ describe('Frontend Behavior Tests', () => {
     expect(screen.queryByText('Mutfak Ekranı')).not.toBeNull();
   });
 
-  it('ProtectedRoute: basic + KDS URL -> dashboard redirect', async () => {
+  it('ProtectedRoute: basic + KDS URL -> setup guidance', async () => {
     axios.get.mockImplementation((url) => {
       if (url === '/subscription/current') return Promise.resolve({
         data: { modules: { pos_fnb: true }, entitlements: { pos_fnb: { features: [], limits: {} } } }
@@ -214,7 +214,8 @@ describe('Frontend Behavior Tests', () => {
     await act(async () => { await new Promise(r => setTimeout(r, 0)); });
 
     expect(screen.queryByTestId('kds-page')).toBeNull();
-    expect(screen.getByTestId('dashboard')).toBeDefined();
+    expect(screen.getByTestId('module-availability-state')).toHaveAttribute('data-state', 'disabled');
+    expect(screen.queryByTestId('dashboard')).toBeNull();
   });
 
   it('ModuleGuardedRoute: moduleKey present & enabled -> renders component', async () => {
@@ -250,7 +251,7 @@ describe('Frontend Behavior Tests', () => {
     expect(screen.queryByTestId('pms-page')).not.toBeNull();
   });
 
-  it('ModuleGuardedRoute: moduleKey present & disabled -> redirects to dashboard', async () => {
+  it('ModuleGuardedRoute: moduleKey present & disabled -> shows setup guidance', async () => {
     axios.get.mockImplementation((url) => {
       if (url === '/subscription/current') return Promise.resolve({
         data: { modules: { pms: false }, entitlements: {} }
@@ -281,7 +282,9 @@ describe('Frontend Behavior Tests', () => {
     await act(async () => { await new Promise(r => setTimeout(r, 0)); });
 
     expect(screen.queryByTestId('pms-page')).toBeNull();
-    expect(screen.getByTestId('dashboard')).toBeDefined();
+    expect(screen.getByTestId('module-availability-state')).toHaveAttribute('data-state', 'disabled');
+    expect(screen.getByText('Kurulum gerekli')).toBeDefined();
+    expect(screen.queryByTestId('dashboard')).toBeNull();
   });
 
   it('ModuleGuardedRoute: not authenticated -> redirects to auth', async () => {

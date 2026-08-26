@@ -11,6 +11,7 @@
 import { cloneElement, isValidElement, Suspense, lazy } from "react";
 import { Navigate } from "react-router-dom";
 import { useEntitlements } from "@/context/EntitlementContext";
+import { ModuleAvailabilityState } from "@/components/shared/ModuleAvailabilityState";
 
 const Layout = lazy(() => import("@/components/Layout"));
 
@@ -87,7 +88,7 @@ export function ModuleGuardedRoute({
   tenant,
   onLogout,
 }) {
-  const { hasModule, hasFeature, loading, error, isSuperAdmin } = useEntitlements();
+  const { hasModule, hasFeature, loading, error, refresh } = useEntitlements();
 
   if (!isAuthenticated) return <Navigate to="/auth" replace />;
 
@@ -95,18 +96,36 @@ export function ModuleGuardedRoute({
     return <LoadingFallback />;
   }
 
-  // Prevent redirect loops by checking if the user is already on the fallback route
-  const currentPath = window.location.pathname;
-  const fallbackRoute = isSuperAdmin ? "/admin" : "/app/dashboard";
-
   if (moduleKey && !hasModule(moduleKey)) {
-    if (currentPath === fallbackRoute) return null; // Avoid loop
-    return <Navigate to={fallbackRoute} replace />;
+    const moduleNames = {
+      hr: "İnsan Kaynakları",
+      mice: "MICE & Banquet",
+      spa: "Spa & Wellness",
+      pos_fnb: "Restoran POS",
+    };
+    const unavailable = (
+      <ModuleAvailabilityState
+        moduleName={moduleNames[moduleKey] || moduleKey}
+        reason={error ? "temporary" : "disabled"}
+        onRetry={error ? refresh : undefined}
+      />
+    );
+    return (
+      <Suspense fallback={<LoadingFallback />}>
+        {withOptionalLayout(unavailable, { wrapLayout, layoutModule, user, tenant, onLogout })}
+      </Suspense>
+    );
   }
   
   if (featureKey && !hasFeature(moduleKey, featureKey)) {
-    if (currentPath === fallbackRoute) return null; // Avoid loop
-    return <Navigate to={fallbackRoute} replace />;
+    const unavailable = (
+      <ModuleAvailabilityState moduleName={moduleKey || "Bu modül"} reason="disabled" />
+    );
+    return (
+      <Suspense fallback={<LoadingFallback />}>
+        {withOptionalLayout(unavailable, { wrapLayout, layoutModule, user, tenant, onLogout })}
+      </Suspense>
+    );
   }
   return (
     <Suspense fallback={<LoadingFallback />}>

@@ -17,6 +17,7 @@ import { confirmDialog, promptDialog } from '@/lib/dialogs';
 import { deptLabel, positionLabel, employmentTypeLabel, EMPLOYMENT_TYPE_OPTIONS } from '@/lib/hrLabels';
 import UserProvisionDialog from '@/components/UserProvisionDialog';
 import { FixedSizeList } from 'react-window';
+import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
 
 // ── Virtualized staff table ───────────────────────────────────────────────
 const SM_ROW_H = 52;
@@ -120,6 +121,7 @@ const StaffManagement = () => {
   const navigate = useNavigate();
   const { getLimit } = useEntitlements();
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [staff, setStaff] = useState([]);
   const employeeLimit = getLimit('hr', 'employees');
   const activeEmployeeLimit = getLimit('hr', 'active_employees');
@@ -200,6 +202,7 @@ const StaffManagement = () => {
   const [filterHireTo, setFilterHireTo] = useState('');
   const loadAll = useCallback(async () => {
     setRefreshing(true);
+    setLoadError(null);
     try {
       const today = new Date().toISOString().slice(0, 10);
       const staffParams = {
@@ -284,6 +287,7 @@ const StaffManagement = () => {
       setExpiringTrainTotal(trRes.data?.total ?? (trRes.data?.items || []).length);
     } catch (e) {
       console.error(e);
+      setLoadError(e);
       toast.error('Personel verileri yüklenemedi');
     } finally {
       setRefreshing(false);
@@ -545,6 +549,13 @@ const StaffManagement = () => {
     filtered, equipmentByStaff, warningsByStaff, trainingsByStaff,
     navigate, openEdit, offboardStaff, t,
   }), [filtered, equipmentByStaff, warningsByStaff, trainingsByStaff, navigate, openEdit, offboardStaff, t]);
+
+  if (loadError) {
+    return <div className="p-2">
+      <PageHeader icon={Users} title={t("cm.pages_StaffManagement.personel_y\xF6netimi")} subtitle="Çalışanlar, departmanlar, pozisyonlar — tek noktadan yönet" actions={headerActions} />
+      <ModuleLoadError moduleName="Personel Yönetimi" error={loadError} onRetry={loadAll} compact />
+    </div>;
+  }
 
   return <div className="p-2">
       <PageHeader icon={Users} title={t("cm.pages_StaffManagement.personel_y\xF6netimi")} subtitle="Çalışanlar, departmanlar, pozisyonlar — tek noktadan yönet" actions={headerActions} />

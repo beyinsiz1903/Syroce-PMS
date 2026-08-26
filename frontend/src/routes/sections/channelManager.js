@@ -16,7 +16,7 @@ export function channelManagerRoutes({ p, pa }) {
     { path: "/channel-ops", type: "redirect", to: "/channels?tab=ops" },
     { path: "/channels", ...p(ChannelHub), wrapLayout: true, layoutModule: "channels" },
     { path: "/app/channels", ...p(ChannelHub), wrapLayout: true, layoutModule: "channels" },
-    { path: "/app/revenue-hub", ...p(RevenueHub), wrapLayout: true, layoutModule: "revenue" },
+    { path: "/app/revenue-hub", ...p(RevenueHub), type: "feature", featureKey: "hidden_rms", moduleName: "Gelir Yönetimi (RMS)", wrapLayout: true, layoutModule: "revenue" },
     { path: "/app/admin-hub", ...pa(AdminHub), wrapLayout: true, layoutModule: "admin" },
     { path: "/mapping-manager", ...p(MappingManager), wrapLayout: true, layoutModule: "channel-manager" },
     { path: "/room-mapping-wizard", ...p(RoomMappingWizard), wrapLayout: true },

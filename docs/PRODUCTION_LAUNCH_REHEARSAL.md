@@ -14,7 +14,7 @@ trafiği AÇILMAZ.
 | # | Kapı                             | Sahip      | Süre  | Hard | Sandbox kanıtı |
 |---|----------------------------------|------------|-------|------|----------------|
 | 1 | DigitalOcean Secrets matrix tamamlandı  | DevOps     | 5 dk  | ✅   | §1             |
-| 2 | Sentry UI 11 alarm kurulu         | DevOps     | 15 dk | ✅   | §2             |
+| 2 | Sentry UI 12 alarm kurulu         | DevOps     | 15 dk | ✅   | §2             |
 | 3 | Sentry Crons (cm-backlog) kurulu  | DevOps     | 5 dk  | ✅   | §2.4           |
 | 4 | Slack/PagerDuty routing canlı     | DevOps     | 10 dk | ✅   | §3             |
 | 5 | `rollback.sh --dry-run` PASS      | DevOps     | 2 dk  | ✅   | §4.1           |
@@ -80,7 +80,7 @@ curl -fsS http://localhost:8000/api/production-golive/readiness | jq '.verdict, 
 
 ## §2 — Sentry UI checklist (manuel kurulum)
 
-**Doc:** `docs/SENTRY_ALERT_POLICY.md` — 11 alarm routing tablosu + severity
+**Doc:** `docs/SENTRY_ALERT_POLICY.md` — 12 alarm routing tablosu + severity
 matrix. Bu §2 sadece **operatör tıklama sıralaması**.
 
 ### 2.1 Project ayarları
@@ -91,7 +91,7 @@ matrix. Bu §2 sadece **operatör tıklama sıralaması**.
    `IP Addresses`)
 4. **Environment**: backend init zaten `SENTRY_ENVIRONMENT=pilot` okur
 
-### 2.2 11 Alarm rule (Settings → Alerts → Create Alert Rule)
+### 2.2 12 Alarm rule (Settings → Alerts → Create Alert Rule)
 
 `docs/SENTRY_ALERT_POLICY.md` §3 routing tablosundan kopyala. Her rule
 için: **Name**, **When (filter)**, **Then (action)** üçlüsü:
@@ -109,6 +109,7 @@ için: **Name**, **When (filter)**, **Then (action)** üçlüsü:
 | 9 | JWT weak / brute-force          | `subsystem:auth level:warning count > 100/h` | Security team   |
 |10 | ChunkLoadError (frontend)       | `subsystem:frontend message:ChunkLoad`       | Slack #pms-alerts|
 |11 | Payment failure                 | `subsystem:payment level:error`              | Finance + DBA   |
+|12 | Module API final failure        | `subsystem:module-api`                       | Slack #pms-alerts + email |
 
 ### 2.3 Smoke test (her rule için)
 
