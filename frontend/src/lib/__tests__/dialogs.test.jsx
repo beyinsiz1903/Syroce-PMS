@@ -24,6 +24,8 @@ describe('dialog system', () => {
 
       expect(screen.getByTestId('app-dialog')).toBeInTheDocument();
       expect(screen.getByText('Emin misiniz?')).toBeInTheDocument();
+      expect(screen.getByTestId('app-dialog')).toHaveClass('z-[80]');
+      expect(document.querySelector('.z-\\[70\\]')).toBeInTheDocument();
 
       fireEvent.click(screen.getByTestId('dialog-confirm-btn'));
       await promise;

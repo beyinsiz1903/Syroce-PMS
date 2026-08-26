@@ -24,7 +24,7 @@ const { get, post, confirmDialog, axiosMock } = vi.hoisted(() => {
 });
 vi.mock('axios', () => ({ default: axiosMock }));
 vi.mock('@/lib/dialogs', () => ({ confirmDialog }));
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (_key, fallback) => fallback || _key }),
 }));
@@ -159,6 +159,26 @@ describe('ReservationDetailModal operation URLs', () => {
       bookingId: 'booking-test',
       operation: 'checked_out',
     }));
+  });
+
+  it('routes an open-balance checkout to folios without opening a hidden confirmation', async () => {
+    get.mockResolvedValueOnce({
+      data: {
+        ...detail,
+        booking: { ...detail.booking, status: 'checked_in' },
+        summary: { ...detail.summary, balance: 4760 },
+      },
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    const paymentButton = await screen.findByTestId('btn-checkout');
+    expect(paymentButton).toHaveTextContent('Önce ödemeyi tamamlayın');
+    fireEvent.click(paymentButton);
+
+    expect(confirmDialog).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
+    expect(screen.getByRole('tab', { name: 'Folyolar' })).toHaveAttribute('data-state', 'active');
   });
 
   it('hides all lifecycle mutations for a checked-out booking', async () => {
