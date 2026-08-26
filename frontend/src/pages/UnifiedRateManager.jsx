@@ -44,6 +44,7 @@ const UnifiedRateManager = ({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeView, setActiveView] = useState('bulk');
+  const [mobileBulkStep, setMobileBulkStep] = useState(1);
 
   // Provider detection
   const [provider, setProvider] = useState(null);
@@ -647,8 +648,8 @@ const UnifiedRateManager = ({
   return <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="unified_rate_manager">
       <div className="p-4 md:p-6 space-y-4" data-testid="unified-rate-manager-page">
         {/* Header */}
-        <div className="flex justify-between items-start">
-          <div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start">
+          <div className="min-w-0">
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold" style={{
             fontFamily: 'Space Grotesk'
           }}>
@@ -658,7 +659,7 @@ const UnifiedRateManager = ({
               {t('cm.pages_UnifiedRateManager.tum_kanallara_ve_acentelere_tek_noktadan')}
             </p>
           </div>
-          <div className="flex items-center gap-2" data-testid="unified-push-provider-badges">
+          <div className="flex flex-wrap items-center gap-2" data-testid="unified-push-provider-badges">
             {pushProviders.length > 0 ? pushProviders.map(p => {
             const cfg = modeConfig[p.mode] || modeConfig.inactive;
             return <Badge key={p.slug} className={cfg.className} data-testid={`unified-push-badge-${p.slug}`}>
@@ -690,24 +691,24 @@ const UnifiedRateManager = ({
           </div>}
 
         {/* Main content with agency panel */}
-        <div className="flex gap-4">
+        <div className="flex flex-col gap-4 lg:flex-row">
           {/* Main tabs area */}
           <div className="flex-1 min-w-0">
             <Tabs value={activeView} onValueChange={setActiveView}>
-              <TabsList className="grid w-full grid-cols-3 max-w-md">
-                <TabsTrigger value="bulk" data-testid="unified-bulk-tab">
-                  <Grid3X3 className="w-4 h-4 mr-1.5" /> Toplu Guncelle
+              <TabsList className="grid w-full max-w-md grid-cols-3">
+                <TabsTrigger value="bulk" className="px-1 text-[11px] sm:px-3 sm:text-sm" data-testid="unified-bulk-tab">
+                  <Grid3X3 className="mr-1 h-4 w-4" /> <span className="sm:hidden">Toplu</span><span className="hidden sm:inline">Toplu Güncelle</span>
                 </TabsTrigger>
-                <TabsTrigger value="grid" data-testid="unified-grid-tab">
-                  <CalendarDays className="w-4 h-4 mr-1.5" /> Takvim Gorunumu
+                <TabsTrigger value="grid" className="px-1 text-[11px] sm:px-3 sm:text-sm" data-testid="unified-grid-tab">
+                  <CalendarDays className="mr-1 h-4 w-4" /> <span className="sm:hidden">Takvim</span><span className="hidden sm:inline">Takvim Görünümü</span>
                 </TabsTrigger>
-                <TabsTrigger value="stop-sale" data-testid="unified-stop-sale-tab">
-                  <Ban className="w-4 h-4 mr-1.5" /> Stop Sale
+                <TabsTrigger value="stop-sale" className="px-1 text-[11px] sm:px-3 sm:text-sm" data-testid="unified-stop-sale-tab">
+                  <Ban className="mr-1 h-4 w-4" /> Stop Sale
                 </TabsTrigger>
               </TabsList>
 
               <TabsContent value="bulk" className="mt-4">
-                <BulkUpdatePanel roomTypeTree={roomTypeTree} roomTypes={roomTypes} ratePlans={ratePlans} enabledFields={enabledFields} toggleField={toggleField} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} allDays={allDays} selectedDays={selectedDays} toggleDay={toggleDay} toggleAllDays={toggleAllDays} selections={selections} toggleRoomType={toggleRoomType} toggleAllRoomTypes={toggleAllRoomTypes} toggleRatePlan={toggleRatePlan} isRoomTypeSelected={isRoomTypeSelected} isRoomTypeFullySelected={isRoomTypeFullySelected} isRatePlanSelected={isRatePlanSelected} roomValues={roomValues} updateRoomValue={updateRoomValue} getDefaultValues={getDefaultValues} applyToAllSelected={applyToAllSelected} expandedRoomTypes={expandedRoomTypes} toggleExpanded={toggleExpanded} pricingSettings={pricingSettings} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType} currencySymbol={currencySymbol} currency={currency} totalSelectedRoomTypes={totalSelectedRoomTypes} totalSelectedPlans={totalSelectedPlans} saving={saving} handleBulkUpdate={handleBulkUpdate} handleReset={handleReset} loading={loading} activeChannels={activeChannels} activeChannelsStale={activeChannelsStale} channelProvider={provider} />
+                <BulkUpdatePanel roomTypeTree={roomTypeTree} roomTypes={roomTypes} ratePlans={ratePlans} enabledFields={enabledFields} toggleField={toggleField} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} allDays={allDays} selectedDays={selectedDays} toggleDay={toggleDay} toggleAllDays={toggleAllDays} selections={selections} toggleRoomType={toggleRoomType} toggleAllRoomTypes={toggleAllRoomTypes} toggleRatePlan={toggleRatePlan} isRoomTypeSelected={isRoomTypeSelected} isRoomTypeFullySelected={isRoomTypeFullySelected} isRatePlanSelected={isRatePlanSelected} roomValues={roomValues} updateRoomValue={updateRoomValue} getDefaultValues={getDefaultValues} applyToAllSelected={applyToAllSelected} expandedRoomTypes={expandedRoomTypes} toggleExpanded={toggleExpanded} pricingSettings={pricingSettings} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType} currencySymbol={currencySymbol} currency={currency} totalSelectedRoomTypes={totalSelectedRoomTypes} totalSelectedPlans={totalSelectedPlans} saving={saving} handleBulkUpdate={handleBulkUpdate} handleReset={handleReset} loading={loading} activeChannels={activeChannels} activeChannelsStale={activeChannelsStale} channelProvider={provider} mobileStep={mobileBulkStep} setMobileStep={setMobileBulkStep} />
               </TabsContent>
 
               <TabsContent value="grid" className="mt-4">
@@ -721,7 +722,7 @@ const UnifiedRateManager = ({
           </div>
 
           {/* Agency Panel (right side) */}
-          <div className="w-[260px] flex-shrink-0" data-testid="agency-panel">
+          <div className={`${activeView === 'bulk' && mobileBulkStep === 3 ? 'block' : 'hidden'} w-full flex-shrink-0 lg:block lg:w-[260px]`} data-testid="agency-panel">
             <Card className="sticky top-4">
               <CardHeader className="pb-2 pt-4 px-4">
                 <div className="flex items-center justify-between">

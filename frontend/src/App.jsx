@@ -463,7 +463,17 @@ function App() {
                       if (!isAuthenticated) {
                         element = <Navigate to="/auth" replace />;
                       } else if (!isSuperAdmin) {
-                        element = <Navigate to="/app/dashboard" replace />;
+                        element = (
+                          <ProtectedRoute
+                            isAuthenticated={isAuthenticated}
+                            element={<ModuleAvailabilityState reason="disabled" />}
+                            wrapLayout
+                            layoutModule="dashboard"
+                            user={user}
+                            tenant={tenant}
+                            onLogout={handleLogout}
+                          />
+                        );
                       } else {
                         element = <ProtectedRoute isAuthenticated={isAuthenticated} element={<rc.component {...rc.props} />} wrapLayout={rc.wrapLayout} layoutModule={rc.layoutModule} user={user} tenant={tenant} onLogout={handleLogout} />;
                       }
@@ -475,7 +485,20 @@ function App() {
                   })}
 
                   {/* Catch-all */}
-                  <Route path="*" element={isAuthenticated ? <Navigate to="/app/dashboard" replace /> : <Navigate to="/auth" replace />} />
+                  <Route
+                    path="*"
+                    element={isAuthenticated ? (
+                      <ProtectedRoute
+                        isAuthenticated={isAuthenticated}
+                        element={<ModuleAvailabilityState reason="disabled" />}
+                        wrapLayout
+                        layoutModule="dashboard"
+                        user={user}
+                        tenant={tenant}
+                        onLogout={handleLogout}
+                      />
+                    ) : <Navigate to="/auth" replace />}
+                  />
                 </Routes>
                 </Suspense>
               </PlanRouteGuard>

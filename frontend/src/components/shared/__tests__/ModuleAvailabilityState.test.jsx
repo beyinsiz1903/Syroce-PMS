@@ -17,7 +17,7 @@ describe("ModuleAvailabilityState", () => {
   it("shows explicit setup guidance instead of redirecting", () => {
     render(<ModuleAvailabilityState moduleName="Spa & Wellness" reason="disabled" />);
     expect(screen.getByText("Kurulum gerekli")).toBeDefined();
-    expect(screen.getByText(/Spa & Wellness tesisinizde etkin değil/)).toBeDefined();
+    expect(screen.getByText('Bu modül tesisinizde etkin değil. Paketinizi veya kullanıcı yetkinizi kontrol edin.')).toBeDefined();
   });
 
   it("offers retry for exhausted 429 responses", () => {

@@ -55,14 +55,28 @@ describe("PMSDateBadge dense content safety", () => {
     "/app/academy",
     "/app/academy-report",
     "/app/academy-manage",
-  ])("does not cover content on %s", (pathname) => {
+  ])("stays in normal layout flow on %s", (pathname) => {
     render(
       <MemoryRouter initialEntries={[pathname]}>
         <PMSDateBadge />
       </MemoryRouter>,
     );
 
-    expect(screen.queryByTestId("pms-date-badge")).not.toBeInTheDocument();
+    const badge = screen.getByTestId("pms-date-badge");
+    expect(badge).toBeInTheDocument();
+    expect(badge.parentElement).not.toHaveClass("fixed");
+  });
+
+  it("provides a dedicated layout row when embedded by Layout", () => {
+    render(
+      <MemoryRouter initialEntries={["/app/reservation-calendar"]}>
+        <PMSDateBadge inLayout />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId("layout-business-date-bar")).toContainElement(
+      screen.getByTestId("pms-date-badge"),
+    );
   });
 });
 

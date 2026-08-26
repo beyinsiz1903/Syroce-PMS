@@ -46,7 +46,7 @@ const readBdCache = () => {
   } catch { return null; }
 };
 
-export default function PMSDateBadge() {
+export default function PMSDateBadge({ inLayout = false }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -138,10 +138,7 @@ export default function PMSDateBadge() {
     return () => clearTimeout(id);
   }, [navigating]);
 
-  const isDenseContentPage = location.pathname === '/app/reservation-calendar'
-    || location.pathname.startsWith('/app/academy');
-
-  if (hidden || isDenseContentPage) return null;
+  if (hidden) return null;
 
   const containerClass = isStale
     ? "flex items-center gap-2 pl-3 pr-1 py-1 rounded-full bg-amber-50 text-amber-900 text-xs shadow-sm border border-amber-300"
@@ -149,7 +146,11 @@ export default function PMSDateBadge() {
 
   return (
     <div
-      className="fixed bottom-3 left-3 z-40 select-none"
+      className={inLayout
+        ? "flex min-h-9 max-w-full shrink-0 select-none items-center justify-end border-b border-slate-200 bg-slate-50/90 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/70 sm:px-4"
+        : "max-w-full select-none"}
+      data-testid={inLayout ? "layout-business-date-bar" : undefined}
+      aria-label={inLayout ? "PMS iş günü" : undefined}
       title={bdMeta?.update_source === "initialization"
         ? "İş günü başlangıç kaydından oluşturuldu; Night Audit değildir."
         : bdMeta?.update_source === "legacy_record"
@@ -158,7 +159,7 @@ export default function PMSDateBadge() {
           ? `Son Night Audit: ${bdMeta.audit_run_id}`
           : undefined}
     >
-      <div className={containerClass} data-testid="pms-date-badge">
+      <div className={`${containerClass} max-w-full`} data-testid="pms-date-badge">
         {isStale ? (
           <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
         ) : (
