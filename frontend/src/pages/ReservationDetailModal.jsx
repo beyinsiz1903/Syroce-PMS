@@ -40,6 +40,15 @@ const STATUS_PILL = {
   pending: 'bg-slate-100 text-slate-600 border border-slate-200',
 };
 
+const DETAIL_RETRY_DELAYS_MS = [150, 450];
+
+const isRetryableDetailError = (error) => {
+  const statusCode = Number(error?.response?.status || 0);
+  return !statusCode || statusCode === 408 || statusCode === 429 || statusCode >= 500;
+};
+
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
 export default function ReservationDetailModal({ bookingId, onClose, allBookings, onOperationComplete }) {
   const { t } = useTranslation();
   const [data, setData] = useState(null);
@@ -47,6 +56,8 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const [activeTab, setActiveTab] = useState('general');
   const [checkinAlertOpen, setCheckinAlertOpen] = useState(false);
   const [offlineFallback, setOfflineFallback] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const loadGenerationRef = useRef(0);
 
   // allBookings kimliği her render değişebilir → loadData dep'ine koymak yerine
   // ref ile oku (full-detail re-fetch döngüsünü önler).
@@ -55,29 +66,55 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
 
   const loadData = useCallback(async () => {
     if (!bookingId) return;
-    try {
-      const res = await axios.get(`/pms/reservations/${bookingId}/full-detail`);
-      setData(res.data);
-      setOfflineFallback(null);
-    } catch (e) {
+    const generation = ++loadGenerationRef.current;
+    setLoading(true);
+    setData(null);
+    setLoadError(null);
+    let lastError = null;
+
+    for (let attempt = 0; attempt <= DETAIL_RETRY_DELAYS_MS.length; attempt += 1) {
+      try {
+        const res = await axios.get(`/pms/reservations/${bookingId}/full-detail`);
+        if (!res?.data?.booking) throw new Error('Reservation detail response is incomplete');
+        if (generation !== loadGenerationRef.current) return;
+        setData(res.data);
+        setOfflineFallback(null);
+        setLoading(false);
+        return;
+      } catch (error) {
+        lastError = error;
+        const canRetry = isRetryableDetailError(error) && attempt < DETAIL_RETRY_DELAYS_MS.length;
+        if (!canRetry) break;
+        await wait(DETAIL_RETRY_DELAYS_MS[attempt]);
+      }
+    }
+
+    if (generation !== loadGenerationRef.current) return;
+    if (lastError) {
       // full-detail finansal veri (folyo/ödeme) embed ettiğinden ASLA cache'lenmez
       // (at-rest PII). Çevrimdışıysak zaten cache'li listeden (allBookings) yalnızca
-      // operasyonel alanları sınırlı, salt-okunur bir görünümle göster.
+      // operasyonel alanları sınırlı, salt-okunur bir görünümle göster. Aynı güvenli
+      // takvim özeti, geçici sunucu/ağ hatasında da kullanılır; mutasyon butonu içermez.
       const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
-      const fallback = isOffline && Array.isArray(allBookingsRef.current)
+      const fallback = Array.isArray(allBookingsRef.current)
         ? allBookingsRef.current.find((b) => b.id === bookingId)
         : null;
+      const statusCode = Number(lastError?.response?.status || 0) || null;
+      setLoadError({ isOffline, statusCode });
       if (fallback) {
         setOfflineFallback(fallback);
       } else {
         toast.error('Rezervasyon detayı yüklenemedi');
       }
-      console.error(e);
+      console.error(lastError);
     }
     setLoading(false);
   }, [bookingId]);
 
-  useEffect(() => { setLoading(true); loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+    return () => { loadGenerationRef.current += 1; };
+  }, [loadData]);
 
   const finishOperation = useCallback(async (operation) => {
     if (typeof onOperationComplete === 'function') {
@@ -115,11 +152,14 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   if (!data && offlineFallback) {
     const fb = offlineFallback;
     const fbStatus = fb.status || 'pending';
+    const isOffline = loadError?.isOffline;
     return (
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
         <div className="bg-white rounded-2xl w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-between px-5 py-3 border-b">
-            <h2 className="text-slate-800 font-semibold text-base">Rezervasyon (çevrimdışı)</h2>
+            <h2 className="text-slate-800 font-semibold text-base">
+              {isOffline ? 'Rezervasyon (çevrimdışı)' : 'Rezervasyon özeti'}
+            </h2>
             <button onClick={onClose} aria-label="Kapat" className="text-slate-400 hover:text-slate-600">
               <X className="w-5 h-5" />
             </button>
@@ -127,8 +167,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
           <div className="px-5 py-3 bg-amber-50 border-b border-amber-200 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
             <p className="text-xs text-amber-800">
-              Çevrimdışısınız. Yalnızca temel operasyonel bilgiler gösteriliyor; finansal
-              veriler (folyo, ödeme, fatura) ve işlemler internet bağlantısı gelince görünür.
+              {isOffline
+                ? 'Çevrimdışısınız. Yalnızca temel operasyonel bilgiler gösteriliyor; finansal veriler ve işlemler internet bağlantısı gelince görünür.'
+                : `Tam rezervasyon ayrıntıları geçici olarak alınamadı${loadError?.statusCode ? ` (HTTP ${loadError.statusCode})` : ''}. Temel takvim bilgileri salt okunur gösteriliyor.`}
             </p>
           </div>
           <div className="px-5 py-4 space-y-3 text-sm">
@@ -153,12 +194,31 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               <span className="font-medium text-slate-800 text-right">{statusLabel ? statusLabel(fbStatus) : fbStatus}</span>
             </div>
           </div>
+          <div className="flex justify-end gap-2 px-5 py-3 border-t">
+            <Button variant="outline" onClick={onClose}>Kapat</Button>
+            <Button onClick={loadData} data-testid="retry-reservation-detail">Tekrar dene</Button>
+          </div>
         </div>
       </div>
     );
   }
 
-  if (!data) return null;
+  if (!data) return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" data-testid="reservation-detail-load-error">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-xl p-6 text-center">
+        <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto mb-3" />
+        <h2 className="text-lg font-semibold text-slate-800">Rezervasyon detayı yüklenemedi</h2>
+        <p className="text-sm text-slate-500 mt-2">
+          Sunucuya geçici olarak ulaşılamadı{loadError?.statusCode ? ` (HTTP ${loadError.statusCode})` : ''}.
+          Rezervasyonda herhangi bir değişiklik yapılmadı.
+        </p>
+        <div className="flex justify-center gap-2 mt-5">
+          <Button variant="outline" onClick={onClose}>Kapat</Button>
+          <Button onClick={loadData} data-testid="retry-reservation-detail">Tekrar dene</Button>
+        </div>
+      </div>
+    </div>
+  );
 
   const { booking, guest, room, company, folios, charges, payments, extra_charges, notes, history, room_moves, daily_rates, guests, summary, communication_logs, deposits } = data;
 

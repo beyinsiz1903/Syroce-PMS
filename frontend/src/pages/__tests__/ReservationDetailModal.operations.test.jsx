@@ -175,4 +175,44 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.queryByTestId('btn-mark-noshow')).not.toBeInTheDocument();
     expect(screen.queryByTestId('btn-cancel-reservation')).not.toBeInTheDocument();
   });
+
+  it('retries transient detail failures and keeps a safe calendar summary visible', async () => {
+    get.mockRejectedValue({ response: { status: 503 } });
+    const calendarBooking = {
+      id: 'booking-test', guest_name: 'TEST GUEST', room_number: '106',
+      check_in: '2026-08-13', check_out: '2026-08-14', status: 'confirmed',
+    };
+
+    render(
+      <ReservationDetailModal
+        bookingId="booking-test"
+        onClose={() => {}}
+        allBookings={[calendarBooking]}
+      />,
+    );
+
+    expect(await screen.findByText('Rezervasyon özeti')).toBeInTheDocument();
+    expect(screen.getByText(/HTTP 503/)).toBeInTheDocument();
+    expect(screen.getByText('TEST GUEST')).toBeInTheDocument();
+    expect(screen.getByTestId('retry-reservation-detail')).toBeInTheDocument();
+    expect(get).toHaveBeenCalledTimes(3);
+    expect(screen.queryByTestId('btn-checkin')).not.toBeInTheDocument();
+  });
+
+  it('does not retry a missing reservation and offers an explicit retry action', async () => {
+    get.mockRejectedValue({ response: { status: 404 } });
+
+    render(
+      <ReservationDetailModal
+        bookingId="missing-booking"
+        onClose={() => {}}
+        allBookings={[]}
+      />,
+    );
+
+    expect(await screen.findByTestId('reservation-detail-load-error')).toBeInTheDocument();
+    expect(screen.getByText(/HTTP 404/)).toBeInTheDocument();
+    expect(screen.getByText(/herhangi bir değişiklik yapılmadı/i)).toBeInTheDocument();
+    expect(get).toHaveBeenCalledTimes(1);
+  });
 });

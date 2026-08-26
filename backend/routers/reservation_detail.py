@@ -6,7 +6,7 @@ payment processing, cari transfers, room changes, and front office operations.
 
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -357,6 +357,31 @@ def _clean_docs(docs):
     return [_clean_doc(d) for d in docs]
 
 
+def _reservation_calendar_date(value) -> date | None:
+    """Best-effort calendar date parsing for legacy/provider reservations.
+
+    Full-detail must remain readable even when an old imported reservation has
+    a malformed date. Returning ``None`` simply suppresses generated daily-rate
+    rows; it must not turn the entire reservation detail endpoint into a 500.
+    """
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return None
+
+    normalized = value.strip().replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized).date()
+    except ValueError:
+        try:
+            return date.fromisoformat(normalized[:10])
+        except ValueError:
+            logger.warning("Invalid reservation date in full-detail response: %r", value)
+            return None
+
+
 async def _log_activity(tenant_id: str, booking_id: str, action: str, actor: str, details: dict = None):
     """Log an activity for a reservation."""
     log_entry = {
@@ -447,24 +472,21 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
 
         # If no daily rates exist, generate from booking
         if not daily_rates and booking.get("check_in") and booking.get("check_out"):
-            ci = booking["check_in"]
-            co = booking["check_out"]
-            if isinstance(ci, str):
-                ci = datetime.fromisoformat(ci.replace("Z", "+00:00")) if "T" in ci else datetime.strptime(ci[:10], "%Y-%m-%d")
-            if isinstance(co, str):
-                co = datetime.fromisoformat(co.replace("Z", "+00:00")) if "T" in co else datetime.strptime(co[:10], "%Y-%m-%d")
-            nights = max((co - ci).days, 1)
-            nightly_rate = round(booking.get("total_amount", 0) / nights, 2) if nights > 0 else 0
-            current = ci
-            for i in range(nights):
-                daily_rates.append(
-                    {
-                        "date": current.strftime("%Y-%m-%d") if hasattr(current, "strftime") else str(current)[:10],
-                        "rate": nightly_rate,
-                        "generated": True,
-                    }
-                )
-                current = current + timedelta(days=1)
+            ci = _reservation_calendar_date(booking["check_in"])
+            co = _reservation_calendar_date(booking["check_out"])
+            if ci is not None and co is not None:
+                nights = max((co - ci).days, 1)
+                nightly_rate = round(booking.get("total_amount", 0) / nights, 2) if nights > 0 else 0
+                current = ci
+                for _ in range(nights):
+                    daily_rates.append(
+                        {
+                            "date": current.isoformat(),
+                            "rate": nightly_rate,
+                            "generated": True,
+                        }
+                    )
+                    current = current + timedelta(days=1)
 
         # Guests associated with this booking
         guests_list = []
