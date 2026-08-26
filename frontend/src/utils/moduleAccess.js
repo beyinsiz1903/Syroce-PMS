@@ -239,7 +239,7 @@ export const PMS_TAB_SCOPES = Object.freeze({
 
 export const SUPPLEMENTAL_MODULE_NAV_ITEMS = Object.freeze([
   { key: 'cashier_workspace', label: 'Kasa', path: '/app/cashier', navGroup: 'backoffice', moduleScopes: ['cashier'] },
-  { key: 'tasks_workspace', label: 'Görevler', path: '/app/tasks', navGroup: 'operations', moduleScopes: ['tasks'] },
+  { key: 'tasks_workspace', label: 'Görevler', path: '/app/tasks', navGroup: 'operations', navSection: 'daily', moduleScopes: ['tasks'] },
 ]);
 
 function roleValue(user) {

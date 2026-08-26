@@ -2134,6 +2134,18 @@
     "system": "Kanäle & Integrationen"
   },
   "navSections": {
+    "frontdesk": {
+      "reservations": "Reservierungen & Aufenthalte",
+      "room_management": "Zimmerverwaltung",
+      "guest_services": "Gästeservice",
+      "daily_controls": "Tägliche Kontrollen"
+    },
+    "operations": {
+      "daily": "Täglicher Betrieb",
+      "guest_requests": "Gästeanfragen",
+      "incidents": "Vorfälle & Nachverfolgung",
+      "wellness": "Spa & Wellness"
+    },
     "system": {
       "channels": "Kanalverwaltung",
       "distribution": "Vertrieb & Verkauf",

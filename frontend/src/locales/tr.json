@@ -2182,6 +2182,18 @@
     "system": "Kanallar & Entegrasyonlar"
   },
   "navSections": {
+    "frontdesk": {
+      "reservations": "Rezervasyon & Konaklama",
+      "room_management": "Oda Yönetimi",
+      "guest_services": "Misafir Hizmetleri",
+      "daily_controls": "Günlük Kontroller"
+    },
+    "operations": {
+      "daily": "Günlük Operasyon",
+      "guest_requests": "Misafir Talepleri",
+      "incidents": "Olay & Takip",
+      "wellness": "Spa & Wellness"
+    },
     "system": {
       "channels": "Kanal Yönetimi",
       "distribution": "Dağıtım & Satış",
