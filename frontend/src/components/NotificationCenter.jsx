@@ -129,7 +129,7 @@ const NotificationCenter = () => {
   }, [handleMarkAllInternal]);
 
   return (
-    <div className="fixed bottom-4 right-4 z-50">
+    <div className="safe-fixed-bottom fixed right-4 z-50">
       <Button
         variant="outline"
         size="icon"

@@ -24,7 +24,7 @@ export function ModuleAvailabilityState({
       ? "İstek sınırına ulaşıldı"
       : "Modül şu anda doğrulanamıyor";
   const description = isSetup
-    ? `${moduleName} tesisinizde etkin değil veya kullanıcı yetkiniz bulunmuyor. Paket ve yetki ayarlarını kontrol edin.`
+    ? "Bu modül tesisinizde etkin değil. Paketinizi veya kullanıcı yetkinizi kontrol edin."
     : isThrottled
       ? `${moduleName} kısa süre içinde otomatik olarak yeniden denenmesine rağmen yüklenemedi. Biraz bekleyip tekrar deneyin.`
       : `${moduleName} verilerine şu anda ulaşılamıyor. Mevcut verileriniz etkilenmedi; bağlantı düzeldiğinde yeniden deneyebilirsiniz.`;

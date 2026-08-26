@@ -3,12 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight,
-  Plus, RefreshCw, Loader2, AlertTriangle, SlidersHorizontal
+  Plus, RefreshCw, Loader2, AlertTriangle, SlidersHorizontal, MoreHorizontal
 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -84,10 +85,155 @@ const CalendarHeader = ({
   const compactMode = viewPreferences?.compactMode !== false;
 
   return (
-    <div
-      className={`flex items-center ${compactMode ? 'flex-nowrap gap-2' : 'flex-wrap gap-x-4 gap-y-3'}`}
-      data-testid="reservation-toolbar"
-    >
+    <>
+      <input
+        ref={dateInputRef}
+        type="date"
+        data-testid="go-to-date-input"
+        className="sr-only"
+        tabIndex={-1}
+        aria-label="Tarihe git"
+        onChange={(e) => {
+          if (e.target.value) onGoToDate(new Date(e.target.value + 'T00:00:00'));
+          try { e.target.blur(); } catch (_) { /* dismiss native picker */ }
+        }}
+      />
+
+      {/* Mobile toolbar: primary navigation stays visible; secondary actions live in one menu. */}
+      <div className="space-y-2 md:hidden" data-testid="mobile-calendar-toolbar">
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigate('/pms?tab=bookings')}
+            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+            data-testid="mobile-reservations-tab-btn"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-sm">
+              <CalendarIcon className="h-5 w-5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-base font-extrabold leading-tight text-slate-900">Rezervasyonlar</span>
+              <span className="block truncate text-[11px] font-medium text-slate-500" data-testid="mobile-toolbar-date-range">
+                {dateRangeLabel}
+              </span>
+            </span>
+          </button>
+
+          <Button
+            type="button"
+            onClick={onShowNewBookingDialog}
+            size="icon"
+            className="h-9 w-9 shrink-0 bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-sm"
+            data-testid="mobile-add-reservation-button"
+            aria-label={t('cm.pages_calendar_CalendarHeader.rezervasyon_ekle')}
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                data-testid="mobile-calendar-actions"
+                aria-label="Takvim işlemleri"
+              >
+                <MoreHorizontal className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuLabel>Takvim işlemleri</DropdownMenuLabel>
+              <DropdownMenuItem onSelect={openNativePicker} data-testid="mobile-calendar-date-jump">
+                <CalendarIcon /> Tarihe git
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onShowFindRoomDialog}>
+                <SlidersHorizontal /> {t('cm.pages_calendar_CalendarHeader.genel_bakis')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onSyncReservations} disabled={syncing}>
+                {syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                {syncing ? 'Senkronize ediliyor…' : 'OTA senkronizasyonu'}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Gün aralığı</DropdownMenuLabel>
+              {[7, 14, 30].map((dayCount) => (
+                <DropdownMenuCheckboxItem
+                  key={dayCount}
+                  checked={daysToShow === dayCount}
+                  onCheckedChange={() => setDaysToShow(dayCount)}
+                >
+                  {dayCount} gün
+                </DropdownMenuCheckboxItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Görünüm</DropdownMenuLabel>
+              <DropdownMenuCheckboxItem
+                checked={Boolean(viewPreferences?.operationMode)}
+                onCheckedChange={(checked) => onViewPreferenceChange?.('operationMode', checked)}
+              >
+                Operasyon görünümü
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={Boolean(viewPreferences?.showOccupancy)}
+                onCheckedChange={(checked) => onViewPreferenceChange?.('showOccupancy', checked)}
+                disabled={Boolean(viewPreferences?.operationMode)}
+              >
+                Doluluk eğrisi
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={Boolean(viewPreferences?.showTimeline)}
+                onCheckedChange={(checked) => onViewPreferenceChange?.('showTimeline', checked)}
+                disabled={Boolean(viewPreferences?.operationMode)}
+              >
+                Zaman çizelgesi
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <Button variant="outline" size="icon" onClick={onNavigatePrevious} className="h-9 w-9" data-testid="mobile-calendar-nav-prev" aria-label="Önceki tarih aralığı">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => onGoToDate(new Date())} className="h-9 flex-1 text-xs font-semibold" data-testid="mobile-calendar-nav-today">
+            {t('cm.pages_calendar_CalendarHeader.bugun_01475')}
+          </Button>
+          <Button variant="outline" size="icon" onClick={onNavigateNext} className="h-9 w-9" data-testid="mobile-calendar-nav-next" aria-label="Sonraki tarih aralığı">
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {(unassignedCount > 0 || conflicts.length > 0) && (
+          <div className="flex flex-wrap gap-1.5" aria-label="Takvim uyarıları">
+            {unassignedCount > 0 && (
+              <button
+                type="button"
+                onClick={() => onShowUnassigned?.()}
+                className={`inline-flex h-7 items-center rounded-full border px-2 text-[11px] font-semibold ${overdueCount > 0 ? 'border-red-300 bg-red-50 text-red-700' : 'border-amber-300 bg-amber-50 text-amber-700'}`}
+                data-testid="mobile-unassigned-count-btn"
+              >
+                {hasUrgent && <AlertTriangle className="mr-1 h-3 w-3" />}
+                {unassignedCount} atanmamış
+              </button>
+            )}
+            {conflicts.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onShowConflicts?.()}
+                className="inline-flex h-7 items-center rounded-full bg-red-500 px-2 text-[11px] font-semibold text-white"
+                data-testid="mobile-conflicts-btn"
+              >
+                <AlertTriangle className="mr-1 h-3 w-3" /> {conflicts.length} çakışma
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div
+        className={`hidden items-center md:flex ${compactMode ? 'flex-nowrap gap-2' : 'flex-wrap gap-x-4 gap-y-3'}`}
+        data-testid="reservation-toolbar"
+      >
       {/* ─── LEFT GROUP: title + date range + alert chips ─── */}
       <div className={`flex items-center min-w-0 mr-auto ${compactMode ? 'gap-2' : 'gap-3'}`}>
         <button
@@ -186,18 +332,6 @@ const CalendarHeader = ({
             <CalendarIcon className="w-3.5 h-3.5 mr-1.5" />
             Tarihe Git
           </Button>
-          <input
-            ref={dateInputRef}
-            type="date"
-            data-testid="go-to-date-input"
-            className="sr-only"
-            tabIndex={-1}
-            aria-label="Tarihe git"
-            onChange={(e) => {
-              if (e.target.value) onGoToDate(new Date(e.target.value + 'T00:00:00'));
-              try { e.target.blur(); } catch (_) { /* dismiss native picker */ }
-            }}
-          />
         </div>
       </div>
 
@@ -302,7 +436,8 @@ const CalendarHeader = ({
           {t('cm.pages_calendar_CalendarHeader.rezervasyon_ekle')}
         </Button>
       </div>
-    </div>
+      </div>
+    </>
   );
 };
 

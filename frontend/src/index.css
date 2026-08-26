@@ -159,6 +159,31 @@ code {
     .animate-fade-in {
         animation: fadeIn 0.2s ease-out forwards;
     }
+
+    /* Fixed mobile controls must clear iOS/Android home indicators. */
+    .safe-fixed-bottom {
+        bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .safe-fixed-bottom-raised {
+        bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .safe-fixed-bottom-chat {
+        bottom: calc(10rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .safe-fixed-bottom-fab {
+        bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .app-safe-bottom-padding {
+        padding-bottom: calc(7rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .safe-bottom-padding {
+        padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    }
 }
 
 /* ============================================================================
