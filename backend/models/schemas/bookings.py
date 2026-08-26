@@ -34,6 +34,8 @@ class BookingCreate(BaseModel):
     guests_count: int = Field(..., ge=1, le=100)  # Total: adults + children
     total_amount: float = Field(..., ge=0, le=1e12)
     base_rate: float | None = None  # For override tracking
+    apply_occupancy_pricing: bool = False
+    pricing_rule_version: str | None = None
     channel: ChannelType = ChannelType.DIRECT
     special_requests: str | None = None
     rate_plan: str | None = None
@@ -94,6 +96,10 @@ class Booking(BookingBase):
     guests_count: int | None = None
     total_amount: float
     base_rate: float | None = None
+    apply_occupancy_pricing: bool = False
+    pricing_rule_version: str | None = None
+    pricing_breakdown: dict | None = None
+    pricing_rule_snapshot: dict | None = None
     paid_amount: float = 0.0
     status: BookingStatus = BookingStatus.PENDING
     group_booking_id: str | None = None

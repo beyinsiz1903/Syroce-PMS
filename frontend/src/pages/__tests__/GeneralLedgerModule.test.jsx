@@ -9,6 +9,8 @@ import {
   normalizeTrialBalance,
   parseAccountMapping,
   toJournalPayload,
+  toVoucherPayload,
+  voucherActionNames,
 } from '@/pages/GeneralLedgerModule';
 
 describe('GeneralLedgerModule persistent GL contract', () => {
@@ -17,7 +19,9 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       accounts: '/gl/accounts',
       initializeAccounts: '/gl/accounts/initialize',
       journal: '/gl/journal',
+      vouchers: '/gl/vouchers',
       sequenceAudit: '/gl/sequence-audit',
+      integrityAudit: '/gl/integrity-audit',
       trialBalance: '/gl/trial-balance',
       periods: '/gl/periods',
       initializePeriods: '/gl/periods/initialize',
@@ -43,8 +47,8 @@ describe('GeneralLedgerModule persistent GL contract', () => {
     });
   });
 
-  it('passes the stable manual-post idempotency key to the backend', () => {
-    expect(toJournalPayload({
+  it('does not expose a direct-post or client idempotency bypass in voucher payloads', () => {
+    const payload = toVoucherPayload({
       date: '2026-08-13',
       type: 'Mahsup',
       description: 'Tekrar güvenli fiş',
@@ -53,7 +57,11 @@ describe('GeneralLedgerModule persistent GL contract', () => {
         { account_code: '100', debit: 10, credit: 0, description: '' },
         { account_code: '600', debit: 0, credit: 10, description: '' },
       ],
-    }).idempotency_key).toBe('manual-request-123');
+    });
+    expect(payload).not.toHaveProperty('source');
+    expect(payload).not.toHaveProperty('source_ref');
+    expect(payload).not.toHaveProperty('idempotency_key');
+    expect(payload.voucher_type).toBe('mahsup');
   });
 
   it('maps the form to the durable journal payload', () => {
@@ -68,13 +76,20 @@ describe('GeneralLedgerModule persistent GL contract', () => {
     })).toEqual({
       date: '2026-08-13',
       memo: 'Test fişi',
-      source: 'manual',
-      source_ref: 'Mahsup',
+      voucher_type: 'mahsup',
       lines: [
         { account_code: '100', debit: 100, credit: 0, memo: 'Borç' },
         { account_code: '600', debit: 0, credit: 100, memo: null },
       ],
     });
+  });
+
+  it('exposes only the valid actions for each voucher state', () => {
+    expect(voucherActionNames('draft')).toEqual(['edit', 'submit', 'cancel']);
+    expect(voucherActionNames('submitted')).toEqual(['approve', 'reject']);
+    expect(voucherActionNames('approved')).toEqual(['post']);
+    expect(voucherActionNames('rejected')).toEqual(['edit', 'cancel']);
+    expect(voucherActionNames('posted')).toEqual([]);
   });
 
   it('keeps the journal save action disabled until the form is valid', () => {

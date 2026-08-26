@@ -16,6 +16,7 @@ Değişmezler:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -37,6 +38,9 @@ _NORMAL_CREDIT = {"liability", "equity", "revenue"}
 _CENT = Decimal("0.01")
 logger = logging.getLogger("shared_kernel.gl_posting")
 
+INTEGRITY_VERSION = "sha256-chain-v1"
+INTEGRITY_GENESIS = "GENESIS"
+
 
 class GLPostingError(ValueError):
     """Geçersiz yevmiye fişi (denge/satır/COA ihlali)."""
@@ -55,12 +59,22 @@ def _now_iso() -> str:
 
 
 async def ensure_gl_idem_index(db) -> None:
-    """gl_journal_entries idempotency index (fail-closed)."""
+    """Journal idempotency and legal-sequence indexes (fail-closed)."""
     await ensure_compound_unique(
         db.gl_journal_entries,
         [("tenant_id", 1), ("idempotency_key", 1)],
         partial_filter={"idempotency_key": {"$type": "string"}},
         name="ux_gl_journal_idem",
+    )
+    await ensure_compound_unique(
+        db.gl_journal_entries,
+        [("tenant_id", 1), ("entry_no", 1)],
+        name="ux_gl_journal_entry_no",
+    )
+    await ensure_compound_unique(
+        db.gl_journal_entries,
+        [("tenant_id", 1), ("fiscal_year", 1), ("posting_sequence", 1)],
+        name="ux_gl_journal_sequence",
     )
 
 
@@ -79,6 +93,7 @@ async def _allocate_journal_sequence(db, tenant_id: str, fiscal_year: int, entry
             "$setOnInsert": {
                 "tenant_id": tenant_id,
                 "fiscal_year": fiscal_year,
+                "counter_type": "journal",
                 "created_at": now,
             },
             "$set": {"updated_at": now},
@@ -132,7 +147,117 @@ def _minor_to_float(value: int) -> float:
     return float(Decimal(value) / 100)
 
 
-def _normalize_lines(lines: list[dict]) -> tuple[list[dict], float, float]:
+def _integrity_payload(entry: dict) -> dict:
+    """Return only the immutable posting core used by the journal seal.
+
+    Operational annotations such as ``reversal_status`` are intentionally not
+    included: a reversal is represented by a new linked entry, while the
+    original posting core remains byte-for-byte verifiable.
+    """
+    keys = (
+        "id",
+        "tenant_id",
+        "entry_no",
+        "posting_sequence",
+        "sequence_scope",
+        "date",
+        "period_id",
+        "fiscal_year",
+        "period_no",
+        "memo",
+        "lines",
+        "total_debit_minor",
+        "total_credit_minor",
+        "source",
+        "source_ref",
+        "status",
+        "idempotency_key",
+        "idempotency_fingerprint",
+        "created_at",
+        "created_by",
+        "reverses_entry_id",
+        "reversal_reason",
+        "previous_entry_hash",
+        "integrity_version",
+    )
+    return {key: entry.get(key) for key in keys}
+
+
+def compute_journal_entry_hash(entry: dict) -> str:
+    """Compute the deterministic SHA-256 seal for a posted journal entry."""
+    encoded = json.dumps(
+        _integrity_payload(entry),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def verify_journal_entry_hash(entry: dict) -> bool:
+    stored = str(entry.get("entry_hash") or "")
+    return bool(stored) and stored == compute_journal_entry_hash(entry)
+
+
+def sequence_void_hash(reservation: dict) -> str:
+    """Make an allocated-but-unused journal number part of the integrity chain."""
+    payload = {
+        "tenant_id": reservation.get("tenant_id"),
+        "fiscal_year": reservation.get("fiscal_year"),
+        "sequence": reservation.get("sequence"),
+        "status": "void",
+        "void_reason": reservation.get("void_reason"),
+        "reservation_id": reservation.get("id") or reservation.get("_id"),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+async def _previous_integrity_hash(db, tenant_id: str, fiscal_year: int, sequence: int) -> str:
+    """Resolve the previous posted/void ordinal before sealing ``sequence``.
+
+    Journal numbers are allocated atomically, so a concurrent predecessor may
+    still be finishing. We wait briefly for its durable reservation to become
+    posted/void. If it remains unresolved we fail closed and leave the new
+    ordinal visibly void instead of creating a broken chain.
+    """
+    if sequence <= 1:
+        return INTEGRITY_GENESIS
+    previous_sequence = sequence - 1
+    reservation = None
+    for _ in range(20):
+        reservation = await db.gl_sequence_reservations.find_one(
+            {
+                "tenant_id": tenant_id,
+                "fiscal_year": fiscal_year,
+                "sequence": previous_sequence,
+            },
+            {"_id": 0},
+        )
+        if reservation and reservation.get("status") in {"posted", "void"}:
+            break
+        await asyncio.sleep(0.05)
+    if not reservation:
+        raise GLPostingError(f"Önceki yevmiye sırası bulunamadı: {previous_sequence}")
+    if reservation.get("status") == "void":
+        return sequence_void_hash(reservation)
+    if reservation.get("status") != "posted":
+        raise GLPostingError(f"Önceki yevmiye sırası kesinleşmedi: {previous_sequence}")
+    previous = await db.gl_journal_entries.find_one(
+        {
+            "tenant_id": tenant_id,
+            "fiscal_year": fiscal_year,
+            "posting_sequence": previous_sequence,
+        },
+        {"_id": 0},
+    )
+    if not previous:
+        raise GLPostingError(f"Önceki yevmiye fişi bulunamadı: {previous_sequence}")
+    return str(previous.get("entry_hash") or compute_journal_entry_hash(previous))
+
+
+def normalize_journal_lines(lines: list[dict]) -> tuple[list[dict], float, float]:
     if not lines:
         raise GLPostingError("Fiş satırı yok")
     out: list[dict] = []
@@ -169,9 +294,7 @@ def _normalize_lines(lines: list[dict]) -> tuple[list[dict], float, float]:
             if not rate_decimal.is_finite() or rate_decimal <= 0:
                 raise GLPostingError(f"Satır {idx}: döviz kuru pozitif olmalıdır")
             normalized_rate = str(rate_decimal.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP))
-            expected_base_minor = int(
-                (Decimal(foreign_amount_minor) * rate_decimal).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-            )
+            expected_base_minor = int((Decimal(foreign_amount_minor) * rate_decimal).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
             base_minor = debit_minor or credit_minor
             if abs(expected_base_minor - base_minor) > 1:
                 raise GLPostingError(f"Satır {idx}: yabancı tutar × kur TL tutarıyla uyuşmuyor")
@@ -196,9 +319,7 @@ def _normalize_lines(lines: list[dict]) -> tuple[list[dict], float, float]:
     if total_debit_minor <= 0:
         raise GLPostingError("Toplam tutar sıfır")
     if total_debit_minor != total_credit_minor:
-        raise GLPostingError(
-            f"Fiş dengesiz: debit={_minor_to_float(total_debit_minor)} credit={_minor_to_float(total_credit_minor)}"
-        )
+        raise GLPostingError(f"Fiş dengesiz: debit={_minor_to_float(total_debit_minor)} credit={_minor_to_float(total_credit_minor)}")
     return out, _minor_to_float(total_debit_minor), _minor_to_float(total_credit_minor)
 
 
@@ -221,7 +342,7 @@ async def post_journal_entry(
     Döner: yazılan (veya idempotent mevcut) fiş dökümanı (_id'siz).
     """
     posting_date = normalize_posting_date(date)
-    norm_lines, tot_debit, tot_credit = _normalize_lines(lines)
+    norm_lines, tot_debit, tot_credit = normalize_journal_lines(lines)
     fingerprint = hashlib.sha256(
         json.dumps(
             {
@@ -241,8 +362,8 @@ async def post_journal_entry(
 
     # An exact retry must remain idempotent even after its period is closed.
     # Return the already-posted entry before evaluating the current lock state.
+    await ensure_gl_idem_index(db)
     if idempotency_key:
-        await ensure_gl_idem_index(db)
         existing = await db.gl_journal_entries.find_one(
             {"tenant_id": tenant_id, "idempotency_key": idempotency_key},
             {"_id": 0},
@@ -305,6 +426,25 @@ async def post_journal_entry(
         doc["reverses_entry_id"] = reverses_entry_id
         doc["reversal_reason"] = (reversal_reason or "").strip() or None
     try:
+        doc["integrity_version"] = INTEGRITY_VERSION
+        doc["previous_entry_hash"] = await _previous_integrity_hash(
+            db,
+            tenant_id,
+            fiscal_year,
+            sequence,
+        )
+        doc["entry_hash"] = compute_journal_entry_hash(doc)
+    except Exception:
+        await _mark_sequence_reservation(
+            db,
+            tenant_id,
+            reservation_id,
+            "void",
+            _now_iso(),
+            void_reason="integrity_predecessor_unavailable",
+        )
+        raise
+    try:
         await db.gl_journal_entries.insert_one(dict(doc))
     except DuplicateKeyError:
         await _mark_sequence_reservation(
@@ -340,6 +480,7 @@ async def post_journal_entry(
         "posted",
         _now_iso(),
         entry_no=doc["entry_no"],
+        entry_hash=doc["entry_hash"],
     )
     doc.pop("_id", None)
     return doc
@@ -365,9 +506,7 @@ async def compute_trial_balance(db, tenant_id: str, as_of: str | None = None) ->
     accts = await db.gl_accounts.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(5000)
     type_by_code = {a["code"]: a.get("type") for a in accts}
     name_by_code = {a["code"]: a.get("name") for a in accts}
-    normal_balance_by_code = {
-        a["code"]: a.get("normal_balance") or normal_balance(a.get("type")) for a in accts
-    }
+    normal_balance_by_code = {a["code"]: a.get("normal_balance") or normal_balance(a.get("type")) for a in accts}
 
     rows = []
     total_debit_balance_minor = total_credit_balance_minor = 0
@@ -462,8 +601,7 @@ async def compute_income_statement(
                 "amount": _minor_to_float(amount_minor),
                 "amount_minor": amount_minor,
                 "normal_balance": account.get("normal_balance") or normal_balance(account.get("type")),
-                "is_contra": (account.get("normal_balance") or normal_balance(account.get("type")))
-                != normal_balance(account.get("type")),
+                "is_contra": (account.get("normal_balance") or normal_balance(account.get("type"))) != normal_balance(account.get("type")),
             }
         )
     net_income_minor = total_revenue_minor - total_expense_minor
@@ -504,8 +642,7 @@ async def compute_balance_sheet(db, tenant_id: str, *, as_of: str | None = None)
                 "amount": _minor_to_float(amount_minor),
                 "amount_minor": amount_minor,
                 "normal_balance": row.get("normal_balance") or normal_balance(row.get("account_type")),
-                "is_contra": (row.get("normal_balance") or normal_balance(row.get("account_type")))
-                != normal_balance(row.get("account_type")),
+                "is_contra": (row.get("normal_balance") or normal_balance(row.get("account_type"))) != normal_balance(row.get("account_type")),
             }
         )
         totals_minor[section] += amount_minor

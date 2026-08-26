@@ -11,13 +11,14 @@ import asyncio
 import io
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from core.accounting.eledger_source_package import (
@@ -48,15 +49,25 @@ from core.security import get_current_user
 from core.tenant_db import get_system_db
 from core.utils import create_excel_workbook, excel_response
 from models.schemas import User
-from shared_kernel.gl_periods import GLPeriodError, ensure_calendar_year_periods
+from shared_kernel.gl_periods import (
+    GLPeriodError,
+    assert_gl_period_open,
+    ensure_calendar_year_periods,
+    normalize_posting_date,
+)
 from shared_kernel.gl_posting import (
     ACCOUNT_TYPES,
+    INTEGRITY_GENESIS,
     GLPostingError,
     compute_balance_sheet,
     compute_income_statement,
+    compute_journal_entry_hash,
     compute_trial_balance,
     normal_balance,
+    normalize_journal_lines,
     post_journal_entry,
+    sequence_void_hash,
+    verify_journal_entry_hash,
 )
 from shared_kernel.pos_idem import ensure_compound_unique
 
@@ -164,10 +175,14 @@ async def initialize_periods(payload: FiscalYearIn, current_user: User = Depends
         await ensure_calendar_year_periods(db, tenant_id, payload.fiscal_year, actor=_actor_id(current_user))
     except GLPeriodError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    rows = await db.gl_periods.find(
-        {"tenant_id": tenant_id, "fiscal_year": payload.fiscal_year},
-        {"_id": 0},
-    ).sort("period_no", 1).to_list(12)
+    rows = (
+        await db.gl_periods.find(
+            {"tenant_id": tenant_id, "fiscal_year": payload.fiscal_year},
+            {"_id": 0},
+        )
+        .sort("period_no", 1)
+        .to_list(12)
+    )
     return {"periods": rows, "created_or_existing": len(rows)}
 
 
@@ -195,6 +210,28 @@ async def close_period(
     )
     if earlier_open:
         raise HTTPException(status_code=409, detail=f"Önce {earlier_open.get('name')} dönemi kapatılmalıdır")
+    pending_voucher = await db.gl_vouchers.find_one(
+        {
+            "tenant_id": tenant_id,
+            "date": {"$gte": period["start_date"], "$lte": period["end_date"]},
+            "status": {"$in": ["draft", "submitted", "approved", "posting", "rejected"]},
+        },
+        {"_id": 0, "voucher_no": 1, "status": 1},
+    )
+    if pending_voucher:
+        raise HTTPException(
+            status_code=409,
+            detail=(f"{pending_voucher.get('voucher_no') or 'Bekleyen fiş'} kesinleşmeden mali dönem kapatılamaz"),
+        )
+    integrity = await journal_integrity_audit(
+        fiscal_year=int(period["fiscal_year"]),
+        current_user=current_user,
+    )
+    if not integrity.get("healthy"):
+        raise HTTPException(
+            status_code=409,
+            detail="Yevmiye sıra veya bütünlük denetimi başarısız olduğu için dönem kapatılamaz",
+        )
     trial = await compute_trial_balance(db, tenant_id, as_of=period["end_date"])
     if not trial.get("totals", {}).get("balanced", False):
         raise HTTPException(status_code=409, detail="Mizan dengeli olmadığı için dönem kapatılamaz")
@@ -319,10 +356,14 @@ async def close_fiscal_year(
         return {"closure": existing, "already_closed": True}
 
     await ensure_calendar_year_periods(db, tenant_id, payload.fiscal_year, actor=_actor_id(current_user))
-    periods = await db.gl_periods.find(
-        {"tenant_id": tenant_id, "fiscal_year": payload.fiscal_year},
-        {"_id": 0},
-    ).sort("period_no", 1).to_list(12)
+    periods = (
+        await db.gl_periods.find(
+            {"tenant_id": tenant_id, "fiscal_year": payload.fiscal_year},
+            {"_id": 0},
+        )
+        .sort("period_no", 1)
+        .to_list(12)
+    )
     periods_by_no = {int(period["period_no"]): period for period in periods}
     if len(periods_by_no) != 12:
         raise HTTPException(status_code=409, detail="Mali yılın 12 dönemi eksiksiz oluşturulmalıdır")
@@ -432,8 +473,7 @@ async def close_fiscal_year(
             "credit_balance_minor": row["credit_balance_minor"],
         }
         for row in closing_trial["rows"]
-        if row.get("account_type") in {"asset", "liability", "equity"}
-        and (row["debit_balance_minor"] or row["credit_balance_minor"])
+        if row.get("account_type") in {"asset", "liability", "equity"} and (row["debit_balance_minor"] or row["credit_balance_minor"])
     ]
     now = _now_iso()
     closure = {
@@ -705,6 +745,21 @@ class JournalReversalIn(BaseModel):
     idempotency_key: str = Field(..., min_length=8, max_length=120)
 
 
+class VoucherCreateIn(BaseModel):
+    date: str = Field(..., min_length=10, max_length=10, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    voucher_type: Literal["mahsup", "tahsil", "tediye", "acilis", "kapanis"] = "mahsup"
+    memo: str = Field(..., min_length=1, max_length=500)
+    lines: list[JournalLineIn] = Field(..., min_length=2, max_length=500)
+
+
+class VoucherUpdateIn(VoucherCreateIn):
+    version: int = Field(..., ge=1)
+
+
+class VoucherActionIn(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=500)
+
+
 class FXRevaluationIn(BaseModel):
     date: str = Field(..., min_length=10, max_length=10, pattern=r"^\d{4}-\d{2}-\d{2}$")
     currency: str = Field(..., min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
@@ -784,6 +839,525 @@ class NilveraGLSettingsIn(BaseModel):
     outgoing_accommodation_tax_accounts_by_rate: dict[str, str] = Field(default_factory=dict)
 
 
+_VOUCHER_STATUSES = {"draft", "submitted", "approved", "rejected", "posting", "posted", "cancelled"}
+
+
+def _normalized_voucher_payload(payload: VoucherCreateIn | VoucherUpdateIn) -> dict:
+    try:
+        lines, total_debit, total_credit = normalize_journal_lines([line.model_dump() for line in payload.lines])
+    except GLPostingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "date": normalize_posting_date(payload.date),
+        "voucher_type": payload.voucher_type,
+        "memo": payload.memo.strip(),
+        "lines": lines,
+        "total_debit": total_debit,
+        "total_credit": total_credit,
+    }
+
+
+async def _allocate_voucher_number(tenant_id: str, fiscal_year: int, now: str) -> tuple[int, str]:
+    """Allocate a durable, monotonic document number that is never reused.
+
+    Cancelled vouchers remain in the register, so an allocated number is
+    always explainable instead of disappearing from the audit trail.
+    """
+    counter_id = f"gl-voucher-counter:{tenant_id}:{fiscal_year}"
+    counter = await db.gl_counters.find_one_and_update(
+        {"_id": counter_id, "tenant_id": tenant_id},
+        {
+            "$inc": {"value": 1},
+            "$setOnInsert": {
+                "tenant_id": tenant_id,
+                "fiscal_year": fiscal_year,
+                "counter_type": "voucher",
+                "created_at": now,
+            },
+            "$set": {"updated_at": now},
+        },
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    sequence = int(counter["value"])
+    return sequence, f"MF-{fiscal_year}-{sequence:08d}"
+
+
+async def _validate_voucher_context(tenant_id: str, voucher: dict, actor: str) -> None:
+    try:
+        await assert_gl_period_open(db, tenant_id, voucher["date"], actor=actor)
+    except GLPeriodError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    codes = sorted({line["account_code"] for line in voucher.get("lines", [])})
+    accounts = await db.gl_accounts.find(
+        {"tenant_id": tenant_id, "code": {"$in": codes}},
+        {"_id": 0, "code": 1, "active": 1},
+    ).to_list(1000)
+    active_codes = {account["code"] for account in accounts if account.get("active", True)}
+    missing = sorted(set(codes) - active_codes)
+    if missing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Hesap planında olmayan veya pasif hesaplar: {', '.join(missing)}",
+        )
+
+
+async def _audit_voucher_transition(
+    *,
+    tenant_id: str,
+    actor: str,
+    voucher: dict,
+    action: str,
+    before_status: str | None,
+    after_status: str,
+    reason: str | None = None,
+) -> None:
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=actor,
+        action=action,
+        entity_type="gl_voucher",
+        entity_id=voucher["id"],
+        details=f"{voucher.get('voucher_no')} fişi: {before_status or '-'} → {after_status}",
+        before_value={"status": before_status},
+        after_value={"status": after_status, "reason": reason},
+        db=db,
+    )
+
+
+@router.get("/vouchers")
+async def list_vouchers(
+    status: str | None = Query(None),
+    start: str | None = Query(None),
+    end: str | None = Query(None),
+    limit: int = Query(200, ge=1, le=1000),
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _READ_ROLES)
+    if status and status not in _VOUCHER_STATUSES:
+        raise HTTPException(status_code=400, detail="Geçersiz fiş durumu")
+    query: dict = {"tenant_id": _tenant_of(current_user)}
+    if status:
+        query["status"] = status
+    if start or end:
+        query["date"] = {
+            **({"$gte": normalize_posting_date(start)} if start else {}),
+            **({"$lte": normalize_posting_date(end)} if end else {}),
+        }
+    rows = await db.gl_vouchers.find(query, {"_id": 0}).sort("updated_at", -1).to_list(limit)
+    return {"vouchers": rows}
+
+
+@router.get("/vouchers/{voucher_id}")
+async def get_voucher(voucher_id: str, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _READ_ROLES)
+    voucher = await db.gl_vouchers.find_one(
+        {"tenant_id": _tenant_of(current_user), "id": voucher_id},
+        {"_id": 0},
+    )
+    if not voucher:
+        raise HTTPException(status_code=404, detail="Muhasebe fişi bulunamadı")
+    return {"voucher": voucher}
+
+
+@router.post("/vouchers")
+async def create_voucher(payload: VoucherCreateIn, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    actor = _actor_id(current_user)
+    normalized = _normalized_voucher_payload(payload)
+    now = _now_iso()
+    voucher_id = str(uuid.uuid4())
+    fiscal_year = int(normalized["date"][:4])
+    voucher_sequence, voucher_no = await _allocate_voucher_number(tenant_id, fiscal_year, now)
+    voucher = {
+        "id": voucher_id,
+        "tenant_id": tenant_id,
+        "voucher_no": voucher_no,
+        "voucher_sequence": voucher_sequence,
+        "fiscal_year": fiscal_year,
+        **normalized,
+        "status": "draft",
+        "version": 1,
+        "created_at": now,
+        "created_by": actor,
+        "updated_at": now,
+        "updated_by": actor,
+        "history": [{"at": now, "by": actor, "action": "created", "status": "draft"}],
+    }
+    await db.gl_vouchers.insert_one(dict(voucher))
+    voucher.pop("_id", None)
+    await _audit_voucher_transition(
+        tenant_id=tenant_id,
+        actor=actor,
+        voucher=voucher,
+        action="gl_voucher_created",
+        before_status=None,
+        after_status="draft",
+    )
+    return {"voucher": voucher}
+
+
+@router.put("/vouchers/{voucher_id}")
+async def update_voucher(
+    voucher_id: str,
+    payload: VoucherUpdateIn,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    actor = _actor_id(current_user)
+    before = await db.gl_vouchers.find_one(
+        {"tenant_id": tenant_id, "id": voucher_id},
+        {"_id": 0},
+    )
+    if not before:
+        raise HTTPException(status_code=404, detail="Muhasebe fişi bulunamadı")
+    if before.get("status") not in {"draft", "rejected"}:
+        raise HTTPException(status_code=409, detail="Yalnız taslak veya reddedilmiş fiş düzenlenebilir")
+    if int(before.get("version") or 1) != payload.version:
+        raise HTTPException(status_code=409, detail="Fiş başka bir kullanıcı tarafından güncellendi")
+    now = _now_iso()
+    normalized = _normalized_voucher_payload(payload)
+    revision = {
+        "version": before.get("version", 1),
+        "at": now,
+        "by": actor,
+        "date": before.get("date"),
+        "voucher_type": before.get("voucher_type"),
+        "memo": before.get("memo"),
+        "lines": before.get("lines", []),
+        "status": before.get("status"),
+    }
+    new_version = payload.version + 1
+    result = await db.gl_vouchers.update_one(
+        {
+            "tenant_id": tenant_id,
+            "id": voucher_id,
+            "status": {"$in": ["draft", "rejected"]},
+            "version": payload.version,
+        },
+        {
+            "$set": {
+                **normalized,
+                "status": "draft",
+                "version": new_version,
+                "updated_at": now,
+                "updated_by": actor,
+                "rejection_reason": None,
+                "rejected_at": None,
+                "rejected_by": None,
+            },
+            "$push": {
+                "revisions": revision,
+                "history": {"at": now, "by": actor, "action": "updated", "status": "draft"},
+            },
+        },
+    )
+    if result.modified_count != 1:
+        raise HTTPException(status_code=409, detail="Fiş eşzamanlı olarak değişti")
+    voucher = await db.gl_vouchers.find_one({"tenant_id": tenant_id, "id": voucher_id}, {"_id": 0})
+    await _audit_voucher_transition(
+        tenant_id=tenant_id,
+        actor=actor,
+        voucher=voucher,
+        action="gl_voucher_updated",
+        before_status=before.get("status"),
+        after_status="draft",
+    )
+    return {"voucher": voucher}
+
+
+@router.post("/vouchers/{voucher_id}/submit")
+async def submit_voucher(
+    voucher_id: str,
+    payload: VoucherActionIn,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    actor = _actor_id(current_user)
+    voucher = await db.gl_vouchers.find_one(
+        {"tenant_id": tenant_id, "id": voucher_id, "status": "draft"},
+        {"_id": 0},
+    )
+    if not voucher:
+        raise HTTPException(status_code=409, detail="Yalnız taslak fiş incelemeye gönderilebilir")
+    await _validate_voucher_context(tenant_id, voucher, actor)
+    now = _now_iso()
+    result = await db.gl_vouchers.update_one(
+        {"tenant_id": tenant_id, "id": voucher_id, "status": "draft", "version": voucher.get("version", 1)},
+        {
+            "$set": {
+                "status": "submitted",
+                "submitted_at": now,
+                "submitted_by": actor,
+                "submission_note": payload.reason.strip(),
+                "updated_at": now,
+                "updated_by": actor,
+                "version": int(voucher.get("version") or 1) + 1,
+            },
+            "$push": {"history": {"at": now, "by": actor, "action": "submitted", "status": "submitted", "reason": payload.reason.strip()}},
+        },
+    )
+    if result.modified_count != 1:
+        raise HTTPException(status_code=409, detail="Fiş eşzamanlı olarak değişti")
+    updated = await db.gl_vouchers.find_one({"tenant_id": tenant_id, "id": voucher_id}, {"_id": 0})
+    await _audit_voucher_transition(
+        tenant_id=tenant_id,
+        actor=actor,
+        voucher=updated,
+        action="gl_voucher_submitted",
+        before_status="draft",
+        after_status="submitted",
+        reason=payload.reason.strip(),
+    )
+    return {"voucher": updated}
+
+
+@router.post("/vouchers/{voucher_id}/approve")
+async def approve_voucher(
+    voucher_id: str,
+    payload: VoucherActionIn,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    actor = _actor_id(current_user)
+    voucher = await db.gl_vouchers.find_one(
+        {"tenant_id": tenant_id, "id": voucher_id, "status": "submitted"},
+        {"_id": 0},
+    )
+    if not voucher:
+        raise HTTPException(status_code=409, detail="Yalnız incelemedeki fiş onaylanabilir")
+    if voucher.get("created_by") == actor:
+        raise HTTPException(status_code=409, detail="Fişi hazırlayan kullanıcı aynı fişi onaylayamaz")
+    await _validate_voucher_context(tenant_id, voucher, actor)
+    now = _now_iso()
+    result = await db.gl_vouchers.update_one(
+        {"tenant_id": tenant_id, "id": voucher_id, "status": "submitted", "version": voucher.get("version", 1)},
+        {
+            "$set": {
+                "status": "approved",
+                "approved_at": now,
+                "approved_by": actor,
+                "approval_reason": payload.reason.strip(),
+                "updated_at": now,
+                "updated_by": actor,
+                "version": int(voucher.get("version") or 1) + 1,
+            },
+            "$push": {"history": {"at": now, "by": actor, "action": "approved", "status": "approved", "reason": payload.reason.strip()}},
+        },
+    )
+    if result.modified_count != 1:
+        raise HTTPException(status_code=409, detail="Fiş eşzamanlı olarak değişti")
+    updated = await db.gl_vouchers.find_one({"tenant_id": tenant_id, "id": voucher_id}, {"_id": 0})
+    await _audit_voucher_transition(
+        tenant_id=tenant_id,
+        actor=actor,
+        voucher=updated,
+        action="gl_voucher_approved",
+        before_status="submitted",
+        after_status="approved",
+        reason=payload.reason.strip(),
+    )
+    return {"voucher": updated}
+
+
+@router.post("/vouchers/{voucher_id}/reject")
+async def reject_voucher(
+    voucher_id: str,
+    payload: VoucherActionIn,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    actor = _actor_id(current_user)
+    voucher = await db.gl_vouchers.find_one(
+        {"tenant_id": tenant_id, "id": voucher_id, "status": "submitted"},
+        {"_id": 0},
+    )
+    if not voucher:
+        raise HTTPException(status_code=409, detail="Yalnız incelemedeki fiş reddedilebilir")
+    now = _now_iso()
+    result = await db.gl_vouchers.update_one(
+        {"tenant_id": tenant_id, "id": voucher_id, "status": "submitted", "version": voucher.get("version", 1)},
+        {
+            "$set": {
+                "status": "rejected",
+                "rejected_at": now,
+                "rejected_by": actor,
+                "rejection_reason": payload.reason.strip(),
+                "updated_at": now,
+                "updated_by": actor,
+                "version": int(voucher.get("version") or 1) + 1,
+            },
+            "$push": {"history": {"at": now, "by": actor, "action": "rejected", "status": "rejected", "reason": payload.reason.strip()}},
+        },
+    )
+    if result.modified_count != 1:
+        raise HTTPException(status_code=409, detail="Fiş eşzamanlı olarak değişti")
+    updated = await db.gl_vouchers.find_one({"tenant_id": tenant_id, "id": voucher_id}, {"_id": 0})
+    await _audit_voucher_transition(
+        tenant_id=tenant_id,
+        actor=actor,
+        voucher=updated,
+        action="gl_voucher_rejected",
+        before_status="submitted",
+        after_status="rejected",
+        reason=payload.reason.strip(),
+    )
+    return {"voucher": updated}
+
+
+@router.post("/vouchers/{voucher_id}/cancel")
+async def cancel_voucher(
+    voucher_id: str,
+    payload: VoucherActionIn,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    actor = _actor_id(current_user)
+    voucher = await db.gl_vouchers.find_one(
+        {"tenant_id": tenant_id, "id": voucher_id, "status": {"$in": ["draft", "rejected"]}},
+        {"_id": 0},
+    )
+    if not voucher:
+        raise HTTPException(status_code=409, detail="Bu aşamadaki fiş iptal edilemez")
+    now = _now_iso()
+    result = await db.gl_vouchers.update_one(
+        {"tenant_id": tenant_id, "id": voucher_id, "status": voucher["status"], "version": voucher.get("version", 1)},
+        {
+            "$set": {
+                "status": "cancelled",
+                "cancelled_at": now,
+                "cancelled_by": actor,
+                "cancellation_reason": payload.reason.strip(),
+                "updated_at": now,
+                "updated_by": actor,
+                "version": int(voucher.get("version") or 1) + 1,
+            },
+            "$push": {"history": {"at": now, "by": actor, "action": "cancelled", "status": "cancelled", "reason": payload.reason.strip()}},
+        },
+    )
+    if result.modified_count != 1:
+        raise HTTPException(status_code=409, detail="Fiş eşzamanlı olarak değişti")
+    updated = await db.gl_vouchers.find_one({"tenant_id": tenant_id, "id": voucher_id}, {"_id": 0})
+    await _audit_voucher_transition(
+        tenant_id=tenant_id,
+        actor=actor,
+        voucher=updated,
+        action="gl_voucher_cancelled",
+        before_status=voucher["status"],
+        after_status="cancelled",
+        reason=payload.reason.strip(),
+    )
+    return {"voucher": updated}
+
+
+@router.post("/vouchers/{voucher_id}/post")
+async def post_approved_voucher(voucher_id: str, current_user: User = Depends(get_current_user)):
+    """Idempotently convert an approved voucher into an immutable journal entry."""
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    actor = _actor_id(current_user)
+    voucher = await db.gl_vouchers.find_one(
+        {"tenant_id": tenant_id, "id": voucher_id},
+        {"_id": 0},
+    )
+    if not voucher:
+        raise HTTPException(status_code=404, detail="Muhasebe fişi bulunamadı")
+    if voucher.get("status") == "posted" and voucher.get("journal_entry_id"):
+        entry = await db.gl_journal_entries.find_one(
+            {"tenant_id": tenant_id, "id": voucher["journal_entry_id"]},
+            {"_id": 0},
+        )
+        return {"voucher": voucher, "entry": entry, "already_posted": True}
+    if voucher.get("status") not in {"approved", "posting"}:
+        raise HTTPException(status_code=409, detail="Yalnız onaylanmış fiş yevmiyeye işlenebilir")
+    await _validate_voucher_context(tenant_id, voucher, actor)
+    now = _now_iso()
+    claim_id = voucher.get("posting_claim_id") or str(uuid.uuid4())
+    if voucher.get("status") == "approved":
+        claim = await db.gl_vouchers.update_one(
+            {"tenant_id": tenant_id, "id": voucher_id, "status": "approved", "version": voucher.get("version", 1)},
+            {
+                "$set": {
+                    "status": "posting",
+                    "posting_claim_id": claim_id,
+                    "posting_started_at": now,
+                    "updated_at": now,
+                    "updated_by": actor,
+                    "version": int(voucher.get("version") or 1) + 1,
+                },
+                "$push": {"history": {"at": now, "by": actor, "action": "posting", "status": "posting"}},
+            },
+        )
+        if claim.modified_count != 1:
+            raise HTTPException(status_code=409, detail="Fiş başka bir işlem tarafından alındı")
+        voucher = await db.gl_vouchers.find_one({"tenant_id": tenant_id, "id": voucher_id}, {"_id": 0})
+    try:
+        entry = await post_journal_entry(
+            db,
+            tenant_id,
+            date=voucher["date"],
+            memo=voucher["memo"],
+            lines=voucher["lines"],
+            source="manual_voucher",
+            source_ref=voucher["id"],
+            actor=actor,
+            idempotency_key=f"gl-voucher:{voucher['id']}",
+        )
+    except GLPostingError as exc:
+        await db.gl_vouchers.update_one(
+            {"tenant_id": tenant_id, "id": voucher_id, "status": "posting", "posting_claim_id": claim_id},
+            {
+                "$set": {
+                    "status": "approved",
+                    "last_post_error": str(exc)[:500],
+                    "updated_at": _now_iso(),
+                    "updated_by": actor,
+                },
+                "$unset": {"posting_claim_id": ""},
+            },
+        )
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    completed_at = _now_iso()
+    result = await db.gl_vouchers.update_one(
+        {"tenant_id": tenant_id, "id": voucher_id, "status": "posting"},
+        {
+            "$set": {
+                "status": "posted",
+                "posted_at": completed_at,
+                "posted_by": actor,
+                "journal_entry_id": entry["id"],
+                "journal_entry_no": entry["entry_no"],
+                "updated_at": completed_at,
+                "updated_by": actor,
+            },
+            "$unset": {"posting_claim_id": "", "last_post_error": ""},
+            "$push": {"history": {"at": completed_at, "by": actor, "action": "posted", "status": "posted", "entry_no": entry["entry_no"]}},
+        },
+    )
+    if result.modified_count != 1:
+        raise HTTPException(
+            status_code=409,
+            detail="Yevmiye oluşturuldu ancak fiş durumu kesinleştirilemedi; güvenli tekrar deneyin",
+        )
+    updated = await db.gl_vouchers.find_one({"tenant_id": tenant_id, "id": voucher_id}, {"_id": 0})
+    await _audit_voucher_transition(
+        tenant_id=tenant_id,
+        actor=actor,
+        voucher=updated,
+        action="gl_voucher_posted",
+        before_status="approved",
+        after_status="posted",
+        reason=entry["entry_no"],
+    )
+    return {"voucher": updated, "entry": entry, "already_posted": False}
+
+
 @router.get("/journal")
 async def list_journal(
     start: str | None = Query(None),
@@ -826,10 +1400,12 @@ async def sequence_audit(
     query: dict = {"tenant_id": tenant_id}
     if fiscal_year is not None:
         query["fiscal_year"] = fiscal_year
-    rows = await db.gl_sequence_reservations.find(query, {"_id": 0}).sort(
-        [("fiscal_year", -1), ("sequence", 1)]
-    ).to_list(100000)
-    counters = await db.gl_counters.find(query, {"_id": 0}).to_list(1000)
+    rows = await db.gl_sequence_reservations.find(query, {"_id": 0}).sort([("fiscal_year", -1), ("sequence", 1)]).to_list(100000)
+    counters = [
+        counter
+        for counter in await db.gl_counters.find(query, {"_id": 0}).to_list(1000)
+        if counter.get("counter_type") != "voucher"
+    ]
     counts = {"posted": 0, "void": 0, "reserved": 0}
     sequences_by_year: dict[int, set[int]] = {}
     for row in rows:
@@ -852,6 +1428,104 @@ async def sequence_audit(
         "totals": {"count": len(rows), **counts, "missing": missing_count},
         "missing_sequences": missing_by_year,
         "healthy": counts.get("reserved", 0) == 0 and missing_count == 0,
+    }
+
+
+@router.get("/integrity-audit")
+async def journal_integrity_audit(
+    fiscal_year: int | None = Query(None, ge=2000, le=2100),
+    current_user: User = Depends(get_current_user),
+):
+    """Verify journal seals, predecessor links and allocated ordinals.
+
+    Older records created before the integrity-chain rollout are reported as
+    ``legacy_unsealed``. They are never silently labelled immutable.
+    """
+    _require_role(current_user, _READ_ROLES)
+    tenant_id = _tenant_of(current_user)
+    query: dict = {"tenant_id": tenant_id}
+    if fiscal_year is not None:
+        query["fiscal_year"] = fiscal_year
+    entries = await db.gl_journal_entries.find(query, {"_id": 0}).to_list(100000)
+    reservations = await db.gl_sequence_reservations.find(query, {"_id": 0}).to_list(100000)
+    counters = [
+        counter
+        for counter in await db.gl_counters.find(query, {"_id": 0}).to_list(1000)
+        if counter.get("counter_type") != "voucher"
+    ]
+
+    entries_by_key = {(int(entry.get("fiscal_year") or str(entry.get("date") or "0000")[:4]), int(entry.get("posting_sequence") or 0)): entry for entry in entries if entry.get("posting_sequence")}
+    reservations_by_key = {(int(row.get("fiscal_year") or 0), int(row.get("sequence") or 0)): row for row in reservations if row.get("fiscal_year") and row.get("sequence")}
+    counter_by_year = {int(row["fiscal_year"]): int(row.get("value") or 0) for row in counters}
+    years = sorted(set(counter_by_year) | {key[0] for key in entries_by_key} | {key[0] for key in reservations_by_key})
+    issues: list[dict] = []
+    legacy_unsealed: list[str] = []
+    sealed_count = 0
+    posted_count = 0
+    void_count = 0
+
+    for year in years:
+        last_hash = INTEGRITY_GENESIS
+        max_sequence = max([counter_by_year.get(year, 0)] + [seq for item_year, seq in entries_by_key if item_year == year] + [seq for item_year, seq in reservations_by_key if item_year == year])
+        for sequence in range(1, max_sequence + 1):
+            key = (year, sequence)
+            reservation = reservations_by_key.get(key)
+            if not reservation:
+                issues.append({"code": "sequence_reservation_missing", "fiscal_year": year, "sequence": sequence})
+                continue
+            status = reservation.get("status")
+            if status == "void":
+                void_count += 1
+                last_hash = sequence_void_hash(reservation)
+                continue
+            if status != "posted":
+                issues.append({"code": "sequence_not_final", "fiscal_year": year, "sequence": sequence, "status": status or "reserved"})
+                continue
+            posted_count += 1
+            entry = entries_by_key.get(key)
+            if not entry:
+                issues.append({"code": "posted_entry_missing", "fiscal_year": year, "sequence": sequence})
+                continue
+            if not entry.get("entry_hash"):
+                legacy_unsealed.append(str(entry.get("entry_no") or entry.get("id") or key))
+                last_hash = compute_journal_entry_hash(entry)
+                continue
+            sealed_count += 1
+            if entry.get("previous_entry_hash") != last_hash:
+                issues.append({"code": "predecessor_hash_mismatch", "entry_no": entry.get("entry_no"), "fiscal_year": year, "sequence": sequence})
+            if not verify_journal_entry_hash(entry):
+                issues.append({"code": "entry_hash_mismatch", "entry_no": entry.get("entry_no"), "fiscal_year": year, "sequence": sequence})
+            last_hash = str(entry.get("entry_hash"))
+
+    duplicate_entry_numbers: list[str] = []
+    seen_numbers: set[str] = set()
+    for entry in entries:
+        entry_no = str(entry.get("entry_no") or "")
+        if entry_no and entry_no in seen_numbers:
+            duplicate_entry_numbers.append(entry_no)
+        seen_numbers.add(entry_no)
+    if duplicate_entry_numbers:
+        issues.append({"code": "duplicate_entry_number", "entry_numbers": sorted(set(duplicate_entry_numbers))[:100]})
+
+    return {
+        "fiscal_year": fiscal_year,
+        "healthy": not issues,
+        "fully_sealed": not issues and not legacy_unsealed,
+        "source_ledger_ready": not issues and not legacy_unsealed,
+        # A valid internal chain is necessary but never sufficient for an
+        # official GIB e-Defter/berat.  Signing, approved software and GIB
+        # acceptance are deliberately represented separately.
+        "official_ledger_ready": False,
+        "official_edefter": False,
+        "counts": {
+            "posted": posted_count,
+            "sealed": sealed_count,
+            "legacy_unsealed": len(legacy_unsealed),
+            "void": void_count,
+            "issues": len(issues),
+        },
+        "legacy_unsealed_entries": legacy_unsealed[:100],
+        "issues": issues[:500],
     }
 
 
@@ -887,9 +1561,7 @@ async def revalue_foreign_currency(
             if line.get("currency") != currency:
                 if entry.get("revaluation_currency") == currency:
                     position = positions.setdefault(code, {"foreign_minor": 0, "carrying_minor": 0})
-                    position["carrying_minor"] += int(line.get("debit_minor") or 0) - int(
-                        line.get("credit_minor") or 0
-                    )
+                    position["carrying_minor"] += int(line.get("debit_minor") or 0) - int(line.get("credit_minor") or 0)
                 continue
             foreign_minor = int(line.get("foreign_amount_minor") or 0)
             if not foreign_minor:
@@ -905,9 +1577,7 @@ async def revalue_foreign_currency(
     total_gain_minor = total_loss_minor = 0
     for code in sorted(positions):
         position = positions[code]
-        target_minor = int(
-            (Decimal(position["foreign_minor"]) * rate).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-        )
+        target_minor = int((Decimal(position["foreign_minor"]) * rate).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
         difference_minor = target_minor - position["carrying_minor"]
         result_positions.append(
             {
@@ -989,11 +1659,7 @@ async def update_operational_gl_mapping(
 ):
     _require_role(current_user, _GL_ROLES)
     tenant_id = _tenant_of(current_user)
-    account_codes = {
-        value.strip()
-        for key, value in payload.model_dump().items()
-        if key.endswith("_account_code")
-    }
+    account_codes = {value.strip() for key, value in payload.model_dump().items() if key.endswith("_account_code")}
     accounts = await db.gl_accounts.find(
         {"tenant_id": tenant_id, "active": True, "code": {"$in": sorted(account_codes)}},
         {"_id": 0, "code": 1},
@@ -1026,12 +1692,8 @@ async def operational_gl_status(current_user: User = Depends(get_current_user)):
     _require_role(current_user, _READ_ROLES)
     tenant_id = _tenant_of(current_user)
     mapping = await get_operational_mapping(db, tenant_id)
-    failed_night_audits = await db.night_audit_runs.count_documents(
-        {"tenant_id": tenant_id, "gl_bridge_status": "failed"}
-    )
-    failed_pos = await db.pos_transactions.count_documents(
-        {"tenant_id": tenant_id, "gl_bridge_status": "failed"}
-    )
+    failed_night_audits = await db.night_audit_runs.count_documents({"tenant_id": tenant_id, "gl_bridge_status": "failed"})
+    failed_pos = await db.pos_transactions.count_documents({"tenant_id": tenant_id, "gl_bridge_status": "failed"})
     latest = await db.night_audit_runs.find_one(
         {"tenant_id": tenant_id, "status": "completed"},
         {"_id": 0, "id": 1, "business_date": 1, "gl_bridge_status": 1, "gl_entry_no": 1},
@@ -1043,6 +1705,367 @@ async def operational_gl_status(current_user: User = Depends(get_current_user)):
         "failed": {"night_audit": failed_night_audits, "pos": failed_pos},
         "latest_night_audit": latest,
         "healthy": bool(mapping["enabled"]) and failed_night_audits == 0 and failed_pos == 0,
+    }
+
+
+def _reconciliation_minor(value: object) -> int:
+    return int(
+        (
+            Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            * 100
+        ).to_integral_exact()
+    )
+
+
+def _reconciliation_amount(value: int) -> float:
+    return float(Decimal(value) / 100)
+
+
+def _settlement_account(mapping: dict, method: object) -> str:
+    normalized = str(method or "").strip().lower()
+    if normalized in {"cash", "nakit"}:
+        return mapping["cash_account_code"]
+    if normalized in {"card", "credit_card", "debit_card", "kredi_karti", "pos"}:
+        return mapping["card_account_code"]
+    return mapping["bank_account_code"]
+
+
+@router.get("/integrations/operational/reconciliation")
+async def operational_reconciliation(
+    business_date: str | None = Query(None, min_length=10, max_length=10),
+    current_user: User = Depends(get_current_user),
+):
+    """Cross-check PMS/POS/bank/cashier sources against durable GL links.
+
+    This endpoint is deliberately read-only: it never imports bank data,
+    changes operational records, or posts a journal. It exposes missing and
+    mismatched source-to-ledger links before period close.
+    """
+    _require_role(current_user, _READ_ROLES)
+    tenant_id = _tenant_of(current_user)
+    selected = business_date or datetime.now(UTC).date().isoformat()
+    try:
+        parsed_date = date.fromisoformat(selected)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="İş günü YYYY-AA-GG biçiminde olmalıdır") from exc
+    if parsed_date.isoformat() != selected:
+        raise HTTPException(status_code=400, detail="İş günü YYYY-AA-GG biçiminde olmalıdır")
+    next_day = (parsed_date + timedelta(days=1)).isoformat()
+    mapping = await get_operational_mapping(db, tenant_id)
+
+    payment_query = {
+        "tenant_id": tenant_id,
+        "voided": {"$ne": True},
+        "$or": [
+            {"payment_date": {"$gte": selected, "$lt": next_day}},
+            {"processed_at": {"$gte": selected, "$lt": next_day}},
+            {"date": {"$gte": selected, "$lt": next_day}},
+        ],
+    }
+    pos_query = {
+        "tenant_id": tenant_id,
+        "status": {"$in": ["completed", "closed", "paid"]},
+        "$or": [
+            {"transaction_date": selected},
+            {"closed_at": {"$gte": selected, "$lt": next_day}},
+            {"created_at": {"$gte": selected, "$lt": next_day}},
+        ],
+    }
+    (
+        payments,
+        pos_transactions,
+        source_folio_charges,
+        bank_transactions,
+        night_audits,
+        cashier_shifts,
+        pos_closures,
+        journal_entries,
+    ) = await asyncio.gather(
+        db.payments.find(payment_query, {"_id": 0}).to_list(100000),
+        db.pos_transactions.find(pos_query, {"_id": 0}).to_list(100000),
+        db.folio_charges.find(
+            {
+                "tenant_id": tenant_id,
+                "voided": {"$ne": True},
+                "source_pos_order_id": {"$exists": True},
+                "date": {"$gte": selected, "$lt": next_day},
+            },
+            {"_id": 0, "source_pos_order_id": 1},
+        ).to_list(100000),
+        db.bank_transactions.find(
+            {"tenant_id": tenant_id, "date": {"$gte": selected, "$lt": next_day}},
+            {"_id": 0},
+        ).to_list(100000),
+        db.night_audit_runs.find(
+            {"tenant_id": tenant_id, "business_date": selected},
+            {"_id": 0},
+        ).to_list(1000),
+        db.cashier_shifts.find(
+            {
+                "tenant_id": tenant_id,
+                "$or": [
+                    {"business_date": selected},
+                    {"closed_at": {"$gte": selected, "$lt": next_day}},
+                    {"opened_at": {"$gte": selected, "$lt": next_day}},
+                ],
+            },
+            {"_id": 0},
+        ).to_list(10000),
+        db.pos_closures.find(
+            {"tenant_id": tenant_id, "closure_date": selected},
+            {"_id": 0},
+        ).to_list(1000),
+        db.gl_journal_entries.find(
+            {
+                "tenant_id": tenant_id,
+                "date": selected,
+                "status": "posted",
+                "source": {"$in": ["night_audit", "pos_direct", "bank_reconciliation"]},
+            },
+            {"_id": 0},
+        ).to_list(100000),
+    )
+
+    entries_by_id = {str(entry.get("id")): entry for entry in journal_entries if entry.get("id")}
+    entries_by_source = {
+        (str(entry.get("source")), str(entry.get("source_ref"))): entry
+        for entry in journal_entries
+        if entry.get("source_ref")
+    }
+    settlement_accounts = {
+        mapping["cash_account_code"],
+        mapping["card_account_code"],
+        mapping["bank_account_code"],
+    }
+
+    blockers: list[dict] = []
+    warnings: list[dict] = []
+    if not mapping.get("enabled"):
+        blockers.append(
+            {
+                "code": "operational_bridge_disabled",
+                "message": "PMS/POS muhasebe köprüsü kapalı; operasyon kayıtları yevmiyeye otomatik bağlanmıyor.",
+            }
+        )
+
+    payment_by_account: dict[str, int] = {}
+    for payment in payments:
+        account = _settlement_account(mapping, payment.get("method") or payment.get("payment_method"))
+        payment_by_account[account] = payment_by_account.get(account, 0) + _reconciliation_minor(payment.get("amount"))
+    payment_total_minor = sum(payment_by_account.values())
+    posted_night_runs = [run for run in night_audits if run.get("gl_bridge_status") == "posted"]
+    linked_night_entries: list[dict] = []
+    for run in posted_night_runs:
+        entry = entries_by_id.get(str(run.get("gl_journal_entry_id"))) or entries_by_source.get(
+            ("night_audit", str(run.get("id")))
+        )
+        if not entry:
+            blockers.append(
+                {
+                    "code": "night_audit_journal_missing",
+                    "message": f"{run.get('id') or selected} gün sonu kaydının yevmiye bağlantısı bulunamadı.",
+                }
+            )
+            continue
+        linked_night_entries.append(entry)
+
+    if payment_total_minor and not posted_night_runs:
+        blockers.append(
+            {
+                "code": "folio_payments_unposted",
+                "message": "Günün folyo tahsilatları var ancak muhasebeleştirilmiş gün sonu kaydı yok.",
+            }
+        )
+    night_gl_by_account: dict[str, int] = {}
+    for entry in linked_night_entries:
+        for line in entry.get("lines", []):
+            account = str(line.get("account_code") or "")
+            if account in settlement_accounts:
+                night_gl_by_account[account] = night_gl_by_account.get(account, 0) + int(
+                    line.get("debit_minor") or 0
+                )
+    payment_variance_minor = payment_total_minor - sum(night_gl_by_account.values())
+    if payment_variance_minor:
+        blockers.append(
+            {
+                "code": "folio_gl_variance",
+                "message": f"Folyo tahsilatları ile yevmiye arasında {_reconciliation_amount(payment_variance_minor):.2f} fark var.",
+            }
+        )
+
+    folio_pos_orders = {
+        str(row.get("source_pos_order_id"))
+        for row in source_folio_charges
+        if row.get("source_pos_order_id")
+    }
+    direct_pos = [
+        row
+        for row in pos_transactions
+        if str(row.get("order_id") or "") not in folio_pos_orders
+        and row.get("gl_bridge_status") != "folio_path"
+    ]
+    pos_total_minor = 0
+    pos_gl_total_minor = 0
+    for transaction in direct_pos:
+        amount_minor = _reconciliation_minor(
+            transaction.get("total_amount", transaction.get("amount"))
+        )
+        pos_total_minor += amount_minor
+        entry = entries_by_id.get(str(transaction.get("gl_journal_entry_id"))) or entries_by_source.get(
+            ("pos_direct", str(transaction.get("order_id")))
+        )
+        if transaction.get("gl_bridge_status") != "posted" or not entry:
+            blockers.append(
+                {
+                    "code": "pos_journal_missing",
+                    "record_id": transaction.get("id"),
+                    "message": f"POS işlemi {transaction.get('order_number') or transaction.get('order_id') or transaction.get('id')} yevmiyeye bağlı değil.",
+                }
+            )
+            continue
+        account = _settlement_account(mapping, transaction.get("payment_method"))
+        linked_minor = sum(
+            int(line.get("debit_minor") or 0)
+            for line in entry.get("lines", [])
+            if str(line.get("account_code") or "") == account
+        )
+        pos_gl_total_minor += linked_minor
+        if linked_minor != amount_minor:
+            blockers.append(
+                {
+                    "code": "pos_gl_variance",
+                    "record_id": transaction.get("id"),
+                    "message": f"POS işlemi {transaction.get('order_number') or transaction.get('order_id')} ile yevmiye tutarı farklı.",
+                }
+            )
+    if direct_pos and not pos_closures:
+        warnings.append(
+            {
+                "code": "pos_closure_missing",
+                "message": "Günde kesinleşmiş POS işlemleri var ancak POS günlük kapanışı oluşturulmamış.",
+            }
+        )
+
+    matched_bank = [row for row in bank_transactions if row.get("status") == "matched"]
+    unmatched_bank = [row for row in bank_transactions if row.get("status") != "matched"]
+    bank_total_minor = 0
+    bank_gl_total_minor = 0
+    for transaction in matched_bank:
+        amount_minor = _reconciliation_minor(transaction.get("amount"))
+        bank_total_minor += amount_minor
+        entry = entries_by_id.get(str(transaction.get("journal_entry_id"))) or entries_by_source.get(
+            ("bank_reconciliation", str(transaction.get("id")))
+        )
+        if not entry:
+            blockers.append(
+                {
+                    "code": "bank_journal_missing",
+                    "record_id": transaction.get("id"),
+                    "message": f"Eşleşmiş banka işlemi {transaction.get('id')} için yevmiye bağlantısı yok.",
+                }
+            )
+            continue
+        linked_minor = sum(
+            int(line.get("debit_minor") or 0)
+            for line in entry.get("lines", [])
+            if str(line.get("account_code") or "") == mapping["bank_account_code"]
+        )
+        bank_gl_total_minor += linked_minor
+        if linked_minor != amount_minor:
+            blockers.append(
+                {
+                    "code": "bank_gl_variance",
+                    "record_id": transaction.get("id"),
+                    "message": f"Banka işlemi {transaction.get('id')} ile yevmiye tutarı farklı.",
+                }
+            )
+    if unmatched_bank:
+        warnings.append(
+            {
+                "code": "bank_transactions_unmatched",
+                "message": f"{len(unmatched_bank)} banka hareketi henüz fatura/yevmiye ile eşleştirilmemiş.",
+            }
+        )
+
+    cashier_difference_minor = sum(
+        _reconciliation_minor(shift.get("difference"))
+        for shift in cashier_shifts
+        if shift.get("status") == "closed"
+    )
+    open_cashier_count = sum(1 for shift in cashier_shifts if shift.get("status") == "open")
+    if cashier_difference_minor:
+        blockers.append(
+            {
+                "code": "cashier_count_variance",
+                "message": f"Kasa sayımlarında toplam {_reconciliation_amount(cashier_difference_minor):.2f} fark var.",
+            }
+        )
+    if open_cashier_count:
+        warnings.append(
+            {
+                "code": "cashier_shift_open",
+                "message": f"{open_cashier_count} kasa vardiyası hâlâ açık.",
+            }
+        )
+
+    referenced_entries = linked_night_entries + [
+        entry
+        for entry in journal_entries
+        if entry.get("source") in {"pos_direct", "bank_reconciliation"}
+    ]
+    invalid_entries = sorted(
+        {
+            str(entry.get("entry_no") or entry.get("id"))
+            for entry in referenced_entries
+            if not entry.get("entry_hash") or not verify_journal_entry_hash(entry)
+        }
+    )
+    if invalid_entries:
+        blockers.append(
+            {
+                "code": "linked_journal_integrity_failed",
+                "message": f"Bağlı yevmiye kayıtlarının bütünlük doğrulaması başarısız: {', '.join(invalid_entries[:10])}",
+            }
+        )
+
+    return {
+        "business_date": selected,
+        "healthy": not blockers,
+        "mapping_enabled": bool(mapping.get("enabled")),
+        "blockers": blockers,
+        "warnings": warnings,
+        "folios": {
+            "payment_count": len(payments),
+            "payment_total": _reconciliation_amount(payment_total_minor),
+            "gl_total": _reconciliation_amount(sum(night_gl_by_account.values())),
+            "variance": _reconciliation_amount(payment_variance_minor),
+            "by_account": {
+                code: _reconciliation_amount(amount)
+                for code, amount in sorted(payment_by_account.items())
+            },
+        },
+        "pos": {
+            "direct_count": len(direct_pos),
+            "folio_path_count": len(pos_transactions) - len(direct_pos),
+            "total": _reconciliation_amount(pos_total_minor),
+            "gl_total": _reconciliation_amount(pos_gl_total_minor),
+            "closure_count": len(pos_closures),
+        },
+        "bank": {
+            "matched_count": len(matched_bank),
+            "unmatched_count": len(unmatched_bank),
+            "matched_total": _reconciliation_amount(bank_total_minor),
+            "gl_total": _reconciliation_amount(bank_gl_total_minor),
+        },
+        "cashier": {
+            "shift_count": len(cashier_shifts),
+            "open_count": open_cashier_count,
+            "difference": _reconciliation_amount(cashier_difference_minor),
+        },
+        "journal": {
+            "linked_entry_count": len({entry.get("id") for entry in referenced_entries}),
+            "invalid_entry_count": len(invalid_entries),
+        },
     }
 
 
@@ -1068,8 +2091,13 @@ async def retry_night_audit_gl_bridge(run_id: str, current_user: User = Depends(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@router.post("/journal")
 async def create_journal(payload: JournalIn, current_user: User = Depends(get_current_user)):
+    """Trusted compatibility helper used by accounting-domain tests.
+
+    Manual HTTP clients must use the voucher lifecycle.  Keeping the posting
+    helper undecorated lets older internal callers be migrated without
+    exposing a maker-checker bypass over the public API.
+    """
     _require_role(current_user, _GL_ROLES)
     tenant_id = _tenant_of(current_user)
     idempotency_key = (payload.idempotency_key or "").strip() or None
@@ -1107,6 +2135,20 @@ async def create_journal(payload: JournalIn, current_user: User = Depends(get_cu
         db=db,
     )
     return {"entry": entry}
+
+
+@router.post("/journal", status_code=410)
+async def reject_legacy_manual_journal(current_user: User = Depends(get_current_user)):
+    """Reject the former direct manual-post route.
+
+    Operational integrations post through the shared GL kernel; human-entered
+    documents must follow draft -> submit -> approve -> post under /vouchers.
+    """
+    _require_role(current_user, _GL_ROLES)
+    raise HTTPException(
+        status_code=410,
+        detail="Doğrudan yevmiye kaydı kapatıldı. Taslak fiş oluşturup onay akışını kullanın.",
+    )
 
 
 @router.post("/journal/{entry_id}/reverse")
@@ -1386,10 +2428,7 @@ async def comparative_income_statement(
     return {
         "current": current,
         "comparison": comparison,
-        "variance": {
-            key: _variance(current["totals"][f"{key}_minor"], comparison["totals"][f"{key}_minor"])
-            for key in ("revenue", "expenses", "net_income")
-        },
+        "variance": {key: _variance(current["totals"][f"{key}_minor"], comparison["totals"][f"{key}_minor"]) for key in ("revenue", "expenses", "net_income")},
     }
 
 
@@ -1881,18 +2920,14 @@ async def _export_rows(tenant_id: str, report: str, start: str | None, end: str 
         )
     if report == "income_statement":
         data = await compute_income_statement(db, tenant_id, start=start, end=end)
-        rows = [
-            ["Gelir", row["account_code"], row["account_name"], row["amount"]] for row in data["revenue"]
-        ] + [["Gider", row["account_code"], row["account_name"], row["amount"]] for row in data["expenses"]]
+        rows = [["Gelir", row["account_code"], row["account_name"], row["amount"]] for row in data["revenue"]] + [
+            ["Gider", row["account_code"], row["account_name"], row["amount"]] for row in data["expenses"]
+        ]
         return "Gelir Tablosu", ["Bölüm", "Hesap Kodu", "Hesap Adı", "Tutar"], rows
     if report == "balance_sheet":
         data = await compute_balance_sheet(db, tenant_id, as_of=as_of)
         section_names = {"assets": "Varlık", "liabilities": "Yükümlülük", "equity": "Özkaynak"}
-        rows = [
-            [section_names[section], row["account_code"], row["account_name"], row["amount"]]
-            for section in ("assets", "liabilities", "equity")
-            for row in data[section]
-        ]
+        rows = [[section_names[section], row["account_code"], row["account_name"], row["amount"]] for section in ("assets", "liabilities", "equity") for row in data[section]]
         return "Bilanço", ["Bölüm", "Hesap Kodu", "Hesap Adı", "Tutar"], rows
     query: dict = {"tenant_id": tenant_id, "status": "posted"}
     if start or end:
@@ -1901,9 +2936,7 @@ async def _export_rows(tenant_id: str, report: str, start: str | None, end: str 
             query["date"]["$gte"] = start
         if end:
             query["date"]["$lte"] = end
-    entries = await db.gl_journal_entries.find(query, {"_id": 0}).sort(
-        [("date", 1), ("posting_sequence", 1)]
-    ).to_list(100000)
+    entries = await db.gl_journal_entries.find(query, {"_id": 0}).sort([("date", 1), ("posting_sequence", 1)]).to_list(100000)
     rows = [
         [
             entry.get("entry_no"),
@@ -1997,6 +3030,7 @@ async def post_nilvera_outgoing_invoice_to_gl(
     tenant_id = _tenant_of(current_user)
     try:
         from core.integrations.invoice_gl_bridge import post_outgoing_invoice_to_gl
+
         entry = await post_outgoing_invoice_to_gl(
             tenant_id,
             invoice_id,

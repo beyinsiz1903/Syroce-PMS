@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { resetUnassignedListScroll } from './calendar/unassignedPanel';
 import { lazyWithPreload } from '@/routes/lazyWithPreload';
 import { useCalendarRealtime } from './calendar/useCalendarRealtime';
+import { findOccupancyRule } from '@/utils/occupancyPricing';
 
 import {
   CalendarHeader,
@@ -256,8 +257,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [newBooking, setNewBooking] = useState({
     guest_id: '', room_id: '', check_in: '', check_out: '',
     guests_count: 2, adults: 2, children: 0, children_ages: [],
-    total_amount: 0, status: 'confirmed'
+    total_amount: 0, base_rate: 0, status: 'confirmed'
   });
+  const [occupancyPricingRules, setOccupancyPricingRules] = useState({});
 
   // Find room
   const [findRoomCriteria, setFindRoomCriteria] = useState({
@@ -329,12 +331,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       const endDate = new Date(currentDate);
       endDate.setDate(endDate.getDate() + daysToShow + 7);
 
-      const [roomsRes, bookingsRes, guestsRes, companiesRes, blocksRes] = await Promise.all([
+      const [roomsRes, bookingsRes, guestsRes, companiesRes, blocksRes, pricingRes] = await Promise.all([
         axios.get('/pms/rooms'),
         axios.get(`/pms/bookings?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&limit=500`),
         axios.get('/pms/guests').catch(() => ({ data: [] })),
         axios.get('/companies').catch(() => ({ data: [] })),
-        axios.get('/pms/room-blocks?status=active').catch(() => ({ data: { blocks: [] } }))
+        axios.get('/pms/room-blocks?status=active').catch(() => ({ data: { blocks: [] } })),
+        axios.get('/channel-manager/unified-rate-manager/pricing-settings').catch(() => ({ data: { rules: {} } }))
       ]);
 
       // Race guard: bu fetch tamamlanırken kullanıcı yeni navigasyon yaptıysa
@@ -352,6 +355,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       setGuests(guestsRes.data || []);
       setCompanies(companiesRes.data || []);
       setRoomBlocks(blocksRes.data.blocks || []);
+      setOccupancyPricingRules(pricingRes.data?.rules || {});
 
       // Build group bookings summary
       const rawBookings = bookingsRes.data || [];
@@ -538,7 +542,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       check_in: checkInDate.toISOString().split('T')[0],
       check_out: checkOutDate.toISOString().split('T')[0],
       guests_count: 2, adults: 2, children: 0, children_ages: [],
-      total_amount: room.base_price || 100, status: 'confirmed'
+      total_amount: room.base_price || 100, base_rate: room.base_price || 100,
+      apply_occupancy_pricing: findOccupancyRule(occupancyPricingRules, room)?.pricing_type === 'per_person',
+      status: 'confirmed'
     });
     setShowNewBookingDialog(true);
   };
@@ -596,7 +602,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       guest_id: '', room_id: sel.roomId,
       check_in: checkIn, check_out: checkOut,
       guests_count: 2, adults: 2, children: 0, children_ages: [],
-      total_amount: (room.base_price || 100) * nights, status: 'confirmed'
+      total_amount: (room.base_price || 100) * nights, base_rate: room.base_price || 100,
+      apply_occupancy_pricing: findOccupancyRule(occupancyPricingRules, room)?.pricing_type === 'per_person',
+      status: 'confirmed'
     });
     setShowNewBookingDialog(true);
   };
@@ -979,7 +987,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             setNewBooking({
               guest_id: '', room_id: '', check_in: '', check_out: '',
               guests_count: 2, adults: 2, children: 0, children_ages: [],
-              total_amount: 0, status: 'confirmed'
+              total_amount: 0, base_rate: 0, status: 'confirmed'
             });
             setShowNewBookingDialog(true);
           }}
@@ -1092,6 +1100,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         selectedRoom={selectedRoom}
         guests={guests}
         rooms={rooms}
+        occupancyPricingRules={occupancyPricingRules}
         onSubmit={handleCreateBooking}
         minDate={(() => { const t = new Date().toISOString().split('T')[0]; return hotelBusinessDate && hotelBusinessDate < t ? hotelBusinessDate : t; })()}
       />

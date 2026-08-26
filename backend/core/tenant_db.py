@@ -139,6 +139,7 @@ TENANT_SCOPED_COLLECTIONS: set[str] = {
     "gl_accounts",
     "gl_counters",
     "gl_journal_entries",
+    "gl_vouchers",
     "gl_operational_mappings",
     "gl_nilvera_settings",
     "gl_nilvera_queue",

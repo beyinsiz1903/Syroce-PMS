@@ -130,6 +130,7 @@ yarn-error.log*
 !.yarn/releases
 !.yarn/versions
 **/*.zip
+!backend/assets/syroce-kbs-eklentisi.zip
 
 # Auto-generated stress E2E scaffold drill report (regenerated every run)
 docs/drill_reports/*_stress_f7_scaffold.md

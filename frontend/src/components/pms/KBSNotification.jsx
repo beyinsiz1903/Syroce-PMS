@@ -251,11 +251,17 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
       const a = document.createElement('a');
       a.href = url;
       a.download = 'syroce-kbs-eklentisi.zip';
+      a.style.display = 'none';
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      a.remove();
+      // Safari indirme islemini asenkron baslatabildigi icin object URL'yi
+      // ayni tick'te iptal etmek indirmeyi aralikli olarak bozabiliyor.
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       toast.success('Eklenti paketi indirildi');
-    } catch {
-      toast.error('Eklenti paketi indirilemedi');
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Eklenti paketi indirilemedi');
     } finally {
       setDownloadingExt(false);
     }

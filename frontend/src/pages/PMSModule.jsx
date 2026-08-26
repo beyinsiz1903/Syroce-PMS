@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Layout from '@/components/Layout';
 import GlobalSearch from '@/components/GlobalSearch';
+import { calculateOccupancyPrice, findOccupancyRule, nightsBetween } from '@/utils/occupancyPricing';
 // Tur 5: Bundle code-split — tab içerikleri ve büyük dialog'lar lazy.
 // İlk yüklemede sadece varsayılan 'frontdesk' tab'ı indirilir; kullanıcı
 // diğer sekmelere geçince ilgili chunk talep üzerine yüklenir.
@@ -348,6 +349,42 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [multiRoomBooking, setMultiRoomBooking] = useState([
     { room_id: '', adults: 1, children: 0, children_ages: [], total_amount: 0, base_rate: 0, rate_plan: '', package_code: null }
   ]);
+  const [occupancyPricingRules, setOccupancyPricingRules] = useState({});
+
+  useEffect(() => {
+    const nights = nightsBetween(newBooking.check_in, newBooking.check_out);
+    setMultiRoomBooking(prev => {
+      let changed = false;
+      const next = prev.map(line => {
+        const room = rooms.find(item => item.id === line.room_id);
+        const rule = findOccupancyRule(occupancyPricingRules, room);
+        const quote = rule?.pricing_type === 'per_person'
+          ? calculateOccupancyPrice({
+              baseNightlyRate: line.base_rate,
+              nights,
+              adults: Number(line.adults || 1),
+              childrenAges: line.children_ages || [],
+              rule,
+            })
+          : null;
+        const updated = quote
+          ? {
+              ...line,
+              total_amount: quote.totalAmount,
+              apply_occupancy_pricing: true,
+              pricing_rule_version: quote.rule.pricing_version,
+            }
+          : { ...line, apply_occupancy_pricing: false, pricing_rule_version: null };
+        if (
+          updated.total_amount !== line.total_amount
+          || updated.apply_occupancy_pricing !== line.apply_occupancy_pricing
+          || updated.pricing_rule_version !== line.pricing_rule_version
+        ) changed = true;
+        return updated;
+      });
+      return changed ? next : prev;
+    });
+  }, [newBooking.check_in, newBooking.check_out, multiRoomBooking, rooms, occupancyPricingRules]);
 
   const [bookingConflict, setBookingConflict] = useState(null);
 
@@ -451,9 +488,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         axios.get('/pms/rooms?limit=100', { timeout: 15000 }),
         axios.get('/pms/guests?limit=100', { timeout: 15000 }),
         axios.get(`/pms/bookings?start_date=${today}&end_date=${futureDateStr}&limit=120`, { timeout: 15000 }),
-        axios.get('/companies?limit=50', { timeout: 15000 })
+        axios.get('/companies?limit=50', { timeout: 15000 }),
+        axios.get('/channel-manager/unified-rate-manager/pricing-settings', { timeout: 15000 })
       ]);
-      const [roomsRes, guestsRes, bookingsRes, companiesRes] = results.map((r) => (r.status === 'fulfilled' ? r.value : null));
+      const [roomsRes, guestsRes, bookingsRes, companiesRes, pricingRes] = results.map((r) => (r.status === 'fulfilled' ? r.value : null));
       results.forEach((r, idx) => { if (r.status === 'rejected') console.warn('PMS loadData partial failure:', idx, r.reason); });
       const rawBookings = bookingsRes?.data || [];
       const grouped = [];
@@ -468,6 +506,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       setGroupedBookings(grouped);
       setRooms(roomsRes?.data || []); setGuests(guestsRes?.data || []);
       setBookings(bookingsRes?.data || []); setCompanies(companiesRes?.data || []);
+      setOccupancyPricingRules(pricingRes?.data?.rules || {});
     } catch (error) { toast.error('Failed to load data'); console.error('PMS data load error:', error);
     } finally { setLoading(false); }
   };
@@ -684,7 +723,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     try {
       const roomsPayload = multiRoomBooking.map(room => ({
         room_id: room.room_id, adults: room.adults, children: room.children, children_ages: room.children_ages || [],
-        total_amount: room.total_amount, base_rate: room.base_rate, rate_plan: room.rate_plan || newBooking.rate_type || 'Standard', package_code: room.package_code || null
+        total_amount: room.total_amount, base_rate: room.base_rate,
+        apply_occupancy_pricing: room.apply_occupancy_pricing === true,
+        pricing_rule_version: room.pricing_rule_version || null,
+        rate_plan: room.rate_plan || newBooking.rate_type || 'Standard', package_code: room.package_code || null
       }));
       const payload = {
         arrival_date: newBooking.check_in, departure_date: newBooking.check_out,
@@ -954,7 +996,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             open prop her zaman gerçek koşulu yansıtır → modal davranışı korunur. */}
         {visitedDialogs.has('booking') && (
           <Suspense fallback={null}>
-            <BookingDialog open={openDialog === 'booking'} onClose={() => setOpenDialog(null)} guests={guests} rooms={rooms} companies={companies} ratePlans={ratePlans} packages={packages} newBooking={newBooking} setNewBooking={setNewBooking} multiRoomBooking={multiRoomBooking} handleCreateBooking={handleCreateBooking} handleCompanySelect={handleCompanySelect} handleContractedRateSelect={handleContractedRateSelect} handleChildrenChange={handleChildrenChange} handleChildAgeChange={handleChildAgeChange} addRoomToMultiBooking={addRoomToMultiBooking} removeRoomFromMultiBooking={removeRoomFromMultiBooking} updateMultiRoomField={updateMultiRoomField} updateMultiRoomChildrenAges={updateMultiRoomChildrenAges} updateMultiRoomChildAge={updateMultiRoomChildAge} isLite={isLite} setOpenDialog={setOpenDialog} />
+            <BookingDialog open={openDialog === 'booking'} onClose={() => setOpenDialog(null)} guests={guests} rooms={rooms} companies={companies} ratePlans={ratePlans} packages={packages} newBooking={newBooking} setNewBooking={setNewBooking} multiRoomBooking={multiRoomBooking} occupancyPricingRules={occupancyPricingRules} handleCreateBooking={handleCreateBooking} handleCompanySelect={handleCompanySelect} handleContractedRateSelect={handleContractedRateSelect} handleChildrenChange={handleChildrenChange} handleChildAgeChange={handleChildAgeChange} addRoomToMultiBooking={addRoomToMultiBooking} removeRoomFromMultiBooking={removeRoomFromMultiBooking} updateMultiRoomField={updateMultiRoomField} updateMultiRoomChildrenAges={updateMultiRoomChildrenAges} updateMultiRoomChildAge={updateMultiRoomChildAge} isLite={isLite} setOpenDialog={setOpenDialog} />
           </Suspense>
         )}
         <CompanyDialog open={openDialog === 'company'} onClose={() => setOpenDialog(null)} newCompany={newCompany} setNewCompany={setNewCompany} onSubmit={handleCreateCompany} />

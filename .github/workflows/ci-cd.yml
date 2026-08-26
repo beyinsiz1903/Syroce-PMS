@@ -55,6 +55,9 @@ jobs:
 
       - name: Test skip and inventory budget guard
         run: python scripts/check_skip_budget.py
+
+      - name: KBS extension release package guard
+        run: python scripts/build_kbs_extension_package.py --check
         
       # ---- Requirements split guards (Phase 7 of requirements split) ----
       # Both scripts are pure-stdlib (no pip install needed) and run in <1s.
@@ -227,6 +230,9 @@ jobs:
             tests/test_nilvera_log_redaction.py \
             tests/test_bootstrap_invoice_workers.py \
             tests/test_nilvera_worker_lifecycle.py \
+            tests/test_gl_ledger.py \
+            tests/test_invoice_gl_bridge.py \
+            tests/unit/test_kbs_extension_download.py \
             tests/integration/test_academy_cert_race_live.py \
             -v --tb=short -q --timeout=30 --junitxml=test-results.xml
         env:

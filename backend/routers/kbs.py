@@ -72,6 +72,20 @@ def _kbs_extension_dir() -> Path:
     return Path(__file__).resolve().parent.parent.parent / "extension"
 
 
+def _kbs_extension_archive() -> Path:
+    """Production image'e gomulen, deterministik KBS eklenti arsivi.
+
+    Backend container'i yalniz ``backend/`` build context'inden olusturulur;
+    bu nedenle repo kokundeki ``extension/`` klasoru production imajinda
+    bulunmaz. Release sirasinda uretilen arsiv backend asset'i olarak imaja
+    girer. Ortam degiskeni operasyonel override/test icin korunur.
+    """
+    override = os.environ.get("KBS_EXTENSION_ARCHIVE")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent.parent / "assets" / "syroce-kbs-eklentisi.zip"
+
+
 @router.get("/extension/download")
 async def download_kbs_extension(
     current_user: User = Depends(get_current_user),
@@ -86,6 +100,27 @@ async def download_kbs_extension(
     """
     import io
     import zipfile
+
+    archive = _kbs_extension_archive()
+    if archive.is_file():
+        content = archive.read_bytes()
+        try:
+            with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+                names = zf.namelist()
+                if not names or "syroce-kbs-eklentisi/manifest.json" not in names:
+                    raise zipfile.BadZipFile("manifest missing")
+        except (OSError, zipfile.BadZipFile) as exc:
+            logger.error("KBS extension archive is invalid: %s", exc)
+            raise HTTPException(503, "Eklenti paketi gecici olarak kullanilamiyor") from exc
+        return Response(
+            content=content,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": 'attachment; filename="syroce-kbs-eklentisi.zip"',
+                "Cache-Control": "no-store",
+                "Content-Length": str(len(content)),
+            },
+        )
 
     ext_dir = _kbs_extension_dir()
     if not ext_dir.is_dir():

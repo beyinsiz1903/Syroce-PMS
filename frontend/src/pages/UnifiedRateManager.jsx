@@ -55,6 +55,7 @@ const UnifiedRateManager = ({
   const [ratePlans, setRatePlans] = useState([]);
   const [grid, setGrid] = useState([]);
   const [pricingSettings, setPricingSettings] = useState({});
+  const [occupancyPricingRules, setOccupancyPricingRules] = useState({});
   const [currency, setCurrency] = useState('TRY');
   const [pushProviders, setPushProviders] = useState([]);
   const [activeChannels, setActiveChannels] = useState([]);
@@ -159,6 +160,7 @@ const UnifiedRateManager = ({
       setRoomTypes(data.room_types || []);
       setRatePlans(data.rate_plans || []);
       if (data.pricing_settings) setPricingSettings(data.pricing_settings);
+      if (data.occupancy_pricing_rules) setOccupancyPricingRules(data.occupancy_pricing_rules);
       if (data.currency) setCurrency(data.currency);
     } catch {
       toast.error('Veriler yüklenemedi');
@@ -362,6 +364,7 @@ const UnifiedRateManager = ({
     e.stopPropagation();
     const current = pricingSettings[roomTypeCode] || 'per_person';
     const newType = current === 'per_person' ? 'per_room' : 'per_person';
+    const currentRule = occupancyPricingRules[roomTypeCode] || {};
     setPricingSettings(prev => ({
       ...prev,
       [roomTypeCode]: newType
@@ -370,12 +373,17 @@ const UnifiedRateManager = ({
       await axios.put(`${UNIFIED_PREFIX}/pricing-settings`, {
         settings: [{
           room_type_code: roomTypeCode,
+          ...currentRule,
           pricing_type: newType
         }]
       }, {
         headers
       });
       toast.success(`${newType === 'per_room' ? 'Oda bazli' : 'Kisi bazli'} fiyatlandirma ayarlandi`);
+      setOccupancyPricingRules(prev => ({
+        ...prev,
+        [roomTypeCode]: { ...currentRule, pricing_type: newType }
+      }));
     } catch {
       setPricingSettings(prev => ({
         ...prev,
@@ -383,6 +391,17 @@ const UnifiedRateManager = ({
       }));
       toast.error('Fiyatlandırma ayarı güncellenemedi');
     }
+  };
+  const saveOccupancyPricingRule = async (roomTypeCode, rule) => {
+    await axios.put(`${UNIFIED_PREFIX}/pricing-settings`, {
+      settings: [{ room_type_code: roomTypeCode, ...rule, pricing_type: 'per_person' }]
+    }, { headers });
+    setPricingSettings(prev => ({ ...prev, [roomTypeCode]: 'per_person' }));
+    setOccupancyPricingRules(prev => ({
+      ...prev,
+      [roomTypeCode]: { ...rule, pricing_type: 'per_person' }
+    }));
+    toast.success('Kişi bazlı fiyatlandırma kuralı kaydedildi');
   };
   const handleReset = () => {
     setSelections({});
@@ -708,7 +727,7 @@ const UnifiedRateManager = ({
               </TabsList>
 
               <TabsContent value="bulk" className="mt-4">
-                <BulkUpdatePanel roomTypeTree={roomTypeTree} roomTypes={roomTypes} ratePlans={ratePlans} enabledFields={enabledFields} toggleField={toggleField} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} allDays={allDays} selectedDays={selectedDays} toggleDay={toggleDay} toggleAllDays={toggleAllDays} selections={selections} toggleRoomType={toggleRoomType} toggleAllRoomTypes={toggleAllRoomTypes} toggleRatePlan={toggleRatePlan} isRoomTypeSelected={isRoomTypeSelected} isRoomTypeFullySelected={isRoomTypeFullySelected} isRatePlanSelected={isRatePlanSelected} roomValues={roomValues} updateRoomValue={updateRoomValue} getDefaultValues={getDefaultValues} applyToAllSelected={applyToAllSelected} expandedRoomTypes={expandedRoomTypes} toggleExpanded={toggleExpanded} pricingSettings={pricingSettings} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType} currencySymbol={currencySymbol} currency={currency} totalSelectedRoomTypes={totalSelectedRoomTypes} totalSelectedPlans={totalSelectedPlans} saving={saving} handleBulkUpdate={handleBulkUpdate} handleReset={handleReset} loading={loading} activeChannels={activeChannels} activeChannelsStale={activeChannelsStale} channelProvider={provider} mobileStep={mobileBulkStep} setMobileStep={setMobileBulkStep} />
+                <BulkUpdatePanel roomTypeTree={roomTypeTree} roomTypes={roomTypes} ratePlans={ratePlans} enabledFields={enabledFields} toggleField={toggleField} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} allDays={allDays} selectedDays={selectedDays} toggleDay={toggleDay} toggleAllDays={toggleAllDays} selections={selections} toggleRoomType={toggleRoomType} toggleAllRoomTypes={toggleAllRoomTypes} toggleRatePlan={toggleRatePlan} isRoomTypeSelected={isRoomTypeSelected} isRoomTypeFullySelected={isRoomTypeFullySelected} isRatePlanSelected={isRatePlanSelected} roomValues={roomValues} updateRoomValue={updateRoomValue} getDefaultValues={getDefaultValues} applyToAllSelected={applyToAllSelected} expandedRoomTypes={expandedRoomTypes} toggleExpanded={toggleExpanded} pricingSettings={pricingSettings} occupancyPricingRules={occupancyPricingRules} saveOccupancyPricingRule={saveOccupancyPricingRule} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType} currencySymbol={currencySymbol} currency={currency} totalSelectedRoomTypes={totalSelectedRoomTypes} totalSelectedPlans={totalSelectedPlans} saving={saving} handleBulkUpdate={handleBulkUpdate} handleReset={handleReset} loading={loading} activeChannels={activeChannels} activeChannelsStale={activeChannelsStale} channelProvider={provider} mobileStep={mobileBulkStep} setMobileStep={setMobileBulkStep} />
               </TabsContent>
 
               <TabsContent value="grid" className="mt-4">

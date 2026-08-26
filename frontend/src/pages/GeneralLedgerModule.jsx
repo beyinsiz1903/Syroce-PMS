@@ -7,13 +7,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useCurrency } from '@/context/CurrencyContext';
-import { Plus, Save, FileText, AlertCircle, CalendarRange, LockKeyhole, Unlock, RotateCcw, Landmark, TrendingUp, PackageOpen, Cable, ReceiptText } from 'lucide-react';
+import { Plus, Save, FileText, AlertCircle, CalendarRange, LockKeyhole, Unlock, RotateCcw, Landmark, TrendingUp, PackageOpen, Cable, ReceiptText, Send, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
 
 export const GL_ENDPOINTS = {
   accounts: '/gl/accounts',
   initializeAccounts: '/gl/accounts/initialize',
   journal: '/gl/journal',
+  vouchers: '/gl/vouchers',
   sequenceAudit: '/gl/sequence-audit',
+  integrityAudit: '/gl/integrity-audit',
   trialBalance: '/gl/trial-balance',
   periods: '/gl/periods',
   initializePeriods: '/gl/periods/initialize',
@@ -134,12 +136,18 @@ export const collectIntegrationAccountCodes = (nilvera = {}, ap = {}, fixedAsset
   return [...new Set(candidates.map((value) => String(value || '').trim()).filter(Boolean))].sort();
 };
 
-export const toJournalPayload = (journal) => ({
+const VOUCHER_TYPE_BY_LABEL = {
+  Mahsup: 'mahsup',
+  Tahsilat: 'tahsil',
+  Tediye: 'tediye',
+  Açılış: 'acilis',
+  Kapanış: 'kapanis',
+};
+
+export const toVoucherPayload = (journal) => ({
   date: journal.date,
   memo: journal.description.trim(),
-  source: 'manual',
-  source_ref: journal.type,
-  ...(journal.idempotency_key ? { idempotency_key: journal.idempotency_key } : {}),
+  voucher_type: VOUCHER_TYPE_BY_LABEL[journal.type] || 'mahsup',
   lines: journal.lines.map((line) => ({
     account_code: line.account_code.trim(),
     debit: Number(line.debit) || 0,
@@ -152,6 +160,10 @@ export const toJournalPayload = (journal) => ({
     } : {}),
   })),
 });
+
+// Kept as an export while callers migrate; it now creates a controlled
+// voucher payload and can no longer bypass the approval lifecycle.
+export const toJournalPayload = toVoucherPayload;
 
 export const getJournalValidationError = (journal) => {
   const lines = journal.lines || [];
@@ -186,6 +198,48 @@ const emptyJournal = () => ({
   ]
 });
 
+const VOUCHER_STATUS = {
+  draft: { label: 'Taslak', className: 'bg-slate-100 text-slate-700' },
+  submitted: { label: 'İncelemede', className: 'bg-amber-100 text-amber-800' },
+  approved: { label: 'Onaylandı', className: 'bg-blue-100 text-blue-800' },
+  posting: { label: 'Kaydediliyor', className: 'bg-indigo-100 text-indigo-800' },
+  posted: { label: 'Yevmiyede', className: 'bg-emerald-100 text-emerald-800' },
+  rejected: { label: 'Reddedildi', className: 'bg-red-100 text-red-800' },
+  cancelled: { label: 'İptal', className: 'bg-gray-100 text-gray-600' },
+};
+
+export const voucherActionNames = (status) => ({
+  draft: ['edit', 'submit', 'cancel'],
+  submitted: ['approve', 'reject'],
+  approved: ['post'],
+  posting: ['post'],
+  rejected: ['edit', 'cancel'],
+}[status] || []);
+
+const VOUCHER_LABEL_BY_TYPE = {
+  mahsup: 'Mahsup',
+  tahsil: 'Tahsilat',
+  tediye: 'Tediye',
+  acilis: 'Açılış',
+  kapanis: 'Kapanış',
+};
+
+const journalFromVoucher = (voucher) => ({
+  date: voucher.date,
+  type: VOUCHER_LABEL_BY_TYPE[voucher.voucher_type] || 'Mahsup',
+  description: voucher.memo || '',
+  idempotency_key: newRequestKey(),
+  lines: (voucher.lines || []).map((line) => ({
+    account_code: line.account_code || '',
+    debit: line.debit || 0,
+    credit: line.credit || 0,
+    description: line.memo || '',
+    currency: line.currency || '',
+    foreign_amount: line.foreign_amount || '',
+    exchange_rate: line.exchange_rate || '',
+  })),
+});
+
 export const normalizeTrialBalance = (data = {}) => ({
   lines: (data.rows || []).map((row) => ({
     code: row.account_code,
@@ -218,7 +272,9 @@ const GeneralLedgerModule = () => {
   
   const [accounts, setAccounts] = useState([]);
   const [journals, setJournals] = useState([]);
+  const [vouchers, setVouchers] = useState([]);
   const [sequenceAudit, setSequenceAudit] = useState(null);
+  const [integrityAudit, setIntegrityAudit] = useState(null);
   const [trialBalance, setTrialBalance] = useState({ lines: [], totals: {} });
   const [initializingAccounts, setInitializingAccounts] = useState(false);
   const [periods, setPeriods] = useState([]);
@@ -228,6 +284,8 @@ const GeneralLedgerModule = () => {
   const [periodActionDialog, setPeriodActionDialog] = useState(null);
   const [periodActionReason, setPeriodActionReason] = useState('');
   const [journalSaving, setJournalSaving] = useState(false);
+  const [voucherBusy, setVoucherBusy] = useState('');
+  const [editingVoucher, setEditingVoucher] = useState(null);
   const [reversalBusy, setReversalBusy] = useState('');
   const reversalKeys = useRef({});
   const [statements, setStatements] = useState({ income: null, balance: null });
@@ -281,12 +339,16 @@ const GeneralLedgerModule = () => {
 
   const fetchJournals = async () => {
     try {
-      const [journalRes, auditRes] = await Promise.all([
+      const [journalRes, voucherRes, auditRes, integrityRes] = await Promise.all([
         axios.get(GL_ENDPOINTS.journal),
+        axios.get(GL_ENDPOINTS.vouchers),
         axios.get(GL_ENDPOINTS.sequenceAudit, { params: { fiscal_year: new Date().getFullYear() } }),
+        axios.get(GL_ENDPOINTS.integrityAudit, { params: { fiscal_year: new Date().getFullYear() } }),
       ]);
       setJournals(journalRes.data?.entries || []);
+      setVouchers(voucherRes.data?.vouchers || []);
       setSequenceAudit(auditRes.data || null);
+      setIntegrityAudit(integrityRes.data || null);
     } catch {
       toast.error('Yevmiye fişleri yüklenemedi.');
     }
@@ -721,14 +783,58 @@ const GeneralLedgerModule = () => {
 
     setJournalSaving(true);
     try {
-      await axios.post(GL_ENDPOINTS.journal, toJournalPayload(newJournal));
-      toast.success('Yevmiye fişi başarıyla kaydedildi.');
+      if (editingVoucher) {
+        await axios.put(`${GL_ENDPOINTS.vouchers}/${editingVoucher.id}`, {
+          ...toVoucherPayload(newJournal),
+          version: editingVoucher.version,
+        });
+        toast.success('Taslak fiş güncellendi. Değişiklik geçmişi korundu.');
+      } else {
+        await axios.post(GL_ENDPOINTS.vouchers, toVoucherPayload(newJournal));
+        toast.success('Taslak fiş oluşturuldu. Yevmiyeye geçmesi için inceleme ve onay gerekir.');
+      }
       setNewJournal(emptyJournal());
-      fetchJournals();
+      setEditingVoucher(null);
+      await fetchJournals();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Fiş kaydedilirken hata oluştu.');
+      toast.error(e.response?.data?.detail || 'Taslak fiş oluşturulurken hata oluştu.');
     } finally {
       setJournalSaving(false);
+    }
+  };
+
+  const editVoucher = (voucher) => {
+    setEditingVoucher(voucher);
+    setNewJournal(journalFromVoucher(voucher));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const runVoucherAction = async (voucher, action) => {
+    const labels = {
+      submit: 'incelemeye gönderme',
+      approve: 'onaylama',
+      reject: 'reddetme',
+      cancel: 'iptal',
+      post: 'yevmiye kaydı',
+    };
+    let reason;
+    if (action !== 'post') {
+      reason = window.prompt(`${labels[action]} gerekçesi:`);
+      if (!reason || reason.trim().length < 3) return;
+    }
+    const busyKey = `${voucher.id}:${action}`;
+    setVoucherBusy(busyKey);
+    try {
+      await axios.post(
+        `${GL_ENDPOINTS.vouchers}/${voucher.id}/${action}`,
+        action === 'post' ? undefined : { reason: reason.trim() },
+      );
+      toast.success(action === 'post' ? 'Onaylı fiş yevmiyeye işlendi.' : `Fiş ${labels[action]} adımını tamamladı.`);
+      await fetchJournals();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || `Fiş ${labels[action]} işlemi tamamlanamadı.`);
+    } finally {
+      setVoucherBusy('');
     }
   };
 
@@ -848,7 +954,8 @@ const GeneralLedgerModule = () => {
             <div className="lg:col-span-2">
               <Card>
                 <CardHeader>
-                  <CardTitle>Yeni Fiş Girişi</CardTitle>
+                  <CardTitle>{editingVoucher ? `${editingVoucher.voucher_no} Taslağını Düzenle` : 'Yeni Taslak Muhasebe Fişi'}</CardTitle>
+                  <p className="text-sm text-gray-500">Taslak doğrudan yevmiyeye yazılmaz. Hazırlayan kişi incelemeye gönderir; farklı bir yetkili onaylar ve kayıt işlemini tamamlar.</p>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid gap-4 sm:grid-cols-3">
@@ -907,7 +1014,10 @@ const GeneralLedgerModule = () => {
                   </div>
                   <div className="flex flex-wrap justify-between gap-3 mt-4">
                     <Button variant="outline" onClick={handleAddJournalLine}><Plus className="w-4 h-4 mr-2" /> Satır Ekle</Button>
-                    <Button onClick={handleSubmitJournal} disabled={journalSaving || !!journalValidationError} title={journalValidationError || undefined} className="bg-blue-600 hover:bg-blue-700 text-white"><Save className="w-4 h-4 mr-2" /> {journalSaving ? 'Kaydediliyor...' : 'Fişi Kaydet'}</Button>
+                    <div className="flex gap-2">
+                      {editingVoucher && <Button variant="ghost" onClick={() => { setEditingVoucher(null); setNewJournal(emptyJournal()); }}>Düzenlemeyi İptal Et</Button>}
+                      <Button onClick={handleSubmitJournal} disabled={journalSaving || !!journalValidationError} title={journalValidationError || undefined} className="bg-blue-600 hover:bg-blue-700 text-white"><Save className="w-4 h-4 mr-2" /> {journalSaving ? 'Kaydediliyor...' : editingVoucher ? 'Taslağı Güncelle' : 'Taslak Oluştur'}</Button>
+                    </div>
                   </div>
                   {journalValidationError && <p className="text-xs text-slate-500" role="status">{journalValidationError}</p>}
                 </CardContent>
@@ -916,6 +1026,19 @@ const GeneralLedgerModule = () => {
 
             {/* Recent Journals */}
             <div>
+              {integrityAudit && (
+                <div className={`mb-4 rounded-lg border p-3 ${integrityAudit.fully_sealed ? 'border-emerald-200 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`} data-testid="gl-integrity-audit">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="flex items-center gap-1.5 text-sm font-semibold text-gray-900"><ShieldCheck className="h-4 w-4" /> Yevmiye bütünlük zinciri</p>
+                    <span className={`text-xs font-semibold ${integrityAudit.fully_sealed ? 'text-emerald-700' : 'text-amber-700'}`}>
+                      {integrityAudit.fully_sealed ? 'Doğrulandı' : 'İnceleme gerekli'}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-600">
+                    {integrityAudit.counts?.sealed || 0} mühürlü kayıt · {integrityAudit.counts?.legacy_unsealed || 0} eski mühürsüz kayıt · {integrityAudit.counts?.issues || 0} bütünlük sorunu
+                  </p>
+                </div>
+              )}
               {sequenceAudit && (
                 <div className={`mb-4 rounded-lg border p-3 ${sequenceAudit.healthy ? 'border-emerald-200 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`}>
                   <div className="flex items-center justify-between gap-2">
@@ -929,6 +1052,53 @@ const GeneralLedgerModule = () => {
                   </p>
                 </div>
               )}
+              <Card className="mb-4">
+                <CardHeader>
+                  <CardTitle className="text-base">Fiş İş Akışı</CardTitle>
+                  <p className="text-xs text-gray-500">Taslak, inceleme ve onay kuyruğu</p>
+                </CardHeader>
+                <CardContent className="space-y-3 max-h-[420px] overflow-y-auto" data-testid="gl-voucher-queue">
+                  {vouchers.map((voucher) => {
+                    const status = VOUCHER_STATUS[voucher.status] || { label: voucher.status, className: 'bg-gray-100 text-gray-700' };
+                    return (
+                      <div key={voucher.id} className="rounded-lg border bg-white p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-gray-900">{voucher.voucher_no}</p>
+                            <p className="truncate text-xs text-gray-500">{voucher.date} · {voucher.memo}</p>
+                          </div>
+                          <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold ${status.className}`}>{status.label}</span>
+                        </div>
+                        {voucher.rejection_reason && <p className="mt-2 text-xs text-red-700">Ret: {voucher.rejection_reason}</p>}
+                        {voucher.journal_entry_no && <p className="mt-2 text-xs text-emerald-700">Yevmiye: {voucher.journal_entry_no}</p>}
+                        {voucherActionNames(voucher.status).length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {voucherActionNames(voucher.status).includes('edit') && (
+                              <Button size="sm" variant="outline" disabled={!!voucherBusy} onClick={() => editVoucher(voucher)}>Düzenle</Button>
+                            )}
+                            {voucherActionNames(voucher.status).includes('submit') && (
+                              <Button size="sm" variant="outline" disabled={!!voucherBusy} onClick={() => runVoucherAction(voucher, 'submit')}><Send className="mr-1.5 h-3.5 w-3.5" /> İncelemeye Gönder</Button>
+                            )}
+                            {voucherActionNames(voucher.status).includes('approve') && (
+                              <Button size="sm" disabled={!!voucherBusy} onClick={() => runVoucherAction(voucher, 'approve')}><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Onayla</Button>
+                            )}
+                            {voucherActionNames(voucher.status).includes('reject') && (
+                              <Button size="sm" variant="outline" disabled={!!voucherBusy} onClick={() => runVoucherAction(voucher, 'reject')}><XCircle className="mr-1.5 h-3.5 w-3.5" /> Reddet</Button>
+                            )}
+                            {voucherActionNames(voucher.status).includes('post') && (
+                              <Button size="sm" disabled={!!voucherBusy} onClick={() => runVoucherAction(voucher, 'post')}><Save className="mr-1.5 h-3.5 w-3.5" /> Yevmiyeye İşle</Button>
+                            )}
+                            {voucherActionNames(voucher.status).includes('cancel') && (
+                              <Button size="sm" variant="ghost" disabled={!!voucherBusy} onClick={() => runVoucherAction(voucher, 'cancel')}>İptal Et</Button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {vouchers.length === 0 && <p className="py-4 text-center text-sm text-gray-500">Bekleyen muhasebe fişi yok.</p>}
+                </CardContent>
+              </Card>
               <Card>
                 <CardHeader>
                   <CardTitle>Son Fişler</CardTitle>
