@@ -539,6 +539,16 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 <Button
                   size="sm"
                   onClick={async () => {
+                    if (hasOpenBalance) {
+                      setActiveTab('folios');
+                      toast.warning(
+                        `Çıkış için önce ${balance.toLocaleString('tr-TR', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })} TL bakiyeyi kapatın.`,
+                      );
+                      return;
+                    }
                     if (!await confirmDialog({ message: 'Çıkış yapılsın mı?', variant: 'danger' })) return;
                     try {
                       // Bakiye summary'den biliniyor → açık bakiye ASLA çevrimdışı
@@ -575,7 +585,11 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   className="w-full h-10 bg-amber-600 hover:bg-amber-700 text-white font-medium shadow-sm"
                   data-testid="btn-checkout"
                 >
-                  <LogOut className="w-4 h-4 mr-2" /> {t('cm.pages_ReservationDetailModal.cikis_yap')}
+                  {hasOpenBalance ? (
+                    <><CreditCard className="w-4 h-4 mr-2" /> Önce ödemeyi tamamlayın</>
+                  ) : (
+                    <><LogOut className="w-4 h-4 mr-2" /> {t('cm.pages_ReservationDetailModal.cikis_yap')}</>
+                  )}
                 </Button>
               </div>
             )}

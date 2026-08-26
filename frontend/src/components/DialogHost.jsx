@@ -60,7 +60,8 @@ export default function DialogHost() {
   return (
     <AlertDialog open={state.open} onOpenChange={(o) => { if (!o) handleCancel(); }}>
       <AlertDialogContent
-        className="max-w-md rounded-xl border-gray-200 shadow-2xl"
+        overlayClassName="z-[70]"
+        className="z-[80] max-w-md rounded-xl border-gray-200 shadow-2xl"
         data-testid="app-dialog"
       >
         <form
