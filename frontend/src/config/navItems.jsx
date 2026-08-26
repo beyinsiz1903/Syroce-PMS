@@ -20,6 +20,18 @@ export const NAV_GROUPS = [
 // Long menus are split into task-oriented sections. Keeping the section model
 // in configuration makes desktop and mobile navigation tell the same story.
 export const NAV_GROUP_SECTIONS = {
+  frontdesk: [
+    { id: "reservations", label: "Rezervasyon & Konaklama" },
+    { id: "room_management", label: "Oda Yönetimi" },
+    { id: "guest_services", label: "Misafir Hizmetleri" },
+    { id: "daily_controls", label: "Günlük Kontroller" },
+  ],
+  operations: [
+    { id: "daily", label: "Günlük Operasyon" },
+    { id: "guest_requests", label: "Misafir Talepleri" },
+    { id: "incidents", label: "Olay & Takip" },
+    { id: "wellness", label: "Spa & Wellness" },
+  ],
   system: [
     { id: "channels", label: "Kanal Yönetimi" },
     { id: "distribution", label: "Dağıtım & Satış" },
@@ -87,10 +99,8 @@ export const NAV_ITEMS = [
     path: "/security",
     tier: "basic",
     group: "core",
-    // Sayfa route'u infrastructure.js'te ve Altyapı'da görünüyor; üst nav
-    // highlight'ı da Altyapı'da olmalı. Önceden "admin" idi → "Yönetim"
-    // grubu mavi kalıyordu (navGroups.admin = "Yönetim" i18n).
-    navGroup: "operations",
+    navGroup: "admin",
+    navSection: "centers",
   },
   {
     key: "channels_hub",
@@ -204,6 +214,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "frontdesk",
+    navSection: "reservations",
   },
   {
     key: "pms",
@@ -213,6 +224,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "frontdesk",
+    navSection: "reservations",
   },
   {
     key: "housekeeping_status",
@@ -230,6 +242,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "operations",
     navGroup: "operations",
+    navSection: "wellness",
   },
   {
     key: "spa_dining_packages",
@@ -239,6 +252,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "operations",
     navGroup: "operations",
+    navSection: "wellness",
   },
   {
     key: "shift_handover",
@@ -248,6 +262,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "operations",
     navGroup: "operations",
+    navSection: "daily",
   },
   {
     key: "early_late_pricing",
@@ -284,6 +299,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "operations",
     navGroup: "frontdesk",
+    navSection: "reservations",
   },
   {
     key: "room_map",
@@ -293,6 +309,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "operations",
     navGroup: "frontdesk",
+    navSection: "room_management",
   },
   {
     key: "wake_up_calls",
@@ -301,7 +318,8 @@ export const NAV_ITEMS = [
     moduleKey: "pms",
     tier: "basic",
     group: "core",
-    navGroup: "operations",
+    navGroup: "frontdesk",
+    navSection: "guest_services",
   },
   {
     key: "lost_found",
@@ -311,6 +329,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "operations",
+    navSection: "guest_requests",
   },
   {
     key: "connecting_rooms",
@@ -319,7 +338,8 @@ export const NAV_ITEMS = [
     moduleKey: "pms",
     tier: "basic",
     group: "core",
-    navGroup: "operations",
+    navGroup: "frontdesk",
+    navSection: "room_management",
     allowedRoles: ["admin", "supervisor", "super_admin"],
   },
   {
@@ -339,6 +359,7 @@ export const NAV_ITEMS = [
     tier: "professional",
     group: "professional",
     navGroup: "operations",
+    navSection: "incidents",
   },
   {
     key: "service_recovery",
@@ -404,6 +425,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "frontdesk",
+    navSection: "daily_controls",
   },
   {
     key: "no_show_today",
@@ -413,6 +435,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "frontdesk",
+    navSection: "daily_controls",
   },
 
   // ──── FINANCE GROUP ────────────────────────────────
@@ -424,6 +447,7 @@ export const NAV_ITEMS = [
     tier: "professional",
     group: "professional",
     navGroup: "frontdesk",
+    navSection: "daily_controls",
   },
   {
     key: "invoices",
@@ -1110,6 +1134,7 @@ export const NAV_ITEMS = [
     path: "/app/room-requests",
     group: "operations",
     navGroup: "operations",
+    navSection: "guest_requests",
     icon: "MessageSquare",
     moduleKey: "room_qr_requests",
     tier: "basic",
@@ -1119,7 +1144,8 @@ export const NAV_ITEMS = [
     label: "Oda QR Kodları",
     path: "/admin/room-qr-codes",
     group: "admin",
-    navGroup: "operations",
+    navGroup: "admin",
+    navSection: "properties",
     icon: "QrCode",
     moduleKey: "room_qr_requests",
     tier: "basic",

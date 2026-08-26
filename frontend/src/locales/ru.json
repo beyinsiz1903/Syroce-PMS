@@ -2134,6 +2134,18 @@
     "system": "Каналы и интеграции"
   },
   "navSections": {
+    "frontdesk": {
+      "reservations": "Бронирования и проживание",
+      "room_management": "Управление номерами",
+      "guest_services": "Сервис для гостей",
+      "daily_controls": "Ежедневный контроль"
+    },
+    "operations": {
+      "daily": "Ежедневные операции",
+      "guest_requests": "Запросы гостей",
+      "incidents": "Инциденты и контроль",
+      "wellness": "Спа и велнес"
+    },
     "system": {
       "channels": "Управление каналами",
       "distribution": "Дистрибуция и продажи",

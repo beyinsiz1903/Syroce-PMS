@@ -2134,6 +2134,18 @@
     "system": "渠道与集成"
   },
   "navSections": {
+    "frontdesk": {
+      "reservations": "预订与住宿",
+      "room_management": "客房管理",
+      "guest_services": "宾客服务",
+      "daily_controls": "日常检查"
+    },
+    "operations": {
+      "daily": "日常运营",
+      "guest_requests": "宾客需求",
+      "incidents": "事件与跟进",
+      "wellness": "水疗与康体"
+    },
     "system": {
       "channels": "渠道管理",
       "distribution": "分销与销售",

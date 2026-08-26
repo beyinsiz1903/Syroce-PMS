@@ -2134,6 +2134,18 @@
     "system": "القنوات والتكاملات"
   },
   "navSections": {
+    "frontdesk": {
+      "reservations": "الحجوزات والإقامة",
+      "room_management": "إدارة الغرف",
+      "guest_services": "خدمات الضيوف",
+      "daily_controls": "عمليات التحقق اليومية"
+    },
+    "operations": {
+      "daily": "العمليات اليومية",
+      "guest_requests": "طلبات الضيوف",
+      "incidents": "الحوادث والمتابعة",
+      "wellness": "السبا والعافية"
+    },
     "system": {
       "channels": "إدارة القنوات",
       "distribution": "التوزيع والمبيعات",

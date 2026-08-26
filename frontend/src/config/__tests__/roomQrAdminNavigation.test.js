@@ -10,6 +10,8 @@ describe('room QR admin access', () => {
     expect(item).toMatchObject({
       path: '/admin/room-qr-codes',
       moduleKey: 'room_qr_requests',
+      navGroup: 'admin',
+      navSection: 'properties',
       allowedRoles: ['admin', 'super_admin'],
     });
     expect(item.requireSuperAdmin).not.toBe(true);
