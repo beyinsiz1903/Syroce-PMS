@@ -5,10 +5,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle, CopyCheck } from 'lucide-react';
+import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle, CopyCheck, Plus, Trash2 } from 'lucide-react';
 import { DAYS, UPDATE_FIELDS } from './constants';
 import { ChannelList } from './ChannelList';
 import { useTranslation } from 'react-i18next';
+import { normalizeOccupancyRule } from '@/utils/occupancyPricing';
 
 export const BulkUpdatePanel = ({
   roomTypeTree, roomTypes, ratePlans, enabledFields, toggleField,
@@ -407,20 +408,62 @@ const RoomTypeList = ({
 };
 
 export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave, currentBaseRate, currencySymbol, channelProvider }) => {
+  const normalizedRule = normalizeOccupancyRule(rule);
   const initial = {
-    base_occupancy: Number(rule?.base_occupancy ?? 2),
-    extra_adult_rate: Number(rule?.extra_adult_rate ?? 0),
-    extra_child_rate: Number(rule?.extra_child_rate ?? 0),
-    child_free_age_max: Number(rule?.child_free_age_max ?? 0),
-    max_occupancy: rule?.max_occupancy ?? '',
+    base_occupancy: normalizedRule.base_occupancy,
+    extra_adult_rate: normalizedRule.extra_adult_rate,
+    child_age_bands: normalizedRule.child_age_bands,
+    max_occupancy: normalizedRule.max_occupancy ?? '',
     provider_pricing_verified: Boolean(rule?.provider_pricing_verified),
     provider_pricing_note: rule?.provider_pricing_note || '',
   };
   const [draft, setDraft] = useState(initial);
   const [submitting, setSubmitting] = useState(false);
-  const update = (field, value) => setDraft(prev => ({ ...prev, [field]: value }));
+  const update = (field, value) => setDraft(prev => ({
+    ...prev,
+    [field]: value,
+    ...(field !== 'provider_pricing_verified' && field !== 'provider_pricing_note'
+      ? { provider_pricing_verified: false }
+      : {}),
+  }));
+  const updateBand = (index, field, value) => setDraft(prev => ({
+    ...prev,
+    provider_pricing_verified: false,
+    child_age_bands: prev.child_age_bands.map((band, bandIndex) => bandIndex === index
+      ? { ...band, [field]: value }
+      : band),
+  }));
+  const removeBand = index => setDraft(prev => ({
+    ...prev,
+    provider_pricing_verified: false,
+    child_age_bands: prev.child_age_bands.filter((_, bandIndex) => bandIndex !== index),
+  }));
+  const addBand = () => setDraft(prev => ({
+    ...prev,
+    provider_pricing_verified: false,
+    child_age_bands: [...prev.child_age_bands, { min_age: 0, max_age: 17, pricing_mode: 'fixed', value: 0 }],
+  }));
+  const applyCommonBands = () => update('child_age_bands', [
+    { min_age: 0, max_age: 6, pricing_mode: 'free', value: 0 },
+    { min_age: 7, max_age: 11, pricing_mode: 'adult_percentage', value: 50 },
+    { min_age: 12, max_age: 17, pricing_mode: 'adult_rate', value: 0 },
+  ]);
+  const sortedBands = [...draft.child_age_bands].sort((left, right) => left.min_age - right.min_age);
+  let expectedAge = 0;
+  const bandsValid = sortedBands.length > 0 && sortedBands.every(band => {
+    const valid = Number.isInteger(Number(band.min_age))
+      && Number.isInteger(Number(band.max_age))
+      && Number(band.min_age) === expectedAge
+      && Number(band.max_age) >= Number(band.min_age)
+      && Number(band.max_age) <= 17
+      && ['free', 'fixed', 'adult_percentage', 'adult_rate'].includes(band.pricing_mode)
+      && Number(band.value || 0) >= 0
+      && (band.pricing_mode !== 'adult_percentage' || Number(band.value || 0) <= 100);
+    expectedAge = Number(band.max_age) + 1;
+    return valid;
+  }) && expectedAge === 18;
   const base = Number(currentBaseRate || 0);
-  const exampleGuests = draft.base_occupancy + 1;
+  const exampleGuests = Number(draft.base_occupancy) + 1;
   const exampleNightly = base + Number(draft.extra_adult_rate || 0);
 
   return (
@@ -435,12 +478,64 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
       </div>
       {open && (
         <div className="mt-3 rounded-lg border border-amber-200 bg-white p-3">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <RuleNumber label="Fiyata dahil yetişkin" value={draft.base_occupancy} min={1} max={20} onChange={v => update('base_occupancy', v)} />
             <RuleNumber label="Ek yetişkin / gece" value={draft.extra_adult_rate} min={0} step="0.01" onChange={v => update('extra_adult_rate', v)} />
-            <RuleNumber label="Ek çocuk / gece" value={draft.extra_child_rate} min={0} step="0.01" onChange={v => update('extra_child_rate', v)} />
-            <RuleNumber label="Ücretsiz çocuk yaş sınırı" value={draft.child_free_age_max} min={0} max={17} onChange={v => update('child_free_age_max', v)} />
             <RuleNumber label="Maksimum kişi" value={draft.max_occupancy} min={draft.base_occupancy} max={50} optional onChange={v => update('max_occupancy', v)} />
+          </div>
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3" data-testid={`child-age-bands-${roomType.code}`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold text-slate-800">Çocuk yaş kademeleri</div>
+                <div className="text-[11px] text-slate-500">0–17 yaş aralığının tamamı, boşluk ve çakışma olmadan tanımlanmalıdır.</div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={applyCommonBands}>
+                  0–6 ücretsiz · 7–11 %50 · 12+ yetişkin
+                </Button>
+                <Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={addBand}>
+                  <Plus className="mr-1 h-3.5 w-3.5" /> Kademe ekle
+                </Button>
+              </div>
+            </div>
+            <div className="mt-3 space-y-2">
+              {draft.child_age_bands.map((band, index) => {
+                const needsValue = ['fixed', 'adult_percentage'].includes(band.pricing_mode);
+                return (
+                  <div key={`child-band-${index}`} className="grid items-end gap-2 rounded-md border bg-white p-2 sm:grid-cols-[80px_80px_minmax(180px,1fr)_140px_36px]">
+                    <RuleNumber label="Başlangıç yaşı" value={band.min_age} min={0} max={17} onChange={value => updateBand(index, 'min_age', Number(value))} />
+                    <RuleNumber label="Bitiş yaşı" value={band.max_age} min={0} max={17} onChange={value => updateBand(index, 'max_age', Number(value))} />
+                    <div>
+                      <Label className="text-[11px] text-gray-600">Ücret yöntemi</Label>
+                      <select
+                        className="mt-1 h-8 w-full rounded-md border border-input bg-white px-2 text-sm"
+                        value={band.pricing_mode}
+                        onChange={event => updateBand(index, 'pricing_mode', event.target.value)}
+                      >
+                        <option value="free">Ücretsiz</option>
+                        <option value="adult_percentage">Yetişkin ek ücretinin yüzdesi</option>
+                        <option value="adult_rate">Yetişkin sayılır</option>
+                        <option value="fixed">Sabit ücret / gece</option>
+                      </select>
+                    </div>
+                    {needsValue
+                      ? <RuleNumber
+                          label={band.pricing_mode === 'adult_percentage' ? 'Yüzde' : 'Tutar / gece'}
+                          value={band.value}
+                          min={0}
+                          max={band.pricing_mode === 'adult_percentage' ? 100 : undefined}
+                          step="0.01"
+                          onChange={value => updateBand(index, 'value', Number(value))}
+                        />
+                      : <div className="pb-2 text-xs text-slate-500">Otomatik</div>}
+                    <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-red-600" aria-label={`${index + 1}. çocuk yaş kademesini sil`} onClick={() => removeBand(index)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+            {!bandsValid && <div className="mt-2 text-xs font-medium text-red-600" role="alert">Yaş kademeleri 0–17 aralığını kesintisiz kapsamalıdır.</div>}
           </div>
           {base > 0 && (
             <div className="mt-3 rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800" data-testid={`occupancy-preview-${roomType.code}`}>
@@ -459,7 +554,7 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
                   data-testid={`hotelrunner-pricing-attestation-${roomType.code}`}
                 />
                 <span>
-                  HotelRunner panelindeki dahil yetişkin, ek yetişkin, çocuk ücreti ve ücretsiz çocuk yaşı bu değerlerle eşleşiyor.
+                  HotelRunner panelindeki dahil yetişkin, ek yetişkin ve tüm çocuk yaş kademeleri bu değerlerle eşleşiyor.
                   <span className="mt-1 block font-normal text-slate-600">Bu onay olmadan HotelRunner'a taban fiyat gönderimi güvenlik amacıyla durdurulur.</span>
                 </span>
               </label>
@@ -476,16 +571,24 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
             <Button
               type="button"
               size="sm"
-              disabled={submitting}
+              disabled={submitting || !bandsValid}
               onClick={async () => {
                 setSubmitting(true);
                 try {
+                  const freeBand = sortedBands[0]?.pricing_mode === 'free' && sortedBands[0]?.min_age === 0 ? sortedBands[0] : null;
+                  const fixedBand = sortedBands.find(band => band.pricing_mode === 'fixed');
                   await onSave({
                     ...draft,
                     base_occupancy: Number(draft.base_occupancy),
                     extra_adult_rate: Number(draft.extra_adult_rate),
-                    extra_child_rate: Number(draft.extra_child_rate),
-                    child_free_age_max: Number(draft.child_free_age_max),
+                    extra_child_rate: Number(fixedBand?.value || 0),
+                    child_free_age_max: Number(freeBand?.max_age || 0),
+                    child_age_bands: sortedBands.map(band => ({
+                      min_age: Number(band.min_age),
+                      max_age: Number(band.max_age),
+                      pricing_mode: band.pricing_mode,
+                      value: Number(band.value || 0),
+                    })),
                     max_occupancy: draft.max_occupancy === '' ? null : Number(draft.max_occupancy),
                   });
                 } finally {

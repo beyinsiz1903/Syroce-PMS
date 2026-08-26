@@ -276,7 +276,9 @@ const BookingDialog = ({
                 </div>
               </div>
               {room.apply_occupancy_pricing && occupancyRule && <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-                {occupancyRule.base_occupancy} yetişkin fiyata dahil · Ek yetişkin ₺{Number(occupancyRule.extra_adult_rate || 0).toLocaleString('tr-TR')}/gece. Toplam backend tarafından yeniden doğrulanır.
+                {occupancyRule.base_occupancy} yetişkin fiyata dahil · Ek yetişkin ₺{Number(occupancyRule.extra_adult_rate || 0).toLocaleString('tr-TR')}/gece.
+                {occupancyRule.child_age_bands?.length > 0 && ` Çocuk yaş kademeleri: ${occupancyRule.child_age_bands.map(band => `${band.min_age}–${band.max_age} ${band.pricing_mode === 'free' ? 'ücretsiz' : band.pricing_mode === 'adult_rate' ? 'yetişkin sayılır' : band.pricing_mode === 'adult_percentage' ? `%${band.value}` : `₺${Number(band.value).toLocaleString('tr-TR')}`}`).join(', ')}.`}
+                {' '}Toplam backend tarafından yeniden doğrulanır.
               </div>}
             </div>})}
         </div>

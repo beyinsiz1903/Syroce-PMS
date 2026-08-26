@@ -22,6 +22,15 @@ RULE = {
     "max_occupancy": 4,
 }
 
+TIERED_RULE = {
+    **RULE,
+    "child_age_bands": [
+        {"min_age": 0, "max_age": 6, "pricing_mode": "free", "value": 0},
+        {"min_age": 7, "max_age": 11, "pricing_mode": "adult_percentage", "value": 50},
+        {"min_age": 12, "max_age": 17, "pricing_mode": "adult_rate", "value": 0},
+    ],
+}
+
 
 def test_two_adults_pay_only_base_rate():
     quote = calculate_occupancy_quote(
@@ -59,6 +68,92 @@ def test_free_child_age_and_paid_child_are_distinguished():
     )
     assert quote["chargeable_children"] == 1
     assert quote["total_amount"] == 5750
+
+
+def test_tiered_child_pricing_supports_free_half_and_adult_rates():
+    quote = calculate_occupancy_quote(
+        base_nightly_rate=5000,
+        nights=2,
+        adults=2,
+        children_ages=[6, 7, 12],
+        rule={**TIERED_RULE, "max_occupancy": 5},
+    )
+
+    assert [child["rate"] for child in quote["child_breakdown"]] == [0, 750, 1500]
+    assert quote["free_children"] == 1
+    assert quote["chargeable_children"] == 2
+    assert quote["child_supplement_nightly"] == 2250
+    assert quote["nightly_total"] == 7250
+    assert quote["total_amount"] == 14500
+
+
+def test_adult_equivalent_child_uses_an_included_adult_slot_first():
+    quote = calculate_occupancy_quote(
+        base_nightly_rate=5000,
+        nights=1,
+        adults=1,
+        children_ages=[12],
+        rule=TIERED_RULE,
+    )
+
+    assert quote["child_breakdown"][0]["counts_as_adult"] is True
+    assert quote["child_breakdown"][0]["rate"] == 0
+    assert quote["nightly_total"] == 5000
+
+
+def test_percentage_tier_rounds_to_currency_precision():
+    rule = {
+        **TIERED_RULE,
+        "extra_adult_rate": 999.99,
+        "child_age_bands": [
+            band | {"value": 33.33} if band["pricing_mode"] == "adult_percentage" else band
+            for band in TIERED_RULE["child_age_bands"]
+        ],
+    }
+    quote = calculate_occupancy_quote(
+        base_nightly_rate=5000,
+        nights=1,
+        adults=2,
+        children_ages=[8],
+        rule=rule,
+    )
+    assert quote["child_supplement_nightly"] == 333.30
+    assert quote["nightly_total"] == 5333.30
+
+
+@pytest.mark.parametrize(
+    "bands",
+    [
+        [
+            {"min_age": 0, "max_age": 6, "pricing_mode": "free", "value": 0},
+            {"min_age": 8, "max_age": 17, "pricing_mode": "fixed", "value": 500},
+        ],
+        [
+            {"min_age": 0, "max_age": 10, "pricing_mode": "free", "value": 0},
+            {"min_age": 10, "max_age": 17, "pricing_mode": "fixed", "value": 500},
+        ],
+    ],
+)
+def test_child_age_bands_reject_gaps_and_overlaps(bands):
+    with pytest.raises(OccupancyPricingError, match="bosluk ve cakisma"):
+        normalize_occupancy_rule({**RULE, "child_age_bands": bands})
+
+
+def test_child_percentage_cannot_exceed_one_hundred():
+    bands = [
+        {"min_age": 0, "max_age": 6, "pricing_mode": "free", "value": 0},
+        {"min_age": 7, "max_age": 17, "pricing_mode": "adult_percentage", "value": 101},
+    ]
+    with pytest.raises(OccupancyPricingError, match="0-100"):
+        normalize_occupancy_rule({**RULE, "child_age_bands": bands})
+
+
+def test_legacy_child_rule_is_migrated_without_price_change():
+    normalized = normalize_occupancy_rule(RULE)
+    assert normalized["child_age_bands"] == [
+        {"min_age": 0, "max_age": 6, "pricing_mode": "free", "value": 0.0},
+        {"min_age": 7, "max_age": 17, "pricing_mode": "fixed", "value": 750.0},
+    ]
 
 
 def test_per_room_rule_never_adds_guest_supplements():

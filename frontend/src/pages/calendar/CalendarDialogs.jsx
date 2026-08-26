@@ -375,7 +375,11 @@ export const NewBookingDialog = ({
             <div className="mt-1">
               {occupancyQuote.rule.base_occupancy} yetişkin dahil
               {occupancyQuote.extraAdults > 0 && ` · ${occupancyQuote.extraAdults} ek yetişkin × ₺${occupancyQuote.rule.extra_adult_rate.toLocaleString('tr-TR')}`}
-              {occupancyQuote.chargeableChildren > 0 && ` · ${occupancyQuote.chargeableChildren} ücretli çocuk × ₺${occupancyQuote.rule.extra_child_rate.toLocaleString('tr-TR')}`}
+              {occupancyQuote.childBreakdown?.map((child, index) => (
+                <span key={`${child.age}-${index}`}>
+                  {` · ${child.age} yaş ${child.rate > 0 ? `₺${child.rate.toLocaleString('tr-TR')}` : 'ücretsiz'}`}
+                </span>
+              ))}
             </div>
             <div className="mt-1 font-medium">
               Gecelik ₺{occupancyQuote.nightlyTotal.toLocaleString('tr-TR')} · {occupancyQuote.nights} gece toplam ₺{occupancyQuote.totalAmount.toLocaleString('tr-TR')}

@@ -11,7 +11,8 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 MONEY = Decimal("0.01")
-PRICING_RULE_VERSION = "occupancy-v1"
+PRICING_RULE_VERSION = "occupancy-v2"
+CHILD_PRICING_MODES = {"free", "fixed", "adult_percentage", "adult_rate"}
 
 
 class OccupancyPricingError(ValueError):
@@ -26,6 +27,71 @@ def _decimal(value: Any, *, field: str) -> Decimal:
     if not result.is_finite() or result < 0:
         raise OccupancyPricingError(f"{field} negatif veya gecersiz olamaz")
     return result.quantize(MONEY, rounding=ROUND_HALF_UP)
+
+
+def _legacy_child_age_bands(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    """Translate the v1 free-age/fixed-child rule into complete v2 bands."""
+
+    free_age_max = int(raw.get("child_free_age_max") or 0)
+    fixed_rate = float(_decimal(raw.get("extra_child_rate", 0), field="Ek cocuk ucreti"))
+    bands = [{"min_age": 0, "max_age": free_age_max, "pricing_mode": "free", "value": 0.0}]
+    if free_age_max < 17:
+        bands.append(
+            {
+                "min_age": free_age_max + 1,
+                "max_age": 17,
+                "pricing_mode": "fixed",
+                "value": fixed_rate,
+            }
+        )
+    return bands
+
+
+def _normalize_child_age_bands(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    supplied = raw.get("child_age_bands")
+    if supplied in (None, []):
+        return _legacy_child_age_bands(raw)
+    if not isinstance(supplied, list) or len(supplied) > 18:
+        raise OccupancyPricingError("Cocuk yas kademeleri liste olmali ve 18 satiri gecmemeli")
+
+    bands: list[dict[str, Any]] = []
+    for item in supplied:
+        if not isinstance(item, dict):
+            raise OccupancyPricingError("Cocuk yas kademesi gecersiz")
+        try:
+            min_age = int(item.get("min_age"))
+            max_age = int(item.get("max_age"))
+        except (TypeError, ValueError) as exc:
+            raise OccupancyPricingError("Cocuk yas araligi tam sayi olmali") from exc
+        if not 0 <= min_age <= max_age <= 17:
+            raise OccupancyPricingError("Cocuk yas araligi 0-17 icinde olmali")
+
+        pricing_mode = str(item.get("pricing_mode") or "").strip()
+        if pricing_mode not in CHILD_PRICING_MODES:
+            raise OccupancyPricingError("Gecersiz cocuk fiyatlandirma yontemi")
+        value = _decimal(item.get("value", 0), field="Cocuk kademe degeri")
+        if pricing_mode == "adult_percentage" and value > 100:
+            raise OccupancyPricingError("Yetiskin ucreti yuzdesi 0-100 arasinda olmali")
+        if pricing_mode in {"free", "adult_rate"}:
+            value = Decimal("0.00")
+        bands.append(
+            {
+                "min_age": min_age,
+                "max_age": max_age,
+                "pricing_mode": pricing_mode,
+                "value": float(value),
+            }
+        )
+
+    bands.sort(key=lambda band: (band["min_age"], band["max_age"]))
+    expected_min_age = 0
+    for band in bands:
+        if band["min_age"] != expected_min_age:
+            raise OccupancyPricingError("Cocuk yas kademeleri 0-17 yaslarini bosluk ve cakisma olmadan kapsamalidir")
+        expected_min_age = band["max_age"] + 1
+    if expected_min_age != 18:
+        raise OccupancyPricingError("Cocuk yas kademeleri 0-17 yaslarini tamamen kapsamalidir")
+    return bands
 
 
 def normalize_occupancy_rule(rule: dict[str, Any] | None) -> dict[str, Any]:
@@ -45,12 +111,14 @@ def normalize_occupancy_rule(rule: dict[str, Any] | None) -> dict[str, Any]:
     if not 0 <= child_free_age_max <= 17:
         raise OccupancyPricingError("Ucretsiz cocuk yas siniri 0-17 arasinda olmali")
 
+    child_age_bands = _normalize_child_age_bands(raw)
     return {
         "pricing_type": pricing_type,
         "base_occupancy": base_occupancy,
         "extra_adult_rate": float(_decimal(raw.get("extra_adult_rate", 0), field="Ek yetiskin ucreti")),
         "extra_child_rate": float(_decimal(raw.get("extra_child_rate", 0), field="Ek cocuk ucreti")),
         "child_free_age_max": child_free_age_max,
+        "child_age_bands": child_age_bands,
         "max_occupancy": max_occupancy,
         "pricing_version": str(raw.get("pricing_version") or PRICING_RULE_VERSION),
     }
@@ -85,12 +153,50 @@ def calculate_occupancy_quote(
 
     extra_adults = 0
     chargeable_children = 0
+    free_children = 0
+    child_breakdown: list[dict[str, Any]] = []
     if normalized["pricing_type"] == "per_person":
         extra_adults = max(0, adults - normalized["base_occupancy"])
-        chargeable_children = sum(age > normalized["child_free_age_max"] for age in ages)
+        included_adult_slots = max(0, normalized["base_occupancy"] - adults)
+        adult_rate = _decimal(normalized["extra_adult_rate"], field="Ek yetiskin ucreti")
+        for age in ages:
+            band = next(
+                (candidate for candidate in normalized["child_age_bands"] if candidate["min_age"] <= age <= candidate["max_age"]),
+                None,
+            )
+            if band is None:  # Normalization guarantees complete coverage; keep fail-closed.
+                raise OccupancyPricingError(f"{age} yas icin cocuk fiyat kademesi bulunamadi")
+            mode = band["pricing_mode"]
+            if mode == "free":
+                amount = Decimal("0.00")
+            elif mode == "fixed":
+                amount = _decimal(band["value"], field="Cocuk sabit ucreti")
+            elif mode == "adult_percentage":
+                percentage = _decimal(band["value"], field="Yetiskin ucreti yuzdesi")
+                amount = (adult_rate * percentage / Decimal("100")).quantize(MONEY, rounding=ROUND_HALF_UP)
+            else:  # adult_rate: the child is an adult-equivalent for occupancy pricing.
+                if included_adult_slots > 0:
+                    included_adult_slots -= 1
+                    amount = Decimal("0.00")
+                else:
+                    amount = adult_rate
+            if amount > 0:
+                chargeable_children += 1
+            else:
+                free_children += 1
+            child_breakdown.append(
+                {
+                    "age": age,
+                    "pricing_mode": mode,
+                    "rate": float(amount),
+                    "counts_as_adult": mode == "adult_rate",
+                    "band_min_age": band["min_age"],
+                    "band_max_age": band["max_age"],
+                }
+            )
 
     adult_supplement = _decimal(normalized["extra_adult_rate"], field="Ek yetiskin ucreti") * extra_adults
-    child_supplement = _decimal(normalized["extra_child_rate"], field="Ek cocuk ucreti") * chargeable_children
+    child_supplement = sum((_decimal(row["rate"], field="Cocuk ucreti") for row in child_breakdown), Decimal("0.00"))
     nightly_total = (base_rate + adult_supplement + child_supplement).quantize(MONEY, rounding=ROUND_HALF_UP)
     stay_total = (nightly_total * nights).quantize(MONEY, rounding=ROUND_HALF_UP)
 
@@ -104,8 +210,11 @@ def calculate_occupancy_quote(
         "children_ages": ages,
         "extra_adults": extra_adults,
         "chargeable_children": chargeable_children,
+        "free_children": free_children,
+        "child_breakdown": child_breakdown,
         "extra_adult_rate": normalized["extra_adult_rate"],
         "extra_child_rate": normalized["extra_child_rate"],
+        "child_age_bands": normalized["child_age_bands"],
         "adult_supplement_nightly": float(adult_supplement),
         "child_supplement_nightly": float(child_supplement),
         "nightly_total": float(nightly_total),
