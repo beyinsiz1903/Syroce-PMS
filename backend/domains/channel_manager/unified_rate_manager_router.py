@@ -115,6 +115,13 @@ class AgencyRateOverrideRequest(BaseModel):
     overrides: list[AgencyRateOverride]
 
 
+class ChildAgeBandItem(BaseModel):
+    min_age: int = Field(..., ge=0, le=17)
+    max_age: int = Field(..., ge=0, le=17)
+    pricing_mode: str
+    value: float = Field(0, ge=0, le=1e12)
+
+
 class PricingSettingItem(BaseModel):
     room_type_code: str
     pricing_type: str
@@ -122,6 +129,7 @@ class PricingSettingItem(BaseModel):
     extra_adult_rate: float = Field(0, ge=0, le=1e12)
     extra_child_rate: float = Field(0, ge=0, le=1e12)
     child_free_age_max: int = Field(0, ge=0, le=17)
+    child_age_bands: list[ChildAgeBandItem] | None = Field(None, max_length=18)
     max_occupancy: int | None = Field(None, ge=1, le=50)
     provider_pricing_verified: bool = False
     provider_pricing_note: str | None = Field(None, max_length=500)
