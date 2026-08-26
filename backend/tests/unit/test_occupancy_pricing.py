@@ -11,6 +11,7 @@ from core.occupancy_pricing import (
     find_occupancy_rule,
     normalize_occupancy_rule,
 )
+from domains.channel_manager import unified_rate_manager_router as unified
 
 RULE = {
     "pricing_type": "per_person",
@@ -93,6 +94,35 @@ def test_capacity_and_invalid_money_fail_closed():
 def test_maximum_occupancy_cannot_be_below_included_occupancy():
     with pytest.raises(OccupancyPricingError, match="Maksimum"):
         normalize_occupancy_rule({**RULE, "base_occupancy": 3, "max_occupancy": 2})
+
+
+def test_hotelrunner_pricing_rule_exposes_manual_verification_state():
+    _, rules = unified._pricing_payload([
+        {"room_type_code": "STD", **RULE, "provider_pricing_verified": False}
+    ])
+    assert rules["STD"]["provider_sync_state"] == "MANUAL_CONFIGURATION_REQUIRED"
+    assert rules["STD"]["provider_pricing_verified"] is False
+
+    _, verified = unified._pricing_payload([
+        {"room_type_code": "STD", **RULE, "provider_pricing_verified": True}
+    ])
+    assert verified["STD"]["provider_sync_state"] == "VERIFIED"
+
+
+def test_hotelrunner_base_rate_write_fails_closed_until_rule_is_attested():
+    mappings = [{"pms_room_type": "standard", "hr_inv_code": "HR-STD"}]
+    assert unified._unsafe_hotelrunner_room_types(["standard"], mappings, []) == ["standard"]
+    assert unified._unsafe_hotelrunner_room_types(
+        ["standard"], mappings, [{"room_type_code": "HR-STD", "pricing_type": "per_person"}]
+    ) == ["standard"]
+    assert unified._unsafe_hotelrunner_room_types(
+        ["standard"], mappings, [{
+            "room_type_code": "HR-STD", "pricing_type": "per_person", "provider_pricing_verified": True
+        }]
+    ) == []
+    assert unified._unsafe_hotelrunner_room_types(
+        ["standard"], mappings, [{"room_type_code": "HR-STD", "pricing_type": "per_room"}]
+    ) == []
 
 
 @pytest.mark.asyncio

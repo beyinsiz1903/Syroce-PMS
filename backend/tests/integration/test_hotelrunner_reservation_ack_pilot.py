@@ -33,6 +33,7 @@ pytestmark = [
 _OFFICIAL_BASE_URL = "https://app.hotelrunner.com"
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _TARGET_POLL_INTERVAL_SECONDS = 10
+_sleep = asyncio.sleep
 
 
 class AckPilotHttpGuard:
@@ -201,7 +202,7 @@ async def _wait_for_target_reservation(
         remaining = deadline - loop.time()
         if remaining <= 0:
             raise ReservationPilotError("BLOCKED_TARGET_UNDELIVERED_RESERVATION_NOT_FOUND")
-        await asyncio.sleep(min(_TARGET_POLL_INTERVAL_SECONDS, remaining))
+        await _sleep(min(_TARGET_POLL_INTERVAL_SECONDS, remaining))
 
 
 def _verify_history_pms_number(

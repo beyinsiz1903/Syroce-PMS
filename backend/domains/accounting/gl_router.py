@@ -839,6 +839,30 @@ class NilveraGLSettingsIn(BaseModel):
     outgoing_accommodation_tax_accounts_by_rate: dict[str, str] = Field(default_factory=dict)
 
 
+class AccountingSetupProfileIn(BaseModel):
+    legal_name: str = Field(..., min_length=2, max_length=240)
+    taxpayer_id: str = Field(..., min_length=10, max_length=11, pattern=r"^\d{10,11}$")
+    tax_office: str = Field(..., min_length=2, max_length=120)
+    address: str = Field(..., min_length=5, max_length=500)
+    city: str = Field(..., min_length=2, max_length=120)
+    country: str = Field("Türkiye", min_length=2, max_length=120)
+    currency: str = Field("TRY", min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
+    fiscal_year: int = Field(..., ge=2000, le=2100)
+    migration_date: str = Field(..., min_length=10, max_length=10, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    opening_balance_required: bool = False
+    branch_code: str | None = Field(None, max_length=40)
+    cost_center_code: str | None = Field(None, max_length=40)
+    accountant_name: str | None = Field(None, max_length=160)
+    accountant_email: str | None = Field(None, max_length=240)
+
+
+class AccountingSetupOpeningBalanceIn(BaseModel):
+    date: str = Field(..., min_length=10, max_length=10, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    memo: str = Field("Muhasebe açılış bakiyeleri", min_length=3, max_length=500)
+    lines: list[JournalLineIn] = Field(..., min_length=2, max_length=500)
+    idempotency_key: str = Field(..., min_length=8, max_length=120)
+
+
 _VOUCHER_STATUSES = {"draft", "submitted", "approved", "rejected", "posting", "posted", "cancelled"}
 
 
@@ -2456,6 +2480,215 @@ async def comparative_balance_sheet(
             for key in ("assets", "liabilities", "equity", "liabilities_and_equity")
         },
     }
+
+
+async def _accounting_setup_state(tenant_id: str) -> dict:
+    profile = await db.gl_setup_profiles.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    fiscal_year = int((profile or {}).get("fiscal_year") or datetime.now(UTC).year)
+    account_count, period_count = await asyncio.gather(
+        db.gl_accounts.count_documents({"tenant_id": tenant_id, "active": True}),
+        db.gl_periods.count_documents({"tenant_id": tenant_id, "fiscal_year": fiscal_year}),
+    )
+    mapping = await get_operational_mapping(db, tenant_id)
+    opening_voucher = await db.gl_vouchers.find_one(
+        {"tenant_id": tenant_id, "setup_kind": "opening_balance", "status": {"$ne": "cancelled"}},
+        {"_id": 0, "id": 1, "voucher_no": 1, "status": 1, "date": 1},
+        sort=[("created_at", -1)],
+    )
+    checks = [
+        {
+            "code": "legal_profile",
+            "label": "Yasal şirket ve vergi bilgileri",
+            "ready": bool(profile),
+            "required": True,
+        },
+        {
+            "code": "chart_of_accounts",
+            "label": "Tek Düzen Hesap Planı",
+            "ready": account_count >= len(_DEFAULT_CHART_OF_ACCOUNTS),
+            "required": True,
+        },
+        {
+            "code": "fiscal_periods",
+            "label": f"{fiscal_year} mali dönemleri",
+            "ready": period_count == 12,
+            "required": True,
+        },
+        {
+            "code": "operational_mapping",
+            "label": "PMS/POS muhasebe eşlemesi",
+            "ready": bool(mapping.get("enabled")),
+            "required": True,
+        },
+        {
+            "code": "opening_balance",
+            "label": "Açılış bakiyesi taslağı",
+            "ready": bool(opening_voucher) or not bool((profile or {}).get("opening_balance_required")),
+            "required": bool((profile or {}).get("opening_balance_required")),
+        },
+    ]
+    blockers = [check for check in checks if check["required"] and not check["ready"]]
+    return {
+        "profile": profile,
+        "checks": checks,
+        "blockers": blockers,
+        "ready": not blockers,
+        "account_count": account_count,
+        "period_count": period_count,
+        "operational_mapping": mapping,
+        "opening_balance_voucher": opening_voucher,
+    }
+
+
+@router.get("/setup")
+async def get_accounting_setup(current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _READ_ROLES)
+    return await _accounting_setup_state(_tenant_of(current_user))
+
+
+@router.put("/setup/profile")
+async def save_accounting_setup_profile(
+    payload: AccountingSetupProfileIn,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    actor = _actor_id(current_user)
+    now = _now_iso()
+    profile = {
+        **payload.model_dump(),
+        "currency": payload.currency.upper(),
+        "tenant_id": tenant_id,
+        "updated_at": now,
+        "updated_by": actor,
+    }
+    before = await db.gl_setup_profiles.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    await db.gl_setup_profiles.update_one(
+        {"tenant_id": tenant_id},
+        {"$set": profile, "$setOnInsert": {"created_at": now, "created_by": actor}},
+        upsert=True,
+    )
+    # Keep e-Defter identity aligned. This does not submit anything to GİB.
+    await db.gl_eledger_settings.update_one(
+        {"tenant_id": tenant_id},
+        {
+            "$set": {
+                "tenant_id": tenant_id,
+                "taxpayer_id": payload.taxpayer_id,
+                "legal_name": payload.legal_name.strip(),
+                "updated_at": now,
+                "updated_by": actor,
+            },
+            "$setOnInsert": {
+                "source_application": "Syroce PMS",
+                "source_application_version": "setup-wizard",
+                "created_at": now,
+            },
+        },
+        upsert=True,
+    )
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=actor,
+        action="gl_setup_profile_updated",
+        entity_type="gl_setup_profile",
+        entity_id=tenant_id,
+        details="Otel muhasebe kurulum profili güncellendi",
+        before_value=before,
+        after_value={key: value for key, value in profile.items() if key not in {"tenant_id", "updated_by"}},
+        db=db,
+    )
+    return await _accounting_setup_state(tenant_id)
+
+
+@router.post("/setup/initialize")
+async def initialize_accounting_setup(current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    profile = await db.gl_setup_profiles.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    if not profile:
+        raise HTTPException(status_code=409, detail="Önce yasal şirket ve mali yıl bilgilerini kaydedin")
+    await initialize_chart_of_accounts(current_user=current_user)
+    await initialize_periods(FiscalYearIn(fiscal_year=int(profile["fiscal_year"])), current_user=current_user)
+    return await _accounting_setup_state(tenant_id)
+
+
+@router.post("/setup/opening-balances")
+async def create_accounting_setup_opening_balance(
+    payload: AccountingSetupOpeningBalanceIn,
+    current_user: User = Depends(get_current_user),
+):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    existing = await db.gl_vouchers.find_one(
+        {
+            "tenant_id": tenant_id,
+            "setup_kind": "opening_balance",
+            "setup_idempotency_key": payload.idempotency_key,
+        },
+        {"_id": 0},
+    )
+    if existing:
+        return {"voucher": existing, "idempotent_replay": True, **(await _accounting_setup_state(tenant_id))}
+    actor = _actor_id(current_user)
+    now = _now_iso()
+    normalized = _normalized_voucher_payload(
+        VoucherCreateIn(date=payload.date, voucher_type="acilis", memo=payload.memo, lines=payload.lines)
+    )
+    fiscal_year = int(normalized["date"][:4])
+    voucher_sequence, voucher_no = await _allocate_voucher_number(tenant_id, fiscal_year, now)
+    voucher = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "voucher_no": voucher_no,
+        "voucher_sequence": voucher_sequence,
+        "fiscal_year": fiscal_year,
+        **normalized,
+        "status": "draft",
+        "version": 1,
+        "setup_kind": "opening_balance",
+        "setup_idempotency_key": payload.idempotency_key,
+        "created_at": now,
+        "created_by": actor,
+        "updated_at": now,
+        "updated_by": actor,
+        "history": [{"at": now, "by": actor, "action": "created", "status": "draft"}],
+    }
+    try:
+        await db.gl_vouchers.insert_one(dict(voucher))
+    except DuplicateKeyError:
+        replay = await db.gl_vouchers.find_one(
+            {"tenant_id": tenant_id, "setup_idempotency_key": payload.idempotency_key},
+            {"_id": 0},
+        )
+        if replay:
+            return {"voucher": replay, "idempotent_replay": True, **(await _accounting_setup_state(tenant_id))}
+        raise
+    voucher.pop("_id", None)
+    await _audit_voucher_transition(
+        tenant_id=tenant_id,
+        actor=actor,
+        voucher=voucher,
+        action="gl_setup_opening_balance_created",
+        before_status=None,
+        after_status="draft",
+    )
+    return {"voucher": voucher, "idempotent_replay": False, **(await _accounting_setup_state(tenant_id))}
+
+
+@router.post("/setup/complete")
+async def complete_accounting_setup(current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    state = await _accounting_setup_state(tenant_id)
+    if not state["ready"]:
+        raise HTTPException(status_code=409, detail="Zorunlu muhasebe kurulum adımları tamamlanmadı")
+    now = _now_iso()
+    await db.gl_setup_profiles.update_one(
+        {"tenant_id": tenant_id},
+        {"$set": {"completed_at": now, "completed_by": _actor_id(current_user), "updated_at": now}},
+    )
+    return await _accounting_setup_state(tenant_id)
 
 
 @router.get("/e-ledger/settings")

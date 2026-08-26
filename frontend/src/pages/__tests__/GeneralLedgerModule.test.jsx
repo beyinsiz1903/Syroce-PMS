@@ -16,6 +16,11 @@ import {
 describe('GeneralLedgerModule persistent GL contract', () => {
   it('uses the tenant-scoped persistent journal endpoint', () => {
     expect(GL_ENDPOINTS).toEqual({
+      setup: '/gl/setup',
+      setupProfile: '/gl/setup/profile',
+      setupInitialize: '/gl/setup/initialize',
+      setupOpeningBalances: '/gl/setup/opening-balances',
+      setupComplete: '/gl/setup/complete',
       accounts: '/gl/accounts',
       initializeAccounts: '/gl/accounts/initialize',
       journal: '/gl/journal',

@@ -170,7 +170,7 @@ async def test_ack_target_wait_is_get_only_until_exact_target(monkeypatch):
             ]
         )
     )
-    monkeypatch.setattr(ack_pilot.asyncio, "sleep", AsyncMock())
+    monkeypatch.setattr(ack_pilot, "_sleep", AsyncMock())
 
     selected = await ack_pilot._wait_for_target_reservation(
         provider,
@@ -180,7 +180,7 @@ async def test_ack_target_wait_is_get_only_until_exact_target(monkeypatch):
 
     assert selected["message_uid"] == "target"
     assert provider.fetch_reservations.await_count == 2
-    ack_pilot.asyncio.sleep.assert_awaited_once_with(10)
+    ack_pilot._sleep.assert_awaited_once_with(10)
 
 
 @pytest.mark.asyncio

@@ -218,6 +218,7 @@ class TestBacklogDrain:
         """Events stuck in retry/pending after outage are countable."""
         tenant_id = tenant_factory("backlog-001")
         past = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        next_retry = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
 
         # Insert 5 events simulating a backlog
         for _ in range(5):
@@ -225,7 +226,10 @@ class TestBacklogDrain:
                 tenant_id=tenant_id,
                 status="retry",
                 created_at=past,
-                available_at=past,  # All available now
+                # Keep the backlog pending while the assertion runs. Making these
+                # immediately available races the real outbox worker started by
+                # the full-suite fixture and turns this count into a flaky test.
+                available_at=next_retry,
             )
             await db.outbox_events.insert_one(event)
 
