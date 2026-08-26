@@ -1123,7 +1123,7 @@ export const NAV_ITEMS = [
     icon: "QrCode",
     moduleKey: "room_qr_requests",
     tier: "basic",
-    requireSuperAdmin: true,
+    allowedRoles: ["admin", "super_admin"],
   },
   {
     key: "api_docs",
