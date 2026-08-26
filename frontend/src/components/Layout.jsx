@@ -742,16 +742,17 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
         )}
       </header>
 
+      <PMSDateBadge inLayout />
+
       <main
         ref={mainRef}
-        className={`flex-1 w-full mx-auto overflow-auto pb-28 ${fullWidth ? 'max-w-none' : 'max-w-7xl'}`}
+        className={`app-safe-bottom-padding flex-1 w-full mx-auto overflow-auto ${fullWidth ? 'max-w-none' : 'max-w-7xl'}`}
       >
         <ErrorBoundary>
           {children}
         </ErrorBoundary>
       </main>
 
-      <PMSDateBadge />
       <SimulationOverlay />
     </div>
   );

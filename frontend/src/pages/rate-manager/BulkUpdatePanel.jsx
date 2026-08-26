@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, AlertTriangle, CopyCheck } from 'lucide-react';
+import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle, CopyCheck } from 'lucide-react';
 import { DAYS, UPDATE_FIELDS } from './constants';
 import { ChannelList } from './ChannelList';
 import { useTranslation } from 'react-i18next';
@@ -21,13 +21,41 @@ export const BulkUpdatePanel = ({
   totalSelectedRoomTypes, totalSelectedPlans,
   saving, handleBulkUpdate, handleReset, loading,
   activeChannels, activeChannelsStale, channelProvider,
+  mobileStep = 1, setMobileStep,
 }) => {
   const { t } = useTranslation();
+  const canContinueFromFields = enabledFields.size > 0 && Boolean(dateFrom) && Boolean(dateTo);
+  const canContinueFromRooms = totalSelectedRoomTypes > 0;
+  const goToStep = (step) => setMobileStep?.(Math.max(1, Math.min(3, step)));
+
   return (
   <div>
+    <div className="mb-4 lg:hidden" data-testid="rate-mobile-wizard">
+      <div className="grid grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+        {[
+          [1, 'Alan ve tarih'],
+          [2, 'Oda ve fiyat'],
+          [3, 'Kanal ve onay'],
+        ].map(([step, label]) => (
+          <button
+            key={step}
+            type="button"
+            onClick={() => goToStep(step)}
+            disabled={(step === 2 && !canContinueFromFields) || (step === 3 && (!canContinueFromFields || !canContinueFromRooms))}
+            className={`rounded-lg px-1.5 py-2 text-center text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${mobileStep === step ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500'}`}
+            aria-current={mobileStep === step ? 'step' : undefined}
+            data-testid={`rate-mobile-step-${step}`}
+          >
+            <span className={`mx-auto mb-1 flex h-5 w-5 items-center justify-center rounded-full text-[10px] ${mobileStep === step ? 'bg-amber-600 text-white' : 'bg-slate-200 text-slate-600'}`}>{step}</span>
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+
     <div className="flex flex-col lg:flex-row gap-4" data-testid="bulk-update-layout">
       {/* LEFT PANEL: Filters */}
-      <div className="w-full lg:w-[240px] flex-shrink-0 space-y-4" data-testid="bulk-left-panel">
+      <div className={`${mobileStep === 1 ? 'block' : 'hidden'} w-full flex-shrink-0 space-y-4 lg:block lg:w-[240px]`} data-testid="bulk-left-panel">
         {/* Update Fields Selection */}
         <Card>
           <CardHeader className="pb-2 pt-4 px-4">
@@ -87,7 +115,7 @@ export const BulkUpdatePanel = ({
         </Card>
 
         {/* Action Buttons */}
-        <div className="flex gap-2">
+        <div className="hidden gap-2 lg:flex">
           <Button className="flex-1 bg-amber-600 hover:bg-amber-700 text-white" onClick={handleBulkUpdate} disabled={saving} data-testid="bulk-update-btn">
             {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <Save className="w-4 h-4 mr-1.5" />}
             Guncelle
@@ -100,7 +128,7 @@ export const BulkUpdatePanel = ({
       </div>
 
       {/* CENTER PANEL: Room Types Table */}
-      <div className="flex-1 min-w-0" data-testid="bulk-center-panel">
+      <div className={`${mobileStep === 2 ? 'block' : 'hidden'} min-w-0 flex-1 lg:block`} data-testid="bulk-center-panel">
         <Card className="h-full">
           <CardHeader className="pb-2 pt-4 px-4">
             <div className="flex items-center justify-between">
@@ -133,7 +161,7 @@ export const BulkUpdatePanel = ({
       </div>
 
       {/* RIGHT PANEL: Channels */}
-      <div className="w-full lg:w-[200px] flex-shrink-0" data-testid="bulk-right-panel">
+      <div className={`${mobileStep === 3 ? 'block' : 'hidden'} w-full flex-shrink-0 lg:block lg:w-[200px]`} data-testid="bulk-right-panel">
         <Card className="h-full">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold text-gray-700">Kanallar</CardTitle>
@@ -147,7 +175,7 @@ export const BulkUpdatePanel = ({
 
     {/* Summary Bar */}
     {(totalSelectedRoomTypes > 0 || enabledFields.size > 0) && (
-      <Card className="border-amber-200 bg-amber-50/50 mt-4" data-testid="bulk-summary">
+      <Card className={`${mobileStep === 3 ? 'block' : 'hidden'} border-amber-200 bg-amber-50/50 mt-4 lg:block`} data-testid="bulk-summary">
         <CardContent className="py-3 px-4">
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="font-medium text-gray-700">{t('cm.pages_ratemanager_BulkUpdatePanel.ozet')}</span>
@@ -160,6 +188,37 @@ export const BulkUpdatePanel = ({
         </CardContent>
       </Card>
     )}
+
+    <div className="sticky bottom-0 z-20 -mx-4 mt-4 border-t border-slate-200 bg-white/95 px-4 pt-3 safe-bottom-padding backdrop-blur lg:hidden" data-testid="rate-mobile-wizard-actions">
+      <div className="flex items-center gap-2">
+        {mobileStep > 1 && (
+          <Button type="button" variant="outline" onClick={() => goToStep(mobileStep - 1)} className="flex-1" data-testid="rate-mobile-previous">
+            <ChevronLeft className="mr-1 h-4 w-4" /> Geri
+          </Button>
+        )}
+        {mobileStep < 3 ? (
+          <Button
+            type="button"
+            onClick={() => goToStep(mobileStep + 1)}
+            disabled={mobileStep === 1 ? !canContinueFromFields : !canContinueFromRooms}
+            className="flex-1 bg-amber-600 text-white hover:bg-amber-700"
+            data-testid="rate-mobile-next"
+          >
+            Devam <ChevronRight className="ml-1 h-4 w-4" />
+          </Button>
+        ) : (
+          <>
+            <Button type="button" variant="outline" size="icon" onClick={() => { handleReset(); goToStep(1); }} data-testid="rate-mobile-reset" aria-label="Sıfırla">
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+            <Button className="flex-[2] bg-amber-600 text-white hover:bg-amber-700" onClick={handleBulkUpdate} disabled={saving || !canContinueFromFields || !canContinueFromRooms} data-testid="rate-mobile-update">
+              {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+              Güncelle
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
   </div>
   );
 };

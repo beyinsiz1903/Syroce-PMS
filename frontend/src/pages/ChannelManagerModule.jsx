@@ -710,7 +710,7 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
                   </p>
                   <Button
                     className="bg-amber-600 hover:bg-amber-700 text-white"
-                    onClick={() => window.location.href = '/rate-manager'}
+                    onClick={() => window.location.href = '/unified-rate-manager'}
                     data-testid="go-to-rate-manager"
                   >
                     <Settings className="w-4 h-4 mr-2" />

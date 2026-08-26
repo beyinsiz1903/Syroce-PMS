@@ -18,7 +18,7 @@ describe('InternalChatWidget positioning', () => {
     render(<InternalChatWidget user={{ id: 'operator' }} />);
 
     expect(screen.getByRole('button', { name: 'Personel mesajlaşmasını aç' })).toHaveClass(
-      'bottom-24',
+      'safe-fixed-bottom-fab',
     );
   });
 
@@ -28,7 +28,7 @@ describe('InternalChatWidget positioning', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Personel mesajlaşmasını aç' }));
 
     expect(screen.getByRole('dialog', { name: 'Personel Mesajlaşması' })).toHaveClass(
-      'bottom-40',
+      'safe-fixed-bottom-chat',
     );
   });
 });

@@ -106,7 +106,7 @@ const PropertySwitcher = ({ onPropertyChange }) => {
       {/* Floating Button */}
       <button
         onClick={handleOpen}
-        className="fixed bottom-20 left-4 z-50 bg-gradient-to-r from-indigo-600 to-indigo-600 text-white rounded-full p-3 shadow-lg hover:shadow-xl transition-all hover:scale-110"
+        className="safe-fixed-bottom-raised fixed left-4 z-50 bg-gradient-to-r from-indigo-600 to-indigo-600 text-white rounded-full p-3 shadow-lg hover:shadow-xl transition-all hover:scale-110"
         title={t('cm.components_PropertySwitcher.tesis_degistir')}
       >
         <Building2 className="h-6 w-6" />

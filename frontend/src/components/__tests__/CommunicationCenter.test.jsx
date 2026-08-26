@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import CommunicationCenter from '@/components/CommunicationCenter';
 
@@ -7,6 +7,7 @@ vi.mock('@/context/NotificationContext', () => ({
   useNotifications: () => ({ internalUnreadCount: 3 }),
 }));
 
+beforeEach(() => sessionStorage.clear());
 afterEach(() => cleanup());
 
 describe('CommunicationCenter', () => {
@@ -32,5 +33,21 @@ describe('CommunicationCenter', () => {
 
     expect(listener).toHaveBeenCalledTimes(1);
   });
-});
 
+  it('can be minimized, closed, and restored without losing access', () => {
+    render(<CommunicationCenter user={{ id: 'operator', role: 'front_desk' }} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'İletişim merkezini aç' }));
+    fireEvent.click(screen.getByRole('button', { name: 'İletişim merkezini küçült' }));
+
+    expect(screen.getByTestId('communication-center-launcher')).toHaveClass('w-12');
+    expect(screen.queryByText('İletişim merkezi')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'İletişim merkezini aç' }));
+    fireEvent.click(screen.getByRole('button', { name: 'İletişim merkezini kapat' }));
+
+    expect(screen.queryByTestId('communication-center-launcher')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'İletişim merkezini göster' }));
+    expect(screen.getByTestId('communication-center-launcher')).toHaveClass('w-12');
+  });
+});

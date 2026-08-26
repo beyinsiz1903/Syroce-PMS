@@ -778,7 +778,7 @@ export default function Softphone({ user, hideLauncher = false }) {
   };
 
   return (
-    <div className={`communication-panel fixed z-50 flex gap-4 items-end ${hideLauncher ? 'bottom-20 right-5' : 'bottom-4 left-4'}`}>
+    <div className={`communication-panel fixed z-50 flex gap-4 items-end ${hideLauncher ? 'safe-fixed-bottom-raised right-5' : 'safe-fixed-bottom left-4'}`}>
       {open ? (
         <div className="relative w-72 rounded-lg border border-gray-200 bg-white shadow-xl">
           <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
