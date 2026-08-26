@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from domains.revenue.pricing.occupancy_pricing import (
+from core.occupancy_pricing import (
     OccupancyPricingError,
     calculate_occupancy_quote,
     find_occupancy_rule,

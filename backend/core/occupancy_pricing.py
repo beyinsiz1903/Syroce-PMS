@@ -1,4 +1,4 @@
-"""Deterministic occupancy-based room pricing.
+"""Shared deterministic occupancy-based room pricing.
 
 The channel manager receives only the base nightly rate.  These rules are the
 PMS-side commercial policy used for direct/manual reservations and for an

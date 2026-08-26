@@ -34,6 +34,11 @@ from pymongo import UpdateOne
 
 from cache_manager import cached
 from core.database import db
+from core.occupancy_pricing import (
+    OccupancyPricingError,
+    calculate_occupancy_quote,
+    normalize_occupancy_rule,
+)
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
 from domains.channel_manager.providers.exely.production_safety import (
@@ -42,11 +47,6 @@ from domains.channel_manager.providers.exely.production_safety import (
 from domains.channel_manager.providers.exely.security import exely_connection_projection
 from domains.channel_manager.providers.hotelrunner.production_safety import (
     ari_write_block_reason as hotelrunner_ari_write_block_reason,
-)
-from domains.revenue.pricing.occupancy_pricing import (
-    OccupancyPricingError,
-    calculate_occupancy_quote,
-    normalize_occupancy_rule,
 )
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v96 DW

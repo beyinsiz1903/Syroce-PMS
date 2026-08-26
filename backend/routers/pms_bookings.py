@@ -21,14 +21,14 @@ from pydantic import BaseModel, Field
 
 from core.database import db
 from core.helpers import create_audit_log, require_module
-from core.pagination import PaginationParams, paginate
-from core.security import get_current_user
-from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
-from domains.revenue.pricing.occupancy_pricing import (
+from core.occupancy_pricing import (
     OccupancyPricingError,
     calculate_occupancy_quote,
     find_occupancy_rule,
 )
+from core.pagination import PaginationParams, paginate
+from core.security import get_current_user
+from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
 from modules.pms_core.role_permission_service import require_op  # v82 DR
 
 try:

@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import HTTPException, Request, status
 
 from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
-from domains.revenue.pricing.occupancy_pricing import (
+from core.occupancy_pricing import (
     OccupancyPricingError,
     calculate_occupancy_quote,
     find_occupancy_rule,
