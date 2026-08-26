@@ -81,6 +81,11 @@ async def ensure_performance_indexes():
         ("gl_nilvera_settings", [("tenant_id", 1)], "idx_gl_nilvera_settings_tenant", {"unique": True}),
         ("gl_nilvera_queue", [("tenant_id", 1), ("id", 1)], "idx_gl_nilvera_queue_id", {"unique": True}),
         ("gl_nilvera_queue", [("tenant_id", 1), ("status", 1), ("created_at", -1)], "idx_gl_nilvera_queue_status", {}),
+        ("gl_vouchers", [("tenant_id", 1), ("id", 1)], "ux_gl_vouchers_tenant_id", {"unique": True}),
+        ("gl_vouchers", [("tenant_id", 1), ("voucher_no", 1)], "ux_gl_vouchers_tenant_no", {"unique": True}),
+        ("gl_vouchers", [("tenant_id", 1), ("status", 1), ("updated_at", -1)], "idx_gl_vouchers_work_queue", {}),
+        ("gl_journal_entries", [("tenant_id", 1), ("entry_no", 1)], "ux_gl_journal_entry_no", {"unique": True}),
+        ("gl_journal_entries", [("tenant_id", 1), ("fiscal_year", 1), ("posting_sequence", 1)], "ux_gl_journal_sequence", {"unique": True}),
         ("ap_gl_mapping", [("tenant_id", 1)], "idx_ap_gl_mapping_tenant", {"unique": True}),
         ("fixed_asset_gl_mapping", [("tenant_id", 1)], "idx_fixed_asset_gl_mapping_tenant", {"unique": True}),
         ("hotelrunner_connections", [("tenant_id", 1), ("status", 1)], "idx_hr_status", {}),
@@ -219,7 +224,12 @@ async def ensure_performance_indexes():
         #     yarışında upsert ÇİFT çağrı üretemez (kaybeden DuplicateKeyError alır,
         #     mevcut çağrıyı okur). Race-free garanti için unique.
         ("contact_center_calls", [("tenant_id", 1), ("provider_call_sid", 1)], "ux_cc_calls_provider_sid", {"unique": True, "partialFilterExpression": {"provider_call_sid": {"$type": "string"}}}),
-        ("contact_center_calls", [("tenant_id", 1), ("agent_id", 1), ("call_attempt_id", 1)], "ux_cc_calls_attempt_id", {"unique": True, "partialFilterExpression": {"call_attempt_id": {"$type": "string"}}}),
+        (
+            "contact_center_calls",
+            [("tenant_id", 1), ("agent_id", 1), ("call_attempt_id", 1)],
+            "ux_cc_calls_attempt_id",
+            {"unique": True, "partialFilterExpression": {"call_attempt_id": {"$type": "string"}}},
+        ),
         #   - contact_center_calls (tenant_id, started_at desc): çağrı listesi ucu
         #     başlangıca göre azalan sıralar.
         ("contact_center_calls", [("tenant_id", 1), ("started_at", -1)], "idx_cc_calls_tenant_started", {}),
@@ -428,24 +438,13 @@ async def ensure_performance_indexes():
     # ── Migration Cleanup for contact_center_calls ──
     try:
         # 1. Unset empty/invalid call_attempt_id values so they don't enter the unique partial filter
-        await _raw_db["contact_center_calls"].update_many(
-            {"call_attempt_id": ""},
-            {"$unset": {"call_attempt_id": ""}}
-        )
+        await _raw_db["contact_center_calls"].update_many({"call_attempt_id": ""}, {"$unset": {"call_attempt_id": ""}})
 
         # 2. Find and remove duplicate (tenant_id, agent_id, call_attempt_id) combinations
         pipeline = [
             {"$match": {"call_attempt_id": {"$type": "string"}}},
-            {"$group": {
-                "_id": {
-                    "tenant_id": "$tenant_id",
-                    "agent_id": "$agent_id",
-                    "call_attempt_id": "$call_attempt_id"
-                },
-                "count": {"$sum": 1},
-                "ids": {"$push": "$_id"}
-            }},
-            {"$match": {"count": {"$gt": 1}}}
+            {"$group": {"_id": {"tenant_id": "$tenant_id", "agent_id": "$agent_id", "call_attempt_id": "$call_attempt_id"}, "count": {"$sum": 1}, "ids": {"$push": "$_id"}}},
+            {"$match": {"count": {"$gt": 1}}},
         ]
         async for group in _raw_db["contact_center_calls"].aggregate(pipeline):
             # Keep the first document, delete the rest

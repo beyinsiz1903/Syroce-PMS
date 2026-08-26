@@ -29,7 +29,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pymongo import UpdateOne
 
 from cache_manager import cached
@@ -42,6 +42,11 @@ from domains.channel_manager.providers.exely.production_safety import (
 from domains.channel_manager.providers.exely.security import exely_connection_projection
 from domains.channel_manager.providers.hotelrunner.production_safety import (
     ari_write_block_reason as hotelrunner_ari_write_block_reason,
+)
+from domains.revenue.pricing.occupancy_pricing import (
+    OccupancyPricingError,
+    calculate_occupancy_quote,
+    normalize_occupancy_rule,
 )
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v96 DW
@@ -112,10 +117,58 @@ class AgencyRateOverrideRequest(BaseModel):
 class PricingSettingItem(BaseModel):
     room_type_code: str
     pricing_type: str
+    base_occupancy: int = Field(2, ge=1, le=20)
+    extra_adult_rate: float = Field(0, ge=0, le=1e12)
+    extra_child_rate: float = Field(0, ge=0, le=1e12)
+    child_free_age_max: int = Field(0, ge=0, le=17)
+    max_occupancy: int | None = Field(None, ge=1, le=50)
 
 
 class PricingSettingsRequest(BaseModel):
     settings: list[PricingSettingItem]
+
+
+class OccupancyPricePreviewRequest(BaseModel):
+    room_type_code: str
+    base_nightly_rate: float = Field(..., ge=0, le=1e12)
+    nights: int = Field(1, ge=1, le=750)
+    adults: int = Field(1, ge=1, le=50)
+    children_ages: list[int] = Field(default_factory=list, max_length=50)
+
+
+def _pricing_payload(docs: list[dict]) -> tuple[dict[str, str], dict[str, dict]]:
+    settings: dict[str, str] = {}
+    rules: dict[str, dict] = {}
+    for doc in docs:
+        room_type_code = doc.get("room_type_code")
+        if not room_type_code:
+            continue
+        try:
+            rule = normalize_occupancy_rule(doc)
+        except (OccupancyPricingError, TypeError, ValueError):
+            rule = normalize_occupancy_rule({"pricing_type": doc.get("pricing_type", "per_room")})
+        settings[room_type_code] = rule["pricing_type"]
+        rules[room_type_code] = rule
+    return settings, rules
+
+
+async def _add_pms_rule_aliases(tenant_id: str, provider: str, rules: dict) -> dict:
+    """Expose provider-code rules under their mapped PMS room type as well."""
+    aliased = dict(rules)
+    if provider == "hotelrunner":
+        mappings = await db.hotelrunner_room_mappings.find(
+            {"tenant_id": tenant_id}, {"_id": 0}
+        ).to_list(200)
+        pairs = ((m.get("hr_inv_code"), m.get("pms_room_type")) for m in mappings)
+    else:
+        mappings = await db.exely_room_mappings.find(
+            {"tenant_id": tenant_id}, {"_id": 0}
+        ).to_list(200)
+        pairs = ((m.get("exely_room_code"), m.get("pms_room_type")) for m in mappings)
+    for remote_code, pms_type in pairs:
+        if remote_code in rules and pms_type:
+            aliased.setdefault(str(pms_type), rules[remote_code])
+    return aliased
 
 
 def _ari_write_block_for_targets(targets: list[dict]) -> str:
@@ -253,6 +306,7 @@ async def get_unified_grid(
             "room_types": [],
             "rate_plans": [],
             "pricing_settings": {},
+            "occupancy_pricing_rules": {},
             "currency": "TRY",
             "start_date": start_date,
             "end_date": end_date,
@@ -265,6 +319,7 @@ async def get_unified_grid(
             "room_types": [],
             "rate_plans": [],
             "pricing_settings": {},
+            "occupancy_pricing_rules": {},
             "currency": "TRY",
             "start_date": start_date,
             "end_date": end_date,
@@ -289,6 +344,7 @@ async def _build_hr_grid(tenant_id, conn, start_date, end_date):
             "room_types": [],
             "rate_plans": [],
             "pricing_settings": {},
+            "occupancy_pricing_rules": {},
             "currency": "TRY",
             "start_date": start_date,
             "end_date": end_date,
@@ -352,7 +408,7 @@ async def _build_hr_grid(tenant_id, conn, start_date, end_date):
             )
 
     pricing_docs = await db.hr_pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
-    pricing_map = {doc["room_type_code"]: doc.get("pricing_type", "per_person") for doc in pricing_docs}
+    pricing_map, pricing_rules = _pricing_payload(pricing_docs)
 
     currency = cached_rooms[0].get("sales_currency", "TRY") if cached_rooms else "TRY"
 
@@ -361,6 +417,7 @@ async def _build_hr_grid(tenant_id, conn, start_date, end_date):
         "room_types": room_types,
         "rate_plans": rate_plans,
         "pricing_settings": pricing_map,
+        "occupancy_pricing_rules": pricing_rules,
         "currency": currency,
         "start_date": start_date,
         "end_date": end_date,
@@ -423,7 +480,7 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
             )
 
     pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
-    pricing_map = {doc["room_type_code"]: doc.get("pricing_type", "per_person") for doc in pricing_docs}
+    pricing_map, pricing_rules = _pricing_payload(pricing_docs)
 
     currency = conn.get("currency", "TRY")
 
@@ -432,6 +489,7 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
         "room_types": room_types,
         "rate_plans": rate_plans,
         "pricing_settings": pricing_map,
+        "occupancy_pricing_rules": pricing_rules,
         "currency": currency,
         "start_date": start_date,
         "end_date": end_date,
@@ -538,7 +596,13 @@ async def get_unified_room_types(current_user: User = Depends(get_current_user))
     detection = await _detect_active_provider(tenant_id)
 
     if not detection["provider"]:
-        return {"room_types": [], "rate_plans": [], "pricing_settings": {}, "provider": None}
+        return {
+            "room_types": [],
+            "rate_plans": [],
+            "pricing_settings": {},
+            "occupancy_pricing_rules": {},
+            "provider": None,
+        }
 
     conn = detection["connection"]
     if detection["provider"] == "hotelrunner":
@@ -549,12 +613,13 @@ async def get_unified_room_types(current_user: User = Depends(get_current_user))
         rate_plans = conn.get("rate_plans", [])
         pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
 
-    pricing_map = {doc["room_type_code"]: doc.get("pricing_type", "per_person") for doc in pricing_docs}
+    pricing_map, pricing_rules = _pricing_payload(pricing_docs)
 
     return {
         "room_types": room_types,
         "rate_plans": rate_plans,
         "pricing_settings": pricing_map,
+        "occupancy_pricing_rules": pricing_rules,
         "provider": detection["provider"],
     }
 
@@ -1453,15 +1518,16 @@ async def get_pricing_settings(current_user: User = Depends(get_current_user)):
     # yanlis (digerine ait) yerel koleksiyona DUSME, bos don. configured=None
     # (legacy) tenant'larda configuration_error olusmaz -> eski davranis korunur.
     if detection.get("configuration_error"):
-        return {"settings": {}}
+        return {"settings": {}, "rules": {}}
 
     if detection["provider"] == "hotelrunner":
         docs = await db.hr_pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
     else:
         docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
 
-    settings = {doc["room_type_code"]: doc.get("pricing_type", "per_person") for doc in docs}
-    return {"settings": settings}
+    settings, rules = _pricing_payload(docs)
+    rules = await _add_pms_rule_aliases(tenant_id, detection["provider"], rules)
+    return {"settings": settings, "rules": rules}
 
 
 @router.put("/pricing-settings")
@@ -1484,15 +1550,17 @@ async def update_pricing_settings(
     collection = "hr_pricing_settings" if detection["provider"] == "hotelrunner" else "pricing_settings"
 
     for item in request.settings:
-        if item.pricing_type not in ("per_person", "per_room"):
-            raise HTTPException(status_code=400, detail=f"Gecersiz fiyatlandirma tipi: {item.pricing_type}")
+        try:
+            rule = normalize_occupancy_rule(item.model_dump())
+        except OccupancyPricingError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         await db[collection].update_one(
             {"tenant_id": tenant_id, "room_type_code": item.room_type_code},
             {
                 "$set": {
                     "tenant_id": tenant_id,
                     "room_type_code": item.room_type_code,
-                    "pricing_type": item.pricing_type,
+                    **rule,
                     "updated_at": now,
                     "updated_by": current_user.id,
                 }
@@ -1502,6 +1570,36 @@ async def update_pricing_settings(
         updated += 1
 
     return {"updated": updated, "message": f"{updated} fiyatlandirma ayari guncellendi"}
+
+
+@router.post("/occupancy-price-preview")
+async def preview_occupancy_price(
+    request: OccupancyPricePreviewRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Calculate a read-only PMS quote from the stored occupancy rule."""
+
+    tenant_id = current_user.tenant_id
+    detection = await _detect_active_provider(tenant_id)
+    if detection.get("configuration_error"):
+        raise HTTPException(status_code=409, detail="Secili kanal saglayicinin aktif baglantisi yok")
+    collection = "hr_pricing_settings" if detection["provider"] == "hotelrunner" else "pricing_settings"
+    rule = await db[collection].find_one(
+        {"tenant_id": tenant_id, "room_type_code": request.room_type_code},
+        {"_id": 0},
+    )
+    if not rule:
+        raise HTTPException(status_code=404, detail="Bu oda tipi icin kisi fiyatlandirma kurali bulunamadi")
+    try:
+        return calculate_occupancy_quote(
+            base_nightly_rate=request.base_nightly_rate,
+            nights=request.nights,
+            adults=request.adults,
+            children_ages=request.children_ages,
+            rule=rule,
+        )
+    except OccupancyPricingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # ── Stop Sale Summary ────────────────────────────────────────────

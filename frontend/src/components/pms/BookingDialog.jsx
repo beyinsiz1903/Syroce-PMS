@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2, User, Search, UserCheck, UserPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { findOccupancyRule } from '@/utils/occupancyPricing';
 const BookingDialog = ({
   open,
   onClose,
@@ -20,6 +21,7 @@ const BookingDialog = ({
   newBooking,
   setNewBooking,
   multiRoomBooking,
+  occupancyPricingRules = {},
   handleCreateBooking,
   handleCompanySelect,
   handleContractedRateSelect,
@@ -186,7 +188,10 @@ const BookingDialog = ({
         </div>
 
         <div className="space-y-3">
-          {multiRoomBooking.map((room, index) => <div key={room.id || index} className="border rounded-md bg-white p-3 space-y-3">
+          {multiRoomBooking.map((room, index) => {
+            const physicalRoom = rooms.find(item => item.id === room.room_id);
+            const occupancyRule = findOccupancyRule(occupancyPricingRules, physicalRoom);
+            return <div key={room.id || index} className="border rounded-md bg-white p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium text-sm">Room #{index + 1}</div>
                 {multiRoomBooking.length > 1 && <Button type="button" variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => removeRoomFromMultiBooking(index)}>
@@ -266,11 +271,14 @@ const BookingDialog = ({
                   <Input type="number" step="0.01" value={room.base_rate === 0 ? '' : room.base_rate} onChange={e => updateMultiRoomField(index, 'base_rate', e.target.value)} />
                 </div>
                 <div>
-                  <Label className="text-xs">Total Amount *</Label>
-                  <Input type="number" step="0.01" value={room.total_amount === 0 ? '' : room.total_amount} onChange={e => updateMultiRoomField(index, 'total_amount', e.target.value)} />
+                  <Label className="text-xs">{room.apply_occupancy_pricing ? 'Hesaplanan toplam' : 'Total Amount *'}</Label>
+                  <Input type="number" step="0.01" value={room.total_amount === 0 ? '' : room.total_amount} disabled={room.apply_occupancy_pricing} onChange={e => updateMultiRoomField(index, 'total_amount', e.target.value)} />
                 </div>
               </div>
-            </div>)}
+              {room.apply_occupancy_pricing && occupancyRule && <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                {occupancyRule.base_occupancy} yetişkin fiyata dahil · Ek yetişkin ₺{Number(occupancyRule.extra_adult_rate || 0).toLocaleString('tr-TR')}/gece. Toplam backend tarafından yeniden doğrulanır.
+              </div>}
+            </div>})}
         </div>
       </div>
 

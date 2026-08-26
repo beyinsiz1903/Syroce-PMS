@@ -94,6 +94,8 @@ class _Coll:
         for d in self.docs:
             if _match(d, flt):
                 d.update(update.get("$set", {}))
+                for key in update.get("$unset", {}):
+                    d.pop(key, None)
                 for key, value in update.get("$push", {}).items():
                     d.setdefault(key, []).append(value)
                 return SimpleNamespace(matched_count=1, modified_count=1)
@@ -136,6 +138,7 @@ class _FakeDB:
         self.gl_accounts = _Coll("gl_accounts")
         self.gl_counters = _Coll("gl_counters")
         self.gl_journal_entries = _Coll("gl_journal_entries", unique_key=("tenant_id", "idempotency_key"))
+        self.gl_vouchers = _Coll("gl_vouchers")
         self.gl_operational_mappings = _Coll("gl_operational_mappings")
         self.gl_intercompany_rules = _Coll("gl_intercompany_rules")
         self.gl_eledger_settings = _Coll("gl_eledger_settings")
@@ -169,10 +172,10 @@ def test_accounting_subledgers_are_strictly_tenant_scoped():
     }.issubset(TENANT_SCOPED_COLLECTIONS)
 
 
-def _user(role="finance", *, super_admin=False, tenant=TENANT):
+def _user(role="finance", *, super_admin=False, tenant=TENANT, user_id="u1"):
     return SimpleNamespace(
-        id="u1",
-        user_id="u1",
+        id=user_id,
+        user_id=user_id,
         tenant_id=tenant,
         role=role,
         is_super_admin=super_admin,
@@ -1260,12 +1263,8 @@ async def test_eledger_preflight_blocks_unexplained_journal_sequence_gap(_patch)
             ),
             current_user=_user("finance"),
         )
-    _patch.gl_journal_entries.docs = [
-        item for item in _patch.gl_journal_entries.docs if item.get("posting_sequence") != 2
-    ]
-    _patch.gl_sequence_reservations.docs = [
-        item for item in _patch.gl_sequence_reservations.docs if item.get("sequence") != 2
-    ]
+    _patch.gl_journal_entries.docs = [item for item in _patch.gl_journal_entries.docs if item.get("posting_sequence") != 2]
+    _patch.gl_sequence_reservations.docs = [item for item in _patch.gl_sequence_reservations.docs if item.get("sequence") != 2]
     await _patch.gl_periods.update_one(
         {"tenant_id": TENANT, "fiscal_year": 2026, "period_no": 7},
         {"$set": {"status": "closed"}},
@@ -1284,3 +1283,233 @@ async def test_eledger_preflight_blocks_unexplained_journal_sequence_gap(_patch)
     gap = next(item for item in preflight["blockers"] if item["code"] == "unexplained_sequence_gap")
     assert gap["sequence_numbers"] == [2]
     assert preflight["ready_for_source_export"] is False
+
+
+async def test_eledger_preflight_blocks_tampered_or_unsealed_entries(_patch):
+    await _mk_account("100", "Kasa", "asset")
+    await _mk_account("600", "Satış", "revenue")
+    await gl.create_journal(
+        _journal(
+            [{"account_code": "100", "debit": 25}, {"account_code": "600", "credit": 25}],
+            date="2026-08-15",
+        ),
+        current_user=_user("finance"),
+    )
+    await _patch.gl_periods.update_one(
+        {"tenant_id": TENANT, "fiscal_year": 2026, "period_no": 8},
+        {"$set": {"status": "closed"}, "$setOnInsert": {"id": "period-8"}},
+        upsert=True,
+    )
+    await gl.update_eledger_settings(
+        gl.ELedgerSettingsIn(
+            taxpayer_id="1234567890",
+            legal_name="Syroce Test Oteli AŞ",
+            source_application_version="2026.08",
+        ),
+        current_user=_user("admin"),
+    )
+
+    _patch.gl_journal_entries.docs[0]["memo"] = "mühür sonrası değişiklik"
+    tampered = await gl.eledger_preflight(period="2026-08", current_user=_user("finance"))
+    assert {item["code"] for item in tampered["blockers"]} >= {"journal_integrity_mismatch"}
+
+    _patch.gl_journal_entries.docs[0].pop("entry_hash")
+    unsealed = await gl.eledger_preflight(period="2026-08", current_user=_user("finance"))
+    assert {item["code"] for item in unsealed["blockers"]} >= {"legacy_unsealed_entry"}
+    assert unsealed["official_edefter"] is False
+
+
+# ---------------------------------------------------------------------------
+# Voucher lifecycle + tamper-evident journal chain
+# ---------------------------------------------------------------------------
+def _voucher_payload(amount=100, *, date="2026-08-10"):
+    return gl.VoucherCreateIn(
+        date=date,
+        voucher_type="mahsup",
+        memo="Kontrollü manuel mahsup",
+        lines=[
+            gl.JournalLineIn(account_code="100", debit=amount),
+            gl.JournalLineIn(account_code="600", credit=amount),
+        ],
+    )
+
+
+async def test_voucher_requires_maker_checker_before_posting(_patch):
+    await _seed_basic_coa()
+    maker = _user("finance", user_id="maker")
+    approver = _user("finance", user_id="approver")
+
+    created = await gl.create_voucher(_voucher_payload(), current_user=maker)
+    voucher = created["voucher"]
+    assert voucher["status"] == "draft"
+    assert _patch.gl_journal_entries.docs == []
+
+    submitted = await gl.submit_voucher(
+        voucher["id"],
+        gl.VoucherActionIn(reason="Belgeler kontrol için hazır"),
+        current_user=maker,
+    )
+    assert submitted["voucher"]["status"] == "submitted"
+
+    with pytest.raises(HTTPException) as exc:
+        await gl.approve_voucher(
+            voucher["id"],
+            gl.VoucherActionIn(reason="Kendi kaydımı onaylıyorum"),
+            current_user=maker,
+        )
+    assert exc.value.status_code == 409
+    assert "hazırlayan" in exc.value.detail
+
+    approved = await gl.approve_voucher(
+        voucher["id"],
+        gl.VoucherActionIn(reason="Borç alacak ve belge kontrol edildi"),
+        current_user=approver,
+    )
+    assert approved["voucher"]["status"] == "approved"
+
+    posted = await gl.post_approved_voucher(voucher["id"], current_user=approver)
+    assert posted["voucher"]["status"] == "posted"
+    assert posted["entry"]["source"] == "manual_voucher"
+    assert posted["entry"]["entry_hash"]
+    assert posted["entry"]["previous_entry_hash"] == gl.INTEGRITY_GENESIS
+
+    replay = await gl.post_approved_voucher(voucher["id"], current_user=approver)
+    assert replay["already_posted"] is True
+    assert replay["entry"]["id"] == posted["entry"]["id"]
+    assert len(_patch.gl_journal_entries.docs) == 1
+
+
+async def test_voucher_numbers_are_monotonic_and_cancelled_numbers_remain_auditable(_patch):
+    await _seed_basic_coa()
+    maker = _user("finance", user_id="maker")
+    first = (await gl.create_voucher(_voucher_payload(date="2026-02-01"), current_user=maker))["voucher"]
+    second = (await gl.create_voucher(_voucher_payload(date="2026-02-02"), current_user=maker))["voucher"]
+    next_year = (await gl.create_voucher(_voucher_payload(date="2027-01-02"), current_user=maker))["voucher"]
+
+    assert first["voucher_no"] == "MF-2026-00000001"
+    assert second["voucher_no"] == "MF-2026-00000002"
+    assert next_year["voucher_no"] == "MF-2027-00000001"
+    await gl.cancel_voucher(
+        first["id"],
+        gl.VoucherActionIn(reason="Belge iptal edildi"),
+        current_user=maker,
+    )
+    cancelled = await gl.get_voucher(first["id"], current_user=maker)
+    assert cancelled["voucher"]["status"] == "cancelled"
+    assert cancelled["voucher"]["voucher_no"] == "MF-2026-00000001"
+
+
+async def test_rejected_voucher_can_be_revised_with_optimistic_version(_patch):
+    await _seed_basic_coa()
+    maker = _user("finance", user_id="maker")
+    reviewer = _user("finance", user_id="reviewer")
+    voucher = (await gl.create_voucher(_voucher_payload(), current_user=maker))["voucher"]
+    await gl.submit_voucher(
+        voucher["id"],
+        gl.VoucherActionIn(reason="İncelemeye sunuldu"),
+        current_user=maker,
+    )
+    rejected = await gl.reject_voucher(
+        voucher["id"],
+        gl.VoucherActionIn(reason="Açıklama destekleyici belgeyle uyuşmuyor"),
+        current_user=reviewer,
+    )
+    rejected_version = rejected["voucher"]["version"]
+    update_payload = gl.VoucherUpdateIn(
+        **_voucher_payload(amount=125).model_dump(),
+        version=rejected_version,
+    )
+    updated = await gl.update_voucher(voucher["id"], update_payload, current_user=maker)
+    assert updated["voucher"]["status"] == "draft"
+    assert updated["voucher"]["total_debit"] == 125.0
+    assert updated["voucher"]["revisions"][0]["status"] == "rejected"
+
+    with pytest.raises(HTTPException) as exc:
+        await gl.update_voucher(voucher["id"], update_payload, current_user=maker)
+    assert exc.value.status_code == 409
+
+
+async def test_integrity_audit_detects_journal_tampering_and_legacy_rows(_patch):
+    await _seed_basic_coa()
+    first = await gl.create_journal(
+        _journal([{"account_code": "100", "debit": 10}, {"account_code": "600", "credit": 10}]),
+        current_user=_user("finance"),
+    )
+    second = await gl.create_journal(
+        _journal([{"account_code": "100", "debit": 20}, {"account_code": "600", "credit": 20}]),
+        current_user=_user("finance"),
+    )
+    assert second["entry"]["previous_entry_hash"] == first["entry"]["entry_hash"]
+
+    healthy = await gl.journal_integrity_audit(fiscal_year=2026, current_user=_user("finance"))
+    assert healthy["healthy"] is True
+    assert healthy["fully_sealed"] is True
+    assert healthy["counts"]["sealed"] == 2
+
+    _patch.gl_journal_entries.docs[1]["lines"][0]["debit"] = 999.0
+    broken = await gl.journal_integrity_audit(fiscal_year=2026, current_user=_user("finance"))
+    assert broken["healthy"] is False
+    assert {issue["code"] for issue in broken["issues"]} >= {"entry_hash_mismatch"}
+
+    _patch.gl_journal_entries.docs[1]["lines"][0]["debit"] = 20.0
+    _patch.gl_journal_entries.docs[0].pop("entry_hash")
+    legacy = await gl.journal_integrity_audit(fiscal_year=2026, current_user=_user("finance"))
+    assert legacy["fully_sealed"] is False
+    assert legacy["counts"]["legacy_unsealed"] == 1
+
+
+async def test_public_direct_manual_journal_route_is_retired(_patch):
+    with pytest.raises(HTTPException) as exc:
+        await gl.reject_legacy_manual_journal(current_user=_user("finance"))
+    assert exc.value.status_code == 410
+    assert "Taslak fiş" in exc.value.detail
+
+
+async def test_period_close_blocks_pending_vouchers_then_allows_cancelled_draft(_patch):
+    await _seed_basic_coa()
+    await gl.initialize_periods(gl.FiscalYearIn(fiscal_year=2026), current_user=_user("finance"))
+    maker = _user("finance", user_id="maker")
+    voucher = (await gl.create_voucher(_voucher_payload(date="2026-01-10"), current_user=maker))["voucher"]
+
+    with pytest.raises(HTTPException) as exc:
+        await gl.close_period(
+            "tenant-A:2026:01",
+            gl.PeriodActionIn(reason="Ocak kapanışı"),
+            current_user=_user("finance", user_id="closer"),
+        )
+    assert exc.value.status_code == 409
+    assert voucher["voucher_no"] in exc.value.detail
+
+    await gl.cancel_voucher(
+        voucher["id"],
+        gl.VoucherActionIn(reason="Hatalı taslak iptal edildi"),
+        current_user=maker,
+    )
+    closed = await gl.close_period(
+        "tenant-A:2026:01",
+        gl.PeriodActionIn(reason="Ocak kapanışı"),
+        current_user=_user("finance", user_id="closer"),
+    )
+    assert closed["period"]["status"] == "closed"
+
+
+async def test_period_close_fails_when_journal_integrity_is_broken(_patch):
+    await _seed_basic_coa()
+    await gl.initialize_periods(gl.FiscalYearIn(fiscal_year=2026), current_user=_user("finance"))
+    await gl.create_journal(
+        _journal(
+            [{"account_code": "100", "debit": 50}, {"account_code": "600", "credit": 50}],
+            date="2026-01-05",
+        ),
+        current_user=_user("finance"),
+    )
+    _patch.gl_journal_entries.docs[0]["memo"] = "sonradan değiştirildi"
+
+    with pytest.raises(HTTPException) as exc:
+        await gl.close_period(
+            "tenant-A:2026:01",
+            gl.PeriodActionIn(reason="Ocak kapanışı"),
+            current_user=_user("finance"),
+        )
+    assert exc.value.status_code == 409
+    assert "bütünlük" in exc.value.detail

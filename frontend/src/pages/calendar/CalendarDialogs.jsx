@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import axios from "axios";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -9,15 +9,58 @@ import { Search, CheckCircle, AlertCircle, Clock, UserCheck, UserPlus } from "lu
 import { getSegmentColor, getStatusColor, getStatusLabel } from "./calendarHelpers";
 import { alertDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { calculateOccupancyPrice, findOccupancyRule, nightsBetween } from '@/utils/occupancyPricing';
 
 // New Booking Dialog
 export const NewBookingDialog = ({
   open, onOpenChange, newBooking, setNewBooking,
   selectedRoom, guests, rooms, onSubmit, minDate,
+  occupancyPricingRules = {},
 }) => {
   const { t } = useTranslation();
   const roomTypes = rooms ? [...new Set(rooms.map(r => r.room_type).filter(Boolean))] : [];
   const effectiveMinDate = minDate || new Date().toISOString().split('T')[0];
+  const activeRoom = selectedRoom || (rooms || []).find(room => room.id === newBooking.room_id);
+  const occupancyRule = useMemo(
+    () => findOccupancyRule(occupancyPricingRules, activeRoom),
+    [occupancyPricingRules, activeRoom],
+  );
+  const occupancyQuote = useMemo(() => occupancyRule?.pricing_type === 'per_person'
+    ? calculateOccupancyPrice({
+        baseNightlyRate: newBooking.base_rate,
+        nights: nightsBetween(newBooking.check_in, newBooking.check_out),
+        adults: Number(newBooking.adults || 1),
+        childrenAges: newBooking.children_ages || [],
+        rule: occupancyRule,
+      })
+    : null, [
+      occupancyRule,
+      newBooking.base_rate,
+      newBooking.check_in,
+      newBooking.check_out,
+      newBooking.adults,
+      newBooking.children_ages,
+    ]);
+
+  useEffect(() => {
+    setNewBooking(prev => {
+      if (!occupancyQuote) {
+        if (!prev.apply_occupancy_pricing) return prev;
+        return { ...prev, apply_occupancy_pricing: false, pricing_rule_version: null };
+      }
+      if (
+        prev.total_amount === occupancyQuote.totalAmount
+        && prev.apply_occupancy_pricing === true
+        && prev.pricing_rule_version === occupancyQuote.rule.pricing_version
+      ) return prev;
+      return {
+        ...prev,
+        total_amount: occupancyQuote.totalAmount,
+        apply_occupancy_pricing: true,
+        pricing_rule_version: occupancyQuote.rule.pricing_version,
+      };
+    });
+  }, [occupancyQuote, setNewBooking]);
 
   // Guest search state
   const [guestSearchQuery, setGuestSearchQuery] = useState('');
@@ -122,7 +165,16 @@ export const NewBookingDialog = ({
               <select
                 className="w-full border rounded-md p-2"
                 value={newBooking.room_id || ''}
-                onChange={(e) => setNewBooking({...newBooking, room_id: e.target.value})}
+                onChange={(e) => {
+                  const room = (rooms || []).find(item => item.id === e.target.value);
+                  const baseRate = Number(room?.base_price || 0);
+                  setNewBooking({
+                    ...newBooking,
+                    room_id: e.target.value,
+                    base_rate: baseRate,
+                    total_amount: baseRate * Math.max(1, nightsBetween(newBooking.check_in, newBooking.check_out)),
+                  });
+                }}
                 data-testid="new-booking-room-select"
               >
                 <option value="">{t('cm.pages_calendar_CalendarDialogs.oda_secin')}</option>
@@ -280,20 +332,56 @@ export const NewBookingDialog = ({
               onChange={(e) => setNewBooking({
                 ...newBooking,
                 children: Number(e.target.value),
+                children_ages: Array.from({ length: Number(e.target.value) }, (_, index) => newBooking.children_ages?.[index] ?? 0),
                 guests_count: newBooking.adults + Number(e.target.value)
               })}
             />
           </div>
           <div>
-            <Label>{t('cm.pages_calendar_CalendarDialogs.toplam_tutar')}</Label>
+            <Label>{occupancyQuote ? 'Gecelik taban fiyat' : t('cm.pages_calendar_CalendarDialogs.toplam_tutar')}</Label>
             <Input
               type="number"
               step="0.01"
-              value={newBooking.total_amount}
-              onChange={(e) => setNewBooking({...newBooking, total_amount: Number(e.target.value)})}
+              value={occupancyQuote ? newBooking.base_rate : newBooking.total_amount}
+              onChange={(e) => setNewBooking(occupancyQuote
+                ? {...newBooking, base_rate: Number(e.target.value)}
+                : {...newBooking, total_amount: Number(e.target.value), base_rate: Number(e.target.value)})}
             />
           </div>
         </div>
+        {newBooking.children > 0 && (
+          <div className="grid grid-cols-2 gap-3 rounded-md border bg-gray-50 p-3">
+            {Array.from({ length: newBooking.children }).map((_, index) => (
+              <div key={index}>
+                <Label>Çocuk {index + 1} yaşı</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="17"
+                  value={newBooking.children_ages?.[index] ?? 0}
+                  onChange={event => {
+                    const ages = [...(newBooking.children_ages || [])];
+                    ages[index] = Number(event.target.value);
+                    setNewBooking({ ...newBooking, children_ages: ages });
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+        {occupancyQuote && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900" data-testid="occupancy-price-breakdown">
+            <div className="font-semibold">Kişi bazlı fiyat özeti</div>
+            <div className="mt-1">
+              {occupancyQuote.rule.base_occupancy} yetişkin dahil
+              {occupancyQuote.extraAdults > 0 && ` · ${occupancyQuote.extraAdults} ek yetişkin × ₺${occupancyQuote.rule.extra_adult_rate.toLocaleString('tr-TR')}`}
+              {occupancyQuote.chargeableChildren > 0 && ` · ${occupancyQuote.chargeableChildren} ücretli çocuk × ₺${occupancyQuote.rule.extra_child_rate.toLocaleString('tr-TR')}`}
+            </div>
+            <div className="mt-1 font-medium">
+              Gecelik ₺{occupancyQuote.nightlyTotal.toLocaleString('tr-TR')} · {occupancyQuote.nights} gece toplam ₺{occupancyQuote.totalAmount.toLocaleString('tr-TR')}
+            </div>
+          </div>
+        )}
         <div>
           <Label>{t('cm.pages_calendar_CalendarDialogs.durum')}</Label>
           <select

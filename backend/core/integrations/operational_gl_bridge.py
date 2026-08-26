@@ -165,8 +165,17 @@ async def post_direct_pos_to_gl(
 ) -> dict:
     mapping = await get_operational_mapping(db, tenant_id)
     if posted_to_folio:
+        if transaction.get("id") and hasattr(db, "pos_transactions"):
+            await db.pos_transactions.update_one(
+                {"tenant_id": tenant_id, "id": transaction["id"]},
+                {"$set": {"gl_bridge_status": "folio_path"}},
+            )
         return {"status": "skipped", "reason": "folio_path"}
     if not mapping["enabled"] or not mapping["auto_pos"]:
+        await db.pos_transactions.update_one(
+            {"tenant_id": tenant_id, "id": transaction["id"]},
+            {"$set": {"gl_bridge_status": "not_configured"}},
+        )
         return {"status": "skipped", "reason": "not_configured"}
     total = _minor(transaction.get("total_amount"))
     tax = _minor(order.get("tax_amount"))

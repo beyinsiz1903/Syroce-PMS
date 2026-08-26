@@ -1,12 +1,17 @@
 import hashlib
 import json
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import HTTPException, Request, status
 
 from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
+from domains.revenue.pricing.occupancy_pricing import (
+    OccupancyPricingError,
+    calculate_occupancy_quote,
+    find_occupancy_rule,
+)
 from models.enums import FolioType
 from models.schemas import BookingCreate, Folio, RateOverrideLog
 from modules.reservations.repository import ReservationsRepository
@@ -16,10 +21,10 @@ from shared_kernel.tenancy_context import build_property_context, build_tenant_c
 
 
 class CreateReservationService:
-    def __init__(self, repository: Optional[ReservationsRepository] = None):
+    def __init__(self, repository: ReservationsRepository | None = None):
         self.repository = repository or ReservationsRepository()
 
-    async def create(self, booking_data: BookingCreate, current_user, request: Request) -> Dict[str, Any]:
+    async def create(self, booking_data: BookingCreate, current_user, request: Request) -> dict[str, Any]:
         tenant_context = build_tenant_context(current_user, request)
         property_context = build_property_context(current_user, request)
         self._enforce_property_scope(tenant_context.tenant_id, property_context.property_id)
@@ -74,21 +79,58 @@ class CreateReservationService:
                 {"tenant_id": tenant_context.tenant_id}, {"_id": 0}
             )
             business_date_str = (tenant_settings or {}).get(
-                "business_date", datetime.now(timezone.utc).date().isoformat()
+                "business_date", datetime.now(UTC).date().isoformat()
             )
-            today_str = datetime.now(timezone.utc).date().isoformat()
+            today_str = datetime.now(UTC).date().isoformat()
             # Gun sonu yapilmadiysa PMS hala dunde; gece gec gelen misafir
             # dun girisli rezervasyon yapabilmeli. Bu nedenle alt sinir =
             # min(business_date, today) — yani PMS'in bulundugu gun.
             effective_min_date = min(business_date_str, today_str)
             effective_min_dt = datetime.fromisoformat(effective_min_date + "T00:00:00+00:00")
-            if check_in_dt.replace(tzinfo=timezone.utc) < effective_min_dt:
+            if check_in_dt.replace(tzinfo=UTC) < effective_min_dt:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Gecmis tarihe rezervasyon yapilamaz (minimum: {effective_min_date})"
                 )
             booking_id = str(uuid.uuid4())
-            now_ts = datetime.now(timezone.utc)
+            now_ts = datetime.now(UTC)
+
+            pricing_quote = None
+            pricing_rule = None
+            if booking_data.apply_occupancy_pricing:
+                if booking_data.base_rate is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Kisi bazli fiyatlandirma icin gecelik taban fiyat zorunludur",
+                    )
+                pricing_rule = await find_occupancy_rule(
+                    _db,
+                    tenant_context.tenant_id,
+                    room,
+                )
+                if not pricing_rule or pricing_rule.get("pricing_type") != "per_person":
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Oda tipi icin etkin kisi bazli fiyatlandirma kurali bulunamadi",
+                    )
+                if len(booking_data.children_ages) != booking_data.children:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Her cocuk icin yas bilgisi girilmelidir",
+                    )
+                try:
+                    pricing_quote = calculate_occupancy_quote(
+                        base_nightly_rate=booking_data.base_rate,
+                        nights=(check_out_dt.date() - check_in_dt.date()).days,
+                        adults=booking_data.adults,
+                        children_ages=booking_data.children_ages,
+                        rule=pricing_rule,
+                    )
+                except OccupancyPricingError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=str(exc),
+                    ) from exc
 
             booking_dict = {
                 'id': booking_id,
@@ -101,8 +143,13 @@ class CreateReservationService:
                 'children': booking_data.children,
                 'children_ages': booking_data.children_ages,
                 'guests_count': booking_data.guests_count,
-                'total_amount': booking_data.total_amount,
+                'total_amount': pricing_quote['total_amount'] if pricing_quote else booking_data.total_amount,
                 'base_rate': booking_data.base_rate,
+                'rate_per_night': pricing_quote['nightly_total'] if pricing_quote else None,
+                'apply_occupancy_pricing': bool(pricing_quote),
+                'pricing_rule_version': pricing_quote['pricing_version'] if pricing_quote else None,
+                'pricing_breakdown': pricing_quote,
+                'pricing_rule_snapshot': pricing_rule,
                 'paid_amount': 0.0,
                 'status': getattr(booking_data, 'status', None) or 'confirmed',
                 'channel': booking_data.channel.value if booking_data.channel else 'direct',
@@ -128,7 +175,12 @@ class CreateReservationService:
                 '_version': 1,
             }
 
-            if booking_data.base_rate and booking_data.base_rate != booking_data.total_amount and booking_data.override_reason:
+            if (
+                not pricing_quote
+                and booking_data.base_rate
+                and booking_data.base_rate != booking_data.total_amount
+                and booking_data.override_reason
+            ):
                 override_log = RateOverrideLog(
                     tenant_id=tenant_context.tenant_id,
                     booking_id=booking_id,
@@ -161,8 +213,8 @@ class CreateReservationService:
 
             # OTA-002: Enqueue outbox event for guaranteed delivery
             # No more fire-and-forget cm_push_event — the outbox worker handles dispatch
-            from core.outbox_service import enqueue_outbox_event, BOOKING_CREATED
             from core.database import db as _outbox_db
+            from core.outbox_service import BOOKING_CREATED, enqueue_outbox_event
 
             await enqueue_outbox_event(
                 _outbox_db,
@@ -245,15 +297,16 @@ class CreateReservationService:
 
             # Usage metering
             try:
-                from core.metering import record_usage, UsageEventType
+                from core.metering import UsageEventType, record_usage
                 await record_usage(tenant_context.tenant_id, UsageEventType.RESERVATION_CREATED)
             except Exception:
                 pass
 
             # Channel availability auto-sync: arka planda müsaitlik güncelle ve kanallara push et
             try:
-                from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
                 import asyncio
+
+                from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
                 asyncio.create_task(sync_availability_after_booking(
                     tenant_id=tenant_context.tenant_id,
                     room_id=booking_data.room_id,
@@ -299,7 +352,7 @@ class CreateReservationService:
         serialized = json.dumps({"tenant_id": tenant_id, "payload": payload}, sort_keys=True, default=str)
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
-    def _enforce_property_scope(self, tenant_id: str, property_id: Optional[str]) -> None:
+    def _enforce_property_scope(self, tenant_id: str, property_id: str | None) -> None:
         if property_id and property_id != tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

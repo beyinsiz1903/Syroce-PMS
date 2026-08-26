@@ -121,9 +121,7 @@ async def post_incoming_invoice_to_gl(
     deduction_total = sum(deductions.values(), Decimal("0"))
     calculated_total = (base_total + vat_total + other_tax_total - deduction_total).quantize(Decimal("0.01"))
     if abs(calculated_total - payable) > _ROUNDING_TOLERANCE:
-        raise InvoiceGLBridgeError(
-            "Incoming invoice totals do not reconcile to payable amount; accounting mapping is required"
-        )
+        raise InvoiceGLBridgeError("Incoming invoice totals do not reconcile to payable amount; accounting mapping is required")
 
     purchase_account = _clean_account(purchase_account_code, "Purchase")
     vat_account = _clean_account(vat_account_code, "VAT")
@@ -233,10 +231,13 @@ async def post_incoming_invoice_to_gl(
             }
         },
     )
-    return await db.gl_journal_entries.find_one(
-        {"tenant_id": tenant_id, "id": entry["id"]},
-        {"_id": 0},
-    ) or entry
+    return (
+        await db.gl_journal_entries.find_one(
+            {"tenant_id": tenant_id, "id": entry["id"]},
+            {"_id": 0},
+        )
+        or entry
+    )
 
 
 async def reverse_incoming_invoice_gl_for_return(
@@ -296,6 +297,8 @@ async def reverse_incoming_invoice_gl_for_return(
             source_ref=generated_provider_uuid,
             actor=actor,
             idempotency_key=f"nilvera-return:{action_id}",
+            reverses_entry_id=original.get("id"),
+            reversal_reason=f"Nilvera iade faturası {generated_provider_uuid}",
         )
     except GLPostingError as exc:
         raise InvoiceGLBridgeError(str(exc)) from exc
@@ -307,15 +310,17 @@ async def reverse_incoming_invoice_gl_for_return(
                 "nilvera_source_invoice_id": source_invoice_id,
                 "nilvera_return_action_id": action_id,
                 "nilvera_generated_provider_uuid": generated_provider_uuid,
-                "reverses_entry_id": original.get("id"),
                 "integration_kind": "nilvera_return",
             }
         },
     )
-    return await db.gl_journal_entries.find_one(
-        {"tenant_id": tenant_id, "id": reversal["id"]},
-        {"_id": 0},
-    ) or reversal
+    return (
+        await db.gl_journal_entries.find_one(
+            {"tenant_id": tenant_id, "id": reversal["id"]},
+            {"_id": 0},
+        )
+        or reversal
+    )
 
 
 async def get_incoming_invoice_gl_link(tenant_id: str, incoming_invoice_id: str) -> InvoiceGLLink:
@@ -337,6 +342,7 @@ async def get_incoming_invoice_gl_link(tenant_id: str, incoming_invoice_id: str)
     ).sort("created_at", -1)
     return_entries = tuple(await cursor.to_list(length=100))
     return InvoiceGLLink(source_entry=source_entry, return_entries=return_entries)
+
 
 async def post_outgoing_invoice_to_gl(
     tenant_id: str,
@@ -388,7 +394,7 @@ async def post_outgoing_invoice_to_gl(
             if discount_account:
                 base_revenue += gross
             else:
-                base_revenue += (gross - disc)
+                base_revenue += gross - disc
 
             vat_amt = _money(item.get("kdv_amount", 0))
             if vat_amt > 0:
@@ -412,29 +418,14 @@ async def post_outgoing_invoice_to_gl(
     journal_lines: list[dict] = []
 
     # 1. Receivable (Debit)
-    journal_lines.append({
-        "account_code": receivable_account,
-        "debit": float(total),
-        "credit": 0,
-        "memo": "Satış faturası alacağı"
-    })
+    journal_lines.append({"account_code": receivable_account, "debit": float(total), "credit": 0, "memo": "Satış faturası alacağı"})
 
     # 2. Revenue (Credit)
-    journal_lines.append({
-        "account_code": revenue_account,
-        "debit": 0,
-        "credit": float(base_revenue),
-        "memo": "Satış faturası geliri"
-    })
+    journal_lines.append({"account_code": revenue_account, "debit": 0, "credit": float(base_revenue), "memo": "Satış faturası geliri"})
 
     # 3. Discount (Debit)
     if discount_account and total_discount > 0:
-        journal_lines.append({
-            "account_code": discount_account,
-            "debit": float(total_discount),
-            "credit": 0,
-            "memo": "Satış faturası iskontosu"
-        })
+        journal_lines.append({"account_code": discount_account, "debit": float(total_discount), "credit": 0, "memo": "Satış faturası iskontosu"})
 
     # 4. VAT (Credit) - Per Rate
     vat_map = vat_accounts_by_rate or {}
@@ -443,12 +434,7 @@ async def post_outgoing_invoice_to_gl(
             acc = vat_map.get(rate) or vat_account_code
             if not acc:
                 raise InvoiceGLBridgeError(f"No VAT account provided for rate {rate}%")
-            journal_lines.append({
-                "account_code": _clean_account(acc, f"VAT {rate}%"),
-                "debit": 0,
-                "credit": float(amt),
-                "memo": f"Satış faturası {rate}% KDV"
-            })
+            journal_lines.append({"account_code": _clean_account(acc, f"VAT {rate}%"), "debit": 0, "credit": float(amt), "memo": f"Satış faturası {rate}% KDV"})
 
     # 5. Accommodation Tax (Credit) - Per Rate
     acc_tax_map = accommodation_tax_accounts_by_rate or {}
@@ -457,12 +443,7 @@ async def post_outgoing_invoice_to_gl(
             acc = acc_tax_map.get(rate) or accommodation_tax_account_code
             if not acc:
                 raise InvoiceGLBridgeError(f"No Accommodation Tax account provided for rate {rate}%")
-            journal_lines.append({
-                "account_code": _clean_account(acc, f"Acc Tax {rate}%"),
-                "debit": 0,
-                "credit": float(amt),
-                "memo": f"Satış faturası konaklama vergisi {rate}%"
-            })
+            journal_lines.append({"account_code": _clean_account(acc, f"Acc Tax {rate}%"), "debit": 0, "credit": float(amt), "memo": f"Satış faturası konaklama vergisi {rate}%"})
 
     tot_debit = float(total) + (float(total_discount) if discount_account else 0)
     tot_credit = float(base_revenue) + float(sum(vat_by_rate.values())) + float(sum(acc_tax_by_rate.values()))
@@ -503,10 +484,13 @@ async def post_outgoing_invoice_to_gl(
             }
         },
     )
-    return await db.gl_journal_entries.find_one(
-        {"tenant_id": tenant_id, "id": entry["id"]},
-        {"_id": 0},
-    ) or entry
+    return (
+        await db.gl_journal_entries.find_one(
+            {"tenant_id": tenant_id, "id": entry["id"]},
+            {"_id": 0},
+        )
+        or entry
+    )
 
 
 async def reverse_outgoing_invoice_gl(
@@ -606,7 +590,10 @@ async def reverse_outgoing_invoice_gl(
             }
         },
     )
-    return await db.gl_journal_entries.find_one(
-        {"tenant_id": tenant_id, "id": reversal["id"]},
-        {"_id": 0},
-    ) or reversal
+    return (
+        await db.gl_journal_entries.find_one(
+            {"tenant_id": tenant_id, "id": reversal["id"]},
+            {"_id": 0},
+        )
+        or reversal
+    )

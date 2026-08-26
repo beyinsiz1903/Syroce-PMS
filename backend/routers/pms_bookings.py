@@ -24,6 +24,11 @@ from core.helpers import create_audit_log, require_module
 from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
 from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
+from domains.revenue.pricing.occupancy_pricing import (
+    OccupancyPricingError,
+    calculate_occupancy_quote,
+    find_occupancy_rule,
+)
 from modules.pms_core.role_permission_service import require_op  # v82 DR
 
 try:
@@ -829,9 +834,17 @@ async def create_multi_room_booking(
         requested_room_ids.append(rid)
     found_rooms = await db.rooms.find(
         {"id": {"$in": requested_room_ids}, "tenant_id": current_user.tenant_id},
-        {"id": 1, "_id": 0},
+        {
+            "id": 1,
+            "room_type": 1,
+            "room_type_code": 1,
+            "room_type_name": 1,
+            "type": 1,
+            "_id": 0,
+        },
     ).to_list(length=len(requested_room_ids))
     found_set = {r["id"] for r in found_rooms}
+    found_by_id = {r["id"]: r for r in found_rooms}
     missing = [r for r in requested_room_ids if r not in found_set]
     if missing:
         raise HTTPException(status_code=404, detail=f"Oda(lar) bulunamadi: {missing[:5]}")
@@ -882,6 +895,37 @@ async def create_multi_room_booking(
             base_rate = room_data.get("base_rate")
             rate_plan = room_data.get("rate_plan")
             package_code = room_data.get("package_code")
+            pricing_quote = None
+            pricing_rule = None
+            if room_data.get("apply_occupancy_pricing"):
+                if base_rate is None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Kisi bazli fiyatlandirma icin gecelik taban fiyat zorunludur",
+                    )
+                if len(children_ages) != children:
+                    raise HTTPException(status_code=400, detail="Her cocuk icin yas bilgisi girilmelidir")
+                pricing_rule = await find_occupancy_rule(
+                    db,
+                    current_user.tenant_id,
+                    found_by_id[room_id],
+                )
+                if not pricing_rule or pricing_rule.get("pricing_type") != "per_person":
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Oda tipi icin etkin kisi bazli fiyatlandirma kurali bulunamadi",
+                    )
+                try:
+                    pricing_quote = calculate_occupancy_quote(
+                        base_nightly_rate=base_rate,
+                        nights=(check_out_dt.date() - check_in_dt.date()).days,
+                        adults=adults,
+                        children_ages=children_ages,
+                        rule=pricing_rule,
+                    )
+                except OccupancyPricingError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+                total_amount = pricing_quote["total_amount"]
 
             # Booking modeli yalin (extra=ignore) oldugundan dict'i elle insa ediyoruz
             special_req = payload.special_requests
@@ -907,6 +951,11 @@ async def create_multi_room_booking(
                 "guests_count": adults + children,
                 "total_amount": total_amount,
                 "base_rate": base_rate,
+                "rate_per_night": pricing_quote["nightly_total"] if pricing_quote else None,
+                "apply_occupancy_pricing": bool(pricing_quote),
+                "pricing_rule_version": pricing_quote["pricing_version"] if pricing_quote else None,
+                "pricing_breakdown": pricing_quote,
+                "pricing_rule_snapshot": pricing_rule,
                 "channel": getattr(payload.channel, "value", payload.channel) if payload.channel else "direct",
                 "rate_plan": rate_plan or "Standard",
                 "special_requests": special_req,

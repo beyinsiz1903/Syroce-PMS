@@ -21,6 +21,8 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from decimal import Decimal
 
+from shared_kernel.gl_posting import verify_journal_entry_hash
+
 PERIOD_RE = re.compile(r"^(?P<year>20\d{2})-(?P<month>0[1-9]|1[0-2])$")
 ENTRY_NO_RE = re.compile(r"^YEV-(?P<year>20\d{2})-(?P<number>\d{8})$")
 
@@ -116,6 +118,8 @@ async def preflight_eledger_source(db, tenant_id: str, period: str, settings: di
     unbalanced_entries: list[str] = []
     missing_account_entries: list[str] = []
     non_posted_entries: list[str] = []
+    unsealed_entries: list[str] = []
+    integrity_mismatches: list[str] = []
     for entry in entries:
         entry_no = str(entry.get("entry_no") or entry.get("id") or "?")
         if entry_no in seen_entry_nos:
@@ -126,6 +130,10 @@ async def preflight_eledger_source(db, tenant_id: str, period: str, settings: di
             entry_numbers.append(int(match.group("number")))
         if entry.get("status") != "posted":
             non_posted_entries.append(entry_no)
+        if not entry.get("entry_hash"):
+            unsealed_entries.append(entry_no)
+        elif not verify_journal_entry_hash(entry):
+            integrity_mismatches.append(entry_no)
         debit = sum(_minor(line, "debit") for line in entry.get("lines", []))
         credit = sum(_minor(line, "credit") for line in entry.get("lines", []))
         if debit <= 0 or debit != credit:
@@ -136,6 +144,22 @@ async def preflight_eledger_source(db, tenant_id: str, period: str, settings: di
         blockers.append({"code": "duplicate_entry_no", "message": "Yinelenen yevmiye numarası var", "entries": sorted(duplicate_entry_nos)})
     if non_posted_entries:
         blockers.append({"code": "non_posted_entry", "message": "Kesinleşmemiş fişler var", "entries": non_posted_entries[:100]})
+    if unsealed_entries:
+        blockers.append(
+            {
+                "code": "legacy_unsealed_entry",
+                "message": "Bütünlük mührü bulunmayan eski yevmiye kayıtları var",
+                "entries": unsealed_entries[:100],
+            }
+        )
+    if integrity_mismatches:
+        blockers.append(
+            {
+                "code": "journal_integrity_mismatch",
+                "message": "İçeriği bütünlük mührüyle uyuşmayan yevmiye kayıtları var",
+                "entries": integrity_mismatches[:100],
+            }
+        )
     if unbalanced_entries:
         blockers.append({"code": "unbalanced_entry", "message": "Borç/alacak dengesi bozuk fişler var", "entries": unbalanced_entries[:100]})
     if missing_account_entries:

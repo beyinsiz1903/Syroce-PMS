@@ -198,6 +198,47 @@ async def test_create_uses_defaults_without_writing_rate_override(harness):
 
 
 @pytest.mark.asyncio
+async def test_create_recalculates_person_pricing_on_server(harness, monkeypatch):
+    harness.repository.get_room_for_tenant.return_value = {
+        "id": "room-1",
+        "room_type_code": "standard",
+    }
+    monkeypatch.setattr(
+        service_module,
+        "find_occupancy_rule",
+        AsyncMock(
+            return_value={
+                "room_type_code": "standard",
+                "pricing_type": "per_person",
+                "base_occupancy": 2,
+                "extra_adult_rate": 1500,
+                "extra_child_rate": 0,
+                "child_free_age_max": 0,
+                "max_occupancy": 4,
+                "pricing_version": "occupancy-v1",
+            }
+        ),
+    )
+    booking = _booking(
+        adults=3,
+        children=0,
+        children_ages=[],
+        guests_count=3,
+        base_rate=5000,
+        total_amount=1,
+        apply_occupancy_pricing=True,
+    )
+
+    result = await harness.service.create(booking, harness.user, harness.request)
+
+    assert result["rate_per_night"] == 6500
+    assert result["total_amount"] == 13000
+    assert result["pricing_breakdown"]["extra_adults"] == 1
+    assert result["pricing_rule_snapshot"]["extra_adult_rate"] == 1500
+    harness.repository.insert_rate_override_log.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_completed_idempotent_request_replays_the_original_response(harness):
     request_hash = harness.service._build_request_hash("tenant-1", harness.booking)
     original = {"id": "booking-existing", "status": "confirmed"}

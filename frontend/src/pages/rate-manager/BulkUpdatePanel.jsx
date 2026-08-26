@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +18,7 @@ export const BulkUpdatePanel = ({
   isRoomTypeSelected, isRoomTypeFullySelected, isRatePlanSelected,
   roomValues, updateRoomValue, getDefaultValues, applyToAllSelected,
   expandedRoomTypes, toggleExpanded,
-  pricingSettings, getPricingLabel, togglePricingType, currencySymbol, currency,
+  pricingSettings, occupancyPricingRules, saveOccupancyPricingRule, getPricingLabel, togglePricingType, currencySymbol, currency,
   totalSelectedRoomTypes, totalSelectedPlans,
   saving, handleBulkUpdate, handleReset, loading,
   activeChannels, activeChannelsStale, channelProvider,
@@ -123,7 +124,7 @@ export const BulkUpdatePanel = ({
                 isRoomTypeSelected={isRoomTypeSelected} isRoomTypeFullySelected={isRoomTypeFullySelected}
                 isRatePlanSelected={isRatePlanSelected}
                 toggleRoomType={toggleRoomType} toggleRatePlan={toggleRatePlan}
-                pricingSettings={pricingSettings} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType}
+                pricingSettings={pricingSettings} occupancyPricingRules={occupancyPricingRules} saveOccupancyPricingRule={saveOccupancyPricingRule} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType}
                 currencySymbol={currencySymbol} currency={currency}
                 totalSelectedRoomTypes={Object.keys(selections).length}
               />
@@ -186,10 +187,11 @@ const ApplyAllButton = ({ field, value, applyToAllSelected, totalSelectedRoomTyp
 const RoomTypeList = ({
   roomTypeTree, enabledFields, selections, roomValues, updateRoomValue, getDefaultValues, applyToAllSelected,
   expandedRoomTypes, toggleExpanded, isRoomTypeSelected, isRoomTypeFullySelected, isRatePlanSelected,
-  toggleRoomType, toggleRatePlan, pricingSettings, getPricingLabel, togglePricingType, currencySymbol, currency,
+  toggleRoomType, toggleRatePlan, pricingSettings, occupancyPricingRules, saveOccupancyPricingRule, getPricingLabel, togglePricingType, currencySymbol, currency,
   totalSelectedRoomTypes,
 }) => {
   const { t } = useTranslation();
+  const [editingRule, setEditingRule] = useState(null);
   return (
   <div className="overflow-x-auto" data-testid="room-type-list">
     {/* Table Header */}
@@ -296,6 +298,21 @@ const RoomTypeList = ({
               )}
             </div>
 
+            {(pricingSettings[rt.code] || 'per_person') === 'per_person' && (
+              <OccupancyPricingEditor
+                roomType={rt}
+                open={editingRule === rt.code}
+                onToggle={() => setEditingRule(editingRule === rt.code ? null : rt.code)}
+                rule={occupancyPricingRules?.[rt.code]}
+                onSave={async rule => {
+                  await saveOccupancyPricingRule(rt.code, rule);
+                  setEditingRule(null);
+                }}
+                currentBaseRate={rv.rate}
+                currencySymbol={currencySymbol}
+              />
+            )}
+
             {/* Expanded Rate Plans */}
             {isExpanded && rt.plans.map(rp => (
               <div key={`${rt.code}-${rp.code}`}
@@ -327,3 +344,91 @@ const RoomTypeList = ({
   </div>
   );
 };
+
+const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave, currentBaseRate, currencySymbol }) => {
+  const initial = {
+    base_occupancy: Number(rule?.base_occupancy ?? 2),
+    extra_adult_rate: Number(rule?.extra_adult_rate ?? 0),
+    extra_child_rate: Number(rule?.extra_child_rate ?? 0),
+    child_free_age_max: Number(rule?.child_free_age_max ?? 0),
+    max_occupancy: rule?.max_occupancy ?? '',
+  };
+  const [draft, setDraft] = useState(initial);
+  const [submitting, setSubmitting] = useState(false);
+  const update = (field, value) => setDraft(prev => ({ ...prev, [field]: value }));
+  const base = Number(currentBaseRate || 0);
+  const exampleGuests = draft.base_occupancy + 1;
+  const exampleNightly = base + Number(draft.extra_adult_rate || 0);
+
+  return (
+    <div className="border-t border-amber-100 bg-amber-50/40 px-4 py-2" data-testid={`occupancy-pricing-${roomType.code}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        <span className="text-gray-600">
+          {draft.base_occupancy} yetişkin dahil · Ek yetişkin {currencySymbol}{Number(draft.extra_adult_rate || 0).toLocaleString('tr-TR')}/gece
+        </span>
+        <button type="button" onClick={onToggle} className="font-medium text-amber-700 hover:underline">
+          {open ? 'Kuralı kapat' : 'Kuralı düzenle'}
+        </button>
+      </div>
+      {open && (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-white p-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <RuleNumber label="Fiyata dahil yetişkin" value={draft.base_occupancy} min={1} max={20} onChange={v => update('base_occupancy', v)} />
+            <RuleNumber label="Ek yetişkin / gece" value={draft.extra_adult_rate} min={0} step="0.01" onChange={v => update('extra_adult_rate', v)} />
+            <RuleNumber label="Ek çocuk / gece" value={draft.extra_child_rate} min={0} step="0.01" onChange={v => update('extra_child_rate', v)} />
+            <RuleNumber label="Ücretsiz çocuk yaş sınırı" value={draft.child_free_age_max} min={0} max={17} onChange={v => update('child_free_age_max', v)} />
+            <RuleNumber label="Maksimum kişi" value={draft.max_occupancy} min={draft.base_occupancy} max={50} optional onChange={v => update('max_occupancy', v)} />
+          </div>
+          {base > 0 && (
+            <div className="mt-3 rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800" data-testid={`occupancy-preview-${roomType.code}`}>
+              Örnek: {draft.base_occupancy} kişi {currencySymbol}{base.toLocaleString('tr-TR')}; {exampleGuests}. yetişkin ile gecelik {currencySymbol}{exampleNightly.toLocaleString('tr-TR')}.
+            </div>
+          )}
+          <p className="mt-2 text-[11px] leading-4 text-gray-500">
+            Bu kural Syroce'de oluşturulan manuel/doğrudan rezervasyonların toplamını hesaplar. HotelRunner'a taban fiyat gönderilir; HotelRunner kişi farkı ayarı da aynı olmalıdır.
+          </p>
+          <div className="mt-3 flex justify-end">
+            <Button
+              type="button"
+              size="sm"
+              disabled={submitting}
+              onClick={async () => {
+                setSubmitting(true);
+                try {
+                  await onSave({
+                    ...draft,
+                    base_occupancy: Number(draft.base_occupancy),
+                    extra_adult_rate: Number(draft.extra_adult_rate),
+                    extra_child_rate: Number(draft.extra_child_rate),
+                    child_free_age_max: Number(draft.child_free_age_max),
+                    max_occupancy: draft.max_occupancy === '' ? null : Number(draft.max_occupancy),
+                  });
+                } finally {
+                  setSubmitting(false);
+                }
+              }}
+              data-testid={`save-occupancy-rule-${roomType.code}`}
+            >
+              {submitting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+              Kuralı kaydet
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const RuleNumber = ({ label, value, onChange, optional = false, ...inputProps }) => (
+  <div>
+    <Label className="text-[11px] text-gray-600">{label}</Label>
+    <Input
+      type="number"
+      value={value}
+      placeholder={optional ? 'Opsiyonel' : undefined}
+      onChange={event => onChange(event.target.value)}
+      className="mt-1 h-8 text-sm"
+      {...inputProps}
+    />
+  </div>
+);
