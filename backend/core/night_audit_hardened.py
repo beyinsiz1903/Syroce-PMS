@@ -27,6 +27,7 @@ from pymongo.read_concern import ReadConcern
 from pymongo.write_concern import WriteConcern
 
 from core.business_date_service import ensure_business_date_initialized
+from core.channel_room_charge_pricing import calculate_room_charge
 from core.database import client, db
 
 logger = logging.getLogger("core.night_audit_hardened")
@@ -797,7 +798,26 @@ async def _build_candidate_set(
     # N+1 fix: tum bookings'i once topla, sonra folio + folio_charges idempotency icin tek sorgu
     all_checked_in = await db.bookings.find(
         {"tenant_id": tenant_id, "status": "checked_in"},
-        {"_id": 0, "id": 1, "room_id": 1, "folio_id": 1, "room_rate": 1, "rate": 1, "total_amount": 1, "check_in": 1, "check_out": 1, "guest_name": 1, "currency": 1},
+        {
+            "_id": 0,
+            "id": 1,
+            "room_id": 1,
+            "folio_id": 1,
+            "room_rate": 1,
+            "rate": 1,
+            "total_amount": 1,
+            "provider_total_amount": 1,
+            "pricing_tax_inclusive": 1,
+            "pricing_source": 1,
+            "booking_source": 1,
+            "source": 1,
+            "origin": 1,
+            "created_by": 1,
+            "check_in": 1,
+            "check_out": 1,
+            "guest_name": 1,
+            "currency": 1,
+        },
     ).to_list(5000)
     bookings_list, _future, _ended, _invalid = _partition_stays_for_business_date(
         all_checked_in,
@@ -825,16 +845,13 @@ async def _build_candidate_set(
     for booking in bookings_list:
         booking_id = booking["id"]
 
-        # Resolve nightly rate
-        rate = booking.get("room_rate") or booking.get("rate") or 0.0
-        if rate <= 0 and booking.get("total_amount") and booking.get("check_in") and booking.get("check_out"):
-            try:
-                ci = datetime.fromisoformat(booking["check_in"].replace("Z", "+00:00"))
-                co = datetime.fromisoformat(booking["check_out"].replace("Z", "+00:00"))
-                nights = max((co - ci).days, 1)
-                rate = round(booking["total_amount"] / nights, 2)
-            except Exception:
-                rate = 0.0
+        pricing = calculate_room_charge(
+            booking,
+            bd,
+            vat_rate=VAT_RATE,
+            accommodation_tax_rate=ACCOMMODATION_TAX_RATE,
+        )
+        rate = pricing["amount"]
 
         # Resolve folio
         folio_id = booking.get("folio_id") or folio_by_booking.get(booking_id)
@@ -854,9 +871,9 @@ async def _build_candidate_set(
             item_status = IS_SKIPPED
             reason = "already_posted_for_business_date"
 
-        vat = round(rate * VAT_RATE, 2)
-        acc_tax = round(rate * ACCOMMODATION_TAX_RATE, 2)
-        total = round(rate + vat + acc_tax, 2)
+        vat = pricing["tax_breakdown"]["vat"]
+        acc_tax = pricing["tax_breakdown"]["accommodation_tax"]
+        total = pricing["total"]
 
         items.append(
             {
@@ -869,9 +886,10 @@ async def _build_candidate_set(
                 "posting_type": "room_charge",
                 "posting_date": bd,
                 "amount": rate,
-                "tax_amount": round(vat + acc_tax, 2),
+                "tax_amount": pricing["tax_amount"],
                 "total": total,
                 "tax_breakdown": {"vat": vat, "accommodation_tax": acc_tax},
+                "tax_inclusive": pricing["tax_inclusive"],
                 "currency": booking.get("currency") or DEFAULT_CURRENCY,
                 "status": item_status,
                 "reason": reason,
@@ -1022,6 +1040,7 @@ async def _post_room_charge_item(tenant_id: str, item: dict, run_id: str) -> boo
                     "tax_rate": round((VAT_RATE + ACCOMMODATION_TAX_RATE) * 100, 1),
                     "tax_amount": item["tax_amount"],
                     "tax_breakdown": item.get("tax_breakdown", {}),
+                    "tax_inclusive": bool(item.get("tax_inclusive")),
                     "total": item["total"],
                     "currency": item.get("currency", DEFAULT_CURRENCY),
                     "business_date": item["posting_date"],

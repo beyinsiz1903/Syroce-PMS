@@ -181,6 +181,41 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.getByRole('tab', { name: 'Folyolar' })).toHaveAttribute('data-state', 'active');
   });
 
+  it('repairs an unpaid double-taxed channel charge without cancelling the booking', async () => {
+    get.mockResolvedValue({
+      data: {
+        ...detail,
+        booking: { ...detail.booking, status: 'checked_in', channel: 'Etstur' },
+        summary: {
+          ...detail.summary,
+          balance: 5320,
+          total_amount: 4750,
+          channel_pricing_issue: {
+            code: 'CHANNEL_TOTAL_TAXED_TWICE',
+            observed_total: 5320,
+            expected_total: 4750,
+            overcharge: 570,
+            repairable: true,
+          },
+        },
+      },
+    });
+    post.mockResolvedValueOnce({ data: { success: true, total_reduction: 570 } });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    fireEvent.click(await screen.findByTestId('repair-channel-pricing'));
+
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Kanal fiyatını düzelt',
+    })));
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/pms/reservations/booking-test/repair-channel-pricing',
+      { reason: 'Kanal toplamına mükerrer vergi eklenmesinin düzeltilmesi' },
+    ));
+    expect(post).not.toHaveBeenCalledWith(expect.stringContaining('cancel'), expect.anything());
+  });
+
   it('hides all lifecycle mutations for a checked-out booking', async () => {
     get.mockResolvedValueOnce({
       data: { ...detail, booking: { ...detail.booking, status: 'checked_out' } },

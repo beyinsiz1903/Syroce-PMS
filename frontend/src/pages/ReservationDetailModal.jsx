@@ -57,6 +57,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const [checkinAlertOpen, setCheckinAlertOpen] = useState(false);
   const [offlineFallback, setOfflineFallback] = useState(null);
   const [loadError, setLoadError] = useState(null);
+  const [pricingRepairing, setPricingRepairing] = useState(false);
   const loadGenerationRef = useRef(0);
 
   // allBookings kimliği her render değişebilir → loadData dep'ine koymak yerine
@@ -132,6 +133,35 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
       else await loadData();
     }
     catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+  };
+
+  const repairChannelPricing = async () => {
+    const issue = data?.summary?.channel_pricing_issue;
+    if (!issue?.repairable || pricingRepairing) return;
+    const confirmed = await confirmDialog({
+      title: 'Kanal fiyatını düzelt',
+      message: `${fmtTL(issue.observed_total)} TL olan hatalı folyo bakiyesi, acenteden gelen ${fmtTL(issue.expected_total)} TL toplamla eşitlenecek. Rezervasyon ve acente referansı korunacak. Devam edilsin mi?`,
+      confirmText: 'Güvenli şekilde düzelt',
+    });
+    if (!confirmed) return;
+
+    setPricingRepairing(true);
+    try {
+      const response = await axios.post(`/pms/reservations/${bookingId}/repair-channel-pricing`, {
+        reason: 'Kanal toplamına mükerrer vergi eklenmesinin düzeltilmesi',
+      });
+      const reduction = response.data?.total_reduction;
+      toast.success(
+        response.data?.already_repaired
+          ? 'Kanal fiyatı zaten doğru'
+          : `Folyo düzeltildi${typeof reduction === 'number' ? `: ${fmtTL(reduction)} TL mükerrer tutar kaldırıldı` : ''}`,
+      );
+      await loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Kanal fiyatı düzeltilemedi');
+    } finally {
+      setPricingRepairing(false);
+    }
   };
 
   const bookingStatus = String(data?.booking?.status || '').toLowerCase();
@@ -227,6 +257,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const rawBalance = summary?.balance;
   const balance = Number(rawBalance) || 0;
   const hasOpenBalance = balance > 0.01;
+  const channelPricingIssue = summary?.channel_pricing_issue;
   const hasRoomAssignment = Boolean(booking?.room_id && room?.id);
 
   // Birincil sekmeler — günlük kullanımda en sık ihtiyaç duyulanlar
@@ -329,6 +360,30 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     </div>
                   )}
                 </div>
+                {channelPricingIssue && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5" data-testid="channel-pricing-issue">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-amber-800">Kanal toplamına vergi tekrar eklenmiş</p>
+                        <p className="mt-0.5 text-[10px] leading-4 text-amber-700">
+                          Doğru toplam {fmtTL(channelPricingIssue.expected_total)} TL. Mükerrer tutar {fmtTL(channelPricingIssue.overcharge)} TL.
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={repairChannelPricing}
+                      disabled={!channelPricingIssue.repairable || pricingRepairing}
+                      className="mt-2 h-7 w-full bg-amber-600 px-2 text-[11px] text-white hover:bg-amber-700"
+                      data-testid="repair-channel-pricing"
+                    >
+                      {pricingRepairing ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Repeat2 className="mr-1.5 h-3 w-3" />}
+                      {channelPricingIssue.repairable ? 'Kanal fiyatıyla eşitle' : 'Finans onayı gerekli'}
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {/* Oda Bilgisi — yalnızca gerçek alanlar */}
