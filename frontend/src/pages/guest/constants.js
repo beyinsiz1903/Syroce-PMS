@@ -18,6 +18,127 @@ export const LANGS = [
   { code: "ar", label: "العربية" },
 ];
 
+export const EXPERIENCE_COPY = {
+  tr: {
+    guestServices: "Misafir Hizmetleri",
+    heroSubtitle: "Konaklamanız boyunca yanınızdayız.",
+    pickTitle: "Size nasıl yardımcı olabiliriz?",
+    pickHint: "İhtiyacınız olan hizmeti seçin; talebinizi doğru ekibe hemen iletelim.",
+    serviceHint: "Hizmeti seçin ve gerekiyorsa ayrıntıları ekleyin.",
+    secureNote: "Talebiniz güvenli şekilde otel ekibine iletilir.",
+    serviceAdd: "Talebe ekle",
+    serviceAdded: "Eklendi",
+    departmentFallback: "Otel hizmetleri ve destek",
+  },
+  en: {
+    guestServices: "Guest Services",
+    heroSubtitle: "We are here throughout your stay.",
+    pickTitle: "How may we assist you?",
+    pickHint: "Choose a service and we will route your request to the right hotel team.",
+    serviceHint: "Select a service and add details when needed.",
+    secureNote: "Your request is securely delivered to the hotel team.",
+    serviceAdd: "Add to request",
+    serviceAdded: "Added",
+    departmentFallback: "Hotel services and assistance",
+  },
+  de: {
+    guestServices: "Gästeservice",
+    heroSubtitle: "Wir sind während Ihres Aufenthalts für Sie da.",
+    pickTitle: "Wie können wir Ihnen helfen?",
+    pickHint: "Wählen Sie einen Service; wir leiten Ihre Anfrage an das zuständige Hotelteam weiter.",
+    serviceHint: "Wählen Sie einen Service und ergänzen Sie bei Bedarf Details.",
+    secureNote: "Ihre Anfrage wird sicher an das Hotelteam übermittelt.",
+    serviceAdd: "Zur Anfrage hinzufügen",
+    serviceAdded: "Hinzugefügt",
+    departmentFallback: "Hotelservice und Unterstützung",
+  },
+  ru: {
+    guestServices: "Гостевой сервис",
+    heroSubtitle: "Мы рядом на протяжении всего вашего проживания.",
+    pickTitle: "Чем мы можем помочь?",
+    pickHint: "Выберите услугу, и мы направим запрос нужной команде отеля.",
+    serviceHint: "Выберите услугу и при необходимости добавьте детали.",
+    secureNote: "Ваш запрос будет безопасно передан команде отеля.",
+    serviceAdd: "Добавить в запрос",
+    serviceAdded: "Добавлено",
+    departmentFallback: "Услуги и помощь в отеле",
+  },
+  ar: {
+    guestServices: "خدمات الضيوف",
+    heroSubtitle: "نحن إلى جانبك طوال فترة إقامتك.",
+    pickTitle: "كيف يمكننا مساعدتك؟",
+    pickHint: "اختر الخدمة وسنرسل طلبك مباشرة إلى فريق الفندق المختص.",
+    serviceHint: "اختر الخدمة وأضف التفاصيل عند الحاجة.",
+    secureNote: "يتم إرسال طلبك بأمان إلى فريق الفندق.",
+    serviceAdd: "إضافة إلى الطلب",
+    serviceAdded: "تمت الإضافة",
+    departmentFallback: "خدمات الفندق والمساعدة",
+  },
+};
+
+export const DEPT_DESCRIPTIONS = {
+  tr: {
+    housekeeping: "Temizlik, havlu ve oda ihtiyaçları",
+    rooms: "Temizlik, havlu ve oda ihtiyaçları",
+    technical: "Klima, Wi-Fi ve teknik destek",
+    reception: "Resepsiyon ve konaklama talepleri",
+    other: "Resepsiyon ve konaklama talepleri",
+    fnb: "Yeme, içme ve oda servisi",
+    laundry: "Çamaşır ve kuru temizleme",
+    transportation: "Transfer ve ulaşım desteği",
+    spa: "SPA ve bakım hizmetleri",
+    minibar: "Minibar talep ve desteği",
+  },
+  en: {
+    housekeeping: "Cleaning, towels and room essentials",
+    rooms: "Cleaning, towels and room essentials",
+    technical: "Air conditioning, Wi-Fi and maintenance",
+    reception: "Front desk and stay assistance",
+    other: "Front desk and stay assistance",
+    fnb: "Dining and in-room service",
+    laundry: "Laundry and dry cleaning",
+    transportation: "Transfers and transportation",
+    spa: "Spa and wellness services",
+    minibar: "Minibar requests and assistance",
+  },
+  de: {
+    housekeeping: "Reinigung, Handtücher und Zimmerbedarf",
+    rooms: "Reinigung, Handtücher und Zimmerbedarf",
+    technical: "Klimaanlage, WLAN und technische Hilfe",
+    reception: "Rezeption und Unterstützung während des Aufenthalts",
+    other: "Rezeption und Unterstützung während des Aufenthalts",
+    fnb: "Gastronomie und Zimmerservice",
+    laundry: "Wäsche- und Reinigungsservice",
+    transportation: "Transfer- und Transportservice",
+    spa: "Spa- und Wellnessangebote",
+    minibar: "Minibar-Anfragen und Unterstützung",
+  },
+  ru: {
+    housekeeping: "Уборка, полотенца и всё необходимое для номера",
+    rooms: "Уборка, полотенца и всё необходимое для номера",
+    technical: "Кондиционер, Wi-Fi и техническая помощь",
+    reception: "Стойка регистрации и помощь во время проживания",
+    other: "Стойка регистрации и помощь во время проживания",
+    fnb: "Питание и обслуживание в номере",
+    laundry: "Стирка и химчистка",
+    transportation: "Трансфер и транспорт",
+    spa: "Спа- и велнес-услуги",
+    minibar: "Запросы по мини-бару и помощь",
+  },
+  ar: {
+    housekeeping: "التنظيف والمناشف واحتياجات الغرفة",
+    rooms: "التنظيف والمناشف واحتياجات الغرفة",
+    technical: "التكييف والواي فاي والدعم الفني",
+    reception: "الاستقبال والمساعدة أثناء الإقامة",
+    other: "الاستقبال والمساعدة أثناء الإقامة",
+    fnb: "الطعام وخدمة الغرف",
+    laundry: "الغسيل والتنظيف الجاف",
+    transportation: "خدمات النقل والمواصلات",
+    spa: "خدمات السبا والعافية",
+    minibar: "طلبات الميني بار والمساعدة",
+  },
+};
+
 export const UI = {
   tr: { title: "Oda Talebi", room: "Oda", welcome: "Hoş geldiniz", pick: "Ne için talep oluşturuyorsunuz?",
         describe: "Detay / Açıklama", placeholder: "Kısaca talebinizi yazın...", priority: "Öncelik",
@@ -109,14 +230,14 @@ export const UI = {
 export const LOCALE = { tr: "tr-TR", en: "en-US", de: "de-DE", ru: "ru-RU", ar: "ar" };
 
 export const DEPT_LABELS = {
-  tr: { rooms: "Kat Hizmetleri", technical: "Teknik Servis", fnb: "Restoran / Oda Servisi", laundry: "Çamaşırhane", transportation: "Ulaşım", spa: "SPA", other: "Resepsiyon / Diğer", minibar: "Minibar" },
-  en: { rooms: "Housekeeping", technical: "Maintenance", fnb: "Dining & Room Service", laundry: "Laundry", transportation: "Transportation", spa: "SPA", other: "Reception / Other", minibar: "Minibar" },
-  de: { rooms: "Zimmerreinigung", technical: "Wartung", fnb: "Restaurant", laundry: "Wäscherei", transportation: "Transport", spa: "SPA", other: "Rezeption / Andere", minibar: "Minibar" },
-  ru: { rooms: "Уборка", technical: "Ремонт", fnb: "Ресторан", laundry: "Прачечная", transportation: "Транспорт", spa: "СПА", other: "Ресепшн / Другое", minibar: "Минибар" },
-  ar: { rooms: "خدمة الغرف", technical: "صيانة", fnb: "مطعم", laundry: "غسيل", transportation: "نقل", spa: "سبا", other: "استقبال / أخرى", minibar: "ميني بار" },
+  tr: { housekeeping: "Kat Hizmetleri", rooms: "Kat Hizmetleri", technical: "Teknik Servis", reception: "Resepsiyon", fnb: "Restoran / Oda Servisi", laundry: "Çamaşırhane", transportation: "Ulaşım", spa: "SPA", other: "Resepsiyon / Diğer", minibar: "Minibar" },
+  en: { housekeeping: "Housekeeping", rooms: "Housekeeping", technical: "Maintenance", reception: "Reception", fnb: "Dining & Room Service", laundry: "Laundry", transportation: "Transportation", spa: "SPA", other: "Reception / Other", minibar: "Minibar" },
+  de: { housekeeping: "Zimmerreinigung", rooms: "Zimmerreinigung", technical: "Wartung", reception: "Rezeption", fnb: "Restaurant", laundry: "Wäscherei", transportation: "Transport", spa: "SPA", other: "Rezeption / Andere", minibar: "Minibar" },
+  ru: { housekeeping: "Уборка", rooms: "Уборка", technical: "Ремонт", reception: "Ресепшн", fnb: "Ресторан", laundry: "Прачечная", transportation: "Транспорт", spa: "СПА", other: "Ресепшн / Другое", minibar: "Минибар" },
+  ar: { housekeeping: "خدمة الغرف", rooms: "خدمة الغرف", technical: "صيانة", reception: "الاستقبال", fnb: "مطعم", laundry: "غسيل", transportation: "نقل", spa: "سبا", other: "استقبال / أخرى", minibar: "ميني بار" },
 };
 
 export const DEPT_ICONS = {
-  rooms: Sparkles, technical: Wrench, fnb: Utensils, laundry: Shirt,
-  transportation: Car, spa: Heart, other: Bell, minibar: Beer
+  housekeeping: Sparkles, rooms: Sparkles, technical: Wrench, reception: Bell,
+  fnb: Utensils, laundry: Shirt, transportation: Car, spa: Heart, other: Bell, minibar: Beer
 };

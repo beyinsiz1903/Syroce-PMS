@@ -993,6 +993,7 @@ code {
 .dark .border-gray-50 { border-color: hsl(var(--border)); }
 .dark .border-gray-200\/50 { border-color: hsl(var(--border) / 0.5); }
 .dark .border-slate-200\/70 { border-color: hsl(var(--border) / 0.7); }
+.dark .border-slate-200\/80 { border-color: hsl(var(--border) / 0.8); }
 .dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
 .dark .divide-zinc-800 > :not([hidden]) ~ :not([hidden]),
 .dark .divide-slate-800 > :not([hidden]) ~ :not([hidden]) { border-color: hsl(var(--border)); }
@@ -1136,6 +1137,7 @@ code {
 .dark .to-indigo-50\/30 { --tw-gradient-to: rgba(30, 27, 75, 0.3) var(--tw-gradient-to-position); }
 .dark .border-indigo-200\/50 { border-color: rgba(49, 46, 129, 0.5); }
 .dark .bg-slate-100\/60 { background-color: rgba(15, 23, 42, 0.6); }
+.dark .bg-slate-50\/70 { background-color: rgb(30 41 59 / 0.7); }
 .dark .border-amber-100\/50 { border-color: rgba(69, 26, 3, 0.5); }
 .dark .active\:bg-gray-100:active { background-color: #1f2937; }
 .dark .disabled\:hover\:bg-gray-100:disabled:hover { background-color: #1f2937; }

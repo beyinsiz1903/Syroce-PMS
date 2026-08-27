@@ -3,7 +3,7 @@ import "@/App.css";
 import { keepActiveSessionAlive } from "@/config/axiosConfig";
 import { clearAxiosCache } from "@/lib/axios-cache";
 import axios from "axios";
-import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate, useLocation } from "react-router-dom";
 import PlanRouteGuard from "@/components/PlanRouteGuard";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
@@ -57,6 +57,12 @@ function SelfCheckinRoute() {
 function DigitalKeyRoute() {
   const { bookingId } = useParams();
   return <DigitalKeyPage bookingId={bookingId} />;
+}
+
+function RouteAwareCommunicationCenter({ user }) {
+  const { pathname } = useLocation();
+  const isGuestRoomService = /^\/g\/(?:room\/|[^/]+\/room\/)/.test(pathname) || pathname.startsWith("/room-qr/");
+  return isGuestRoomService ? null : <CommunicationCenter user={user} />;
 }
 
 function notifyServiceWorkerAuthChanged() {
@@ -504,6 +510,7 @@ function App() {
               </PlanRouteGuard>
             </ErrorBoundary>
             </SimulationProvider>
+            {isAuthenticated && user && <RouteAwareCommunicationCenter user={user} />}
           </BrowserRouter>
           {isAuthenticated && user && <InternalChatWidget user={user} hideLauncher />}
           {isAuthenticated && user && (
@@ -511,7 +518,6 @@ function App() {
               <Softphone user={user} hideLauncher />
             </Suspense>
           )}
-          {isAuthenticated && user && <CommunicationCenter user={user} />}
         </div>
       </QueryClientProvider>
       </CurrencyProvider>

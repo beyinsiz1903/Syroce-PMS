@@ -198,6 +198,46 @@ describe('RoomRequestPage', () => {
     renderComponent();
   };
 
+  it('renders the localized public catalogue contract instead of internal codes', async () => {
+    Object.defineProperty(navigator, 'language', { value: 'tr-TR', configurable: true });
+    const localizedCatalogue = {
+      departments: [
+        { department_code: 'housekeeping', label: 'Kat Hizmetleri', icon: 'sparkles' },
+      ],
+      services: [
+        {
+          service_code: 'housekeeping.room_cleaning',
+          department_code: 'housekeeping',
+          label: 'Oda temizliği',
+          description: 'Odanız için temizlik hizmeti talep edin.',
+          icon: 'sparkles',
+          input_type: 'one_tap',
+          input_config: {},
+          is_chargeable: false,
+        },
+      ],
+    };
+
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/catalogue')) return Promise.resolve({ data: localizedCatalogue, status: 200 });
+      if (url.includes('/room-qr/tenant1/room1')) return Promise.resolve({ data: mockMeta });
+      if (url.includes('/thread')) return Promise.reject();
+      return Promise.reject();
+    });
+    axios.post.mockResolvedValue({ data: { session_token: 'guest123' } });
+
+    renderComponent();
+
+    await waitFor(() => expect(screen.getByText('Kat Hizmetleri')).toBeInTheDocument());
+    expect(screen.queryByText('housekeeping')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('dept-housekeeping'));
+
+    await waitFor(() => expect(screen.getByText('Oda temizliği')).toBeInTheDocument());
+    expect(screen.getByText('Odanız için temizlik hizmeti talep edin.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Talebe ekle' })).toBeInTheDocument();
+    expect(screen.queryByText('housekeeping.room_cleaning')).not.toBeInTheDocument();
+  });
+
   it('quantity default/min/max and exact payload', async () => {
     setupCatalogue();
     await waitFor(() => screen.getByTestId("dept-rooms"));
