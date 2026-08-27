@@ -161,7 +161,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       )}
 
       {showCari && (
-        <FormPanel color="orange" title="Cariye Aktar" testid="cari-transfer-form" onClose={() => setShowCari(false)} loading={loading}
+        <FormPanel color="amber" title="Cariye Aktar" testid="cari-transfer-form" onClose={() => setShowCari(false)} loading={loading}
           onSubmit={() => exec(async () => {
             await axios.post(`/pms/reservations/${booking.id}/transfer-to-cari`, { ...cariForm, amount: parseFloat(cariForm.amount) });
             toast.success('Cariye aktarildi'); setShowCari(false); setCariForm({ amount: '', cari_account_id: '', description: '' });
@@ -176,7 +176,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       )}
 
       {showAgency && (
-        <FormPanel color="purple" title="Acente Ödemesi" testid="agency-payment-form" onClose={() => setShowAgency(false)} loading={loading}
+        <FormPanel color="blue" title="Acente Ödemesi" testid="agency-payment-form" onClose={() => setShowAgency(false)} loading={loading}
           onSubmit={() => exec(async () => {
             await axios.post(`/pms/reservations/${booking.id}/record-agency-payment`, { ...agencyForm, amount: parseFloat(agencyForm.amount) });
             toast.success('Acente ödemesi kaydedildi'); setShowAgency(false); setAgencyForm({ amount: '', agency_name: '', reference: '' });

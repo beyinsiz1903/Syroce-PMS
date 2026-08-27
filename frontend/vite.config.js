@@ -121,6 +121,17 @@ function offlineAssetManifest() {
         source: JSON.stringify({ schema_version: 1, assets }, null, 2),
       });
     },
+    closeBundle() {
+      // Append a build timestamp to service-worker.js so the browser detects
+      // a byte-change and triggers the install event (precaching new chunks).
+      import('fs').then(fs => {
+        const swPath = path.resolve(__dirname, 'build/service-worker.js');
+        if (fs.existsSync(swPath)) {
+          const timestamp = Date.now();
+          fs.appendFileSync(swPath, `\n// BUILD_TIMESTAMP: ${timestamp}\n`);
+        }
+      });
+    }
   };
 }
 
