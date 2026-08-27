@@ -2064,13 +2064,27 @@ async def update_reservation_guest(
 
 @router.get("/cari-accounts")
 async def list_cari_accounts(current_user: User = Depends(get_current_user)):
-    """List all cari (account receivable) accounts."""
+    """List all cari (account receivable) accounts, including city ledger accounts."""
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
     accounts = []
+    # Eski cari_accounts koleksiyonu
     async for acc in db.cari_accounts.find({"tenant_id": tid}, {"_id": 0}).sort("name", 1):
         accounts.append(acc)
+
+    # City Ledger hesaplarını da ekle (folyo dropdown'ında görünsün)
+    async for acc in db.city_ledger_accounts.find({"tenant_id": tid, "is_active": {"$ne": False}}, {"_id": 0}).sort("account_name", 1):
+        # cari_accounts formatıyla uyumlu hale getir
+        accounts.append({
+            "id": acc.get("id"),
+            "name": acc.get("account_name"),
+            "company_name": acc.get("company_name"),
+            "account_type": "city_ledger",
+            "balance": acc.get("current_balance", 0),
+            "credit_limit": acc.get("credit_limit", 0),
+            "tenant_id": tid,
+        })
 
     return {"accounts": accounts}
 
