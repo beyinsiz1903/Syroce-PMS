@@ -7,7 +7,7 @@
 // CACHE_NAME'e geçer (activate handler eskileri siler).
 // v1.4.0: tüm Vite lazy-route varlıklarının build manifestinden precache'i,
 // çevrimdışı SPA navigation fallback'i ve static/data cache ayrımı eklendi.
-const CACHE_VERSION = 'v1.4.0';
+const CACHE_VERSION = 'v1.4.1';
 const STATIC_CACHE_NAME = `hotel-pms-static-${CACHE_VERSION}`;
 const DATA_CACHE_NAME = `hotel-pms-data-${CACHE_VERSION}`;
 const CACHE_PREFIX = 'hotel-pms-';

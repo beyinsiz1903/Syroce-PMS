@@ -145,14 +145,25 @@ export function SelectField({ label, value, onChange, options }) {
   );
 }
 
+const FORM_PANEL_COLORS = {
+  emerald: { bg: 'bg-emerald-50/50', text: 'text-emerald-800', btn: 'bg-emerald-600 hover:bg-emerald-700' },
+  orange: { bg: 'bg-orange-50/50', text: 'text-orange-800', btn: 'bg-orange-600 hover:bg-orange-700' },
+  purple: { bg: 'bg-purple-50/50', text: 'text-purple-800', btn: 'bg-purple-600 hover:bg-purple-700' },
+  indigo: { bg: 'bg-indigo-50/50', text: 'text-indigo-800', btn: 'bg-indigo-600 hover:bg-indigo-700' },
+  teal: { bg: 'bg-teal-50/50', text: 'text-teal-800', btn: 'bg-teal-600 hover:bg-teal-700' },
+  cyan: { bg: 'bg-cyan-50/50', text: 'text-cyan-800', btn: 'bg-cyan-600 hover:bg-cyan-700' },
+  blue: { bg: 'bg-blue-50/50', text: 'text-blue-800', btn: 'bg-blue-600 hover:bg-blue-700' }
+};
+
 export function FormPanel({ color, title, testid, children, onClose, onSubmit, loading }) {
   const { t } = useTranslation();
+  const c = FORM_PANEL_COLORS[color] || FORM_PANEL_COLORS.blue;
   return (
-    <div className={`border rounded-lg p-4 bg-${color}-50/50 space-y-3`} data-testid={testid}>
-      <div className={`text-sm font-semibold text-${color}-800`}>{title}</div>
+    <div className={`border rounded-lg p-4 ${c.bg} space-y-3`} data-testid={testid}>
+      <div className={`text-sm font-semibold ${c.text}`}>{title}</div>
       {children}
       <div className="flex gap-2">
-        <Button size="sm" onClick={onSubmit} disabled={loading} className={`bg-${color}-600 hover:bg-${color}-700 text-white h-8 text-xs`}>
+        <Button size="sm" onClick={onSubmit} disabled={loading} className={`${c.btn} text-white h-8 text-xs`}>
           {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Check className="w-3 h-3 mr-1" />} {t('cm.pages_reservationdetail_helpers.kaydet')}
         </Button>
         <Button size="sm" variant="ghost" onClick={onClose} className="h-8 text-xs">{t('cm.pages_reservationdetail_helpers.iptal')}</Button>

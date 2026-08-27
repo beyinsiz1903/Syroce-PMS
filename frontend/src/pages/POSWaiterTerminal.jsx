@@ -315,9 +315,9 @@ const POSWaiterTerminal = () => {
               <ArrowLeft className="w-4 h-4 mr-1" />{t("cm.pages_POSWaiterTerminal.satis_noktasi")}</Button>
           </div>
           {tables.length === 0 ? <Card><CardContent className="p-8 text-center text-gray-500">{t("cm.pages_POSWaiterTerminal.bu_satis_noktasinda_masa_bulun")}</CardContent></Card> : <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-              {tables.map(t => <button key={t.id} onClick={() => pickTable(t)} data-testid={`table-${t.table_number}`} className={`rounded-lg border-2 p-4 text-center transition-shadow hover:shadow-md ${statusColor(t.status)}`}>
-                  <div className="text-xl font-bold">{t.table_number}</div>
-                  <div className="text-xs mt-1">{t.seats}{t("cm.pages_POSWaiterTerminal.kisi")}</div>
+              {tables.map(tbl => <button key={tbl.id} onClick={() => pickTable(tbl)} data-testid={`table-${tbl.table_number}`} className={`rounded-lg border-2 p-4 text-center transition-shadow hover:shadow-md ${statusColor(tbl.status)}`}>
+                  <div className="text-xl font-bold">{tbl.table_number}</div>
+                  <div className="text-xs mt-1">{tbl.seats} {t("cm.pages_POSWaiterTerminal.kisi")}</div>
                 </button>)}
             </div>}
         </div>}
