@@ -432,7 +432,7 @@ export default function RoomRequestPage() {
   // Submit state
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
-  const [successResponse, setSuccessResponse] = useState(null);
+  const [submittedItems, setSubmittedItems] = useState([]);
   const submitGuard = useRef(false);
 
   const loadData = useCallback(async () => {
@@ -551,6 +551,7 @@ export default function RoomRequestPage() {
         guest_name: name.trim() || undefined,
         guest_phone: phone.trim() || undefined,
       }, { headers: { "X-Guest-Session": guestSession } });
+      setSubmittedItems([catLabel]);
       setView("success");
     } catch (e) {
       handleSubmitError(e);
@@ -600,11 +601,14 @@ export default function RoomRequestPage() {
     }
 
     try {
-      const res = await axios.post(`/public/room-qr/${tenantId}/${roomId}/submit`, payload, {
+      const readableItems = cartState.cart.map((item) =>
+        getLabel(item.catalogueItem, lang, item.service_code),
+      );
+      await axios.post(`/public/room-qr/${tenantId}/${roomId}/submit`, payload, {
         headers: { "X-Guest-Session": guestSession }
       });
       cartState.clearCart();
-      setSuccessResponse(res.data);
+      setSubmittedItems(readableItems);
       setView("success");
     } catch (e) {
       handleSubmitError(e);
@@ -640,7 +644,7 @@ export default function RoomRequestPage() {
     setLegacyDescription("");
     setLegacyPriority("normal");
     setSubmitError("");
-    setSuccessResponse(null);
+    setSubmittedItems([]);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -740,16 +744,19 @@ export default function RoomRequestPage() {
               <h2 className="text-2xl font-bold mb-2">{t.sent}</h2>
               <p className="text-gray-600 mb-6">{mode === "catalogue" ? t.structuredSentDesc : t.sentDesc}</p>
               
-              {successResponse && (
-                <div className="text-sm text-left bg-slate-100 p-4 rounded-lg mb-6 break-words" data-testid="success-refs">
-                  {successResponse.submission_reference && (
-                    <div className="font-semibold text-slate-700">Ref: {successResponse.submission_reference}</div>
-                  )}
-                  {Array.isArray(successResponse.request_references) && successResponse.request_references.map(r => (
-                    <div key={r.request_reference} className="text-slate-500 mt-1">
-                      {r.service_code}: {r.request_reference}
-                    </div>
-                  ))}
+              {submittedItems.length > 0 && (
+                <div className="mb-6 rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4 text-left" data-testid="success-summary">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-600/70">
+                    {t.requestSummary}
+                  </div>
+                  <div className="space-y-2">
+                    {submittedItems.map((label, index) => (
+                      <div key={`${label}-${index}`} className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                        <span>{label}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 

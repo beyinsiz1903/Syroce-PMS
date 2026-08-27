@@ -190,7 +190,7 @@ class TestDelayedProcessingDetection:
                 tenant_id=tenant_id,
                 status="pending",
                 created_at=_utc_past(hours=1),
-                available_at=_utc_past(hours=1),
+                available_at=_utc_past(hours=-1),
             )
             await db.outbox_events.insert_one(event)
 

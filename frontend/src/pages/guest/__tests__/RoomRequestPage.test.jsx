@@ -801,7 +801,7 @@ describe('RoomRequestPage', () => {
     });
   });
 
-  it('success public references', async () => {
+  it('shows a readable success summary without internal references', async () => {
     setupCatalogue();
     await waitFor(() => screen.getByTestId("dept-fnb"));
     fireEvent.click(screen.getByTestId("dept-fnb"));
@@ -820,8 +820,10 @@ describe('RoomRequestPage', () => {
     fireEvent.click(screen.getByText("Submit Request"));
     
     await waitFor(() => {
-      expect(screen.getByTestId("success-refs")).toHaveTextContent("Ref: SUB123");
-      expect(screen.getByTestId("success-refs")).toHaveTextContent("WATER: REQ999");
+      expect(screen.getByTestId("success-summary")).toHaveTextContent("Water");
+      expect(screen.queryByText(/SUB123/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/REQ999/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/WATER:/)).not.toBeInTheDocument();
     });
   });
 

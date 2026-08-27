@@ -41,7 +41,11 @@ def compute_payload_fingerprint(lang: str, items: list) -> str:
 
 def generate_deterministic_description(input_type: str, validated_value: dict, guest_note: str | None, service_labels: dict | None, input_config: dict, lang: str, prop_lang: str) -> str:
     from domains.guest.qr_catalogue_service import process_lang
-    desc_lines = []
+    # The description is reused as the staff-facing guest-request message.
+    # Always lead with the human service label so one-tap requests never turn
+    # into the context-free "Talep alındı." message.
+    service_label = process_lang(service_labels, lang, prop_lang).strip()
+    desc_lines = [service_label] if service_label else ["Misafir talebi"]
 
     if input_type == "quantity":
         qty = validated_value.get("quantity")
@@ -82,8 +86,5 @@ def generate_deterministic_description(input_type: str, validated_value: dict, g
         if len(note) > 1000:
             note = note[:1000] + "..."
         desc_lines.append(f"Not: {note}")
-
-    if not desc_lines:
-        return "Talep alındı."
 
     return "\n".join(desc_lines)

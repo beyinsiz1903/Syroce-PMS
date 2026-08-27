@@ -101,6 +101,55 @@ GUEST_THREAD_FALLBACK_WINDOW_HOURS = 24
 # Mesaj gövdesi azami uzunluğu (DoS / spam guard).
 MAX_MESSAGE_LEN = 2000
 
+_GENERIC_REQUEST_BODIES = frozenset({"Talep alındı", "Talep alındı."})
+
+
+def _service_label_from_request(request_doc: dict) -> str | None:
+    """Resolve a staff-readable label from a structured QR request snapshot."""
+    snapshot = request_doc.get("catalogue_snapshot") or {}
+    labels = snapshot.get("labels") or {}
+    if not isinstance(labels, dict):
+        labels = {}
+    language = request_doc.get("language")
+    for key in ("tr", language, "en"):
+        value = labels.get(key) if key else None
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    for value in labels.values():
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    title = request_doc.get("title")
+    if isinstance(title, str) and title.strip():
+        return title.split(" — Oda ", 1)[0].strip()
+    return None
+
+
+def _is_generic_request_body(body: Any) -> bool:
+    return isinstance(body, str) and body.strip() in _GENERIC_REQUEST_BODIES
+
+
+async def _load_request_labels(tenant_id: str, request_ids: list[str]) -> dict[str, str]:
+    unique_ids = list(dict.fromkeys(request_id for request_id in request_ids if request_id))
+    if not unique_ids:
+        return {}
+
+    labels: dict[str, str] = {}
+    cursor = raw_db["qr_requests"].find(
+        {"tenant_id": tenant_id, "_id": {"$in": unique_ids}},
+        {
+            "_id": 1,
+            "title": 1,
+            "language": 1,
+            "catalogue_snapshot.labels": 1,
+        },
+    )
+    async for request_doc in cursor:
+        label = _service_label_from_request(request_doc)
+        if label:
+            labels[str(request_doc.get("_id"))] = label
+    return labels
+
 
 def internal_dept_for_qr_department(qr_department: str | None) -> str:
     """QR departmanını iç-sohbet departmanına çevirir. Asla None döndürmez."""
@@ -277,6 +326,7 @@ async def list_threads_for_staff(tenant_id: str, *, limit: int = 100) -> list[di
                 "last_sender_type": {"$last": "$sender_type"},
                 "last_created_at": {"$last": "$created_at"},
                 "last_category": {"$last": "$category"},
+                "last_request_id": {"$last": "$request_id"},
                 "total": {"$sum": 1},
             }
         },
@@ -297,8 +347,22 @@ async def list_threads_for_staff(tenant_id: str, *, limit: int = 100) -> list[di
                 "last_category": row.get("last_category"),
                 "last_created_at": last_created,
                 "total": row.get("total", 0),
+                "last_request_id": row.get("last_request_id"),
             }
         )
+
+    labels = await _load_request_labels(
+        tenant_id,
+        [
+            room.get("last_request_id")
+            for room in rooms
+            if _is_generic_request_body(room.get("last_body"))
+        ],
+    )
+    for room in rooms:
+        request_id = room.pop("last_request_id", None)
+        if _is_generic_request_body(room.get("last_body")) and request_id in labels:
+            room["last_body"] = labels[request_id]
     return rooms
 
 
@@ -346,10 +410,26 @@ async def get_thread_messages(
         query["booking_id"] = None
     if since is not None:
         query["created_at"] = {"$gte": since}
-    msgs: list[dict] = []
+    raw_messages: list[dict] = []
     cursor = raw_db[GR_COLL].find(query).sort("created_at", 1).limit(int(limit))
     async for msg in cursor:
-        msgs.append(_serialize(msg, viewer_user_id=viewer_user_id))
+        raw_messages.append(msg)
+
+    labels = await _load_request_labels(
+        tenant_id,
+        [
+            msg.get("request_id")
+            for msg in raw_messages
+            if _is_generic_request_body(msg.get("body"))
+        ],
+    )
+    msgs: list[dict] = []
+    for msg in raw_messages:
+        serialized = _serialize(msg, viewer_user_id=viewer_user_id)
+        request_id = msg.get("request_id")
+        if _is_generic_request_body(serialized.get("body")) and request_id in labels:
+            serialized["body"] = labels[request_id]
+        msgs.append(serialized)
     return msgs
 
 
