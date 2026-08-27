@@ -12,6 +12,10 @@ vi.mock('sonner', () => ({
 
 vi.mock('@/lib/dialogs', () => ({ confirmDialog: vi.fn() }));
 
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => vi.fn(),
+}));
+
 const { axiosGet, axiosPost, axiosMock } = vi.hoisted(() => {
   const get = vi.fn();
   const post = vi.fn();

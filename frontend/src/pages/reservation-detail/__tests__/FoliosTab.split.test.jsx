@@ -24,6 +24,10 @@ vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
 
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => vi.fn(),
+}));
+
 const axiosGet = vi.fn();
 const axiosPost = vi.fn();
 vi.mock('axios', () => ({
