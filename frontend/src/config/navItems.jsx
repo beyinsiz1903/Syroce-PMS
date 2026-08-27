@@ -459,6 +459,14 @@ export const NAV_ITEMS = [
     navGroup: "backoffice",
   },
   {
+    key: "city_ledger",
+    label: "Cari Hesaplar",
+    path: "/city-ledger",
+    tier: "basic",
+    group: "core",
+    navGroup: "backoffice",
+  },
+  {
     key: "general_ledger",
     label: "Genel Muhasebe",
     path: "/app/general-ledger",
