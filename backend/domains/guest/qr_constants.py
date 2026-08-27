@@ -43,6 +43,22 @@ CATEGORY_LABELS = {
 
 # Default mappings for known service codes
 DEFAULT_SERVICE_MAPPINGS = {
+    "housekeeping.room_cleaning": "cleaning",
+    "housekeeping.no_cleaning_today": "cleaning",
+    "housekeeping.extra_bath_towel": "towels",
+    "housekeeping.extra_toilet_paper": "amenities",
+    "housekeeping.extra_slippers": "amenities",
+    "technical.ac_not_working": "ac_heating",
+    "technical.no_hot_water": "maintenance",
+    "technical.light_not_working": "maintenance",
+    "technical.television_not_working": "tv",
+    "technical.wifi_problem": "wifi",
+    "technical.other_problem": "maintenance",
+    "reception.late_checkout": "reception",
+    "reception.wake_up_call": "reception",
+    "reception.luggage_assistance": "reception",
+    "reception.contact_reception": "reception",
+    # Older configured catalogue identifiers remain supported.
     "housekeeping room cleaning": "cleaning",
     "housekeeping towels/linen": "towels",
     "housekeeping amenities/toiletries": "amenities",
@@ -50,6 +66,19 @@ DEFAULT_SERVICE_MAPPINGS = {
     "technical AC": "ac_heating",
     "technical Wi-Fi": "wifi",
     "technical TV": "tv",
+}
+
+CATALOGUE_DEPARTMENT_MAPPINGS = {
+    "housekeeping": "cleaning",
+    "rooms": "cleaning",
+    "technical": "maintenance",
+    "reception": "reception",
+    "fnb": "food_order",
+    "minibar": "minibar",
+    "laundry": "laundry",
+    "transportation": "transport",
+    "spa": "spa",
+    "other": "other",
 }
 
 def map_legacy_routing(service_code: str, department_code: str) -> tuple[str, str]:
@@ -61,9 +90,10 @@ def map_legacy_routing(service_code: str, department_code: str) -> tuple[str, st
     if service_code in CATEGORY_MAP:
         return service_code, CATEGORY_MAP[service_code]["department"]
 
-    # safe catalogue department -> default legacy category mapping
-    legacy_depts = {c["department"] for c in CATEGORY_MAP.values()}
-    if department_code in legacy_depts:
-        return "other", department_code
+    # Configured catalogue items still need a meaningful staff-facing category
+    # even when their custom service code is not known in advance.
+    mapped_cat = CATALOGUE_DEPARTMENT_MAPPINGS.get(department_code)
+    if mapped_cat in CATEGORY_MAP:
+        return mapped_cat, CATEGORY_MAP[mapped_cat]["department"]
 
     return "other", "other"
