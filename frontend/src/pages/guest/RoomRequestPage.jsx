@@ -745,8 +745,8 @@ export default function RoomRequestPage() {
               <p className="text-gray-600 mb-6">{mode === "catalogue" ? t.structuredSentDesc : t.sentDesc}</p>
               
               {submittedItems.length > 0 && (
-                <div className="mb-6 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-left" data-testid="success-summary">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800/70">
+                <div className="mb-6 rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4 text-left" data-testid="success-summary">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-600/70">
                     {t.requestSummary}
                   </div>
                   <div className="space-y-2">
