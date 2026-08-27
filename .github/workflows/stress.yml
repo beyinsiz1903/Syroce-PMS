@@ -11,8 +11,6 @@ name: Full Stress Suite (one-shot)
 #   - Shard F (POS & F&B): Specs 98-pos* — POS outlets, KDS, inventory, lifecycle.
 
 on:
-    schedule:
-        - cron: '30 2 * * *'
     workflow_dispatch:
         inputs:
             report_tag:
