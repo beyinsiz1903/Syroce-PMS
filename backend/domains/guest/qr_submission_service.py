@@ -29,6 +29,18 @@ def generate_public_reference(prefix="REQ"):
     suffix = "".join(secrets.choice(chars) for _ in range(8))
     return f"{prefix}-{suffix}"
 
+
+def _build_ledger_upsert_update(ledger_doc: dict, updated_at):
+    """Keep MongoDB upsert operators path-disjoint.
+
+    MongoDB rejects an update when the same field appears in both
+    ``$setOnInsert`` and ``$set``. ``updated_at`` must refresh for both a new
+    ledger and a concurrent retry, so it belongs exclusively to ``$set``.
+    """
+    insert_doc = {key: value for key, value in ledger_doc.items() if key != "updated_at"}
+    return {"$setOnInsert": insert_doc, "$set": {"updated_at": updated_at}}
+
+
 async def handle_structured_submission(tenant_id: str, property_id: str, room_id: str, booking_id: str, session_id: str, room_number: str, payload: StructuredRequestSubmit, guest_name: str | None, guest_phone: str | None):
     tenant_db = _db_for_tenant(tenant_id)
     seen_codes = set()
@@ -214,7 +226,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                     "booking_id": booking_id,
                     "idempotency_key": payload.idempotency_key
                 },
-                {"$setOnInsert": ledger_doc, "$set": {"updated_at": _utc_now()}},
+                _build_ledger_upsert_update(ledger_doc, _utc_now()),
                 upsert=True,
                 return_document=ReturnDocument.AFTER
             )
