@@ -8,8 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { alertDialog } from '@/lib/dialogs';
-import { Loader2, Hotel, AlertTriangle, CheckCircle2, Minus, Plus, MessageSquare } from "lucide-react";
-import { ICONS, LANGS, UI, LOCALE, DEPT_LABELS, DEPT_ICONS } from "./constants";
+import { Loader2, Hotel, AlertTriangle, CheckCircle2, Minus, Plus, MessageSquare, ChevronLeft, ChevronRight, ShieldCheck } from "lucide-react";
+import { ICONS, LANGS, UI, LOCALE, DEPT_LABELS, DEPT_ICONS, DEPT_DESCRIPTIONS, EXPERIENCE_COPY } from "./constants";
 import { useGuestCart } from "./hooks/useGuestCart";
 
 function fmtGuestTime(iso, lang) {
@@ -32,6 +32,7 @@ function getLocalDateString(offsetDays = 0) {
 
 function getLabel(item, lang, fallbackCode) {
   if (!item) return fallbackCode || "";
+  if (typeof item.label === "string" && item.label.trim()) return item.label.trim();
   const labels = item.labels;
   if (!labels || typeof labels !== "object") return fallbackCode || "";
   if (labels[lang]) return labels[lang];
@@ -40,6 +41,12 @@ function getLabel(item, lang, fallbackCode) {
     if (labels[key]) return labels[key];
   }
   return fallbackCode || "";
+}
+
+function getLocalizedText(value, lang, fallback = "") {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object") return getLabel({ labels: value }, lang, fallback);
+  return fallback;
 }
 
 function GuestThread({ tenantId, roomId, token, t, lang, rtl, accent, alwaysShow }) {
@@ -116,7 +123,7 @@ function GuestThread({ tenantId, roomId, token, t, lang, rtl, accent, alwaysShow
   if (!alwaysShow && (!loaded || messages.length === 0)) return null;
 
   return (
-    <Card className="shadow-xl mt-4" data-testid="guest-thread-card">
+    <Card className="mt-4 rounded-[1.5rem] border-slate-200/80 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.6)]" data-testid="guest-thread-card">
       <CardHeader>
         <CardTitle className="text-lg">{t.conversation}</CardTitle>
       </CardHeader>
@@ -170,7 +177,7 @@ function GuestThread({ tenantId, roomId, token, t, lang, rtl, accent, alwaysShow
 // ----------------------------------------------------------------------
 // SERVICE INPUT COMPONENT
 // ----------------------------------------------------------------------
-function ServiceInput({ service, cartItem, onChange, t, accent, lang }) {
+function ServiceInput({ service, cartItem, onChange, t, accent, lang, experience }) {
   const type = service.input_type;
   const config = service.input_config || {};
   
@@ -178,12 +185,12 @@ function ServiceInput({ service, cartItem, onChange, t, accent, lang }) {
     const isSelected = !!cartItem;
     return (
       <Button 
-        variant={isSelected ? "destructive" : "outline"}
+        variant={isSelected ? "default" : "outline"}
         onClick={() => isSelected ? onChange(null) : onChange({ value: {} })}
-        className="w-full mt-2 min-h-[44px]"
-        style={isSelected ? {} : { color: accent, borderColor: accent }}
+        className="w-full mt-3 min-h-[46px] rounded-xl font-semibold"
+        style={isSelected ? { background: accent } : { color: accent, borderColor: `${accent}66`, background: `${accent}08` }}
       >
-        {isSelected ? t.remove : t.addMore}
+        {isSelected ? experience.serviceAdded : experience.serviceAdd}
       </Button>
     );
   }
@@ -397,6 +404,7 @@ export default function RoomRequestPage() {
     return UI[nav] ? nav : "tr";
   });
   const t = UI[lang] || UI.tr;
+  const experience = EXPERIENCE_COPY[lang] || EXPERIENCE_COPY.en;
   const rtl = lang === "ar";
 
   // Core mode & views
@@ -676,23 +684,29 @@ export default function RoomRequestPage() {
   }
 
   const renderHeader = () => (
-    <div className="text-white p-6 pb-10 rounded-b-3xl shadow-lg"
-         style={{ background: `linear-gradient(135deg, ${accent} 0%, ${accent}dd 100%)` }}>
-      <div className="max-w-2xl mx-auto">
-        <div className="flex justify-between items-start mb-4">
-          <div className="flex items-center gap-3">
+    <header
+      className="relative overflow-hidden rounded-b-[2rem] text-white shadow-[0_18px_45px_-28px_rgba(15,23,42,0.85)]"
+      style={{ background: `linear-gradient(135deg, ${accent} 0%, #172033 112%)` }}
+    >
+      <div className="pointer-events-none absolute -right-16 -top-20 h-52 w-52 rounded-full bg-white/10" />
+      <div className="pointer-events-none absolute -bottom-24 -left-16 h-48 w-48 rounded-full bg-slate-950/10" />
+      <div className="relative mx-auto max-w-xl px-4 pb-16 pt-[max(1.25rem,env(safe-area-inset-top))] sm:px-6">
+        <div className="mb-8 flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             {meta.hotel_logo ? (
-              <img src={meta.hotel_logo} alt="" className="w-12 h-12 rounded-xl bg-white/20 p-2" />
+              <img src={meta.hotel_logo} alt={meta.hotel_name} className="h-11 w-11 shrink-0 rounded-xl bg-white object-contain p-1.5 shadow-sm" />
             ) : (
-              <Hotel className="w-12 h-12 bg-white/20 p-2 rounded-xl" />
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white/15 backdrop-blur-sm">
+                <Hotel className="h-6 w-6" />
+              </div>
             )}
-            <div>
-              <div className="text-xs opacity-80">{t.welcome}</div>
-              <div className="font-bold text-lg">{meta.hotel_name}</div>
+            <div className="min-w-0">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70">{experience.guestServices}</div>
+              <div className="truncate text-base font-semibold sm:text-lg">{meta.hotel_name}</div>
             </div>
           </div>
           <Select value={lang} onValueChange={setLang}>
-            <SelectTrigger className="w-28 bg-white/20 border-white/30 text-white min-h-[44px]">
+            <SelectTrigger aria-label={t.language} className="h-10 min-h-10 w-[110px] shrink-0 border-white/20 bg-white text-slate-700 shadow-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -700,21 +714,25 @@ export default function RoomRequestPage() {
             </SelectContent>
           </Select>
         </div>
-        <div className="bg-white/15 backdrop-blur p-4 rounded-2xl">
-          <div className="text-xs opacity-80 uppercase tracking-wide">{t.room}</div>
-          <div className="text-4xl font-bold">{meta.room_number}</div>
-          {meta.room_type && <div className="text-sm opacity-80 mt-1">{meta.room_type}</div>}
+        <div>
+          <div className="mb-2 text-sm font-medium text-white/75">{t.welcome}</div>
+          <div className="max-w-sm text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">{experience.heroSubtitle}</div>
+        </div>
+        <div className="mt-5 inline-flex max-w-full items-center gap-2 rounded-full border border-white/20 bg-white/15 px-3.5 py-2 text-sm font-medium backdrop-blur-sm">
+          <span className="text-white/70">{t.room}</span>
+          <strong className="text-base">{meta.room_number}</strong>
+          {meta.room_type && <><span className="h-1 w-1 rounded-full bg-white/50" /><span className="truncate text-white/80">{meta.room_type}</span></>}
         </div>
       </div>
-    </div>
+    </header>
   );
 
   if (view === "success") {
     return (
       <div dir={rtl ? "rtl" : "ltr"} className="min-h-screen bg-slate-50 pb-24">
         {renderHeader()}
-        <div className="max-w-2xl mx-auto px-4 -mt-4">
-          <Card className="shadow-xl">
+        <div className="mx-auto -mt-8 max-w-xl px-4">
+          <Card className="rounded-[1.75rem] border-0 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.5)]">
             <CardContent className="p-10 text-center">
               <div className="w-20 h-20 mx-auto rounded-full bg-emerald-100 flex items-center justify-center mb-4">
                 <CheckCircle2 className="w-12 h-12 text-emerald-600" />
@@ -750,9 +768,9 @@ export default function RoomRequestPage() {
     return (
       <div dir={rtl ? "rtl" : "ltr"} className="min-h-screen bg-slate-50 pb-24">
         {renderHeader()}
-        <div className="max-w-2xl mx-auto px-4 -mt-4">
+        <div className="mx-auto -mt-8 max-w-xl px-4">
           {!selectedDeptCode ? (
-             <Card className="shadow-xl">
+             <Card className="rounded-[1.75rem] border-0 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.5)]">
                <CardHeader><CardTitle>{t.pick}</CardTitle></CardHeader>
                <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-3">
                  {[...new Set(meta.categories.map(c => c.department))].map(dept => {
@@ -828,53 +846,81 @@ export default function RoomRequestPage() {
   }
 
   return (
-    <div dir={rtl ? "rtl" : "ltr"} className="min-h-screen bg-slate-50 pb-32">
+    <div dir={rtl ? "rtl" : "ltr"} className="min-h-screen bg-[#f4f6fa] pb-32 text-slate-900">
       {renderHeader()}
-      <div className="max-w-2xl mx-auto px-4 -mt-4 relative">
+      <main className="relative mx-auto -mt-8 max-w-xl px-4">
         {view === "departments" && (
-          <Card className="shadow-xl">
-            <CardHeader><CardTitle>{t.pick}</CardTitle></CardHeader>
-            <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <Card className="overflow-hidden rounded-[1.75rem] border-0 bg-white/95 shadow-[0_22px_60px_-34px_rgba(15,23,42,0.55)] backdrop-blur">
+            <CardHeader className="px-5 pb-3 pt-6 sm:px-6">
+              <CardTitle className="text-[1.35rem] font-semibold leading-tight tracking-tight">{experience.pickTitle}</CardTitle>
+              <p className="pt-1 text-sm leading-6 text-slate-500">{experience.pickHint}</p>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 gap-3 px-4 pb-5 sm:grid-cols-3 sm:px-6">
               {catalogueData.departments.map(dept => {
                 const Icon = ICONS[dept.icon] || MessageSquare;
+                const deptDescriptions = DEPT_DESCRIPTIONS[lang] || DEPT_DESCRIPTIONS.en;
+                const description = deptDescriptions[dept.department_code] || experience.departmentFallback;
                 return (
-                  <button key={dept.department_code} onClick={() => { setSelectedDeptCode(dept.department_code); setView("services"); }} className="flex flex-col items-center gap-3 p-4 rounded-xl border-2 border-slate-200 hover:border-slate-400 active:scale-95 transition-all min-h-[44px]" data-testid={`dept-${dept.department_code}`}>
-                    <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: `${accent}15`, color: accent }}>
-                      <Icon className="w-7 h-7" />
+                  <button
+                    key={dept.department_code}
+                    onClick={() => { setSelectedDeptCode(dept.department_code); setView("services"); }}
+                    className="group flex min-h-[76px] w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-[0_8px_24px_-22px_rgba(15,23,42,0.8)] transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md active:translate-y-0 sm:min-h-[156px] sm:flex-col sm:justify-center sm:text-center"
+                    data-testid={`dept-${dept.department_code}`}
+                  >
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-transform group-hover:scale-105 sm:h-14 sm:w-14" style={{ background: `${accent}12`, color: accent }}>
+                      <Icon className="h-6 w-6 sm:h-7 sm:w-7" />
                     </div>
-                    <span className="text-sm font-semibold text-center">{getLabel(dept, lang, dept.department_code)}</span>
+                    <span className="min-w-0 flex-1 sm:flex-none">
+                      <span className="block text-[15px] font-semibold text-slate-900">{getLabel(dept, lang, dept.department_code)}</span>
+                      <span className="mt-0.5 block text-xs leading-5 text-slate-500 sm:hidden">{description}</span>
+                    </span>
+                    <ChevronRight className={`h-5 w-5 shrink-0 text-slate-300 sm:hidden ${rtl ? "rotate-180" : ""}`} />
                   </button>
                 );
               })}
             </CardContent>
+            <div className="flex items-center justify-center gap-2 border-t border-slate-100 px-5 py-3.5 text-xs text-slate-500">
+              <ShieldCheck className="h-4 w-4" style={{ color: accent }} />
+              <span>{experience.secureNote}</span>
+            </div>
           </Card>
         )}
 
         {view === "services" && (
-          <Card className="shadow-xl">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 border-b">
-              <CardTitle className="text-lg">
-                {getLabel(catalogueData.departments.find(d => d.department_code === selectedDeptCode), lang, selectedDeptCode)}
-              </CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => setView("departments")} className="min-h-[44px]">{t.back}</Button>
+          <Card className="overflow-hidden rounded-[1.75rem] border-0 shadow-[0_22px_60px_-34px_rgba(15,23,42,0.55)]">
+            <CardHeader className="border-b border-slate-100 px-5 pb-4 pt-5">
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="icon" onClick={() => setView("departments")} className="h-10 w-10 shrink-0 rounded-full" aria-label={t.back}>
+                  <ChevronLeft className={`h-5 w-5 ${rtl ? "rotate-180" : ""}`} />
+                  <span className="sr-only">{t.back}</span>
+                </Button>
+                <div className="min-w-0">
+                  <CardTitle className="truncate text-lg font-semibold">
+                    {getLabel(catalogueData.departments.find(d => d.department_code === selectedDeptCode), lang, selectedDeptCode)}
+                  </CardTitle>
+                  <p className="mt-0.5 text-xs text-slate-500">{experience.serviceHint}</p>
+                </div>
+              </div>
             </CardHeader>
-            <CardContent className="pt-4 space-y-4">
+            <CardContent className="space-y-3 bg-slate-50/70 px-4 py-4 sm:px-5">
               {catalogueData.services.filter(s => s.department_code === selectedDeptCode).map(service => {
                 const Icon = ICONS[service.icon] || MessageSquare;
                 const cartItem = cartState.cart.find(c => c.service_code === service.service_code);
+                const description = getLocalizedText(service.description, lang);
+                const chargeWarning = getLocalizedText(service.charge_warning, lang, t.chargeWarning);
                 
                 return (
-                  <div key={service.service_code} className="flex flex-col p-4 rounded-xl border border-slate-200 bg-white" data-testid={`service-${service.service_code}`}>
+                  <div key={service.service_code} className="flex flex-col rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_10px_28px_-26px_rgba(15,23,42,0.9)]" data-testid={`service-${service.service_code}`}>
                     <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-slate-100 text-slate-600">
-                        <Icon className="w-5 h-5" />
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={{ background: `${accent}12`, color: accent }}>
+                        <Icon className="h-5 w-5" />
                       </div>
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-slate-800">{getLabel(service, lang, service.service_code)}</h4>
-                        {service.description && typeof service.description === "object" && <p className="text-xs text-slate-500 mt-1">{getLabel({labels: service.description}, lang, "")}</p>}
+                      <div className="min-w-0 flex-1 pt-0.5">
+                        <h4 className="font-semibold leading-5 text-slate-900">{getLabel(service, lang, service.service_code)}</h4>
+                        {description && <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>}
                         {service.is_chargeable && (
-                           <p className="text-[10px] text-amber-600 font-medium bg-amber-50 inline-block px-1.5 py-0.5 rounded mt-1">
-                             {service.charge_warning && typeof service.charge_warning === "object" ? getLabel({labels: service.charge_warning}, lang, t.chargeWarning) : t.chargeWarning}
+                           <p className="mt-2 inline-block rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700">
+                             {chargeWarning}
                            </p>
                         )}
                       </div>
@@ -892,6 +938,7 @@ export default function RoomRequestPage() {
                       t={t} 
                       accent={accent}
                       lang={lang}
+                      experience={experience}
                     />
                   </div>
                 );
@@ -901,12 +948,17 @@ export default function RoomRequestPage() {
         )}
 
         {view === "review" && (
-          <Card className="shadow-xl">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 border-b">
-              <CardTitle className="text-lg">{t.reviewReq}</CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => setView(selectedDeptCode ? "services" : "departments")} className="min-h-[44px]">{t.back}</Button>
+          <Card className="overflow-hidden rounded-[1.75rem] border-0 shadow-[0_22px_60px_-34px_rgba(15,23,42,0.55)]">
+            <CardHeader className="border-b border-slate-100 px-5 pb-4 pt-5">
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="icon" onClick={() => setView(selectedDeptCode ? "services" : "departments")} className="h-10 w-10 shrink-0 rounded-full" aria-label={t.back}>
+                  <ChevronLeft className={`h-5 w-5 ${rtl ? "rotate-180" : ""}`} />
+                  <span className="sr-only">{t.back}</span>
+                </Button>
+                <CardTitle className="text-lg font-semibold">{t.reviewReq}</CardTitle>
+              </div>
             </CardHeader>
-            <CardContent className="pt-4 space-y-4">
+            <CardContent className="space-y-4 bg-slate-50/70 px-4 py-4 sm:px-5">
               {cartState.cart.length === 0 ? (
                 <div className="text-center py-6 text-slate-500">{t.emptyCart}</div>
               ) : (
@@ -915,7 +967,7 @@ export default function RoomRequestPage() {
                      const service = catalogueData.services.find(s => s.service_code === c.service_code) || c.catalogueItem;
                      const Icon = ICONS[service?.icon] || MessageSquare;
                      return (
-                       <div key={c.service_code} className="p-3 border border-slate-200 rounded-xl bg-slate-50" data-testid={`review-item-${c.service_code}`}>
+                       <div key={c.service_code} className="rounded-2xl border border-slate-200 bg-white p-4" data-testid={`review-item-${c.service_code}`}>
                          <div className="flex items-center gap-3 mb-2">
                            <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shrink-0">
                              <Icon className="w-4 h-4 text-slate-600" />
@@ -929,7 +981,7 @@ export default function RoomRequestPage() {
                              if (updates === null) cartState.removeItem(c.service_code);
                              else cartState.updateItem(c.service_code, updates);
                            }} 
-                           t={t} accent={accent} lang={lang}
+                           t={t} accent={accent} lang={lang} experience={experience}
                          />
                          <Input 
                            value={c.note || ""} 
@@ -949,7 +1001,7 @@ export default function RoomRequestPage() {
                     </div>
                   )}
 
-                  <Button onClick={submitStructured} disabled={submitting || cartState.cart.length === 0} className="w-full text-white min-h-[44px] mt-4" style={{ background: accent }} data-testid="button-structured-submit">
+                  <Button onClick={submitStructured} disabled={submitting || cartState.cart.length === 0} className="mt-4 min-h-[48px] w-full rounded-xl font-semibold text-white" style={{ background: accent }} data-testid="button-structured-submit">
                     {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}{submitting ? t.sending : t.submit}
                   </Button>
                 </div>
@@ -959,16 +1011,16 @@ export default function RoomRequestPage() {
         )}
 
         <GuestThread tenantId={tenantId} roomId={roomId} token={guestSession} t={t} lang={lang} rtl={rtl} accent={accent} alwaysShow={false} />
-      </div>
+      </main>
 
       {cartState.totalItems > 0 && view !== "review" && (
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] z-50 pb-[env(safe-area-bottom,16px)]" data-testid="sticky-cart">
-          <div className="max-w-2xl mx-auto flex items-center justify-between gap-4">
+        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200/80 bg-white/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-12px_35px_-28px_rgba(15,23,42,0.7)] backdrop-blur" data-testid="sticky-cart">
+          <div className="mx-auto flex max-w-xl items-center justify-between gap-4">
              <div className="flex flex-col">
                <span className="font-semibold text-slate-800">{cartState.totalItems} {t.items}</span>
                {cartState.hasChargeable && <span className="text-xs text-amber-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> Ücretli</span>}
              </div>
-             <Button onClick={() => setView("review")} className="flex-1 text-white min-h-[44px]" style={{ background: accent }}>
+             <Button onClick={() => setView("review")} className="min-h-[48px] flex-1 rounded-xl font-semibold text-white" style={{ background: accent }}>
                {t.reviewReq}
              </Button>
           </div>
