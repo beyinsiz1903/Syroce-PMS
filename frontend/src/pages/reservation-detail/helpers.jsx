@@ -147,11 +147,9 @@ export function SelectField({ label, value, onChange, options }) {
 
 const FORM_PANEL_COLORS = {
   emerald: { bg: 'bg-emerald-50/50', text: 'text-emerald-800', btn: 'bg-emerald-600 hover:bg-emerald-700' },
-  orange: { bg: 'bg-orange-50/50', text: 'text-orange-800', btn: 'bg-orange-600 hover:bg-orange-700' },
-  purple: { bg: 'bg-purple-50/50', text: 'text-purple-800', btn: 'bg-purple-600 hover:bg-purple-700' },
+  amber: { bg: 'bg-amber-50/50', text: 'text-amber-800', btn: 'bg-amber-600 hover:bg-amber-700' },
   indigo: { bg: 'bg-indigo-50/50', text: 'text-indigo-800', btn: 'bg-indigo-600 hover:bg-indigo-700' },
   teal: { bg: 'bg-teal-50/50', text: 'text-teal-800', btn: 'bg-teal-600 hover:bg-teal-700' },
-  cyan: { bg: 'bg-cyan-50/50', text: 'text-cyan-800', btn: 'bg-cyan-600 hover:bg-cyan-700' },
   blue: { bg: 'bg-blue-50/50', text: 'text-blue-800', btn: 'bg-blue-600 hover:bg-blue-700' }
 };
 
