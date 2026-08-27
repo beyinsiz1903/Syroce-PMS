@@ -4,7 +4,7 @@ import uuid
 
 from domains.guest.qr_catalogue_service import validate_input_value
 from domains.guest.qr_request_description import compute_payload_fingerprint
-from domains.guest.qr_submission_service import generate_deterministic_description
+from domains.guest.qr_submission_service import _build_ledger_upsert_update, generate_deterministic_description
 from models.schemas.qr_catalogue_submission import StructuredRequestSubmit, LegacyRequestSubmit
 from pydantic import ValidationError
 
@@ -45,6 +45,28 @@ def test_fingerprint_mismatch():
     m1 = StructuredRequestSubmit.model_validate(payload1)
     m2 = StructuredRequestSubmit.model_validate(payload2)
     assert compute_payload_fingerprint(m1.language, m1.items) != compute_payload_fingerprint(m2.language, m2.items)
+
+
+def test_ledger_upsert_update_has_no_conflicting_mongo_paths():
+    created_at = datetime(2026, 8, 27, 7, 0, tzinfo=UTC)
+    refreshed_at = datetime(2026, 8, 27, 7, 1, tzinfo=UTC)
+
+    update = _build_ledger_upsert_update(
+        {
+            "idempotency_key": "idem-1",
+            "status": "pending",
+            "created_at": created_at,
+            "updated_at": created_at,
+        },
+        refreshed_at,
+    )
+
+    insert_paths = set(update["$setOnInsert"])
+    set_paths = set(update["$set"])
+    assert insert_paths.isdisjoint(set_paths)
+    assert "updated_at" not in update["$setOnInsert"]
+    assert update["$set"]["updated_at"] == refreshed_at
+    assert update["$setOnInsert"]["created_at"] == created_at
 
 def test_value_shapes():
     val = validate_input_value("quantity", {"min": 1, "max": 5}, {"quantity": 3}, "UTC")
