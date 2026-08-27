@@ -214,7 +214,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
   }
 
   const _userRoles = Array.isArray(user?.roles) ? user.roles : [];
-  const _isAllowed = ['super_admin', 'admin'].includes(user?.role) || _userRoles.includes('super_admin') || _userRoles.includes('admin');
+  const _isAllowed = ['super_admin', 'admin', 'finance'].includes(user?.role) || _userRoles.includes('super_admin') || _userRoles.includes('admin') || _userRoles.includes('finance');
   if (!_isAllowed) {
     return (
       <>
