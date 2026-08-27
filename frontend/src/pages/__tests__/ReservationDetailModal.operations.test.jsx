@@ -28,6 +28,9 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: v
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (_key, fallback) => fallback || _key }),
 }));
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => vi.fn(),
+}));
 vi.mock('@/components/GuestAlertModal', () => ({
   default: ({ open, onConfirm }) => (
     open ? <button type="button" onClick={onConfirm}>Girişi onayla</button> : null

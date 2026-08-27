@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -12,6 +13,7 @@ import SplitFolioDialog from '@/components/SplitFolioDialog';
 
 export function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, guest, room, onRefresh, onSwitchTab }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [showPayment, setShowPayment] = useState(false);
   const [showCari, setShowCari] = useState(false);
   const [showAgency, setShowAgency] = useState(false);
@@ -274,7 +276,12 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       )}
 
       <div className="space-y-2">
-        <div className="text-xs font-semibold text-gray-500 uppercase">İşlem Geçmişi</div>
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-semibold text-gray-500 uppercase">İşlem Geçmişi</div>
+          <Button variant="link" size="sm" className="h-auto p-0 text-indigo-600 hover:text-indigo-700" onClick={() => navigate(`/folio-detail/${folios?.[0]?.id}`)} disabled={!folios || folios.length === 0}>
+            Gelişmiş Folyo Yönetimi &rarr;
+          </Button>
+        </div>
         {allItems.length === 0 ? <div className="text-center py-6 text-gray-400 text-sm">Henüz işlem bulunmuyor</div> : (
           allItems.map((item, i) => (
             <div key={item.id || i} className={`flex items-center gap-3 p-3 rounded-lg border ${item.voided ? 'opacity-50 bg-gray-50' : 'bg-white'}`}>
