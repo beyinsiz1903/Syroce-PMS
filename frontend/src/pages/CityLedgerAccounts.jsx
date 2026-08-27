@@ -7,14 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Building2,
   Plus,
-  DollarSign,
   CreditCard,
   Search,
-  AlertTriangle
+  RefreshCw,
+  FileText,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import EmptyState from '@/components/EmptyState';
@@ -31,6 +30,23 @@ export const validateCityLedgerPayment = (amountValue, balanceValue) => {
   return null;
 };
 
+const EMPTY_ACCOUNT = {
+  account_name: '',
+  company_name: '',
+  contact_person: '',
+  email: '',
+  phone: '',
+  credit_limit: '',
+  payment_terms: 30,
+  // Fatura bilgileri
+  tax_number: '',
+  tax_office: '',
+  billing_address: '',
+  billing_city: '',
+  billing_postal_code: '',
+  billing_country: 'Türkiye',
+};
+
 const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const [accounts, setAccounts] = useState([]);
@@ -45,15 +61,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
   const [postingPayment, setPostingPayment] = useState(false);
 
   const [newAccountDialogOpen, setNewAccountDialogOpen] = useState(false);
-  const [newAccountData, setNewAccountData] = useState({
-    account_name: '',
-    company_name: '',
-    contact_person: '',
-    email: '',
-    phone: '',
-    credit_limit: '',
-    payment_terms: 30,
-  });
+  const [newAccountData, setNewAccountData] = useState(EMPTY_ACCOUNT);
   const [creatingAccount, setCreatingAccount] = useState(false);
 
   useEffect(() => {
@@ -68,7 +76,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
       setAccounts(data);
     } catch (error) {
       console.error('Failed to load city ledger accounts:', error);
-      toast.error('City ledger hesapları yüklenemedi');
+      toast.error('Cari hesaplar yüklenemedi');
       setAccounts([]);
     } finally {
       setLoading(false);
@@ -143,17 +151,9 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
       };
       const response = await axios.post('/cashiering/city-ledger', payload);
       if (response.data?.success) {
-        toast.success('City ledger hesabı oluşturuldu');
+        toast.success('Cari hesap başarıyla oluşturuldu');
         setNewAccountDialogOpen(false);
-        setNewAccountData({
-          account_name: '',
-          company_name: '',
-          contact_person: '',
-          email: '',
-          phone: '',
-          credit_limit: '',
-          payment_terms: 30,
-        });
+        setNewAccountData(EMPTY_ACCOUNT);
         await loadAccounts();
       } else {
         toast.error('Hesap oluşturulamadı');
@@ -166,13 +166,13 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
     }
   };
 
+  const field = (key) => (e) => setNewAccountData({ ...newAccountData, [key]: e.target.value });
+
   if (loading) {
     return (
-      <>
-        <div className="flex items-center justify-center h-screen">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600" />
-        </div>
-      </>
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600" />
+      </div>
     );
   }
 
@@ -184,17 +184,18 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
               <Building2 className="w-8 h-8 text-blue-600" />
-              {t('finance.cityLedger')} Accounts
+              Cari Hesaplar
             </h1>
-            <p className="text-gray-600 mt-1">Direct billing accounts for corporate and travel agency partners</p>
+            <p className="text-gray-600 mt-1">Kurumsal ve acente partnerlerine ait doğrudan faturalama hesapları</p>
           </div>
           <div className="flex items-center gap-3">
             <Button variant="outline" onClick={loadAccounts}>
-              Refresh
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Yenile
             </Button>
             <Button onClick={() => setNewAccountDialogOpen(true)}>
               <Plus className="w-4 h-4 mr-2" />
-              New Account
+              Yeni Hesap
             </Button>
           </div>
         </div>
@@ -207,7 +208,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <Input
                   className="pl-10"
-                  placeholder="Search by account or company name..."
+                  placeholder="Hesap veya şirket adına göre ara..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -217,16 +218,16 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
 
           <Card>
             <CardContent className="pt-6">
-              <div className="text-sm text-gray-600">Active Accounts</div>
+              <div className="text-sm text-gray-600">Aktif Hesaplar</div>
               <div className="text-2xl font-bold text-blue-600 mt-1">{accounts.length}</div>
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="pt-6">
-              <div className="text-sm text-gray-600">Total Balance</div>
+              <div className="text-sm text-gray-600">Toplam Bakiye</div>
               <div className="text-2xl font-bold text-red-600 mt-1">
-                ${accounts.reduce((sum, a) => sum + (a.current_balance || 0), 0).toFixed(2)}
+                ₺{accounts.reduce((sum, a) => sum + (a.current_balance || 0), 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
               </div>
             </CardContent>
           </Card>
@@ -235,8 +236,8 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
         {/* Accounts List */}
         <Card>
           <CardHeader>
-            <CardTitle>Accounts</CardTitle>
-            <CardDescription>City ledger accounts with balances and credit limits</CardDescription>
+            <CardTitle>Hesaplar</CardTitle>
+            <CardDescription>Bakiye ve kredi limitleriyle cari hesaplar</CardDescription>
           </CardHeader>
           <CardContent>
             {filteredAccounts.length === 0 ? (
@@ -267,6 +268,8 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                   if (utilization > 90) statusColor = 'bg-red-100 text-red-800';
                   else if (utilization > 70) statusColor = 'bg-yellow-100 text-yellow-800';
 
+                  const fmt = (n) => n.toLocaleString('tr-TR', { minimumFractionDigits: 2 });
+
                   return (
                     <div
                       key={account.id}
@@ -276,10 +279,12 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                         <div className="flex items-center gap-2 mb-1">
                           <h3 className="text-lg font-semibold truncate">{account.account_name}</h3>
                           <Badge variant="outline">{account.company_name}</Badge>
+                          {account.tax_number && (
+                            <Badge variant="secondary" className="text-xs">VKN: {account.tax_number}</Badge>
+                          )}
                         </div>
                         <div className="text-sm text-gray-600 mb-2">
-                          Credit Limit: ${creditLimit.toFixed(2)} | Balance: ${balance.toFixed(2)} | Available: $
-                          {available.toFixed(2)}
+                          Kredi Limiti: ₺{fmt(creditLimit)} &nbsp;|&nbsp; Bakiye: ₺{fmt(balance)} &nbsp;|&nbsp; Kullanılabilir: ₺{fmt(available)}
                         </div>
                         <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
                           <div
@@ -287,11 +292,17 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                             style={{ width: `${Math.min(100, utilization)}%` }}
                           />
                         </div>
+                        {account.billing_address && (
+                          <div className="text-xs text-gray-400 mt-1">
+                            {account.billing_address}, {account.billing_city}
+                            {account.tax_office && ` — ${account.tax_office} V.D.`}
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex flex-col items-end gap-2">
                         <Badge className={statusColor}>
-                          Utilization {creditLimit > 0 ? `${utilization.toFixed(0)}%` : 'N/A'}
+                          Kullanım {creditLimit > 0 ? `${utilization.toFixed(0)}%` : 'Limitsiz'}
                         </Badge>
                         <div className="flex gap-2">
                           <Button
@@ -299,10 +310,10 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                             size="sm"
                             onClick={() => handleOpenPaymentDialog(account)}
                             disabled={!Number.isFinite(Number(balance)) || Number(balance) <= 0}
-                            title={Number(balance) > 0 ? 'Post payment' : 'No outstanding balance'}
+                            title={Number(balance) > 0 ? 'Ödeme kaydet' : 'Açık bakiye yok'}
                           >
                             <CreditCard className="w-4 h-4 mr-1" />
-                            Post Payment
+                            Ödeme Kaydet
                           </Button>
                         </div>
                       </div>
@@ -316,83 +327,129 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
 
         {/* New Account Dialog */}
         <Dialog open={newAccountDialogOpen} onOpenChange={setNewAccountDialogOpen}>
-          <DialogContent>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>New City Ledger Account</DialogTitle>
-              <DialogDescription>Create a direct billing account for a company or agency.</DialogDescription>
+              <DialogTitle className="flex items-center gap-2">
+                <Building2 className="w-5 h-5" /> Yeni Cari Hesap
+              </DialogTitle>
+              <DialogDescription>Kurumsal veya acente partnerlerine ait doğrudan faturalama hesabı oluşturun.</DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4 mt-2">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm text-gray-600">Account Name</label>
-                  <Input
-                    value={newAccountData.account_name}
-                    onChange={(e) => setNewAccountData({ ...newAccountData, account_name: e.target.value })}
-                    placeholder="e.g. ABC Travel Ltd."
-                  />
+            <div className="space-y-5 mt-2">
+              {/* Temel bilgiler */}
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-3">Hesap Bilgileri</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm text-gray-600">Hesap Adı *</label>
+                    <Input
+                      value={newAccountData.account_name}
+                      onChange={field('account_name')}
+                      placeholder="ör. ABC Seyahat A.Ş."
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">Şirket Ticaret Unvanı *</label>
+                    <Input
+                      value={newAccountData.company_name}
+                      onChange={field('company_name')}
+                      placeholder="Resmi ticaret unvanı"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="text-sm text-gray-600">Company Name</label>
-                  <Input
-                    value={newAccountData.company_name}
-                    onChange={(e) => setNewAccountData({ ...newAccountData, company_name: e.target.value })}
-                    placeholder="Legal company name"
-                  />
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+                  <div>
+                    <label className="text-sm text-gray-600">Yetkili Kişi</label>
+                    <Input value={newAccountData.contact_person} onChange={field('contact_person')} />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">E-posta</label>
+                    <Input type="email" value={newAccountData.email} onChange={field('email')} />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">Telefon</label>
+                    <Input value={newAccountData.phone} onChange={field('phone')} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                  <div>
+                    <label className="text-sm text-gray-600">Kredi Limiti (₺)</label>
+                    <Input
+                      type="number"
+                      value={newAccountData.credit_limit}
+                      onChange={field('credit_limit')}
+                      placeholder="ör. 10000"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">Ödeme Vadesi (gün)</label>
+                    <Input
+                      type="number"
+                      value={newAccountData.payment_terms}
+                      onChange={field('payment_terms')}
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="text-sm text-gray-600">Contact Person</label>
+              {/* Fatura bilgileri */}
+              <div className="border-t pt-4">
+                <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <FileText className="w-4 h-4" /> Fatura Bilgileri
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm text-gray-600">Vergi Kimlik Numarası (VKN / TCKN)</label>
+                    <Input
+                      value={newAccountData.tax_number}
+                      onChange={field('tax_number')}
+                      placeholder="ör. 1234567890"
+                      maxLength={11}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">Vergi Dairesi</label>
+                    <Input
+                      value={newAccountData.tax_office}
+                      onChange={field('tax_office')}
+                      placeholder="ör. Kadıköy Vergi Dairesi"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <label className="text-sm text-gray-600">Fatura Adresi</label>
                   <Input
-                    value={newAccountData.contact_person}
-                    onChange={(e) => setNewAccountData({ ...newAccountData, contact_person: e.target.value })}
+                    value={newAccountData.billing_address}
+                    onChange={field('billing_address')}
+                    placeholder="Sokak, mahalle, bina no..."
                   />
                 </div>
-                <div>
-                  <label className="text-sm text-gray-600">Email</label>
-                  <Input
-                    type="email"
-                    value={newAccountData.email}
-                    onChange={(e) => setNewAccountData({ ...newAccountData, email: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-gray-600">Phone</label>
-                  <Input
-                    value={newAccountData.phone}
-                    onChange={(e) => setNewAccountData({ ...newAccountData, phone: e.target.value })}
-                  />
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+                  <div>
+                    <label className="text-sm text-gray-600">Şehir</label>
+                    <Input value={newAccountData.billing_city} onChange={field('billing_city')} placeholder="İstanbul" />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">Posta Kodu</label>
+                    <Input value={newAccountData.billing_postal_code} onChange={field('billing_postal_code')} placeholder="34000" />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">Ülke</label>
+                    <Input value={newAccountData.billing_country} onChange={field('billing_country')} />
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm text-gray-600">Credit Limit</label>
-                  <Input
-                    type="number"
-                    value={newAccountData.credit_limit}
-                    onChange={(e) => setNewAccountData({ ...newAccountData, credit_limit: e.target.value })}
-                    placeholder="e.g. 10000"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-gray-600">Payment Terms (days)</label>
-                  <Input
-                    type="number"
-                    value={newAccountData.payment_terms}
-                    onChange={(e) => setNewAccountData({ ...newAccountData, payment_terms: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 mt-4">
+              <div className="flex justify-end gap-2 mt-2">
                 <Button variant="outline" onClick={() => setNewAccountDialogOpen(false)}>
-                  Cancel
+                  İptal
                 </Button>
                 <Button onClick={handleCreateAccount} disabled={creatingAccount}>
-                  {creatingAccount ? 'Creating...' : 'Create Account'}
+                  {creatingAccount ? 'Oluşturuluyor...' : 'Hesabı Oluştur'}
                 </Button>
               </div>
             </div>
@@ -403,9 +460,9 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
         <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Post Payment</DialogTitle>
+              <DialogTitle>Ödeme Kaydet</DialogTitle>
               <DialogDescription>
-                Record a payment against the selected city ledger account.
+                Seçilen cari hesaba ödeme kaydı giriniz.
               </DialogDescription>
             </DialogHeader>
 
@@ -415,51 +472,51 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                   <div className="font-semibold">{selectedAccount.account_name}</div>
                   <div className="text-gray-500">{selectedAccount.company_name}</div>
                   <div className="mt-1 text-xs text-gray-500">
-                    Current Balance: ${selectedAccount.current_balance?.toFixed(2) || '0.00'} | Credit Limit: $
-                    {selectedAccount.credit_limit?.toFixed(2) || '0.00'}
+                    Mevcut Bakiye: ₺{selectedAccount.current_balance?.toLocaleString('tr-TR', { minimumFractionDigits: 2 }) || '0,00'} &nbsp;|&nbsp;
+                    Kredi Limiti: ₺{selectedAccount.credit_limit?.toLocaleString('tr-TR', { minimumFractionDigits: 2 }) || '0,00'}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm text-gray-600">Amount</label>
+                    <label className="text-sm text-gray-600">Tutar (₺)</label>
                     <Input
                       type="number"
                       value={paymentAmount}
                       onChange={(e) => setPaymentAmount(e.target.value)}
-                      placeholder="e.g. 500.00"
+                      placeholder="ör. 500.00"
                     />
                   </div>
                   <div>
-                    <label className="text-sm text-gray-600">Payment Method</label>
+                    <label className="text-sm text-gray-600">Ödeme Yöntemi</label>
                     <select
                       className="border rounded-md px-3 py-2 text-sm w-full"
                       value={paymentMethod}
                       onChange={(e) => setPaymentMethod(e.target.value)}
                     >
-                      <option value="bank_transfer">Bank Transfer</option>
-                      <option value="credit_card">Credit Card</option>
-                      <option value="cash">Cash</option>
-                      <option value="check">Check</option>
+                      <option value="bank_transfer">Havale / EFT</option>
+                      <option value="credit_card">Kredi Kartı</option>
+                      <option value="cash">Nakit</option>
+                      <option value="check">Çek</option>
                     </select>
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-sm text-gray-600">Reference</label>
+                  <label className="text-sm text-gray-600">Referans / Dekont No</label>
                   <Input
                     value={paymentReference}
                     onChange={(e) => setPaymentReference(e.target.value)}
-                    placeholder="e.g. Bank slip no, POS ref, etc."
+                    placeholder="ör. banka dekontu no, POS slip no..."
                   />
                 </div>
 
                 <div className="flex justify-end gap-2 mt-4">
                   <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>
-                    Cancel
+                    İptal
                   </Button>
                   <Button onClick={handlePostPayment} disabled={postingPayment}>
-                    {postingPayment ? 'Posting...' : 'Post Payment'}
+                    {postingPayment ? 'Kaydediliyor...' : 'Ödemeyi Kaydet'}
                   </Button>
                 </div>
               </div>
