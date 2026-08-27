@@ -344,6 +344,10 @@ class NightAuditEngine:
         charges_to_insert: list[dict] = []
         now_iso = datetime.now(UTC).isoformat()
         tax_rate = 10  # default tax rate
+        from core.channel_room_charge_pricing import (
+            calculate_room_charge,
+            is_channel_total_tax_inclusive,
+        )
 
         # Architect review fix #1: intra-run duplicate guard. Eski kod
         # per-booking find_one ile aynı folio'ya iki booking map'lendiğinde
@@ -374,14 +378,34 @@ class NightAuditEngine:
                 if fid in already_posted_folio_ids or fid in scheduled_folio_ids:
                     continue  # idempotency (DB-level OR intra-run dedupe)
 
-                # Calculate nightly rate
-                check_in_dt = datetime.fromisoformat(booking["check_in"].replace("Z", "+00:00"))
-                check_out_dt = datetime.fromisoformat(booking["check_out"].replace("Z", "+00:00"))
-                total_nights = max((check_out_dt - check_in_dt).days, 1)
-                nightly_rate = round(booking.get("total_amount", 0) / total_nights, 2)
-
-                tax_amount = round(nightly_rate * tax_rate / 100, 2)
-                total = round(nightly_rate + tax_amount, 2)
+                # Channel totals are already guest-payable. Direct bookings
+                # retain this engine's historical total_amount/night + 10%
+                # behavior; only imported OTA totals use reverse extraction.
+                if is_channel_total_tax_inclusive(booking):
+                    pricing = calculate_room_charge(
+                        booking,
+                        business_date,
+                        vat_rate=tax_rate / 100,
+                        accommodation_tax_rate=0.02,
+                    )
+                else:
+                    check_in_dt = datetime.fromisoformat(booking["check_in"].replace("Z", "+00:00"))
+                    check_out_dt = datetime.fromisoformat(booking["check_out"].replace("Z", "+00:00"))
+                    total_nights = max((check_out_dt - check_in_dt).days, 1)
+                    direct_rate = round(booking.get("total_amount", 0) / total_nights, 2)
+                    direct_tax = round(direct_rate * tax_rate / 100, 2)
+                    pricing = {
+                        "amount": direct_rate,
+                        "unit_price": direct_rate,
+                        "tax_rate": tax_rate,
+                        "tax_amount": direct_tax,
+                        "total": round(direct_rate + direct_tax, 2),
+                        "tax_breakdown": {"vat": direct_tax, "accommodation_tax": 0.0},
+                        "tax_inclusive": False,
+                    }
+                nightly_rate = pricing["amount"]
+                tax_amount = pricing["tax_amount"]
+                total = pricing["total"]
                 room_number = rooms_by_id.get(booking.get("room_id"), "N/A")
 
                 charge_id = str(uuid.uuid4())
@@ -396,9 +420,11 @@ class NightAuditEngine:
                         "unit_price": nightly_rate,
                         "quantity": 1.0,
                         "amount": nightly_rate,
-                        "tax_rate": tax_rate,
+                        "tax_rate": pricing["tax_rate"],
                         "tax_amount": tax_amount,
                         "total": total,
+                        "tax_breakdown": pricing["tax_breakdown"],
+                        "tax_inclusive": pricing["tax_inclusive"],
                         "posted_by": "night_audit",
                         "date": now_iso,
                         "night_audit_date": business_date,

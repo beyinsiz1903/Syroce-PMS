@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
+from core.channel_room_charge_pricing import analyze_legacy_double_tax_charge
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
@@ -89,6 +90,30 @@ def _build_financial_summary(
         "total_deposits": round(total_deposits, 2),
         "balance": round(balance, 2),
         "paid_amount": booking.get("paid_amount", 0),
+    }
+
+
+def _build_channel_pricing_issue(booking: dict, charges: list[dict], payments: list[dict]) -> dict | None:
+    """Summarize only the exact, safely repairable legacy double-tax shape."""
+    issues = [
+        issue
+        for charge in charges
+        if (issue := analyze_legacy_double_tax_charge(booking, charge)) is not None
+    ]
+    if not issues:
+        return None
+    has_payments = any(
+        not payment.get("voided") and float(payment.get("amount", 0) or 0) > 0
+        for payment in payments
+    )
+    return {
+        "code": "CHANNEL_TOTAL_TAXED_TWICE",
+        "charge_count": len(issues),
+        "observed_total": round(sum(issue["observed_total"] for issue in issues), 2),
+        "expected_total": round(sum(issue["expected_total"] for issue in issues), 2),
+        "overcharge": round(sum(issue["overcharge"] for issue in issues), 2),
+        "repairable": not has_payments,
+        "blocked_reason": "payment_exists" if has_payments else None,
     }
 
 
@@ -217,6 +242,14 @@ class PaymentRecord(BaseModel):
     payment_type: str = Field("interim", max_length=50)  # prepayment, deposit, interim, final
     reference: str | None = Field(None, max_length=200)
     notes: str | None = Field(None, max_length=2000)
+
+
+class ChannelPricingRepairRequest(BaseModel):
+    reason: str = Field(
+        "Kanal toplamına mükerrer vergi eklenmesinin düzeltilmesi",
+        min_length=10,
+        max_length=500,
+    )
 
 
 class CariTransfer(BaseModel):
@@ -512,6 +545,7 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
             deposits.append(dep)
 
     summary = _build_financial_summary(booking, charges, payments, extra_charges, deposits)
+    summary["channel_pricing_issue"] = _build_channel_pricing_issue(booking, charges, payments)
 
     # Decrypt PII fields for authorized response (KVKK: only after auth/perm checks)
     try:
@@ -549,6 +583,260 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
         "deposits": deposits,
         "summary": summary,
     }
+
+
+@router.post("/reservations/{booking_id}/repair-channel-pricing")
+async def repair_channel_pricing(
+    booking_id: str,
+    data: ChannelPricingRepairRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("void_charge")),
+):
+    """Repair the exact legacy OTA gross-total double-tax posting in place.
+
+    The reservation, provider reference, folio, and room-charge ID are kept.
+    Only an unpaid/uninvoiced night-audit charge matching the deterministic
+    double-tax signature can be corrected. The before value is retained on the
+    charge and in both reservation and tamper-evident audit streams.
+    """
+    _enforce_perm(current_user.role, "void_charge")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one(
+        {"id": booking_id, "tenant_id": tid},
+        {"_id": 0, "id": 1},
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+
+    folios = [
+        folio
+        async for folio in db.folios.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0, "id": 1},
+        )
+    ]
+    resources = [("folio", folio["id"]) for folio in folios if folio.get("id")]
+
+    async def _repair(session):
+        locked_booking = await db.bookings.find_one(
+            {"id": booking_id, "tenant_id": tid},
+            {"_id": 0},
+            session=session,
+        )
+        if not locked_booking:
+            raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+
+        charges = [
+            charge
+            async for charge in db.folio_charges.find(
+                {"booking_id": booking_id, "tenant_id": tid},
+                {"_id": 0},
+                session=session,
+            )
+        ]
+        issues = [
+            (charge, issue)
+            for charge in charges
+            if (issue := analyze_legacy_double_tax_charge(locked_booking, charge)) is not None
+        ]
+        if not issues:
+            return {
+                "success": True,
+                "already_repaired": True,
+                "booking_id": booking_id,
+                "message": "Kanal fiyatı zaten doğru",
+            }
+
+        folio_ids = sorted({str(issue["folio_id"]) for _, issue in issues if issue.get("folio_id")})
+        active_payment = await db.payments.find_one(
+            {
+                "tenant_id": tid,
+                "$or": [
+                    {"booking_id": booking_id},
+                    {"folio_id": {"$in": folio_ids}},
+                ],
+                "voided": {"$ne": True},
+                "amount": {"$gt": 0},
+            },
+            {"_id": 0, "id": 1},
+            session=session,
+        )
+        if active_payment:
+            raise HTTPException(
+                status_code=409,
+                detail="Ödeme bulunan rezervasyon otomatik düzeltilemez; finans onayı gerekir",
+            )
+
+        issued_invoice = await db.invoices.find_one(
+            {
+                "tenant_id": tid,
+                "$or": [
+                    {"booking_id": booking_id},
+                    {"folio_id": {"$in": folio_ids}},
+                ],
+                "status": {"$nin": ["draft", "cancelled", "voided"]},
+            },
+            {"_id": 0, "id": 1},
+            session=session,
+        )
+        if issued_invoice:
+            raise HTTPException(
+                status_code=409,
+                detail="Faturalanmış rezervasyon otomatik düzeltilemez; iade/düzeltme belgesi gerekir",
+            )
+
+        now = datetime.now(UTC).isoformat()
+        repaired_rows = []
+        for charge, issue in issues:
+            corrected = issue["corrected"]
+            before = {
+                "amount": charge.get("amount"),
+                "unit_price": charge.get("unit_price"),
+                "tax_rate": charge.get("tax_rate"),
+                "tax_amount": charge.get("tax_amount"),
+                "tax_breakdown": charge.get("tax_breakdown"),
+                "total": charge.get("total"),
+            }
+            updated = await db.folio_charges.update_one(
+                {
+                    "id": charge["id"],
+                    "tenant_id": tid,
+                    "booking_id": booking_id,
+                    "voided": {"$ne": True},
+                    "total": charge.get("total"),
+                },
+                {
+                    "$set": {
+                        "amount": corrected["amount"],
+                        "unit_price": corrected["unit_price"],
+                        "tax_rate": corrected["tax_rate"],
+                        "tax_amount": corrected["tax_amount"],
+                        "tax_breakdown": corrected["tax_breakdown"],
+                        "tax_inclusive": True,
+                        "total": corrected["total"],
+                        "pricing_repaired": True,
+                        "pricing_repair_reason": data.reason,
+                        "pricing_repair_before": before,
+                        "pricing_repaired_at": now,
+                        "pricing_repaired_by": current_user.id,
+                    }
+                },
+                session=session,
+            )
+            if updated.modified_count != 1:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Folyo satırı eşzamanlı değişti; yenileyip tekrar deneyin",
+                )
+            repaired_rows.append(
+                {
+                    "charge_id": charge["id"],
+                    "folio_id": charge.get("folio_id"),
+                    "before_total": issue["observed_total"],
+                    "after_total": issue["expected_total"],
+                    "difference": issue["overcharge"],
+                }
+            )
+
+        # Keep the cached operational balances aligned inside the same commit.
+        for folio_id in folio_ids:
+            active_charges = [
+                row
+                async for row in db.folio_charges.find(
+                    {"folio_id": folio_id, "tenant_id": tid, "voided": {"$ne": True}},
+                    {"_id": 0, "total": 1, "amount": 1},
+                    session=session,
+                )
+            ]
+            active_payments = [
+                row
+                async for row in db.payments.find(
+                    {"folio_id": folio_id, "tenant_id": tid, "voided": {"$ne": True}},
+                    {"_id": 0, "amount": 1},
+                    session=session,
+                )
+            ]
+            balance = round(
+                sum(float(row.get("total", row.get("amount", 0)) or 0) for row in active_charges)
+                - sum(float(row.get("amount", 0) or 0) for row in active_payments),
+                2,
+            )
+            await db.folios.update_one(
+                {"id": folio_id, "tenant_id": tid},
+                {"$set": {"balance": balance, "updated_at": now}},
+                session=session,
+            )
+
+        await db.bookings.update_one(
+            {"id": booking_id, "tenant_id": tid},
+            {
+                "$set": {
+                    "pricing_tax_inclusive": True,
+                    "pricing_source": locked_booking.get("pricing_source") or "channel_manager",
+                    "pricing_repaired_at": now,
+                    "updated_at": now,
+                }
+            },
+            session=session,
+        )
+        audit_details = {
+            "reason": data.reason,
+            "repairs": repaired_rows,
+            "provider_reference": (
+                locked_booking.get("external_confirmation")
+                or locked_booking.get("external_reservation_id")
+            ),
+        }
+        await db.reservation_activity_log.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tid,
+                "booking_id": booking_id,
+                "action": "channel_pricing_repaired",
+                "actor": current_user.name,
+                "details": audit_details,
+                "created_at": now,
+            },
+            session=session,
+        )
+        await db.pms_audit_trail.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tid,
+                "entity_type": "booking",
+                "entity_id": booking_id,
+                "action": "channel_pricing_repaired",
+                "performed_by": current_user.id,
+                "metadata": audit_details,
+                "created_at": now,
+            },
+            session=session,
+        )
+        return {
+            "success": True,
+            "already_repaired": False,
+            "booking_id": booking_id,
+            "repaired_charges": repaired_rows,
+            "total_reduction": round(sum(row["difference"] for row in repaired_rows), 2),
+            "new_booking_balance": round(
+                sum(
+                    float(row.get("total", row.get("amount", 0)) or 0)
+                    for row in charges
+                    if not row.get("voided")
+                )
+                - sum(row["difference"] for row in repaired_rows),
+                2,
+            ),
+        }
+
+    return await _run_reservation_financial_transaction(
+        tenant_id=tid,
+        booking_id=booking_id,
+        resources=resources,
+        callback=_repair,
+    )
 
 
 @router.post("/reservations/{booking_id}/record-payment")

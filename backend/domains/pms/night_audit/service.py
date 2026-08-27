@@ -14,6 +14,10 @@ from common.audit_hook import SEVERITY_CRITICAL, audited
 from common.context import OperationContext
 from common.result import ServiceResult
 from core.business_date_service import ensure_business_date_initialized
+from core.channel_room_charge_pricing import (
+    calculate_room_charge,
+    is_channel_total_tax_inclusive,
+)
 from domains.pms.night_audit.validations import validate_pre_audit
 
 logger = logging.getLogger(__name__)
@@ -309,7 +313,32 @@ class NightAuditCoreService:
 
         for booking in bookings_list:
             rooms_processed += 1
-            room_rate = booking.get("room_rate") or booking.get("rate") or 0.0
+            if is_channel_total_tax_inclusive(booking):
+                pricing = calculate_room_charge(
+                    booking,
+                    bd,
+                    vat_rate=DEFAULT_VAT_RATE,
+                    accommodation_tax_rate=accommodation_tax_rate,
+                )
+            else:
+                # Preserve this service's established direct-booking rate
+                # semantics; only provider-imported gross totals are changed.
+                direct_rate = float(booking.get("room_rate") or booking.get("rate") or 0.0)
+                vat = round(direct_rate * DEFAULT_VAT_RATE, 2)
+                accommodation_tax = round(direct_rate * accommodation_tax_rate, 2)
+                pricing = {
+                    "amount": direct_rate,
+                    "unit_price": direct_rate,
+                    "tax_rate": round((DEFAULT_VAT_RATE + accommodation_tax_rate) * 100, 1),
+                    "tax_amount": round(vat + accommodation_tax, 2),
+                    "total": round(direct_rate + vat + accommodation_tax, 2),
+                    "tax_breakdown": {
+                        "vat": vat,
+                        "accommodation_tax": accommodation_tax,
+                    },
+                    "tax_inclusive": False,
+                }
+            room_rate = pricing["amount"]
             if room_rate <= 0:
                 exceptions.append(
                     self._make_exception(
@@ -345,9 +374,9 @@ class NightAuditCoreService:
                 )
                 continue
 
-            vat = round(room_rate * DEFAULT_VAT_RATE, 2)
-            accommodation_tax = round(room_rate * accommodation_tax_rate, 2)
-            total_charge = round(room_rate + vat + accommodation_tax, 2)
+            vat = pricing["tax_breakdown"]["vat"]
+            accommodation_tax = pricing["tax_breakdown"]["accommodation_tax"]
+            total_charge = pricing["total"]
 
             if not dry_run:
                 charge_id = str(uuid.uuid4())
@@ -362,12 +391,14 @@ class NightAuditCoreService:
                     "quantity": 1,
                     "unit_price": room_rate,
                     "amount": room_rate,
-                    "tax_amount": vat + accommodation_tax,
+                    "tax_rate": pricing["tax_rate"],
+                    "tax_amount": pricing["tax_amount"],
                     "total": total_charge,
                     "tax_breakdown": {
                         "vat": vat,
                         "accommodation_tax": accommodation_tax,
                     },
+                    "tax_inclusive": pricing["tax_inclusive"],
                     "voided": False,
                     "posted_by": "night_audit",
                     "audit_id": audit_id,

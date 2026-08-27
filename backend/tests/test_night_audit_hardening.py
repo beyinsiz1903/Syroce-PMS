@@ -190,6 +190,64 @@ async def test_successful_full_audit():
 
 
 @pytest.mark.asyncio
+async def test_channel_gross_total_is_not_taxed_twice():
+    """HotelRunner/OTA guest-payable total remains the posted folio total."""
+    c, db = await _get_db()
+    try:
+        await _cleanup(db)
+        await _call_engine("ensure_night_audit_indexes", c, db)
+        seed = await _seed_booking(db, room_rate=0.0)
+        await db.bookings.update_one(
+            {"id": seed["booking_id"]},
+            {
+                "$set": {
+                    "booking_source": "ota_import",
+                    "source": {
+                        "provider": "hotelrunner",
+                        "external_reservation_id": "R901318024",
+                    },
+                    "check_in": BD,
+                    "check_out": BD_NEXT,
+                    "total_amount": 4750.0,
+                },
+                "$unset": {"room_rate": ""},
+            },
+        )
+
+        result = await _call_engine(
+            "start_night_audit",
+            c,
+            db,
+            TENANT,
+            PROPERTY,
+            BD,
+            "manual",
+            {"id": "tester"},
+        )
+
+        assert result["success"] is True
+        charge = await db.folio_charges.find_one(
+            {
+                "tenant_id": TENANT,
+                "booking_id": seed["booking_id"],
+                "business_date": BD,
+                "charge_type": "room_charge",
+            },
+            {"_id": 0},
+        )
+        assert charge["amount"] == 4241.07
+        assert charge["tax_amount"] == 508.93
+        assert charge["total"] == 4750.0
+        assert charge["tax_inclusive"] is True
+
+        folio = await db.folios.find_one({"id": seed["folio_id"]}, {"_id": 0})
+        assert folio["balance"] == 4750.0
+    finally:
+        await _cleanup(db)
+        c.close()
+
+
+@pytest.mark.asyncio
 async def test_successful_audit_multiple_bookings():
     """Multiple bookings processed in single run."""
     c, db = await _get_db()
