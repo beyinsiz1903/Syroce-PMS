@@ -152,9 +152,7 @@ describe('integration destructive action guards', () => {
     render(<HotelRunnerIntegration user={{}} tenant={{}} />);
 
     expect(await screen.findByTestId('hr-callback-readiness-card')).toHaveTextContent('token + HR_ID');
-    expect(screen.getByTestId('hr-callback-url')).toHaveValue(
-      'https://pms.syroce.com/api/channel-manager/hotelrunner/callback',
-    );
+    await waitFor(() => expect(screen.getByTestId('hr-callback-url')).toHaveValue('https://pms.syroce.com/api/channel-manager/hotelrunner/callback'));
     expect(screen.queryByTestId('hr-webhook-secret-rotate-btn')).not.toBeInTheDocument();
     expect(screen.queryByText(/HotelRunner paneline.*secret/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/The Canyon/i)).not.toBeInTheDocument();
