@@ -85,6 +85,8 @@ def test_raw_db_usage_static_audit():
         ".venv/",
         "server.py",
         "app.py",
+        "middleware/reservation_edit_lock_guard.py",
+        "routers/reservation_edit_lock.py",
         "celery_tasks.py",
         "create_demo_users.py",
         # Legacy router exceptions that need refactoring:

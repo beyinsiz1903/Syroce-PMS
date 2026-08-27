@@ -188,7 +188,7 @@ function createManager() {
     return acquirePromise;
   };
 
-  const interceptorId = axios.interceptors.request.use(async (config) => {
+  const interceptorId = axios.interceptors?.request ? axios.interceptors.request.use(async (config) => {
     if (config?.__skipReservationEditLock) return config;
 
     const method = normalizeMethod(config?.method);
@@ -217,7 +217,7 @@ function createManager() {
     config.headers[RESERVATION_EDIT_LOCK_HEADER] = current.lockId;
     markViewActivity();
     return config;
-  });
+  }) : null;
 
   if (typeof window !== 'undefined') {
     window.addEventListener('beforeunload', () => {
