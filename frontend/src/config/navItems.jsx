@@ -459,7 +459,6 @@ export const NAV_ITEMS = [
     navGroup: "backoffice",
   },
   {
-  {
     key: "city_ledger",
     label: "Cari Hesaplar",
     path: "/city-ledger",
