@@ -373,6 +373,24 @@ async def _find_active_booking(tenant_id: str, room_id: str) -> dict | None:
         return None
 
 
+def _resolve_property_id(tenant_id: str, room: dict, booking: dict) -> str | None:
+    """Resolve the property scope for canonical and legacy PMS records.
+
+    Older single-property tenants may have no ``property_id`` on rooms and
+    bookings. The tenant id is the canonical fallback used elsewhere in the
+    PMS for those records. An explicit room/booking mismatch still fails
+    closed. The caller has already matched both records by tenant + room id,
+    so accepting one populated side does not widen the room boundary.
+    """
+    room_property_id = room.get("property_id")
+    booking_property_id = booking.get("property_id")
+
+    if room_property_id and booking_property_id and room_property_id != booking_property_id:
+        return None
+
+    return room_property_id or booking_property_id or tenant_id
+
+
 
 # ═══════════════════════════════════════════════════════════════
 # GUEST SESSION MANAGEMENT (Phase 1 Security Hardening)
@@ -394,11 +412,11 @@ async def _verify_guest_session(tenant_id: str, room_id: str, session_token: str
     if not booking:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
-    room_prop = room.get("property_id")
-    booking_prop = booking.get("property_id")
-    if not room_prop or not booking_prop or room_prop != booking_prop:
+    property_id = _resolve_property_id(tenant_id, room, booking)
+    if not property_id:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
-    property_id = room_prop
+
+    booking = {**booking, "property_id": property_id}
 
     # Check session exists with all strict mandatory fields
     session = await raw_db["room_guest_sessions"].find_one({
@@ -452,11 +470,9 @@ async def public_create_guest_session(
         # Do not leak occupancy. Just return generic 403.
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
-    room_prop = room.get("property_id")
-    booking_prop = booking.get("property_id")
-    if not room_prop or not booking_prop or room_prop != booking_prop:
+    property_id = _resolve_property_id(tenant_id, room, booking)
+    if not property_id:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
-    property_id = room_prop
 
     raw_token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
@@ -585,15 +601,16 @@ async def public_submit_request(
     if not room or room.get("is_active") is False:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
-    room_prop = room.get("property_id")
-    booking_prop = booking.get("property_id")
+    property_id = _resolve_property_id(tenant_id, room, booking)
     session_prop = guest_session.get("property_id")
 
-    if not booking_prop or not session_prop or not room_prop:
+    if not property_id or not session_prop:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
 
-    if booking_prop != session_prop or booking_prop != room_prop:
+    if property_id != session_prop:
         raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+
+    booking = {**booking, "property_id": property_id}
 
     room_number = room.get("room_number")
 
@@ -1050,6 +1067,14 @@ async def public_post_thread_message(
     from domains.guest.messaging import guest_requests as _gr
 
     booking = await _find_active_booking(tenant_id, room_id)
+    if not booking:
+        raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+
+    property_id = _resolve_property_id(tenant_id, room, booking)
+    if not property_id:
+        raise HTTPException(status_code=403, detail="Hizmet şu anda kullanılamıyor")
+
+    booking = {**booking, "property_id": property_id}
     booking_id = booking.get("id") if booking else None
     sender_name = (booking.get("guest_name") if booking else None) or "Misafir"
 

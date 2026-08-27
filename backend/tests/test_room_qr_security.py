@@ -58,6 +58,8 @@ def mock_db():
         async def mock_rooms_find_one(query, *args, **kwargs):
             if query.get("id") == "r_missing_prop":
                 return {"id": "r_missing_prop", "is_active": True, "room_number": "999"}
+            if query.get("id") == "r_both_missing_prop":
+                return {"id": "r_both_missing_prop", "is_active": True, "room_number": "998"}
             if query.get("id") == "r_inactive":
                 return {"id": "r_inactive", "is_active": False, "property_id": "p1"}
             if query.get("id") == "r_mismatch_prop":
@@ -76,6 +78,8 @@ def mock_db():
                 return {"id": "b_mismatch", "property_id": "p1"}
             if room_id == "r_booking_missing_prop":
                 return {"id": "b_missing", "property_id": None}
+            if room_id == "r_both_missing_prop":
+                return {"id": "b_both_missing", "property_id": None}
 
             return {
                 "id": "b1",
@@ -289,13 +293,23 @@ def test_failed_validation_persists_no_records(client, mock_db, mock_dependencie
         m_add.assert_not_called()
 
 # === Property Consistency Tests ===
-def test_room_property_missing(client, mock_db, mock_dependencies):
+def test_legacy_room_property_missing_uses_booking_property(client, mock_db, mock_dependencies):
     r = client.post("/api/public/room-qr/t1/r_missing_prop/session?t=valid")
-    assert r.status_code == 403
+    assert r.status_code == 200
+    doc = mock_db["room_guest_sessions"].insert_one.call_args[0][0]
+    assert doc["property_id"] == "p1"
 
-def test_booking_property_missing(client, mock_db, mock_dependencies):
+def test_legacy_booking_property_missing_uses_room_property(client, mock_db, mock_dependencies):
     r = client.post("/api/public/room-qr/t1/r_booking_missing_prop/session?t=valid")
-    assert r.status_code == 403
+    assert r.status_code == 200
+    doc = mock_db["room_guest_sessions"].insert_one.call_args[0][0]
+    assert doc["property_id"] == "p1"
+
+def test_legacy_room_and_booking_property_missing_use_tenant_scope(client, mock_db, mock_dependencies):
+    r = client.post("/api/public/room-qr/t1/r_both_missing_prop/session?t=valid")
+    assert r.status_code == 200
+    doc = mock_db["room_guest_sessions"].insert_one.call_args[0][0]
+    assert doc["property_id"] == "t1"
 
 def test_room_booking_property_mismatch(client, mock_db, mock_dependencies):
     r = client.post("/api/public/room-qr/t1/r_mismatch_prop/session?t=valid")
