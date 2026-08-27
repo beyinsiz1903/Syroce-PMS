@@ -129,10 +129,12 @@ async def acquire_reservation_edit_lock(
             "booking_id": booking_id,
             "owner_user_id": owner_user_id,
             "lock_id": lock_id,
+            # Every explicit acquire starts a fresh lease epoch. Heartbeats only
+            # extend heartbeat_at/expires_at and never rewrite acquired_at.
+            "acquired_at": now,
             "heartbeat_at": now,
             "expires_at": expires_at,
         },
-        "$setOnInsert": {"acquired_at": now},
     }
 
     try:
@@ -148,28 +150,10 @@ async def acquire_reservation_edit_lock(
     if not doc:
         raise ReservationEditLockConflict("reservation edit lock could not be acquired")
 
-    # Reclaiming an expired document must start a fresh lease epoch instead of
-    # inheriting the previous owner's acquired_at timestamp.
-    if doc.get("acquired_at") is None or doc.get("owner_user_id") != owner_user_id or doc.get("lock_id") != lock_id:
+    if doc.get("owner_user_id") != owner_user_id or doc.get("lock_id") != lock_id:
         # Defensive only: the atomic update above should already have replaced
-        # owner/lock fields.  Fail closed rather than returning an ambiguous lease.
+        # owner/lock fields. Fail closed rather than returning an ambiguous lease.
         raise ReservationEditLockConflict("reservation edit lock ownership is ambiguous")
-
-    # If we replaced an expired lease, set acquired_at to this acquisition.
-    # We detect that by checking whether the returned timestamp predates the
-    # current heartbeat by more than one lease window.
-    acquired_at = doc.get("acquired_at")
-    if not isinstance(acquired_at, datetime) or acquired_at < now - timedelta(seconds=LEASE_SECONDS):
-        await collection.update_one(
-            {
-                "tenant_id": tenant_id,
-                "booking_id": booking_id,
-                "owner_user_id": owner_user_id,
-                "lock_id": lock_id,
-            },
-            {"$set": {"acquired_at": now}},
-        )
-        doc["acquired_at"] = now
 
     return ReservationEditLease.from_doc(doc)
 
