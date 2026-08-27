@@ -21,6 +21,19 @@ def register_middleware(app: FastAPI) -> None:
     # GZip compression for responses > 500 bytes
     app.add_middleware(GZipMiddleware, minimum_size=500)
 
+    # Reservation-detail pessimistic edit locking. The middleware enforces an
+    # active per-view lock on mutation paths; the small lock router exposes
+    # acquire/heartbeat/release endpoints before the large router registry is
+    # mounted. Both are fail-closed and tenant/user scoped.
+    try:
+        from middleware.reservation_edit_lock_guard import ReservationEditLockGuardMiddleware
+        from routers.reservation_edit_lock import router as reservation_edit_lock_router
+
+        app.add_middleware(ReservationEditLockGuardMiddleware)
+        app.include_router(reservation_edit_lock_router)
+    except ImportError:
+        pass
+
     # TI-003: Tenant context middleware — sets tenant_id from JWT
     # Must be added AFTER CORS (runs BEFORE route handlers due to LIFO)
     try:
