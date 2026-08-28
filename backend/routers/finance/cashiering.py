@@ -516,3 +516,79 @@ async def get_city_ledger_transactions(account_id: str, limit: int = 100, creden
         "transactions": transactions,
         "summary": {"total_charges": round(charges, 2), "total_payments": round(payments, 2), "current_balance": round(charges - payments, 2), "transaction_count": len(transactions)},
     }
+
+
+@router.post("/cashiering/city-ledger-adjustment")
+async def post_city_ledger_adjustment(
+    account_id: str,
+    amount: float,
+    description: str,
+    adjustment_type: str = "commission",
+    idempotency_key: str = "",
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    """Write off a commission/discount difference against a city ledger account balance.
+
+    adjustment_type values:
+      - commission   : acente komisyonu düşümü
+      - discount     : indirim / promosyon
+      - writeoff     : şüpheli alacak silme
+      - other        : diğer
+    """
+    current_user = await get_current_user(credentials)
+    _enforce(current_user.role, "post_city_ledger_payment")  # same permission as payment
+
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Ayarlama tutarı sıfırdan büyük olmalıdır")
+
+    valid_types = {"commission", "discount", "writeoff", "other"}
+    if adjustment_type not in valid_types:
+        raise HTTPException(status_code=400, detail=f"Geçersiz ayarlama tipi. Geçerli değerler: {valid_types}")
+
+    account = await db.city_ledger_accounts.find_one(
+        {"id": account_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
+
+    current_balance = account.get("current_balance", 0.0)
+    if current_balance <= 0:
+        raise HTTPException(status_code=409, detail="Bu hesabın düşülecek bakiyesi bulunmuyor")
+    if amount > current_balance + 0.005:
+        raise HTTPException(status_code=409, detail="Ayarlama tutarı mevcut bakiyeyi aşamaz")
+
+    request_key = idempotency_key or f"adj:{current_user.tenant_id}:{account_id}:{round(amount,2)}"
+    now = datetime.now(UTC).isoformat()
+
+    transaction_doc = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "account_id": account_id,
+        "transaction_type": "adjustment",
+        "adjustment_type": adjustment_type,
+        "amount": round(amount, 2),
+        "description": description or f"{adjustment_type.capitalize()} ayarlaması",
+        "posted_by": current_user.name,
+        "transaction_date": now,
+        "idempotency_key": request_key,
+        "status": "completed",
+    }
+
+    try:
+        await db.city_ledger_transactions.insert_one(transaction_doc)
+    except Exception:
+        raise HTTPException(status_code=409, detail="Bu ayarlama zaten kaydedilmiş")
+
+    new_balance = round(current_balance - amount, 2)
+    await db.city_ledger_accounts.update_one(
+        {"id": account_id, "tenant_id": current_user.tenant_id},
+        {"$set": {"current_balance": max(0.0, new_balance)}},
+    )
+
+    transaction_doc.pop("_id", None)
+    return {
+        "success": True,
+        "adjustment": transaction_doc,
+        "previous_balance": current_balance,
+        "new_balance": max(0.0, new_balance),
+    }

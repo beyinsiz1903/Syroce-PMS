@@ -14,6 +14,7 @@ import {
   Search,
   RefreshCw,
   FileText,
+  Scissors,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import EmptyState from '@/components/EmptyState';
@@ -60,6 +61,13 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
   const [paymentRequestId, setPaymentRequestId] = useState('');
   const [postingPayment, setPostingPayment] = useState(false);
 
+  const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
+  const [adjustAccount, setAdjustAccount] = useState(null);
+  const [adjustAmount, setAdjustAmount] = useState('');
+  const [adjustType, setAdjustType] = useState('commission');
+  const [adjustDescription, setAdjustDescription] = useState('');
+  const [postingAdjust, setPostingAdjust] = useState(false);
+
   const [newAccountDialogOpen, setNewAccountDialogOpen] = useState(false);
   const [newAccountData, setNewAccountData] = useState(EMPTY_ACCOUNT);
   const [creatingAccount, setCreatingAccount] = useState(false);
@@ -98,6 +106,54 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
     setPaymentMethod('bank_transfer');
     setPaymentRequestId(globalThis.crypto?.randomUUID?.() || `payment-${Date.now()}`);
     setPaymentDialogOpen(true);
+  };
+
+  const handleOpenAdjustDialog = (account) => {
+    setAdjustAccount(account);
+    setAdjustAmount('');
+    setAdjustType('commission');
+    setAdjustDescription('');
+    setAdjustDialogOpen(true);
+  };
+
+  const handlePostAdjustment = async () => {
+    if (!adjustAccount) return;
+    const amount = parseFloat(adjustAmount);
+    const balance = Number(adjustAccount.current_balance || 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('Geçerli bir tutar girin');
+      return;
+    }
+    if (amount > balance + 0.005) {
+      toast.error('Ayarlama tutarı mevcut bakiyeyi aşamaz');
+      return;
+    }
+    if (!adjustDescription.trim()) {
+      toast.error('Açıklama zorunludur');
+      return;
+    }
+    setPostingAdjust(true);
+    try {
+      const params = new URLSearchParams({
+        account_id: adjustAccount.id,
+        amount: amount.toString(),
+        description: adjustDescription,
+        adjustment_type: adjustType,
+        idempotency_key: `adj-${adjustAccount.id}-${Date.now()}`,
+      });
+      const res = await axios.post(`/cashiering/city-ledger-adjustment?${params.toString()}`);
+      if (res.data?.success) {
+        toast.success(`Ayarlama kaydedildi. Yeni bakiye: ₺${res.data.new_balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`);
+        setAdjustDialogOpen(false);
+        await loadAccounts();
+      } else {
+        toast.error('Ayarlama kaydedilemedi');
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Ayarlama sırasında hata oluştu');
+    } finally {
+      setPostingAdjust(false);
+    }
   };
 
   const handlePostPayment = async () => {
@@ -315,6 +371,16 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                             <CreditCard className="w-4 h-4 mr-1" />
                             Ödeme Kaydet
                           </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleOpenAdjustDialog(account)}
+                            disabled={!Number.isFinite(Number(balance)) || Number(balance) <= 0}
+                            title={Number(balance) > 0 ? 'Komisyon veya fark ayarla' : 'Açık bakiye yok'}
+                          >
+                            <Scissors className="w-4 h-4 mr-1" />
+                            Komisyon / Fark
+                          </Button>
                         </div>
                       </div>
                     </div>
@@ -517,6 +583,81 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                   </Button>
                   <Button onClick={handlePostPayment} disabled={postingPayment}>
                     {postingPayment ? 'Kaydediliyor...' : 'Ödemeyi Kaydet'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Komisyon / Fark Ayarlama Dialog */}
+        <Dialog open={adjustDialogOpen} onOpenChange={setAdjustDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Scissors className="w-5 h-5" /> Komisyon / Fark Ayarla
+              </DialogTitle>
+              <DialogDescription>
+                Acentenin ödediği tutardan düştüğü komisyon veya kabul edilen farkı bakiyeden silin.
+              </DialogDescription>
+            </DialogHeader>
+
+            {adjustAccount && (
+              <div className="space-y-4 mt-2">
+                <div className="text-sm text-gray-700">
+                  <div className="font-semibold">{adjustAccount.account_name}</div>
+                  <div className="text-gray-500">{adjustAccount.company_name}</div>
+                  <div className="mt-1 text-xs text-gray-500">
+                    Mevcut Bakiye: <span className="font-medium text-red-600">₺{(adjustAccount.current_balance || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm text-gray-600">Tutar (₺)</label>
+                    <Input
+                      type="number"
+                      value={adjustAmount}
+                      onChange={(e) => setAdjustAmount(e.target.value)}
+                      placeholder="ör. 750.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">Ayarlama Tipi</label>
+                    <select
+                      className="border rounded-md px-3 py-2 text-sm w-full"
+                      value={adjustType}
+                      onChange={(e) => setAdjustType(e.target.value)}
+                    >
+                      <option value="commission">Acente Komisyonu</option>
+                      <option value="discount">İndirim / Promosyon</option>
+                      <option value="writeoff">Şüpheli Alacak Silme</option>
+                      <option value="other">Diğer</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm text-gray-600">Açıklama *</label>
+                  <Input
+                    value={adjustDescription}
+                    onChange={(e) => setAdjustDescription(e.target.value)}
+                    placeholder="ör. Etstur Ağustos komisyonu %15 — 750 TL"
+                  />
+                </div>
+
+                {adjustAmount && parseFloat(adjustAmount) > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-sm text-amber-800">
+                    Bakiye <strong>₺{(adjustAccount.current_balance || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</strong> → <strong>₺{Math.max(0, (adjustAccount.current_balance || 0) - parseFloat(adjustAmount || 0)).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</strong> olacak.
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 mt-4">
+                  <Button variant="outline" onClick={() => setAdjustDialogOpen(false)}>
+                    İptal
+                  </Button>
+                  <Button onClick={handlePostAdjustment} disabled={postingAdjust}>
+                    {postingAdjust ? 'Kaydediliyor...' : 'Ayarlamayı Kaydet'}
                   </Button>
                 </div>
               </div>
