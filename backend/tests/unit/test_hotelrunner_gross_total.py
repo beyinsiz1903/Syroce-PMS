@@ -17,6 +17,21 @@ def _hotelrunner_room(*, before_tax=5357.14, after_tax=6000.0, code="room-1"):
     }
 
 
+class _Cursor:
+    def __init__(self, rows):
+        self.rows = rows
+
+    async def to_list(self, _length):
+        return list(self.rows)
+
+    def __aiter__(self):
+        async def iterate():
+            for row in self.rows:
+                yield row
+
+        return iterate()
+
+
 def test_single_room_preserves_hotelrunner_guest_payable_grand_total():
     payload = {
         "hr_number": "R017934708",
@@ -112,6 +127,71 @@ async def test_pull_sync_repairs_exact_legacy_net_import_even_when_timestamp_is_
     imported_set = imported.update_one.await_args.args[1]["$set"]
     assert imported_set["total_amount"] == 6000
     assert "provider_updated_at" not in imported_set
+
+
+@pytest.mark.asyncio
+async def test_manual_phase_b_does_not_skip_legacy_total_repair_at_unchanged_timestamp(monkeypatch):
+    from domains.channel_manager.providers.hotelrunner import mapping_bridge
+
+    external_id = "R017934708"
+
+    def imported_find(query, _projection):
+        if query.get("import_status") == "review_required":
+            return _Cursor([])
+        return _Cursor(
+            [
+                {
+                    "external_reservation_id": external_id,
+                    "provider_updated_at": "2026-08-27T12:00:00Z",
+                }
+            ]
+        )
+
+    fake_db = SimpleNamespace(
+        imported_reservations=SimpleNamespace(find=imported_find),
+        bookings=SimpleNamespace(
+            find=lambda _query, _projection: _Cursor(
+                [
+                    {
+                        "external_reservation_id": external_id,
+                        "status": "confirmed",
+                        "total_amount": 5357.14,
+                    }
+                ]
+            )
+        ),
+    )
+    provider = SimpleNamespace(
+        get_reservations=AsyncMock(
+            return_value={
+                "success": True,
+                "data": {
+                    "reservations": [
+                        {
+                            "hr_number": external_id,
+                            "state": "confirmed",
+                            "updated_at": "2026-08-26T12:00:00Z",
+                            "total": 6000,
+                            "rooms": [_hotelrunner_room()],
+                        }
+                    ],
+                    "pages": 1,
+                },
+            }
+        )
+    )
+    reconcile = AsyncMock(return_value=True)
+
+    monkeypatch.setattr(sync_engine, "db", fake_db)
+    monkeypatch.setattr(mapping_bridge, "backfill_hotelrunner_mappings", AsyncMock(return_value=0))
+    monkeypatch.setattr(sync_engine, "sync_reservation_update", reconcile)
+
+    imported_count, updated_count = await sync_engine.run_phase_b("tenant-a", provider)
+
+    assert imported_count == 0
+    assert updated_count == 1
+    reconcile.assert_awaited_once()
+    assert reconcile.await_args.args[1] == external_id
 
 
 @pytest.mark.asyncio
