@@ -62,6 +62,17 @@ class ReservationPullScheduler:
         self._last_lock_error_log_at = None
         self._suppressed_lock_errors = 0
 
+    def _should_run_phase_b(self, *, is_manual: bool, has_prior_cursor: bool) -> bool:
+        """Run a full reconciliation promptly after each process start.
+
+        The normal ten-cycle cadence remains in place, but the first safe
+        cycle of a newly deployed process must also reconcile provider
+        history.  Otherwise corrections to already-imported reservations can
+        remain invisible for hours unless an operator finds and uses the
+        manual HotelRunner sync action.
+        """
+        return is_manual or self._cycle_count == 1 or not has_prior_cursor or self._cycle_count % 10 == 0
+
     async def start(self, interval_minutes: int = 15, safety_window_minutes: int = 5, interval_seconds: int | None = None):
         runtime_block = reservation_sync_block_reason()
         if runtime_block:
@@ -309,7 +320,10 @@ class ReservationPullScheduler:
             run_b = False
             logger.info("[PULL] Skipping Phase B — rate limit backoff active (consecutive: %d)", self._consecutive_rate_limits)
         else:
-            run_b = is_manual or not prior_cursor or self._cycle_count % 10 == 0
+            run_b = self._should_run_phase_b(
+                is_manual=is_manual,
+                has_prior_cursor=bool(prior_cursor),
+            )
         if not run_b:
             logger.debug(f"[PULL] Skipping Phase B (cycle {self._cycle_count}, runs every 10th)")
         else:
