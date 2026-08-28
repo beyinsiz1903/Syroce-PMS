@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -275,9 +276,14 @@ export const mergeAccountBalances = (accounts = [], trialBalance = {}) => {
   return accounts.map((account) => ({ ...account, balance: balances.get(account.code) || 0 }));
 };
 
+const GL_TABS = ['overview', 'journals', 'account-ledger', 'accounts', 'trial-balance', 'statements', 'periods', 'workspace', 'integrations', 'setup'];
+
 const GeneralLedgerModule = () => {
   const { amount: fmtMoney } = useCurrency();
-  const [activeTab, setActiveTab] = useState('overview');
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(GL_TABS.includes(requestedTab) ? requestedTab : 'overview');
   
   const [accounts, setAccounts] = useState([]);
   const [journals, setJournals] = useState([]);
@@ -317,6 +323,17 @@ const GeneralLedgerModule = () => {
   const [apGLMapping, setApGLMapping] = useState(DEFAULT_AP_GL_MAPPING);
   const [fixedAssetGLMapping, setFixedAssetGLMapping] = useState(DEFAULT_FIXED_ASSET_GL_MAPPING);
   const [integrationBusy, setIntegrationBusy] = useState('');
+
+  const handleTabChange = (value) => {
+    setActiveTab(value);
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', value);
+    setSearchParams(next, { replace: true });
+  };
+
+  useEffect(() => {
+    if (GL_TABS.includes(requestedTab)) setActiveTab(requestedTab);
+  }, [requestedTab]);
   
   // New Journal Entry State
   const [newJournal, setNewJournal] = useState(emptyJournal);
@@ -899,9 +916,9 @@ const GeneralLedgerModule = () => {
         <p className="text-gray-500 mt-1">Tek Düzen Hesap Planı, Yevmiye Kayıtları ve Mizan</p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <div className="grid items-start gap-5 lg:grid-cols-[270px_minmax(0,1fr)]">
-          <GeneralLedgerNavigation activeTab={activeTab} onSelect={setActiveTab} />
+          <GeneralLedgerNavigation activeTab={activeTab} onSelect={handleTabChange} onNavigate={navigate} />
           <main className="min-w-0">
         <TabsContent value="overview" className="mt-0">
           <GeneralLedgerOverview
@@ -909,7 +926,7 @@ const GeneralLedgerModule = () => {
             vouchers={vouchers}
             trialBalance={trialBalance}
             periods={periods}
-            onSelect={setActiveTab}
+            onSelect={handleTabChange}
           />
         </TabsContent>
 

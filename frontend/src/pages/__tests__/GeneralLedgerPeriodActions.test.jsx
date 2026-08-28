@@ -2,8 +2,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
+import { MemoryRouter } from 'react-router-dom';
 
 import GeneralLedgerModule, { GL_ENDPOINTS } from '@/pages/GeneralLedgerModule';
+
+const renderModule = () => render(<MemoryRouter><GeneralLedgerModule /></MemoryRouter>);
 
 vi.mock('axios', () => ({
   default: {
@@ -41,7 +44,7 @@ describe('GeneralLedgerModule period action dialogs', () => {
   it('collects a period-close reason in an application dialog before posting', async () => {
     const user = userEvent.setup();
     const legacyPrompt = vi.spyOn(window, 'prompt');
-    render(<GeneralLedgerModule />);
+    renderModule();
 
     await user.click(screen.getByRole('tab', { name: 'Mali Dönemler' }));
     await user.click(await screen.findByRole('button', { name: 'Dönemi Kapat' }));
@@ -62,7 +65,7 @@ describe('GeneralLedgerModule period action dialogs', () => {
     const user = userEvent.setup();
     periods = Array.from({ length: 12 }, (_, index) => period(index + 1, index < 11 ? 'closed' : 'open'));
     axios.post.mockResolvedValue({ data: { closure: { closing_entry_no: 'YEV-2026-CLOSE' } } });
-    render(<GeneralLedgerModule />);
+    renderModule();
 
     await user.click(screen.getByRole('tab', { name: 'Mali Dönemler' }));
     await user.click(await screen.findByRole('button', { name: 'Yıl Sonunu Kapat ve Devret' }));
