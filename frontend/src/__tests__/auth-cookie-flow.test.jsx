@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import axios from 'axios';
 import { render, waitFor, screen } from '@testing-library/react';
 import App from '../App';
-import { keepActiveSessionAlive, shouldRefreshActiveSession } from '@/config/axiosConfig';
+import { keepActiveSessionAlive, shouldRefreshActiveSession, verifyActiveSession } from '@/config/axiosConfig';
 
 // Mock the axios module
 vi.mock('axios', () => {
@@ -74,6 +74,33 @@ describe('Auth Cookie Flow in App.jsx', () => {
     // App should call /auth/me because token_ts exists
     await waitFor(() => {
       expect(axios.get).toHaveBeenCalledWith('/auth/me');
+    });
+  });
+
+  it('should recover a missing tenant snapshot and modules from the server', async () => {
+    localStorage.setItem('token_ts', Date.now().toString());
+    localStorage.setItem('user', JSON.stringify({ id: 'u1', name: 'Cached User' }));
+    localStorage.setItem('tenant', 'null');
+
+    axios.get
+      .mockResolvedValueOnce({ data: { id: 'u1', tenant_id: 't1', name: 'Fresh User', role: 'admin' } })
+      .mockResolvedValueOnce({
+        data: {
+          tenant: { id: 't1', property_name: 'The Canyon Kartepe' },
+          modules: { pms: true, reports: true },
+        },
+      });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(axios.get).toHaveBeenCalledWith('/subscription/current');
+      expect(JSON.parse(localStorage.getItem('tenant'))).toEqual({
+        id: 't1',
+        property_name: 'The Canyon Kartepe',
+        modules: { pms: true, reports: true },
+      });
+      expect(JSON.parse(localStorage.getItem('modules'))).toEqual({ pms: true, reports: true });
     });
   });
 
@@ -211,5 +238,34 @@ describe('Auth Cookie Flow in App.jsx', () => {
     await expect(keepActiveSessionAlive()).resolves.toEqual({ transient: true });
     expect(localStorage.getItem('token_ts')).toBe(String(oldMarker));
     expect(localStorage.getItem('user')).not.toBeNull();
+  });
+
+  it('should preserve the session when refresh races but /auth/me is still valid', async () => {
+    const oldMarker = Date.now() - (91 * 60 * 1000);
+    localStorage.setItem('token_ts', String(oldMarker));
+    localStorage.setItem('user', JSON.stringify({ id: 'u1' }));
+    localStorage.setItem('refresh_token', 'rotated-in-another-tab');
+    axios.post.mockRejectedValueOnce({ response: { status: 401 } });
+    axios.get.mockResolvedValueOnce({ data: { id: 'u1', tenant_id: 't1' } });
+
+    await expect(keepActiveSessionAlive()).resolves.toEqual({ sessionRecovered: true });
+    expect(axios.get).toHaveBeenCalledWith('/auth/me', {
+      _skipAuthRetry: true,
+      _skipRetry: true,
+      _noCache: true,
+    });
+    expect(localStorage.getItem('token_ts')).toBe(String(oldMarker));
+    expect(localStorage.getItem('user')).not.toBeNull();
+  });
+
+  it('should trust only a fresh uncached /auth/me response for logout decisions', async () => {
+    axios.get.mockResolvedValueOnce({ data: { id: 'u1' } });
+
+    await expect(verifyActiveSession()).resolves.toBe(true);
+    expect(axios.get).toHaveBeenCalledWith('/auth/me', {
+      _skipAuthRetry: true,
+      _skipRetry: true,
+      _noCache: true,
+    });
   });
 });

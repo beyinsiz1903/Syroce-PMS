@@ -163,6 +163,7 @@ def mock_sub_db():
     with um.patch("domains.admin.router.subscription.db") as m:
         tenant_doc = {
             "id": "tenant_1",
+            "property_name": "The Canyon Kartepe",
             "subscription_tier": "basic",
             "subscription_status": "active",
             "subscription_valid_until": None,
@@ -223,6 +224,19 @@ async def test_subscription_current_preserves_modules_field(mock_sub_db, mock_en
     assert "entitlements" in result
     assert "tier" in result
     assert "tenant_id" in result
+
+
+@pytest.mark.asyncio
+async def test_subscription_current_returns_safe_tenant_context(mock_sub_db, mock_entitlements_helper):
+    """Frontend session bootstrap can recover a lost local tenant snapshot."""
+    from domains.admin.router.subscription import get_current_subscription
+
+    result = await get_current_subscription(current_user=_MockUser())
+
+    assert result["tenant"]["id"] == "tenant_1"
+    assert result["tenant"]["property_name"] == "The Canyon Kartepe"
+    assert result["tenant"]["modules"]["housekeeping"] is True
+    assert "_id" not in result["tenant"]
 
 
 @pytest.mark.asyncio

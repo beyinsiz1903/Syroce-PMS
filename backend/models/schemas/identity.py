@@ -42,6 +42,11 @@ class Tenant(BaseModel):
         }
     )
     features: dict[str, bool] | None = None
+    # Property profiles may intentionally hide navigation groups/items.  These
+    # fields must survive login/session serialization so the application shell
+    # can rebuild the same menu after a page refresh.
+    hidden_nav_groups: list[str] = Field(default_factory=list)
+    hidden_nav_items: list[str] = Field(default_factory=list)
     # Zincir oteller ayrı tenant olarak kalır; ortak chain_id yalnızca
     # yetkili, salt-okunur konsolidasyon kapsamını belirler.
     chain_id: str | None = None

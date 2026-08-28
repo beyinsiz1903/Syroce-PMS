@@ -116,7 +116,7 @@ function App() {
     // session alive until logout, account revocation, or refresh rejection.
     if (hasAuthCookieSession && storedUser) {
       axios.get("/auth/me")
-        .then((meResponse) => {
+        .then(async (meResponse) => {
           const freshUser = meResponse.data;
           let parsedTenant = null;
           if (storedTenant && storedTenant !== "null") {
@@ -126,12 +126,27 @@ function App() {
           if (storedModules) {
             try { parsedModules = JSON.parse(storedModules); } catch { /* ignore parse error */ }
           }
-          const reconciled = reconcileAdminTenantContext(freshUser, parsedTenant, parsedModules);
+          let subscriptionContext = null;
+          if (freshUser?.tenant_id) {
+            try {
+              const subscriptionResponse = await axios.get("/subscription/current");
+              subscriptionContext = subscriptionResponse?.data || null;
+            } catch {
+              // Session verification succeeded. A temporary subscription read
+              // failure must not log the user out; the last verified local
+              // snapshot remains the safe fallback.
+            }
+          }
+          const serverTenant = subscriptionContext?.tenant || null;
+          const serverModules = subscriptionContext?.modules || null;
+          const recoveredTenant = serverTenant || parsedTenant;
+          const recoveredModules = serverModules || parsedModules || recoveredTenant?.modules || null;
+          const reconciled = reconcileAdminTenantContext(freshUser, recoveredTenant, recoveredModules);
           const reconciledTenant = reconciled.tenant
             ? (reconciled.modules ? { ...reconciled.tenant, modules: reconciled.modules } : reconciled.tenant)
             : null;
           localStorage.setItem("user", JSON.stringify(reconciled.user));
-          localStorage.setItem("tenant", reconciled.tenant ? JSON.stringify(reconciled.tenant) : "null");
+          localStorage.setItem("tenant", reconciledTenant ? JSON.stringify(reconciledTenant) : "null");
           if (reconciled.modules) localStorage.setItem("modules", JSON.stringify(reconciled.modules));
           setUser(reconciled.user);
           setModules(reconciled.modules);
