@@ -224,7 +224,11 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
         {
             "tenant_id": {"$in": tenant_ids},
             "external_reservation_id": {"$in": external_ids},
-        }
+        },
+        {
+            "tenant_id": {"$in": tenant_ids},
+            "external_confirmation": {"$in": external_ids},
+        },
     ]
     if linked_booking_ids:
         booking_matchers.append(
@@ -240,6 +244,7 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
             "id": 1,
             "tenant_id": 1,
             "external_reservation_id": 1,
+            "external_confirmation": 1,
             "total_amount": 1,
         },
     )
@@ -249,6 +254,9 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
         tenant_id = str(booking.get("tenant_id") or "")
         external_id = str(booking.get("external_reservation_id") or "")
         payload_key = (tenant_id, external_id)
+        if payload_key not in latest_payloads:
+            external_id = str(booking.get("external_confirmation") or "")
+            payload_key = (tenant_id, external_id)
         if payload_key not in latest_payloads:
             booking_id = str(booking.get("id") or "")
             payload_key = linked_booking_keys.get((tenant_id, booking_id), payload_key)

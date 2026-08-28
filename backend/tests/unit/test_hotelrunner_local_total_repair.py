@@ -38,6 +38,7 @@ def _database(
     common_ingest_event=False,
     reservation_mirror=False,
     linked_import=False,
+    confirmation_only=False,
 ):
     payload = {
         "hr_number": "R017934708",
@@ -95,8 +96,13 @@ def _database(
                     "total_amount": booking_total,
                     **(
                         {}
-                        if linked_import
+                        if linked_import or confirmation_only
                         else {"external_reservation_id": "R017934708"}
+                    ),
+                    **(
+                        {"external_confirmation": "R017934708"}
+                        if confirmation_only
+                        else {}
                     ),
                 }
             ]
@@ -192,6 +198,23 @@ async def test_repairs_legacy_booking_linked_only_by_import_record():
     assert booking_set["total_amount"] == 6000
     imported_filter = database.imported_reservations.update_one.await_args.args[0]
     assert imported_filter == {"tenant_id": "tenant-a", "id": "import-1"}
+
+
+@pytest.mark.asyncio
+async def test_repairs_legacy_booking_identified_by_hotelrunner_confirmation():
+    database = _database(confirmation_only=True)
+
+    repaired = await reconcile_hotelrunner_guest_totals_from_local_events(database)
+
+    assert repaired == 1
+    booking_filter = database.bookings.update_one.await_args.args[0]
+    booking_set = database.bookings.update_one.await_args.args[1]["$set"]
+    assert booking_filter == {
+        "id": "booking-1",
+        "tenant_id": "tenant-a",
+        "total_amount": 5357.14,
+    }
+    assert booking_set["total_amount"] == 6000
 
 
 @pytest.mark.asyncio
