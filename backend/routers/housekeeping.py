@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field
 
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.entitlements.enforcement import get_tenant_limit, require_feature
 from core.entitlements.quota import QuotaExceededException, release_quota, reserve_quota
@@ -64,6 +65,12 @@ router = APIRouter(prefix="/api", tags=["housekeeping"])
 security = HTTPBearer()
 create_room_block_service = CreateRoomBlockService()
 release_room_block_service = ReleaseRoomBlockService()
+
+
+async def _operational_date(tenant_id: str):
+    """Return the hotel's authoritative PMS date, never the server calendar date."""
+    payload = await ensure_business_date_initialized(db, tenant_id)
+    return datetime.fromisoformat(payload["business_date"]).date()
 
 
 # ============= HOUSEKEEPING =============
@@ -320,10 +327,9 @@ async def get_room_status_board(current_user: User = Depends(get_current_user)):
 
 # rbac-allow: cache-rbac — due-out listesi tüm rolelere açık (FO check-out koordinasyon)
 @router.get("/housekeeping/due-out")
-@cached(ttl=120, key_prefix="hk_due_out")  # Cache for 2 min
 async def get_due_out_rooms(current_user: User = Depends(get_current_user)):
     """Get rooms with guests checking out today"""
-    today = datetime.now(UTC).date()
+    today = await _operational_date(current_user.tenant_id)
     tomorrow = today + timedelta(days=1)
 
     # Find bookings checking out today
@@ -376,15 +382,14 @@ async def get_due_out_rooms(current_user: User = Depends(get_current_user)):
             }
         )
 
-    return {"due_out_rooms": due_out_rooms, "count": len(due_out_rooms)}
+    return {"business_date": today.isoformat(), "due_out_rooms": due_out_rooms, "count": len(due_out_rooms)}
 
 
 # rbac-allow: cache-rbac — stayovers listesi tüm rolelere açık (operasyonel oda durumu)
 @router.get("/housekeeping/stayovers")
-@cached(ttl=120, key_prefix="hk_stayovers")  # Cache for 2 min
 async def get_stayover_rooms(current_user: User = Depends(get_current_user)):
     """Get rooms with guests staying beyond today"""
-    today = datetime.now(UTC).date()
+    today = await _operational_date(current_user.tenant_id)
 
     # Find checked-in bookings not checking out today
     bookings = await db.bookings.find({"tenant_id": current_user.tenant_id, "status": "checked_in"}).to_list(1000)
@@ -433,7 +438,7 @@ async def get_stayover_rooms(current_user: User = Depends(get_current_user)):
             }
         )
 
-    return {"stayover_rooms": stayover_rooms, "count": len(stayover_rooms)}
+    return {"business_date": today.isoformat(), "stayover_rooms": stayover_rooms, "count": len(stayover_rooms)}
 
 
 # rbac-allow: cache-rbac — oda durumu raporu tüm rolelere açık (operasyonel)
@@ -582,10 +587,9 @@ async def get_staff_performance_detailed(
 
 # rbac-allow: cache-rbac — arrival rooms listesi tüm rolelere açık (FO check-in koordinasyon)
 @router.get("/housekeeping/arrivals")
-@cached(ttl=120, key_prefix="hk_arrivals")  # Cache for 2 min
 async def get_arrival_rooms(current_user: User = Depends(get_current_user)):
     """Get rooms with guests arriving today"""
-    today = datetime.now(UTC).date()
+    today = await _operational_date(current_user.tenant_id)
     today_iso = today.isoformat()
     tomorrow_iso = (today + timedelta(days=1)).isoformat()
     today_dt = datetime.combine(today, datetime.min.time(), tzinfo=UTC)
@@ -651,7 +655,7 @@ async def get_arrival_rooms(current_user: User = Depends(get_current_user)):
             }
         )
 
-    return {"arrival_rooms": arrival_rooms, "count": len(arrival_rooms), "ready_count": sum(1 for r in arrival_rooms if r["ready"])}
+    return {"business_date": today.isoformat(), "arrival_rooms": arrival_rooms, "count": len(arrival_rooms), "ready_count": sum(1 for r in arrival_rooms if r["ready"])}
 
 
 @router.put("/housekeeping/room/{room_id}/status")
