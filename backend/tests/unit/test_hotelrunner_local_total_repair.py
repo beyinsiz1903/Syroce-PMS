@@ -35,6 +35,7 @@ def _database(
     booking_total=5357.14,
     modified_count=1,
     unified_events=True,
+    common_ingest_event=False,
     reservation_mirror=False,
 ):
     payload = {
@@ -56,7 +57,20 @@ def _database(
             else []
         )
     )
-    legacy_events = SimpleNamespace(find=lambda *_args: _Cursor([]))
+    legacy_events = SimpleNamespace(
+        find=lambda *_args: _Cursor(
+            [
+                {
+                    "tenant_id": "tenant-a",
+                    "external_id": "R017934708",
+                    "payload": payload,
+                    "received_at": "2026-08-27T12:00:00Z",
+                }
+            ]
+            if common_ingest_event
+            else []
+        )
+    )
     reservation_mirrors = SimpleNamespace(
         find=lambda *_args: _Cursor(
             [
@@ -130,6 +144,18 @@ async def test_repairs_from_hotelrunner_reservation_mirror_when_unified_event_mi
         booking_set["hotelrunner_total_reconciliation_source"]
         == "hotelrunner_reservation_mirror"
     )
+
+
+@pytest.mark.asyncio
+async def test_repairs_common_ingest_event_that_uses_external_id_alias():
+    database = _database(unified_events=False, common_ingest_event=True)
+
+    repaired = await reconcile_hotelrunner_guest_totals_from_local_events(database)
+
+    assert repaired == 1
+    booking_set = database.bookings.update_one.await_args.args[1]["$set"]
+    assert booking_set["total_amount"] == 6000
+    assert booking_set["hotelrunner_total_reconciliation_source"] == "hotelrunner_raw_event"
 
 
 @pytest.mark.asyncio
