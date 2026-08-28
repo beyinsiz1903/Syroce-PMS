@@ -121,6 +121,26 @@ function _hardLogout() {
   }
 }
 
+/**
+ * A 401 from a business endpoint does not necessarily mean the login session
+ * is invalid (for example an operation PIN may be rejected with 401).  Token
+ * rotation can also race across browser tabs.  Before deleting a session,
+ * confirm it against the canonical identity endpoint with cache/retry/auth
+ * interception disabled so only a fresh server response is trusted.
+ */
+export async function verifyActiveSession() {
+  try {
+    await axios.get("/auth/me", {
+      _skipAuthRetry: true,
+      _skipRetry: true,
+      _noCache: true,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Refresh sonucu üç durumdan biri:
 //   { token: string }  — başarılı, retry yapılır
 //   { transient: true } — geçici servis/ağ hatası; oturum SİLİNMEZ, istek reddedilir
@@ -219,6 +239,8 @@ export async function keepActiveSessionAlive() {
   if (result?.contextRestored) return { contextRestored: true };
   if (result?.transient) return { transient: true };
 
+  if (await verifyActiveSession()) return { sessionRecovered: true };
+
   _hardLogout();
   return { invalid: true };
 }
@@ -251,12 +273,23 @@ axios.interceptors.response.use(
         console.warn("Refresh transient failure (5xx/network); session preserved");
         return Promise.reject(error);
       }
+      if (await verifyActiveSession()) {
+        console.warn("401 response was operation-specific; active session preserved. URL:", original.url);
+        return Promise.reject(error);
+      }
       console.warn("401 Unauthorized - refresh failed, clearing session. URL:", original.url);
       _hardLogout();
     } else if (error.response?.status === 401 && !original._skipAuthRetry) {
-      // A _retried request returned 401 again → hard fail.
-      console.warn("401 Unauthorized after retry - clearing session. URL:", original.url);
-      _hardLogout();
+      // A retried business request may still reject an operation-level
+      // credential (PIN, one-time action token, provider auth, etc.). Only the
+      // canonical identity endpoint is allowed to decide that the user session
+      // itself is invalid.
+      if (!(await verifyActiveSession())) {
+        console.warn("401 Unauthorized after retry and session verification - clearing session. URL:", original.url);
+        _hardLogout();
+      } else {
+        console.warn("401 Unauthorized after retry; active session preserved. URL:", original.url);
+      }
     }
     if (error.response?.data?.detail) {
       const detail = error.response.data.detail;
