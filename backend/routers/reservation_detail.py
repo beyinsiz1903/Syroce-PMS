@@ -1018,6 +1018,10 @@ async def transfer_to_cari(
         raise HTTPException(status_code=409, detail="Cari aktarım tutarı açık bakiyeyi aşamaz")
 
     cari = await db.cari_accounts.find_one({"id": data.cari_account_id, "tenant_id": tid}, {"_id": 0})
+    is_city_ledger = False
+    if not cari:
+        cari = await db.city_ledger_accounts.find_one({"id": data.cari_account_id, "tenant_id": tid}, {"_id": 0})
+        is_city_ledger = True
     if not cari:
         raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
 
@@ -1063,6 +1067,12 @@ async def transfer_to_cari(
             session=session,
         )
         if not current_cari:
+            current_cari = await db.city_ledger_accounts.find_one(
+                {"id": data.cari_account_id, "tenant_id": tid},
+                {"_id": 0},
+                session=session,
+            )
+        if not current_cari:
             raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
 
         current_outstanding = await _reservation_outstanding_balance(
@@ -1097,7 +1107,6 @@ async def transfer_to_cari(
         transaction = {
             "id": transaction_id,
             "tenant_id": tid,
-            "cari_account_id": data.cari_account_id,
             "booking_id": booking_id,
             "transaction_type": "charge",
             "amount": data.amount,
@@ -1105,7 +1114,13 @@ async def transfer_to_cari(
             "posted_by": current_user.name,
             "created_at": now,
         }
-        await db.cari_transactions.insert_one({**transaction}, session=session)
+        if is_city_ledger:
+            transaction["account_id"] = data.cari_account_id
+            transaction["transaction_date"] = now
+            await db.city_ledger_transactions.insert_one({**transaction}, session=session)
+        else:
+            transaction["cari_account_id"] = data.cari_account_id
+            await db.cari_transactions.insert_one({**transaction}, session=session)
 
         payment = {
             "id": payment_id,
@@ -1125,17 +1140,25 @@ async def transfer_to_cari(
         }
         await db.payments.insert_one({**payment}, session=session)
 
-        new_cari_balance = _cari_balance(current_cari) + data.amount
-        await db.cari_accounts.update_one(
-            {"id": data.cari_account_id, "tenant_id": tid},
-            {
-                "$set": {
-                    "balance": new_cari_balance,
-                    "current_balance": new_cari_balance,
-                }
-            },
-            session=session,
-        )
+        if is_city_ledger:
+            new_cari_balance = current_cari.get("current_balance", 0.0) + data.amount
+            await db.city_ledger_accounts.update_one(
+                {"id": data.cari_account_id, "tenant_id": tid},
+                {"$set": {"current_balance": new_cari_balance}},
+                session=session,
+            )
+        else:
+            new_cari_balance = _cari_balance(current_cari) + data.amount
+            await db.cari_accounts.update_one(
+                {"id": data.cari_account_id, "tenant_id": tid},
+                {
+                    "$set": {
+                        "balance": new_cari_balance,
+                        "current_balance": new_cari_balance,
+                    }
+                },
+                session=session,
+            )
 
         new_paid = (current_booking.get("paid_amount", 0) or 0) + data.amount
         await db.bookings.update_one(

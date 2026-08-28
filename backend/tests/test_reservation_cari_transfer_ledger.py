@@ -152,6 +152,11 @@ async def test_cari_transfer_does_not_write_without_owned_account(monkeypatch):
             cari_accounts=cari_accounts,
             payments=payments,
             cari_transactions=cari_transactions,
+            city_ledger_accounts=SimpleNamespace(
+                find_one=AsyncMock(return_value=None),
+                update_one=AsyncMock()
+            ),
+            city_ledger_transactions=SimpleNamespace(insert_one=AsyncMock()),
         ),
     )
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
@@ -205,6 +210,11 @@ async def test_cari_transfer_rejects_absent_or_exceeded_balance_without_writes(
             cari_accounts=cari_accounts,
             payments=payments,
             cari_transactions=cari_transactions,
+            city_ledger_accounts=SimpleNamespace(
+                find_one=AsyncMock(return_value=None),
+                update_one=AsyncMock()
+            ),
+            city_ledger_transactions=SimpleNamespace(insert_one=AsyncMock()),
         ),
     )
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
@@ -257,6 +267,11 @@ async def test_cari_transfer_duplicate_click_fails_before_financial_writes(monke
         ),
         cari_transactions=SimpleNamespace(insert_one=AsyncMock()),
         payments=SimpleNamespace(insert_one=AsyncMock()),
+        city_ledger_accounts=SimpleNamespace(
+            find_one=AsyncMock(return_value=None),
+            update_one=AsyncMock(),
+        ),
+        city_ledger_transactions=SimpleNamespace(insert_one=AsyncMock()),
     )
     monkeypatch.setattr(reservation_detail, "db", database)
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
@@ -309,6 +324,11 @@ async def test_cari_transfer_duplicate_key_is_safe_conflict(monkeypatch):
         ),
         cari_transactions=SimpleNamespace(insert_one=AsyncMock()),
         payments=SimpleNamespace(insert_one=AsyncMock()),
+        city_ledger_accounts=SimpleNamespace(
+            find_one=AsyncMock(return_value=None),
+            update_one=AsyncMock(),
+        ),
+        city_ledger_transactions=SimpleNamespace(insert_one=AsyncMock()),
     )
     monkeypatch.setattr(reservation_detail, "db", database)
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
