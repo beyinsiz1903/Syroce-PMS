@@ -139,6 +139,7 @@ jobs:
           done
 
       - name: Trigger App Platform Deployment
+        id: app-platform-deploy
         env:
           DO_APP_ID: ${{ secrets.DO_APP_ID }}
           GITHUB_SHA: ${{ github.sha }}
@@ -281,6 +282,7 @@ jobs:
           echo "Live tag and repository verification passed."
           
           echo "Deployment completed successfully. (ID: $DEPLOYMENT_ID, Phase: $STATUS)"
+          echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
           
           echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
@@ -311,6 +313,7 @@ jobs:
         shell: bash
         env:
           DO_APP_ID: ${{ secrets.DO_APP_ID }}
+          DEPLOYMENT_ID: ${{ steps.app-platform-deploy.outputs.deployment_id }}
         run: |
           set -euo pipefail
           umask 077
@@ -319,7 +322,10 @@ jobs:
 
           marker=""
           for attempt in 1 2 3 4; do
-            if doctl apps logs "$DO_APP_ID" backend --type run --tail 1000 >"$logs_file" 2>/dev/null; then
+            if doctl apps logs "$DO_APP_ID" backend \
+              --deployment "$DEPLOYMENT_ID" \
+              --type run \
+              --tail -1 >"$logs_file" 2>/dev/null; then
               marker="$(
                 grep -E \
                   'HotelRunner local gross-total reconciliation completed event_count=[0-9]+ candidate_count=[0-9]+ repaired_count=[0-9]+' \

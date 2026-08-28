@@ -30,7 +30,13 @@ class _Cursor:
         return iterate()
 
 
-def _database(*, booking_total=5357.14, modified_count=1):
+def _database(
+    *,
+    booking_total=5357.14,
+    modified_count=1,
+    unified_events=True,
+    reservation_mirror=False,
+):
     payload = {
         "hr_number": "R017934708",
         "total": 6000,
@@ -46,6 +52,23 @@ def _database(*, booking_total=5357.14, modified_count=1):
                     "received_at": "2026-08-27T12:00:00Z",
                 }
             ]
+            if unified_events
+            else []
+        )
+    )
+    legacy_events = SimpleNamespace(find=lambda *_args: _Cursor([]))
+    reservation_mirrors = SimpleNamespace(
+        find=lambda *_args: _Cursor(
+            [
+                {
+                    "tenant_id": "tenant-a",
+                    "hr_number": "R017934708",
+                    "raw_data": payload,
+                    "synced_at": "2026-08-27T12:00:00Z",
+                }
+            ]
+            if reservation_mirror
+            else []
         )
     )
     bookings = SimpleNamespace(
@@ -63,9 +86,14 @@ def _database(*, booking_total=5357.14, modified_count=1):
             return_value=SimpleNamespace(modified_count=modified_count)
         ),
     )
-    imported = SimpleNamespace(update_one=AsyncMock())
+    imported = SimpleNamespace(
+        find=lambda *_args: _Cursor([]),
+        update_one=AsyncMock(),
+    )
     return SimpleNamespace(
         raw_channel_events=raw_events,
+        hotelrunner_raw_events=legacy_events,
+        hotelrunner_reservations=reservation_mirrors,
         bookings=bookings,
         imported_reservations=imported,
     )
@@ -87,6 +115,21 @@ async def test_repairs_exact_legacy_net_total_from_local_event_without_provider_
     assert booking_set["hotelrunner_total_reconciliation_source"] == "local_raw_event"
     imported_set = database.imported_reservations.update_one.await_args.args[1]["$set"]
     assert imported_set["total_amount"] == 6000
+
+
+@pytest.mark.asyncio
+async def test_repairs_from_hotelrunner_reservation_mirror_when_unified_event_missing():
+    database = _database(unified_events=False, reservation_mirror=True)
+
+    repaired = await reconcile_hotelrunner_guest_totals_from_local_events(database)
+
+    assert repaired == 1
+    booking_set = database.bookings.update_one.await_args.args[1]["$set"]
+    assert booking_set["total_amount"] == 6000
+    assert (
+        booking_set["hotelrunner_total_reconciliation_source"]
+        == "hotelrunner_reservation_mirror"
+    )
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-"""Repair legacy HotelRunner net totals from the immutable local event store.
+"""Repair legacy HotelRunner net totals from local provider truth stores.
 
 This migration performs no provider I/O.  It is intentionally independent of
 the HotelRunner reservation-read gate so historical imports can be corrected
@@ -24,7 +24,7 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
     *,
     max_events: int = 5000,
 ) -> int:
-    """Repair exact legacy ``rooms[].price`` imports from stored raw events.
+    """Repair exact legacy ``rooms[].price`` imports from stored provider data.
 
     The compare-and-set booking update makes the repair idempotent across
     multiple application replicas.  A booking is changed only when its current
@@ -53,19 +53,132 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
     events = await event_cursor.to_list(max_events)
 
     latest_payloads: dict[tuple[str, str], dict[str, Any]] = {}
-    for event in events:
-        tenant_id = str(event.get("tenant_id") or "")
-        external_id = str(event.get("external_reservation_id") or "")
-        payload = event.get("raw_payload")
-        key = (tenant_id, external_id)
-        if tenant_id and external_id and isinstance(payload, dict) and key not in latest_payloads:
+    payload_sources: dict[tuple[str, str], str] = {}
+
+    def remember_payload(
+        *,
+        tenant_id: Any,
+        external_id: Any,
+        payload: Any,
+        source: str,
+    ) -> None:
+        key = (str(tenant_id or ""), str(external_id or ""))
+        if (
+            key[0]
+            and key[1]
+            and isinstance(payload, dict)
+            and payload
+            and key not in latest_payloads
+        ):
             latest_payloads[key] = payload
+            payload_sources[key] = source
+
+    for event in events:
+        remember_payload(
+            tenant_id=event.get("tenant_id"),
+            external_id=event.get("external_reservation_id"),
+            payload=event.get("raw_payload"),
+            source="local_raw_event",
+        )
+
+    # Older/manual HotelRunner paths pre-date the unified event ledger. Their
+    # payloads are still kept locally in the provider raw-event and reservation
+    # mirrors. Reading these collections is required while reservation polling
+    # is deliberately disabled in production; no provider request is made.
+    legacy_event_cursor = (
+        database.hotelrunner_raw_events.find(
+            {
+                "hr_number": {"$exists": True, "$ne": ""},
+                "payload": {"$type": "object"},
+            },
+            {
+                "_id": 0,
+                "tenant_id": 1,
+                "hr_number": 1,
+                "payload": 1,
+                "received_at": 1,
+            },
+        )
+        .sort("received_at", -1)
+        .limit(max_events)
+    )
+    legacy_events = await legacy_event_cursor.to_list(max_events)
+    for event in legacy_events:
+        remember_payload(
+            tenant_id=event.get("tenant_id"),
+            external_id=event.get("hr_number"),
+            payload=event.get("payload"),
+            source="hotelrunner_raw_event",
+        )
+
+    mirror_cursor = (
+        database.hotelrunner_reservations.find(
+            {"hr_number": {"$exists": True, "$ne": ""}},
+            {
+                "_id": 0,
+                "tenant_id": 1,
+                "hr_number": 1,
+                "raw_data": 1,
+                "total": 1,
+                "rooms": 1,
+                "synced_at": 1,
+            },
+        )
+        .sort("synced_at", -1)
+        .limit(max_events)
+    )
+    mirrors = await mirror_cursor.to_list(max_events)
+    for mirror in mirrors:
+        payload = mirror.get("raw_data")
+        if not isinstance(payload, dict) or not payload:
+            payload = {
+                "hr_number": mirror.get("hr_number"),
+                "total": mirror.get("total"),
+                "rooms": mirror.get("rooms") or [],
+            }
+        remember_payload(
+            tenant_id=mirror.get("tenant_id"),
+            external_id=mirror.get("hr_number"),
+            payload=payload,
+            source="hotelrunner_reservation_mirror",
+        )
+
+    imported_cursor = (
+        database.imported_reservations.find(
+            {
+                "provider": "hotelrunner",
+                "external_reservation_id": {"$exists": True, "$ne": ""},
+                "raw_payload": {"$type": "object"},
+            },
+            {
+                "_id": 0,
+                "tenant_id": 1,
+                "external_reservation_id": 1,
+                "raw_payload": 1,
+                "updated_at": 1,
+            },
+        )
+        .sort("updated_at", -1)
+        .limit(max_events)
+    )
+    imported_payloads = await imported_cursor.to_list(max_events)
+    for imported in imported_payloads:
+        remember_payload(
+            tenant_id=imported.get("tenant_id"),
+            external_id=imported.get("external_reservation_id"),
+            payload=imported.get("raw_payload"),
+            source="imported_reservation_payload",
+        )
+
+    local_record_count = (
+        len(events) + len(legacy_events) + len(mirrors) + len(imported_payloads)
+    )
 
     if not latest_payloads:
         logger.info(
             "HotelRunner local gross-total reconciliation completed "
             "event_count=%d candidate_count=0 repaired_count=0",
-            len(events),
+            local_record_count,
         )
         return 0
 
@@ -90,7 +203,8 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
     async for booking in booking_cursor:
         tenant_id = str(booking.get("tenant_id") or "")
         external_id = str(booking.get("external_reservation_id") or "")
-        payload = latest_payloads.get((tenant_id, external_id))
+        payload_key = (tenant_id, external_id)
+        payload = latest_payloads.get(payload_key)
         current_total = booking.get("total_amount")
         if not payload or not matches_legacy_before_tax_total(current_total, payload):
             continue
@@ -116,7 +230,9 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
                     "pricing_source": "channel_manager",
                     "hotelrunner_total_reconciled_from": float(current_total),
                     "hotelrunner_total_reconciled_at": now,
-                    "hotelrunner_total_reconciliation_source": "local_raw_event",
+                    "hotelrunner_total_reconciliation_source": payload_sources[
+                        payload_key
+                    ],
                     "updated_at": now,
                 }
             },
@@ -142,7 +258,7 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
     logger.info(
         "HotelRunner local gross-total reconciliation completed "
         "event_count=%d candidate_count=%d repaired_count=%d",
-        len(events),
+        local_record_count,
         len(latest_payloads),
         repaired,
     )
