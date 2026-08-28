@@ -305,3 +305,41 @@ jobs:
             --max-time 20 \
             "${BASE_URL}/health/live" >/dev/null
           echo "Smoke test passed."
+
+      - name: Report safe HotelRunner local total reconciliation signal
+        if: inputs.environment == 'production'
+        shell: bash
+        env:
+          DO_APP_ID: ${{ secrets.DO_APP_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          logs_file="$(mktemp)"
+          trap 'rm -f "$logs_file"' EXIT
+
+          marker=""
+          for attempt in 1 2 3 4; do
+            if doctl apps logs "$DO_APP_ID" backend --type run --tail 1000 >"$logs_file" 2>/dev/null; then
+              marker="$(
+                grep -E \
+                  'HotelRunner local gross-total reconciliation completed event_count=[0-9]+ candidate_count=[0-9]+ repaired_count=[0-9]+' \
+                  "$logs_file" | tail -n 1 || true
+              )"
+            fi
+            if [ -n "$marker" ]; then
+              break
+            fi
+            sleep 15
+          done
+
+          if [ -z "$marker" ]; then
+            echo "::warning::HotelRunner local total reconciliation signal was not visible in the safe log window."
+            exit 0
+          fi
+
+          safe_marker="${marker#*HotelRunner local gross-total reconciliation completed }"
+          echo "HotelRunner local gross-total reconciliation completed ${safe_marker}"
+          {
+            echo "### HotelRunner Local Total Reconciliation"
+            echo "- ${safe_marker}"
+          } >> "$GITHUB_STEP_SUMMARY"
