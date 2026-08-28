@@ -471,6 +471,7 @@ async def run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
     known_ext_ids = set()
     known_ext_updated = {}
     known_ext_status = {}
+    known_ext_totals = {}
 
     async for doc in db.imported_reservations.find(
         {"tenant_id": tenant_id, "provider": "hotelrunner"},
@@ -482,9 +483,11 @@ async def run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
 
     async for bdoc in db.bookings.find(
         {"tenant_id": tenant_id, "external_reservation_id": {"$exists": True, "$ne": ""}},
-        {"_id": 0, "external_reservation_id": 1, "status": 1},
+        {"_id": 0, "external_reservation_id": 1, "status": 1, "total_amount": 1},
     ):
-        known_ext_status[bdoc.get("external_reservation_id", "")] = bdoc.get("status", "confirmed")
+        external_id = bdoc.get("external_reservation_id", "")
+        known_ext_status[external_id] = bdoc.get("status", "confirmed")
+        known_ext_totals[external_id] = bdoc.get("total_amount")
 
     while all_page <= all_total_pages:
         result = await provider.get_reservations(
@@ -582,7 +585,19 @@ async def run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
                     if stored_status == "cancelled" and hr_status_check != "cancelled":
                         state_changed = False
 
-                    if state_changed or timestamp_changed:
+                    # Provider timestamps do not change merely because Syroce's
+                    # earlier importer selected rooms[].price instead of the
+                    # authoritative guest-payable total.  A manual full
+                    # reconciliation must therefore be allowed through this
+                    # outer gate when the exact legacy before-tax signature is
+                    # present; sync_reservation_update performs the same narrow
+                    # check again before writing.
+                    legacy_total_repair = matches_legacy_before_tax_total(
+                        known_ext_totals.get(sub_ext),
+                        sub_res,
+                    )
+
+                    if state_changed or timestamp_changed or legacy_total_repair:
                         try:
                             updated = await sync_reservation_update(
                                 tenant_id,
