@@ -23,6 +23,7 @@ from domains.channel_manager.data_model import (
     RawChannelEvent,
     RawEventSource,
 )
+from domains.channel_manager.ingest.hotelrunner_pricing import hotelrunner_room_guest_total
 from domains.channel_manager.ingest.normalizer import extract_hotelrunner_identity
 from domains.channel_manager.ingest.pipeline import process_event
 
@@ -136,7 +137,9 @@ def explode_multi_room_reservation(raw_reservation: dict[str, Any]) -> list[dict
             **raw_reservation,
             "hr_number": sub_hr,
             "rooms": [room],
-            "total": float(room.get("price", 0) or 0),
+            # HotelRunner room.price is before tax. Each exploded PMS booking
+            # must retain the room's guest-payable after-tax total.
+            "total": hotelrunner_room_guest_total(room) or 0.0,
             "_exploded_from": hr_number,
             "_room_index": idx,
         }
