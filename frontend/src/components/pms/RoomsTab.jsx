@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink, Banknote, Building2, Wallet, Plus, CalendarPlus, Search, UserCheck, UserPlus, Calendar, Clock, AlertOctagon, UserCircle2 } from 'lucide-react';
 import BookingConflictDialog from '@/components/pms/BookingConflictDialog';
 import { parseBookingConflict } from '@/lib/bookingConflict';
+import { classifyGuestPayment } from '@/utils/paymentClassification';
 
 const RoomsTab = ({
   rooms,
@@ -241,7 +242,7 @@ const RoomsTab = ({
       await axios.post(`/pms/reservations/${paymentTarget.booking_id}/record-payment`, {
         amount,
         method: paymentMethod,
-        payment_type: 'interim',
+        payment_type: classifyGuestPayment(amount, paymentTarget.balance),
       });
       toast.success(`${amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ödeme başarıyla alindi`);
       setPaymentDialog(false);

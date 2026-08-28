@@ -8,6 +8,7 @@ import { Search, FileText, CreditCard, Plus, DollarSign, Receipt, Eye, Printer }
 import RegistrationCard from './RegistrationCard';
 import PrintableFolio from './PrintableFolio';
 import { alertDialog } from '@/lib/dialogs';
+import { classifyGuestPayment } from '@/utils/paymentClassification';
 const FolioManagementPage = () => {
   const [folios, setFolios] = useState([]);
   const [selectedFolio, setSelectedFolio] = useState(null);
@@ -447,7 +448,7 @@ const FolioManagementPage = () => {
             const formData = new FormData(e.target);
             postPayment({
               method: formData.get('method'),
-              payment_type: formData.get('payment_type'),
+              payment_type: classifyGuestPayment(formData.get('amount'), balance),
               amount: parseFloat(formData.get('amount')),
               reference: formData.get('reference') || null
             });
@@ -467,19 +468,8 @@ const FolioManagementPage = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Payment Type</label>
-                    <Select name="payment_type" required>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="prepayment">Prepayment</SelectItem>
-                        <SelectItem value="deposit">Deposit</SelectItem>
-                        <SelectItem value="interim">Interim</SelectItem>
-                        <SelectItem value="final">Final</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    Payment type is selected automatically from the amount. Use the dedicated deposit flow for deposits.
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-2">Amount</label>
