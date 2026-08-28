@@ -10,6 +10,10 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, ClipboardList, DollarSign, RotateCcw, FileText, ArrowLeftRight, Printer, Send, Loader2, KeyRound, RefreshCw, AlertTriangle, Receipt, CreditCard } from 'lucide-react';
+import {
+  classifyGuestPayment,
+  guestPaymentClassificationLabel,
+} from '@/utils/paymentClassification';
 const VAT_OPTIONS = [{
   value: '0',
   label: '%0'
@@ -81,7 +85,6 @@ const FolioViewDialog = ({
   const [newFolioPayment, setNewFolioPayment] = useState({
     amount: 0,
     method: 'card',
-    payment_type: 'interim',
     reference: '',
     notes: ''
   });
@@ -140,13 +143,15 @@ const FolioViewDialog = ({
     e.preventDefault();
     if (!selectedFolio) return;
     try {
-      await axios.post(`/folio/${selectedFolio.id}/payment`, newFolioPayment);
+      await axios.post(`/folio/${selectedFolio.id}/payment`, {
+        ...newFolioPayment,
+        payment_type: classifyGuestPayment(newFolioPayment.amount, selectedFolio.balance),
+      });
       toast.success('Ödeme alındı');
       onPaymentPosted(selectedFolio.id);
       setNewFolioPayment({
         amount: 0,
         method: 'card',
-        payment_type: 'interim',
         reference: '',
         notes: ''
       });
@@ -656,19 +661,11 @@ th{background:#f5f5f5}
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>Ödeme Tipi</Label>
-              <Select value={newFolioPayment.payment_type} onValueChange={v => setNewFolioPayment({
-              ...newFolioPayment,
-              payment_type: v
-            })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="interim">Ara</SelectItem>
-                  <SelectItem value="final">Son</SelectItem>
-                  <SelectItem value="deposit">Depozito</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600" data-testid="payment-classification">
+              <div className="font-medium text-slate-700">
+                {guestPaymentClassificationLabel(newFolioPayment.amount, selectedFolio?.balance)}
+              </div>
+              <div className="mt-0.5">Ödeme türü otomatik belirlenir; depozito ayrı depozito akışından alınır.</div>
             </div>
             <div>
               <Label>Referans</Label>
