@@ -88,13 +88,17 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
     legacy_event_cursor = (
         database.hotelrunner_raw_events.find(
             {
-                "hr_number": {"$exists": True, "$ne": ""},
+                "$or": [
+                    {"hr_number": {"$exists": True, "$ne": ""}},
+                    {"external_id": {"$exists": True, "$ne": ""}},
+                ],
                 "payload": {"$type": "object"},
             },
             {
                 "_id": 0,
                 "tenant_id": 1,
                 "hr_number": 1,
+                "external_id": 1,
                 "payload": 1,
                 "received_at": 1,
             },
@@ -106,18 +110,24 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
     for event in legacy_events:
         remember_payload(
             tenant_id=event.get("tenant_id"),
-            external_id=event.get("hr_number"),
+            external_id=event.get("hr_number") or event.get("external_id"),
             payload=event.get("payload"),
             source="hotelrunner_raw_event",
         )
 
     mirror_cursor = (
         database.hotelrunner_reservations.find(
-            {"hr_number": {"$exists": True, "$ne": ""}},
+            {
+                "$or": [
+                    {"hr_number": {"$exists": True, "$ne": ""}},
+                    {"external_id": {"$exists": True, "$ne": ""}},
+                ]
+            },
             {
                 "_id": 0,
                 "tenant_id": 1,
                 "hr_number": 1,
+                "external_id": 1,
                 "raw_data": 1,
                 "total": 1,
                 "rooms": 1,
@@ -129,16 +139,17 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
     )
     mirrors = await mirror_cursor.to_list(max_events)
     for mirror in mirrors:
+        external_id = mirror.get("hr_number") or mirror.get("external_id")
         payload = mirror.get("raw_data")
         if not isinstance(payload, dict) or not payload:
             payload = {
-                "hr_number": mirror.get("hr_number"),
+                "hr_number": external_id,
                 "total": mirror.get("total"),
                 "rooms": mirror.get("rooms") or [],
             }
         remember_payload(
             tenant_id=mirror.get("tenant_id"),
-            external_id=mirror.get("hr_number"),
+            external_id=external_id,
             payload=payload,
             source="hotelrunner_reservation_mirror",
         )
