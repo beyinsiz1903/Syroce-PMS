@@ -106,7 +106,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
     <div data-testid="folios-tab" className="space-y-4">
       <div className="grid grid-cols-4 gap-3">
         <SummaryCard label="Toplam" value={summary?.total_amount} color="blue" />
-        <SummaryCard label="Masraflar" value={(summary?.total_charges || 0) + (summary?.total_extra || 0)} color="amber" />
+        <SummaryCard label="Borçlar" value={(summary?.total_charges || 0) + (summary?.total_extra || 0)} color="amber" />
         <SummaryCard label="Ödemeler" value={summary?.total_payments} color="emerald" />
         <SummaryCard label="Bakiye" value={summary?.balance} color={(summary?.balance || 0) > 0 ? 'red' : 'green'} />
       </div>
