@@ -1,16 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 
 import { buildAccountLedgerRows } from '@/pages/accounting/AccountLedgerView';
-import { GL_NAV_GROUPS } from '@/pages/accounting/GeneralLedgerNavigation';
+import { GeneralLedgerNavigation, GL_NAV_GROUPS } from '@/pages/accounting/GeneralLedgerNavigation';
 
 describe('General ledger accountant workspace', () => {
   it('keeps every general-ledger destination in the expanded left menu', () => {
     expect(GL_NAV_GROUPS.map((group) => group.label)).toEqual([
+      'Ticari İşlemler',
       'Günlük İşlemler',
       'Defter ve Raporlar',
       'Dönem ve Kontrol',
     ]);
     expect(GL_NAV_GROUPS.flatMap((group) => group.items.map((item) => item.value))).toEqual([
+      'invoices-menu',
+      'current-accounts',
       'overview',
       'journals',
       'account-ledger',
@@ -22,6 +26,28 @@ describe('General ledger accountant workspace', () => {
       'integrations',
       'setup',
     ]);
+    const commerce = GL_NAV_GROUPS[0];
+    expect(commerce.items[0].children).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Yeni Fatura', href: '/app/invoices?action=new' }),
+      expect.objectContaining({ label: 'Fatura Listesi', href: '/app/invoices?tab=invoices' }),
+      expect.objectContaining({ label: 'Nilvera Entegrasyonu', targetTab: 'integrations' }),
+    ]));
+    expect(commerce.items[1]).toMatchObject({ label: 'Cariler', href: '/city-ledger' });
+  });
+
+  it('opens existing invoice, current-account and Nilvera destinations without creating duplicate modules', () => {
+    const onSelect = vi.fn();
+    const onNavigate = vi.fn();
+    render(<GeneralLedgerNavigation activeTab="overview" onSelect={onSelect} onNavigate={onNavigate} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Yeni Fatura' }));
+    expect(onNavigate).toHaveBeenCalledWith('/app/invoices?action=new');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cariler' }));
+    expect(onNavigate).toHaveBeenCalledWith('/city-ledger');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Nilvera Entegrasyonu' }));
+    expect(onSelect).toHaveBeenCalledWith('integrations');
   });
 
   it('builds a filterable account ledger with per-account running balances', () => {
@@ -76,4 +102,3 @@ describe('General ledger accountant workspace', () => {
     expect(result.rows[0]).toMatchObject({ accountCode: '102', accountName: 'Bankalar', debit: 125 });
   });
 });
-

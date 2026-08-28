@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatAmount } from '@/lib/currency';
 import { ExpenseDialog, SupplierDialog, BankAccountDialog, InventoryDialog } from '@/components/invoice/AccountingDialogs';
 import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
 import InvoiceTemplate from '@/components/invoice/InvoiceTemplate';
+import InvoiceFormDialog from '@/components/invoice/InvoiceFormDialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -20,6 +22,14 @@ import {
 const InvoiceModule = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
   const { amount: fmtMoney } = useCurrency();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const [activeSection, setActiveSection] = useState(
+    ['invoices', 'expenses', 'suppliers', 'banks', 'inventory', 'reports'].includes(requestedTab)
+      ? requestedTab
+      : 'invoices',
+  );
   const [fatal, setFatal] = useState(null);
   const [invoices, setInvoices] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -132,6 +142,34 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     })();
     return () => { mounted = false; };
   }, [loadInitial]);
+
+  useEffect(() => {
+    if (searchParams.get('action') === 'new') setOpenDialog('invoice');
+  }, [searchParams]);
+
+  const handleSectionChange = (value) => {
+    setActiveSection(value);
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', value);
+    next.delete('action');
+    setSearchParams(next, { replace: true });
+    if (value === 'expenses') { loadExpenses(); loadSuppliers(); }
+    if (value === 'suppliers') loadSuppliers();
+    if (value === 'banks') loadBanks();
+    if (value === 'inventory') loadInventory();
+    if (value === 'cashflow') loadCashFlow();
+    if (value === 'reports') loadReports();
+  };
+
+  const closeInvoiceDialog = async (created = false) => {
+    setOpenDialog(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete('action');
+    next.set('tab', 'invoices');
+    setSearchParams(next, { replace: true });
+    setActiveSection('invoices');
+    if (created) await loadInitial();
+  };
 
   const loadCashFlow = async () => {
     try {
@@ -247,9 +285,14 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
   return (
     <>
       <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-4xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk' }}>{t('invoice.title')}</h1>
-          <p className="text-gray-600">{t('invoice.subtitle')}</p>
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+          <div>
+            <h1 className="text-4xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk' }}>{t('invoice.title')}</h1>
+            <p className="text-gray-600">{t('invoice.subtitle')}</p>
+          </div>
+          <Button variant="outline" onClick={() => navigate('/app/general-ledger?tab=integrations')}>
+            Nilvera Muhasebe Eşlemesi
+          </Button>
         </div>
 
         {dashboard && (
@@ -286,14 +329,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
           </div>
         )}
 
-        <Tabs defaultValue="invoices" onValueChange={(v) => {
-          if (v === 'expenses') { loadExpenses(); loadSuppliers(); }
-          if (v === 'suppliers') loadSuppliers();
-          if (v === 'banks') loadBanks();
-          if (v === 'inventory') loadInventory();
-          if (v === 'cashflow') loadCashFlow();
-          if (v === 'reports') loadReports();
-        }}>
+        <Tabs value={activeSection} onValueChange={handleSectionChange}>
           <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="invoices" data-testid="tab-invoices"><FileText className="w-4 h-4 mr-2" />{t('invoice.tabs.invoices')}</TabsTrigger>
             <TabsTrigger value="expenses" data-testid="tab-expenses"><Receipt className="w-4 h-4 mr-2" />{t('invoice.tabs.expenses')}</TabsTrigger>
@@ -312,7 +348,12 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
               </div>
             </div>
 
-            <h2 className="text-2xl font-semibold">{t('invoice.headers.invoices', { count: invoices.length })}</h2>
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+              <h2 className="text-2xl font-semibold">{t('invoice.headers.invoices', { count: invoices.length })}</h2>
+              <Button onClick={() => setOpenDialog('invoice')} data-testid="create-invoice-btn">
+                <Plus className="mr-2 h-4 w-4" />Yeni Fatura
+              </Button>
+            </div>
 
             <div className="space-y-4">
               {invoices.map((invoice) => (
@@ -591,6 +632,11 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
         <SupplierDialog open={openDialog === 'supplier'} onClose={() => { setOpenDialog(null); loadSuppliers(true); }} />
         <BankAccountDialog open={openDialog === 'bank'} onClose={() => { setOpenDialog(null); loadBanks(true); refreshDashboard(); }} />
         <InventoryDialog open={openDialog === 'inventory'} onClose={() => { setOpenDialog(null); loadInventory(true); }} />
+        <InvoiceFormDialog
+          open={openDialog === 'invoice'}
+          onClose={() => closeInvoiceDialog(false)}
+          onCreated={() => closeInvoiceDialog(true)}
+        />
       </div>
     </>
   );
