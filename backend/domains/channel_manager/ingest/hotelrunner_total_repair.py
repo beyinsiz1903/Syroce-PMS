@@ -54,6 +54,8 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
 
     latest_payloads: dict[tuple[str, str], dict[str, Any]] = {}
     payload_sources: dict[tuple[str, str], str] = {}
+    linked_booking_keys: dict[tuple[str, str], tuple[str, str]] = {}
+    imported_record_ids: dict[tuple[str, str], str] = {}
 
     def remember_payload(
         *,
@@ -128,6 +130,7 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
                 "tenant_id": 1,
                 "hr_number": 1,
                 "external_id": 1,
+                "pms_booking_id": 1,
                 "raw_data": 1,
                 "total": 1,
                 "rooms": 1,
@@ -153,18 +156,30 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
             payload=payload,
             source="hotelrunner_reservation_mirror",
         )
+        tenant_id = str(mirror.get("tenant_id") or "")
+        booking_id = str(mirror.get("pms_booking_id") or "")
+        if tenant_id and booking_id and external_id:
+            linked_booking_keys[(tenant_id, booking_id)] = (
+                tenant_id,
+                str(external_id),
+            )
 
     imported_cursor = (
         database.imported_reservations.find(
             {
-                "provider": "hotelrunner",
+                "$or": [
+                    {"provider": "hotelrunner"},
+                    {"raw_payload.hr_number": {"$exists": True, "$ne": ""}},
+                ],
                 "external_reservation_id": {"$exists": True, "$ne": ""},
                 "raw_payload": {"$type": "object"},
             },
             {
                 "_id": 0,
+                "id": 1,
                 "tenant_id": 1,
                 "external_reservation_id": 1,
+                "pms_booking_id": 1,
                 "raw_payload": 1,
                 "updated_at": 1,
             },
@@ -174,12 +189,21 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
     )
     imported_payloads = await imported_cursor.to_list(max_events)
     for imported in imported_payloads:
+        tenant_id = str(imported.get("tenant_id") or "")
+        external_id = str(imported.get("external_reservation_id") or "")
+        payload_key = (tenant_id, external_id)
         remember_payload(
-            tenant_id=imported.get("tenant_id"),
-            external_id=imported.get("external_reservation_id"),
+            tenant_id=tenant_id,
+            external_id=external_id,
             payload=imported.get("raw_payload"),
             source="imported_reservation_payload",
         )
+        booking_id = str(imported.get("pms_booking_id") or "")
+        if tenant_id and booking_id and external_id:
+            linked_booking_keys[(tenant_id, booking_id)] = payload_key
+        record_id = str(imported.get("id") or "")
+        if record_id and payload_key not in imported_record_ids:
+            imported_record_ids[payload_key] = record_id
 
     local_record_count = (
         len(events) + len(legacy_events) + len(mirrors) + len(imported_payloads)
@@ -195,12 +219,22 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
 
     tenant_ids = sorted({tenant_id for tenant_id, _ in latest_payloads})
     external_ids = sorted({external_id for _, external_id in latest_payloads})
-    booking_cursor = database.bookings.find(
+    linked_booking_ids = sorted({booking_id for _, booking_id in linked_booking_keys})
+    booking_matchers: list[dict[str, Any]] = [
         {
             "tenant_id": {"$in": tenant_ids},
             "external_reservation_id": {"$in": external_ids},
-            "booking_source": "ota_import",
-        },
+        }
+    ]
+    if linked_booking_ids:
+        booking_matchers.append(
+            {
+                "tenant_id": {"$in": tenant_ids},
+                "id": {"$in": linked_booking_ids},
+            }
+        )
+    booking_cursor = database.bookings.find(
+        {"$or": booking_matchers},
         {
             "_id": 0,
             "id": 1,
@@ -215,6 +249,10 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
         tenant_id = str(booking.get("tenant_id") or "")
         external_id = str(booking.get("external_reservation_id") or "")
         payload_key = (tenant_id, external_id)
+        if payload_key not in latest_payloads:
+            booking_id = str(booking.get("id") or "")
+            payload_key = linked_booking_keys.get((tenant_id, booking_id), payload_key)
+            external_id = payload_key[1]
         payload = latest_payloads.get(payload_key)
         current_total = booking.get("total_amount")
         if not payload or not matches_legacy_before_tax_total(current_total, payload):
@@ -229,8 +267,6 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
             {
                 "id": booking.get("id"),
                 "tenant_id": tenant_id,
-                "external_reservation_id": external_id,
-                "booking_source": "ota_import",
                 "total_amount": current_total,
             },
             {
@@ -252,12 +288,17 @@ async def reconcile_hotelrunner_guest_totals_from_local_events(
             continue
 
         repaired += 1
-        await database.imported_reservations.update_one(
-            {
+        imported_filter = {
+            "tenant_id": tenant_id,
+            "external_reservation_id": external_id,
+        }
+        if imported_record_ids.get(payload_key):
+            imported_filter = {
                 "tenant_id": tenant_id,
-                "provider": "hotelrunner",
-                "external_reservation_id": external_id,
-            },
+                "id": imported_record_ids[payload_key],
+            }
+        await database.imported_reservations.update_one(
+            imported_filter,
             {
                 "$set": {
                     "total_amount": guest_total,
