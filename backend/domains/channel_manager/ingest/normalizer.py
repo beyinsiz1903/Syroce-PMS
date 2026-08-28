@@ -9,6 +9,8 @@ import hashlib
 import json
 from typing import Any
 
+from domains.channel_manager.ingest.hotelrunner_pricing import hotelrunner_guest_total
+
 
 def _safe_str(v: Any) -> str:
     return str(v) if v is not None else ""
@@ -87,18 +89,9 @@ def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
     adults = int(first_room.get("total_adult") or first_room.get("adults") or payload.get("adults", 1) or 1)
     children = len(first_room.get("child_ages", [])) or int(first_room.get("children") or payload.get("children", 0) or 0)
 
-    # Total: prefer room-level price for exploded sub-reservations, then reservation total
-    room_price = float(first_room.get("price", 0) or 0)
-    reservation_total = float(payload.get("total", 0.0) or 0.0)
-    # If this payload was exploded from a multi-room reservation (has _exploded_from),
-    # use the per-room price. Otherwise use the reservation total.
-    if payload.get("_exploded_from") and room_price > 0:
-        total_amount = room_price
-    elif room_price > 0 and len(rooms) == 1:
-        # Single room after explosion — use room price
-        total_amount = room_price
-    else:
-        total_amount = reservation_total
+    # HotelRunner's price is before tax; total is the guest-payable after-tax
+    # amount. Preserve the provider grand total instead of recalculating taxes.
+    total_amount = hotelrunner_guest_total(payload)
 
     # Status: state > status
     # For exploded sub-reservations, check room-level cancellation first
@@ -137,7 +130,7 @@ def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
         "provider_room_number": _safe_str(first_room.get("number") or first_room.get("room_number", "")),
         "rate_plan_code": rate_plan,
         "currency": _safe_str(payload.get("currency", "TRY")),
-        "total_amount": total_amount,
+        "total_amount": total_amount if total_amount is not None else 0.0,
         "status": canonical_status,
         "provider_last_modified_at": last_mod,
         "source_system": _safe_str(payload.get("channel") or payload.get("channel_display", "")),
