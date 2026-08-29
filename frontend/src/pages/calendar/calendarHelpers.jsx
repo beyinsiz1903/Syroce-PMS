@@ -221,6 +221,28 @@ export const getRateTypeInfo = (booking) => {
   return rateTypes[booking.rate_type] || { label: booking.rate_type?.toUpperCase() || 'STD', color: 'text-gray-300' };
 };
 
+/**
+ * Flatten the unified Syroce rate grid into one visible room-type/day rate.
+ * The reservation calendar has no rate-plan row, so when several plans exist
+ * it shows the lowest configured positive selling rate. Reservation totals
+ * are intentionally not an input: an OTA booking must never rewrite the
+ * hotel's public calendar price label.
+ */
+export const buildCalendarRateLookup = (grid = []) => {
+  const lookup = {};
+  for (const row of Array.isArray(grid) ? grid : []) {
+    const roomType = row?.pms_room_type || row?.room_type_name;
+    if (!roomType) continue;
+    for (const day of Array.isArray(row?.dates) ? row.dates : []) {
+      const rate = Number(day?.rate);
+      if (!day?.date || !Number.isFinite(rate) || rate <= 0) continue;
+      const key = `${roomType}|${day.date}`;
+      if (lookup[key] == null || rate < lookup[key]) lookup[key] = rate;
+    }
+  }
+  return lookup;
+};
+
 // Booking arrival/stayover/departure status
 export const getBookingStatus = (booking, date) => {
   const dayStr = toDateStringUTC(date);

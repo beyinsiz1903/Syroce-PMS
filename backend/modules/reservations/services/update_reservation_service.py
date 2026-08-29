@@ -4,6 +4,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException, Request, status
 
@@ -94,6 +95,12 @@ class UpdateReservationService:
             if not existing_booking:
                 raise HTTPException(status_code=404, detail="Booking not found")
 
+            await self._validate_date_changes(
+                tenant_id=tenant_context.tenant_id,
+                existing_booking=existing_booking,
+                booking_data=normalized_payload,
+            )
+
             update_data = await self._build_update_data(
                 tenant_id=tenant_context.tenant_id,
                 booking_id=booking_id,
@@ -150,22 +157,86 @@ class UpdateReservationService:
                 update_data.pop("status", None)
 
             else:
-                # Non-check-in/check-out status changes: handle room updates manually
-                if room_changed and existing_booking.get("room_id"):
-                    await self.repository.update_room_for_tenant(
-                        tenant_context.tenant_id,
-                        existing_booking["room_id"],
-                        {"status": "available", "current_booking_id": None},
+                # Physical room state is updated only after the booking write
+                # succeeds. Mutating it here would strand rooms on an
+                # optimistic-lock conflict.
+                pass
+
+            # Keep room-night locks aligned with room/date edits. Run this
+            # after transition-specific payload normalization (a combined
+            # check-in request may intentionally remove room_id) but before
+            # the booking write so conflicts fail closed.
+            allocation_reassigned = False
+            stay_changed = any(field in update_data for field in ("room_id", "check_in", "check_out"))
+            if stay_changed and effective_status not in ("cancelled", "no_show", "checked_out"):
+                effective_room_id = update_data.get("room_id", existing_booking.get("room_id"))
+                if effective_room_id:
+                    from core.atomic_booking import BookingConflictError, assign_room_atomic
+
+                    try:
+                        await assign_room_atomic(
+                            tenant_id=tenant_context.tenant_id,
+                            booking_id=booking_id,
+                            room_id=effective_room_id,
+                            check_in=update_data.get("check_in", existing_booking.get("check_in")),
+                            check_out=update_data.get("check_out", existing_booking.get("check_out")),
+                            correlation_id=correlation_id,
+                        )
+                        allocation_reassigned = True
+                    except BookingConflictError as exc:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=str(exc),
+                        ) from exc
+
+            async def restore_original_allocation() -> None:
+                if not allocation_reassigned or not existing_booking.get("room_id"):
+                    return
+                try:
+                    from core.atomic_booking import assign_room_atomic
+
+                    await assign_room_atomic(
+                        tenant_id=tenant_context.tenant_id,
+                        booking_id=booking_id,
+                        room_id=existing_booking["room_id"],
+                        check_in=existing_booking["check_in"],
+                        check_out=existing_booking["check_out"],
+                        correlation_id=f"{correlation_id}:rollback",
+                    )
+                except Exception as rollback_exc:
+                    logger.critical(
+                        "Reservation allocation rollback failed booking=%s: %s",
+                        booking_id,
+                        rollback_exc,
                     )
 
-                if room_changed and effective_status == "checked_in":
-                    await self.repository.update_room_for_tenant(
+            # Apply remaining field updates with optimistic locking (INV-4)
+            if update_data:
+                expected_version = existing_booking.get("_version")
+                try:
+                    version_ok = await self.repository.update_booking(
                         tenant_context.tenant_id,
-                        update_data["room_id"],
-                        {"status": "occupied", "current_booking_id": booking_id},
+                        booking_id,
+                        update_data,
+                        expected_version=expected_version,
                     )
+                except Exception:
+                    await restore_original_allocation()
+                    raise
+                if not version_ok:
+                    await restore_original_allocation()
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Concurrent modification detected. Please retry.",
+                    )
+            updated_booking = await self.repository.get_booking_for_tenant(tenant_context.tenant_id, booking_id)
 
-            # Release room-night locks when status transitions to cancelled/no_show (INV-6)
+            if not updated_booking:
+                raise HTTPException(status_code=500, detail="Booking update failed")
+
+            # Release inventory only after the cancellation/no-show write is
+            # durable. Otherwise an optimistic-lock failure could leave an
+            # active reservation without its room-night protection.
             if new_status in ("cancelled", "no_show") and old_status not in ("cancelled", "no_show"):
                 try:
                     from core.atomic_booking import release_booking_nights
@@ -176,27 +247,31 @@ class UpdateReservationService:
                         reason=f"{new_status}:update_service",
                         correlation_id=correlation_id,
                     )
-                except Exception:
-                    pass
-
-            # Apply remaining field updates with optimistic locking (INV-4)
-            if update_data:
-                expected_version = existing_booking.get("_version")
-                version_ok = await self.repository.update_booking(
-                    tenant_context.tenant_id,
-                    booking_id,
-                    update_data,
-                    expected_version=expected_version,
-                )
-                if not version_ok:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail="Concurrent modification detected. Please retry.",
+                except Exception as release_exc:
+                    logger.exception(
+                        "Reservation lock release failed booking=%s: %s",
+                        booking_id,
+                        release_exc,
                     )
-            updated_booking = await self.repository.get_booking_for_tenant(tenant_context.tenant_id, booking_id)
 
-            if not updated_booking:
-                raise HTTPException(status_code=500, detail="Booking update failed")
+            actual_room_changed = updated_booking.get("room_id") != existing_booking.get("room_id")
+            if actual_room_changed:
+                old_room_id = existing_booking.get("room_id")
+                if old_room_id:
+                    await self.repository.update_room_for_tenant(
+                        tenant_context.tenant_id,
+                        old_room_id,
+                        {
+                            "status": "dirty" if effective_status == "checked_in" else "available",
+                            "current_booking_id": None,
+                        },
+                    )
+                if effective_status == "checked_in":
+                    await self.repository.update_room_for_tenant(
+                        tenant_context.tenant_id,
+                        updated_booking["room_id"],
+                        {"status": "occupied", "current_booking_id": booking_id},
+                    )
 
             changes = {
                 field: {
@@ -422,6 +497,72 @@ class UpdateReservationService:
             return {}
 
         return update_data
+
+    async def _validate_date_changes(
+        self,
+        *,
+        tenant_id: str,
+        existing_booking: dict[str, Any],
+        booking_data: dict[str, Any],
+    ) -> None:
+        """Block calendar backdating and immutable operational history edits."""
+        date_fields = {field for field in ("check_in", "check_out") if field in booking_data}
+        if not date_fields:
+            return
+
+        def parsed_date(value: Any, label: str):
+            try:
+                return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date()
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Gecersiz {label} tarihi",
+                ) from exc
+
+        old_check_in = parsed_date(existing_booking.get("check_in"), "giris")
+        old_check_out = parsed_date(existing_booking.get("check_out"), "cikis")
+        new_check_in = parsed_date(booking_data.get("check_in", existing_booking.get("check_in")), "giris")
+        new_check_out = parsed_date(booking_data.get("check_out", existing_booking.get("check_out")), "cikis")
+        check_in_changed = "check_in" in booking_data and new_check_in != old_check_in
+        check_out_changed = "check_out" in booking_data and new_check_out != old_check_out
+
+        if new_check_out <= new_check_in:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cikis tarihi giris tarihinden sonra olmalidir",
+            )
+
+        current_status = (existing_booking.get("status") or "").lower()
+        if check_in_changed and current_status == "checked_in":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=("Giris yapilmis rezervasyonun giris tarihi takvimden degistirilemez. Oda degisikligi veya konaklama uzatma islemini kullanin."),
+            )
+        if (check_in_changed or check_out_changed) and current_status == "checked_out":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cikis yapilmis rezervasyonun konaklama tarihleri degistirilemez",
+            )
+
+        if check_in_changed:
+            settings = await self.repository.get_calendar_settings_for_tenant(tenant_id)
+            timezone_name = settings.get("timezone") or "Europe/Istanbul"
+            try:
+                local_today = datetime.now(ZoneInfo(timezone_name)).date()
+            except ZoneInfoNotFoundError:
+                local_today = datetime.now(UTC).date()
+            try:
+                business_date = parsed_date(settings.get("business_date") or local_today.isoformat(), "PMS is gunu")
+            except HTTPException:
+                # The current calendar day remains the safe lower bound when
+                # legacy tenant settings contain a malformed business date.
+                business_date = local_today
+            effective_min_date = min(business_date, local_today)
+            if new_check_in < effective_min_date:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Gecmis tarihe rezervasyon tasinamaz (minimum: {effective_min_date.isoformat()})",
+                )
 
     def _normalize_payload(self, booking_data: dict[str, Any]) -> dict[str, Any]:
         normalized: dict[str, Any] = {}

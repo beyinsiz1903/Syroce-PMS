@@ -31,6 +31,7 @@ import {
   getUnassignedUrgency,
   sortByUrgency,
   roomOccupancyStatus,
+  buildCalendarRateLookup,
 } from './calendar';
 import { useTranslation } from 'react-i18next';
 
@@ -260,6 +261,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     total_amount: 0, base_rate: 0, status: 'confirmed'
   });
   const [occupancyPricingRules, setOccupancyPricingRules] = useState({});
+  const [calendarRates, setCalendarRates] = useState({});
 
   // Find room
   const [findRoomCriteria, setFindRoomCriteria] = useState({
@@ -331,13 +333,14 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       const endDate = new Date(currentDate);
       endDate.setDate(endDate.getDate() + daysToShow + 7);
 
-      const [roomsRes, bookingsRes, guestsRes, companiesRes, blocksRes, pricingRes] = await Promise.all([
+      const [roomsRes, bookingsRes, guestsRes, companiesRes, blocksRes, pricingRes, rateGridRes] = await Promise.all([
         axios.get('/pms/rooms'),
         axios.get(`/pms/bookings?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&limit=500`),
         axios.get('/pms/guests').catch(() => ({ data: [] })),
         axios.get('/companies').catch(() => ({ data: [] })),
         axios.get('/pms/room-blocks?status=active').catch(() => ({ data: { blocks: [] } })),
-        axios.get('/channel-manager/unified-rate-manager/pricing-settings').catch(() => ({ data: { rules: {} } }))
+        axios.get('/channel-manager/unified-rate-manager/pricing-settings').catch(() => ({ data: { rules: {} } })),
+        axios.get(`/channel-manager/unified-rate-manager/grid?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}`).catch(() => ({ data: { grid: [] } }))
       ]);
 
       // Race guard: bu fetch tamamlanırken kullanıcı yeni navigasyon yaptıysa
@@ -356,6 +359,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       setCompanies(companiesRes.data || []);
       setRoomBlocks(blocksRes.data.blocks || []);
       setOccupancyPricingRules(pricingRes.data?.rules || {});
+      setCalendarRates(buildCalendarRateLookup(rateGridRes.data?.grid || []));
 
       // Build group bookings summary
       const rawBookings = bookingsRes.data || [];
@@ -790,6 +794,26 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       return;
     }
 
+    const targetDateStr = newDate.toISOString().split('T')[0];
+    const oldDateStr = oldDate.toISOString().split('T')[0];
+    const localToday = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+    const minDate = hotelBusinessDate && hotelBusinessDate < localToday ? hotelBusinessDate : localToday;
+    if (targetDateStr < minDate) {
+      toast.error(`Geçmiş tarihe rezervasyon taşınamaz (minimum: ${minDate})`);
+      setDraggingBooking(null);
+      return;
+    }
+    if (draggingBooking.status === 'checked_in' && targetDateStr !== oldDateStr) {
+      toast.error('Giriş yapılmış rezervasyonun giriş tarihi değiştirilemez. Yalnızca oda değişikliği yapabilirsiniz.');
+      setDraggingBooking(null);
+      return;
+    }
+    if (draggingBooking.status === 'checked_out' && targetDateStr !== oldDateStr) {
+      toast.error('Çıkış yapılmış rezervasyonun tarihleri değiştirilemez.');
+      setDraggingBooking(null);
+      return;
+    }
+
     const daysDiff = Math.ceil((new Date(draggingBooking.check_out) - new Date(draggingBooking.check_in)) / (1000 * 60 * 60 * 24));
     const newCheckIn = new Date(newDate);
     const newCheckOut = new Date(newDate);
@@ -1066,6 +1090,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onDragEnd={handleDragEnd}
           onBookingDoubleClick={handleBookingDoubleClick}
           showOccupancyBand={viewPreferences.showOccupancy && !viewPreferences.operationMode}
+          dailyRates={calendarRates}
         />
         </div>
         {viewPreferences.showTimeline && !viewPreferences.operationMode && (
