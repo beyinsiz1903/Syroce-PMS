@@ -328,7 +328,7 @@ jobs:
               --tail -1 >"$logs_file" 2>/dev/null; then
               marker="$(
                 grep -E \
-                  'HotelRunner local gross-total reconciliation completed event_count=[0-9]+ candidate_count=[0-9]+ repaired_count=[0-9]+' \
+                  'HotelRunner local gross-total reconciliation completed event_count=[0-9]+ candidate_count=[0-9]+( matched_booking_count=[0-9]+ legacy_signature_count=[0-9]+)? repaired_count=[0-9]+' \
                   "$logs_file" | tail -n 1 || true
               )"
             fi
