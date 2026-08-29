@@ -1,16 +1,17 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axiosGet, axiosPatch } = vi.hoisted(() => ({
+const { axiosGet, axiosPatch, axiosPost } = vi.hoisted(() => ({
   axiosGet: vi.fn(),
   axiosPatch: vi.fn(),
+  axiosPost: vi.fn(),
 }));
 
 vi.mock('axios', () => ({
   default: {
     get: axiosGet,
     patch: axiosPatch,
-    post: vi.fn(),
+    post: axiosPost,
   },
 }));
 
@@ -48,6 +49,7 @@ describe('KBSNotification pending guest identity editing', () => {
       },
     });
     axiosPatch.mockResolvedValue({ data: { status: 'updated' } });
+    axiosPost.mockResolvedValue({ data: { created: true } });
   });
 
   it('opens the identity form from the pending-row warning and makes the guest sendable after save', async () => {
@@ -92,6 +94,60 @@ describe('KBSNotification pending guest identity editing', () => {
         name: 'idMissing: Abdulhakim Tavlasoğlu',
       })).not.toBeInTheDocument();
     });
+    expect(screen.getByRole('button', { name: 'send' })).toBeEnabled();
+  });
+
+  it('queues the booking without submitting or navigating the surrounding page', async () => {
+    render(
+      <KBSNotification
+        bookings={[{
+          id: 'booking-110',
+          guest_id: 'guest-110',
+          status: 'checked_in',
+          guest_name: 'Abdulhakim Tavlasoğlu',
+          room_number: '110',
+          nationality: 'TC',
+          id_number: '12345678901',
+          birth_date: '1990-05-12',
+        }]}
+      />,
+    );
+
+    const queueButton = screen.getByRole('button', { name: 'addToQueue' });
+    expect(queueButton).toHaveAttribute('type', 'button');
+    fireEvent.click(queueButton);
+
+    await waitFor(() => {
+      expect(axiosPost).toHaveBeenCalledWith('/kbs/queue', {
+        booking_id: 'booking-110',
+        action: 'checkin',
+      });
+    });
+  });
+
+  it('rehydrates saved identity fields from the linked guest after the page remounts', () => {
+    render(
+      <KBSNotification
+        bookings={[{
+          id: 'booking-110',
+          guest_id: 'guest-110',
+          status: 'checked_in',
+          guest_name: 'Abdulhakim Tavlasoğlu',
+          room_number: '110',
+          nationality: 'TC',
+        }]}
+        guests={[{
+          id: 'guest-110',
+          id_number: '12345678901',
+          birth_date: '1990-05-12',
+        }]}
+      />,
+    );
+
+    expect(screen.queryByRole('button', {
+      name: 'idMissing: Abdulhakim Tavlasoğlu',
+    })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'addToQueue' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'send' })).toBeEnabled();
   });
 });

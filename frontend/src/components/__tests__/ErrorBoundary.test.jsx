@@ -57,6 +57,19 @@ describe('ErrorBoundary stale chunk recovery', () => {
     expect(window.__syroceForceFreshReload).toHaveBeenCalledOnce();
   });
 
+  it('recognizes Chromium stale-lazy errors even when the HTML bootstrap matcher is missing', () => {
+    delete window.__syroceIsChunkError;
+
+    render(
+      <ErrorBoundary>
+        <BrokenComponent message="Cannot read properties of undefined (reading 'default')" />
+      </ErrorBoundary>,
+    );
+
+    expect(screen.getByText('Uygulamanın yeni sürümü yüklenemedi')).toBeInTheDocument();
+    expect(window.__syroceChunkReloadOnce).toHaveBeenCalledOnce();
+  });
+
   it('keeps the ordinary retry path for non-chunk render failures', () => {
     render(
       <ErrorBoundary>

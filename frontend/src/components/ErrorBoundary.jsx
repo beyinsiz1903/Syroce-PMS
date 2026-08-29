@@ -1,5 +1,17 @@
 import React from "react";
 
+const STALE_LAZY_ERROR_PARTS = [
+  "Dynamically imported module is invalid",
+  "Cannot read properties of undefined (reading 'default')",
+  "._result.default",
+];
+
+function isKnownStaleLazyError(message) {
+  return Boolean(
+    message && STALE_LAZY_ERROR_PARTS.some((part) => message.includes(part))
+  );
+}
+
 export class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -22,9 +34,9 @@ export class ErrorBoundary extends React.Component {
       const msg = error && (error.message || (typeof error === "string" ? error : ""));
       if (
         typeof window !== "undefined" &&
-        typeof window.__syroceIsChunkError === "function" &&
         typeof window.__syroceChunkReloadOnce === "function" &&
-        window.__syroceIsChunkError(msg)
+        ((typeof window.__syroceIsChunkError === "function" && window.__syroceIsChunkError(msg)) ||
+          isKnownStaleLazyError(msg))
       ) {
         const healing = window.__syroceChunkReloadOnce();
         if (healing) return; // reloading now — benign stale-chunk, do not capture
@@ -51,8 +63,8 @@ export class ErrorBoundary extends React.Component {
     const msg = error && (error.message || (typeof error === "string" ? error : ""));
     return Boolean(
       typeof window !== "undefined" &&
-      typeof window.__syroceIsChunkError === "function" &&
-      window.__syroceIsChunkError(msg)
+      ((typeof window.__syroceIsChunkError === "function" && window.__syroceIsChunkError(msg)) ||
+        isKnownStaleLazyError(msg))
     );
   };
 
