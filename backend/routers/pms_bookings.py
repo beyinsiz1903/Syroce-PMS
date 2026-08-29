@@ -209,15 +209,20 @@ async def create_quick_booking(
             await db.guests.insert_one(guest_doc)
 
     # 3) Build BookingCreate and delegate to the standard service
+    guests_count = data.adults + data.children
+    if guests_count < 1:
+        raise HTTPException(status_code=400, detail="En az bir misafir gerekli")
+
     booking_data = BookingCreate(
         guest_id=guest_id,
         room_id=data.room_id,
         check_in=data.check_in,
         check_out=data.check_out,
-        adults=1,
-        children=0,
-        guests_count=1,
+        adults=data.adults,
+        children=data.children,
+        guests_count=guests_count,
         total_amount=data.total_amount,
+        base_rate=data.daily_rate,
         channel="direct",
         source_channel="direct",
         origin="ui",

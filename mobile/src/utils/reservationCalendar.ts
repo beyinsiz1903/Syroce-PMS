@@ -72,11 +72,14 @@ export type CalReservation = {
   id: string;
   room_id?: string;
   room_number?: string;
+  room_type?: string;
   guest_name?: string;
   status?: string;
   check_in?: string;
   check_out?: string;
   total_amount?: number;
+  paid_amount?: number;
+  balance?: number;
   vip_status?: boolean;
 };
 

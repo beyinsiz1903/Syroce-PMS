@@ -1,4 +1,4 @@
-import { api } from './client';
+import { api, apiRequest } from './client';
 
 export type Booking = {
   id: string;
@@ -172,5 +172,36 @@ export async function walkInQuick(payload: WalkInPayload): Promise<unknown> {
     rate_amount: 0,
     payment_method: 'cash',
     ...payload,
+  });
+}
+
+export type QuickBookingPayload = {
+  guest_name: string;
+  room_id: string;
+  check_in: string;
+  check_out: string;
+  total_amount: number;
+  adults?: number;
+  children?: number;
+  daily_rate?: number;
+};
+
+export type QuickBookingResult = {
+  id?: string;
+  booking_id?: string;
+  guest_name?: string;
+  room_number?: string;
+};
+
+// POST /api/pms/quick-booking — creates a dated direct reservation without
+// auto check-in. The stable key makes a lost response / retry safe.
+export async function createQuickBooking(
+  payload: QuickBookingPayload,
+  idempotencyKey: string,
+): Promise<QuickBookingResult> {
+  return apiRequest<QuickBookingResult>('/api/pms/quick-booking', {
+    method: 'POST',
+    body: payload,
+    headers: { 'Idempotency-Key': idempotencyKey },
   });
 }
