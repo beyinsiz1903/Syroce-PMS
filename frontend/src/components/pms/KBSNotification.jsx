@@ -28,6 +28,7 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
   const [sending, setSending] = useState(false);
   const [editDialog, setEditDialog] = useState(null);
   const [editForm, setEditForm] = useState({ id_number: '', birth_date: '' });
+  const [savingGuestInfo, setSavingGuestInfo] = useState(false);
 
   // Faz 1 kuyruk altyapısı entegrasyonu
   const [queueJobs, setQueueJobs] = useState([]);
@@ -382,18 +383,25 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
 
   const saveGuestInfo = async () => {
     if (!editDialog) return;
+    setSavingGuestInfo(true);
     try {
-      await axios.patch(`/pms/guests/${editDialog.guest_id}/preferences`, {
-        id_number: editForm.id_number,
+      const normalizedForm = {
+        id_number: editForm.id_number.trim(),
         birth_date: editForm.birth_date,
+      };
+      await axios.patch(`/pms/guests/${editDialog.guest_id}/preferences`, {
+        id_number: normalizedForm.id_number,
+        birth_date: normalizedForm.birth_date,
       });
       setPendingGuests(prev => prev.map(p =>
-        p.id === editDialog.id ? { ...p, id_number: editForm.id_number, birth_date: editForm.birth_date } : p
+        p.id === editDialog.id ? { ...p, ...normalizedForm } : p
       ));
       toast.success(tk('updateSuccess'));
       setEditDialog(null);
     } catch {
       toast.error(tk('updateError'));
+    } finally {
+      setSavingGuestInfo(false);
     }
   };
 
@@ -590,7 +598,18 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
                     <span className="font-medium">{guest.guest_name}</span>
                     <Badge variant="outline">{tk('room')} {guest.room_number}</Badge>
                     <Badge variant="secondary">{guest.nationality}</Badge>
-                    {!guest.id_number && <Badge variant="destructive">{tk('idMissing')}</Badge>}
+                    {!guest.id_number && (
+                      <button
+                        type="button"
+                        onClick={() => openEditDialog(guest)}
+                        className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                        aria-label={`${tk('idMissing')}: ${guest.guest_name}`}
+                      >
+                        <Badge variant="destructive" className="cursor-pointer hover:bg-red-700">
+                          {tk('idMissing')}
+                        </Badge>
+                      </button>
+                    )}
                   </div>
                   <div className="text-xs text-gray-500 mt-1">
                     {tk('checkinDate')} {guest.check_in ? new Date(guest.check_in).toLocaleDateString() : '-'} |
@@ -603,9 +622,15 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
                     disabled={enqueuingId === guest.id}>
                     <ListPlus className="h-3 w-3 mr-1" /> {tk('addToQueue')}
                   </Button>
-                  <Button size="sm" onClick={() => sendToKBS(guest)} disabled={!guest.id_number || sending}>
-                    <Send className="h-3 w-3 mr-1" /> {tk('send')}
-                  </Button>
+                  {!guest.id_number || !guest.birth_date ? (
+                    <Button size="sm" variant="outline" onClick={() => openEditDialog(guest)}>
+                      <UserCog className="h-3 w-3 mr-1" /> {tk('updateInfo')}
+                    </Button>
+                  ) : (
+                    <Button size="sm" onClick={() => sendToKBS(guest)} disabled={sending}>
+                      <Send className="h-3 w-3 mr-1" /> {tk('send')}
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -756,24 +781,30 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
             <div className="space-y-4">
               <p className="text-sm text-gray-600">{editDialog.guest_name} - {tk('room')} {editDialog.room_number}</p>
               <div>
-                <Label>{tk('idLabel')}</Label>
+                <Label htmlFor="kbs-guest-id-number">{tk('idLabel')}</Label>
                 <Input
+                  id="kbs-guest-id-number"
                   value={editForm.id_number}
                   onChange={e => setEditForm({ ...editForm, id_number: e.target.value })}
                   placeholder={tk('idPlaceholder')}
+                  autoComplete="off"
                 />
               </div>
               <div>
-                <Label>{tk('birthDateLabel')}</Label>
+                <Label htmlFor="kbs-guest-birth-date">{tk('birthDateLabel')}</Label>
                 <Input
+                  id="kbs-guest-birth-date"
                   type="date"
                   value={editForm.birth_date}
                   onChange={e => setEditForm({ ...editForm, birth_date: e.target.value })}
                 />
               </div>
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setEditDialog(null)}>{tk('cancel')}</Button>
-                <Button onClick={saveGuestInfo}>{tk('save')}</Button>
+                <Button variant="outline" onClick={() => setEditDialog(null)} disabled={savingGuestInfo}>{tk('cancel')}</Button>
+                <Button onClick={saveGuestInfo} disabled={savingGuestInfo}>
+                  {savingGuestInfo && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  {tk('save')}
+                </Button>
               </div>
             </div>
           )}
