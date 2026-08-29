@@ -1009,28 +1009,16 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
             <ul className="flex flex-wrap items-center gap-x-4 gap-y-2" role="list" aria-label="Rezervasyon durumu renk kodları">
               <li className="flex items-center gap-1.5" role="listitem">
-                <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#16a34a' }} aria-hidden="true"></div>
-                <span>İçeride (Check-in)</span>
-              </li>
-              <li className="flex items-center gap-1.5" role="listitem">
-                <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#f97316' }} aria-hidden="true"></div>
-                <span>{t('cm.pages_ReservationCalendar.bugun_gelis')}</span>
-              </li>
-              <li className="flex items-center gap-1.5" role="listitem">
                 <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#2563eb' }} aria-hidden="true"></div>
-                <span>Onaylanmış</span>
+                <span>Giriş Yapmamış</span>
               </li>
               <li className="flex items-center gap-1.5" role="listitem">
-                <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#f87171' }} aria-hidden="true"></div>
-                <span>{t('cm.pages_ReservationCalendar.gecmis_check_out')}</span>
+                <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#16a34a' }} aria-hidden="true"></div>
+                <span>İçeride</span>
               </li>
               <li className="flex items-center gap-1.5" role="listitem">
-                <div className="w-2 h-2 rounded-full bg-green-500" aria-hidden="true"></div>
-                <span>{t('cm.pages_ReservationCalendar.musait')}</span>
-              </li>
-              <li className="flex items-center gap-1.5" role="listitem">
-                <div className="w-2 h-2 rounded-full bg-red-500" aria-hidden="true"></div>
-                <span>{t('cm.pages_ReservationCalendar.dolu')}</span>
+                <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#dc2626' }} aria-hidden="true"></div>
+                <span>Çıkış Yapılmış</span>
               </li>
             </ul>
             <div className={`items-center gap-3 text-gray-400 ${viewPreferences.compactMode ? 'hidden 2xl:flex' : 'flex'}`}>

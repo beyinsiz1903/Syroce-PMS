@@ -6,7 +6,7 @@ import {
   isBlockStart, calculateBlockSpan, calculateBookingSpan,
   getBookingStatusColor, getBookingStatus, getSourceColor,
   getUnassignedBookingsForType, computeUnassignedLanes,
-  getUnassignedUrgency, getUrgencyBarColors,
+  getUnassignedUrgency,
   isBlockedRoomStatus, cellOccupancyStatus, getCellOccupancyTint,
 } from "./calendarHelpers";
 import { useTranslation } from 'react-i18next';
@@ -309,24 +309,19 @@ const CalendarGrid = ({
                     </div>
                   </div>
 
-                  {/* Unassigned Bookings Row — urgency-colored */}
+                  {/* Unassigned bookings stay visually neutral; their cards use
+                      the same three lifecycle colors as assigned bookings. */}
                   {unassignedForType.length > 0 && (() => {
                     const { lanes, maxLane } = computeUnassignedLanes(unassignedForType);
                     const rowHeight = (maxLane + 1) * LANE_H + 6;
-                    const hasOverdue = unassignedForType.some(b => getUnassignedUrgency(b).level === 'overdue');
-                    const hasToday = unassignedForType.some(b => getUnassignedUrgency(b).level === 'today');
-                    const labelColor = hasOverdue ? 'text-red-700' : hasToday ? 'text-amber-700' : 'text-blue-700';
-                    const dotColor = hasOverdue ? 'bg-red-500' : hasToday ? 'bg-amber-500' : 'bg-blue-500';
-                    const rowBg = hasOverdue ? 'bg-red-50/30' : hasToday ? 'bg-amber-50/30' : 'bg-blue-50/20';
-                    const sidebarBg = hasOverdue ? 'bg-red-50/60' : hasToday ? 'bg-amber-50/60' : 'bg-blue-50/40';
                     return (
-                      <div className={`flex border-b border-dashed border-blue-200 ${rowBg}`} style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
-                        <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-2 border-r border-gray-200 ${sidebarBg}`} style={{ height: `${rowHeight}px` }}>
+                      <div className="flex border-b border-slate-200 bg-slate-50/30" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
+                        <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-2 border-r border-gray-200 bg-slate-50/80`} style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-1">
-                            <div className={`w-2 h-2 ${dotColor} rounded-full ${hasOverdue || hasToday ? 'animate-pulse' : ''}`}></div>
-                            <div className={`font-bold text-[9px] ${labelColor}`}>{t('cm.pages_calendar_CalendarGrid.atanmamis')}</div>
+                            <div className="w-2 h-2 bg-slate-400 rounded-full"></div>
+                            <div className="font-bold text-[9px] text-slate-700">{t('cm.pages_calendar_CalendarGrid.atanmamis')}</div>
                           </div>
-                          <div className={`text-[10px] ml-3 ${hasOverdue ? 'text-red-500 font-semibold' : hasToday ? 'text-amber-500 font-semibold' : 'text-blue-500'}`}>
+                          <div className="text-[10px] ml-3 text-slate-500">
                             {unassignedForType.length} rez.
                           </div>
                         </div>
@@ -355,7 +350,7 @@ const CalendarGrid = ({
                             const endIdx = visibleEndIdx >= 0 ? visibleEndIdx : dateRange.length;
                             const span = Math.max(endIdx - startIdx, 1);
                             const urgency = getUnassignedUrgency(booking);
-                            const uColors = getUrgencyBarColors(urgency);
+                            const statusColor = getBookingStatusColor(booking);
                             const fullGuestName = formatGuestName(booking.guest_name) || 'Misafir';
                             const displayGuestName = compactGuestName(fullGuestName, span === 1 ? 10 : 20);
                             return (
@@ -369,31 +364,25 @@ const CalendarGrid = ({
                                 onDragEnd={onDragEnd}
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
-                                className={`absolute rounded text-[10px] shadow-sm hover:shadow-lg hover:-translate-y-px transition-all cursor-move z-20 border-2 outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${urgency.level === 'overdue' ? 'ring-1 ring-red-400 ring-offset-1' : ''} ${urgency.level === 'today' ? 'ring-1 ring-amber-300' : ''}`}
+                                className="absolute rounded text-[10px] text-white shadow-sm hover:shadow-lg hover:-translate-y-px transition-all cursor-move z-20 border-2 outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                                 style={{
                                   left: `${startIdx * CELL_W + 2}px`,
                                   top: `${lane * LANE_H + 3}px`,
                                   width: `${span * CELL_W - 4}px`,
                                   height: `${LANE_H - 6}px`,
-                                  backgroundColor: uColors.bg,
-                                  borderColor: uColors.border,
+                                  backgroundColor: statusColor.bg,
+                                  borderColor: statusColor.border,
                                 }}
                                 data-testid={`unassigned-booking-${booking.id}`}
                                 title={`${fullGuestName} — ${urgency.label} — Odaya sürükleyin`}
                               >
                                 <div className="flex h-full overflow-hidden">
-                                  <div className="w-[3px] rounded-l shrink-0" style={{ backgroundColor: uColors.stripe }}></div>
                                   <div className="px-1 py-0.5 flex-1 min-w-0 flex items-center gap-1">
                                     <div className="min-w-0 flex-1">
-                                      <div className="font-extrabold text-[10px] truncate leading-tight" style={{ color: uColors.text }}>
+                                      <div className="font-extrabold text-[10px] text-white truncate leading-tight">
                                         {displayGuestName}
                                       </div>
                                     </div>
-                                    <span
-                                      className={`w-2 h-2 rounded-full shrink-0 ${uColors.badge}`}
-                                      title={urgency.label}
-                                      aria-hidden="true"
-                                    />
                                     <span className="sr-only">{urgency.label}</span>
                                   </div>
                                 </div>
@@ -482,10 +471,7 @@ const CalendarGrid = ({
                                 } ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''} ${
                                   inDragSel ? 'bg-indigo-100/70 ring-2 ring-inset ring-indigo-400 z-10' : ''
                                 }`}
-                                style={{
-                                  height: `${rowHeight}px`, minHeight: `${rowHeight}px`, overflow: 'visible',
-                                  ...(past && !roomBlock ? { backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 8px, rgba(0,0,0,0.02) 8px, rgba(0,0,0,0.02) 9px)' } : {})
-                                }}
+                                style={{ height: `${rowHeight}px`, minHeight: `${rowHeight}px`, overflow: 'visible' }}
                                 onClick={() => !covered && !roomBlock && onCellClick(room.id, date)}
                                 onMouseDown={canCreate ? (e) => { if (e.button === 0) { e.preventDefault(); onCellMouseDown?.(room.id, date); } } : undefined}
                                 onMouseEnter={canCreate ? () => onCellMouseEnter?.(room.id, date) : undefined}
@@ -514,7 +500,6 @@ const CalendarGrid = ({
                                     }`}
                                     style={{
                                       width: `${calculateBlockSpan(roomBlock, currentDate, daysToShow) * CELL_W - 4}px`,
-                                      backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.1) 10px, rgba(255,255,255,.1) 20px)',
                                       zIndex: 5
                                     }}
                                     title={`${roomBlock.type.replace('_', ' ').toUpperCase()}: ${roomBlock.reason}\n${roomBlock.start_date} - ${roomBlock.end_date || 'Open-ended'}`}
@@ -581,7 +566,6 @@ const CalendarGrid = ({
                               ? `⚠ Çakışma: Bu oda ${formatConflictRange(conflictInfo.overlap_start, conflictInfo.overlap_end)} tarihlerinde iki rezervasyona sahip (${conflictInfo.guest1 || 'Misafir'} ↔ ${conflictInfo.guest2 || 'Misafir'}). Lütfen birini başka odaya taşıyın.`
                               : fullGuestName;
                             const isDragging = draggingBooking?.id === booking.id;
-                            const isDeparted = booking.status === 'checked_out' || checkOutStr <= refTodayStr;
                             const paxCount = (booking.adults || 0) + (booking.children || 0);
                             const fmtCardDate = (d) => { try { return new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }); } catch { return ''; } };
                             const displayGuestName = compactGuestName(fullGuestName, span === 1 ? 10 : span === 2 ? 18 : 40);
@@ -613,13 +597,6 @@ const CalendarGrid = ({
                                 data-testid={isDragging ? 'reservation-card-dragging' : `booking-bar-${booking.id}`}
                                 title={conflictTitle}
                               >
-                                {isDeparted && (
-                                  <div
-                                    className="absolute inset-0 rounded-md pointer-events-none"
-                                    aria-hidden="true"
-                                    style={{ backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 5px, rgba(0,0,0,0.18) 5px, rgba(0,0,0,0.18) 6px)' }}
-                                  />
-                                )}
                                 <div className="px-2 py-1 relative overflow-hidden" style={{ height: `${BOOKING_H}px` }}>
                                   <div className="font-extrabold text-[12px] truncate pr-4 text-white leading-tight drop-shadow-sm">
                                     {displayGuestName}
