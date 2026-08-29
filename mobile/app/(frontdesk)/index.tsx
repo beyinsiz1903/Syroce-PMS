@@ -247,7 +247,7 @@ export default function TodayScreen() {
             icon="calendar-outline"
             label={tr.today.actionNewReservation}
             tone={c.primary}
-            onPress={() => router.push(ROUTES.reservations)}
+            onPress={() => router.push(ROUTES.newReservation)}
           />
           <QuickAction
             icon="person-add-outline"

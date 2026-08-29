@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, View, type ColorValue } from 'react-native';
 import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,7 +15,7 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 // which is the Tier-1 ergonomic goal — the label/name/testID stay untouched so
 // the smoke matrix keeps resolving every tab.
 function tabIcon(active: IoniconName, inactive: IoniconName) {
-  return ({ color, focused, size }: { color: string; focused: boolean; size: number }) => (
+  return ({ color, focused, size }: { color: ColorValue; focused: boolean; size: number }) => (
     <Ionicons name={focused ? active : inactive} size={size ?? 24} color={color} />
   );
 }
@@ -108,7 +108,7 @@ export default function HomeLayout() {
         name="index"
         options={{
           title: tr.tabs.home,
-          tabBarTestID: 'smoke-tab-home',
+          tabBarButtonTestID: 'smoke-tab-home',
           tabBarIcon: tabIcon('home', 'home-outline'),
         }}
       />
@@ -116,7 +116,7 @@ export default function HomeLayout() {
         name="tasks"
         options={{
           title: tr.tabs.tasks,
-          tabBarTestID: 'smoke-tab-tasks',
+          tabBarButtonTestID: 'smoke-tab-tasks',
           tabBarIcon: tabIcon('checkbox', 'checkbox-outline'),
         }}
       />
@@ -124,7 +124,7 @@ export default function HomeLayout() {
         name="notifications"
         options={{
           title: tr.tabs.notifications,
-          tabBarTestID: 'smoke-tab-notifications',
+          tabBarButtonTestID: 'smoke-tab-notifications',
           tabBarIcon: tabIcon('notifications', 'notifications-outline'),
         }}
       />
@@ -132,7 +132,7 @@ export default function HomeLayout() {
         name="messages"
         options={{
           title: tr.tabs.messages,
-          tabBarTestID: 'smoke-tab-messages',
+          tabBarButtonTestID: 'smoke-tab-messages',
           tabBarIcon: tabIcon('chatbubble-ellipses', 'chatbubble-ellipses-outline'),
         }}
       />
@@ -140,7 +140,7 @@ export default function HomeLayout() {
         name="profile"
         options={{
           title: tr.tabs.profile,
-          tabBarTestID: 'smoke-tab-profile',
+          tabBarButtonTestID: 'smoke-tab-profile',
           tabBarIcon: tabIcon('person-circle', 'person-circle-outline'),
         }}
       />
@@ -152,7 +152,7 @@ export default function HomeLayout() {
         options={{
           title: tr.tabs.today,
           href: null,
-          tabBarTestID: 'smoke-tab-today',
+          tabBarButtonTestID: 'smoke-tab-today',
           tabBarIcon: tabIcon('today', 'today-outline'),
         }}
       />
@@ -161,7 +161,7 @@ export default function HomeLayout() {
         options={{
           title: tr.tabs.approvals,
           href: null,
-          tabBarTestID: 'smoke-tab-approvals',
+          tabBarButtonTestID: 'smoke-tab-approvals',
           tabBarIcon: tabIcon('checkmark-done-circle', 'checkmark-done-circle-outline'),
         }}
       />
@@ -170,7 +170,7 @@ export default function HomeLayout() {
         options={{
           title: tr.tabs.search,
           href: null,
-          tabBarTestID: 'smoke-tab-search',
+          tabBarButtonTestID: 'smoke-tab-search',
           tabBarIcon: tabIcon('search', 'search-outline'),
         }}
       />

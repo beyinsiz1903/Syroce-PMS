@@ -11,6 +11,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -22,7 +23,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { Badge, Body, EmptyState, FadeInView, H1, H2, Muted } from '../../src/components/ui';
+import { Badge, Body, Button, EmptyState, FadeInView, H1, H2, Muted } from '../../src/components/ui';
 import { DatePicker } from '../../src/components/DatePicker';
 import { FilterChips, type FilterChipOption } from '../../src/components/FilterChips';
 import { cardShadow, radius, spacing, useTheme, type ThemeColors } from '../../src/theme';
@@ -39,6 +40,7 @@ import { blockCoversDay } from '../../src/utils/availabilityGrid';
 import { errorMessage, isOffline } from '../../src/utils/errors';
 import { formatCurrency, formatDate } from '../../src/utils/format';
 import { haptic } from '../../src/hooks/useHaptic';
+import { ROUTES } from '../../src/navigation/routes';
 import {
   ROOM_COL_WIDTH,
   ROW_HEIGHT,
@@ -256,6 +258,7 @@ function ReservationBar({
 
 export default function ReservationCalendarScreen() {
   const c = useTheme();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
 
@@ -523,7 +526,16 @@ export default function ReservationCalendarScreen() {
         style={{ flex: 1, paddingTop: spacing.md, paddingBottom: insets.bottom }}
       >
         <View style={{ paddingHorizontal: spacing.lg }}>
-          <H1>{tr.calendar.title}</H1>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm }}>
+            <H1 style={{ flex: 1 }}>{tr.calendar.title}</H1>
+            <Button
+              testID="calendar-new-reservation"
+              title={tr.reservations.newReservation}
+              icon="add"
+              variant="success"
+              onPress={() => router.push(ROUTES.newReservation)}
+            />
+          </View>
           <Muted style={{ marginTop: 2 }}>{tr.calendar.subtitle}</Muted>
         </View>
 
@@ -917,7 +929,30 @@ export default function ReservationCalendarScreen() {
             }}
           >
             {selected ? (
-              <DetailBody bar={selected} c={c} onClose={() => setSelected(null)} />
+              <DetailBody
+                bar={selected}
+                c={c}
+                onClose={() => setSelected(null)}
+                onOpen={() => {
+                  const r = selected.reservation;
+                  setSelected(null);
+                  router.push({
+                    pathname: ROUTES.reservationDetail,
+                    params: {
+                      id: r.id,
+                      guest_name: r.guest_name || '',
+                      room_number: r.room_number || '',
+                      room_type: r.room_type || '',
+                      check_in: r.check_in || '',
+                      check_out: r.check_out || '',
+                      status: r.status || '',
+                      total_amount: r.total_amount != null ? String(r.total_amount) : '',
+                      paid_amount: r.paid_amount != null ? String(r.paid_amount) : '',
+                      balance: r.balance != null ? String(r.balance) : '',
+                    },
+                  });
+                }}
+              />
             ) : null}
           </Pressable>
         </Pressable>
@@ -926,7 +961,17 @@ export default function ReservationCalendarScreen() {
   );
 }
 
-function DetailBody({ bar, c, onClose }: { bar: PlacedBar; c: ThemeColors; onClose: () => void }) {
+function DetailBody({
+  bar,
+  c,
+  onClose,
+  onOpen,
+}: {
+  bar: PlacedBar;
+  c: ThemeColors;
+  onClose: () => void;
+  onOpen: () => void;
+}) {
   const r = bar.reservation;
   const ci = toDateOnly(r.check_in);
   const co = toDateOnly(r.check_out);
@@ -965,6 +1010,12 @@ function DetailBody({ bar, c, onClose }: { bar: PlacedBar; c: ThemeColors; onClo
         c={c}
       />
       <Row label={tr.calendar.price} value={formatCurrency(r.total_amount)} c={c} />
+      <Button
+        title={tr.calendar.openDetail}
+        icon="open-outline"
+        onPress={onOpen}
+        fullWidth
+      />
     </View>
   );
 }

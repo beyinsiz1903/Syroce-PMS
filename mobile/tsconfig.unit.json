@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "commonjs",
-    "moduleResolution": "node",
+    "module": "Node16",
+    "moduleResolution": "Node16",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -20,6 +20,8 @@
     "src/utils/__tests__/availabilityGrid.test.ts",
     "src/utils/reservationCalendar.ts",
     "src/utils/__tests__/reservationCalendar.test.ts",
+    "src/utils/paymentEntry.ts",
+    "src/utils/__tests__/paymentEntry.test.ts",
     "src/state/roleAccess.ts",
     "src/state/__tests__/roleAccess.test.ts",
     "src/utils/departmentScreens.ts",

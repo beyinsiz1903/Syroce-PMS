@@ -15,7 +15,6 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import type { Router } from 'expo-router';
 import { getOrCreateDeviceId } from '../api/client';
 import { registerPushDevice } from '../api/auth';
 import { ROUTES, rootForRole } from '../navigation/routes';
@@ -39,6 +38,10 @@ export type PushRegistrationStatus =
   | 'error';
 let _lastPushStatus: PushRegistrationStatus = 'unknown';
 
+type PushRouter = {
+  push: (target: never) => void;
+};
+
 export function getLastPushStatus(): PushRegistrationStatus {
   return _lastPushStatus;
 }
@@ -51,6 +54,8 @@ function setForegroundHandler() {
       // Show a banner even when the app is in the foreground so urgent
       // events (no-show risk, damage reports) don't get silently swallowed.
       shouldShowAlert: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
       shouldPlaySound: true,
       shouldSetBadge: false,
     }),
@@ -237,7 +242,7 @@ function routeForRole(payload: PushPayload, role: AppRole): RouteTarget | null {
   }
 }
 
-function navigateTo(router: Router, target: RouteTarget | null) {
+function navigateTo(router: PushRouter, target: RouteTarget | null) {
   if (!target) return;
   try {
     if (typeof target === 'string') router.push(target as never);
@@ -262,7 +267,7 @@ let _coldStartHandled = false;
  * later re-attach (e.g. on hot reload or login state change) does not
  * re-route to the original notification.
  */
-export function attachPushListeners(router: Router, role: AppRole): () => void {
+export function attachPushListeners(router: PushRouter, role: AppRole): () => void {
   setForegroundHandler();
   if (_tapSub) {
     _tapSub.remove();
