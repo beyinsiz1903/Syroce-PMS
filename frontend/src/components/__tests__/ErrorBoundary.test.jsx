@@ -40,6 +40,23 @@ describe('ErrorBoundary stale chunk recovery', () => {
     expect(window.__syroceForceFreshReload).toHaveBeenCalledOnce();
   });
 
+  it('loads the current version for Chromium React.lazy default-export errors', () => {
+    window.__syroceIsChunkError = (message) =>
+      message?.includes("Cannot read properties of undefined (reading 'default')");
+
+    render(
+      <ErrorBoundary>
+        <BrokenComponent message="Cannot read properties of undefined (reading 'default')" />
+      </ErrorBoundary>,
+    );
+
+    expect(screen.getByText('Uygulamanın yeni sürümü yüklenemedi')).toBeInTheDocument();
+    expect(window.__syroceChunkReloadOnce).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Güncel sürümü yükle' }));
+    expect(window.__syroceForceFreshReload).toHaveBeenCalledOnce();
+  });
+
   it('keeps the ordinary retry path for non-chunk render failures', () => {
     render(
       <ErrorBoundary>

@@ -56,5 +56,6 @@ describe('complete offline application shell contract', () => {
     expect(html).toContain("sessionStorage.removeItem('syroce_chunk_reload_done')");
     expect(html).toContain('window.__syroceForceFreshReload = forceFreshReload');
     expect(html).toContain("u.searchParams.set('_appreload', String(Date.now()))");
+    expect(html).toContain("Cannot read properties of undefined (reading 'default')");
   });
 });

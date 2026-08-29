@@ -91,7 +91,11 @@
                     // Raw WebKit/React.lazy failure when a resolved module has
                     // no usable default export. Some component-level lazy imports
                     // can throw this before our module guard gets control.
-                    '._result.default'
+                    '._result.default',
+                    // Raw Chromium/React.lazy equivalent of the WebKit failure
+                    // above. This may be emitted before guardModule can normalize
+                    // a stale resolved module on a cached route tree.
+                    "Cannot read properties of undefined (reading 'default')"
                 ];
                 function isChunkError(msg) {
                     if (!msg) return false;
