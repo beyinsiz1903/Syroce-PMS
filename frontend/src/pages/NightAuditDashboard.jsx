@@ -21,6 +21,7 @@ import {
 import { toast } from "sonner";
 import { confirmDialog } from "@/lib/dialogs";
 import { emitBusinessDateChanged } from "@/lib/businessDateEvents";
+import { buildBusinessDateOriginCopy } from "@/lib/businessDateOriginCopy";
 import {
   NIGHT_AUDIT_RUN_TIMEOUT_MS,
   confirmsNightAuditAdvance,
@@ -80,6 +81,9 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
     dry_run: false,
     reason: "",
   });
+  const businessDateOriginCopy = businessDateMeta?.is_initialized
+    ? buildBusinessDateOriginCopy(businessDateMeta, user)
+    : null;
 
   const fetchBusinessDate = useCallback(async () => {
     try {
@@ -574,23 +578,10 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
               )}
               <div className="min-w-0 text-xs text-slate-700">
                 <p className="font-semibold text-slate-900">
-                  {businessDateMeta.update_source === "night_audit"
-                    ? "PMS iş günü tamamlanan Night Audit ile ilerletildi"
-                    : businessDateMeta.update_source === "legacy_record"
-                      ? "PMS iş günü eski sistem kaydından geliyor"
-                      : "PMS iş günü güvenli başlangıç kaydından oluşturuldu"}
+                  {businessDateOriginCopy.title}
                 </p>
                 <p className="mt-0.5">
-                  {businessDateMeta.initialization_reason === "earliest_unresolved_arrival" && "Başlangıç noktası: çözülmemiş en eski aktif rezervasyon. "}
-                  {businessDateMeta.initialization_reason === "night_audit_history" && "Başlangıç noktası: son başarılı Night Audit’in ertesi günü. "}
-                  {businessDateMeta.initialization_reason === "first_operational_use" && "Başlangıç noktası: ilk operasyonel kullanım günü. "}
-                  {businessDateMeta.initialization_reason === "tenant_provisioning" && "Başlangıç noktası: tesis kurulum günü. "}
-                  {businessDateMeta.update_source === "legacy_record" && "Eski kayıtta işlemi yapan kullanıcı veya Night Audit kimliği bulunmuyor. "}
-                  {businessDateMeta.updated_at && `Son kayıt: ${new Date(businessDateMeta.updated_at).toLocaleString("tr-TR")}. `}
-                  {businessDateMeta.trigger_source === "scheduler" && "Kaynak: otomatik zamanlama. "}
-                  {businessDateMeta.trigger_source === "manual" && "Kaynak: manuel Night Audit. "}
-                  {businessDateMeta.updated_by && `İşlemi yapan: ${businessDateMeta.updated_by}. `}
-                  {businessDateMeta.audit_run_id && `Denetim: ${businessDateMeta.audit_run_id}.`}
+                  {businessDateOriginCopy.detail}
                 </p>
                 {businessDateMeta.update_source !== "night_audit" && (
                   <p className="mt-1 font-medium text-amber-800">
