@@ -526,8 +526,11 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
         if guest:
             guests_list.append(guest)
         # Also check for additional guests
-        async for ag in db.booking_guests.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
-            guests_list.append(ag)
+        ag_links = await db.booking_guests.find({"booking_id": booking_id, "tenant_id": tid}, {"guest_id": 1}).to_list(100)
+        ag_ids = [l["guest_id"] for l in ag_links if "guest_id" in l]
+        if ag_ids:
+            async for ag in db.guests.find({"id": {"$in": ag_ids}, "tenant_id": tid}, {"_id": 0}):
+                guests_list.append(ag)
 
         # Company info
         company = None
@@ -3003,3 +3006,52 @@ async def list_all_deposits(current_user: User = Depends(get_current_user)):
         deposits.append(d)
 
     return {"deposits": deposits}
+
+@router.post("/reservations/{booking_id}/guests")
+async def add_reservation_guest(
+    booking_id: str,
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),
+):
+    _enforce_perm(current_user.role, "edit_booking")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+
+    import uuid
+    from datetime import datetime, UTC
+    from routers.pms_guests import _encrypt_guest
+    
+    guest_id = f"GST-{uuid.uuid4().hex[:8].upper()}"
+    guest = {
+        "id": guest_id,
+        "tenant_id": tid,
+        "created_at": datetime.now(UTC).isoformat(),
+        "total_stays": 1,
+        "total_spend": 0.0,
+    }
+    
+    allowed = {"name", "email", "phone", "id_type", "id_number", "nationality", "date_of_birth", "gender", "address", "city", "country", "notes"}
+    for k in allowed:
+        if k in data:
+            guest[k] = data[k]
+            
+    from security.search_normalize import normalized_set_for_update
+    _norm = normalized_set_for_update(guest, collection="guests")
+    guest = _encrypt_guest(guest)
+    guest.update(_norm)
+    
+    await db.guests.insert_one(guest)
+    await db.booking_guests.insert_one({
+        "id": f"BG-{uuid.uuid4().hex[:8].upper()}",
+        "tenant_id": tid,
+        "booking_id": booking_id,
+        "guest_id": guest_id,
+        "created_at": datetime.now(UTC).isoformat()
+    })
+    
+    return {"status": "ok", "guest_id": guest_id}

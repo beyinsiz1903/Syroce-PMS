@@ -253,7 +253,7 @@ async def kbs_guest_list(
 
             async for g in db.guests.find(
                 {"tenant_id": tenant_id, "id": {"$in": guest_ids}},
-                {"_id": 0, "id": 1, "nationality": 1, "id_number": 1, "passport_number": 1, "birth_date": 1, "gender": 1, "address": 1, "father_name": 1, "mother_name": 1, "birth_place": 1},
+                {"_id": 0, "id": 1, "nationality": 1, "id_number": 1, "passport_number": 1, "birth_date": 1, "date_of_birth": 1, "gender": 1, "address": 1, "father_name": 1, "mother_name": 1, "birth_place": 1},
             ):
                 guest_map[g["id"]] = decrypt_guest_doc(g)
 
@@ -262,7 +262,7 @@ async def kbs_guest_list(
             b["nationality"] = g.get("nationality", "")
             b["id_number"] = g.get("id_number", "")
             b["passport_number"] = g.get("passport_number", "")
-            b["birth_date"] = g.get("birth_date", "")
+            b["birth_date"] = g.get("birth_date") or g.get("date_of_birth", "")
             b["gender"] = g.get("gender", "")
             b["address"] = g.get("address", "")
             b["father_name"] = g.get("father_name", "")
@@ -509,7 +509,7 @@ async def _build_payload_snapshot(tenant_id: str, booking_id: str) -> tuple[dict
         "nationality": guest.get("nationality") or booking.get("guest_nationality") or "",
         "id_number": guest.get("id_number", ""),
         "passport_number": guest.get("passport_number", ""),
-        "birth_date": guest.get("birth_date", ""),
+        "birth_date": guest.get("birth_date") or guest.get("date_of_birth", ""),
         "gender": guest.get("gender", ""),
         "father_name": guest.get("father_name", ""),
         "mother_name": guest.get("mother_name", ""),
