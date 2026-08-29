@@ -52,6 +52,9 @@ if (SENTRY_DSN) {
             // Raw WebKit/React.lazy resolved-but-invalid module failure.
             // Keep in sync with frontend/index.html.
             "._result.default",
+            // Raw Chromium/React.lazy equivalent. Keep in sync with
+            // frontend/index.html so a self-healed stale tab is not reported.
+            "Cannot read properties of undefined (reading 'default')",
           ];
           const ex = hint && hint.originalException;
           const msg =
