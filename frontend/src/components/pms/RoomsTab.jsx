@@ -13,6 +13,7 @@ import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, Ex
 import BookingConflictDialog from '@/components/pms/BookingConflictDialog';
 import { parseBookingConflict } from '@/lib/bookingConflict';
 import { classifyGuestPayment } from '@/utils/paymentClassification';
+import { deduplicateGuestSearchResults, maskGuestDocument } from '@/pages/calendar/guestIdentity';
 
 const RoomsTab = ({
   rooms,
@@ -73,7 +74,10 @@ const RoomsTab = ({
   // Quick reservation dialog state
   const [quickResDialog, setQuickResDialog] = useState(false);
   const [quickResRoom, setQuickResRoom] = useState(null);
-  const [quickResForm, setQuickResForm] = useState({ guest_name: '', check_in: '', check_out: '', total_amount: '' });
+  const [quickResForm, setQuickResForm] = useState({
+    guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '',
+    check_in: '', check_out: '', total_amount: '',
+  });
   const [quickResLoading, setQuickResLoading] = useState(false);
 
   // Guest search state
@@ -259,7 +263,10 @@ const RoomsTab = ({
   const handleQuickResOpen = useCallback((e, room) => {
     e.stopPropagation();
     setQuickResRoom(room);
-    setQuickResForm({ guest_name: '', check_in: today, check_out: tomorrow, total_amount: '' });
+    setQuickResForm({
+      guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '',
+      check_in: today, check_out: tomorrow, total_amount: '',
+    });
     setSelectedGuest(null);
     setGuestSearchQuery('');
     setGuestSearchResults([]);
@@ -285,7 +292,7 @@ const RoomsTab = ({
     guestSearchTimerRef.current = setTimeout(async () => {
       try {
         const res = await axios.get(`/pms/guests/search?q=${encodeURIComponent(query.trim())}&limit=8`);
-        setGuestSearchResults(res.data || []);
+        setGuestSearchResults(deduplicateGuestSearchResults(res.data));
         setShowGuestDropdown(true);
       } catch {
         setGuestSearchResults([]);
@@ -299,7 +306,13 @@ const RoomsTab = ({
   const handleSelectGuest = useCallback((guest) => {
     setSelectedGuest(guest);
     setGuestSearchQuery(guest.name);
-    setQuickResForm(f => ({ ...f, guest_name: guest.name }));
+    setQuickResForm(f => ({
+      ...f,
+      guest_name: guest.name,
+      guest_email: guest.email || '',
+      guest_phone: guest.phone || '',
+      guest_id_number: guest.id_number || '',
+    }));
     setShowGuestDropdown(false);
     setGuestSearchResults([]);
   }, []);
@@ -308,7 +321,13 @@ const RoomsTab = ({
   const handleClearGuest = useCallback(() => {
     setSelectedGuest(null);
     setGuestSearchQuery('');
-    setQuickResForm(f => ({ ...f, guest_name: '' }));
+    setQuickResForm(f => ({
+      ...f,
+      guest_name: '',
+      guest_email: '',
+      guest_phone: '',
+      guest_id_number: '',
+    }));
     setGuestSearchResults([]);
     setShowGuestDropdown(false);
   }, []);
@@ -328,6 +347,9 @@ const RoomsTab = ({
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `quick-booking-${Date.now()}-${Math.random()}`;
       const payload = {
         guest_name: guest_name.trim(),
+        guest_email: quickResForm.guest_email?.trim() || undefined,
+        guest_phone: quickResForm.guest_phone?.trim() || undefined,
+        guest_id_number: quickResForm.guest_id_number?.trim() || undefined,
         room_id: quickResRoom.id,
         check_in: check_in + 'T14:00:00+00:00',
         check_out: check_out + 'T11:00:00+00:00',
@@ -840,7 +862,7 @@ const RoomsTab = ({
 
       {/* Quick Reservation Dialog */}
       <Dialog open={quickResDialog} onOpenChange={(o) => { if (!o) { setQuickResDialog(false); setShowGuestDropdown(false); } }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CalendarPlus className="w-5 h-5 text-amber-600" />
@@ -918,6 +940,7 @@ const RoomsTab = ({
                                 <p className="text-xs text-slate-500 truncate">
                                   {g.email && !g.email.includes('placeholder') ? g.email : ''}
                                   {g.phone ? (g.email && !g.email.includes('placeholder') ? ' | ' : '') + g.phone : ''}
+                                  {g.id_number ? ` | Kimlik: ${maskGuestDocument(g.id_number)}` : ''}
                                 </p>
                               </div>
                             </div>
@@ -938,6 +961,42 @@ const RoomsTab = ({
                   </div>
                 )}
               </div>
+
+              {!selectedGuest && guestSearchQuery.trim().length >= 2 && (
+                <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div>
+                    <Label htmlFor="quick-res-phone" className="text-xs">Telefon</Label>
+                    <Input
+                      id="quick-res-phone"
+                      value={quickResForm.guest_phone || ''}
+                      onChange={e => setQuickResForm(f => ({ ...f, guest_phone: e.target.value }))}
+                      placeholder="05xx..."
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="quick-res-id-number" className="text-xs">T.C. / Pasaport</Label>
+                    <Input
+                      id="quick-res-id-number"
+                      value={quickResForm.guest_id_number || ''}
+                      onChange={e => setQuickResForm(f => ({ ...f, guest_id_number: e.target.value }))}
+                      placeholder="Kimlik numarası"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <Label htmlFor="quick-res-email" className="text-xs">E-posta</Label>
+                    <Input
+                      id="quick-res-email"
+                      type="email"
+                      value={quickResForm.guest_email || ''}
+                      onChange={e => setQuickResForm(f => ({ ...f, guest_email: e.target.value }))}
+                      placeholder="ornek@eposta.com"
+                    />
+                  </div>
+                  <p className="col-span-2 text-[11px] text-slate-500">
+                    Aynı kimlik, telefon veya e-posta varsa mevcut misafir kartı kullanılır.
+                  </p>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
