@@ -236,6 +236,21 @@ async def tuik_monthly(
 # ─────────────────────────────────────────────────────────────────────
 
 
+def _normalize_tenant_legal_profile(tenant: dict[str, Any]) -> dict[str, Any]:
+    """Return the canonical regulatory view of a historically mixed tenant.
+
+    Older tenants use ``hotel_name``/``tax_no`` while the current hotel
+    settings and onboarding flows write ``property_name``/``tax_number``.
+    Regulatory readiness must not report valid data as missing merely because
+    it was stored by the newer flow.
+    """
+    normalized = dict(tenant)
+    normalized["hotel_name"] = tenant.get("hotel_name") or tenant.get("property_name") or tenant.get("name")
+    normalized["tax_no"] = tenant.get("tax_no") or tenant.get("tax_number")
+    normalized["phone"] = tenant.get("phone") or tenant.get("contact_phone")
+    return normalized
+
+
 @router.get("/inspection-readiness")
 @cached(ttl=300, key_prefix="regulatory_inspection_readiness")
 async def inspection_readiness(
@@ -243,9 +258,24 @@ async def inspection_readiness(
     _perm=Depends(require_op("view_regulatory_reports")),
     _nocache: bool = Query(False, alias="nocache"),
 ) -> dict[str, Any]:
-    tenant = (
+    tenant = _normalize_tenant_legal_profile(
         await db.tenants.find_one(
-            {"id": current_user.tenant_id}, {"_id": 0, "hotel_name": 1, "hotel_id": 1, "tax_no": 1, "star_rating": 1, "address": 1, "phone": 1, "license_number": 1, "license_expires_at": 1}
+            {"id": current_user.tenant_id},
+            {
+                "_id": 0,
+                "hotel_name": 1,
+                "property_name": 1,
+                "name": 1,
+                "hotel_id": 1,
+                "tax_no": 1,
+                "tax_number": 1,
+                "star_rating": 1,
+                "address": 1,
+                "phone": 1,
+                "contact_phone": 1,
+                "license_number": 1,
+                "license_expires_at": 1,
+            },
         )
         or {}
     )
@@ -289,6 +319,8 @@ async def inspection_readiness(
     if license_expiry_iso:
         try:
             le = datetime.fromisoformat(license_expiry_iso.replace("Z", "+00:00"))
+            if le.tzinfo is None:
+                le = le.replace(tzinfo=UTC)
             license_days_left = (le - now).days
         except Exception:
             license_days_left = None

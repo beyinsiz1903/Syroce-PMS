@@ -161,6 +161,8 @@ const Settings = ({
   // Plan değişimi sonrası activeTab'ı koru (window.location.reload state kaybını önler).
   const [activeTab, setActiveTab] = useState(() => {
     try {
+      const requested = new URLSearchParams(window.location.search).get('tab');
+      if (['team', 'plan', 'billing', 'hotel', 'invoice', 'rooms', 'b2b'].includes(requested)) return requested;
       const saved = sessionStorage.getItem('settings:activeTab');
       if (saved) sessionStorage.removeItem('settings:activeTab');
       return saved || 'team';
@@ -207,7 +209,13 @@ const Settings = ({
   const [billingLoading, setBillingLoading] = useState(false);
 
   // Hotel info editing
-  const [editMode, setEditMode] = useState(false);
+  const [editMode, setEditMode] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('edit') === 'legal';
+    } catch {
+      return false;
+    }
+  });
   const [hotelForm, setHotelForm] = useState({});
   const [hotelSaving, setHotelSaving] = useState(false);
 
@@ -483,10 +491,22 @@ const Settings = ({
         address: tenant.address || '',
         location: tenant.location || '',
         description: tenant.description || '',
-        total_rooms: tenant.total_rooms || 0
+        total_rooms: tenant.total_rooms || 0,
+        tax_number: tenant.tax_number || tenant.tax_no || '',
+        license_number: tenant.license_number || '',
+        license_expires_at: String(tenant.license_expires_at || '').slice(0, 10),
+        star_rating: tenant.star_rating || ''
       });
     }
   }, [tenant]);
+
+  useEffect(() => {
+    if (activeTab !== 'hotel' || window.location.hash !== '#legal') return;
+    const scrollTimer = window.setTimeout(() => {
+      document.getElementById('legal')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+    return () => window.clearTimeout(scrollTimer);
+  }, [activeTab]);
 
   // ─── Self check (id veya _id eşleşmesi) ───────
   const isSameUser = useCallback(member => {
@@ -586,7 +606,10 @@ const Settings = ({
     }
     setHotelSaving(true);
     try {
-      const res = await axios.patch('/hotel/info', hotelForm);
+      const payload = { ...hotelForm };
+      if (!payload.license_expires_at) delete payload.license_expires_at;
+      if (!payload.star_rating) delete payload.star_rating;
+      const res = await axios.patch('/hotel/info', payload);
       toast.success(res.data?.message || 'Otel bilgileri güncellendi');
       setEditMode(false);
       // localStorage'daki tenant'ı senkron tutmak: App.jsx mount'unda

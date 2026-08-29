@@ -10,6 +10,7 @@ import { getSegmentColor, getStatusColor, getStatusLabel } from "./calendarHelpe
 import { alertDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 import { calculateOccupancyPrice, findOccupancyRule, nightsBetween } from '@/utils/occupancyPricing';
+import { deduplicateGuestSearchResults, maskGuestDocument } from './guestIdentity';
 
 // New Booking Dialog
 export const NewBookingDialog = ({
@@ -99,7 +100,7 @@ export const NewBookingDialog = ({
     guestSearchTimerRef.current = setTimeout(async () => {
       try {
         const res = await axios.get(`/pms/guests/search?q=${encodeURIComponent(query.trim())}&limit=8`);
-        setGuestSearchResults(res.data || []);
+        setGuestSearchResults(deduplicateGuestSearchResults(res.data));
         setShowGuestDropdown(true);
       } catch {
         setGuestSearchResults([]);
@@ -115,7 +116,14 @@ export const NewBookingDialog = ({
     setGuestSearchQuery(guest.name);
     setShowGuestDropdown(false);
     setGuestSearchResults([]);
-    setNewBooking(prev => ({ ...prev, guest_id: guest.id, guest_name: guest.name }));
+    setNewBooking(prev => ({
+      ...prev,
+      guest_id: guest.id,
+      guest_name: guest.name,
+      guest_email: guest.email || '',
+      guest_phone: guest.phone || '',
+      guest_id_number: guest.id_number || '',
+    }));
   }, [setNewBooking]);
 
   // Clear selected guest
@@ -124,7 +132,14 @@ export const NewBookingDialog = ({
     setGuestSearchQuery('');
     setGuestSearchResults([]);
     setShowGuestDropdown(false);
-    setNewBooking(prev => ({ ...prev, guest_id: '', guest_name: '' }));
+    setNewBooking(prev => ({
+      ...prev,
+      guest_id: '',
+      guest_name: '',
+      guest_email: '',
+      guest_phone: '',
+      guest_id_number: '',
+    }));
   }, [setNewBooking]);
 
   return (
@@ -255,6 +270,7 @@ export const NewBookingDialog = ({
                           <p className="text-xs text-gray-500 truncate">
                             {g.email && !g.email.includes('placeholder') ? g.email : ''}
                             {g.phone ? (g.email && !g.email.includes('placeholder') ? ' | ' : '') + g.phone : ''}
+                            {g.id_number ? ` | Kimlik: ${maskGuestDocument(g.id_number)}` : ''}
                           </p>
                         </div>
                       </div>
@@ -275,6 +291,42 @@ export const NewBookingDialog = ({
             </div>
           )}
         </div>
+
+        {!selectedGuest && guestSearchQuery.trim().length >= 2 && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div>
+              <Label htmlFor="new-guest-phone" className="text-xs">Telefon</Label>
+              <Input
+                id="new-guest-phone"
+                value={newBooking.guest_phone || ''}
+                onChange={e => setNewBooking(prev => ({ ...prev, guest_phone: e.target.value }))}
+                placeholder="05xx..."
+              />
+            </div>
+            <div>
+              <Label htmlFor="new-guest-id" className="text-xs">T.C. / Pasaport</Label>
+              <Input
+                id="new-guest-id"
+                value={newBooking.guest_id_number || ''}
+                onChange={e => setNewBooking(prev => ({ ...prev, guest_id_number: e.target.value }))}
+                placeholder="Kimlik numarası"
+              />
+            </div>
+            <div>
+              <Label htmlFor="new-guest-email" className="text-xs">E-posta</Label>
+              <Input
+                id="new-guest-email"
+                type="email"
+                value={newBooking.guest_email || ''}
+                onChange={e => setNewBooking(prev => ({ ...prev, guest_email: e.target.value }))}
+                placeholder="ornek@eposta.com"
+              />
+            </div>
+            <p className="sm:col-span-3 text-[11px] text-slate-500">
+              Aynı kimlik, telefon veya e-posta mevcutsa yeni kart açılmaz; kayıtlı misafir kullanılır.
+            </p>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <div>

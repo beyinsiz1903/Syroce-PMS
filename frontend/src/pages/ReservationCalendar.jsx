@@ -256,7 +256,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
   // New booking form
   const [newBooking, setNewBooking] = useState({
-    guest_id: '', room_id: '', check_in: '', check_out: '',
+    guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '',
+    room_id: '', check_in: '', check_out: '',
     guests_count: 2, adults: 2, children: 0, children_ages: [],
     total_amount: 0, base_rate: 0, status: 'confirmed'
   });
@@ -542,7 +543,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     const checkOutDate = new Date(date);
     checkOutDate.setDate(checkOutDate.getDate() + 1);
     setNewBooking({
-      guest_id: '', room_id: roomId,
+      guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '', room_id: roomId,
       check_in: checkInDate.toISOString().split('T')[0],
       check_out: checkOutDate.toISOString().split('T')[0],
       guests_count: 2, adults: 2, children: 0, children_ages: [],
@@ -603,7 +604,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     setSelectedRoom(room);
     setSelectedDate(new Date(`${checkIn}T00:00:00Z`));
     setNewBooking({
-      guest_id: '', room_id: sel.roomId,
+      guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '', room_id: sel.roomId,
       check_in: checkIn, check_out: checkOut,
       guests_count: 2, adults: 2, children: 0, children_ages: [],
       total_amount: (room.base_price || 100) * nights, base_rate: room.base_price || 100,
@@ -671,12 +672,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         const newGuest = {
           id: `guest_${Date.now()}`, name: newBooking.guest_name,
           email: newBooking.guest_email || '', phone: newBooking.guest_phone || '',
-          id_number: '',
+          id_number: newBooking.guest_id_number || '',
           tenant_id: user.tenant_id, created_at: new Date().toISOString()
         };
         const response = await axios.post('/pms/guests', newGuest);
         guestId = response.data.id;
-        toast.success('Yeni misafir oluşturuldu!');
+        toast.success('Misafir profili hazır');
       } catch (error) {
         toast.error('Misafir oluşturulamadı: ' + (error.response?.data?.detail || error.message));
         return;
@@ -1009,7 +1010,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onShowNewBookingDialog={() => {
             setSelectedRoom(null);
             setNewBooking({
-              guest_id: '', room_id: '', check_in: '', check_out: '',
+              guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '',
+              room_id: '', check_in: '', check_out: '',
               guests_count: 2, adults: 2, children: 0, children_ages: [],
               total_amount: 0, base_rate: 0, status: 'confirmed'
             });

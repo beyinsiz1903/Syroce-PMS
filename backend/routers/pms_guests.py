@@ -10,6 +10,7 @@ from core.helpers import require_module
 from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
 from models.schemas import Guest, GuestCreate, User
+from modules.pms_core.guest_identity import deduplicate_guest_records, find_existing_guest_by_identity
 from modules.pms_core.role_permission_service import require_op
 from shared_kernel.idempotency import (
     claim_idempotency,
@@ -97,6 +98,20 @@ async def create_guest(
         lock_id = claim.get("lock_id")
 
     try:
+        existing_guest = await find_existing_guest_by_identity(
+            db.guests,
+            current_user.tenant_id,
+            guest_data.model_dump(),
+        )
+        if existing_guest:
+            if lock_id:
+                await complete_idempotency(
+                    db,
+                    lock_id=lock_id,
+                    response_body={"id": existing_guest["id"], "tenant_id": current_user.tenant_id},
+                )
+            return existing_guest
+
         guest = Guest(tenant_id=current_user.tenant_id, **guest_data.model_dump())
         guest_dict = guest.model_dump()
         guest_dict["created_at"] = guest_dict["created_at"].isoformat()
@@ -215,6 +230,8 @@ async def search_guests(
         )
         query = {
             "tenant_id": tenant_id,
+            "archived": {"$ne": True},
+            "status": {"$ne": "deleted"},
             "$or": name_conditions + encrypted_conditions,
         }
     else:
@@ -222,6 +239,8 @@ async def search_guests(
         regex = {"$regex": safe_q, "$options": "i"}
         query = {
             "tenant_id": tenant_id,
+            "archived": {"$ne": True},
+            "status": {"$ne": "deleted"},
             "$or": name_conditions
             + [
                 {"email": regex},
@@ -232,7 +251,8 @@ async def search_guests(
         }
 
     # Primary precise query: name PREFIX range + encrypted-PII hash/dual-read.
-    primary = await db.guests.find(query, {"_id": 0}).sort("name", 1).limit(limit).to_list(limit)
+    fetch_limit = min(100, max(limit, limit * 3))
+    primary = await db.guests.find(query, {"_id": 0}).sort("name", 1).limit(fetch_limit).to_list(fetch_limit)
 
     # Secondary INFIX (substring) query on the plaintext-name trigram companion
     # `_ng_name` (>= 3 chars). Trigram `$all` is index-served by the
@@ -247,14 +267,17 @@ async def search_guests(
     guests_raw = primary
     if ng_cond:
         seen = {g.get("id") for g in primary}
-        ng_rows = await db.guests.find({"tenant_id": tenant_id, **ng_cond}, {"_id": 0}).sort("name", 1).limit(limit).to_list(limit)
+        ng_rows = await db.guests.find(
+            {"tenant_id": tenant_id, "archived": {"$ne": True}, "status": {"$ne": "deleted"}, **ng_cond},
+            {"_id": 0},
+        ).sort("name", 1).limit(fetch_limit).to_list(fetch_limit)
         extras = [r for r in ng_rows if r.get("id") not in seen and ngram_match(r, q, collection=_GUEST_COLLECTION)]
         if extras:
             guests_raw = primary + extras
             guests_raw.sort(key=lambda g: (g.get("name") or "").lower())
-            guests_raw = guests_raw[:limit]
+            guests_raw = guests_raw[:fetch_limit]
 
-    results = []
+    decrypted_results = []
     for g in guests_raw:
         g = _decrypt_guest(g)
         if "first_name" in g and "last_name" in g:
@@ -263,6 +286,10 @@ async def search_guests(
             g["name"] = g.get("email", "Unknown")
         if "id_number" not in g:
             g["id_number"] = g.get("passport_number", "")
+        decrypted_results.append(g)
+
+    results = []
+    for g in deduplicate_guest_records(decrypted_results)[:limit]:
         results.append(
             {
                 "id": g.get("id", ""),

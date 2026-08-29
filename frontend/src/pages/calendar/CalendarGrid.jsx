@@ -23,6 +23,10 @@ const BOOKING_H = 40;
 const LANE_H = 40;
 const LANE_BAR_H = 44;
 
+export const clearCalendarTextSelection = () => {
+  window.getSelection?.()?.removeAllRanges();
+};
+
 const CalendarGrid = ({
   rooms,
   bookings,
@@ -156,7 +160,11 @@ const CalendarGrid = ({
   });
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm relative flex flex-col h-full overflow-hidden" data-testid="calendar-grid">
+    <div
+      className="bg-white rounded-xl border border-slate-200 shadow-sm relative flex flex-col h-full overflow-hidden select-none"
+      data-testid="calendar-grid"
+      onPointerDown={clearCalendarTextSelection}
+    >
       {/* Date Header Row - STICKY */}
       <div className="overflow-auto flex-1">
         <div className="min-w-max pb-12">

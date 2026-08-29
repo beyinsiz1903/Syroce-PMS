@@ -255,6 +255,9 @@ async def update_hotel_info(
     update_data = {}
     if payload.property_name is not None:
         update_data["property_name"] = payload.property_name
+        # Historical consumers still read hotel_name. Keep the aliases in
+        # sync until the tenant schema migration is complete.
+        update_data["hotel_name"] = payload.property_name
     if payload.phone is not None:
         update_data["phone"] = payload.phone
         update_data["contact_phone"] = payload.phone
@@ -281,12 +284,30 @@ async def update_hotel_info(
         except (ValueError, KeyError):
             pass
         update_data["total_rooms"] = payload.total_rooms
+    if payload.tax_number is not None:
+        tax_number = payload.tax_number.strip()
+        if tax_number and (not tax_number.isdigit() or len(tax_number) not in (10, 11)):
+            raise HTTPException(status_code=422, detail="VKN 10, TCKN 11 haneli olmalıdır")
+        update_data["tax_number"] = tax_number
+        update_data["tax_no"] = tax_number
+    if payload.license_number is not None:
+        update_data["license_number"] = payload.license_number.strip()
+    if payload.license_expires_at is not None:
+        update_data["license_expires_at"] = payload.license_expires_at.isoformat()
+    if payload.star_rating is not None:
+        update_data["star_rating"] = payload.star_rating
 
     if not update_data:
         raise HTTPException(status_code=400, detail="No field to update")
 
     update_data["updated_at"] = datetime.now(UTC).isoformat()
     await db.tenants.update_one({"id": current_user.tenant_id}, {"$set": update_data})
+
+    if _cache_mgr:
+        try:
+            _cache_mgr.invalidate_tenant_cache(current_user.tenant_id, "regulatory_inspection_readiness")
+        except Exception:
+            logger.warning("inspection readiness cache invalidation failed for tenant=%s", current_user.tenant_id)
 
     updated = await db.tenants.find_one({"id": current_user.tenant_id}, {"_id": 0})
     return {
