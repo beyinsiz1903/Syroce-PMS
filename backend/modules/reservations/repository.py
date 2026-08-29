@@ -85,6 +85,15 @@ class ReservationsRepository:
             {"_id": 0},
         )
 
+    async def get_calendar_settings_for_tenant(self, tenant_id: str) -> dict[str, Any]:
+        return (
+            await db.tenant_settings.find_one(
+                {"tenant_id": tenant_id},
+                {"_id": 0, "business_date": 1, "timezone": 1},
+            )
+            or {}
+        )
+
     async def update_booking(self, tenant_id: str, booking_id: str, update_doc: dict[str, Any], expected_version: int | None = None) -> bool:
         """Update booking with optional optimistic locking (INV-4).
 

@@ -51,6 +51,7 @@ const CalendarGrid = ({
   onDragEnd,
   onBookingDoubleClick,
   showOccupancyBand = false,
+  dailyRates = {},
 }) => {
   const { t } = useTranslation();
   const [collapsedTypes, setCollapsedTypes] = useState(() => new Set());
@@ -279,13 +280,9 @@ const CalendarGrid = ({
                         const occupiedCount = assignedBookings.length + unassignedOnDate.length;
                         const totalTypeRooms = typeRooms.length;
                         const isFull = occupiedCount >= totalTypeRooms;
-                        const allBookingsForPrice = [...assignedBookings, ...unassignedOnDate];
-                        const avgPrice = allBookingsForPrice.length > 0
-                          ? Math.round(allBookingsForPrice.reduce((sum, b) => {
-                              const nights = Math.max(1, Math.ceil((new Date(b.check_out) - new Date(b.check_in)) / (1000 * 60 * 60 * 24)));
-                              return sum + (b.total_amount || 0) / nights;
-                            }, 0) / allBookingsForPrice.length)
-                          : typeRooms[0]?.base_price || 0;
+                        const dayKey = toDateStringUTC(date);
+                        const configuredRate = dailyRates[`${roomType}|${dayKey}`];
+                        const displayRate = configuredRate ?? typeRooms[0]?.base_price ?? 0;
 
                         return (
                           <div
@@ -295,7 +292,7 @@ const CalendarGrid = ({
                             }`}
                           >
                             <div className={`text-[10px] font-bold truncate ${past ? 'text-gray-400' : 'text-gray-800'}`}>
-                              {avgPrice > 0 ? `${avgPrice.toLocaleString('tr-TR')} TL` : '-'}
+                              {displayRate > 0 ? `${displayRate.toLocaleString('tr-TR')} TL` : '-'}
                             </div>
                             <div className="flex items-center justify-center gap-0.5 mt-0.5">
                               <div className={`w-1.5 h-1.5 rounded-full ${isFull ? 'bg-red-500' : occupiedCount > 0 ? 'bg-amber-500' : 'bg-green-500'}`}></div>

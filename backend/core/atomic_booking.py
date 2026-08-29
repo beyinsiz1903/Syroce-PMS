@@ -50,6 +50,11 @@ OOO_PREFIX = "OOO:"
 OOS_PREFIX = "OOS:"
 MAINTENANCE_PREFIX = "MAINT:"
 
+# A booking lock is written immediately before its booking document. Never
+# retire a missing/mismatched owner during that short create/move window; only
+# old rows are eligible for inline recovery.
+STALE_LOCK_MIN_AGE_SECONDS = 60
+
 
 class BookingConflictError(Exception):
     """Raised when a booking conflicts with an existing reservation."""
@@ -73,6 +78,152 @@ def _night_dates(check_in: str, check_out: str) -> list[str]:
         nights.append(current.isoformat())
         current += timedelta(days=1)
     return nights
+
+
+def _lock_is_old_enough(lock: dict[str, Any], *, now: datetime | None = None) -> bool:
+    """Return whether ``lock`` is outside the legitimate in-flight window."""
+    created_at = lock.get("created_at")
+    if created_at is None:
+        return True
+
+    try:
+        created = created_at
+        if isinstance(created, str):
+            created = datetime.fromisoformat(created.replace("Z", "+00:00"))
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=UTC)
+        reference = now or datetime.now(UTC)
+        return (reference - created).total_seconds() >= STALE_LOCK_MIN_AGE_SECONDS
+    except (AttributeError, TypeError, ValueError):
+        # Unknown timestamps are kept. Recovery must fail closed.
+        return False
+
+
+async def _retire_stale_booking_lock(
+    *,
+    tenant_id: str,
+    room_id: str,
+    night: str,
+    existing: dict[str, Any] | None,
+    requested_booking_id: str,
+    correlation_id: str | None,
+) -> bool:
+    """Safely retire one demonstrably stale booking lock.
+
+    Intentional inventory blocks are never touched. The exact tuple and owner
+    are included in the delete filter so a concurrent replacement cannot be
+    removed. Fresh rows are always kept to protect an in-flight create/move.
+    """
+    if not existing or not _lock_is_old_enough(existing):
+        return False
+
+    lock_type = (existing.get("lock_type") or "booking").lower()
+    owner_id = existing.get("booking_id")
+    if lock_type != "booking":
+        return False
+    if isinstance(owner_id, str) and owner_id.startswith((OOO_PREFIX, OOS_PREFIX, MAINTENANCE_PREFIX)):
+        return False
+    if not owner_id or owner_id == requested_booking_id:
+        return False
+
+    with tenant_context(tenant_id):
+        owner = await db.bookings.find_one(
+            {"tenant_id": tenant_id, "id": owner_id},
+            {"_id": 0, "id": 1, "status": 1, "room_id": 1, "check_in": 1, "check_out": 1},
+        )
+
+    stale_reason: str | None = None
+    if owner is None:
+        stale_reason = "booking_missing"
+    elif (owner.get("status") or "").lower() in TERMINAL_BOOKING_STATUSES:
+        stale_reason = "booking_terminal"
+    elif owner.get("room_id") != room_id:
+        stale_reason = "room_mismatch"
+    else:
+        try:
+            if night not in _night_dates(owner.get("check_in", ""), owner.get("check_out", "")):
+                stale_reason = "night_outside_stay"
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+    if stale_reason is None:
+        return False
+
+    exact_filter = {
+        "tenant_id": tenant_id,
+        "room_id": room_id,
+        "night_date": night,
+        "booking_id": owner_id,
+    }
+    if existing.get("lock_type") is not None:
+        exact_filter["lock_type"] = existing["lock_type"]
+    if existing.get("created_at") is not None:
+        exact_filter["created_at"] = existing["created_at"]
+
+    with tenant_context(tenant_id):
+        deleted = await db.room_night_locks.delete_one(exact_filter)
+    if deleted.deleted_count != 1:
+        return False
+
+    logger.warning(
+        "Recovered stale room-night lock tenant=%s room=%s night=%s owner=%s reason=%s",
+        tenant_id,
+        room_id,
+        night,
+        owner_id,
+        stale_reason,
+    )
+    await _timeline_event(
+        tenant_id=tenant_id,
+        stage="stale_lock_recovered",
+        status="success",
+        booking_id=requested_booking_id,
+        room_id=room_id,
+        correlation_id=correlation_id or requested_booking_id,
+        metadata={"night": night, "retired_booking_id": owner_id, "reason": stale_reason},
+    )
+    return True
+
+
+async def _claim_night_or_get_owner(lock_doc: dict[str, Any], *, correlation_id: str | None = None) -> tuple[bool, dict[str, Any] | None]:
+    """Claim one night, retrying once after exact stale-lock recovery."""
+    tenant_id = lock_doc["tenant_id"]
+    room_id = lock_doc["room_id"]
+    night = lock_doc["night_date"]
+
+    try:
+        with tenant_context(tenant_id):
+            await db.room_night_locks.insert_one(lock_doc)
+        return True, None
+    except DuplicateKeyError:
+        pass
+
+    with tenant_context(tenant_id):
+        existing = await db.room_night_locks.find_one(
+            {"tenant_id": tenant_id, "room_id": room_id, "night_date": night},
+            {"_id": 0, "booking_id": 1, "lock_type": 1, "created_at": 1},
+        )
+
+    recovered = await _retire_stale_booking_lock(
+        tenant_id=tenant_id,
+        room_id=room_id,
+        night=night,
+        existing=existing,
+        requested_booking_id=lock_doc["booking_id"],
+        correlation_id=correlation_id,
+    )
+    if recovered:
+        try:
+            with tenant_context(tenant_id):
+                await db.room_night_locks.insert_one(lock_doc)
+            return True, None
+        except DuplicateKeyError:
+            with tenant_context(tenant_id):
+                existing = await db.room_night_locks.find_one(
+                    {"tenant_id": tenant_id, "room_id": room_id, "night_date": night},
+                    {"_id": 0, "booking_id": 1, "lock_type": 1, "created_at": 1},
+                )
+    return False, existing
 
 
 async def _timeline_event(tenant_id: str, stage: str, status: str, booking_id: str, room_id: str, metadata: dict[str, Any] | None = None, correlation_id: str | None = None):
@@ -152,31 +303,31 @@ async def _emit_overbooking_alert(
 
         with tenant_context(tenant_id):
             await db.notifications.insert_one(
-            {
-                "id": str(_uuid.uuid4()),
-                "tenant_id": tenant_id,
-                "type": "overbooking_risk",
-                "severity": "warning",
-                "title": f"Overbooking Engellendi - {title_room}",
-                "message": (
-                    f"{conflict_night} gecesi için {title_room} talebi reddedildi "
-                    f"(çakışma kaynağı: {type_label}" + (f", booking {conflicting_booking_id}" if conflicting_booking_id else "") + "). "
-                    "OTA kaynaklı bookingler 'pending_assignment' kuyruğuna düşmüş olabilir — kontrol edin."
-                ),
-                "related_entity": "booking",
-                "related_id": booking_id or "",
-                "read": False,
-                "created_at": datetime.now(UTC).isoformat(),
-                "metadata": {
-                    "conflict_type": conflict_type,
-                    "conflict_night": conflict_night,
-                    "conflicting_booking_id": conflicting_booking_id,
-                    "correlation_id": correlation_id,
-                    "rejected_room_id": room_id,
-                    "rejected_booking_id": booking_id,
-                },
-            }
-        )
+                {
+                    "id": str(_uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "type": "overbooking_risk",
+                    "severity": "warning",
+                    "title": f"Overbooking Engellendi - {title_room}",
+                    "message": (
+                        f"{conflict_night} gecesi için {title_room} talebi reddedildi "
+                        f"(çakışma kaynağı: {type_label}" + (f", booking {conflicting_booking_id}" if conflicting_booking_id else "") + "). "
+                        "OTA kaynaklı bookingler 'pending_assignment' kuyruğuna düşmüş olabilir — kontrol edin."
+                    ),
+                    "related_entity": "booking",
+                    "related_id": booking_id or "",
+                    "read": False,
+                    "created_at": datetime.now(UTC).isoformat(),
+                    "metadata": {
+                        "conflict_type": conflict_type,
+                        "conflict_night": conflict_night,
+                        "conflicting_booking_id": conflicting_booking_id,
+                        "correlation_id": correlation_id,
+                        "rejected_room_id": room_id,
+                        "rejected_booking_id": booking_id,
+                    },
+                }
+            )
     except Exception as exc:
         logger.warning(
             "Overbooking notification insert failed (booking=%s, room=%s): %s",
@@ -391,17 +542,14 @@ async def create_booking_atomic(
                 "lock_type": "booking",
                 "created_at": datetime.now(UTC).isoformat(),
             }
-            try:
-                with tenant_context(tenant_id):
-                    await db.room_night_locks.insert_one(lock_doc)
+            claimed, existing = await _claim_night_or_get_owner(
+                lock_doc,
+                correlation_id=correlation_id,
+            )
+            if claimed:
                 claimed_nights.append(night)
-            except DuplicateKeyError:
+            else:
                 # Find which booking/hold owns this night
-                with tenant_context(tenant_id):
-                    existing = await db.room_night_locks.find_one(
-                    {"tenant_id": tenant_id, "room_id": room_id, "night_date": night},
-                    {"_id": 0, "booking_id": 1, "lock_type": 1},
-                )
                 conflicting_id = existing.get("booking_id") if existing else None
                 lock_type = existing.get("lock_type", "booking") if existing else "booking"
 
@@ -441,13 +589,13 @@ async def create_booking_atomic(
                 if claimed_nights:
                     with tenant_context(tenant_id):
                         await db.room_night_locks.delete_many(
-                        {
-                            "tenant_id": tenant_id,
-                            "room_id": room_id,
-                            "night_date": {"$in": claimed_nights},
-                            "booking_id": booking_id,
-                        }
-                    )
+                            {
+                                "tenant_id": tenant_id,
+                                "room_id": room_id,
+                                "night_date": {"$in": claimed_nights},
+                                "booking_id": booking_id,
+                            }
+                        )
 
                     # INV-6: Log the compensation
                     await _timeline_event(
@@ -514,13 +662,13 @@ async def create_booking_atomic(
         if claimed_nights:
             with tenant_context(tenant_id):
                 await db.room_night_locks.delete_many(
-                {
-                    "tenant_id": tenant_id,
-                    "room_id": room_id,
-                    "night_date": {"$in": claimed_nights},
-                    "booking_id": booking_id,
-                }
-            )
+                    {
+                        "tenant_id": tenant_id,
+                        "room_id": room_id,
+                        "night_date": {"$in": claimed_nights},
+                        "booking_id": booking_id,
+                    }
+                )
             # INV-6: Log the compensation
             await _timeline_event(
                 tenant_id=tenant_id,
@@ -556,17 +704,17 @@ async def release_booking_nights(tenant_id: str, booking_id: str, reason: str = 
     # Capture lock details before deletion for audit
     with tenant_context(tenant_id):
         locks = await db.room_night_locks.find(
-        {"tenant_id": tenant_id, "booking_id": booking_id},
-        {"_id": 0, "room_id": 1, "night_date": 1},
-    ).to_list(365)
+            {"tenant_id": tenant_id, "booking_id": booking_id},
+            {"_id": 0, "room_id": 1, "night_date": 1},
+        ).to_list(365)
 
     with tenant_context(tenant_id):
         result = await db.room_night_locks.delete_many(
-        {
-            "tenant_id": tenant_id,
-            "booking_id": booking_id,
-        }
-    )
+            {
+                "tenant_id": tenant_id,
+                "booking_id": booking_id,
+            }
+        )
     deleted = result.deleted_count
 
     if deleted > 0:
@@ -657,16 +805,13 @@ async def assign_room_atomic(
             "lock_type": "booking",
             "created_at": datetime.now(UTC).isoformat(),
         }
-        try:
-            with tenant_context(tenant_id):
-                await db.room_night_locks.insert_one(lock_doc)
+        claimed, existing = await _claim_night_or_get_owner(
+            lock_doc,
+            correlation_id=correlation_id or booking_id,
+        )
+        if claimed:
             claimed_nights.append(night)
-        except DuplicateKeyError:
-            with tenant_context(tenant_id):
-                existing = await db.room_night_locks.find_one(
-                {"tenant_id": tenant_id, "room_id": room_id, "night_date": night},
-                {"_id": 0, "booking_id": 1, "lock_type": 1},
-            )
+        else:
             existing_owner = existing.get("booking_id") if existing else None
             # Idempotent: this booking already holds the night on this room.
             if existing_owner == booking_id:
@@ -675,13 +820,13 @@ async def assign_room_atomic(
             if claimed_nights:
                 with tenant_context(tenant_id):
                     await db.room_night_locks.delete_many(
-                    {
-                        "tenant_id": tenant_id,
-                        "room_id": room_id,
-                        "night_date": {"$in": claimed_nights},
-                        "booking_id": booking_id,
-                    }
-                )
+                        {
+                            "tenant_id": tenant_id,
+                            "room_id": room_id,
+                            "night_date": {"$in": claimed_nights},
+                            "booking_id": booking_id,
+                        }
+                    )
             lock_type = existing.get("lock_type", "booking") if existing else "booking"
             if existing_owner and existing_owner.startswith(OOO_PREFIX):
                 conflict_type = "ooo"
@@ -716,15 +861,19 @@ async def assign_room_atomic(
                 conflicting_nights=[night],
             )
 
-    # Step 3 — release this booking's locks on any other room (room change).
+    # Step 3 — release obsolete locks: any previous room, plus nights on the
+    # same room that no longer belong to the edited stay window.
     with tenant_context(tenant_id):
         await db.room_night_locks.delete_many(
-        {
-            "tenant_id": tenant_id,
-            "booking_id": booking_id,
-            "room_id": {"$ne": room_id},
-        }
-    )
+            {
+                "tenant_id": tenant_id,
+                "booking_id": booking_id,
+                "$or": [
+                    {"room_id": {"$ne": room_id}},
+                    {"room_id": room_id, "night_date": {"$nin": nights}},
+                ],
+            }
+        )
 
     await _timeline_event(
         tenant_id=tenant_id,
@@ -795,9 +944,9 @@ async def apply_room_block(tenant_id: str, room_id: str, block_type: str, start_
         except DuplicateKeyError:
             with tenant_context(tenant_id):
                 existing = await db.room_night_locks.find_one(
-                {"tenant_id": tenant_id, "room_id": room_id, "night_date": night},
-                {"_id": 0, "booking_id": 1, "lock_type": 1},
-            )
+                    {"tenant_id": tenant_id, "room_id": room_id, "night_date": night},
+                    {"_id": 0, "booking_id": 1, "lock_type": 1},
+                )
             conflicts.append(
                 {
                     "night": night,
@@ -1332,25 +1481,25 @@ async def manual_resolve_room_night_lock_duplicate(
     try:
         with tenant_context(tenant_id):
             await db.audit_logs.insert_one(
-            {
-                "id": (f"rnl-manual-{tenant_id}-{room_id}-{night_date}-{int(datetime.now(UTC).timestamp())}"),
-                "tenant_id": tenant_id,
-                "user_id": actor_id,
-                "user_name": actor_name,
-                "user_role": actor_role,
-                "action": "MANUAL_RESOLVE_RNL_DUPLICATE",
-                "entity_type": "room_night_lock",
-                "entity_id": f"{tenant_id}:{room_id}:{night_date}",
-                "changes": {
-                    "keep_booking_id": keep_booking_id,
-                    "retire_booking_ids": retire_ids,
-                    "owners_before": existing_locks,
-                    "deleted_count": del_res.deleted_count,
-                    "decision": "manual",
-                },
-                "timestamp": now_iso,
-            }
-        )
+                {
+                    "id": (f"rnl-manual-{tenant_id}-{room_id}-{night_date}-{int(datetime.now(UTC).timestamp())}"),
+                    "tenant_id": tenant_id,
+                    "user_id": actor_id,
+                    "user_name": actor_name,
+                    "user_role": actor_role,
+                    "action": "MANUAL_RESOLVE_RNL_DUPLICATE",
+                    "entity_type": "room_night_lock",
+                    "entity_id": f"{tenant_id}:{room_id}:{night_date}",
+                    "changes": {
+                        "keep_booking_id": keep_booking_id,
+                        "retire_booking_ids": retire_ids,
+                        "owners_before": existing_locks,
+                        "deleted_count": del_res.deleted_count,
+                        "decision": "manual",
+                    },
+                    "timestamp": now_iso,
+                }
+            )
     except Exception as exc:
         logger.warning("F8N manual-resolve audit_log insert failed: %s", exc)
 
