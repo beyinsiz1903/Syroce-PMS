@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useCurrency } from '@/context/CurrencyContext';
 import AccountingSetupWizard from '@/pages/accounting/AccountingSetupWizard';
+import { AccountLedgerView } from '@/pages/accounting/AccountLedgerView';
+import { GeneralLedgerNavigation } from '@/pages/accounting/GeneralLedgerNavigation';
+import { GeneralLedgerOverview } from '@/pages/accounting/GeneralLedgerOverview';
 import { Plus, Save, FileText, AlertCircle, CalendarRange, LockKeyhole, Unlock, RotateCcw, Landmark, TrendingUp, PackageOpen, Cable, ReceiptText, Send, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
 
 export const GL_ENDPOINTS = {
@@ -272,9 +276,14 @@ export const mergeAccountBalances = (accounts = [], trialBalance = {}) => {
   return accounts.map((account) => ({ ...account, balance: balances.get(account.code) || 0 }));
 };
 
+const GL_TABS = ['overview', 'journals', 'account-ledger', 'accounts', 'trial-balance', 'statements', 'periods', 'workspace', 'integrations', 'setup'];
+
 const GeneralLedgerModule = () => {
   const { amount: fmtMoney } = useCurrency();
-  const [activeTab, setActiveTab] = useState('setup');
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(GL_TABS.includes(requestedTab) ? requestedTab : 'overview');
   
   const [accounts, setAccounts] = useState([]);
   const [journals, setJournals] = useState([]);
@@ -314,6 +323,17 @@ const GeneralLedgerModule = () => {
   const [apGLMapping, setApGLMapping] = useState(DEFAULT_AP_GL_MAPPING);
   const [fixedAssetGLMapping, setFixedAssetGLMapping] = useState(DEFAULT_FIXED_ASSET_GL_MAPPING);
   const [integrationBusy, setIntegrationBusy] = useState('');
+
+  const handleTabChange = (value) => {
+    setActiveTab(value);
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', value);
+    setSearchParams(next, { replace: true });
+  };
+
+  useEffect(() => {
+    if (GL_TABS.includes(requestedTab)) setActiveTab(requestedTab);
+  }, [requestedTab]);
   
   // New Journal Entry State
   const [newJournal, setNewJournal] = useState(emptyJournal);
@@ -346,7 +366,7 @@ const GeneralLedgerModule = () => {
   const fetchJournals = async () => {
     try {
       const [journalRes, voucherRes, auditRes, integrityRes] = await Promise.all([
-        axios.get(GL_ENDPOINTS.journal),
+        axios.get(GL_ENDPOINTS.journal, { params: { limit: 1000 } }),
         axios.get(GL_ENDPOINTS.vouchers),
         axios.get(GL_ENDPOINTS.sequenceAudit, { params: { fiscal_year: new Date().getFullYear() } }),
         axios.get(GL_ENDPOINTS.integrityAudit, { params: { fiscal_year: new Date().getFullYear() } }),
@@ -751,9 +771,18 @@ const GeneralLedgerModule = () => {
   };
 
   useEffect(() => {
+    if (activeTab === 'overview') {
+      fetchAccounts();
+      fetchJournals();
+      fetchPeriods();
+    }
     if (activeTab === 'setup') fetchAccounts();
     if (activeTab === 'accounts') fetchAccounts();
     if (activeTab === 'journals') fetchJournals();
+    if (activeTab === 'account-ledger') {
+      fetchAccounts();
+      fetchJournals();
+    }
     if (activeTab === 'trial-balance') fetchTrialBalance();
     if (activeTab === 'periods') fetchPeriods();
     if (activeTab === 'statements') fetchStatements();
@@ -887,19 +916,19 @@ const GeneralLedgerModule = () => {
         <p className="text-gray-500 mt-1">Tek Düzen Hesap Planı, Yevmiye Kayıtları ve Mizan</p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <div className="-mx-1 overflow-x-auto px-1 pb-1" data-testid="gl-tab-scroll">
-          <TabsList className="mb-3 min-w-max justify-start">
-            <TabsTrigger value="setup">Kurulum</TabsTrigger>
-            <TabsTrigger value="accounts">Hesap Planı (TDHP)</TabsTrigger>
-            <TabsTrigger value="journals">Yevmiye Fişleri</TabsTrigger>
-            <TabsTrigger value="trial-balance">Mizan</TabsTrigger>
-            <TabsTrigger value="periods">Mali Dönemler</TabsTrigger>
-            <TabsTrigger value="statements">Mali Tablolar</TabsTrigger>
-            <TabsTrigger value="workspace">Alt Defterler</TabsTrigger>
-            <TabsTrigger value="integrations">Muhasebe Entegrasyonları</TabsTrigger>
-          </TabsList>
-        </div>
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+        <div className="grid items-start gap-5 lg:grid-cols-[270px_minmax(0,1fr)]">
+          <GeneralLedgerNavigation activeTab={activeTab} onSelect={handleTabChange} onNavigate={navigate} />
+          <main className="min-w-0">
+        <TabsContent value="overview" className="mt-0">
+          <GeneralLedgerOverview
+            accounts={accounts}
+            vouchers={vouchers}
+            trialBalance={trialBalance}
+            periods={periods}
+            onSelect={handleTabChange}
+          />
+        </TabsContent>
 
         <TabsContent value="setup">
           <AccountingSetupWizard onAccountsChanged={fetchAccounts} />
@@ -956,6 +985,10 @@ const GeneralLedgerModule = () => {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="account-ledger">
+          <AccountLedgerView journals={journals} accounts={accounts} formatMoney={fmtMoney} />
         </TabsContent>
 
         {/* Journals */}
@@ -1610,6 +1643,8 @@ const GeneralLedgerModule = () => {
             </Card>
           </div>
         </TabsContent>
+          </main>
+        </div>
       </Tabs>
 
       <Dialog

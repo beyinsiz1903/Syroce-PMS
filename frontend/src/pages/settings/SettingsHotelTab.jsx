@@ -43,7 +43,11 @@ export default function SettingsHotelTab({ editMode, setEditMode, setHotelForm, 
               address: tenant?.address || '',
               location: tenant?.location || '',
               description: tenant?.description || '',
-              total_rooms: tenant?.total_rooms || 0
+              total_rooms: tenant?.total_rooms || 0,
+              tax_number: tenant?.tax_number || tenant?.tax_no || '',
+              license_number: tenant?.license_number || '',
+              license_expires_at: String(tenant?.license_expires_at || '').slice(0, 10),
+              star_rating: tenant?.star_rating || ''
             });
           }}>
                         <X className="w-4 h-4 mr-1" /> İptal
@@ -111,6 +115,47 @@ export default function SettingsHotelTab({ editMode, setEditMode, setHotelForm, 
           ...hotelForm,
           description: e.target.value
         })} placeholder="Otel hakkında kısa açıklama..." />
+                </div>
+                <div id="legal" className="border-t border-slate-200 pt-4 space-y-4 scroll-mt-24">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Yasal ve Resmî Bilgiler</h3>
+                    <p className="text-xs text-slate-500 mt-1">Bakanlık denetimi, TÜİK, TGA ve resmî raporlarda kullanılır.</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="hotel-tax-number">VKN / TCKN</Label>
+                      <Input id="hotel-tax-number" inputMode="numeric" maxLength={11} value={hotelForm.tax_number || ''} readOnly={!editMode} className={!editMode ? 'bg-slate-50' : ''} onChange={e => setHotelForm({
+            ...hotelForm,
+            tax_number: e.target.value.replace(/\D/g, '').slice(0, 11)
+          })} placeholder="10 haneli VKN veya 11 haneli TCKN" />
+                    </div>
+                    <div>
+                      <Label htmlFor="hotel-star-rating">Yıldız Sınıflaması</Label>
+                      <Select disabled={!editMode} value={hotelForm.star_rating ? String(hotelForm.star_rating) : undefined} onValueChange={value => setHotelForm({
+            ...hotelForm,
+            star_rating: Number(value)
+          })}>
+                        <SelectTrigger id="hotel-star-rating" className={!editMode ? 'bg-slate-50' : ''}><SelectValue placeholder="Seçiniz" /></SelectTrigger>
+                        <SelectContent>
+                          {[1, 2, 3, 4, 5].map(star => <SelectItem key={star} value={String(star)}>{star} yıldız</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="hotel-license-number">İşletme Belgesi Numarası</Label>
+                      <Input id="hotel-license-number" maxLength={100} value={hotelForm.license_number || ''} readOnly={!editMode} className={!editMode ? 'bg-slate-50' : ''} onChange={e => setHotelForm({
+            ...hotelForm,
+            license_number: e.target.value
+          })} />
+                    </div>
+                    <div>
+                      <Label htmlFor="hotel-license-expires-at">Belge Son Geçerlilik Tarihi</Label>
+                      <Input id="hotel-license-expires-at" type="date" value={hotelForm.license_expires_at || ''} readOnly={!editMode} className={!editMode ? 'bg-slate-50' : ''} onChange={e => setHotelForm({
+            ...hotelForm,
+            license_expires_at: e.target.value
+          })} />
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>

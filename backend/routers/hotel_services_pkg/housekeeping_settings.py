@@ -171,16 +171,18 @@ async def get_hotel_settings(
     settings = await db.hotel_settings.find_one({"tenant_id": tid}, {"_id": 0})
     if not settings:
         # Return defaults
-        tenant = await db.tenants.find_one({"tenant_id": tid}, {"_id": 0})
+        tenant = await db.tenants.find_one({"id": tid}, {"_id": 0})
+        if not tenant:
+            tenant = await db.tenants.find_one({"tenant_id": tid}, {"_id": 0})
         settings = {
             "tenant_id": tid,
-            "hotel_name": tenant.get("property_name", "") if tenant else "",
+            "hotel_name": (tenant.get("property_name") or tenant.get("hotel_name") or tenant.get("name") or "") if tenant else "",
             "hotel_address": tenant.get("address", "") if tenant else "",
             "hotel_phone": tenant.get("phone", tenant.get("contact_phone", "")) if tenant else "",
             "hotel_email": tenant.get("email", tenant.get("contact_email", "")) if tenant else "",
             "tax_id": "",
             "tax_office": "",
-            "logo_data": None,
+            "logo_data": (tenant.get("logo_data") or tenant.get("logo_url")) if tenant else None,
             "invoice_header": "",
             "invoice_footer": "Konaklama hizmetlerinden memnun kaldiysa bizi tercih ettiginiz icin tesekkur ederiz.",
             "invoice_notes": "",

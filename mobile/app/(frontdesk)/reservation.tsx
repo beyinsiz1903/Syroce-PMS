@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -34,6 +34,17 @@ import { roomPanelView } from '../../src/utils/availabilityFilters';
 import { formatCurrency, formatDate, formatTime } from '../../src/utils/format';
 import { errorMessage, isOffline } from '../../src/utils/errors';
 import { haptic } from '../../src/hooks/useHaptic';
+import {
+  getFolioForBooking,
+  postFolioPayment,
+} from '../../src/api/folio';
+import {
+  SIMPLE_PAYMENT_METHODS,
+  parsePaymentAmount,
+  paymentAmountError,
+  paymentTypeForAmount,
+  type SimplePaymentMethod,
+} from '../../src/utils/paymentEntry';
 
 // DD.MM.YYYY → YYYY-MM-DD (same normaliser the list screen uses). Returns
 // undefined for blank / unparseable input so the caller can reject it.
@@ -99,9 +110,16 @@ export default function ReservationDetailScreen() {
     queryFn: () => getReservationOtaDetails(id),
     enabled: !!id,
   });
+  const folio = useQuery({
+    queryKey: ['reservation-folio', id],
+    queryFn: () => getFolioForBooking(id),
+    enabled: !!id,
+  });
 
   const offline =
-    (enhanced.isError && isOffline(enhanced.error)) || (ota.isError && isOffline(ota.error));
+    (enhanced.isError && isOffline(enhanced.error)) ||
+    (ota.isError && isOffline(ota.error)) ||
+    (folio.isError && isOffline(folio.error));
 
   const totalAmount = p.total_amount ? Number(p.total_amount) : undefined;
   const paidAmount = p.paid_amount ? Number(p.paid_amount) : undefined;
@@ -121,7 +139,7 @@ export default function ReservationDetailScreen() {
 
   // Which inline action panel is open ('' = none). Only one at a time keeps the
   // detail screen readable on a phone.
-  const [panel, setPanel] = useState<'' | 'dates' | 'room' | 'rate' | 'guests'>('');
+  const [panel, setPanel] = useState<'' | 'dates' | 'room' | 'rate' | 'guests' | 'payment'>('');
   const [actionError, setActionError] = useState<string | null>(null);
   // Inline success banner (NOT Alert.alert — a no-op on Expo Web). Cleared when
   // a new panel opens or another action starts.
@@ -138,6 +156,9 @@ export default function ReservationDetailScreen() {
   const [adults, setAdults] = useState('');
   const [children, setChildren] = useState('');
   const [specialRequests, setSpecialRequests] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<SimplePaymentMethod>('card');
+  const paymentAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
   // Room-change availability window. Defaults to the reservation's own dates
   // but the operator can edit it to check a different window without first
   // saving a date change.
@@ -159,6 +180,7 @@ export default function ReservationDetailScreen() {
     qc.invalidateQueries({ queryKey: ['reservations-search'] });
     qc.invalidateQueries({ queryKey: ['reservation-enhanced', id] });
     qc.invalidateQueries({ queryKey: ['reservation-ota', id] });
+    qc.invalidateQueries({ queryKey: ['reservation-folio', id] });
   };
 
   const closePanel = () => {
@@ -166,7 +188,7 @@ export default function ReservationDetailScreen() {
     setActionError(null);
   };
 
-  const openPanel = (next: 'dates' | 'room' | 'rate' | 'guests') => {
+  const openPanel = (next: 'dates' | 'room' | 'rate' | 'guests' | 'payment') => {
     setActionError(null);
     setSuccessMsg(null);
     setCancelConfirming(false);
@@ -177,6 +199,10 @@ export default function ReservationDetailScreen() {
       setAdults(otaData?.adults != null ? String(otaData.adults) : '');
       setChildren(otaData?.children != null ? String(otaData.children) : '');
       setSpecialRequests(otaData?.special_requests || '');
+    }
+    if (next === 'payment') {
+      const current = folio.data?.balance ?? balance ?? 0;
+      setPaymentAmount(current > 0 ? String(Math.round(current * 100) / 100) : '');
     }
   };
 
@@ -316,6 +342,58 @@ export default function ReservationDetailScreen() {
     },
   });
 
+  const paymentMutation = useMutation({
+    mutationFn: async () => {
+      const folioData = folio.data;
+      if (!folioData?.id) throw new Error(tr.reservations.paymentNoFolio);
+      const currentBalance = folioData.balance ?? balance ?? 0;
+      if (currentBalance <= 0) throw new Error(tr.reservations.paymentNoBalance);
+      const amount = parsePaymentAmount(paymentAmount);
+      const amountIssue = paymentAmountError(amount, currentBalance);
+      if (amountIssue === 'invalid') throw new Error(tr.reservations.paymentInvalid);
+      if (amountIssue === 'overpayment') throw new Error(tr.reservations.paymentOver);
+      const safeAmount = amount as number;
+      const paymentType = paymentTypeForAmount(safeAmount, currentBalance);
+      const fingerprint = `${id}|${folioData.id}|${safeAmount}|${paymentMethod}|${paymentType}`;
+      if (!paymentAttempt.current || paymentAttempt.current.fingerprint !== fingerprint) {
+        paymentAttempt.current = {
+          fingerprint,
+          key: `mobile-payment-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+        };
+      }
+      return postFolioPayment(
+        folioData.id,
+        { amount: safeAmount, method: paymentMethod, payment_type: paymentType },
+        paymentAttempt.current.key,
+      );
+    },
+    onSuccess: async () => {
+      haptic.success();
+      paymentAttempt.current = null;
+      await folio.refetch();
+      refreshAll();
+      closePanel();
+      setSuccessMsg(tr.reservations.paymentSaved);
+    },
+    onError: (e: unknown) => {
+      haptic.error();
+      setActionError(errorMessage(e, tr.reservations.actionError));
+    },
+  });
+
+  const paymentMethodLabel = (method: SimplePaymentMethod): string => {
+    switch (method) {
+      case 'cash':
+        return tr.reservations.paymentCash;
+      case 'card':
+        return tr.reservations.paymentCard;
+      case 'bank_transfer':
+        return tr.reservations.paymentTransfer;
+      case 'online':
+        return tr.reservations.paymentOnline;
+    }
+  };
+
   const onCancelPress = () => {
     haptic.tap();
     setActionError(null);
@@ -387,6 +465,12 @@ export default function ReservationDetailScreen() {
               title={tr.reservations.editGuests}
               variant={panel === 'guests' ? 'primary' : 'secondary'}
               onPress={() => openPanel('guests')}
+            />
+            <Button
+              title={tr.reservations.takePayment}
+              icon="card-outline"
+              variant={panel === 'payment' ? 'primary' : 'success'}
+              onPress={() => openPanel('payment')}
             />
           </View>
 
@@ -497,6 +581,52 @@ export default function ReservationDetailScreen() {
                     />
                   ))}
                 </View>
+              )}
+            </View>
+          ) : null}
+
+          {panel === 'payment' ? (
+            <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
+              {folio.isLoading ? (
+                <SkeletonCard />
+              ) : folio.isError ? (
+                <Body style={{ color: c.danger }}>
+                  {errorMessage(folio.error, tr.reservations.paymentNoFolio)}
+                </Body>
+              ) : (
+                <>
+                  <Row
+                    label={tr.reservations.paymentBalance}
+                    value={formatCurrency(folio.data?.balance ?? balance ?? 0)}
+                  />
+                  <Field
+                    label={tr.reservations.paymentAmount}
+                    value={paymentAmount}
+                    onChangeText={setPaymentAmount}
+                    keyboardType="decimal-pad"
+                  />
+                  <Muted>{tr.reservations.paymentMethod}</Muted>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+                    {SIMPLE_PAYMENT_METHODS.map((method) => (
+                      <Button
+                        key={method}
+                        title={paymentMethodLabel(method)}
+                        variant={paymentMethod === method ? 'primary' : 'secondary'}
+                        onPress={() => setPaymentMethod(method)}
+                        disabled={paymentMutation.isPending}
+                      />
+                    ))}
+                  </View>
+                  <Button
+                    testID="reservation-payment-submit"
+                    title={tr.reservations.takePayment}
+                    icon="checkmark-circle-outline"
+                    variant="success"
+                    onPress={() => paymentMutation.mutate()}
+                    loading={paymentMutation.isPending}
+                    fullWidth
+                  />
+                </>
               )}
             </View>
           ) : null}

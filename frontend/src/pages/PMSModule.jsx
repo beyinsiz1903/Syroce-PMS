@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy, memo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense, memo } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { lazyWithPreload as lazy } from '@/routes/lazyWithPreload';
 import Layout from '@/components/Layout';
 import GlobalSearch from '@/components/GlobalSearch';
 import { calculateOccupancyPrice, findOccupancyRule, nightsBetween } from '@/utils/occupancyPricing';
@@ -83,6 +84,7 @@ import {
 import FloatingActionButton from '@/components/FloatingActionButton';
 import { useSetupStatus } from '@/hooks/useSetupStatus';
 import LiteSetupBanner from '@/components/LiteSetupBanner';
+import { BUSINESS_DATE_CHANGED_EVENT } from '@/lib/businessDateEvents';
 
 const PMSModule = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
@@ -109,6 +111,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [dueOutRooms, setDueOutRooms] = useState([]);
   const [stayoverRooms, setStayoverRooms] = useState([]);
   const [arrivalRooms, setArrivalRooms] = useState([]);
+  const [businessDate, setBusinessDate] = useState(null);
   const [auditLogs, setAuditLogs] = useState([]);
   const [userPermissions, setUserPermissions] = useState({});
   const [otaReservations, setOtaReservations] = useState([]);
@@ -470,19 +473,39 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   }, []);
 
   useEffect(() => {
+    const handleBusinessDateChanged = (event) => {
+      const nextBusinessDate = event?.detail?.businessDate;
+      if (!nextBusinessDate) return;
+      setBusinessDate(nextBusinessDate);
+      loadData(nextBusinessDate);
+      if (hasLoadedFrontdesk) loadFrontDeskData();
+      if (hasLoadedHousekeeping) loadHousekeepingData();
+    };
+    window.addEventListener(BUSINESS_DATE_CHANGED_EVENT, handleBusinessDateChanged);
+    return () => window.removeEventListener(BUSINESS_DATE_CHANGED_EVENT, handleBusinessDateChanged);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- event handler reloads the current operational board
+  }, [hasLoadedFrontdesk, hasLoadedHousekeeping]);
+
+  useEffect(() => {
     if (activeTab === 'frontdesk' && !hasLoadedFrontdesk) { loadFrontDeskData(); setHasLoadedFrontdesk(true); }
     else if (activeTab === 'housekeeping' && !hasLoadedHousekeeping) { loadHousekeepingData(); setHasLoadedHousekeeping(true); }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [activeTab, hasLoadedFrontdesk, hasLoadedHousekeeping]);
 
-  const loadData = async () => {
+  const loadData = async (businessDateOverride = null) => {
     try {
-      const today = new Date().toISOString().split('T')[0];
+      let operationalDate = businessDateOverride || businessDate;
+      if (!operationalDate) {
+        const businessDateResponse = await axios.get('/night-audit/business-date', { timeout: 15000 });
+        operationalDate = businessDateResponse?.data?.business_date;
+        if (operationalDate) setBusinessDate(operationalDate);
+      }
+      const today = operationalDate || new Date().toISOString().split('T')[0];
       // Initial fetch range 90gün → 30gün, limit 200 → 120: ilk render için
       // yeterli (KPI + arrival/departure pencereleri 30 gün içine düşer).
       // Bookings sekmesine girildiğinde tam tarih aralığı zaten ayrı fetch
       // ile genişletilebilir. Backend cache hit oranı da yükseliyor.
-      const futureDate = new Date(); futureDate.setDate(futureDate.getDate() + 30);
+      const futureDate = new Date(`${today}T12:00:00Z`); futureDate.setUTCDate(futureDate.getUTCDate() + 30);
       const futureDateStr = futureDate.toISOString().split('T')[0];
       const results = await Promise.allSettled([
         axios.get('/pms/rooms?limit=100', { timeout: 15000 }),
@@ -954,7 +977,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           )}
           {activeTab === 'rooms' && (
             <TabsContent value="rooms" className="space-y-4">
-              <RoomsTab rooms={rooms} bookings={bookings} guests={guests} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} onPayment={(bookingId) => { setReservationDetailId(bookingId); }} onGuestClick={(guestId) => { const guest = guests.find(g => g.id === guestId); if (guest) { setSelectedGuest(guest); setOpenDialog('guestInfo'); } }} onBookingDoubleClick={(booking) => setReservationDetailId(booking.id)} onDataRefresh={loadData} />
+              <RoomsTab rooms={rooms} bookings={bookings} guests={guests} businessDate={businessDate} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} onPayment={(bookingId) => { setReservationDetailId(bookingId); }} onGuestClick={(guestId) => { const guest = guests.find(g => g.id === guestId); if (guest) { setSelectedGuest(guest); setOpenDialog('guestInfo'); } }} onBookingDoubleClick={(booking) => setReservationDetailId(booking.id)} onDataRefresh={loadData} />
               {selectedRoom && <RoomFeaturesPanel room={selectedRoom} onUpdate={loadData} />}
             </TabsContent>
           )}

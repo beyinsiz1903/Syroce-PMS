@@ -29,6 +29,7 @@ from core.occupancy_pricing import (
 from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
 from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
+from modules.pms_core.guest_identity import find_existing_guest_by_identity
 from modules.pms_core.role_permission_service import require_op  # v82 DR
 
 try:
@@ -107,6 +108,9 @@ class QuickBookingCreate(BaseModel):
     check_out: str
     total_amount: float = Field(..., ge=0, le=1e12)
     guest_id: str | None = None
+    guest_email: str | None = Field(default=None, max_length=320)
+    guest_phone: str | None = Field(default=None, max_length=50)
+    guest_id_number: str | None = Field(default=None, max_length=50)
     adults: int = Field(1, ge=0, le=50)
     children: int = Field(0, ge=0, le=50)
     daily_rate: float | None = Field(None, ge=0, le=1e12)
@@ -179,45 +183,60 @@ async def create_quick_booking(
             raise HTTPException(status_code=404, detail="Secilen misafir bulunamadi")
         guest_id = data.guest_id
     else:
-        # Deterministic guest_id from idempotency key so retries with the same
-        # Idempotency-Key produce the same guest_id (otherwise the downstream
-        # request_hash differs and idempotency check fails).
-        idem_key = request.headers.get("Idempotency-Key") or request.headers.get("idempotency-key") or ""
-        if idem_key:
-            guest_id = str(uuid.uuid5(uuid.NAMESPACE_OID, f"{tenant_id}:walkin:{idem_key}"))
+        identity_candidate = {
+            "name": data.guest_name.strip(),
+            "email": (data.guest_email or "").strip(),
+            "phone": (data.guest_phone or "").strip(),
+            "id_number": (data.guest_id_number or "").strip(),
+        }
+        matched_guest = await find_existing_guest_by_identity(db.guests, tenant_id, identity_candidate)
+        if matched_guest:
+            guest_id = matched_guest["id"]
         else:
-            guest_id = str(uuid.uuid4())
-        existing_walkin = await db.guests.find_one({"id": guest_id, "tenant_id": tenant_id}, {"_id": 0})
-        if not existing_walkin:
-            now_ts = datetime.now(UTC)
-            guest_doc = {
-                "id": guest_id,
-                "tenant_id": tenant_id,
-                "name": data.guest_name.strip(),
-                "email": f"walk-in-{guest_id[:8]}@placeholder.local",
-                "phone": "",
-                "id_number": "",
-                "vip_status": False,
-                "loyalty_points": 0,
-                "total_stays": 0,
-                "total_spend": 0.0,
-                "created_at": now_ts.isoformat(),
-            }
-            from security.guest_write import encrypt_guest_insert
+            # Deterministic guest_id from idempotency key so retries with the same
+            # Idempotency-Key produce the same guest_id (otherwise the downstream
+            # request_hash differs and idempotency check fails).
+            idem_key = request.headers.get("Idempotency-Key") or request.headers.get("idempotency-key") or ""
+            if idem_key:
+                guest_id = str(uuid.uuid5(uuid.NAMESPACE_OID, f"{tenant_id}:walkin:{idem_key}"))
+            else:
+                guest_id = str(uuid.uuid4())
+            existing_walkin = await db.guests.find_one({"id": guest_id, "tenant_id": tenant_id}, {"_id": 0})
+            if not existing_walkin:
+                now_ts = datetime.now(UTC)
+                guest_doc = {
+                    "id": guest_id,
+                    "tenant_id": tenant_id,
+                    "name": identity_candidate["name"],
+                    "email": identity_candidate["email"] or f"walk-in-{guest_id[:8]}@placeholder.local",
+                    "phone": identity_candidate["phone"],
+                    "id_number": identity_candidate["id_number"],
+                    "vip_status": False,
+                    "loyalty_points": 0,
+                    "total_stays": 0,
+                    "total_spend": 0.0,
+                    "created_at": now_ts.isoformat(),
+                }
+                from security.guest_write import encrypt_guest_insert
 
-            guest_doc = encrypt_guest_insert(guest_doc)
-            await db.guests.insert_one(guest_doc)
+                guest_doc = encrypt_guest_insert(guest_doc)
+                await db.guests.insert_one(guest_doc)
 
     # 3) Build BookingCreate and delegate to the standard service
+    guests_count = data.adults + data.children
+    if guests_count < 1:
+        raise HTTPException(status_code=400, detail="En az bir misafir gerekli")
+
     booking_data = BookingCreate(
         guest_id=guest_id,
         room_id=data.room_id,
         check_in=data.check_in,
         check_out=data.check_out,
-        adults=1,
-        children=0,
-        guests_count=1,
+        adults=data.adults,
+        children=data.children,
+        guests_count=guests_count,
         total_amount=data.total_amount,
+        base_rate=data.daily_rate,
         channel="direct",
         source_channel="direct",
         origin="ui",

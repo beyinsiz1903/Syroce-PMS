@@ -73,6 +73,7 @@ export const ROUTES = {
   checkin: '/(frontdesk)/checkin',
   checkout: '/(frontdesk)/checkout',
   walkin: '/(frontdesk)/walkin',
+  newReservation: '/(frontdesk)/new-reservation',
   reservations: '/(frontdesk)/reservations',
   reservationDetail: '/(frontdesk)/reservation',
   availability: '/(frontdesk)/availability',

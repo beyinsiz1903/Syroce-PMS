@@ -221,6 +221,28 @@ export const getRateTypeInfo = (booking) => {
   return rateTypes[booking.rate_type] || { label: booking.rate_type?.toUpperCase() || 'STD', color: 'text-gray-300' };
 };
 
+/**
+ * Flatten the unified Syroce rate grid into one visible room-type/day rate.
+ * The reservation calendar has no rate-plan row, so when several plans exist
+ * it shows the lowest configured positive selling rate. Reservation totals
+ * are intentionally not an input: an OTA booking must never rewrite the
+ * hotel's public calendar price label.
+ */
+export const buildCalendarRateLookup = (grid = []) => {
+  const lookup = {};
+  for (const row of Array.isArray(grid) ? grid : []) {
+    const roomType = row?.pms_room_type || row?.room_type_name;
+    if (!roomType) continue;
+    for (const day of Array.isArray(row?.dates) ? row.dates : []) {
+      const rate = Number(day?.rate);
+      if (!day?.date || !Number.isFinite(rate) || rate <= 0) continue;
+      const key = `${roomType}|${day.date}`;
+      if (lookup[key] == null || rate < lookup[key]) lookup[key] = rate;
+    }
+  }
+  return lookup;
+};
+
 // Booking arrival/stayover/departure status
 export const getBookingStatus = (booking, date) => {
   const dayStr = toDateStringUTC(date);
@@ -259,31 +281,13 @@ export const getOTAInfo = (channel) => {
   return otaData[channel] || { label: 'OTA', name: 'OTA', color: 'bg-gray-600' };
 };
 
-// Status-based booking color for calendar bars
-// blue = confirmed, green = checked_in (in-house), red tint = checked_out, teal = guaranteed
-// refToday: otelin iş günü (business date). Gün sonu yapılmadıysa duvar-saati
-// (new Date) iş gününün ÖNÜNDE olur; o yüzden "geçmiş → kırmızı" kararı duvar
-// saatine göre değil, iş gününe göre verilmeli. Aksi halde gelecekteki onaylı
-// rezervasyonlar yanlışlıkla kırmızı görünür (bkz. takvim renk hatası).
-export const getBookingStatusColor = (booking, refToday) => {
-  const status = booking.status;
-  const today = refToday || new Date().toISOString().slice(0, 10);
-  const checkIn = toDateStringUTC(booking.check_in);
-  const checkOut = toDateStringUTC(booking.check_out);
-  // In-house: vibrant green
-  if (status === 'checked_in') return { bg: '#16a34a', border: '#15803d' };
-  // Departed: warm orange/amber (HotelRunner stili — geçmişte kalan misafirler)
-  if (status === 'checked_out') return { bg: '#f97316', border: '#ea580c' };
-  // Past but not checked out: soft red
-  if (checkOut <= today) return { bg: '#f87171', border: '#ef4444' };
-  // Guaranteed: vivid teal
-  if (status === 'guaranteed') return { bg: '#0891b2', border: '#0e7490' };
-  // Arriving today: vivid orange
-  if (checkIn === today && status === 'confirmed') return { bg: '#f97316', border: '#ea580c' };
-  // Confirmed future: vibrant blue
-  if (status === 'confirmed') return { bg: '#2563eb', border: '#1d4ed8' };
-  // Default: blue
-  return { bg: '#3b82f6', border: '#2563eb' };
+// Calendar bars deliberately use only three operational colors. Dates, OTA
+// source and urgency must not change a reservation's color; the lifecycle
+// status is the single source of truth.
+export const getBookingStatusColor = (booking) => {
+  if (booking.status === 'checked_in') return { bg: '#16a34a', border: '#15803d' };
+  if (booking.status === 'checked_out') return { bg: '#dc2626', border: '#b91c1c' };
+  return { bg: '#2563eb', border: '#1d4ed8' };
 };
 
 // Source-based booking card color mapping (legacy, kept for compatibility)

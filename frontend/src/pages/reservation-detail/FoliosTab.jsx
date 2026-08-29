@@ -10,6 +10,10 @@ import {
 } from 'lucide-react';
 import { API, fmtTL, fmtTs, SummaryCard, FormField, SelectField, FormPanel } from './helpers';
 import SplitFolioDialog from '@/components/SplitFolioDialog';
+import {
+  classifyGuestPayment,
+  guestPaymentClassificationLabel,
+} from '@/utils/paymentClassification';
 
 export function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, guest, room, onRefresh, onSwitchTab }) {
   const { t } = useTranslation();
@@ -19,7 +23,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [showAgency, setShowAgency] = useState(false);
   const [showCariTransfer, setShowCariTransfer] = useState(false);
   const [showReconcile, setShowReconcile] = useState(false);
-  const [payForm, setPayForm] = useState({ amount: '', method: 'cash', payment_type: 'interim', reference: '' });
+  const [payForm, setPayForm] = useState({ amount: '', method: 'cash', reference: '' });
   const [cariAccounts, setCariAccounts] = useState([]);
   const [cariForm, setCariForm] = useState({ amount: '', cari_account_id: '', description: '' });
   const [agencyForm, setAgencyForm] = useState({ amount: '', agency_name: '', reference: '' });
@@ -148,16 +152,23 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       {showPayment && (
         <FormPanel color="emerald" title={t('common.paymentRecord')} testid="payment-form" onClose={() => setShowPayment(false)} loading={loading}
           onSubmit={() => exec(async () => {
-            await axios.post(`/pms/reservations/${booking.id}/record-payment`, { ...payForm, amount: parseFloat(payForm.amount) });
-            toast.success('Ödeme kaydedildi'); setShowPayment(false); setPayForm({ amount: '', method: 'cash', payment_type: 'interim', reference: '' });
+            const amount = parseFloat(payForm.amount);
+            await axios.post(`/pms/reservations/${booking.id}/record-payment`, {
+              ...payForm,
+              amount,
+              payment_type: classifyGuestPayment(amount, summary?.balance),
+            });
+            toast.success('Ödeme kaydedildi'); setShowPayment(false); setPayForm({ amount: '', method: 'cash', reference: '' });
           })}>
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Tutar (TL)" type="number" value={payForm.amount} onChange={v => setPayForm(p => ({ ...p, amount: v }))} />
             <SelectField label={t('common.paymentMethod')} value={payForm.method} onChange={v => setPayForm(p => ({ ...p, method: v }))}
               options={[['cash','Nakit'],['card','Kredi Kartı'],['bank_transfer','Havale/EFT'],['online','Online']]} />
-            <SelectField label={t('common.paymentType')} value={payForm.payment_type} onChange={v => setPayForm(p => ({ ...p, payment_type: v }))}
-              options={[['prepayment','On Ödeme'],['deposit','Depozito'],['interim','Ara Ödeme'],['final','Final']]} />
             <FormField label="Referans" value={payForm.reference} onChange={v => setPayForm(p => ({ ...p, reference: v }))} placeholder="Fis/Dekont No" />
+          </div>
+          <div className="rounded-md border border-emerald-200 bg-white/70 px-3 py-2 text-xs text-emerald-800" data-testid="payment-classification">
+            <div className="font-medium">{guestPaymentClassificationLabel(payForm.amount, summary?.balance)}</div>
+            <div className="mt-0.5 text-emerald-700">Ödeme türü otomatik belirlenir. Depozito için ayrı Depozito sekmesini kullanın.</div>
           </div>
         </FormPanel>
       )}

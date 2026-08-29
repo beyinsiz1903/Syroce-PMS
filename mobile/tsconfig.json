@@ -3,7 +3,6 @@
   "compilerOptions": {
     "strict": true,
     "module": "esnext",
-    "baseUrl": ".",
     "paths": {
       "@/*": [
         "./src/*"
@@ -15,6 +14,9 @@
     "**/*.tsx"
   ],
   "exclude": [
-    "e2e/**/*"
+    "e2e/**/*",
+    "**/__tests__/**/*",
+    ".unit-build/**/*",
+    "scratch.tsx"
   ]
 }

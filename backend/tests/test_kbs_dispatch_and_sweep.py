@@ -176,7 +176,8 @@ async def test_dispatch_missing_data_dead_and_alert(tenant, monkeypatch):
     assert dead["status"] == "dead"
     alert = await sys_db.kbs_alerts.find_one({"tenant_id": tenant, "kind": "missing_data"})
     assert alert is not None
-    assert "birth_date" in alert["missing_fields"]
+    assert "id_number" in alert["missing_fields"]
+    assert "birth_date" not in alert["missing_fields"]
 
 
 async def test_dispatch_idempotent_no_double_send(tenant, monkeypatch):

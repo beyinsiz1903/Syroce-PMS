@@ -14,6 +14,10 @@ from typing import Any
 
 from core.booking_realtime import publish_booking_change
 from core.database import db
+from domains.channel_manager.ingest.hotelrunner_pricing import (
+    hotelrunner_guest_total,
+    matches_legacy_before_tax_total,
+)
 from domains.channel_manager.providers.hotelrunner_shared import (
     _persist_and_process,
     _resolve_property_id,
@@ -467,6 +471,7 @@ async def run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
     known_ext_ids = set()
     known_ext_updated = {}
     known_ext_status = {}
+    known_ext_totals = {}
 
     async for doc in db.imported_reservations.find(
         {"tenant_id": tenant_id, "provider": "hotelrunner"},
@@ -478,9 +483,11 @@ async def run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
 
     async for bdoc in db.bookings.find(
         {"tenant_id": tenant_id, "external_reservation_id": {"$exists": True, "$ne": ""}},
-        {"_id": 0, "external_reservation_id": 1, "status": 1},
+        {"_id": 0, "external_reservation_id": 1, "status": 1, "total_amount": 1},
     ):
-        known_ext_status[bdoc.get("external_reservation_id", "")] = bdoc.get("status", "confirmed")
+        external_id = bdoc.get("external_reservation_id", "")
+        known_ext_status[external_id] = bdoc.get("status", "confirmed")
+        known_ext_totals[external_id] = bdoc.get("total_amount")
 
     while all_page <= all_total_pages:
         result = await provider.get_reservations(
@@ -578,7 +585,19 @@ async def run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
                     if stored_status == "cancelled" and hr_status_check != "cancelled":
                         state_changed = False
 
-                    if state_changed or timestamp_changed:
+                    # Provider timestamps do not change merely because Syroce's
+                    # earlier importer selected rooms[].price instead of the
+                    # authoritative guest-payable total.  A manual full
+                    # reconciliation must therefore be allowed through this
+                    # outer gate when the exact legacy before-tax signature is
+                    # present; sync_reservation_update performs the same narrow
+                    # check again before writing.
+                    legacy_total_repair = matches_legacy_before_tax_total(
+                        known_ext_totals.get(sub_ext),
+                        sub_res,
+                    )
+
+                    if state_changed or timestamp_changed or legacy_total_repair:
                         try:
                             updated = await sync_reservation_update(
                                 tenant_id,
@@ -631,8 +650,14 @@ async def sync_reservation_update(
         logger.warning("[PULL-SYNC] Durable PMS booking not found")
         return False
 
+    total = hotelrunner_guest_total(hr_payload)
     existing_sync_ts = booking.get("last_synced_from_provider_at", "")
-    if existing_sync_ts and hr_updated_at and hr_updated_at <= existing_sync_ts:
+    provider_update_is_stale = bool(existing_sync_ts and hr_updated_at and hr_updated_at <= existing_sync_ts)
+    legacy_total_repair = provider_update_is_stale and matches_legacy_before_tax_total(
+        booking.get("total_amount"),
+        hr_payload,
+    )
+    if provider_update_is_stale and not legacy_total_repair:
         logger.debug("[PULL-SYNC] Provider update already applied or superseded")
         return True
 
@@ -644,17 +669,17 @@ async def sync_reservation_update(
     if not guest_name_hr:
         guest_name_hr = hr_payload.get("guest", "")
 
-    if guest_name_hr and guest_name_hr != booking.get("guest_name", ""):
+    if not provider_update_is_stale and guest_name_hr and guest_name_hr != booking.get("guest_name", ""):
         updates["guest_name"] = guest_name_hr
 
     checkin = hr_payload.get("checkin_date") or (room.get("checkin_date") if room else "")
     checkout = hr_payload.get("checkout_date") or (room.get("checkout_date") if room else "")
-    if checkin and checkin != booking.get("check_in", ""):
+    if not provider_update_is_stale and checkin and checkin != booking.get("check_in", ""):
         updates["check_in"] = checkin
-    if checkout and checkout != booking.get("check_out", ""):
+    if not provider_update_is_stale and checkout and checkout != booking.get("check_out", ""):
         updates["check_out"] = checkout
 
-    if room:
+    if room and not provider_update_is_stale:
         hr_room_code = room.get("inv_code") or room.get("code") or ""
         if hr_room_code:
             room_mapping = await db.room_mappings.find_one(
@@ -673,11 +698,14 @@ async def sync_reservation_update(
                 updates["room_type"] = new_room_type
                 updates["room_type_id"] = new_room_type_id
 
-    total = float(hr_payload.get("total", 0) or 0)
-    if room:
-        total = float(room.get("total", room.get("price", 0)) or 0)
-    if total > 0 and abs(total - float(booking.get("total_amount", 0))) > 0.01:
+    if total is not None and abs(total - float(booking.get("total_amount", 0))) > 0.01:
         updates["total_amount"] = total
+        updates["provider_total_amount"] = total
+        updates["pricing_tax_inclusive"] = True
+        updates["pricing_source"] = "channel_manager"
+        if legacy_total_repair:
+            updates["hotelrunner_total_reconciled_from"] = float(booking.get("total_amount", 0))
+            updates["hotelrunner_total_reconciled_at"] = datetime.now(UTC).isoformat()
 
     hr_status_map = {
         "confirmed": "confirmed",
@@ -687,7 +715,7 @@ async def sync_reservation_update(
         "no_show": "no_show",
     }
     mapped_status = hr_status_map.get(hr_state, hr_state)
-    if mapped_status != booking.get("status", ""):
+    if not provider_update_is_stale and mapped_status != booking.get("status", ""):
         updates["status"] = mapped_status
         if mapped_status == "cancelled":
             updates["cancelled_at"] = datetime.now(UTC).isoformat()
@@ -713,7 +741,8 @@ async def sync_reservation_update(
         return True
 
     updates["updated_at"] = datetime.now(UTC).isoformat()
-    updates["last_synced_from_provider_at"] = hr_updated_at
+    if not provider_update_is_stale:
+        updates["last_synced_from_provider_at"] = hr_updated_at
 
     booking_update = await db.bookings.update_one(
         {
@@ -727,10 +756,13 @@ async def sync_reservation_update(
         return False
 
     imported_update = {
-        "provider_updated_at": hr_updated_at,
         "updated_at": datetime.now(UTC).isoformat(),
         "guest_name": guest_name_hr if "guest_name" in updates else booking.get("guest_name", ""),
     }
+    if not provider_update_is_stale:
+        imported_update["provider_updated_at"] = hr_updated_at
+    if "total_amount" in updates:
+        imported_update["total_amount"] = updates["total_amount"]
     if "status" in updates:
         imported_update["status"] = updates["status"]
     await db.imported_reservations.update_one(

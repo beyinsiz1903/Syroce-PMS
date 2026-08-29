@@ -36,6 +36,10 @@ function readHostUri(): string | undefined {
 export function getApiUrl(): string {
   const url = process.env.EXPO_PUBLIC_API_URL;
   if (url && url.length > 0) return url.replace(/\/$/, '');
+  // A release build must never silently target localhost when an EAS/local
+  // build profile forgot to inject its public environment. Development keeps
+  // LAN host discovery below; standalone builds fail safe to the live PMS.
+  if (!__DEV__) return 'https://pms.syroce.com';
   const hostUri = readHostUri();
   if (hostUri) {
     const host = String(hostUri).split(':')[0];
@@ -48,6 +52,7 @@ export function getQuickIdUrl(): string {
   const url = process.env.EXPO_PUBLIC_QUICKID_URL;
   if (url && url.length > 0) return url.replace(/\/$/, '');
   const api = getApiUrl();
+  if (api === 'https://pms.syroce.com') return api;
   return api.replace(/:8000(\/|$)/, ':8099$1').replace(/:8000$/, ':8099');
 }
 

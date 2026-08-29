@@ -52,7 +52,7 @@ def _invalidate_admin_tenants_cache(tenant_id: str | None) -> None:
 require_super_admin = require_super_admin_guard()
 from domains.admin.subscription_models import PLAN_MODULE_DEFAULTS, SUBSCRIPTION_PLANS, SubscriptionTier, get_all_module_keys, get_feature_comparison, get_plan_default_modules
 from models.enums import ROLE_PERMISSIONS, Permission, UserRole
-from models.schemas import User
+from models.schemas import Tenant, User
 
 
 def _has_permission(role: UserRole | str, perm: Permission) -> bool:
@@ -318,6 +318,18 @@ async def get_current_subscription(current_user: User = Depends(get_current_user
         plan = SUBSCRIPTION_PLANS.get(SubscriptionTier.BASIC)
 
     entitlements = await _get_full_entitlements(current_user.tenant_id)
+    tenant_modules = get_tenant_modules(tenant)
+    # The browser may legitimately lose its local tenant snapshot after a
+    # deployment, storage cleanup, or an older session migration.  Returning a
+    # schema-filtered tenant snapshot here lets the authenticated bootstrap
+    # recover the hotel name and navigation context from the server instead of
+    # silently hiding module groups.
+    tenant_snapshot = Tenant(
+        **{
+            **tenant,
+            "modules": tenant_modules,
+        }
+    ).model_dump(mode="json")
     return {
         "tenant_id": current_user.tenant_id,
         "tier": normalized_tier,
@@ -326,8 +338,9 @@ async def get_current_subscription(current_user: User = Depends(get_current_user
         "valid_until": tenant.get("subscription_valid_until"),
         "rooms_count": await db.rooms.count_documents({"tenant_id": current_user.tenant_id}),
         "users_count": await db.users.count_documents({"tenant_id": current_user.tenant_id}),
-        "modules": get_tenant_modules(tenant),
+        "modules": tenant_modules,
         "entitlements": entitlements,
+        "tenant": tenant_snapshot,
     }
 
 

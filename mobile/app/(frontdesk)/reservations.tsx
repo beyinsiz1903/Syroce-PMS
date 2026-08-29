@@ -164,29 +164,52 @@ export default function ReservationsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <View style={[{ flex: 1, padding: spacing.lg }, webCenter]}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm }}>
+      <View>
         <H1>{tr.reservations.title}</H1>
-        <Pressable
-          testID="reservations-open-calendar"
-          accessibilityRole="button"
-          accessibilityLabel={tr.calendar.title}
-          onPress={() => router.push(ROUTES.reservationCalendar)}
-          style={({ pressed }) => ({
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: spacing.xs,
-            paddingHorizontal: spacing.md,
-            paddingVertical: spacing.sm,
-            borderRadius: radius.pill,
-            backgroundColor: c.primary,
-            opacity: pressed ? 0.85 : 1,
-          })}
-        >
-          <Ionicons name="calendar-outline" size={16} color={c.primaryText} />
-          <Body style={{ color: c.primaryText, fontWeight: '700', fontSize: 13 }}>
-            {tr.calendar.openCta}
-          </Body>
-        </Pressable>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm }}>
+          <Pressable
+            testID="reservations-new"
+            accessibilityRole="button"
+            accessibilityLabel={tr.reservations.newReservation}
+            onPress={() => router.push(ROUTES.newReservation)}
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: spacing.xs,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm,
+              borderRadius: radius.pill,
+              backgroundColor: c.success,
+              opacity: pressed ? 0.85 : 1,
+            })}
+          >
+            <Ionicons name="add" size={16} color="#fff" />
+            <Body style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>
+              {tr.reservations.newReservation}
+            </Body>
+          </Pressable>
+          <Pressable
+            testID="reservations-open-calendar"
+            accessibilityRole="button"
+            accessibilityLabel={tr.calendar.title}
+            onPress={() => router.push(ROUTES.reservationCalendar)}
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: spacing.xs,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm,
+              borderRadius: radius.pill,
+              backgroundColor: c.primary,
+              opacity: pressed ? 0.85 : 1,
+            })}
+          >
+            <Ionicons name="calendar-outline" size={16} color={c.primaryText} />
+            <Body style={{ color: c.primaryText, fontWeight: '700', fontSize: 13 }}>
+              {tr.calendar.openCta}
+            </Body>
+          </Pressable>
+        </View>
       </View>
       <View style={{ height: spacing.sm }} />
       <Field

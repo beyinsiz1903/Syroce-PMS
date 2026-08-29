@@ -9,6 +9,27 @@ logger = logging.getLogger(__name__)
 
 
 async def phase_g_channels_and_audit(app):
+    # Historical HotelRunner imports may contain rooms[].price (before tax)
+    # while reservation reads are deliberately disabled in production. Repair
+    # only that exact legacy signature from the immutable local event store;
+    # this performs no provider I/O and is safe to repeat across replicas.
+    try:
+        from domains.channel_manager.ingest.hotelrunner_total_repair import (
+            reconcile_hotelrunner_guest_totals_from_local_events,
+        )
+
+        repaired_totals = await reconcile_hotelrunner_guest_totals_from_local_events(_raw_db)
+        if repaired_totals:
+            logger.info(
+                "HotelRunner stored reservation totals repaired count=%d",
+                repaired_totals,
+            )
+    except Exception as e:
+        logger.warning(
+            "HotelRunner local total reconciliation warning exception_class=%s",
+            type(e).__name__,
+        )
+
     # ARI Push Engine
     try:
         from domains.channel_manager.ari.adapters.exely_ari_adapter import ExelyARIAdapter

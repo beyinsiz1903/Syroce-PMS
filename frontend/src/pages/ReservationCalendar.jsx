@@ -31,6 +31,7 @@ import {
   getUnassignedUrgency,
   sortByUrgency,
   roomOccupancyStatus,
+  buildCalendarRateLookup,
 } from './calendar';
 import { useTranslation } from 'react-i18next';
 
@@ -255,11 +256,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
   // New booking form
   const [newBooking, setNewBooking] = useState({
-    guest_id: '', room_id: '', check_in: '', check_out: '',
+    guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '',
+    room_id: '', check_in: '', check_out: '',
     guests_count: 2, adults: 2, children: 0, children_ages: [],
     total_amount: 0, base_rate: 0, status: 'confirmed'
   });
   const [occupancyPricingRules, setOccupancyPricingRules] = useState({});
+  const [calendarRates, setCalendarRates] = useState({});
 
   // Find room
   const [findRoomCriteria, setFindRoomCriteria] = useState({
@@ -331,13 +334,14 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       const endDate = new Date(currentDate);
       endDate.setDate(endDate.getDate() + daysToShow + 7);
 
-      const [roomsRes, bookingsRes, guestsRes, companiesRes, blocksRes, pricingRes] = await Promise.all([
+      const [roomsRes, bookingsRes, guestsRes, companiesRes, blocksRes, pricingRes, rateGridRes] = await Promise.all([
         axios.get('/pms/rooms'),
         axios.get(`/pms/bookings?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&limit=500`),
         axios.get('/pms/guests').catch(() => ({ data: [] })),
         axios.get('/companies').catch(() => ({ data: [] })),
         axios.get('/pms/room-blocks?status=active').catch(() => ({ data: { blocks: [] } })),
-        axios.get('/channel-manager/unified-rate-manager/pricing-settings').catch(() => ({ data: { rules: {} } }))
+        axios.get('/channel-manager/unified-rate-manager/pricing-settings').catch(() => ({ data: { rules: {} } })),
+        axios.get(`/channel-manager/unified-rate-manager/grid?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}`).catch(() => ({ data: { grid: [] } }))
       ]);
 
       // Race guard: bu fetch tamamlanırken kullanıcı yeni navigasyon yaptıysa
@@ -356,6 +360,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       setCompanies(companiesRes.data || []);
       setRoomBlocks(blocksRes.data.blocks || []);
       setOccupancyPricingRules(pricingRes.data?.rules || {});
+      setCalendarRates(buildCalendarRateLookup(rateGridRes.data?.grid || []));
 
       // Build group bookings summary
       const rawBookings = bookingsRes.data || [];
@@ -538,7 +543,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     const checkOutDate = new Date(date);
     checkOutDate.setDate(checkOutDate.getDate() + 1);
     setNewBooking({
-      guest_id: '', room_id: roomId,
+      guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '', room_id: roomId,
       check_in: checkInDate.toISOString().split('T')[0],
       check_out: checkOutDate.toISOString().split('T')[0],
       guests_count: 2, adults: 2, children: 0, children_ages: [],
@@ -599,7 +604,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     setSelectedRoom(room);
     setSelectedDate(new Date(`${checkIn}T00:00:00Z`));
     setNewBooking({
-      guest_id: '', room_id: sel.roomId,
+      guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '', room_id: sel.roomId,
       check_in: checkIn, check_out: checkOut,
       guests_count: 2, adults: 2, children: 0, children_ages: [],
       total_amount: (room.base_price || 100) * nights, base_rate: room.base_price || 100,
@@ -667,12 +672,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         const newGuest = {
           id: `guest_${Date.now()}`, name: newBooking.guest_name,
           email: newBooking.guest_email || '', phone: newBooking.guest_phone || '',
-          id_number: '',
+          id_number: newBooking.guest_id_number || '',
           tenant_id: user.tenant_id, created_at: new Date().toISOString()
         };
         const response = await axios.post('/pms/guests', newGuest);
         guestId = response.data.id;
-        toast.success('Yeni misafir oluşturuldu!');
+        toast.success('Misafir profili hazır');
       } catch (error) {
         toast.error('Misafir oluşturulamadı: ' + (error.response?.data?.detail || error.message));
         return;
@@ -786,6 +791,26 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     const oldRoomId = draggingBooking.room_id;
     const oldDate = new Date(draggingBooking.check_in);
     if (oldRoomId === newRoomId && oldDate.toDateString() === newDate.toDateString()) {
+      setDraggingBooking(null);
+      return;
+    }
+
+    const targetDateStr = newDate.toISOString().split('T')[0];
+    const oldDateStr = oldDate.toISOString().split('T')[0];
+    const localToday = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+    const minDate = hotelBusinessDate && hotelBusinessDate < localToday ? hotelBusinessDate : localToday;
+    if (targetDateStr < minDate) {
+      toast.error(`Geçmiş tarihe rezervasyon taşınamaz (minimum: ${minDate})`);
+      setDraggingBooking(null);
+      return;
+    }
+    if (draggingBooking.status === 'checked_in' && targetDateStr !== oldDateStr) {
+      toast.error('Giriş yapılmış rezervasyonun giriş tarihi değiştirilemez. Yalnızca oda değişikliği yapabilirsiniz.');
+      setDraggingBooking(null);
+      return;
+    }
+    if (draggingBooking.status === 'checked_out' && targetDateStr !== oldDateStr) {
+      toast.error('Çıkış yapılmış rezervasyonun tarihleri değiştirilemez.');
       setDraggingBooking(null);
       return;
     }
@@ -985,7 +1010,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onShowNewBookingDialog={() => {
             setSelectedRoom(null);
             setNewBooking({
-              guest_id: '', room_id: '', check_in: '', check_out: '',
+              guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '',
+              room_id: '', check_in: '', check_out: '',
               guests_count: 2, adults: 2, children: 0, children_ages: [],
               total_amount: 0, base_rate: 0, status: 'confirmed'
             });
@@ -1009,28 +1035,16 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
             <ul className="flex flex-wrap items-center gap-x-4 gap-y-2" role="list" aria-label="Rezervasyon durumu renk kodları">
               <li className="flex items-center gap-1.5" role="listitem">
-                <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#16a34a' }} aria-hidden="true"></div>
-                <span>İçeride (Check-in)</span>
-              </li>
-              <li className="flex items-center gap-1.5" role="listitem">
-                <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#f97316' }} aria-hidden="true"></div>
-                <span>{t('cm.pages_ReservationCalendar.bugun_gelis')}</span>
-              </li>
-              <li className="flex items-center gap-1.5" role="listitem">
                 <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#2563eb' }} aria-hidden="true"></div>
-                <span>Onaylanmış</span>
+                <span>Giriş Yapmamış</span>
               </li>
               <li className="flex items-center gap-1.5" role="listitem">
-                <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#f87171' }} aria-hidden="true"></div>
-                <span>{t('cm.pages_ReservationCalendar.gecmis_check_out')}</span>
+                <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#16a34a' }} aria-hidden="true"></div>
+                <span>İçeride</span>
               </li>
               <li className="flex items-center gap-1.5" role="listitem">
-                <div className="w-2 h-2 rounded-full bg-green-500" aria-hidden="true"></div>
-                <span>{t('cm.pages_ReservationCalendar.musait')}</span>
-              </li>
-              <li className="flex items-center gap-1.5" role="listitem">
-                <div className="w-2 h-2 rounded-full bg-red-500" aria-hidden="true"></div>
-                <span>{t('cm.pages_ReservationCalendar.dolu')}</span>
+                <div className="w-3.5 h-3.5 rounded shadow-sm" style={{ backgroundColor: '#dc2626' }} aria-hidden="true"></div>
+                <span>Çıkış Yapılmış</span>
               </li>
             </ul>
             <div className={`items-center gap-3 text-gray-400 ${viewPreferences.compactMode ? 'hidden 2xl:flex' : 'flex'}`}>
@@ -1078,6 +1092,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onDragEnd={handleDragEnd}
           onBookingDoubleClick={handleBookingDoubleClick}
           showOccupancyBand={viewPreferences.showOccupancy && !viewPreferences.operationMode}
+          dailyRates={calendarRates}
         />
         </div>
         {viewPreferences.showTimeline && !viewPreferences.operationMode && (

@@ -1,4 +1,5 @@
 import React from 'react';
+import type { ColorValue } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,7 +15,7 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 // matching the (home) shell. Titles/names/testIDs are untouched so the smoke
 // matrix keeps resolving every tab.
 function tabIcon(active: IoniconName, inactive: IoniconName) {
-  return ({ color, focused, size }: { color: string; focused: boolean; size: number }) => (
+  return ({ color, focused, size }: { color: ColorValue; focused: boolean; size: number }) => (
     <Ionicons name={focused ? active : inactive} size={size ?? 24} color={color} />
   );
 }
@@ -53,23 +54,26 @@ export default function FrontDeskLayout() {
         options={{ title: tr.tabs.today, tabBarIcon: tabIcon('today', 'today-outline') }}
       />
       <Tabs.Screen
-        name="reservations"
+        name="calendar"
         options={{
-          title: tr.reservations.title,
+          title: tr.calendar.openCta,
           tabBarIcon: tabIcon('calendar', 'calendar-outline'),
         }}
       />
       <Tabs.Screen
         name="availability"
-        options={{ title: tr.availability.title, tabBarIcon: tabIcon('grid', 'grid-outline') }}
+        options={{ href: null, title: tr.availability.title, ...backOptions }}
       />
       <Tabs.Screen
         name="rooms"
         options={{ title: tr.tabs.rooms, tabBarIcon: tabIcon('bed', 'bed-outline') }}
       />
       <Tabs.Screen
-        name="guests"
-        options={{ title: tr.tabs.guests, tabBarIcon: tabIcon('people', 'people-outline') }}
+        name="reservations"
+        options={{
+          title: tr.tabs.bookings,
+          tabBarIcon: tabIcon('reader', 'reader-outline'),
+        }}
       />
       <Tabs.Screen
         name="more"
@@ -85,12 +89,16 @@ export default function FrontDeskLayout() {
       />
       <Tabs.Screen name="walkin" options={{ href: null, title: tr.walkin.title, ...backOptions }} />
       <Tabs.Screen
+        name="new-reservation"
+        options={{ href: null, title: tr.reservations.newReservation, ...backOptions }}
+      />
+      <Tabs.Screen
         name="reservation"
         options={{ href: null, title: tr.reservations.detailTitle, ...backOptions }}
       />
       <Tabs.Screen
-        name="calendar"
-        options={{ href: null, title: tr.calendar.title, ...backOptions }}
+        name="guests"
+        options={{ href: null, title: tr.tabs.guests, ...backOptions }}
       />
     </Tabs>
   );

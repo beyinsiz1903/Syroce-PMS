@@ -39,6 +39,46 @@ def _invoice_charge_item(charge: dict) -> dict:
     }
 
 
+def _merge_hotel_document_branding(settings: dict | None, tenant: dict | None) -> dict:
+    """Resolve printable hotel branding without trusting placeholder defaults.
+
+    Invoice settings own the uploaded logo and optional document contact data;
+    the tenant profile owns the actual property identity.  A historical
+    ``hotel_name='Hotel'`` placeholder must never hide the real property name.
+    """
+    settings = dict(settings or {})
+    tenant = dict(tenant or {})
+    tenant_name = tenant.get("property_name") or tenant.get("hotel_name") or tenant.get("name")
+    configured_name = settings.get("hotel_name")
+    settings["hotel_name"] = tenant_name or (configured_name if configured_name and configured_name.strip().lower() != "hotel" else None) or "Otel"
+    settings["hotel_address"] = settings.get("hotel_address") or tenant.get("address") or ""
+    settings["hotel_phone"] = settings.get("hotel_phone") or tenant.get("phone") or tenant.get("contact_phone") or ""
+    settings["hotel_email"] = settings.get("hotel_email") or tenant.get("email") or tenant.get("contact_email") or ""
+    settings["logo_data"] = settings.get("logo_data") or tenant.get("logo_data") or tenant.get("logo_url")
+    return settings
+
+
+def _format_document_date(value) -> str:
+    raw = str(value or "")[:10]
+    try:
+        return datetime.fromisoformat(raw).strftime("%d.%m.%Y")
+    except (TypeError, ValueError):
+        return raw or "—"
+
+
+def _format_document_money(value, currency: str = "TRY") -> str:
+    """Format printable monetary values in the property's document locale."""
+    try:
+        amount = round(float(value or 0), 2)
+    except (TypeError, ValueError):
+        amount = 0.0
+
+    formatted = f"{amount:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+    currency_code = str(currency or "TRY").strip().upper()
+    currency_label = "TL" if currency_code in {"TRY", "TL", "₺"} else currency_code
+    return f"{formatted} {currency_label}".strip()
+
+
 async def _load_reservation_charge_items(booking_id: str, tenant_id: str) -> list[dict]:
     """Read durable charge rows once, excluding voided and duplicate entries."""
     items: list[dict] = []
@@ -292,62 +332,123 @@ async def generate_voucher(
         room = await db.rooms.find_one({"id": booking["room_id"], "tenant_id": tid}, {"_id": 0})
 
     settings = await db.hotel_settings.find_one({"tenant_id": tid}, {"_id": 0})
-    if not settings:
+    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0})
+    if not tenant:
         tenant = await db.tenants.find_one({"tenant_id": tid}, {"_id": 0})
-        settings = {
-            "hotel_name": tenant.get("property_name", "Hotel") if tenant else "Hotel",
-            "hotel_address": tenant.get("address", "") if tenant else "",
-            "hotel_phone": tenant.get("phone", "") if tenant else "",
-            "hotel_email": tenant.get("email", "") if tenant else "",
-        }
+    settings = _merge_hotel_document_branding(settings, tenant)
 
     guest_name = guest.get("name", booking.get("guest_name", "-")) if guest else booking.get("guest_name", "-")
     nights = max(1, (datetime.fromisoformat(str(booking.get("check_out", ""))[:10]) - datetime.fromisoformat(str(booking.get("check_in", ""))[:10])).days)
 
     voucher_no = f"V-{datetime.now(UTC).strftime('%Y%m%d')}-{booking_id[:8].upper()}"
+    safe_logo = _safe_logo_src(settings.get("logo_data"))
+    logo_html = f'<img class="hotel-logo" src="{_e(safe_logo)}" alt="{_e(settings.get("hotel_name"))} logosu" />' if safe_logo else ""
+    contact_parts = [settings.get("hotel_phone"), settings.get("hotel_email")]
+    contact_line = " • ".join(str(part) for part in contact_parts if part)
+    confirmation_no = booking.get("ota_confirmation") or booking.get("confirmation_number") or booking_id[:12]
+    currency = booking.get("currency") or settings.get("currency") or "TRY"
+    total_amount = round(float(booking.get("total_amount") or 0), 2)
+    paid_amount = round(float(booking.get("paid_amount") or 0), 2)
+    balance = round(total_amount - paid_amount, 2)
+    special_requests_html = ""
+    if booking.get("special_requests"):
+        special_requests_html = f"""
+        <div class="note-box">
+            <div class="note-label">Özel İstekler</div>
+            <div>{_e(booking.get("special_requests"))}</div>
+        </div>"""
 
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body {{ font-family: 'Segoe UI', Arial, sans-serif; margin:0; padding:40px; color:#333; font-size:13px; }}
-.voucher {{ border: 2px solid #1a56db; border-radius: 12px; padding: 32px; max-width: 700px; margin: 0 auto; }}
-.header {{ text-align: center; border-bottom: 2px solid #1a56db; padding-bottom: 16px; margin-bottom: 24px; }}
-.hotel-name {{ font-size: 24px; font-weight: 700; color: #1a56db; }}
-.voucher-title {{ font-size: 20px; font-weight: 600; color: #1e293b; margin-top: 8px; }}
-.voucher-no {{ font-size: 12px; color: #64748b; margin-top: 4px; }}
-.info-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }}
-.info-item {{ padding: 12px; background: #f8fafc; border-radius: 8px; }}
-.info-label {{ font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 600; }}
-.info-value {{ font-size: 14px; font-weight: 600; color: #1e293b; margin-top: 4px; }}
-.footer {{ text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 11px; }}
+* {{ box-sizing: border-box; }}
+body {{ font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; margin:0; padding:40px; color:#172033; font-size:13px; background:#f3f6fa; -webkit-font-smoothing:antialiased; }}
+.voucher {{ background:#fff; border:1px solid #dbe3ee; border-radius:20px; padding:40px; max-width:780px; margin:0 auto; box-shadow:0 18px 50px rgba(15,23,42,.09); position:relative; overflow:hidden; }}
+.voucher::before {{ content:""; position:absolute; inset:0 0 auto; height:6px; background:linear-gradient(90deg,#0f766e,#14b8a6,#2563eb); }}
+.header {{ display:flex; align-items:center; justify-content:space-between; gap:28px; border-bottom:1px solid #dbe3ee; padding-bottom:26px; margin-bottom:28px; }}
+.brand {{ display:flex; align-items:center; gap:16px; min-width:0; }}
+.hotel-logo {{ display:block; max-height:68px; max-width:170px; object-fit:contain; }}
+.hotel-name {{ font-size:23px; line-height:1.15; font-weight:750; color:#0f172a; letter-spacing:-.35px; }}
+.hotel-address {{ font-size:11px; line-height:1.5; color:#64748b; margin-top:5px; max-width:330px; }}
+.document-meta {{ text-align:right; flex:0 0 auto; }}
+.eyebrow {{ color:#0f766e; font-size:10px; font-weight:750; letter-spacing:1.5px; text-transform:uppercase; }}
+.voucher-title {{ font-size:20px; line-height:1.2; font-weight:750; color:#172033; margin-top:5px; letter-spacing:-.2px; }}
+.voucher-no {{ display:inline-block; font-size:11px; color:#475569; margin-top:9px; background:#f1f5f9; border-radius:999px; padding:6px 10px; }}
+.summary {{ display:flex; justify-content:space-between; align-items:center; gap:16px; background:linear-gradient(135deg,#ecfdf5,#eff6ff); border:1px solid #cfe8e2; border-radius:14px; padding:15px 18px; margin-bottom:20px; }}
+.summary-label {{ font-size:10px; text-transform:uppercase; letter-spacing:.9px; font-weight:700; color:#64748b; }}
+.summary-value {{ font-size:16px; font-weight:750; color:#0f172a; margin-top:3px; }}
+.stay-pill {{ color:#0f766e; background:#fff; border:1px solid #b7dfd7; border-radius:999px; padding:8px 12px; font-weight:700; white-space:nowrap; }}
+.info-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }}
+.info-item {{ padding:14px 16px; background:#f8fafc; border:1px solid #edf1f6; border-radius:12px; min-height:72px; }}
+.info-label {{ font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:.65px; font-weight:700; }}
+.info-value {{ font-size:14px; line-height:1.35; font-weight:650; color:#172033; margin-top:6px; }}
+.price-summary {{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:16px; }}
+.price-item {{ padding:15px 16px; border:1px solid #dbe3ee; border-radius:12px; background:#fff; }}
+.price-item.total {{ background:#eff6ff; border-color:#bfdbfe; }}
+.price-item.paid {{ background:#ecfdf5; border-color:#bbf7d0; }}
+.price-item.balance {{ background:#fff7ed; border-color:#fed7aa; }}
+.price-label {{ font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:.65px; font-weight:700; }}
+.price-value {{ margin-top:6px; color:#172033; font-size:16px; font-weight:750; }}
+.price-item.paid .price-value {{ color:#047857; }}
+.price-item.balance .price-value {{ color:#c2410c; }}
+.note-box {{ padding:14px 16px; background:#fffbeb; border:1px solid #fde68a; border-radius:12px; margin-top:16px; color:#78350f; line-height:1.5; }}
+.note-label {{ font-size:10px; text-transform:uppercase; letter-spacing:.65px; font-weight:750; margin-bottom:4px; }}
+.footer {{ text-align:center; margin-top:28px; padding-top:20px; border-top:1px solid #dbe3ee; color:#64748b; font-size:10px; line-height:1.7; }}
+.footer strong {{ color:#334155; }}
+@media (max-width:620px) {{ body {{ padding:12px; }} .voucher {{ padding:26px 20px; border-radius:14px; }} .header {{ display:block; }} .document-meta {{ text-align:left; margin-top:20px; }} .info-grid, .price-summary {{ grid-template-columns:1fr; }} }}
+@media print {{ @page {{ size:A4; margin:14mm; }} body {{ padding:0; background:#fff; }} .voucher {{ max-width:none; box-shadow:none; border-color:#cbd5e1; }} }}
 </style></head><body>
 <div class="voucher">
     <div class="header">
-        <div class="hotel-name">{_e(settings.get("hotel_name", ""))}</div>
-        <div style="font-size:12px;color:#64748b;">{_e(settings.get("hotel_address", ""))}</div>
-        <div class="voucher-title">KONAKLAMA VOUCHER</div>
-        <div class="voucher-no">Voucher No: {_e(voucher_no)}</div>
+        <div class="brand">
+            {logo_html}
+            <div>
+                <div class="hotel-name">{_e(settings.get("hotel_name"))}</div>
+                {f'<div class="hotel-address">{_e(settings.get("hotel_address"))}</div>' if settings.get("hotel_address") else ""}
+            </div>
+        </div>
+        <div class="document-meta">
+            <div class="eyebrow">Rezervasyon Belgesi</div>
+            <div class="voucher-title">Konaklama Voucher’ı</div>
+            <div class="voucher-no">Voucher No: {_e(voucher_no)}</div>
+        </div>
+    </div>
+    <div class="summary">
+        <div><div class="summary-label">Sayın Misafirimiz</div><div class="summary-value">{_e(guest_name)}</div></div>
+        <div class="stay-pill">{nights} gece konaklama</div>
     </div>
     <div class="info-grid">
-        <div class="info-item"><div class="info-label">Misafir</div><div class="info-value">{_e(guest_name)}</div></div>
-        <div class="info-item"><div class="info-label">Rezervasyon No</div><div class="info-value">{_e(booking.get("ota_confirmation", booking_id[:12]))}</div></div>
-        <div class="info-item"><div class="info-label">Giris Tarihi</div><div class="info-value">{_e(str(booking.get("check_in", ""))[:10])}</div></div>
-        <div class="info-item"><div class="info-label">Cikis Tarihi</div><div class="info-value">{_e(str(booking.get("check_out", ""))[:10])}</div></div>
+        <div class="info-item"><div class="info-label">Rezervasyon Numarası</div><div class="info-value">{_e(confirmation_no)}</div></div>
         <div class="info-item"><div class="info-label">Oda / Tip</div><div class="info-value">{_e(booking.get("room_number", room.get("room_number", "-") if room else "-"))} / {_e(room.get("room_type", "") if room else booking.get("room_type", ""))}</div></div>
-        <div class="info-item"><div class="info-label">Gece Sayisi</div><div class="info-value">{nights}</div></div>
-        <div class="info-item"><div class="info-label">Yetiskin / Cocuk</div><div class="info-value">{int(booking.get("adults", 1) or 0)} / {int(booking.get("children", 0) or 0)}</div></div>
-        <div class="info-item"><div class="info-label">Pansiyon</div><div class="info-value">{_e(booking.get("rate_plan", "Standart"))}</div></div>
+        <div class="info-item"><div class="info-label">Giriş Tarihi</div><div class="info-value">{_e(_format_document_date(booking.get("check_in")))}</div></div>
+        <div class="info-item"><div class="info-label">Çıkış Tarihi</div><div class="info-value">{_e(_format_document_date(booking.get("check_out")))}</div></div>
+        <div class="info-item"><div class="info-label">Misafir Sayısı</div><div class="info-value">{int(booking.get("adults", 1) or 0)} yetişkin · {int(booking.get("children", 0) or 0)} çocuk</div></div>
+        <div class="info-item"><div class="info-label">Konaklama Planı</div><div class="info-value">{_e(booking.get("rate_plan") or "Standart")}</div></div>
     </div>
-    {f'<div style="padding:12px;background:#fffbeb;border-radius:8px;margin-bottom:16px;"><strong>Ozel Istekler:</strong> {_e(booking.get("special_requests", ""))}</div>' if booking.get("special_requests") else ""}
+    <div class="price-summary">
+        <div class="price-item total"><div class="price-label">Toplam Tutar</div><div class="price-value">{_e(_format_document_money(total_amount, currency))}</div></div>
+        <div class="price-item paid"><div class="price-label">Ödenen</div><div class="price-value">{_e(_format_document_money(paid_amount, currency))}</div></div>
+        <div class="price-item balance"><div class="price-label">Kalan Bakiye</div><div class="price-value">{_e(_format_document_money(balance, currency))}</div></div>
+    </div>
+    {special_requests_html}
     <div class="footer">
-        <div>Bu voucher {_e(settings.get("hotel_name", ""))} tarafindan duzenlenmistir.</div>
-        <div>{_e(settings.get("hotel_phone", ""))} | {_e(settings.get("hotel_email", ""))}</div>
-        <div style="margin-top:8px;">Tarih: {datetime.now(UTC).strftime("%d.%m.%Y %H:%M")}</div>
+        <div>Bu belge <strong>{_e(settings.get("hotel_name"))}</strong> tarafından elektronik olarak düzenlenmiştir.</div>
+        {f'<div>{_e(contact_line)}</div>' if contact_line else ""}
+        <div>Düzenlenme tarihi: {datetime.now(UTC).strftime("%d.%m.%Y %H:%M UTC")}</div>
     </div>
 </div>
 </body></html>"""
 
-    return {"success": True, "voucher_html": html, "voucher_no": voucher_no}
+    return {
+        "success": True,
+        "voucher_html": html,
+        "voucher_no": voucher_no,
+        "total_amount": total_amount,
+        "paid_amount": paid_amount,
+        "balance": balance,
+        "currency": str(currency).upper(),
+    }
 
 
 # ═══════════════════════════════════════════════════

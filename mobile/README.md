@@ -9,7 +9,7 @@ hedeflenir.
 
 ```bash
 cd mobile
-npm install
+npm ci
 EXPO_PUBLIC_API_URL="https://<digitalocean-dev-domain>" npx expo start
 ```
 
@@ -17,8 +17,8 @@ EXPO_PUBLIC_API_URL="https://<digitalocean-dev-domain>" npx expo start
 geliştirmede DigitalOcean dev domain'ini kullanın; backend `/api/...` ön ekiyle
 yanıt verir.
 
-`EXPO_PUBLIC_QUICKID_URL` Quick-ID kimlik tarama servisi (varsayılan
-aynı host, port `8099`). Üretimde ters proxy üzerinden yayınlanmalıdır.
+`EXPO_PUBLIC_QUICKID_URL` Quick-ID kimlik tarama servisi. Üretimde API ile
+aynı `https://pms.syroce.com` origin'i üzerinden ters proxy edilir.
 
 ### Demo hesabı
 
@@ -33,8 +33,8 @@ aynı host, port `8099`). Üretimde ters proxy üzerinden yayınlanmalıdır.
 - Kat hizmetleri oda listesi + uzun bas → durum değiştir
 - Misafir uygulaması: rezervasyonlarım, dijital anahtar, mesajlaşma,
   oda servisi, sadakat
-- V2: çevrim dışı önbellek (TanStack Query persister + MMKV/AsyncStorage)
-- V3: SSL pinning (`react-native-ssl-pinning`), push bildirimleri
+- V2: çevrim dışı önbellek (TanStack Query persister + AsyncStorage)
+- V3: SecureStore, biyometrik uygulama kilidi ve push bildirimleri
 
 Karanlık mod ve Türkçe arayüz desteklenir; emoji kullanılmaz.
 
@@ -66,7 +66,7 @@ Ayrıntı: [`store/README.md`](store/README.md).
 - `expo.version` (`app.json`): kullanıcıya gösterilen pazarlama sürümü
   (semver, ör. `1.0.0`).
 - iOS `buildNumber` ve Android `versionCode` her dağıtımda artar.
-  EAS `preview` ve `production` profilleri `autoIncrement: "buildNumber"`
+  EAS `pilot`, `preview` ve `production` profilleri `autoIncrement: "buildNumber"`
   / `"versionCode"` kullanır — yerel `app.json` değişikliği gerekmez.
 - `runtimeVersion.policy = "appVersion"`: aynı pazarlama sürümünde OTA
   güncellemeleri uyumlu kalır.
@@ -107,12 +107,13 @@ kullanmayacaksanız atlayabilirsiniz. Bu iki komut tamamlanmadan
 
 ### Profiller
 
-`eas.json` içinde üç build profili tanımlıdır:
+`eas.json` içinde dört build profili tanımlıdır:
 
 | Profil        | Dağıtım (EAS)        | Kanal       | iOS              | Android  | Hedef                                |
 | ------------- | -------------------- | ----------- | ---------------- | -------- | ------------------------------------ |
 | `development` | `internal` (ad-hoc)  | development | Simulator IPA    | APK      | Expo Dev Client, yerel cihaz/sim     |
 | `preview`     | `store`              | preview     | App Store imzalı | AAB      | TestFlight + Play Internal Testing   |
+| `pilot`       | `store`              | pilot       | App Store imzalı | AAB      | Production API ile kapalı iç pilot   |
 | `production`  | `store`              | production  | App Store imzalı | AAB      | App Store + Play production track    |
 
 > **Not — neden `preview` da `store` dağıtımı?** EAS'te `distribution: "internal"`
@@ -125,8 +126,22 @@ kullanmayacaksanız atlayabilirsiniz. Bu iki komut tamamlanmadan
 > `submit.preview.android.track: "internal"` ile belirlenir.
 
 `development` profili Expo Dev Client ile yerel test içindir; ad-hoc imzalama
-yeterlidir. `preview` ve `production` Apple/Google store sertifikaları ile
-imzalı build üretir.
+yeterlidir. `pilot`, `preview` ve `production` Apple/Google store sertifikaları
+ile imzalı build üretir. `pilot` ve `production` profilleri production API'sini
+(`https://pms.syroce.com`) kullanır.
+
+### Pilot ön kontrolü
+
+```bash
+cd mobile
+npm ci
+npm run check
+```
+
+Bu komut yapılandırmayı, TypeScript'i, 105 birim testini ve Expo Doctor'ı
+tek kapıda doğrular. `EAS_PROJECT_ID`, App Store Connect kimlikleri ve Google
+Play service-account dosyası henüz yoksa yapılandırma denetimi bunları dış
+hesap adımı olarak uyarır; kod kontrollerini engellemez.
 
 ---
 
@@ -173,7 +188,7 @@ imzalı build üretir.
 
 ```bash
 cd mobile
-eas build --platform ios --profile preview
+eas build --platform ios --profile pilot
 ```
 
 İlk çağrıda EAS sertifikaları (Distribution Certificate +
@@ -183,7 +198,7 @@ Build tamamlanınca bir IPA bağlantısı verilir.
 ### TestFlight'a yükleme
 
 ```bash
-eas submit --platform ios --profile preview --latest
+eas submit --platform ios --profile pilot --latest
 ```
 
 Komut son `preview` build'i App Store Connect'e yükler ve TestFlight'ta
@@ -239,7 +254,7 @@ incelemesinden geçer (genelde < 24 saat).
 
 ```bash
 cd mobile
-eas build --platform android --profile preview
+eas build --platform android --profile pilot
 ```
 
 İlk çağrıda EAS yeni bir Android Keystore üretir ve EAS sunucularında
@@ -249,7 +264,7 @@ Build tamamlanınca bir AAB (Android App Bundle) bağlantısı verilir.
 ### Play Internal Testing'e yükleme
 
 ```bash
-eas submit --platform android --profile preview --latest
+eas submit --platform android --profile pilot --latest
 ```
 
 Komut son `preview` AAB'sini Play Console'un **internal** track'ine
@@ -293,9 +308,10 @@ mutlaka yeni bir EAS Build ister.
 
 1. `app.json` → `expo.version` semver güncelle (ör. `1.0.0` → `1.1.0`).
 2. `CHANGELOG` (kök) yeni sürüm bölümünü ekle (Türkçe).
-3. `eas build --profile preview` ile iç dağıtım build'ini al; iOS ve
+3. `npm run check` ile yerel mobil kalite kapısını geçir.
+4. `eas build --profile pilot` ile iç dağıtım build'ini al; iOS ve
    Android için `buildNumber` / `versionCode` otomatik artar.
-4. **Smoke test (CI üzerinden zorunlu)** — Build başarıyla bittiğinde
+5. **Smoke test (CI üzerinden zorunlu)** — Build başarıyla bittiğinde
    GitHub Actions'taki `Mobile Smoke (post EAS build)` iş akışı otomatik
    ya da manuel olarak tetiklenir; build artifact'i indirilir, iOS
    Simulator / Android Emulator'a kurulur ve `mobile/scripts/smoke.sh`
@@ -304,15 +320,15 @@ mutlaka yeni bir EAS Build ister.
    tetiklenir, otomatik webhook bağlanır ve sonuçlar PR'a yorumlanır:
    [Otomatik smoke CI hook'u](#otomatik-smoke-ci-hooku). Yerel akış
    detayı: [`.maestro/README.md`](.maestro/README.md).
-5. CI smoke yeşil olduktan sonra `eas submit --profile preview` ile
+6. CI smoke yeşil olduktan sonra `eas submit --profile pilot` ile
    TestFlight + Play Internal'a yükle.
-6. İç test (en az 24 saat, regresyon listesi) → onaylandıktan sonra
+7. İç test (en az 24 saat, regresyon listesi) → onaylandıktan sonra
    `--profile production` ile üretim build'i ve submission. Üretim
    build'inde de aynı CI smoke akışı tekrar çalıştırılır (`profile:
    production` girdisi ile); gerçek QA hesapları için repo secret'ları
    `SMOKE_EMAIL` / `SMOKE_PASSWORD` / `SMOKE_GUEST_EMAIL` /
    `SMOKE_GUEST_PASSWORD` doldurulmuş olmalı.
-7. OTA hotfix gerekiyorsa `eas update` (aynı pazarlama sürümünde).
+8. OTA hotfix gerekiyorsa `eas update` (aynı pazarlama sürümünde).
 
 > **Smoke başarısız olursa:** `eas submit` koşturulmaz. Hatanın kaynağı
 > Maestro çıktı log'undan (Actions run → `maestro-ios-debug` /

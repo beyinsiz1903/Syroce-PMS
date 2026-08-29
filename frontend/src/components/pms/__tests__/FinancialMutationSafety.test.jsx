@@ -145,11 +145,12 @@ describe('financial and destructive mutation safety', () => {
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     expect(post).toHaveBeenCalledWith(
       '/folio/folio-test/payment',
-      positiveProps.paymentForm,
+      { ...positiveProps.paymentForm, payment_type: 'interim' },
       expect.objectContaining({
         headers: expect.objectContaining({ 'Idempotency-Key': expect.any(String) }),
       }),
     );
+    expect(screen.queryByTestId('payment-type-select')).not.toBeInTheDocument();
 
     resolvePayment({ data: {} });
     await waitFor(() => expect(positiveProps.onPaymentDone).toHaveBeenCalledTimes(1));

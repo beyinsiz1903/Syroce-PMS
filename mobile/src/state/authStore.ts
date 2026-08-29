@@ -128,8 +128,17 @@ export const useAuthStore = create<AuthState>((set) => ({
         user = fresh;
         await persistUser(fresh);
       }
-    } catch {
-      // keep cached user — `apiMe` may have failed because we're offline
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.status === 401) {
+        // Refresh already had one chance in the API interceptor. A remaining
+        // 401 means the session was revoked/expired; do not expose a stale
+        // cached identity or leave the app in a failing request loop.
+        await persistUser(null);
+        await clearAllAuthStorage();
+        user = null;
+      }
+      // Network/5xx failures keep the cached user so an already-authenticated
+      // operator can continue using the offline-capable surfaces.
     }
     set({
       user,

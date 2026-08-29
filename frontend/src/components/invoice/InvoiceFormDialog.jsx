@@ -9,9 +9,13 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus } from 'lucide-react';
+
+export const createAccountingInvoice = (invoice) => axios.post('/accounting/invoices', invoice);
+
 const InvoiceFormDialog = ({
   open,
-  onClose
+  onClose,
+  onCreated,
 }) => {
   const {
     t
@@ -118,11 +122,9 @@ const InvoiceFormDialog = ({
   const handleCreateInvoice = async e => {
     e.preventDefault();
     try {
-      await axios.post('/accounting/invoices', null, {
-        params: newInvoice
-      });
-      toast.success('Invoice created');
-      onClose();
+      await createAccountingInvoice(newInvoice);
+      toast.success('Fatura oluşturuldu');
+      if (onCreated) onCreated(); else onClose();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to create invoice');
     }

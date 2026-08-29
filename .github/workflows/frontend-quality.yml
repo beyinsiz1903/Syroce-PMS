@@ -78,12 +78,10 @@ jobs:
                   path: frontend/coverage/
 
     # ============ MOBILE UNIT TESTS (HARD GATE) ============
-    # Mobile date-math unit suite (DatePicker) via Node's built-in test
-    # runner — pure TS compiled with the already-pinned `typescript` devDep,
-    # no extra dependencies, no emulator/server. Blocks merges if the picker's
-    # date math regresses. See mobile/src/components/datePickerUtils.ts.
+    # Mobile pilot readiness: production-safe config, full TypeScript surface,
+    # timezone-sensitive unit tests and Expo native dependency/schema checks.
     mobile-unit:
-        name: Mobile Unit Tests (node:test)
+        name: Mobile Pilot Readiness (config + TS + tests + Expo Doctor)
         runs-on: ubuntu-latest
         timeout-minutes: 10
         steps:
@@ -96,8 +94,8 @@ jobs:
                   cache-dependency-path: mobile/package-lock.json
             - name: Install
               run: cd mobile && npm ci
-            - name: Run mobile unit tests (hard gate)
-              run: cd mobile && npm run test:unit
+            - name: Run mobile pilot readiness checks (hard gate)
+              run: cd mobile && npm run check
 
     # ============ E2E SMOKE (HARD GATE on PR) ============
     e2e-smoke:

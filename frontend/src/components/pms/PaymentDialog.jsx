@@ -9,6 +9,10 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { DollarSign, AlertTriangle, Lightbulb } from 'lucide-react';
+import {
+  classifyGuestPayment,
+  guestPaymentClassificationLabel,
+} from '@/utils/paymentClassification';
 
 const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPaymentForm, onPaymentDone }) => {
   const { t } = useTranslation();
@@ -35,7 +39,11 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
       if (folioRes.data && folioRes.data.length > 0) {
         const folio = folioRes.data[0];
         const idempotencyKey = window.crypto?.randomUUID?.() || `payment-${Date.now()}-${Math.random()}`;
-        await axios.post(`/folio/${folio.id}/payment`, paymentForm, {
+        const paymentPayload = {
+          ...paymentForm,
+          payment_type: classifyGuestPayment(amount, balance),
+        };
+        await axios.post(`/folio/${folio.id}/payment`, paymentPayload, {
           headers: { 'Idempotency-Key': idempotencyKey },
         });
         toast.success(t('messages.success.saved'));
@@ -122,17 +130,11 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>{t('folio.paymentType')}</Label>
-              <Select value={paymentForm.payment_type} onValueChange={(v) => setPaymentForm({...paymentForm, payment_type: v})}>
-                <SelectTrigger data-testid="payment-type-select"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="prepayment">Prepayment</SelectItem>
-                  <SelectItem value="deposit">Deposit</SelectItem>
-                  <SelectItem value="interim">Interim</SelectItem>
-                  <SelectItem value="final">Final</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600" data-testid="payment-classification">
+              <div className="font-medium text-slate-700">
+                {guestPaymentClassificationLabel(paymentForm.amount, balance)}
+              </div>
+              <div className="mt-0.5">İşlem türü tutara göre otomatik belirlenir. Depozito işlemleri Depozito ekranından yapılır.</div>
             </div>
             <div>
               <Label>Reference</Label>

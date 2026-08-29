@@ -459,6 +459,27 @@ def test_scheduler_lock_error_is_rate_limited_and_redacted(monkeypatch):
     assert "RuntimeError" in rendered_args
 
 
+def test_scheduler_runs_full_reconciliation_on_first_cycle_after_deploy():
+    scheduler = ReservationPullScheduler()
+    scheduler._cycle_count = 1
+
+    assert scheduler._should_run_phase_b(is_manual=False, has_prior_cursor=True) is True
+
+
+def test_scheduler_keeps_periodic_full_reconciliation_cadence():
+    scheduler = ReservationPullScheduler()
+
+    scheduler._cycle_count = 2
+    assert scheduler._should_run_phase_b(is_manual=False, has_prior_cursor=True) is False
+
+    scheduler._cycle_count = 10
+    assert scheduler._should_run_phase_b(is_manual=False, has_prior_cursor=True) is True
+
+    scheduler._cycle_count = 2
+    assert scheduler._should_run_phase_b(is_manual=True, has_prior_cursor=True) is True
+    assert scheduler._should_run_phase_b(is_manual=False, has_prior_cursor=False) is True
+
+
 async def main():
     try:
         await test_scheduler_concurrency_only_one_worker_runs()

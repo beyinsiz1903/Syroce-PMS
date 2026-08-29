@@ -304,6 +304,32 @@ describe('FoliosTab — Folyo Böl akışı (Task #419)', () => {
   });
 });
 
+describe('FoliosTab — sade ödeme akışı', () => {
+  it('ödeme tipini kullanıcıya seçtirmez ve tam bakiye ödemesini otomatik final kaydeder', async () => {
+    render(<FoliosTab {...singleFolioProps()} />);
+
+    fireEvent.click(screen.getByTestId('btn-odeme-al'));
+    const panel = screen.getByTestId('payment-form');
+
+    expect(within(panel).queryByText('common.paymentType')).not.toBeInTheDocument();
+    expect(within(panel).queryByText('Ara Ödeme')).not.toBeInTheDocument();
+    expect(within(panel).queryByText('Depozito')).not.toBeInTheDocument();
+    expect(within(panel).getByText(/Tam ödeme — bakiye kapanacak/)).toBeInTheDocument();
+
+    fireEvent.click(within(panel).getAllByRole('button')[0]);
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/bk-1/record-payment',
+      {
+        amount: 100,
+        method: 'cash',
+        payment_type: 'final',
+        reference: '',
+      },
+    ));
+  });
+});
+
 describe('FoliosTab — masraf var folio yok (Task #423)', () => {
   // Tam-detay yeniden çekimini simüle eden durumlu sarmalayıcı: ensure-folio
   // çağrısı sonrası onRefresh tetiklendiğinde props "backfill sonrası" hâle
