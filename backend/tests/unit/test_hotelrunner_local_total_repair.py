@@ -39,6 +39,7 @@ def _database(
     reservation_mirror=False,
     linked_import=False,
     confirmation_only=False,
+    newer_provider_payload=False,
 ):
     payload = {
         "hr_number": "R017934708",
@@ -47,7 +48,23 @@ def _database(
     }
     raw_events = SimpleNamespace(
         find=lambda *_args: _Cursor(
-            [
+            (
+                [
+                    {
+                        "tenant_id": "tenant-a",
+                        "external_reservation_id": "R017934708",
+                        "raw_payload": {
+                            **payload,
+                            "sub_total": 6000,
+                            "rooms": [{"price": 6000, "total": 6000}],
+                        },
+                        "received_at": "2026-08-27T12:23:00Z",
+                    }
+                ]
+                if newer_provider_payload
+                else []
+            )
+            + [
                 {
                     "tenant_id": "tenant-a",
                     "external_reservation_id": "R017934708",
@@ -152,6 +169,18 @@ async def test_repairs_exact_legacy_net_total_from_local_event_without_provider_
     assert booking_set["hotelrunner_total_reconciliation_source"] == "local_raw_event"
     imported_set = database.imported_reservations.update_one.await_args.args[1]["$set"]
     assert imported_set["total_amount"] == 6000
+
+
+@pytest.mark.asyncio
+async def test_repairs_from_older_matching_payload_when_newer_event_rewrites_room_price():
+    database = _database(newer_provider_payload=True)
+
+    repaired = await reconcile_hotelrunner_guest_totals_from_local_events(database)
+
+    assert repaired == 1
+    booking_set = database.bookings.update_one.await_args.args[1]["$set"]
+    assert booking_set["total_amount"] == 6000
+    assert booking_set["hotelrunner_total_reconciliation_source"] == "local_raw_event"
 
 
 @pytest.mark.asyncio
