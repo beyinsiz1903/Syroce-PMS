@@ -66,6 +66,19 @@ def _format_document_date(value) -> str:
         return raw or "—"
 
 
+def _format_document_money(value, currency: str = "TRY") -> str:
+    """Format printable monetary values in the property's document locale."""
+    try:
+        amount = round(float(value or 0), 2)
+    except (TypeError, ValueError):
+        amount = 0.0
+
+    formatted = f"{amount:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+    currency_code = str(currency or "TRY").strip().upper()
+    currency_label = "TL" if currency_code in {"TRY", "TL", "₺"} else currency_code
+    return f"{formatted} {currency_label}".strip()
+
+
 async def _load_reservation_charge_items(booking_id: str, tenant_id: str) -> list[dict]:
     """Read durable charge rows once, excluding voided and duplicate entries."""
     items: list[dict] = []
@@ -333,6 +346,10 @@ async def generate_voucher(
     contact_parts = [settings.get("hotel_phone"), settings.get("hotel_email")]
     contact_line = " • ".join(str(part) for part in contact_parts if part)
     confirmation_no = booking.get("ota_confirmation") or booking.get("confirmation_number") or booking_id[:12]
+    currency = booking.get("currency") or settings.get("currency") or "TRY"
+    total_amount = round(float(booking.get("total_amount") or 0), 2)
+    paid_amount = round(float(booking.get("paid_amount") or 0), 2)
+    balance = round(total_amount - paid_amount, 2)
     special_requests_html = ""
     if booking.get("special_requests"):
         special_requests_html = f"""
@@ -366,11 +383,20 @@ body {{ font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial
 .info-item {{ padding:14px 16px; background:#f8fafc; border:1px solid #edf1f6; border-radius:12px; min-height:72px; }}
 .info-label {{ font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:.65px; font-weight:700; }}
 .info-value {{ font-size:14px; line-height:1.35; font-weight:650; color:#172033; margin-top:6px; }}
+.price-summary {{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:16px; }}
+.price-item {{ padding:15px 16px; border:1px solid #dbe3ee; border-radius:12px; background:#fff; }}
+.price-item.total {{ background:#eff6ff; border-color:#bfdbfe; }}
+.price-item.paid {{ background:#ecfdf5; border-color:#bbf7d0; }}
+.price-item.balance {{ background:#fff7ed; border-color:#fed7aa; }}
+.price-label {{ font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:.65px; font-weight:700; }}
+.price-value {{ margin-top:6px; color:#172033; font-size:16px; font-weight:750; }}
+.price-item.paid .price-value {{ color:#047857; }}
+.price-item.balance .price-value {{ color:#c2410c; }}
 .note-box {{ padding:14px 16px; background:#fffbeb; border:1px solid #fde68a; border-radius:12px; margin-top:16px; color:#78350f; line-height:1.5; }}
 .note-label {{ font-size:10px; text-transform:uppercase; letter-spacing:.65px; font-weight:750; margin-bottom:4px; }}
 .footer {{ text-align:center; margin-top:28px; padding-top:20px; border-top:1px solid #dbe3ee; color:#64748b; font-size:10px; line-height:1.7; }}
 .footer strong {{ color:#334155; }}
-@media (max-width:620px) {{ body {{ padding:12px; }} .voucher {{ padding:26px 20px; border-radius:14px; }} .header {{ display:block; }} .document-meta {{ text-align:left; margin-top:20px; }} .info-grid {{ grid-template-columns:1fr; }} }}
+@media (max-width:620px) {{ body {{ padding:12px; }} .voucher {{ padding:26px 20px; border-radius:14px; }} .header {{ display:block; }} .document-meta {{ text-align:left; margin-top:20px; }} .info-grid, .price-summary {{ grid-template-columns:1fr; }} }}
 @media print {{ @page {{ size:A4; margin:14mm; }} body {{ padding:0; background:#fff; }} .voucher {{ max-width:none; box-shadow:none; border-color:#cbd5e1; }} }}
 </style></head><body>
 <div class="voucher">
@@ -400,6 +426,11 @@ body {{ font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial
         <div class="info-item"><div class="info-label">Misafir Sayısı</div><div class="info-value">{int(booking.get("adults", 1) or 0)} yetişkin · {int(booking.get("children", 0) or 0)} çocuk</div></div>
         <div class="info-item"><div class="info-label">Konaklama Planı</div><div class="info-value">{_e(booking.get("rate_plan") or "Standart")}</div></div>
     </div>
+    <div class="price-summary">
+        <div class="price-item total"><div class="price-label">Toplam Tutar</div><div class="price-value">{_e(_format_document_money(total_amount, currency))}</div></div>
+        <div class="price-item paid"><div class="price-label">Ödenen</div><div class="price-value">{_e(_format_document_money(paid_amount, currency))}</div></div>
+        <div class="price-item balance"><div class="price-label">Kalan Bakiye</div><div class="price-value">{_e(_format_document_money(balance, currency))}</div></div>
+    </div>
     {special_requests_html}
     <div class="footer">
         <div>Bu belge <strong>{_e(settings.get("hotel_name"))}</strong> tarafından elektronik olarak düzenlenmiştir.</div>
@@ -409,7 +440,15 @@ body {{ font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial
 </div>
 </body></html>"""
 
-    return {"success": True, "voucher_html": html, "voucher_no": voucher_no}
+    return {
+        "success": True,
+        "voucher_html": html,
+        "voucher_no": voucher_no,
+        "total_amount": total_amount,
+        "paid_amount": paid_amount,
+        "balance": balance,
+        "currency": str(currency).upper(),
+    }
 
 
 # ═══════════════════════════════════════════════════
