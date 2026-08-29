@@ -21,6 +21,7 @@ PUSH_INTERVAL_SECONDS = 5  # Check every 5 seconds
 # (AutoReconnect / NoPrimary / SSL timeout) do not flood Sentry on every
 # 5-second tick. See `core.transient_db_guard`.
 _transient_tracker = TransientFailureTracker("ari-push-worker")
+_worker_task: asyncio.Task | None = None
 
 
 async def ari_push_worker_loop():
@@ -93,6 +94,32 @@ async def ari_push_worker_loop():
 
 
 async def start_push_worker():
-    """Start the push worker as a background task."""
-    asyncio.create_task(ari_push_worker_loop())
+    """Start one process-local push worker and return its task."""
+    global _worker_task
+
+    if _worker_task is not None and not _worker_task.done():
+        return _worker_task
+
+    _worker_task = asyncio.create_task(ari_push_worker_loop(), name="ari-push-worker")
     logger.info("ARI push worker task created")
+    return _worker_task
+
+
+async def stop_push_worker() -> bool:
+    """Stop the process-local worker before MongoDB is closed."""
+    global _worker_task
+
+    task = _worker_task
+    _worker_task = None
+    if task is None:
+        return False
+
+    if not task.done():
+        task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    logger.info("ARI push worker stopped")
+    return True
