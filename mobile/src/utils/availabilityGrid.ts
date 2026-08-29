@@ -57,11 +57,14 @@ export type GridBlockInput = {
   end_date?: string | null;
 };
 
-// YYYY-MM-DD + N days -> YYYY-MM-DD. Anchored at local midnight then sliced on
-// the ISO prefix so it is stable regardless of the runner timezone.
+// YYYY-MM-DD + N days -> YYYY-MM-DD. Date-only values are calendar data, not
+// instants. Perform the arithmetic in UTC so positive-offset timezones (such
+// as Europe/Istanbul) cannot shift the result back to the previous day when
+// it is formatted.
 export function addDaysISO(iso: string, days: number): string {
-  const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() + days);
+  const [year, month, day] = iso.split('-').map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day));
+  d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
 

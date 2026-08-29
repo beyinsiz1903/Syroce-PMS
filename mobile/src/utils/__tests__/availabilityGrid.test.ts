@@ -27,6 +27,20 @@ test('addDaysISO advances a plain date and crosses month/year boundaries', () =>
   assert.equal(addDaysISO('2026-12-31', 1), '2027-01-01');
 });
 
+test('addDaysISO is stable across positive and negative device timezones', () => {
+  const original = process.env.TZ;
+  try {
+    for (const tz of ['Europe/Istanbul', 'America/Los_Angeles', 'Pacific/Kiritimati']) {
+      process.env.TZ = tz;
+      assert.equal(addDaysISO('2026-06-10', 1), '2026-06-11', `TZ=${tz}`);
+      assert.equal(addDaysISO('2026-06-10', 0), '2026-06-10', `TZ=${tz}`);
+    }
+  } finally {
+    if (original === undefined) delete process.env.TZ;
+    else process.env.TZ = original;
+  }
+});
+
 // ── buildDayList: the ordered span of days ─────────────────────────────────
 test('buildDayList returns the inclusive run of day strings from the start', () => {
   assert.deepEqual(buildDayList('2026-06-10', 3), [

@@ -273,13 +273,6 @@ export default function PosScreen() {
     enabled: posAccess && tab === 'spa_gym',
   });
 
-  // Calculate table stats when layouts load (for the summary Kpis).
-  const tableStats = useMemo(() => {
-    const m = new Map<string, MenuItem>();
-    for (const it of menuItems) m.set(it.id, it);
-    return m;
-  }, [menuItems]);
-
   const menuItems = menuQ.data || [];
   const menuById = useMemo(() => {
     const m = new Map<string, MenuItem>();
@@ -1802,7 +1795,7 @@ export default function PosScreen() {
     const showList = !reservationsQ.isLoading && !reservationsQ.error && data.length > 0;
     return (
       <View>
-        <SectionTitle title={tr.departments.pos.tabs?.reservations || 'Rezervasyonlar'} />
+        <SectionTitle title="Rezervasyonlar" />
         <Muted>Aktif masa rezervasyonları</Muted>
         <View style={{ height: spacing.sm }} />
         {!showList ? (
@@ -1948,7 +1941,7 @@ export default function PosScreen() {
         <Chip
           active={tab === 'reservations'}
           icon="calendar-outline"
-          label={tr.departments.pos.tabs?.reservations || 'Rezervasyon'}
+          label="Rezervasyon"
           onPress={() => setTab('reservations')}
         />
         <Chip
@@ -2016,60 +2009,72 @@ export default function PosScreen() {
       >
         {selectedSpaReservation && (
           <View style={{ gap: spacing.md, padding: spacing.sm }}>
-            <DetailRow label="Tarih" value={`${selectedSpaReservation.res_date} ${selectedSpaReservation.res_time}`} />
-            <DetailRow label="Süre" value={`${selectedSpaReservation.duration_minutes} dk`} />
+            <DetailRow
+              label="Tarih"
+              value={`${selectedSpaReservation.res_date} ${selectedSpaReservation.res_time}`}
+            />
+            <DetailRow
+              label="Süre"
+              value={`${selectedSpaReservation.duration_minutes} dk`}
+            />
             <DetailRow label="Durum" value={statusLabel(selectedSpaReservation.status)} />
-            <DetailRow label="Ücretlendirildi mi?" value={selectedSpaReservation.charged ? 'Evet' : 'Hayır'} />
+            <DetailRow
+              label="Ücretlendirildi mi?"
+              value={selectedSpaReservation.charged ? 'Evet' : 'Hayır'}
+            />
 
-            {selectedSpaReservation.status !== 'completed' && selectedSpaReservation.status !== 'cancelled' && selectedSpaReservation.status !== 'no_show' && (
-              <SegmentedActions
-                actions={[
-                  {
-                    icon: 'close-circle-outline',
-                    label: 'İptal',
-                    tone: 'danger',
-                    onPress: async () => {
-                      try {
-                        await updateSpaReservationStatus(selectedSpaReservation.id, 'cancelled');
-                        spaReservationsQ.refetch();
-                        setSelectedSpaReservation(null);
-                      } catch (e) {
-                        Alert.alert('Hata', errorMessage(e));
-                      }
+            {selectedSpaReservation.status !== 'completed' &&
+            selectedSpaReservation.status !== 'cancelled' &&
+            selectedSpaReservation.status !== 'no_show' ? (
+              <SegmentedActions>
+                <ActionButton
+                  icon="close-circle-outline"
+                  label="İptal"
+                  bg={c.danger}
+                  fg={c.primaryText}
+                  onPress={async () => {
+                    try {
+                      await updateSpaReservationStatus(selectedSpaReservation.id, 'cancelled');
+                      spaReservationsQ.refetch();
+                      setSelectedSpaReservation(null);
+                    } catch (e) {
+                      Alert.alert('Hata', errorMessage(e, 'Randevu iptal edilemedi.'));
                     }
-                  },
-                  {
-                    icon: 'alert-circle-outline',
-                    label: 'No-Show',
-                    tone: 'warning',
-                    onPress: async () => {
-                      try {
-                        await updateSpaReservationStatus(selectedSpaReservation.id, 'no_show');
-                        spaReservationsQ.refetch();
-                        setSelectedSpaReservation(null);
-                      } catch (e) {
-                        Alert.alert('Hata', errorMessage(e));
-                      }
+                  }}
+                />
+                <ActionButton
+                  icon="alert-circle-outline"
+                  label="Gelmedi"
+                  bg={c.warning}
+                  fg={c.primaryText}
+                  onPress={async () => {
+                    try {
+                      await updateSpaReservationStatus(selectedSpaReservation.id, 'no_show');
+                      spaReservationsQ.refetch();
+                      setSelectedSpaReservation(null);
+                    } catch (e) {
+                      Alert.alert('Hata', errorMessage(e, 'Randevu durumu güncellenemedi.'));
                     }
-                  },
-                  {
-                    icon: 'card-outline',
-                    label: 'Folyoya Aktar',
-                    tone: 'success',
-                    onPress: async () => {
-                      try {
-                        await chargeSpaReservation(selectedSpaReservation.id);
-                        spaReservationsQ.refetch();
-                        setSelectedSpaReservation(null);
-                        Alert.alert('Başarılı', 'Ücret folyoya yansıtıldı.');
-                      } catch (e) {
-                        Alert.alert('Hata', errorMessage(e));
-                      }
+                  }}
+                />
+                <ActionButton
+                  icon="card-outline"
+                  label="Folyoya Aktar"
+                  bg={c.success}
+                  fg={c.primaryText}
+                  onPress={async () => {
+                    try {
+                      await chargeSpaReservation(selectedSpaReservation.id);
+                      spaReservationsQ.refetch();
+                      setSelectedSpaReservation(null);
+                      Alert.alert('Başarılı', 'Ücret folyoya yansıtıldı.');
+                    } catch (e) {
+                      Alert.alert('Hata', errorMessage(e, 'Ücret folyoya aktarılamadı.'));
                     }
-                  }
-                ]}
-              />
-            )}
+                  }}
+                />
+              </SegmentedActions>
+            ) : null}
           </View>
         )}
       </ActionSheet>

@@ -56,11 +56,13 @@ export function toDateOnly(input?: string): string | undefined {
   return d.toISOString().slice(0, 10);
 }
 
-// Whole-day difference b - a (both YYYY-MM-DD), anchored at local midnight so
-// it is timezone-stable on any runner.
+// Whole-day difference b - a (both YYYY-MM-DD). Calendar dates are converted
+// to UTC day numbers so DST and the device timezone cannot alter the span.
 export function diffDays(a: string, b: string): number {
-  const da = new Date(`${a}T00:00:00`).getTime();
-  const db = new Date(`${b}T00:00:00`).getTime();
+  const [ay, am, ad] = a.split('-').map(Number);
+  const [by, bm, bd] = b.split('-').map(Number);
+  const da = Date.UTC(ay, am - 1, ad);
+  const db = Date.UTC(by, bm - 1, bd);
   return Math.round((db - da) / 86_400_000);
 }
 

@@ -1,4 +1,5 @@
 import React from 'react';
+import type { ColorValue } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,7 +15,7 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 // matching the (home) shell. Titles/names/testIDs are untouched so the smoke
 // matrix keeps resolving every tab.
 function tabIcon(active: IoniconName, inactive: IoniconName) {
-  return ({ color, focused, size }: { color: string; focused: boolean; size: number }) => (
+  return ({ color, focused, size }: { color: ColorValue; focused: boolean; size: number }) => (
     <Ionicons name={focused ? active : inactive} size={size ?? 24} color={color} />
   );
 }
