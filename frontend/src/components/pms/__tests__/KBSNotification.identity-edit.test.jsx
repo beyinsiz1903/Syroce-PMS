@@ -1,10 +1,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { axiosGet, axiosPatch, axiosPost } = vi.hoisted(() => ({
+const { axiosGet, axiosPatch, axiosPost, toastError } = vi.hoisted(() => ({
   axiosGet: vi.fn(),
   axiosPatch: vi.fn(),
   axiosPost: vi.fn(),
+  toastError: vi.fn(),
 }));
 
 vi.mock('axios', () => ({
@@ -16,7 +17,7 @@ vi.mock('axios', () => ({
 }));
 
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: vi.fn(), error: toastError },
 }));
 
 vi.mock('react-i18next', () => ({
@@ -123,6 +124,64 @@ describe('KBSNotification pending guest identity editing', () => {
         action: 'checkin',
       });
     });
+  });
+
+  it('renders a structured enqueue validation error as text without crashing the page', async () => {
+    axiosPost.mockRejectedValueOnce({
+      response: {
+        data: {
+          detail: {
+            error: 'kbs_payload_incomplete',
+            missing_fields: ['check_in'],
+            message: 'KBS bildirimi için zorunlu alanlar eksik: check_in',
+          },
+        },
+      },
+    });
+
+    render(
+      <KBSNotification
+        bookings={[{
+          id: 'booking-110',
+          guest_id: 'guest-110',
+          status: 'checked_in',
+          guest_name: 'Abdulhakim Tavlasoğlu',
+          room_number: '110',
+          nationality: 'TC',
+          id_number: '12345678901',
+          birth_date: '',
+        }]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'addToQueue' }));
+
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith(
+        'KBS bildirimi için zorunlu alanlar eksik: check_in',
+      );
+    });
+    expect(screen.getByRole('button', { name: 'addToQueue' })).toBeInTheDocument();
+  });
+
+  it('does not require a birth date for a Turkish guest with a valid identity number', () => {
+    render(
+      <KBSNotification
+        bookings={[{
+          id: 'booking-110',
+          guest_id: 'guest-110',
+          status: 'checked_in',
+          guest_name: 'Abdulhakim Tavlasoğlu',
+          room_number: '110',
+          nationality: 'TC',
+          id_number: '12345678901',
+          birth_date: '',
+        }]}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'send' })).toBeEnabled();
+    expect(screen.getByRole('tab', { name: 'missingTab (0)' })).toBeInTheDocument();
   });
 
   it('rehydrates saved identity fields from the linked guest after the page remounts', () => {

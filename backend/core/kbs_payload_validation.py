@@ -5,10 +5,9 @@ doğrular. Eksikse iş kuyruğa girmesin diye `validate_kbs_payload()` çağrıl
 
 Kurallar (EGM/Jandarma KBS minimum şeması):
   * `guest_name`               — boş olamaz
-  * `birth_date`               — boş olamaz (YYYY-MM-DD)
   * `nationality == "TC"`      → `id_number` 11 hane (numeric)
   * `nationality != "TC"`      → `passport_number`, `gender`, `birth_place`
-                                  boş olamaz
+                                  ve `birth_date` boş olamaz
   * `check_in` / `check_out`   — boş olamaz
 
 Yardımcı: `validate_or_raise()` 422 HTTPException fırlatır (router için).
@@ -18,7 +17,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 
-REQUIRED_BASE_FIELDS = ("guest_name", "birth_date", "check_in", "check_out")
+REQUIRED_BASE_FIELDS = ("guest_name", "check_in", "check_out")
 
 
 def _norm(v: object) -> str:
@@ -47,6 +46,8 @@ def validate_kbs_payload(snapshot: dict) -> tuple[bool, list[str]]:
         elif not (id_number.isdigit() and len(id_number) == 11):
             missing.append("id_number_invalid")
     else:
+        if not _norm(snapshot.get("birth_date")):
+            missing.append("birth_date")
         if not passport_number:
             missing.append("passport_number")
         if not _norm(snapshot.get("gender")):

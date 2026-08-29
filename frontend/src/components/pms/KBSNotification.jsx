@@ -18,6 +18,29 @@ import {
 const escapeXml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 const EMPTY_LIST = Object.freeze([]);
 
+const getApiErrorMessage = (error, fallback) => {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (detail && typeof detail === 'object') {
+    if (typeof detail.message === 'string' && detail.message.trim()) return detail.message;
+    if (typeof detail.msg === 'string' && detail.msg.trim()) return detail.msg;
+    if (typeof detail.error === 'string' && detail.error.trim()) return detail.error;
+  }
+  if (typeof error?.message === 'string' && error.message.trim()) return error.message;
+  return fallback;
+};
+
+const isTurkishGuest = (guest) => {
+  const nationality = String(guest?.nationality || '').trim().toUpperCase()
+    .replaceAll('Ç', 'C').replaceAll('Ğ', 'G').replaceAll('İ', 'I')
+    .replaceAll('Ö', 'O').replaceAll('Ş', 'S').replaceAll('Ü', 'U');
+  return ['', 'TC', 'TR', 'TUR', 'TURKIYE'].includes(nationality);
+};
+
+const hasMissingKbsData = (guest) => (
+  !guest?.id_number || (!isTurkishGuest(guest) && !guest?.birth_date)
+);
+
 const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   const { t } = useTranslation();
   const tk = (k) => t(`pmsComponents.kbs.${k}`);
@@ -109,7 +132,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
       toast.success(res.data?.created ? tk('addedToQueue') : tk('alreadyQueued'));
       fetchQueue();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || tk('addToQueueError'));
+      toast.error(getApiErrorMessage(err, tk('addToQueueError')));
     } finally {
       setEnqueuingId(null);
     }
@@ -126,7 +149,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
       toast.success(tk('retryQueued'));
       fetchQueue();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || tk('retryError'));
+      toast.error(getApiErrorMessage(err, tk('retryError')));
     }
   };
 
@@ -417,7 +440,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   const filteredSent = sentHistory.filter(g =>
     !searchTerm || g.guest_name?.toLowerCase().includes(searchTerm.toLowerCase()) || String(g.room_number).includes(searchTerm)
   );
-  const missingData = pendingGuests.filter(g => !g.id_number || !g.birth_date);
+  const missingData = pendingGuests.filter(hasMissingKbsData);
 
   return (
     <div className="space-y-4">
@@ -632,7 +655,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
                     disabled={enqueuingId === guest.id}>
                     <ListPlus className="h-3 w-3 mr-1" /> {tk('addToQueue')}
                   </Button>
-                  {!guest.id_number || !guest.birth_date ? (
+                  {hasMissingKbsData(guest) ? (
                     <Button type="button" size="sm" variant="outline" onClick={() => openEditDialog(guest)}>
                       <UserCog className="h-3 w-3 mr-1" /> {tk('updateInfo')}
                     </Button>
@@ -689,7 +712,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
                     <Badge variant="outline">{tk('room')} {guest.room_number}</Badge>
                   </div>
                   <div className="text-xs text-red-600 mt-1">
-                    {tk('missing')} {!guest.id_number ? tk('idNumber') + ' ' : ''}{!guest.birth_date ? tk('birthDate') : ''}
+                    {tk('missing')} {!guest.id_number ? tk('idNumber') + ' ' : ''}{!isTurkishGuest(guest) && !guest.birth_date ? tk('birthDate') : ''}
                   </div>
                 </div>
                 <Button size="sm" variant="outline" onClick={() => openEditDialog(guest)}>
