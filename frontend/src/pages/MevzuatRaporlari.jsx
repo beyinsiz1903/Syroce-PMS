@@ -26,6 +26,13 @@ const TABS = [{
   label: "Yıldız Sınıflama Self-Check",
   icon: Award
 }];
+const TENANT_ADMIN_ROLES = new Set(["admin", "super_admin", "platform_admin"]);
+
+export function canEditTenantLegalSettings(user) {
+  return TENANT_ADMIN_ROLES.has(String(user?.role || "").toLowerCase()) ||
+    (Array.isArray(user?.roles) && user.roles.some(role => TENANT_ADMIN_ROLES.has(String(role || "").toLowerCase())));
+}
+
 function fmtNum(v) {
   return new Intl.NumberFormat("tr-TR").format(Number(v || 0));
 }
@@ -53,13 +60,12 @@ function RefreshButton({
     </Button>;
 }
 export default function MevzuatRaporlari({
-  user,
-  tenant
+  user
 }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [tab, setTab] = useState("tuik");
-  const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "super_admin";
+  const canEditTenantSettings = canEditTenantLegalSettings(user);
 
   // ── TÜİK
   const today = useMemo(() => new Date(), []);
@@ -121,12 +127,11 @@ export default function MevzuatRaporlari({
     downloadCSV(rows, `bakanlik-denetim-hazirlik-${new Date().toISOString().slice(0, 10)}.csv`);
   };
   const goToTenantSettings = () => {
-    if (isSuperAdmin) {
-      const tid = readiness?.tenant?.hotel_id || tenant?.id || tenant?.hotel_id;
-      navigate(tid ? `/admin/tenants?edit=${encodeURIComponent(tid)}` : "/admin/tenants");
-    } else {
-      toast.info("Bu alanları yalnızca tesis yöneticisi düzenleyebilir. Lütfen yöneticinizle iletişime geçin.");
+    if (canEditTenantSettings) {
+      navigate("/app/settings?tab=hotel&edit=legal#legal");
+      return;
     }
+    toast.info("Bu alanları tesis yöneticiniz düzenleyebilir. Lütfen yöneticinizle iletişime geçin.");
   };
   const goToMissingNationality = () => {
     setMissingOpen(true);
@@ -646,7 +651,7 @@ export default function MevzuatRaporlari({
                   <div>
                     <Button variant="outline" size="sm" onClick={goToTenantSettings}>
                       <Settings className="h-4 w-4 mr-1.5" />
-                      {isSuperAdmin ? "Tesis ayarlarına git" : "Yöneticiye nasıl iletişim kuracağımı gör"}
+                      {canEditTenantSettings ? "Tesis bilgilerini doldur" : "Yöneticiye nasıl ulaşacağımı gör"}
                     </Button>
                   </div>
                 </div>}

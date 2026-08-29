@@ -3,6 +3,7 @@ Admin Domain — Schemas
 Request/response models extracted from admin/router.py.
 """
 
+from datetime import date
 from enum import Enum
 from typing import Literal
 
@@ -82,6 +83,10 @@ class UpdateHotelInfoRequest(BaseModel):
     location: str | None = None
     description: str | None = None
     total_rooms: int | None = None
+    tax_number: str | None = Field(default=None, max_length=20)
+    license_number: str | None = Field(default=None, max_length=100)
+    license_expires_at: date | None = None
+    star_rating: int | None = Field(default=None, ge=1, le=5)
 
 
 class CreateTeamMemberRequest(BaseModel):
