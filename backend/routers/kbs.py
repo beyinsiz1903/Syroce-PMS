@@ -1270,6 +1270,77 @@ async def kbs_queue_fail(
 # task can clean up its subscriber slot.
 _SSE_HEARTBEAT_SECONDS = 25.0
 
+
+@router.post("/queue/{job_id}/requeue")
+async def kbs_queue_requeue(
+    job_id: str,
+    reason: str = "manual_resend",
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),
+):
+    """Tamamlanmış (done) veya başarısız (failed/dead) bir işi tekrar 'pending'
+    durumuna alır. Jandarma SOAP gibi resmi referans dönmeyen entegrasyonlarda
+    'Gönderildi' görünmesine rağmen KBS'ye ulaşmayan bildirimleri tekrar göndermek için.
+
+    Yalnızca done / failed / dead statüsündeki işler requeue edilebilir.
+    in_progress işler dokunulmadan bırakılır (başka worker işliyor olabilir).
+    """
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(403, "Kullanıcının bir oteli (tenant_id) yok")
+
+    with tenant_context(tenant_id):
+        job = await db.kbs_reports.find_one(
+            {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
+            {"_id": 0},
+        )
+        if not job:
+            raise HTTPException(404, "İş bulunamadı")
+
+        if job["status"] not in ("done", "failed", "dead"):
+            raise HTTPException(
+                409,
+                f"Yalnızca done/failed/dead işler tekrar kuyruğa alınabilir (mevcut: {job['status']})",
+            )
+
+        now = _now()
+        await db.kbs_reports.update_one(
+            {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
+            {
+                "$set": {
+                    "status": "pending",
+                    "worker_id": None,
+                    "claimed_at": None,
+                    "completed_at": None,
+                    "failed_at": None,
+                    "kbs_reference": None,
+                    "last_error": None,
+                    "next_retry_at": None,
+                    "updated_at": _iso(now),
+                    "notes": (job.get("notes") or "") + f"\n[{_iso(now)}] Tekrar kuyruğa alındı ({reason}) — {current_user.name}",
+                },
+                "$unset": {"_open_lock": ""},
+            },
+        )
+
+        updated = await db.kbs_reports.find_one(
+            {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
+            {"_id": 0},
+        )
+
+    # SSE fan-out: bağlı eklentilere yeni iş var sinyali
+    try:
+        await kbs_queue_pubsub.publish(
+            "job.requeued",
+            tenant_id,
+            job_id=job_id,
+            booking_id=job.get("booking_id", ""),
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {"ok": True, "job": updated}
+
 # Maximum stream lifetime. Forces a clean reconnect every ~6 hours
 # even on perfectly healthy connections so long-running agents
 # refresh JWTs and re-establish a known-good state.
