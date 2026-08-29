@@ -13,7 +13,8 @@ from models.enums import UserRole
 from models.schemas import GuestCreate
 from modules.pms_core.guest_identity import deduplicate_guest_records, find_existing_guest_by_identity
 from routers import pms_bookings, pms_guests
-from routers.hotel_services_pkg.invoices import _format_document_date, _merge_hotel_document_branding
+from routers.hotel_services_pkg import invoices as invoices_router
+from routers.hotel_services_pkg.invoices import _format_document_date, _format_document_money, _merge_hotel_document_branding
 from routers.pms_bookings import QuickBookingCreate
 from routers.regulatory import _normalize_tenant_legal_profile
 
@@ -102,6 +103,66 @@ def test_voucher_branding_prefers_real_tenant_name_and_keeps_uploaded_logo():
     assert branding["hotel_address"] == "Kartepe"
     assert branding["hotel_phone"] == "+905551112233"
     assert _format_document_date("2026-08-29T14:00:00Z") == "29.08.2026"
+
+
+def test_voucher_money_uses_turkish_number_format_and_currency_label():
+    assert _format_document_money(4510, "TRY") == "4.510,00 TL"
+    assert _format_document_money("1250.5", "EUR") == "1.250,50 EUR"
+    assert _format_document_money(None, "TRY") == "0,00 TL"
+
+
+class _VoucherCollection:
+    def __init__(self, rows: list[dict]):
+        self.rows = [dict(row) for row in rows]
+
+    async def find_one(self, query, _projection=None):
+        for row in self.rows:
+            if all(row.get(key) == value for key, value in query.items()):
+                return dict(row)
+        return None
+
+
+@pytest.mark.asyncio
+async def test_voucher_includes_total_paid_and_balance(monkeypatch):
+    tenant_id = "tenant-1"
+    booking_id = "booking-12345678"
+    monkeypatch.setattr(
+        invoices_router,
+        "db",
+        SimpleNamespace(
+            bookings=_VoucherCollection(
+                [
+                    {
+                        "id": booking_id,
+                        "tenant_id": tenant_id,
+                        "guest_name": "Süleyman Çakıroğlu",
+                        "room_id": "room-201",
+                        "room_number": "201",
+                        "check_in": "2026-08-29",
+                        "check_out": "2026-08-30",
+                        "total_amount": 4510,
+                        "paid_amount": 1000,
+                        "currency": "TRY",
+                    }
+                ]
+            ),
+            guests=_VoucherCollection([]),
+            rooms=_VoucherCollection(
+                [{"id": "room-201", "tenant_id": tenant_id, "room_number": "201", "room_type": "standart"}]
+            ),
+            hotel_settings=_VoucherCollection([{"tenant_id": tenant_id, "hotel_name": "Hotel"}]),
+            tenants=_VoucherCollection([{"id": tenant_id, "property_name": "The Canyon Kartepe"}]),
+        ),
+    )
+
+    result = await invoices_router.generate_voucher(booking_id, SimpleNamespace(tenant_id=tenant_id))
+
+    assert result["total_amount"] == 4510
+    assert result["paid_amount"] == 1000
+    assert result["balance"] == 3510
+    assert "4.510,00 TL" in result["voucher_html"]
+    assert "1.000,00 TL" in result["voucher_html"]
+    assert "3.510,00 TL" in result["voucher_html"]
 
 
 class _GuestCursor:
