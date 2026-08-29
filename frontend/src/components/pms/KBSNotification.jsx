@@ -16,8 +16,9 @@ import {
 } from 'lucide-react';
 
 const escapeXml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+const EMPTY_LIST = Object.freeze([]);
 
-const KBSNotification = ({ bookings = [], guests = [] }) => {
+const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   const { t } = useTranslation();
   const tk = (k) => t(`pmsComponents.kbs.${k}`);
 
@@ -281,24 +282,29 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
 
   useEffect(() => {
     const checkedIn = bookings.filter(b => b.status === 'checked_in');
-    const pending = checkedIn.map(b => ({
-      id: b.id,
-      guest_id: b.guest_id || b.guestId || b.id,
-      guest_name: b.guest_name || b.guestName || tk('unknown'),
-      room_number: b.room_number || b.roomNumber || '-',
-      check_in: b.check_in || b.checkIn,
-      check_out: b.check_out || b.checkOut,
-      nationality: b.guest_nationality || b.nationality || 'TC',
-      id_type: b.id_type || 'tc_kimlik',
-      id_number: b.id_number || '',
-      birth_date: b.birth_date || '',
-      kbs_status: b.kbs_status || 'pending',
-      kbs_sent_at: b.kbs_sent_at || null,
-    }));
+    const pending = checkedIn.map(b => {
+      const guestId = b.guest_id || b.guestId || b.id;
+      const guest = guests.find(g => String(g.id || g._id) === String(guestId));
+
+      return {
+        id: b.id,
+        guest_id: guestId,
+        guest_name: b.guest_name || b.guestName || guest?.name || guest?.full_name || tk('unknown'),
+        room_number: b.room_number || b.roomNumber || '-',
+        check_in: b.check_in || b.checkIn,
+        check_out: b.check_out || b.checkOut,
+        nationality: b.guest_nationality || b.nationality || guest?.nationality || 'TC',
+        id_type: b.id_type || guest?.id_type || 'tc_kimlik',
+        id_number: b.id_number || guest?.id_number || '',
+        birth_date: b.birth_date || guest?.birth_date || '',
+        kbs_status: b.kbs_status || 'pending',
+        kbs_sent_at: b.kbs_sent_at || null,
+      };
+    });
     setPendingGuests(pending.filter(p => p.kbs_status === 'pending'));
     setSentHistory(pending.filter(p => p.kbs_status !== 'pending'));
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [bookings]);
+  }, [bookings, guests]);
 
   const sendToKBS = async (guest) => {
     setSending(true);
@@ -618,16 +624,20 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
                 </div>
                 <div className="flex gap-1">
                   <Button size="sm" variant="outline"
-                    onClick={() => enqueueBooking(guest.id, 'checkin')}
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      enqueueBooking(guest.id, 'checkin');
+                    }}
                     disabled={enqueuingId === guest.id}>
                     <ListPlus className="h-3 w-3 mr-1" /> {tk('addToQueue')}
                   </Button>
                   {!guest.id_number || !guest.birth_date ? (
-                    <Button size="sm" variant="outline" onClick={() => openEditDialog(guest)}>
+                    <Button type="button" size="sm" variant="outline" onClick={() => openEditDialog(guest)}>
                       <UserCog className="h-3 w-3 mr-1" /> {tk('updateInfo')}
                     </Button>
                   ) : (
-                    <Button size="sm" onClick={() => sendToKBS(guest)} disabled={sending}>
+                    <Button type="button" size="sm" onClick={() => sendToKBS(guest)} disabled={sending}>
                       <Send className="h-3 w-3 mr-1" /> {tk('send')}
                     </Button>
                   )}

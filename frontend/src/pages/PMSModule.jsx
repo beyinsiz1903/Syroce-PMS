@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy, memo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense, memo } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { lazyWithPreload as lazy } from '@/routes/lazyWithPreload';
 import Layout from '@/components/Layout';
 import GlobalSearch from '@/components/GlobalSearch';
 import { calculateOccupancyPrice, findOccupancyRule, nightsBetween } from '@/utils/occupancyPricing';
