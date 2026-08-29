@@ -3023,9 +3023,10 @@ async def add_reservation_guest(
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
 
     import uuid
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
+
     from routers.pms_guests import _encrypt_guest
-    
+
     guest_id = f"GST-{uuid.uuid4().hex[:8].upper()}"
     guest = {
         "id": guest_id,
@@ -3034,17 +3035,17 @@ async def add_reservation_guest(
         "total_stays": 1,
         "total_spend": 0.0,
     }
-    
+
     allowed = {"name", "email", "phone", "id_type", "id_number", "nationality", "date_of_birth", "gender", "address", "city", "country", "notes"}
     for k in allowed:
         if k in data:
             guest[k] = data[k]
-            
+
     from security.search_normalize import normalized_set_for_update
     _norm = normalized_set_for_update(guest, collection="guests")
     guest = _encrypt_guest(guest)
     guest.update(_norm)
-    
+
     await db.guests.insert_one(guest)
     await db.booking_guests.insert_one({
         "id": f"BG-{uuid.uuid4().hex[:8].upper()}",
@@ -3053,5 +3054,5 @@ async def add_reservation_guest(
         "guest_id": guest_id,
         "created_at": datetime.now(UTC).isoformat()
     })
-    
+
     return {"status": "ok", "guest_id": guest_id}

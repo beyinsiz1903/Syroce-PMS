@@ -324,7 +324,6 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   }, [autoSend, refreshExt, drainViaExtension]);
 
   useEffect(() => {
-  useEffect(() => {
     let mounted = true;
     const fetchKbsGuests = async () => {
       try {
