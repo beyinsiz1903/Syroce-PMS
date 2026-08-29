@@ -8,6 +8,16 @@ logger = logging.getLogger(__name__)
 
 
 async def shutdown_all(app):
+    # ARI worker uses MongoDB on every five-second tick. Stop it before the
+    # shared client is closed so a deploy/restart cannot create a final tick
+    # against a closed proxy (and a misleading Sentry incident).
+    try:
+        from workers.ari_push_worker import stop_push_worker
+
+        await stop_push_worker()
+    except Exception as e:
+        logger.warning("ARI push worker shutdown warning: %s", type(e).__name__)
+
     # Infrastructure cleanup
     try:
         from infra.horizontal_scaling import scaling_manager
