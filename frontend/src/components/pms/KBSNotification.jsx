@@ -153,6 +153,26 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
     }
   };
 
+  const requeueJob = async (job) => {
+    // done ama KBS'de kayıt yok (resmi olmayan referans): pending'e geri al
+    try {
+      await axios.post(`/kbs/queue/${job.id}/requeue`, null, {
+        params: { reason: 'manual_resend' },
+      });
+      toast.success('Bildirim tekrar kuyruğa alındı — eklenti ile gönderin');
+      fetchQueue();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Tekrar kuyruğa alma başarısız');
+    }
+  };
+
+  // Resmi KBS referansı olmayan done işleri tespit et
+  // (JANDARMA-* veya EGM localReceipt formatı → resmi değil)
+  const isUnofficialRef = (ref) => {
+    if (!ref) return true;
+    return ref.startsWith('JANDARMA-') || ref.startsWith('EGM-LOCAL-') || ref.startsWith('TEST-');
+  };
+
   // --- KBS tarayici eklentisi: kuyrugu otel IP'sinden gonderme ---
   const refreshExt = useCallback(async () => {
     try {
@@ -784,19 +804,30 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
                       <div className="text-gray-400">
                         {tk('qCreatedAt')}: {job.created_at ? new Date(job.created_at).toLocaleString() : '-'}
                       </div>
+                      <div className="flex items-center gap-2">
+                        {extReady && job.status === 'pending' && (
+                          <Button size="sm" variant="outline" onClick={() => sendJobViaExtension(job)}>
+                            <Send className="h-3 w-3 mr-1" /> Eklenti ile gonder
+                          </Button>
+                        )}
+                        {isRetryable && (
+                          <Button size="sm" variant="outline" onClick={() => retryDeadJob(job)}>
+                            <RefreshCw className="h-3 w-3 mr-1" /> {tk('retry')}
+                          </Button>
+                        )}
+                        {job.status === 'done' && isUnofficialRef(job.kbs_reference) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-amber-400 text-amber-700 hover:bg-amber-50"
+                            onClick={() => requeueJob(job)}
+                            title="Bu bildirim KBS'ye resmi olarak ulaşmamış olabilir. Tekrar göndermek için tıklayın."
+                          >
+                            <RefreshCw className="h-3 w-3 mr-1" /> Tekrar Gönder
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {extReady && job.status === 'pending' && (
-                      <Button size="sm" variant="outline" onClick={() => sendJobViaExtension(job)}>
-                        <Send className="h-3 w-3 mr-1" /> Eklenti ile gonder
-                      </Button>
-                    )}
-                    {isRetryable && (
-                      <Button size="sm" variant="outline" onClick={() => retryDeadJob(job)}>
-                        <RefreshCw className="h-3 w-3 mr-1" /> {tk('retry')}
-                      </Button>
-                    )}
                   </div>
                 </CardContent>
               </Card>
