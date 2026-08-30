@@ -392,7 +392,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "block_management",
-    label: "Grup Blok Kontenjanı",
+    label: "Grup Kontenjanları",
     path: "/block-management",
     moduleKey: "pms",
     tier: "basic",
