@@ -3,15 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { NAV_ITEMS } from '@/config/navItems';
 
 describe('connecting rooms navigation', () => {
-  it('exposes connecting-room management to hotel managers under room management', () => {
+  it('keeps connection setup out of daily navigation and available from settings', () => {
     const item = NAV_ITEMS.find(({ key }) => key === 'connecting_rooms');
 
     expect(item).toMatchObject({
-      label: 'Bağlantılı Odalar',
+      label: 'Bağlantılı Oda Tanımları',
       path: '/suite-connecting',
       moduleKey: 'pms',
-      navGroup: 'frontdesk',
-      navSection: 'room_management',
+      group: 'settings',
+      hidden: true,
       allowedRoles: ['admin', 'supervisor', 'super_admin'],
     });
   });

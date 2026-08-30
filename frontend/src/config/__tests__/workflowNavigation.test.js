@@ -12,10 +12,7 @@ describe('workflow-oriented hotel navigation', () => {
       navGroup: 'frontdesk',
       navSection: 'guest_services',
     });
-    expect(item('connecting_rooms')).toMatchObject({
-      navGroup: 'frontdesk',
-      navSection: 'room_management',
-    });
+    expect(item('connecting_rooms')).toMatchObject({ hidden: true, group: 'settings' });
   });
 
   it('keeps operational work in named task sections', () => {
