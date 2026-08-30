@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   BarChart3, TrendingUp, DollarSign, Activity, Download,
-  Building2, Zap, RefreshCw, FileText,
+  Building2, Zap, RefreshCw, FileText, Info, ArrowRight, Database,
 } from 'lucide-react';
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar,
@@ -16,6 +16,7 @@ import {
 import { KPICard, CustomTooltip, COLORS, formatNumber } from './reports/ReportHelpers';
 import { formatCurrency as formatTenantCurrency } from '@/lib/currency';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 
 // Tur 21 #3: raw fetch yerine axios — silent token refresh, retry, axios-cache
 // ve correlation-id interceptor'larina otomatik dahil olur. Token Authorization
@@ -124,7 +125,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
       if (agR.status === 'fulfilled') setAgencies(agR.value.agencies || []);
       if (trR.status === 'fulfilled') setTrends(trR.value.trends || []);
       if (usR.status === 'fulfilled') setApiUsage({ timeline: usR.value.timeline || [], totals: usR.value.totals || [] });
-      if (topR.status === 'fulfilled') setTopEndpoints(topR.value.endpoints || []);
+      if (topR.status === 'fulfilled') setTopEndpoints(topR.value.activity_types || topR.value.endpoints || []);
     } finally {
       if (!ctrl.signal.aborted) setLoading(false);
     }
@@ -207,15 +208,14 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
   const kpis = summary?.kpis || {};
 
   return (
-    <div className="min-h-screen bg-gray-50/50 p-6 space-y-6">
+    <div className="min-h-screen bg-slate-50/60 p-4 text-slate-950 dark:bg-slate-950/30 dark:text-slate-50 sm:p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <h1 className="text-2xl font-bold flex items-center gap-2">
             <BarChart3 className="w-7 h-7 text-indigo-600" />
-            B2B Analytics
+            B2B Satış Analitiği
           </h1>
-          {/* #7: performansi → performansı, kullanım zaten unicode; hizala */}
-          <p className="text-sm text-gray-500 mt-1">{t('cm.pages_B2BAnalyticsDashboard.acente_performansi_ve_api_kullanim_anali')}</p>
+          <p className="text-sm text-muted-foreground mt-1">Acente rezervasyonlarını, geliri ve bağlantılı tesis kullanımını tek çalışma alanında izleyin.</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -251,13 +251,40 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
       </div>
 
       {error && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-center justify-between">
-          <p className="text-sm text-amber-800">{error}</p>
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-center justify-between dark:border-amber-900 dark:bg-amber-950/30">
+          <p className="text-sm text-amber-800 dark:text-amber-300">{error}</p>
           <Button variant="ghost" size="sm" onClick={() => setError(null)} className="text-amber-600 hover:text-amber-800">
             {t('cm.pages_B2BAnalyticsDashboard.kapat')}
           </Button>
         </div>
       )}
+
+      <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 dark:border-indigo-900 dark:bg-indigo-950/30">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 rounded-lg bg-white p-2 text-indigo-700 shadow-sm dark:bg-slate-900 dark:text-indigo-300">
+              <Info className="h-4 w-4" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-semibold">B2B satış ve bağlantı görünümü</p>
+              <p className="max-w-4xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                Rezervasyon, gelir ve acente performansı Syroce B2B rezervasyonlarından hesaplanır. “Tesis telemetrisi” ise seçilen dönemdeki tüm tesis API ve sistem olaylarını gösterir; yalnızca tek bir acenteye ait trafik değildir.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline" className="bg-white dark:bg-slate-900">
+              <Link to="/app/incoming-agency-contracts">Sözleşme Talepleri <ArrowRight className="ml-2 h-4 w-4" /></Link>
+            </Button>
+            <Button asChild variant="outline" className="bg-white dark:bg-slate-900">
+              <Link to="/agency-management">Acente Yönetimi <ArrowRight className="ml-2 h-4 w-4" /></Link>
+            </Button>
+            <Button asChild variant="outline" className="bg-white dark:bg-slate-900">
+              <Link to="/travel-agent-arap">Komisyon ve Ödemeler <ArrowRight className="ml-2 h-4 w-4" /></Link>
+            </Button>
+          </div>
+        </div>
+      </div>
 
       {/* Tur 21 #6: purple → indigo (digitalocean.md Color Palette Convention) */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -272,23 +299,23 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
           icon={DollarSign} color="amber"
         />
         <KPICard title={t('cm.pages_B2BAnalyticsDashboard.aktif_acente')} value={kpis.active_agencies || 0} icon={Building2} color="cyan" />
-        <KPICard title={t('cm.pages_B2BAnalyticsDashboard.api_cagrisi')} value={kpis.api_calls || 0} icon={Activity} color="indigo" />
+        <KPICard title="Tesis API Trafiği" value={kpis.api_calls || 0} icon={Activity} color="indigo" />
       </div>
 
       <Tabs defaultValue="bookings" className="space-y-4">
-        <TabsList className="bg-white border">
-          <TabsTrigger value="bookings">Rez. Trendleri</TabsTrigger>
+        <TabsList className="border bg-white dark:bg-slate-900">
+          <TabsTrigger value="bookings">Rezervasyon Trendleri</TabsTrigger>
           <TabsTrigger value="agencies">{t('cm.pages_B2BAnalyticsDashboard.acente_performansi')}</TabsTrigger>
-          <TabsTrigger value="api">{t('cm.pages_B2BAnalyticsDashboard.api_kullanimi')}</TabsTrigger>
-          <TabsTrigger value="endpoints">Top Endpointler</TabsTrigger>
+          <TabsTrigger value="api">Tesis Telemetrisi</TabsTrigger>
+          <TabsTrigger value="endpoints">Aktivite Dağılımı</TabsTrigger>
         </TabsList>
 
         <TabsContent value="bookings" className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-gray-700">
-                  {t('cm.pages_B2BAnalyticsDashboard.gunluk_rezervasyonlar')} {trendsLoading && <span className="text-[10px] text-gray-400 ml-2">{t('cm.pages_B2BAnalyticsDashboard.guncelleniyor')}</span>}
+                <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  {t('cm.pages_B2BAnalyticsDashboard.gunluk_rezervasyonlar')} {trendsLoading && <span className="ml-2 text-[10px] text-slate-400 dark:text-slate-500">{t('cm.pages_B2BAnalyticsDashboard.guncelleniyor')}</span>}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -306,7 +333,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="h-[300px] flex items-center justify-center text-gray-400 text-sm">
+                  <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
                     {t('cm.pages_B2BAnalyticsDashboard.veri_bulunamadi')}
                   </div>
                 )}
@@ -315,7 +342,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_B2BAnalyticsDashboard.gunluk_gelir_trendi')}</CardTitle>
+                <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-200">{t('cm.pages_B2BAnalyticsDashboard.gunluk_gelir_trendi')}</CardTitle>
               </CardHeader>
               <CardContent>
                 {trends.length > 0 ? (
@@ -335,7 +362,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="h-[300px] flex items-center justify-center text-gray-400 text-sm">
+                  <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
                     {t('cm.pages_B2BAnalyticsDashboard.veri_bulunamadi_c60c4')}
                   </div>
                 )}
@@ -347,7 +374,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
         <TabsContent value="agencies" className="space-y-4">
           <Card>
             <CardHeader className="pb-2 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_B2BAnalyticsDashboard.acente_bazli_performans')}</CardTitle>
+              <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-200">{t('cm.pages_B2BAnalyticsDashboard.acente_bazli_performans')}</CardTitle>
               <Button variant="outline" size="sm" onClick={() => handleExport('agencies')} disabled={exporting}>
                 <Download className="w-4 h-4 mr-1" />
                 CSV
@@ -357,7 +384,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b text-left text-gray-500">
+                    <tr className="border-b text-left text-muted-foreground">
                       <th className="py-2 px-3 font-medium">Acente</th>
                       <th className="py-2 px-3 font-medium text-center">{t('cm.pages_B2BAnalyticsDashboard.durum')}</th>
                       <th className="py-2 px-3 font-medium text-right">Komisyon %</th>
@@ -370,8 +397,8 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
                   </thead>
                   <tbody>
                     {agencies.length > 0 ? agencies.map((a) => (
-                      <tr key={a.agency_id} className="border-b hover:bg-gray-50 transition-colors">
-                        <td className="py-2.5 px-3 font-medium text-gray-900">{a.agency_name}</td>
+                      <tr key={a.agency_id} className="border-b transition-colors hover:bg-slate-50 dark:hover:bg-slate-900/70">
+                        <td className="px-3 py-2.5 font-medium text-slate-900 dark:text-slate-100">{a.agency_name}</td>
                         <td className="py-2.5 px-3 text-center">
                           <Badge variant={a.status === 'active' ? 'default' : 'secondary'} className="text-[10px]">
                             {a.status === 'active' ? 'Aktif' : 'Pasif'}
@@ -390,7 +417,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
                       </tr>
                     )) : (
                       <tr>
-                        <td colSpan="8" className="py-8 text-center text-gray-400">
+                        <td colSpan="8" className="py-8 text-center text-muted-foreground">
                           {t('cm.pages_B2BAnalyticsDashboard.acente_verisi_bulunamadi')}
                         </td>
                       </tr>
@@ -405,7 +432,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_B2BAnalyticsDashboard.acente_gelir_dagilimi')}</CardTitle>
+                  <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-200">{t('cm.pages_B2BAnalyticsDashboard.acente_gelir_dagilimi')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={280}>
@@ -431,7 +458,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
 
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_B2BAnalyticsDashboard.acente_rez_karsilastirmasi')}</CardTitle>
+                  <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-200">{t('cm.pages_B2BAnalyticsDashboard.acente_rez_karsilastirmasi')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={280}>
@@ -451,10 +478,16 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
         </TabsContent>
 
         <TabsContent value="api" className="space-y-4">
+          <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
+            <Database className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
+            <p className="text-slate-600 dark:text-slate-300">
+              Bu bölüm acente bazlı bir faturalama sayacı değildir. Tesisinizin API çağrıları, rezervasyon olayları, kanal senkronizasyonları ve webhook trafiğini operasyonel sağlık amacıyla gösterir.
+            </p>
+          </div>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Card className="lg:col-span-2">
               <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_B2BAnalyticsDashboard.api_kullanim_trendi')}</CardTitle>
+                <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-200">Tesis kullanım trendi</CardTitle>
                 <Button variant="outline" size="sm" onClick={() => handleExport('usage')} disabled={exporting}>
                   <Download className="w-4 h-4 mr-1" />
                   CSV
@@ -492,7 +525,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="h-[320px] flex items-center justify-center text-gray-400 text-sm">
+                  <div className="flex h-[320px] items-center justify-center text-sm text-muted-foreground">
                     {t('cm.pages_B2BAnalyticsDashboard.veri_bulunamadi_c60c4')}
                   </div>
                 )}
@@ -501,7 +534,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_B2BAnalyticsDashboard.olay_tipi_dagilimi')}</CardTitle>
+                <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-200">Olay tipi dağılımı</CardTitle>
               </CardHeader>
               <CardContent>
                 {apiUsage.totals.length > 0 ? (
@@ -525,7 +558,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="h-[320px] flex items-center justify-center text-gray-400 text-sm">
+                  <div className="flex h-[320px] items-center justify-center text-sm text-muted-foreground">
                     {t('cm.pages_B2BAnalyticsDashboard.veri_bulunamadi_c60c4')}
                   </div>
                 )}
@@ -537,19 +570,20 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
         <TabsContent value="endpoints" className="space-y-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_B2BAnalyticsDashboard.en_cok_kullanilan_endpointler')}</CardTitle>
+              <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-200">En yoğun tesis aktiviteleri</CardTitle>
+              <p className="text-xs text-muted-foreground">Bu sıralama URL endpointlerini değil, tesis kullanım sayacındaki olay türlerini karşılaştırır.</p>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
                 {topEndpoints.length > 0 ? topEndpoints.map((ep, idx) => (
                   <div key={ep.event_type} className="flex items-center gap-3">
-                    <span className="text-xs font-bold text-gray-400 w-6 text-right">#{idx + 1}</span>
+                    <span className="w-6 text-right text-xs font-bold text-slate-400 dark:text-slate-500">#{idx + 1}</span>
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium text-gray-800">{getEventLabel(ep.event_type)}</span>
-                        <span className="text-sm text-gray-600">{formatNumber(ep.total_calls)} <span className="text-gray-400 text-xs">(%{ep.percentage})</span></span>
+                        <span className="text-sm font-medium text-slate-800 dark:text-slate-100">{getEventLabel(ep.event_type)}</span>
+                        <span className="text-sm text-slate-600 dark:text-slate-300">{formatNumber(ep.total_calls)} <span className="text-xs text-slate-400 dark:text-slate-500">(%{ep.percentage})</span></span>
                       </div>
-                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                         <div
                           className="h-full rounded-full transition-all"
                           style={{ width: `${ep.percentage}%`, backgroundColor: COLORS[idx % COLORS.length] }}
@@ -558,7 +592,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
                     </div>
                   </div>
                 )) : (
-                  <div className="py-8 text-center text-gray-400 text-sm">
+                  <div className="py-8 text-center text-sm text-muted-foreground">
                     {t('cm.pages_B2BAnalyticsDashboard.veri_bulunamadi_c60c4')}
                   </div>
                 )}

@@ -614,7 +614,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "incoming_agency_contracts",
-    label: "Gelen Acente Talepleri",
+    label: "Acente Sözleşme Talepleri",
     path: "/app/incoming-agency-contracts",
     moduleKey: "channel_manager",
     tier: "basic",
@@ -632,7 +632,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "b2b_analytics",
-    label: "B2B Analitik",
+    label: "B2B Satış Analitiği",
     path: "/b2b-analytics",
     moduleKey: "channel_manager",
     tier: "professional",
