@@ -419,7 +419,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "departure_list",
-    label: "Bugünün Çıkışları",
+    label: "Çıkış Operasyonları",
     path: "/departure-list",
     moduleKey: "pms",
     tier: "basic",

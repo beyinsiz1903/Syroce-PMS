@@ -792,15 +792,18 @@ class FrontdeskService:
         room_ids = list({b["room_id"] for b in bookings if b.get("room_id")})
         guest_map = {}
         if guest_ids:
+            from security.encrypted_lookup import decrypt_guest_doc
+
             async for g in self._db.guests.find(
-                {"id": {"$in": guest_ids}},
+                {"tenant_id": tenant_id, "id": {"$in": guest_ids}},
                 {"_id": 0, "id": 1, "name": 1, "phone": 1, "email": 1},
             ):
+                g = decrypt_guest_doc(g)
                 guest_map[g["id"]] = g
         room_map = {}
         if room_ids:
             async for r in self._db.rooms.find(
-                {"id": {"$in": room_ids}},
+                {"tenant_id": tenant_id, "id": {"$in": room_ids}},
                 {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "status": 1},
             ):
                 room_map[r["id"]] = r
