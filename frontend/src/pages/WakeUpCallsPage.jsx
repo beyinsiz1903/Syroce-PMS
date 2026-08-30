@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -10,64 +10,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { PageHeader } from '@/components/ui/page-header';
 import { KpiCard } from '@/components/ui/kpi-card';
 import {
-  AlarmClock, Plus, Phone, CheckCircle, XCircle, Clock,
-  Trash2, Edit2, RefreshCw, PhoneCall, PhoneOff, Repeat, Bell, BellOff
+  AlarmClock, Plus, CheckCircle, XCircle, Clock,
+  Trash2, RefreshCw, PhoneCall, PhoneOff, Repeat, Bell, BellOff, Volume2, TimerReset
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-
-// Tek, uzun ömürlü AudioContext — kullanıcı etkileşimiyle bir kez
-// resume edildikten sonra timer-tabanlı sonraki alarmlar da çalar
-// (autoplay policy bypass'ı için kritik).
-let _alarmCtx = null;
-function getAlarmCtx() {
-  const Ctx = window.AudioContext || window.webkitAudioContext;
-  if (!Ctx) return null;
-  if (!_alarmCtx) {
-    try { _alarmCtx = new Ctx(); } catch { return null; }
-  }
-  return _alarmCtx;
-}
-
-function playAlarmBeep() {
-  const ctx = getAlarmCtx();
-  if (!ctx) return;
-  if (ctx.state === 'suspended') {
-    ctx.resume().catch((e) => {
-      console.debug('[WakeUpCallsPage] AudioContext.resume() blocked (browser autoplay policy):', e?.name);
-    });
-  }
-  const beep = (start, freq = 880) => {
-    try {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      osc.connect(gain).connect(ctx.destination);
-      gain.gain.setValueAtTime(0.0001, ctx.currentTime + start);
-      gain.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + start + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + start + 0.35);
-      osc.start(ctx.currentTime + start);
-      osc.stop(ctx.currentTime + start + 0.4);
-    } catch { /* noop */ }
-  };
-  beep(0, 880);
-  beep(0.45, 880);
-  beep(0.9, 1100);
-}
-
-// Hotel-local (Istanbul) tarihi — UTC ISO yerine. Saat dilimi farkı
-// gece yarısı sınırında is_due/filterDate uyumsuzluğu yapmasın diye.
-function todayInIstanbul() {
-  try {
-    const fmt = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit',
-    });
-    return fmt.format(new Date()); // YYYY-MM-DD
-  } catch {
-    const d = new Date(Date.now() + 3 * 3600 * 1000);
-    return d.toISOString().split('T')[0];
-  }
-}
+import {
+  getWakeUpAlarmSettings,
+  playWakeUpChime,
+  saveWakeUpAlarmSettings,
+  snoozeWakeUpTime,
+  todayInIstanbul,
+  unlockWakeUpAudio,
+  WAKEUP_VOLUME_OPTIONS,
+} from '@/lib/wakeUpAlarm';
 
 const STATUS_COLORS = {
   pending: 'bg-amber-100 text-amber-700 border-amber-200',
@@ -83,75 +38,23 @@ const RESPONSE_LABELS = {
 };
 const METHOD_LABELS = { phone: 'Telefon', system: 'Sistem', both: 'Her İkisi' };
 
-const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
-  const { t, i18n } = useTranslation();
+const WakeUpCallsPage = () => {
+  const { t } = useTranslation();
   const [calls, setCalls] = useState([]);
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(true);
   const [filterDate, setFilterDate] = useState(todayInIstanbul());
   const [filterStatus, setFilterStatus] = useState('');
   const [showCreate, setShowCreate] = useState(false);
-  const [showUpdate, setShowUpdate] = useState(null);
   const [form, setForm] = useState({
     room_number: '', guest_name: '', wake_time: '07:00', wake_date: '',
     recurring: false, recurrence_end_date: '', notes: '', method: 'phone',
   });
   const [deleteConfirm, setDeleteConfirm] = useState(null);
-  const [alertsArmed, setAlertsArmed] = useState(false);
-  const alertedIdsRef = useRef(new Set());
-  const armedRef = useRef(false);
-
-  // Bugün için zaten alarm çalmış çağrıları sessionStorage'da tutuyoruz
-  // ki sayfa kapanıp açıldığında aynı alarm tekrar çalmasın.
+  const initialAlarmSettings = getWakeUpAlarmSettings();
+  const [alertsArmed, setAlertsArmed] = useState(initialAlarmSettings.enabled);
+  const [alarmVolume, setAlarmVolume] = useState(initialAlarmSettings.volume);
   const today = todayInIstanbul();
-  const alertKey = `wakeup-alerted-${today}`;
-
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(sessionStorage.getItem(alertKey) || '[]');
-      alertedIdsRef.current = new Set(saved);
-    } catch { alertedIdsRef.current = new Set(); }
-  }, [alertKey]);
-
-  const fireAlertsFor = useCallback((dueCalls) => {
-    const fresh = dueCalls.filter(c => !alertedIdsRef.current.has(c.id));
-    if (fresh.length === 0) return;
-
-    // Alarm henüz "armed" değilse: visual + toast tetikle, ama ses/desktop
-    // bildirim için izin/etkileşim gerekir. Ref kullanıyoruz ki callback
-    // her arm değişiminde yeniden oluşmasın (poller'ın yeniden kurulumunu
-    // tetikleyip duplicate fetch yapmaz).
-    if (armedRef.current) {
-      playAlarmBeep();
-    }
-
-    // Tarayıcı bildirimi — izin verildiyse her çağrı için ayrı bildirim
-    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      fresh.forEach(c => {
-        try {
-          const n = new Notification('Uyandırma Çağrısı Zamanı', {
-            body: `Oda ${c.room_number}${c.guest_name ? ` — ${c.guest_name}` : ''} • ${c.wake_time}`,
-            tag: `wakeup-${c.id}`,
-            requireInteraction: true,
-          });
-          n.onclick = () => { window.focus(); n.close(); };
-        } catch { /* noop */ }
-      });
-    }
-
-    // Toast (her zaman gösterilir, izin gerekmez)
-    fresh.forEach(c => {
-      toast.warning(`Oda ${c.room_number} — uyandırma saati (${c.wake_time})`, {
-        duration: 15000,
-      });
-    });
-
-    // Hatırla
-    fresh.forEach(c => alertedIdsRef.current.add(c.id));
-    try {
-      sessionStorage.setItem(alertKey, JSON.stringify([...alertedIdsRef.current]));
-    } catch { /* noop */ }
-  }, [alertKey]);
 
   const loadCalls = useCallback(async () => {
     try {
@@ -162,20 +65,17 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
       const list = res.data?.calls || [];
       setCalls(list);
       setStats(res.data?.stats || {});
-      // Backend `is_due` damgaladıysa alarmı tetikle
-      const due = list.filter(c => c.is_due);
-      if (due.length > 0) fireAlertsFor(due);
     } catch (e) {
       console.error('Load calls error', e);
     } finally {
       setLoading(false);
     }
-  }, [filterDate, filterStatus, fireAlertsFor]);
+  }, [filterDate, filterStatus]);
 
   useEffect(() => { loadCalls(); }, [loadCalls]);
 
-  // 60 sn'de bir poll — sadece bugün filtreliyken VE sekme önplandayken çalsın.
-  // Sekme önplana döndüğünde anında bir tazeleme tetiklenir.
+  // Listeyi güncel tutar; sesli ve masaüstü alarmı uygulama kabuğundaki
+  // WakeUpAlarmMonitor tüm PMS sayfalarında ayrıca izler.
   useEffect(() => {
     if (filterDate !== today) return;
     const tick = () => { if (!document.hidden) loadCalls(); };
@@ -188,28 +88,43 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
     };
   }, [loadCalls, filterDate, today]);
 
-  // Alarm sistemini etkinleştir: izin iste + AudioContext'i kullanıcı
-  // etkileşimiyle "uyandır" (autoplay policy gereği).
   const armAlerts = async () => {
     try {
       if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
         const perm = await Notification.requestPermission();
         if (perm !== 'granted') {
-          toast.error('Tarayıcı bildirim izni reddedildi — sadece sesli alarm çalacak');
+          toast.warning('Masaüstü bildirimi kapalı; uygulama içi uyarı ve seçtiğiniz ses kullanılacak.');
         }
       }
-      // Tek AudioContext'i bu kullanıcı gesture'ında resume et —
-      // sonraki timer-tetikli alarmlarda autoplay policy'yi bypass eder.
-      const ctx = getAlarmCtx();
-      if (ctx && ctx.state === 'suspended') {
-        await ctx.resume();
-      }
-      playAlarmBeep();
-      armedRef.current = true;
+      await unlockWakeUpAudio();
+      saveWakeUpAlarmSettings({ enabled: true, volume: alarmVolume });
+      await playWakeUpChime(alarmVolume);
       setAlertsArmed(true);
-      toast.success('Sesli alarm + bildirimler aktif');
+      toast.success('Resepsiyon alarmı açık; PMS içinde çalışırken çağrılar izlenecek.');
     } catch (e) {
       toast.error('Alarm açılamadı: ' + e.message);
+    }
+  };
+
+  const changeAlarmVolume = async (volume) => {
+    setAlarmVolume(volume);
+    saveWakeUpAlarmSettings({ enabled: alertsArmed, volume });
+    if (alertsArmed && volume !== 'silent') await playWakeUpChime(volume);
+  };
+
+  const disarmAlerts = () => {
+    saveWakeUpAlarmSettings({ enabled: false, volume: alarmVolume });
+    setAlertsArmed(false);
+    toast.success('Bu bilgisayardaki sesli uyandırma alarmı kapatıldı.');
+  };
+
+  const testAlarm = async () => {
+    try {
+      await unlockWakeUpAudio();
+      await playWakeUpChime(alarmVolume);
+      toast.success(alarmVolume === 'silent' ? 'Yalnız görsel uyarı seçili.' : 'Kısa alarm sesi oynatıldı.');
+    } catch {
+      toast.error('Ses oynatılamadı. Tarayıcının ses iznini kontrol edin.');
     }
   };
 
@@ -240,6 +155,21 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
     }
   };
 
+  const handleSnooze = async (call) => {
+    try {
+      const nextSchedule = snoozeWakeUpTime(call, 5);
+      await axios.put(`/pms/wake-up-calls/${call.id}`, {
+        ...nextSchedule,
+        status: 'pending',
+        attempt_count: (call.attempt_count || 0) + 1,
+      });
+      toast.success(`Oda ${call.room_number} çağrısı 5 dakika ertelendi.`);
+      loadCalls();
+    } catch {
+      toast.error('Uyandırma çağrısı ertelenemedi.');
+    }
+  };
+
   const handleDelete = async (callId) => {
     try {
       await axios.delete(`/pms/wake-up-calls/${callId}`);
@@ -261,16 +191,7 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
           subtitle={t('cm.pages_WakeUpCallsPage.misafir_uyandirma_cagrilarini_planlayip_')}
           actions={
             <>
-              {!alertsArmed ? (
-                <Button
-                  variant="outline" size="sm"
-                  onClick={armAlerts}
-                  className="border-amber-300 text-amber-700 hover:bg-amber-50"
-                  data-testid="arm-alerts-btn"
-                >
-                  <BellOff className="w-4 h-4 mr-1.5" /> {t('cm.pages_WakeUpCallsPage.sesli_alarmi_ac')}
-                </Button>
-              ) : (
+              {alertsArmed && (
                 <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 gap-1 self-center">
                   <Bell className="w-3 h-3" /> {t('cm.pages_WakeUpCallsPage.alarm_aktif')}
                 </Badge>
@@ -284,6 +205,53 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
             </>
           }
         />
+
+        <Card className={alertsArmed ? 'border-emerald-200 bg-emerald-50/50' : 'border-amber-200 bg-amber-50/50'}>
+          <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className={`mt-0.5 rounded-full p-2 ${alertsArmed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                {alertsArmed ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+              </div>
+              <div>
+                <p className="font-semibold">{alertsArmed ? 'Resepsiyon alarmı açık' : 'Resepsiyon alarmını etkinleştirin'}</p>
+                <p className="mt-0.5 max-w-2xl text-sm text-muted-foreground">
+                  {alertsArmed
+                    ? 'PMS içinde hangi ekranda olursanız olun zamanı gelen çağrı düşük ses, masaüstü bildirimi ve uygulama içi uyarıyla gösterilir.'
+                    : 'Tarayıcı ses izni için bu bilgisayarda bir kez alarmı açın. Varsayılan ses kısa ve düşük seviyededir.'}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="alarm-volume" className="text-xs text-muted-foreground">Uyarı seviyesi</Label>
+                <select
+                  id="alarm-volume"
+                  value={alarmVolume}
+                  onChange={(event) => changeAlarmVolume(event.target.value)}
+                  className="h-9 rounded-md border bg-background px-3 text-sm"
+                  data-testid="alarm-volume"
+                >
+                  {Object.entries(WAKEUP_VOLUME_OPTIONS).map(([value, option]) => (
+                    <option key={value} value={value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={testAlarm} disabled={alarmVolume === 'silent'}>
+                <Volume2 className="mr-1.5 h-4 w-4" /> Sesi dene
+              </Button>
+              {!alertsArmed && (
+                <Button type="button" size="sm" onClick={armAlerts} data-testid="arm-alerts-primary">
+                  <Bell className="mr-1.5 h-4 w-4" /> Alarmı aç
+                </Button>
+              )}
+              {alertsArmed && (
+                <Button type="button" variant="ghost" size="sm" onClick={disarmAlerts}>
+                  <BellOff className="mr-1.5 h-4 w-4" /> Alarmı kapat
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <KpiCard icon={Clock} label={t('cm.pages_WakeUpCallsPage.bugun_toplam')} value={stats.total_today || 0} intent="info" />
@@ -373,7 +341,13 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
                           onClick={() => handleStatus(call.id, 'completed', 'answered')}
                           data-testid={`complete-btn-${call.id}`}
                         >
-                          <PhoneCall className="w-3 h-3 mr-1" /> Tamamla
+                          <PhoneCall className="w-3 h-3 mr-1" /> Arandı
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-8 text-xs text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                          onClick={() => handleSnooze(call)}
+                          data-testid={`snooze-btn-${call.id}`}
+                        >
+                          <TimerReset className="w-3 h-3 mr-1" /> 5 dk ertele
                         </Button>
                         <Button size="sm" variant="outline" className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50"
                           onClick={() => handleStatus(call.id, 'missed', 'no_answer')}
