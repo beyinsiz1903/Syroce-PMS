@@ -596,7 +596,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "travel_agent_arap",
-    label: "Acente AR/AP",
+    label: "Acente Komisyonları",
     path: "/travel-agent-arap",
     moduleKey: "channel_manager",
     tier: "basic",
