@@ -34,6 +34,7 @@ import NightScreen from '@/components/NightScreen';
 import ThemeToggle from '@/components/ThemeToggle';
 import PushSubscriptionManager from '@/components/PushSubscriptionManager';
 import PMSDateBadge from '@/components/PMSDateBadge';
+import WakeUpAlarmMonitor from '@/components/WakeUpAlarmMonitor';
 import { NAV_ITEMS, NAV_GROUPS, NAV_GROUP_SECTIONS } from '@/config/navItems';
 import { UpgradeBanner } from '@/components/UpgradeBanner';
 import SimulationOverlay from '@/components/academy/SimulationOverlay';
@@ -743,6 +744,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
       </header>
 
       <PMSDateBadge inLayout />
+      <WakeUpAlarmMonitor tenant={tenant} />
 
       <main
         ref={mainRef}
