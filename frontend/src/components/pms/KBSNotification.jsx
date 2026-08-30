@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -107,9 +107,6 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
 
   // Faz 1 kuyruk altyapısı entegrasyonu
   const [queueJobs, setQueueJobs] = useState([]);
-  const [queueStats, setQueueStats] = useState({
-    pending: 0, in_progress: 0, done: 0, failed: 0, dead: 0,
-  });
   const [queueLoading, setQueueLoading] = useState(false);
   const [enqueuingId, setEnqueuingId] = useState(null);
 
@@ -135,12 +132,10 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
       const res = await axios.get('/kbs/queue', {
         params: { status: 'pending,in_progress,failed,dead', limit: 200 },
       });
-      // Savunmaci filtre: eski bir backend tum statuleri dondurse bile
-      // tamamlanmis misafirler Kuyruk'ta ikinci kez gosterilmez.
+      // Savunmaci ilk filtre: eski bir backend tum statuleri dondurse bile
+      // done isleri kuyruk adaylarina alma. Kalici KBS durumu asagida ayrica
+      // rezervasyon kimligi uzerinden tum eski denemeleri eler.
       setQueueJobs((res.data?.jobs || []).filter(job => job.status !== 'done'));
-      setQueueStats(res.data?.stats || {
-        pending: 0, in_progress: 0, done: 0, failed: 0, dead: 0,
-      });
     } catch {
       // Sessiz: ilk yüklemede backend kuyruk dolmamış olabilir
     } finally {
@@ -280,6 +275,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
     };
 
     setPendingGuests(prev => prev.filter(row => String(row.id) !== bookingId));
+    setQueueJobs(prev => prev.filter(jobRow => String(jobRow.booking_id) !== bookingId));
     setSentHistory(prev => {
       const existing = prev.find(row => String(row.id) === bookingId);
       return [
@@ -621,6 +617,20 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
     !searchTerm || g.guest_name?.toLowerCase().includes(searchTerm.toLowerCase()) || String(g.room_number).includes(searchTerm)
   );
   const missingData = pendingGuests.filter(hasMissingKbsData);
+  const visibleQueueJobs = useMemo(() => {
+    const sentBookingIds = new Set(sentHistory.map(row => String(row.id)));
+    return queueJobs.filter(job => (
+      job.status !== 'done'
+      && !sentBookingIds.has(String(job.booking_id || ''))
+    ));
+  }, [queueJobs, sentHistory]);
+  const visibleQueueStats = useMemo(() => {
+    const stats = { pending: 0, in_progress: 0, done: 0, failed: 0, dead: 0 };
+    visibleQueueJobs.forEach((job) => {
+      if (Object.hasOwn(stats, job.status)) stats[job.status] += 1;
+    });
+    return stats;
+  }, [visibleQueueJobs]);
 
   return (
     <div className="space-y-4">
@@ -684,27 +694,27 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
         <div className="grid grid-cols-5 gap-2">
           <div className="text-center bg-white rounded border-yellow-200 border p-2">
             <Clock className="w-4 h-4 mx-auto text-yellow-600" />
-            <p className="text-lg font-bold text-yellow-700">{queueStats.pending || 0}</p>
+            <p className="text-lg font-bold text-yellow-700">{visibleQueueStats.pending}</p>
             <p className="text-[10px] text-yellow-700">{tk('qPending')}</p>
           </div>
           <div className="text-center bg-white rounded border-blue-200 border p-2">
             <Loader2 className="w-4 h-4 mx-auto text-blue-600" />
-            <p className="text-lg font-bold text-blue-700">{queueStats.in_progress || 0}</p>
+            <p className="text-lg font-bold text-blue-700">{visibleQueueStats.in_progress}</p>
             <p className="text-[10px] text-blue-700">{tk('qInProgress')}</p>
           </div>
           <div className="text-center bg-white rounded border-green-200 border p-2">
             <CheckCircle className="w-4 h-4 mx-auto text-green-600" />
-            <p className="text-lg font-bold text-green-700">{queueStats.done || 0}</p>
+            <p className="text-lg font-bold text-green-700">{visibleQueueStats.done}</p>
             <p className="text-[10px] text-green-700">{tk('qDone')}</p>
           </div>
           <div className="text-center bg-white rounded border-amber-200 border p-2">
             <AlertTriangle className="w-4 h-4 mx-auto text-amber-600" />
-            <p className="text-lg font-bold text-amber-700">{queueStats.failed || 0}</p>
+            <p className="text-lg font-bold text-amber-700">{visibleQueueStats.failed}</p>
             <p className="text-[10px] text-amber-700">{tk('qFailed')}</p>
           </div>
           <div className="text-center bg-white rounded border-red-200 border p-2">
             <Skull className="w-4 h-4 mx-auto text-red-600" />
-            <p className="text-lg font-bold text-red-700">{queueStats.dead || 0}</p>
+            <p className="text-lg font-bold text-red-700">{visibleQueueStats.dead}</p>
             <p className="text-[10px] text-red-700">{tk('qDead')}</p>
           </div>
         </div>
@@ -790,7 +800,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
           <TabsTrigger value="pending">{tk('pendingTab')} ({pendingGuests.length})</TabsTrigger>
           <TabsTrigger value="sent">{tk('sentTab')} ({sentHistory.length})</TabsTrigger>
           <TabsTrigger value="missing">{tk('missingTab')} ({missingData.length})</TabsTrigger>
-          <TabsTrigger value="queue">{tk('queueTab')} ({queueJobs.length})</TabsTrigger>
+          <TabsTrigger value="queue">{tk('queueTab')} ({visibleQueueJobs.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="pending" className="space-y-2">
@@ -905,12 +915,12 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
 
         {/* Faz 3: Kuyruk sekmesi — agent app'in çalıştığı işler */}
         <TabsContent value="queue" className="space-y-2">
-          {queueJobs.length === 0 ? (
+          {visibleQueueJobs.length === 0 ? (
             <div className="text-center text-gray-500 py-8">
               <ListPlus className="w-10 h-10 mx-auto mb-2 text-gray-300" />
               <p>{tk('noQueueJobs')}</p>
             </div>
-          ) : queueJobs.map(job => {
+          ) : visibleQueueJobs.map(job => {
             const statusColors = {
               pending: 'bg-yellow-100 text-yellow-800',
               in_progress: 'bg-blue-100 text-blue-800',
