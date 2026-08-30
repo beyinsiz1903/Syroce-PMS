@@ -343,13 +343,12 @@ export const NAV_ITEMS = [
   },
   {
     key: "connecting_rooms",
-    label: "Bağlantılı Odalar",
+    label: "Bağlantılı Oda Tanımları",
     path: "/suite-connecting",
     moduleKey: "pms",
     tier: "basic",
-    group: "core",
-    navGroup: "frontdesk",
-    navSection: "room_management",
+    group: "settings",
+    hidden: true,
     allowedRoles: ["admin", "supervisor", "super_admin"],
   },
   {

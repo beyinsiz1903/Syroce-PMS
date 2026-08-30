@@ -1,4 +1,3 @@
-import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -32,7 +31,6 @@ const BED_TYPE_LABELS = {
 };
 
 export default function SettingsRoomsTab({ loadRooms, roomsLoading, setShowBulkRoomsDialog, setShowAddRoomDialog, roomsList, handleDeleteRoom, onEditRoom }) {
-    const { t } = useTranslation();
     const navigate = useNavigate();
     return (
         <TabsContent value="rooms" className="space-y-4" data-testid="rooms-settings-content">
@@ -47,7 +45,7 @@ export default function SettingsRoomsTab({ loadRooms, roomsLoading, setShowBulkR
                     </div>
                      <div className="flex gap-2 flex-wrap">
                       <Button variant="outline" size="sm" onClick={() => navigate("/suite-connecting")} data-testid="btn-go-suite-connecting" >
-                        <DoorOpen className="w-4 h-4 mr-1.5" /> {t("cm.pages_SettingsRoomsTab.suite_connecting_tanimlari", "Suite / Connecting Tanımları")}
+                        <DoorOpen className="w-4 h-4 mr-1.5" /> Bağlantılı Oda Tanımları
                       </Button>
                       <Button variant="outline" size="sm" onClick={loadRooms} disabled={roomsLoading}>
                         <RefreshCw className={`w-4 h-4 mr-1.5 ${roomsLoading ? 'animate-spin' : ''}`} /> Yenile
