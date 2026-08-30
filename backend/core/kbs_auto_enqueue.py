@@ -16,6 +16,7 @@ import uuid
 from datetime import UTC, datetime
 
 from core.database import db
+from core.kbs_payload_builder import build_kbs_payload_snapshot
 from core.kbs_payload_validation import validate_kbs_payload
 
 logger = logging.getLogger("core.kbs_auto_enqueue")
@@ -29,66 +30,8 @@ def _now_iso() -> str:
 
 
 async def _build_payload_snapshot(tenant_id: str, booking_id: str) -> dict:
-    booking = await db.bookings.find_one(
-        {"tenant_id": tenant_id, "id": booking_id},
-        {
-            "_id": 0,
-            "id": 1,
-            "guest_id": 1,
-            "guest_name": 1,
-            "guest_email": 1,
-            "guest_phone": 1,
-            "room_number": 1,
-            "check_in": 1,
-            "check_out": 1,
-            "guest_nationality": 1,
-        },
-    )
-    if not booking:
-        return {}
-
-    guest: dict = {}
-    if booking.get("guest_id"):
-        from security.encrypted_lookup import decrypt_guest_doc
-
-        guest = (
-            decrypt_guest_doc(
-                await db.guests.find_one(
-                    {"tenant_id": tenant_id, "id": booking["guest_id"]},
-                    {
-                        "_id": 0,
-                        "nationality": 1,
-                        "id_number": 1,
-                        "passport_number": 1,
-                        "birth_date": 1,
-                        "date_of_birth": 1,
-                        "gender": 1,
-                        "address": 1,
-                        "father_name": 1,
-                        "mother_name": 1,
-                        "birth_place": 1,
-                    },
-                )
-            )
-            or {}
-        )
-
-    return {
-        "guest_name": booking.get("guest_name", ""),
-        "phone": booking.get("guest_phone", ""),
-        "room_number": booking.get("room_number", ""),
-        "check_in": booking.get("check_in", ""),
-        "check_out": booking.get("check_out", ""),
-        "nationality": guest.get("nationality") or booking.get("guest_nationality") or "TC",
-        "id_number": guest.get("id_number", ""),
-        "passport_number": guest.get("passport_number", ""),
-        "birth_date": guest.get("birth_date") or guest.get("date_of_birth", ""),
-        "gender": guest.get("gender", ""),
-        "father_name": guest.get("father_name", ""),
-        "mother_name": guest.get("mother_name", ""),
-        "birth_place": guest.get("birth_place", ""),
-        "address": guest.get("address", ""),
-    }
+    _booking, _guest, snapshot = await build_kbs_payload_snapshot(db, tenant_id, booking_id)
+    return snapshot
 
 
 async def auto_enqueue_kbs(

@@ -31,13 +31,13 @@ test("builds foreign check-in and rejects unknown country", () => {
   const req = soap.buildRequest({ nationality: "DE", passport_number: "C01X", guest_name: "Ada Lovelace", gender: "female", birth_date: "1990-01-02", check_in: "2026-08-23", room_number: "4" }, "checkin", credentials);
   assert.equal(req.method, "MusteriYabanciGiris");
   assert.match(req.envelope, /<d:ULKKOD>GERMANY<\/d:ULKKOD>/);
-  assert.throws(() => soap.buildRequest({ nationality: "XX", passport_number: "P1", guest_name: "A B", birth_date: "1990-01-01", check_in: "2026-08-23" }, "checkin", credentials), /unsupported_foreign_country/);
+  assert.throws(() => soap.buildRequest({ nationality: "XX", passport_number: "P1", guest_name: "A B", birth_date: "1990-01-01", check_in: "2026-08-23", room_number: "4" }, "checkin", credentials), /unsupported_foreign_country/);
 });
 
 test("uses exact official enum symbols and never guesses foreign gender", () => {
   assert.equal(soap.countryEnum("GB"), "UNITED_KINGDOM");
   assert.equal(soap.countryEnum("Rusya"), "RUSSIAN_FEDERATION");
-  assert.throws(() => soap.buildRequest({ nationality: "DE", passport_number: "P1", guest_name: "A B", gender: "", birth_date: "1990-01-01", check_in: "2026-08-23" }, "checkin", credentials), /unsupported_foreign_gender/);
+  assert.throws(() => soap.buildRequest({ nationality: "DE", passport_number: "P1", guest_name: "A B", gender: "", birth_date: "1990-01-01", check_in: "2026-08-23", room_number: "4" }, "checkin", credentials), /unsupported_foreign_gender/);
 });
 
 test("accepts only Basarili response and exposes official error", () => {
@@ -45,4 +45,22 @@ test("accepts only Basarili response and exposes official error", () => {
   const failed = soap.parseResponse("<x><Basarili>false</Basarili><HataKodu>YetkiHatasi</HataKodu><Mesaj>IP gecersiz</Mesaj></x>", "MusteriKimlikNoGiris");
   assert.equal(failed.ok, false);
   assert.match(failed.error, /YetkiHatasi.*IP gecersiz/);
+});
+
+test("rejects a check-in without a room number before building SOAP", () => {
+  assert.throws(
+    () => soap.buildRequest(
+      {
+        guest_name: "Test Guest",
+        nationality: "TC",
+        id_number: "10000000146",
+        room_number: "",
+        check_in: "2026-08-30T14:00:00+03:00",
+        check_out: "2026-08-31T12:00:00+03:00",
+      },
+      "checkin",
+      { userTc: "10000000146", facilityCode: "123456", password: "secret" },
+    ),
+    /missing_room_number/,
+  );
 });

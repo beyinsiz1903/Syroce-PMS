@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 
-REQUIRED_BASE_FIELDS = ("guest_name", "check_in", "check_out")
+REQUIRED_BASE_FIELDS = ("guest_name", "room_number", "check_in", "check_out")
 
 
 def _norm(v: object) -> str:

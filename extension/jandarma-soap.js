@@ -80,6 +80,9 @@
       : (action === "checkin" ? "MusteriYabanciGiris" : "MusteriYabanciCikis");
     const identity = turkish ? String(payload.id_number) : String(payload.passport_number || "").trim();
     if (!identity) throw new Error("missing_guest_identity");
+    if (action === "checkin" && !String(payload.room_number || "").trim()) {
+      throw new Error("missing_room_number");
+    }
 
     let fields = "";
     if (turkish && action === "checkin") {

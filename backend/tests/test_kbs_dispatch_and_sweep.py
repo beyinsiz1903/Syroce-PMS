@@ -10,6 +10,7 @@ Mongo session loop'una conftest tarafından bağlanır; erişilemezse testler at
 Gönderim ağa ÇIKMAZ: testler KBS_TEST_MODE=1 ile çalışır (gerçek HTTP yok, TEST-
 referans). Saat ``_now_utc`` ile sabitlenir.
 """
+
 import uuid
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
@@ -28,8 +29,8 @@ def _ts() -> str:
 
 
 async def _cleanup(tenant_id: str) -> None:
-    from core.database import db
     from core.tenant_db import get_system_db
+
     sys_db = get_system_db()
     await sys_db.kbs_reports.delete_many({"tenant_id": tenant_id})
     await sys_db.kbs_alerts.delete_many({"tenant_id": tenant_id})
@@ -68,13 +69,16 @@ def _valid_payload(**over) -> dict:
 async def _seed_job(tenant_id, *, status="pending", payload=None, action="checkin", attempts=0):
     from core.database import db
     from core.tenant_db import tenant_context
+
+    job_payload = payload if payload is not None else _valid_payload()
+    guest_id = str(uuid.uuid4())
     job = {
         "_kind": QUEUE_KIND,
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
         "booking_id": str(uuid.uuid4()),
         "action": action,
-        "payload": payload if payload is not None else _valid_payload(),
+        "payload": job_payload,
         "status": status,
         "attempts": attempts,
         "max_attempts": 5,
@@ -82,9 +86,31 @@ async def _seed_job(tenant_id, *, status="pending", payload=None, action="checki
         "created_at": datetime.now(UTC).isoformat(),
     }
     with tenant_context(tenant_id):
-        await db.bookings.insert_one({
-            "tenant_id": tenant_id, "id": job["booking_id"], "status": "checked_in",
-        })
+        await db.bookings.insert_one(
+            {
+                "tenant_id": tenant_id,
+                "id": job["booking_id"],
+                "guest_id": guest_id,
+                "guest_name": job_payload.get("guest_name", ""),
+                "guest_nationality": job_payload.get("nationality", "TC"),
+                "room_number": job_payload.get("room_number", ""),
+                "check_in": job_payload.get("check_in", ""),
+                "check_out": job_payload.get("check_out", ""),
+                "status": "checked_in",
+            }
+        )
+        await db.guests.insert_one(
+            {
+                "tenant_id": tenant_id,
+                "id": guest_id,
+                "nationality": job_payload.get("nationality", "TC"),
+                "id_number": job_payload.get("id_number", ""),
+                "passport_number": job_payload.get("passport_number", ""),
+                "birth_date": job_payload.get("birth_date", ""),
+                "gender": job_payload.get("gender", ""),
+                "birth_place": job_payload.get("birth_place", ""),
+            }
+        )
         await db.kbs_reports.insert_one(dict(job))
     return job
 
@@ -94,6 +120,7 @@ async def _seed_job(tenant_id, *, status="pending", payload=None, action="checki
 
 async def test_sender_test_mode_returns_test_ref(monkeypatch):
     from core import kbs_sender
+
     monkeypatch.setenv("KBS_TEST_MODE", "1")
     ref = await kbs_sender.send_kbs_notification(_valid_payload(), "checkin")
     assert ref.startswith("TEST-")
@@ -101,6 +128,7 @@ async def test_sender_test_mode_returns_test_ref(monkeypatch):
 
 async def test_sender_fail_closed_without_credentials(monkeypatch):
     from core import kbs_sender
+
     monkeypatch.setenv("KBS_TEST_MODE", "0")
     monkeypatch.delenv("KBS_API_URL", raising=False)
     monkeypatch.delenv("KBS_API_TOKEN", raising=False)
@@ -111,6 +139,7 @@ async def test_sender_fail_closed_without_credentials(monkeypatch):
 
 async def test_dispatch_active_kill_switch(monkeypatch):
     from core import kbs_sender
+
     monkeypatch.setenv("KBS_TEST_MODE", "1")
     monkeypatch.setenv("KBS_AUTO_DISPATCH", "0")
     assert kbs_sender.kbs_dispatch_active() is False
@@ -121,10 +150,11 @@ async def test_dispatch_active_kill_switch(monkeypatch):
 
 async def test_dispatch_inactive_alerts_when_pending(tenant, monkeypatch):
     """Kimlik bilgisi yok + bekleyen iş var → no-op + send_unconfigured alarmı."""
-    from core.database import db
     from core.tenant_db import get_system_db
+
     sys_db = get_system_db()
     from core.kbs_dispatch import dispatch_pending_kbs_jobs
+
     monkeypatch.setenv("KBS_TEST_MODE", "0")
     monkeypatch.delenv("KBS_API_URL", raising=False)
     monkeypatch.delenv("KBS_API_TOKEN", raising=False)
@@ -140,10 +170,11 @@ async def test_dispatch_inactive_alerts_when_pending(tenant, monkeypatch):
 
 async def test_dispatch_completes_in_test_mode(tenant, monkeypatch):
     """Test-mode aktif → iş done, TEST- referans, booking bayrağı + legacy report."""
-    from core.database import db
     from core.tenant_db import get_system_db
+
     sys_db = get_system_db()
     from core.kbs_dispatch import dispatch_pending_kbs_jobs
+
     monkeypatch.setenv("KBS_TEST_MODE", "1")
     job = await _seed_job(tenant)
 
@@ -162,10 +193,11 @@ async def test_dispatch_completes_in_test_mode(tenant, monkeypatch):
 
 async def test_dispatch_missing_data_dead_and_alert(tenant, monkeypatch):
     """Payload eksik → iş dead + missing_data alarmı, gönderim DENENMEZ."""
-    from core.database import db
     from core.tenant_db import get_system_db
+
     sys_db = get_system_db()
     from core.kbs_dispatch import dispatch_pending_kbs_jobs
+
     monkeypatch.setenv("KBS_TEST_MODE", "1")
     job = await _seed_job(tenant, payload=_valid_payload(birth_date="", id_number=""))
 
@@ -182,10 +214,11 @@ async def test_dispatch_missing_data_dead_and_alert(tenant, monkeypatch):
 
 async def test_dispatch_idempotent_no_double_send(tenant, monkeypatch):
     """Done iş ikinci koşuda yeniden claim edilmez."""
-    from core.database import db
     from core.tenant_db import get_system_db
+
     sys_db = get_system_db()
     from core.kbs_dispatch import dispatch_pending_kbs_jobs
+
     monkeypatch.setenv("KBS_TEST_MODE", "1")
     await _seed_job(tenant)
 
@@ -194,9 +227,7 @@ async def test_dispatch_idempotent_no_double_send(tenant, monkeypatch):
 
     assert first["sent"] == 1
     assert second.get("sent", 0) == 0
-    assert await sys_db.kbs_reports.count_documents(
-        {"_kind": QUEUE_KIND, "tenant_id": tenant, "status": "done"}
-    ) == 1
+    assert await sys_db.kbs_reports.count_documents({"_kind": QUEUE_KIND, "tenant_id": tenant, "status": "done"}) == 1
 
 
 # ── nightly sweep dispatcher: yerel-saat 00:00 ─────────────────────────
@@ -205,44 +236,56 @@ async def test_dispatch_idempotent_no_double_send(tenant, monkeypatch):
 async def _seed_active_tenant(tenant_id, *, tz, check_in_day):
     from core.database import db
     from core.tenant_db import tenant_context
+
     with tenant_context(tenant_id):
-        await db.users.insert_one({
-            "tenant_id": tenant_id, "id": str(uuid.uuid4()),
-            "email": f"u_{uuid.uuid4().hex[:6]}@example.com", "is_active": True,
-        })
-        await db.tenant_settings.update_one(
-            {"tenant_id": tenant_id}, {"$set": {"timezone": tz}}, upsert=True
+        await db.users.insert_one(
+            {
+                "tenant_id": tenant_id,
+                "id": str(uuid.uuid4()),
+                "email": f"u_{uuid.uuid4().hex[:6]}@example.com",
+                "is_active": True,
+            }
         )
+        await db.tenant_settings.update_one({"tenant_id": tenant_id}, {"$set": {"timezone": tz}}, upsert=True)
         booking_id = str(uuid.uuid4())
         guest_id = str(uuid.uuid4())
-        await db.guests.insert_one({
-            "tenant_id": tenant_id, "id": guest_id,
-            "nationality": "TC", "id_number": "12345678901",
-            "birth_date": "1990-01-01",
-        })
-        await db.bookings.insert_one({
-            "tenant_id": tenant_id, "id": booking_id, "guest_id": guest_id,
-            "status": "checked_in", "guest_name": "Grace Hopper", "room_number": "201",
-            "check_in": f"{check_in_day}T12:00:00",
-            "check_out": f"{check_in_day}T23:00:00",
-            "guest_nationality": "TC",
-        })
+        await db.guests.insert_one(
+            {
+                "tenant_id": tenant_id,
+                "id": guest_id,
+                "nationality": "TC",
+                "id_number": "12345678901",
+                "birth_date": "1990-01-01",
+            }
+        )
+        await db.bookings.insert_one(
+            {
+                "tenant_id": tenant_id,
+                "id": booking_id,
+                "guest_id": guest_id,
+                "status": "checked_in",
+                "guest_name": "Grace Hopper",
+                "room_number": "201",
+                "check_in": f"{check_in_day}T12:00:00",
+                "check_out": f"{check_in_day}T23:00:00",
+                "guest_nationality": "TC",
+            }
+        )
     return booking_id
 
 
 async def test_nightly_sweep_enqueues_at_local_midnight(tenant, monkeypatch):
-    from core.database import db
     from core.tenant_db import get_system_db
+
     sys_db = get_system_db()
     from celery_tasks import _kbs_nightly_sweep_dispatch_async
+
     monkeypatch.setenv("KBS_NIGHTLY_SWEEP", "1")
     monkeypatch.setenv("KBS_AUTO_ENQUEUE", "1")
 
     tz = "Asia/Tokyo"
     # Pin wall clock so the tenant's LOCAL time is exactly 00:00.
-    local_midnight = datetime.now(ZoneInfo(tz)).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    local_midnight = datetime.now(ZoneInfo(tz)).replace(hour=0, minute=0, second=0, microsecond=0)
     pinned = local_midnight.astimezone(UTC)
     yesterday = (local_midnight - timedelta(days=1)).strftime("%Y-%m-%d")
     booking_id = await _seed_active_tenant(tenant, tz=tz, check_in_day=yesterday)
@@ -252,24 +295,27 @@ async def test_nightly_sweep_enqueues_at_local_midnight(tenant, monkeypatch):
 
     assert result["success"] is True
     assert tenant in result["swept"]
-    job = await sys_db.kbs_reports.find_one({
-        "_kind": QUEUE_KIND, "tenant_id": tenant, "booking_id": booking_id,
-        "action": "checkin",
-    })
+    job = await sys_db.kbs_reports.find_one(
+        {
+            "_kind": QUEUE_KIND,
+            "tenant_id": tenant,
+            "booking_id": booking_id,
+            "action": "checkin",
+        }
+    )
     assert job is not None and job["status"] == "pending"
 
 
 async def test_nightly_sweep_skips_when_not_midnight(tenant, monkeypatch):
-    from core.database import db
     from core.tenant_db import get_system_db
+
     sys_db = get_system_db()
     from celery_tasks import _kbs_nightly_sweep_dispatch_async
+
     monkeypatch.setenv("KBS_NIGHTLY_SWEEP", "1")
 
     tz = "Asia/Tokyo"
-    local = datetime.now(ZoneInfo(tz)).replace(
-        hour=13, minute=37, second=0, microsecond=0
-    )
+    local = datetime.now(ZoneInfo(tz)).replace(hour=13, minute=37, second=0, microsecond=0)
     pinned = local.astimezone(UTC)
     yesterday = (local - timedelta(days=1)).strftime("%Y-%m-%d")
     await _seed_active_tenant(tenant, tz=tz, check_in_day=yesterday)
@@ -278,19 +324,16 @@ async def test_nightly_sweep_skips_when_not_midnight(tenant, monkeypatch):
         result = await _kbs_nightly_sweep_dispatch_async()
 
     assert tenant not in result.get("swept", [])
-    assert await sys_db.kbs_reports.count_documents(
-        {"_kind": QUEUE_KIND, "tenant_id": tenant}
-    ) == 0
+    assert await sys_db.kbs_reports.count_documents({"_kind": QUEUE_KIND, "tenant_id": tenant}) == 0
 
 
 async def test_nightly_sweep_dedups_within_local_day(tenant, monkeypatch):
     from celery_tasks import _kbs_nightly_sweep_dispatch_async
+
     monkeypatch.setenv("KBS_NIGHTLY_SWEEP", "1")
 
     tz = "Asia/Tokyo"
-    local_midnight = datetime.now(ZoneInfo(tz)).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    local_midnight = datetime.now(ZoneInfo(tz)).replace(hour=0, minute=0, second=0, microsecond=0)
     pinned = local_midnight.astimezone(UTC)
     yesterday = (local_midnight - timedelta(days=1)).strftime("%Y-%m-%d")
     await _seed_active_tenant(tenant, tz=tz, check_in_day=yesterday)
@@ -308,11 +351,9 @@ async def test_nightly_sweep_dedups_within_local_day(tenant, monkeypatch):
 
 async def test_beat_schedule_registered():
     from celery_app import celery_app
+
     sched = celery_app.conf.beat_schedule
     assert "kbs-dispatch" in sched
     assert sched["kbs-dispatch"]["task"] == "celery_tasks.kbs_dispatch_task"
     assert "kbs-nightly-sweep-dispatch" in sched
-    assert (
-        sched["kbs-nightly-sweep-dispatch"]["task"]
-        == "celery_tasks.kbs_nightly_sweep_dispatch_task"
-    )
+    assert sched["kbs-nightly-sweep-dispatch"]["task"] == "celery_tasks.kbs_nightly_sweep_dispatch_task"

@@ -22,6 +22,7 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from core.kbs_payload_builder import build_kbs_payload_snapshot
 from core.kbs_payload_validation import validate_kbs_payload
 from core.kbs_sender import (
     KBSCredentialsMissing,
@@ -412,7 +413,18 @@ async def dispatch_pending_kbs_jobs(db, *, limit: int = 50) -> dict:
             dead += 1
             continue
 
-        payload = job.get("payload") or {}
+        # Rehydrate at send time so room moves and identity corrections made
+        # after enqueue are reflected in the legal notification.
+        _booking, _guest, current_payload = await build_kbs_payload_snapshot(
+            db,
+            job["tenant_id"],
+            job["booking_id"],
+        )
+        payload = current_payload or job.get("payload") or {}
+        await db.kbs_reports.update_one(
+            {"_kind": QUEUE_KIND, "tenant_id": job["tenant_id"], "id": job["id"]},
+            {"$set": {"payload": payload, "updated_at": _iso(_now())}},
+        )
         ok, missing_fields = validate_kbs_payload(payload)
         if not ok:
             await _handle_missing_data(db, job, missing_fields)

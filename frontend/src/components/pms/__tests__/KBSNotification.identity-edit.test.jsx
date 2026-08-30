@@ -330,6 +330,58 @@ describe('KBSNotification pending guest identity editing', () => {
     expect(toastError).toHaveBeenCalledWith(expect.stringContaining('Test modu'));
   });
 
+  it('shows the official Jandarma error and disables retry for permanent input failures', async () => {
+    pingExtension.mockResolvedValue({
+      present: true,
+      state: 'absent',
+      states: { jandarma: 'configured' },
+      version: '1.3.1',
+      installId: 'install-1',
+    });
+    localStorage.setItem('kbs_ext_authority', 'jandarma');
+    const job = {
+      id: 'job-110', booking_id: 'booking-110', action: 'checkin',
+      payload: { guest_name: 'Test Guest', room_number: '110' },
+    };
+    axiosPost.mockImplementation((url) => {
+      if (url === '/kbs/queue') return Promise.resolve({ data: { created: true, job } });
+      if (url === '/kbs/queue/job-110/claim') return Promise.resolve({ data: { job } });
+      if (url === '/kbs/queue/job-110/fail') return Promise.resolve({ data: { job: { ...job, status: 'dead' } } });
+      return Promise.resolve({ data: {} });
+    });
+    sendViaExtension.mockResolvedValue({
+      ok: false,
+      reference: '',
+      error: 'jandarma_GirdiHatasi: Oda Numarası Eksik.&lt;br&gt;',
+      test: false,
+    });
+
+    render(
+      <KBSNotification
+        bookings={[{
+          id: 'booking-110', guest_id: 'guest-110', status: 'checked_in',
+          guest_name: 'Test Guest', room_number: '110', nationality: 'TC',
+          id_number: '12345678901',
+        }]}
+      />,
+    );
+
+    await waitFor(() => expect(pingExtension).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'send' }));
+
+    await waitFor(() => {
+      expect(axiosPost).toHaveBeenCalledWith(
+        '/kbs/queue/job-110/fail',
+        expect.objectContaining({
+          retry: false,
+          error: 'jandarma_GirdiHatasi: Oda Numarası Eksik.&lt;br&gt;',
+        }),
+        expect.objectContaining({ headers: expect.any(Object) }),
+      );
+    });
+    expect(toastError).toHaveBeenCalledWith('Jandarma veri hatası: Oda Numarası Eksik.');
+  });
+
   it('does not offer a duplicate resend for a Jandarma acceptance receipt', async () => {
     axiosGet.mockResolvedValue({
       data: {

@@ -157,6 +157,8 @@ function validBody(body) {
   if (!body.guest_name) return false;
   if (!body.id_number && !body.passport_number) return false;
   if (!body.check_in) return false;
+  if (!body.check_out) return false;
+  if (!body.room_number) return false;
   return true;
 }
 
@@ -165,6 +167,19 @@ async function sendToKbs(body, authority) {
   const cfg = await getProfile(auth);
   const { jandarmaWebServicePassword } = await chrome.storage.session.get("jandarmaWebServicePassword");
   const state = configState(cfg, Boolean(jandarmaWebServicePassword));
+
+  // Test modu dahil, eksik operasyon verisini "basarili prova" gibi gosterme.
+  // Backend ayni kontrolu yapsa da eski kuyruk kayitlari veya farkli istemciler
+  // eklentiye ulasabilir; kurum cagrisi oncesi son savunma burada.
+  if (!validBody(body)) {
+    const missing = [];
+    if (!body || !body.guest_name) missing.push("guest_name");
+    if (!body || (!body.id_number && !body.passport_number)) missing.push("identity");
+    if (!body || !body.room_number) missing.push("room_number");
+    if (!body || !body.check_in) missing.push("check_in");
+    if (!body || !body.check_out) missing.push("check_out");
+    return { ok: false, error: `payload_incomplete: ${missing.join(", ")}` };
+  }
 
   if (state === "test") {
     return { ok: true, reference: "TEST-" + randHex(16), test: true };
