@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.helpers import require_module
 from core.reservation_mutability import ensure_reservation_mutable
@@ -17,9 +18,20 @@ from modules.pms_core.role_permission_service import require_op
 
 router = APIRouter(prefix="/api/pms/room-map", tags=["pms"])
 
+_QUICK_ASSIGNMENT_BLOCKED_STATUSES = {"out_of_order", "maintenance", "blocked", "dirty", "cleaning"}
 
-def _today() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%d")
+
+def _validate_quick_assignment(old_room: dict | None, new_room: dict) -> None:
+    if new_room.get("status") in _QUICK_ASSIGNMENT_BLOCKED_STATUSES:
+        raise HTTPException(409, f"Oda {new_room.get('room_number')} atamaya uygun degil")
+
+    old_type = str((old_room or {}).get("room_type") or "").strip().casefold()
+    new_type = str(new_room.get("room_type") or "").strip().casefold()
+    if old_type and new_type and old_type != new_type:
+        raise HTTPException(
+            409,
+            "Farkli oda tipine geciste fiyat ve degisim nedeni secilmelidir; rezervasyon detayindaki Oda Degistir akislarini kullanin",
+        )
 
 
 @router.get("")
@@ -30,7 +42,7 @@ async def get_map(
     _perm=Depends(require_op("view_room_status")),
 ):
     tenant_id = current_user.tenant_id
-    bd = business_date or _today()
+    bd = business_date or (await ensure_business_date_initialized(db, tenant_id))["business_date"]
     next_day = (datetime.fromisoformat(bd) + timedelta(days=1)).strftime("%Y-%m-%d")
 
     rooms = (
@@ -49,17 +61,20 @@ async def get_map(
             "check_in": {"$lt": next_day},
             "check_out": {"$gt": bd},
         },
-        {"_id": 0, "id": 1, "room_id": 1, "guest_id": 1, "check_in": 1, "check_out": 1, "status": 1, "adults": 1, "children": 1, "nights": 1},
+        {"_id": 0, "id": 1, "room_id": 1, "room_type": 1, "guest_id": 1, "check_in": 1, "check_out": 1, "status": 1, "adults": 1, "children": 1, "nights": 1},
     )
     bookings = await bookings_cursor.to_list(1000)
 
     guest_ids = list({b.get("guest_id") for b in bookings if b.get("guest_id")})
     guests_map = {}
     if guest_ids:
+        from security.encrypted_lookup import decrypt_guest_doc
+
         async for g in db.guests.find(
             {"tenant_id": tenant_id, "id": {"$in": guest_ids}},
             {"_id": 0, "id": 1, "name": 1, "vip_status": 1},
         ):
+            g = decrypt_guest_doc(g)
             guests_map[g["id"]] = g
 
     by_room: dict[str, dict] = {}
@@ -73,6 +88,7 @@ async def get_map(
             "check_in": b.get("check_in"),
             "check_out": b.get("check_out"),
             "status": b.get("status"),
+            "room_type": b.get("room_type"),
             "adults": b.get("adults") or 1,
             "children": b.get("children") or 0,
             "nights": b.get("nights"),
@@ -103,16 +119,34 @@ async def assign(
     _perm=Depends(require_op("update_booking")),
 ):
     tenant_id = current_user.tenant_id
-    bd = payload.business_date or _today()
+    bd = payload.business_date or (await ensure_business_date_initialized(db, tenant_id))["business_date"]
     next_day = (datetime.fromisoformat(bd) + timedelta(days=1)).strftime("%Y-%m-%d")
 
     booking = await db.bookings.find_one({"id": payload.booking_id, "tenant_id": tenant_id}, {"_id": 0})
     if not booking:
         raise HTTPException(404, "Rezervasyon bulunamadi")
     await ensure_reservation_mutable(db, tenant_id, booking)
-    new_room = await db.rooms.find_one({"id": payload.room_id, "tenant_id": tenant_id}, {"_id": 0})
+    new_room = await db.rooms.find_one(
+        {"id": payload.room_id, "tenant_id": tenant_id, "is_active": {"$ne": False}},
+        {"_id": 0},
+    )
     if not new_room:
         raise HTTPException(404, "Oda bulunamadi")
+    if booking.get("room_id") == payload.room_id:
+        return {
+            "ok": True,
+            "booking_id": payload.booking_id,
+            "room_id": payload.room_id,
+            "room_number": new_room.get("room_number"),
+            "unchanged": True,
+        }
+    old_room = None
+    if booking.get("room_id"):
+        old_room = await db.rooms.find_one(
+            {"id": booking.get("room_id"), "tenant_id": tenant_id},
+            {"_id": 0},
+        )
+    _validate_quick_assignment(old_room or {"room_type": booking.get("room_type")}, new_room)
 
     # Cakisma kontrolu
     ci = booking.get("check_in") or bd
@@ -139,11 +173,23 @@ async def assign(
     )
     if res.matched_count == 0:
         raise HTTPException(409, "Rezervasyon bu sirada degistirilmis, lutfen yenileyin")
+
+    if str(booking.get("status") or "").lower() in {"checked_in", "in_house"}:
+        if old_room_id:
+            await db.rooms.update_one(
+                {"id": old_room_id, "tenant_id": tenant_id},
+                {"$set": {"status": "dirty", "current_booking_id": None}},
+            )
+        await db.rooms.update_one(
+            {"id": payload.room_id, "tenant_id": tenant_id},
+            {"$set": {"status": "occupied", "current_booking_id": payload.booking_id}},
+        )
     await db.room_move_history.insert_one(
         {
             "tenant_id": tenant_id,
             "booking_id": payload.booking_id,
             "from_room_id": old_room_id,
+            "from_room_number": (old_room or {}).get("room_number"),
             "to_room_id": payload.room_id,
             "to_room_number": new_room.get("room_number"),
             "moved_by_id": current_user.id,
@@ -151,5 +197,18 @@ async def assign(
             "moved_at": now,
             "reason": "room_map_drag_drop",
         }
+    )
+
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+
+    schedule_emit_reservation_updated(
+        tenant_id,
+        payload.booking_id,
+        "room_moved",
+        {
+            "new_room_id": payload.room_id,
+            "new_room_number": new_room.get("room_number"),
+            "reason": "room_map_drag_drop",
+        },
     )
     return {"ok": True, "booking_id": payload.booking_id, "room_id": payload.room_id, "room_number": new_room.get("room_number")}
