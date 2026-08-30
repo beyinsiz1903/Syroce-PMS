@@ -234,7 +234,7 @@ export default function DepositTracking({
               </Button>
             </>} />
 
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4" data-testid="deposit-folio-explanation">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-800 dark:bg-emerald-950/30" data-testid="deposit-folio-explanation">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 rounded-lg bg-white p-2 text-emerald-700 shadow-sm">
               <Info className="h-4 w-4" />
