@@ -313,7 +313,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "room_map",
-    label: "Oda Haritası",
+    label: "Oda Planı & Atama",
     path: "/room-map",
     moduleKey: "pms",
     tier: "basic",

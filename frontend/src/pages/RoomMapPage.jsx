@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '@/api/axios';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Loader2, Map as MapIcon, Crown, Calendar, RefreshCw, Info, X as XIcon, Search } from 'lucide-react';
+import { Loader2, Map as MapIcon, Crown, Calendar, RefreshCw, Info, X as XIcon, Search, BedDouble, Users, Sparkles, AlertTriangle, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import EmptyState from '@/components/EmptyState';
+import { confirmDialog } from '@/lib/dialogs';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -17,6 +19,8 @@ const STATUS_META = {
   available:    { color: 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50',         dotCls: 'bg-slate-300',   label: 'Müsait' },
   out_of_order: { color: 'bg-slate-100 border-slate-300 text-slate-700 opacity-80',     dotCls: 'bg-slate-500',   label: 'Engelli' },
   maintenance:  { color: 'bg-blue-50/80 border-blue-200 text-blue-800',         dotCls: 'bg-blue-400',   label: 'Bakımda' },
+  blocked:      { color: 'bg-slate-100 border-slate-300 text-slate-700 opacity-80',     dotCls: 'bg-slate-500',   label: 'Hizmet dışı' },
+  cleaning:     { color: 'bg-amber-50/80 border-amber-200 text-amber-950 shadow-sm',     dotCls: 'bg-amber-400',   label: 'Temizleniyor' },
 };
 
 const formatShortDate = (iso) => {
@@ -28,13 +32,30 @@ const formatShortDate = (iso) => {
   }
 };
 
-function statusMeta(status, occupied) {
+export function statusMeta(status, occupied) {
   if (occupied) return STATUS_META.occupied;
+  // Oda belgesindeki `occupied` değeri bugüne ait ve eski kalmış olabilir.
+  // Tarih bazlı haritada doluluk yalnızca çakışan rezervasyondan türetilir.
+  if (status === 'occupied') return STATUS_META.available;
   return STATUS_META[status] || STATUS_META.available;
 }
 
+export function summarizeRoomMap(rooms = [], unassigned = []) {
+  const occupied = rooms.filter((room) => Boolean(room.booking)).length;
+  const blocked = rooms.filter((room) => ['out_of_order', 'maintenance', 'blocked'].includes(room.status)).length;
+  const dirty = rooms.filter((room) => !room.booking && room.status === 'dirty').length;
+  const cleaning = rooms.filter((room) => !room.booking && room.status === 'cleaning').length;
+  return {
+    total: rooms.length,
+    occupied,
+    available: Math.max(0, rooms.length - occupied - blocked - dirty - cleaning),
+    dirty,
+    unassigned: unassigned.length,
+  };
+}
+
 function RoomCell({ room, onDrop }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [over, setOver] = useState(false);
   const occupied = !!room.booking;
   const meta = statusMeta(room.status, occupied);
@@ -105,7 +126,8 @@ function UnassignedItem({ b }) {
 }
 
 export default function RoomMapPage({ user, tenant, onLogout }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+  const navigate = useNavigate();
   const [date, setDate] = useState(today());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -129,10 +151,48 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    let active = true;
+    api.get('/night-audit/business-date')
+      .then(({ data: businessDate }) => {
+        if (active && businessDate?.business_date) setDate(businessDate.business_date);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
   const assign = async (booking_id, room_id) => {
+    const sourceRoom = (data?.rooms || []).find(room => room.booking?.booking_id === booking_id);
+    const sourceBooking = sourceRoom?.booking
+      || (data?.unassigned || []).find(booking => booking.booking_id === booking_id);
+    const targetRoom = (data?.rooms || []).find(room => String(room.id) === String(room_id));
+    if (!sourceBooking || !targetRoom) {
+      toast.error('Oda değişikliği için rezervasyon ve hedef oda doğrulanamadı.');
+      return;
+    }
+    if (targetRoom.booking) {
+      toast.error(`Oda ${targetRoom.room_number} bu tarihte başka bir rezervasyona atanmış.`);
+      return;
+    }
+    if (['dirty', 'cleaning', 'maintenance', 'out_of_order', 'blocked'].includes(targetRoom.status)) {
+      toast.error(`Oda ${targetRoom.room_number} şu anda ${statusMeta(targetRoom.status, false).label.toLocaleLowerCase('tr-TR')}; hızlı atamaya uygun değil.`);
+      return;
+    }
+    const sourceType = sourceRoom?.room_type || sourceBooking.room_type;
+    if (sourceType && targetRoom.room_type
+      && String(sourceType).trim().toLocaleLowerCase('tr-TR') !== String(targetRoom.room_type).trim().toLocaleLowerCase('tr-TR')) {
+      toast.error('Farklı oda tipine geçişte fiyat ve neden seçimi gerekir. Rezervasyon detayındaki Oda Değiştir akışını kullanın.');
+      return;
+    }
+    const confirmed = await confirmDialog({
+      message: sourceRoom
+        ? `${sourceRoom.room_number} numaralı odadaki ${sourceBooking.guest_name} misafiri ${targetRoom.room_number} numaralı odaya taşınacak. Devam edilsin mi?`
+        : `${sourceBooking.guest_name} misafiri ${targetRoom.room_number} numaralı odaya atanacak. Devam edilsin mi?`,
+    });
+    if (!confirmed) return;
     try {
       await api.post('/pms/room-map/assign', { booking_id, room_id, business_date: date });
-      toast.success('Oda değiştirildi');
+      toast.success(`Oda ${targetRoom.room_number} olarak değiştirildi`);
       load();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
   };
@@ -169,21 +229,32 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
     [byFloor]
   );
 
+  const summary = useMemo(
+    () => summarizeRoomMap(data?.rooms || [], data?.unassigned || []),
+    [data]
+  );
+
   return (
     <>
       <div className="p-4 md:p-6 space-y-4" data-testid="room-map-page">
         {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-start justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2 text-slate-900">
-              <MapIcon className="w-6 h-6 text-amber-600" /> {t('cm.pages_RoomMapPage.oda_haritasi')}
+              <MapIcon className="w-6 h-6 text-sky-600" /> Oda Planı & Atama
             </h1>
-            <p className="text-sm text-slate-500 mt-1">
-              {new Date(date).toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' })}
+            <p className="text-sm text-slate-500 mt-1 max-w-2xl">
+              Kat bazlı oda yerleşimini, tarih bazlı doluluğu ve atanmamış rezervasyonları görün; aynı tip odalar arasında güvenli atama yapın.
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              {new Date(`${date}T12:00:00`).toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' })}
               {data?.rooms && <> · {data.rooms.length} oda</>}
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <Button size="sm" variant="outline" onClick={() => navigate('/pms?tab=rooms')}>
+              <BedDouble className="w-4 h-4 mr-1.5" /> Oda operasyonları <ArrowRight className="w-3.5 h-3.5 ml-1" />
+            </Button>
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <Input
@@ -213,15 +284,36 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
           </div>
         </div>
 
+        {data && !loading && (
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-5" data-testid="room-map-summary">
+            {[
+              [BedDouble, 'Toplam oda', summary.total, 'text-slate-700'],
+              [Users, 'Dolu / rezerve', summary.occupied, 'text-rose-700'],
+              [Sparkles, 'Atanabilir', summary.available, 'text-emerald-700'],
+              [AlertTriangle, 'Kirli oda', summary.dirty, 'text-amber-700'],
+              [Calendar, 'Atama bekleyen', summary.unassigned, 'text-sky-700'],
+            ].map(([Icon, label, value, color]) => (
+              <Card key={label} className="p-3 border-slate-200 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <Icon className={`h-4 w-4 ${color}`} />
+                  <span className="text-xs font-medium text-slate-500">{label}</span>
+                </div>
+                <div className={`mt-1 text-xl font-bold ${color}`}>{value}</div>
+              </Card>
+            ))}
+          </div>
+        )}
+
         {/* Renk lejandı */}
         <div className="flex items-center gap-3 flex-wrap text-xs bg-white border border-slate-200 rounded-lg px-3 py-2">
-          <span className="text-slate-500 font-medium uppercase tracking-wide text-[10px]">Lejant:</span>
+          <span className="text-slate-500 font-medium uppercase tracking-wide text-[10px]">Durumlar:</span>
           {[
             ['available', 'Müsait'],
             ['occupied', 'Dolu'],
             ['dirty', 'Kirli'],
             ['clean', 'Temiz'],
-            ['out_of_order', 'Engelli'],
+            ['cleaning', 'Temizleniyor'],
+            ['out_of_order', 'Hizmet dışı'],
           ].map(([k, l]) => {
             const m = STATUS_META[k];
             return (
