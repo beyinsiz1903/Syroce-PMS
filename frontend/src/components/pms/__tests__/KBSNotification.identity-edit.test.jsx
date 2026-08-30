@@ -409,18 +409,31 @@ describe('KBSNotification pending guest identity editing', () => {
       }
       return Promise.resolve({
         data: {
-          // Eski backend done isi dondurse bile istemci ikinci kez gostermemeli.
-          jobs: [{
-            id: 'job-jandarma',
-            booking_id: 'booking-110',
-            action: 'checkin',
-            status: 'done',
-            attempts: 1,
-            max_attempts: 5,
-            kbs_reference: 'JANDARMA-MusteriKimlikNoGiris-123',
-            payload: { guest_name: 'Test Guest', room_number: '110' },
-          }],
-          stats: { pending: 0, in_progress: 0, done: 1, failed: 0, dead: 0 },
+          // Eski backend done isiyle birlikte ayni rezervasyonun daha eski
+          // basarisiz kopyasini dondurse bile misafir Kuyruk'ta gorunmemeli.
+          jobs: [
+            {
+              id: 'job-jandarma',
+              booking_id: 'booking-110',
+              action: 'checkin',
+              status: 'done',
+              attempts: 1,
+              max_attempts: 5,
+              kbs_reference: 'JANDARMA-MusteriKimlikNoGiris-123',
+              payload: { guest_name: 'Test Guest', room_number: '110' },
+            },
+            {
+              id: 'job-jandarma-old-dead',
+              booking_id: 'booking-110',
+              action: 'checkin',
+              status: 'dead',
+              attempts: 5,
+              max_attempts: 5,
+              last_error: 'Eski basarisiz deneme',
+              payload: { guest_name: 'Test Guest', room_number: '110' },
+            },
+          ],
+          stats: { pending: 0, in_progress: 0, done: 1, failed: 0, dead: 1 },
         },
       });
     });
