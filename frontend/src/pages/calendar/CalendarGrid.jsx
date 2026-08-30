@@ -439,7 +439,7 @@ const CalendarGrid = ({
                           {/* Arka plan hücreleri: blok, drag-over, tıkla-oluştur, boş gösterge */}
                           {dateRange.map((date, idx) => {
                             const dStr = toDateStringUTC(date);
-                            const covered = roomBookings.some(b => isActiveOn(b, dStr));
+                            const covered = roomBookings.some(b => isActiveOn(b, dStr) && b.status !== 'checked_out');
                             const roomBlock = getRoomBlockForDate(room.id, date, roomBlocks);
                             const bBlockIsStart = roomBlock && isBlockStart(roomBlock, date);
                             const isDragOver = dragOverCell?.roomId === room.id &&

@@ -561,7 +561,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const isRoomNightAvailable = (roomId, dStr) => {
     const occupied = bookings.some(b =>
       b.room_id === roomId &&
-      b.status !== 'cancelled' && b.status !== 'no_show' &&
+      b.status !== 'cancelled' && b.status !== 'no_show' && b.status !== 'checked_out' &&
       toDateStringUTC(b.check_in) <= dStr && toDateStringUTC(b.check_out) > dStr
     );
     if (occupied) return false;

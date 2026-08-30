@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Pencil, Check, Globe, Phone, Star, Building2, Users, X, Mail, CreditCard, Loader2, ScanLine, Crown, AlertTriangle, ShieldAlert, Cake, Repeat, BedDouble, CalendarDays, UserCircle2, CalendarClock, Clock, Moon, Wallet, StickyNote, Tag, CheckCircle2, Activity } from 'lucide-react';
+import { Pencil, Check, Globe, Phone, Star, Building2, Users, X, Mail, CreditCard, Loader2, ScanLine, Crown, AlertTriangle, ShieldAlert, Cake, Repeat, BedDouble, CalendarDays, UserCircle2, CalendarClock, Clock, Moon, Wallet, StickyNote, Tag, CheckCircle2, Activity , UserPlus} from 'lucide-react';
 import { fmtDate, fmtDateTime, fmtTL, Avatar, EmptyState, translateValue, translateView, SectionHeader, StatCard, InfoLine } from './helpers';
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
 import api from '@/api/axios';
@@ -74,7 +74,8 @@ export function GeneralInfoTab({
   summary,
   payments,
   deposits,
-  onSwitchTab
+  onSwitchTab,
+  readOnly = false,
 }) {
   const {
     t
@@ -224,7 +225,7 @@ export function GeneralInfoTab({
         <div className="border border-slate-200 rounded-xl bg-white p-4 space-y-3 shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Misafir & İletişim</span>
-            <Button variant="ghost" size="sm" onClick={() => setEditing(!editing)} className="h-7 px-2">
+            <Button variant="ghost" size="sm" onClick={() => setEditing(!editing)} disabled={readOnly} title={readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : undefined} className="h-7 px-2">
               <Pencil className="w-3 h-3 mr-1" /> {editing ? 'İptal' : 'Düzenle'}
             </Button>
           </div>
@@ -412,10 +413,12 @@ function isQuickIdEnabled() {
 export function GuestsTab({
   guests,
   booking,
-  onRefresh
+  onRefresh,
+  readOnly = false,
 }) {
   const quickIdOn = isQuickIdEnabled();
   const [editingId, setEditingId] = useState(null);
+  const [addingGuest, setAddingGuest] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [scanGuestId, setScanGuestId] = useState(null);
@@ -499,6 +502,45 @@ export function GuestsTab({
     setSaving(false);
   };
   return <div data-testid="guests-tab" className="space-y-3">
+      <div className="flex justify-end mb-2">
+        <Button variant="outline" size="sm" disabled={readOnly} title={readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : undefined} onClick={() => { setForm({ name: '', nationality: 'TR', id_type: 'tc_kimlik', id_number: '', date_of_birth: '' }); setAddingGuest(true); setEditingId(null); }}><UserPlus className="w-4 h-4 mr-2" /> Misafir Ekle</Button>
+      </div>
+      {addingGuest && (
+        <div className="border rounded-lg bg-gray-50 p-4 space-y-3 mb-4">
+          <h4 className="text-sm font-semibold mb-2">Yeni Misafir Ekle</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div><Label className="text-xs">Ad Soyad</Label><Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className="h-8 text-sm" /></div>
+            <div><Label className="text-xs">Uyruk</Label><Input value={form.nationality} onChange={e => setForm(p => ({ ...p, nationality: e.target.value }))} placeholder="TR" className="h-8 text-sm" /></div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div><Label className="text-xs">Kimlik Tipi</Label><Select value={form.id_type} onValueChange={v => setForm(p => ({ ...p, id_type: v }))}><SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Seçiniz" /></SelectTrigger><SelectContent className="z-[70]">{ID_TYPES.map(t => <SelectItem key={t.code} value={t.code}>{t.label}</SelectItem>)}</SelectContent></Select></div>
+            <div><Label className="text-xs">Kimlik / Pasaport No</Label><Input value={form.id_number} onChange={e => setForm(p => ({ ...p, id_number: e.target.value }))} className="h-8 text-sm" /></div>
+            <div><Label className="text-xs">Doğum Tarihi</Label><Input type="date" value={form.date_of_birth} onChange={e => setForm(p => ({ ...p, date_of_birth: e.target.value }))} className="h-8 text-sm" /></div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button size="sm" onClick={async () => {
+              setSaving(true);
+              try {
+                const payload = Object.fromEntries(
+                  Object.entries(form).map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value]),
+                );
+                const response = await axios.post(`/pms/reservations/${booking.id}/guests`, payload);
+                toast.success(response.data?.already_linked
+                  ? 'Bu misafir rezervasyonda zaten kayıtlı'
+                  : response.data?.created
+                    ? 'Yeni misafir odaya eklendi'
+                    : 'Mevcut misafir odaya eklendi');
+                setAddingGuest(false);
+                setForm({});
+                onRefresh?.();
+              } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+              setSaving(false);
+            }} disabled={saving || !form.name?.trim()} className="h-8">{saving ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Check className="w-3 h-3 mr-1" />} Ekle</Button>
+            <Button size="sm" variant="outline" onClick={() => setAddingGuest(false)} className="h-8">İptal</Button>
+          </div>
+        </div>
+      )}
+      
       {!guests || guests.length === 0 ? <EmptyState icon={Users} text="Kayıtlı misafir bulunamadı" /> : guests.map((g, i) => {
       const isPrimary = i === 0;
       const isEditing = editingId === g.id;
@@ -517,11 +559,11 @@ export function GuestsTab({
                 <div className="flex items-center gap-2">
                   {g.vip_status && <Badge className="bg-amber-100 text-amber-700">VIP</Badge>}
                   {isPrimary && <Badge className="bg-blue-100 text-blue-700">Ana Misafir</Badge>}
-                  {quickIdOn && <Button variant="outline" size="sm" className="h-8 px-2 bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100" onClick={() => setScanGuestId(g.id)} data-testid={`btn-scan-id-${g.id}`}>
+                  {quickIdOn && <Button variant="outline" size="sm" disabled={readOnly} className="h-8 px-2 bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100" onClick={() => setScanGuestId(g.id)} data-testid={`btn-scan-id-${g.id}`}>
                       <ScanLine className="w-3.5 h-3.5" />
                       <span className="ml-1 text-xs">Kimlik Tara</span>
                     </Button>}
-                  <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => isEditing ? cancelEdit() : startEdit(g)}>
+                  <Button variant="ghost" size="sm" disabled={readOnly} className="h-8 px-2" onClick={() => isEditing ? cancelEdit() : startEdit(g)}>
                     {isEditing ? <X className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
                     <span className="ml-1 text-xs">{isEditing ? 'İptal' : 'Düzenle'}</span>
                   </Button>

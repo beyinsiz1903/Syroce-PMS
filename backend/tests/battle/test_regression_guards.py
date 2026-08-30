@@ -17,7 +17,7 @@ Bug Fixes Covered:
 import asyncio
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -100,7 +100,7 @@ async def get_test_guest(client, headers):
 
 @pytest.mark.asyncio
 async def test_past_date_booking_rejected_quick_booking():
-    """Booking with yesterday's check-in date MUST return 400.
+    """Booking before the PMS reservation lower bound MUST return 400.
     This is the core regression test for the past-date booking bug."""
     headers, _ = await get_auth()
     async with httpx.AsyncClient(timeout=15) as client:
@@ -109,7 +109,22 @@ async def test_past_date_booking_rejected_quick_booking():
         if not room or not guest:
             pytest.skip("No room/guest available")
 
-        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT14:00:00+00:00")
+        # A hotel may intentionally still be operating on the previous PMS
+        # business date until Night Audit is completed.  In that case the
+        # calendar's "yesterday" is not historical for PMS purposes.  Build
+        # the regression input from the endpoint's authoritative lower bound
+        # so this guard remains deterministic across midnight/Night Audit lag.
+        business_date_resp = await client.get(
+            f"{API_URL}/api/night-audit/business-date",
+            headers=headers,
+        )
+        assert business_date_resp.status_code == 200, business_date_resp.text
+        business_date = datetime.fromisoformat(
+            business_date_resp.json()["business_date"]
+        ).date()
+        calendar_today = datetime.now(UTC).date()
+        rejected_date = min(business_date, calendar_today) - timedelta(days=1)
+        yesterday = rejected_date.strftime("%Y-%m-%dT14:00:00+00:00")
         tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT11:00:00+00:00")
 
         resp = await client.post(

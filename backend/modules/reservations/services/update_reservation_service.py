@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException, Request, status
 
+from core.database import db
+from core.reservation_mutability import ensure_reservation_mutable
 from modules.reservations.events import RESERVATION_MODIFIED_EVENT
 from modules.reservations.repository import ReservationsRepository
 from shared_kernel.audit_helper import audit_log
@@ -94,6 +96,12 @@ class UpdateReservationService:
             existing_booking = await self.repository.get_booking_for_tenant(tenant_context.tenant_id, booking_id)
             if not existing_booking:
                 raise HTTPException(status_code=404, detail="Booking not found")
+
+            await ensure_reservation_mutable(
+                db,
+                tenant_context.tenant_id,
+                existing_booking,
+            )
 
             await self._validate_date_changes(
                 tenant_id=tenant_context.tenant_id,

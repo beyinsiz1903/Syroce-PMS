@@ -35,6 +35,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.kbs_payload_validation import validate_kbs_payload
 from core.security import get_current_user
@@ -212,19 +213,41 @@ async def kbs_guest_list(
     if not tenant_id:
         raise HTTPException(403, "Kullanıcının bir oteli (tenant_id) yok")
 
-    target_date = date or datetime.now(UTC).strftime("%Y-%m-%d")
+    if date:
+        target_date = date
+    else:
+        business_date = await ensure_business_date_initialized(db, tenant_id)
+        target_date = business_date["business_date"]
     status_filter = [status] if status else ["checked_in", "confirmed", "guaranteed"]
+    start_of_day = target_date + "T00:00:00"
+    end_of_day = target_date + "T23:59:59"
+
+    booking_windows: list[dict] = []
+    if "checked_in" in status_filter:
+        # A guest who remains in-house belongs to the current PMS business day
+        # even when the original arrival happened on an earlier calendar day.
+        booking_windows.append(
+            {
+                "status": "checked_in",
+                "check_in": {"$lte": end_of_day},
+                "check_out": {"$gte": start_of_day},
+            }
+        )
+    arrival_statuses = [item for item in status_filter if item != "checked_in"]
+    if arrival_statuses:
+        booking_windows.append(
+            {
+                "status": {"$in": arrival_statuses},
+                "check_in": {"$gte": start_of_day, "$lte": end_of_day},
+            }
+        )
 
     with tenant_context(tenant_id):
         bookings = (
             await db.bookings.find(
                 {
                     "tenant_id": tenant_id,
-                    "status": {"$in": status_filter},
-                    "check_in": {
-                        "$gte": target_date + "T00:00:00",
-                        "$lte": target_date + "T23:59:59",
-                    },
+                    "$or": booking_windows,
                 },
                 {
                     "_id": 0,
@@ -253,7 +276,20 @@ async def kbs_guest_list(
 
             async for g in db.guests.find(
                 {"tenant_id": tenant_id, "id": {"$in": guest_ids}},
-                {"_id": 0, "id": 1, "nationality": 1, "id_number": 1, "passport_number": 1, "birth_date": 1, "gender": 1, "address": 1, "father_name": 1, "mother_name": 1, "birth_place": 1},
+                {
+                    "_id": 0,
+                    "id": 1,
+                    "nationality": 1,
+                    "id_number": 1,
+                    "passport_number": 1,
+                    "birth_date": 1,
+                    "date_of_birth": 1,
+                    "gender": 1,
+                    "address": 1,
+                    "father_name": 1,
+                    "mother_name": 1,
+                    "birth_place": 1,
+                },
             ):
                 guest_map[g["id"]] = decrypt_guest_doc(g)
 
@@ -262,13 +298,26 @@ async def kbs_guest_list(
             b["nationality"] = g.get("nationality", "")
             b["id_number"] = g.get("id_number", "")
             b["passport_number"] = g.get("passport_number", "")
-            b["birth_date"] = g.get("birth_date", "")
+            b["birth_date"] = g.get("birth_date") or g.get("date_of_birth", "")
             b["gender"] = g.get("gender", "")
             b["address"] = g.get("address", "")
             b["father_name"] = g.get("father_name", "")
             b["mother_name"] = g.get("mother_name", "")
             b["birth_place"] = g.get("birth_place", "")
-            b["kbs_ready"] = bool((g.get("id_number") or g.get("passport_number")) and g.get("birth_date") and g.get("nationality"))
+            ready, _missing = validate_kbs_payload(
+                {
+                    "guest_name": b.get("guest_name", ""),
+                    "check_in": b.get("check_in", ""),
+                    "check_out": b.get("check_out", ""),
+                    "nationality": b["nationality"],
+                    "id_number": b["id_number"],
+                    "passport_number": b["passport_number"],
+                    "birth_date": b["birth_date"],
+                    "gender": b["gender"],
+                    "birth_place": b["birth_place"],
+                }
+            )
+            b["kbs_ready"] = ready
 
         reports = (
             await db.kbs_reports.find(
@@ -489,6 +538,7 @@ async def _build_payload_snapshot(tenant_id: str, booking_id: str) -> tuple[dict
                         "id_number": 1,
                         "passport_number": 1,
                         "birth_date": 1,
+                        "date_of_birth": 1,
                         "gender": 1,
                         "address": 1,
                         "father_name": 1,
@@ -509,7 +559,7 @@ async def _build_payload_snapshot(tenant_id: str, booking_id: str) -> tuple[dict
         "nationality": guest.get("nationality") or booking.get("guest_nationality") or "",
         "id_number": guest.get("id_number", ""),
         "passport_number": guest.get("passport_number", ""),
-        "birth_date": guest.get("birth_date", ""),
+        "birth_date": guest.get("birth_date") or guest.get("date_of_birth", ""),
         "gender": guest.get("gender", ""),
         "father_name": guest.get("father_name", ""),
         "mother_name": guest.get("mother_name", ""),
@@ -1345,6 +1395,7 @@ async def kbs_queue_requeue(
         pass
 
     return {"ok": True, "job": updated}
+
 
 # Maximum stream lifetime. Forces a clean reconnect every ~6 hours
 # even on perfectly healthy connections so long-running agents

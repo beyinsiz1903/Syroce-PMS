@@ -128,7 +128,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const action = async (url, body = {}, msg = 'İşlem tamamlandı', operation = null) => {
     try {
       await axios.post(`${API}${url}`, body);
-      toast.success(msg);
+      if (msg) toast.success(msg);
       if (operation) await finishOperation(operation);
       else await loadData();
     }
@@ -165,10 +165,11 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   };
 
   const bookingStatus = String(data?.booking?.status || '').toLowerCase();
-  const canCheckIn = ['pending', 'confirmed', 'guaranteed'].includes(bookingStatus);
-  const canLateCheckout = bookingStatus === 'checked_in';
-  const canChangeRoom = ['pending', 'confirmed', 'guaranteed', 'checked_in'].includes(bookingStatus);
-  const canCancel = ['pending', 'confirmed', 'guaranteed'].includes(bookingStatus);
+  const readOnly = Boolean(data?.read_only);
+  const canCheckIn = !readOnly && ['pending', 'confirmed', 'guaranteed'].includes(bookingStatus);
+  const canLateCheckout = !readOnly && bookingStatus === 'checked_in';
+  const canChangeRoom = !readOnly && ['pending', 'confirmed', 'guaranteed', 'checked_in'].includes(bookingStatus);
+  const canCancel = !readOnly && ['pending', 'confirmed', 'guaranteed'].includes(bookingStatus);
 
   if (loading) return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
@@ -274,8 +275,10 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const moreTabs = [
     { id: 'vcc', label: 'Sanal Kart', icon: Shield },
     { id: 'daily_rates', label: 'Günlük Fiyatlar', icon: Calendar },
-    { id: 'room_change', label: 'Oda Değiştir', icon: Repeat2 },
-    { id: 'cancel', label: 'İptal Et', icon: AlertTriangle },
+    ...(!readOnly ? [
+      { id: 'room_change', label: 'Oda Değiştir', icon: Repeat2 },
+      { id: 'cancel', label: 'İptal Et', icon: AlertTriangle },
+    ] : []),
     { id: 'voucher', label: 'Voucher', icon: FileText },
     { id: 'deposits', label: `Depozito${deposits?.length ? ` (${deposits.length})` : ''}`, icon: Shield },
     { id: 'communication', label: `İletişim${communication_logs?.length ? ` (${communication_logs.length})` : ''}`, icon: Mail },
@@ -307,6 +310,11 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
             {hasOpenBalance && (
               <Badge className="bg-rose-50 text-rose-700 border border-rose-200 text-[11px] h-5 px-2 hidden md:inline-flex">
                 <AlertTriangle className="w-3 h-3 mr-1" /> {t('cm.pages_ReservationDetailModal.bakiye')} {fmtTL(balance)} TL
+              </Badge>
+            )}
+            {readOnly && (
+              <Badge className="bg-slate-100 text-slate-700 border border-slate-300 text-[11px] h-5 px-2 hidden md:inline-flex">
+                Salt okunur
               </Badge>
             )}
           </div>
@@ -375,7 +383,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       type="button"
                       size="sm"
                       onClick={repairChannelPricing}
-                      disabled={!channelPricingIssue.repairable || pricingRepairing}
+                      disabled={readOnly || !channelPricingIssue.repairable || pricingRepairing}
                       className="mt-2 h-7 w-full bg-amber-600 px-2 text-[11px] text-white hover:bg-amber-700"
                       data-testid="repair-channel-pricing"
                     >
@@ -472,7 +480,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   className="w-full h-8 text-xs justify-start bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
                 />
                 {canCheckIn && (
-                  <Button size="sm" variant="outline" onClick={() => action(`/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, 'Erken giriş yapıldı')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50" data-testid="btn-early-checkin">
+                  <Button size="sm" variant="outline" onClick={() => action(`/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, null)} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50" data-testid="btn-early-checkin">
                     <LogIn className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.erken_giris')}
                   </Button>
                 )}
@@ -486,10 +494,10 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     <DoorOpen className="w-3 h-3 mr-2" /> Oda Değiştir
                   </Button>
                 )}
-                <Button size="sm" variant="outline" onClick={() => setActiveTab('notes')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
+                <Button size="sm" variant="outline" disabled={readOnly} onClick={() => setActiveTab('notes')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
                   <FileText className="w-3 h-3 mr-2" /> Not Ekle
                 </Button>
-                <Button size="sm" variant="outline" onClick={async () => {
+                <Button size="sm" variant="outline" disabled={readOnly} onClick={async () => {
                   const vip = data?.guest?.vip_status || false;
                   try {
                     await axios.put(`/pms/reservations/${bookingId}/vip-status?vip=${!vip}`);
@@ -562,7 +570,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
             </div>
 
             {/* Sticky footer — birincil eylem (Giriş/Çıkış) hep görünür */}
-            {(booking?.status === 'confirmed' || booking?.status === 'guaranteed') && (
+            {!readOnly && (booking?.status === 'confirmed' || booking?.status === 'guaranteed') && (
               <div className="border-t bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
                 <Button
                   size="sm"
@@ -589,7 +597,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 </Button>
               </div>
             )}
-            {booking?.status === 'checked_in' && (
+            {!readOnly && booking?.status === 'checked_in' && (
               <div className="border-t bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
                 <Button
                   size="sm"
@@ -624,8 +632,6 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       const total = result.data?.total_balance;
                       if (typeof total === 'number' && total > 0.01) {
                         toast.warning(`Açık bakiye ile çıkış yapıldı: ${total.toFixed(2)}`);
-                      } else {
-                        toast.success('Çıkış yapıldı');
                       }
                       await finishOperation('checked_out');
                     } catch (e) {
@@ -690,12 +696,12 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 </DropdownMenu>
               </TabsList>
               <div className="flex-1 overflow-y-auto p-6">
-                <TabsContent value="general" className="mt-0"><GeneralInfoTab booking={booking} guest={guest} room={room} company={company} onGuestUpdate={loadData} notes={notes} history={history} summary={summary} payments={payments} deposits={deposits} onSwitchTab={setActiveTab} /></TabsContent>
-                <TabsContent value="guests" className="mt-0"><GuestsTab guests={guests} booking={booking} onRefresh={loadData} /></TabsContent>
+                <TabsContent value="general" className="mt-0"><GeneralInfoTab booking={booking} guest={guest} room={room} company={company} onGuestUpdate={loadData} notes={notes} history={history} summary={summary} payments={payments} deposits={deposits} onSwitchTab={setActiveTab} readOnly={readOnly} /></TabsContent>
+                <TabsContent value="guests" className="mt-0"><GuestsTab guests={guests} booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="online_payment" className="mt-0"><OnlinePaymentTab booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="vcc" className="mt-0"><VCCTab booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="folios" className="mt-0"><FoliosTab folios={folios} charges={charges} payments={payments} extra_charges={extra_charges} summary={summary} booking={booking} guest={guest} room={room} onRefresh={loadData} onSwitchTab={setActiveTab} /></TabsContent>
-                <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} onRefresh={loadData} /></TabsContent>
+                <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="extras" className="mt-0"><ExtraChargesTab extra_charges={extra_charges} charges={charges} booking={booking} onRefresh={loadData} allBookings={allBookings} /></TabsContent>
                 <TabsContent value="room_change" className="mt-0"><RoomChangeTab booking={booking} room={room} roomMoves={room_moves} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="cancel" className="mt-0"><CancelTab booking={booking} bookingId={bookingId} onRefresh={loadData} onClose={onClose} /></TabsContent>
@@ -720,7 +726,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
           setCheckinAlertOpen(false);
           try {
             await axios.post(`/frontdesk/checkin/${bookingId}?create_folio=true&force_clean=true`);
-            toast.success('Giriş yapıldı');
+            
             await finishOperation('checked_in');
           } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
         }}
