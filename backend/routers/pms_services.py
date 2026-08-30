@@ -108,7 +108,13 @@ async def get_staff_tasks(
     current_user: User = Depends(get_current_user),
     _module=Depends(require_module_scope("tasks")),
 ):
-    """Get staff tasks (engineering, housekeeping, maintenance)."""
+    """Get manual tasks and the idempotent projection of every QR request."""
+    from domains.guest.qr_task_projection import reconcile_tenant_requests
+
+    # Covers both current structured QR requests and historical legacy
+    # requests. Upserts are deterministic, so loading the page never creates
+    # duplicate tasks.
+    await reconcile_tenant_requests(current_user.tenant_id)
     query = {"tenant_id": current_user.tenant_id}
     if department:
         query["department"] = department
@@ -205,11 +211,54 @@ async def update_staff_task(
     current_user: User = Depends(get_current_user),
     _module=Depends(require_module_scope("tasks")),
 ):
-    """Update staff task status"""
-    await db.staff_tasks.update_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"$set": update_data})
-    updated_task = await db.staff_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
-    if not updated_task:
+    """Update a task and synchronize QR-originated work back to the guest."""
+    task = await db.staff_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    allowed = {"status", "assigned_to", "priority", "resolution_note"}
+    safe = {key: value for key, value in update_data.items() if key in allowed}
+    if not safe:
+        raise HTTPException(status_code=400, detail="Güncellenecek izinli alan yok")
+    if "status" in safe and safe["status"] not in {"pending", "in_progress", "completed", "cancelled"}:
+        raise HTTPException(status_code=400, detail="Geçersiz görev durumu")
+    if "priority" in safe and safe["priority"] not in {"urgent", "high", "normal", "low"}:
+        raise HTTPException(status_code=400, detail="Geçersiz öncelik")
+    if "resolution_note" in safe:
+        safe["resolution_note"] = str(safe["resolution_note"] or "").strip()[:2000]
+    safe["updated_at"] = datetime.now(UTC).isoformat()
+
+    if task.get("source") == "guest_qr":
+        if safe.get("status") == "completed" and not (
+            safe.get("resolution_note") or task.get("resolution_note")
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Misafir talebi sonuçlandırılırken çözüm bilgisi zorunludur",
+            )
+        from domains.guest.qr_task_projection import update_qr_task
+
+        actor_name = (
+            getattr(current_user, "name", None)
+            or getattr(current_user, "email", None)
+            or "Personel"
+        )
+        try:
+            projected = await update_qr_task(
+                task,
+                safe,
+                actor_id=current_user.id,
+                actor_name=actor_name,
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        safe.update({key: projected.get(key) for key in ("status", "assigned_to", "priority", "completed_at")})
+
+    await db.staff_tasks.update_one(
+        {"id": task_id, "tenant_id": current_user.tenant_id},
+        {"$set": safe},
+    )
+    updated_task = await db.staff_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     return updated_task
 
 
@@ -219,6 +268,9 @@ async def delete_staff_task(
     current_user: User = Depends(get_current_user),
     _module=Depends(require_module_scope("tasks")),
 ):
+    task = await db.staff_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "source": 1})
+    if task and task.get("source") == "guest_qr":
+        raise HTTPException(status_code=409, detail="Misafir talepleri denetim kaydı olduğu için silinemez")
     result = await db.staff_tasks.delete_one({"id": task_id, "tenant_id": current_user.tenant_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Task not found")

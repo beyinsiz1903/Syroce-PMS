@@ -640,6 +640,13 @@ async def public_submit_request(
         docs_to_emit = res.pop("docs_to_emit", [])
 
         for doc in docs_to_emit:
+            try:
+                from domains.guest.qr_task_projection import record_new_request
+
+                await record_new_request(doc, "qr_requests")
+            except Exception as exc:
+                logger.warning("[room_qr] görev projeksiyonu oluşturulamadı: %s", exc)
+
             if doc["category"] == "complaint":
                 quota_ok, quota_count = _complaint_quota_check(tenant_id, room_id)
                 if not quota_ok:
@@ -760,6 +767,12 @@ async def public_submit_request(
             "status_history": [{"status": "new", "by": "guest", "at": now, "note": "QR üzerinden gönderildi"}],
         }
         await raw_db[COLL].insert_one(doc)
+        try:
+            from domains.guest.qr_task_projection import record_new_request
+
+            await record_new_request(doc, COLL)
+        except Exception as exc:
+            logger.warning("[room_qr] görev projeksiyonu oluşturulamadı: %s", exc)
 
         if payload_obj.category == "complaint":
             quota_ok, quota_count = _complaint_quota_check(tenant_id, room_id)
@@ -1148,8 +1161,16 @@ async def list_requests(
     if room_id:
         q["room_id"] = room_id
 
-    cursor = raw_db[COLL].find(q).sort("created_at", -1).limit(min(limit, 500))
-    items = [_serialize(d) async for d in cursor]
+    per_source_limit = min(limit, 500)
+    items = []
+    for collection in (COLL, "qr_requests"):
+        cursor = raw_db[collection].find(q).sort("created_at", -1).limit(per_source_limit)
+        async for d in cursor:
+            item = _serialize(d)
+            item["source_collection"] = collection
+            items.append(item)
+    items.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    items = items[:per_source_limit]
     return {"items": items, "count": len(items)}
 
 
@@ -1169,16 +1190,17 @@ async def stats_summary(current_user=Depends(get_current_user)):
     by_status: dict = {}
     by_department: dict = {}
     total = 0
-    async for row in raw_db[COLL].aggregate(pipeline):
-        s = row["_id"]["status"]
-        d = row["_id"]["department"]
-        c = row["count"]
-        by_status[s] = by_status.get(s, 0) + c
-        by_department.setdefault(d, {"total": 0, "open": 0})
-        by_department[d]["total"] += c
-        if s in ("new", "assigned", "in_progress"):
-            by_department[d]["open"] += c
-        total += c
+    for collection in (COLL, "qr_requests"):
+        async for row in raw_db[collection].aggregate(pipeline):
+            s = row["_id"]["status"]
+            d = row["_id"]["department"]
+            c = row["count"]
+            by_status[s] = by_status.get(s, 0) + c
+            by_department.setdefault(d, {"total": 0, "open": 0})
+            by_department[d]["total"] += c
+            if s in ("new", "assigned", "in_progress"):
+                by_department[d]["open"] += c
+            total += c
     return {
         "total": total,
         "by_status": by_status,
@@ -1190,10 +1212,15 @@ async def stats_summary(current_user=Depends(get_current_user)):
 @router.get("/api/room-requests/{request_id}")
 async def get_request(request_id: str, current_user=Depends(get_current_user)):
     tenant_id = _tenant_of(current_user)
-    d = await raw_db[COLL].find_one({"_id": request_id, "tenant_id": tenant_id})
-    if not d:
+    from domains.guest.qr_task_projection import find_source_request
+
+    found = await find_source_request(tenant_id, request_id)
+    if not found:
         raise HTTPException(status_code=404, detail="Talep bulunamadı")
-    return _serialize(d)
+    collection, d = found
+    item = _serialize(d)
+    item["source_collection"] = collection
+    return item
 
 
 class RequestUpdate(BaseModel):
@@ -1211,9 +1238,12 @@ async def update_request(
     current_user=Depends(get_current_user),
 ):
     tenant_id = _tenant_of(current_user)
-    doc = await raw_db[COLL].find_one({"_id": request_id, "tenant_id": tenant_id})
-    if not doc:
+    from domains.guest.qr_task_projection import find_source_request
+
+    found = await find_source_request(tenant_id, request_id)
+    if not found:
         raise HTTPException(status_code=404, detail="Talep bulunamadı")
+    source_collection, doc = found
 
     now = datetime.now(UTC)
     update: dict = {"updated_at": now}
@@ -1245,10 +1275,17 @@ async def update_request(
     if len(update) == 1 and not payload.note:  # sadece updated_at ve note yoksa
         raise HTTPException(status_code=400, detail="Güncellenecek alan yok")
 
-    await raw_db[COLL].update_one(
+    await raw_db[source_collection].update_one(
         {"_id": request_id, "tenant_id": tenant_id},
         {"$set": update, "$push": {"status_history": history_entry}},
     )
+
+    try:
+        from domains.guest.qr_task_projection import project_request
+
+        await project_request({**doc, **update}, source_collection)
+    except Exception as exc:
+        logger.warning("[room_qr] görev projeksiyonu güncellenemedi: %s", exc)
 
     if payload.note:
         try:
@@ -1291,7 +1328,7 @@ async def update_request(
     except Exception:
         pass
 
-    updated = await raw_db[COLL].find_one({"_id": request_id, "tenant_id": tenant_id})
+    updated = await raw_db[source_collection].find_one({"_id": request_id, "tenant_id": tenant_id})
     return _serialize(updated)
 
 

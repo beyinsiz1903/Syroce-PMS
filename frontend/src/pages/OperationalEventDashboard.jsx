@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { useTranslation } from 'react-i18next';
-import { Activity, Bell, Radio, Users, Home, Wrench, AlertTriangle, CheckCircle, Clock, Eye, EyeOff, RefreshCw, ChevronDown, Shield } from 'lucide-react';
+import { Activity, Bell, Radio, Users, Home, Wrench, AlertTriangle, CheckCircle, Clock, Eye, RefreshCw, Shield, MessageSquare, ClipboardList, ArrowRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,14 +23,48 @@ const EVENT_ICONS = {
   checkout_completed: CheckCircle,
   vip_arrival: Activity,
   rate_alert: Bell,
-  night_audit_completed: CheckCircle
+  night_audit_completed: CheckCircle,
+  guest_request_created: MessageSquare,
+  guest_request_completed: CheckCircle
+};
+const EVENT_LABELS = {
+  check_in_created: 'Giriş kaydı oluşturuldu',
+  guest_arrived: 'Misafir geldi',
+  housekeeping_task_overdue: 'Kat hizmetleri görevi gecikti',
+  room_ready: 'Oda hazır',
+  audit_exception: 'Denetim istisnası',
+  overbooking_risk: 'Fazla satış riski',
+  reservation_modified: 'Rezervasyon değiştirildi',
+  maintenance_block: 'Bakım nedeniyle oda kapatıldı',
+  checkout_completed: 'Çıkış tamamlandı',
+  vip_arrival: 'VIP misafir gelişi',
+  rate_alert: 'Fiyat uyarısı',
+  night_audit_completed: 'Night Audit tamamlandı',
+  guest_request_created: 'Yeni misafir talebi',
+  guest_request_completed: 'Misafir talebi tamamlandı',
+};
+const DEPARTMENT_LABELS = {
+  housekeeping: 'Kat Hizmetleri',
+  maintenance: 'Teknik Servis',
+  frontdesk: 'Ön Büro',
+  fb: 'Yiyecek & İçecek',
+};
+const eventSummary = (event) => {
+  const payload = event?.payload || {};
+  if (event?.event_type === 'guest_request_created' || event?.event_type === 'guest_request_completed') {
+    return [
+      payload.room_number ? `Oda ${payload.room_number}` : null,
+      DEPARTMENT_LABELS[payload.department] || payload.department,
+      payload.priority ? `Öncelik: ${payload.priority}` : null,
+    ].filter(Boolean).join(' • ');
+  }
+  return JSON.stringify(payload).slice(0, 120);
 };
 export default function OperationalEventDashboard({
   user,
   tenant,
   onLogout
 }) {
-  const { t, i18n } = useTranslation();
   const [liveFeed, setLiveFeed] = useState(null);
   const [stats, setStats] = useState(null);
   const [unread, setUnread] = useState(null);
@@ -144,10 +177,10 @@ export default function OperationalEventDashboard({
   return <>
       <div className="space-y-6 p-4 lg:p-6" data-testid="event-system-dashboard">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">{t("techDashboards.operationalEvents")}</h1>
-            <p className="text-sm text-slate-500 mt-1">{t("techDashboards.operationalEventsDesc")}</p>
+            <h1 className="text-2xl font-bold text-slate-900">Operasyon İzleme</h1>
+            <p className="text-sm text-slate-500 mt-1">Son 24 saatteki kritik operasyon hareketlerini ve sistem olaylarını izleyin</p>
           </div>
           <div className="flex items-center gap-3">
             {unread?.total_unread > 0 && <Badge variant="destructive" className="text-sm" data-testid="unread-badge">
@@ -156,7 +189,14 @@ export default function OperationalEventDashboard({
             <Button variant="outline" size="sm" onClick={() => fetchAll(false)} data-testid="event-refresh-btn">
               <RefreshCw className="w-4 h-4 mr-2" /> Yenile
             </Button>
+            <Button size="sm" onClick={() => { window.location.href = '/app/tasks'; }}>
+              <ClipboardList className="mr-2 h-4 w-4" /> Görevleri Yönet <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
           </div>
+        </div>
+
+        <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          Bu ekran canlı denetim kaydıdır; personel atama, işleme alma ve sonuçlandırma işlemleri ortak <strong>Görevler</strong> ekranından yürütülür.
         </div>
 
         {/* Quick Stats */}
@@ -223,7 +263,8 @@ export default function OperationalEventDashboard({
               <CardContent>
                 {(liveFeed?.events || []).length === 0 ? <div className="text-center py-12 text-slate-400" data-testid="no-events">
                     <Radio className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                    <p>Henüz olay yok</p>
+                    <p className="font-medium text-slate-600">Son 24 saatte kayıtlı operasyon olayı yok</p>
+                    <p className="mt-1 text-xs">Yeni girişler, geciken işler, oda hareketleri ve misafir talepleri oluştukça burada görünür.</p>
                   </div> : <div className="space-y-2" data-testid="event-list">
                     {(liveFeed?.events || []).map(e => {
                 const Icon = EVENT_ICONS[e.event_type] || Activity;
@@ -231,11 +272,11 @@ export default function OperationalEventDashboard({
                           <Icon className="w-5 h-5 mt-0.5 shrink-0" />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
-                              <span className="font-medium text-sm">{e.event_type?.replace(/_/g, ' ')}</span>
+                              <span className="font-medium text-sm">{EVENT_LABELS[e.event_type] || e.event_type?.replace(/_/g, ' ')}</span>
                               <Badge variant="outline" className="text-xs">{e.priority}</Badge>
                               {!e.read && <span className="w-2 h-2 rounded-full bg-teal-500" />}
                             </div>
-                            <p className="text-xs text-slate-500 mt-1 truncate">{JSON.stringify(e.payload).slice(0, 120)}</p>
+                            <p className="text-xs text-slate-500 mt-1 truncate">{eventSummary(e)}</p>
                             <p className="text-xs text-slate-400 mt-1">{e.created_at?.replace('T', ' ').slice(0, 19)}</p>
                           </div>
                           <div className="flex gap-1 shrink-0">
@@ -338,7 +379,7 @@ export default function OperationalEventDashboard({
               <CardContent>
                 <div className="space-y-2" data-testid="event-type-stats">
                   {Object.entries(stats?.by_type || {}).sort((a, b) => b[1] - a[1]).map(([type, count]) => <div key={type} className="flex items-center justify-between p-2 bg-slate-50 rounded">
-                      <span className="text-sm">{type.replace(/_/g, ' ')}</span>
+                      <span className="text-sm">{EVENT_LABELS[type] || type.replace(/_/g, ' ')}</span>
                       <Badge variant="secondary">{count}</Badge>
                     </div>)}
                   {Object.keys(stats?.by_type || {}).length === 0 && <p className="text-slate-400 text-sm text-center py-4">Veri yok</p>}

@@ -42,11 +42,16 @@ import {
 import { useTranslation } from 'react-i18next';
 
 
-const InternalChatTab = ({ currentUser }) => {
+const InternalChatTab = ({ currentUser, initialView = 'conversations' }) => {
   const { t } = useTranslation();
   const { toast } = useToast();
   // Keep the global bell counter in sync when this tab mutates read state.
-  const { decrementInternalUnread, markAllInternalRead } = useNotifications();
+  const {
+    decrementInternalUnread,
+    markAllInternalRead,
+    guestRequestsUnreadCount,
+    syncGuestRequestsUnread,
+  } = useNotifications();
   // Task #43: no explicit room — the server auto-enrols the socket in
   // tenant-scoped internal_chat / pms rooms at connect time based on the
   // JWT identity. Passing the legacy global 'pms' room here used to
@@ -59,7 +64,7 @@ const InternalChatTab = ({ currentUser }) => {
   // ACL ile çift korumalı). Erişim bilgisi mount'ta bir kez çekilir; rozet
   // sayacı panel tarafından bildirilir.
   const [canViewGuestRequests, setCanViewGuestRequests] = useState(false);
-  const [guestRequestsUnread, setGuestRequestsUnread] = useState(0);
+  const guestRequestsUnread = guestRequestsUnreadCount || 0;
 
   // "Acil" mesaj kanalı alıcıda alarm tetiklediği için ayrı bir izinle
   // korunuyor. Yetkisiz roller (front_desk, housekeeping, vb.) bu seçeneği
@@ -666,7 +671,21 @@ const InternalChatTab = ({ currentUser }) => {
     [messageText, priority, recipientType, toDepartment, toUserId, resetForm, loadInbox, toast],
   );
 
-  const [view, setView] = useState('conversations');
+  const [view, setView] = useState(initialView);
+
+  useEffect(() => {
+    if (initialView === 'guest_requests' && canViewGuestRequests) {
+      setView('guest_requests');
+    }
+  }, [initialView, canViewGuestRequests]);
+
+  useEffect(() => {
+    const openGuestRequests = () => {
+      if (canViewGuestRequests) setView('guest_requests');
+    };
+    window.addEventListener('syroce:open-guest-requests', openGuestRequests);
+    return () => window.removeEventListener('syroce:open-guest-requests', openGuestRequests);
+  }, [canViewGuestRequests]);
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-background" data-testid="internal-chat-panel">
@@ -846,7 +865,7 @@ const InternalChatTab = ({ currentUser }) => {
                 handleReply={handleReply}
               />
             ) : (
-              <GuestRequestsPanel onUnreadChange={setGuestRequestsUnread} />
+              <GuestRequestsPanel onUnreadChange={syncGuestRequestsUnread} />
             )}
           </div>
         </>

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import InternalChatWidget from '@/components/InternalChatWidget';
 
 vi.mock('@/context/NotificationContext', () => ({
-  useNotifications: () => ({ internalUnreadCount: 0 }),
+  useNotifications: () => ({ internalUnreadCount: 0, guestRequestsUnreadCount: 0 }),
 }));
 
 vi.mock('@/components/pms/InternalChatTab', () => ({

@@ -141,6 +141,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
             doc = {
                 "_id": req_id,
                 "tenant_id": tenant_id,
+                "property_id": property_id,
                 "room_id": room_id,
                 "room_number": room_number,
                 "category": cat,

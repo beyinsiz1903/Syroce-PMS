@@ -12,8 +12,9 @@ const InternalChatTab = lazy(() => import('@/components/pms/InternalChatTab'));
  */
 const InternalChatWidget = ({ user, hideLauncher = false }) => {
   const [open, setOpen] = useState(false);
-  const { internalUnreadCount } = useNotifications();
-  const unread = internalUnreadCount || 0;
+  const [initialView, setInitialView] = useState('conversations');
+  const { internalUnreadCount, guestRequestsUnreadCount } = useNotifications();
+  const unread = (internalUnreadCount || 0) + (guestRequestsUnreadCount || 0);
 
   const close = useCallback(() => setOpen(false), []);
   const toggle = useCallback(() => setOpen((v) => !v), []);
@@ -38,12 +39,15 @@ const InternalChatWidget = ({ user, hideLauncher = false }) => {
   }, [open]);
 
   useEffect(() => {
-    const openChat = () => setOpen(true);
+    const openChat = () => { setInitialView('conversations'); setOpen(true); };
+    const openGuestRequests = () => { setInitialView('guest_requests'); setOpen(true); };
     const closeChat = () => setOpen(false);
     window.addEventListener('syroce:open-internal-chat', openChat);
+    window.addEventListener('syroce:open-guest-requests', openGuestRequests);
     window.addEventListener('syroce:close-internal-chat', closeChat);
     return () => {
       window.removeEventListener('syroce:open-internal-chat', openChat);
+      window.removeEventListener('syroce:open-guest-requests', openGuestRequests);
       window.removeEventListener('syroce:close-internal-chat', closeChat);
     };
   }, []);
@@ -89,7 +93,7 @@ const InternalChatWidget = ({ user, hideLauncher = false }) => {
                 </div>
               }
             >
-              <InternalChatTab currentUser={user} />
+              <InternalChatTab currentUser={user} initialView={initialView} />
             </Suspense>
           </div>
         </div>

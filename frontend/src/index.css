@@ -871,6 +871,7 @@ code {
 .dark .bg-sky-50\/30 { background-color: rgb(8 47 73 / 0.3); }
 .dark .bg-sky-50\/40 { background-color: rgb(8 47 73 / 0.4); }
 .dark .bg-sky-50\/50 { background-color: rgb(8 47 73 / 0.5); }
+.dark .bg-sky-50\/70 { background-color: rgb(8 47 73 / 0.7); }
 .dark .bg-blue-50\/10 { background-color: rgb(23 37 84 / 0.1); }
 .dark .bg-blue-50\/20 { background-color: rgb(23 37 84 / 0.2); }
 .dark .bg-blue-50\/30 { background-color: rgb(23 37 84 / 0.3); }
@@ -886,6 +887,7 @@ code {
 .dark .bg-indigo-100\/70 { background-color: rgb(49 46 129 / 0.7); }
 .dark .bg-violet-50\/30 { background-color: rgb(46 16 101 / 0.3); }
 .dark .bg-violet-50\/50 { background-color: rgb(46 16 101 / 0.5); }
+.dark .bg-violet-50\/70 { background-color: rgb(46 16 101 / 0.7); }
 .dark .bg-rose-50\/30 { background-color: rgb(76 5 25 / 0.3); }
 .dark .bg-rose-50\/40 { background-color: rgb(76 5 25 / 0.4); }
 .dark .bg-rose-50\/50 { background-color: rgb(76 5 25 / 0.5); }
