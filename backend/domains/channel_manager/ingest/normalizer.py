@@ -10,6 +10,7 @@ import json
 from typing import Any
 
 from domains.channel_manager.ingest.hotelrunner_pricing import hotelrunner_guest_total
+from domains.channel_manager.providers.hotelrunner_notes import extract_hotelrunner_note
 
 
 def _safe_str(v: Any) -> str:
@@ -41,6 +42,7 @@ def empty_canonical() -> dict[str, Any]:
         "provider_last_modified_at": "",
         "source_system": "",
         "source_payload_ref": "",
+        "provider_note": "",
     }
 
 
@@ -135,6 +137,7 @@ def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
         "provider_last_modified_at": last_mod,
         "source_system": _safe_str(payload.get("channel") or payload.get("channel_display", "")),
         "source_payload_ref": _safe_str(payload.get("hr_number", "")),
+        "provider_note": extract_hotelrunner_note(payload),
     }
 
 
@@ -271,6 +274,7 @@ def compute_canonical_hash(canonical: dict[str, Any]) -> str:
         "total_amount": canonical.get("total_amount", 0.0),
         "status": canonical.get("status", ""),
         "guest_email": canonical.get("guest_email", ""),
+        "provider_note": canonical.get("provider_note", ""),
     }
     raw = json.dumps(key_fields, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode()).hexdigest()[:16]

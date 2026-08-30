@@ -11,6 +11,7 @@ Outbound: PMS ARI delta → HotelRunner inventory payload
 import logging
 from typing import Any
 
+from ..hotelrunner_notes import extract_hotelrunner_note
 from .schemas import HotelRunnerReservation
 
 logger = logging.getLogger("hotelrunner.mapper")
@@ -55,6 +56,7 @@ def map_reservation_to_canonical(res: HotelRunnerReservation) -> dict[str, Any]:
         "source_payload_ref": res.hr_number or res.reservation_id,
         "message_uid": res.message_uid,
         "requires_response": res.requires_response,
+        "provider_note": extract_hotelrunner_note(res.raw),
     }
 
 
@@ -95,6 +97,7 @@ def map_raw_payload_to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
         "source_system": str(raw.get("channel_display", raw.get("channel", ""))),
         "source_payload_ref": str(raw.get("hr_number", raw.get("reservation_id", ""))),
         "message_uid": str(raw.get("message_uid", "")),
+        "provider_note": extract_hotelrunner_note(raw),
     }
 
 
