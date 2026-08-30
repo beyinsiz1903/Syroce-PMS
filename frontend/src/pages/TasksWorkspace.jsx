@@ -11,7 +11,7 @@ export default function TasksWorkspace({ user, tenant, onLogout }) {
           <h1 className="text-3xl font-bold text-gray-900">Görevler</h1>
           <p className="text-sm text-gray-500 mt-1">Operasyon görevlerini takip et ve yönet</p>
         </div>
-        <StaffTaskManager />
+        <StaffTaskManager currentUser={user} />
       </div>
     </Layout>
   );

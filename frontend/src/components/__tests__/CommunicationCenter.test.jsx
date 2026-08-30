@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CommunicationCenter from '@/components/CommunicationCenter';
 
 vi.mock('@/context/NotificationContext', () => ({
-  useNotifications: () => ({ internalUnreadCount: 3 }),
+  useNotifications: () => ({ internalUnreadCount: 3, guestRequestsUnreadCount: 2 }),
 }));
 
 beforeEach(() => sessionStorage.clear());
@@ -20,7 +20,20 @@ describe('CommunicationCenter', () => {
     fireEvent.click(screen.getByRole('button', { name: 'İletişim merkezini aç' }));
     expect(screen.getByRole('menu', { name: 'İletişim merkezi seçenekleri' })).toBeInTheDocument();
     expect(screen.getByText('Personel mesajları')).toBeInTheDocument();
+    expect(screen.getByText('Misafir talepleri')).toBeInTheDocument();
     expect(screen.getByText('Telefon')).toBeInTheDocument();
+  });
+
+  it('opens unread guest requests from the same launcher', () => {
+    const listener = vi.fn();
+    window.addEventListener('syroce:open-guest-requests', listener, { once: true });
+    render(<CommunicationCenter user={{ id: 'operator', role: 'front_desk' }} />);
+
+    expect(screen.getByTestId('communication-center-launcher')).toHaveTextContent('5');
+    fireEvent.click(screen.getByRole('button', { name: 'İletişim merkezini aç' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Misafir talepleri/ }));
+
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it('opens messaging through the shared event contract', () => {

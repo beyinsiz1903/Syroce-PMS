@@ -2566,7 +2566,8 @@
         "repair": "Onarım",
         "inspection": "Denetim",
         "setup": "Hazırlık",
-        "delivery": "Teslimat"
+        "delivery": "Teslimat",
+        "guest_request": "Misafir Talebi"
       },
       "departments": {
         "engineering": "Teknik Servis",

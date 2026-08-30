@@ -14,6 +14,7 @@ const NotificationContext = createContext({
   notifications: [],
   internalMessages: [],
   internalUnreadCount: 0,
+  guestRequestsUnreadCount: 0,
   totalUnreadCount: 0,
   unreadCount: 0,
   loading: false,
@@ -22,6 +23,8 @@ const NotificationContext = createContext({
   resetInternalUnread: () => {},
   decrementInternalUnread: () => {},
   refreshInternalUnread: async () => {},
+  refreshGuestRequestsUnread: async () => {},
+  syncGuestRequestsUnread: () => {},
   markAllInternalRead: async () => ({ success: false, updated_count: 0 }),
   permission: 'default',
   requestPermission: async () => 'default',
@@ -52,6 +55,7 @@ export const NotificationProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [internalMessages, setInternalMessages] = useState([]);
   const [internalUnreadCount, setInternalUnreadCount] = useState(0);
+  const [guestRequestsUnreadCount, setGuestRequestsUnreadCount] = useState(0);
   const [permission, setPermission] = useState(() =>
     isClient && 'Notification' in window ? Notification.permission : 'default'
   );
@@ -150,6 +154,7 @@ export const NotificationProvider = ({ children }) => {
       // Logged out (or guest) → clear stale state from a previous session.
       setInternalMessages([]);
       setInternalUnreadCount(0);
+      setGuestRequestsUnreadCount(0);
       return undefined;
     }
 
@@ -235,10 +240,54 @@ export const NotificationProvider = ({ children }) => {
     }
   }, [authUser]);
 
+  const refreshGuestRequestsUnread = useCallback(async () => {
+    if (!isClient || !isStaffUser(authUser)) return 0;
+    try {
+      const axios = (await import('axios')).default;
+      const res = await axios.get('/messaging/guest-requests/threads', {
+        params: { limit: 1 },
+      });
+      const count = res.data?.total_unread || 0;
+      setGuestRequestsUnreadCount(count);
+      return count;
+    } catch (err) {
+      // 403 is expected for roles that are not allowed to view guest requests.
+      if (err?.response?.status === 403) setGuestRequestsUnreadCount(0);
+      return 0;
+    }
+  }, [authUser]);
+
+  const syncGuestRequestsUnread = useCallback((count) => {
+    setGuestRequestsUnreadCount(Math.max(0, Number(count) || 0));
+  }, []);
+
   useEffect(() => {
     if (!isStaffUser(authUser)) return;
     refreshInternalUnread();
-  }, [authUser, refreshInternalUnread]);
+    refreshGuestRequestsUnread();
+  }, [authUser, refreshInternalUnread, refreshGuestRequestsUnread]);
+
+  useEffect(() => {
+    if (!isClient || !isStaffUser(authUser)) return undefined;
+    let detached = false;
+    let unsubscribe = null;
+    const init = async () => {
+      try {
+        await websocket.connect();
+        if (detached) return;
+        unsubscribe = websocket.on('guest_requests:updated', () => {
+          refreshGuestRequestsUnread();
+        });
+      } catch {
+        /* polling/next focus refresh remains the fallback */
+      }
+    };
+    init();
+    return () => {
+      detached = true;
+      if (unsubscribe) unsubscribe();
+    };
+  }, [authUser, refreshGuestRequestsUnread]);
 
   const markRead = useCallback(async (id) => {
     setNotifications((prev) =>
@@ -306,14 +355,17 @@ export const NotificationProvider = ({ children }) => {
       notifications,
       internalMessages,
       internalUnreadCount,
+      guestRequestsUnreadCount,
       unreadCount: swPushUnread,
-      totalUnreadCount: swPushUnread + internalUnreadCount,
+      totalUnreadCount: swPushUnread + internalUnreadCount + guestRequestsUnreadCount,
       loading,
       markRead,
       clearAll,
       resetInternalUnread,
       decrementInternalUnread,
       refreshInternalUnread,
+      refreshGuestRequestsUnread,
+      syncGuestRequestsUnread,
       markAllInternalRead,
       permission,
       requestPermission,
@@ -322,6 +374,7 @@ export const NotificationProvider = ({ children }) => {
       notifications,
       internalMessages,
       internalUnreadCount,
+      guestRequestsUnreadCount,
       swPushUnread,
       loading,
       markRead,
@@ -329,6 +382,8 @@ export const NotificationProvider = ({ children }) => {
       resetInternalUnread,
       decrementInternalUnread,
       refreshInternalUnread,
+      refreshGuestRequestsUnread,
+      syncGuestRequestsUnread,
       markAllInternalRead,
       permission,
       requestPermission,

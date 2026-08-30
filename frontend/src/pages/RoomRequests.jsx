@@ -5,10 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { RefreshCw, Clock, CheckCircle2, PlayCircle, XCircle, AlertTriangle, User, Phone, MessageSquare, Building, Loader2, QrCode, Sparkles } from "lucide-react";
+import { RefreshCw, Clock, CheckCircle2, PlayCircle, AlertTriangle, User, Phone, MessageSquare, Building, QrCode, Sparkles, ClipboardList, ArrowRight } from "lucide-react";
 import RoomQRPrintAction from "@/components/RoomQRPrintAction";
 const STATUS_COLUMNS = [{
   key: "new",
@@ -103,32 +102,6 @@ function RequestCard({
       </div>
     </button>;
 }
-const QUICK_REPLIES = {
-  technical: [
-    { label: "Teknik servis ilgileniyor", status: "in_progress" },
-    { label: "Onarıldı", status: "completed" },
-    { label: "Parça bekleniyor", status: "in_progress" }
-  ],
-  rooms: [
-    { label: "Kat görevlisi yönlendirildi", status: "in_progress" },
-    { label: "Temizlik tamamlandı", status: "completed" },
-    { label: "Eksikler odaya bırakıldı", status: "completed" }
-  ],
-  fnb: [
-    { label: "Siparişiniz hazırlanıyor", status: "in_progress" },
-    { label: "Odaya gönderildi", status: "completed" }
-  ],
-  laundry: [
-    { label: "Çamaşırlarınız alındı", status: "in_progress" },
-    { label: "Teslim edildi", status: "completed" }
-  ],
-  general: [
-    { label: "İlgili personel yönlendirildi", status: "in_progress" },
-    { label: "Talebiniz çözüldü", status: "completed" },
-    { label: "İletildi / Bilgi verildi", status: "completed" }
-  ]
-};
-
 export default function RoomRequests({
   user,
   tenant,
@@ -139,8 +112,6 @@ export default function RoomRequests({
   const [loading, setLoading] = useState(true);
   const [department, setDepartment] = useState(ALL_DEPTS);
   const [selected, setSelected] = useState(null);
-  const [note, setNote] = useState("");
-  const [saving, setSaving] = useState(false);
 
   // Single request fetches all tenant requests; filtering and stat aggregation
   // happen client-side. Eliminates the second `/stats/summary` round-trip and
@@ -201,29 +172,12 @@ export default function RoomRequests({
       by_status
     };
   }, [items]);
-  const updateStatus = async (id, patch, noteText) => {
-    setSaving(true);
-    try {
-      const r = await axios.patch(`/room-requests/${id}`, {
-        ...patch,
-        note: noteText || undefined
-      });
-      setSelected(r.data);
-      setNote("");
-      toast.success("Güncellendi");
-      await load();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Hata");
-    } finally {
-      setSaving(false);
-    }
-  };
   return <>
       <div className="p-6 space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold">Oda QR Talepleri</h1>
-            <p className="text-gray-500 text-sm mt-1">Misafirlerden gelen talepleri departman bazında takip edin</p>
+            <h1 className="text-3xl font-bold">Oda QR Merkezi</h1>
+            <p className="text-gray-500 text-sm mt-1">QR kartlarını yönetin ve misafir taleplerinin denetim geçmişini izleyin</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Select value={department} onValueChange={setDepartment}>
@@ -238,6 +192,21 @@ export default function RoomRequests({
             </Button>
           </div>
         </div>
+
+        <Card className="border-violet-200 bg-violet-50/70">
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <ClipboardList className="mt-0.5 h-5 w-5 shrink-0 text-violet-700" />
+              <div>
+                <div className="font-semibold text-violet-950">Talepler artık ortak Görevler akışında yönetiliyor</div>
+                <p className="text-sm text-violet-800">Departmana atama, işleme alma ve misafire sonuç bildirme işlemlerini Görevler ekranından yapın. Bu ekran kurulum ve denetim kaydı olarak kalır.</p>
+              </div>
+            </div>
+            <Button className="shrink-0 bg-violet-700 hover:bg-violet-800" onClick={() => { window.location.href = '/app/tasks?source=guest_qr'; }}>
+              Görevlerde Yönet <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </CardContent>
+        </Card>
 
         {/* İstatistik */}
         {stats && <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -313,50 +282,11 @@ export default function RoomRequests({
                   </div>
                 </div>
 
-                <div className="space-y-2 border-t pt-4 mt-4">
-                  <div className="text-xs font-semibold text-slate-600">Misafire Yanıt İlet & Durum Güncelle</div>
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {(QUICK_REPLIES[selected.department] || QUICK_REPLIES.general).map(r => (
-                      <Badge
-                        key={r.label}
-                        variant="secondary"
-                        className="cursor-pointer hover:bg-blue-100 hover:text-blue-700 bg-slate-100 text-slate-700 border border-slate-200"
-                        onClick={() => updateStatus(selected.id, { status: r.status }, r.label)}
-                      >
-                        {r.label} ({r.status === 'completed' ? 'Tamamla' : 'İşleme Al'})
-                      </Badge>
-                    ))}
-                  </div>
-                  <Textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Veya özel bir not yazın (misafire iletilir)..." rows={2} />
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {selected.status !== "in_progress" && selected.status !== "completed" && <Button onClick={() => updateStatus(selected.id, {
-                status: "in_progress"
-              }, note)} disabled={saving}>
-                      <PlayCircle className="w-4 h-4 mr-2" /> İşleme Al
-                    </Button>}
-                  {selected.status !== "completed" && <Button onClick={() => updateStatus(selected.id, {
-                status: "completed"
-              }, note)} className="bg-emerald-600 hover:bg-emerald-700" disabled={saving}>
-                      <CheckCircle2 className="w-4 h-4 mr-2" /> Tamamlandı
-                    </Button>}
-                  {selected.status !== "cancelled" && selected.status !== "completed" && <Button variant="outline" onClick={() => updateStatus(selected.id, {
-                status: "cancelled"
-              }, note)} disabled={saving}>
-                      <XCircle className="w-4 h-4 mr-2" /> İptal
-                    </Button>}
-                  <Select value={selected.priority} onValueChange={v => updateStatus(selected.id, {
-                priority: v
-              })}>
-                    <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="low">Düşük</SelectItem>
-                      <SelectItem value="normal">Normal</SelectItem>
-                      <SelectItem value="high">Yüksek</SelectItem>
-                      <SelectItem value="urgent">Acil</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+                  <p className="text-xs text-slate-500">Bu kayıt denetim amaçlıdır. Durum ve sonuç değişiklikleri ortak görev geçmişinden yürütülür.</p>
+                  <Button size="sm" onClick={() => { window.location.href = '/app/tasks?source=guest_qr'; }}>
+                    Görevi Aç <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
                 </div>
               </div>
             </>}

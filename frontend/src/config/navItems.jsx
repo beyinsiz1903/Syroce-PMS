@@ -353,7 +353,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "operational_events",
-    label: "Olay Merkezi",
+    label: "Operasyon İzleme",
     path: "/operational-events",
     moduleKey: "pms",
     tier: "professional",
@@ -429,7 +429,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "no_show_today",
-    label: "Bekleyen / No-Show Adayları",
+    label: "Bekleyen Varışlar / No-Show",
     path: "/no-show-today",
     moduleKey: "pms",
     tier: "basic",
@@ -1138,7 +1138,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "room_qr_requests",
-    label: "Oda QR Talepleri",
+    label: "Oda QR Merkezi",
     path: "/app/room-requests",
     group: "operations",
     navGroup: "operations",

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Headset, MessagesSquare, Minus, Phone, X } from 'lucide-react';
+import { Headset, MessageCircleMore, MessagesSquare, Minus, Phone, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { useNotifications } from '@/context/NotificationContext';
@@ -22,8 +22,10 @@ const readDisplayMode = () => {
 export default function CommunicationCenter({ user }) {
   const [open, setOpen] = useState(false);
   const [displayMode, setDisplayMode] = useState(readDisplayMode);
-  const { internalUnreadCount } = useNotifications();
-  const unread = internalUnreadCount || 0;
+  const { internalUnreadCount, guestRequestsUnreadCount } = useNotifications();
+  const staffUnread = internalUnreadCount || 0;
+  const guestUnread = guestRequestsUnreadCount || 0;
+  const unread = staffUnread + guestUnread;
 
   useEffect(() => {
     const close = () => setOpen(false);
@@ -99,7 +101,21 @@ export default function CommunicationCenter({ user }) {
               <span className="block text-sm font-semibold text-slate-800">Personel mesajları</span>
               <span className="block text-[11px] text-slate-500">Ekip içi yazışmalar</span>
             </span>
-            {unread > 0 && <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white">{unread > 99 ? '99+' : unread}</span>}
+            {staffUnread > 0 && <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white">{staffUnread > 99 ? '99+' : staffUnread}</span>}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-900"
+            onClick={() => openPanel('syroce:open-guest-requests', CLOSE_PHONE_EVENT)}
+            data-testid="communication-open-guest-requests"
+          >
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-700"><MessageCircleMore className="h-4 w-4" /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-slate-800">Misafir talepleri</span>
+              <span className="block text-[11px] text-slate-500">QR talepleri ve yanıtlar</span>
+            </span>
+            {guestUnread > 0 && <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white">{guestUnread > 99 ? '99+' : guestUnread}</span>}
           </button>
           <button
             type="button"
