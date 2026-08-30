@@ -88,6 +88,7 @@ const toKbsGuest = (booking, linkedGuest, unknownLabel) => ({
   birth_date: booking.birth_date || booking.date_of_birth || linkedGuest?.birth_date || linkedGuest?.date_of_birth || '',
   kbs_status: booking.kbs_status || 'pending',
   kbs_sent_at: booking.kbs_sent_at || null,
+  kbs_reference: booking.kbs_reference || null,
 });
 
 const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
@@ -95,6 +96,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   const tk = (k) => t(`pmsComponents.kbs.${k}`);
 
   const [pendingGuests, setPendingGuests] = useState([]);
+  const pendingGuestsRef = useRef([]);
   const [sentHistory, setSentHistory] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('pending');
@@ -130,8 +132,12 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   const fetchQueue = useCallback(async () => {
     setQueueLoading(true);
     try {
-      const res = await axios.get('/kbs/queue', { params: { limit: 200 } });
-      setQueueJobs(res.data?.jobs || []);
+      const res = await axios.get('/kbs/queue', {
+        params: { status: 'pending,in_progress,failed,dead', limit: 200 },
+      });
+      // Savunmaci filtre: eski bir backend tum statuleri dondurse bile
+      // tamamlanmis misafirler Kuyruk'ta ikinci kez gosterilmez.
+      setQueueJobs((res.data?.jobs || []).filter(job => job.status !== 'done'));
       setQueueStats(res.data?.stats || {
         pending: 0, in_progress: 0, done: 0, failed: 0, dead: 0,
       });
@@ -249,6 +255,42 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
       : String(Date.now()) + '-' + Math.random().toString(16).slice(2)
   );
 
+  useEffect(() => {
+    pendingGuestsRef.current = pendingGuests;
+  }, [pendingGuests]);
+
+  const markBookingSent = useCallback((job, reference) => {
+    const bookingId = String(job?.booking_id || '');
+    if (!bookingId) return;
+    const sentAt = new Date().toISOString();
+    const existingPending = pendingGuestsRef.current.find(row => String(row.id) === bookingId);
+    const sentGuest = {
+      id: job.booking_id,
+      guest_id: job.guest_id || existingPending?.guest_id,
+      guest_name: job.payload?.guest_name || existingPending?.guest_name || tk('unknown'),
+      room_number: job.payload?.room_number || existingPending?.room_number || '-',
+      check_in: job.payload?.check_in || existingPending?.check_in,
+      check_out: job.payload?.check_out || existingPending?.check_out,
+      nationality: job.payload?.nationality || existingPending?.nationality || 'TR',
+      id_number: job.payload?.id_number || existingPending?.id_number || '',
+      birth_date: job.payload?.birth_date || existingPending?.birth_date || '',
+      kbs_status: 'sent',
+      kbs_sent_at: sentAt,
+      kbs_reference: reference,
+    };
+
+    setPendingGuests(prev => prev.filter(row => String(row.id) !== bookingId));
+    setSentHistory(prev => {
+      const existing = prev.find(row => String(row.id) === bookingId);
+      return [
+        { ...sentGuest, ...(existing || {}), kbs_status: 'sent', kbs_sent_at: sentAt, kbs_reference: reference },
+        ...prev.filter(row => String(row.id) !== bookingId),
+      ];
+    });
+  // tk is used only for a defensive fallback label and does not affect identity.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Tek isi: claim -> eklenti ile EGM'ye gonder -> complete/fail.
   const processJobViaExtension = useCallback(async (job, workerId) => {
     let claimed = null;
@@ -289,6 +331,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
         await axios.post(`/kbs/queue/${job.id}/complete`,
           { worker_id: workerId, kbs_reference: sent.reference },
           { headers: { 'Idempotency-Key': idem } });
+        markBookingSent(claimed, sent.reference);
         return { status: 'ok', reference: sent.reference, error: '' };
       } catch (error) {
         return {
@@ -311,7 +354,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
       // fail kaydi yazilamadi: lease suresi dolunca tekrar denenir
     }
     return { status: 'fail', reference: '', error: sendError };
-  }, [authority]);
+  }, [authority, markBookingSent]);
 
   const drainViaExtension = useCallback(async () => {
     if (!extReady || !extInfo.installId) return;

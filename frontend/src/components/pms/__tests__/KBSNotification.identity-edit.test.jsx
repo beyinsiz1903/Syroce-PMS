@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -278,6 +278,11 @@ describe('KBSNotification pending guest identity editing', () => {
       );
     });
     expect(toastSuccess).toHaveBeenCalledWith(expect.stringContaining('KBS kabulü doğrulandı'));
+    expect(screen.getByRole('tab', { name: 'pendingTab (0)' })).toBeInTheDocument();
+    const sentTab = screen.getByRole('tab', { name: 'sentTab (1)' });
+    fireEvent.click(sentTab);
+    expect(screen.getByText('Test Guest')).toBeVisible();
+    expect(screen.getByText(/JANDARMA-MusteriKimlikNoGiris-123/)).toBeVisible();
   });
 
   it('does not complete or report success for an extension test result', async () => {
@@ -382,30 +387,57 @@ describe('KBSNotification pending guest identity editing', () => {
     expect(toastError).toHaveBeenCalledWith('Jandarma veri hatası: Oda Numarası Eksik.');
   });
 
-  it('does not offer a duplicate resend for a Jandarma acceptance receipt', async () => {
-    axiosGet.mockResolvedValue({
-      data: {
-        jobs: [{
-          id: 'job-jandarma',
-          booking_id: 'booking-110',
-          action: 'checkin',
-          status: 'done',
-          attempts: 1,
-          max_attempts: 5,
-          kbs_reference: 'JANDARMA-MusteriKimlikNoGiris-123',
-          payload: { guest_name: 'Test Guest', room_number: '110' },
-        }],
-        stats: { pending: 0, in_progress: 0, done: 1, failed: 0, dead: 0 },
-      },
+  it('shows a completed Jandarma guest only in Sent, never in Queue', async () => {
+    axiosGet.mockImplementation((url) => {
+      if (url === '/kbs/guests') {
+        return Promise.resolve({
+          data: {
+            guests: [{
+              id: 'booking-110',
+              guest_id: 'guest-110',
+              status: 'checked_in',
+              guest_name: 'Test Guest',
+              room_number: '110',
+              nationality: 'TR',
+              id_number: '12345678901',
+              kbs_status: 'sent',
+              kbs_sent_at: '2026-08-30T10:00:00Z',
+              kbs_reference: 'JANDARMA-MusteriKimlikNoGiris-123',
+            }],
+          },
+        });
+      }
+      return Promise.resolve({
+        data: {
+          // Eski backend done isi dondurse bile istemci ikinci kez gostermemeli.
+          jobs: [{
+            id: 'job-jandarma',
+            booking_id: 'booking-110',
+            action: 'checkin',
+            status: 'done',
+            attempts: 1,
+            max_attempts: 5,
+            kbs_reference: 'JANDARMA-MusteriKimlikNoGiris-123',
+            payload: { guest_name: 'Test Guest', room_number: '110' },
+          }],
+          stats: { pending: 0, in_progress: 0, done: 1, failed: 0, dead: 0 },
+        },
+      });
     });
 
     render(<KBSNotification />);
 
-    const queueTab = await screen.findByRole('tab', { name: 'queueTab (1)' });
-    fireEvent.click(queueTab);
+    const sentTab = await screen.findByRole('tab', { name: 'sentTab (1)' });
+    const queueTab = screen.getByRole('tab', { name: 'queueTab (0)' });
+    fireEvent.click(sentTab);
 
-    expect(await screen.findByText('JANDARMA-MusteriKimlikNoGiris-123')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Tekrar Gönder' })).not.toBeInTheDocument();
+    expect(await screen.findByText('Test Guest')).toBeInTheDocument();
+    expect(screen.getByText(/JANDARMA-MusteriKimlikNoGiris-123/)).toBeInTheDocument();
+
+    fireEvent.click(queueTab);
+    const queuePanel = screen.getByText('noQueueJobs').closest('[role="tabpanel"]');
+    expect(queuePanel).toBeInTheDocument();
+    expect(within(queuePanel).queryByText('Test Guest')).not.toBeInTheDocument();
   });
 
   it('rehydrates saved identity fields from the linked guest after the page remounts', () => {
