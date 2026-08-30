@@ -17,6 +17,7 @@ const POLL_INTERVAL_MS = 30000;
 export default function WakeUpAlarmMonitor({ tenant }) {
   const navigate = useNavigate();
   const pollingRef = useRef(false);
+  const tenantKey = tenant?.id || tenant?._id || tenant?.tenant_id;
 
   const fireAlerts = useCallback(async (calls) => {
     const alerted = getAlertedWakeUpIds();
@@ -55,7 +56,7 @@ export default function WakeUpAlarmMonitor({ tenant }) {
   }, [navigate]);
 
   const poll = useCallback(async () => {
-    if (!tenant) return;
+    if (!tenantKey) return;
     if (pollingRef.current) return;
     pollingRef.current = true;
     try {
@@ -68,7 +69,7 @@ export default function WakeUpAlarmMonitor({ tenant }) {
     } finally {
       pollingRef.current = false;
     }
-  }, [fireAlerts, tenant]);
+  }, [fireAlerts, tenantKey]);
 
   useEffect(() => {
     poll();
