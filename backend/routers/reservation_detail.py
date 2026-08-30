@@ -203,6 +203,65 @@ async def _refresh_cached_folio_balance(tenant_id: str, folio_id: str) -> float:
     return balance
 
 
+async def _ensure_reservation_folio(
+    tenant_id: str,
+    booking: dict,
+    *,
+    preferred_folio_id: str | None = None,
+    session=None,
+) -> dict:
+    """Resolve the reservation folio used by deposits and their refunds.
+
+    Deposits are payments, not room-price adjustments. They therefore need
+    the same concrete folio link as regular payments so folio history and the
+    cached outstanding balance stay in sync. ``preferred_folio_id`` keeps a
+    refund on the original folio even when that folio has since been closed.
+    """
+    query = {"tenant_id": tenant_id}
+    if preferred_folio_id:
+        query["id"] = preferred_folio_id
+    else:
+        query.update({"booking_id": booking["id"], "status": "open"})
+
+    kwargs = {"session": session} if session is not None else {}
+    folio = await db.folios.find_one(query, {"_id": 0}, **kwargs)
+    if folio:
+        return folio
+
+    # A legacy deposit may not have a folio_id. Reuse the reservation's open
+    # folio before creating one so the guest never gets parallel folios.
+    if preferred_folio_id:
+        folio = await db.folios.find_one(
+            {
+                "tenant_id": tenant_id,
+                "booking_id": booking["id"],
+                "status": "open",
+            },
+            {"_id": 0},
+            **kwargs,
+        )
+        if folio:
+            return folio
+
+    from core.utils import generate_folio_number
+
+    now = datetime.now(UTC).isoformat()
+    folio = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "booking_id": booking["id"],
+        "folio_number": await generate_folio_number(tenant_id),
+        "folio_type": "guest",
+        "status": "open",
+        "guest_id": booking.get("guest_id"),
+        "balance": 0.0,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.folios.insert_one({**folio}, **kwargs)
+    return folio
+
+
 # ── Group bookings cache (TTL 30s) ─────────────────────────────
 # /pms/group-bookings list endpoint'i her grup için bookings.find()
 # çağırıyordu (N+1). Single-query bucket pattern'a geçirdikten sonra
@@ -1888,10 +1947,13 @@ async def record_deposit(
             detail="Tamamlanmış veya iptal edilmiş rezervasyona depozito alınamaz",
         )
 
+    folio = await _ensure_reservation_folio(tid, booking)
+
     deposit = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
         "booking_id": booking_id,
+        "folio_id": folio["id"],
         "amount": data.amount,
         "method": data.method,
         "reference": data.reference,
@@ -1906,7 +1968,7 @@ async def record_deposit(
     payment = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
-        "folio_id": "",
+        "folio_id": folio["id"],
         "booking_id": booking_id,
         "deposit_id": deposit["id"],
         "amount": data.amount,
@@ -1925,6 +1987,7 @@ async def record_deposit(
         {"id": booking_id, "tenant_id": tid},
         {"$set": {"paid_amount": round(new_paid, 2)}},
     )
+    await _refresh_cached_folio_balance(tid, folio["id"])
 
     await _log_activity(
         tid,
@@ -2951,9 +3014,17 @@ async def refund_deposit(
                 detail="Iade tutari kalan depozito bakiyesinden buyuk olamaz",
             )
 
+        folio = await _ensure_reservation_folio(
+            tid,
+            current_booking,
+            preferred_folio_id=current_deposit.get("folio_id"),
+            session=session,
+        )
+
         refund = {
             "id": refund_id,
             "payment_id": payment_id,
+            "folio_id": folio["id"],
             "tenant_id": tid,
             "booking_id": booking_id,
             "deposit_id": data.deposit_id,
@@ -2969,7 +3040,7 @@ async def refund_deposit(
         payment = {
             "id": payment_id,
             "tenant_id": tid,
-            "folio_id": "",
+            "folio_id": folio["id"],
             "booking_id": booking_id,
             "deposit_id": data.deposit_id,
             "deposit_refund_id": refund_id,
@@ -3036,6 +3107,11 @@ async def refund_deposit(
     except Exception:
         await _release_dedup_safely(dedup_lock_id, operation="refund_deposit")
         raise
+
+    await _run_post_commit_hook(
+        lambda: _refresh_cached_folio_balance(tid, result["payment"]["folio_id"]),
+        operation="refund_deposit_folio_balance",
+    )
 
     await _run_post_commit_hook(
         lambda: _log_activity(

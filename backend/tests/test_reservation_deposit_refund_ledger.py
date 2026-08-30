@@ -39,6 +39,17 @@ def _database(*, deposit, booking=None):
         ),
         deposit_refunds=SimpleNamespace(insert_one=AsyncMock()),
         payments=SimpleNamespace(insert_one=AsyncMock()),
+        folios=SimpleNamespace(
+            find_one=AsyncMock(
+                return_value={
+                    "id": "folio-a",
+                    "tenant_id": "tenant-a",
+                    "booking_id": "booking-a",
+                    "status": "open",
+                }
+            ),
+            insert_one=AsyncMock(),
+        ),
     )
 
 
@@ -46,6 +57,11 @@ def _patch(monkeypatch, database):
     monkeypatch.setattr(reservation_detail, "db", database)
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
     monkeypatch.setattr(reservation_detail, "_log_activity", AsyncMock())
+    monkeypatch.setattr(
+        reservation_detail,
+        "_refresh_cached_folio_balance",
+        AsyncMock(return_value=0.0),
+    )
     emitted = MagicMock()
     monkeypatch.setattr(webhook_retry_service, "schedule_emit_reservation_updated", emitted)
     claim = AsyncMock(return_value={"status": "acquired", "lock_id": "lock-a"})
@@ -94,6 +110,8 @@ async def test_full_deposit_refund_posts_negative_payment(monkeypatch):
     assert result["remaining_amount"] == 0
     assert result["payment"]["amount"] == -25.0
     assert result["payment"]["payment_type"] == "refund"
+    assert result["payment"]["folio_id"] == "folio-a"
+    assert result["refund"]["folio_id"] == "folio-a"
     assert result["payment"]["deposit_id"] == "deposit-a"
     assert result["payment"]["reference"].startswith("deposit-refund:")
     assert result["payment"]["reference"] != "reference-a"
