@@ -170,6 +170,7 @@ async def create_import_record(
         "total_amount": lineage.get("total_amount", 0.0),
         "currency": lineage.get("currency", "TRY"),
         "source_system": lineage.get("source_system", ""),
+        "provider_note": lineage.get("provider_note", ""),
         "provider_updated_at": lineage.get("provider_last_modified_at", "") or lineage.get("provider_updated_at", ""),
         "created_at": now,
         "updated_at": now,
@@ -482,6 +483,20 @@ async def auto_import_reservation_to_pms(
             ext_res_id,
         )
         if existing_booking_id:
+            if provider == "hotelrunner":
+                from domains.channel_manager.providers.hotelrunner_notes import (
+                    sync_hotelrunner_note,
+                )
+
+                await sync_hotelrunner_note(
+                    db,
+                    tenant_id=tenant_id,
+                    booking_id=existing_booking_id,
+                    external_reservation_id=ext_res_id,
+                    content=record.get("provider_note", ""),
+                    provider_updated_at=record.get("provider_updated_at", ""),
+                    update_existing=False,
+                )
             await db[COLL_IMPORTED].update_one(
                 {"id": imported_reservation_id},
                 {
@@ -698,6 +713,19 @@ async def auto_import_reservation_to_pms(
             booking_doc=booking_doc,
             create_booking=create_booking_atomic,
         )
+        if provider == "hotelrunner":
+            from domains.channel_manager.providers.hotelrunner_notes import (
+                sync_hotelrunner_note,
+            )
+
+            await sync_hotelrunner_note(
+                db,
+                tenant_id=tenant_id,
+                booking_id=booking_id,
+                external_reservation_id=ext_res_id,
+                content=record.get("provider_note", ""),
+                provider_updated_at=record.get("provider_updated_at", ""),
+            )
         if assigned_room:
             logger.info(
                 "[IMPORT-BRIDGE] OTA reservation %s auto-assigned to room %s",

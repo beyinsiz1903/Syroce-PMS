@@ -397,6 +397,12 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
                 lock_lost,
             )
             result.lineage_id = lineage_id
+            await _sync_provider_note_to_booking(
+                tenant_id=tenant_id,
+                provider=provider,
+                external_reservation_id=ext_res_id,
+                canonical=canonical,
+            )
             result.status = "processed"
 
         elif decision == IngestDecision.CANCEL:
@@ -739,6 +745,7 @@ async def _create_lineage(
         guest_name=canonical.get("guest_name", ""),
         guest_email=canonical.get("guest_email", ""),
         guest_phone=canonical.get("guest_phone", ""),
+        provider_note=canonical.get("provider_note", ""),
         arrival_date=canonical.get("check_in", ""),
         departure_date=canonical.get("check_out", ""),
         room_type_code=canonical.get("room_type_code", ""),
@@ -781,6 +788,7 @@ async def _update_lineage(
     existing["guest_name"] = canonical.get("guest_name", existing.get("guest_name", ""))
     existing["guest_email"] = canonical.get("guest_email", existing.get("guest_email", ""))
     existing["guest_phone"] = canonical.get("guest_phone", existing.get("guest_phone", ""))
+    existing["provider_note"] = canonical.get("provider_note", existing.get("provider_note", ""))
     existing["arrival_date"] = canonical.get("check_in", existing.get("arrival_date", ""))
     existing["departure_date"] = canonical.get("check_out", existing.get("departure_date", ""))
     existing["room_type_code"] = canonical.get("room_type_code", existing.get("room_type_code", ""))
@@ -826,6 +834,41 @@ async def _cancel_lineage(
     if not lineage_id:
         raise ReservationLockLostError("RESERVATION_LOCK_LOST")
     return lineage_id
+
+
+async def _sync_provider_note_to_booking(
+    *,
+    tenant_id: str,
+    provider: str,
+    external_reservation_id: str,
+    canonical: dict[str, Any],
+) -> None:
+    """Project HotelRunner's provider note into the existing PMS Notes tab."""
+    if provider != ConnectorProvider.HOTELRUNNER:
+        return
+    booking = await db.bookings.find_one(
+        {
+            "tenant_id": tenant_id,
+            "external_reservation_id": external_reservation_id,
+            "booking_source": {"$ne": "ota_unmatched_hold"},
+        },
+        {"_id": 0, "id": 1},
+    )
+    if not booking:
+        return
+
+    from domains.channel_manager.providers.hotelrunner_notes import (
+        sync_hotelrunner_note,
+    )
+
+    await sync_hotelrunner_note(
+        db,
+        tenant_id=tenant_id,
+        booking_id=booking["id"],
+        external_reservation_id=external_reservation_id,
+        content=canonical.get("provider_note", ""),
+        provider_updated_at=canonical.get("provider_last_modified_at", ""),
+    )
 
 
 async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) -> bool:
@@ -991,6 +1034,7 @@ async def _trigger_import_bridge(
         "currency": canonical.get("currency", "TRY"),
         "status": canonical.get("status", "confirmed"),
         "source_system": canonical.get("source_system", ""),
+        "provider_note": canonical.get("provider_note", ""),
     }
 
     import_status, review_reason = classify_for_import(

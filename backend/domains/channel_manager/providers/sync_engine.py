@@ -18,6 +18,10 @@ from domains.channel_manager.ingest.hotelrunner_pricing import (
     hotelrunner_guest_total,
     matches_legacy_before_tax_total,
 )
+from domains.channel_manager.providers.hotelrunner_notes import (
+    extract_hotelrunner_note,
+    sync_hotelrunner_note,
+)
 from domains.channel_manager.providers.hotelrunner_shared import (
     _persist_and_process,
     _resolve_property_id,
@@ -656,6 +660,15 @@ async def sync_reservation_update(
     legacy_total_repair = provider_update_is_stale and matches_legacy_before_tax_total(
         booking.get("total_amount"),
         hr_payload,
+    )
+    await sync_hotelrunner_note(
+        db,
+        tenant_id=tenant_id,
+        booking_id=booking["id"],
+        external_reservation_id=ext_reservation_id,
+        content=extract_hotelrunner_note(hr_payload),
+        provider_updated_at=hr_updated_at,
+        update_existing=not provider_update_is_stale,
     )
     if provider_update_is_stale and not legacy_total_repair:
         logger.debug("[PULL-SYNC] Provider update already applied or superseded")

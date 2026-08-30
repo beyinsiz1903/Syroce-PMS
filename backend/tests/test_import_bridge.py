@@ -52,6 +52,7 @@ async def _cleanup(db):
         COLL_LINEAGE,
         COLL_AUDIT,
         "outbox_events",
+        "reservation_notes",
     ]:
         await db[coll].delete_many({"tenant_id": TEST_TENANT})
 
@@ -59,13 +60,13 @@ async def _cleanup(db):
     await db["rate_plan_mappings"].delete_many({"tenant_id": TEST_TENANT})
 
 
-async def _setup_mappings(db):
+async def _setup_mappings(db, provider=TEST_PROVIDER):
     """Create room and rate plan mappings for test provider."""
     await db["room_mappings"].insert_one({
         "id": str(uuid.uuid4()),
         "tenant_id": TEST_TENANT,
         "property_id": TEST_PROPERTY,
-        "provider": TEST_PROVIDER,
+        "provider": provider,
         "pms_room_type_id": "room-type-std",
         "pms_room_type_name": "Standard Room",
         "provider_room_code": "STD",
@@ -75,7 +76,7 @@ async def _setup_mappings(db):
         "id": str(uuid.uuid4()),
         "tenant_id": TEST_TENANT,
         "property_id": TEST_PROPERTY,
-        "provider": TEST_PROVIDER,
+        "provider": provider,
         "pms_rate_plan_id": "rate-bar",
         "pms_rate_plan_name": "Best Available Rate",
         "provider_rate_code": "BAR",
@@ -264,6 +265,55 @@ async def test_auto_import_creates_booking():
         assert booking["source"]["provider"] == TEST_PROVIDER
         assert booking["source"]["external_reservation_id"] == lineage["external_reservation_id"]
         assert booking["status"] == "confirmed"
+    finally:
+        await _cleanup(db)
+        client.close()
+
+
+@pytest.mark.asyncio
+async def test_hotelrunner_import_projects_provider_note_into_existing_notes_collection():
+    client, db = await _get_db()
+    try:
+        await _cleanup(db)
+        await _setup_mappings(db, provider="hotelrunner")
+        await db[COLL_IMPORTED].create_index(
+            [("tenant_id", 1), ("connector_id", 1), ("external_reservation_id", 1)],
+            name="idx_import_unique_ext_res",
+            unique=True,
+        )
+        lineage = _make_lineage(
+            provider="hotelrunner",
+            provider_note="Smoking Type:UNSPECIFIED Payment Method:HotelCollect",
+        )
+
+        with patch("core.import_bridge_service.db", db), \
+             patch("core.import_decision.db", db), \
+             patch("core.atomic_booking.db", db):
+            from core.import_bridge_service import (
+                auto_import_reservation_to_pms,
+                create_import_record,
+            )
+
+            record = await create_import_record(
+                lineage,
+                "pending_auto_import",
+                connector_id=TEST_CONNECTOR,
+            )
+            success, _ = await auto_import_reservation_to_pms(record["id"])
+
+        assert success is True
+        imported = await db[COLL_IMPORTED].find_one({"id": record["id"]}, {"_id": 0})
+        note = await db.reservation_notes.find_one(
+            {
+                "tenant_id": TEST_TENANT,
+                "booking_id": imported["booking_id"],
+                "source": "hotelrunner",
+            },
+            {"_id": 0},
+        )
+        assert note is not None
+        assert note["content"] == lineage["provider_note"]
+        assert note["created_by"] == "HotelRunner"
     finally:
         await _cleanup(db)
         client.close()
