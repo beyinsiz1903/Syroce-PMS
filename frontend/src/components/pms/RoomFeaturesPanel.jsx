@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
-  BellOff, Link2, Wine, Plus, Trash2, Clock, CheckCircle, AlertTriangle, DoorOpen
+  BellOff, Wine, Plus, Trash2, Clock, CheckCircle, AlertTriangle, DoorOpen
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -37,7 +37,6 @@ const CHECKOUT_RULES = [
 const RoomFeaturesPanel = ({ room, onUpdate }) => {
   const { t } = useTranslation();
   const [dndEnabled, setDndEnabled] = useState(room?.dnd || false);
-  const [connectedRoom, setConnectedRoom] = useState(room?.connected_room || '');
   const [minibarItems, setMinibarItems] = useState([]);
   const [showMinibar, setShowMinibar] = useState(false);
   const [showCheckoutRules, setShowCheckoutRules] = useState(false);
@@ -53,16 +52,6 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
       onUpdate?.();
     } catch {
       toast.error('DND durumu güncellenemedi');
-    }
-  };
-
-  const setConnecting = async () => {
-    try {
-      await axios.patch(`/pms/rooms/${room._id || room.id}/features`, { connected_room: connectedRoom });
-      toast.success(`Oda ${room.room_number} → ${connectedRoom} baglandi`);
-      onUpdate?.();
-    } catch {
-      toast.error('Oda baglama işlemi başarısız');
     }
   };
 
@@ -101,7 +90,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
@@ -118,31 +107,6 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
                 {dndEnabled ? 'Kapat' : 'Aktif Et'}
               </Button>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Link2 className="h-4 w-4" />
-              {t('cm.components_pms_RoomFeaturesPanel.baglanti_oda')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-2">
-              <Input
-                placeholder={t('cm.components_pms_RoomFeaturesPanel.oda_no')}
-                value={connectedRoom}
-                onChange={(e) => setConnectedRoom(e.target.value)}
-                className="flex-1"
-              />
-              <Button size="sm" onClick={setConnecting} disabled={!connectedRoom}>
-                <Link2 className="h-4 w-4" />
-              </Button>
-            </div>
-            {room?.connected_room && (
-              <p className="text-xs text-muted-foreground mt-1">Mevcut: {room.connected_room}</p>
-            )}
           </CardContent>
         </Card>
 
