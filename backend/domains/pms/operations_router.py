@@ -394,23 +394,17 @@ async def send_kbs_notification(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
-    now = datetime.utcnow()
-    booking_id = body.get("booking_id")
-    kbs_ref = str(uuid.uuid4())[:8].upper()
-    doc = {
-        "_id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
-        "booking_id": booking_id,
-        "kbs_reference": kbs_ref,
-        "status": "sent",
-        "sent_at": now.isoformat(),
-        "sent_by": current_user.email,
-        "guest_data": body.get("guest_data", {}),
-    }
-    await db.kbs_notifications.insert_one(doc)
-    if booking_id:
-        await db.bookings.update_one({"_id": booking_id, "tenant_id": current_user.tenant_id}, {"$set": {"kbs_status": "sent", "kbs_sent_at": now.isoformat(), "kbs_reference": kbs_ref}})
-    return {"status": "sent", "kbs_reference": kbs_ref, "sent_at": now.isoformat()}
+    """Retired endpoint that used to manufacture a local success reference.
+
+    A KBS notification may only be marked successful after the browser extension
+    has delivered the queue job and the authority has accepted it.  Keeping this
+    route fail-closed also protects older cached frontends from creating false
+    audit records.
+    """
+    raise HTTPException(
+        status_code=410,
+        detail="Bu eski KBS gönderim yolu resmî teslimatı doğrulamaz. /api/kbs/queue akışını kullanın.",
+    )
 
 
 @router.post("/kbs/send-batch")
@@ -419,31 +413,11 @@ async def send_kbs_batch(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
-    now = datetime.utcnow()
-    booking_ids = body.get("booking_ids", [])
-    results = []
-    for bid in booking_ids:
-        kbs_ref = str(uuid.uuid4())[:8].upper()
-        doc = {
-            "_id": str(uuid.uuid4()),
-            "tenant_id": current_user.tenant_id,
-            "booking_id": bid,
-            "kbs_reference": kbs_ref,
-            "status": "sent",
-            "sent_at": now.isoformat(),
-            "sent_by": current_user.email,
-        }
-        try:
-            await db.kbs_notifications.insert_one(doc)
-            await db.bookings.update_one({"_id": bid, "tenant_id": current_user.tenant_id}, {"$set": {"kbs_status": "sent", "kbs_sent_at": now.isoformat(), "kbs_reference": kbs_ref}})
-        except Exception:
-            import logging
-
-            logging.getLogger(__name__).exception("KBS batch send failed for booking %s", bid)
-            results.append({"booking_id": bid, "status": "error"})
-            continue
-        results.append({"booking_id": bid, "kbs_reference": kbs_ref})
-    return {"status": "sent", "count": len(results), "results": results, "sent_at": now.isoformat()}
+    """Fail closed; batch delivery is queue + extension only."""
+    raise HTTPException(
+        status_code=410,
+        detail="Bu eski toplu KBS gönderim yolu resmî teslimatı doğrulamaz. /api/kbs/queue akışını kullanın.",
+    )
 
 
 @router.get("/kbs/history")

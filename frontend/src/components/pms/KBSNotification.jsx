@@ -166,11 +166,12 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
     }
   };
 
-  // Resmi KBS referansı olmayan done işleri tespit et
-  // (JANDARMA-* veya EGM localReceipt formatı → resmi değil)
-  const isUnofficialRef = (ref) => {
+  // Eski sahte endpoint'in ürettiği 8 haneli yerel referanslar ve TEST
+  // sonuçları gerçek teslimat kanıtı değildir. JANDARMA-* ise kurumun SOAP
+  // Basarili=true / HataKodu=100 cevabından sonra üretilen yerel makbuzdur.
+  const isUnverifiedRef = (ref) => {
     if (!ref) return true;
-    return ref.startsWith('JANDARMA-') || ref.startsWith('EGM-LOCAL-') || ref.startsWith('TEST-');
+    return ref.startsWith('TEST-') || /^[0-9A-F]{8}$/.test(ref);
   };
 
   // --- KBS tarayici eklentisi: kuyrugu otel IP'sinden gonderme ---
@@ -190,7 +191,8 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   const authorityState = (extInfo.states && extInfo.states[authority])
     || (authority === 'polis' ? extInfo.state : 'absent')
     || 'absent';
-  const extReady = extInfo.present && (authorityState === 'test' || authorityState === 'configured');
+  // Test modu hiçbir zaman operasyonel gönderim olarak kabul edilmez.
+  const extReady = extInfo.present && authorityState === 'configured';
 
   const newIdemKey = () => (
     (typeof crypto !== 'undefined' && crypto.randomUUID)
@@ -207,22 +209,33 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
       });
       claimed = c.data?.job;
     } catch {
-      return 'skipped'; // 409 (baska worker / backoff / kapali) -> atla
+      return { status: 'skipped', reference: '' }; // baska worker / backoff / kapali
     }
-    if (!claimed) return 'skipped';
+    if (!claimed) return { status: 'skipped', reference: '' };
 
     const body = buildKbsBody(claimed.payload, claimed.action || 'checkin');
     const sent = await sendViaExtension(body, authority);
     const idem = newIdemKey();
+
+    if (sent.test || sent.reference?.startsWith('TEST-')) {
+      try {
+        await axios.post(`/kbs/queue/${job.id}/fail`,
+          { worker_id: workerId, error: 'Test modu sonucu production bildirimi değildir', retry: false },
+          { headers: { 'Idempotency-Key': idem } });
+      } catch {
+        // lease süresi dolunca sunucu işi tekrar görünür yapar
+      }
+      return { status: 'test', reference: sent.reference || '' };
+    }
 
     if (sent.ok && sent.reference) {
       try {
         await axios.post(`/kbs/queue/${job.id}/complete`,
           { worker_id: workerId, kbs_reference: sent.reference },
           { headers: { 'Idempotency-Key': idem } });
-        return 'ok';
+        return { status: 'ok', reference: sent.reference };
       } catch {
-        return 'fail';
+        return { status: 'fail', reference: '' };
       }
     }
     try {
@@ -232,7 +245,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
     } catch {
       // fail kaydi yazilamadi: lease suresi dolunca tekrar denenir
     }
-    return 'fail';
+    return { status: 'fail', reference: '' };
   }, [authority]);
 
   const drainViaExtension = useCallback(async () => {
@@ -247,8 +260,8 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
       const jobs = res.data?.jobs || [];
       for (const job of jobs) {
         const r = await processJobViaExtension(job, workerId);
-        if (r === 'ok') ok++;
-        else if (r === 'fail') fail++;
+        if (r?.status === 'ok') ok++;
+        else if (r?.status === 'fail' || r?.status === 'test') fail++;
       }
     } catch {
       // listeleme hatasi -> sessiz, sonraki turda tekrar denenir
@@ -267,9 +280,10 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
     }
     const workerId = `ext:${extInfo.installId}`;
     const r = await processJobViaExtension(job, workerId);
-    if (r === 'ok') toast.success('KBS gonderimi tamamlandi');
-    else if (r === 'fail') toast.error('KBS gonderimi basarisiz');
-    else toast.error('Is su anda claim edilemedi (baska worker / bekleme)');
+    if (r?.status === 'ok') toast.success(`KBS kabulü doğrulandı. Makbuz: ${r.reference}`);
+    else if (r?.status === 'test') toast.error('Test modu sonucu gönderilmiş sayılmadı. Eklentiyi canlı moda alın.');
+    else if (r?.status === 'fail') toast.error('KBS gönderimi başarısız; başarılı olarak kaydedilmedi.');
+    else toast.error('İş şu anda alınamadı (başka worker veya bekleme süresi).');
     fetchQueue();
   }, [extReady, extInfo.installId, processJobViaExtension, fetchQueue]);
 
@@ -352,25 +366,29 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   const sendToKBS = async (guest) => {
     setSending(true);
     try {
-      const res = await axios.post('/kbs/send', {
+      const res = await axios.post('/kbs/queue', {
         booking_id: guest.id,
-        guest_data: {
-          guest_name: guest.guest_name,
-          nationality: guest.nationality,
-          id_number: guest.id_number,
-        }
+        action: 'checkin',
       });
-      toast.success(t('pmsComponents.kbs.guestSent', { name: guest.guest_name, ref: res.data.kbs_reference }));
-      setPendingGuests(prev => prev.filter(p => p.id !== guest.id));
-      setSentHistory(prev => [{
-        ...guest,
-        kbs_status: 'sent',
-        kbs_sent_at: res.data.sent_at,
-        kbs_reference: res.data.kbs_reference,
-      }, ...prev]);
-    } catch {
-      toast.error(tk('sendError'));
+      const job = res.data?.job;
+      if (!extReady || !extInfo.installId) {
+        toast.info('Bildirim kuyruğa eklendi; henüz kuruma gönderilmedi. Canlı moddaki resepsiyon eklentisi gönderecek.');
+        return;
+      }
+      const result = job
+        ? await processJobViaExtension(job, `ext:${extInfo.installId}`)
+        : { status: 'fail' };
+      if (result?.status === 'ok') {
+        toast.success(`${guest.guest_name} için KBS kabulü doğrulandı. Makbuz: ${result.reference}`);
+      } else if (result?.status === 'test') {
+        toast.error('Test modu sonucu gönderilmiş sayılmadı. Eklentiyi canlı moda alın.');
+      } else {
+        toast.error('KBS gönderimi doğrulanamadı; kayıt başarılı olarak işaretlenmedi.');
+      }
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, tk('sendError')));
     } finally {
+      fetchQueue();
       setSending(false);
     }
   };
@@ -383,21 +401,34 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
     }
     setSending(true);
     try {
-      const res = await axios.post('/kbs/send-batch', { booking_ids: toSend.map(p => p.id) });
-      toast.success(t('pmsComponents.kbs.guestsSent', { count: res.data.count }));
-      const sentIds = new Set(toSend.map(p => p.id));
-      const sentResults = res.data.results || [];
-      setPendingGuests(prev => prev.filter(p => !sentIds.has(p.id)));
-      setSentHistory(prev => [
-        ...toSend.map(g => {
-          const r = sentResults.find(sr => sr.booking_id === g.id);
-          return { ...g, kbs_status: 'sent', kbs_sent_at: res.data.sent_at, kbs_reference: r?.kbs_reference || '' };
-        }),
-        ...prev
-      ]);
-    } catch {
-      toast.error(tk('batchError'));
+      const jobs = [];
+      for (const guest of toSend) {
+        const res = await axios.post('/kbs/queue', {
+          booking_id: guest.id,
+          action: 'checkin',
+        });
+        if (res.data?.job) jobs.push(res.data.job);
+      }
+
+      if (!extReady || !extInfo.installId) {
+        toast.info(`${jobs.length} bildirim kuyruğa eklendi; henüz kuruma gönderilmedi.`);
+        return;
+      }
+
+      const workerId = `ext:${extInfo.installId}`;
+      let accepted = 0;
+      let failed = 0;
+      for (const job of jobs) {
+        const result = await processJobViaExtension(job, workerId);
+        if (result?.status === 'ok') accepted += 1;
+        else failed += 1;
+      }
+      if (accepted > 0) toast.success(`${accepted} bildirimin kurum kabulü doğrulandı.`);
+      if (failed > 0) toast.error(`${failed} bildirim doğrulanamadı ve başarılı sayılmadı.`);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, tk('batchError')));
     } finally {
+      fetchQueue();
       setSending(false);
     }
   };
@@ -815,7 +846,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
                             <RefreshCw className="h-3 w-3 mr-1" /> {tk('retry')}
                           </Button>
                         )}
-                        {job.status === 'done' && isUnofficialRef(job.kbs_reference) && (
+                        {job.status === 'done' && isUnverifiedRef(job.kbs_reference) && (
                           <Button
                             size="sm"
                             variant="outline"

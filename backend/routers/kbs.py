@@ -945,6 +945,11 @@ async def kbs_queue_complete(
     # Madde 8: test mode — TEST- prefix zorunlu, prod referans kaçışını engeller.
     test_mode = _kbs_test_mode()
     is_test_ref = data.kbs_reference.startswith("TEST-")
+    if is_test_ref and not test_mode:
+        raise HTTPException(
+            422,
+            "TEST referansı production KBS teslimatı olarak kabul edilemez",
+        )
     if test_mode and not is_test_ref:
         raise HTTPException(
             422,
