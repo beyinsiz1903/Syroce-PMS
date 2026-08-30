@@ -255,6 +255,16 @@ export const NAV_ITEMS = [
     navSection: "wellness",
   },
   {
+    key: "activity_scheduler",
+    label: "Aktivite & Kaynak Rezervasyonları",
+    path: "/activities",
+    moduleKey: "pms",
+    tier: "basic",
+    group: "operations",
+    navGroup: "operations",
+    navSection: "wellness",
+  },
+  {
     key: "shift_handover",
     label: "Vardiya Devri",
     path: "/shift-handover",
