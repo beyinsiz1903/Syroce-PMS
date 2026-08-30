@@ -16,11 +16,26 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { CalendarDays, Plus, RefreshCw, X, Loader2 } from "lucide-react";
+import {
+  ArrowRight, CalendarDays, Clock3, Dumbbell, Info, Loader2, MapPin,
+  Plus, RefreshCw, Search, Settings2, UserRound, X,
+} from "lucide-react";
 import { useTranslation } from 'react-i18next';
 
 const TYPES = ["golf", "tennis", "yoga", "fitness", "bike", "diving", "kids", "other"];
 const HOURS = Array.from({ length: 13 }, (_, i) => 8 + i); // 08:00 → 20:00
+const TYPE_LABELS = {
+  golf: "Golf", tennis: "Tenis", yoga: "Yoga", fitness: "Fitness",
+  bike: "Bisiklet", diving: "Dalış", kids: "Çocuk aktivitesi", other: "Diğer",
+};
+const RESOURCE_KIND_LABELS = {
+  instructor: "Eğitmen", venue: "Mekân", equipment: "Ekipman",
+};
+const localISODate = () => {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60_000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+};
 
 /**
  * Opera #3 — Activity Scheduler.
@@ -38,7 +53,7 @@ export default function ActivitySchedulerPage() {
   const [activities, setActivities] = useState([]);
   const [resources, setResources] = useState([]);
   const [bookings, setBookings] = useState([]);
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(localISODate);
   const [loading, setLoading] = useState(false);
 
   // Booking modal
@@ -50,6 +65,9 @@ export default function ActivitySchedulerPage() {
     activity_id: "", resource_id: "", guest_id: "", starts_at: "", note: "",
   });
   const [submittingBk, setSubmittingBk] = useState(false);
+  const [guestQuery, setGuestQuery] = useState("");
+  const [guestResults, setGuestResults] = useState([]);
+  const [guestSearching, setGuestSearching] = useState(false);
 
   // Tanım formları (tab içinde)
   const [actForm, setActForm] = useState({
@@ -83,6 +101,38 @@ export default function ActivitySchedulerPage() {
   }, [date, handleErr]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Operasyon ekranları takvim gününe değil otelin açık PMS iş gününe oturur.
+  useEffect(() => {
+    let active = true;
+    api.get("/night-audit/business-date")
+      .then(({ data }) => {
+        if (active && data?.business_date) setDate(data.business_date);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  // Teknik guest_id yazdırmak yerine mevcut PMS misafir kaydını seçtir.
+  useEffect(() => {
+    const query = guestQuery.trim();
+    if (bkForm.guest_id || query.length < 2) {
+      setGuestResults([]);
+      return undefined;
+    }
+    const timer = window.setTimeout(async () => {
+      setGuestSearching(true);
+      try {
+        const { data } = await api.get("/pms/guests/search", { params: { q: query, limit: 8 } });
+        setGuestResults(Array.isArray(data) ? data : []);
+      } catch {
+        setGuestResults([]);
+      } finally {
+        setGuestSearching(false);
+      }
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [guestQuery, bkForm.guest_id]);
 
   const addActivity = async (e) => {
     e.preventDefault();
@@ -118,7 +168,7 @@ export default function ActivitySchedulerPage() {
     const act = activityById[b.activity_id];
     setCancelTarget({
       id: b.id,
-      label: `${act?.name || b.activity_id} · ${b.starts_at?.slice(11, 16)}-${b.ends_at?.slice(11, 16)} · ${b.guest_id}`,
+      label: `${act?.name || b.activity_id} · ${b.starts_at?.slice(11, 16)}-${b.ends_at?.slice(11, 16)} · ${b.guest_name || b.guest_id}`,
     });
   };
 
@@ -150,6 +200,8 @@ export default function ActivitySchedulerPage() {
       toast({ title: "Rezervasyon oluşturuldu" });
       setBookingOpen(false);
       setBkForm({ activity_id: "", resource_id: "", guest_id: "", starts_at: "", note: "" });
+      setGuestQuery("");
+      setGuestResults([]);
       load();
     } catch (e) { handleErr("Rezervasyon başarısız", e); }
     finally { setSubmittingBk(false); }
@@ -165,6 +217,8 @@ export default function ActivitySchedulerPage() {
       starts_at: startsAt,
       note: "",
     });
+    setGuestQuery("");
+    setGuestResults([]);
     setBookingOpen(true);
   };
 
@@ -218,15 +272,41 @@ export default function ActivitySchedulerPage() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-2xl font-semibold flex items-center gap-2">
-            <CalendarDays className="h-6 w-6" /> Aktivite Takvimi
+            <CalendarDays className="h-6 w-6" /> Aktivite & Kaynak Rezervasyonları
           </h2>
           <p className="text-sm text-muted-foreground">
-            {t('cm.pages_ActivitySchedulerPage.golf_tenis_yoga_dalis_cocuk_kulubu_egitm')}
+            Oda dışı hizmetleri; eğitmen, mekân ve ekipman uygunluğuyla birlikte yönetin.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={load} disabled={loading} data-testid="button-refresh-activities">
           <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> {t('cm.pages_ActivitySchedulerPage.yenile')}
         </Button>
+      </div>
+
+      <div className="rounded-lg border bg-muted/30 p-4 flex items-start gap-3">
+        <Info className="h-5 w-5 mt-0.5 shrink-0 text-primary" />
+        <div className="space-y-1">
+          <p className="text-sm font-medium">Bu ekran oda rezervasyonu için değildir.</p>
+          <p className="text-sm text-muted-foreground">
+            Golf, tenis, yoga, dalış, çocuk kulübü ve benzeri saatli hizmetlerde aynı eğitmen,
+            alan veya ekipmanın iki kez rezerve edilmesini önler. Oda rezervasyonları Takvim ekranında yönetilir.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card><CardContent className="p-4 flex items-center gap-3">
+          <Dumbbell className="h-5 w-5 text-muted-foreground" />
+          <div><p className="text-xs text-muted-foreground">Aktif hizmet</p><p className="text-xl font-semibold">{activities.length}</p></div>
+        </CardContent></Card>
+        <Card><CardContent className="p-4 flex items-center gap-3">
+          <MapPin className="h-5 w-5 text-muted-foreground" />
+          <div><p className="text-xs text-muted-foreground">Rezervasyon kaynağı</p><p className="text-xl font-semibold">{resources.length}</p></div>
+        </CardContent></Card>
+        <Card><CardContent className="p-4 flex items-center gap-3">
+          <Clock3 className="h-5 w-5 text-muted-foreground" />
+          <div><p className="text-xs text-muted-foreground">Seçili gün aktif rezervasyon</p><p className="text-xl font-semibold">{bookings.filter((b) => b.status !== "cancelled").length}</p></div>
+        </CardContent></Card>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -256,14 +336,40 @@ export default function ActivitySchedulerPage() {
                     data-testid="input-schedule-date"
                   />
                 </div>
-                <Button onClick={() => { setBkForm({ activity_id: "", resource_id: "", guest_id: "", starts_at: "", note: "" }); setBookingOpen(true); }}>
+                <Button
+                  data-testid="button-new-activity-booking"
+                  disabled={activities.length === 0 || resources.length === 0}
+                  onClick={() => {
+                    setBkForm({ activity_id: "", resource_id: "", guest_id: "", starts_at: "", note: "" });
+                    setGuestQuery("");
+                    setGuestResults([]);
+                    setBookingOpen(true);
+                  }}
+                >
                   <Plus className="h-4 w-4 mr-1" /> {t('cm.pages_ActivitySchedulerPage.yeni_rezervasyon')}
                 </Button>
               </div>
 
-              {resources.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  {t('cm.pages_ActivitySchedulerPage.henuz_kaynak_tanimli_degil_kaynaklar_sek')}
+              {activities.length === 0 || resources.length === 0 ? (
+                <div className="rounded-xl border border-dashed p-8 text-center space-y-5" data-testid="activity-setup-empty-state">
+                  <div className="mx-auto h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+                    <Settings2 className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-lg">Aktivite satışını kullanıma hazırlayın</h3>
+                    <p className="text-sm text-muted-foreground max-w-2xl mx-auto mt-1">
+                      Önce satılan hizmeti, ardından o hizmet için ayrılacak eğitmen, mekân veya ekipmanı tanımlayın.
+                      Her iki adım tamamlandığında saatlik takvim otomatik açılır.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Button variant={activities.length === 0 ? "default" : "outline"} onClick={() => setTab("activities")}>
+                      1. Hizmet tanımla <ArrowRight className="h-4 w-4 ml-1" />
+                    </Button>
+                    <Button variant={activities.length > 0 && resources.length === 0 ? "default" : "outline"} onClick={() => setTab("resources")}>
+                      2. Kaynak ekle <ArrowRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <div className="overflow-x-auto border rounded">
@@ -283,7 +389,7 @@ export default function ActivitySchedulerPage() {
                         <tr key={r.id} className="border-t">
                           <td className="px-2 py-1 sticky left-0 bg-background z-10 font-medium whitespace-nowrap">
                             {r.name}
-                            <span className="ml-1 text-[10px] text-muted-foreground">[{r.kind}]</span>
+                            <span className="ml-1 text-[10px] text-muted-foreground">[{RESOURCE_KIND_LABELS[r.kind] || r.kind}]</span>
                           </td>
                           {HOURS.map((h) => {
                             const slot = bookingsByCell.get(`${r.id}@${h}`) || [];
@@ -319,10 +425,10 @@ export default function ActivitySchedulerPage() {
                                               ? "bg-blue-200 hover:bg-blue-300 font-medium"
                                               : "bg-blue-100 hover:bg-blue-200 italic opacity-80"
                                         }`}
-                                        title={`${act?.name || b.activity_id} · ${b.guest_id} · ${b.starts_at?.slice(11, 16)}-${b.ends_at?.slice(11, 16)}${isStart ? "" : " (devam)"}`}
+                                        title={`${act?.name || b.activity_id} · ${b.guest_name || b.guest_id} · ${b.starts_at?.slice(11, 16)}-${b.ends_at?.slice(11, 16)}${isStart ? "" : " (devam)"}`}
                                       >
                                         {isStart
-                                          ? `${act?.name || "?"} · ${b.guest_id?.slice(0, 6)}`
+                                          ? `${act?.name || "?"} · ${b.guest_name || b.guest_id?.slice(0, 6)}`
                                           : "↳"}
                                       </button>
                                     );
@@ -372,7 +478,7 @@ export default function ActivitySchedulerPage() {
                             </TableCell>
                             <TableCell>{act?.name || b.activity_id}</TableCell>
                             <TableCell>{res?.name || b.resource_id}</TableCell>
-                            <TableCell className="text-xs">{b.guest_id}</TableCell>
+                            <TableCell className="text-xs">{b.guest_name || b.guest_id}</TableCell>
                             <TableCell>
                               {!cancelled && (
                                 <Button size="sm" variant="ghost" onClick={() => requestCancel(b)}>
@@ -415,7 +521,9 @@ export default function ActivitySchedulerPage() {
                   <Select value={actForm.type} onValueChange={(v) => setActForm({ ...actForm, type: v })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                      {TYPES.map((type) => (
+                        <SelectItem key={type} value={type}>{TYPE_LABELS[type] || type}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -461,7 +569,7 @@ export default function ActivitySchedulerPage() {
                     <TableRow key={a.id}>
                       <TableCell className="font-medium">{a.name}</TableCell>
                       <TableCell className="text-center">
-                        <Badge variant="secondary">{a.type}</Badge>
+                        <Badge variant="secondary">{TYPE_LABELS[a.type] || a.type}</Badge>
                       </TableCell>
                       <TableCell className="text-center">{a.duration_min} dk</TableCell>
                       <TableCell className="text-right">{a.price}</TableCell>
@@ -546,7 +654,7 @@ export default function ActivitySchedulerPage() {
                     <TableRow key={r.id}>
                       <TableCell className="font-medium">{r.name}</TableCell>
                       <TableCell className="text-center">
-                        <Badge variant="outline">{r.kind}</Badge>
+                        <Badge variant="outline">{RESOURCE_KIND_LABELS[r.kind] || r.kind}</Badge>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {(r.activity_types || []).join(", ") || "tümü"}
@@ -581,7 +689,16 @@ export default function ActivitySchedulerPage() {
       </Dialog>
 
       {/* Booking modal */}
-      <Dialog open={bookingOpen} onOpenChange={setBookingOpen}>
+      <Dialog
+        open={bookingOpen}
+        onOpenChange={(open) => {
+          setBookingOpen(open);
+          if (!open) {
+            setGuestQuery("");
+            setGuestResults([]);
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('cm.pages_ActivitySchedulerPage.yeni_rezervasyon_92459')}</DialogTitle>
@@ -598,7 +715,7 @@ export default function ActivitySchedulerPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {activities.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.name} ({a.type})</SelectItem>
+                    <SelectItem key={a.id} value={a.id}>{a.name} ({TYPE_LABELS[a.type] || a.type})</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -611,18 +728,55 @@ export default function ActivitySchedulerPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {resources.map((r) => (
-                    <SelectItem key={r.id} value={r.id}>{r.name} [{r.kind}]</SelectItem>
+                    <SelectItem key={r.id} value={r.id}>{r.name} [{RESOURCE_KIND_LABELS[r.kind] || r.kind}]</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>{t('cm.pages_ActivitySchedulerPage.misafir_id')}</Label>
-              <Input
-                value={bkForm.guest_id}
-                onChange={(e) => setBkForm({ ...bkForm, guest_id: e.target.value })}
-                data-testid="input-booking-guest"
-              />
+            <div className="relative">
+              <Label>Misafir</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={guestQuery}
+                  onChange={(e) => {
+                    setGuestQuery(e.target.value);
+                    setBkForm({ ...bkForm, guest_id: "" });
+                  }}
+                  placeholder="Ad, telefon, e-posta veya kimlik ile ara"
+                  className="pl-9"
+                  autoComplete="off"
+                  data-testid="input-booking-guest"
+                />
+                {guestSearching && <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />}
+              </div>
+              {bkForm.guest_id ? (
+                <p className="mt-1 text-xs text-muted-foreground flex items-center gap-1">
+                  <UserRound className="h-3 w-3" /> PMS misafir kaydı seçildi
+                </p>
+              ) : guestResults.length > 0 ? (
+                <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md max-h-52 overflow-y-auto">
+                  {guestResults.map((guest) => (
+                    <button
+                      key={guest.id}
+                      type="button"
+                      className="w-full px-3 py-2 text-left hover:bg-accent border-b last:border-b-0"
+                      onClick={() => {
+                        setBkForm({ ...bkForm, guest_id: guest.id });
+                        setGuestQuery(guest.name || `${guest.first_name || ""} ${guest.last_name || ""}`.trim());
+                        setGuestResults([]);
+                      }}
+                    >
+                      <span className="block text-sm font-medium">{guest.name || `${guest.first_name || ""} ${guest.last_name || ""}`.trim()}</span>
+                      {(guest.phone || guest.email) && (
+                        <span className="block text-xs text-muted-foreground">{guest.phone || guest.email}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              ) : guestQuery.trim().length >= 2 && !guestSearching ? (
+                <p className="mt-1 text-xs text-muted-foreground">Eşleşen PMS misafiri bulunamadı.</p>
+              ) : null}
             </div>
             <div>
               <Label>{t('cm.pages_ActivitySchedulerPage.baslangic')}</Label>

@@ -1,5 +1,4 @@
 import React, { memo, useState, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -14,7 +13,7 @@ import { TableLoadingSkeleton } from '@/utils/lazyLoad';
 import {
   Calendar, Users, TrendingUp, LogIn, LogOut, Star,
   AlertTriangle, Clock, UserPlus, CheckSquare, Printer, CheckCircle2, XCircle,
-  ChevronDown, ChevronUp, CalendarDays
+  ChevronDown, ChevronUp
 } from 'lucide-react';
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
 
@@ -39,7 +38,6 @@ const FrontdeskTab = ({
   setReservationDetailId,
 }) => {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const tf = useCallback((k, opts) => t(`pmsComponents.frontdesk.${k}`, opts), [t]);
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [showGroupCheckin, setShowGroupCheckin] = useState(false);
@@ -516,9 +514,6 @@ const FrontdeskTab = ({
             <CheckSquare className="w-4 h-4 mr-1" /> {tf('batchCheckin')} ({groupArrivals.length})
           </Button>
         )}
-        <Button variant="outline" size="sm" onClick={() => navigate('/activities')}>
-          <CalendarDays className="w-4 h-4 mr-1" /> {tf('activities', { defaultValue: 'Aktiviteler' })}
-        </Button>
       </div>
 
       {overstays.length > 0 && (

@@ -23,6 +23,11 @@ describe('workflow-oriented hotel navigation', () => {
     expect(item('lost_found').navSection).toBe('guest_requests');
     expect(item('room_qr_requests').navSection).toBe('guest_requests');
     expect(item('operational_events').navSection).toBe('incidents');
+    expect(item('activity_scheduler')).toMatchObject({
+      navGroup: 'operations',
+      navSection: 'wellness',
+      path: '/activities',
+    });
     expect(SUPPLEMENTAL_MODULE_NAV_ITEMS.find(({ key }) => key === 'tasks_workspace'))
       .toMatchObject({ navGroup: 'operations', navSection: 'daily' });
   });
