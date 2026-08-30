@@ -265,6 +265,10 @@ async def kbs_guest_list(
                     "children": 1,
                     "status": 1,
                     "confirmation_code": 1,
+                    "kbs_reported": 1,
+                    "kbs_reported_at": 1,
+                    "kbs_reference": 1,
+                    "kbs_test": 1,
                 },
             )
             .sort("check_in", 1)
@@ -307,6 +311,13 @@ async def kbs_guest_list(
             b["father_name"] = g.get("father_name", "")
             b["mother_name"] = g.get("mother_name", "")
             b["birth_place"] = g.get("birth_place", "")
+            # KBS ekraninin sekmeleri kalici teslimat kaydini esas alir.
+            # Queue `done` durumu tek basina yeterli degildir (test/legacy
+            # kayitlari olabilir); production complete akisi booking uzerine
+            # kbs_reported bayragini yazar.
+            is_reported = bool(b.get("kbs_reported")) and not bool(b.get("kbs_test"))
+            b["kbs_status"] = "sent" if is_reported else "pending"
+            b["kbs_sent_at"] = b.get("kbs_reported_at") if is_reported else None
             ready, _missing = validate_kbs_payload(
                 {
                     "guest_name": b.get("guest_name", ""),
@@ -1128,10 +1139,11 @@ async def kbs_queue_complete(
             booking_update = {
                 "kbs_reported": True,
                 "kbs_reported_at": _iso(now),
+                "kbs_status": "sent",
+                "kbs_sent_at": _iso(now),
                 "kbs_reference": data.kbs_reference,
+                "kbs_test": is_test_ref,
             }
-            if is_test_ref:
-                booking_update["kbs_test"] = True
             await db.bookings.update_one(
                 {"tenant_id": tenant_id, "id": job["booking_id"]},
                 {"$set": booking_update},

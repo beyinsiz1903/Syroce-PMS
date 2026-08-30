@@ -53,6 +53,9 @@ async def test_kbs_guests_use_pms_business_date_and_canonical_tc_identity(monkey
             "check_in": "2026-08-28T14:00:00",
             "check_out": "2026-08-30T12:00:00",
             "status": "checked_in",
+            "kbs_reported": True,
+            "kbs_reported_at": "2026-08-29T12:30:00+00:00",
+            "kbs_reference": "JANDARMA-MusteriKimlikNoGiris-123",
         }
     ])
     guests = FakeCollection([
@@ -86,6 +89,9 @@ async def test_kbs_guests_use_pms_business_date_and_canonical_tc_identity(monkey
     assert result["guests"][0]["id_number"] == "12345678901"
     assert result["guests"][0]["birth_date"] == ""
     assert result["guests"][0]["kbs_ready"] is True
+    assert result["guests"][0]["kbs_status"] == "sent"
+    assert result["guests"][0]["kbs_sent_at"] == "2026-08-29T12:30:00+00:00"
+    assert result["guests"][0]["kbs_reference"] == "JANDARMA-MusteriKimlikNoGiris-123"
     checked_in_window = bookings.queries[0]["$or"][0]
     assert checked_in_window == {
         "status": "checked_in",
