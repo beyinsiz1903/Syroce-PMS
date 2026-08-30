@@ -1,6 +1,10 @@
 from datetime import UTC, date, datetime
+from types import SimpleNamespace
 
-from core.reservation_mutability import reservation_is_historical
+import pytest
+from fastapi import HTTPException
+
+from core.reservation_mutability import ensure_reservation_mutable, reservation_is_historical
 
 
 def test_terminal_reservations_are_read_only_immediately():
@@ -38,3 +42,15 @@ def test_overdue_in_house_reservation_stays_operable_until_checkout():
         {"status": "checked_in", "check_out": "2026-08-29T12:00:00"},
         "2026-08-30",
     )
+
+
+@pytest.mark.asyncio
+async def test_terminal_reservation_rejects_without_business_date_lookup():
+    with pytest.raises(HTTPException) as exc_info:
+        await ensure_reservation_mutable(
+            SimpleNamespace(),
+            "tenant-a",
+            {"status": "checked_out"},
+        )
+
+    assert exc_info.value.status_code == 409

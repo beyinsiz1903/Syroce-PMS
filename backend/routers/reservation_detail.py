@@ -1758,9 +1758,9 @@ async def late_checkout(
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
-    await ensure_reservation_mutable(db, tid, booking)
     if str(booking.get("status") or "").lower() != "checked_in":
         raise HTTPException(status_code=409, detail="Geç çıkış yalnız içerideki rezervasyona uygulanabilir")
+    await ensure_reservation_mutable(db, tid, booking)
 
     updates = {"late_checkout": True}
     if data.checkout_time:
@@ -1818,9 +1818,9 @@ async def mark_noshow(
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
-    await ensure_reservation_mutable(db, tid, booking)
     if str(booking.get("status") or "").lower() not in {"pending", "confirmed", "guaranteed"}:
         raise HTTPException(status_code=409, detail="Bu rezervasyon mevcut durumunda no-show yapılamaz")
+    await ensure_reservation_mutable(db, tid, booking)
 
     await db.bookings.update_one(
         {"id": booking_id, "tenant_id": tid},

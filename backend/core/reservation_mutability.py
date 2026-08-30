@@ -47,6 +47,14 @@ def reservation_is_historical(booking: dict, business_date: str) -> bool:
 
 
 async def ensure_reservation_mutable(db, tenant_id: str, booking: dict) -> None:
+    # Terminal states are historical regardless of the current PMS business
+    # date. Reject them before touching settings; this also keeps the guard
+    # fail-fast when Night Audit/settings storage is temporarily unavailable.
+    if str(booking.get("status") or "").strip().lower() in _TERMINAL_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=("Geçmiş veya tamamlanmış rezervasyonlar salt okunurdur; fiyat ve konaklama bilgileri değiştirilemez."),
+        )
     business_date = await ensure_business_date_initialized(db, tenant_id)
     active_day = business_date["business_date"]
     if reservation_is_historical(booking, active_day):
