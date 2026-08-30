@@ -37,6 +37,7 @@ from pydantic import BaseModel, Field
 
 from core.business_date_service import ensure_business_date_initialized
 from core.database import db
+from core.kbs_payload_builder import build_kbs_payload_snapshot, resolve_booking_room_number
 from core.kbs_payload_validation import validate_kbs_payload
 from core.security import get_current_user
 from core.tenant_db import tenant_context
@@ -256,6 +257,7 @@ async def kbs_guest_list(
                     "guest_name": 1,
                     "guest_email": 1,
                     "guest_phone": 1,
+                    "room_id": 1,
                     "room_number": 1,
                     "check_in": 1,
                     "check_out": 1,
@@ -294,6 +296,7 @@ async def kbs_guest_list(
                 guest_map[g["id"]] = decrypt_guest_doc(g)
 
         for b in bookings:
+            b["room_number"] = await resolve_booking_room_number(db, tenant_id, b)
             g = guest_map.get(b.get("guest_id"), {})
             b["nationality"] = g.get("nationality", "")
             b["id_number"] = g.get("id_number", "")
@@ -307,6 +310,7 @@ async def kbs_guest_list(
             ready, _missing = validate_kbs_payload(
                 {
                     "guest_name": b.get("guest_name", ""),
+                    "room_number": b.get("room_number", ""),
                     "check_in": b.get("check_in", ""),
                     "check_out": b.get("check_out", ""),
                     "nationality": b["nationality"],
@@ -501,72 +505,43 @@ async def _build_payload_snapshot(tenant_id: str, booking_id: str) -> tuple[dict
     Returns: (booking, guest, snapshot)
     Raises: HTTPException(404) if booking bulunamazsa.
     """
-    booking = await db.bookings.find_one(
-        {"tenant_id": tenant_id, "id": booking_id},
-        {
-            "_id": 0,
-            "id": 1,
-            "guest_id": 1,
-            "guest_name": 1,
-            "guest_email": 1,
-            "guest_phone": 1,
-            "room_number": 1,
-            "check_in": 1,
-            "check_out": 1,
-            "adults": 1,
-            "children": 1,
-            "status": 1,
-            "confirmation_code": 1,
-            "guest_nationality": 1,
-        },
-    )
+    booking, guest, snapshot = await build_kbs_payload_snapshot(db, tenant_id, booking_id)
     if not booking:
         raise HTTPException(404, f"Rezervasyon bulunamadı: {booking_id}")
-
-    guest = {}
-    if booking.get("guest_id"):
-        from security.encrypted_lookup import decrypt_guest_doc
-
-        guest = (
-            decrypt_guest_doc(
-                await db.guests.find_one(
-                    {"tenant_id": tenant_id, "id": booking["guest_id"]},
-                    {
-                        "_id": 0,
-                        "id": 1,
-                        "nationality": 1,
-                        "id_number": 1,
-                        "passport_number": 1,
-                        "birth_date": 1,
-                        "date_of_birth": 1,
-                        "gender": 1,
-                        "address": 1,
-                        "father_name": 1,
-                        "mother_name": 1,
-                        "birth_place": 1,
-                    },
-                )
-            )
-            or {}
-        )
-
-    snapshot = {
-        "guest_name": booking.get("guest_name", ""),
-        "phone": booking.get("guest_phone", ""),
-        "room_number": booking.get("room_number", ""),
-        "check_in": booking.get("check_in", ""),
-        "check_out": booking.get("check_out", ""),
-        "nationality": guest.get("nationality") or booking.get("guest_nationality") or "",
-        "id_number": guest.get("id_number", ""),
-        "passport_number": guest.get("passport_number", ""),
-        "birth_date": guest.get("birth_date") or guest.get("date_of_birth", ""),
-        "gender": guest.get("gender", ""),
-        "father_name": guest.get("father_name", ""),
-        "mother_name": guest.get("mother_name", ""),
-        "birth_place": guest.get("birth_place", ""),
-        "address": guest.get("address", ""),
-    }
     return booking, guest, snapshot
+
+
+def _is_permanent_kbs_error(error: str) -> bool:
+    """Return True for errors that cannot heal through automatic retry.
+
+    Network errors and server faults remain retryable. Input, identity,
+    credential/configuration and HTTP 4xx failures require operator action;
+    retrying them only sends the same rejected legal notification repeatedly.
+    """
+    normalized = str(error or "").strip().lower()
+    if not normalized:
+        return False
+    permanent_prefixes = (
+        "jandarma_girdihatasi",
+        "jandarma_yetkihatasi",
+        "jandarma_kullanicihatasi",
+        "payload_incomplete",
+        "unconfigured",
+        "password_required",
+        "confirmation_required",
+        "endpoint_invalid",
+        "endpoint_not_allowed",
+        "bad_body",
+        "invalid_",
+        "missing_",
+        "unsupported_",
+        "foreign_guest_name_requires_surname",
+    )
+    if normalized.startswith(permanent_prefixes):
+        return True
+    if normalized.startswith("http 4"):
+        return True
+    return False
 
 
 # --- 1) Enqueue ---------------------------------------------
@@ -629,6 +604,43 @@ async def kbs_queue_enqueue(
                     {"_id": 0},
                 )
                 if existing:
+                    # Pending isleri guncel rezervasyon/oda/kimlik verisiyle
+                    # yeniden hydrate et. Boylece daha once eksik snapshot ile
+                    # backoff'a giren is, kullanici tekrar Gonder dediginde ayni
+                    # bozuk payload'i kullanmaz.
+                    booking, guest, snapshot = await _build_payload_snapshot(tenant_id, data.booking_id)
+                    ok, missing = validate_kbs_payload(snapshot)
+                    if not ok:
+                        raise HTTPException(
+                            status_code=422,
+                            detail={
+                                "error": "kbs_payload_incomplete",
+                                "missing_fields": missing,
+                                "message": ("KBS bildirimi için zorunlu alanlar eksik: " + ", ".join(missing)),
+                            },
+                        )
+                    if existing.get("status") == "pending":
+                        refreshed_at = _iso(_now())
+                        await db.kbs_reports.update_one(
+                            {
+                                "_kind": QUEUE_KIND,
+                                "tenant_id": tenant_id,
+                                "id": existing["id"],
+                                "status": "pending",
+                            },
+                            {
+                                "$set": {
+                                    "payload": snapshot,
+                                    "next_retry_at": None,
+                                    "last_error": None,
+                                    "updated_at": refreshed_at,
+                                }
+                            },
+                        )
+                        existing["payload"] = snapshot
+                        existing["next_retry_at"] = None
+                        existing["last_error"] = None
+                        existing["updated_at"] = refreshed_at
                     response = {"job": existing, "created": False}
                     if idem_lock_id:
                         await complete_idempotency(
@@ -903,6 +915,47 @@ async def kbs_queue_claim(
     }
 
     with tenant_context(tenant_id):
+        # Her claim'de snapshot'i yeniden kur: bekleme/backoff sirasinda oda
+        # degismis veya eski bir is oda numarasi olmadan olusmus olabilir.
+        claimable = await db.kbs_reports.find_one(
+            query,
+            {"_id": 0, "booking_id": 1},
+        )
+        if claimable:
+            _booking, _guest, fresh_snapshot = await _build_payload_snapshot(
+                tenant_id,
+                claimable["booking_id"],
+            )
+            ok, missing = validate_kbs_payload(fresh_snapshot)
+            if not ok:
+                validation_error = "kbs_payload_incomplete: " + ", ".join(missing)
+                dead_result = await db.kbs_reports.update_one(
+                    query,
+                    {
+                        "$set": {
+                            "status": "dead",
+                            "worker_id": None,
+                            "leased_until": None,
+                            "next_retry_at": None,
+                            "failed_at": _iso(now),
+                            "updated_at": _iso(now),
+                            "last_error": validation_error,
+                            "payload": fresh_snapshot,
+                        },
+                        "$unset": {"_open_lock": ""},
+                    },
+                )
+                if dead_result.modified_count:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "error": "kbs_payload_incomplete",
+                            "missing_fields": missing,
+                            "message": ("KBS bildirimi için zorunlu alanlar eksik: " + ", ".join(missing)),
+                        },
+                    )
+            update["$set"]["payload"] = fresh_snapshot
+
         # find_one_and_update'da return_document=AFTER yok ise sonuç eski hâl olabilir;
         # motor 3.x sürümünde ReturnDocument.AFTER lazım. Burada güvenli yol: update,
         # sonra fresh fetch.
@@ -1204,7 +1257,8 @@ async def kbs_queue_fail(
 
             attempts = job.get("attempts", 0)
             max_attempts = job.get("max_attempts", DEFAULT_MAX_ATTEMPTS)
-            will_retry = data.retry and attempts < max_attempts
+            permanent_error = _is_permanent_kbs_error(data.error)
+            will_retry = data.retry and not permanent_error and attempts < max_attempts
             next_retry_at = None
 
             if will_retry:
@@ -1263,6 +1317,7 @@ async def kbs_queue_fail(
             "job": job,
             "will_retry": will_retry,
             "next_retry_at": next_retry_at,
+            "permanent_error": permanent_error,
         }
         if idem_lock_id:
             await complete_idempotency(

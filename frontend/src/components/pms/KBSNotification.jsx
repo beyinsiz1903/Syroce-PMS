@@ -30,6 +30,40 @@ const getApiErrorMessage = (error, fallback) => {
   return fallback;
 };
 
+const cleanKbsError = (error, fallback = 'KBS gönderimi doğrulanamadı') => {
+  const value = String(error || '').trim();
+  if (!value) return fallback;
+  return value
+    .replace(/(?:&lt;|<)br\s*\/?(?:&gt;|>)/gi, ' ')
+    .replace(/^jandarma_girdihatasi\s*:\s*/i, 'Jandarma veri hatası: ')
+    .replace(/^jandarma_yetkihatasi\s*:\s*/i, 'Jandarma yetki hatası: ')
+    .replace(/^jandarma_kullanicihatasi\s*:\s*/i, 'Jandarma kullanıcı hatası: ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const isPermanentKbsError = (error) => {
+  const value = String(error || '').trim().toLowerCase();
+  if (!value) return false;
+  return [
+    'jandarma_girdihatasi',
+    'jandarma_yetkihatasi',
+    'jandarma_kullanicihatasi',
+    'payload_incomplete',
+    'unconfigured',
+    'password_required',
+    'confirmation_required',
+    'endpoint_invalid',
+    'endpoint_not_allowed',
+    'bad_body',
+    'invalid_',
+    'missing_',
+    'unsupported_',
+    'foreign_guest_name_requires_surname',
+    'http 4',
+  ].some((prefix) => value.startsWith(prefix));
+};
+
 const isTurkishGuest = (guest) => {
   const nationality = String(guest?.nationality || '').trim().toUpperCase()
     .replaceAll('Ç', 'C').replaceAll('Ğ', 'G').replaceAll('İ', 'I')
@@ -223,10 +257,17 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
         worker_id: workerId, lease_seconds: 300,
       });
       claimed = c.data?.job;
-    } catch {
-      return { status: 'skipped', reference: '' }; // baska worker / backoff / kapali
+    } catch (error) {
+      if (error?.response?.status === 409) {
+        return { status: 'skipped', reference: '', error: '' }; // baska worker / backoff / kapali
+      }
+      return {
+        status: 'fail',
+        reference: '',
+        error: getApiErrorMessage(error, 'KBS işi gönderim için hazırlanamadı'),
+      };
     }
-    if (!claimed) return { status: 'skipped', reference: '' };
+    if (!claimed) return { status: 'skipped', reference: '', error: '' };
 
     const body = buildKbsBody(claimed.payload, claimed.action || 'checkin');
     const sent = await sendViaExtension(body, authority);
@@ -240,7 +281,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
       } catch {
         // lease süresi dolunca sunucu işi tekrar görünür yapar
       }
-      return { status: 'test', reference: sent.reference || '' };
+      return { status: 'test', reference: sent.reference || '', error: 'Test modu sonucu production bildirimi değildir' };
     }
 
     if (sent.ok && sent.reference) {
@@ -248,19 +289,28 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
         await axios.post(`/kbs/queue/${job.id}/complete`,
           { worker_id: workerId, kbs_reference: sent.reference },
           { headers: { 'Idempotency-Key': idem } });
-        return { status: 'ok', reference: sent.reference };
-      } catch {
-        return { status: 'fail', reference: '' };
+        return { status: 'ok', reference: sent.reference, error: '' };
+      } catch (error) {
+        return {
+          status: 'fail',
+          reference: '',
+          error: getApiErrorMessage(error, 'KBS kabulü kaydedilemedi'),
+        };
       }
     }
+    const sendError = cleanKbsError(sent.error, 'KBS kurumu gönderimi reddetti');
     try {
       await axios.post(`/kbs/queue/${job.id}/fail`,
-        { worker_id: workerId, error: sent.error || 'extension_send_failed', retry: true },
+        {
+          worker_id: workerId,
+          error: sent.error || 'extension_send_failed',
+          retry: !isPermanentKbsError(sent.error),
+        },
         { headers: { 'Idempotency-Key': idem } });
     } catch {
       // fail kaydi yazilamadi: lease suresi dolunca tekrar denenir
     }
-    return { status: 'fail', reference: '' };
+    return { status: 'fail', reference: '', error: sendError };
   }, [authority]);
 
   const drainViaExtension = useCallback(async () => {
@@ -297,7 +347,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
     const r = await processJobViaExtension(job, workerId);
     if (r?.status === 'ok') toast.success(`KBS kabulü doğrulandı. Makbuz: ${r.reference}`);
     else if (r?.status === 'test') toast.error('Test modu sonucu gönderilmiş sayılmadı. Eklentiyi canlı moda alın.');
-    else if (r?.status === 'fail') toast.error('KBS gönderimi başarısız; başarılı olarak kaydedilmedi.');
+    else if (r?.status === 'fail') toast.error(cleanKbsError(r.error, 'KBS gönderimi başarısız; başarılı olarak kaydedilmedi.'));
     else toast.error('İş şu anda alınamadı (başka worker veya bekleme süresi).');
     fetchQueue();
   }, [extReady, extInfo.installId, processJobViaExtension, fetchQueue]);
@@ -412,7 +462,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
       } else if (result?.status === 'test') {
         toast.error('Test modu sonucu gönderilmiş sayılmadı. Eklentiyi canlı moda alın.');
       } else {
-        toast.error('KBS gönderimi doğrulanamadı; kayıt başarılı olarak işaretlenmedi.');
+        toast.error(cleanKbsError(result?.error, 'KBS gönderimi doğrulanamadı; kayıt başarılı olarak işaretlenmedi.'));
       }
     } catch (error) {
       toast.error(getApiErrorMessage(error, tk('sendError')));
@@ -447,13 +497,20 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
       const workerId = `ext:${extInfo.installId}`;
       let accepted = 0;
       let failed = 0;
+      let firstError = '';
       for (const job of jobs) {
         const result = await processJobViaExtension(job, workerId);
         if (result?.status === 'ok') accepted += 1;
-        else failed += 1;
+        else {
+          failed += 1;
+          if (!firstError && result?.error) firstError = result.error;
+        }
       }
       if (accepted > 0) toast.success(`${accepted} bildirimin kurum kabulü doğrulandı.`);
-      if (failed > 0) toast.error(`${failed} bildirim doğrulanamadı ve başarılı sayılmadı.`);
+      if (failed > 0) {
+        const detail = firstError ? ` İlk hata: ${cleanKbsError(firstError)}` : '';
+        toast.error(`${failed} bildirim doğrulanamadı ve başarılı sayılmadı.${detail}`);
+      }
     } catch (error) {
       toast.error(getApiErrorMessage(error, tk('batchError')));
     } finally {

@@ -51,7 +51,7 @@ test("EGM session mode posts Turkish check-in without opening a tab", async () =
   });
   const result = await send({
     type: "KBS_SEND", authority: "polis",
-    body: { action: "checkin", guest_name: "Ali Veli", nationality: "TR", id_number: "10000000146", room_number: "101", check_in: "2026-08-23" },
+    body: { action: "checkin", guest_name: "Ali Veli", nationality: "TR", id_number: "10000000146", room_number: "101", check_in: "2026-08-23", check_out: "2026-08-24" },
   });
   assert.equal(result.ok, true);
   assert.match(result.reference, /^EGM-CHECKIN-/);
@@ -67,7 +67,7 @@ test("EGM session mode fails closed when the portal session expired", async () =
   }));
   const result = await send({
     type: "KBS_SEND", authority: "polis",
-    body: { action: "checkin", guest_name: "Ali Veli", nationality: "TR", id_number: "10000000146", room_number: "101", check_in: "2026-08-23" },
+    body: { action: "checkin", guest_name: "Ali Veli", nationality: "TR", id_number: "10000000146", room_number: "101", check_in: "2026-08-23", check_out: "2026-08-24" },
   });
   assert.deepEqual(JSON.parse(JSON.stringify(result)), { ok: false, error: "egm_login_required" });
 });
@@ -83,7 +83,7 @@ test("EGM checkout resolves the active guest before deactivating it", async () =
   });
   const result = await send({
     type: "KBS_SEND", authority: "polis",
-    body: { action: "checkout", guest_name: "Ali Veli", nationality: "TR", id_number: "10000000146", room_number: "8", check_in: "2026-08-22" },
+    body: { action: "checkout", guest_name: "Ali Veli", nationality: "TR", id_number: "10000000146", room_number: "8", check_in: "2026-08-22", check_out: "2026-08-23" },
   });
   assert.equal(result.ok, true);
   assert.equal(calls.length, 2);
