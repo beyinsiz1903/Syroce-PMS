@@ -234,6 +234,22 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.queryByTestId('btn-cancel-reservation')).not.toBeInTheDocument();
   });
 
+  it('keeps a historical legacy reservation read-only even when its status is confirmed', async () => {
+    get.mockResolvedValueOnce({
+      data: { ...detail, read_only: true },
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByText('Salt okunur')).toBeInTheDocument();
+    expect(screen.queryByTestId('btn-checkin')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('btn-early-checkin')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('btn-room-change')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('btn-mark-noshow')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('btn-cancel-reservation')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Not Ekle' })).toBeDisabled();
+  });
+
   it('retries transient detail failures and keeps a safe calendar summary visible', async () => {
     get.mockRejectedValue({ response: { status: 503 } });
     const calendarBooking = {

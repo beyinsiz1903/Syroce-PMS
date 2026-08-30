@@ -381,4 +381,52 @@ describe('KBSNotification pending guest identity editing', () => {
     expect(screen.getByRole('button', { name: 'addToQueue' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'send' })).toBeEnabled();
   });
+
+  it('refreshes a stale calendar guest from the canonical KBS guest API', async () => {
+    axiosGet.mockImplementation((url) => {
+      if (url === '/kbs/guests') {
+        return Promise.resolve({
+          data: {
+            guests: [{
+              id: 'booking-110',
+              guest_id: 'guest-110',
+              status: 'checked_in',
+              guest_name: 'Abdulhakim Tavlasoğlu',
+              room_number: '110',
+              nationality: 'TR',
+              id_number: '12345678901',
+              birth_date: '',
+            }],
+          },
+        });
+      }
+      return Promise.resolve({
+        data: {
+          jobs: [],
+          stats: { pending: 0, in_progress: 0, done: 0, failed: 0, dead: 0 },
+        },
+      });
+    });
+
+    render(
+      <KBSNotification
+        bookings={[{
+          id: 'booking-110',
+          guest_id: 'guest-110',
+          status: 'checked_in',
+          guest_name: 'Abdulhakim Tavlasoğlu',
+          room_number: '110',
+          nationality: 'TR',
+          id_number: '',
+        }]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', {
+        name: 'idMissing: Abdulhakim Tavlasoğlu',
+      })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: 'send' })).toBeEnabled();
+  });
 });

@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from core.database import db
 from core.helpers import require_module
+from core.reservation_mutability import ensure_reservation_mutable
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
@@ -108,6 +109,7 @@ async def assign(
     booking = await db.bookings.find_one({"id": payload.booking_id, "tenant_id": tenant_id}, {"_id": 0})
     if not booking:
         raise HTTPException(404, "Rezervasyon bulunamadi")
+    await ensure_reservation_mutable(db, tenant_id, booking)
     new_room = await db.rooms.find_one({"id": payload.room_id, "tenant_id": tenant_id}, {"_id": 0})
     if not new_room:
         raise HTTPException(404, "Oda bulunamadi")

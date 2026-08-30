@@ -10,6 +10,7 @@ import {
   isBlockedRoomStatus,
   cellOccupancyStatus,
   getCellOccupancyTint,
+  isRoomOccupiedOnDay,
 } from '../calendarHelpers';
 
 describe('normalizeOccupancyStatus', () => {
@@ -106,5 +107,28 @@ describe('getCellOccupancyTint', () => {
   it('bilinmeyen durumda boş string döner', () => {
     expect(getCellOccupancyTint('whatever')).toBe('');
     expect(getCellOccupancyTint()).toBe('');
+  });
+});
+
+describe('same-day room turnover', () => {
+  const checkedOutStay = {
+    id: 'old-stay',
+    room_id: 'room-103',
+    status: 'checked_out',
+    check_in: '2026-08-28T14:00:00',
+    check_out: '2026-08-29T12:00:00',
+  };
+
+  it('tamamlanmış çıkışı yeni rezervasyon için doluluk saymaz', () => {
+    expect(isRoomOccupiedOnDay('room-103', '2026-08-29', [checkedOutStay])).toBe(false);
+  });
+
+  it('aktif konaklamada çıkış günü zaten yarı-açık aralığın dışındadır', () => {
+    expect(isRoomOccupiedOnDay('room-103', '2026-08-28', [
+      { ...checkedOutStay, status: 'checked_in' },
+    ])).toBe(true);
+    expect(isRoomOccupiedOnDay('room-103', '2026-08-29', [
+      { ...checkedOutStay, status: 'checked_in' },
+    ])).toBe(false);
   });
 });

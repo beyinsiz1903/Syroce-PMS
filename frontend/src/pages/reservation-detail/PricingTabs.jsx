@@ -10,7 +10,8 @@ import { useTranslation } from 'react-i18next';
 export function DailyRatesTab({
   dailyRates,
   booking,
-  onRefresh
+  onRefresh,
+  readOnly = false,
 }) {
   const {
     t
@@ -42,11 +43,12 @@ export function DailyRatesTab({
   return <div data-testid="daily-rates-tab" className="space-y-3">
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold text-gray-700">{t('cm.pages_reservationdetail_PricingTabs.gunluk_fiyatlar')}</span>
-        <Button size="sm" variant="outline" onClick={() => editMode ? handleSave() : setEditMode(true)} disabled={saving} className="h-7 text-xs">
+        <Button size="sm" variant="outline" onClick={() => editMode ? handleSave() : setEditMode(true)} disabled={saving || readOnly} className="h-7 text-xs" title={readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : undefined}>
           {saving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : editMode ? <Check className="w-3 h-3 mr-1" /> : <Pencil className="w-3 h-3 mr-1" />}
           {editMode ? 'Kaydet' : 'Düzenle'}
         </Button>
       </div>
+      {readOnly && <p className="text-xs text-slate-500">Geçmiş veya tamamlanmış rezervasyonlarda fiyat değiştirilemez.</p>}
       <div className="border rounded-lg overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50"><tr><th className="text-left py-2 px-3 text-xs text-gray-500 font-medium">{t('cm.pages_reservationdetail_PricingTabs.tarih')}</th><th className="text-right py-2 px-3 text-xs text-gray-500 font-medium">Fiyat (TL)</th></tr></thead>

@@ -9,13 +9,16 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
+from core.business_date_service import ensure_business_date_initialized
 from core.channel_room_charge_pricing import analyze_legacy_double_tax_charge
 from core.database import db
+from core.reservation_mutability import ensure_reservation_mutable, reservation_is_historical
 from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
+from modules.pms_core.guest_identity import find_existing_guest_by_identity
 from modules.pms_core.role_permission_service import (
     RolePermissionService,
     require_op,  # v97 DW
@@ -526,11 +529,31 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
         if guest:
             guests_list.append(guest)
         # Also check for additional guests
-        ag_links = await db.booking_guests.find({"booking_id": booking_id, "tenant_id": tid}, {"guest_id": 1}).to_list(100)
-        ag_ids = [l["guest_id"] for l in ag_links if "guest_id" in l]
+        ag_links = await db.booking_guests.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0},
+        ).to_list(100)
+        ag_ids = [
+            link["guest_id"]
+            for link in ag_links
+            if link.get("guest_id") and link.get("guest_id") != booking.get("guest_id")
+        ]
         if ag_ids:
             async for ag in db.guests.find({"id": {"$in": ag_ids}, "tenant_id": tid}, {"_id": 0}):
                 guests_list.append(ag)
+        # Older additional-guest records embedded the guest payload directly in
+        # booking_guests. Keep them readable while all new writes use guest_id.
+        known_guest_ids = {item.get("id") for item in guests_list if item.get("id")}
+        for link in ag_links:
+            if link.get("guest_id") or not link.get("name"):
+                continue
+            legacy_guest = {key: value for key, value in link.items() if key not in {"booking_id", "tenant_id"}}
+            legacy_id = legacy_guest.get("id")
+            if legacy_id and legacy_id in known_guest_ids:
+                continue
+            guests_list.append(legacy_guest)
+            if legacy_id:
+                known_guest_ids.add(legacy_id)
 
         # Company info
         company = None
@@ -546,6 +569,9 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
         deposits = []
         async for dep in db.deposits.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
             deposits.append(dep)
+
+        business_date = await ensure_business_date_initialized(db, tid)
+        read_only = reservation_is_historical(booking, business_date["business_date"])
 
     summary = _build_financial_summary(booking, charges, payments, extra_charges, deposits)
     summary["channel_pricing_issue"] = _build_channel_pricing_issue(booking, charges, payments)
@@ -585,6 +611,7 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
         "communication_logs": communication_logs,
         "deposits": deposits,
         "summary": summary,
+        "read_only": read_only,
     }
 
 
@@ -608,10 +635,11 @@ async def repair_channel_pricing(
 
     booking = await db.bookings.find_one(
         {"id": booking_id, "tenant_id": tid},
-        {"_id": 0, "id": 1},
+        {"_id": 0},
     )
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
 
     folios = [
         folio
@@ -1523,6 +1551,11 @@ async def add_reservation_note(
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
+
     note = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
@@ -1563,6 +1596,7 @@ async def room_change(
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
     if str(booking.get("status") or "").lower() not in {"pending", "confirmed", "guaranteed", "checked_in"}:
         raise HTTPException(status_code=409, detail="Bu rezervasyon mevcut durumunda oda değişikliğine uygun değil")
 
@@ -1650,6 +1684,11 @@ async def early_checkin(
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
+
     from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
 
     extra_fields = {"early_checkin": True}
@@ -1719,6 +1758,7 @@ async def late_checkout(
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
     if str(booking.get("status") or "").lower() != "checked_in":
         raise HTTPException(status_code=409, detail="Geç çıkış yalnız içerideki rezervasyona uygulanabilir")
 
@@ -1778,6 +1818,7 @@ async def mark_noshow(
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
     if str(booking.get("status") or "").lower() not in {"pending", "confirmed", "guaranteed"}:
         raise HTTPException(status_code=409, detail="Bu rezervasyon mevcut durumunda no-show yapılamaz")
 
@@ -1813,6 +1854,7 @@ async def update_vip_status(
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
 
     if booking.get("guest_id"):
         await db.guests.update_one(
@@ -1985,6 +2027,7 @@ async def update_daily_rates(
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
 
     for rate_entry in data.rates:
         await db.daily_rates.update_one(
@@ -2035,6 +2078,7 @@ async def update_reservation_guest(
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
 
     if not booking.get("guest_id"):
         raise HTTPException(status_code=400, detail="Misafir bilgisi bulunamadı")
@@ -2405,16 +2449,30 @@ async def create_group_booking(
     # Mevcut booking_ids'i tenant kapsamında doğrula
     valid_existing_ids: list[str] = []
     if data.booking_ids:
-        existing_docs = db.bookings.find(
-            {"id": {"$in": list(set(data.booking_ids))}, "tenant_id": tid},
-            {"id": 1},
-        )
-        valid_existing_ids = [d["id"] async for d in existing_docs]
+        existing_docs = [
+            document
+            async for document in db.bookings.find(
+                {"id": {"$in": list(set(data.booking_ids))}, "tenant_id": tid},
+                {"_id": 0, "id": 1, "status": 1, "check_out": 1},
+            )
+        ]
+        valid_existing_ids = [document["id"] for document in existing_docs]
         missing = set(data.booking_ids) - set(valid_existing_ids)
         if missing:
             raise HTTPException(
                 status_code=404,
                 detail=f"Bu rezervasyonlar bulunamadı veya yetkiniz yok: {', '.join(list(missing)[:3])}",
+            )
+        business_date = await ensure_business_date_initialized(db, tid)
+        historical_ids = [
+            document["id"]
+            for document in existing_docs
+            if reservation_is_historical(document, business_date["business_date"])
+        ]
+        if historical_ids:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Geçmiş rezervasyonlar gruba eklenemez: {', '.join(historical_ids[:3])}",
             )
 
     if not data.new_bookings and not valid_existing_ids:
@@ -2609,6 +2667,7 @@ async def add_room_to_group(
     booking = await db.bookings.find_one({"id": data.booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+    await ensure_reservation_mutable(db, tid, booking)
 
     existing_ids = group.get("booking_ids", [])
     if data.booking_id not in existing_ids:
@@ -2644,9 +2703,21 @@ async def group_check_in_all(
     from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
     from routers.webhook_retry_service import schedule_emit_reservation_updated
 
+    group_booking_ids = list(group.get("booking_ids", []))
+    group_bookings = {
+        item["id"]: item
+        async for item in db.bookings.find(
+            {"id": {"$in": group_booking_ids}, "tenant_id": tid},
+            {"_id": 0, "id": 1, "status": 1, "check_out": 1},
+        )
+    }
+    business_date = await ensure_business_date_initialized(db, tid)
     checked_in = 0
     errors = []
-    for bid in group.get("booking_ids", []):
+    for bid in group_booking_ids:
+        if reservation_is_historical(group_bookings.get(bid, {}), business_date["business_date"]):
+            errors.append({"booking_id": bid, "error": "Geçmiş rezervasyon salt okunurdur"})
+            continue
         try:
             await check_in_booking_atomic(
                 booking_id=bid,
@@ -2682,9 +2753,21 @@ async def group_check_out_all(
     from core.atomic_checkin_checkout import CheckOutError, check_out_booking_atomic
     from routers.webhook_retry_service import schedule_emit_reservation_updated
 
+    group_booking_ids = list(group.get("booking_ids", []))
+    group_bookings = {
+        item["id"]: item
+        async for item in db.bookings.find(
+            {"id": {"$in": group_booking_ids}, "tenant_id": tid},
+            {"_id": 0, "id": 1, "status": 1, "check_out": 1},
+        )
+    }
+    business_date = await ensure_business_date_initialized(db, tid)
     checked_out = 0
     errors = []
-    for bid in group.get("booking_ids", []):
+    for bid in group_booking_ids:
+        if reservation_is_historical(group_bookings.get(bid, {}), business_date["business_date"]):
+            errors.append({"booking_id": bid, "error": "Geçmiş rezervasyon salt okunurdur"})
+            continue
         try:
             await check_out_booking_atomic(
                 booking_id=bid,
@@ -3007,10 +3090,55 @@ async def list_all_deposits(current_user: User = Depends(get_current_user)):
 
     return {"deposits": deposits}
 
+
+class ReservationGuestCreate(BaseModel):
+    """Guest fields accepted when linking another occupant to a reservation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=2, max_length=200)
+    email: str = Field("", max_length=320)
+    phone: str = Field("", max_length=40)
+    id_type: str = Field("tc_kimlik", max_length=40)
+    id_number: str = Field("", max_length=80)
+    nationality: str = Field("TR", max_length=80)
+    date_of_birth: str = Field("", max_length=20)
+    gender: str = Field("", max_length=40)
+    address: str = Field("", max_length=1000)
+    city: str = Field("", max_length=160)
+    country: str = Field("", max_length=160)
+    notes: str = Field("", max_length=2000)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        cleaned = " ".join(value.strip().split())
+        if len(cleaned) < 2:
+            raise ValueError("Misafir adı en az 2 karakter olmalıdır")
+        return cleaned
+
+    @field_validator(
+        "email",
+        "phone",
+        "id_type",
+        "id_number",
+        "nationality",
+        "date_of_birth",
+        "gender",
+        "address",
+        "city",
+        "country",
+        "notes",
+    )
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        return value.strip()
+
+
 @router.post("/reservations/{booking_id}/guests")
 async def add_reservation_guest(
     booking_id: str,
-    data: dict,
+    data: ReservationGuestCreate,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),
 ):
@@ -3021,38 +3149,62 @@ async def add_reservation_guest(
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
-
-    import uuid
-    from datetime import UTC, datetime
+    await ensure_reservation_mutable(db, tid, booking)
 
     from routers.pms_guests import _encrypt_guest
 
-    guest_id = f"GST-{uuid.uuid4().hex[:8].upper()}"
-    guest = {
-        "id": guest_id,
-        "tenant_id": tid,
-        "created_at": datetime.now(UTC).isoformat(),
-        "total_stays": 1,
-        "total_spend": 0.0,
-    }
+    candidate = data.model_dump()
+    if candidate.get("id_type") == "passport" and candidate.get("id_number"):
+        candidate["passport_number"] = candidate["id_number"]
 
-    allowed = {"name", "email", "phone", "id_type", "id_number", "nationality", "date_of_birth", "gender", "address", "city", "country", "notes"}
-    for k in allowed:
-        if k in data:
-            guest[k] = data[k]
+    existing_guest = await find_existing_guest_by_identity(db.guests, tid, candidate)
+    created = existing_guest is None
+    if existing_guest:
+        guest_id = existing_guest["id"]
+    else:
+        guest_id = f"GST-{uuid.uuid4().hex[:8].upper()}"
+        guest = {
+            **candidate,
+            "id": guest_id,
+            "tenant_id": tid,
+            "created_at": datetime.now(UTC).isoformat(),
+            "total_stays": 0,
+            "total_spend": 0.0,
+        }
+        from security.search_normalize import normalized_set_for_update
 
-    from security.search_normalize import normalized_set_for_update
-    _norm = normalized_set_for_update(guest, collection="guests")
-    guest = _encrypt_guest(guest)
-    guest.update(_norm)
+        normalized = normalized_set_for_update(guest, collection="guests")
+        guest = _encrypt_guest(guest)
+        guest.update(normalized)
+        await db.guests.insert_one(guest)
 
-    await db.guests.insert_one(guest)
+    already_linked = guest_id == booking.get("guest_id") or bool(
+        await db.booking_guests.find_one(
+            {"tenant_id": tid, "booking_id": booking_id, "guest_id": guest_id},
+            {"_id": 0, "id": 1},
+        )
+    )
+    if already_linked:
+        return {
+            "status": "ok",
+            "guest_id": guest_id,
+            "created": created,
+            "linked": False,
+            "already_linked": True,
+        }
+
     await db.booking_guests.insert_one({
         "id": f"BG-{uuid.uuid4().hex[:8].upper()}",
         "tenant_id": tid,
         "booking_id": booking_id,
         "guest_id": guest_id,
-        "created_at": datetime.now(UTC).isoformat()
+        "created_at": datetime.now(UTC).isoformat(),
     })
 
-    return {"status": "ok", "guest_id": guest_id}
+    return {
+        "status": "ok",
+        "guest_id": guest_id,
+        "created": created,
+        "linked": True,
+        "already_linked": False,
+    }

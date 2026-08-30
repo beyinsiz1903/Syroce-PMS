@@ -23,6 +23,7 @@ from fastapi.security import HTTPBearer
 
 from core.atomic_booking import BookingConflictError, assign_room_atomic
 from core.database import db
+from core.reservation_mutability import ensure_reservation_mutable
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import RolePermissionService
@@ -98,6 +99,7 @@ async def assign_room_to_booking(
 
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
+    await ensure_reservation_mutable(db, current_user.tenant_id, booking)
 
     # Get room
     room = await db.rooms.find_one({"id": room_id, "tenant_id": current_user.tenant_id})

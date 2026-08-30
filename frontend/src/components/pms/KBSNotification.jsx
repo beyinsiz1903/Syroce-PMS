@@ -41,6 +41,21 @@ const hasMissingKbsData = (guest) => (
   !guest?.id_number || (!isTurkishGuest(guest) && !guest?.birth_date)
 );
 
+const toKbsGuest = (booking, linkedGuest, unknownLabel) => ({
+  id: booking.id,
+  guest_id: booking.guest_id || booking.guestId || linkedGuest?.id || booking.id,
+  guest_name: booking.guest_name || booking.guestName || linkedGuest?.name || linkedGuest?.full_name || unknownLabel,
+  room_number: booking.room_number || booking.roomNumber || '-',
+  check_in: booking.check_in || booking.checkIn,
+  check_out: booking.check_out || booking.checkOut,
+  nationality: booking.guest_nationality || booking.nationality || linkedGuest?.nationality || 'TR',
+  id_type: booking.id_type || linkedGuest?.id_type || 'tc_kimlik',
+  id_number: booking.id_number || linkedGuest?.id_number || linkedGuest?.passport_number || '',
+  birth_date: booking.birth_date || booking.date_of_birth || linkedGuest?.birth_date || linkedGuest?.date_of_birth || '',
+  kbs_status: booking.kbs_status || 'pending',
+  kbs_sent_at: booking.kbs_sent_at || null,
+});
+
 const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   const { t } = useTranslation();
   const tk = (k) => t(`pmsComponents.kbs.${k}`);
@@ -339,34 +354,44 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
 
   useEffect(() => {
     let mounted = true;
+    const guestMap = new Map(guests.map(guest => [String(guest.id || guest._id), guest]));
+    const fallbackRows = bookings
+      .filter(booking => booking.status === 'checked_in')
+      .map(booking => {
+        const guestId = booking.guest_id || booking.guestId || booking.id;
+        return toKbsGuest(booking, guestMap.get(String(guestId)), tk('unknown'));
+      });
+    const applyRows = (rows) => {
+      if (!mounted) return;
+      setPendingGuests(rows.filter(row => row.kbs_status === 'pending'));
+      setSentHistory(rows.filter(row => row.kbs_status !== 'pending'));
+    };
+
+    // Render the already loaded PMS data immediately. The canonical KBS API
+    // then refreshes identity fields without blanking the page on a transient
+    // request failure or while the hotel's business day trails UTC.
+    applyRows(fallbackRows);
+
     const fetchKbsGuests = async () => {
       try {
         const res = await axios.get('/kbs/guests', { params: { limit: 200 } });
         if (!mounted) return;
-        const enriched = res.data.guests || [];
-        const pending = enriched.map(b => ({
-          id: b.id,
-          guest_id: b.guest_id || b.guestId || b.id,
-          guest_name: b.guest_name || b.guestName || tk('unknown'),
-          room_number: b.room_number || b.roomNumber || '-',
-          check_in: b.check_in || b.checkIn,
-          check_out: b.check_out || b.checkOut,
-          nationality: b.guest_nationality || b.nationality || 'TC',
-          id_type: b.id_type || 'tc_kimlik',
-          id_number: b.id_number || '',
-          birth_date: b.birth_date || '',
-          kbs_status: b.kbs_status || 'pending',
-          kbs_sent_at: b.kbs_sent_at || null,
-        }));
-        setPendingGuests(pending.filter(p => p.kbs_status === 'pending'));
-        setSentHistory(pending.filter(p => p.kbs_status !== 'pending'));
+        if (!Array.isArray(res.data?.guests)) return;
+        const rowsByBooking = new Map(fallbackRows.map(row => [String(row.id), row]));
+        res.data.guests.forEach(booking => {
+          const guestId = booking.guest_id || booking.guestId || booking.id;
+          const apiRow = toKbsGuest(booking, guestMap.get(String(guestId)), tk('unknown'));
+          rowsByBooking.set(String(apiRow.id), apiRow);
+        });
+        applyRows([...rowsByBooking.values()]);
       } catch (err) {
         console.error('KBS misafir listesi cekilemedi', err);
       }
     };
     fetchKbsGuests();
     return () => { mounted = false; };
-  }, [bookings]); // update when bookings array reference changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- t identity may change each render
+  }, [bookings, guests]);
   const sendToKBS = async (guest) => {
     setSending(true);
     try {
