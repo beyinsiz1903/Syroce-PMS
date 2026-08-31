@@ -13,6 +13,7 @@ from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.stay_night_metrics import calculate_stay_night_metrics
 
 try:
     from domains.pms.night_audit_module import AuditStatus, AutomaticPosting, NightAuditRecord
@@ -229,6 +230,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool):
                 "guest_email": 1,
                 "guest_phone": 1,
                 "room_number": 1,
+                "room_id": 1,
                 "nationality": 1,
                 "id_number": 1,
                 "passport_number": 1,
@@ -262,7 +264,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool):
     )
     rooms, all_bk, in_house, hk_tasks, maint_open, maint_completed, pending_invoices, paid_invoices, all_guests, all_payments, prev_bookings, ly_bookings, fnb_revenue = results
 
-    total_rooms = len(rooms)
+    active_rooms = [room for room in rooms if room.get("is_active") is not False]
+    total_rooms = len(active_rooms)
     room_types = {}
     for r in rooms:
         rt = r.get("room_type", "Standard")
@@ -286,10 +289,6 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool):
         ci, co, status = bk.get("check_in", ""), bk.get("check_out", ""), bk.get("status", "")
         amt = bk.get("total_amount", 0) or 0
         created = bk.get("created_at", "")
-        # P0 fix: Tür 28 — occupied_today STAY-DATE bazlı (overlap),
-        # status'u checked_in'e kısıtlamak günün gerçek doluluğunu sıfırlıyordu.
-        if status in ALL_REVENUE_STATUSES and ci <= ts_e and co >= ts_s:
-            occupied_today += 1
         if ci >= ts_s and ci <= ts_e and status in ("confirmed", "guaranteed", "checked_in"):
             arrivals += 1
         if co >= ts_s and co <= ts_e:
@@ -298,8 +297,6 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool):
             no_shows += 1
         if status == "cancelled" and created >= ts_s and created <= ts_e:
             cancellations += 1
-        if ci >= ts_s and ci <= ts_e:
-            today_revenue += amt
         if created >= ms_s:
             recent_bookings.append(bk)
         if ci >= ws_s and status in ALL_REVENUE_STATUSES:
@@ -328,29 +325,21 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool):
                 }
             )
 
-    occupancy_pct = round(min((occupied_today / total_rooms * 100), 100.0), 1) if total_rooms > 0 else 0
-    adr = round(today_revenue / occupied_today, 2) if occupied_today > 0 else 0
-    revpar = round(today_revenue / total_rooms, 2) if total_rooms > 0 else 0
-
-    # Compute 30-day trends from batch data (NO extra queries)
-    occupancy_trend = []
-    revenue_trend = []
-    for i in range(29, -1, -1):
-        d = today - timedelta(days=i)
-        ds = d.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        de = d.replace(hour=23, minute=59, second=59).isoformat()
-        occ_c = 0
-        day_r = 0
-        for bk in all_bk:
-            ci, co, st2 = bk.get("check_in", ""), bk.get("check_out", ""), bk.get("status", "")
-            if st2 in ("checked_in", "checked_out", "confirmed", "guaranteed") and ci <= de and co >= ds:
-                occ_c += 1
-            if st2 in ("confirmed", "guaranteed", "checked_in", "checked_out") and ci >= ds and ci <= de:
-                day_r += bk.get("total_amount", 0) or 0
-        # Cap %100 (overbooking veya cakisma durumlarinda)
-        _occ_pct = round((occ_c / total_rooms * 100), 1) if total_rooms > 0 else 0
-        occupancy_trend.append({"date": d.strftime("%Y-%m-%d"), "label": d.strftime("%d %b"), "occupancy": min(_occ_pct, 100.0), "rooms_occupied": occ_c})
-        revenue_trend.append({"date": d.strftime("%Y-%m-%d"), "label": d.strftime("%d %b"), "revenue": round(day_r, 2)})
+    metric_rows = calculate_stay_night_metrics(all_bk, active_rooms, trend_start.date(), today.date())
+    today_metric = metric_rows[-1] if metric_rows else {}
+    occupied_today = today_metric.get("occupied_rooms", 0)
+    today_revenue = today_metric.get("revenue", 0)
+    occupancy_pct = today_metric.get("occupancy_rate", 0)
+    adr = today_metric.get("adr", 0)
+    revpar = today_metric.get("revpar", 0)
+    occupancy_trend = [
+        {"date": row["date"], "label": datetime.fromisoformat(row["date"]).strftime("%d %b"), "occupancy": row["occupancy_rate"], "rooms_occupied": row["occupied_rooms"]}
+        for row in metric_rows
+    ]
+    revenue_trend = [
+        {"date": row["date"], "label": datetime.fromisoformat(row["date"]).strftime("%d %b"), "revenue": row["revenue"]}
+        for row in metric_rows
+    ]
 
     hk_completed = len([t for t in hk_tasks if t.get("status") == "completed"])
     hk_pending = len([t for t in hk_tasks if t.get("status") in ["pending", "assigned"]])

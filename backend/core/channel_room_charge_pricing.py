@@ -1,9 +1,10 @@
-"""Room-charge pricing rules for provider-imported reservations.
+"""Room-charge pricing rules for guest-payable reservation totals.
 
-Channel-manager ``total_amount`` values are guest-payable (tax-inclusive)
-totals.  Legacy night-audit paths treated that gross total as a net room rate
-and added VAT/accommodation tax a second time.  This module keeps the pricing
-decision pure and shared by posting, diagnosis, and the audited repair flow.
+Reservation prices entered manually or imported from a channel are
+guest-payable (tax-inclusive) totals. Legacy night-audit paths treated those
+gross values as net room rates and added VAT/accommodation tax a second time.
+This module keeps the pricing decision pure and shared by posting, diagnosis,
+and the audited repair flow.
 """
 
 from __future__ import annotations
@@ -68,7 +69,12 @@ def is_channel_total_tax_inclusive(booking: dict[str, Any]) -> bool:
 
 def _nightly_gross(booking: dict[str, Any], business_date: Any) -> Decimal:
     """Allocate a gross stay total by cent while preserving the exact total."""
-    total = _decimal(booking.get("provider_total_amount", booking.get("total_amount", 0)))
+    total = _decimal(
+        booking.get("provider_total_amount")
+        or booking.get("total_amount")
+        or booking.get("total_price")
+        or 0
+    )
     total_cents = int((total * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
     check_in = _date(booking.get("check_in"))
     check_out = _date(booking.get("check_out"))
@@ -85,6 +91,27 @@ def _nightly_gross(booking: dict[str, Any], business_date: Any) -> Decimal:
     return (Decimal(cents) / 100).quantize(MONEY)
 
 
+def _manual_nightly_gross(booking: dict[str, Any], business_date: Any) -> Decimal:
+    """Resolve a manual reservation's nightly guest-payable gross price."""
+    # The confirmed stay total is authoritative.  Some legacy/manual records
+    # also contain a stale room_rate copied from the room-type tariff; using it
+    # would silently replace the amount the receptionist agreed with the guest.
+    confirmed_total = _decimal(booking.get("total_amount") or booking.get("total_price") or 0)
+    if confirmed_total > 0:
+        return _nightly_gross(booking, business_date)
+
+    explicit_rate = _decimal(
+        booking.get("room_rate")
+        or booking.get("rate")
+        or booking.get("rate_per_night")
+        or booking.get("base_rate")
+        or 0
+    )
+    if explicit_rate > 0:
+        return explicit_rate.quantize(MONEY, rounding=ROUND_HALF_UP)
+    return _nightly_gross(booking, business_date)
+
+
 def calculate_room_charge(
     booking: dict[str, Any],
     business_date: Any,
@@ -94,37 +121,27 @@ def calculate_room_charge(
 ) -> dict[str, Any]:
     """Return a normalized nightly room-charge breakdown.
 
-    Direct/manual bookings retain the historical net-rate behavior. Provider
-    imports are reverse-calculated from their gross nightly allocation so the
-    posted total never exceeds the channel reservation total.
+    Both direct/manual prices and provider imports are guest-payable gross
+    values. Taxes are extracted from that value so the posted total never
+    exceeds the price confirmed to the guest.
     """
     vat_rate_d = _decimal(vat_rate)
     accommodation_rate_d = _decimal(accommodation_tax_rate)
     combined_rate = vat_rate_d + accommodation_rate_d
-    inclusive = is_channel_total_tax_inclusive(booking)
-
-    if inclusive:
-        gross = _nightly_gross(booking, business_date)
-        divisor = Decimal("1") + combined_rate
-        net = (gross / divisor).quantize(MONEY, rounding=ROUND_HALF_UP) if divisor > 0 else gross
-        vat = (net * vat_rate_d).quantize(MONEY, rounding=ROUND_HALF_UP)
-        # Put the final rounding cent in accommodation tax so net + taxes is
-        # always exactly equal to the provider's guest-payable gross amount.
-        accommodation_tax = (gross - net - vat).quantize(MONEY)
-        tax = (gross - net).quantize(MONEY)
-        total = gross
-    else:
-        rate = _decimal(booking.get("room_rate") or booking.get("rate") or 0)
-        if rate <= 0 and booking.get("total_amount"):
-            check_in = _date(booking.get("check_in"))
-            check_out = _date(booking.get("check_out"))
-            nights = max((check_out - check_in).days, 1) if check_in and check_out else 1
-            rate = (_decimal(booking.get("total_amount")) / nights).quantize(MONEY, rounding=ROUND_HALF_UP)
-        net = rate.quantize(MONEY, rounding=ROUND_HALF_UP)
-        vat = (net * vat_rate_d).quantize(MONEY, rounding=ROUND_HALF_UP)
-        accommodation_tax = (net * accommodation_rate_d).quantize(MONEY, rounding=ROUND_HALF_UP)
-        tax = (vat + accommodation_tax).quantize(MONEY)
-        total = (net + tax).quantize(MONEY)
+    provider_total = is_channel_total_tax_inclusive(booking)
+    gross = (
+        _nightly_gross(booking, business_date)
+        if provider_total
+        else _manual_nightly_gross(booking, business_date)
+    )
+    divisor = Decimal("1") + combined_rate
+    net = (gross / divisor).quantize(MONEY, rounding=ROUND_HALF_UP) if divisor > 0 else gross
+    vat = (net * vat_rate_d).quantize(MONEY, rounding=ROUND_HALF_UP)
+    # Put the final rounding cent in accommodation tax so net + taxes is
+    # always exactly equal to the guest-payable gross amount.
+    accommodation_tax = (gross - net - vat).quantize(MONEY)
+    tax = (gross - net).quantize(MONEY)
+    total = gross
 
     return {
         "amount": float(net),
@@ -136,7 +153,7 @@ def calculate_room_charge(
             "vat": float(vat),
             "accommodation_tax": float(accommodation_tax),
         },
-        "tax_inclusive": inclusive,
+        "tax_inclusive": True,
     }
 
 
@@ -149,7 +166,7 @@ def analyze_legacy_double_tax_charge(
     tolerance: float = 0.03,
 ) -> dict[str, Any] | None:
     """Identify the exact legacy double-tax signature on a room charge."""
-    if not is_channel_total_tax_inclusive(booking) or charge.get("voided"):
+    if charge.get("voided"):
         return None
     if charge.get("charge_category") != "room":
         return None

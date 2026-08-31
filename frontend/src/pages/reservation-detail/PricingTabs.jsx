@@ -3,7 +3,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Pencil, Check, Loader2, Plus, Receipt, ArrowRightLeft, Clock } from 'lucide-react';
+import { Pencil, Check, Loader2, Plus, Receipt, ArrowRightLeft, Clock, Lock } from 'lucide-react';
 import { API, fmtDate, fmtTL, fmtTs, FormField, SelectField } from './helpers';
 import EarlyLateChargeModal from '@/components/EarlyLateChargeModal';
 import { useTranslation } from 'react-i18next';
@@ -12,6 +12,7 @@ export function DailyRatesTab({
   booking,
   onRefresh,
   readOnly = false,
+  businessDate,
 }) {
   const {
     t
@@ -22,6 +23,10 @@ export function DailyRatesTab({
   useEffect(() => {
     setRates(dailyRates || []);
   }, [dailyRates]);
+  const normalizedBusinessDate = String(businessDate || '').slice(0, 10);
+  const isClosedRate = rate => Boolean(normalizedBusinessDate && String(rate?.date || '').slice(0, 10) < normalizedBusinessDate);
+  const anyEditable = rates.some(rate => !isClosedRate(rate));
+  const hasClosedRates = rates.some(isClosedRate);
   const handleSave = async () => {
     if (rates.some(rate => !Number.isFinite(Number(rate.rate)) || Number(rate.rate) <= 0)) {
       toast.error('Günlük fiyat sıfırdan büyük olmalıdır');
@@ -43,12 +48,13 @@ export function DailyRatesTab({
   return <div data-testid="daily-rates-tab" className="space-y-3">
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold text-gray-700">{t('cm.pages_reservationdetail_PricingTabs.gunluk_fiyatlar')}</span>
-        <Button size="sm" variant="outline" onClick={() => editMode ? handleSave() : setEditMode(true)} disabled={saving || readOnly} className="h-7 text-xs" title={readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : undefined}>
+        <Button size="sm" variant="outline" onClick={() => editMode ? handleSave() : setEditMode(true)} disabled={saving || readOnly || !anyEditable} className="h-7 text-xs" title={readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : !anyEditable ? 'Night Audit ile kapanmış günlerin fiyatı değiştirilemez' : undefined}>
           {saving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : editMode ? <Check className="w-3 h-3 mr-1" /> : <Pencil className="w-3 h-3 mr-1" />}
           {editMode ? 'Kaydet' : 'Düzenle'}
         </Button>
       </div>
       {readOnly && <p className="text-xs text-slate-500">Geçmiş veya tamamlanmış rezervasyonlarda fiyat değiştirilemez.</p>}
+      {!readOnly && hasClosedRates && <p className="text-xs text-slate-500">Night Audit ile kapanan tarihler kilitlidir; yalnızca açık iş günü ve sonrası düzenlenebilir.</p>}
       <div className="border rounded-lg overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50"><tr><th className="text-left py-2 px-3 text-xs text-gray-500 font-medium">{t('cm.pages_reservationdetail_PricingTabs.tarih')}</th><th className="text-right py-2 px-3 text-xs text-gray-500 font-medium">Fiyat (TL)</th></tr></thead>
@@ -56,14 +62,14 @@ export function DailyRatesTab({
             {rates.map((r, i) => <tr key={r.id || i} className="border-t">
                 <td className="py-2 px-3 text-gray-700">{fmtDate(r.date)}</td>
                 <td className="py-2 px-3 text-right">
-                  {editMode ? <Input type="number" value={r.rate} onChange={e => {
+                  {editMode && !isClosedRate(r) ? <Input type="number" value={r.rate} onChange={e => {
                 const u = [...rates];
                 u[i] = {
                   ...u[i],
                   rate: parseFloat(e.target.value) || 0
                 };
                 setRates(u);
-              }} className="h-7 text-sm text-right w-24 ml-auto" /> : <span className="font-medium text-gray-800">{fmtTL(r.rate)} TL</span>}
+              }} className="h-7 text-sm text-right w-24 ml-auto" /> : <span className="inline-flex items-center justify-end gap-1.5 font-medium text-gray-800">{editMode && isClosedRate(r) && <><Lock className="h-3 w-3 text-slate-400" /><span className="sr-only">Gün sonu kapalı</span></>}{fmtTL(r.rate)} TL</span>}
                 </td>
               </tr>)}
           </tbody>

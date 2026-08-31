@@ -802,7 +802,7 @@ const Dashboard = ({
                 {/* Booking Trends */}
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-lg">{t('dashboard.bookingTrends')}</CardTitle>
+                    <CardTitle className="text-lg">{t('dashboard.stayTrends', 'Konaklama Trendleri')}</CardTitle>
                     <CardDescription>{t("dashboard.dailyBookings")}</CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -825,7 +825,7 @@ const Dashboard = ({
                         <Legend wrapperStyle={{
                       fontSize: '12px'
                     }} />
-                        <Line yAxisId="left" type="monotone" dataKey="bookings" stroke="#8b5cf6" strokeWidth={2} name={t('dashboard.chartBookings')} />
+                        <Line yAxisId="left" type="monotone" dataKey="occupied_rooms" stroke="#8b5cf6" strokeWidth={2} name={t('dashboard.occupiedRooms', 'Dolu Odalar')} />
                         <Line yAxisId="right" type="monotone" dataKey="adr" stroke="#10b981" strokeWidth={2} name={`ADR (${currencySymbol})`} />
                       </LineChart>
                     </ResponsiveContainer>

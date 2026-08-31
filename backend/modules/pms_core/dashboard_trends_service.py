@@ -7,6 +7,7 @@ night audit exceptions, blocked check-ins trends.
 from datetime import date, timedelta
 
 from core.database import db
+from modules.pms_core.stay_night_metrics import load_stay_night_metrics
 
 
 async def _count_by_day(coll, match: dict, date_field: str, date_range: list[str], iso_datetime: bool = True) -> dict:
@@ -90,64 +91,16 @@ class DashboardTrendsService:
         return [{"date": d, "count": cmap.get(d, 0)} for d in date_range]
 
     async def _occupancy_trend(self, tenant_id: str, date_range: list[str]) -> list[dict]:
-        """Calculate occupancy rate per day from daily snapshots or live data."""
-        total_rooms = await db.rooms.count_documents(
-            {
-                "tenant_id": tenant_id,
-                "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
-            }
+        """Calculate occupancy from the canonical room-night service."""
+        if not date_range:
+            return []
+        metrics = await load_stay_night_metrics(
+            db, tenant_id, date.fromisoformat(date_range[0]), date.fromisoformat(date_range[-1])
         )
-        if total_rooms == 0:
-            return [{"date": d, "rate": 0, "occupied": 0, "total": 0} for d in date_range]
-
-        # Tek sorguda tum snapshotlar
-        snaps = await db.daily_audit_snapshots.find(
-            {"tenant_id": tenant_id, "business_date": {"$in": date_range}},
-            {"_id": 0},
-        ).to_list(len(date_range))
-        snap_map = {s["business_date"]: s for s in snaps}
-
-        # Snapshot olmayan gunler icin tek aggregation: her gun icin "live" occupied
-        # ($facet ile gunlere bol)
-        missing_days = [d for d in date_range if d not in snap_map]
-        live_map: dict[str, int] = {}
-        if missing_days:
-            facet = {}
-            for d in missing_days:
-                facet[d] = [
-                    {
-                        "$match": {
-                            "tenant_id": tenant_id,
-                            "status": {"$in": ["checked_in"]},
-                            "check_in": {"$lte": d + "T23:59:59"},
-                            "check_out": {"$gt": d},
-                        }
-                    },
-                    {"$count": "n"},
-                ]
-            agg = await db.bookings.aggregate([{"$facet": facet}]).to_list(1)
-            row = agg[0] if agg else {}
-            for d in missing_days:
-                arr = row.get(d, [])
-                live_map[d] = arr[0]["n"] if arr else 0
-
-        result = []
-        for d in date_range:
-            snap = snap_map.get(d)
-            if snap:
-                result.append(
-                    {
-                        "date": d,
-                        "rate": snap.get("occupancy_rate", 0),
-                        "occupied": snap.get("occupied_rooms", 0),
-                        "total": snap.get("total_rooms", total_rooms),
-                    }
-                )
-            else:
-                occupied = live_map.get(d, 0)
-                rate = round(occupied / total_rooms * 100, 1)
-                result.append({"date": d, "rate": rate, "occupied": occupied, "total": total_rooms})
-        return result
+        return [
+            {"date": row["date"], "rate": row["occupancy_rate"], "occupied": row["occupied_rooms"], "total": row["total_rooms"]}
+            for row in metrics
+        ]
 
     async def _housekeeping_readiness_trend(self, tenant_id: str, date_range: list[str]) -> list[dict]:
         """Housekeeping readiness: percentage of rooms in available/inspected state."""

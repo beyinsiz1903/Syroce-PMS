@@ -139,8 +139,8 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     const issue = data?.summary?.channel_pricing_issue;
     if (!issue?.repairable || pricingRepairing) return;
     const confirmed = await confirmDialog({
-      title: 'Kanal fiyatını düzelt',
-      message: `${fmtTL(issue.observed_total)} TL olan hatalı folyo bakiyesi, acenteden gelen ${fmtTL(issue.expected_total)} TL toplamla eşitlenecek. Rezervasyon ve acente referansı korunacak. Devam edilsin mi?`,
+      title: 'Rezervasyon fiyatını düzelt',
+      message: `${fmtTL(issue.observed_total)} TL olan hatalı folyo bakiyesi, girilen veya kanaldan teyit edilen ${fmtTL(issue.expected_total)} TL nihai rezervasyon toplamıyla eşitlenecek. Rezervasyon kaydı korunacak. Devam edilsin mi?`,
       confirmText: 'Güvenli şekilde düzelt',
     });
     if (!confirmed) return;
@@ -148,17 +148,17 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     setPricingRepairing(true);
     try {
       const response = await axios.post(`/pms/reservations/${bookingId}/repair-channel-pricing`, {
-        reason: 'Kanal toplamına mükerrer vergi eklenmesinin düzeltilmesi',
+        reason: 'Vergi dahil nihai rezervasyon tutarına mükerrer vergi eklenmesinin düzeltilmesi',
       });
       const reduction = response.data?.total_reduction;
       toast.success(
         response.data?.already_repaired
-          ? 'Kanal fiyatı zaten doğru'
+          ? 'Rezervasyon fiyatı zaten doğru'
           : `Folyo düzeltildi${typeof reduction === 'number' ? `: ${fmtTL(reduction)} TL mükerrer tutar kaldırıldı` : ''}`,
       );
       await loadData();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Kanal fiyatı düzeltilemedi');
+      toast.error(error.response?.data?.detail || 'Rezervasyon fiyatı düzeltilemedi');
     } finally {
       setPricingRepairing(false);
     }
@@ -373,7 +373,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     <div className="flex items-start gap-2">
                       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
                       <div className="min-w-0">
-                        <p className="text-[11px] font-semibold text-amber-800">Kanal toplamına vergi tekrar eklenmiş</p>
+                        <p className="text-[11px] font-semibold text-amber-800">Nihai rezervasyon tutarına vergi tekrar eklenmiş</p>
                         <p className="mt-0.5 text-[10px] leading-4 text-amber-700">
                           Doğru toplam {fmtTL(channelPricingIssue.expected_total)} TL. Mükerrer tutar {fmtTL(channelPricingIssue.overcharge)} TL.
                         </p>
@@ -388,7 +388,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       data-testid="repair-channel-pricing"
                     >
                       {pricingRepairing ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Repeat2 className="mr-1.5 h-3 w-3" />}
-                      {channelPricingIssue.repairable ? 'Kanal fiyatıyla eşitle' : 'Finans onayı gerekli'}
+                      {channelPricingIssue.repairable ? 'Nihai fiyata düzelt' : 'Finans onayı gerekli'}
                     </Button>
                   </div>
                 )}
@@ -701,7 +701,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 <TabsContent value="online_payment" className="mt-0"><OnlinePaymentTab booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="vcc" className="mt-0"><VCCTab booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="folios" className="mt-0"><FoliosTab folios={folios} charges={charges} payments={payments} extra_charges={extra_charges} summary={summary} booking={booking} guest={guest} room={room} onRefresh={loadData} onSwitchTab={setActiveTab} /></TabsContent>
-                <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
+                <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} onRefresh={loadData} readOnly={readOnly} businessDate={data?.business_date} /></TabsContent>
                 <TabsContent value="extras" className="mt-0"><ExtraChargesTab extra_charges={extra_charges} charges={charges} booking={booking} onRefresh={loadData} allBookings={allBookings} /></TabsContent>
                 <TabsContent value="room_change" className="mt-0"><RoomChangeTab booking={booking} room={room} roomMoves={room_moves} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="cancel" className="mt-0"><CancelTab booking={booking} bookingId={bookingId} onRefresh={loadData} onClose={onClose} /></TabsContent>

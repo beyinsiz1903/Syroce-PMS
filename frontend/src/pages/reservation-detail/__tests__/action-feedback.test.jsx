@@ -133,6 +133,24 @@ describe('reservation detail action feedback', () => {
     expect(axiosMock.put).not.toHaveBeenCalled();
   });
 
+  it('locks daily rates before the current PMS business date', () => {
+    render(
+      <DailyRatesTab
+        dailyRates={[
+          { id: 'rate-closed', date: '2026-08-17', rate: 400 },
+          { id: 'rate-open', date: '2026-08-18', rate: 500 },
+        ]}
+        booking={{ id: 'booking-a' }}
+        businessDate="2026-08-18"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Düzenle' }));
+
+    expect(screen.getAllByRole('spinbutton')).toHaveLength(1);
+    expect(screen.getByText('Gün sonu kapalı')).toBeInTheDocument();
+  });
+
   it('exposes the virtual-card delete icon as a named action', async () => {
     axiosGet.mockResolvedValue({
       data: {

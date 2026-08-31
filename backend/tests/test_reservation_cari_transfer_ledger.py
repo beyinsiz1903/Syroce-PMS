@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from bson import ObjectId
 from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
@@ -130,6 +131,96 @@ async def test_cari_transfer_posts_visible_folio_payment(monkeypatch):
         session="session-a",
     )
     refresh.assert_awaited_once_with("tenant-a", "folio-a")
+
+
+@pytest.mark.asyncio
+async def test_cari_transfer_accepts_legacy_mongo_object_id(monkeypatch):
+    legacy_id = ObjectId()
+    booking = {
+        "id": "booking-a",
+        "tenant_id": "tenant-a",
+        "guest_id": "guest-a",
+        "paid_amount": 0.0,
+    }
+    cari = {
+        "_id": legacy_id,
+        "tenant_id": "tenant-a",
+        "name": "Etstur",
+        "balance": 0.0,
+    }
+    folio = {
+        "id": "folio-a",
+        "tenant_id": "tenant-a",
+        "booking_id": "booking-a",
+        "status": "open",
+    }
+
+    async def find_legacy_cari(query, **_kwargs):
+        if query == {"tenant_id": "tenant-a", "_id": legacy_id}:
+            return cari
+        return None
+
+    cari_accounts = SimpleNamespace(
+        find_one=AsyncMock(side_effect=find_legacy_cari),
+        update_one=AsyncMock(),
+    )
+    database = SimpleNamespace(
+        bookings=SimpleNamespace(
+            find_one=AsyncMock(return_value=booking),
+            update_one=AsyncMock(),
+        ),
+        folios=SimpleNamespace(
+            find_one=AsyncMock(return_value=folio),
+            insert_one=AsyncMock(),
+        ),
+        cari_accounts=cari_accounts,
+        cari_transactions=SimpleNamespace(insert_one=AsyncMock()),
+        payments=SimpleNamespace(insert_one=AsyncMock()),
+        city_ledger_accounts=SimpleNamespace(
+            find_one=AsyncMock(return_value=None),
+            update_one=AsyncMock(),
+        ),
+        city_ledger_transactions=SimpleNamespace(insert_one=AsyncMock()),
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
+    _patch_atomic_financial_helpers(monkeypatch)
+    monkeypatch.setattr(reservation_detail, "_log_activity", AsyncMock())
+    monkeypatch.setattr(
+        reservation_detail,
+        "_reservation_outstanding_balance",
+        AsyncMock(return_value=8500.0),
+    )
+    monkeypatch.setattr(
+        reservation_detail,
+        "_refresh_cached_folio_balance",
+        AsyncMock(return_value=0.0),
+    )
+
+    result = await reservation_detail.transfer_to_cari(
+        "booking-a",
+        reservation_detail.CariTransfer(
+            amount=8500.0,
+            cari_account_id=str(legacy_id),
+            description="Etstur cari aktarımı",
+        ),
+        current_user=SimpleNamespace(
+            id="user-a",
+            tenant_id="tenant-a",
+            role="manager",
+            name="Test Operator",
+        ),
+        _perm=None,
+    )
+
+    assert result["success"] is True
+    assert result["cari_account_id"] == str(legacy_id)
+    assert result["payment"]["cari_account_id"] == str(legacy_id)
+    cari_accounts.update_one.assert_awaited_once_with(
+        {"tenant_id": "tenant-a", "_id": legacy_id},
+        {"$set": {"balance": 8500.0, "current_balance": 8500.0}},
+        session="session-a",
+    )
 
 
 @pytest.mark.asyncio
