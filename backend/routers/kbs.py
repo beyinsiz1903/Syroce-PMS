@@ -242,6 +242,25 @@ async def kbs_guest_list(
                 "check_in": {"$gte": start_of_day, "$lte": end_of_day},
             }
         )
+    if status is None:
+        # A delivery remains operational history even after the guest checks
+        # out. Keep reports completed on the selected PMS business date in
+        # the Sent tab; otherwise the successful record disappears while an
+        # older failed queue attempt can still be visible.
+        booking_windows.append(
+            {
+                "kbs_reported": True,
+                "kbs_test": {"$ne": True},
+                "kbs_reported_at": {"$gte": start_of_day, "$lte": end_of_day},
+            }
+        )
+        booking_windows.append(
+            {
+                "kbs_checkout_reported": True,
+                "kbs_checkout_test": {"$ne": True},
+                "kbs_checkout_reported_at": {"$gte": start_of_day, "$lte": end_of_day},
+            }
+        )
 
     with tenant_context(tenant_id):
         bookings = (
@@ -269,6 +288,10 @@ async def kbs_guest_list(
                     "kbs_reported_at": 1,
                     "kbs_reference": 1,
                     "kbs_test": 1,
+                    "kbs_checkout_reported": 1,
+                    "kbs_checkout_reported_at": 1,
+                    "kbs_checkout_reference": 1,
+                    "kbs_checkout_test": 1,
                 },
             )
             .sort("check_in", 1)
@@ -299,6 +322,7 @@ async def kbs_guest_list(
             ):
                 guest_map[g["id"]] = decrypt_guest_doc(g)
 
+        delivery_rows: list[dict] = []
         for b in bookings:
             b["room_number"] = await resolve_booking_room_number(db, tenant_id, b)
             g = guest_map.get(b.get("guest_id"), {})
@@ -316,8 +340,9 @@ async def kbs_guest_list(
             # kayitlari olabilir); production complete akisi booking uzerine
             # kbs_reported bayragini yazar.
             is_reported = bool(b.get("kbs_reported")) and not bool(b.get("kbs_test"))
-            b["kbs_status"] = "sent" if is_reported else "pending"
-            b["kbs_sent_at"] = b.get("kbs_reported_at") if is_reported else None
+            is_checkout_reported = bool(b.get("kbs_checkout_reported")) and not bool(
+                b.get("kbs_checkout_test")
+            )
             ready, _missing = validate_kbs_payload(
                 {
                     "guest_name": b.get("guest_name", ""),
@@ -332,7 +357,33 @@ async def kbs_guest_list(
                     "birth_place": b["birth_place"],
                 }
             )
-            b["kbs_ready"] = ready
+            # A checked-out booking may have been selected solely by the
+            # checkout delivery window. Do not invent a pending check-in row
+            # for it; only active arrivals/in-house stays or a durable
+            # production check-in receipt belong in the check-in list.
+            include_checkin = b.get("status") in status_filter or is_reported
+            if include_checkin:
+                checkin_row = dict(b)
+                checkin_row["booking_id"] = b["id"]
+                checkin_row["kbs_action"] = "checkin"
+                checkin_row["kbs_status"] = "sent" if is_reported else "pending"
+                checkin_row["kbs_sent_at"] = b.get("kbs_reported_at") if is_reported else None
+                checkin_row["kbs_reference"] = b.get("kbs_reference") if is_reported else None
+                checkin_row["kbs_ready"] = ready
+                delivery_rows.append(checkin_row)
+
+            if is_checkout_reported:
+                checkout_row = dict(b)
+                checkout_row["id"] = f"{b['id']}:checkout"
+                checkout_row["booking_id"] = b["id"]
+                checkout_row["kbs_action"] = "checkout"
+                checkout_row["kbs_status"] = "sent"
+                checkout_row["kbs_sent_at"] = b.get("kbs_checkout_reported_at")
+                checkout_row["kbs_reference"] = b.get("kbs_checkout_reference")
+                checkout_row["kbs_ready"] = ready
+                delivery_rows.append(checkout_row)
+
+        bookings = delivery_rows
 
         reports = (
             await db.kbs_reports.find(
@@ -844,9 +895,129 @@ async def kbs_queue_list(
     with tenant_context(tenant_id):
         jobs = await db.kbs_reports.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
 
+        # Durable production receipts are authoritative for each action.
+        # Obsolete pending/failed/dead copies must not reappear after refresh.
+        delivery_booking_ids = list({
+            job.get("booking_id") for job in jobs if job.get("booking_id")
+        })
+        delivered_checkins: set[str] = set()
+        delivered_checkouts: set[str] = set()
+        if delivery_booking_ids:
+            async for booking in db.bookings.find(
+                {
+                    "tenant_id": tenant_id,
+                    "id": {"$in": delivery_booking_ids},
+                },
+                {
+                    "_id": 0,
+                    "id": 1,
+                    "kbs_reported": 1,
+                    "kbs_test": 1,
+                    "kbs_checkout_reported": 1,
+                    "kbs_checkout_test": 1,
+                },
+            ):
+                booking_key = str(booking.get("id") or "")
+                if booking.get("kbs_reported") and not booking.get("kbs_test"):
+                    delivered_checkins.add(booking_key)
+                if booking.get("kbs_checkout_reported") and not booking.get("kbs_checkout_test"):
+                    delivered_checkouts.add(booking_key)
+        jobs = [
+            job for job in jobs
+            if not (
+                (
+                    (job.get("action") or "checkin") == "checkin"
+                    and str(job.get("booking_id") or "") in delivered_checkins
+                )
+                or (
+                    job.get("action") == "checkout"
+                    and str(job.get("booking_id") or "") in delivered_checkouts
+                )
+            )
+        ]
+
         # Tüm statüler için sayım (status bar)
         pipeline = [
             {"$match": {"_kind": QUEUE_KIND, "tenant_id": tenant_id}},
+            {
+                "$lookup": {
+                    "from": "bookings",
+                    "let": {
+                        "booking_id": "$booking_id",
+                        "job_tenant_id": "$tenant_id",
+                    },
+                    "pipeline": [
+                        {
+                            "$match": {
+                                "$expr": {
+                                    "$and": [
+                                        {"$eq": ["$id", "$$booking_id"]},
+                                        {"$eq": ["$tenant_id", "$$job_tenant_id"]},
+                                    ]
+                                }
+                            }
+                        },
+                        {
+                            "$project": {
+                                "_id": 0,
+                                "kbs_reported": 1,
+                                "kbs_test": 1,
+                                "kbs_checkout_reported": 1,
+                                "kbs_checkout_test": 1,
+                            }
+                        },
+                    ],
+                    "as": "delivery_booking",
+                }
+            },
+            {
+                "$set": {
+                    "delivery_booking": {
+                        "$arrayElemAt": ["$delivery_booking", 0]
+                    }
+                }
+            },
+            {
+                "$match": {
+                    "$expr": {
+                        "$not": [
+                            {
+                                "$or": [
+                                    {
+                                        "$and": [
+                                            {
+                                                "$eq": [
+                                                    {"$ifNull": ["$action", "checkin"]},
+                                                    "checkin",
+                                                ]
+                                            },
+                                            {"$eq": ["$delivery_booking.kbs_reported", True]},
+                                            {"$ne": ["$delivery_booking.kbs_test", True]},
+                                        ]
+                                    },
+                                    {
+                                        "$and": [
+                                            {"$eq": ["$action", "checkout"]},
+                                            {
+                                                "$eq": [
+                                                    "$delivery_booking.kbs_checkout_reported",
+                                                    True,
+                                                ]
+                                            },
+                                            {
+                                                "$ne": [
+                                                    "$delivery_booking.kbs_checkout_test",
+                                                    True,
+                                                ]
+                                            },
+                                        ]
+                                    },
+                                ]
+                            }
+                        ]
+                    }
+                }
+            },
             {"$group": {"_id": "$status", "count": {"$sum": 1}}},
         ]
         stats = dict.fromkeys(QUEUE_STATUSES, 0)
@@ -1045,8 +1216,8 @@ async def kbs_queue_complete(
     """Worker başarıyla bildirdi: in_progress → done.
 
     Sadece claim'i alan worker tamamlayabilir (worker_id eşleşmeli).
-    Side-effect: bookings.kbs_reported = true; legacy uyumluluk için
-    kbs_reports'a tek-misafir özet kaydı yazılır.
+    Side-effect: action'a özel kalıcı teslimat alanları booking'e yazılır;
+    legacy uyumluluk için kbs_reports'a tek-misafir özet kaydı eklenir.
 
     Header `Idempotency-Key` ile aynı çağrı retry edilebilir (replay).
     `KBS_TEST_MODE=1` env iken kbs_reference "TEST-" prefix'i şart;
@@ -1135,15 +1306,27 @@ async def kbs_queue_complete(
                     409,
                     "İş aralıkta değişti, complete uygulanamadı (lease expired olabilir)",
                 )
-            # Booking üzerine bayrak
-            booking_update = {
-                "kbs_reported": True,
-                "kbs_reported_at": _iso(now),
-                "kbs_status": "sent",
-                "kbs_sent_at": _iso(now),
-                "kbs_reference": data.kbs_reference,
-                "kbs_test": is_test_ref,
-            }
+            # Check-in and check-out are independent legal notifications.
+            # Never overwrite the check-in receipt when checkout completes.
+            action = job.get("action") or "checkin"
+            if action == "checkout":
+                booking_update = {
+                    "kbs_checkout_reported": True,
+                    "kbs_checkout_reported_at": _iso(now),
+                    "kbs_checkout_status": "sent",
+                    "kbs_checkout_sent_at": _iso(now),
+                    "kbs_checkout_reference": data.kbs_reference,
+                    "kbs_checkout_test": is_test_ref,
+                }
+            else:
+                booking_update = {
+                    "kbs_reported": True,
+                    "kbs_reported_at": _iso(now),
+                    "kbs_status": "sent",
+                    "kbs_sent_at": _iso(now),
+                    "kbs_reference": data.kbs_reference,
+                    "kbs_test": is_test_ref,
+                }
             await db.bookings.update_one(
                 {"tenant_id": tenant_id, "id": job["booking_id"]},
                 {"$set": booking_update},
@@ -1159,6 +1342,8 @@ async def kbs_queue_complete(
                     "status": "submitted",
                     "guest_count": 1,
                     "guest_ids": [job["booking_id"]],
+                    "booking_id": job["booking_id"],
+                    "action": action,
                     "submission_reference": data.kbs_reference,
                     "notes": data.notes or "via queue",
                     "submitted_by": f"worker:{data.worker_id}",

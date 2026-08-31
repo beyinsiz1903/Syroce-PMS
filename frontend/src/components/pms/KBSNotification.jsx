@@ -77,6 +77,7 @@ const hasMissingKbsData = (guest) => (
 
 const toKbsGuest = (booking, linkedGuest, unknownLabel) => ({
   id: booking.id,
+  booking_id: booking.booking_id || booking.id,
   guest_id: booking.guest_id || booking.guestId || linkedGuest?.id || booking.id,
   guest_name: booking.guest_name || booking.guestName || linkedGuest?.name || linkedGuest?.full_name || unknownLabel,
   room_number: booking.room_number || booking.roomNumber || '-',
@@ -89,7 +90,14 @@ const toKbsGuest = (booking, linkedGuest, unknownLabel) => ({
   kbs_status: booking.kbs_status || 'pending',
   kbs_sent_at: booking.kbs_sent_at || null,
   kbs_reference: booking.kbs_reference || null,
+  kbs_action: booking.kbs_action || booking.action || 'checkin',
 });
+
+const kbsDeliveryKey = (row) => {
+  const bookingId = String(row?.booking_id || row?.id || '');
+  const action = String(row?.kbs_action || row?.action || 'checkin');
+  return bookingId ? `${bookingId}:${action}` : '';
+};
 
 const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   const { t } = useTranslation();
@@ -174,7 +182,8 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
 
   const enqueueBooking = async (bookingId, action = 'checkin') => {
     if (!bookingId) return;
-    setEnqueuingId(bookingId);
+    const deliveryKey = `${bookingId}:${action}`;
+    setEnqueuingId(deliveryKey);
     try {
       const res = await axios.post('/kbs/queue', {
         booking_id: bookingId, action,
@@ -257,10 +266,12 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   const markBookingSent = useCallback((job, reference) => {
     const bookingId = String(job?.booking_id || '');
     if (!bookingId) return;
+    const deliveryKey = kbsDeliveryKey(job);
     const sentAt = new Date().toISOString();
-    const existingPending = pendingGuestsRef.current.find(row => String(row.id) === bookingId);
+    const existingPending = pendingGuestsRef.current.find(row => kbsDeliveryKey(row) === deliveryKey);
     const sentGuest = {
       id: job.booking_id,
+      booking_id: job.booking_id,
       guest_id: job.guest_id || existingPending?.guest_id,
       guest_name: job.payload?.guest_name || existingPending?.guest_name || tk('unknown'),
       room_number: job.payload?.room_number || existingPending?.room_number || '-',
@@ -272,15 +283,16 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
       kbs_status: 'sent',
       kbs_sent_at: sentAt,
       kbs_reference: reference,
+      kbs_action: job.action || 'checkin',
     };
 
-    setPendingGuests(prev => prev.filter(row => String(row.id) !== bookingId));
-    setQueueJobs(prev => prev.filter(jobRow => String(jobRow.booking_id) !== bookingId));
+    setPendingGuests(prev => prev.filter(row => kbsDeliveryKey(row) !== deliveryKey));
+    setQueueJobs(prev => prev.filter(jobRow => kbsDeliveryKey(jobRow) !== deliveryKey));
     setSentHistory(prev => {
-      const existing = prev.find(row => String(row.id) === bookingId);
+      const existing = prev.find(row => kbsDeliveryKey(row) === deliveryKey);
       return [
         { ...sentGuest, ...(existing || {}), kbs_status: 'sent', kbs_sent_at: sentAt, kbs_reference: reference },
-        ...prev.filter(row => String(row.id) !== bookingId),
+        ...prev.filter(row => kbsDeliveryKey(row) !== deliveryKey),
       ];
     });
   // tk is used only for a defensive fallback label and does not affect identity.
@@ -466,13 +478,13 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
         const res = await axios.get('/kbs/guests', { params: { limit: 200 } });
         if (!mounted) return;
         if (!Array.isArray(res.data?.guests)) return;
-        const rowsByBooking = new Map(fallbackRows.map(row => [String(row.id), row]));
+        const rowsByDelivery = new Map(fallbackRows.map(row => [kbsDeliveryKey(row), row]));
         res.data.guests.forEach(booking => {
           const guestId = booking.guest_id || booking.guestId || booking.id;
           const apiRow = toKbsGuest(booking, guestMap.get(String(guestId)), tk('unknown'));
-          rowsByBooking.set(String(apiRow.id), apiRow);
+          rowsByDelivery.set(kbsDeliveryKey(apiRow), apiRow);
         });
-        applyRows([...rowsByBooking.values()]);
+        applyRows([...rowsByDelivery.values()]);
       } catch (err) {
         console.error('KBS misafir listesi cekilemedi', err);
       }
@@ -485,8 +497,8 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
     setSending(true);
     try {
       const res = await axios.post('/kbs/queue', {
-        booking_id: guest.id,
-        action: 'checkin',
+        booking_id: guest.booking_id || guest.id,
+        action: guest.kbs_action || 'checkin',
       });
       const job = res.data?.job;
       if (!extReady || !extInfo.installId) {
@@ -522,8 +534,8 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
       const jobs = [];
       for (const guest of toSend) {
         const res = await axios.post('/kbs/queue', {
-          booking_id: guest.id,
-          action: 'checkin',
+          booking_id: guest.booking_id || guest.id,
+          action: guest.kbs_action || 'checkin',
         });
         if (res.data?.job) jobs.push(res.data.job);
       }
@@ -618,10 +630,10 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
   );
   const missingData = pendingGuests.filter(hasMissingKbsData);
   const visibleQueueJobs = useMemo(() => {
-    const sentBookingIds = new Set(sentHistory.map(row => String(row.id)));
+    const sentDeliveries = new Set(sentHistory.map(kbsDeliveryKey).filter(Boolean));
     return queueJobs.filter(job => (
       job.status !== 'done'
-      && !sentBookingIds.has(String(job.booking_id || ''))
+      && !sentDeliveries.has(kbsDeliveryKey(job))
     ));
   }, [queueJobs, sentHistory]);
   const visibleQueueStats = useMemo(() => {
@@ -809,8 +821,12 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
               <Shield className="w-10 h-10 mx-auto mb-2 text-gray-300" />
               <p>{tk('noPending')}</p>
             </div>
-          ) : filteredPending.map(guest => (
-            <Card key={guest.id}>
+          ) : filteredPending.map(guest => {
+            const bookingId = guest.booking_id || guest.id;
+            const action = guest.kbs_action || 'checkin';
+            const deliveryKey = kbsDeliveryKey(guest);
+            return (
+            <Card key={deliveryKey}>
               <CardContent className="p-3 flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -840,9 +856,9 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
                     type="button"
                     onClick={(event) => {
                       event.preventDefault();
-                      enqueueBooking(guest.id, 'checkin');
+                      enqueueBooking(bookingId, action);
                     }}
-                    disabled={enqueuingId === guest.id}>
+                    disabled={enqueuingId === deliveryKey}>
                     <ListPlus className="h-3 w-3 mr-1" /> {tk('addToQueue')}
                   </Button>
                   {hasMissingKbsData(guest) ? (
@@ -857,7 +873,8 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </TabsContent>
 
         <TabsContent value="sent" className="space-y-2">
@@ -867,13 +884,16 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
               <p>{tk('noSent')}</p>
             </div>
           ) : filteredSent.map(guest => (
-            <Card key={guest.id}>
+            <Card key={kbsDeliveryKey(guest)}>
               <CardContent className="p-3 flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <CheckCircle className="h-4 w-4 text-green-500" />
                     <span className="font-medium">{guest.guest_name}</span>
                     <Badge variant="outline">{tk('room')} {guest.room_number}</Badge>
+                    <Badge variant="outline">
+                      {guest.kbs_action === 'checkout' ? 'Çıkış bildirimi' : 'Giriş bildirimi'}
+                    </Badge>
                     {guest.kbs_reference && <Badge variant="secondary">{tk('ref')} {guest.kbs_reference}</Badge>}
                   </div>
                   <div className="text-xs text-gray-500 mt-1">
@@ -893,7 +913,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
               <p>{tk('allComplete')}</p>
             </div>
           ) : missingData.map(guest => (
-            <Card key={guest.id} className="border-red-200">
+            <Card key={kbsDeliveryKey(guest)} className="border-red-200">
               <CardContent className="p-3 flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">

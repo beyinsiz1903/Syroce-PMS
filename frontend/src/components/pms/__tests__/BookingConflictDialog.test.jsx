@@ -110,7 +110,12 @@ describe('BookingConflictDialog', () => {
     // Full-detail + available-rooms doğru URL'lerle çağrıldı
     await waitFor(() => {
       expect(axiosGet).toHaveBeenCalledWith('/pms/reservations/bk-123/full-detail');
-      expect(axiosGet).toHaveBeenCalledWith('/bookings/bk-123/available-rooms');
+      expect(axiosGet).toHaveBeenCalledWith('/bookings/bk-123/available-rooms', {
+        params: {
+          check_in: '2026-06-01',
+          check_out: '2026-06-03',
+        },
+      });
     });
 
     // Blocker bilgileri

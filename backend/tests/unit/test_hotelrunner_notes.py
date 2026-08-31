@@ -10,6 +10,7 @@ from domains.channel_manager.ingest.normalizer import (
 from domains.channel_manager.providers import sync_engine
 from domains.channel_manager.providers.hotelrunner_notes import (
     extract_hotelrunner_note,
+    resolve_legacy_hotelrunner_note,
     sync_hotelrunner_note,
 )
 
@@ -126,3 +127,230 @@ async def test_stale_pull_backfills_missing_note_without_mutating_booking(monkey
     assert "$setOnInsert" in note_update
     assert "$set" not in note_update
     assert note_update["$setOnInsert"]["content"].startswith("Smoking Type")
+
+
+@pytest.mark.asyncio
+async def test_resolves_legacy_note_from_linked_import_record():
+    imported = _collection(
+        find_one=AsyncMock(
+            return_value={
+                "provider": "hotelrunner",
+                "provider_note": "Late arrival requested by Expedia",
+                "provider_updated_at": "2026-08-30T14:00:00Z",
+            }
+        )
+    )
+    lineage = _collection()
+    database = SimpleNamespace(
+        imported_reservations=imported,
+        reservation_lineage=lineage,
+    )
+
+    note = await resolve_legacy_hotelrunner_note(
+        database,
+        tenant_id="tenant-a",
+        booking={
+            "id": "booking-a",
+            "external_reservation_id": "R-NOTE",
+            "source": {
+                "provider": "hotelrunner",
+                "import_record_id": "import-a",
+            },
+        },
+    )
+
+    assert note is not None
+    assert note["content"] == "Late arrival requested by Expedia"
+    assert note["source"] == "hotelrunner"
+    assert note["created_by"] == "HotelRunner / Acente"
+    imported.find_one.assert_awaited_once_with(
+        {"id": "import-a", "tenant_id": "tenant-a"},
+        {
+            "_id": 0,
+            "provider": 1,
+            "provider_note": 1,
+            "raw_payload": 1,
+            "payload": 1,
+            "provider_updated_at": 1,
+            "provider_last_modified_at": 1,
+            "received_at": 1,
+            "updated_at": 1,
+            "created_at": 1,
+        },
+    )
+    lineage.find_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_resolves_legacy_note_from_lineage_when_import_has_no_snapshot():
+    imported = _collection(find_one=AsyncMock(return_value=None))
+    lineage = _collection(
+        find_one=AsyncMock(
+            return_value={
+                "provider_note": "Agency requested a quiet room",
+                "provider_last_modified_at": "2026-08-30T15:00:00Z",
+            }
+        )
+    )
+    database = SimpleNamespace(
+        imported_reservations=imported,
+        reservation_lineage=lineage,
+    )
+
+    note = await resolve_legacy_hotelrunner_note(
+        database,
+        tenant_id="tenant-a",
+        booking={
+            "id": "booking-a",
+            "external_reservation_id": "R-NOTE",
+            "source": {"provider": "hotelrunner"},
+        },
+    )
+
+    assert note is not None
+    assert note["content"] == "Agency requested a quiet room"
+    assert note["created_at"] == "2026-08-30T15:00:00Z"
+    assert imported.find_one.await_count == 1
+    lineage.find_one.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_legacy_note_resolver_ignores_non_hotelrunner_booking():
+    database = SimpleNamespace(
+        imported_reservations=_collection(),
+        reservation_lineage=_collection(),
+    )
+
+    note = await resolve_legacy_hotelrunner_note(
+        database,
+        tenant_id="tenant-a",
+        booking={
+            "id": "booking-a",
+            "external_reservation_id": "R-NOTE",
+            "source": {"provider": "other-provider"},
+        },
+    )
+
+    assert note is None
+    database.imported_reservations.find_one.assert_not_awaited()
+    database.reservation_lineage.find_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_resolves_old_hotelrunner_booking_without_source_metadata():
+    imported = _collection(
+        find_one=AsyncMock(
+            return_value={
+                "provider": "hotelrunner",
+                "provider_note": "High floor requested by the agency",
+            }
+        )
+    )
+    database = SimpleNamespace(
+        imported_reservations=imported,
+        reservation_lineage=_collection(),
+    )
+
+    note = await resolve_legacy_hotelrunner_note(
+        database,
+        tenant_id="tenant-a",
+        booking={
+            "id": "booking-a",
+            "external_reservation_id": "R-OLD-NOTE",
+            "source": {"import_record_id": "import-a"},
+        },
+    )
+
+    assert note is not None
+    assert note["content"] == "High floor requested by the agency"
+    assert note["source"] == "hotelrunner"
+
+
+@pytest.mark.asyncio
+async def test_resolves_old_note_from_unified_raw_event_when_snapshot_has_none():
+    imported = _collection(
+        find_one=AsyncMock(return_value={"provider": "hotelrunner"})
+    )
+    raw_events = _collection(
+        find_one=AsyncMock(
+            return_value={
+                "raw_payload": {
+                    "note": "Smoking Type:UNSPECIFIED Payment Method:HotelCollect",
+                    "rooms": [{"comments": [{"body": "Late arrival"}]}],
+                },
+                "received_at": "2026-08-30T16:00:00Z",
+            }
+        )
+    )
+    database = SimpleNamespace(
+        imported_reservations=imported,
+        reservation_lineage=_collection(),
+        raw_channel_events=raw_events,
+        hotelrunner_raw_events=_collection(),
+    )
+
+    note = await resolve_legacy_hotelrunner_note(
+        database,
+        tenant_id="tenant-a",
+        booking={
+            "id": "booking-a",
+            "external_reservation_id": "R-OLD-NOTE",
+            "source": {
+                "provider": "hotelrunner",
+                "import_record_id": "import-a",
+            },
+        },
+    )
+
+    assert note is not None
+    assert note["content"] == (
+        "Smoking Type:UNSPECIFIED Payment Method:HotelCollect\nLate arrival"
+    )
+    assert note["created_at"] == "2026-08-30T16:00:00Z"
+    raw_events.find_one.assert_awaited_once_with(
+        {
+            "tenant_id": "tenant-a",
+            "provider": "hotelrunner",
+            "external_reservation_id": "R-OLD-NOTE",
+            "raw_payload": {"$type": "object"},
+        },
+        {
+            "_id": 0,
+            "raw_payload": 1,
+            "provider_timestamp": 1,
+            "received_at": 1,
+        },
+        sort=[("received_at", -1)],
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolves_old_note_from_legacy_hotelrunner_raw_event():
+    legacy_events = _collection(
+        find_one=AsyncMock(
+            return_value={
+                "payload": {"comments": [{"body": "Agency airport transfer"}]},
+                "received_at": "2026-08-30T17:00:00Z",
+            }
+        )
+    )
+    database = SimpleNamespace(
+        imported_reservations=_collection(),
+        reservation_lineage=_collection(),
+        raw_channel_events=_collection(),
+        hotelrunner_raw_events=legacy_events,
+    )
+
+    note = await resolve_legacy_hotelrunner_note(
+        database,
+        tenant_id="tenant-a",
+        booking={
+            "id": "booking-a",
+            "external_reservation_id": "R-LEGACY-NOTE",
+            "source": {"provider": "hotelrunner"},
+        },
+    )
+
+    assert note is not None
+    assert note["content"] == "Agency airport transfer"
+    assert note["created_at"] == "2026-08-30T17:00:00Z"

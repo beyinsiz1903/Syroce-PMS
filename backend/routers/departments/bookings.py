@@ -160,17 +160,42 @@ async def assign_room_to_booking(
 
 
 # ── GET /bookings/{booking_id}/available-rooms ──
+def _parse_availability_datetime(value, field_name: str) -> datetime:
+    """Parse booking/query datetimes without weakening the turnover boundary."""
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        raise HTTPException(status_code=400, detail=f"{field_name} is required")
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name}") from exc
+
+
+def _resolve_availability_window(booking: dict, requested_check_in=None, requested_check_out=None):
+    """Use the attempted reservation window when the conflict dialog supplies it."""
+    check_in = _parse_availability_datetime(requested_check_in or booking.get("check_in"), "check_in")
+    check_out = _parse_availability_datetime(requested_check_out or booking.get("check_out"), "check_out")
+    if check_out <= check_in:
+        raise HTTPException(status_code=400, detail="check_out must be after check_in")
+    return check_in, check_out
+
+
 @router.get("/bookings/{booking_id}/available-rooms")
 @cached(ttl=120, key_prefix="booking_available_rooms")  # Cache for 2 min
-async def get_available_rooms_for_booking(booking_id: str, current_user: User = Depends(get_current_user)):
-    """Get list of available rooms for a specific booking"""
+async def get_available_rooms_for_booking(
+    booking_id: str,
+    check_in: str | None = None,
+    check_out: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    """Get rooms available in the attempted half-open stay window [in, out)."""
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id})
 
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    check_in = datetime.fromisoformat(booking.get("check_in"))
-    check_out = datetime.fromisoformat(booking.get("check_out"))
+    check_in, check_out = _resolve_availability_window(booking, check_in, check_out)
     requested_type = booking.get("room_type", "standard")
 
     # Fetch all real rooms (skip "V-..." virtual no-show placeholder rooms).
@@ -193,10 +218,11 @@ async def get_available_rooms_for_booking(booking_id: str, current_user: User = 
             "tenant_id": current_user.tenant_id,
             "id": {"$ne": booking_id},
             "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-            "$or": [
-                {"check_in": {"$lte": check_in.isoformat()}, "check_out": {"$gt": check_in.isoformat()}},
-                {"check_in": {"$lt": check_out.isoformat()}, "check_out": {"$gte": check_out.isoformat()}},
-            ],
+            # Half-open interval overlap: [existing_in, existing_out) intersects
+            # [requested_in, requested_out).  Equality at the boundary is free,
+            # so a room checking out today can receive a new arrival today.
+            "check_in": {"$lt": check_out.isoformat()},
+            "check_out": {"$gt": check_in.isoformat()},
         },
         {"room_id": 1},
     )

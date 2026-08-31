@@ -293,6 +293,57 @@ describe('PMS manually discovered operation regressions', () => {
     expect(confirmDialog).not.toHaveBeenCalled();
   });
 
+  it('posts a simple quick payment to the guest folio and refreshes the front desk', async () => {
+    const loadFrontDeskData = vi.fn().mockResolvedValue(undefined);
+    const loadData = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MemoryRouter>
+        <Tabs defaultValue="frontdesk">
+          <FrontdeskTab
+            arrivals={[]}
+            departures={[{
+              id: 'booking-payment', status: 'checked_in', balance: 125,
+              check_in: '2026-08-30', check_out: '2026-08-31',
+              guest_name: 'PAYMENT GUEST', room_number: '105',
+            }]}
+            inhouse={[]}
+            bookings={[]}
+            rooms={[]}
+            guests={[]}
+            handleCheckIn={() => {}}
+            handleCheckOut={() => {}}
+            loadFolio={() => {}}
+            loadFrontDeskData={loadFrontDeskData}
+            loadData={loadData}
+            loading={false}
+          />
+        </Tabs>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('departure-payment-booking-payment'));
+    expect(screen.getByRole('heading', { name: 'Hızlı Ödeme Al' })).toBeInTheDocument();
+    expect(screen.getByTestId('frontdesk-quick-payment-amount')).toHaveValue(125);
+    expect(screen.queryByText('Ara Ödeme')).not.toBeInTheDocument();
+    expect(screen.queryByText('Final Ödeme')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('frontdesk-quick-payment-submit'));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/frontdesk/folio/booking-payment/payment',
+      {
+        amount: 125,
+        method: 'card',
+        payment_type: 'final',
+        reference: null,
+        notes: 'Ön büro hızlı tahsilat',
+      },
+      expect.objectContaining({ headers: expect.objectContaining({ 'Idempotency-Key': expect.any(String) }) }),
+    ));
+    await waitFor(() => expect(loadFrontDeskData).toHaveBeenCalledTimes(1));
+    expect(loadData).toHaveBeenCalledTimes(1);
+  });
+
   it('opens the full walk-in workflow from the front desk quick action', () => {
     render(
       <MemoryRouter initialEntries={['/pms']}>

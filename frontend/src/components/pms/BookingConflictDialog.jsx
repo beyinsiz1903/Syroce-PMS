@@ -88,11 +88,16 @@ export default function BookingConflictDialog({
           if (!cancelled) setBlockerLoading(false);
         });
 
-      // Alternative rooms for the same window (re-uses the existing
-      // available-rooms endpoint scoped to the blocker booking).
+      // Ask for alternatives in the attempted reservation window. The
+      // blocker may span different dates, so using only its dates can hide a
+      // room that is valid for same-day checkout/check-in turnover.
       setAltLoading(true);
+      const attemptedWindow = conflict.conflictWindow || {};
+      const availabilityConfig = attemptedWindow.check_in && attemptedWindow.check_out
+        ? { params: { check_in: attemptedWindow.check_in, check_out: attemptedWindow.check_out } }
+        : undefined;
       axios
-        .get(`/bookings/${id}/available-rooms`)
+        .get(`/bookings/${id}/available-rooms`, availabilityConfig)
         .then((res) => {
           if (cancelled) return;
           setAlternatives(res.data?.available_rooms?.slice(0, 6) || []);
