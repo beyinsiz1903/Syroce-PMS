@@ -37,6 +37,8 @@ STALE_THRESHOLD_SECONDS = 900  # 15 min without heartbeat = stale
 DEFAULT_PROPERTY = "default"
 DEFAULT_CURRENCY = "TRY"
 VAT_RATE = 0.10
+# Yalnız config okunamazsa kullanılacak yasal genel oran. Tenant'ın tarihli
+# ayarı normal akışta tek doğruluk kaynağıdır.
 ACCOMMODATION_TAX_RATE = 0.02
 
 # Status
@@ -794,6 +796,19 @@ async def _build_candidate_set(
     now = _now_iso()
     items: list[dict] = []
 
+    try:
+        from routers.finance.konaklama_vergisi_core import get_accommodation_tax_rate
+
+        accommodation_tax_rate = float(await get_accommodation_tax_rate(tenant_id, bd))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "hardened night audit tax config unavailable tenant=%s date=%s: %s",
+            tenant_id,
+            bd,
+            exc,
+        )
+        accommodation_tax_rate = ACCOMMODATION_TAX_RATE
+
     # ── Room charges for checked-in stayover guests ──
     # N+1 fix: tum bookings'i once topla, sonra folio + folio_charges idempotency icin tek sorgu
     all_checked_in = await db.bookings.find(
@@ -849,7 +864,7 @@ async def _build_candidate_set(
             booking,
             bd,
             vat_rate=VAT_RATE,
-            accommodation_tax_rate=ACCOMMODATION_TAX_RATE,
+            accommodation_tax_rate=accommodation_tax_rate,
         )
         rate = pricing["amount"]
 
@@ -887,6 +902,7 @@ async def _build_candidate_set(
                 "posting_date": bd,
                 "amount": rate,
                 "tax_amount": pricing["tax_amount"],
+                "tax_rate": pricing["tax_rate"],
                 "total": total,
                 "tax_breakdown": {"vat": vat, "accommodation_tax": acc_tax},
                 "tax_inclusive": pricing["tax_inclusive"],
@@ -1037,7 +1053,10 @@ async def _post_room_charge_item(tenant_id: str, item: dict, run_id: str) -> boo
                     "unit_price": item["amount"],
                     "quantity": 1,
                     "amount": item["amount"],
-                    "tax_rate": round((VAT_RATE + ACCOMMODATION_TAX_RATE) * 100, 1),
+                    "tax_rate": item.get(
+                        "tax_rate",
+                        round((VAT_RATE + ACCOMMODATION_TAX_RATE) * 100, 1),
+                    ),
                     "tax_amount": item["tax_amount"],
                     "tax_breakdown": item.get("tax_breakdown", {}),
                     "tax_inclusive": bool(item.get("tax_inclusive")),

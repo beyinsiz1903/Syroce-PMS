@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from core.database import db
@@ -50,10 +50,30 @@ async def load_tax_config(tenant_id: str) -> dict[str, Any]:
     return doc
 
 
-async def get_accommodation_tax_rate(tenant_id: str) -> float:
-    """Vergi oranını ondalık (ör. 0.02) olarak döner. Inactive ise 0.0."""
+def _as_business_date(value: str | date | datetime | None) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+
+
+async def get_accommodation_tax_rate(
+    tenant_id: str,
+    business_date: str | date | datetime | None = None,
+) -> float:
+    """Vergi oranını ondalık olarak döner; yürürlük öncesinde oran sıfırdır."""
     cfg = await load_tax_config(tenant_id)
     if not cfg.get("active", True):
+        return 0.0
+    effective_from = _as_business_date(cfg.get("effective_from"))
+    target_date = _as_business_date(business_date)
+    if effective_from and target_date and target_date < effective_from:
         return 0.0
     rate_pct = float(cfg.get("rate_percent", DEFAULT_RATE_PERCENT))
     return round(rate_pct / 100.0, 6)
@@ -165,6 +185,62 @@ async def post_konaklama_vergisi_to_folio(
     tax_amount = round(base * (rate_percent / 100.0), 2)
     if tax_amount <= 0:
         return {"ok": False, "posted": False, "reason": "zero_tax"}
+
+    # Night Audit oda satırları KDV ve konaklama vergisini ayrı bir
+    # tax_breakdown ile toplamın içine zaten dahil eder. Checkout'ta tekrar
+    # CITY_TAX satırı yazmak aynı vergiyi ikinci kez misafire yansıtırdı.
+    embedded_tax = round(
+        sum(
+            float((charge.get("tax_breakdown") or {}).get("accommodation_tax") or 0.0)
+            for charge in room_charges
+        ),
+        2,
+    )
+    if embedded_tax + 0.01 >= tax_amount:
+        posting_id = str(uuid.uuid4())
+        now_iso = datetime.now(UTC).isoformat()
+        try:
+            await db.accommodation_tax_postings.insert_one(
+                {
+                    "id": posting_id,
+                    "tenant_id": tenant_id,
+                    "folio_id": folio_id,
+                    "charge_id": None,
+                    "base_amount": base,
+                    "rate_percent": rate_percent,
+                    "tax_amount": embedded_tax,
+                    "included_in_room_charges": True,
+                    "posted_at": now_iso,
+                    "posted_by": posted_by,
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            from pymongo.errors import DuplicateKeyError
+
+            if not isinstance(exc, DuplicateKeyError):
+                if raise_on_error:
+                    raise
+                return {"ok": False, "posted": False, "reason": "posting_insert_failed"}
+            existing = await db.accommodation_tax_postings.find_one(
+                {"tenant_id": tenant_id, "folio_id": folio_id}
+            )
+            return {
+                "ok": True,
+                "posted": False,
+                "already_posted": True,
+                "posting_id": existing.get("id") if existing else None,
+            }
+        return {
+            "ok": True,
+            "posted": False,
+            "already_included": True,
+            "posting_id": posting_id,
+            "tax_amount": embedded_tax,
+        }
+
+    # Geçiş döneminde oda satırının bir kısmı breakdown içinde bulunuyorsa
+    # yalnız eksik kalan tutarı ekle; mevcut tahakkuku yeniden fiyatlama.
+    tax_amount = round(tax_amount - embedded_tax, 2)
 
     charge_id = str(uuid.uuid4())
     now_iso = datetime.now(UTC).isoformat()

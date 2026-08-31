@@ -53,6 +53,73 @@ security = HTTPBearer()
 folio_balance_read_service = FolioBalanceReadService()
 open_folio_service = OpenFolioService()
 
+ACCOMMODATION_VAT_RATE = 10.0
+FOOD_SERVICE_VAT_RATE = 10.0
+GENERAL_VAT_RATE = 20.0
+
+
+def _charge_vat_rate(charge: dict[str, Any]) -> float:
+    """Resolve VAT without treating accommodation tax as VAT.
+
+    Turkish PMS folios can contain both VAT and the separate accommodation
+    tax. Room ``tax_rate`` is therefore a combined informational rate and must
+    not be copied into a fiscal invoice's VAT field.
+    """
+    category = str(charge.get("charge_category") or "other").lower()
+    if category == "city_tax" or charge.get("konaklama_vergisi"):
+        return 0.0
+    if category == "room":
+        return ACCOMMODATION_VAT_RATE
+
+    explicit = charge.get("vat_rate")
+    if explicit is not None:
+        return float(explicit)
+
+    if category in {"food", "food_beverage", "beverage", "minibar"}:
+        text = f"{charge.get('description', '')} {charge.get('subcategory', '')}".lower()
+        alcoholic_markers = ("alkol", "alcohol", "wine", "şarap", "sarap", "bira", "beer", "viski", "whisky")
+        return GENERAL_VAT_RATE if any(marker in text for marker in alcoholic_markers) else FOOD_SERVICE_VAT_RATE
+    return float(charge.get("tax_rate") or GENERAL_VAT_RATE)
+
+
+def folio_charge_to_invoice_items(charge: dict[str, Any]) -> list[dict[str, Any]]:
+    """Convert one folio charge to fiscal lines while preserving its total."""
+    category = str(charge.get("charge_category") or "other").lower()
+    description = charge.get("description") or "Otel hizmeti"
+    amount = round(float(charge.get("amount") or charge.get("unit_price") or 0.0), 2)
+    vat_rate = _charge_vat_rate(charge)
+    item = {
+        "description": description,
+        "category": category,
+        "quantity": 1,
+        "unit_price": amount,
+        "vat_rate": vat_rate,
+        "total": round(amount * (1 + vat_rate / 100.0), 2),
+    }
+    if category != "room":
+        return [item]
+
+    breakdown = charge.get("tax_breakdown") or {}
+    accommodation_tax = round(float(breakdown.get("accommodation_tax") or 0.0), 2)
+    if accommodation_tax <= 0:
+        recorded_total = round(float(charge.get("total") or 0.0), 2)
+        accommodation_tax = max(round(recorded_total - item["total"], 2), 0.0)
+    if accommodation_tax <= 0:
+        return [item]
+
+    return [
+        item,
+        {
+            "description": "Konaklama Vergisi",
+            "category": "city_tax",
+            "tax_type": "accommodation_tax",
+            "quantity": 1,
+            "unit_price": accommodation_tax,
+            "vat_rate": 0.0,
+            "total": accommodation_tax,
+        },
+    ]
+
 
 class InvoiceType(str, Enum):
     SALES = "sales"  # Satış faturası
@@ -113,7 +180,7 @@ class Expense(BaseModel):
     category: ExpenseCategory
     description: str
     amount: float
-    vat_rate: float = 18.0
+    vat_rate: float = 20.0
     vat_amount: float = 0.0
     total_amount: float
     date: datetime
@@ -1635,7 +1702,7 @@ async def create_multi_currency_invoice(
     total_vat = 0
     for item in request.items:
         item_total = item.get("quantity", 0) * item.get("unit_price", 0)
-        vat_rate = item.get("vat_rate", 18) / 100
+        vat_rate = item.get("vat_rate", GENERAL_VAT_RATE) / 100
         item["vat_amount"] = round(item_total * vat_rate, 2)
         total_vat += item["vat_amount"]
 
@@ -1732,8 +1799,7 @@ async def generate_invoice_from_folio(
     # Convert charges to invoice items
     invoice_items = []
     for charge in charges:
-        item = {"description": charge.get("description", "Hotel Charge"), "quantity": 1, "unit_price": charge.get("amount", 0), "vat_rate": charge.get("vat_rate", 18), "total": charge.get("total", 0)}
-        invoice_items.append(item)
+        invoice_items.extend(folio_charge_to_invoice_items(charge))
 
     # Resolve customer info. Walk-in / check-in store the guest's name on the
     # GUEST document (booking carries only guest_id), so fall back through
