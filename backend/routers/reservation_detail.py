@@ -97,7 +97,13 @@ def _cari_transfer_lookup_id(account: dict) -> str:
     return str(account.get("_id") or _canonical_cari_account_id(account))
 
 
-async def _find_cari_account(tenant_id: str, account_id: str, *, session=None):
+async def _find_cari_account(
+    tenant_id: str,
+    account_id: str,
+    *,
+    account_name: str | None = None,
+    session=None,
+):
     """Return account, collection kind and its exact update filter."""
     find_kwargs = {"session": session} if session is not None else {}
     for collection, is_city_ledger in (
@@ -110,6 +116,45 @@ async def _find_cari_account(tenant_id: str, account_id: str, *, session=None):
             account = await collection.find_one(query, **find_kwargs)
             if account:
                 return account, is_city_ledger, query
+
+    # Some legacy city-ledger rows have had their public and persisted IDs
+    # regenerated independently. The account list still knows the row, but an
+    # ID round-trip can therefore miss it. Allow the UI to supply the exact
+    # displayed account name as a guarded fallback. Refuse ambiguous matches so
+    # a financial posting can never be routed to an arbitrary account.
+    normalized_name = str(account_name or "").strip()
+    if not normalized_name:
+        return None, False, None
+
+    matches = []
+    name_query = {
+        "tenant_id": tenant_id,
+        "$or": [
+            {"name": normalized_name},
+            {"account_name": normalized_name},
+            {"company_name": normalized_name},
+        ],
+    }
+    for collection, is_city_ledger in (
+        (getattr(db, "cari_accounts", None), False),
+        (getattr(db, "city_ledger_accounts", None), True),
+    ):
+        if collection is None:
+            continue
+        account = await collection.find_one(name_query, **find_kwargs)
+        if account:
+            matches.append((account, is_city_ledger))
+
+    unique_matches = {}
+    for account, is_city_ledger in matches:
+        identity = _cari_transfer_lookup_id(account)
+        unique_matches[identity] = (account, is_city_ledger)
+    if len(unique_matches) == 1:
+        account, is_city_ledger = next(iter(unique_matches.values()))
+        return account, is_city_ledger, {
+            "tenant_id": tenant_id,
+            "_id": account.get("_id"),
+        }
     return None, False, None
 
 
@@ -409,6 +454,7 @@ class ChannelPricingRepairRequest(BaseModel):
 class CariTransfer(BaseModel):
     amount: float = Field(..., gt=0, le=1e9)
     cari_account_id: str
+    cari_account_name: str | None = Field(None, max_length=200)
     description: str | None = Field(None, max_length=2000)
 
 
@@ -1235,7 +1281,11 @@ async def transfer_to_cari(
     if data.amount - outstanding_balance > 0.005:
         raise HTTPException(status_code=409, detail="Cari aktarım tutarı açık bakiyeyi aşamaz")
 
-    cari, _, _ = await _find_cari_account(tid, data.cari_account_id)
+    cari, _, _ = await _find_cari_account(
+        tid,
+        data.cari_account_id,
+        account_name=data.cari_account_name,
+    )
     if not cari:
         raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
 
@@ -1278,6 +1328,7 @@ async def transfer_to_cari(
         current_cari, current_is_city_ledger, current_cari_filter = await _find_cari_account(
             tid,
             data.cari_account_id,
+            account_name=data.cari_account_name,
             session=session,
         )
         if not current_cari:

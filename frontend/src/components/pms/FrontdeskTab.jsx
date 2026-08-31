@@ -273,9 +273,13 @@ const FrontdeskTab = ({
     try {
       let response;
       if (isCariTransfer) {
+        const selectedCariAccount = quickPaymentCariAccounts.find(
+          (account) => (account.transfer_id || account.id) === quickPaymentCariAccountId,
+        );
         response = await axios.post(`/pms/reservations/${quickPaymentBooking.id}/transfer-to-cari`, {
           amount,
           cari_account_id: quickPaymentCariAccountId,
+          cari_account_name: selectedCariAccount?.name || selectedCariAccount?.account_name || null,
           description: 'Ön büro hızlı cari aktarım',
         }, {
           headers: { 'Idempotency-Key': idempotencyKey },
@@ -322,7 +326,7 @@ const FrontdeskTab = ({
       quickPaymentSubmittingRef.current = false;
       setQuickPaymentInProgress(false);
     }
-  }, [effectiveBookingBalance, formatMoney, loadData, loadFrontDeskData, quickPaymentAmount, quickPaymentBooking, quickPaymentCariAccountId, quickPaymentMethod, t]);
+  }, [effectiveBookingBalance, formatMoney, loadData, loadFrontDeskData, quickPaymentAmount, quickPaymentBooking, quickPaymentCariAccountId, quickPaymentCariAccounts, quickPaymentMethod, t]);
 
   if (loading) {
     return (

@@ -398,6 +398,7 @@ describe('PMS manually discovered operation regressions', () => {
       {
         amount: 250,
         cari_account_id: 'mongo-cari-1',
+        cari_account_name: 'Kurumsal Cari',
         description: 'Ön büro hızlı cari aktarım',
       },
       expect.objectContaining({ headers: expect.objectContaining({ 'Idempotency-Key': expect.any(String) }) }),
