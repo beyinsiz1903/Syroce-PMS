@@ -231,12 +231,12 @@ describe('PMS manually discovered operation regressions', () => {
           <FrontdeskTab
             arrivals={[]}
             departures={[]}
-            inhouse={[]}
-            bookings={[{
+            inhouse={[{
               id: 'booking-overstay', status: 'checked_in', balance: 0,
               check_in: '2026-08-10', check_out: '2026-08-11',
               guest_name: 'TEST GUEST', room_number: '105',
             }]}
+            bookings={[]}
             rooms={[]}
             guests={[]}
             handleCheckIn={() => {}}
@@ -269,12 +269,12 @@ describe('PMS manually discovered operation regressions', () => {
           <FrontdeskTab
             arrivals={[]}
             departures={[]}
-            inhouse={[]}
-            bookings={[{
+            inhouse={[{
               id: 'booking-balance', status: 'checked_in', balance: 125,
               check_in: '2026-08-10', check_out: '2026-08-11',
               guest_name: 'BALANCE GUEST', room_number: '105',
             }]}
+            bookings={[]}
             rooms={[]}
             guests={[]}
             handleCheckIn={() => {}}
@@ -287,6 +287,7 @@ describe('PMS manually discovered operation regressions', () => {
       </MemoryRouter>,
     );
 
+    expect(screen.getByTestId('overstay-payment-booking-balance')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('overstay-checkout-booking-balance'));
     expect(setReservationDetailId).toHaveBeenCalledWith('booking-balance');
     expect(handleCheckOut).not.toHaveBeenCalled();

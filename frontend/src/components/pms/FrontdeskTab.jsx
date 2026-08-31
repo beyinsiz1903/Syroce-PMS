@@ -109,13 +109,12 @@ const FrontdeskTab = ({
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   const overstays = useMemo(() => {
-    if (!bookings) return [];
-    return bookings.filter(b => {
+    return (inhouse || []).filter(b => {
       if (b.status !== 'checked_in') return false;
       const co = (b.check_out || '').slice(0, 10);
       return co && co < today;
     });
-  }, [bookings, today]);
+  }, [inhouse, today]);
 
   const noShows = useMemo(() => {
     if (!bookings) return [];
