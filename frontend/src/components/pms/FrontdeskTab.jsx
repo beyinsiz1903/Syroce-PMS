@@ -109,6 +109,33 @@ const FrontdeskTab = ({
     return v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
   }, []);
 
+  const formatBookingChannel = useCallback((booking) => {
+    const rawChannel = booking?.ota_channel
+      || booking?.source_channel
+      || booking?.channel
+      || booking?.agency_name
+      || '';
+    const normalized = String(rawChannel).trim().toLowerCase().replace(/[\s.-]+/g, '_');
+    const labels = {
+      direct: 'Doğrudan',
+      walk_in: 'Walk-in',
+      walkin: 'Walk-in',
+      online: 'Online',
+      website: 'Web Sitesi',
+      phone: 'Telefon',
+      booking: 'Booking.com',
+      booking_com: 'Booking.com',
+      bookingdotcom: 'Booking.com',
+      expedia: 'Expedia',
+      hotels_com: 'Hotels.com',
+      agoda: 'Agoda',
+      airbnb: 'Airbnb',
+      hotelrunner: 'HotelRunner',
+      exely: 'Exely',
+    };
+    return labels[normalized] || String(rawChannel).trim() || 'Belirtilmemiş';
+  }, []);
+
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   const overstays = useMemo(() => {
@@ -893,6 +920,16 @@ const FrontdeskTab = ({
                     {tf('balance')}: {formatMoney(quickPaymentBooking.balance)} {t('pmsComponents.common.currency')}
                   </span>
                 </div>
+                <div className="mt-2 flex items-center gap-2 border-t border-slate-200 pt-2 text-sm">
+                  <span className="text-slate-500">Rezervasyon kanalı</span>
+                  <Badge
+                    variant="outline"
+                    className="ml-auto border-sky-200 bg-sky-50 text-sky-800"
+                    data-testid="frontdesk-quick-payment-channel"
+                  >
+                    {formatBookingChannel(quickPaymentBooking)}
+                  </Badge>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="frontdesk-quick-payment-amount">Tutar</Label>
@@ -944,6 +981,9 @@ const FrontdeskTab = ({
                   {!quickPaymentCariLoading && quickPaymentCariAccounts.length === 0 && (
                     <p className="text-xs text-amber-700">Aktarım için önce Cari Hesaplar ekranında aktif bir cari oluşturun.</p>
                   )}
+                  <p className="text-xs text-slate-500">
+                    Rezervasyon kanalı: <span className="font-medium text-slate-700">{formatBookingChannel(quickPaymentBooking)}</span>. İlgili acente carisini seçin.
+                  </p>
                 </div>
               )}
               <p className="text-xs text-slate-500">
