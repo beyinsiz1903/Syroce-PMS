@@ -455,11 +455,7 @@ const CashierTab = () => {
           <Wallet className="w-6 h-6" /> {t('cm.components_pms_CashierTab.kasa_yonetimi')}
         </h2>
         <div className="flex gap-2 flex-wrap">
-          {!shift ? (
-            <Button onClick={() => setShowOpenDialog(true)} className="bg-emerald-600 hover:bg-emerald-700">
-              <LogIn className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.vardiya_ac')}
-            </Button>
-          ) : (
+          {shift ? (
             <>
               <Button onClick={() => setShowCashInDialog(true)} variant="outline" className="border-emerald-300 text-emerald-700 hover:bg-emerald-50">
                 <Plus className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.nakit_giris')}
@@ -480,12 +476,12 @@ const CashierTab = () => {
                 <LogOut className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.vardiya_kapat')}
               </Button>
             </>
-          )}
+          ) : null}
           <Button onClick={() => setShowPeriodReportDialog(true)} variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-50">
             <CalendarRange className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.donem_raporu')}
           </Button>
-          <Button onClick={() => navigate('/folio-routing')} variant="outline" className="border-indigo-300 text-indigo-700 hover:bg-indigo-50">
-            <ArrowRightLeft className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.folio_yonlendirme')}
+          <Button onClick={() => navigate('/folio-routing')} variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-50">
+            <ArrowRightLeft className="w-4 h-4 mr-2" /> Folyo Kuralları
           </Button>
           <Button variant="outline" onClick={() => { loadShift(); loadHistory(); }}>
             <RefreshCw className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.yenile')}
@@ -554,7 +550,7 @@ const CashierTab = () => {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <CardTitle className="text-sm flex items-center gap-2">
-                  <Receipt className="w-4 h-4" /> {t('cm.components_pms_CashierTab.vardiya_islemleri')}{filteredTransactions.length}/{transactions.length})
+                  <Receipt className="w-4 h-4" /> {t('cm.components_pms_CashierTab.vardiya_islemleri')} ({filteredTransactions.length}/{transactions.length})
                 </CardTitle>
                 <div className="flex gap-2 items-center flex-wrap">
                   <div className="relative">
@@ -613,14 +609,34 @@ const CashierTab = () => {
           </Card>
         </>
       ) : (
-        <Card className="border-dashed border-2 border-gray-300">
-          <CardContent className="py-12 text-center">
-            <Wallet className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-            <p className="text-gray-500 text-lg mb-2">{t('cm.components_pms_CashierTab.aktif_vardiya_yok')}</p>
-            <p className="text-gray-400 text-sm mb-4">{t('cm.components_pms_CashierTab.islem_yapabilmek_icin_vardiya_acmaniz_ge')}</p>
+        <Card className="border-slate-200 bg-gradient-to-br from-white to-slate-50">
+          <CardContent className="py-10">
+            <div className="mx-auto max-w-3xl text-center">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                <Wallet className="h-6 w-6" />
+              </div>
+              <p className="text-lg font-semibold text-slate-900">{t('cm.components_pms_CashierTab.aktif_vardiya_yok')}</p>
+              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
+                Vardiya; nakit tahsilat, iade ve kasa hareketlerini işlemi yapan kullanıcıyla eşleştirir. Kart ve online ödemeler raporda izlenir, fiziksel kasa bakiyesini yalnızca nakit hareketleri etkiler.
+              </p>
+              <div className="my-6 grid gap-3 text-left sm:grid-cols-3">
+                <div className="rounded-lg border bg-white p-3">
+                  <p className="text-xs font-semibold text-slate-900">1. Açılış tutarı</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">Kasada fiilen bulunan nakdi girin.</p>
+                </div>
+                <div className="rounded-lg border bg-white p-3">
+                  <p className="text-xs font-semibold text-slate-900">2. Denetlenebilir hareket</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">Tahsilat ve kasa hareketleri vardiyaya bağlanır.</p>
+                </div>
+                <div className="rounded-lg border bg-white p-3">
+                  <p className="text-xs font-semibold text-slate-900">3. Sayım ve fark</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">Kapanışta beklenen ve sayılan tutar karşılaştırılır.</p>
+                </div>
+              </div>
             <Button onClick={() => setShowOpenDialog(true)} className="bg-emerald-600 hover:bg-emerald-700">
               <LogIn className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.vardiya_ac_4889c')}
             </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -630,6 +646,7 @@ const CashierTab = () => {
           <CardTitle className="text-sm flex items-center gap-2">
             <Clock className="w-4 h-4" /> {t('cm.components_pms_CashierTab.gecmis_vardiyalar')}
           </CardTitle>
+          <p className="text-xs text-slate-500">Kapalı vardiyaların açılış, kapanış, fark ve Z raporu kayıtları burada saklanır.</p>
         </CardHeader>
         <CardContent>
           {shiftHistory.length === 0 ? (

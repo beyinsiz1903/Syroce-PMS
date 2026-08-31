@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/ui/page-header';
 import { KpiCard } from '@/components/ui/kpi-card';
-import { Loader2, Shield, Banknote, RefreshCw, Plus, RotateCcw, FileText, Search, X, ArrowDownCircle, ArrowUpCircle, Receipt } from 'lucide-react';
+import { Loader2, Shield, Banknote, RefreshCw, Plus, RotateCcw, FileText, Search, X, ArrowDownCircle, ArrowUpCircle, Receipt, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 const API = "";
 export default function DepositTracking({
@@ -233,6 +233,20 @@ export default function DepositTracking({
                 <Plus className="w-4 h-4 mr-1.5" /> {t('cm.pages_DepositTracking.yeni_depozito')}
               </Button>
             </>} />
+
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-800 dark:bg-emerald-950/30" data-testid="deposit-folio-explanation">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 rounded-lg bg-white p-2 text-emerald-700 shadow-sm">
+              <Info className="h-4 w-4" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-semibold text-slate-900">Depozito rezervasyona nasıl yansır?</p>
+              <p className="text-sm leading-6 text-slate-600">
+                Yeni depozito, seçtiğiniz rezervasyonun misafir folyosuna ödeme olarak işlenir ve kalan bakiyeyi azaltır. Oda fiyatını değiştirmez. İade edildiğinde ters ödeme kaydı oluşur ve iade tutarı rezervasyon bakiyesine geri eklenir.
+              </p>
+            </div>
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <KpiCard icon={ArrowDownCircle} label={t('cm.pages_DepositTracking.aktif_depozitolar')} value={`${totalAll.toLocaleString(i18n.language)} TL`} sub={`${deposits.filter(d => d.status === 'received').length} kayıt`} intent="success" />

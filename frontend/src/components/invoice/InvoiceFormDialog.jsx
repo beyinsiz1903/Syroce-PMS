@@ -12,6 +12,24 @@ import { Plus } from 'lucide-react';
 
 export const createAccountingInvoice = (invoice) => axios.post('/accounting/invoices', invoice);
 
+export const INVOICE_ITEM_CATEGORIES = {
+  accommodation: { label: 'Konaklama', vatRate: 10 },
+  food_beverage: { label: 'Yiyecek / alkolsüz içecek', vatRate: 10 },
+  alcoholic_beverage: { label: 'Alkollü içecek', vatRate: 20 },
+  other: { label: 'Diğer mal / hizmet', vatRate: 20 },
+};
+
+export const createInvoiceItem = (category = 'accommodation') => ({
+  category,
+  description: category === 'accommodation' ? 'Konaklama Bedeli' : '',
+  quantity: 1,
+  unit_price: 0,
+  vat_rate: INVOICE_ITEM_CATEGORIES[category]?.vatRate ?? 20,
+  vat_amount: 0,
+  total: 0,
+  additional_taxes: [],
+});
+
 const InvoiceFormDialog = ({
   open,
   onClose,
@@ -27,15 +45,7 @@ const InvoiceFormDialog = ({
     customer_tax_office: '',
     customer_tax_number: '',
     customer_address: '',
-    items: [{
-      description: '',
-      quantity: 1,
-      unit_price: 0,
-      vat_rate: 18,
-      vat_amount: 0,
-      total: 0,
-      additional_taxes: []
-    }],
+    items: [createInvoiceItem()],
     due_date: '',
     notes: ''
   });
@@ -52,7 +62,13 @@ const InvoiceFormDialog = ({
   const calculateInvoiceItem = (index, field, value) => {
     const items = [...newInvoice.items];
     items[index][field] = value;
-    if (field === 'quantity' || field === 'unit_price' || field === 'vat_rate') {
+    if (field === 'category') {
+      items[index].vat_rate = INVOICE_ITEM_CATEGORIES[value]?.vatRate ?? 20;
+      if (!items[index].description || items[index].description === 'Konaklama Bedeli') {
+        items[index].description = value === 'accommodation' ? 'Konaklama Bedeli' : '';
+      }
+    }
+    if (field === 'quantity' || field === 'unit_price' || field === 'vat_rate' || field === 'category') {
       const subtotal = items[index].quantity * items[index].unit_price;
       items[index].vat_amount = subtotal * (items[index].vat_rate / 100);
       items[index].total = subtotal + items[index].vat_amount;
@@ -65,15 +81,7 @@ const InvoiceFormDialog = ({
   const addInvoiceItem = () => {
     setNewInvoice({
       ...newInvoice,
-      items: [...newInvoice.items, {
-        description: '',
-        quantity: 1,
-        unit_price: 0,
-        vat_rate: 18,
-        vat_amount: 0,
-        total: 0,
-        additional_taxes: []
-      }]
+      items: [...newInvoice.items, createInvoiceItem('other')]
     });
   };
   const addAdditionalTax = () => {
@@ -218,9 +226,20 @@ const InvoiceFormDialog = ({
                   <Plus className="w-4 h-4 mr-1" /> {t('invoice.addItem')}
                 </Button>
               </div>
+              <p className="mb-3 text-xs text-slate-500">
+                KDV her satırın hizmet türüne göre uygulanır: konaklama ile yiyecek/alkolsüz içecek %10; alkollü içecek ve genel oranlı hizmetler %20. Konaklama vergisi KDV matrahına eklenmez.
+              </p>
               <div className="space-y-3">
                 {newInvoice.items.map((item, index) => <div key={item.id || index} className="border rounded-lg p-3 space-y-2">
-                    <div className="grid grid-cols-6 gap-2 items-center">
+                    <div className="grid grid-cols-1 md:grid-cols-7 gap-2 items-center">
+                      <Select value={item.category || 'other'} onValueChange={v => calculateInvoiceItem(index, 'category', v)}>
+                        <SelectTrigger aria-label="Hizmet türü"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(INVOICE_ITEM_CATEGORIES).map(([value, option]) => (
+                            <SelectItem key={value} value={value}>{option.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <Input placeholder={t('invoice.description')} value={item.description} onChange={e => calculateInvoiceItem(index, 'description', e.target.value)} required />
                       <Input type="number" placeholder={t('invoice.qty')} value={item.quantity} onChange={e => calculateInvoiceItem(index, 'quantity', parseFloat(e.target.value))} required />
                       <Input type="number" step="0.01" placeholder={t('invoice.price')} value={item.unit_price} onChange={e => calculateInvoiceItem(index, 'unit_price', parseFloat(e.target.value))} required />

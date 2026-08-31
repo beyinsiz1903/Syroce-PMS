@@ -213,4 +213,27 @@ describe('financial and destructive mutation safety', () => {
     expect(post.mock.calls.filter(([url]) => url === '/cashier/peer-verify')).toHaveLength(1);
     expect(post.mock.calls.filter(([url]) => url === '/cashier/bank-deposit')).toHaveLength(1);
   });
+
+  it('explains the audited cash-shift flow without duplicating the open-shift action', async () => {
+    get.mockImplementation((url) => {
+      if (url === '/cashier/current-shift') {
+        return Promise.resolve({ data: { shift: null, transactions: [] } });
+      }
+      if (url === '/cashier/shift-history?limit=20') {
+        return Promise.resolve({ data: { shifts: [] } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(
+      <MemoryRouter>
+        <CashierTab />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText(/nakit tahsilat, iade ve kasa hareketlerini/i)).toBeInTheDocument();
+    expect(screen.getByText('1. Açılış tutarı')).toBeInTheDocument();
+    expect(screen.getByText('3. Sayım ve fark')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /vardiya_ac/i })).toHaveLength(1);
+  });
 });

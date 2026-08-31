@@ -84,7 +84,7 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
     tax_number: tenant?.tax_number || "",
     mersis_no: tenant?.mersis_no || "",
     tga_code: tenant?.tga_code || "",
-    vat_rate: tenant?.vat_rate ?? 8,
+    vat_rate: tenant?.vat_rate ?? 10,
     accommodation_tax_exempt: tenant?.accommodation_tax_exempt || false,
   });
 
@@ -363,10 +363,11 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
                 </Select>
               </div>
               <div>
-                <Label htmlFor="vat_rate">KDV (%)</Label>
+                <Label htmlFor="vat_rate">Varsayılan konaklama KDV (%)</Label>
                 <Input id="vat_rate" type="number" min="0" max="100" step="0.1"
                   value={hotelForm.vat_rate}
                   onChange={e => setHotelForm(f => ({ ...f, vat_rate: e.target.value }))} />
+                <p className="mt-1 text-[11px] text-slate-500">Fatura satırında hizmet türüne göre değiştirilebilir.</p>
               </div>
             </div>
 

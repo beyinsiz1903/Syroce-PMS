@@ -235,7 +235,11 @@ class NightAuditCoreService:
             await self._release_lock(ctx.tenant_id, bd)
 
     # ── Tenant Tax Rate Resolver ───────────────────────────────────────
-    async def _resolve_accommodation_tax_rate(self, tenant_id: str) -> float:
+    async def _resolve_accommodation_tax_rate(
+        self,
+        tenant_id: str,
+        business_date: str | None = None,
+    ) -> float:
         """Tenant'ın `city_tax_rules` ayarından konaklama vergisi oranını
         çöz; eksik/devre dışı ise fallback olarak yasal varsayılanı (%2) kullan.
 
@@ -254,7 +258,7 @@ class NightAuditCoreService:
             #   - active=False     → 0.0 (tenant açıkça kapatmış)
             # Tenant'ın açık kararına saygı duy; muafiyet için
             # rate_percent=0 yazmalıdır.
-            return float(await get_accommodation_tax_rate(tenant_id))
+            return float(await get_accommodation_tax_rate(tenant_id, business_date))
         except Exception as exc:
             logger.warning(
                 "tax rate resolve failed for tenant=%s, falling back to %.4f: %s",
@@ -280,7 +284,7 @@ class NightAuditCoreService:
         total_tax = 0.0
 
         # Tek seferde tenant tax oranını çöz — döngü içinde DB hit olmasın.
-        accommodation_tax_rate = await self._resolve_accommodation_tax_rate(ctx.tenant_id)
+        accommodation_tax_rate = await self._resolve_accommodation_tax_rate(ctx.tenant_id, bd)
         logger.info(
             "night_audit: tenant=%s accommodation_tax_rate=%.4f",
             ctx.tenant_id,
@@ -618,7 +622,7 @@ class NightAuditCoreService:
     ):
         # v95.7: tenant'a özel oranı kullan (eskiden hardcoded ACCOMMODATION_TAX_RATE
         # vardı ve bu sembol kaldırılınca NameError'a sebep oluyordu).
-        accommodation_tax_rate = await self._resolve_accommodation_tax_rate(ctx.tenant_id)
+        accommodation_tax_rate = await self._resolve_accommodation_tax_rate(ctx.tenant_id, bd)
         expected_rate = DEFAULT_VAT_RATE + accommodation_tax_rate
         cursor = self._db.folio_charges.find(
             {

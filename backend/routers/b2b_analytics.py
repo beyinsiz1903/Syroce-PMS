@@ -114,6 +114,12 @@ async def get_b2b_summary(
 
     return {
         "period": {"start": sd, "end": ed},
+        "data_scope": {
+            "sales": "agency_booking_requests",
+            "agencies": "agencies",
+            "usage": "tenant_metering",
+            "usage_is_agency_specific": False,
+        },
         "kpis": {
             "total_bookings": total_bookings,
             "approved_bookings": approved_bookings,
@@ -287,7 +293,13 @@ async def get_api_usage(
     totals_result = await db.usage_daily.aggregate(totals_pipeline).to_list(50)
     totals = [{"event_type": r["_id"], "total": r["total"]} for r in totals_result]
 
-    return {"period": {"start": sd, "end": ed}, "timeline": timeline, "totals": totals}
+    return {
+        "period": {"start": sd, "end": ed},
+        "scope": "tenant_metering",
+        "agency_specific": False,
+        "timeline": timeline,
+        "totals": totals,
+    }
 
 
 @router.get("/top-endpoints")
@@ -322,7 +334,14 @@ async def get_top_endpoints(
             }
         )
 
-    return {"period": {"start": sd, "end": ed}, "endpoints": endpoints}
+    return {
+        "period": {"start": sd, "end": ed},
+        "scope": "tenant_metering",
+        "agency_specific": False,
+        "activity_types": endpoints,
+        # Backward compatibility for older frontend releases.
+        "endpoints": endpoints,
+    }
 
 
 @router.get("/export")

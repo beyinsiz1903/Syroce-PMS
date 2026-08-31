@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { Link } from 'react-router-dom';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,7 +15,7 @@ import {
 import {
   Building2, DollarSign, TrendingUp, TrendingDown, AlertTriangle,
   Search, CreditCard, FileText, Clock, CheckCircle2, XCircle,
-  ChevronDown, ChevronRight, Loader2, Plus, Calendar,
+  ChevronDown, ChevronRight, Loader2, Plus, Calendar, Info, ArrowRight,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -222,6 +223,27 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
         <div>
           <h1 className="text-2xl font-bold">{t('agentArap.title')}</h1>
           <p className="text-muted-foreground">{t('agentArap.subtitle')}</p>
+        </div>
+
+        <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-800 dark:bg-blue-950/30">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 rounded-lg bg-white p-2 text-blue-700 shadow-sm dark:bg-slate-900 dark:text-blue-300">
+                <Info className="h-4 w-4" />
+              </div>
+              <div className="space-y-1">
+                <p className="font-semibold text-slate-900 dark:text-slate-100">Operasyon ve finans ekranı</p>
+                <p className="max-w-4xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                  Bu ekran, Acente Yönetimi'nde tanımlanan B2B acentelere bağlı rezervasyonların komisyonunu, yapılan ödemeleri, taksit planlarını ve vade yaşlandırmasını yönetir. HotelRunner üzerinden gelen Expedia, Agoda gibi OTA rezervasyonları burada otomatik cari hesap oluşturmaz.
+                </p>
+              </div>
+            </div>
+            <Button asChild variant="outline" className="shrink-0 bg-white dark:bg-slate-900">
+              <Link to="/agency-management">
+                Acente Yönetimi <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>

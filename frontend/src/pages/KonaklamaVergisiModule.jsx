@@ -253,7 +253,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
         ? config.email_recipients
         : String(config.email_recipients || "").split(",").map((s) => s.trim());
       const payload = {
-        rate_percent: Number(config.rate_percent || 2),
+        rate_percent: Number(config.rate_percent ?? 2),
         active: !!config.active,
         auto_post: !!config.auto_post,
         effective_from: config.effective_from || null,
@@ -395,6 +395,22 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                 <div>
                   <b>{t('cm.pages_KonaklamaVergisiModule.matrah_oda_satiri_kdv_haric')}</b> {t('cm.pages_KonaklamaVergisiModule.konaklama_vergisi_7194_sk_uyarinca_kdv_m')}
                 </div>
+              </div>
+
+              <div className="flex flex-col gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-950 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-semibold">2026 geçici oranı: %1</p>
+                  <p className="mt-1 leading-5 text-indigo-800">
+                    1 Mayıs–31 Aralık 2026 döneminde oran %1'dir. Bu ayar geçmiş rezervasyon fiyatlarını ve daha önce kaydedilmiş vergi satırlarını değiştirmez.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-md border border-indigo-300 bg-white px-3 py-2 font-medium text-indigo-800 hover:bg-indigo-100"
+                  onClick={() => setConfig({ ...config, rate_percent: 1, effective_from: "2026-05-01" })}
+                >
+                  2026 oranını uygula
+                </button>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
