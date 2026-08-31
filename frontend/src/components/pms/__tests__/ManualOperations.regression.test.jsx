@@ -8,13 +8,14 @@ import FrontdeskTab from '@/components/pms/FrontdeskTab';
 import { normalizeSearchResults } from '@/components/GlobalSearch';
 import { Tabs } from '@/components/ui/tabs';
 
-const { post, confirmDialog } = vi.hoisted(() => ({
+const { get, post, confirmDialog } = vi.hoisted(() => ({
+  get: vi.fn(),
   post: vi.fn(),
   confirmDialog: vi.fn(),
 }));
 
 vi.mock('axios', () => ({
-  default: { get: vi.fn(), post },
+  default: { get, post },
 }));
 
 vi.mock('@/lib/dialogs', () => ({ confirmDialog }));
@@ -37,6 +38,8 @@ afterEach(() => cleanup());
 
 describe('PMS manually discovered operation regressions', () => {
   beforeEach(() => {
+    get.mockReset();
+    get.mockResolvedValue({ data: {} });
     post.mockReset();
     post.mockResolvedValue({ data: {} });
     confirmDialog.mockReset();
@@ -338,6 +341,60 @@ describe('PMS manually discovered operation regressions', () => {
         payment_type: 'final',
         reference: null,
         notes: 'Ön büro hızlı tahsilat',
+      },
+      expect.objectContaining({ headers: expect.objectContaining({ 'Idempotency-Key': expect.any(String) }) }),
+    ));
+    await waitFor(() => expect(loadFrontDeskData).toHaveBeenCalledTimes(1));
+    expect(loadData).toHaveBeenCalledTimes(1);
+  });
+
+  it('transfers the quick-payment balance to the selected existing cari account', async () => {
+    get.mockResolvedValue({
+      data: { accounts: [{ id: 'cari-1', name: 'Kurumsal Cari' }] },
+    });
+    const loadFrontDeskData = vi.fn().mockResolvedValue(undefined);
+    const loadData = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MemoryRouter>
+        <Tabs defaultValue="frontdesk">
+          <FrontdeskTab
+            arrivals={[]}
+            departures={[{
+              id: 'booking-cari', status: 'checked_in', balance: 250,
+              check_in: '2026-08-30', check_out: '2026-08-31',
+              guest_name: 'CARI GUEST', room_number: '107',
+            }]}
+            inhouse={[]}
+            bookings={[]}
+            rooms={[]}
+            guests={[]}
+            handleCheckIn={() => {}}
+            handleCheckOut={() => {}}
+            loadFolio={() => {}}
+            loadFrontDeskData={loadFrontDeskData}
+            loadData={loadData}
+            loading={false}
+          />
+        </Tabs>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('departure-payment-booking-cari'));
+    fireEvent.click(screen.getByTestId('frontdesk-quick-payment-method'));
+    fireEvent.click(screen.getByText('Cari Hesaba Aktar'));
+
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/pms/cari-accounts'));
+    await waitFor(() => expect(screen.getByTestId('frontdesk-quick-payment-cari-account')).toBeEnabled());
+    fireEvent.click(screen.getByTestId('frontdesk-quick-payment-cari-account'));
+    fireEvent.click(screen.getAllByText('Kurumsal Cari').at(-1));
+    fireEvent.click(screen.getByTestId('frontdesk-quick-payment-submit'));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/pms/reservations/booking-cari/transfer-to-cari',
+      {
+        amount: 250,
+        cari_account_id: 'cari-1',
+        description: 'Ön büro hızlı cari aktarım',
       },
       expect.objectContaining({ headers: expect.objectContaining({ 'Idempotency-Key': expect.any(String) }) }),
     ));

@@ -861,27 +861,24 @@ async def get_folio(booking_id: str, current_user: User = Depends(get_current_us
     return result.data
 
 
-# rbac-allow: cache-rbac — FO arrivals operasyonel (FO/HK/manager)
+# rbac-allow: operational read — FO arrivals (FO/HK/manager)
 @router.get("/frontdesk/arrivals")
-@cached(ttl=120, key_prefix="frontdesk_arrivals")
 async def get_arrivals(date: str | None = None, current_user: User = Depends(get_current_user)):
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.get_arrivals(ctx, date)
     return result.data
 
 
-# rbac-allow: cache-rbac — FO departures operasyonel
+# rbac-allow: operational read — FO departures
 @router.get("/frontdesk/departures")
-@cached(ttl=120, key_prefix="frontdesk_departures")
 async def get_departures(date: str | None = None, current_user: User = Depends(get_current_user)):
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.get_departures(ctx, date)
     return result.data
 
 
-# rbac-allow: cache-rbac — FO inhouse operasyonel
+# rbac-allow: operational read — FO inhouse
 @router.get("/frontdesk/inhouse")
-@cached(ttl=180, key_prefix="frontdesk_inhouse")
 async def get_inhouse_guests(current_user: User = Depends(get_current_user)):
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.get_inhouse(ctx)
