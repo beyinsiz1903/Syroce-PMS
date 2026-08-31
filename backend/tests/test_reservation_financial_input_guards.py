@@ -116,6 +116,65 @@ async def test_legacy_numeric_cari_account_id_round_trips_from_list_response(mon
     assert reservation_detail._cari_transfer_lookup_id(numeric_account) == "12"
 
 
+@pytest.mark.asyncio
+async def test_cari_account_exact_name_fallback_resolves_unique_legacy_row(monkeypatch):
+    legacy_account = {
+        "_id": "persisted-etstur",
+        "id": "public-etstur",
+        "tenant_id": "tenant-a",
+        "account_name": "Etstur",
+    }
+
+    async def find_city_ledger(query, *_args, **_kwargs):
+        if "$or" in query:
+            return legacy_account
+        return None
+
+    database = SimpleNamespace(
+        cari_accounts=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        city_ledger_accounts=SimpleNamespace(find_one=AsyncMock(side_effect=find_city_ledger)),
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+
+    account, is_city_ledger, update_filter = await reservation_detail._find_cari_account(
+        "tenant-a",
+        "stale-browser-id",
+        account_name="Etstur",
+    )
+
+    assert account is legacy_account
+    assert is_city_ledger is True
+    assert update_filter == {"tenant_id": "tenant-a", "_id": "persisted-etstur"}
+
+
+@pytest.mark.asyncio
+async def test_cari_account_name_fallback_refuses_ambiguous_rows(monkeypatch):
+    legacy = {"_id": "legacy-etstur", "tenant_id": "tenant-a", "name": "Etstur"}
+    city_ledger = {"_id": "ledger-etstur", "tenant_id": "tenant-a", "account_name": "Etstur"}
+
+    async def find_legacy(query, *_args, **_kwargs):
+        return legacy if "$or" in query else None
+
+    async def find_city_ledger(query, *_args, **_kwargs):
+        return city_ledger if "$or" in query else None
+
+    database = SimpleNamespace(
+        cari_accounts=SimpleNamespace(find_one=AsyncMock(side_effect=find_legacy)),
+        city_ledger_accounts=SimpleNamespace(find_one=AsyncMock(side_effect=find_city_ledger)),
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+
+    account, is_city_ledger, update_filter = await reservation_detail._find_cari_account(
+        "tenant-a",
+        "stale-browser-id",
+        account_name="Etstur",
+    )
+
+    assert account is None
+    assert is_city_ledger is False
+    assert update_filter is None
+
+
 @pytest.mark.parametrize(
     "model,payload",
     [
