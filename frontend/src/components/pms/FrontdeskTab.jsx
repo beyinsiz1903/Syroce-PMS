@@ -48,6 +48,9 @@ const FrontdeskTab = ({
   const [quickPaymentBooking, setQuickPaymentBooking] = useState(null);
   const [quickPaymentAmount, setQuickPaymentAmount] = useState('');
   const [quickPaymentMethod, setQuickPaymentMethod] = useState('card');
+  const [quickPaymentCariAccounts, setQuickPaymentCariAccounts] = useState([]);
+  const [quickPaymentCariAccountId, setQuickPaymentCariAccountId] = useState('');
+  const [quickPaymentCariLoading, setQuickPaymentCariLoading] = useState(false);
   const [quickPaymentInProgress, setQuickPaymentInProgress] = useState(false);
   const quickPaymentSubmittingRef = useRef(false);
   // Which top KPI card is currently expanded to show guest names: null | 'arrivals' | 'departures' | 'inhouse'
@@ -177,6 +180,7 @@ const FrontdeskTab = ({
     setQuickPaymentBooking(booking);
     setQuickPaymentAmount(balance.toFixed(2));
     setQuickPaymentMethod('card');
+    setQuickPaymentCariAccountId('');
   }, []);
 
   const closeQuickPayment = useCallback(() => {
@@ -184,6 +188,26 @@ const FrontdeskTab = ({
     setQuickPaymentBooking(null);
     setQuickPaymentAmount('');
     setQuickPaymentMethod('card');
+    setQuickPaymentCariAccountId('');
+  }, []);
+
+  const handleQuickPaymentMethodChange = useCallback(async (method) => {
+    setQuickPaymentMethod(method);
+    setQuickPaymentCariAccountId('');
+    if (method !== 'city_ledger') return;
+
+    setQuickPaymentCariLoading(true);
+    try {
+      const response = await axios.get('/pms/cari-accounts');
+      const accounts = Array.isArray(response.data?.accounts) ? response.data.accounts : [];
+      setQuickPaymentCariAccounts(accounts);
+      if (accounts.length === 1) setQuickPaymentCariAccountId(accounts[0].id);
+    } catch (error) {
+      setQuickPaymentCariAccounts([]);
+      toast.error('Cari hesaplar yüklenemedi. Lütfen tekrar deneyin.');
+    } finally {
+      setQuickPaymentCariLoading(false);
+    }
   }, []);
 
   const submitQuickPayment = useCallback(async () => {
@@ -198,25 +222,42 @@ const FrontdeskTab = ({
       toast.error('Ödeme tutarı kalan bakiyeyi aşamaz.');
       return;
     }
+    const isCariTransfer = quickPaymentMethod === 'city_ledger';
+    if (isCariTransfer && !quickPaymentCariAccountId) {
+      toast.error('Aktarım yapılacak cari hesabı seçin.');
+      return;
+    }
 
     quickPaymentSubmittingRef.current = true;
     setQuickPaymentInProgress(true);
     const idempotencyKey = window.crypto?.randomUUID?.()
       || `frontdesk-payment-${quickPaymentBooking.id}-${Date.now()}-${Math.random()}`;
     try {
-      await axios.post(`/frontdesk/folio/${quickPaymentBooking.id}/payment`, {
-        amount,
-        method: quickPaymentMethod,
-        payment_type: amount >= balance - 0.01 ? 'final' : 'interim',
-        reference: null,
-        notes: 'Ön büro hızlı tahsilat',
-      }, {
-        headers: { 'Idempotency-Key': idempotencyKey },
-      });
-      toast.success(`Ödeme folyoya işlendi: ${formatMoney(amount)} ${t('pmsComponents.common.currency')}`);
+      if (isCariTransfer) {
+        await axios.post(`/pms/reservations/${quickPaymentBooking.id}/transfer-to-cari`, {
+          amount,
+          cari_account_id: quickPaymentCariAccountId,
+          description: 'Ön büro hızlı cari aktarım',
+        }, {
+          headers: { 'Idempotency-Key': idempotencyKey },
+        });
+        toast.success(`Bakiye cari hesaba aktarıldı: ${formatMoney(amount)} ${t('pmsComponents.common.currency')}`);
+      } else {
+        await axios.post(`/frontdesk/folio/${quickPaymentBooking.id}/payment`, {
+          amount,
+          method: quickPaymentMethod,
+          payment_type: amount >= balance - 0.01 ? 'final' : 'interim',
+          reference: null,
+          notes: 'Ön büro hızlı tahsilat',
+        }, {
+          headers: { 'Idempotency-Key': idempotencyKey },
+        });
+        toast.success(`Ödeme folyoya işlendi: ${formatMoney(amount)} ${t('pmsComponents.common.currency')}`);
+      }
       setQuickPaymentBooking(null);
       setQuickPaymentAmount('');
       setQuickPaymentMethod('card');
+      setQuickPaymentCariAccountId('');
       await Promise.allSettled([
         loadFrontDeskData ? Promise.resolve().then(loadFrontDeskData) : Promise.resolve(),
         loadData ? Promise.resolve().then(loadData) : Promise.resolve(),
@@ -231,7 +272,7 @@ const FrontdeskTab = ({
       quickPaymentSubmittingRef.current = false;
       setQuickPaymentInProgress(false);
     }
-  }, [formatMoney, loadData, loadFrontDeskData, quickPaymentAmount, quickPaymentBooking, quickPaymentMethod, t]);
+  }, [formatMoney, loadData, loadFrontDeskData, quickPaymentAmount, quickPaymentBooking, quickPaymentCariAccountId, quickPaymentMethod, t]);
 
   if (loading) {
     return (
@@ -868,8 +909,8 @@ const FrontdeskTab = ({
                 />
               </div>
               <div className="space-y-2">
-                <Label>Ödeme Yöntemi</Label>
-                <Select value={quickPaymentMethod} onValueChange={setQuickPaymentMethod} disabled={quickPaymentInProgress}>
+                <Label>Tahsilat / Aktarım Yöntemi</Label>
+                <Select value={quickPaymentMethod} onValueChange={handleQuickPaymentMethodChange} disabled={quickPaymentInProgress}>
                   <SelectTrigger data-testid="frontdesk-quick-payment-method">
                     <SelectValue />
                   </SelectTrigger>
@@ -877,11 +918,38 @@ const FrontdeskTab = ({
                     <SelectItem value="card">Kredi / Banka Kartı</SelectItem>
                     <SelectItem value="cash">Nakit</SelectItem>
                     <SelectItem value="bank_transfer">Havale / EFT</SelectItem>
+                    <SelectItem value="city_ledger">Cari Hesaba Aktar</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+              {quickPaymentMethod === 'city_ledger' && (
+                <div className="space-y-2">
+                  <Label>Cari Hesap</Label>
+                  <Select
+                    value={quickPaymentCariAccountId}
+                    onValueChange={setQuickPaymentCariAccountId}
+                    disabled={quickPaymentInProgress || quickPaymentCariLoading}
+                  >
+                    <SelectTrigger data-testid="frontdesk-quick-payment-cari-account">
+                      <SelectValue placeholder={quickPaymentCariLoading ? 'Cari hesaplar yükleniyor…' : 'Cari hesap seçin'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {quickPaymentCariAccounts.map((account) => (
+                        <SelectItem key={account.id} value={account.id}>
+                          {account.name || account.title || account.account_name || account.id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {!quickPaymentCariLoading && quickPaymentCariAccounts.length === 0 && (
+                    <p className="text-xs text-amber-700">Aktarım için önce Cari Hesaplar ekranında aktif bir cari oluşturun.</p>
+                  )}
+                </div>
+              )}
               <p className="text-xs text-slate-500">
-                Ödeme doğrudan misafirin açık folyosuna işlenir. Bakiye kapandığında çıkış butonu otomatik olarak kullanılabilir hâle gelir.
+                {quickPaymentMethod === 'city_ledger'
+                  ? 'Tutar misafirin folyosunu kapatır ve seçilen cari hesabın borcuna tek işlem olarak yansır.'
+                  : 'Ödeme doğrudan misafirin açık folyosuna işlenir. Bakiye kapandığında çıkış butonu otomatik olarak kullanılabilir hâle gelir.'}
               </p>
               <div className="flex justify-end gap-2 border-t pt-4">
                 <Button type="button" variant="outline" onClick={closeQuickPayment} disabled={quickPaymentInProgress}>
@@ -890,12 +958,12 @@ const FrontdeskTab = ({
                 <Button
                   type="button"
                   onClick={submitQuickPayment}
-                  disabled={quickPaymentInProgress || !Number.isFinite(Number(quickPaymentAmount)) || Number(quickPaymentAmount) <= 0}
+                  disabled={quickPaymentInProgress || !Number.isFinite(Number(quickPaymentAmount)) || Number(quickPaymentAmount) <= 0 || (quickPaymentMethod === 'city_ledger' && !quickPaymentCariAccountId)}
                   data-testid="frontdesk-quick-payment-submit"
                   className="bg-emerald-600 text-white hover:bg-emerald-700"
                 >
                   {quickPaymentInProgress ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
-                  {quickPaymentInProgress ? 'İşleniyor…' : 'Ödemeyi Folyoya İşle'}
+                  {quickPaymentInProgress ? 'İşleniyor…' : quickPaymentMethod === 'city_ledger' ? 'Cari Hesaba Aktar' : 'Ödemeyi Folyoya İşle'}
                 </Button>
               </div>
             </div>
