@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, Suspense, memo } fro
 import axios from 'axios';
 import { toast } from 'sonner';
 import { getCheckoutErrorMessage, normalizeCheckoutResponse } from '@/utils/pmsCheckout';
+import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { lazyWithPreload as lazy } from '@/routes/lazyWithPreload';
@@ -643,17 +644,39 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   };
 
   const handleCheckIn = async (bookingId, forceClean = false) => {
+    const currentLock = reservationEditLockManager?.getCurrent?.();
+    const shouldReleaseLock = !(
+      String(currentLock?.bookingId || '') === String(bookingId)
+      && currentLock?.status === 'acquired'
+    );
     try {
+      const lock = await reservationEditLockManager?.acquire?.(bookingId);
+      if (!lock || lock.status !== 'acquired') {
+        throw new Error('Rezervasyon düzenleme kilidi alınamadı. Lütfen tekrar deneyin.');
+      }
       const params = new URLSearchParams({ create_folio: 'true' });
       if (forceClean) params.append('force_clean', 'true');
       const response = await axios.post(`/frontdesk/checkin/${bookingId}?${params}`);
       toast.success(`${response.data.message} - Room ${response.data.room_number}`);
       await Promise.all([loadData(), loadFrontDeskData()]);
-    } catch (error) { toast.error(error.response?.data?.detail || 'Check-in failed'); }
+    } catch (error) {
+      toast.error(error.response?.data?.detail || error.message || 'Giriş yapılamadı');
+    } finally {
+      if (shouldReleaseLock) await reservationEditLockManager?.releaseCurrent?.();
+    }
   };
 
   const handleCheckOut = async (bookingId) => {
+    const currentLock = reservationEditLockManager?.getCurrent?.();
+    const shouldReleaseLock = !(
+      String(currentLock?.bookingId || '') === String(bookingId)
+      && currentLock?.status === 'acquired'
+    );
     try {
+      const lock = await reservationEditLockManager?.acquire?.(bookingId);
+      if (!lock || lock.status !== 'acquired') {
+        throw new Error('Rezervasyon düzenleme kilidi alınamadı. Lütfen tekrar deneyin.');
+      }
       const response = await axios.post(`/frontdesk/checkout/${bookingId}?auto_close_folios=true`);
       const result = normalizeCheckoutResponse(response);
       if (result.totalBalance > 0.01) {
@@ -671,6 +694,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     } catch (error) {
       toast.error(getCheckoutErrorMessage(error));
       return false;
+    } finally {
+      if (shouldReleaseLock) await reservationEditLockManager?.releaseCurrent?.();
     }
   };
 

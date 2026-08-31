@@ -731,17 +731,58 @@ class FrontdeskService:
         bookings = await self._db.bookings.find({"tenant_id": ctx.tenant_id, "status": "checked_in"}, {"_id": 0}).to_list(1000)
         if not bookings:
             return ServiceResult.success([])
+
+        booking_ids = [b["id"] for b in bookings if b.get("id")]
         guest_ids = list({b["guest_id"] for b in bookings if b.get("guest_id")})
         room_ids = list({b["room_id"] for b in bookings if b.get("room_id")})
-        guest_map = {}
+        guest_map, room_map = {}, {}
+        charges_by_booking, payments_by_booking, extras_by_booking = {}, {}, {}
+
         if guest_ids:
             async for g in self._db.guests.find({"id": {"$in": guest_ids}, "tenant_id": ctx.tenant_id}, {"_id": 0}):
                 guest_map[g["id"]] = g
-        room_map = {}
         if room_ids:
             async for r in self._db.rooms.find({"id": {"$in": room_ids}, "tenant_id": ctx.tenant_id}, {"_id": 0}):
                 room_map[r["id"]] = r
-        enriched = [{**b, "guest": guest_map.get(b.get("guest_id")), "room": room_map.get(b.get("room_id"))} for b in bookings]
+        if booking_ids:
+            async for charge in self._db.folio_charges.find(
+                {"booking_id": {"$in": booking_ids}, "tenant_id": ctx.tenant_id},
+                {"_id": 0},
+            ):
+                charges_by_booking.setdefault(charge["booking_id"], []).append(charge)
+            async for payment in self._db.payments.find(
+                {"booking_id": {"$in": booking_ids}, "tenant_id": ctx.tenant_id},
+                {"_id": 0},
+            ):
+                payments_by_booking.setdefault(payment["booking_id"], []).append(payment)
+            async for charge in self._db.extra_charges.find(
+                {"booking_id": {"$in": booking_ids}, "tenant_id": ctx.tenant_id},
+                {"_id": 0},
+            ):
+                extras_by_booking.setdefault(charge["booking_id"], []).append(charge)
+
+        enriched = []
+        for booking in bookings:
+            booking_id = booking["id"]
+            guest = guest_map.get(booking.get("guest_id")) or {}
+            room = room_map.get(booking.get("room_id")) or {}
+            guest_name = guest.get("name") or f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip()
+            balance = calculate_departure_balance(
+                charges_by_booking.get(booking_id, []),
+                payments_by_booking.get(booking_id, []),
+                extras_by_booking.get(booking_id, []),
+                booking_total=booking.get("total_amount", 0),
+            )
+            enriched.append(
+                {
+                    **booking,
+                    "guest": guest or None,
+                    "room": room or None,
+                    "guest_name": guest_name or booking.get("guest_name"),
+                    "room_number": room.get("room_number") or booking.get("room_number"),
+                    "balance": balance,
+                }
+            )
         return ServiceResult.success(enriched)
 
     # ------------------------------------------------------------------
