@@ -362,7 +362,7 @@ describe('PMS manually discovered operation regressions', () => {
             departures={[{
               id: 'booking-cari', status: 'checked_in', balance: 250,
               check_in: '2026-08-30', check_out: '2026-08-31',
-              guest_name: 'CARI GUEST', room_number: '107',
+              guest_name: 'CARI GUEST', room_number: '107', channel: 'expedia',
             }]}
             inhouse={[]}
             bookings={[]}
@@ -380,6 +380,7 @@ describe('PMS manually discovered operation regressions', () => {
     );
 
     fireEvent.click(screen.getByTestId('departure-payment-booking-cari'));
+    expect(screen.getByTestId('frontdesk-quick-payment-channel')).toHaveTextContent('Expedia');
     fireEvent.click(screen.getByTestId('frontdesk-quick-payment-method'));
     fireEvent.click(screen.getByText('Cari Hesaba Aktar'));
 
