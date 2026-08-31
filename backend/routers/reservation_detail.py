@@ -24,13 +24,13 @@ from core.reservation_mutability import ensure_reservation_mutable, reservation_
 from core.security import get_current_user
 from domains.channel_manager.providers.hotelrunner_notes import resolve_legacy_hotelrunner_note
 from models.schemas import User, _ensure_hotel_context
+from models.schemas.bookings import BookingCreate
 from modules.pms_core.guest_identity import find_existing_guest_by_identity
 from modules.pms_core.role_permission_service import (
     RolePermissionService,
     require_op,  # v97 DW
 )
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
-from models.schemas.bookings import BookingCreate
 from modules.reservations.services.create_reservation_service import (
     CreateReservationService,
 )

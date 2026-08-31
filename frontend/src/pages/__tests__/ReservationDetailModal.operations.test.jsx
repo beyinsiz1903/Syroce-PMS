@@ -210,11 +210,11 @@ describe('ReservationDetailModal operation URLs', () => {
     fireEvent.click(await screen.findByTestId('repair-channel-pricing'));
 
     await waitFor(() => expect(confirmDialog).toHaveBeenCalledWith(expect.objectContaining({
-      title: 'Kanal fiyatını düzelt',
+      title: 'Rezervasyon fiyatını düzelt',
     })));
     await waitFor(() => expect(post).toHaveBeenCalledWith(
       '/pms/reservations/booking-test/repair-channel-pricing',
-      { reason: 'Kanal toplamına mükerrer vergi eklenmesinin düzeltilmesi' },
+      { reason: 'Vergi dahil nihai rezervasyon tutarına mükerrer vergi eklenmesinin düzeltilmesi' },
     ));
     expect(post).not.toHaveBeenCalledWith(expect.stringContaining('cancel'), expect.anything());
   });
