@@ -997,7 +997,7 @@ const FrontdeskTab = ({
                     </SelectTrigger>
                     <SelectContent>
                       {quickPaymentCariAccounts.map((account) => (
-                        <SelectItem key={account.id} value={account.id}>
+                        <SelectItem key={account.id} value={account.transfer_id || account.id}>
                           {account.name || account.title || account.account_name || account.id}
                         </SelectItem>
                       ))}

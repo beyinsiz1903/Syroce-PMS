@@ -353,7 +353,7 @@ describe('PMS manually discovered operation regressions', () => {
 
   it('transfers the quick-payment balance to the selected existing cari account', async () => {
     get.mockResolvedValue({
-      data: { accounts: [{ id: 'cari-1', name: 'Kurumsal Cari' }] },
+      data: { accounts: [{ id: 'legacy-cari-1', transfer_id: 'mongo-cari-1', name: 'Kurumsal Cari' }] },
     });
     const loadFrontDeskData = vi.fn().mockResolvedValue(undefined);
     const loadData = vi.fn().mockResolvedValue(undefined);
@@ -397,7 +397,7 @@ describe('PMS manually discovered operation regressions', () => {
       '/pms/reservations/booking-cari/transfer-to-cari',
       {
         amount: 250,
-        cari_account_id: 'cari-1',
+        cari_account_id: 'mongo-cari-1',
         description: 'Ön büro hızlı cari aktarım',
       },
       expect.objectContaining({ headers: expect.objectContaining({ 'Idempotency-Key': expect.any(String) }) }),

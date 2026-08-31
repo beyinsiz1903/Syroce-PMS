@@ -92,6 +92,11 @@ def _canonical_cari_account_name(account: dict) -> str:
     )
 
 
+def _cari_transfer_lookup_id(account: dict) -> str:
+    """Expose the persisted Mongo identity used by the transfer write path."""
+    return str(account.get("_id") or _canonical_cari_account_id(account))
+
+
 async def _find_cari_account(tenant_id: str, account_id: str, *, session=None):
     """Return account, collection kind and its exact update filter."""
     find_kwargs = {"session": session} if session is not None else {}
@@ -2350,6 +2355,7 @@ async def list_cari_accounts(current_user: User = Depends(get_current_user)):
         seen_account_ids.add(account_id)
         normalized = {key: value for key, value in acc.items() if key != "_id"}
         normalized["id"] = account_id
+        normalized["transfer_id"] = _cari_transfer_lookup_id(acc)
         normalized["name"] = _canonical_cari_account_name(acc)
         normalized["balance"] = _cari_balance(acc)
         accounts.append(normalized)
@@ -2363,6 +2369,7 @@ async def list_cari_accounts(current_user: User = Depends(get_current_user)):
         # cari_accounts formatıyla uyumlu hale getir
         accounts.append({
             "id": account_id,
+            "transfer_id": _cari_transfer_lookup_id(acc),
             "name": _canonical_cari_account_name(acc),
             "company_name": acc.get("company_name"),
             "account_type": "city_ledger",
