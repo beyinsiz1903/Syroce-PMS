@@ -3,12 +3,88 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from bson import ObjectId
 from fastapi import HTTPException
 from pydantic import ValidationError
 
 os.environ.setdefault("JWT_SECRET", "unit-test-secret-key-at-least-32-chars!!")
 
 from routers import pms_reservations, reservation_detail
+
+
+class AsyncRows:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def __aiter__(self):
+        async def iterate():
+            for row in self.rows:
+                yield row
+
+        return iterate()
+
+
+@pytest.mark.asyncio
+async def test_legacy_cari_object_id_is_found_and_normalized(monkeypatch):
+    legacy_id = ObjectId()
+    legacy_account = {
+        "_id": legacy_id,
+        "tenant_id": "tenant-a",
+        "account_name": "Etstur",
+        "current_balance": 0,
+    }
+
+    async def find_legacy_account(query, *_args, **_kwargs):
+        if query.get("_id") == legacy_id:
+            return legacy_account
+        return None
+
+    database = SimpleNamespace(
+        cari_accounts=SimpleNamespace(find_one=AsyncMock(side_effect=find_legacy_account)),
+        city_ledger_accounts=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+
+    account, is_city_ledger, update_filter = await reservation_detail._find_cari_account(
+        "tenant-a",
+        str(legacy_id),
+    )
+
+    assert account is legacy_account
+    assert is_city_ledger is False
+    assert update_filter == {"tenant_id": "tenant-a", "_id": legacy_id}
+    assert reservation_detail._canonical_cari_account_id(account) == str(legacy_id)
+    assert reservation_detail._canonical_cari_account_name(account) == "Etstur"
+
+
+@pytest.mark.asyncio
+async def test_legacy_city_ledger_account_id_is_found(monkeypatch):
+    legacy_account = {
+        "tenant_id": "tenant-a",
+        "account_id": "agency-etstur",
+        "account_name": "Etstur",
+        "current_balance": 0,
+    }
+
+    async def find_city_ledger(query, *_args, **_kwargs):
+        if query.get("account_id") == "agency-etstur":
+            return legacy_account
+        return None
+
+    database = SimpleNamespace(
+        cari_accounts=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        city_ledger_accounts=SimpleNamespace(find_one=AsyncMock(side_effect=find_city_ledger)),
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+
+    account, is_city_ledger, update_filter = await reservation_detail._find_cari_account(
+        "tenant-a",
+        "agency-etstur",
+    )
+
+    assert account is legacy_account
+    assert is_city_ledger is True
+    assert update_filter == {"tenant_id": "tenant-a", "account_id": "agency-etstur"}
 
 
 @pytest.mark.parametrize(
@@ -164,3 +240,64 @@ async def test_deposit_refund_prefers_original_folio(monkeypatch):
         {"_id": 0},
     )
     database.folios.insert_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_night_audit_closed_daily_rate_cannot_be_changed(monkeypatch):
+    daily_rates = SimpleNamespace(
+        find=lambda *_args, **_kwargs: AsyncRows(
+            [
+                {
+                    "id": "rate-a",
+                    "booking_id": "booking-a",
+                    "tenant_id": "tenant-a",
+                    "date": "2026-08-17",
+                    "rate": 400.0,
+                }
+            ]
+        ),
+        update_one=AsyncMock(),
+    )
+    database = SimpleNamespace(
+        bookings=SimpleNamespace(
+            find_one=AsyncMock(
+                return_value={
+                    "id": "booking-a",
+                    "tenant_id": "tenant-a",
+                    "status": "checked_in",
+                }
+            ),
+            update_one=AsyncMock(),
+        ),
+        daily_rates=daily_rates,
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_args: None)
+    monkeypatch.setattr(reservation_detail, "ensure_reservation_mutable", AsyncMock())
+    monkeypatch.setattr(
+        reservation_detail,
+        "ensure_business_date_initialized",
+        AsyncMock(return_value={"business_date": "2026-08-18"}),
+    )
+    monkeypatch.setattr(reservation_detail, "_log_activity", AsyncMock())
+
+    with pytest.raises(HTTPException) as exc:
+        await reservation_detail.update_daily_rates(
+            "booking-a",
+            reservation_detail.DailyRateUpdate(
+                rates=[reservation_detail.DailyRateEntry(date="2026-08-17", rate=450.0)]
+            ),
+            current_user=SimpleNamespace(
+                id="user-a",
+                tenant_id="tenant-a",
+                role="manager",
+                name="Test Operator",
+            ),
+            _perm=None,
+        )
+
+    assert exc.value.status_code == 409
+    assert "Night Audit ile kapatıldığı" in exc.value.detail
+    daily_rates.update_one.assert_not_awaited()
+    database.bookings.update_one.assert_not_awaited()

@@ -14,10 +14,7 @@ from common.audit_hook import SEVERITY_CRITICAL, audited
 from common.context import OperationContext
 from common.result import ServiceResult
 from core.business_date_service import ensure_business_date_initialized
-from core.channel_room_charge_pricing import (
-    calculate_room_charge,
-    is_channel_total_tax_inclusive,
-)
+from core.channel_room_charge_pricing import calculate_room_charge
 from domains.pms.night_audit.validations import validate_pre_audit
 
 logger = logging.getLogger(__name__)
@@ -317,31 +314,12 @@ class NightAuditCoreService:
 
         for booking in bookings_list:
             rooms_processed += 1
-            if is_channel_total_tax_inclusive(booking):
-                pricing = calculate_room_charge(
-                    booking,
-                    bd,
-                    vat_rate=DEFAULT_VAT_RATE,
-                    accommodation_tax_rate=accommodation_tax_rate,
-                )
-            else:
-                # Preserve this service's established direct-booking rate
-                # semantics; only provider-imported gross totals are changed.
-                direct_rate = float(booking.get("room_rate") or booking.get("rate") or 0.0)
-                vat = round(direct_rate * DEFAULT_VAT_RATE, 2)
-                accommodation_tax = round(direct_rate * accommodation_tax_rate, 2)
-                pricing = {
-                    "amount": direct_rate,
-                    "unit_price": direct_rate,
-                    "tax_rate": round((DEFAULT_VAT_RATE + accommodation_tax_rate) * 100, 1),
-                    "tax_amount": round(vat + accommodation_tax, 2),
-                    "total": round(direct_rate + vat + accommodation_tax, 2),
-                    "tax_breakdown": {
-                        "vat": vat,
-                        "accommodation_tax": accommodation_tax,
-                    },
-                    "tax_inclusive": False,
-                }
+            pricing = calculate_room_charge(
+                booking,
+                bd,
+                vat_rate=DEFAULT_VAT_RATE,
+                accommodation_tax_rate=accommodation_tax_rate,
+            )
             room_rate = pricing["amount"]
             if room_rate <= 0:
                 exceptions.append(

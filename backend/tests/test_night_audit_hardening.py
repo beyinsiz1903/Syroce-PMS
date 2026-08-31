@@ -164,12 +164,17 @@ async def test_successful_full_audit():
             "business_date": BD, "charge_type": "room_charge",
         }, {"_id": 0})
         assert charge is not None
-        assert charge["amount"] == 2500.0
+        # Reservation fiyatı misafirin ödeyeceği vergi dahil brüt toplamdır.
+        # Night Audit vergiyi bunun üzerine eklemez; matrah/vergi olarak ayırır.
+        assert charge["amount"] == 2232.14
+        assert charge["tax_amount"] == 267.86
+        assert charge["total"] == 2500.0
+        assert charge["tax_inclusive"] is True
         assert charge["voided"] is False
 
         # Verify folio balance updated
         folio = await db.folios.find_one({"id": seed["folio_id"]}, {"_id": 0})
-        assert folio["balance"] > 0
+        assert folio["balance"] == 2500.0
 
         # Verify business date advanced
         settings = await db.tenant_settings.find_one({"tenant_id": TENANT}, {"_id": 0})

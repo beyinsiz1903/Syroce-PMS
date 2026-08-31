@@ -346,6 +346,9 @@ describe('PMS manually discovered operation regressions', () => {
     ));
     await waitFor(() => expect(loadFrontDeskData).toHaveBeenCalledTimes(1));
     expect(loadData).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.queryByTestId('departure-payment-booking-payment')).not.toBeInTheDocument();
+    });
   });
 
   it('transfers the quick-payment balance to the selected existing cari account', async () => {
@@ -401,6 +404,9 @@ describe('PMS manually discovered operation regressions', () => {
     ));
     await waitFor(() => expect(loadFrontDeskData).toHaveBeenCalledTimes(1));
     expect(loadData).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.queryByTestId('departure-payment-booking-cari')).not.toBeInTheDocument();
+    });
   });
 
   it('opens the full walk-in workflow from the front desk quick action', () => {

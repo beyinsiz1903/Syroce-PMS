@@ -52,6 +52,7 @@ const FrontdeskTab = ({
   const [quickPaymentCariAccountId, setQuickPaymentCariAccountId] = useState('');
   const [quickPaymentCariLoading, setQuickPaymentCariLoading] = useState(false);
   const [quickPaymentInProgress, setQuickPaymentInProgress] = useState(false);
+  const [quickPaymentBalanceOverrides, setQuickPaymentBalanceOverrides] = useState({});
   const quickPaymentSubmittingRef = useRef(false);
   // Which top KPI card is currently expanded to show guest names: null | 'arrivals' | 'departures' | 'inhouse'
   const [expandedKpi, setExpandedKpi] = useState(null);
@@ -59,17 +60,27 @@ const FrontdeskTab = ({
     setExpandedKpi(prev => (prev === key ? null : key));
   }, []);
 
+  const effectiveBookingBalance = useCallback((booking) => {
+    const sourceBalance = Math.max(0, Number(booking?.balance) || 0);
+    const override = booking?.id ? quickPaymentBalanceOverrides[booking.id] : null;
+    if (!override) return sourceBalance;
+
+    // Stop applying the optimistic value as soon as refreshed API data changes.
+    if (Math.abs(sourceBalance - override.sourceBalance) > 0.005) return sourceBalance;
+    return Math.max(0, Number(override.remainingBalance) || 0);
+  }, [quickPaymentBalanceOverrides]);
+
   // Today's financial pulse (computed client-side from already-loaded data)
   const financialPulse = useMemo(() => {
     const sumNum = (arr, key) => arr.reduce((acc, b) => acc + (Number(b?.[key]) || 0), 0);
     const expectedRevenue = sumNum(arrivals, 'total_amount');
-    const expectedCollections = sumNum(departures, 'balance');
-    const inhouseOutstanding = sumNum(inhouse, 'balance');
+    const expectedCollections = departures.reduce((acc, booking) => acc + effectiveBookingBalance(booking), 0);
+    const inhouseOutstanding = inhouse.reduce((acc, booking) => acc + effectiveBookingBalance(booking), 0);
     const occRooms = rooms.filter(r => ['occupied', 'reserved'].includes(r.status)).length;
     const totalRooms = rooms.length || 0;
     const occupancyPct = totalRooms > 0 ? Math.round((occRooms / totalRooms) * 100) : 0;
     return { expectedRevenue, expectedCollections, inhouseOutstanding, occupancyPct, occRooms, totalRooms };
-  }, [arrivals, departures, inhouse, rooms]);
+  }, [arrivals, departures, effectiveBookingBalance, inhouse, rooms]);
 
   // VIP & special-request alerts: scan today's arrivals + in-house
   const guestById = useMemo(() => {
@@ -179,7 +190,7 @@ const FrontdeskTab = ({
   const requestCheckout = useCallback(async (booking) => {
     if (!booking?.id || checkoutInProgress) return;
 
-    const balance = Number(booking.balance) || 0;
+    const balance = effectiveBookingBalance(booking);
     if (balance > 0.01) {
       setReservationDetailId?.(booking.id);
       toast.warning(`${tf('balance')}: ${formatMoney(balance)} ${t('pmsComponents.common.currency')} · ${tf('collectFirst')}`);
@@ -199,16 +210,16 @@ const FrontdeskTab = ({
     } finally {
       setCheckoutInProgress(null);
     }
-  }, [checkoutInProgress, formatMoney, handleCheckOut, setReservationDetailId, t, tf]);
+  }, [checkoutInProgress, effectiveBookingBalance, formatMoney, handleCheckOut, setReservationDetailId, t, tf]);
 
   const openQuickPayment = useCallback((booking) => {
-    const balance = Math.max(0, Number(booking?.balance) || 0);
+    const balance = effectiveBookingBalance(booking);
     if (!booking?.id || balance <= 0.01) return;
     setQuickPaymentBooking(booking);
     setQuickPaymentAmount(balance.toFixed(2));
     setQuickPaymentMethod('card');
     setQuickPaymentCariAccountId('');
-  }, []);
+  }, [effectiveBookingBalance]);
 
   const closeQuickPayment = useCallback(() => {
     if (quickPaymentSubmittingRef.current) return;
@@ -240,7 +251,7 @@ const FrontdeskTab = ({
   const submitQuickPayment = useCallback(async () => {
     if (!quickPaymentBooking?.id || quickPaymentSubmittingRef.current) return;
     const amount = Number(quickPaymentAmount);
-    const balance = Math.max(0, Number(quickPaymentBooking.balance) || 0);
+    const balance = effectiveBookingBalance(quickPaymentBooking);
     if (!Number.isFinite(amount) || amount <= 0) {
       toast.error('Ödeme tutarı sıfırdan büyük olmalı.');
       return;
@@ -260,8 +271,9 @@ const FrontdeskTab = ({
     const idempotencyKey = window.crypto?.randomUUID?.()
       || `frontdesk-payment-${quickPaymentBooking.id}-${Date.now()}-${Math.random()}`;
     try {
+      let response;
       if (isCariTransfer) {
-        await axios.post(`/pms/reservations/${quickPaymentBooking.id}/transfer-to-cari`, {
+        response = await axios.post(`/pms/reservations/${quickPaymentBooking.id}/transfer-to-cari`, {
           amount,
           cari_account_id: quickPaymentCariAccountId,
           description: 'Ön büro hızlı cari aktarım',
@@ -270,7 +282,7 @@ const FrontdeskTab = ({
         });
         toast.success(`Bakiye cari hesaba aktarıldı: ${formatMoney(amount)} ${t('pmsComponents.common.currency')}`);
       } else {
-        await axios.post(`/frontdesk/folio/${quickPaymentBooking.id}/payment`, {
+        response = await axios.post(`/frontdesk/folio/${quickPaymentBooking.id}/payment`, {
           amount,
           method: quickPaymentMethod,
           payment_type: amount >= balance - 0.01 ? 'final' : 'interim',
@@ -281,6 +293,17 @@ const FrontdeskTab = ({
         });
         toast.success(`Ödeme folyoya işlendi: ${formatMoney(amount)} ${t('pmsComponents.common.currency')}`);
       }
+      const apiRemaining = Number(response?.data?.remaining_balance);
+      const remainingBalance = Number.isFinite(apiRemaining)
+        ? Math.max(0, apiRemaining)
+        : Math.max(0, balance - amount);
+      setQuickPaymentBalanceOverrides((previous) => ({
+        ...previous,
+        [quickPaymentBooking.id]: {
+          sourceBalance: Math.max(0, Number(quickPaymentBooking.balance) || 0),
+          remainingBalance,
+        },
+      }));
       setQuickPaymentBooking(null);
       setQuickPaymentAmount('');
       setQuickPaymentMethod('card');
@@ -299,7 +322,7 @@ const FrontdeskTab = ({
       quickPaymentSubmittingRef.current = false;
       setQuickPaymentInProgress(false);
     }
-  }, [formatMoney, loadData, loadFrontDeskData, quickPaymentAmount, quickPaymentBooking, quickPaymentCariAccountId, quickPaymentMethod, t]);
+  }, [effectiveBookingBalance, formatMoney, loadData, loadFrontDeskData, quickPaymentAmount, quickPaymentBooking, quickPaymentCariAccountId, quickPaymentMethod, t]);
 
   if (loading) {
     return (
@@ -463,7 +486,7 @@ const FrontdeskTab = ({
                     const guestName = b.guest?.name || b.guest_name || tf('guest');
                     const roomNo = b.room?.room_number || b.room_number || '-';
                     const isVip = !!(b.guest?.vip_status || b.vip_status);
-                    const balance = Number(b.balance) || 0;
+                    const balance = effectiveBookingBalance(b);
                     return (
                       <button
                         key={b.id}
@@ -632,7 +655,7 @@ const FrontdeskTab = ({
                     <span className="text-red-500 ml-2">{tf('plannedCheckout')}: {b.check_out?.slice(0, 10)}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    {(Number(b.balance) || 0) > 0.01 && (
+                    {effectiveBookingBalance(b) > 0.01 && (
                       <Button
                         type="button"
                         size="sm"
@@ -781,6 +804,7 @@ const FrontdeskTab = ({
           {arrivals.map((booking) => {
             const isDirty = booking.room?.status === 'dirty' || booking.room?.status === 'cleaning';
             const isVip = booking.guest?.vip_status;
+            const balance = effectiveBookingBalance(booking);
             return (
               <Card key={booking.id} className={`transition-all hover:shadow-md ${isDirty ? 'border-l-4 border-l-amber-400' : ''} ${isVip ? 'ring-1 ring-indigo-200' : ''}`}
                 data-testid={`arrival-card-${booking.id}`}>
@@ -799,9 +823,9 @@ const FrontdeskTab = ({
                             <Calendar className="w-3 h-3" /> {tf('roomDirty')}
                           </span>
                         )}
-                        {booking.balance > 0 && (
+                        {balance > 0.01 && (
                           <span className="inline-flex items-center gap-1 text-[11px] bg-red-50 border border-red-200 text-red-700 rounded-md px-2 py-0.5">
-                            {tf('balance')}: {booking.balance?.toFixed(2)} {t('pmsComponents.common.currency')}
+                            {tf('balance')}: {balance.toFixed(2)} {t('pmsComponents.common.currency')}
                           </span>
                         )}
                       </div>
@@ -836,7 +860,8 @@ const FrontdeskTab = ({
             <div className="text-center py-8 text-slate-400 text-sm">{tf('noDeparturesToday')}</div>
           )}
           {departures.map((booking) => {
-            const hasBalance = booking.balance > 0;
+            const balance = effectiveBookingBalance(booking);
+            const hasBalance = balance > 0.01;
             return (
               <Card key={booking.id} className={`transition-all hover:shadow-md ${hasBalance ? 'border-l-4 border-l-red-400' : 'border-l-4 border-l-emerald-400'}`}
                 data-testid={`departure-card-${booking.id}`}>
@@ -848,7 +873,7 @@ const FrontdeskTab = ({
                       <div className="text-xs text-slate-400 mt-0.5">{tf('checkout')}: {new Date(booking.check_out).toLocaleDateString()}</div>
                       {hasBalance && (
                         <div className="mt-2 inline-flex items-center gap-1 text-[11px] bg-red-50 border border-red-200 text-red-700 rounded-md px-2 py-0.5">
-                          <span className="font-semibold">{tf('balance')}: {booking.balance?.toFixed(2)} {t('pmsComponents.common.currency')}</span>
+                          <span className="font-semibold">{tf('balance')}: {balance.toFixed(2)} {t('pmsComponents.common.currency')}</span>
                           — {tf('collectFirst')}
                         </div>
                       )}
@@ -917,7 +942,7 @@ const FrontdeskTab = ({
                 <div className="mt-1 flex items-center justify-between text-sm text-slate-600">
                   <span>{tf('room')} {quickPaymentBooking.room_number || quickPaymentBooking.room?.room_number || '-'}</span>
                   <span className="font-semibold text-red-700">
-                    {tf('balance')}: {formatMoney(quickPaymentBooking.balance)} {t('pmsComponents.common.currency')}
+                    {tf('balance')}: {formatMoney(effectiveBookingBalance(quickPaymentBooking))} {t('pmsComponents.common.currency')}
                   </span>
                 </div>
                 <div className="mt-2 flex items-center gap-2 border-t border-slate-200 pt-2 text-sm">
@@ -939,7 +964,7 @@ const FrontdeskTab = ({
                   type="number"
                   min="0.01"
                   step="0.01"
-                  max={Number(quickPaymentBooking.balance) || undefined}
+                  max={effectiveBookingBalance(quickPaymentBooking) || undefined}
                   value={quickPaymentAmount}
                   onChange={(event) => setQuickPaymentAmount(event.target.value)}
                   disabled={quickPaymentInProgress}

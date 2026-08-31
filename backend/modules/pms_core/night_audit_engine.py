@@ -7,6 +7,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 
 from core.database import db
+from routers.finance.konaklama_vergisi_core import get_accommodation_tax_rate
 
 # A night audit completes in well under 5s even at 500 rooms; 900s (the same
 # stale threshold the hardened engine uses) is a very safe window after which a
@@ -344,9 +345,11 @@ class NightAuditEngine:
         charges_to_insert: list[dict] = []
         now_iso = datetime.now(UTC).isoformat()
         tax_rate = 10  # default tax rate
-        from core.channel_room_charge_pricing import (
-            calculate_room_charge,
-            is_channel_total_tax_inclusive,
+        from core.channel_room_charge_pricing import calculate_room_charge
+
+        accommodation_tax_rate = await get_accommodation_tax_rate(
+            tenant_id,
+            business_date,
         )
 
         # Architect review fix #1: intra-run duplicate guard. Eski kod
@@ -378,31 +381,12 @@ class NightAuditEngine:
                 if fid in already_posted_folio_ids or fid in scheduled_folio_ids:
                     continue  # idempotency (DB-level OR intra-run dedupe)
 
-                # Channel totals are already guest-payable. Direct bookings
-                # retain this engine's historical total_amount/night + 10%
-                # behavior; only imported OTA totals use reverse extraction.
-                if is_channel_total_tax_inclusive(booking):
-                    pricing = calculate_room_charge(
-                        booking,
-                        business_date,
-                        vat_rate=tax_rate / 100,
-                        accommodation_tax_rate=0.02,
-                    )
-                else:
-                    check_in_dt = datetime.fromisoformat(booking["check_in"].replace("Z", "+00:00"))
-                    check_out_dt = datetime.fromisoformat(booking["check_out"].replace("Z", "+00:00"))
-                    total_nights = max((check_out_dt - check_in_dt).days, 1)
-                    direct_rate = round(booking.get("total_amount", 0) / total_nights, 2)
-                    direct_tax = round(direct_rate * tax_rate / 100, 2)
-                    pricing = {
-                        "amount": direct_rate,
-                        "unit_price": direct_rate,
-                        "tax_rate": tax_rate,
-                        "tax_amount": direct_tax,
-                        "total": round(direct_rate + direct_tax, 2),
-                        "tax_breakdown": {"vat": direct_tax, "accommodation_tax": 0.0},
-                        "tax_inclusive": False,
-                    }
+                pricing = calculate_room_charge(
+                    booking,
+                    business_date,
+                    vat_rate=tax_rate / 100,
+                    accommodation_tax_rate=accommodation_tax_rate,
+                )
                 nightly_rate = pricing["amount"]
                 tax_amount = pricing["tax_amount"]
                 total = pricing["total"]

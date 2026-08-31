@@ -7,13 +7,18 @@ payment processing, cari transfers, room changes, and front office operations.
 import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
+from bson import ObjectId
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
 from core.business_date_service import ensure_business_date_initialized
-from core.channel_room_charge_pricing import analyze_legacy_double_tax_charge
+from core.channel_room_charge_pricing import (
+    analyze_legacy_double_tax_charge,
+    is_channel_total_tax_inclusive,
+)
 from core.database import db
 from core.reservation_mutability import ensure_reservation_mutable, reservation_is_historical
 from core.security import get_current_user
@@ -25,6 +30,12 @@ from modules.pms_core.role_permission_service import (
     require_op,  # v97 DW
 )
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
+from models.schemas.bookings import BookingCreate
+from modules.reservations.services.create_reservation_service import (
+    CreateReservationService,
+)
+from routers.finance.konaklama_vergisi_core import get_accommodation_tax_rate
+from security.field_encryption import get_field_encryption_service
 from shared_kernel.idempotency import claim_short_window_dedup, release_idempotency
 
 # Bug CP fix — shared role-permission enforcement for financial endpoints
@@ -42,6 +53,55 @@ def _cari_balance(account: dict) -> float:
     return max(values, default=0.0)
 
 
+def _cari_account_lookup_filters(tenant_id: str, account_id: str) -> list[dict]:
+    """Support both current UUID records and legacy Mongo-backed cari records."""
+    raw_id = str(account_id or "").strip()
+    filters = [
+        {"tenant_id": tenant_id, "id": raw_id},
+        {"tenant_id": tenant_id, "account_id": raw_id},
+        {"tenant_id": tenant_id, "legacy_id": raw_id},
+        {"tenant_id": tenant_id, "_id": raw_id},
+    ]
+    if ObjectId.is_valid(raw_id):
+        filters.append({"tenant_id": tenant_id, "_id": ObjectId(raw_id)})
+    return filters
+
+
+def _canonical_cari_account_id(account: dict) -> str:
+    return str(
+        account.get("id")
+        or account.get("account_id")
+        or account.get("legacy_id")
+        or account.get("_id")
+        or ""
+    )
+
+
+def _canonical_cari_account_name(account: dict) -> str:
+    return str(
+        account.get("name")
+        or account.get("account_name")
+        or account.get("company_name")
+        or "Cari Hesap"
+    )
+
+
+async def _find_cari_account(tenant_id: str, account_id: str, *, session=None):
+    """Return account, collection kind and its exact update filter."""
+    find_kwargs = {"session": session} if session is not None else {}
+    for collection, is_city_ledger in (
+        (getattr(db, "cari_accounts", None), False),
+        (getattr(db, "city_ledger_accounts", None), True),
+    ):
+        if collection is None:
+            continue
+        for query in _cari_account_lookup_filters(tenant_id, account_id):
+            account = await collection.find_one(query, **find_kwargs)
+            if account:
+                return account, is_city_ledger, query
+    return None, False, None
+
+
 def _extra_charge_total(charge: dict) -> float:
     """Resolve heterogeneous extra-charge totals while preserving an explicit zero."""
     for field in ("total", "charge_amount", "amount"):
@@ -51,11 +111,18 @@ def _extra_charge_total(charge: dict) -> float:
     return 0.0
 
 
-from models.schemas.bookings import BookingCreate
-from modules.reservations.services.create_reservation_service import (
-    CreateReservationService,
-)
-from security.field_encryption import get_field_encryption_service
+def _money_cents(value) -> int:
+    """Compare money values without float rounding noise."""
+    try:
+        return int(
+            (Decimal(str(value or 0)) * 100).quantize(
+                Decimal("1"),
+                rounding=ROUND_HALF_UP,
+            )
+        )
+    except (ValueError, TypeError, ArithmeticError):
+        return 0
+
 
 _create_reservation_service = CreateReservationService()
 _field_enc = get_field_encryption_service()
@@ -97,12 +164,25 @@ def _build_financial_summary(
     }
 
 
-def _build_channel_pricing_issue(booking: dict, charges: list[dict], payments: list[dict]) -> dict | None:
+def _build_channel_pricing_issue(
+    booking: dict,
+    charges: list[dict],
+    payments: list[dict],
+    *,
+    accommodation_tax_rate: float,
+) -> dict | None:
     """Summarize only the exact, safely repairable legacy double-tax shape."""
     issues = [
         issue
         for charge in charges
-        if (issue := analyze_legacy_double_tax_charge(booking, charge)) is not None
+        if (
+            issue := analyze_legacy_double_tax_charge(
+                booking,
+                charge,
+                accommodation_tax_rate=accommodation_tax_rate,
+            )
+        )
+        is not None
     ]
     if not issues:
         return None
@@ -309,7 +389,7 @@ class PaymentRecord(BaseModel):
 
 class ChannelPricingRepairRequest(BaseModel):
     reason: str = Field(
-        "Kanal toplamına mükerrer vergi eklenmesinin düzeltilmesi",
+        "Nihai rezervasyon tutarına mükerrer vergi eklenmesinin düzeltilmesi",
         min_length=10,
         max_length=500,
     )
@@ -643,10 +723,19 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
             deposits.append(dep)
 
         business_date = await ensure_business_date_initialized(db, tid)
+        accommodation_tax_rate = await get_accommodation_tax_rate(
+            tid,
+            booking.get("check_in") or business_date["business_date"],
+        )
         read_only = reservation_is_historical(booking, business_date["business_date"])
 
     summary = _build_financial_summary(booking, charges, payments, extra_charges, deposits)
-    summary["channel_pricing_issue"] = _build_channel_pricing_issue(booking, charges, payments)
+    summary["channel_pricing_issue"] = _build_channel_pricing_issue(
+        booking,
+        charges,
+        payments,
+        accommodation_tax_rate=accommodation_tax_rate,
+    )
 
     # Decrypt PII fields for authorized response (KVKK: only after auth/perm checks)
     try:
@@ -684,6 +773,7 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
         "deposits": deposits,
         "summary": summary,
         "read_only": read_only,
+        "business_date": business_date["business_date"],
     }
 
 
@@ -694,7 +784,7 @@ async def repair_channel_pricing(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("void_charge")),
 ):
-    """Repair the exact legacy OTA gross-total double-tax posting in place.
+    """Repair an exact legacy gross-total double-tax posting in place.
 
     The reservation, provider reference, folio, and room-charge ID are kept.
     Only an unpaid/uninvoiced night-audit charge matching the deterministic
@@ -711,8 +801,10 @@ async def repair_channel_pricing(
     )
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
-    await ensure_reservation_mutable(db, tid, booking)
-
+    accommodation_tax_rate = await get_accommodation_tax_rate(
+        tid,
+        booking.get("check_in"),
+    )
     folios = [
         folio
         async for folio in db.folios.find(
@@ -742,14 +834,21 @@ async def repair_channel_pricing(
         issues = [
             (charge, issue)
             for charge in charges
-            if (issue := analyze_legacy_double_tax_charge(locked_booking, charge)) is not None
+            if (
+                issue := analyze_legacy_double_tax_charge(
+                    locked_booking,
+                    charge,
+                    accommodation_tax_rate=accommodation_tax_rate,
+                )
+            )
+            is not None
         ]
         if not issues:
             return {
                 "success": True,
                 "already_repaired": True,
                 "booking_id": booking_id,
-                "message": "Kanal fiyatı zaten doğru",
+                "message": "Rezervasyon fiyatı zaten doğru",
             }
 
         folio_ids = sorted({str(issue["folio_id"]) for _, issue in issues if issue.get("folio_id")})
@@ -872,12 +971,17 @@ async def repair_channel_pricing(
                 session=session,
             )
 
+        fallback_source = (
+            "channel_manager"
+            if is_channel_total_tax_inclusive(locked_booking)
+            else "manual"
+        )
         await db.bookings.update_one(
             {"id": booking_id, "tenant_id": tid},
             {
                 "$set": {
                     "pricing_tax_inclusive": True,
-                    "pricing_source": locked_booking.get("pricing_source") or "channel_manager",
+                    "pricing_source": locked_booking.get("pricing_source") or fallback_source,
                     "pricing_repaired_at": now,
                     "updated_at": now,
                 }
@@ -1120,11 +1224,7 @@ async def transfer_to_cari(
     if data.amount - outstanding_balance > 0.005:
         raise HTTPException(status_code=409, detail="Cari aktarım tutarı açık bakiyeyi aşamaz")
 
-    cari = await db.cari_accounts.find_one({"id": data.cari_account_id, "tenant_id": tid}, {"_id": 0})
-    is_city_ledger = False
-    if not cari:
-        cari = await db.city_ledger_accounts.find_one({"id": data.cari_account_id, "tenant_id": tid}, {"_id": 0})
-        is_city_ledger = True
+    cari, _, _ = await _find_cari_account(tid, data.cari_account_id)
     if not cari:
         raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
 
@@ -1164,19 +1264,14 @@ async def transfer_to_cari(
         if not current_booking:
             raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
 
-        current_cari = await db.cari_accounts.find_one(
-            {"id": data.cari_account_id, "tenant_id": tid},
-            {"_id": 0},
+        current_cari, current_is_city_ledger, current_cari_filter = await _find_cari_account(
+            tid,
+            data.cari_account_id,
             session=session,
         )
         if not current_cari:
-            current_cari = await db.city_ledger_accounts.find_one(
-                {"id": data.cari_account_id, "tenant_id": tid},
-                {"_id": 0},
-                session=session,
-            )
-        if not current_cari:
             raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
+        canonical_account_id = _canonical_cari_account_id(current_cari)
 
         current_outstanding = await _reservation_outstanding_balance(
             tid,
@@ -1217,12 +1312,12 @@ async def transfer_to_cari(
             "posted_by": current_user.name,
             "created_at": now,
         }
-        if is_city_ledger:
-            transaction["account_id"] = data.cari_account_id
+        if current_is_city_ledger:
+            transaction["account_id"] = canonical_account_id
             transaction["transaction_date"] = now
             await db.city_ledger_transactions.insert_one({**transaction}, session=session)
         else:
-            transaction["cari_account_id"] = data.cari_account_id
+            transaction["cari_account_id"] = canonical_account_id
             await db.cari_transactions.insert_one({**transaction}, session=session)
 
         payment = {
@@ -1235,7 +1330,7 @@ async def transfer_to_cari(
             "payment_type": "city_ledger_transfer",
             "status": "paid",
             "reference": f"cari-transfer:{transaction_id}",
-            "cari_account_id": data.cari_account_id,
+            "cari_account_id": canonical_account_id,
             "notes": data.description,
             "processed_by": current_user.name,
             "processed_at": now,
@@ -1243,17 +1338,17 @@ async def transfer_to_cari(
         }
         await db.payments.insert_one({**payment}, session=session)
 
-        if is_city_ledger:
+        if current_is_city_ledger:
             new_cari_balance = current_cari.get("current_balance", 0.0) + data.amount
             await db.city_ledger_accounts.update_one(
-                {"id": data.cari_account_id, "tenant_id": tid},
+                current_cari_filter,
                 {"$set": {"current_balance": new_cari_balance}},
                 session=session,
             )
         else:
             new_cari_balance = _cari_balance(current_cari) + data.amount
             await db.cari_accounts.update_one(
-                {"id": data.cari_account_id, "tenant_id": tid},
+                current_cari_filter,
                 {
                     "$set": {
                         "balance": new_cari_balance,
@@ -1277,7 +1372,9 @@ async def transfer_to_cari(
             "transaction": transaction,
             "payment": payment,
             "folio_id": current_folio["id"],
-            "cari_name": current_cari.get("name"),
+            "cari_account_id": canonical_account_id,
+            "cari_name": _canonical_cari_account_name(current_cari),
+            "remaining_balance": round(max(0.0, current_outstanding - data.amount), 2),
         }
 
     try:
@@ -1311,7 +1408,7 @@ async def transfer_to_cari(
             {
                 "amount": data.amount,
                 "cari_account": result["cari_name"],
-                "cari_account_id": data.cari_account_id,
+                "cari_account_id": result["cari_account_id"],
             },
         ),
         operation="transfer_to_cari_activity",
@@ -2105,6 +2202,28 @@ async def update_daily_rates(
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
     await ensure_reservation_mutable(db, tid, booking)
 
+    business_state = await ensure_business_date_initialized(db, tid)
+    current_business_date = str(business_state["business_date"])[:10]
+    existing_rates = {
+        str(row.get("date") or "")[:10]: row
+        async for row in db.daily_rates.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0, "date": 1, "rate": 1},
+        )
+    }
+    for rate_entry in data.rates:
+        rate_date = str(rate_entry.date)[:10]
+        if rate_date < current_business_date:
+            existing = existing_rates.get(rate_date)
+            if existing is None or _money_cents(existing.get("rate")) != _money_cents(rate_entry.rate):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"{rate_date} iş günü Night Audit ile kapatıldığı için "
+                        "oda fiyatı değiştirilemez"
+                    ),
+                )
+
     for rate_entry in data.rates:
         await db.daily_rates.update_one(
             {"booking_id": booking_id, "tenant_id": tid, "date": rate_entry.date},
@@ -2133,6 +2252,7 @@ async def update_daily_rates(
         current_user.name,
         {
             "rates_count": len(data.rates),
+            "business_date": current_business_date,
         },
     )
 
@@ -2215,16 +2335,29 @@ async def list_cari_accounts(current_user: User = Depends(get_current_user)):
     tid = current_user.tenant_id
 
     accounts = []
+    seen_account_ids = set()
     # Eski cari_accounts koleksiyonu
-    async for acc in db.cari_accounts.find({"tenant_id": tid}, {"_id": 0}).sort("name", 1):
-        accounts.append(acc)
+    async for acc in db.cari_accounts.find({"tenant_id": tid}).sort("name", 1):
+        account_id = _canonical_cari_account_id(acc)
+        if not account_id or account_id in seen_account_ids:
+            continue
+        seen_account_ids.add(account_id)
+        normalized = {key: value for key, value in acc.items() if key != "_id"}
+        normalized["id"] = account_id
+        normalized["name"] = _canonical_cari_account_name(acc)
+        normalized["balance"] = _cari_balance(acc)
+        accounts.append(normalized)
 
     # City Ledger hesaplarını da ekle (folyo dropdown'ında görünsün)
-    async for acc in db.city_ledger_accounts.find({"tenant_id": tid, "is_active": {"$ne": False}}, {"_id": 0}).sort("account_name", 1):
+    async for acc in db.city_ledger_accounts.find({"tenant_id": tid, "is_active": {"$ne": False}}).sort("account_name", 1):
+        account_id = _canonical_cari_account_id(acc)
+        if not account_id or account_id in seen_account_ids:
+            continue
+        seen_account_ids.add(account_id)
         # cari_accounts formatıyla uyumlu hale getir
         accounts.append({
-            "id": acc.get("id"),
-            "name": acc.get("account_name"),
+            "id": account_id,
+            "name": _canonical_cari_account_name(acc),
             "company_name": acc.get("company_name"),
             "account_type": "city_ledger",
             "balance": acc.get("current_balance", 0),
