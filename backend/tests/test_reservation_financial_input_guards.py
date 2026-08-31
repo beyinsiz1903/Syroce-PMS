@@ -55,6 +55,7 @@ async def test_legacy_cari_object_id_is_found_and_normalized(monkeypatch):
     assert update_filter == {"tenant_id": "tenant-a", "_id": legacy_id}
     assert reservation_detail._canonical_cari_account_id(account) == str(legacy_id)
     assert reservation_detail._canonical_cari_account_name(account) == "Etstur"
+    assert reservation_detail._cari_transfer_lookup_id(account) == str(legacy_id)
 
 
 @pytest.mark.asyncio
@@ -112,6 +113,7 @@ async def test_legacy_numeric_cari_account_id_round_trips_from_list_response(mon
     assert account == numeric_account
     assert is_city_ledger is False
     assert update_filter == {"tenant_id": "tenant-a", "id": 12}
+    assert reservation_detail._cari_transfer_lookup_id(numeric_account) == "12"
 
 
 @pytest.mark.parametrize(
