@@ -128,7 +128,14 @@ export function NotesTab({ notes, booking, onRefresh }) {
           notes.map((n, i) => (
             <div key={n.id || i} className="border rounded-lg p-3 space-y-1">
               <div className="flex items-center justify-between">
-                <Badge className={`${typeColors[n.note_type] || typeColors.general} text-xs`}>{typeLabels[n.note_type] || 'Genel'}</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge className={`${typeColors[n.note_type] || typeColors.general} text-xs`}>{typeLabels[n.note_type] || 'Genel'}</Badge>
+                  {n.source === 'hotelrunner' && (
+                    <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 text-xs">
+                      HotelRunner / Acente
+                    </Badge>
+                  )}
+                </div>
                 <span className="text-xs text-gray-400">{fmtTs(n.created_at)}</span>
               </div>
               <p className="text-sm text-gray-700">{n.content}</p>

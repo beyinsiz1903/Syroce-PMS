@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import BookingDialog from '@/components/pms/BookingDialog';
 import FolioDialog from '@/components/pms/FolioDialog';
@@ -220,6 +220,157 @@ describe('PMS manually discovered operation regressions', () => {
 
     fireEvent.click(screen.getByTestId('kpi-noshow'));
     expect(screen.getByRole('button', { name: 'Kapat' })).toBeInTheDocument();
+  });
+
+  it('guards overstay checkout, confirms once and locks the destructive action while pending', async () => {
+    let resolveCheckout;
+    const handleCheckOut = vi.fn(() => new Promise((resolve) => { resolveCheckout = resolve; }));
+    render(
+      <MemoryRouter>
+        <Tabs defaultValue="frontdesk">
+          <FrontdeskTab
+            arrivals={[]}
+            departures={[]}
+            inhouse={[]}
+            bookings={[{
+              id: 'booking-overstay', status: 'checked_in', balance: 0,
+              check_in: '2026-08-10', check_out: '2026-08-11',
+              guest_name: 'TEST GUEST', room_number: '105',
+            }]}
+            rooms={[]}
+            guests={[]}
+            handleCheckIn={() => {}}
+            handleCheckOut={handleCheckOut}
+            loadFolio={() => {}}
+            loading={false}
+          />
+        </Tabs>
+      </MemoryRouter>,
+    );
+
+    const button = screen.getByTestId('overstay-checkout-booking-overstay');
+    fireEvent.click(button);
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(handleCheckOut).toHaveBeenCalledWith('booking-overstay'));
+    expect(button).toBeDisabled();
+
+    fireEvent.click(button);
+    expect(handleCheckOut).toHaveBeenCalledTimes(1);
+    resolveCheckout(true);
+    await waitFor(() => expect(button).not.toBeDisabled());
+  });
+
+  it('opens the reservation instead of checking out an overstay with an open balance', async () => {
+    const handleCheckOut = vi.fn();
+    const setReservationDetailId = vi.fn();
+    render(
+      <MemoryRouter>
+        <Tabs defaultValue="frontdesk">
+          <FrontdeskTab
+            arrivals={[]}
+            departures={[]}
+            inhouse={[]}
+            bookings={[{
+              id: 'booking-balance', status: 'checked_in', balance: 125,
+              check_in: '2026-08-10', check_out: '2026-08-11',
+              guest_name: 'BALANCE GUEST', room_number: '105',
+            }]}
+            rooms={[]}
+            guests={[]}
+            handleCheckIn={() => {}}
+            handleCheckOut={handleCheckOut}
+            loadFolio={() => {}}
+            setReservationDetailId={setReservationDetailId}
+            loading={false}
+          />
+        </Tabs>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('overstay-checkout-booking-balance'));
+    expect(setReservationDetailId).toHaveBeenCalledWith('booking-balance');
+    expect(handleCheckOut).not.toHaveBeenCalled();
+    expect(confirmDialog).not.toHaveBeenCalled();
+  });
+
+  it('posts a simple quick payment to the guest folio and refreshes the front desk', async () => {
+    const loadFrontDeskData = vi.fn().mockResolvedValue(undefined);
+    const loadData = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MemoryRouter>
+        <Tabs defaultValue="frontdesk">
+          <FrontdeskTab
+            arrivals={[]}
+            departures={[{
+              id: 'booking-payment', status: 'checked_in', balance: 125,
+              check_in: '2026-08-30', check_out: '2026-08-31',
+              guest_name: 'PAYMENT GUEST', room_number: '105',
+            }]}
+            inhouse={[]}
+            bookings={[]}
+            rooms={[]}
+            guests={[]}
+            handleCheckIn={() => {}}
+            handleCheckOut={() => {}}
+            loadFolio={() => {}}
+            loadFrontDeskData={loadFrontDeskData}
+            loadData={loadData}
+            loading={false}
+          />
+        </Tabs>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('departure-payment-booking-payment'));
+    expect(screen.getByRole('heading', { name: 'Hızlı Ödeme Al' })).toBeInTheDocument();
+    expect(screen.getByTestId('frontdesk-quick-payment-amount')).toHaveValue(125);
+    expect(screen.queryByText('Ara Ödeme')).not.toBeInTheDocument();
+    expect(screen.queryByText('Final Ödeme')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('frontdesk-quick-payment-submit'));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/frontdesk/folio/booking-payment/payment',
+      {
+        amount: 125,
+        method: 'card',
+        payment_type: 'final',
+        reference: null,
+        notes: 'Ön büro hızlı tahsilat',
+      },
+      expect.objectContaining({ headers: expect.objectContaining({ 'Idempotency-Key': expect.any(String) }) }),
+    ));
+    await waitFor(() => expect(loadFrontDeskData).toHaveBeenCalledTimes(1));
+    expect(loadData).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the full walk-in workflow from the front desk quick action', () => {
+    render(
+      <MemoryRouter initialEntries={['/pms']}>
+        <Routes>
+          <Route path="/pms" element={(
+            <Tabs defaultValue="frontdesk">
+              <FrontdeskTab
+                arrivals={[]}
+                departures={[]}
+                inhouse={[]}
+                bookings={[]}
+                rooms={[]}
+                guests={[]}
+                handleCheckIn={() => {}}
+                handleCheckOut={() => {}}
+                loadFolio={() => {}}
+                loading={false}
+              />
+            </Tabs>
+          )} />
+          <Route path="/walkin" element={<div>walk-in-workflow</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('open-walkin-workflow'));
+    expect(screen.getByText('walk-in-workflow')).toBeInTheDocument();
   });
 
   it('normalizes both list and paginated search response shapes', () => {

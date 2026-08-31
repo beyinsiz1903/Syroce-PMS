@@ -305,6 +305,8 @@ export const NAV_ITEMS = [
     key: "walkin",
     label: "Walk-in Check-in",
     path: "/walkin",
+    // Ayrı bir üst menü kalemi değildir; Ön Büro içindeki hızlı işlemden açılır.
+    hidden: true,
     moduleKey: "pms",
     tier: "basic",
     group: "operations",

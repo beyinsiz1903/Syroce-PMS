@@ -13,10 +13,38 @@ from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
 from common.result import ServiceResult
 from core.business_date_transition_guard import enforce_business_date_transition
+from core.kbs_auto_enqueue import auto_enqueue_kbs
 from domains.pms.frontdesk_financials import calculate_departure_balance
 from domains.pms.lock_bridge.service import CMD_ENCODE, CMD_REVOKE, enqueue_lock_command
 
 logger = logging.getLogger(__name__)
+
+
+async def _enqueue_kbs_after_frontdesk_transition(
+    ctx: OperationContext,
+    booking_id: str,
+    action: str,
+) -> dict | None:
+    """Best-effort KBS hand-off after the PMS transition is durable.
+
+    A temporary browser-extension/KBS problem must never roll back a room
+    movement that has already completed. The queue itself is idempotent for
+    ``booking + action``, so UI retries remain safe.
+    """
+    try:
+        return await auto_enqueue_kbs(
+            ctx.tenant_id,
+            booking_id,
+            action,
+            actor=f"user:{ctx.actor_id}",
+        )
+    except Exception:  # pragma: no cover - defensive; helper is fail-open by contract
+        logger.exception(
+            "KBS auto-enqueue failed after front-desk transition: booking=%s action=%s",
+            booking_id,
+            action,
+        )
+        return None
 
 
 class FrontdeskService:
@@ -190,11 +218,19 @@ class FrontdeskService:
                 {"$inc": {"total_stays": 1}},
             )
 
+        kbs_job = await _enqueue_kbs_after_frontdesk_transition(
+            ctx,
+            booking_id,
+            "checkin",
+        )
+
         return ServiceResult.success(
             {
                 "message": "Check-in completed successfully",
                 "checked_in_at": checked_in_time.isoformat(),
                 "room_number": room.get("room_number"),
+                "kbs_queued": bool(kbs_job),
+                "kbs_job_id": (kbs_job or {}).get("id"),
             }
         )
 
@@ -320,6 +356,12 @@ class FrontdeskService:
         }
         await self._db.housekeeping_tasks.insert_one(hk_task)
 
+        kbs_job = await _enqueue_kbs_after_frontdesk_transition(
+            ctx,
+            booking_id,
+            "checkout",
+        )
+
         return ServiceResult.success(
             {
                 "message": "Check-out completed successfully",
@@ -327,6 +369,8 @@ class FrontdeskService:
                 "total_balance": effective_balance,
                 "folios_closed": len(folios) if auto_close_folios else 0,
                 "folio_details": folio_details,
+                "kbs_queued": bool(kbs_job),
+                "kbs_job_id": (kbs_job or {}).get("id"),
             }
         )
 
@@ -357,7 +401,20 @@ class FrontdeskService:
             {"id": booking["id"], "tenant_id": ctx.tenant_id},
             {"$set": {"status": "checked_in", "checked_in_at": datetime.now(UTC).isoformat()}},
         )
-        return ServiceResult.success({"success": True, "message": "Express check-in tamamlandi", "booking": booking})
+        kbs_job = await _enqueue_kbs_after_frontdesk_transition(
+            ctx,
+            booking["id"],
+            "checkin",
+        )
+        return ServiceResult.success(
+            {
+                "success": True,
+                "message": "Express check-in tamamlandi",
+                "booking": booking,
+                "kbs_queued": bool(kbs_job),
+                "kbs_job_id": (kbs_job or {}).get("id"),
+            }
+        )
 
     # ------------------------------------------------------------------
     # Audit Checklist

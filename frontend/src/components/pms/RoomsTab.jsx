@@ -1061,6 +1061,11 @@ const RoomsTab = ({
           conflict={bookingConflict}
           open={!!bookingConflict}
           onClose={() => setBookingConflict(null)}
+          onPickAlternative={(room) => {
+            setQuickResRoom(room);
+            setBookingConflict(null);
+            toast.info(`Oda ${room.room_number} seçildi. Rezervasyonu yeniden onaylayın.`);
+          }}
         />
       )}
     </div>

@@ -393,7 +393,11 @@ describe('KBSNotification pending guest identity editing', () => {
         return Promise.resolve({
           data: {
             guests: [{
-              id: 'booking-110',
+              // Production can return a delivery/report row id separately
+              // from the reservation identity. Queue de-duplication must use
+              // booking_id, not the report's own id.
+              id: 'report-110',
+              booking_id: 'booking-110',
               guest_id: 'guest-110',
               status: 'checked_in',
               guest_name: 'Test Guest',
@@ -403,6 +407,7 @@ describe('KBSNotification pending guest identity editing', () => {
               kbs_status: 'sent',
               kbs_sent_at: '2026-08-30T10:00:00Z',
               kbs_reference: 'JANDARMA-MusteriKimlikNoGiris-123',
+              kbs_action: 'checkin',
             }],
           },
         });

@@ -17,6 +17,7 @@ from core.channel_room_charge_pricing import analyze_legacy_double_tax_charge
 from core.database import db
 from core.reservation_mutability import ensure_reservation_mutable, reservation_is_historical
 from core.security import get_current_user
+from domains.channel_manager.providers.hotelrunner_notes import resolve_legacy_hotelrunner_note
 from models.schemas import User, _ensure_hotel_context
 from modules.pms_core.guest_identity import find_existing_guest_by_identity
 from modules.pms_core.role_permission_service import (
@@ -549,6 +550,18 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
         notes = []
         async for n in db.reservation_notes.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
             notes.append(n)
+        if not any(note.get("source") == "hotelrunner" for note in notes):
+            provider_note = await resolve_legacy_hotelrunner_note(
+                db,
+                tenant_id=tid,
+                booking=booking,
+            )
+            if provider_note and not any(
+                str(note.get("content") or "").strip() == provider_note["content"]
+                for note in notes
+            ):
+                notes.append(provider_note)
+                notes.sort(key=lambda note: str(note.get("created_at") or ""), reverse=True)
 
         # Activity log / history
         history = []
