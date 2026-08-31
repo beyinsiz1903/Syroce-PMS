@@ -56,11 +56,17 @@ def _cari_balance(account: dict) -> float:
 def _cari_account_lookup_filters(tenant_id: str, account_id: str) -> list[dict]:
     """Support both current UUID records and legacy Mongo-backed cari records."""
     raw_id = str(account_id or "").strip()
+    lookup_values: list[object] = [raw_id]
+    # Older cari imports stored otherwise identical identifiers as BSON numbers.
+    # The list API serializes every identifier as a string for the browser, so a
+    # transfer must restore the numeric candidate when looking the record up.
+    if raw_id.isdecimal():
+        lookup_values.append(int(raw_id))
+
     filters = [
-        {"tenant_id": tenant_id, "id": raw_id},
-        {"tenant_id": tenant_id, "account_id": raw_id},
-        {"tenant_id": tenant_id, "legacy_id": raw_id},
-        {"tenant_id": tenant_id, "_id": raw_id},
+        {"tenant_id": tenant_id, field: value}
+        for field in ("id", "account_id", "legacy_id", "_id")
+        for value in lookup_values
     ]
     if ObjectId.is_valid(raw_id):
         filters.append({"tenant_id": tenant_id, "_id": ObjectId(raw_id)})

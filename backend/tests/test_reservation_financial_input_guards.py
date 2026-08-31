@@ -87,6 +87,33 @@ async def test_legacy_city_ledger_account_id_is_found(monkeypatch):
     assert update_filter == {"tenant_id": "tenant-a", "account_id": "agency-etstur"}
 
 
+@pytest.mark.asyncio
+async def test_legacy_numeric_cari_account_id_round_trips_from_list_response(monkeypatch):
+    numeric_account = {"id": 12, "tenant_id": "tenant-a", "name": "Etstur"}
+
+    async def find_numeric_account(query, *_args, **_kwargs):
+        if query.get("id") == 12:
+            return numeric_account
+        return None
+
+    cari_accounts = SimpleNamespace(find_one=AsyncMock(side_effect=find_numeric_account))
+    database = SimpleNamespace(
+        cari_accounts=cari_accounts,
+        city_ledger_accounts=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+
+    # The list response serializes the BSON numeric identifier for the browser.
+    account, is_city_ledger, update_filter = await reservation_detail._find_cari_account(
+        "tenant-a",
+        reservation_detail._canonical_cari_account_id(numeric_account),
+    )
+
+    assert account == numeric_account
+    assert is_city_ledger is False
+    assert update_filter == {"tenant_id": "tenant-a", "id": 12}
+
+
 @pytest.mark.parametrize(
     "model,payload",
     [
