@@ -113,16 +113,49 @@ async def _find_cari_account(
 ):
     """Return account, collection kind and its exact update filter."""
     find_kwargs = {"session": session} if session is not None else {}
-    for collection, is_city_ledger in (
+    collections = (
         (getattr(db, "cari_accounts", None), False),
         (getattr(db, "city_ledger_accounts", None), True),
-    ):
+    )
+    for collection, is_city_ledger in collections:
         if collection is None:
             continue
         for query in _cari_account_lookup_filters(tenant_id, account_id):
             account = await collection.find_one(query, **find_kwargs)
             if account:
                 return account, is_city_ledger, query
+
+    # BSON UUID representation settings can make a value query miss even when
+    # the same persisted identity was serialized for the browser. On this
+    # fallback path, inspect only this tenant's small account set and compare
+    # the exact serialized identity exposed by ``list_cari_accounts``. Keep the
+    # original ``_id`` object for the subsequent atomic update.
+    raw_id = str(account_id or "").strip()
+    serialized_matches = []
+    for collection, is_city_ledger in collections:
+        find = getattr(collection, "find", None) if collection is not None else None
+        if find is None:
+            continue
+        cursor = find({"tenant_id": tenant_id}, **find_kwargs)
+        async for account in cursor:
+            identities = {
+                _cari_transfer_lookup_id(account),
+                _canonical_cari_account_id(account),
+            }
+            if raw_id in identities:
+                serialized_matches.append((account, is_city_ledger))
+
+    unique_serialized_matches = {}
+    for account, is_city_ledger in serialized_matches:
+        persisted_id = account.get("_id")
+        identity = (is_city_ledger, type(persisted_id).__name__, repr(persisted_id))
+        unique_serialized_matches[identity] = (account, is_city_ledger)
+    if len(unique_serialized_matches) == 1:
+        account, is_city_ledger = next(iter(unique_serialized_matches.values()))
+        return account, is_city_ledger, {
+            "tenant_id": tenant_id,
+            "_id": account.get("_id"),
+        }
 
     # Some legacy city-ledger rows have had their public and persisted IDs
     # regenerated independently. The account list still knows the row, but an
@@ -142,10 +175,7 @@ async def _find_cari_account(
             {"company_name": normalized_name},
         ],
     }
-    for collection, is_city_ledger in (
-        (getattr(db, "cari_accounts", None), False),
-        (getattr(db, "city_ledger_accounts", None), True),
-    ):
+    for collection, is_city_ledger in collections:
         if collection is None:
             continue
         account = await collection.find_one(name_query, **find_kwargs)

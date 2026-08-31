@@ -148,6 +148,44 @@ async def test_uuid_backed_cari_id_round_trips_from_list_response(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_serialized_identity_fallback_reuses_exact_persisted_id(monkeypatch):
+    class OpaquePersistedId:
+        def __str__(self):
+            return "090a62e9-ee24-5083-a918-748d71cbd416"
+
+        def __repr__(self):
+            return "OpaquePersistedId(090a62e9)"
+
+    persisted_id = OpaquePersistedId()
+    account = {
+        "_id": persisted_id,
+        "tenant_id": "tenant-a",
+        "account_name": "Etstur",
+    }
+    city_ledger = SimpleNamespace(
+        find_one=AsyncMock(return_value=None),
+        find=lambda *_args, **_kwargs: AsyncRows([account]),
+    )
+    database = SimpleNamespace(
+        cari_accounts=SimpleNamespace(
+            find_one=AsyncMock(return_value=None),
+            find=lambda *_args, **_kwargs: AsyncRows([]),
+        ),
+        city_ledger_accounts=city_ledger,
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+
+    found, is_city_ledger, update_filter = await reservation_detail._find_cari_account(
+        "tenant-a",
+        str(persisted_id),
+    )
+
+    assert found is account
+    assert is_city_ledger is True
+    assert update_filter == {"tenant_id": "tenant-a", "_id": persisted_id}
+
+
+@pytest.mark.asyncio
 async def test_cari_account_exact_name_fallback_resolves_unique_legacy_row(monkeypatch):
     legacy_account = {
         "_id": "persisted-etstur",
