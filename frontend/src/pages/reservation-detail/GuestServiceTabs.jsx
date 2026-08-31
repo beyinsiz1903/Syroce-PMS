@@ -131,7 +131,7 @@ export function NotesTab({ notes, booking, onRefresh }) {
                 <div className="flex items-center gap-2">
                   <Badge className={`${typeColors[n.note_type] || typeColors.general} text-xs`}>{typeLabels[n.note_type] || 'Genel'}</Badge>
                   {n.source === 'hotelrunner' && (
-                    <Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-700 text-xs">
+                    <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 text-xs">
                       HotelRunner / Acente
                     </Badge>
                   )}
