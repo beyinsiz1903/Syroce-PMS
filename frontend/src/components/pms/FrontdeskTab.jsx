@@ -44,6 +44,7 @@ const FrontdeskTab = ({
   const [walkInForm, setWalkInForm] = useState({ guest_name: '', phone: '', email: '', id_number: '', room_number: '', nights: 1, rate: 0 });
   const [walkInSubmitting, setWalkInSubmitting] = useState(false);
   const [groupCheckinIds, setGroupCheckinIds] = useState(new Set());
+  const [checkoutInProgress, setCheckoutInProgress] = useState(null);
   // Which top KPI card is currently expanded to show guest names: null | 'arrivals' | 'departures' | 'inhouse'
   const [expandedKpi, setExpandedKpi] = useState(null);
   const toggleKpi = useCallback((key) => {
@@ -111,10 +112,10 @@ const FrontdeskTab = ({
     return items.slice(0, 12); // cap to prevent overflow
   }, [arrivals, inhouse, guestById, tf]);
 
-  const formatMoney = (n) => {
+  const formatMoney = useCallback((n) => {
     const v = Number(n) || 0;
     return v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-  };
+  }, []);
 
   const resetWalkInForm = () => {
     setWalkInForm({ guest_name: '', phone: '', email: '', id_number: '', room_number: '', nights: 1, rate: 0 });
@@ -201,6 +202,31 @@ const FrontdeskTab = ({
     setGroupCheckinIds(new Set());
     setShowGroupCheckin(false);
   };
+
+  const requestCheckout = useCallback(async (booking) => {
+    if (!booking?.id || checkoutInProgress) return;
+
+    const balance = Number(booking.balance) || 0;
+    if (balance > 0.01) {
+      setReservationDetailId?.(booking.id);
+      toast.warning(`${tf('balance')}: ${formatMoney(balance)} ${t('pmsComponents.common.currency')} · ${tf('collectFirst')}`);
+      return;
+    }
+
+    const guestName = booking.guest_name || booking.guest?.name || tf('guest');
+    const confirmed = await confirmDialog({
+      message: `${guestName} için çıkış işlemini onaylıyor musunuz?`,
+      variant: 'default',
+    });
+    if (!confirmed) return;
+
+    setCheckoutInProgress(booking.id);
+    try {
+      await handleCheckOut(booking.id);
+    } finally {
+      setCheckoutInProgress(null);
+    }
+  }, [checkoutInProgress, formatMoney, handleCheckOut, setReservationDetailId, t, tf]);
 
   if (loading) {
     return (
@@ -532,8 +558,17 @@ const FrontdeskTab = ({
                     <span className="text-gray-500 ml-2">{tf('room')} {b.room_number}</span>
                     <span className="text-red-500 ml-2">{tf('plannedCheckout')}: {b.check_out?.slice(0, 10)}</span>
                   </div>
-                  <Button size="sm" variant="outline" className="h-6 text-xs border-red-300 text-red-700" onClick={() => handleCheckOut(b.id)}>
-                    <LogOut className="w-3 h-3 mr-1" /> {tf('checkout')}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-6 text-xs border-red-300 text-red-700"
+                    onClick={() => requestCheckout(b)}
+                    disabled={checkoutInProgress === b.id}
+                    data-testid={`overstay-checkout-${b.id}`}
+                  >
+                    <LogOut className="w-3 h-3 mr-1" />
+                    {checkoutInProgress === b.id ? 'İşleniyor…' : tf('checkout')}
                   </Button>
                 </div>
               ))}
@@ -733,11 +768,12 @@ const FrontdeskTab = ({
                     </div>
                     <div className="flex flex-col gap-1.5 flex-shrink-0">
                       <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => loadFolio(booking.id)}>{tf('folio')}</Button>
-                      <Button size="sm"
+                      <Button type="button" size="sm"
                         className={`h-9 ${hasBalance ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
-                        onClick={() => handleCheckOut(booking.id)} disabled={hasBalance}
+                        onClick={() => requestCheckout(booking)} disabled={hasBalance || checkoutInProgress === booking.id}
                         data-testid={`checkout-${booking.id}`}>
-                        <LogOut className="w-4 h-4 mr-1.5" /> {tf('checkout')}
+                        <LogOut className="w-4 h-4 mr-1.5" />
+                        {checkoutInProgress === booking.id ? 'İşleniyor…' : tf('checkout')}
                       </Button>
                     </div>
                   </div>

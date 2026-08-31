@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Suspense, memo } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { getCheckoutErrorMessage, normalizeCheckoutResponse } from '@/utils/pmsCheckout';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { lazyWithPreload as lazy } from '@/routes/lazyWithPreload';
@@ -654,10 +655,23 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const handleCheckOut = async (bookingId) => {
     try {
       const response = await axios.post(`/frontdesk/checkout/${bookingId}?auto_close_folios=true`);
-      if (response.data.total_balance > 0.01) toast.warning(`Open balance on check-out: ${response.data.total_balance.toFixed(2)} ₺`);
-      else toast.success(`${response.data.message} - ${response.data.folios_closed} folios closed`);
-      await Promise.all([loadData(), loadFrontDeskData(), loadHousekeepingData()]);
-    } catch (error) { toast.error(error.response?.data?.detail || 'Check-out failed'); }
+      const result = normalizeCheckoutResponse(response);
+      if (result.totalBalance > 0.01) {
+        toast.warning(`Çıkışta açık bakiye: ${result.totalBalance.toFixed(2)} ₺`);
+      } else {
+        toast.success(result.foliosClosed > 0
+          ? `${result.message} · ${result.foliosClosed} folyo kapatıldı`
+          : result.message);
+      }
+
+      // Çıkış sunucuda tamamlandıktan sonra yardımcı ekranlardan biri geçici olarak
+      // yenilenemese bile başarılı işlemi hata/boş ekran gibi göstermeyelim.
+      await Promise.allSettled([loadData(), loadFrontDeskData(), loadHousekeepingData()]);
+      return true;
+    } catch (error) {
+      toast.error(getCheckoutErrorMessage(error));
+      return false;
+    }
   };
 
   const loadFolio = async (bookingId) => {

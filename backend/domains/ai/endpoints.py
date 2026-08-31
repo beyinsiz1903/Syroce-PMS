@@ -276,12 +276,16 @@ async def analyze_guest_patterns(
             "analysis": {
                 "avg_checkin_time": f"{avg_checkin_hour}:00",
                 "avg_checkout_time": f"{avg_checkout_hour}:00",
-                "peak_checkin_days": ["Friday", "Saturday"],
-                "peak_checkout_days": ["Sunday", "Monday"],
+                "peak_checkin_days": ["Cuma", "Cumartesi"],
+                "peak_checkout_days": ["Pazar", "Pazartesi"],
                 "avg_length_of_stay": 2.5,
             },
             "total_bookings": len(bookings),
-            "insights": [f"Analyzed {len(bookings)} bookings", f"Average check-in: {avg_checkin_hour}:00", f"Average checkout: {avg_checkout_hour}:00"],
+            "insights": [
+                f"{len(bookings)} rezervasyon analiz edildi",
+                f"Ortalama giriş saati: {avg_checkin_hour}:00",
+                f"Ortalama çıkış saati: {avg_checkout_hour}:00",
+            ],
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to analyze patterns: {str(e)}")

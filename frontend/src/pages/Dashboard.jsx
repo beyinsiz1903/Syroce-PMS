@@ -69,7 +69,8 @@ const Dashboard = ({
     i18n
   } = useTranslation();
   const {
-    format: fmtMoney
+    format: fmtMoney,
+    symbol: currencySymbol
   } = useCurrency();
   const [stats, setStats] = useState(dashboardCache.stats);
   const [loading, setLoading] = useState(!dashboardCache.stats);
@@ -696,7 +697,7 @@ const Dashboard = ({
               </div>;
         })()}
 
-            <Card className="overflow-hidden border-0 bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_50%,#b45309_100%)] text-white shadow-lg" data-testid="migration-observability-dashboard-card">
+            {isSuperAdmin && <Card className="overflow-hidden border-0 bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_50%,#b45309_100%)] text-white shadow-lg" data-testid="migration-observability-dashboard-card">
               <CardContent className="grid gap-5 p-6 md:grid-cols-[1.15fr_0.85fr] md:p-7">
                 <div className="space-y-3">
                   <Badge className="w-fit bg-white/15 text-white hover:bg-white/15" data-testid="migration-observability-dashboard-badge">Migration Observability</Badge>
@@ -725,7 +726,7 @@ const Dashboard = ({
                   </Button>
                 </div>
               </CardContent>
-            </Card>
+            </Card>}
 
             {/* Modules Grid - Categorized with Accordion */}
 
@@ -783,7 +784,7 @@ const Dashboard = ({
                       fontSize: 10,
                       fill: 'var(--dash-chart-axis, #666)'
                     }} />
-                        <Tooltip labelFormatter={value => new Date(value).toLocaleDateString()} formatter={value => `$${(typeof value === 'number' ? value : 0).toFixed(0)}`} />
+                        <Tooltip labelFormatter={value => new Date(value).toLocaleDateString()} formatter={value => fmtMoney(value, { decimals: 0 })} />
                         <Legend wrapperStyle={{
                       fontSize: '12px'
                     }} />
@@ -825,7 +826,7 @@ const Dashboard = ({
                       fontSize: '12px'
                     }} />
                         <Line yAxisId="left" type="monotone" dataKey="bookings" stroke="#8b5cf6" strokeWidth={2} name={t('dashboard.chartBookings')} />
-                        <Line yAxisId="right" type="monotone" dataKey="adr" stroke="#10b981" strokeWidth={2} name="ADR ($)" />
+                        <Line yAxisId="right" type="monotone" dataKey="adr" stroke="#10b981" strokeWidth={2} name={`ADR (${currencySymbol})`} />
                       </LineChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -849,7 +850,7 @@ const Dashboard = ({
                       fontSize: 10,
                       fill: 'var(--dash-chart-axis, #666)'
                     }} />
-                        <Tooltip labelFormatter={value => new Date(value).toLocaleDateString()} formatter={value => `$${(typeof value === 'number' ? value : 0).toFixed(2)}`} />
+                        <Tooltip labelFormatter={value => new Date(value).toLocaleDateString()} formatter={value => fmtMoney(value, { decimals: 2 })} />
                         <Area type="monotone" dataKey="revpar" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.4} name="RevPAR" />
                       </AreaChart>
                     </ResponsiveContainer>

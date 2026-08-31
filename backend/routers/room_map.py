@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from core.business_date_service import ensure_business_date_initialized
 from core.database import db
+from core.guest_name_utils import display_guest_name, is_placeholder_guest_name
 from core.helpers import require_module
 from core.reservation_mutability import ensure_reservation_mutable
 from core.security import get_current_user
@@ -19,6 +20,20 @@ from modules.pms_core.role_permission_service import require_op
 router = APIRouter(prefix="/api/pms/room-map", tags=["pms"])
 
 _QUICK_ASSIGNMENT_BLOCKED_STATUSES = {"out_of_order", "maintenance", "blocked", "dirty", "cleaning"}
+
+
+def _resolve_room_map_guest_name(booking: dict, guest: dict | None = None) -> str:
+    """Oda haritasinda guests kaydini, yoksa booking snapshot adini kullan."""
+    guest = guest or {}
+    guest_name = guest.get("name") or f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip()
+    if guest_name and not is_placeholder_guest_name(guest_name):
+        return guest_name.strip()
+
+    booking_name = booking.get("guest_name")
+    if booking_name and not is_placeholder_guest_name(booking_name):
+        return booking_name.strip()
+
+    return display_guest_name(booking_name or guest_name, booking.get("guest_id"))
 
 
 def _validate_quick_assignment(old_room: dict | None, new_room: dict) -> None:
@@ -61,18 +76,20 @@ async def get_map(
             "check_in": {"$lt": next_day},
             "check_out": {"$gt": bd},
         },
-        {"_id": 0, "id": 1, "room_id": 1, "room_type": 1, "guest_id": 1, "check_in": 1, "check_out": 1, "status": 1, "adults": 1, "children": 1, "nights": 1},
+        {"_id": 0, "id": 1, "room_id": 1, "room_type": 1, "guest_id": 1, "guest_name": 1, "check_in": 1, "check_out": 1, "status": 1, "adults": 1, "children": 1, "nights": 1},
     )
     bookings = await bookings_cursor.to_list(1000)
+
+    from security.encrypted_lookup import decrypt_booking_doc, decrypt_guest_doc
+
+    bookings = [decrypt_booking_doc(b) for b in bookings]
 
     guest_ids = list({b.get("guest_id") for b in bookings if b.get("guest_id")})
     guests_map = {}
     if guest_ids:
-        from security.encrypted_lookup import decrypt_guest_doc
-
         async for g in db.guests.find(
             {"tenant_id": tenant_id, "id": {"$in": guest_ids}},
-            {"_id": 0, "id": 1, "name": 1, "vip_status": 1},
+            {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1, "vip_status": 1},
         ):
             g = decrypt_guest_doc(g)
             guests_map[g["id"]] = g
@@ -83,7 +100,7 @@ async def get_map(
         g = guests_map.get(b.get("guest_id"), {})
         item = {
             "booking_id": b["id"],
-            "guest_name": g.get("name") or "(misafir)",
+            "guest_name": _resolve_room_map_guest_name(b, g),
             "vip": bool(g.get("vip_status")),
             "check_in": b.get("check_in"),
             "check_out": b.get("check_out"),
