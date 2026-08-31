@@ -19,4 +19,27 @@ describe('PMS checkout response guards', () => {
     expect(getCheckoutErrorMessage({ response: { data: { detail: ['invalid'] } } }))
       .toBe('Çıkış yapılamadı');
   });
+
+  it('localizes reservation edit lock errors instead of exposing backend English', () => {
+    expect(getCheckoutErrorMessage({
+      response: {
+        data: {
+          detail: {
+            code: 'RESERVATION_EDIT_LOCK_REQUIRED',
+            message: 'Active reservation edit lock required',
+          },
+        },
+      },
+    })).toBe('Rezervasyon işlem kilidi alınamadı. Lütfen tekrar deneyin.');
+
+    expect(getCheckoutErrorMessage({
+      response: {
+        data: {
+          detail: 'Reservation edit lock expired or belongs to another view',
+        },
+      },
+    })).toBe(
+      'Rezervasyon işlem kilidinin süresi doldu veya kayıt başka bir ekranda kullanılıyor. Lütfen tekrar deneyin.',
+    );
+  });
 });

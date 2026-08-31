@@ -2,7 +2,10 @@ import { useState, useEffect, useMemo, useCallback, useRef, Suspense, memo } fro
 import axios from 'axios';
 import { toast } from 'sonner';
 import { getCheckoutErrorMessage, normalizeCheckoutResponse } from '@/utils/pmsCheckout';
-import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
+import {
+  RESERVATION_EDIT_LOCK_HEADER,
+  reservationEditLockManager,
+} from '@/lib/reservationEditLockManager';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { lazyWithPreload as lazy } from '@/routes/lazyWithPreload';
@@ -656,11 +659,15 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       }
       const params = new URLSearchParams({ create_folio: 'true' });
       if (forceClean) params.append('force_clean', 'true');
-      const response = await axios.post(`/frontdesk/checkin/${bookingId}?${params}`);
+      const response = await axios.post(
+        `/frontdesk/checkin/${bookingId}?${params}`,
+        null,
+        { headers: { [RESERVATION_EDIT_LOCK_HEADER]: lock.lockId } },
+      );
       toast.success(`${response.data.message} - Room ${response.data.room_number}`);
       await Promise.all([loadData(), loadFrontDeskData()]);
     } catch (error) {
-      toast.error(error.response?.data?.detail || error.message || 'Giriş yapılamadı');
+      toast.error(getCheckoutErrorMessage(error, 'Giriş yapılamadı'));
     } finally {
       if (shouldReleaseLock) await reservationEditLockManager?.releaseCurrent?.();
     }
@@ -677,7 +684,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       if (!lock || lock.status !== 'acquired') {
         throw new Error('Rezervasyon düzenleme kilidi alınamadı. Lütfen tekrar deneyin.');
       }
-      const response = await axios.post(`/frontdesk/checkout/${bookingId}?auto_close_folios=true`);
+      const response = await axios.post(
+        `/frontdesk/checkout/${bookingId}?auto_close_folios=true`,
+        null,
+        { headers: { [RESERVATION_EDIT_LOCK_HEADER]: lock.lockId } },
+      );
       const result = normalizeCheckoutResponse(response);
       if (result.totalBalance > 0.01) {
         toast.warning(`Çıkışta açık bakiye: ${result.totalBalance.toFixed(2)} ₺`);
