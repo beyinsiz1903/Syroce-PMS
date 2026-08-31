@@ -1,4 +1,5 @@
 import os
+import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -114,6 +115,36 @@ async def test_legacy_numeric_cari_account_id_round_trips_from_list_response(mon
     assert is_city_ledger is False
     assert update_filter == {"tenant_id": "tenant-a", "id": 12}
     assert reservation_detail._cari_transfer_lookup_id(numeric_account) == "12"
+
+
+@pytest.mark.asyncio
+async def test_uuid_backed_cari_id_round_trips_from_list_response(monkeypatch):
+    persisted_id = uuid.uuid4()
+    uuid_account = {
+        "_id": persisted_id,
+        "tenant_id": "tenant-a",
+        "account_name": "Etstur",
+    }
+
+    async def find_uuid_account(query, *_args, **_kwargs):
+        if query.get("_id") == persisted_id:
+            return uuid_account
+        return None
+
+    database = SimpleNamespace(
+        cari_accounts=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        city_ledger_accounts=SimpleNamespace(find_one=AsyncMock(side_effect=find_uuid_account)),
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+
+    account, is_city_ledger, update_filter = await reservation_detail._find_cari_account(
+        "tenant-a",
+        str(persisted_id),
+    )
+
+    assert account is uuid_account
+    assert is_city_ledger is True
+    assert update_filter == {"tenant_id": "tenant-a", "_id": persisted_id}
 
 
 @pytest.mark.asyncio

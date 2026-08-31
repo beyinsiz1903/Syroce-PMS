@@ -62,6 +62,13 @@ def _cari_account_lookup_filters(tenant_id: str, account_id: str) -> list[dict]:
     # transfer must restore the numeric candidate when looking the record up.
     if raw_id.isdecimal():
         lookup_values.append(int(raw_id))
+    # Mongo UUID fields deserialize as ``uuid.UUID``. Their JSON representation
+    # is a string, so restore the typed value when the browser sends it back.
+    # Without this, both public UUID IDs and UUID-backed ``_id`` values miss.
+    try:
+        lookup_values.append(uuid.UUID(raw_id))
+    except (ValueError, AttributeError):
+        pass
 
     filters = [
         {"tenant_id": tenant_id, field: value}
