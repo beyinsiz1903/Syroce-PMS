@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import BookingDialog from '@/components/pms/BookingDialog';
 import FolioDialog from '@/components/pms/FolioDialog';
@@ -291,6 +291,35 @@ describe('PMS manually discovered operation regressions', () => {
     expect(setReservationDetailId).toHaveBeenCalledWith('booking-balance');
     expect(handleCheckOut).not.toHaveBeenCalled();
     expect(confirmDialog).not.toHaveBeenCalled();
+  });
+
+  it('opens the full walk-in workflow from the front desk quick action', () => {
+    render(
+      <MemoryRouter initialEntries={['/pms']}>
+        <Routes>
+          <Route path="/pms" element={(
+            <Tabs defaultValue="frontdesk">
+              <FrontdeskTab
+                arrivals={[]}
+                departures={[]}
+                inhouse={[]}
+                bookings={[]}
+                rooms={[]}
+                guests={[]}
+                handleCheckIn={() => {}}
+                handleCheckOut={() => {}}
+                loadFolio={() => {}}
+                loading={false}
+              />
+            </Tabs>
+          )} />
+          <Route path="/walkin" element={<div>walk-in-workflow</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('open-walkin-workflow'));
+    expect(screen.getByText('walk-in-workflow')).toBeInTheDocument();
   });
 
   it('normalizes both list and paginated search response shapes', () => {

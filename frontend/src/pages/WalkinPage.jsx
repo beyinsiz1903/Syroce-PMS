@@ -325,7 +325,7 @@ export default function WalkinPage({ user, tenant, onLogout }) {
         {!done && (
           <div className="fixed bottom-0 left-0 right-0 z-20 bg-white border-t border-slate-200 px-4 py-3 md:pl-64">
             <div className="max-w-5xl mx-auto flex items-center justify-between gap-2">
-              <Button variant="outline" onClick={step === 1 ? () => nav('/pms') : goBack} className="border-slate-300">
+              <Button variant="outline" onClick={step === 1 ? () => nav('/pms#frontdesk') : goBack} className="border-slate-300">
                 {step === 1 ? 'İptal' : (<><ChevronLeft className="w-4 h-4 mr-1" /> Geri</>)}
               </Button>
               {step < 3 ? (
