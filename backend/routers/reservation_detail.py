@@ -1296,6 +1296,38 @@ async def record_payment(
     return {"success": True, "payment": payment}
 
 
+@router.get("/cari-transfer-resolution")
+async def diagnose_cari_transfer_resolution(
+    booking_id: str,
+    account_id: str,
+    account_name: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),
+):
+    """Read-only check for the identities required by a cari transfer."""
+    _enforce_perm(current_user.role, "post_payment")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one(
+        {"id": booking_id, "tenant_id": tid},
+        {"_id": 0, "id": 1},
+    )
+    account, is_city_ledger, _ = await _find_cari_account(
+        tid,
+        account_id,
+        account_name=account_name,
+    )
+    return {
+        "booking_found": bool(booking),
+        "account_found": bool(account),
+        "account_collection": "city_ledger_accounts" if account and is_city_ledger else "cari_accounts" if account else None,
+        "canonical_account_id": _canonical_cari_account_id(account) if account else None,
+        "transfer_id": _cari_transfer_lookup_id(account) if account else None,
+        "persisted_id_type": type(account.get("_id")).__name__ if account else None,
+    }
+
+
 @router.post("/reservations/{booking_id}/transfer-to-cari")
 async def transfer_to_cari(
     booking_id: str,
