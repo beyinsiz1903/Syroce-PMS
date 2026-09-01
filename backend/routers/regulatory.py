@@ -31,9 +31,11 @@ from core.security import get_current_user
 from core.tga_outbound import (
     build_batch_envelope,
     build_daily_payload,
+    build_monthly_v6_payload,
     get_tga_config,
     list_send_log,
     send_batch,
+    send_monthly_v6,
     set_tga_config,
 )
 from models.schemas import User
@@ -492,6 +494,12 @@ async def save_star_checklist(
 
 
 class TgaConfigPayload(BaseModel):
+    facility_id: str | None = None
+    il_kodu: str | None = None
+    ilce_kodu: str | None = None
+    licensed_room_count: int | None = Field(default=None, gt=0)
+    licensed_bed_count: int | None = Field(default=None, gt=0)
+    # v5+ no longer transmits these legacy identifiers.
     belge_no: str | None = None
     vergi_no: str | None = None
     api_key: str | None = None  # boş bırakılırsa mevcut korunur
@@ -521,6 +529,11 @@ async def tga_config_set(
             api_key=payload.api_key,
             environment=payload.environment,
             enabled=payload.enabled,
+            facility_id=payload.facility_id,
+            il_kodu=payload.il_kodu,
+            ilce_kodu=payload.ilce_kodu,
+            licensed_room_count=payload.licensed_room_count,
+            licensed_bed_count=payload.licensed_bed_count,
         )
     except ValueError as ve:
         raise HTTPException(400, str(ve)) from ve
@@ -533,6 +546,61 @@ async def tga_config_set(
         changes={k: v for k, v in payload.model_dump().items() if v is not None and k != "api_key"},
     )
     return out
+
+
+@router.get("/tga/monthly/preview")
+async def tga_monthly_preview(
+    year: int,
+    month: int,
+    average_price_eur: float = Query(..., ge=0),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_op("manage_settings")),
+) -> dict[str, Any]:
+    """Build a complete v6 payload. This endpoint never sends data."""
+    try:
+        payload = await build_monthly_v6_payload(
+            current_user.tenant_id,
+            year,
+            month,
+            average_price_eur=average_price_eur,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"api_version": "v6.0.0", "payload": payload, "sent": False}
+
+
+@router.post("/tga/monthly/send")
+async def tga_monthly_send(
+    year: int,
+    month: int,
+    average_price_eur: float = Query(..., ge=0),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_op("manage_settings")),
+) -> dict[str, Any]:
+    try:
+        result = await send_monthly_v6(
+            current_user.tenant_id,
+            year,
+            month,
+            average_price_eur=average_price_eur,
+            triggered_by="manual",
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    await create_audit_log(
+        tenant_id=current_user.tenant_id,
+        user=current_user,
+        action="SEND_TGA_MONTHLY_V6",
+        entity_type="integration_tga",
+        entity_id=f"{year}-{month:02d}",
+        changes={
+            "period": f"{year}-{month:02d}",
+            "status": result.get("status"),
+            "http_status": result.get("http_status"),
+            "api_version": result.get("api_version"),
+        },
+    )
+    return result
 
 
 @router.get("/tga/preview")

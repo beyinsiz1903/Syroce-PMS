@@ -1,29 +1,28 @@
 """TGA Tesis Entegrasyon — Türkiye Turizm Tanıtım ve Geliştirme Ajansı.
 
-Resmi API: POST https://tesis-entegrasyon.tga.gov.tr/otel-veri/
+Resmi API v6: POST https://tesis-entegrasyon.tga.gov.tr/tesis-aylik-rapor/
 Doc:       https://tesis-entegrasyon.tga.gov.tr/docs
 
-Akış:
-  1. Tenant ayarları (`db.tenants.tga` sub-doc): `belge_no`, `vergi_no`,
-     `api_key_enc` (core.crypto ile şifreli), `environment` (test|live),
-     `enabled`. API anahtarı tesise özel TGA tarafından verilir.
-  2. `build_daily_payload(tenant_id, date)` — bir günlük TGA payload'ı:
-        toplam_oda, toplam_kisi (in-house),
-        giren_oda, giren_kisi (o gün giren),
-        net_oda_geliri,
-        demografik_veriler[] — ISO 3-harf ülke × yetiskin/cocuk/oda/...,
-        kanal_veriler[]      — satış kanalı (Direkt/Acenta/OTA/...) × oda/kişi/gelir.
-     Sadece **fiili** konaklamalar (cancelled / no_show hariç).
-  3. `send_batch(tenant_id, end_date, days=7)` — son N günü tek POST'ta
-     TGA endpoint'ine gönderir; sonucu `integration_tga_outbox` koleksiyonuna
-     yazar (status=sent|failed, retries, response).
-  4. `safe_post_async` ile DNS-rebinding-safe outbound (SXI standardı).
+Güncel akış:
+  1. Tenant ayarları UUID, resmî il/ilçe kodu, belge kapasitesi ve şifreli
+     X-API-Key içerir. v5+ payload'ında belge/vergi numarası gönderilmez.
+  2. `build_monthly_v6_payload` fiilî konaklamaları ülke ve hafta içi/
+     hafta sonu kırılımıyla tam aylık gövdeye dönüştürür.
+  3. Kullanıcı tam gövdeyi önizler ve ayrıca onaylarsa `send_monthly_v6`
+     resmî endpoint'e gönderir; sonuç outbox'a kaydedilir.
+  4. Ağ çıkışı `safe_post_async` ile DNS-rebinding-safe yapılır.
+
+Eski günlük payload yardımcıları rolling-deploy uyumluluğu ve geçmiş outbox
+kayıtlarını okuyabilmek için geçici olarak korunmaktadır; scheduler bunları
+göndermez.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import uuid
+from calendar import monthrange
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -34,8 +33,9 @@ from core.database import db
 logger = logging.getLogger(__name__)
 
 TGA_BASE_URL_LIVE = "https://tesis-entegrasyon.tga.gov.tr"
-TGA_BASE_URL_TEST = os.environ.get("TGA_BASE_URL_TEST", "https://tesis-entegrasyon-test.tga.gov.tr")
-TGA_PATH = "/otel-veri/"
+TGA_BASE_URL_TEST = os.environ.get("TGA_BASE_URL_TEST", "https://test-tesis-entegrasyon.tga.gov.tr")
+TGA_PATH = "/tesis-aylik-rapor/"
+TGA_API_VERSION = "v6.0.0"
 HTTP_TIMEOUT_S = 30.0
 OUTBOX_COLL = "integration_tga_outbox"
 
@@ -248,7 +248,8 @@ _ALIAS_OVERRIDES: dict[str, str] = {
     "KIBRIS": "CYP",
     "GUNEY KIBRIS": "CYP",
     "GÜNEY KIBRIS": "CYP",
-    "KKTC": "TUR",  # KKTC pasaportları TGA'da TR uyrukla raporlanır
+    "KKTC": "CTR",
+    "KIBRIS TÜRK CUMHURİYETİ": "CTR",
     "LUKSEMBURG": "LUX",
     "LÜKSEMBURG": "LUX",
     "MONAKO": "MCO",
@@ -426,7 +427,16 @@ async def get_tga_config(tenant_id: str, *, decrypt_api_key: bool = False) -> di
     """Tenant'ın TGA ayarları. `decrypt_api_key=False` → API key maskeli."""
     doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "tga": 1}) or {}
     cfg = (doc.get("tga") or {}) if isinstance(doc, dict) else {}
+    facility_id = cfg.get("facility_id") or str(uuid.uuid5(uuid.NAMESPACE_URL, f"syroce:tga:{tenant_id}"))
     out = {
+        "facility_id": facility_id,
+        "il_kodu": cfg.get("il_kodu") or "",
+        "ilce_kodu": cfg.get("ilce_kodu") or "",
+        "licensed_room_count": cfg.get("licensed_room_count"),
+        "licensed_bed_count": cfg.get("licensed_bed_count"),
+        "api_version": TGA_API_VERSION,
+        # Legacy fields are kept in the response for a safe rolling deploy. v6
+        # does not send either value to TGA.
         "belge_no": cfg.get("belge_no") or "",
         "vergi_no": cfg.get("vergi_no") or "",
         "environment": cfg.get("environment") or "test",
@@ -452,10 +462,40 @@ async def set_tga_config(
     api_key: str | None = None,
     environment: str | None = None,
     enabled: bool | None = None,
+    facility_id: str | None = None,
+    il_kodu: str | None = None,
+    ilce_kodu: str | None = None,
+    licensed_room_count: int | None = None,
+    licensed_bed_count: int | None = None,
 ) -> dict[str, Any]:
     """TGA ayarlarını günceller. `api_key` boş/None → mevcut korunur."""
     cur = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "tga": 1}) or {}
     cfg = dict((cur.get("tga") or {}) if isinstance(cur, dict) else {})
+    if facility_id is not None:
+        try:
+            cfg["facility_id"] = str(uuid.UUID(facility_id.strip()))
+        except (ValueError, AttributeError) as exc:
+            raise ValueError("Tesis kimliği geçerli bir UUID olmalıdır") from exc
+    elif not cfg.get("facility_id"):
+        cfg["facility_id"] = str(uuid.uuid5(uuid.NAMESPACE_URL, f"syroce:tga:{tenant_id}"))
+    if il_kodu is not None:
+        value = il_kodu.strip()
+        if not value.isdigit() or not 1 <= len(value) <= 2:
+            raise ValueError("İl kodu 1-2 haneli sayısal bir değer olmalıdır")
+        cfg["il_kodu"] = value.zfill(2)
+    if ilce_kodu is not None:
+        value = ilce_kodu.strip()
+        if not value.isdigit() or not 1 <= len(value) <= 4:
+            raise ValueError("İlçe kodu 1-4 haneli sayısal bir değer olmalıdır")
+        cfg["ilce_kodu"] = value
+    if licensed_room_count is not None:
+        if licensed_room_count <= 0:
+            raise ValueError("Bakanlık belgesindeki oda sayısı sıfırdan büyük olmalıdır")
+        cfg["licensed_room_count"] = int(licensed_room_count)
+    if licensed_bed_count is not None:
+        if licensed_bed_count <= 0:
+            raise ValueError("Bakanlık belgesindeki yatak sayısı sıfırdan büyük olmalıdır")
+        cfg["licensed_bed_count"] = int(licensed_bed_count)
     if belge_no is not None:
         cfg["belge_no"] = belge_no.strip()
     if vergi_no is not None:
@@ -469,6 +509,13 @@ async def set_tga_config(
     if api_key:
         svc = get_crypto_service()
         cfg["api_key_enc"] = svc.encrypt(api_key.strip(), aad=_aad(tenant_id))
+    if enabled:
+        if not cfg.get("api_key_enc"):
+            raise ValueError("Entegrasyonu etkinleştirmek için TGA X-API-Key gereklidir")
+        if not cfg.get("il_kodu") or not cfg.get("ilce_kodu"):
+            raise ValueError("Entegrasyonu etkinleştirmek için il ve ilçe kodları gereklidir")
+        if not cfg.get("licensed_room_count") or not cfg.get("licensed_bed_count"):
+            raise ValueError("Entegrasyonu etkinleştirmek için Bakanlık belgesindeki oda ve yatak sayıları gereklidir")
     cfg["updated_at"] = datetime.now(UTC).isoformat()
     await db.tenants.update_one({"id": tenant_id}, {"$set": {"tga": cfg}})
     return await get_tga_config(tenant_id)
@@ -704,6 +751,136 @@ async def build_daily_payload(
     }
 
 
+def calculate_monthly_v6_rows(
+    bookings: list[dict[str, Any]],
+    countries: dict[str, str],
+    period_start: date,
+    period_end: date,
+) -> list[dict[str, Any]]:
+    """Aggregate actual stays into the country/day buckets required by TGA v6.
+
+    TGA defines Friday and Saturday as weekend. Accommodation nights use the
+    PMS-wide ``check_in <= day < check_out`` rule; arrivals are counted only on
+    the actual check-in date (month-boundary carry-ins are not new TGA arrivals).
+    """
+    buckets: dict[str, dict[str, int]] = defaultdict(
+        lambda: {
+            "haftaici_toplam_giris_yapan_misafir": 0,
+            "haftasonu_toplam_giris_yapan_misafir": 0,
+            "haftaici_toplam_geceleme": 0,
+            "haftasonu_toplam_geceleme": 0,
+            "haftaici_toplam_satilan_oda_gece": 0,
+            "haftasonu_toplam_satilan_oda_gece": 0,
+        }
+    )
+    for booking in bookings:
+        ci = _parse_dt(booking.get("check_in"))
+        co = _parse_dt(booking.get("check_out"))
+        if not ci or not co or co.date() <= ci.date():
+            continue
+        guests = max(1, int(booking.get("adults") or 1) + int(booking.get("children") or 0))
+        raw_country = (
+            booking.get("nationality")
+            or booking.get("guest_country")
+            or booking.get("country")
+            or countries.get(str(booking.get("guest_id") or ""), "")
+        )
+        iso3 = _to_iso3(raw_country)
+        if iso3 == "ZZZ":
+            iso3 = "OTHER"
+        row = buckets[iso3]
+
+        arrival = ci.date()
+        if period_start <= arrival < period_end:
+            prefix = "haftasonu" if arrival.weekday() in (4, 5) else "haftaici"
+            row[f"{prefix}_toplam_giris_yapan_misafir"] += guests
+
+        night = max(ci.date(), period_start)
+        last_night = min(co.date(), period_end)
+        while night < last_night:
+            prefix = "haftasonu" if night.weekday() in (4, 5) else "haftaici"
+            row[f"{prefix}_toplam_geceleme"] += guests
+            row[f"{prefix}_toplam_satilan_oda_gece"] += 1
+            night += timedelta(days=1)
+
+    if not buckets:
+        buckets["OTHER"]
+    return [{"iso_kodu": iso, **values} for iso, values in sorted(buckets.items())]
+
+
+async def build_monthly_v6_payload(
+    tenant_id: str,
+    year: int,
+    month: int,
+    *,
+    average_price_eur: float,
+) -> dict[str, Any]:
+    """Build the complete v6 monthly request without sending it."""
+    if month < 1 or month > 12:
+        raise ValueError("Ay 1-12 arasında olmalıdır")
+    if average_price_eur < 0:
+        raise ValueError("Aylık net ortalama fiyat negatif olamaz")
+    cfg = await get_tga_config(tenant_id)
+    if not cfg.get("il_kodu") or not cfg.get("ilce_kodu"):
+        raise ValueError("TGA il ve ilçe kodları eksik")
+
+    start = date(year, month, 1)
+    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    start_dt = datetime(start.year, start.month, start.day, tzinfo=UTC)
+    end_dt = datetime(end.year, end.month, end.day, tzinfo=UTC)
+    bookings = await db.bookings.find(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["checked_in", "checked_out"]},
+            "check_in": {"$lt": end_dt.isoformat()},
+            "check_out": {"$gt": start_dt.isoformat()},
+        },
+        {
+            "_id": 0,
+            "id": 1,
+            "check_in": 1,
+            "check_out": 1,
+            "adults": 1,
+            "children": 1,
+            "guest_id": 1,
+            "nationality": 1,
+            "guest_country": 1,
+            "country": 1,
+        },
+    ).to_list(length=20000)
+    guest_ids = [str(b["guest_id"]) for b in bookings if b.get("guest_id")]
+    countries = await _guest_country_map(tenant_id, guest_ids)
+
+    active_room_filter = {
+        "tenant_id": tenant_id,
+        "status": {"$nin": ["out_of_service", "inactive"]},
+        "active": {"$ne": False},
+        "is_active": {"$ne": False},
+    }
+    active_rooms = await db.rooms.count_documents(active_room_filter)
+    bed_docs = await db.rooms.aggregate(
+        [
+            {"$match": active_room_filter},
+            {"$group": {"_id": None, "beds": {"$sum": {"$ifNull": ["$bed_capacity", 2]}}}},
+        ]
+    ).to_list(length=1)
+    active_beds = int(bed_docs[0]["beds"]) if bed_docs else active_rooms * 2
+    rooms = int(cfg.get("licensed_room_count") or active_rooms)
+    beds = int(cfg.get("licensed_bed_count") or active_beds)
+    open_days = monthrange(year, month)[1]
+    return {
+        "id": cfg["facility_id"],
+        "rapor_tarihi": f"{year}-{month:02d}",
+        "il_kodu": str(cfg["il_kodu"]),
+        "ilce_kodu": str(cfg["ilce_kodu"]),
+        "oda_sayisi": int(rooms),
+        "yatak_sayisi": beds,
+        "tesisin_aylik_acik_oldugu_gun_sayisi": open_days,
+        "aylik_ortalama_fiyat": round(float(average_price_eur), 2),
+        "data": calculate_monthly_v6_rows(bookings, countries, start, end),
+    }
+
+
 async def build_batch_envelope(
     tenant_id: str,
     end_date: date,
@@ -744,15 +921,69 @@ async def _post_envelope(cfg: dict[str, Any], envelope: dict[str, Any]) -> dict[
     try:
         r = await safe_post_async(url, timeout=HTTP_TIMEOUT_S, json=envelope, headers=headers)
         ok = 200 <= r.status_code < 300
+        try:
+            response_data = r.json()
+        except Exception:
+            response_data = None
+        api_version = response_data.get("api_version") if isinstance(response_data, dict) else None
         return {
             "status": "sent" if ok else "failed",
             "http_status": r.status_code,
             "response_text": (r.text or "")[:1000],
+            "response_data": response_data,
+            "api_version": api_version,
+            "api_version_mismatch": bool(api_version and api_version != TGA_API_VERSION),
         }
     except EgressDenied as ed:
         return {"status": "failed", "error": f"egress_denied: {ed}"}
     except Exception as exc:  # network / timeout
         return {"status": "failed", "error": str(exc)[:500]}
+
+
+async def send_monthly_v6(
+    tenant_id: str,
+    year: int,
+    month: int,
+    *,
+    average_price_eur: float,
+    triggered_by: str = "manual",
+) -> dict[str, Any]:
+    """Send one reviewed month through the official TGA v6 endpoint."""
+    cfg = await get_tga_config(tenant_id, decrypt_api_key=True)
+    if not cfg.get("enabled"):
+        return {"status": "skipped", "reason": "disabled"}
+    if not cfg.get("api_key") or not cfg.get("il_kodu") or not cfg.get("ilce_kodu"):
+        return {"status": "skipped", "reason": "missing_config"}
+    payload = await build_monthly_v6_payload(
+        tenant_id,
+        year,
+        month,
+        average_price_eur=average_price_eur,
+    )
+    started = datetime.now(UTC)
+    result = await _post_envelope(cfg, payload)
+    out_doc: dict[str, Any] = {
+        "tenant_id": tenant_id,
+        "period": payload["rapor_tarihi"],
+        "environment": cfg["environment"],
+        "triggered_by": triggered_by,
+        "started_at": started.isoformat(),
+        "finished_at": datetime.now(UTC).isoformat(),
+        "request_summary": {
+            "facility_id": payload["id"],
+            "rapor_tarihi": payload["rapor_tarihi"],
+            "oda_sayisi": payload["oda_sayisi"],
+            "yatak_sayisi": payload["yatak_sayisi"],
+            "country_rows": len(payload["data"]),
+        },
+        **result,
+    }
+    try:
+        await db[OUTBOX_COLL].insert_one(out_doc)
+    except Exception as exc:
+        logger.warning("[tga] monthly outbox insert failed tenant=%s err=%s", tenant_id, exc)
+    out_doc.pop("_id", None)
+    return out_doc
 
 
 async def send_batch(

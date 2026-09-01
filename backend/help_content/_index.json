@@ -101,7 +101,7 @@
       "icon": "ScrollText",
       "articles": [
         {"slug": "kbs-bildirim", "title": "KBS (Konaklama Bildirim Sistemi)", "tags": ["kbs", "polis"]},
-        {"slug": "tuik-anketi", "title": "TÜİK Aylık Konaklama İstatistikleri", "tags": ["tuik", "istatistik"]},
+        {"slug": "tuik-anketi", "title": "KTB Aylık Konaklama ve TGA v6 Gönderimi", "tags": ["ktb", "tga", "istatistik"]},
         {"slug": "yildiz-siniflama", "title": "Yıldız Sınıflama Self-Check", "tags": ["bakanlik", "yildiz"]}
       ]
     }
