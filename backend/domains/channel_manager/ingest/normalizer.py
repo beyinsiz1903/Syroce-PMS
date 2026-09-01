@@ -25,6 +25,7 @@ def _safe_str(v: Any) -> str:
 def empty_canonical() -> dict[str, Any]:
     return {
         "external_reservation_id": "",
+        "agency_reservation_number": "",
         "provider": "",
         "guest_name": "",
         "guest_email": "",
@@ -117,6 +118,12 @@ def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "external_reservation_id": _safe_str(payload.get("hr_number", "")),
+        "agency_reservation_number": _safe_str(
+            payload.get("provider_number")
+            or payload.get("confirmation_number")
+            or payload.get("channel_reservation_number")
+            or payload.get("hr_number", "")
+        ),
         "provider": "hotelrunner",
         "guest_name": f"{first} {last}".strip(),
         "guest_email": email,

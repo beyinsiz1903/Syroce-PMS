@@ -173,10 +173,17 @@ class HotelRunnerMapper:
         payments = raw.get("payments") or []
 
         # ── Build canonical reservation ─────────────────────────────
+        agency_reservation_number = (
+            raw.get("provider_number")
+            or raw.get("confirmation_number")
+            or raw.get("channel_reservation_number")
+            or raw.get("hr_number", "")
+        )
+
         return CanonicalReservation(
             external_id=str(raw.get("reservation_id", "")),
             hr_number=raw.get("hr_number", ""),
-            confirmation_number=raw.get("hr_number", ""),
+            confirmation_number=str(agency_reservation_number),
             channel_name=raw.get("channel_display", "") or raw.get("channel", ""),
             channel_code=raw.get("channel", ""),
             status=status,

@@ -80,6 +80,12 @@ def map_raw_payload_to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "external_reservation_id": str(raw.get("hr_number", raw.get("reservation_id", ""))),
+        "agency_reservation_number": str(
+            raw.get("provider_number")
+            or raw.get("confirmation_number")
+            or raw.get("channel_reservation_number")
+            or raw.get("hr_number", "")
+        ),
         "provider": "hotelrunner",
         "guest_name": f"{first_name} {last_name}".strip(),
         "guest_email": str((raw.get("address") or {}).get("email", guest.get("email", ""))),

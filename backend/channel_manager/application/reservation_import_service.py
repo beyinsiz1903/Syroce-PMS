@@ -622,7 +622,11 @@ class ReservationImportService:
             "currency": canonical.currency,
             "payment_status": "pending",
             "special_requests": canonical.special_requests,
+            "external_reservation_id": canonical.external_id,
+            "hr_number": canonical.hr_number,
+            "agency_reservation_number": canonical.confirmation_number,
             "external_confirmation": canonical.confirmation_number,
+            "ota_confirmation": canonical.confirmation_number,
             "created_at": datetime.now(UTC).isoformat(),
             "created_by": "channel_manager",
         }
@@ -672,6 +676,11 @@ class ReservationImportService:
             "pricing_tax_inclusive": True,
             "pricing_source": "channel_manager",
             "special_requests": imported.special_requests,
+            "external_reservation_id": imported.external_reservation_id,
+            "hr_number": imported.hr_number,
+            "agency_reservation_number": imported.external_confirmation_number,
+            "external_confirmation": imported.external_confirmation_number,
+            "ota_confirmation": imported.external_confirmation_number,
             "updated_at": datetime.now(UTC).isoformat(),
             "updated_by": "channel_manager",
         }

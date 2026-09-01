@@ -187,6 +187,13 @@ export function InvoiceTab({ booking, bookingId }) {
         const items = res.data?.charges || [];
         setCharges(items);
         setSelectedIds(new Set(items.map(c => c.id)));
+        const agencyReservationNumber = String(res.data?.agency_reservation_number || '').trim();
+        if (agencyReservationNumber) {
+          setBillingInfo(prev => prev.note ? prev : ({
+            ...prev,
+            note: `Acente rezervasyon no: ${agencyReservationNumber}`,
+          }));
+        }
       } catch (_e) { /* charge load failed — empty list is acceptable UX */ }
       setLoadingCharges(false);
     };
@@ -244,7 +251,7 @@ export function InvoiceTab({ booking, bookingId }) {
               <FormField label="E-posta" value={billingInfo.email} onChange={v => setBillingInfo(p => ({ ...p, email: v }))} placeholder="fatura@firma.com" />
             </div>
             <FormField label="Adres" value={billingInfo.address} onChange={v => setBillingInfo(p => ({ ...p, address: v }))} placeholder="Fatura adresi" />
-            <FormField label="Fatura Notu" value={billingInfo.note} onChange={v => setBillingInfo(p => ({ ...p, note: v }))} placeholder="Opsiyonel not" />
+            <FormField label="Fatura Notu" value={billingInfo.note} onChange={v => setBillingInfo(p => ({ ...p, note: v }))} placeholder="Acente rezervasyon numarası otomatik eklenir" />
           </div>
 
           <div className="text-sm font-semibold text-gray-700 flex items-center justify-between">

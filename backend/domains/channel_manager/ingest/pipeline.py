@@ -1018,6 +1018,7 @@ async def _trigger_import_bridge(
         "property_id": property_id,
         "provider": provider,
         "external_reservation_id": ext_res_id,
+        "agency_reservation_number": canonical.get("agency_reservation_number", ""),
         "connection_id": connector_id,
         "payload_hash": canonical.get("payload_hash", ""),
         "guest_name": canonical.get("guest_name", ""),

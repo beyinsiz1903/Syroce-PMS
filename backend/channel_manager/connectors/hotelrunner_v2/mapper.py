@@ -196,6 +196,7 @@ def reservation_to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
         "provider": "hotelrunner",
         "provider_reservation_id": _i(raw.get("reservation_id", 0)),
         "provider_number": provider_number,
+        "agency_reservation_number": provider_number or hr_number,
         "guest_name": f"{first} {last}".strip(),
         "guest_first_name": first,
         "guest_last_name": last,
