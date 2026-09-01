@@ -10,7 +10,7 @@ Multi-tenant Property Management System with integrated Channel Manager, Control
 | Styling | Tailwind CSS + shadcn/ui | - |
 | Backend | FastAPI (Python) | 3.11+ |
 | Database | MongoDB | 7.0+ |
-| Runtime | Node.js | 20+ |
+| Runtime | Node.js | 22+ |
 | Linting | Ruff (backend), ESLint v9 (frontend) | - |
 | CI/CD | GitHub Actions (hard-gate pipeline) | - |
 

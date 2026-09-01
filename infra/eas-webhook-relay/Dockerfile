@@ -1,8 +1,8 @@
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
-# The relay has zero runtime dependencies (only Node 20 stdlib + global fetch).
+# The relay has zero runtime dependencies (only Node 22 stdlib + global fetch).
 # package.json is shipped purely so `node --test` / tooling can resolve the
 # package name; no `npm install` step is required or desirable.
 COPY package.json ./

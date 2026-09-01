@@ -1,7 +1,7 @@
 """
 Test Suite: README Files and Past-Date Booking Validation
 Tests:
-1. README files contain correct tech stack info (Syroce PMS, React 19, Python 3.11+, Node 20+, MongoDB 7.0+)
+1. README files contain correct tech stack info (Syroce PMS, React 19, Python 3.11+, Node 22+, MongoDB 7.0+)
 2. Past-date booking rejection works correctly
 3. Future-date booking succeeds
 """
@@ -46,11 +46,11 @@ class TestReadmeFiles:
             content = f.read()
         assert 'Python' in content and '3.11' in content, "README should mention Python 3.11+"
         
-    def test_root_readme_has_node_20(self):
-        """Root README.md should mention Node.js 20+"""
+    def test_root_readme_has_node_22(self):
+        """Root README.md should mention Node.js 22+"""
         with open(REPO_ROOT / 'README.md', 'r') as f:
             content = f.read()
-        assert 'Node' in content and '20' in content, "README should mention Node.js 20+"
+        assert 'Node' in content and '22' in content, "README should mention Node.js 22+"
         
     def test_root_readme_has_mongodb_70(self):
         """Root README.md should mention MongoDB 7.0+"""
