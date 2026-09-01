@@ -224,6 +224,42 @@ async def test_cari_transfer_accepts_legacy_mongo_object_id(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_cari_transfer_exposes_missing_entry_booking_without_writes(monkeypatch):
+    bookings = SimpleNamespace(
+        find_one=AsyncMock(return_value=None),
+        update_one=AsyncMock(),
+    )
+    payments = SimpleNamespace(insert_one=AsyncMock())
+    monkeypatch.setattr(
+        reservation_detail,
+        "db",
+        SimpleNamespace(bookings=bookings, payments=payments),
+    )
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
+
+    with pytest.raises(Exception) as exc:
+        await reservation_detail.transfer_to_cari(
+            "missing-booking",
+            reservation_detail.CariTransfer(
+                amount=250.0,
+                cari_account_id="cari-a",
+            ),
+            current_user=SimpleNamespace(
+                id="user-a",
+                tenant_id="tenant-a",
+                role="manager",
+                name="Test Operator",
+            ),
+            _perm=None,
+        )
+
+    assert getattr(exc.value, "status_code", None) == 409
+    assert "rezervasyon başlangıçta bulunamadı" in getattr(exc.value, "detail", "")
+    payments.insert_one.assert_not_awaited()
+    bookings.update_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_cari_transfer_does_not_write_without_owned_account(monkeypatch):
     bookings = SimpleNamespace(
         find_one=AsyncMock(return_value={"id": "booking-a", "tenant_id": "tenant-a"}),
