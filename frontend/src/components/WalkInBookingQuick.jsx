@@ -24,6 +24,10 @@ const WalkInBookingQuick = ({ onSuccess }) => {
     guest_id_number: '',
     guest_id_type: '',
     guest_nationality: '',
+    guest_birth_date: '',
+    guest_gender: '',
+    guest_birth_place: '',
+    guest_document_expiry_date: '',
     room_type: 'standard',
     nights: 1,
     adults: 1
@@ -40,6 +44,10 @@ const WalkInBookingQuick = ({ onSuccess }) => {
       guest_id_number: doc.id_number || doc.document_number || prev.guest_id_number,
       guest_id_type: doc.document_type || prev.guest_id_type,
       guest_nationality: doc.nationality || prev.guest_nationality,
+      guest_birth_date: doc.birth_date || prev.guest_birth_date,
+      guest_gender: doc.gender || prev.guest_gender,
+      guest_birth_place: doc.birth_place || prev.guest_birth_place,
+      guest_document_expiry_date: doc.expiry_date || prev.guest_document_expiry_date,
     }));
   };
 

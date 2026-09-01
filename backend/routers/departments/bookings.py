@@ -299,6 +299,15 @@ async def create_walk_in_booking(data: dict, http_request: Request, current_user
                     "name": data["guest_name"],
                     "phone": data["guest_phone"],
                     "email": data.get("guest_email"),
+                    "id_number": data.get("guest_id_number", ""),
+                    "id_type": data.get("guest_id_type", ""),
+                    "nationality": data.get("guest_nationality", ""),
+                    "birth_date": data.get("guest_birth_date", ""),
+                    "date_of_birth": data.get("guest_birth_date", ""),
+                    "gender": data.get("guest_gender", ""),
+                    "birth_place": data.get("guest_birth_place", ""),
+                    "document_expiry_date": data.get("guest_document_expiry_date", ""),
+                    "scanned_via_quick_id": bool(data.get("guest_id_number")),
                     "created_at": datetime.now(UTC).isoformat(),
                 }
             )

@@ -26,6 +26,7 @@ iyzipay==1.0.46
 jmespath==1.0.1
 litellm==1.80.0
 openai==1.99.9
+pytesseract==0.3.13
 proto-plus==1.27.1
 protobuf==5.29.6
 # Required by the no-deps LiteLLM security override in post_install.sh.
