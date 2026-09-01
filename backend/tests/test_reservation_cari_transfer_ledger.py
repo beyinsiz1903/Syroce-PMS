@@ -273,7 +273,8 @@ async def test_cari_transfer_does_not_write_without_owned_account(monkeypatch):
             _perm=None,
         )
 
-    assert getattr(exc.value, "status_code", None) == 404
+    assert getattr(exc.value, "status_code", None) == 409
+    assert "başlangıçta çözümlenemedi" in getattr(exc.value, "detail", "")
     payments.insert_one.assert_not_awaited()
     cari_transactions.insert_one.assert_not_awaited()
     bookings.update_one.assert_not_awaited()
