@@ -132,8 +132,14 @@ async def test_uuid_backed_cari_id_round_trips_from_list_response(monkeypatch):
         return None
 
     database = SimpleNamespace(
-        cari_accounts=SimpleNamespace(find_one=AsyncMock(return_value=None)),
-        city_ledger_accounts=SimpleNamespace(find_one=AsyncMock(side_effect=find_uuid_account)),
+        cari_accounts=SimpleNamespace(
+            find_one=AsyncMock(return_value=None),
+            find=lambda *_args, **_kwargs: AsyncRows([]),
+        ),
+        city_ledger_accounts=SimpleNamespace(
+            find_one=AsyncMock(side_effect=find_uuid_account),
+            find=lambda *_args, **_kwargs: AsyncRows([uuid_account]),
+        ),
     )
     monkeypatch.setattr(reservation_detail, "db", database)
 
