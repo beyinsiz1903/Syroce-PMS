@@ -283,7 +283,7 @@ async def scan_id(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=QUICKID_SCAN_TIMEOUT) as client:
             r = await client.post(
                 f"{QUICKID_URL}/api/scan",
                 json=body,

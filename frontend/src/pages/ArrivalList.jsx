@@ -32,13 +32,16 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
       if (doc.document_type) patch.guest_id_type = doc.document_type;
       if (doc.nationality) patch.guest_nationality = doc.nationality;
       if (doc.birth_date) patch.guest_birth_date = doc.birth_date;
-      await axios.patch(`/bookings/${bookingId}/guest-info`, patch).catch((err) => {
-        console.error('Guest info patch failed:', err);
-      });
+      if (doc.gender) patch.guest_gender = doc.gender;
+      if (doc.birth_place) patch.guest_birth_place = doc.birth_place;
+      if (doc.address) patch.guest_address = doc.address;
+      if (doc.expiry_date) patch.guest_document_expiry_date = doc.expiry_date;
+      if (doc.issue_date) patch.guest_document_issue_date = doc.issue_date;
+      await axios.patch(`/bookings/${bookingId}/guest-info`, patch);
       toast.success('Kimlik bilgileri rezervasyona aktarıldı');
       loadTodayArrivals();
     } catch (e) {
-      toast.warning('Bilgiler aktarılamadı, manuel güncelleyebilirsiniz');
+      toast.error(e.response?.data?.detail || 'Kimlik bilgileri rezervasyona aktarılamadı');
     }
   };
 

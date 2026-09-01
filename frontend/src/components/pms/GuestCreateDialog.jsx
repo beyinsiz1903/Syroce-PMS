@@ -12,7 +12,9 @@ import IDScanner from './IDScanner';
 const GuestCreateDialog = ({ open, onClose, onGuestCreated }) => {
   const { t } = useTranslation();
   const [newGuest, setNewGuest] = useState({
-    name: '', email: '', phone: '', id_number: '', address: '', kvkk_consent: false, scanned_via_quick_id: false
+    name: '', email: '', phone: '', id_number: '', id_type: '', nationality: '', birth_date: '',
+    gender: '', birth_place: '', document_expiry_date: '', address: '', kvkk_consent: false,
+    scanned_via_quick_id: false
   });
   const [submitting, setSubmitting] = useState(false);
   const idempotencyKeyRef = useRef(null);
@@ -22,9 +24,14 @@ const GuestCreateDialog = ({ open, onClose, onGuestCreated }) => {
       ...prev,
       name: `${doc.first_name || ''} ${doc.last_name || ''}`.trim(),
       id_number: doc.document_number || doc.id_number || '',
+      id_type: doc.document_type || '',
+      nationality: doc.nationality || '',
+      birth_date: doc.birth_date || '',
+      gender: doc.gender || '',
+      birth_place: doc.birth_place || '',
+      document_expiry_date: doc.expiry_date || '',
+      address: doc.address || prev.address,
       scanned_via_quick_id: true,
-      // Default to consenting if they scanned
-      kvkk_consent: true
     }));
   };
 
@@ -54,7 +61,11 @@ const GuestCreateDialog = ({ open, onClose, onGuestCreated }) => {
       toast.success(t('pms.guestCreated', 'Misafir başarıyla oluşturuldu'));
       onClose();
       onGuestCreated();
-      setNewGuest({ name: '', email: '', phone: '', id_number: '', address: '', kvkk_consent: false, scanned_via_quick_id: false });
+      setNewGuest({
+        name: '', email: '', phone: '', id_number: '', id_type: '', nationality: '', birth_date: '',
+        gender: '', birth_place: '', document_expiry_date: '', address: '', kvkk_consent: false,
+        scanned_via_quick_id: false
+      });
       idempotencyKeyRef.current = null;
     } catch (error) {
       toast.error(error.response?.data?.detail || t('pms.createFailed', 'Misafir oluşturulamadı'));
@@ -93,6 +104,16 @@ const GuestCreateDialog = ({ open, onClose, onGuestCreated }) => {
           <div>
             <Label>{t('pms.idPassport', 'ID / Passport No')} *</Label>
             <Input value={newGuest.id_number} onChange={(e) => setNewGuest({...newGuest, id_number: e.target.value})} required />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>{t('pms.nationality', 'Uyruk')}</Label>
+              <Input value={newGuest.nationality} onChange={(e) => setNewGuest({...newGuest, nationality: e.target.value})} />
+            </div>
+            <div>
+              <Label>{t('pms.birthDate', 'Doğum tarihi')}</Label>
+              <Input type="date" value={newGuest.birth_date} onChange={(e) => setNewGuest({...newGuest, birth_date: e.target.value})} />
+            </div>
           </div>
           <div>
             <Label>{t('common.address', 'Address')}</Label>

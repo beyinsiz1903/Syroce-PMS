@@ -386,8 +386,19 @@ async def media_list(
 #                            Move to routers/pms_bookings.py.
 class GuestInfoPatch(BaseModel):
     guest_name: str | None = None
+    guest_first_name: str | None = None
+    guest_last_name: str | None = None
     guest_phone: str | None = None
     guest_email: str | None = None
+    guest_id_number: str | None = None
+    guest_id_type: str | None = None
+    guest_nationality: str | None = None
+    guest_birth_date: str | None = None
+    guest_gender: str | None = None
+    guest_birth_place: str | None = None
+    guest_address: str | None = None
+    guest_document_expiry_date: str | None = None
+    guest_document_issue_date: str | None = None
     notes: str | None = None
     special_requests: str | None = None
     arrival_time: str | None = None
@@ -403,9 +414,54 @@ async def patch_booking_guest_info(
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
-    update = {k: v for k, v in body.dict().items() if v is not None}
+    update = {k: v for k, v in body.model_dump().items() if v is not None}
     if not update:
         return {"updated": False, "id": booking_id}
+    if not update.get("guest_name") and (update.get("guest_first_name") or update.get("guest_last_name")):
+        update["guest_name"] = " ".join(
+            value.strip()
+            for value in (update.get("guest_first_name", ""), update.get("guest_last_name", ""))
+            if value and value.strip()
+        )
     update["updated_at"] = datetime.now(UTC).isoformat()
-    await db.bookings.update_one({"id": booking_id, "tenant_id": current_user.tenant_id}, {"$set": update})
+    from security.field_encryption import get_field_encryption_service
+
+    booking_update = get_field_encryption_service().encrypt_document(update.copy(), collection="bookings")
+    await db.bookings.update_one(
+        {"id": booking_id, "tenant_id": current_user.tenant_id},
+        {"$set": booking_update},
+    )
+
+    # Keep the linked guest profile in sync. Quick-ID is an OCR adapter; PMS is
+    # the single source of truth and receives the durable PII record.
+    guest_id = booking.get("guest_id")
+    if guest_id:
+        guest_update = {
+            "name": update.get("guest_name"),
+            "first_name": update.get("guest_first_name"),
+            "last_name": update.get("guest_last_name"),
+            "id_number": update.get("guest_id_number"),
+            "id_type": update.get("guest_id_type"),
+            "nationality": update.get("guest_nationality"),
+            "date_of_birth": update.get("guest_birth_date"),
+            "birth_date": update.get("guest_birth_date"),
+            "gender": update.get("guest_gender"),
+            "birth_place": update.get("guest_birth_place"),
+            "address": update.get("guest_address"),
+            "document_expiry_date": update.get("guest_document_expiry_date"),
+            "document_issue_date": update.get("guest_document_issue_date"),
+            "scanned_via_quick_id": True,
+        }
+        guest_update = {key: value for key, value in guest_update.items() if value is not None}
+        existing_guest = await db.guests.find_one(
+            {"id": guest_id, "tenant_id": current_user.tenant_id},
+            {"_id": 0},
+        )
+        if existing_guest and guest_update:
+            from security.guest_write import encrypt_guest_update
+
+            await db.guests.update_one(
+                {"id": guest_id, "tenant_id": current_user.tenant_id},
+                {"$set": encrypt_guest_update(guest_update, existing=existing_guest)},
+            )
     return {"updated": True, "id": booking_id, **update}
