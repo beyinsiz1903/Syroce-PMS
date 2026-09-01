@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-const ExecutiveDashboard = ({ user }) => {
+const ExecutiveDashboard = ({ user, embedded = false }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
@@ -113,7 +113,7 @@ const ExecutiveDashboard = ({ user }) => {
 
   if (loading && !refreshing) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 flex items-center justify-center">
+      <div className={`${embedded ? 'min-h-[40vh] rounded-xl' : 'min-h-screen'} bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 flex items-center justify-center`}>
         <div className="text-center text-white">
           <RefreshCw className="h-12 w-12 animate-spin mx-auto mb-4" />
           <p>Dashboard yükleniyor...</p>
@@ -123,14 +123,14 @@ const ExecutiveDashboard = ({ user }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 pb-20">
+    <div className={`${embedded ? 'min-h-[calc(100vh-8rem)] rounded-xl overflow-hidden' : 'min-h-screen'} bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 pb-20`}>
       {/* Header */}
-      <div className="bg-black/30 backdrop-blur-sm text-white p-4 sticky top-0 z-10 shadow-lg border-b border-white/10">
+      <div className={`bg-black/30 backdrop-blur-sm text-white p-4 shadow-lg border-b border-white/10 ${embedded ? '' : 'sticky top-0 z-10'}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/10 rounded-lg transition">
+            {!embedded && <button aria-label="Geri" onClick={() => navigate(-1)} className="p-2 hover:bg-white/10 rounded-lg transition">
               <ArrowLeft className="h-5 w-5" />
-            </button>
+            </button>}
             <div>
               <h1 className="text-xl font-bold">{t('reports.executiveReport')}</h1>
               <p className="text-gray-300 text-sm">

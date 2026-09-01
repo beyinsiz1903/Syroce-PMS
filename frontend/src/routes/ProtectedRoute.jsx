@@ -21,6 +21,18 @@ const LoadingFallback = () => (
   </div>
 );
 
+const RouteContentLoadingFallback = () => (
+  <div
+    data-testid="route-content-loading"
+    className="flex min-h-[40vh] items-center justify-center rounded-xl border border-slate-200 bg-white"
+  >
+    <div className="text-center">
+      <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-b-blue-600" />
+      <p className="text-sm font-medium text-slate-600">Sayfa hazırlanıyor…</p>
+    </div>
+  </div>
+);
+
 function withOptionalLayout(element, { wrapLayout, layoutModule, user, tenant, onLogout }) {
   if (!wrapLayout) return element;
   const embeddedElement = isValidElement(element)
@@ -28,7 +40,9 @@ function withOptionalLayout(element, { wrapLayout, layoutModule, user, tenant, o
     : element;
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule={layoutModule}>
-      {embeddedElement}
+      <Suspense fallback={<RouteContentLoadingFallback />}>
+        {embeddedElement}
+      </Suspense>
     </Layout>
   );
 }
@@ -134,4 +148,4 @@ export function ModuleGuardedRoute({
   );
 }
 
-export { LoadingFallback };
+export { LoadingFallback, RouteContentLoadingFallback };

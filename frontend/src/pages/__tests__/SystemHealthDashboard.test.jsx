@@ -130,4 +130,33 @@ describe('SystemHealthDashboard — RNL duplicate live socket refresh', () => {
       expect(screen.queryByTestId('rnl-duplicates-widget')).toBeNull()
     );
   });
+
+  it('renders missing readiness metadata as pending instead of raw error codes', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url === '/production-golive/readiness') {
+        return Promise.resolve({
+          data: {
+            verdict: 'unknown',
+            checks: {
+              backup: { status: 'atlas_unknown_tier' },
+              observability: {},
+            },
+          },
+        });
+      }
+      if (url === RNL_URL) {
+        return Promise.resolve({ data: { manual_required_count: 0, top_tenants: [] } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    await act(async () => {
+      render(<SystemHealthDashboard user={{ role: 'superadmin' }} />);
+    });
+
+    expect(await screen.findByText('Katman doğrulanmadı')).toBeInTheDocument();
+    expect(screen.getAllByText('Veri bekleniyor').length).toBeGreaterThan(0);
+    expect(screen.queryByText('atlas_unknown_tier')).not.toBeInTheDocument();
+    expect(screen.queryByText('UNKNOWN')).not.toBeInTheDocument();
+  });
 });
