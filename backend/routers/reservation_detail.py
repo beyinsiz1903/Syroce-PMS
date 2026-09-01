@@ -1146,7 +1146,10 @@ async def record_payment(
 
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
-        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+        raise HTTPException(
+            status_code=409,
+            detail="Cari aktarımı için rezervasyon başlangıçta bulunamadı",
+        )
 
     # Task #184 — Idempotency: aynı (tenant_id, booking_id, reference) ile gelen
     # retry/double-click/network-replay isteği misafiri çift kreditlememeli.
@@ -1348,7 +1351,10 @@ async def transfer_to_cari(
         account_name=data.cari_account_name,
     )
     if not cari:
-        raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
+        raise HTTPException(
+            status_code=409,
+            detail="Cari aktarımı için seçilen cari başlangıçta çözümlenemedi",
+        )
 
     folio = await db.folios.find_one(
         {"booking_id": booking_id, "tenant_id": tid, "status": "open"},
