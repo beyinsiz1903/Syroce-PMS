@@ -42,7 +42,11 @@ const STATUS_META = {
     intent: "neutral"
   },
   unknown: {
-    label: "Bilinmiyor",
+    label: "Veri bekleniyor",
+    intent: "neutral"
+  },
+  atlas_unknown_tier: {
+    label: "Katman doğrulanmadı",
     intent: "neutral"
   }
 };
@@ -883,7 +887,6 @@ export default function SystemHealthDashboard({
 
   // KPI top-row özet (P1 #4)
   const overallStatus = (normalizedOverview?.overall_status || "unknown").toLowerCase();
-  const overallMeta = STATUS_META[overallStatus] || STATUS_META.unknown;
   const cmHealth = (cmStatus?.health || "unknown").toLowerCase();
   const qHealth = (queueHealth?.health || "unknown").toLowerCase();
   const alertCount = alerts?.count || 0;
@@ -924,7 +927,7 @@ export default function SystemHealthDashboard({
           </div>} />
 
       {/* Genel durum şeridi */}
-      {normalizedOverview && <div data-testid="normalized-overview-bar" className={`p-3 rounded-lg border flex items-center gap-3 ${overallStatus === "critical" ? "bg-rose-50 border-rose-200" : overallStatus === "degraded" ? "bg-amber-50 border-amber-200" : "bg-emerald-50 border-emerald-200"}`}>
+      {normalizedOverview && <div data-testid="normalized-overview-bar" className={`p-3 rounded-lg border flex items-center gap-3 ${overallStatus === "critical" ? "bg-rose-50 border-rose-200" : overallStatus === "degraded" || overallStatus === "warning" ? "bg-amber-50 border-amber-200" : overallStatus === "healthy" || overallStatus === "ok" ? "bg-emerald-50 border-emerald-200" : "bg-slate-50 border-slate-200"}`}>
           <Activity className="w-4 h-4 text-slate-700" />
           <span className="text-sm font-medium text-slate-900">Genel:</span>
           <HealthBadge status={overallStatus} />
@@ -981,6 +984,7 @@ export default function SystemHealthDashboard({
       {!loading && pilotReadiness && (() => {
       const checks = pilotReadiness.checks || {};
       const verdict = (pilotReadiness.verdict || "unknown").toUpperCase();
+      const verdictLabel = verdict === "UNKNOWN" ? "Veri bekleniyor" : verdict;
       const verdictIntent = verdict === "PASS" ? "success" : verdict === "REVIEW" ? "warning" : verdict === "FAIL" ? "danger" : "neutral";
       const ox = checks.cm_outbox || {};
       const cb = checks.cm_circuit_breakers || {};
@@ -1007,10 +1011,10 @@ export default function SystemHealthDashboard({
               </div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              <KpiCard icon={CheckCircle2} label="Readiness" value={verdict} sub={typeof pilotReadiness.score === "number" ? `Skor ${(pilotReadiness.score * 100).toFixed(0)}/100` : "—"} intent={verdictIntent} />
+              <KpiCard icon={CheckCircle2} label="Readiness" value={verdictLabel} sub={typeof pilotReadiness.score === "number" ? `Skor ${(pilotReadiness.score * 100).toFixed(0)}/100` : "Henüz değerlendirilmedi"} intent={verdictIntent} />
               <KpiCard icon={Database} label="CM Outbox" value={ox.backlog ?? 0} sub={ox.failed > 0 ? `${ox.failed} failed` : ox.oldest_seconds != null ? `En eski ${Math.round(ox.oldest_seconds)}s` : "Temiz"} intent={oxIntent} />
               <KpiCard icon={Network} label="Circuit Breakers" value={`${cb.open ?? 0} / ${cb.total ?? 0}`} sub={cb.half_open > 0 ? `${cb.half_open} half-open` : "OPEN / Toplam"} intent={cbIntent} />
-              <KpiCard icon={Server} label="Atlas Backup" value={bk.status === "atlas_managed" ? "Atlas Managed" : STATUS_META[bk.status]?.label || bk.status || "—"} sub={bk.tier ? `Tier ${bk.tier}` : "Yedek durumu"} intent={bkIntent} />
+              <KpiCard icon={Server} label="Atlas Backup" value={bk.status === "atlas_managed" ? "Atlas yönetimli" : STATUS_META[bk.status]?.label || "Veri bekleniyor"} sub={bk.tier ? `Katman ${bk.tier}` : "Yedek katmanı doğrulanmadı"} intent={bkIntent} />
               <KpiCard icon={Eye} label="Observability" value={sentryActive && otelActive ? "Sentry + OTel" : sentryActive ? "Sentry" : otelActive ? "OTel" : "Pasif"} sub={sentryActive || otelActive ? "Aktif" : "Yapılandırma eksik"} intent={obIntent} />
             </div>
           </div>;
@@ -1018,7 +1022,7 @@ export default function SystemHealthDashboard({
 
       {/* KPI satırı — Sprint A KpiCard intent palette */}
       {!loading && <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <KpiCard icon={Wifi} label={t('cm.pages_SystemHealthDashboard.kanal_yoneticisi_53252')} value={overallMeta.label === "Bilinmiyor" ? "—" : STATUS_META[cmHealth]?.label || cmHealth} sub={`${cmStatus?.active_connections || 0} bağlantı`} intent={kpiIntent(cmHealth)} />
+          <KpiCard icon={Wifi} label={t('cm.pages_SystemHealthDashboard.kanal_yoneticisi_53252')} value={STATUS_META[cmHealth]?.label || "Veri bekleniyor"} sub={`${cmStatus?.active_connections || 0} bağlantı`} intent={kpiIntent(cmHealth)} />
           <KpiCard icon={Database} label={t('cm.pages_SystemHealthDashboard.kuyruk_sagligi_2d447')} value={STATUS_META[qHealth]?.label || qHealth} sub={`${queueHealth?.pending || 0} bekleyen`} intent={kpiIntent(qHealth)} />
           <KpiCard icon={AlertTriangle} label="Alarmlar" value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} kritik` : "Temiz"} intent={criticalAlerts > 0 ? "danger" : alertCount > 0 ? "warning" : "success"} />
           <KpiCard icon={Shield} label={t('cm.pages_SystemHealthDashboard.izolasyon_ihlalleri')} value={violations} sub="Çapraz-kiracı" intent={violations > 0 ? "danger" : "success"} />

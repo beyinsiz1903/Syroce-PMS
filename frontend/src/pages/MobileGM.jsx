@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-const MobileGM = ({ user }) => {
+const MobileGM = ({ user, tenant, embedded = false }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -45,18 +45,18 @@ const MobileGM = ({ user }) => {
   const [monthlyForecast, setMonthlyForecast] = useState([]);
   const [propertyModalOpen, setPropertyModalOpen] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState(null);
-  const [properties, setProperties] = useState([
-    { id: 1, name: 'Hilton Istanbul Bosphorus', location: 'Istanbul, TR', rooms: 498, status: 'active' },
-    { id: 2, name: 'Hilton Ankara', location: 'Ankara, TR', rooms: 312, status: 'active' },
-    { id: 3, name: 'Hilton Izmir', location: 'Izmir, TR', rooms: 276, status: 'active' },
-    { id: 4, name: 'Hilton Antalya', location: 'Antalya, TR', rooms: 425, status: 'active' }
-  ]);
+  const currentProperty = {
+    id: tenant?.id || user?.tenant_id || 'current-property',
+    name: tenant?.property_name || user?.impersonated_tenant_name || user?.tenant_name || 'Aktif Tesis',
+    location: tenant?.city || tenant?.location || 'Konum bilgisi yok',
+    rooms: Number(tenant?.room_count || tenant?.total_rooms || 0),
+    status: 'active',
+  };
+  const [properties, setProperties] = useState([currentProperty]);
 
   useEffect(() => {
     // Set default property
-    if (!selectedProperty && properties.length > 0) {
-      setSelectedProperty(properties[0]);
-    }
+    setSelectedProperty(currentProperty);
     loadData();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
@@ -76,6 +76,16 @@ const MobileGM = ({ user }) => {
       setFinanceSnapshot(financeRes.data);
       setRoomStatus(roomsRes.data);
       setStaffTasks(tasksRes.data?.tasks || tasksRes.data || []);
+      const resolvedProperty = {
+        ...currentProperty,
+        rooms: Number(
+          flashRes.data?.occupancy?.total_rooms
+          || currentProperty.rooms
+          || 0
+        ),
+      };
+      setProperties([resolvedProperty]);
+      setSelectedProperty(resolvedProperty);
     } catch (error) {
       console.error('Failed to load GM data:', error);
       toast.error('Veri yüklenemedi');
@@ -134,7 +144,7 @@ const MobileGM = ({ user }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className={`${embedded ? 'min-h-[40vh] rounded-xl' : 'min-h-screen'} bg-gray-50 flex items-center justify-center`}>
         <div className="text-center">
           <RefreshCw className="w-8 h-8 animate-spin text-red-600 mx-auto mb-2" />
           <p className="text-gray-600">{t("common.loading")}</p>
@@ -144,13 +154,13 @@ const MobileGM = ({ user }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className={`${embedded ? 'min-h-[calc(100vh-8rem)] rounded-xl overflow-hidden' : 'min-h-screen'} bg-gray-50 pb-20`}>
       {/* Header */}
-      <div className="bg-gradient-to-r from-red-600 to-red-500 text-white sticky top-0 z-50 shadow-lg">
+      <div className={`bg-gradient-to-r from-red-600 to-red-500 text-white shadow-lg ${embedded ? '' : 'sticky top-0 z-50'}`}>
         <div className="p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <Button
+              {!embedded && <Button
                 aria-label="Geri"
                 title="Geri"
                 variant="ghost"
@@ -159,23 +169,23 @@ const MobileGM = ({ user }) => {
                 className="text-white hover:bg-white/20 p-2"
               >
                 <ArrowLeft className="w-5 h-5" />
-              </Button>
+              </Button>}
               <div>
                 <h1 className="text-xl font-bold">Genel Müdür Dashboard</h1>
                 <p className="text-xs text-red-100">GM Executive Dashboard</p>
               </div>
             </div>
             <div className="flex items-center space-x-2">
-              <Button
+              {!embedded && <Button
                 aria-label="Ana Sayfa"
                 variant="ghost"
                 size="sm"
-                onClick={() => navigate('/')}
+                onClick={() => navigate('/app/dashboard')}
                 className="text-white hover:bg-white/20 p-2"
                 title="Ana Sayfa"
               >
                 <Home className="w-5 h-5" />
-              </Button>
+              </Button>}
               <Button
                 aria-label="Yenile"
                 title="Yenile"
@@ -223,7 +233,7 @@ const MobileGM = ({ user }) => {
                     onClick={() => setPropertyModalOpen(true)}
                     className="text-sm font-bold text-blue-600 hover:text-blue-800"
                   >
-                    {selectedProperty ? selectedProperty.name : 'Hilton Istanbul Bosphorus'} ▼
+                    {selectedProperty?.name || 'Aktif Tesis'} ▼
                   </button>
                 </div>
               </div>

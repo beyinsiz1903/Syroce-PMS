@@ -1,3 +1,4 @@
+import { lazy } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -29,5 +30,22 @@ describe('ProtectedRoute layout ownership', () => {
     expect(await screen.findByTestId('outer-layout')).toBeInTheDocument();
     expect(screen.getByTestId('page')).toBeInTheDocument();
     expect(screen.queryByTestId('inner-layout')).not.toBeInTheDocument();
+  });
+
+  it('keeps application chrome visible while a lazy page is loading', async () => {
+    const PendingPage = lazy(() => new Promise(() => {}));
+
+    render(
+      <MemoryRouter>
+        <ProtectedRoute
+          isAuthenticated
+          wrapLayout
+          element={<PendingPage />}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId('outer-layout')).toBeInTheDocument();
+    expect(screen.getByTestId('route-content-loading')).toHaveTextContent('Sayfa hazırlanıyor');
   });
 });

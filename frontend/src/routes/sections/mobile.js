@@ -21,7 +21,7 @@ export function mobileRoutes({ p, pm }) {
     { path: "/mobile/maintenance", ...p(MobileMaintenance) },
     { path: "/mobile/finance", ...p(MobileFinance) },
     { path: "/mobile/security", ...p(MobileSecurity) },
-    { path: "/mobile/gm", ...p(MobileGM) },
+    { path: "/mobile/gm", ...p(MobileGM), wrapLayout: true, layoutModule: "pms_mobile" },
     { path: "/mobile/maintenance/priority-visual", ...p(MaintenancePriorityVisual) },
     { path: "/mobile/order-tracking", ...p(MobileOrderTracking) },
     { path: "/mobile/inventory", ...p(MobileInventory) },

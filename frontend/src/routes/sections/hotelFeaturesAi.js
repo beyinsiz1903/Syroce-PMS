@@ -16,7 +16,7 @@ export function hotelFeaturesAiRoutes({ p, pm }) {
     { path: "/service-recovery", ...p(ServiceRecovery), wrapLayout: true },
     { path: "/spa-wellness", ...pm(SpaWellness, "spa", undefined, { strict: true }), wrapLayout: true, layoutModule: "spa" },
     { path: "/spa-dining-packages", ...pm(SpaDiningPackages, "spa", undefined, { strict: false }), wrapLayout: true, layoutModule: "spa" },
-    { path: "/app/multi-property", ...p(MultiProperty) },
+    { path: "/app/multi-property", ...p(MultiProperty), wrapLayout: true, layoutModule: "multi-property" },
     { path: "/multi-property", type: "redirect", to: "/app/multi-property" },
     { path: "/staff-management", ...pm(StaffManagement, "hr", undefined, { strict: true }), wrapLayout: true, layoutModule: "hr" },
     { path: "/staff/:id", ...pm(StaffProfile, "hr", undefined, { strict: true }), wrapLayout: true, layoutModule: "hr" },

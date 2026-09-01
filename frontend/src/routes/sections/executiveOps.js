@@ -17,7 +17,7 @@ export function executiveOpsRoutes({ p, pm }) {
     { path: "/app/academy-report", ...pm(AcademyReport, "academy"), wrapLayout: true, layoutModule: "academy" },
     { path: "/app/academy-manage", ...pm(AcademyManage, "academy"), wrapLayout: true, layoutModule: "academy" },
     { path: "/app/mevzuat-raporlari", ...pm(MevzuatRaporlari, "basic_reporting"), wrapLayout: true, layoutModule: "mevzuat-raporlari" },
-    { path: "/executive", ...pm(ExecutiveDashboard, "gm_dashboards") },
+    { path: "/executive", ...pm(ExecutiveDashboard, "gm_dashboards"), wrapLayout: true, layoutModule: "gm_dashboards" },
     { path: "/gm/enhanced", type: "redirect", to: "/executive" },
     { path: "/gm-classic", type: "redirect", to: "/app/dashboard" },
 

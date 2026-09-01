@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Building, Home, MapPin, TrendingUp, Hotel, DollarSign, Loader2, AlertTriangle, RefreshCw, Link2, ReceiptText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-const MultiProperty = () => {
+const MultiProperty = ({ embedded = false }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
@@ -28,14 +28,15 @@ const MultiProperty = () => {
     <div className="p-6">
       <div className="mb-8">
         <div className="flex items-center gap-3">
-          <Button 
-            variant="outline" 
+          {!embedded && <Button
+            variant="outline"
             size="icon"
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/app/dashboard')}
             className="hover:bg-blue-50"
+            aria-label="Ana sayfa"
           >
             <Home className="w-5 h-5" />
-          </Button>
+          </Button>}
           <div>
             <h1 className="text-3xl font-bold">Zincir Otel Yönetimi</h1>
             <p className="text-gray-600">Yetkili olduğunuz zincirdeki otellerin konsolide, salt-okunur operasyon görünümü</p>

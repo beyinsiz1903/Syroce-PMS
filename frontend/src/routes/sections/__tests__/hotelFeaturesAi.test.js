@@ -40,6 +40,10 @@ describe('multi-property navigation', () => {
     const legacy = routes.find((route) => route.path === '/multi-property');
 
     expect(canonical.component).toBe('MultiProperty');
+    expect(canonical).toMatchObject({
+      wrapLayout: true,
+      layoutModule: 'multi-property',
+    });
     expect(getRequiredModule(canonical.path)).toBe('multi_property');
     expect(legacy).toMatchObject({
       type: 'redirect',
