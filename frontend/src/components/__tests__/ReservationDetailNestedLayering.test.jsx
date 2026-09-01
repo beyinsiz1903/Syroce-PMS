@@ -39,6 +39,26 @@ vi.mock('sonner', () => ({
   },
 }));
 
+vi.mock('@/components/QuickIdScanDialog', () => ({
+  default: ({ open, onExtracted }) => open ? (
+    <button
+      type="button"
+      onClick={() => onExtracted({
+        first_name: 'AYŞE',
+        last_name: 'YILMAZ',
+        document_type: 'tc_kimlik',
+        id_number: '10000000146',
+        nationality: 'TR',
+        birth_date: '1990-05-15',
+        gender: 'F',
+        address: 'Kartepe / Kocaeli',
+      })}
+    >
+      Taranan kimliği kullan
+    </button>
+  ) : null,
+}));
+
 function expectNestedLayer(content) {
   expect(content).toHaveClass('z-[80]');
   expect(
@@ -52,6 +72,7 @@ describe('reservation detail nested overlays', () => {
   beforeEach(() => {
     axiosGet.mockReset();
     axiosPost.mockReset();
+    localStorage.clear();
     HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
     HTMLElement.prototype.setPointerCapture = vi.fn();
     HTMLElement.prototype.releasePointerCapture = vi.fn();
@@ -151,5 +172,45 @@ describe('reservation detail nested overlays', () => {
     fireEvent.keyDown(idTypeSelect, { key: 'ArrowDown' });
 
     await waitFor(() => expect(screen.getByRole('listbox')).toHaveClass('z-[70]'));
+  });
+
+  it('previews a scanned identity before explicitly adding it to the reservation', async () => {
+    axiosPost.mockResolvedValue({ data: { created: true, linked: true } });
+    const onRefresh = vi.fn();
+
+    render(
+      <GuestsTab
+        guests={[]}
+        booking={{ id: 'booking-a' }}
+        onRefresh={onRefresh}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Kimlikten Misafir Ekle/i }));
+    expect(axiosPost).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /Taranan kimliği kullan/i }));
+    expect(screen.getByText('Kimlikten Yeni Misafir Ekle')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('AYŞE YILMAZ')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('10000000146')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('1990-05-15')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Kartepe / Kocaeli')).toBeInTheDocument();
+    expect(axiosPost).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /^Ekle$/i }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/guests',
+      expect.objectContaining({
+        name: 'AYŞE YILMAZ',
+        id_type: 'tc_kimlik',
+        id_number: '10000000146',
+        nationality: 'TR',
+        date_of_birth: '1990-05-15',
+        gender: 'female',
+        address: 'Kartepe / Kocaeli',
+      }),
+    ));
+    expect(onRefresh).toHaveBeenCalledOnce();
   });
 });

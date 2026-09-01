@@ -410,6 +410,21 @@ function isQuickIdEnabled() {
     return true;
   }
 }
+const NEW_GUEST_SCAN_ID = '__new_guest__';
+const emptyGuestForm = () => ({
+  name: '',
+  email: '',
+  phone: '',
+  nationality: 'TR',
+  id_type: 'tc_kimlik',
+  id_number: '',
+  date_of_birth: '',
+  gender: '',
+  address: '',
+  city: '',
+  country: '',
+  notes: ''
+});
 export function GuestsTab({
   guests,
   booking,
@@ -422,6 +437,7 @@ export function GuestsTab({
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [scanGuestId, setScanGuestId] = useState(null);
+  const [addingFromScan, setAddingFromScan] = useState(false);
   const startEdit = g => {
     setEditingId(g.id);
     setForm({
@@ -451,6 +467,22 @@ export function GuestsTab({
     if (s.includes('tc') || s.includes('kimlik') || s.includes('national')) return 'tc_kimlik';
     return 'other';
   };
+  const mapGender = gender => {
+    const value = String(gender || '').trim().toLocaleLowerCase('tr-TR');
+    if (['m', 'male', 'erkek'].includes(value)) return 'male';
+    if (['f', 'female', 'kadın', 'kadin'].includes(value)) return 'female';
+    return value ? 'other' : '';
+  };
+  const guestFormFromDocument = doc => ({
+    ...emptyGuestForm(),
+    name: [doc.first_name, doc.last_name].filter(Boolean).join(' ').trim(),
+    id_number: doc.id_number || doc.document_number || '',
+    id_type: mapIdType(doc.document_type),
+    nationality: doc.nationality || 'TR',
+    date_of_birth: doc.birth_date || '',
+    gender: mapGender(doc.gender),
+    address: doc.address || ''
+  });
   const applyExtractedData = (g, doc) => {
     const fullName = [doc.first_name, doc.last_name].filter(Boolean).join(' ').trim();
     const prev = editingId === g.id ? form : {
@@ -474,7 +506,8 @@ export function GuestsTab({
       id_type: mapIdType(doc.document_type) || prev.id_type,
       nationality: doc.nationality || prev.nationality,
       date_of_birth: doc.birth_date || prev.date_of_birth,
-      gender: doc.gender || prev.gender
+      gender: mapGender(doc.gender) || prev.gender,
+      address: doc.address || prev.address
     };
     setEditingId(g.id);
     setForm(next);
@@ -502,12 +535,23 @@ export function GuestsTab({
     setSaving(false);
   };
   return <div data-testid="guests-tab" className="space-y-3">
-      <div className="flex justify-end mb-2">
-        <Button variant="outline" size="sm" disabled={readOnly} title={readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : undefined} onClick={() => { setForm({ name: '', nationality: 'TR', id_type: 'tc_kimlik', id_number: '', date_of_birth: '' }); setAddingGuest(true); setEditingId(null); }}><UserPlus className="w-4 h-4 mr-2" /> Misafir Ekle</Button>
+      <div className="flex flex-wrap justify-end gap-2 mb-2">
+        {quickIdOn && <Button variant="outline" size="sm" disabled={readOnly} title={readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : undefined} onClick={() => {
+          setAddingGuest(false);
+          setAddingFromScan(false);
+          setEditingId(null);
+          setScanGuestId(NEW_GUEST_SCAN_ID);
+        }} className="bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100" data-testid="btn-scan-new-guest"><ScanLine className="w-4 h-4 mr-2" /> Kimlikten Misafir Ekle</Button>}
+        <Button variant="outline" size="sm" disabled={readOnly} title={readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : undefined} onClick={() => {
+          setForm(emptyGuestForm());
+          setAddingGuest(true);
+          setAddingFromScan(false);
+          setEditingId(null);
+        }}><UserPlus className="w-4 h-4 mr-2" /> Misafir Ekle</Button>
       </div>
       {addingGuest && (
         <div className="border rounded-lg bg-gray-50 p-4 space-y-3 mb-4">
-          <h4 className="text-sm font-semibold mb-2">Yeni Misafir Ekle</h4>
+          <h4 className="text-sm font-semibold mb-2">{addingFromScan ? 'Kimlikten Yeni Misafir Ekle' : 'Yeni Misafir Ekle'}</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div><Label className="text-xs">Ad Soyad</Label><Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className="h-8 text-sm" /></div>
             <div><Label className="text-xs">Uyruk</Label><Input value={form.nationality} onChange={e => setForm(p => ({ ...p, nationality: e.target.value }))} placeholder="TR" className="h-8 text-sm" /></div>
@@ -517,6 +561,12 @@ export function GuestsTab({
             <div><Label className="text-xs">Kimlik / Pasaport No</Label><Input value={form.id_number} onChange={e => setForm(p => ({ ...p, id_number: e.target.value }))} className="h-8 text-sm" /></div>
             <div><Label className="text-xs">Doğum Tarihi</Label><Input type="date" value={form.date_of_birth} onChange={e => setForm(p => ({ ...p, date_of_birth: e.target.value }))} className="h-8 text-sm" /></div>
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div><Label className="text-xs">Cinsiyet</Label><Select value={form.gender || ''} onValueChange={v => setForm(p => ({ ...p, gender: v }))}><SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Seçiniz" /></SelectTrigger><SelectContent className="z-[70]"><SelectItem value="male">Erkek</SelectItem><SelectItem value="female">Kadın</SelectItem><SelectItem value="other">Diğer</SelectItem></SelectContent></Select></div>
+            <div><Label className="text-xs">Şehir</Label><Input value={form.city || ''} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} className="h-8 text-sm" /></div>
+            <div><Label className="text-xs">Ülke</Label><Input value={form.country || ''} onChange={e => setForm(p => ({ ...p, country: e.target.value }))} className="h-8 text-sm" /></div>
+          </div>
+          <div><Label className="text-xs">Adres</Label><Input value={form.address || ''} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} className="h-8 text-sm" /></div>
           <div className="flex gap-2 pt-1">
             <Button size="sm" onClick={async () => {
               setSaving(true);
@@ -531,12 +581,13 @@ export function GuestsTab({
                     ? 'Yeni misafir odaya eklendi'
                     : 'Mevcut misafir odaya eklendi');
                 setAddingGuest(false);
+                setAddingFromScan(false);
                 setForm({});
                 onRefresh?.();
               } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
               setSaving(false);
             }} disabled={saving || !form.name?.trim()} className="h-8">{saving ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Check className="w-3 h-3 mr-1" />} Ekle</Button>
-            <Button size="sm" variant="outline" onClick={() => setAddingGuest(false)} className="h-8">İptal</Button>
+            <Button size="sm" variant="outline" onClick={() => { setAddingGuest(false); setAddingFromScan(false); }} className="h-8">İptal</Button>
           </div>
         </div>
       )}
@@ -655,6 +706,14 @@ export function GuestsTab({
             </div>;
     })}
       <QuickIdScanDialog open={!!scanGuestId} onClose={() => setScanGuestId(null)} onExtracted={doc => {
+      if (scanGuestId === NEW_GUEST_SCAN_ID) {
+        setForm(guestFormFromDocument(doc));
+        setAddingGuest(true);
+        setAddingFromScan(true);
+        setEditingId(null);
+        setScanGuestId(null);
+        return;
+      }
       const g = guests?.find(x => x.id === scanGuestId);
       if (g) applyExtractedData(g, doc);
     }} />
