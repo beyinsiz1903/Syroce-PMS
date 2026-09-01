@@ -24,6 +24,9 @@ export const reservationIdFromProtectedMutation = (url, method) => {
   if (!['post', 'put', 'patch', 'delete'].includes(normalizedMethod)) return null;
   const raw = String(url || '');
   if (raw.includes('/edit-lock')) return null;
+  // This front-desk financial action owns transaction/resource locks and
+  // idempotency; it is not an edit made from the reservation-detail view.
+  if (raw.split(/[?#]/, 1)[0].endsWith('/transfer-to-cari')) return null;
   return raw.match(RESERVATION_MUTATION_RE)?.[1]
     || raw.match(FRONTDESK_MUTATION_RE)?.[1]
     || null;
