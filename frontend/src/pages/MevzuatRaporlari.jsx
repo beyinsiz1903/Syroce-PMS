@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { useTranslation } from 'react-i18next';
 const TABS = [{
   key: "tuik",
-  label: "TÜİK Aylık Anketi",
+  label: "KTB Aylık Konaklama",
   icon: BarChart3
 }, {
   key: "tga",
@@ -69,9 +69,10 @@ export default function MevzuatRaporlari({
 
   // ── TÜİK
   const today = useMemo(() => new Date(), []);
-  // Cari ay (1-12). Ocak değilse year aynı; Ocak'ta da today.getMonth()=0 → ay 1, yıl aynı.
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() + 1);
+  // KTB'ye her ay bir önceki ay bildirilir; ekranı doğru dönemle aç.
+  const previousPeriod = useMemo(() => new Date(today.getFullYear(), today.getMonth() - 1, 1), [today]);
+  const [year, setYear] = useState(previousPeriod.getFullYear());
+  const [month, setMonth] = useState(previousPeriod.getMonth() + 1);
   const [tuik, setTuik] = useState(null);
   const [loading, setLoading] = useState(false);
   const [missingOpen, setMissingOpen] = useState(false);
@@ -80,7 +81,7 @@ export default function MevzuatRaporlari({
     try {
       const {
         data
-      } = await axios.get("/regulatory/tuik/monthly", {
+      } = await axios.get("/regulatory/ktb/monthly", {
         params: {
           year,
           month
@@ -96,8 +97,8 @@ export default function MevzuatRaporlari({
   };
   const exportTuikCSV = () => {
     if (!tuik) return;
-    const rows = [["Dönem", tuik.period], ["Toplam Oda", tuik.capacity.rooms], ["Toplam Yatak", tuik.capacity.beds], ["Kapasite Oda-Gece", tuik.capacity.room_nights_capacity], ["Satılan Oda-Gece", tuik.stays.room_nights_sold], ["Doluluk %", tuik.occupancy_pct], ["Toplam Misafir", tuik.stays.guest_count], ["Yerli Kişi-Gece", tuik.stays.person_nights_domestic], ["Yabancı Kişi-Gece", tuik.stays.person_nights_foreign], ["Uyruk Belirsiz Kişi-Gece", tuik.stays.person_nights_unspecified], ["Ortalama Kalış", tuik.average_length_of_stay], [], ["Ülke", "Kişi-Gece"], ...tuik.nationality_top20.map(n => [n.country, n.person_nights]), ["Diğer", tuik.nationality_other_total]];
-    downloadCSV(rows, `tuik-konaklama-${tuik.period}.csv`);
+    const rows = [["KTB Konaklama İstatistikleri"], ["Dönem", tuik.period], ["Toplam Oda", tuik.capacity.rooms], ["Toplam Yatak", tuik.capacity.beds], ["Kapasite Oda-Gece", tuik.capacity.room_nights_capacity], ["Satılan Oda-Gece", tuik.stays.room_nights_sold], ["Doluluk %", tuik.occupancy_pct], ["Toplam Tesise Geliş", tuik.stays.arrivals_total], ["Yerli Tesise Geliş", tuik.stays.arrivals_domestic], ["Yabancı Tesise Geliş", tuik.stays.arrivals_foreign], ["Uyruk Belirsiz Tesise Geliş", tuik.stays.arrivals_unspecified], ["Ay Başında Devreden Misafir", tuik.stays.carried_in_guests], ["Yerli Kişi-Gece", tuik.stays.person_nights_domestic], ["Yabancı Kişi-Gece", tuik.stays.person_nights_foreign], ["Uyruk Belirsiz Kişi-Gece", tuik.stays.person_nights_unspecified], ["Toplam Kişi-Gece", tuik.stays.person_nights_total], ["Ortalama Kalış", tuik.average_length_of_stay], [], ["Ülke", "Kişi-Gece"], ...tuik.nationality_top20.map(n => [n.country, n.person_nights]), ["Diğer", tuik.nationality_other_total]];
+    downloadCSV(rows, `ktb-konaklama-${tuik.period}.csv`);
   };
 
   // ── Inspection readiness
@@ -344,6 +345,14 @@ export default function MevzuatRaporlari({
       </div>
 
       {tab === "tuik" && <div className="bg-white border rounded-lg p-4 space-y-4">
+          <div className="bg-sky-50 border border-sky-200 rounded-lg p-3 text-sm text-sky-900 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <strong>Kültür ve Turizm Bakanlığı aylık bildirimi:</strong> Bir önceki ayın tesise geliş ve geceleme verileri ayın 1-10'u arasında girilir. Ay başında devam eden konaklamalar yeni geliş olarak hesaba katılır.
+            </div>
+            <a href="https://is.kultur.gov.tr/public/login.xhtml" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline whitespace-nowrap">
+              KTB portalını aç <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </div>
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label className="text-xs text-slate-600 block">{t('cm.pages_MevzuatRaporlari.yil')}</label>
@@ -383,7 +392,10 @@ export default function MevzuatRaporlari({
                 <KpiCard label="Doluluk" value={`%${tuik.occupancy_pct}`} intent="info" />
                 <KpiCard label={t('cm.pages_MevzuatRaporlari.ortalama_kalis')} value={tuik.average_length_of_stay} intent="neutral" />
                 <KpiCard label={t('cm.pages_MevzuatRaporlari.satilan_oda_gece')} value={fmtNum(tuik.stays.room_nights_sold)} intent="neutral" />
-                <KpiCard label={t('cm.pages_MevzuatRaporlari.toplam_misafir')} value={fmtNum(tuik.stays.guest_count)} intent="neutral" />
+                <KpiCard label="Toplam Tesise Geliş" value={fmtNum(tuik.stays.arrivals_total)} intent="neutral" />
+                <KpiCard label="Yerli Tesise Geliş" value={fmtNum(tuik.stays.arrivals_domestic)} intent="success" />
+                <KpiCard label="Yabancı Tesise Geliş" value={fmtNum(tuik.stays.arrivals_foreign)} intent="info" />
+                <KpiCard label="Ay Başında Devreden" value={fmtNum(tuik.stays.carried_in_guests)} intent="neutral" />
                 <KpiCard label={t('cm.pages_MevzuatRaporlari.yerli_kisi_gece')} value={fmtNum(tuik.stays.person_nights_domestic)} intent="success" />
                 <KpiCard label={t('cm.pages_MevzuatRaporlari.yabanci_kisi_gece')} value={fmtNum(tuik.stays.person_nights_foreign)} intent="info" />
                 {tuik.stays.person_nights_unspecified > 0 && <KpiCard label={t('cm.pages_MevzuatRaporlari.uyruk_belirsiz_kisi_gece')} value={fmtNum(tuik.stays.person_nights_unspecified)} intent="warning" />}
@@ -444,8 +456,8 @@ export default function MevzuatRaporlari({
                   </tbody>
                 </table>
               </div>
-              <p className="text-xs text-slate-400">
-                {t('cm.pages_MevzuatRaporlari.bu_cikti_tuik_e_anket_sistemine_veri_gir')}
+              <p className="text-xs text-slate-500">
+                Bu çıktı KTB Konaklama İstatistikleri Sistemine veri girişi için hazırlanır. Syroce portalda otomatik gönderim yapmaz; rakamları kontrol edip resmî portalda onaylayın.
               </p>
             </>}
         </div>}

@@ -1,9 +1,10 @@
 """Regulatory reports — Turkish Ministry & TÜİK self-service exports.
 
 Provides:
-  GET /api/regulatory/tuik/monthly?year=&month=
-      → TÜİK Aylık Konaklama İstatistikleri (room nights, occupancy,
-        nationality breakdown, ALOS).
+  GET /api/regulatory/ktb/monthly?year=&month=
+      → Kültür ve Turizm Bakanlığı aylık konaklama istatistikleri
+        (tesise geliş, kişi-gece, uyruk, doluluk). Legacy
+        /tuik/monthly aliası korunur.
   GET /api/regulatory/inspection-readiness
       → Bakanlık denetim hazırlık dashboard (oda/çalışan/sertifika
         özet + 12 aylık doluluk).
@@ -37,6 +38,7 @@ from core.tga_outbound import (
 )
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v98 DW
+from modules.regulatory.ktb_monthly import calculate_ktb_stays
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +96,7 @@ def _normalize_country(raw: str | None) -> str:
     return _TR_COUNTRY_ALIASES.get(key, raw.strip().title())
 
 
+@router.get("/ktb/monthly")
 @router.get("/tuik/monthly")
 async def tuik_monthly(
     year: int,
@@ -105,12 +108,15 @@ async def tuik_monthly(
     days = _days_in_month(year, month)
 
     # Capacity: count active rooms for the tenant.
-    total_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id, "status": {"$ne": "out_of_service"}})
-    if total_rooms == 0:
-        # Fallback: all rooms regardless of status.
-        total_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id})
+    active_room_filter = {
+        "tenant_id": current_user.tenant_id,
+        "status": {"$nin": ["out_of_service", "inactive"]},
+        "active": {"$ne": False},
+        "is_active": {"$ne": False},
+    }
+    total_rooms = await db.rooms.count_documents(active_room_filter)
     bed_pipeline = [
-        {"$match": {"tenant_id": current_user.tenant_id}},
+        {"$match": active_room_filter},
         {"$group": {"_id": None, "beds": {"$sum": {"$ifNull": ["$bed_capacity", 2]}}}},
     ]
     bed_doc = await db.rooms.aggregate(bed_pipeline).to_list(length=1)
@@ -136,64 +142,28 @@ async def tuik_monthly(
         },
     ).to_list(length=20000)
 
-    nights_total = 0
-    nights_by_country: dict[str, int] = {}
-    guest_total = 0
-    domestic_nights = 0
-    foreign_nights = 0
-    unspecified_nights = 0
-    missing_nationality_bookings: list[dict[str, Any]] = []
-    missing_nationality_total = 0
-    adults_fallback_count = 0
-    for bk in bookings:
-        try:
-            ci = datetime.fromisoformat(str(bk["check_in"]).replace("Z", "+00:00"))
-            co = datetime.fromisoformat(str(bk["check_out"]).replace("Z", "+00:00"))
-            if ci.tzinfo is None:
-                ci = ci.replace(tzinfo=UTC)
-            if co.tzinfo is None:
-                co = co.replace(tzinfo=UTC)
-        except Exception:
-            continue
-        # Clip to period.
-        ci_eff = max(ci, start)
-        co_eff = min(co, end)
-        nights = max(0, (co_eff - ci_eff).days)
-        if nights == 0:
-            continue
-        if bk.get("adults") in (None, 0):
-            adults_fallback_count += 1
-        guests = int(bk.get("adults") or 1) + int(bk.get("children") or 0)
-        raw_country = bk.get("nationality") or bk.get("guest_country") or bk.get("country")
-        country = _normalize_country(raw_country)
-        person_nights = nights * guests
-        nights_total += nights
-        guest_total += guests
-        nights_by_country[country] = nights_by_country.get(country, 0) + person_nights
-        if country == "Türkiye":
-            domestic_nights += person_nights
-        elif country == "Belirtilmemiş":
-            unspecified_nights += person_nights
-            missing_nationality_total += 1
-            if len(missing_nationality_bookings) < 50:
-                missing_nationality_bookings.append(
-                    {
-                        "id": bk.get("id") or bk.get("booking_id"),
-                        "confirmation_number": bk.get("confirmation_number"),
-                        "guest_name": bk.get("primary_guest_name") or bk.get("guest_name"),
-                        "check_in": str(bk.get("check_in") or "")[:10],
-                        "check_out": str(bk.get("check_out") or "")[:10],
-                    }
-                )
-        else:
-            foreign_nights += person_nights
+    metrics = calculate_ktb_stays(bookings, start, end, _normalize_country)
+    nights_total = metrics["room_nights_sold"]
+    nights_by_country = metrics["nights_by_country"]
+    arrivals_total = metrics["arrivals_total"]
+    arrivals_domestic = metrics["arrivals_domestic"]
+    arrivals_foreign = metrics["arrivals_foreign"]
+    arrivals_unspecified = metrics["arrivals_unspecified"]
+    carried_in_guests = metrics["carried_in_guests"]
+    domestic_nights = metrics["person_nights_domestic"]
+    foreign_nights = metrics["person_nights_foreign"]
+    unspecified_nights = metrics["person_nights_unspecified"]
+    missing_nationality_bookings = metrics["missing_nationality"]
+    missing_nationality_total = metrics["missing_nationality_total"]
+    adults_fallback_count = metrics["adults_fallback_count"]
 
     if adults_fallback_count:
         logger.warning("tuik_monthly tenant=%s period=%s-%02d: %d bookings missing 'adults' (defaulted to 1)", current_user.tenant_id, year, month, adults_fallback_count)
 
     capacity_room_nights = total_rooms * days
     occupancy_pct = round(nights_total / capacity_room_nights * 100, 2) if capacity_room_nights > 0 else 0.0
-    alos = round(nights_total / guest_total, 2) if guest_total > 0 else 0.0
+    person_nights_total = metrics["person_nights_total"]
+    alos = round(person_nights_total / arrivals_total, 2) if arrivals_total > 0 else 0.0
 
     # Top 20 countries.
     top = sorted(nights_by_country.items(), key=lambda x: -x[1])[:20]
@@ -208,13 +178,19 @@ async def tuik_monthly(
             "room_nights_capacity": capacity_room_nights,
         },
         "stays": {
-            "booking_count": len(bookings),
-            "guest_count": guest_total,
+            "booking_count": metrics["valid_booking_count"],
+            # Backwards-compatible alias used by the existing UI.
+            "guest_count": arrivals_total,
+            "arrivals_total": arrivals_total,
+            "arrivals_domestic": arrivals_domestic,
+            "arrivals_foreign": arrivals_foreign,
+            "arrivals_unspecified": arrivals_unspecified,
+            "carried_in_guests": carried_in_guests,
             "room_nights_sold": nights_total,
             "person_nights_domestic": domestic_nights,
             "person_nights_foreign": foreign_nights,
             "person_nights_unspecified": unspecified_nights,
-            "person_nights_total": (domestic_nights + foreign_nights + unspecified_nights),
+            "person_nights_total": person_nights_total,
         },
         "occupancy_pct": occupancy_pct,
         "average_length_of_stay": alos,
@@ -227,7 +203,20 @@ async def tuik_monthly(
         "data_quality": {
             "adults_defaulted_count": adults_fallback_count,
         },
-        "tuik_form_reference": "Aylık Konaklama İstatistikleri Anketi",
+        "submission_window": {
+            "opens_on_day": 1,
+            "due_on_day": 10,
+            "correction_until_day": 25,
+            "portal_url": "https://is.kultur.gov.tr/public/login.xhtml",
+            "automatic_submission": False,
+        },
+        "calculation_rules": {
+            "stay_interval": "check_in <= day < check_out",
+            "month_boundary_carry_in": True,
+            "inactive_rooms_excluded": True,
+        },
+        "ktb_form_reference": "Konaklama İstatistikleri Sistemi - Aylık Veri Girişi",
+        "tuik_form_reference": "Aylık Konaklama İstatistikleri Anketi (geriye dönük uyumluluk)",
     }
 
 
