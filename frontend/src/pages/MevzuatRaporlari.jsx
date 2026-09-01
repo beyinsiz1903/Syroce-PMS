@@ -15,7 +15,7 @@ const TABS = [{
   icon: BarChart3
 }, {
   key: "tga",
-  label: "TGA Tesis Entegrasyon",
+  label: "TGA / KTB API Ayarları",
   icon: Send
 }, {
   key: "inspection",
@@ -76,6 +76,7 @@ export default function MevzuatRaporlari({
   const [tuik, setTuik] = useState(null);
   const [loading, setLoading] = useState(false);
   const [missingOpen, setMissingOpen] = useState(false);
+  const [averagePriceEur, setAveragePriceEur] = useState("");
   const loadTuik = async () => {
     setLoading(true);
     try {
@@ -191,8 +192,11 @@ export default function MevzuatRaporlari({
   // ── TGA Tesis Entegrasyon
   const [tgaCfg, setTgaCfg] = useState(null);
   const [tgaForm, setTgaForm] = useState({
-    belge_no: "",
-    vergi_no: "",
+    facility_id: "",
+    il_kodu: "",
+    ilce_kodu: "",
+    licensed_room_count: "",
+    licensed_bed_count: "",
     api_key: "",
     environment: "test",
     enabled: false
@@ -210,8 +214,11 @@ export default function MevzuatRaporlari({
       } = await axios.get("/regulatory/tga/config");
       setTgaCfg(data);
       setTgaForm({
-        belge_no: data.belge_no || "",
-        vergi_no: data.vergi_no || "",
+        facility_id: data.facility_id || "",
+        il_kodu: data.il_kodu || "",
+        ilce_kodu: data.ilce_kodu || "",
+        licensed_room_count: data.licensed_room_count || "",
+        licensed_bed_count: data.licensed_bed_count || "",
         api_key: "",
         environment: data.environment || "test",
         enabled: !!data.enabled
@@ -242,6 +249,8 @@ export default function MevzuatRaporlari({
         ...tgaForm
       };
       if (!body.api_key) delete body.api_key;
+      if (body.licensed_room_count === "") delete body.licensed_room_count;else body.licensed_room_count = Number(body.licensed_room_count);
+      if (body.licensed_bed_count === "") delete body.licensed_bed_count;else body.licensed_bed_count = Number(body.licensed_bed_count);
       const {
         data
       } = await axios.put("/regulatory/tga/config", body);
@@ -258,34 +267,44 @@ export default function MevzuatRaporlari({
     }
   };
   const previewTga = async () => {
+    if (averagePriceEur === "" || Number(averagePriceEur) < 0) {
+      toast.error("TGA için vergiler hariç net aylık ortalama oda fiyatını EUR olarak girin");
+      return;
+    }
     setTgaPreviewing(true);
     try {
-      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
       const {
         data
-      } = await axios.get("/regulatory/tga/preview", {
+      } = await axios.get("/regulatory/tga/monthly/preview", {
         params: {
-          date: yesterday,
-          days: 1
+          year,
+          month,
+          average_price_eur: Number(averagePriceEur)
         }
       });
-      setTgaPreview(data.single || data);
-    } catch {
-      toast.error("Önizleme alınamadı");
+      setTgaPreview(data.payload);
+      toast.success("TGA v6 aylık gönderim önizlemesi hazırlandı; veri gönderilmedi");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Önizleme alınamadı");
     } finally {
       setTgaPreviewing(false);
     }
   };
   const sendTgaNow = async () => {
+    if (!tgaPreview || tgaPreview.rapor_tarihi !== `${year}-${String(month).padStart(2, "0")}`) {
+      toast.error("Önce seçili ayın TGA önizlemesini oluşturun");
+      return;
+    }
+    if (!window.confirm(`${tgaPreview.rapor_tarihi} dönemi verileri TGA'ya gönderilecek. Onaylıyor musunuz?`)) return;
     setTgaSending(true);
     try {
-      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
       const {
         data
-      } = await axios.post("/regulatory/tga/send", null, {
+      } = await axios.post("/regulatory/tga/monthly/send", null, {
         params: {
-          end_date: yesterday,
-          days: 7
+          year,
+          month,
+          average_price_eur: Number(averagePriceEur)
         }
       });
       if (data.status === "sent") toast.success(`TGA'ya gönderildi (HTTP ${data.http_status})`);else if (data.status === "skipped") toast.error(`Atlandı: ${data.reason}`);else toast.error(`Başarısız: ${data.error || "HTTP " + data.http_status}`);
@@ -300,20 +319,23 @@ export default function MevzuatRaporlari({
   // TGA dirty flag — form değişti, henüz kaydedilmedi.
   const tgaDirty = useMemo(() => {
     if (!tgaCfg) return false;
-    return (tgaForm.belge_no || "") !== (tgaCfg.belge_no || "") || (tgaForm.vergi_no || "") !== (tgaCfg.vergi_no || "") || (tgaForm.environment || "test") !== (tgaCfg.environment || "test") || !!tgaForm.enabled !== !!tgaCfg.enabled || !!tgaForm.api_key;
+    return (tgaForm.facility_id || "") !== (tgaCfg.facility_id || "") || (tgaForm.il_kodu || "") !== (tgaCfg.il_kodu || "") || (tgaForm.ilce_kodu || "") !== (tgaCfg.ilce_kodu || "") || Number(tgaForm.licensed_room_count || 0) !== Number(tgaCfg.licensed_room_count || 0) || Number(tgaForm.licensed_bed_count || 0) !== Number(tgaCfg.licensed_bed_count || 0) || (tgaForm.environment || "test") !== (tgaCfg.environment || "test") || !!tgaForm.enabled !== !!tgaCfg.enabled || !!tgaForm.api_key;
   }, [tgaForm, tgaCfg]);
   const sendDisabledReason = (() => {
-    if (!tgaCfg) return null;
+    if (!tgaCfg) return "TGA ayarları yükleniyor.";
     if (tgaDirty) return "Önce değişiklikleri kaydedin.";
     if (!tgaCfg.enabled) return "Önce ayarları aktifleştirin ve kaydedin.";
     if (!tgaCfg.api_key_set) return "Önce API anahtarı kaydedin.";
+    if (!tgaCfg.il_kodu || !tgaCfg.ilce_kodu) return "İl ve ilçe kodlarını kaydedin.";
+    if (!tgaCfg.licensed_room_count || !tgaCfg.licensed_bed_count) return "Bakanlık belgesindeki oda ve yatak sayılarını kaydedin.";
+    if (!tgaPreview) return "Önce aylık gönderim önizlemesini oluşturun.";
     return null;
   })();
   useEffect(() => {
     if (tab === "tuik" && !tuik && !loading) loadTuik();
     if (tab === "inspection" && !readiness) loadReadiness();
     if (tab === "stars" && !checklist) loadChecklist();
-    if (tab === "tga" && !tgaCfg) {
+    if ((tab === "tuik" || tab === "tga") && !tgaCfg) {
       loadTgaCfg();
       loadTgaLog();
     }
@@ -347,11 +369,14 @@ export default function MevzuatRaporlari({
       {tab === "tuik" && <div className="bg-white border rounded-lg p-4 space-y-4">
           <div className="bg-sky-50 border border-sky-200 rounded-lg p-3 text-sm text-sky-900 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <strong>Kültür ve Turizm Bakanlığı aylık bildirimi:</strong> Bir önceki ayın tesise geliş ve geceleme verileri ayın 1-10'u arasında girilir. Ay başında devam eden konaklamalar yeni geliş olarak hesaba katılır.
+              <strong>KTB aylık bildirimi + TGA v6:</strong> Syroce raporu hesaplar ve resmî TGA Tesis Aylık Rapor API'sine aynı ekrandan iletir. Ay başında devam eden konaklamalar KTB istatistiğinde yeni geliş olarak hesaba katılır.
             </div>
-            <a href="https://is.kultur.gov.tr/public/login.xhtml" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline whitespace-nowrap">
-              KTB portalını aç <ExternalLink className="h-3.5 w-3.5" />
-            </a>
+            <div className="flex items-center gap-2">
+              <StatusBadge intent={tgaCfg?.enabled && tgaCfg?.api_key_set ? "success" : "warning"}>
+                {tgaCfg?.enabled && tgaCfg?.api_key_set ? "TGA API hazır" : "TGA API ayarı gerekli"}
+              </StatusBadge>
+              {(!tgaCfg?.enabled || !tgaCfg?.api_key_set) && <Button variant="outline" size="sm" onClick={() => setTab("tga")}>Ayarları tamamla</Button>}
+            </div>
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <div>
@@ -377,6 +402,32 @@ export default function MevzuatRaporlari({
                 <FileText className="h-4 w-4 mr-1.5" /> {t('cm.pages_MevzuatRaporlari.yazdir')}
               </Button>}
           </div>
+
+          {tuik && <div className="border rounded-lg p-3 bg-slate-50 space-y-2">
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="text-xs text-slate-600 block mb-1">Net aylık ortalama oda fiyatı (EUR)</label>
+                  <input type="number" min="0" step="0.01" inputMode="decimal" autoComplete="off" className="w-52 border rounded px-3 py-2 text-sm bg-white" value={averagePriceEur} onChange={e => {
+                setAveragePriceEur(e.target.value);
+                setTgaPreview(null);
+              }} placeholder="KDV ve vergiler hariç" />
+                </div>
+                <Button variant="outline" size="sm" onClick={previewTga} disabled={tgaPreviewing || !tgaCfg?.enabled}>
+                  {tgaPreviewing ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <FileText className="h-4 w-4 mr-1.5" />}
+                  TGA v6 Önizle
+                </Button>
+                <Button onClick={sendTgaNow} disabled={tgaSending || !!sendDisabledReason} title={sendDisabledReason || "Onaydan sonra seçili ayı TGA'ya gönder"}>
+                  {tgaSending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Send className="h-4 w-4 mr-1.5" />}
+                  Seçili Ayı TGA'ya Gönder
+                </Button>
+                {sendDisabledReason && <span className="text-xs text-slate-500">{sendDisabledReason}</span>}
+              </div>
+              <p className="text-xs text-slate-500">Fiyat, TGA v6 kuralına göre kahvaltı, KDV ve diğer vergiler hariç net EUR olmalıdır. Gönderim öncesinde tam payload önizlemesi ve ayrıca kullanıcı onayı zorunludur.</p>
+              {tgaPreview && <details className="text-xs bg-white border rounded p-2">
+                  <summary className="cursor-pointer font-medium text-slate-700">{tgaPreview.rapor_tarihi} TGA v6 gönderim önizlemesi ({tgaPreview.data?.length || 0} ülke satırı)</summary>
+                  <pre className="mt-2 overflow-auto max-h-80 text-[11px]">{JSON.stringify(tgaPreview, null, 2)}</pre>
+                </details>}
+            </div>}
 
           {!tuik && !loading && <div className="text-sm text-slate-500 italic">
               {t('cm.pages_MevzuatRaporlari.yil_ve_ay_secip_raporu_hesapla_butonuna_')}
@@ -456,18 +507,15 @@ export default function MevzuatRaporlari({
                   </tbody>
                 </table>
               </div>
-              <p className="text-xs text-slate-500">
-                Bu çıktı KTB Konaklama İstatistikleri Sistemine veri girişi için hazırlanır. Syroce portalda otomatik gönderim yapmaz; rakamları kontrol edip resmî portalda onaylayın.
-              </p>
+              <p className="text-xs text-slate-500">Bu çıktı KTB kontrolü ve TGA v6 aylık API gönderimi için ortak kaynak veridir. Syroce kullanıcı onayı olmadan resmî gönderim yapmaz.</p>
             </>}
         </div>}
 
       {tab === "tga" && <div className="space-y-4">
           <div className="bg-sky-50 border border-sky-200 rounded-lg p-3 text-xs text-sky-900 leading-relaxed">
-            <strong>TGA Tesis Entegrasyon API'si:</strong> {t('cm.pages_MevzuatRaporlari.turkiye_turizm_tanitim_ve_gelistirme_aja')}
+            <strong>TGA Tesis Aylık Rapor API v6:</strong> KTB aylık konaklama verisi resmî TGA API'sine tesis UUID'siyle gönderilir.
             <br />
-            <strong>{t('cm.pages_MevzuatRaporlari.on_gereklilik')}</strong> {t('cm.pages_MevzuatRaporlari.tga_dan_tesisinize_ozel')} <em>X-API-Key</em> ile
-            <em> Tesis Belge No</em> {t('cm.pages_MevzuatRaporlari.alinmis_olmali_dokumantasyon')} <a href="https://tesis-entegrasyon.tga.gov.tr/docs" target="_blank" rel="noreferrer" className="underline">tesis-entegrasyon.tga.gov.tr/docs</a>
+            <strong>Gerekli bilgiler:</strong> TGA tarafından verilen <em>X-API-Key</em> ile resmî il/ilçe kodları. Belge numarası ve vergi numarası v5+ payload'ında kullanılmaz. <a href="https://tesis-entegrasyon.tga.gov.tr/docs" target="_blank" rel="noreferrer" className="underline">Resmî v6 dokümantasyonu</a>
           </div>
 
           <div className="bg-white border rounded-lg p-4 space-y-4">
@@ -475,8 +523,8 @@ export default function MevzuatRaporlari({
               <h3 className="font-semibold flex items-center gap-2">
                 <Send className="h-4 w-4" /> {t('cm.pages_MevzuatRaporlari.baglanti_ayarlari')}
               </h3>
-              {tgaCfg && <StatusBadge intent={tgaCfg.enabled ? "success" : "neutral"} icon={tgaCfg.enabled ? Wifi : WifiOff}>
-                  {tgaCfg.enabled ? "Aktif" : "Pasif"} · {tgaCfg.environment === "live" ? "CANLI" : "TEST"}
+              {tgaCfg && <StatusBadge intent={tgaCfg.enabled && tgaCfg.api_key_set ? "success" : "neutral"} icon={tgaCfg.enabled && tgaCfg.api_key_set ? Wifi : WifiOff}>
+                  {tgaCfg.enabled && tgaCfg.api_key_set ? "Hazır" : "Ayar gerekli"} · {tgaCfg.environment === "live" ? "CANLI" : "TEST"} · {tgaCfg.api_version || "v6"}
                 </StatusBadge>}
             </div>
 
@@ -484,25 +532,43 @@ export default function MevzuatRaporlari({
                 <Loader2 className="h-4 w-4 animate-spin" /> {t('cm.pages_MevzuatRaporlari.yukleniyor')}
               </div> : <>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-slate-600 block mb-1">Tesis Belge No</label>
-                    <input type="text" placeholder={t('cm.pages_MevzuatRaporlari.orn_tr_07_12345')} className="w-full border rounded px-3 py-2 text-sm" value={tgaForm.belge_no} onChange={e => setTgaForm({
-                ...tgaForm,
-                belge_no: e.target.value
-              })} />
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-600 block mb-1">Vergi No</label>
-                    <input type="text" placeholder="10 hane" className="w-full border rounded px-3 py-2 text-sm" value={tgaForm.vergi_no} onChange={e => setTgaForm({
-                ...tgaForm,
-                vergi_no: e.target.value
-              })} />
-                  </div>
                   <div className="md:col-span-2">
+                    <label className="text-xs text-slate-600 block mb-1">Syroce Tesis UUID</label>
+                    <input type="text" readOnly autoComplete="off" className="w-full border rounded px-3 py-2 text-sm font-mono bg-slate-50" value={tgaForm.facility_id} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-600 block mb-1">İl Kodu</label>
+                    <input type="text" inputMode="numeric" autoComplete="off" placeholder="Örn. Kocaeli: 41" maxLength={2} className="w-full border rounded px-3 py-2 text-sm" value={tgaForm.il_kodu} onChange={e => setTgaForm({
+                ...tgaForm,
+                il_kodu: e.target.value.replace(/\D/g, "")
+              })} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-600 block mb-1">İlçe Kodu</label>
+                    <input type="text" inputMode="numeric" autoComplete="off" placeholder="Örn. Kartepe: 2063" maxLength={4} className="w-full border rounded px-3 py-2 text-sm" value={tgaForm.ilce_kodu} onChange={e => setTgaForm({
+                ...tgaForm,
+                ilce_kodu: e.target.value.replace(/\D/g, "")
+              })} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-600 block mb-1">Bakanlık Belgesi Oda Sayısı</label>
+                    <input type="number" min="1" inputMode="numeric" autoComplete="off" className="w-full border rounded px-3 py-2 text-sm" value={tgaForm.licensed_room_count} onChange={e => setTgaForm({
+                ...tgaForm,
+                licensed_room_count: e.target.value
+              })} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-600 block mb-1">Bakanlık Belgesi Yatak Sayısı</label>
+                    <input type="number" min="1" inputMode="numeric" autoComplete="off" className="w-full border rounded px-3 py-2 text-sm" value={tgaForm.licensed_bed_count} onChange={e => setTgaForm({
+                ...tgaForm,
+                licensed_bed_count: e.target.value
+              })} />
+                  </div>
+                  <div className="md:col-span-2" autoComplete="off">
                     <label className="text-xs text-slate-600 block mb-1">
                       X-API-Key {tgaCfg.api_key_set && <span className="text-emerald-700">{t('cm.pages_MevzuatRaporlari.kayitli_bos_birak_degismez')}</span>}
                     </label>
-                    <input type="password" placeholder="pk_live_…" className="w-full border rounded px-3 py-2 text-sm font-mono" value={tgaForm.api_key} onChange={e => setTgaForm({
+                    <input type="password" name="tga-api-key" autoComplete="new-password" data-1p-ignore="true" data-lpignore="true" placeholder="TGA tarafından verilen anahtar" className="w-full border rounded px-3 py-2 text-sm font-mono" value={tgaForm.api_key} onChange={e => setTgaForm({
                 ...tgaForm,
                 api_key: e.target.value
               })} />
@@ -523,7 +589,7 @@ export default function MevzuatRaporlari({
                   ...tgaForm,
                   enabled: e.target.checked
                 })} />
-                      {t('cm.pages_MevzuatRaporlari.otomatik_gonderimi_aktiflestir')}
+                      Entegrasyonu etkinleştir
                     </label>
                   </div>
                 </div>
@@ -538,35 +604,23 @@ export default function MevzuatRaporlari({
                     {tgaSaving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
                     {t('cm.pages_MevzuatRaporlari.kaydet')}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={previewTga} disabled={tgaPreviewing}>
-                    {tgaPreviewing ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <FileText className="h-4 w-4 mr-1.5" />}
-                    {t('cm.pages_MevzuatRaporlari.dunun_verisini_onizle')}
-                  </Button>
-                  <Button onClick={sendTgaNow} disabled={tgaSending || !!sendDisabledReason} title={sendDisabledReason || "Son 7 günü TGA'ya gönder"}>
-                    {tgaSending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Send className="h-4 w-4 mr-1.5" />}
-                    {t('cm.pages_MevzuatRaporlari.simdi_gonder_son_7_gun')}
-                  </Button>
-                  {sendDisabledReason && <span className="text-xs text-slate-500 self-center">{sendDisabledReason}</span>}
+                  <Button variant="outline" size="sm" onClick={() => setTab("tuik")}>Aylık rapor ve gönderime dön</Button>
                 </div>
               </>}
           </div>
 
           {tgaPreview && <div className="bg-white border rounded-lg p-4 space-y-3">
               <h3 className="font-semibold text-sm">{t('cm.pages_MevzuatRaporlari.payload_onizleme')} {tgaPreview.rapor_tarihi}</h3>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                <KpiCard label={t('cm.pages_MevzuatRaporlari.toplam_oda_3026f')} value={fmtNum(tgaPreview.toplam_oda)} intent="neutral" />
-                <KpiCard label={t('cm.pages_MevzuatRaporlari.toplam_kisi')} value={fmtNum(tgaPreview.toplam_kisi)} intent="neutral" />
-                <KpiCard label={t('cm.pages_MevzuatRaporlari.giren_oda')} value={fmtNum(tgaPreview.giren_oda)} intent="info" />
-                <KpiCard label={t('cm.pages_MevzuatRaporlari.giren_kisi')} value={fmtNum(tgaPreview.giren_kisi)} intent="info" />
-                <KpiCard label={t('cm.pages_MevzuatRaporlari.net_oda_geliri')} value={fmtNum(tgaPreview.net_oda_geliri)} intent="success" />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <KpiCard label="Oda" value={fmtNum(tgaPreview.oda_sayisi)} intent="neutral" />
+                <KpiCard label="Yatak" value={fmtNum(tgaPreview.yatak_sayisi)} intent="neutral" />
+                <KpiCard label="Açık Gün" value={fmtNum(tgaPreview.tesisin_aylik_acik_oldugu_gun_sayisi)} intent="info" />
+                <KpiCard label="Net Ort. Fiyat EUR" value={tgaPreview.aylik_ortalama_fiyat} intent="success" />
               </div>
               <details className="text-xs">
-                <summary className="cursor-pointer text-slate-600 hover:text-slate-900">{t('cm.pages_MevzuatRaporlari.demografik_kanal_dokumunu_goster')}</summary>
+                <summary className="cursor-pointer text-slate-600 hover:text-slate-900">TGA v6 tam gönderim gövdesini göster</summary>
                 <pre className="mt-2 bg-slate-50 border rounded p-2 overflow-auto max-h-80 text-[11px]">
-                  {JSON.stringify({
-              demografik_veriler: tgaPreview.demografik_veriler,
-              kanal_veriler: tgaPreview.kanal_veriler
-            }, null, 2)}
+                  {JSON.stringify(tgaPreview, null, 2)}
                 </pre>
               </details>
             </div>}
@@ -588,8 +642,8 @@ export default function MevzuatRaporlari({
                       <th className="text-left px-3 py-2">Tetikleyici</th>
                       <th className="text-center px-3 py-2">{t('cm.pages_MevzuatRaporlari.durum')}</th>
                       <th className="text-right px-3 py-2">HTTP</th>
-                      <th className="text-right px-3 py-2">{t('cm.pages_MevzuatRaporlari.toplam_oda_3026f')}</th>
-                      <th className="text-right px-3 py-2">Net Gelir</th>
+                      <th className="text-right px-3 py-2">Oda</th>
+                      <th className="text-right px-3 py-2">API Sürümü</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -598,7 +652,7 @@ export default function MevzuatRaporlari({
                 const skip = it.status === "skipped";
                 return <tr key={it.id || i} className="border-t">
                           <td className="px-3 py-1.5 font-mono">{(it.started_at || "").slice(0, 16).replace("T", " ")}</td>
-                          <td className="px-3 py-1.5">son {it.days}g · {it.end_date}</td>
+                          <td className="px-3 py-1.5">{it.period || (it.days ? `son ${it.days}g · ${it.end_date}` : "—")}</td>
                           <td className="px-3 py-1.5">{it.environment === "live" ? "CANLI" : "TEST"}</td>
                           <td className="px-3 py-1.5">{it.triggered_by}</td>
                           <td className="px-3 py-1.5 text-center">
@@ -607,8 +661,8 @@ export default function MevzuatRaporlari({
                             </StatusBadge>
                           </td>
                           <td className="px-3 py-1.5 text-right font-mono">{it.http_status || "—"}</td>
-                          <td className="px-3 py-1.5 text-right">{fmtNum(it.request_summary?.toplam_oda_sum)}</td>
-                          <td className="px-3 py-1.5 text-right">{fmtNum(it.request_summary?.net_oda_geliri_sum)}</td>
+                          <td className="px-3 py-1.5 text-right">{fmtNum(it.request_summary?.oda_sayisi ?? it.request_summary?.toplam_oda_sum)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono">{it.api_version || "eski"}</td>
                         </tr>;
               })}
                   </tbody>

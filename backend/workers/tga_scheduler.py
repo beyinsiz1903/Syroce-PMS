@@ -1,11 +1,8 @@
-"""TGA günlük gönderim scheduler.
+"""Legacy TGA scheduler compatibility module.
 
-TGA Tesis Entegrasyon API'si her gün son 7 günü kapsayacak şekilde gönderim
-ister. Bu worker periyodik olarak (varsayılan 6 saat) tüm aktif tenant'lar
-için son 7 günü TGA'ya POST eder. Sonuçlar `integration_tga_outbox`
-koleksiyonuna yazılır.
-
-Disable: `TGA_SCHEDULER_INTERVAL_SECONDS=0` env değişkeni ile kapatılır.
+TGA v6 accepts a complete monthly payload and requires a reviewed net EUR
+average price. Therefore unattended daily/backfill delivery is intentionally
+disabled; monthly sends are initiated from the KTB report screen.
 """
 
 from __future__ import annotations
@@ -89,22 +86,6 @@ async def _retry_loop(interval_seconds: int) -> None:
 
 
 def start() -> bool:
-    """Bootstrap çağrısı. `False` döner = scheduler devre dışı.
-
-    Ayrıca konfigüre edilmişse retry worker'ını da başlatır.
-    """
-    global _started, _retry_started
-    if RETRY_INTERVAL_SECONDS > 0 and not _retry_started:
-        asyncio.create_task(_retry_loop(RETRY_INTERVAL_SECONDS), name="tga-retry")
-        _retry_started = True
-    elif RETRY_INTERVAL_SECONDS <= 0:
-        logger.info("[tga-retry] disabled via env (interval=0)")
-    if _started:
-        return True
-    if DEFAULT_INTERVAL_SECONDS <= 0:
-        logger.info("[tga-scheduler] disabled via env (interval=0)")
-        # Retry worker bağımsız çalışabilir; ana scheduler kapalı olsa bile True dön.
-        return _retry_started
-    asyncio.create_task(_loop(DEFAULT_INTERVAL_SECONDS), name="tga-scheduler")
-    _started = True
-    return True
+    """Keep legacy bootstrap imports safe without performing old API calls."""
+    logger.info("[tga-scheduler] unattended legacy daily flow disabled for TGA v6")
+    return False
