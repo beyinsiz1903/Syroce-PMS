@@ -58,7 +58,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 libgdk-pixbuf-2.0-0 \
     libcairo2 libglib2.0-0 \
-    shared-mime-info fonts-dejavu-core fonts-liberation && \
+    shared-mime-info fonts-dejavu-core fonts-liberation \
+    tesseract-ocr tesseract-ocr-eng tesseract-ocr-tur && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /install /usr/local
