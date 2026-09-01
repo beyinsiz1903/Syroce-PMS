@@ -1342,7 +1342,7 @@ async def transfer_to_cari(
     if data.amount - outstanding_balance > 0.005:
         raise HTTPException(status_code=409, detail="Cari aktarım tutarı açık bakiyeyi aşamaz")
 
-    cari, _, _ = await _find_cari_account(
+    cari, resolved_is_city_ledger, resolved_cari_filter = await _find_cari_account(
         tid,
         data.cari_account_id,
         account_name=data.cari_account_name,
@@ -1384,16 +1384,25 @@ async def transfer_to_cari(
             session=session,
         )
         if not current_booking:
-            raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+            raise HTTPException(
+                status_code=409,
+                detail="Cari aktarım transaction'ında rezervasyon yeniden okunamadı",
+            )
 
-        current_cari, current_is_city_ledger, current_cari_filter = await _find_cari_account(
-            tid,
-            data.cari_account_id,
-            account_name=data.cari_account_name,
+        current_is_city_ledger = resolved_is_city_ledger
+        current_cari_filter = resolved_cari_filter
+        current_cari_collection = (
+            db.city_ledger_accounts if current_is_city_ledger else db.cari_accounts
+        )
+        current_cari = await current_cari_collection.find_one(
+            current_cari_filter,
             session=session,
         )
         if not current_cari:
-            raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
+            raise HTTPException(
+                status_code=409,
+                detail="Cari aktarım transaction'ında çözümlenen cari yeniden okunamadı",
+            )
         canonical_account_id = _canonical_cari_account_id(current_cari)
 
         current_outstanding = await _reservation_outstanding_balance(
