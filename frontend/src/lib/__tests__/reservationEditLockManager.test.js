@@ -48,5 +48,8 @@ describe('reservationEditLockManager contract', () => {
     expect(
       reservationIdFromProtectedMutation('/pms/reservations/booking-a/edit-lock/heartbeat', 'post'),
     ).toBeNull();
+    expect(
+      reservationIdFromProtectedMutation('/pms/reservations/booking-a/transfer-to-cari', 'post'),
+    ).toBeNull();
   });
 });
