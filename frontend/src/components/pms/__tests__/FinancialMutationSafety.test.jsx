@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import BulkDeleteRoomsDialog from '@/components/pms/BulkDeleteRoomsDialog';
 import CashierTab from '@/components/pms/CashierTab';
 import PaymentDialog from '@/components/pms/PaymentDialog';
-import { DepositsTab } from '@/pages/reservation-detail/DocumentTabs';
+import { DepositsTab, InvoiceTab } from '@/pages/reservation-detail/DocumentTabs';
 
 const { get, post } = vi.hoisted(() => ({
   get: vi.fn(),
@@ -33,6 +33,26 @@ beforeEach(() => {
 });
 
 describe('financial and destructive mutation safety', () => {
+  it('prefills the agency reservation number in the editable invoice note', async () => {
+    get.mockResolvedValue({
+      data: {
+        charges: [{ id: 'accommodation', amount: 8500, category: 'room', description: 'Konaklama', date: '2026-08-29' }],
+        agency_reservation_number: '5939348',
+      },
+    });
+    post.mockResolvedValue({ data: { invoice_html: '<html>invoice</html>' } });
+
+    render(<InvoiceTab booking={{ id: 'booking-test' }} bookingId="booking-test" />);
+
+    expect(await screen.findByDisplayValue('Acente rezervasyon no: 5939348')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('generate-invoice-btn'));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/pms/reservations/booking-test/generate-invoice',
+      expect.objectContaining({ invoice_note: 'Acente rezervasyon no: 5939348' }),
+    ));
+  });
+
   it('keeps a partially refunded deposit available through an accessible refund action', () => {
     render(
       <DepositsTab

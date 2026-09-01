@@ -181,6 +181,17 @@ class TestMapperContract:
         assert canonical.requires_ack is True
         assert canonical.modified is False
 
+    def test_provider_number_is_preserved_as_agency_confirmation(self):
+        payload = {
+            **SAMPLE_RESERVATION_JSON,
+            "provider_number": "5939348",
+        }
+
+        canonical = self.mapper.reservation_to_canonical(payload)
+
+        assert canonical.hr_number == "R377873409"
+        assert canonical.confirmation_number == "5939348"
+
     def test_guest_mapping(self):
         """Guest details from firstname/lastname and address block."""
         canonical = self.mapper.reservation_to_canonical(SAMPLE_RESERVATION_JSON)
