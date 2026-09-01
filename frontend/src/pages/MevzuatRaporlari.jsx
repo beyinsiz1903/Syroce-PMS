@@ -98,7 +98,7 @@ export default function MevzuatRaporlari({
   };
   const exportTuikCSV = () => {
     if (!tuik) return;
-    const rows = [["KTB Konaklama İstatistikleri"], ["Dönem", tuik.period], ["Toplam Oda", tuik.capacity.rooms], ["Toplam Yatak", tuik.capacity.beds], ["Kapasite Oda-Gece", tuik.capacity.room_nights_capacity], ["Satılan Oda-Gece", tuik.stays.room_nights_sold], ["Doluluk %", tuik.occupancy_pct], ["Toplam Tesise Geliş", tuik.stays.arrivals_total], ["Yerli Tesise Geliş", tuik.stays.arrivals_domestic], ["Yabancı Tesise Geliş", tuik.stays.arrivals_foreign], ["Uyruk Belirsiz Tesise Geliş", tuik.stays.arrivals_unspecified], ["Ay Başında Devreden Misafir", tuik.stays.carried_in_guests], ["Yerli Kişi-Gece", tuik.stays.person_nights_domestic], ["Yabancı Kişi-Gece", tuik.stays.person_nights_foreign], ["Uyruk Belirsiz Kişi-Gece", tuik.stays.person_nights_unspecified], ["Toplam Kişi-Gece", tuik.stays.person_nights_total], ["Ortalama Kalış", tuik.average_length_of_stay], [], ["Ülke", "Kişi-Gece"], ...tuik.nationality_top20.map(n => [n.country, n.person_nights]), ["Diğer", tuik.nationality_other_total]];
+    const rows = [["KTB Konaklama İstatistikleri"], ["Dönem", tuik.period], ["Bakanlık Belgesi Oda Sayısı", tuik.capacity.rooms], ["Bakanlık Belgesi Yatak Sayısı", tuik.capacity.beds], ["Kapasite Oda-Gece", tuik.capacity.room_nights_capacity], ["Satılan Oda-Gece", tuik.stays.room_nights_sold], ["Doluluk %", tuik.occupancy_pct], ["Toplam Tesise Geliş", tuik.stays.arrivals_total], ["Yerli Tesise Geliş", tuik.stays.arrivals_domestic], ["Yabancı Tesise Geliş", tuik.stays.arrivals_foreign], ["Uyruk Belirsiz Tesise Geliş", tuik.stays.arrivals_unspecified], ["Ay Başında Devreden Misafir", tuik.stays.carried_in_guests], ["Yerli Kişi-Gece", tuik.stays.person_nights_domestic], ["Yabancı Kişi-Gece", tuik.stays.person_nights_foreign], ["Uyruk Belirsiz Kişi-Gece", tuik.stays.person_nights_unspecified], ["Toplam Kişi-Gece", tuik.stays.person_nights_total], ["Ortalama Kalış", tuik.average_length_of_stay], [], ["Ülke", "Kişi-Gece"], ...tuik.nationality_top20.map(n => [n.country, n.person_nights]), ["Diğer", tuik.nationality_other_total]];
     downloadCSV(rows, `ktb-konaklama-${tuik.period}.csv`);
   };
 
@@ -438,8 +438,8 @@ export default function MevzuatRaporlari({
 
           {tuik && <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <KpiCard label={t('cm.pages_MevzuatRaporlari.toplam_oda')} value={fmtNum(tuik.capacity.rooms)} intent="neutral" />
-                <KpiCard label={t('cm.pages_MevzuatRaporlari.toplam_yatak')} value={fmtNum(tuik.capacity.beds)} intent="neutral" />
+                <KpiCard label="Bakanlık Belgesi Oda" value={fmtNum(tuik.capacity.rooms)} intent="neutral" />
+                <KpiCard label="Bakanlık Belgesi Yatak" value={fmtNum(tuik.capacity.beds)} intent="neutral" />
                 <KpiCard label="Doluluk" value={`%${tuik.occupancy_pct}`} intent="info" />
                 <KpiCard label={t('cm.pages_MevzuatRaporlari.ortalama_kalis')} value={tuik.average_length_of_stay} intent="neutral" />
                 <KpiCard label={t('cm.pages_MevzuatRaporlari.satilan_oda_gece')} value={fmtNum(tuik.stays.room_nights_sold)} intent="neutral" />

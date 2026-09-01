@@ -98,6 +98,25 @@ def _normalize_country(raw: str | None) -> str:
     return _TR_COUNTRY_ALIASES.get(key, raw.strip().title())
 
 
+def _resolve_regulatory_capacity(
+    tga_config: dict[str, Any],
+    operational_rooms: int,
+    operational_beds: int,
+) -> tuple[int, int, str]:
+    """Use the Ministry-licensed capacity for official KTB/TGA reporting.
+
+    The PMS may contain additional operational rooms that have not yet been
+    added to the tourism certificate.  Falling back to the active inventory
+    keeps older tenants working, while a saved licensed capacity is the
+    authoritative source for every official report and occupancy denominator.
+    """
+    licensed_rooms = tga_config.get("licensed_room_count")
+    licensed_beds = tga_config.get("licensed_bed_count")
+    if licensed_rooms and licensed_beds:
+        return int(licensed_rooms), int(licensed_beds), "ministry_license"
+    return int(operational_rooms), int(operational_beds), "operational_inventory"
+
+
 @router.get("/ktb/monthly")
 @router.get("/tuik/monthly")
 async def tuik_monthly(
@@ -116,13 +135,19 @@ async def tuik_monthly(
         "active": {"$ne": False},
         "is_active": {"$ne": False},
     }
-    total_rooms = await db.rooms.count_documents(active_room_filter)
+    operational_rooms = await db.rooms.count_documents(active_room_filter)
     bed_pipeline = [
         {"$match": active_room_filter},
         {"$group": {"_id": None, "beds": {"$sum": {"$ifNull": ["$bed_capacity", 2]}}}},
     ]
     bed_doc = await db.rooms.aggregate(bed_pipeline).to_list(length=1)
-    total_beds = bed_doc[0]["beds"] if bed_doc else total_rooms * 2
+    operational_beds = bed_doc[0]["beds"] if bed_doc else operational_rooms * 2
+    tga_config = await get_tga_config(current_user.tenant_id)
+    total_rooms, total_beds, capacity_source = _resolve_regulatory_capacity(
+        tga_config,
+        operational_rooms,
+        operational_beds,
+    )
 
     # Stays: bookings that overlap the period.
     bookings = await db.bookings.find(
@@ -178,6 +203,9 @@ async def tuik_monthly(
             "rooms": total_rooms,
             "beds": total_beds,
             "room_nights_capacity": capacity_room_nights,
+            "source": capacity_source,
+            "operational_rooms": operational_rooms,
+            "operational_beds": operational_beds,
         },
         "stays": {
             "booking_count": metrics["valid_booking_count"],
@@ -215,7 +243,8 @@ async def tuik_monthly(
         "calculation_rules": {
             "stay_interval": "check_in <= day < check_out",
             "month_boundary_carry_in": True,
-            "inactive_rooms_excluded": True,
+            "capacity_source": capacity_source,
+            "inactive_rooms_excluded_from_operational_fallback": True,
         },
         "ktb_form_reference": "Konaklama İstatistikleri Sistemi - Aylık Veri Girişi",
         "tuik_form_reference": "Aylık Konaklama İstatistikleri Anketi (geriye dönük uyumluluk)",
