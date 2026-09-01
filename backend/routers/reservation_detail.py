@@ -1382,8 +1382,10 @@ async def transfer_to_cari(
     now = datetime.now(UTC).isoformat()
     transaction_id = str(uuid.uuid4())
     payment_id = str(uuid.uuid4())
+    commit_stage = {"name": "transaction başlangıcı"}
 
     async def _commit(session):
+        commit_stage["name"] = "rezervasyon yeniden okuma"
         current_booking = await db.bookings.find_one(
             {"id": booking_id, "tenant_id": tid},
             {"_id": 0},
@@ -1395,6 +1397,7 @@ async def transfer_to_cari(
                 detail="Cari aktarım transaction'ında rezervasyon yeniden okunamadı",
             )
 
+        commit_stage["name"] = "cari hesabı yeniden okuma"
         current_is_city_ledger = resolved_is_city_ledger
         current_cari_filter = resolved_cari_filter
         current_cari_collection = (
@@ -1411,6 +1414,7 @@ async def transfer_to_cari(
             )
         canonical_account_id = _canonical_cari_account_id(current_cari)
 
+        commit_stage["name"] = "açık bakiye doğrulama"
         current_outstanding = await _reservation_outstanding_balance(
             tid,
             current_booking,
@@ -1421,6 +1425,7 @@ async def transfer_to_cari(
         if data.amount - current_outstanding > 0.005:
             raise HTTPException(status_code=409, detail="Cari aktarım tutarı açık bakiyeyi aşamaz")
 
+        commit_stage["name"] = "folyo hazırlama"
         current_folio = await db.folios.find_one(
             {"booking_id": booking_id, "tenant_id": tid, "status": "open"},
             {"_id": 0},
@@ -1440,6 +1445,7 @@ async def transfer_to_cari(
             }
             await db.folios.insert_one({**current_folio}, session=session)
 
+        commit_stage["name"] = "cari hareketi oluşturma"
         transaction = {
             "id": transaction_id,
             "tenant_id": tid,
@@ -1458,6 +1464,7 @@ async def transfer_to_cari(
             transaction["cari_account_id"] = canonical_account_id
             await db.cari_transactions.insert_one({**transaction}, session=session)
 
+        commit_stage["name"] = "folyo ödemesi oluşturma"
         payment = {
             "id": payment_id,
             "tenant_id": tid,
@@ -1476,8 +1483,9 @@ async def transfer_to_cari(
         }
         await db.payments.insert_one({**payment}, session=session)
 
+        commit_stage["name"] = "cari bakiyesi güncelleme"
         if current_is_city_ledger:
-            new_cari_balance = current_cari.get("current_balance", 0.0) + data.amount
+            new_cari_balance = float(current_cari.get("current_balance", 0.0) or 0) + data.amount
             await db.city_ledger_accounts.update_one(
                 current_cari_filter,
                 {"$set": {"current_balance": new_cari_balance}},
@@ -1496,7 +1504,8 @@ async def transfer_to_cari(
                 session=session,
             )
 
-        new_paid = (current_booking.get("paid_amount", 0) or 0) + data.amount
+        commit_stage["name"] = "rezervasyon ödenen tutarı güncelleme"
+        new_paid = float(current_booking.get("paid_amount", 0) or 0) + data.amount
         await db.bookings.update_one(
             {"id": booking_id, "tenant_id": tid},
             {"$set": {"paid_amount": round(new_paid, 2)}},
@@ -1528,9 +1537,19 @@ async def transfer_to_cari(
             status_code=409,
             detail="Cari aktarımı eşzamanlı veya tekrarlanan işlem nedeniyle tamamlanamadı",
         ) from None
-    except Exception:
+    except HTTPException:
         await _release_dedup_safely(dedup_lock_id, operation="transfer_to_cari")
         raise
+    except Exception:
+        await _release_dedup_safely(dedup_lock_id, operation="transfer_to_cari")
+        logger.exception(
+            "cari transfer transaction failed",
+            extra={"stage": commit_stage["name"]},
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cari aktarımı {commit_stage['name']} aşamasında tamamlanamadı",
+        ) from None
 
     await _run_post_commit_hook(
         lambda: _refresh_cached_folio_balance(tid, result["folio_id"]),

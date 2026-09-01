@@ -52,6 +52,7 @@ const FrontdeskTab = ({
   const [quickPaymentCariAccountId, setQuickPaymentCariAccountId] = useState('');
   const [quickPaymentCariLoading, setQuickPaymentCariLoading] = useState(false);
   const [quickPaymentInProgress, setQuickPaymentInProgress] = useState(false);
+  const [quickPaymentError, setQuickPaymentError] = useState('');
   const [quickPaymentBalanceOverrides, setQuickPaymentBalanceOverrides] = useState({});
   const quickPaymentSubmittingRef = useRef(false);
   // Which top KPI card is currently expanded to show guest names: null | 'arrivals' | 'departures' | 'inhouse'
@@ -219,6 +220,7 @@ const FrontdeskTab = ({
     setQuickPaymentAmount(balance.toFixed(2));
     setQuickPaymentMethod('card');
     setQuickPaymentCariAccountId('');
+    setQuickPaymentError('');
   }, [effectiveBookingBalance]);
 
   const closeQuickPayment = useCallback(() => {
@@ -227,9 +229,11 @@ const FrontdeskTab = ({
     setQuickPaymentAmount('');
     setQuickPaymentMethod('card');
     setQuickPaymentCariAccountId('');
+    setQuickPaymentError('');
   }, []);
 
   const handleQuickPaymentMethodChange = useCallback(async (method) => {
+    setQuickPaymentError('');
     setQuickPaymentMethod(method);
     setQuickPaymentCariAccountId('');
     if (method !== 'city_ledger') return;
@@ -268,6 +272,7 @@ const FrontdeskTab = ({
 
     quickPaymentSubmittingRef.current = true;
     setQuickPaymentInProgress(true);
+    setQuickPaymentError('');
     const idempotencyKey = window.crypto?.randomUUID?.()
       || `frontdesk-payment-${quickPaymentBooking.id}-${Date.now()}-${Math.random()}`;
     try {
@@ -321,6 +326,7 @@ const FrontdeskTab = ({
       const message = typeof detail === 'string'
         ? detail
         : detail?.message || 'Ödeme folyoya işlenemedi. Lütfen tekrar deneyin.';
+      setQuickPaymentError(message);
       toast.error(message);
     } finally {
       quickPaymentSubmittingRef.current = false;
@@ -1020,6 +1026,11 @@ const FrontdeskTab = ({
                   ? 'Tutar misafirin folyosunu kapatır ve seçilen cari hesabın borcuna tek işlem olarak yansır.'
                   : 'Ödeme doğrudan misafirin açık folyosuna işlenir. Bakiye kapandığında çıkış butonu otomatik olarak kullanılabilir hâle gelir.'}
               </p>
+              {quickPaymentError && (
+                <p role="alert" data-testid="frontdesk-quick-payment-error" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {quickPaymentError}
+                </p>
+              )}
               <div className="flex justify-end gap-2 border-t pt-4">
                 <Button type="button" variant="outline" onClick={closeQuickPayment} disabled={quickPaymentInProgress}>
                   Vazgeç
