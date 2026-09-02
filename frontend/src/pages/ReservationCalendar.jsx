@@ -764,12 +764,24 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
 
     try {
+      const oldCheckInDate = new Date(`${toDateStringUTC(booking.check_in)}T00:00:00Z`);
+      const oldCheckOutDate = new Date(`${toDateStringUTC(booking.check_out)}T00:00:00Z`);
+      const newCheckOutDate = new Date(`${result.newCheckOut}T00:00:00Z`);
+      
+      const oldNights = Math.max(1, Math.round((oldCheckOutDate - oldCheckInDate) / 86400000));
+      const newNights = Math.max(1, Math.round((newCheckOutDate - oldCheckInDate) / 86400000));
+      
+      const impliedDailyRate = (booking.total_amount || 0) / oldNights;
+      const newTotalAmount = impliedDailyRate * newNights;
+      const currency = booking.currency || 'TL';
+
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-resize-${Date.now()}-${Math.random()}`;
       await axios.put(`/pms/bookings/${booking.id}`, {
         check_out: result.newCheckOut,
+        total_amount: newTotalAmount,
       }, { headers: { 'Idempotency-Key': idempotencyKey } });
       const action = result.extending ? 'uzatıldı' : 'kısaltıldı';
-      toast.success(`Konaklama ${result.newCheckOut} çıkış tarihine ${action}. Rezervasyon toplamı değiştirilmedi.`);
+      toast.success(`Konaklama ${result.newCheckOut} tarihine ${action}. Yeni tutar: ${newTotalAmount.toLocaleString('tr-TR')} ${currency}.`);
       loadCalendarData();
     } catch (error) {
       const conflict = parseBookingConflict(error);
