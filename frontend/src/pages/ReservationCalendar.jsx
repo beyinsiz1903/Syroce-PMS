@@ -764,12 +764,46 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
 
     try {
+      const oldCheckInDate = new Date(`${toDateStringUTC(booking.check_in)}T00:00:00Z`);
+      const oldCheckOutDate = new Date(`${toDateStringUTC(booking.check_out)}T00:00:00Z`);
+      const newCheckOutDate = new Date(`${result.newCheckOut}T00:00:00Z`);
+      
+      const oldNights = Math.max(1, Math.round((oldCheckOutDate - oldCheckInDate) / 86400000));
+      const impliedDailyRate = (booking.total_amount || 0) / oldNights;
+      
+      const room = rooms.find(r => r.id === booking.room_id) || {};
+      const roomType = booking.room_type || room.room_type || room.type;
+      
+      let newTotalAmount = booking.total_amount || 0;
+      
+      if (result.extending) {
+        let cur = new Date(oldCheckOutDate);
+        while (cur < newCheckOutDate) {
+          const dStr = cur.toISOString().split('T')[0];
+          const rate = calendarRates[`${roomType}|${dStr}`] || room.base_price || booking.base_rate || impliedDailyRate;
+          newTotalAmount += rate;
+          cur.setUTCDate(cur.getUTCDate() + 1);
+        }
+      } else {
+        let cur = new Date(newCheckOutDate);
+        while (cur < oldCheckOutDate) {
+          const dStr = cur.toISOString().split('T')[0];
+          const rate = calendarRates[`${roomType}|${dStr}`] || room.base_price || booking.base_rate || impliedDailyRate;
+          newTotalAmount -= rate;
+          cur.setUTCDate(cur.getUTCDate() + 1);
+        }
+        if (newTotalAmount < 0) newTotalAmount = 0;
+      }
+
+      const currency = booking.currency || 'TL';
+
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-resize-${Date.now()}-${Math.random()}`;
       await axios.put(`/pms/bookings/${booking.id}`, {
         check_out: result.newCheckOut,
+        total_amount: newTotalAmount,
       }, { headers: { 'Idempotency-Key': idempotencyKey } });
       const action = result.extending ? 'uzatıldı' : 'kısaltıldı';
-      toast.success(`Konaklama ${result.newCheckOut} çıkış tarihine ${action}. Rezervasyon toplamı değiştirilmedi.`);
+      toast.success(`Konaklama ${result.newCheckOut} tarihine ${action}. Yeni tutar: ${newTotalAmount.toLocaleString('tr-TR')} ${currency}.`);
       loadCalendarData();
     } catch (error) {
       const conflict = parseBookingConflict(error);
