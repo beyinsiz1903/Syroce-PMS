@@ -403,8 +403,8 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
                             </div>
                             <div className="space-y-1">
                               {group.items.map(({ key, label, hint, tier: modTier }) => {
-                                const on = !!t.modules?.[key];
                                 const included = isModuleIncludedInPlan({ tier: modTier }, tier);
+                                const on = t.modules && t.modules[key] !== undefined ? !!t.modules[key] : included;
                                 return (
                                   <div key={key} className={`flex items-center justify-between py-1 px-2 rounded ${!included ? 'bg-slate-50/80' : ''}`}>
                                     <TooltipProvider>
