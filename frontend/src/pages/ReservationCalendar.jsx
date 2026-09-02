@@ -769,10 +769,32 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       const newCheckOutDate = new Date(`${result.newCheckOut}T00:00:00Z`);
       
       const oldNights = Math.max(1, Math.round((oldCheckOutDate - oldCheckInDate) / 86400000));
-      const newNights = Math.max(1, Math.round((newCheckOutDate - oldCheckInDate) / 86400000));
-      
       const impliedDailyRate = (booking.total_amount || 0) / oldNights;
-      const newTotalAmount = impliedDailyRate * newNights;
+      
+      const room = rooms.find(r => r.id === booking.room_id) || {};
+      const roomType = booking.room_type || room.room_type || room.type;
+      
+      let newTotalAmount = booking.total_amount || 0;
+      
+      if (result.extending) {
+        let cur = new Date(oldCheckOutDate);
+        while (cur < newCheckOutDate) {
+          const dStr = cur.toISOString().split('T')[0];
+          const rate = calendarRates[`${roomType}|${dStr}`] || room.base_price || booking.base_rate || impliedDailyRate;
+          newTotalAmount += rate;
+          cur.setUTCDate(cur.getUTCDate() + 1);
+        }
+      } else {
+        let cur = new Date(newCheckOutDate);
+        while (cur < oldCheckOutDate) {
+          const dStr = cur.toISOString().split('T')[0];
+          const rate = calendarRates[`${roomType}|${dStr}`] || room.base_price || booking.base_rate || impliedDailyRate;
+          newTotalAmount -= rate;
+          cur.setUTCDate(cur.getUTCDate() + 1);
+        }
+        if (newTotalAmount < 0) newTotalAmount = 0;
+      }
+
       const currency = booking.currency || 'TL';
 
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-resize-${Date.now()}-${Math.random()}`;
