@@ -37,6 +37,7 @@ const CalendarGrid = ({
   businessDate,
   conflicts,
   draggingBooking,
+  resizingBooking,
   dragOverCell,
   showDeluxePanel,
   groupColorMap,
@@ -49,6 +50,7 @@ const CalendarGrid = ({
   onCellMouseEnter,
   dragSelect,
   onDragStart,
+  onResizeStart,
   onDragOver,
   onDragLeave,
   onDrop,
@@ -571,6 +573,9 @@ const CalendarGrid = ({
                               ? `⚠ Çakışma: Bu oda ${formatConflictRange(conflictInfo.overlap_start, conflictInfo.overlap_end)} tarihlerinde iki rezervasyona sahip (${conflictInfo.guest1 || 'Misafir'} ↔ ${conflictInfo.guest2 || 'Misafir'}). Lütfen birini başka odaya taşıyın.`
                               : fullGuestName;
                             const isDragging = draggingBooking?.id === booking.id;
+                            const isResizing = resizingBooking?.id === booking.id;
+                            const resizeAllowed = !['checked_out', 'cancelled', 'no_show'].includes(String(booking.status || '').toLowerCase())
+                              && checkOutStr <= rangeEndStr;
                             const paxCount = (booking.adults || 0) + (booking.children || 0);
                             const fmtCardDate = (d) => { try { return new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }); } catch { return ''; } };
                             const displayGuestName = compactGuestName(fullGuestName, span === 1 ? 10 : span === 2 ? 18 : 40);
@@ -587,10 +592,10 @@ const CalendarGrid = ({
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
                                 className={`absolute rounded-lg text-white text-[10px] transition-all cursor-move z-20 group outline-none border border-white/25 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
-                                  isDragging
+                                  isDragging || isResizing
                                     ? 'opacity-90 ring-2 ring-blue-300 shadow-xl scale-[1.02] z-30'
                                     : 'shadow-[0_2px_5px_rgba(15,23,42,0.24)] hover:shadow-lg hover:-translate-y-px hover:z-30'
-                                } ${conflictInfo ? 'ring-2 ring-red-500 animate-pulse' : ''} ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
+                                } ${isResizing ? 'pointer-events-none' : ''} ${conflictInfo ? 'ring-2 ring-red-500 animate-pulse' : ''} ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
                                 style={{
                                   left: `${startIdx * CELL_W + 2}px`,
                                   top: `${lane * LANE_BAR_H + 2}px`,
@@ -630,6 +635,21 @@ const CalendarGrid = ({
                                   >
                                     !!
                                   </div>
+                                )}
+                                {resizeAllowed && (
+                                  <div
+                                    draggable
+                                    role="separator"
+                                    aria-orientation="vertical"
+                                    aria-label={`${fullGuestName} konaklama süresini değiştir`}
+                                    title="Konaklamayı uzat veya kısalt"
+                                    data-testid={`booking-resize-handle-${booking.id}`}
+                                    onDragStart={(e) => { e.stopPropagation(); onResizeStart?.(e, booking); }}
+                                    onDragEnd={(e) => { e.stopPropagation(); onDragEnd?.(); }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onDoubleClick={(e) => e.stopPropagation()}
+                                    className="absolute right-0 top-0 z-40 h-full w-3 cursor-ew-resize rounded-r-lg bg-white/10 hover:bg-white/35 after:absolute after:right-1 after:top-2 after:h-6 after:w-0.5 after:rounded after:bg-white/80"
+                                  />
                                 )}
                               </div>
                             );

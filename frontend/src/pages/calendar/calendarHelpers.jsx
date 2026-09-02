@@ -15,6 +15,35 @@ export const toDateStringUTC = (value) => {
   return `${year}-${month}-${day}`;
 };
 
+// A resize handle is dropped on the final occupied night. Checkout remains
+// exclusive, so the persisted checkout date is the following calendar day.
+export const checkoutAfterCalendarNight = (value) => {
+  const day = toDateStringUTC(value);
+  const parsed = new Date(`${day}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return '';
+  parsed.setUTCDate(parsed.getUTCDate() + 1);
+  return toDateStringUTC(parsed);
+};
+
+export const validateStayResize = (booking, targetNight, minimumCheckout = '') => {
+  const status = String(booking?.status || '').toLowerCase();
+  if (['checked_out', 'cancelled', 'no_show'].includes(status)) {
+    return { ok: false, error: 'Tamamlanmış veya iptal edilmiş rezervasyonların tarihleri değiştirilemez.' };
+  }
+
+  const checkIn = toDateStringUTC(booking?.check_in);
+  const currentCheckOut = toDateStringUTC(booking?.check_out);
+  const newCheckOut = checkoutAfterCalendarNight(targetNight);
+  if (!checkIn || !newCheckOut || newCheckOut <= checkIn) {
+    return { ok: false, error: 'Çıkış tarihi giriş tarihinden sonra olmalıdır.' };
+  }
+  if (minimumCheckout && newCheckOut < minimumCheckout) {
+    return { ok: false, error: `Çıkış tarihi ${minimumCheckout} tarihinden önce olamaz.` };
+  }
+  if (newCheckOut === currentCheckOut) return { ok: false, unchanged: true };
+  return { ok: true, newCheckOut, extending: newCheckOut > currentCheckOut };
+};
+
 // Check if booking overlaps with date
 export const isBookingOnDate = (booking, date) => {
   const dayStr = toDateStringUTC(date);
