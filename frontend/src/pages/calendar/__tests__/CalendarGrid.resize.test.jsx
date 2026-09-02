@@ -102,6 +102,8 @@ describe('CalendarGrid stay resize handle', () => {
     });
 
     fireEvent.pointerDown(handle, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(screen.getByTestId('calendar-grid'), { pointerId: 1, clientX: 11, clientY: 11 });
+    expect(screen.getByTestId('booking-bar-booking-1')).toHaveStyle({ width: '332px' });
     fireEvent.pointerUp(screen.getByTestId('calendar-grid'), { pointerId: 1, clientX: 11, clientY: 11 });
 
     expect(handlers.onResizePointerStart).toHaveBeenCalledWith(booking);

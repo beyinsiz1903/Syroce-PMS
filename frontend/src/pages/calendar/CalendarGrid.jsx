@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Calendar as CalendarIcon, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import {
-  toDateStringUTC, isBookingOnDate, isBookingStart, isWeekend, isToday, isPastDate,
+  toDateStringUTC, checkoutAfterCalendarNight, isBookingOnDate, isBookingStart, isWeekend, isToday, isPastDate,
   formatDateWithDay, getBookingForRoomOnDate, getRoomBlockForDate,
   isBlockStart, calculateBlockSpan, calculateBookingSpan,
   getBookingStatusColor, getBookingStatus, getSourceColor,
@@ -73,10 +73,17 @@ const CalendarGrid = ({
 
   const completePointerResize = (event) => {
     if (!pointerResize) return;
-    const targetDate = pointerDate(event);
-    const booking = pointerResize;
+    const targetDate = pointerDate(event) || pointerResize.targetDate;
+    const { targetDate: _ignoredTargetDate, ...booking } = pointerResize;
     setPointerResize(null);
     if (targetDate) onResizePointerCommit?.(booking, new Date(`${targetDate}T00:00:00Z`));
+  };
+
+  const updatePointerResize = (event) => {
+    if (!pointerResize) return;
+    const targetDate = pointerDate(event);
+    if (!targetDate || targetDate === pointerResize.targetDate) return;
+    setPointerResize((current) => current ? { ...current, targetDate } : current);
   };
 
   const toggleType = (type) => {
@@ -183,6 +190,7 @@ const CalendarGrid = ({
       className="bg-white rounded-xl border border-slate-200 shadow-sm relative flex flex-col h-full overflow-hidden select-none"
       data-testid="calendar-grid"
       onPointerDown={clearCalendarTextSelection}
+      onPointerMove={updatePointerResize}
       onPointerUp={completePointerResize}
       onPointerCancel={() => setPointerResize(null)}
     >
@@ -599,6 +607,12 @@ const CalendarGrid = ({
                               : fullGuestName;
                             const isDragging = draggingBooking?.id === booking.id;
                             const isResizing = resizingBooking?.id === booking.id;
+                            const previewCheckOut = pointerResize?.id === booking.id && pointerResize.targetDate
+                              ? checkoutAfterCalendarNight(pointerResize.targetDate)
+                              : '';
+                            const previewSpan = previewCheckOut > checkInStr
+                              ? calculateBookingSpan({ ...booking, check_out: previewCheckOut }, currentDate, daysToShow)
+                              : span;
                             const resizeAllowed = !['checked_out', 'cancelled', 'no_show'].includes(String(booking.status || '').toLowerCase())
                               && checkOutStr <= rangeEndStr;
                             const paxCount = (booking.adults || 0) + (booking.children || 0);
@@ -624,7 +638,7 @@ const CalendarGrid = ({
                                 style={{
                                   left: `${startIdx * CELL_W + 2}px`,
                                   top: `${lane * LANE_BAR_H + 2}px`,
-                                  width: `${span * CELL_W - 4}px`,
+                                  width: `${previewSpan * CELL_W - 4}px`,
                                   height: `${BOOKING_H}px`,
                                   backgroundColor: statusColor.bg,
                                   borderLeft: `4px solid ${statusColor.border}`,
@@ -675,7 +689,7 @@ const CalendarGrid = ({
                                       e.preventDefault();
                                       e.stopPropagation();
                                       e.currentTarget.setPointerCapture?.(e.pointerId);
-                                      setPointerResize(booking);
+                                      setPointerResize({ ...booking, targetDate: '' });
                                       onResizePointerStart?.(booking);
                                     }}
                                     onClick={(e) => e.stopPropagation()}
