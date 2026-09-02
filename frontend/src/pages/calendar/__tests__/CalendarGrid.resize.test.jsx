@@ -8,7 +8,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key) => key }),
 }));
 
-const dates = [10, 11, 12, 13].map((day) => new Date(`2026-09-${day}T00:00:00Z`));
+const dates = [9, 10, 11, 12, 13].map((day) => new Date(`2026-09-${String(day).padStart(2, '0')}T00:00:00Z`));
 const room = { id: 'room-1', room_number: '101', room_type: 'standard', status: 'available' };
 const booking = {
   id: 'booking-1',
@@ -71,6 +71,17 @@ describe('CalendarGrid stay resize handle', () => {
   it('does not offer resizing for a completed stay', () => {
     renderGrid({ bookings: [{ ...booking, status: 'checked_out' }] });
     expect(screen.queryByTestId('booking-resize-handle-booking-1')).not.toBeInTheDocument();
+  });
+
+  it('protects Turkish weekday abbreviations from browser translation', () => {
+    renderGrid();
+    const wednesday = screen.getByTitle('Çarşamba');
+    const thursday = screen.getByTitle('Perşembe');
+
+    expect(wednesday).toHaveTextContent('Çar');
+    expect(thursday).toHaveTextContent('Per');
+    expect(wednesday).toHaveAttribute('translate', 'no');
+    expect(thursday).toHaveClass('notranslate');
   });
 
   it('lets covered calendar cells receive the drop while resizing', () => {

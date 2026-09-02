@@ -223,7 +223,12 @@ const CalendarGrid = ({
                   }`}
                   data-testid={`date-header-${dayNum}`}
                 >
-                  <div className={`text-[10px] font-bold uppercase tracking-wide ${today ? 'text-blue-700' : past ? 'text-slate-400' : 'text-slate-500'}`}>
+                  <div
+                    lang="tr"
+                    translate="no"
+                    title={date.toLocaleDateString('tr-TR', { weekday: 'long' })}
+                    className={`notranslate text-[10px] font-bold uppercase tracking-wide ${today ? 'text-blue-700' : past ? 'text-slate-400' : 'text-slate-500'}`}
+                  >
                     {dayName}
                   </div>
                   <div className={`text-[18px] font-extrabold leading-tight ${today ? 'text-blue-700' : past ? 'text-slate-400' : 'text-slate-900'}`}>
@@ -648,7 +653,7 @@ const CalendarGrid = ({
                                     onDragEnd={(e) => { e.stopPropagation(); onDragEnd?.(); }}
                                     onClick={(e) => e.stopPropagation()}
                                     onDoubleClick={(e) => e.stopPropagation()}
-                                    className="absolute right-0 top-0 z-40 h-full w-3 cursor-ew-resize rounded-r-lg bg-white/10 hover:bg-white/35 after:absolute after:right-1 after:top-2 after:h-6 after:w-0.5 after:rounded after:bg-white/80"
+                                    className="absolute right-0 top-0 z-40 h-full w-5 cursor-ew-resize touch-none rounded-r-lg border-l border-white/50 bg-slate-950/30 opacity-90 hover:bg-slate-950/55 after:absolute after:right-2 after:top-1/2 after:h-6 after:w-1 after:-translate-y-1/2 after:rounded after:border-x after:border-white/90"
                                   />
                                 )}
                               </div>
