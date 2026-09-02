@@ -493,9 +493,13 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
             </div>
 
             <nav ref={navRef} className="hidden md:flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto pb-1.5 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-gray-400" style={{ scrollbarWidth: 'auto', scrollbarColor: '#94a3b8 transparent' }}>
-              {standaloneItems.filter((item) => item.key === 'dashboard').map((item) => {
+              {[...standaloneItems.filter((item) => item.key === 'dashboard'), ...visibleNav.filter((item) => item.key === 'reservation_calendar')].map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
-                const isActive = location.pathname === roleWorkspace.path || normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item);
+                const isDashboard = item.key === 'dashboard';
+                const targetPath = isDashboard ? roleWorkspace.path : item.path;
+                const label = isDashboard ? (roleWorkspace.label || t(`navKeys.${item.key}`, item.label)) : t(`navKeys.${item.key}`, item.label);
+                const isActive = isDashboard ? (location.pathname === roleWorkspace.path || normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item)) : (normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item));
+                
                 return (
                   <TooltipProvider key={item.key} delayDuration={300}>
                     <Tooltip>
@@ -503,7 +507,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleNavigate(roleWorkspace.path)} onMouseEnter={() => preloadRoute(roleWorkspace.path)} onFocus={() => preloadRoute(roleWorkspace.path)}
+                          onClick={() => handleNavigate(targetPath)} onMouseEnter={() => preloadRoute(targetPath)} onFocus={() => preloadRoute(targetPath)}
                           className={`flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md h-8 transition-all duration-150 ${
                             isActive
                               ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
@@ -513,11 +517,11 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                           data-testid={`nav-${item.key}-button`}
                         >
                           <Icon className="w-3.5 h-3.5 shrink-0" />
-                          <span className="hidden lg:inline font-medium">{roleWorkspace.label || t(`navKeys.${item.key}`, item.label)}</span>
+                          <span className="hidden lg:inline font-medium">{label}</span>
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent side="bottom" className="lg:hidden">
-                        <p>{roleWorkspace.label || t(`navKeys.${item.key}`, item.label)}</p>
+                        <p>{label}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -623,14 +627,18 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                 <LanguageSelector />
               </div>
 
-              {standaloneItems.filter((item) => item.key === 'dashboard').map((item) => {
+              {[...standaloneItems.filter((item) => item.key === 'dashboard'), ...visibleNav.filter((item) => item.key === 'reservation_calendar')].map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
-                const isActive = location.pathname === roleWorkspace.path || normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item);
+                const isDashboard = item.key === 'dashboard';
+                const targetPath = isDashboard ? roleWorkspace.path : item.path;
+                const label = isDashboard ? (roleWorkspace.label || t(`navKeys.${item.key}`, item.label)) : t(`navKeys.${item.key}`, item.label);
+                const isActive = isDashboard ? (location.pathname === roleWorkspace.path || normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item)) : (normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item));
+                
                 return (
-                  <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(roleWorkspace.path, true)} onMouseEnter={() => preloadRoute(roleWorkspace.path)} onFocus={() => preloadRoute(roleWorkspace.path)}
+                  <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(targetPath, true)} onMouseEnter={() => preloadRoute(targetPath)} onFocus={() => preloadRoute(targetPath)}
                     className={`w-full justify-start py-2 mb-0.5 ${isActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-100 dark:text-gray-100'}`}
                     data-testid={`nav-${item.key}-button`}>
-                    <Icon className="w-4 h-4 mr-2" />{roleWorkspace.label || t(`navKeys.${item.key}`, item.label)}
+                    <Icon className="w-4 h-4 mr-2" />{label}
                   </Button>
                 );
               })}
