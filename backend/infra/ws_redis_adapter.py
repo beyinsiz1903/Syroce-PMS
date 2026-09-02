@@ -178,7 +178,10 @@ class WebSocketRedisAdapter:
                 try:
                     await self._pubsub.unsubscribe(channel)
                 except Exception as e:
-                    logger.error("WS unsubscribe error type=%s", type(e).__name__)
+                    if type(e).__name__ in ("ConnectionError", "AuthenticationError", "TimeoutError", "ConnectionClosedError"):
+                        logger.warning("WS unsubscribe non-critical error type=%s", type(e).__name__)
+                    else:
+                        logger.error("WS unsubscribe error type=%s", type(e).__name__)
 
     async def publish(self, room: str, event: str, data: dict[str, Any]):
         """Publish event to all instances via Redis.
