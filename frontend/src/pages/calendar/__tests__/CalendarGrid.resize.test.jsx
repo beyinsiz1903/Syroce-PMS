@@ -25,6 +25,8 @@ const renderGrid = (overrides = {}) => {
     onCellClick: vi.fn(),
     onDragStart: vi.fn(),
     onResizeStart: vi.fn(),
+    onResizePointerStart: vi.fn(),
+    onResizePointerCommit: vi.fn(),
     onDragOver: vi.fn(),
     onDragLeave: vi.fn(),
     onDrop: vi.fn(),
@@ -87,5 +89,28 @@ describe('CalendarGrid stay resize handle', () => {
   it('lets covered calendar cells receive the drop while resizing', () => {
     renderGrid({ resizingBooking: booking });
     expect(screen.getByTestId('booking-bar-booking-1')).toHaveClass('pointer-events-none');
+  });
+
+  it('supports direct pointer resizing in addition to browser drag events', () => {
+    const handlers = renderGrid();
+    const handle = screen.getByTestId('booking-resize-handle-booking-1');
+    const targetCell = screen.getByTestId('calendar-cell-101-2026-09-13');
+    const originalElementFromPoint = document.elementFromPoint;
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: vi.fn(() => targetCell),
+    });
+
+    fireEvent.pointerDown(handle, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(screen.getByTestId('calendar-grid'), { pointerId: 1, clientX: 11, clientY: 11 });
+
+    expect(handlers.onResizePointerStart).toHaveBeenCalledWith(booking);
+    expect(handlers.onResizePointerCommit).toHaveBeenCalledWith(booking, expect.any(Date));
+    expect(handlers.onResizePointerCommit.mock.calls[0][1].toISOString()).toBe('2026-09-13T00:00:00.000Z');
+    if (originalElementFromPoint) {
+      Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: originalElementFromPoint });
+    } else {
+      delete document.elementFromPoint;
+    }
   });
 });

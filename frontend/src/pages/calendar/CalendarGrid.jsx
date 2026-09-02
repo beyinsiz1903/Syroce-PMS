@@ -51,6 +51,8 @@ const CalendarGrid = ({
   dragSelect,
   onDragStart,
   onResizeStart,
+  onResizePointerStart,
+  onResizePointerCommit,
   onDragOver,
   onDragLeave,
   onDrop,
@@ -61,6 +63,21 @@ const CalendarGrid = ({
 }) => {
   const { t } = useTranslation();
   const [collapsedTypes, setCollapsedTypes] = useState(() => new Set());
+  const [pointerResize, setPointerResize] = useState(null);
+
+  const pointerDate = (event) => {
+    const target = document.elementFromPoint?.(event.clientX, event.clientY);
+    const cell = target?.closest?.('[data-calendar-date]');
+    return cell?.dataset.calendarDate || '';
+  };
+
+  const completePointerResize = (event) => {
+    if (!pointerResize) return;
+    const targetDate = pointerDate(event);
+    const booking = pointerResize;
+    setPointerResize(null);
+    if (targetDate) onResizePointerCommit?.(booking, new Date(`${targetDate}T00:00:00Z`));
+  };
 
   const toggleType = (type) => {
     setCollapsedTypes((prev) => {
@@ -166,6 +183,8 @@ const CalendarGrid = ({
       className="bg-white rounded-xl border border-slate-200 shadow-sm relative flex flex-col h-full overflow-hidden select-none"
       data-testid="calendar-grid"
       onPointerDown={clearCalendarTextSelection}
+      onPointerUp={completePointerResize}
+      onPointerCancel={() => setPointerResize(null)}
     >
       {/* Date Header Row - STICKY */}
       <div className="overflow-auto flex-1">
@@ -490,6 +509,7 @@ const CalendarGrid = ({
                                 onDragOver={(e) => onDragOver(e, room.id, date)}
                                 onDragLeave={onDragLeave}
                                 onDrop={(e) => onDrop(e, room.id, date)}
+                                data-calendar-date={dStr}
                                 data-testid={`calendar-cell-${room.room_number}-${toDateStringUTC(date)}`}
                                 title={roomBlock ? `${roomBlock.type.toUpperCase()}: ${roomBlock.reason}` : ''}
                               >
@@ -651,6 +671,13 @@ const CalendarGrid = ({
                                     data-testid={`booking-resize-handle-${booking.id}`}
                                     onDragStart={(e) => { e.stopPropagation(); onResizeStart?.(e, booking); }}
                                     onDragEnd={(e) => { e.stopPropagation(); onDragEnd?.(); }}
+                                    onPointerDown={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      e.currentTarget.setPointerCapture?.(e.pointerId);
+                                      setPointerResize(booking);
+                                      onResizePointerStart?.(booking);
+                                    }}
                                     onClick={(e) => e.stopPropagation()}
                                     onDoubleClick={(e) => e.stopPropagation()}
                                     className="absolute right-0 top-0 z-40 h-full w-5 cursor-ew-resize touch-none rounded-r-lg border-l border-white/50 bg-slate-950/30 opacity-90 hover:bg-slate-950/55 after:absolute after:right-2 after:top-1/2 after:h-6 after:w-1 after:-translate-y-1/2 after:rounded after:border-x after:border-white/90"
