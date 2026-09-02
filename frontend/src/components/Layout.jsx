@@ -116,25 +116,25 @@ const normalizedUserRoles = (user) => new Set([
 ].filter(Boolean).map((role) => String(role).trim().toLowerCase()));
 
 /**
- * Üst çubukta aynı anda yalnızca üç iş alanı gösterilir. Kontrol paneli ve
- * Uygulamalar başlatıcısıyla birlikte ana navigasyon beş girişte kalır.
+ * Üst çubukta aynı anda yalnızca dört iş alanı gösterilir. Kontrol paneli ve
+ * Uygulamalar başlatıcısıyla birlikte ana navigasyon altı girişte kalır.
  * Yetki/entitlement filtresi bundan önce çalıştığı için bu fonksiyon yalnızca
  * yerleşimi belirler; kullanıcıya yeni bir erişim hakkı kazandırmaz.
  */
 export const primaryNavigationGroupIds = (user, isSuperAdmin = false) => {
   const roles = normalizedUserRoles(user);
-  if (isSuperAdmin || roles.has('super_admin')) return ['admin', 'system', 'reports'];
+  if (isSuperAdmin || roles.has('super_admin')) return ['frontdesk', 'admin', 'system', 'reports'];
   if ([...roles].some((role) => ['accounting', 'finance', 'finance_manager', 'cashier'].includes(role))) {
-    return ['backoffice', 'reports', 'sales'];
+    return ['frontdesk', 'backoffice', 'reports', 'sales'];
   }
   if ([...roles].some((role) => ['gm', 'general_manager', 'manager', 'owner'].includes(role))) {
-    return ['sales', 'operations', 'reports'];
+    return ['frontdesk', 'sales', 'operations', 'reports'];
   }
   if ([...roles].some((role) => ['fnb', 'fnb_manager', 'waiter', 'restaurant'].includes(role))) {
     return ['fb', 'operations', 'reports'];
   }
   if ([...roles].some((role) => ['housekeeping', 'maintenance', 'technical'].includes(role))) {
-    return ['operations', 'frontdesk', 'reports'];
+    return ['frontdesk', 'operations', 'reports'];
   }
   return ['frontdesk', 'guest', 'operations'];
 };
@@ -274,7 +274,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
       && (groupedItems[group.id]?.length || 0) > 0
     ));
     const preferred = primaryNavigationGroupIds(user, isSuperAdmin);
-    const primaryIds = new Set(preferred.filter((id) => availableGroups.some((group) => group.id === id)).slice(0, 3));
+    const primaryIds = new Set(preferred.filter((id) => availableGroups.some((group) => group.id === id)).slice(0, 4));
     return {
       primaryGroups: availableGroups.filter((group) => primaryIds.has(group.id)),
       applicationGroups: availableGroups.filter((group) => !primaryIds.has(group.id)),
