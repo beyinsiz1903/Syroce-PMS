@@ -32,6 +32,7 @@ import {
   sortByUrgency,
   roomOccupancyStatus,
   buildCalendarRateLookup,
+  validateStayResize,
 } from './calendar';
 import { useTranslation } from 'react-i18next';
 
@@ -238,6 +239,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
   // Drag & Drop
   const [draggingBooking, setDraggingBooking] = useState(null);
+  const [resizingBooking, setResizingBooking] = useState(null);
   const [dragOverCell, setDragOverCell] = useState(null);
   const [moveData, setMoveData] = useState(null);
   const [moveReason, setMoveReason] = useState('');
@@ -712,8 +714,15 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
   // ─── Drag & Drop ───────────────────────────────────────────
   const handleDragStart = (e, booking) => {
+    setResizingBooking(null);
     setDraggingBooking(booking);
     e.dataTransfer.effectAllowed = 'move';
+  };
+  const handleResizeStart = (e, booking) => {
+    setDraggingBooking(null);
+    setResizingBooking(booking);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', `resize:${booking.id}`);
   };
   const handleDragOver = (e, roomId, date) => {
     e.preventDefault();
@@ -721,7 +730,49 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     setDragOverCell({ roomId, date: date.toISOString() });
   };
   const handleDragLeave = () => { setDragOverCell(null); };
-  const handleDragEnd = () => { setDraggingBooking(null); setDragOverCell(null); };
+  const handleDragEnd = () => { setDraggingBooking(null); setResizingBooking(null); setDragOverCell(null); };
+
+  const handleStayResize = async (booking, targetDate) => {
+    const localToday = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+    const minimumCheckout = hotelBusinessDate && hotelBusinessDate > localToday ? hotelBusinessDate : localToday;
+    const result = validateStayResize(booking, targetDate, minimumCheckout);
+    if (result.unchanged) return;
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+
+    if (result.extending) {
+      const addedNight = new Date(`${toDateStringUTC(booking.check_out)}T00:00:00Z`);
+      const newCheckOut = new Date(`${result.newCheckOut}T00:00:00Z`);
+      while (addedNight < newCheckOut) {
+        const roomBlock = getRoomBlockForDate(booking.room_id, addedNight, roomBlocks);
+        if (roomBlock && !roomBlock.allow_sell) {
+          toast.error(`Konaklama uzatılamadı: ${toDateStringUTC(addedNight)} tarihinde oda ${roomBlock.reason || 'bloklu'}`);
+          return;
+        }
+        addedNight.setUTCDate(addedNight.getUTCDate() + 1);
+      }
+    }
+
+    try {
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-resize-${Date.now()}-${Math.random()}`;
+      await axios.put(`/pms/bookings/${booking.id}`, {
+        check_out: result.newCheckOut,
+      }, { headers: { 'Idempotency-Key': idempotencyKey } });
+      const action = result.extending ? 'uzatıldı' : 'kısaltıldı';
+      toast.success(`Konaklama ${result.newCheckOut} çıkış tarihine ${action}. Rezervasyon toplamı değiştirilmedi.`);
+      loadCalendarData();
+    } catch (error) {
+      const conflict = parseBookingConflict(error);
+      if (conflict) {
+        setBookingConflict(conflict);
+        return;
+      }
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Konaklama süresi değiştirilemedi'));
+    }
+  };
 
   const handleAssignRoom = async (booking, newRoomId) => {
     try {
@@ -773,6 +824,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const handleDrop = async (e, newRoomId, newDate) => {
     e.preventDefault();
     setDragOverCell(null);
+    if (resizingBooking) {
+      const booking = resizingBooking;
+      setResizingBooking(null);
+      await handleStayResize(booking, newDate);
+      return;
+    }
     if (!draggingBooking) return;
 
     const roomBlock = getRoomBlockForDate(newRoomId, newDate, roomBlocks);
@@ -1075,6 +1132,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           businessDate={hotelBusinessDate}
           conflicts={conflicts}
           draggingBooking={draggingBooking}
+          resizingBooking={resizingBooking}
           dragOverCell={dragOverCell}
           showDeluxePanel={showDeluxePanel}
           groupColorMap={groupColorMap}
@@ -1086,6 +1144,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onCellMouseEnter={handleCellMouseEnter}
           dragSelect={dragSelect}
           onDragStart={handleDragStart}
+          onResizeStart={handleResizeStart}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
