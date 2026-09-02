@@ -724,6 +724,14 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', `resize:${booking.id}`);
   };
+  const handleResizePointerStart = (booking) => {
+    setDraggingBooking(null);
+    setResizingBooking(booking);
+  };
+  const handleResizePointerCommit = async (booking, targetDate) => {
+    setResizingBooking(null);
+    await handleStayResize(booking, targetDate);
+  };
   const handleDragOver = (e, roomId, date) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
@@ -1145,6 +1153,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           dragSelect={dragSelect}
           onDragStart={handleDragStart}
           onResizeStart={handleResizeStart}
+          onResizePointerStart={handleResizePointerStart}
+          onResizePointerCommit={handleResizePointerCommit}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}

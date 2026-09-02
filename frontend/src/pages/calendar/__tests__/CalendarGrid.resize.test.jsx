@@ -8,7 +8,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key) => key }),
 }));
 
-const dates = [10, 11, 12, 13].map((day) => new Date(`2026-09-${day}T00:00:00Z`));
+const dates = [9, 10, 11, 12, 13].map((day) => new Date(`2026-09-${String(day).padStart(2, '0')}T00:00:00Z`));
 const room = { id: 'room-1', room_number: '101', room_type: 'standard', status: 'available' };
 const booking = {
   id: 'booking-1',
@@ -25,6 +25,8 @@ const renderGrid = (overrides = {}) => {
     onCellClick: vi.fn(),
     onDragStart: vi.fn(),
     onResizeStart: vi.fn(),
+    onResizePointerStart: vi.fn(),
+    onResizePointerCommit: vi.fn(),
     onDragOver: vi.fn(),
     onDragLeave: vi.fn(),
     onDrop: vi.fn(),
@@ -73,8 +75,44 @@ describe('CalendarGrid stay resize handle', () => {
     expect(screen.queryByTestId('booking-resize-handle-booking-1')).not.toBeInTheDocument();
   });
 
+  it('protects Turkish weekday abbreviations from browser translation', () => {
+    renderGrid();
+    const wednesday = screen.getByTitle('Çarşamba');
+    const thursday = screen.getByTitle('Perşembe');
+
+    expect(wednesday).toHaveTextContent('Çar');
+    expect(thursday).toHaveTextContent('Per');
+    expect(wednesday).toHaveAttribute('translate', 'no');
+    expect(thursday).toHaveClass('notranslate');
+  });
+
   it('lets covered calendar cells receive the drop while resizing', () => {
     renderGrid({ resizingBooking: booking });
     expect(screen.getByTestId('booking-bar-booking-1')).toHaveClass('pointer-events-none');
+  });
+
+  it('supports direct pointer resizing in addition to browser drag events', () => {
+    const handlers = renderGrid();
+    const handle = screen.getByTestId('booking-resize-handle-booking-1');
+    const targetCell = screen.getByTestId('calendar-cell-101-2026-09-13');
+    const originalElementFromPoint = document.elementFromPoint;
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: vi.fn(() => targetCell),
+    });
+
+    fireEvent.pointerDown(handle, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(screen.getByTestId('calendar-grid'), { pointerId: 1, clientX: 11, clientY: 11 });
+    expect(screen.getByTestId('booking-bar-booking-1')).toHaveStyle({ width: '332px' });
+    fireEvent.pointerUp(screen.getByTestId('calendar-grid'), { pointerId: 1, clientX: 11, clientY: 11 });
+
+    expect(handlers.onResizePointerStart).toHaveBeenCalledWith(booking);
+    expect(handlers.onResizePointerCommit).toHaveBeenCalledWith(booking, expect.any(Date));
+    expect(handlers.onResizePointerCommit.mock.calls[0][1].toISOString()).toBe('2026-09-13T00:00:00.000Z');
+    if (originalElementFromPoint) {
+      Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: originalElementFromPoint });
+    } else {
+      delete document.elementFromPoint;
+    }
   });
 });

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Calendar as CalendarIcon, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import {
-  toDateStringUTC, isBookingOnDate, isBookingStart, isWeekend, isToday, isPastDate,
+  toDateStringUTC, checkoutAfterCalendarNight, isBookingOnDate, isBookingStart, isWeekend, isToday, isPastDate,
   formatDateWithDay, getBookingForRoomOnDate, getRoomBlockForDate,
   isBlockStart, calculateBlockSpan, calculateBookingSpan,
   getBookingStatusColor, getBookingStatus, getSourceColor,
@@ -51,6 +51,8 @@ const CalendarGrid = ({
   dragSelect,
   onDragStart,
   onResizeStart,
+  onResizePointerStart,
+  onResizePointerCommit,
   onDragOver,
   onDragLeave,
   onDrop,
@@ -61,6 +63,28 @@ const CalendarGrid = ({
 }) => {
   const { t } = useTranslation();
   const [collapsedTypes, setCollapsedTypes] = useState(() => new Set());
+  const [pointerResize, setPointerResize] = useState(null);
+
+  const pointerDate = (event) => {
+    const target = document.elementFromPoint?.(event.clientX, event.clientY);
+    const cell = target?.closest?.('[data-calendar-date]');
+    return cell?.dataset.calendarDate || '';
+  };
+
+  const completePointerResize = (event) => {
+    if (!pointerResize) return;
+    const targetDate = pointerDate(event) || pointerResize.targetDate;
+    const { targetDate: _ignoredTargetDate, ...booking } = pointerResize;
+    setPointerResize(null);
+    if (targetDate) onResizePointerCommit?.(booking, new Date(`${targetDate}T00:00:00Z`));
+  };
+
+  const updatePointerResize = (event) => {
+    if (!pointerResize) return;
+    const targetDate = pointerDate(event);
+    if (!targetDate || targetDate === pointerResize.targetDate) return;
+    setPointerResize((current) => current ? { ...current, targetDate } : current);
+  };
 
   const toggleType = (type) => {
     setCollapsedTypes((prev) => {
@@ -166,6 +190,9 @@ const CalendarGrid = ({
       className="bg-white rounded-xl border border-slate-200 shadow-sm relative flex flex-col h-full overflow-hidden select-none"
       data-testid="calendar-grid"
       onPointerDown={clearCalendarTextSelection}
+      onPointerMove={updatePointerResize}
+      onPointerUp={completePointerResize}
+      onPointerCancel={() => setPointerResize(null)}
     >
       {/* Date Header Row - STICKY */}
       <div className="overflow-auto flex-1">
@@ -223,7 +250,12 @@ const CalendarGrid = ({
                   }`}
                   data-testid={`date-header-${dayNum}`}
                 >
-                  <div className={`text-[10px] font-bold uppercase tracking-wide ${today ? 'text-blue-700' : past ? 'text-slate-400' : 'text-slate-500'}`}>
+                  <div
+                    lang="tr"
+                    translate="no"
+                    title={date.toLocaleDateString('tr-TR', { weekday: 'long' })}
+                    className={`notranslate text-[10px] font-bold uppercase tracking-wide ${today ? 'text-blue-700' : past ? 'text-slate-400' : 'text-slate-500'}`}
+                  >
                     {dayName}
                   </div>
                   <div className={`text-[18px] font-extrabold leading-tight ${today ? 'text-blue-700' : past ? 'text-slate-400' : 'text-slate-900'}`}>
@@ -485,6 +517,7 @@ const CalendarGrid = ({
                                 onDragOver={(e) => onDragOver(e, room.id, date)}
                                 onDragLeave={onDragLeave}
                                 onDrop={(e) => onDrop(e, room.id, date)}
+                                data-calendar-date={dStr}
                                 data-testid={`calendar-cell-${room.room_number}-${toDateStringUTC(date)}`}
                                 title={roomBlock ? `${roomBlock.type.toUpperCase()}: ${roomBlock.reason}` : ''}
                               >
@@ -574,6 +607,12 @@ const CalendarGrid = ({
                               : fullGuestName;
                             const isDragging = draggingBooking?.id === booking.id;
                             const isResizing = resizingBooking?.id === booking.id;
+                            const previewCheckOut = pointerResize?.id === booking.id && pointerResize.targetDate
+                              ? checkoutAfterCalendarNight(pointerResize.targetDate)
+                              : '';
+                            const previewSpan = previewCheckOut > checkInStr
+                              ? calculateBookingSpan({ ...booking, check_out: previewCheckOut }, currentDate, daysToShow)
+                              : span;
                             const resizeAllowed = !['checked_out', 'cancelled', 'no_show'].includes(String(booking.status || '').toLowerCase())
                               && checkOutStr <= rangeEndStr;
                             const paxCount = (booking.adults || 0) + (booking.children || 0);
@@ -599,7 +638,7 @@ const CalendarGrid = ({
                                 style={{
                                   left: `${startIdx * CELL_W + 2}px`,
                                   top: `${lane * LANE_BAR_H + 2}px`,
-                                  width: `${span * CELL_W - 4}px`,
+                                  width: `${previewSpan * CELL_W - 4}px`,
                                   height: `${BOOKING_H}px`,
                                   backgroundColor: statusColor.bg,
                                   borderLeft: `4px solid ${statusColor.border}`,
@@ -646,9 +685,16 @@ const CalendarGrid = ({
                                     data-testid={`booking-resize-handle-${booking.id}`}
                                     onDragStart={(e) => { e.stopPropagation(); onResizeStart?.(e, booking); }}
                                     onDragEnd={(e) => { e.stopPropagation(); onDragEnd?.(); }}
+                                    onPointerDown={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      e.currentTarget.setPointerCapture?.(e.pointerId);
+                                      setPointerResize({ ...booking, targetDate: '' });
+                                      onResizePointerStart?.(booking);
+                                    }}
                                     onClick={(e) => e.stopPropagation()}
                                     onDoubleClick={(e) => e.stopPropagation()}
-                                    className="absolute right-0 top-0 z-40 h-full w-3 cursor-ew-resize rounded-r-lg bg-white/10 hover:bg-white/35 after:absolute after:right-1 after:top-2 after:h-6 after:w-0.5 after:rounded after:bg-white/80"
+                                    className="absolute right-0 top-0 z-40 h-full w-5 cursor-ew-resize touch-none rounded-r-lg border-l border-white/50 bg-slate-950/30 opacity-90 hover:bg-slate-950/55 after:absolute after:right-2 after:top-1/2 after:h-6 after:w-1 after:-translate-y-1/2 after:rounded after:border-x after:border-white/90"
                                   />
                                 )}
                               </div>
