@@ -186,11 +186,22 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
     if (!await confirmDialog({ message: applyNoshow ? 'No-show olarak iptal edilsin mi?' : 'Rezervasyon iptal edilsin mi?', variant: 'danger' })) return;
     setLoading(true);
     try {
-      await axios.post(`/pms/reservations/${bookingId}/cancel`, {
-        reason, cancel_type: cancelType, apply_noshow: applyNoshow,
-        noshow_charge_type: applyNoshow ? noshowChargeType : null,
-        noshow_charge_amount: applyNoshow ? parseFloat(noshowAmount) || 0 : null,
-      });
+      if (applyNoshow) {
+        await axios.post('/pms-core/no-show', { booking_id: bookingId });
+        if (noshowChargeType && parseFloat(noshowAmount) > 0) {
+          await axios.post(`/pms/reservations/${bookingId}/add-extra-charge`, {
+            description: `No-Show Ücreti (${noshowChargeType})`,
+            amount: parseFloat(noshowAmount),
+            category: 'other',
+            quantity: 1
+          });
+        }
+      } else {
+        await axios.post('/pms-core/cancel', {
+          booking_id: bookingId,
+          reason: reason
+        });
+      }
       toast.success(applyNoshow ? 'No-show olarak işaretlendi' : 'Rezervasyon iptal edildi');
       onRefresh?.();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
