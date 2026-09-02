@@ -169,7 +169,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const canCheckIn = !readOnly && ['pending', 'confirmed', 'guaranteed'].includes(bookingStatus);
   const canLateCheckout = !readOnly && bookingStatus === 'checked_in';
   const canChangeRoom = !readOnly && ['pending', 'confirmed', 'guaranteed', 'checked_in'].includes(bookingStatus);
-  const canCancel = !readOnly && ['pending', 'confirmed', 'guaranteed'].includes(bookingStatus);
+  const canCancel = ['pending', 'confirmed', 'guaranteed'].includes(bookingStatus);
 
   if (loading) return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
