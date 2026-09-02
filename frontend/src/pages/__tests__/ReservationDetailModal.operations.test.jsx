@@ -234,7 +234,7 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.queryByTestId('btn-cancel-reservation')).not.toBeInTheDocument();
   });
 
-  it('keeps a historical legacy reservation read-only even when its status is confirmed', async () => {
+  it('keeps a historical legacy reservation read-only but allows resolving pending status', async () => {
     get.mockResolvedValueOnce({
       data: { ...detail, read_only: true },
     });
@@ -245,8 +245,8 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.queryByTestId('btn-checkin')).not.toBeInTheDocument();
     expect(screen.queryByTestId('btn-early-checkin')).not.toBeInTheDocument();
     expect(screen.queryByTestId('btn-room-change')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('btn-mark-noshow')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('btn-cancel-reservation')).not.toBeInTheDocument();
+    expect(screen.getByTestId('btn-mark-noshow')).toBeInTheDocument();
+    expect(screen.getByTestId('btn-cancel-reservation')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Not Ekle' })).toBeDisabled();
   });
 

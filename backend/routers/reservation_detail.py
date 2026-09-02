@@ -2146,7 +2146,7 @@ async def mark_noshow(
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
     if str(booking.get("status") or "").lower() not in {"pending", "confirmed", "guaranteed"}:
         raise HTTPException(status_code=409, detail="Bu rezervasyon mevcut durumunda no-show yapılamaz")
-    
+
     await db.bookings.update_one(
         {"id": booking_id, "tenant_id": tid},
         {"$set": {"status": "no_show", "no_show_at": datetime.now(UTC).isoformat()}},
