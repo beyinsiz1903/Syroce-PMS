@@ -10,6 +10,7 @@ import { DAYS, UPDATE_FIELDS } from './constants';
 import { ChannelList } from './ChannelList';
 import { useTranslation } from 'react-i18next';
 import { normalizeOccupancyRule } from '@/utils/occupancyPricing';
+import { toast } from 'sonner';
 
 export const BulkUpdatePanel = ({
   roomTypeTree, roomTypes, ratePlans, enabledFields, toggleField,
