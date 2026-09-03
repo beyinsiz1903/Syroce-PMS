@@ -554,7 +554,8 @@ const UnifiedRateManager = ({
     } catch (e) {
       const detail = e.response?.data?.detail;
       const safeCode = typeof detail === 'object' && typeof detail?.error_code === 'string' ? detail.error_code : null;
-      toast.error(safeCode ? `Güncelleme engellendi: ${safeCode}` : 'Güncelleme hatası');
+      const detailStr = typeof detail === 'string' ? detail : null;
+      toast.error(safeCode ? `Güncelleme engellendi: ${safeCode}` : detailStr || 'Güncelleme hatası', { duration: 8000 });
     }
     setSaving(false);
   };
