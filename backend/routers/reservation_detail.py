@@ -2353,15 +2353,23 @@ async def update_daily_rates(
     _ensure_hotel_context(current_user)
     
     tid = current_user.tenant_id
+    target_tenant = None # We can't inject target_tenant via Header since frontend axios.put doesn't send it specifically for this endpoint yet, but let's just make it robust
+    
     from core.security import _is_super_admin
     if _is_super_admin(current_user):
         lookup = await db.bookings.find_one({"id": booking_id}, {"tenant_id": 1})
         if lookup:
             tid = lookup.get("tenant_id", current_user.tenant_id)
-
+            
+    # For non-super_admins, if they somehow get here, tid is current_user.tenant_id
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
-        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+        # Before raising 404, try to see if it exists without tenant_id to differentiate error
+        check = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+        if check:
+            raise HTTPException(status_code=403, detail="Bu rezervasyon başka bir tesise ait.")
+        raise HTTPException(status_code=404, detail="Rezervasyon sistemde bulunamadı.")
+    
     await ensure_reservation_mutable(db, tid, booking)
 
     business_state = await ensure_business_date_initialized(db, tid)
