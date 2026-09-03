@@ -2367,7 +2367,7 @@ async def update_daily_rates(
         check = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
         if check:
             raise HTTPException(status_code=403, detail="Bu rezervasyon başka bir tesise ait.")
-        raise HTTPException(status_code=404, detail="Rezervasyon sistemde bulunamadı.")
+        raise HTTPException(status_code=400, detail="Rezervasyon sistemde bulunamadı.")
 
     await ensure_reservation_mutable(db, tid, booking)
 
