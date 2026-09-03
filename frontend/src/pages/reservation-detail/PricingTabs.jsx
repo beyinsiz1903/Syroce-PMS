@@ -34,8 +34,9 @@ export function DailyRatesTab({
     }
     setSaving(true);
     try {
+      const payloadRates = rates.map(r => ({ ...r, rate: parseFloat(r.rate) || 0 }));
       await axios.put(`/pms/reservations/${booking.id}/daily-rates`, {
-        rates
+        rates: payloadRates
       });
       toast.success('Günlük fiyatlar güncellendi');
       setEditMode(false);
@@ -62,18 +63,18 @@ export function DailyRatesTab({
             {rates.map((r, i) => <tr key={r.id || i} className="border-t">
                 <td className="py-2 px-3 text-gray-700">{fmtDate(r.date)}</td>
                 <td className="py-2 px-3 text-right">
-                  {editMode && !isClosedRate(r) ? <Input type="number" value={r.rate} onChange={e => {
+                  {editMode && !isClosedRate(r) ? <Input type="number" step="0.01" value={r.rate} onChange={e => {
                 const u = [...rates];
                 u[i] = {
                   ...u[i],
-                  rate: parseFloat(e.target.value) || 0
+                  rate: e.target.value
                 };
                 setRates(u);
               }} className="h-7 text-sm text-right w-24 ml-auto" /> : <span className="inline-flex items-center justify-end gap-1.5 font-medium text-gray-800">{editMode && isClosedRate(r) && <><Lock className="h-3 w-3 text-slate-400" /><span className="sr-only">Gün sonu kapalı</span></>}{fmtTL(r.rate)} TL</span>}
                 </td>
               </tr>)}
           </tbody>
-          <tfoot className="bg-gray-50 border-t-2"><tr><td className="py-2 px-3 font-semibold">{t('cm.pages_reservationdetail_PricingTabs.toplam')}</td><td className="py-2 px-3 text-right font-bold">{fmtTL(rates.reduce((s, r) => s + (r.rate || 0), 0))} TL</td></tr></tfoot>
+          <tfoot className="bg-gray-50 border-t-2"><tr><td className="py-2 px-3 font-semibold">{t('cm.pages_reservationdetail_PricingTabs.toplam')}</td><td className="py-2 px-3 text-right font-bold">{fmtTL(rates.reduce((s, r) => s + (parseFloat(r.rate) || 0), 0))} TL</td></tr></tfoot>
         </table>
       </div>
     </div>;
