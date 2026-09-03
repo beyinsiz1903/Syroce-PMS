@@ -10,6 +10,7 @@ import { DAYS, UPDATE_FIELDS } from './constants';
 import { ChannelList } from './ChannelList';
 import { useTranslation } from 'react-i18next';
 import { normalizeOccupancyRule } from '@/utils/occupancyPricing';
+import { toast } from 'sonner';
 
 export const BulkUpdatePanel = ({
   roomTypeTree, roomTypes, ratePlans, enabledFields, toggleField,
@@ -613,6 +614,10 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
                     })),
                     max_occupancy: draft.max_occupancy === '' ? null : Number(draft.max_occupancy),
                   });
+                  toast.success('Kural başarıyla kaydedildi');
+                  onToggle();
+                } catch (err) {
+                  toast.error(err?.response?.data?.detail || 'Kural kaydedilirken bir hata oluştu');
                 } finally {
                   setSubmitting(false);
                 }
