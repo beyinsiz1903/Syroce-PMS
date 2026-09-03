@@ -803,7 +803,7 @@ async def unified_bulk_grid_update(
             {"_id": 0, "room_type_code": 1, "pricing_type": 1, "provider_pricing_verified": 1},
         ).to_list(200)
         unsafe_room_types = _unsafe_hotelrunner_room_types(selected_room_types, mappings, pricing_docs)
-        if False and unsafe_room_types:
+        if unsafe_room_types:
             codes = ", ".join(unsafe_room_types)
             raise HTTPException(
                 status_code=409,
