@@ -613,6 +613,10 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
                     })),
                     max_occupancy: draft.max_occupancy === '' ? null : Number(draft.max_occupancy),
                   });
+                  toast.success('Kural başarıyla kaydedildi');
+                  onToggle();
+                } catch (err) {
+                  toast.error(err?.response?.data?.detail || 'Kural kaydedilirken bir hata oluştu');
                 } finally {
                   setSubmitting(false);
                 }
