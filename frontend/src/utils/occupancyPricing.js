@@ -31,6 +31,7 @@ export const normalizeOccupancyRule = (rule = {}) => {
     ...DEFAULT_OCCUPANCY_RULE,
     ...rule,
     base_occupancy: Number(rule.base_occupancy ?? 2),
+    extra_adult_rate_type: ["fixed", "percentage"].includes(rule.extra_adult_rate_type) ? rule.extra_adult_rate_type : "fixed",
     extra_adult_rate: Number(rule.extra_adult_rate ?? 0),
     extra_child_rate: Number(rule.extra_child_rate ?? 0),
     child_free_age_max: Number(rule.child_free_age_max ?? 0),
@@ -73,6 +74,14 @@ export const calculateOccupancyPrice = ({ baseNightlyRate, nights, adults, child
   if (!Number.isFinite(base) || base < 0 || nights < 1 || adults < 1
     || numericAges.some(age => !Number.isInteger(age) || age < 0 || age > 17)
     || (normalized.max_occupancy !== null && guestCount > normalized.max_occupancy)) return null;
+    
+  let adultRate = 0;
+  if (normalized.pricing_type === 'per_person') {
+    adultRate = normalized.extra_adult_rate_type === 'percentage'
+      ? roundMoney(base * normalized.extra_adult_rate / 100)
+      : normalized.extra_adult_rate;
+  }
+
   const extraAdults = normalized.pricing_type === 'per_person'
     ? Math.max(0, Number(adults) - normalized.base_occupancy)
     : 0;
@@ -84,10 +93,10 @@ export const calculateOccupancyPrice = ({ baseNightlyRate, nights, adults, child
         if (!band) return { age, pricingMode: 'invalid', rate: Number.NaN };
         let rate = 0;
         if (band.pricing_mode === 'fixed') rate = band.value;
-        if (band.pricing_mode === 'adult_percentage') rate = roundMoney(normalized.extra_adult_rate * band.value / 100);
+        if (band.pricing_mode === 'adult_percentage') rate = roundMoney(adultRate * band.value / 100);
         if (band.pricing_mode === 'adult_rate') {
           if (includedAdultSlots > 0) includedAdultSlots -= 1;
-          else rate = normalized.extra_adult_rate;
+          else rate = adultRate;
         }
         return { age, pricingMode: band.pricing_mode, rate, countsAsAdult: band.pricing_mode === 'adult_rate' };
       });
@@ -96,7 +105,7 @@ export const calculateOccupancyPrice = ({ baseNightlyRate, nights, adults, child
   if (childBreakdown.some(item => !Number.isFinite(item.rate))) return null;
   const chargeableChildren = childBreakdown.filter(item => item.rate > 0).length;
   const freeChildren = childBreakdown.filter(item => item.rate === 0).length;
-  const adultSupplement = roundMoney(extraAdults * normalized.extra_adult_rate);
+  const adultSupplement = roundMoney(extraAdults * adultRate);
   const childSupplement = roundMoney(childBreakdown.reduce((sum, item) => sum + item.rate, 0));
   const nightlyTotal = roundMoney(base + adultSupplement + childSupplement);
   return {

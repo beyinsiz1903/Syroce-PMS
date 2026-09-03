@@ -115,6 +115,7 @@ def normalize_occupancy_rule(rule: dict[str, Any] | None) -> dict[str, Any]:
     return {
         "pricing_type": pricing_type,
         "base_occupancy": base_occupancy,
+        "extra_adult_rate_type": raw.get("extra_adult_rate_type", "fixed") if raw.get("extra_adult_rate_type") in ("fixed", "percentage") else "fixed",
         "extra_adult_rate": float(_decimal(raw.get("extra_adult_rate", 0), field="Ek yetiskin ucreti")),
         "extra_child_rate": float(_decimal(raw.get("extra_child_rate", 0), field="Ek cocuk ucreti")),
         "child_free_age_max": child_free_age_max,
@@ -155,10 +156,18 @@ def calculate_occupancy_quote(
     chargeable_children = 0
     free_children = 0
     child_breakdown: list[dict[str, Any]] = []
+    
+    adult_rate = Decimal("0.00")
     if normalized["pricing_type"] == "per_person":
         extra_adults = max(0, adults - normalized["base_occupancy"])
         included_adult_slots = max(0, normalized["base_occupancy"] - adults)
-        adult_rate = _decimal(normalized["extra_adult_rate"], field="Ek yetiskin ucreti")
+        
+        adult_rate_val = _decimal(normalized["extra_adult_rate"], field="Ek yetiskin ucreti")
+        if normalized["extra_adult_rate_type"] == "percentage":
+            adult_rate = (base_rate * adult_rate_val / Decimal("100")).quantize(MONEY, rounding=ROUND_HALF_UP)
+        else:
+            adult_rate = adult_rate_val
+            
         for age in ages:
             band = next(
                 (candidate for candidate in normalized["child_age_bands"] if candidate["min_age"] <= age <= candidate["max_age"]),
@@ -195,7 +204,7 @@ def calculate_occupancy_quote(
                 }
             )
 
-    adult_supplement = _decimal(normalized["extra_adult_rate"], field="Ek yetiskin ucreti") * extra_adults
+    adult_supplement = adult_rate * extra_adults
     child_supplement = sum((_decimal(row["rate"], field="Cocuk ucreti") for row in child_breakdown), Decimal("0.00"))
     nightly_total = (base_rate + adult_supplement + child_supplement).quantize(MONEY, rounding=ROUND_HALF_UP)
     stay_total = (nightly_total * nights).quantize(MONEY, rounding=ROUND_HALF_UP)
@@ -212,6 +221,7 @@ def calculate_occupancy_quote(
         "chargeable_children": chargeable_children,
         "free_children": free_children,
         "child_breakdown": child_breakdown,
+        "extra_adult_rate_type": normalized["extra_adult_rate_type"],
         "extra_adult_rate": normalized["extra_adult_rate"],
         "extra_child_rate": normalized["extra_child_rate"],
         "child_age_bands": normalized["child_age_bands"],
