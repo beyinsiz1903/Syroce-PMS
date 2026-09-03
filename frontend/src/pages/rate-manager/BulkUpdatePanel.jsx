@@ -412,6 +412,7 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
   const initial = {
     base_occupancy: normalizedRule.base_occupancy,
     extra_adult_rate: normalizedRule.extra_adult_rate,
+    extra_adult_rate_type: normalizedRule.extra_adult_rate_type,
     child_age_bands: normalizedRule.child_age_bands,
     max_occupancy: normalizedRule.max_occupancy ?? '',
     provider_pricing_verified: Boolean(rule?.provider_pricing_verified),
@@ -464,13 +465,13 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
   }) && expectedAge === 18;
   const base = Number(currentBaseRate || 0);
   const exampleGuests = Number(draft.base_occupancy) + 1;
-  const exampleNightly = base + Number(draft.extra_adult_rate || 0);
+  const exampleNightly = base + (draft.extra_adult_rate_type === 'percentage' ? (base * Number(draft.extra_adult_rate || 0) / 100) : Number(draft.extra_adult_rate || 0));
 
   return (
     <div className="border-t border-amber-100 bg-amber-50/40 px-4 py-2" data-testid={`occupancy-pricing-${roomType.code}`}>
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <span className="text-gray-600">
-          {draft.base_occupancy} yetişkin dahil · Ek yetişkin {currencySymbol}{Number(draft.extra_adult_rate || 0).toLocaleString('tr-TR')}/gece
+          {draft.base_occupancy} yetişkin dahil · Ek yetişkin {draft.extra_adult_rate_type === 'percentage' ? `%${draft.extra_adult_rate}` : `${currencySymbol}${Number(draft.extra_adult_rate || 0).toLocaleString('tr-TR')}`}/gece
         </span>
         <button type="button" onClick={onToggle} className="font-medium text-amber-700 hover:underline">
           {open ? 'Kuralı kapat' : 'Kuralı düzenle'}
@@ -480,7 +481,27 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
         <div className="mt-3 rounded-lg border border-amber-200 bg-white p-3">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <RuleNumber label="Fiyata dahil yetişkin" value={draft.base_occupancy} min={1} max={20} onChange={v => update('base_occupancy', v)} />
-            <RuleNumber label="Ek yetişkin / gece" value={draft.extra_adult_rate} min={0} step="0.01" onChange={v => update('extra_adult_rate', v)} />
+            <div>
+              <Label className="text-[11px] text-gray-600">Ek yetişkin / gece</Label>
+              <div className="flex mt-1">
+                <select
+                  value={draft.extra_adult_rate_type}
+                  onChange={e => update('extra_adult_rate_type', e.target.value)}
+                  className="h-8 rounded-l-md border border-r-0 border-slate-300 bg-white px-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="fixed">{currencySymbol}</option>
+                  <option value="percentage">%</option>
+                </select>
+                <Input
+                  type="number"
+                  value={draft.extra_adult_rate}
+                  min={0}
+                  step="0.01"
+                  onChange={e => update('extra_adult_rate', e.target.value)}
+                  className="h-8 rounded-l-none text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+            </div>
             <RuleNumber label="Maksimum kişi" value={draft.max_occupancy} min={draft.base_occupancy} max={50} optional onChange={v => update('max_occupancy', v)} />
           </div>
           <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3" data-testid={`child-age-bands-${roomType.code}`}>
@@ -581,6 +602,7 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
                     ...draft,
                     base_occupancy: Number(draft.base_occupancy),
                     extra_adult_rate: Number(draft.extra_adult_rate),
+                    extra_adult_rate_type: draft.extra_adult_rate_type,
                     extra_child_rate: Number(fixedBand?.value || 0),
                     child_free_age_max: Number(freeBand?.max_age || 0),
                     child_age_bands: sortedBands.map(band => ({

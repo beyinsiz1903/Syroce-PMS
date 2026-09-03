@@ -126,6 +126,7 @@ class PricingSettingItem(BaseModel):
     room_type_code: str
     pricing_type: str
     base_occupancy: int = Field(2, ge=1, le=20)
+    extra_adult_rate_type: str = Field("fixed", pattern="^(fixed|percentage)$")
     extra_adult_rate: float = Field(0, ge=0, le=1e12)
     extra_child_rate: float = Field(0, ge=0, le=1e12)
     child_free_age_max: int = Field(0, ge=0, le=17)
