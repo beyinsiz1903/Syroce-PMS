@@ -2355,90 +2355,90 @@ async def update_daily_rates(
     tid = current_user.tenant_id
 
     from core.security import _is_super_admin
+    from core.tenant_db import get_system_db, tenant_context
+
     if _is_super_admin(current_user):
-        lookup = await db.bookings.find_one({"id": booking_id}, {"tenant_id": 1})
+        # Super admin: use system db (no tenant scoping) to find which tenant this booking belongs to
+        sys_db = get_system_db()
+        lookup = await sys_db.bookings.find_one({"id": booking_id}, {"tenant_id": 1})
         if lookup:
             tid = lookup.get("tenant_id", current_user.tenant_id)
 
-    # For non-super_admins, if they somehow get here, tid is current_user.tenant_id
-    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
-    if not booking:
-        # Before raising 404, try to see if it exists without tenant_id to differentiate error
-        check = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
-        if check:
-            raise HTTPException(status_code=403, detail="Bu rezervasyon başka bir tesise ait.")
-        raise HTTPException(status_code=400, detail="Rezervasyon sistemde bulunamadı.")
+    with tenant_context(tid):
+        booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+        if not booking:
+            raise HTTPException(status_code=400, detail="Rezervasyon bulunamadı.")
 
-    await ensure_reservation_mutable(db, tid, booking)
+        await ensure_reservation_mutable(db, tid, booking)
 
-    business_state = await ensure_business_date_initialized(db, tid)
-    current_business_date = str(business_state["business_date"])[:10]
-    existing_rates = {
-        str(row.get("date") or "")[:10]: row
-        async for row in db.daily_rates.find(
-            {"booking_id": booking_id, "tenant_id": tid},
-            {"_id": 0, "date": 1, "rate": 1},
-        )
-    }
+        business_state = await ensure_business_date_initialized(db, tid)
+        current_business_date = str(business_state["business_date"])[:10]
+        existing_rates = {
+            str(row.get("date") or "")[:10]: row
+            async for row in db.daily_rates.find(
+                {"booking_id": booking_id, "tenant_id": tid},
+                {"_id": 0, "date": 1, "rate": 1},
+            )
+        }
 
-    # Bug Fix: If daily_rates are missing in DB, they were generated on-the-fly for the frontend.
-    # We must recreate them here to allow the frontend to submit the locked unchanged rates without triggering a 409.
-    if not existing_rates and booking.get("check_in") and booking.get("check_out"):
-        ci = _reservation_calendar_date(booking["check_in"])
-        co = _reservation_calendar_date(booking["check_out"])
-        if ci is not None and co is not None:
-            nights = max((co - ci).days, 1)
-            nightly_rate = round(booking.get("total_amount", 0) / nights, 2) if nights > 0 else 0
-            current = ci
-            for _ in range(nights):
-                d_str = str(current)[:10]
-                existing_rates[d_str] = {"date": current.isoformat(), "rate": nightly_rate}
-                current = current + timedelta(days=1)
+        # Bug Fix: If daily_rates are missing in DB, they were generated on-the-fly for the frontend.
+        # We must recreate them here to allow the frontend to submit the locked unchanged rates without triggering a 409.
+        if not existing_rates and booking.get("check_in") and booking.get("check_out"):
+            ci = _reservation_calendar_date(booking["check_in"])
+            co = _reservation_calendar_date(booking["check_out"])
+            if ci is not None and co is not None:
+                nights = max((co - ci).days, 1)
+                nightly_rate = round(booking.get("total_amount", 0) / nights, 2) if nights > 0 else 0
+                current = ci
+                for _ in range(nights):
+                    d_str = str(current)[:10]
+                    existing_rates[d_str] = {"date": current.isoformat(), "rate": nightly_rate}
+                    current = current + timedelta(days=1)
 
-    for rate_entry in data.rates:
-        rate_date = str(rate_entry.date)[:10]
-        if rate_date < current_business_date:
-            existing = existing_rates.get(rate_date)
-            if existing is None or _money_cents(existing.get("rate")) != _money_cents(rate_entry.rate):
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        f"{rate_date} iş günü Night Audit ile kapatıldığı için "
-                        "oda fiyatı değiştirilemez"
-                    ),
-                )
+        for rate_entry in data.rates:
+            rate_date = str(rate_entry.date)[:10]
+            if rate_date < current_business_date:
+                existing = existing_rates.get(rate_date)
+                if existing is None or _money_cents(existing.get("rate")) != _money_cents(rate_entry.rate):
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"{rate_date} iş günü Night Audit ile kapatıldığı için "
+                            "oda fiyatı değiştirilemez"
+                        ),
+                    )
 
-    for rate_entry in data.rates:
-        await db.daily_rates.update_one(
-            {"booking_id": booking_id, "tenant_id": tid, "date": rate_entry.date},
+        for rate_entry in data.rates:
+            await db.daily_rates.update_one(
+                {"booking_id": booking_id, "tenant_id": tid, "date": rate_entry.date},
+                {
+                    "$set": {
+                        "rate": rate_entry.rate,
+                        "updated_by": current_user.name,
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                },
+                upsert=True,
+            )
+
+        # Recalculate total
+        new_total = sum(r.rate for r in data.rates)
+        if new_total > 0:
+            await db.bookings.update_one(
+                {"id": booking_id, "tenant_id": tid},
+                {"$set": {"total_amount": round(new_total, 2)}},
+            )
+
+        await _log_activity(
+            tid,
+            booking_id,
+            "daily_rates_updated",
+            current_user.name,
             {
-                "$set": {
-                    "rate": rate_entry.rate,
-                    "updated_by": current_user.name,
-                    "updated_at": datetime.now(UTC).isoformat(),
-                }
+                "rates_count": len(data.rates),
+                "business_date": current_business_date,
             },
-            upsert=True,
         )
-
-    # Recalculate total
-    new_total = sum(r.rate for r in data.rates)
-    if new_total > 0:
-        await db.bookings.update_one(
-            {"id": booking_id, "tenant_id": tid},
-            {"$set": {"total_amount": round(new_total, 2)}},
-        )
-
-    await _log_activity(
-        tid,
-        booking_id,
-        "daily_rates_updated",
-        current_user.name,
-        {
-            "rates_count": len(data.rates),
-            "business_date": current_business_date,
-        },
-    )
 
     return {"success": True, "new_total": round(new_total, 2)}
 
