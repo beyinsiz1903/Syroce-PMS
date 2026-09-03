@@ -2351,7 +2351,13 @@ async def update_daily_rates(
     """Update daily rates for a reservation. Requires override_rate permission."""
     _enforce_perm(current_user.role, "override_rate")  # Bug CP Round-3 — mirror rate-override-panel gate
     _ensure_hotel_context(current_user)
+    
     tid = current_user.tenant_id
+    from core.security import _is_super_admin
+    if _is_super_admin(current_user):
+        lookup = await db.bookings.find_one({"id": booking_id}, {"tenant_id": 1})
+        if lookup:
+            tid = lookup.get("tenant_id", current_user.tenant_id)
 
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
