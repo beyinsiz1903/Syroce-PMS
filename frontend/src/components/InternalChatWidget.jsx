@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { Button } from '@/components/ui/button';
 import { useNotifications } from '@/context/NotificationContext';
-import { MessagesSquare, X } from 'lucide-react';
+import { MessageCircleMore, MessagesSquare, X } from 'lucide-react';
 
 const InternalChatTab = lazy(() => import('@/components/pms/InternalChatTab'));
 
@@ -64,11 +64,13 @@ const InternalChatWidget = ({ user, hideLauncher = false }) => {
           className={`communication-panel fixed z-50 flex flex-col w-[400px] max-w-[calc(100vw-2rem)] h-[600px] rounded-2xl border bg-background shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200 ${hideLauncher ? 'safe-fixed-bottom-raised right-5 max-h-[calc(100vh-7rem)]' : 'safe-fixed-bottom-chat right-6 max-h-[calc(100vh-13rem)]'}`}
         >
           <div className="flex items-center gap-2 px-3 py-2.5 border-b bg-muted/40 shrink-0">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shrink-0">
-              <MessagesSquare className="h-4 w-4" />
+            <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${initialView === 'guest_requests' ? 'bg-amber-600' : 'bg-primary'} text-white shrink-0`}>
+              {initialView === 'guest_requests' ? <MessageCircleMore className="h-4 w-4" /> : <MessagesSquare className="h-4 w-4" />}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold leading-tight truncate">Personel Mesajlaşması</div>
+              <div className="text-sm font-semibold leading-tight truncate">
+                {initialView === 'guest_requests' ? 'Misafir Talepleri' : 'Personel Mesajlaşması'}
+              </div>
               <div className="text-[11px] text-muted-foreground leading-tight">Canlı bildirim açık</div>
             </div>
             <Button
