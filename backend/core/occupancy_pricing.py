@@ -156,18 +156,18 @@ def calculate_occupancy_quote(
     chargeable_children = 0
     free_children = 0
     child_breakdown: list[dict[str, Any]] = []
-    
+
     adult_rate = Decimal("0.00")
     if normalized["pricing_type"] == "per_person":
         extra_adults = max(0, adults - normalized["base_occupancy"])
         included_adult_slots = max(0, normalized["base_occupancy"] - adults)
-        
+
         adult_rate_val = _decimal(normalized["extra_adult_rate"], field="Ek yetiskin ucreti")
         if normalized["extra_adult_rate_type"] == "percentage":
             adult_rate = (base_rate * adult_rate_val / Decimal("100")).quantize(MONEY, rounding=ROUND_HALF_UP)
         else:
             adult_rate = adult_rate_val
-            
+
         for age in ages:
             band = next(
                 (candidate for candidate in normalized["child_age_bands"] if candidate["min_age"] <= age <= candidate["max_age"]),
