@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useCurrency } from '@/context/CurrencyContext';
+import { localIsoDate, useBusinessDate } from '@/hooks/useBusinessDate';
 import AccountingSetupWizard from '@/pages/accounting/AccountingSetupWizard';
 import { AccountLedgerView } from '@/pages/accounting/AccountLedgerView';
 import { GeneralLedgerNavigation } from '@/pages/accounting/GeneralLedgerNavigation';
@@ -154,7 +155,12 @@ const VOUCHER_TYPE_BY_LABEL = {
   Kapanış: 'kapanis',
 };
 
-export const toVoucherPayload = (journal) => ({
+export const isForeignCurrency = (currency, baseCurrency = 'TRY') => {
+  const normalized = String(currency || '').trim().toUpperCase();
+  return Boolean(normalized) && normalized !== String(baseCurrency || 'TRY').trim().toUpperCase();
+};
+
+export const toVoucherPayload = (journal, baseCurrency = 'TRY') => ({
   date: journal.date,
   memo: journal.description.trim(),
   voucher_type: VOUCHER_TYPE_BY_LABEL[journal.type] || 'mahsup',
@@ -163,7 +169,7 @@ export const toVoucherPayload = (journal) => ({
     debit: Number(line.debit) || 0,
     credit: Number(line.credit) || 0,
     memo: line.description?.trim() || null,
-    ...(line.currency ? {
+    ...(isForeignCurrency(line.currency, baseCurrency) ? {
       currency: line.currency.trim().toUpperCase(),
       foreign_amount: Number(line.foreign_amount),
       exchange_rate: Number(line.exchange_rate),
@@ -175,7 +181,7 @@ export const toVoucherPayload = (journal) => ({
 // voucher payload and can no longer bypass the approval lifecycle.
 export const toJournalPayload = toVoucherPayload;
 
-export const getJournalValidationError = (journal) => {
+export const getJournalValidationError = (journal, baseCurrency = 'TRY') => {
   const lines = journal.lines || [];
   const totalDebit = lines.reduce((sum, line) => sum + (Number(line.debit) || 0), 0);
   const totalCredit = lines.reduce((sum, line) => sum + (Number(line.credit) || 0), 0);
@@ -186,7 +192,7 @@ export const getJournalValidationError = (journal) => {
   if (lines.some((line) => (Number(line.debit) > 0) === (Number(line.credit) > 0))) {
     return 'Her satırda yalnızca borç veya alacak tutarı olmalıdır.';
   }
-  if (lines.some((line) => line.currency && (!Number(line.foreign_amount) || !Number(line.exchange_rate)))) {
+  if (lines.some((line) => isForeignCurrency(line.currency, baseCurrency) && (!Number(line.foreign_amount) || !Number(line.exchange_rate)))) {
     return 'Dövizli satırlarda yabancı tutar ve kur zorunludur.';
   }
   return '';
@@ -197,8 +203,7 @@ const newRequestKey = () => {
   return `manual-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
 
-const emptyJournal = () => ({
-  date: new Date().toISOString().split('T')[0],
+const emptyJournal = (businessDate = localIsoDate()) => ({
   type: 'Mahsup',
   description: '',
   idempotency_key: newRequestKey(),
@@ -280,6 +285,8 @@ const GL_TABS = ['overview', 'journals', 'account-ledger', 'accounts', 'trial-ba
 
 const GeneralLedgerModule = () => {
   const { amount: fmtMoney } = useCurrency();
+  const businessDate = useBusinessDate();
+  const [ledgerCurrency, setLedgerCurrency] = useState('TRY');
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
@@ -336,7 +343,26 @@ const GeneralLedgerModule = () => {
   }, [requestedTab]);
   
   // New Journal Entry State
-  const [newJournal, setNewJournal] = useState(emptyJournal);
+  const [newJournal, setNewJournal] = useState(() => emptyJournal());
+
+  useEffect(() => {
+    let active = true;
+    axios.get(GL_ENDPOINTS.setup)
+      .then(({ data }) => {
+        const currency = String(data?.profile?.currency || '').trim().toUpperCase();
+        if (active && /^[A-Z]{3}$/.test(currency)) setLedgerCurrency(currency);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    setNewJournal((current) => {
+      const hasEntry = current.description.trim()
+        || current.lines.some((line) => line.account_code || Number(line.debit) || Number(line.credit));
+      return hasEntry ? current : { ...current, date: businessDate };
+    });
+  }, [businessDate]);
 
   const fetchAccounts = async () => {
     try {
@@ -811,7 +837,7 @@ const GeneralLedgerModule = () => {
   };
 
   const handleSubmitJournal = async () => {
-    const validationError = getJournalValidationError(newJournal);
+    const validationError = getJournalValidationError(newJournal, ledgerCurrency);
     if (validationError) {
       toast.error(validationError);
       return;
@@ -821,19 +847,23 @@ const GeneralLedgerModule = () => {
     try {
       if (editingVoucher) {
         await axios.put(`${GL_ENDPOINTS.vouchers}/${editingVoucher.id}`, {
-          ...toVoucherPayload(newJournal),
+          ...toVoucherPayload(newJournal, ledgerCurrency),
           version: editingVoucher.version,
         });
         toast.success('Taslak fiş güncellendi. Değişiklik geçmişi korundu.');
       } else {
-        await axios.post(GL_ENDPOINTS.vouchers, toVoucherPayload(newJournal));
+        await axios.post(GL_ENDPOINTS.vouchers, toVoucherPayload(newJournal, ledgerCurrency));
         toast.success('Taslak fiş oluşturuldu. Yevmiyeye geçmesi için inceleme ve onay gerekir.');
       }
-      setNewJournal(emptyJournal());
+      setNewJournal(emptyJournal(businessDate));
       setEditingVoucher(null);
       await fetchJournals();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Taslak fiş oluşturulurken hata oluştu.');
+      const detail = e.response?.data?.detail;
+      const message = Array.isArray(detail)
+        ? detail.map((item) => item.msg || String(item)).join(' ')
+        : detail;
+      toast.error(message || 'Taslak fiş oluşturulurken hata oluştu.');
     } finally {
       setJournalSaving(false);
     }
@@ -907,7 +937,7 @@ const GeneralLedgerModule = () => {
     apGLMapping,
     fixedAssetGLMapping,
   ).filter((code) => !knownAccountCodes.has(code));
-  const journalValidationError = getJournalValidationError(newJournal);
+  const journalValidationError = getJournalValidationError(newJournal, ledgerCurrency);
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto overflow-x-hidden">
@@ -1060,7 +1090,7 @@ const GeneralLedgerModule = () => {
                   <div className="flex flex-wrap justify-between gap-3 mt-4">
                     <Button variant="outline" onClick={handleAddJournalLine}><Plus className="w-4 h-4 mr-2" /> Satır Ekle</Button>
                     <div className="flex gap-2">
-                      {editingVoucher && <Button variant="ghost" onClick={() => { setEditingVoucher(null); setNewJournal(emptyJournal()); }}>Düzenlemeyi İptal Et</Button>}
+                      {editingVoucher && <Button variant="ghost" onClick={() => { setEditingVoucher(null); setNewJournal(emptyJournal(businessDate)); }}>Düzenlemeyi İptal Et</Button>}
                       <Button onClick={handleSubmitJournal} disabled={journalSaving || !!journalValidationError} title={journalValidationError || undefined} className="bg-blue-600 hover:bg-blue-700 text-white"><Save className="w-4 h-4 mr-2" /> {journalSaving ? 'Kaydediliyor...' : editingVoucher ? 'Taslağı Güncelle' : 'Taslak Oluştur'}</Button>
                     </div>
                   </div>

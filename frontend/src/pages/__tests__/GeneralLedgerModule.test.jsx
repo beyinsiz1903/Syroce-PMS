@@ -5,6 +5,7 @@ import {
   formatAccountMapping,
   getJournalValidationError,
   GL_ENDPOINTS,
+  isForeignCurrency,
   mergeAccountBalances,
   normalizeTrialBalance,
   parseAccountMapping,
@@ -120,6 +121,24 @@ describe('GeneralLedgerModule persistent GL contract', () => {
     });
     expect(payload.lines[0]).toMatchObject({ currency: 'USD', foreign_amount: 100, exchange_rate: 32 });
     expect(payload.lines[1]).not.toHaveProperty('currency');
+  });
+
+  it('treats the ledger currency as a base amount, not a foreign-currency entry', () => {
+    const journal = {
+      date: '2026-09-03',
+      type: 'Mahsup',
+      description: 'TRY kasa fişi',
+      lines: [
+        { account_code: '100', debit: 1250, credit: 0, currency: 'TRY', foreign_amount: '', exchange_rate: '' },
+        { account_code: '600', debit: 0, credit: 1250, currency: '', foreign_amount: '', exchange_rate: '' },
+      ],
+    };
+
+    expect(isForeignCurrency('TRY')).toBe(false);
+    expect(getJournalValidationError(journal)).toBe('');
+    expect(toVoucherPayload(journal).lines[0]).toEqual({
+      account_code: '100', debit: 1250, credit: 0, memo: null,
+    });
   });
 
   it('normalizes the persistent trial-balance response for the table', () => {

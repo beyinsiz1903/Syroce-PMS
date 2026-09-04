@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus } from 'lucide-react';
+import { useCurrency } from '@/context/CurrencyContext';
 
 export const createAccountingInvoice = (invoice) => axios.post('/accounting/invoices', invoice);
 
@@ -38,6 +39,7 @@ const InvoiceFormDialog = ({
   const {
     t
   } = useTranslation();
+  const { amount: formatMoney } = useCurrency();
   const [newInvoice, setNewInvoice] = useState({
     invoice_type: 'sales',
     customer_name: '',
@@ -130,11 +132,12 @@ const InvoiceFormDialog = ({
   const handleCreateInvoice = async e => {
     e.preventDefault();
     try {
-      await createAccountingInvoice(newInvoice);
+      const response = await createAccountingInvoice(newInvoice);
+      if (!response.data?.id) throw new Error('Fatura kaydı doğrulanamadı.');
       toast.success('Fatura oluşturuldu');
       if (onCreated) onCreated(); else onClose();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to create invoice');
+      toast.error(error.response?.data?.detail || error.message || 'Fatura oluşturulamadı');
     }
   };
   const invoiceSubtotal = newInvoice.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
@@ -282,29 +285,29 @@ const InvoiceFormDialog = ({
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-gray-600">{t('invoice.subtotal')}:</span>
-                  <span className="font-medium">${invoiceSubtotal.toFixed(2)}</span>
+                  <span className="font-medium">{formatMoney(invoiceSubtotal, { decimals: 2 })}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">{t('invoice.totalVAT')}:</span>
-                  <span className="font-medium">${invoiceTotalVAT.toFixed(2)}</span>
+                  <span className="font-medium">{formatMoney(invoiceTotalVAT, { decimals: 2 })}</span>
                 </div>
                 {invoiceAdditionalTaxes > 0 && <div className="flex justify-between">
                     <span className="text-gray-600">{t('invoice.additionalTaxes')}:</span>
-                    <span className="font-medium">${invoiceAdditionalTaxes.toFixed(2)}</span>
+                    <span className="font-medium">{formatMoney(invoiceAdditionalTaxes, { decimals: 2 })}</span>
                   </div>}
                 {invoiceVATWithholding > 0 && <>
                     <div className="flex justify-between text-red-600">
                       <span>{t('invoice.vatWithholding')}:</span>
-                      <span className="font-medium">-${invoiceVATWithholding.toFixed(2)}</span>
+                      <span className="font-medium">-{formatMoney(invoiceVATWithholding, { decimals: 2 })}</span>
                     </div>
                     <div className="flex justify-between text-red-600">
                       <span>{t('invoice.totalWithholding')}:</span>
-                      <span className="font-medium">-${invoiceVATWithholding.toFixed(2)}</span>
+                      <span className="font-medium">-{formatMoney(invoiceVATWithholding, { decimals: 2 })}</span>
                     </div>
                   </>}
                 <div className="flex justify-between text-lg font-bold border-t pt-2">
                   <span>{t('invoice.grandTotal')}:</span>
-                  <span>${invoiceTotal.toFixed(2)}</span>
+                  <span>{formatMoney(invoiceTotal, { decimals: 2 })}</span>
                 </div>
               </div>
             </div>
