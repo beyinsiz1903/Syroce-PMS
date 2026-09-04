@@ -153,12 +153,6 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     next.set('tab', value);
     next.delete('action');
     setSearchParams(next, { replace: true });
-    if (value === 'expenses') { loadExpenses(); loadSuppliers(); }
-    if (value === 'suppliers') loadSuppliers();
-    if (value === 'banks') loadBanks();
-    if (value === 'inventory') loadInventory();
-    if (value === 'cashflow') loadCashFlow();
-    if (value === 'reports') loadReports();
   };
 
   const closeInvoiceDialog = async (created = false) => {
@@ -171,16 +165,16 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     if (created) await loadInitial();
   };
 
-  const loadCashFlow = async () => {
+  const loadCashFlow = useCallback(async () => {
     try {
       const response = await axios.get('/accounting/cash-flow');
       setCashFlow(response.data);
     } catch (error) {
       toast.error(t('common.loadFailed') || 'Yüklenemedi');
     }
-  };
+  }, [t]);
 
-  const loadReports = async () => {
+  const loadReports = useCallback(async () => {
     try {
       const today = new Date();
       const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
@@ -194,7 +188,16 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     } catch (error) {
       toast.error(t('common.loadFailed') || 'Yüklenemedi');
     }
-  };
+  }, [t]);
+
+  useEffect(() => {
+    if (activeSection === 'expenses') { loadExpenses(); loadSuppliers(); }
+    if (activeSection === 'suppliers') loadSuppliers();
+    if (activeSection === 'banks') loadBanks();
+    if (activeSection === 'inventory') loadInventory();
+    if (activeSection === 'cashflow') loadCashFlow();
+    if (activeSection === 'reports') loadReports();
+  }, [activeSection, loadBanks, loadCashFlow, loadExpenses, loadInventory, loadReports, loadSuppliers]);
 
   const updateInvoiceStatus = async (invoiceId, newStatus) => {
     const previous = invoices;
@@ -628,7 +631,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
           </TabsContent>
         </Tabs>
 
-        <ExpenseDialog open={openDialog === 'expense'} onClose={() => { setOpenDialog(null); loadExpenses(true); refreshDashboard(); }} suppliers={suppliers} />
+        <ExpenseDialog open={openDialog === 'expense'} onClose={() => { setOpenDialog(null); loadExpenses(true); loadSuppliers(true); refreshDashboard(); }} suppliers={suppliers} />
         <SupplierDialog
           open={openDialog === 'supplier'}
           onClose={() => setOpenDialog(null)}
