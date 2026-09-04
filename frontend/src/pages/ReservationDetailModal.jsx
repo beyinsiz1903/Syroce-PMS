@@ -261,6 +261,8 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const reservationTotalDue = Number(summary?.reservation_total_due ?? rawBalance) || 0;
   const hasReservationAmountDue = reservationTotalDue > 0.01;
   const unpostedRoomAmount = Number(summary?.unposted_room_amount) || 0;
+  const hasAllocatedPrepayment = unpostedRoomAmount > 0.01 && !hasReservationAmountDue && balance < -0.01;
+  const displayedFolioBalance = hasAllocatedPrepayment ? 0 : balance;
   const channelPricingIssue = summary?.channel_pricing_issue;
   const hasRoomAssignment = Boolean(booking?.room_id && room?.id);
 
@@ -368,12 +370,17 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     <>
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-500">Folio bakiyesi</span>
-                        <span className="font-semibold text-amber-700">{fmtTL(balance)} TL</span>
+                        <span className="font-semibold text-amber-700">{fmtTL(displayedFolioBalance)} TL</span>
                       </div>
                       <div className="flex justify-between text-xs" data-testid="unposted-room-amount">
                         <span className="text-slate-500">Tahakkuk bekleyen konaklama</span>
                         <span className="font-semibold text-slate-700">{fmtTL(unpostedRoomAmount)} TL</span>
                       </div>
+                      {hasAllocatedPrepayment && (
+                        <div className="text-[11px] leading-4 text-emerald-700">
+                          Peşin tahsilat, bekleyen konaklama bedeline ayrıldı.
+                        </div>
+                      )}
                     </>
                   )}
                   {(summary?.total_deposits || 0) > 0 && (
