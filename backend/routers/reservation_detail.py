@@ -209,6 +209,86 @@ def _money_cents(value) -> int:
         return 0
 
 
+def _room_charge_rate_mismatches(
+    charges: list[dict],
+    expected_rates_by_date: dict[str, float],
+) -> list[dict]:
+    """Return posted room charges that no longer equal their nightly gross rate."""
+    mismatches: list[dict] = []
+    for charge in charges:
+        if charge.get("voided"):
+            continue
+        if charge.get("charge_category") != "room" and charge.get("charge_type") != "room_charge":
+            continue
+        charge_date = _reservation_calendar_date(charge.get("date"))
+        if charge_date is None:
+            continue
+        date_key = charge_date.isoformat()
+        expected = expected_rates_by_date.get(date_key)
+        if expected is None:
+            continue
+        observed = charge.get("total", charge.get("amount", 0))
+        if _money_cents(observed) != _money_cents(expected):
+            mismatches.append(
+                {
+                    "date": date_key,
+                    "charge_id": charge.get("id"),
+                    "expected_total": round(float(expected), 2),
+                    "posted_total": round(float(observed or 0), 2),
+                }
+            )
+    return mismatches
+
+
+async def _posted_room_charge_rate_mismatches(
+    tenant_id: str,
+    booking_id: str,
+    *,
+    expected_rates_by_date: dict[str, float] | None = None,
+    session=None,
+) -> list[dict]:
+    """Load the posted-room-rate invariant without blocking legacy rows.
+
+    Old reservations without any daily-rate rows cannot be compared safely.
+    Once daily rates exist, however, a room charge must equal the stored gross
+    rate before another payment may be accepted.
+    """
+    if not getattr(db, "daily_rates", None) or not getattr(db, "folio_charges", None):
+        return []
+    if expected_rates_by_date is None:
+        rate_rows = [
+            row
+            async for row in db.daily_rates.find(
+                {"tenant_id": tenant_id, "booking_id": booking_id},
+                {"_id": 0, "date": 1, "rate": 1},
+                **({"session": session} if session is not None else {}),
+            )
+        ]
+        expected_rates_by_date = {}
+        for row in rate_rows:
+            rate_date = _reservation_calendar_date(row.get("date"))
+            if rate_date is not None:
+                expected_rates_by_date[rate_date.isoformat()] = float(row.get("rate", 0) or 0)
+
+    if not expected_rates_by_date:
+        return []
+
+    charges = [
+        row
+        async for row in db.folio_charges.find(
+            {
+                "tenant_id": tenant_id,
+                "booking_id": booking_id,
+                "voided": {"$ne": True},
+                "$or": [{"charge_category": "room"}, {"charge_type": "room_charge"}],
+            },
+            {"_id": 0, "id": 1, "date": 1, "amount": 1, "total": 1, "charge_category": 1, "charge_type": 1},
+            **({"session": session} if session is not None else {}),
+        )
+    ]
+    return _room_charge_rate_mismatches(charges, expected_rates_by_date)
+
+
 _create_reservation_service = CreateReservationService()
 _field_enc = get_field_encryption_service()
 
@@ -259,6 +339,12 @@ def _build_financial_summary(
         + total_extra
         - total_payments
     )
+    # A posted room charge above the confirmed reservation total is a pricing
+    # reconciliation problem, not an amount the receptionist should collect.
+    pricing_reconciliation_difference = round(
+        max(0, float(room_charge_total or 0) - float(booking.get("total_amount", 0) or 0)),
+        2,
+    )
 
     return {
         "total_amount": booking.get("total_amount", 0),
@@ -270,6 +356,8 @@ def _build_financial_summary(
         "folio_balance": round(folio_balance, 2),
         "unposted_room_amount": round(max(0, float(booking.get("total_amount", 0) or 0) - float(room_charge_total or 0)), 2),
         "reservation_total_due": round(reservation_total_due, 2),
+        "pricing_reconciliation_required": pricing_reconciliation_difference > 0.01,
+        "pricing_reconciliation_difference": pricing_reconciliation_difference,
         "paid_amount": booking.get("paid_amount", 0),
     }
 
@@ -1173,6 +1261,13 @@ async def record_payment(
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
 
+    pricing_mismatches = await _posted_room_charge_rate_mismatches(tid, booking_id)
+    if pricing_mismatches:
+        raise HTTPException(
+            status_code=409,
+            detail="Oda tahakkuku ile günlük fiyat uyuşmuyor; finansal mutabakat tamamlanmadan ödeme alınamaz",
+        )
+
     # Task #184 — Idempotency: aynı (tenant_id, booking_id, reference) ile gelen
     # retry/double-click/network-replay isteği misafiri çift kreditlememeli.
     # Bu kontrol folio create'ten ÖNCE yapılır; aksi halde idempotent retry
@@ -1661,6 +1756,13 @@ async def record_agency_payment(
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+
+    pricing_mismatches = await _posted_room_charge_rate_mismatches(tid, booking_id)
+    if pricing_mismatches:
+        raise HTTPException(
+            status_code=409,
+            detail="Oda tahakkuku ile günlük fiyat uyuşmuyor; finansal mutabakat tamamlanmadan ödeme alınamaz",
+        )
 
     folio = await db.folios.find_one({"booking_id": booking_id, "tenant_id": tid, "status": "open"}, {"_id": 0})
     if not folio:
@@ -2538,6 +2640,45 @@ async def update_daily_rates(
             {"booking_id": booking_id, "tenant_id": tid, "folio_type": "guest", "status": "open"},
             {"_id": 0, "id": 1},
         )
+        rate_changed_dates = {
+            rate_date
+            for rate_date, rate in submitted_rates.items()
+            if _money_cents(existing_rates.get(rate_date, {}).get("rate")) != _money_cents(rate)
+        }
+        posted_rate_mismatches = await _posted_room_charge_rate_mismatches(
+            tid,
+            booking_id,
+            expected_rates_by_date=submitted_rates,
+        )
+        mismatched_dates = {row["date"] for row in posted_rate_mismatches}
+        historical_mismatches = sorted(date_key for date_key in mismatched_dates if date_key < current_business_date)
+        if historical_mismatches:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Night Audit ile kapanmış oda tahakkuku günlük fiyatla uyuşmuyor; "
+                    f"manuel finans mutabakatı gerekir ({', '.join(historical_mismatches)})"
+                ),
+            )
+
+        # Pricing after a payment or an issued invoice must be an explicit,
+        # audited financial adjustment.  A normal daily-rate save must never
+        # change either future room revenue or a drifted posted room charge.
+        if folio and (rate_changed_dates or mismatched_dates):
+            active_payment = await db.payments.find_one(
+                {"tenant_id": tid, "folio_id": folio["id"], "voided": {"$ne": True}, "amount": {"$gt": 0}},
+                {"_id": 0, "id": 1},
+            )
+            issued_invoice = await db.invoices.find_one(
+                {"tenant_id": tid, "folio_id": folio["id"], "status": {"$nin": ["draft", "cancelled", "voided"]}},
+                {"_id": 0, "id": 1},
+            )
+            if active_payment or issued_invoice:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Ödeme veya düzenlenmiş fatura bulunan rezervasyonda fiyat/tahakkuk mutabakatı finans onayı olmadan değiştirilemez",
+                )
+
         affected_folio_ids: set[str] = set()
 
         # Resolve tax rates once — same approach as Night Audit service.
@@ -2580,14 +2721,12 @@ async def update_daily_rates(
                     session=session,
                 )
 
-                financial_lock_checked = False
                 for rate_date, rate in submitted_rates.items():
                     if rate_date < current_business_date:
                         # Closed by Night Audit — do not touch folio charges for this day.
                         continue
 
-                    old_rate = existing_rates.get(rate_date, {}).get("rate")
-                    if old_rate is not None and _money_cents(old_rate) == _money_cents(rate):
+                    if rate_date not in rate_changed_dates and rate_date not in mismatched_dates:
                         # Amount unchanged — nothing to sync.
                         continue
 
@@ -2613,21 +2752,6 @@ async def update_daily_rates(
                     if not folio or existing_room_charges[0].get("folio_id") != folio["id"]:
                         raise HTTPException(status_code=409, detail=f"{rate_date} oda ücreti açık misafir folyasında değil; manuel düzeltme gerekir")
 
-                    if not financial_lock_checked:
-                        active_payment = await db.payments.find_one(
-                            {"tenant_id": tid, "folio_id": folio["id"], "voided": {"$ne": True}, "amount": {"$gt": 0}},
-                            {"_id": 0, "id": 1},
-                            session=session,
-                        )
-                        issued_invoice = await db.invoices.find_one(
-                            {"tenant_id": tid, "folio_id": folio["id"], "status": {"$nin": ["draft", "cancelled", "voided"]}},
-                            {"_id": 0, "id": 1},
-                            session=session,
-                        )
-                        if active_payment or issued_invoice:
-                            raise HTTPException(status_code=409, detail="Ödeme veya düzenlenmiş fatura bulunan folyonun oda ücreti otomatik değiştirilemez")
-                        financial_lock_checked = True
-
                     old_charge = existing_room_charges[0]
                     await db.folio_charges.update_one(
                         {"id": old_charge["id"], "tenant_id": tid, "voided": {"$ne": True}},
@@ -2648,6 +2772,11 @@ async def update_daily_rates(
                             vat_rate=0.10,
                             accommodation_tax_rate=accommodation_tax_rate,
                     )
+                    if _money_cents(pricing["total"]) != _money_cents(rate):
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"{rate_date} için oda tahakkuku günlük fiyatla mutabık oluşturulamadı",
+                        )
                     new_charge = {
                             "id": str(uuid.uuid4()),
                             "tenant_id": tid,

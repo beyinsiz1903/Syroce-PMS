@@ -72,6 +72,8 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
     [charges, extra_charges]
   );
   const pendingRoomAmount = Number(summary?.unposted_room_amount) || 0;
+  const pricingReconciliationRequired = Boolean(summary?.pricing_reconciliation_required);
+  const pricingReconciliationDifference = Number(summary?.pricing_reconciliation_difference) || 0;
   const rawFolioBalance = Number(summary?.folio_balance ?? summary?.balance) || 0;
   const reservationTotalDue = Number(summary?.reservation_total_due ?? summary?.balance) || 0;
   const hasAllocatedPrepayment = pendingRoomAmount > 0.01 && reservationTotalDue <= 0.01 && rawFolioBalance < -0.01;
@@ -140,8 +142,13 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           {fmtTL(Math.abs(rawFolioBalance))} TL peşin tahsilat, {fmtTL(pendingRoomAmount)} TL bekleyen konaklama tahakkukuna ayrıldı. Tahsilat bakiyesi kapandı.
         </div>
       )}
+      {pricingReconciliationRequired && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="folio-pricing-reconciliation-alert">
+          Oda tahakkukları, onaylı rezervasyon toplamından {fmtTL(pricingReconciliationDifference)} TL fazla. Bu fark tahsil edilmez; ödeme almadan önce fiyat/tahakkuk mutabakatını tamamlayın.
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => { const bal = summary?.balance || 0; setPayForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowPayment(!showPayment); }} className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" data-testid="btn-odeme-al"><CreditCard className="w-3 h-3 mr-1" /> Ödeme Al</Button>
+        <Button size="sm" disabled={pricingReconciliationRequired} onClick={() => { const bal = summary?.balance || 0; setPayForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowPayment(!showPayment); }} className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" data-testid="btn-odeme-al"><CreditCard className="w-3 h-3 mr-1" /> Ödeme Al</Button>
         <Button size="sm" variant="outline" onClick={() => { const bal = summary?.balance || 0; setCariForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowCari(!showCari); loadCari(); }} className="h-8 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" data-testid="btn-cariye-aktar"><ArrowRightLeft className="w-3 h-3 mr-1" /> Cariye Aktar</Button>
         <Button size="sm" variant="outline" onClick={() => { const bal = summary?.balance || 0; setAgencyForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowAgency(!showAgency); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acente-odemesi"><Building2 className="w-3 h-3 mr-1" /> Acente Ödemesi</Button>
         <Button size="sm" variant="outline" onClick={() => { setShowCariTransfer(!showCariTransfer); loadCari(); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acenteye-aktar"><ArrowDownUp className="w-3 h-3 mr-1" /> Acenteye Aktar</Button>
