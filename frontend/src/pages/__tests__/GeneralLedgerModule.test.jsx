@@ -6,6 +6,7 @@ import {
   getJournalValidationError,
   GL_ENDPOINTS,
   isForeignCurrency,
+  markReversedJournalEntries,
   mergeAccountBalances,
   normalizeTrialBalance,
   parseAccountMapping,
@@ -163,6 +164,20 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       }],
       totals: { total_debit: 100, total_credit: 100, balanced: true },
     });
+  });
+
+  it('marks legacy source journals as reversed from their linked contra entry', () => {
+    expect(markReversedJournalEntries([
+      { id: 'entry-1', source: 'manual_voucher' },
+      { id: 'entry-2', source: 'reversal', reverses_entry_id: 'entry-1' },
+      { id: 'entry-3', source: 'reversal', source_ref: 'entry-4' },
+      { id: 'entry-4', source: 'manual_voucher' },
+    ])).toMatchObject([
+      { id: 'entry-1', reversal_status: 'reversed' },
+      { id: 'entry-2', source: 'reversal' },
+      { id: 'entry-3', source: 'reversal' },
+      { id: 'entry-4', reversal_status: 'reversed' },
+    ]);
   });
 
   it('derives current account balances from the durable trial balance', () => {
