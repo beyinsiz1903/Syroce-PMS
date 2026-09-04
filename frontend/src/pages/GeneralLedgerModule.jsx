@@ -271,6 +271,23 @@ export const normalizeTrialBalance = (data = {}) => ({
   },
 });
 
+// Older reversal rows predate `reversal_status` on the source entry. The
+// linked contra entry remains authoritative, so derive the display state from
+// that immutable relationship while loading the journal list.
+export const markReversedJournalEntries = (entries = []) => {
+  const reversedSourceIds = new Set(
+    entries
+      .filter((entry) => entry.source === 'reversal')
+      .map((entry) => entry.reverses_entry_id || entry.source_ref)
+      .filter(Boolean),
+  );
+  return entries.map((entry) => (
+    reversedSourceIds.has(entry.id) && entry.reversal_status !== 'reversed'
+      ? { ...entry, reversal_status: 'reversed' }
+      : entry
+  ));
+};
+
 export const mergeAccountBalances = (accounts = [], trialBalance = {}) => {
   const balances = new Map(
     (trialBalance.rows || []).map((row) => [
@@ -412,7 +429,7 @@ const GeneralLedgerModule = () => {
         axios.get(GL_ENDPOINTS.sequenceAudit, { params: { fiscal_year: Number(businessDate.slice(0, 4)) } }),
         axios.get(GL_ENDPOINTS.integrityAudit, { params: { fiscal_year: Number(businessDate.slice(0, 4)) } }),
       ]);
-      setJournals(journalRes.data?.entries || []);
+      setJournals(markReversedJournalEntries(journalRes.data?.entries || []));
       setVouchers(voucherRes.data?.vouchers || []);
       setSequenceAudit(auditRes.data || null);
       setIntegrityAudit(integrityRes.data || null);
