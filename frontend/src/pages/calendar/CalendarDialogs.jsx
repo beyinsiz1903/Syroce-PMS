@@ -26,22 +26,38 @@ export const NewBookingDialog = ({
     () => findOccupancyRule(occupancyPricingRules, activeRoom),
     [occupancyPricingRules, activeRoom],
   );
-  const occupancyQuote = useMemo(() => occupancyRule?.pricing_type === 'per_person'
+  const nights = Math.max(1, nightsBetween(newBooking.check_in, newBooking.check_out));
+  const priceInputMode = newBooking.price_input_mode || 'nightly';
+  const occupancyQuote = useMemo(() => (
+    occupancyRule?.pricing_type === 'per_person' && priceInputMode !== 'total'
+  )
     ? calculateOccupancyPrice({
         baseNightlyRate: newBooking.base_rate,
-        nights: nightsBetween(newBooking.check_in, newBooking.check_out),
+        nights,
         adults: Number(newBooking.adults || 1),
         childrenAges: newBooking.children_ages || [],
         rule: occupancyRule,
       })
     : null, [
       occupancyRule,
+      priceInputMode,
+      nights,
       newBooking.base_rate,
-      newBooking.check_in,
-      newBooking.check_out,
       newBooking.adults,
       newBooking.children_ages,
     ]);
+
+  const recalculateNightlyTotal = useCallback((draft) => {
+    if ((draft.price_input_mode || 'nightly') === 'total' || occupancyRule?.pricing_type === 'per_person') {
+      return draft;
+    }
+    const rate = Number(draft.base_rate);
+    const draftNights = Math.max(1, nightsBetween(draft.check_in, draft.check_out));
+    return {
+      ...draft,
+      total_amount: draft.base_rate === '' || !Number.isFinite(rate) ? '' : rate * draftNights,
+    };
+  }, [occupancyRule]);
 
   useEffect(() => {
     setNewBooking(prev => {
@@ -337,13 +353,13 @@ export const NewBookingDialog = ({
               min={effectiveMinDate}
               onChange={(e) => {
                 const newCi = e.target.value;
-                const updates = {...newBooking, check_in: newCi};
+                let updates = {...newBooking, check_in: newCi};
                 if (newCi && (!newBooking.check_out || newBooking.check_out <= newCi)) {
                   const nextDay = new Date(newCi + 'T00:00:00');
                   nextDay.setDate(nextDay.getDate() + 1);
                   updates.check_out = nextDay.toISOString().split('T')[0];
                 }
-                setNewBooking(updates);
+                setNewBooking(recalculateNightlyTotal(updates));
               }}
               required
               data-testid="new-booking-checkin"
@@ -355,13 +371,13 @@ export const NewBookingDialog = ({
               type="date"
               value={newBooking.check_out}
               min={newBooking.check_in || effectiveMinDate}
-              onChange={(e) => setNewBooking({...newBooking, check_out: e.target.value})}
+              onChange={(e) => setNewBooking(recalculateNightlyTotal({...newBooking, check_out: e.target.value}))}
               required
               data-testid="new-booking-checkout"
             />
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           <div>
             <Label>Yetiskin</Label>
             <Input
@@ -390,14 +406,48 @@ export const NewBookingDialog = ({
             />
           </div>
           <div>
-            <Label>{occupancyQuote ? 'Gecelik taban fiyat' : t('cm.pages_calendar_CalendarDialogs.toplam_tutar')}</Label>
+            <Label>Fiyat girişi</Label>
+            <select
+              className="w-full border rounded-md p-2"
+              value={priceInputMode}
+              onChange={(e) => {
+                const nextMode = e.target.value;
+                setNewBooking(prev => {
+                  const next = {
+                    ...prev,
+                    price_input_mode: nextMode,
+                    apply_occupancy_pricing: nextMode !== 'total' && occupancyRule?.pricing_type === 'per_person',
+                  };
+                  return nextMode === 'nightly' ? recalculateNightlyTotal(next) : next;
+                });
+              }}
+              data-testid="new-booking-price-input-mode"
+            >
+              <option value="nightly">Gecelik fiyat</option>
+              <option value="total">Konaklama toplamı</option>
+            </select>
+          </div>
+          <div>
+            <Label>{priceInputMode === 'total' ? 'Konaklama toplamı' : 'Gecelik taban fiyat'}</Label>
             <Input
               type="number"
+              min="0"
               step="0.01"
-              value={occupancyQuote ? newBooking.base_rate : newBooking.total_amount}
-              onChange={(e) => setNewBooking(occupancyQuote
-                ? {...newBooking, base_rate: Number(e.target.value)}
-                : {...newBooking, total_amount: Number(e.target.value), base_rate: Number(e.target.value)})}
+              value={priceInputMode === 'total' ? newBooking.total_amount : newBooking.base_rate}
+              onChange={(e) => {
+                const input = e.target.value;
+                setNewBooking(prev => {
+                  if ((prev.price_input_mode || 'nightly') === 'total') {
+                    return {
+                      ...prev,
+                      total_amount: input,
+                      apply_occupancy_pricing: false,
+                    };
+                  }
+                  return recalculateNightlyTotal({ ...prev, base_rate: input });
+                });
+              }}
+              data-testid="new-booking-price-input"
             />
           </div>
         </div>
@@ -438,6 +488,57 @@ export const NewBookingDialog = ({
             </div>
           </div>
         )}
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3" data-testid="new-booking-prepayment">
+          <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+            <input
+              type="checkbox"
+              checked={Boolean(newBooking.prepayment_enabled)}
+              onChange={(e) => setNewBooking({ ...newBooking, prepayment_enabled: e.target.checked })}
+              data-testid="new-booking-prepayment-toggle"
+            />
+            Ön ödeme alındı
+          </label>
+          <p className="mt-1 text-xs text-slate-500">Kaydedildiğinde rezervasyonun folyosuna ön ödeme olarak işlenir.</p>
+          {newBooking.prepayment_enabled && (
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <Label>Ön ödeme tutarı</Label>
+                <Input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={newBooking.prepayment_amount}
+                  onChange={(e) => setNewBooking({ ...newBooking, prepayment_amount: e.target.value })}
+                  required
+                  data-testid="new-booking-prepayment-amount"
+                />
+              </div>
+              <div>
+                <Label>Ödeme yöntemi</Label>
+                <select
+                  className="w-full border rounded-md p-2"
+                  value={newBooking.prepayment_method}
+                  onChange={(e) => setNewBooking({ ...newBooking, prepayment_method: e.target.value })}
+                  data-testid="new-booking-prepayment-method"
+                >
+                  <option value="cash">Nakit</option>
+                  <option value="card">Kart</option>
+                  <option value="bank_transfer">Havale / EFT</option>
+                  <option value="online">Online ödeme</option>
+                </select>
+              </div>
+              <div>
+                <Label>Referans no (opsiyonel)</Label>
+                <Input
+                  value={newBooking.prepayment_reference}
+                  onChange={(e) => setNewBooking({ ...newBooking, prepayment_reference: e.target.value })}
+                  placeholder="Dekont / POS no"
+                  data-testid="new-booking-prepayment-reference"
+                />
+              </div>
+            </div>
+          )}
+        </div>
         <div>
           <Label>{t('cm.pages_calendar_CalendarDialogs.durum')}</Label>
           <select
