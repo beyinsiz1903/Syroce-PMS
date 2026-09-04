@@ -23,6 +23,7 @@ import {
   MoveReasonDialog,
   FindRoomDialog,
   isBookingOnDate,
+  findCalendarConflicts,
   toDateStringUTC,
   getDateRange,
   getSegmentColor,
@@ -471,42 +472,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // overlap check then runs only on each room's small subset, instead of
   // the previous O(rooms × bookings²) double scan that re-ran on every
   // booking change. Result memoized so no setState/re-render churn.
-  const conflicts = useMemo(() => {
-    if (!bookings.length || !rooms.length) return [];
-    const SKIPPED = new Set(['cancelled', 'checked_out', 'no_show']);
-    const byRoom = new Map();
-    for (const b of bookings) {
-      if (SKIPPED.has(b.status) || !b.room_id) continue;
-      let arr = byRoom.get(b.room_id);
-      if (!arr) { arr = []; byRoom.set(b.room_id, arr); }
-      arr.push(b);
-    }
-    const out = [];
-    for (const room of rooms) {
-      const roomBookings = byRoom.get(room.id);
-      if (!roomBookings || roomBookings.length < 2) continue;
-      for (let i = 0; i < roomBookings.length; i++) {
-        const b1 = roomBookings[i];
-        const s1 = new Date(b1.check_in).getTime();
-        const e1 = new Date(b1.check_out).getTime();
-        for (let j = i + 1; j < roomBookings.length; j++) {
-          const b2 = roomBookings[j];
-          const s2 = new Date(b2.check_in).getTime();
-          const e2 = new Date(b2.check_out).getTime();
-          if (s1 < e2 && s2 < e1) {
-            out.push({
-              type: 'overbooking', room_id: room.id, room_number: room.room_number,
-              booking1_id: b1.id, booking2_id: b2.id,
-              guest1: b1.guest_name, guest2: b2.guest_name,
-              overlap_start: new Date(s1 > s2 ? s1 : s2),
-              overlap_end: new Date(e1 < e2 ? e1 : e2)
-            });
-          }
-        }
-      }
-    }
-    return out;
-  }, [bookings, rooms]);
+  const conflicts = useMemo(
+    () => findCalendarConflicts(bookings, rooms),
+    [bookings, rooms],
+  );
 
   // ─── Occupancy ─────────────────────────────────────────────
   const getOccupancyForDate = (date) => {

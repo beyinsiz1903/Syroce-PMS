@@ -9,6 +9,7 @@ import {
   normalizeOccupancyStatus,
   isBlockedRoomStatus,
   cellOccupancyStatus,
+  findCalendarConflicts,
   getCellOccupancyTint,
   isRoomOccupiedOnDay,
 } from '../calendarHelpers';
@@ -130,5 +131,42 @@ describe('same-day room turnover', () => {
     expect(isRoomOccupiedOnDay('room-103', '2026-08-29', [
       { ...checkedOutStay, status: 'checked_in' },
     ])).toBe(false);
+  });
+
+  it('çıkış ve sonraki giriş saatleri örtüşse bile komşu geceleri çakışma saymaz', () => {
+    const room = { id: 'room-107', room_number: '107' };
+    const conflicts = findCalendarConflicts([
+      {
+        id: 'departing-stay', room_id: room.id, guest_name: 'Önceki Misafir', status: 'confirmed',
+        check_in: '2026-09-04T14:00:00+03:00', check_out: '2026-09-05T12:00:00+03:00',
+      },
+      {
+        id: 'arriving-stay', room_id: room.id, guest_name: 'Yeni Misafir', status: 'confirmed',
+        check_in: '2026-09-05T00:00:00+03:00', check_out: '2026-09-06T00:00:00+03:00',
+      },
+    ], [room]);
+
+    expect(conflicts).toEqual([]);
+  });
+
+  it('aynı geceyi paylaşan aktif rezervasyonları çakışma olarak raporlar', () => {
+    const room = { id: 'room-107', room_number: '107' };
+    const conflicts = findCalendarConflicts([
+      {
+        id: 'first-stay', room_id: room.id, guest_name: 'İlk Misafir', status: 'confirmed',
+        check_in: '2026-09-04T14:00:00+03:00', check_out: '2026-09-06T12:00:00+03:00',
+      },
+      {
+        id: 'second-stay', room_id: room.id, guest_name: 'İkinci Misafir', status: 'confirmed',
+        check_in: '2026-09-05T00:00:00+03:00', check_out: '2026-09-07T00:00:00+03:00',
+      },
+    ], [room]);
+
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]).toMatchObject({
+      room_id: room.id,
+      overlap_start: '2026-09-05',
+      overlap_end: '2026-09-06',
+    });
   });
 });
