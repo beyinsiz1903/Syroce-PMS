@@ -603,7 +603,19 @@ def _is_permanent_kbs_error(error: str) -> bool:
         return True
     if normalized.startswith("http 4"):
         return True
-    return False
+    # Jandarma'nın bu iki yanıtı ağ/aralıklı servis hatası değildir. Aynı
+    # payload'u beş kez tekrar göndermek yasal bildirimi düzeltmez; biri zaten
+    # kurumda açık kaydın bulunduğunu, diğeri ise taşınan bir alanın kurumun
+    # şemasına sığmadığını bildirir. Operatör, güncel veriyi rehydrate eden
+    # bilinçli yeniden deneme ile devam edebilir.
+    return any(
+        marker in normalized
+        for marker in (
+            "müşteri tesiste zaten kayıtlı",
+            "musteri tesiste zaten kayitli",
+            "string or binary data would be truncated",
+        )
+    )
 
 
 # --- 1) Enqueue ---------------------------------------------
