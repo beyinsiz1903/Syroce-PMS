@@ -286,6 +286,7 @@ const GL_TABS = ['overview', 'journals', 'account-ledger', 'accounts', 'trial-ba
 const GeneralLedgerModule = () => {
   const { amount: fmtMoney } = useCurrency();
   const businessDate = useBusinessDate();
+  const businessDateDefaults = useRef(localIsoDate());
   const [ledgerCurrency, setLedgerCurrency] = useState('TRY');
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -300,7 +301,7 @@ const GeneralLedgerModule = () => {
   const [trialBalance, setTrialBalance] = useState({ lines: [], totals: {} });
   const [initializingAccounts, setInitializingAccounts] = useState(false);
   const [periods, setPeriods] = useState([]);
-  const [periodYear, setPeriodYear] = useState(new Date().getFullYear());
+  const [periodYear, setPeriodYear] = useState(() => Number(localIsoDate().slice(0, 4)));
   const [periodBusy, setPeriodBusy] = useState('');
   const [yearEndStatus, setYearEndStatus] = useState(null);
   const [periodActionDialog, setPeriodActionDialog] = useState(null);
@@ -316,11 +317,11 @@ const GeneralLedgerModule = () => {
   const [intercompany, setIntercompany] = useState({ rules: [], properties: [], can_manage: false });
   const [intercompanyForm, setIntercompanyForm] = useState({ name: '', kind: 'balance', tenant_a_id: '', account_a_code: '', tenant_b_id: '', account_b_code: '' });
   const [intercompanyBusy, setIntercompanyBusy] = useState(false);
-  const [eledgerPeriod, setEledgerPeriod] = useState(new Date().toISOString().slice(0, 7));
+  const [eledgerPeriod, setEledgerPeriod] = useState(() => localIsoDate().slice(0, 7));
   const [eledgerSettings, setEledgerSettings] = useState({ taxpayer_id: '', legal_name: '', source_application: 'Syroce PMS', source_application_version: '', software_approval_reference: '' });
   const [eledgerPreflight, setEledgerPreflight] = useState(null);
   const [eledgerBusy, setEledgerBusy] = useState('');
-  const [fxForm, setFxForm] = useState({ date: new Date().toISOString().split('T')[0], currency: 'USD', closing_rate: '' });
+  const [fxForm, setFxForm] = useState(() => ({ date: localIsoDate(), currency: 'USD', closing_rate: '' }));
   const [fxBusy, setFxBusy] = useState(false);
   const [workspace, setWorkspace] = useState({ aging: null, expenseBudget: null, revenueBudget: null, assets: [] });
   const [operationalBridge, setOperationalBridge] = useState(null);
@@ -364,6 +365,15 @@ const GeneralLedgerModule = () => {
     });
   }, [businessDate]);
 
+  useEffect(() => {
+    const previousDefault = businessDateDefaults.current;
+    if (businessDate === previousDefault) return;
+    setPeriodYear((current) => current === Number(previousDefault.slice(0, 4)) ? Number(businessDate.slice(0, 4)) : current);
+    setEledgerPeriod((current) => current === previousDefault.slice(0, 7) ? businessDate.slice(0, 7) : current);
+    setFxForm((current) => current.date === previousDefault ? { ...current, date: businessDate } : current);
+    businessDateDefaults.current = businessDate;
+  }, [businessDate]);
+
   const fetchAccounts = async () => {
     try {
       const [accountsRes, balanceRes] = await Promise.all([
@@ -394,8 +404,8 @@ const GeneralLedgerModule = () => {
       const [journalRes, voucherRes, auditRes, integrityRes] = await Promise.all([
         axios.get(GL_ENDPOINTS.journal, { params: { limit: 1000 } }),
         axios.get(GL_ENDPOINTS.vouchers),
-        axios.get(GL_ENDPOINTS.sequenceAudit, { params: { fiscal_year: new Date().getFullYear() } }),
-        axios.get(GL_ENDPOINTS.integrityAudit, { params: { fiscal_year: new Date().getFullYear() } }),
+        axios.get(GL_ENDPOINTS.sequenceAudit, { params: { fiscal_year: Number(businessDate.slice(0, 4)) } }),
+        axios.get(GL_ENDPOINTS.integrityAudit, { params: { fiscal_year: Number(businessDate.slice(0, 4)) } }),
       ]);
       setJournals(journalRes.data?.entries || []);
       setVouchers(voucherRes.data?.vouchers || []);
@@ -429,7 +439,7 @@ const GeneralLedgerModule = () => {
   };
 
   const fetchStatements = async () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = businessDate;
     const start = `${today.slice(0, 4)}-01-01`;
     const previousYear = Number(today.slice(0, 4)) - 1;
     const previousStart = `${previousYear}-01-01`;
@@ -573,7 +583,7 @@ const GeneralLedgerModule = () => {
 
   const downloadReport = async (report, format) => {
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = businessDate;
       const response = await axios.get(GL_ENDPOINTS.exportReport, {
         params: { report, format, as_of: today, start: `${today.slice(0, 4)}-01-01`, end: today },
         responseType: 'blob',
@@ -590,7 +600,7 @@ const GeneralLedgerModule = () => {
   };
 
   const fetchWorkspace = async () => {
-    const period = new Date().toISOString().slice(0, 7);
+    const period = businessDate.slice(0, 7);
     try {
       const [agingRes, expenseRes, revenueRes, assetsRes, operationalRes] = await Promise.all([
         axios.get('/ap/aging'),
@@ -815,7 +825,7 @@ const GeneralLedgerModule = () => {
     if (activeTab === 'workspace') fetchWorkspace();
     if (activeTab === 'integrations') fetchAccountingIntegrations();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, periodYear]);
+  }, [activeTab, businessDate, periodYear]);
 
   const handleAddJournalLine = () => {
     setNewJournal(prev => ({
@@ -907,7 +917,7 @@ const GeneralLedgerModule = () => {
   const reverseJournal = async (journal) => {
     const reason = window.prompt('Ters kayıt gerekçesi:');
     if (!reason || reason.trim().length < 3) return;
-    const reversalDate = window.prompt('Ters kayıt tarihi (YYYY-MM-DD):', new Date().toISOString().split('T')[0]);
+    const reversalDate = window.prompt('Ters kayıt tarihi (YYYY-MM-DD):', businessDate);
     if (!reversalDate) return;
     const key = reversalKeys.current[journal.id] || newRequestKey();
     reversalKeys.current[journal.id] = key;
