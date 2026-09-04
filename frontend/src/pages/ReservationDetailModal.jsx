@@ -876,7 +876,11 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
       </div>
 
       <Dialog open={stayEditorOpen} onOpenChange={(open) => { if (!staySaving) setStayEditorOpen(open); }}>
-        <DialogContent className="sm:max-w-md" data-testid="stay-date-editor">
+        <DialogContent
+          className="z-[80] sm:max-w-md"
+          overlayClassName="z-[70]"
+          data-testid="stay-date-editor"
+        >
           <DialogHeader>
             <DialogTitle>Konaklama tarihlerini düzenle</DialogTitle>
             <DialogDescription>

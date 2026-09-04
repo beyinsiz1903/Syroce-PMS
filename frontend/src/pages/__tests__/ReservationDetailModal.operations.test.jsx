@@ -154,6 +154,7 @@ describe('ReservationDetailModal operation URLs', () => {
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
 
     fireEvent.click(await screen.findByTestId('edit-stay-dates'));
+    expect(screen.getByTestId('stay-date-editor')).toHaveClass('z-[80]');
     fireEvent.change(screen.getByLabelText('Çıkış tarihi'), { target: { value: '2026-08-15' } });
     fireEvent.click(screen.getByTestId('save-stay-dates'));
 
