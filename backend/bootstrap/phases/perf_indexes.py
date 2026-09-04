@@ -46,6 +46,15 @@ async def ensure_performance_indexes():
         ("folio_charges", [("tenant_id", 1), ("folio_id", 1), ("voided", 1)], "idx_charge_tenant_folio", {}),
         ("folio_charges", [("tenant_id", 1), ("voided", 1), ("date", 1)], "idx_charge_voided_date", {}),
         ("folio_charges", [("tenant_id", 1), ("charge_category", 1), ("date", 1)], "idx_charge_category_date", {}),
+        # A booking may have only one persisted rate for each stay night.
+        # Legacy rows without `daily_rate_key` remain readable during staged
+        # remediation; all new or edited rows are race-safe immediately.
+        (
+            "daily_rates",
+            [("tenant_id", 1), ("daily_rate_key", 1)],
+            "ux_daily_rates_tenant_stay_night",
+            {"unique": True, "partialFilterExpression": {"daily_rate_key": {"$type": "string"}}},
+        ),
         ("housekeeping_tasks", [("tenant_id", 1), ("status", 1), ("assigned_to", 1)], "idx_hk_status_assigned", {}),
         ("housekeeping_tasks", [("tenant_id", 1), ("completed_at", -1)], "idx_hk_completed", {}),
         ("payments", [("tenant_id", 1), ("folio_id", 1), ("voided", 1)], "idx_payment_tenant_folio", {}),

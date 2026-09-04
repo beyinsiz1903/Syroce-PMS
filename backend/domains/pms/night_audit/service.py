@@ -320,8 +320,10 @@ class NightAuditCoreService:
                     "date": {"$gte": bd, "$lt": bd + "T99"},
                 },
                 {"_id": 0, "booking_id": 1, "rate": 1},
-            ):
-                daily_rates_by_booking[r["booking_id"]] = float(r["rate"])
+            ).sort([("updated_at", -1), ("id", -1), ("_id", -1)]):
+                # See core.night_audit_hardened: legacy duplicate records must
+                # never make room pricing depend on natural collection order.
+                daily_rates_by_booking.setdefault(r["booking_id"], float(r["rate"]))
 
         for booking in bookings_list:
             rooms_processed += 1

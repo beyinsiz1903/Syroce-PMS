@@ -63,6 +63,34 @@ async def test_mark_noshow_rejects_ineligible_status_without_mutation(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_historical_noshow_does_not_release_room_owned_by_a_new_booking(monkeypatch):
+    import routers.reservation_detail as module
+
+    bookings = SimpleNamespace(
+        find_one=AsyncMock(return_value={"id": "historic-booking", "tenant_id": "tenant-a", "status": "confirmed", "room_id": "room-a"}),
+        update_one=AsyncMock(),
+    )
+    rooms = SimpleNamespace(update_one=AsyncMock())
+    monkeypatch.setattr(module, "db", SimpleNamespace(bookings=bookings, rooms=rooms))
+    monkeypatch.setattr(module, "_enforce_perm", lambda *_: None)
+    monkeypatch.setattr(module, "_ensure_hotel_context", lambda *_: None)
+    monkeypatch.setattr(module, "_log_activity", AsyncMock())
+
+    from core import atomic_booking
+
+    release = AsyncMock()
+    monkeypatch.setattr(atomic_booking, "release_booking_nights", release)
+
+    await module.mark_noshow("historic-booking", current_user=_user(), _perm=None)
+
+    rooms.update_one.assert_awaited_once_with(
+        {"id": "room-a", "tenant_id": "tenant-a", "current_booking_id": "historic-booking"},
+        {"$set": {"status": "available", "current_booking_id": None}},
+    )
+    release.assert_awaited_once_with("tenant-a", "historic-booking", reason="no_show")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["checked_out", "cancelled", "no_show"])
 async def test_room_change_rejects_terminal_status_without_mutation(monkeypatch, status):
     import routers.reservation_detail as module

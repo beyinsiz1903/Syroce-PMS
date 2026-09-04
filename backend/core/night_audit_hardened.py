@@ -865,8 +865,11 @@ async def _build_candidate_set(
                 "date": {"$gte": bd, "$lt": bd + "T99"},
             },
             {"_id": 0, "booking_id": 1, "rate": 1},
-        ):
-            daily_rates_by_booking[r["booking_id"]] = float(r["rate"])
+        ).sort([("updated_at", -1), ("id", -1), ("_id", -1)]):
+            # The daily-rate endpoint rejects duplicates. If legacy data still
+            # has them, use the most recently updated record deterministically
+            # rather than depending on Mongo's natural cursor order.
+            daily_rates_by_booking.setdefault(r["booking_id"], float(r["rate"]))
 
     for booking in bookings_list:
         booking_id = booking["id"]
