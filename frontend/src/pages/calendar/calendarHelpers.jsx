@@ -52,6 +52,58 @@ export const isBookingOnDate = (booking, date) => {
   return dayStr >= checkIn && dayStr < checkOut;
 };
 
+// Find genuine room conflicts using hotel-night dates, not arrival/departure
+// clock times. A stay is the half-open interval [check_in_date, check_out_date):
+// its checkout day is therefore available for the next guest's check-in.
+// This mirrors the backend's atomic booking guard and the calendar cell logic.
+export const findCalendarConflicts = (bookings = [], rooms = []) => {
+  if (!bookings.length || !rooms.length) return [];
+
+  const skippedStatuses = new Set(['cancelled', 'checked_out', 'no_show']);
+  const bookingsByRoom = new Map();
+  for (const booking of bookings) {
+    if (skippedStatuses.has(booking.status) || !booking.room_id) continue;
+    const roomBookings = bookingsByRoom.get(booking.room_id) || [];
+    roomBookings.push(booking);
+    bookingsByRoom.set(booking.room_id, roomBookings);
+  }
+
+  const conflicts = [];
+  for (const room of rooms) {
+    const roomBookings = bookingsByRoom.get(room.id);
+    if (!roomBookings || roomBookings.length < 2) continue;
+
+    for (let i = 0; i < roomBookings.length; i++) {
+      const booking1 = roomBookings[i];
+      const start1 = toDateStringUTC(booking1.check_in);
+      const end1 = toDateStringUTC(booking1.check_out);
+      if (!start1 || !end1 || start1 >= end1) continue;
+
+      for (let j = i + 1; j < roomBookings.length; j++) {
+        const booking2 = roomBookings[j];
+        const start2 = toDateStringUTC(booking2.check_in);
+        const end2 = toDateStringUTC(booking2.check_out);
+        if (!start2 || !end2 || start2 >= end2) continue;
+
+        if (start1 < end2 && start2 < end1) {
+          conflicts.push({
+            type: 'overbooking',
+            room_id: room.id,
+            room_number: room.room_number,
+            booking1_id: booking1.id,
+            booking2_id: booking2.id,
+            guest1: booking1.guest_name,
+            guest2: booking2.guest_name,
+            overlap_start: start1 > start2 ? start1 : start2,
+            overlap_end: end1 < end2 ? end1 : end2,
+          });
+        }
+      }
+    }
+  }
+  return conflicts;
+};
+
 // Check if booking starts on this date
 export const isBookingStart = (booking, date) => {
   return toDateStringUTC(date) === toDateStringUTC(booking.check_in);
