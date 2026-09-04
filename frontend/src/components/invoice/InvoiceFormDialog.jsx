@@ -13,6 +13,11 @@ import { useCurrency } from '@/context/CurrencyContext';
 
 export const createAccountingInvoice = (invoice) => axios.post('/accounting/invoices', invoice);
 
+export const withSubmittedDueDate = (invoice, dueDate) => ({
+  ...invoice,
+  due_date: String(dueDate || invoice.due_date || '').trim(),
+});
+
 export const INVOICE_ITEM_CATEGORIES = {
   accommodation: { label: 'Konaklama', vatRate: 10 },
   food_beverage: { label: 'Yiyecek / alkolsüz içecek', vatRate: 10 },
@@ -132,7 +137,8 @@ const InvoiceFormDialog = ({
   const handleCreateInvoice = async e => {
     e.preventDefault();
     try {
-      const response = await createAccountingInvoice(newInvoice);
+      const dueDate = new FormData(e.currentTarget).get('due_date');
+      const response = await createAccountingInvoice(withSubmittedDueDate(newInvoice, dueDate));
       if (!response.data?.id) throw new Error('Fatura kaydı doğrulanamadı.');
       toast.success('Fatura oluşturuldu');
       if (onCreated) onCreated(); else onClose();
@@ -314,7 +320,7 @@ const InvoiceFormDialog = ({
 
             <div>
               <Label>{t('invoice.dueDate')}</Label>
-              <Input type="date" value={newInvoice.due_date} onChange={e => setNewInvoice({
+              <Input name="due_date" type="date" value={newInvoice.due_date} onChange={e => setNewInvoice({
               ...newInvoice,
               due_date: e.target.value
             })} required />
