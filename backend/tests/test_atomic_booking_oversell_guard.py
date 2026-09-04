@@ -137,6 +137,33 @@ async def test_b_non_overlap_accepts(isolated_tenant):
     assert count == 2
 
 
+async def test_b_adjacent_dates_ignore_arrival_and_departure_clock_times(isolated_tenant):
+    """The bookings guard must match the date-based room-night lock doctrine."""
+    from core.atomic_booking import create_booking_atomic
+    from core.tenant_db import tenant_context
+
+    tid = isolated_tenant
+    room_id = f"room_{uuid.uuid4().hex[:12]}"
+    first = _mk_booking_doc(
+        tid,
+        room_id,
+        "2030-07-01T14:00:00+03:00",
+        "2030-07-03T12:00:00+03:00",
+    )
+    # Some legacy and integration callers submit date-midnight values.  This
+    # is still an adjacent stay: the first reservation occupies Jul 1–2 only.
+    second = _mk_booking_doc(
+        tid,
+        room_id,
+        "2030-07-03T00:00:00+03:00",
+        "2030-07-04T00:00:00+03:00",
+    )
+
+    with tenant_context(tid):
+        await create_booking_atomic(tenant_id=tid, booking_doc=first)
+        await create_booking_atomic(tenant_id=tid, booking_doc=second)
+
+
 @pytest.mark.parametrize("terminal_status", ["cancelled", "no_show", "checked_out"])
 async def test_c_terminal_state_does_not_block(isolated_tenant, terminal_status):
     """A booking in cancelled / no_show / checked_out releases its window."""

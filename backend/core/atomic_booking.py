@@ -391,25 +391,55 @@ async def _find_overlapping_active_booking(
     check_out: str,
     exclude_booking_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """F8N — Return one active booking on (tenant_id, room_id) whose date
-    window overlaps [check_in, check_out), or None.
+    """Return one active booking whose occupied *nights* overlap the request.
 
-    Overlap rule (half-open intervals, mirrors `_night_dates`):
-        existing.check_in < new.check_out  AND  existing.check_out > new.check_in
-
-    Terminal-state bookings (cancelled / no_show / checked_out) are excluded.
+    The room-night lock is authoritative and uses the date interval
+    ``[check_in.date(), check_out.date())``.  A raw ISO timestamp comparison
+    here used a different rule: a new reservation at ``00:00`` looked like it
+    overlapped a departing guest at ``12:00`` on the same calendar date even
+    though neither booking claims that departure night.  Keep this defence in
+    depth guard aligned with the lock invariant.
     """
+    try:
+        requested_check_in = datetime.fromisoformat(str(check_in).replace("Z", "+00:00")).date()
+        requested_check_out = datetime.fromisoformat(str(check_out).replace("Z", "+00:00")).date()
+    except (TypeError, ValueError):
+        # Creation validates its timestamps independently; leave malformed
+        # request values to that validation path rather than guessing dates.
+        return None
+
     query: dict[str, Any] = {
         "tenant_id": tenant_id,
         "room_id": room_id,
         "status": {"$nin": list(TERMINAL_BOOKING_STATUSES)},
+        # Narrow candidates with index-friendly comparisons.  The definitive
+        # comparison below is date-based so mixed legacy timestamp formats do
+        # not alter the stay-night doctrine.
         "check_in": {"$lt": check_out},
-        "check_out": {"$gt": check_in},
+        "check_out": {"$gt": requested_check_in.isoformat()},
     }
     if exclude_booking_id:
         query["id"] = {"$ne": exclude_booking_id}
     with tenant_context(tenant_id):
-        return await db.bookings.find_one(query, {"_id": 0, "id": 1, "room_id": 1, "check_in": 1, "check_out": 1, "status": 1})
+        candidates = await db.bookings.find(
+            query,
+            {"_id": 0, "id": 1, "room_id": 1, "check_in": 1, "check_out": 1, "status": 1},
+        ).to_list(length=100)
+
+    for candidate in candidates:
+        try:
+            candidate_check_in = datetime.fromisoformat(
+                str(candidate.get("check_in")).replace("Z", "+00:00")
+            ).date()
+            candidate_check_out = datetime.fromisoformat(
+                str(candidate.get("check_out")).replace("Z", "+00:00")
+            ).date()
+        except (TypeError, ValueError):
+            # A malformed legacy row must not silently make the room sellable.
+            return candidate
+        if candidate_check_in < requested_check_out and candidate_check_out > requested_check_in:
+            return candidate
+    return None
 
 
 async def create_booking_atomic(
