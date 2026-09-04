@@ -306,6 +306,11 @@ const GeneralLedgerModule = () => {
   const [yearEndStatus, setYearEndStatus] = useState(null);
   const [periodActionDialog, setPeriodActionDialog] = useState(null);
   const [periodActionReason, setPeriodActionReason] = useState('');
+  const [voucherActionDialog, setVoucherActionDialog] = useState(null);
+  const [voucherActionReason, setVoucherActionReason] = useState('');
+  const [reversalDialog, setReversalDialog] = useState(null);
+  const [reversalReason, setReversalReason] = useState('');
+  const [reversalDate, setReversalDate] = useState(businessDate);
   const [journalSaving, setJournalSaving] = useState(false);
   const [voucherBusy, setVoucherBusy] = useState('');
   const [editingVoucher, setEditingVoucher] = useState(null);
@@ -885,7 +890,7 @@ const GeneralLedgerModule = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const runVoucherAction = async (voucher, action) => {
+  const runVoucherAction = async (voucher, action, reason = '') => {
     const labels = {
       submit: 'incelemeye gönderme',
       approve: 'onaylama',
@@ -893,11 +898,6 @@ const GeneralLedgerModule = () => {
       cancel: 'iptal',
       post: 'yevmiye kaydı',
     };
-    let reason;
-    if (action !== 'post') {
-      reason = window.prompt(`${labels[action]} gerekçesi:`);
-      if (!reason || reason.trim().length < 3) return;
-    }
     const busyKey = `${voucher.id}:${action}`;
     setVoucherBusy(busyKey);
     try {
@@ -907,34 +907,77 @@ const GeneralLedgerModule = () => {
       );
       toast.success(action === 'post' ? 'Onaylı fiş yevmiyeye işlendi.' : `Fiş ${labels[action]} adımını tamamladı.`);
       await fetchJournals();
+      return true;
     } catch (error) {
       toast.error(error.response?.data?.detail || `Fiş ${labels[action]} işlemi tamamlanamadı.`);
+      return false;
     } finally {
       setVoucherBusy('');
     }
   };
 
-  const reverseJournal = async (journal) => {
-    const reason = window.prompt('Ters kayıt gerekçesi:');
-    if (!reason || reason.trim().length < 3) return;
-    const reversalDate = window.prompt('Ters kayıt tarihi (YYYY-MM-DD):', businessDate);
-    if (!reversalDate) return;
+  const requestVoucherAction = async (voucher, action) => {
+    if (action === 'post') {
+      await runVoucherAction(voucher, action);
+      return;
+    }
+    setVoucherActionReason('');
+    setVoucherActionDialog({ voucher, action });
+  };
+
+  const confirmVoucherAction = async () => {
+    const reason = voucherActionReason.trim();
+    if (reason.length < 3) {
+      toast.error('Gerekçe en az 3 karakter olmalıdır.');
+      return;
+    }
+    if (await runVoucherAction(voucherActionDialog.voucher, voucherActionDialog.action, reason)) {
+      setVoucherActionDialog(null);
+      setVoucherActionReason('');
+    }
+  };
+
+  const requestJournalReversal = (journal) => {
+    setReversalReason('');
+    setReversalDate(businessDate);
+    setReversalDialog({ journal });
+  };
+
+  const reverseJournal = async (journal, reason, date) => {
     const key = reversalKeys.current[journal.id] || newRequestKey();
     reversalKeys.current[journal.id] = key;
     setReversalBusy(journal.id);
     try {
       await axios.post(`${GL_ENDPOINTS.journal}/${journal.id}/reverse`, {
-        date: reversalDate,
+        date,
         reason: reason.trim(),
         idempotency_key: key,
       });
       delete reversalKeys.current[journal.id];
       toast.success('Bağlı ters kayıt fişi oluşturuldu.');
       await fetchJournals();
+      return true;
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Ters kayıt oluşturulamadı.');
+      return false;
     } finally {
       setReversalBusy('');
+    }
+  };
+
+  const confirmJournalReversal = async () => {
+    const reason = reversalReason.trim();
+    if (reason.length < 3) {
+      toast.error('Gerekçe en az 3 karakter olmalıdır.');
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(reversalDate)) {
+      toast.error('Ters kayıt tarihi YYYY-MM-DD biçiminde olmalıdır.');
+      return;
+    }
+    if (await reverseJournal(reversalDialog.journal, reason, reversalDate)) {
+      setReversalDialog(null);
+      setReversalReason('');
     }
   };
 
@@ -1162,19 +1205,19 @@ const GeneralLedgerModule = () => {
                               <Button size="sm" variant="outline" disabled={!!voucherBusy} onClick={() => editVoucher(voucher)}>Düzenle</Button>
                             )}
                             {voucherActionNames(voucher.status).includes('submit') && (
-                              <Button size="sm" variant="outline" disabled={!!voucherBusy} onClick={() => runVoucherAction(voucher, 'submit')}><Send className="mr-1.5 h-3.5 w-3.5" /> İncelemeye Gönder</Button>
+                              <Button size="sm" variant="outline" disabled={!!voucherBusy} onClick={() => requestVoucherAction(voucher, 'submit')}><Send className="mr-1.5 h-3.5 w-3.5" /> İncelemeye Gönder</Button>
                             )}
                             {voucherActionNames(voucher.status).includes('approve') && (
-                              <Button size="sm" disabled={!!voucherBusy} onClick={() => runVoucherAction(voucher, 'approve')}><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Onayla</Button>
+                              <Button size="sm" disabled={!!voucherBusy} onClick={() => requestVoucherAction(voucher, 'approve')}><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Onayla</Button>
                             )}
                             {voucherActionNames(voucher.status).includes('reject') && (
-                              <Button size="sm" variant="outline" disabled={!!voucherBusy} onClick={() => runVoucherAction(voucher, 'reject')}><XCircle className="mr-1.5 h-3.5 w-3.5" /> Reddet</Button>
+                              <Button size="sm" variant="outline" disabled={!!voucherBusy} onClick={() => requestVoucherAction(voucher, 'reject')}><XCircle className="mr-1.5 h-3.5 w-3.5" /> Reddet</Button>
                             )}
                             {voucherActionNames(voucher.status).includes('post') && (
-                              <Button size="sm" disabled={!!voucherBusy} onClick={() => runVoucherAction(voucher, 'post')}><Save className="mr-1.5 h-3.5 w-3.5" /> Yevmiyeye İşle</Button>
+                              <Button size="sm" disabled={!!voucherBusy} onClick={() => requestVoucherAction(voucher, 'post')}><Save className="mr-1.5 h-3.5 w-3.5" /> Yevmiyeye İşle</Button>
                             )}
                             {voucherActionNames(voucher.status).includes('cancel') && (
-                              <Button size="sm" variant="ghost" disabled={!!voucherBusy} onClick={() => runVoucherAction(voucher, 'cancel')}>İptal Et</Button>
+                              <Button size="sm" variant="ghost" disabled={!!voucherBusy} onClick={() => requestVoucherAction(voucher, 'cancel')}>İptal Et</Button>
                             )}
                           </div>
                         )}
@@ -1201,7 +1244,7 @@ const GeneralLedgerModule = () => {
                       <p className="text-sm text-gray-600 truncate">{j.memo}</p>
                       {j.reversal_status === 'reversed' && <p className="text-xs text-amber-700 mt-2">Bu fiş için ters kayıt oluşturuldu.</p>}
                       {j.source !== 'reversal' && j.reversal_status !== 'reversed' && (
-                        <Button size="sm" variant="outline" className="w-full mt-3" disabled={reversalBusy === j.id} onClick={() => reverseJournal(j)}>
+                        <Button size="sm" variant="outline" className="w-full mt-3" disabled={reversalBusy === j.id} onClick={() => requestJournalReversal(j)}>
                           <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> {reversalBusy === j.id ? 'Oluşturuluyor...' : 'Ters Kayıt Oluştur'}
                         </Button>
                       )}
@@ -1729,6 +1772,64 @@ const GeneralLedgerModule = () => {
             <Button onClick={confirmPeriodAction} disabled={Boolean(periodBusy) || periodActionReason.trim().length < 3}>
               {periodBusy ? 'İşleniyor...' : periodActionDialog?.action === 'reopen' ? 'Yeniden Aç' : 'Kapat ve Onayla'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(voucherActionDialog)}
+        onOpenChange={(open) => {
+          if (!open && !voucherBusy) {
+            setVoucherActionDialog(null);
+            setVoucherActionReason('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md" data-testid="gl-voucher-action-dialog">
+          <DialogHeader>
+            <DialogTitle>Fiş İşlemini Onayla</DialogTitle>
+            <DialogDescription>
+              {voucherActionDialog?.voucher?.voucher_no} için {voucherActionDialog?.action === 'submit' ? 'incelemeye gönderme' : voucherActionDialog?.action === 'approve' ? 'onaylama' : voucherActionDialog?.action === 'reject' ? 'reddetme' : 'iptal'} gerekçesini yazın.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium" htmlFor="gl-voucher-action-reason">Gerekçe</label>
+            <Input id="gl-voucher-action-reason" autoFocus value={voucherActionReason} onChange={(event) => setVoucherActionReason(event.target.value)} placeholder="En az 3 karakter" disabled={Boolean(voucherBusy)} />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setVoucherActionDialog(null)} disabled={Boolean(voucherBusy)}>Vazgeç</Button>
+            <Button onClick={confirmVoucherAction} disabled={Boolean(voucherBusy) || voucherActionReason.trim().length < 3}>{voucherBusy ? 'İşleniyor...' : 'Onayla'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(reversalDialog)}
+        onOpenChange={(open) => {
+          if (!open && !reversalBusy) {
+            setReversalDialog(null);
+            setReversalReason('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md" data-testid="gl-reversal-dialog">
+          <DialogHeader>
+            <DialogTitle>Ters Kayıt Oluştur</DialogTitle>
+            <DialogDescription>{reversalDialog?.journal?.entry_no || 'Yevmiye kaydı'} için bağlı ters kayıt oluşturulur.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="gl-reversal-reason">Gerekçe</label>
+              <Input id="gl-reversal-reason" autoFocus value={reversalReason} onChange={(event) => setReversalReason(event.target.value)} placeholder="En az 3 karakter" disabled={Boolean(reversalBusy)} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="gl-reversal-date">Ters kayıt tarihi</label>
+              <Input id="gl-reversal-date" type="date" value={reversalDate} onChange={(event) => setReversalDate(event.target.value)} disabled={Boolean(reversalBusy)} />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setReversalDialog(null)} disabled={Boolean(reversalBusy)}>Vazgeç</Button>
+            <Button onClick={confirmJournalReversal} disabled={Boolean(reversalBusy) || reversalReason.trim().length < 3}>{reversalBusy ? 'Oluşturuluyor...' : 'Ters Kayıt Oluştur'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
