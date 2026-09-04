@@ -2438,6 +2438,14 @@ async def update_daily_rates(
         )
         affected_folio_ids: set[str] = set()
 
+        # Resolve tax rates once — same approach as Night Audit service.
+        from core.channel_room_charge_pricing import calculate_room_charge
+        accommodation_tax_rate = await get_accommodation_tax_rate(tid, booking.get("check_in"))
+
+        # Build a synthetic booking with updated total_amount so calculate_room_charge
+        # picks the right per-night gross for each date being changed.
+        booking_with_new_total = {**booking, "total_amount": round(new_total, 2)}
+
         for rate_entry in data.rates:
             rate_date = str(rate_entry.date)[:10]
             if rate_date < current_business_date:
@@ -2479,8 +2487,23 @@ async def update_daily_rates(
                 if old_charge.get("folio_id"):
                     affected_folio_ids.add(old_charge["folio_id"])
 
-            # Insert new room charge at updated rate
+            # Insert new room charge — use calculate_room_charge for consistent
+            # tax breakdown, same as Night Audit. Since daily_rates stores
+            # per-night gross (guest-payable), we use a single-night synthetic
+            # booking so the gross equals rate_entry.rate exactly.
             if folio:
+                single_night_booking = {
+                    **booking,
+                    "total_amount": round(rate_entry.rate, 2),
+                    "check_in": rate_date,
+                    "check_out": rate_date,  # same day → nights=1 inside _nightly_gross
+                }
+                pricing = calculate_room_charge(
+                    single_night_booking,
+                    rate_date,
+                    vat_rate=0.10,
+                    accommodation_tax_rate=accommodation_tax_rate,
+                )
                 new_charge = {
                     "id": str(uuid.uuid4()),
                     "tenant_id": tid,
@@ -2488,12 +2511,15 @@ async def update_daily_rates(
                     "booking_id": booking_id,
                     "charge_category": "room",
                     "description": f"Room charge - {rate_date}",
-                    "amount": round(rate_entry.rate, 2),
-                    "unit_price": round(rate_entry.rate, 2),
+                    "date": rate_date,
                     "quantity": 1,
-                    "tax_amount": 0.0,
-                    "total": round(rate_entry.rate, 2),
-                    "date": rate_date + "T00:00:00+00:00",
+                    "unit_price": pricing["unit_price"],
+                    "amount": pricing["amount"],
+                    "tax_rate": pricing["tax_rate"],
+                    "tax_amount": pricing["tax_amount"],
+                    "total": pricing["total"],
+                    "tax_breakdown": pricing["tax_breakdown"],
+                    "tax_inclusive": pricing["tax_inclusive"],
                     "posted_at": datetime.now(UTC).isoformat(),
                     "posted_by": current_user.name,
                     "voided": False,
