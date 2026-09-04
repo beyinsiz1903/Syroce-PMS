@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildCalendarRateLookup } from '../calendarHelpers';
+import {
+  buildCalendarRateLookup,
+  getCalendarRoomNightRate,
+  getCalendarStayTotal,
+} from '../calendarHelpers';
 
 
 describe('buildCalendarRateLookup', () => {
@@ -43,5 +47,24 @@ describe('buildCalendarRateLookup', () => {
     ]);
 
     expect(lookup).toEqual({});
+  });
+
+  it('prefills the quick booking nightly price from the room board date', () => {
+    const room = { room_type: 'standard', base_price: 150 };
+    const rates = { 'standard|2026-09-05': 4300 };
+
+    expect(getCalendarRoomNightRate(rates, room, '2026-09-05')).toBe(4300);
+    expect(getCalendarRoomNightRate(rates, room, '2026-09-06')).toBe(150);
+  });
+
+  it('sums daily room-board rates for a multi-night quick booking', () => {
+    const room = { room_type: 'standard', base_price: 150 };
+    const rates = {
+      'standard|2026-09-05': 4300,
+      'standard|2026-09-06': 4600,
+      'standard|2026-09-07': 5000,
+    };
+
+    expect(getCalendarStayTotal(rates, room, '2026-09-05', '2026-09-08')).toBe(13900);
   });
 });

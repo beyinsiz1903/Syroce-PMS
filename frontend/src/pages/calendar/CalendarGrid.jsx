@@ -18,10 +18,12 @@ import { compactGuestName, formatGuestName } from './roomTypeMatching';
 const CELL_W = 84;
 const CELL_CLS = 'w-[84px]';
 const LABEL_CLS = 'w-36';
-const CELL_H = 48;
-const BOOKING_H = 40;
-const LANE_H = 40;
-const LANE_BAR_H = 44;
+// HotelRunner-style room board: calm neutral cells with enough vertical room
+// for a reservation card to be read at a glance on the front-desk screen.
+const CELL_H = 56;
+const BOOKING_H = 42;
+const LANE_H = 44;
+const LANE_BAR_H = 46;
 
 export const clearCalendarTextSelection = () => {
   window.getSelection?.()?.removeAllRanges();
@@ -187,7 +189,7 @@ const CalendarGrid = ({
 
   return (
     <div
-      className="bg-white rounded-xl border border-slate-200 shadow-sm relative flex flex-col h-full overflow-hidden select-none"
+      className="bg-white border-y border-slate-200 relative flex flex-col h-full overflow-hidden select-none"
       data-testid="calendar-grid"
       onPointerDown={clearCalendarTextSelection}
       onPointerMove={updatePointerResize}
@@ -246,7 +248,7 @@ const CalendarGrid = ({
                 <div
                   key={idx}
                   className={`${CELL_CLS} flex-shrink-0 py-2 border-r text-center ${
-                    today ? 'bg-blue-100 border-blue-300 shadow-[inset_0_3px_0_#2563eb]' : past ? 'bg-slate-100 border-slate-200' : weekend ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200'
+                    today ? 'bg-blue-50 border-blue-300 shadow-[inset_0_3px_0_#2563eb]' : past || weekend ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200'
                   }`}
                   data-testid={`date-header-${dayNum}`}
                 >
@@ -281,9 +283,9 @@ const CalendarGrid = ({
               return (
                 <div key={roomType}>
                   {/* Room Type Header */}
-                  <div className="bg-gradient-to-r from-slate-100 to-blue-50 border-b border-blue-200" data-testid="room-type-row">
+                  <div className="bg-slate-50 border-y border-slate-200" data-testid="room-type-row">
                     <div className="flex">
-                      <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-2 border-r border-blue-200 bg-slate-100 flex items-center`}>
+                      <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-2 border-r border-slate-200 bg-slate-50 flex items-center`}>
                         <button
                           type="button"
                           onClick={() => toggleType(roomType)}
@@ -329,8 +331,8 @@ const CalendarGrid = ({
                         return (
                           <div
                             key={idx}
-                            className={`${CELL_CLS} flex-shrink-0 px-0.5 py-1 border-r text-center text-[9px] ${
-                              past ? 'bg-gray-100/70 border-gray-200' : weekend ? 'bg-blue-100/50 border-blue-200' : 'bg-blue-50/80 border-blue-200'
+                          className={`${CELL_CLS} flex-shrink-0 px-0.5 py-1.5 border-r text-center text-[9px] ${
+                              past || weekend ? 'bg-slate-100 border-slate-200' : 'bg-slate-50 border-slate-200'
                             }`}
                           >
                             <div className={`text-[10px] font-bold truncate ${past ? 'text-gray-400' : 'text-gray-800'}`}>
@@ -491,7 +493,9 @@ const CalendarGrid = ({
                               blocked: !!roomBlock,
                               roomStatus: room.status,
                             });
-                            const occTint = getCellOccupancyTint(occStatus);
+                            // HotelRunner benzeri nötr oda-board görünümü için boş
+                            // odalar beyaz kalır; yalnız dolu/bloklu hücre vurgulanır.
+                            const occTint = occStatus === 'free' ? '' : getCellOccupancyTint(occStatus);
                             // Tut-surukle cok-gece secimi: yalnizca ayni odadaki bos
                             // hucreler vurgulanir; aradaki dolu/bloklu hucreler haric.
                             const inDragSel = !!dragSelect && dragSelect.roomId === room.id && canCreate && (() => {
@@ -506,7 +510,7 @@ const CalendarGrid = ({
                                 className={`${CELL_CLS} flex-shrink-0 border-r border-slate-200 relative transition-colors group/cell select-none ${
                                   canCreate ? 'cursor-pointer' : 'cursor-default'
                                 } ${
-                                  past ? 'bg-slate-100/80' : isToday(date) ? 'bg-blue-100/70 dark:bg-blue-950/70' : isWeekend(date) ? 'bg-amber-50/70 dark:bg-amber-950/70' : 'bg-white hover:bg-blue-50/50'
+                                  past ? 'bg-slate-50' : isToday(date) ? 'bg-blue-50/70 dark:bg-blue-950/70' : isWeekend(date) ? 'bg-slate-50 dark:bg-slate-900/40' : 'bg-white hover:bg-slate-50/70'
                                 } ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''} ${
                                   inDragSel ? 'bg-indigo-100/70 ring-2 ring-inset ring-indigo-400 z-10' : ''
                                 }`}

@@ -29,6 +29,8 @@ import {
   getSegmentColor,
   getStatusLabel,
   getRateTypeInfo,
+  getCalendarRoomNightRate,
+  getCalendarStayTotal,
   getUnassignedUrgency,
   sortByUrgency,
   roomOccupancyStatus,
@@ -518,12 +520,15 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     const checkInDate = new Date(date);
     const checkOutDate = new Date(date);
     checkOutDate.setDate(checkOutDate.getDate() + 1);
+    const checkIn = checkInDate.toISOString().split('T')[0];
+    const checkOut = checkOutDate.toISOString().split('T')[0];
+    const nightlyRate = getCalendarRoomNightRate(calendarRates, room, checkIn, room.base_price || 100);
     setNewBooking(newBookingDraft({
       room_id: roomId,
-      check_in: checkInDate.toISOString().split('T')[0],
-      check_out: checkOutDate.toISOString().split('T')[0],
-      total_amount: room.base_price || 100,
-      base_rate: room.base_price || 100,
+      check_in: checkIn,
+      check_out: checkOut,
+      total_amount: getCalendarStayTotal(calendarRates, room, checkIn, checkOut, room.base_price || 100),
+      base_rate: nightlyRate,
     }));
     setShowNewBookingDialog(true);
   };
@@ -570,19 +575,17 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
     const checkIn = lo;
     const checkOut = addDaysToDateStr(lastFree, 1);
-    const nights = Math.max(1, Math.round(
-      (new Date(`${checkOut}T00:00:00Z`) - new Date(`${checkIn}T00:00:00Z`)) / 86400000
-    ));
     if (lastFree < hi) toast.info('Seçim dolu/bloklu geceye kadar kısaltıldı');
 
     setSelectedRoom(room);
     setSelectedDate(new Date(`${checkIn}T00:00:00Z`));
+    const nightlyRate = getCalendarRoomNightRate(calendarRates, room, checkIn, room.base_price || 100);
     setNewBooking(newBookingDraft({
       room_id: sel.roomId,
       check_in: checkIn,
       check_out: checkOut,
-      total_amount: (room.base_price || 100) * nights,
-      base_rate: room.base_price || 100,
+      total_amount: getCalendarStayTotal(calendarRates, room, checkIn, checkOut, room.base_price || 100),
+      base_rate: nightlyRate,
     }));
     setShowNewBookingDialog(true);
   };
