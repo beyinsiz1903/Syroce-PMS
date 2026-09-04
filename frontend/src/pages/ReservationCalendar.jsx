@@ -175,6 +175,16 @@ const addDaysToDateStr = (dStr, n) => {
   return d.toISOString().split('T')[0];
 };
 
+const newBookingDraft = (overrides = {}) => ({
+  guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '',
+  room_id: '', check_in: '', check_out: '',
+  guests_count: 2, adults: 2, children: 0, children_ages: [],
+  total_amount: 0, base_rate: 0, price_input_mode: 'nightly',
+  prepayment_enabled: false, prepayment_amount: '', prepayment_method: 'cash', prepayment_reference: '',
+  apply_occupancy_pricing: false, status: 'confirmed',
+  ...overrides,
+});
+
 const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -257,12 +267,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [groupColorMap, setGroupColorMap] = useState({});
 
   // New booking form
-  const [newBooking, setNewBooking] = useState({
-    guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '',
-    room_id: '', check_in: '', check_out: '',
-    guests_count: 2, adults: 2, children: 0, children_ages: [],
-    total_amount: 0, base_rate: 0, status: 'confirmed'
-  });
+  const [newBooking, setNewBooking] = useState(newBookingDraft);
   const [occupancyPricingRules, setOccupancyPricingRules] = useState({});
   const [calendarRates, setCalendarRates] = useState({});
 
@@ -544,15 +549,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     const checkInDate = new Date(date);
     const checkOutDate = new Date(date);
     checkOutDate.setDate(checkOutDate.getDate() + 1);
-    setNewBooking({
-      guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '', room_id: roomId,
+    setNewBooking(newBookingDraft({
+      room_id: roomId,
       check_in: checkInDate.toISOString().split('T')[0],
       check_out: checkOutDate.toISOString().split('T')[0],
-      guests_count: 2, adults: 2, children: 0, children_ages: [],
-      total_amount: room.base_price || 100, base_rate: room.base_price || 100,
-      apply_occupancy_pricing: findOccupancyRule(occupancyPricingRules, room)?.pricing_type === 'per_person',
-      status: 'confirmed'
-    });
+      total_amount: room.base_price || 100,
+      base_rate: room.base_price || 100,
+    }));
     setShowNewBookingDialog(true);
   };
 
@@ -605,14 +608,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
     setSelectedRoom(room);
     setSelectedDate(new Date(`${checkIn}T00:00:00Z`));
-    setNewBooking({
-      guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '', room_id: sel.roomId,
-      check_in: checkIn, check_out: checkOut,
-      guests_count: 2, adults: 2, children: 0, children_ages: [],
-      total_amount: (room.base_price || 100) * nights, base_rate: room.base_price || 100,
-      apply_occupancy_pricing: findOccupancyRule(occupancyPricingRules, room)?.pricing_type === 'per_person',
-      status: 'confirmed'
-    });
+    setNewBooking(newBookingDraft({
+      room_id: sel.roomId,
+      check_in: checkIn,
+      check_out: checkOut,
+      total_amount: (room.base_price || 100) * nights,
+      base_rate: room.base_price || 100,
+    }));
     setShowNewBookingDialog(true);
   };
 
@@ -668,6 +670,24 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       return;
     }
 
+    const prepaymentAmount = newBooking.prepayment_enabled ? Number(newBooking.prepayment_amount) : 0;
+    const totalAmount = Number(newBooking.total_amount);
+    const nights = Math.max(1, Math.round(
+      (new Date(`${newBooking.check_out}T00:00:00Z`) - new Date(`${newBooking.check_in}T00:00:00Z`)) / 86400000,
+    ));
+    if (!Number.isFinite(totalAmount) || totalAmount < 0) {
+      toast.error('Geçerli bir konaklama toplamı girin');
+      return;
+    }
+    if (newBooking.prepayment_enabled && (!Number.isFinite(prepaymentAmount) || prepaymentAmount <= 0)) {
+      toast.error('Ön ödeme tutarı sıfırdan büyük olmalı');
+      return;
+    }
+    if (prepaymentAmount > totalAmount) {
+      toast.error('Ön ödeme, konaklama toplamından büyük olamaz');
+      return;
+    }
+
     let guestId = newBooking.guest_id;
     if (!guestId && newBooking.guest_name) {
       try {
@@ -688,12 +708,47 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     if (!guestId) { toast.error('Lutfen bir misafir seçin veya yeni misafir ekleyin'); return; }
     try {
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-create-${Date.now()}-${Math.random()}`;
-      await axios.post('/pms/bookings', { ...newBooking, guest_id: guestId }, {
+      const {
+        price_input_mode: priceInputMode,
+        prepayment_enabled: _prepaymentEnabled,
+        prepayment_amount: _prepaymentAmount,
+        prepayment_method: _prepaymentMethod,
+        prepayment_reference: _prepaymentReference,
+        ...bookingFields
+      } = newBooking;
+      const bookingPayload = {
+        ...bookingFields,
+        guest_id: guestId,
+        total_amount: totalAmount,
+        // Total fiyat girildiğinde de raporlama için efektif gecelik tutarı saklanır.
+        base_rate: priceInputMode === 'total' ? totalAmount / nights : Number(bookingFields.base_rate || 0),
+        apply_occupancy_pricing: priceInputMode !== 'total' && Boolean(bookingFields.apply_occupancy_pricing),
+      };
+      const response = await axios.post('/pms/bookings', bookingPayload, {
         headers: { 'Idempotency-Key': idempotencyKey },
       });
-      toast.success('Rezervasyon başarıyla oluşturuldu!');
+      let prepaymentError = null;
+      if (prepaymentAmount > 0) {
+        try {
+          await axios.post(`/pms/reservations/${response.data.id}/record-payment`, {
+            amount: prepaymentAmount,
+            method: newBooking.prepayment_method,
+            payment_type: 'prepayment',
+            reference: newBooking.prepayment_reference.trim() || `reservation-prepayment:${response.data.id}:${idempotencyKey}`,
+            notes: 'Rezervasyon oluşturulurken alınan ön ödeme',
+          });
+        } catch (paymentError) {
+          prepaymentError = paymentError;
+        }
+      }
       setShowNewBookingDialog(false);
       loadCalendarData();
+      if (prepaymentError) {
+        const detail = prepaymentError.response?.data?.detail;
+        toast.warning(`Rezervasyon oluşturuldu; ön ödeme kaydedilemedi. ${typeof detail === 'string' ? detail : 'Folyodan Ödeme Al ile tekrar kaydedin.'}`);
+      } else {
+        toast.success(prepaymentAmount > 0 ? 'Rezervasyon ve ön ödeme başarıyla kaydedildi!' : 'Rezervasyon başarıyla oluşturuldu!');
+      }
     } catch (error) {
       console.log('CREATE_BOOKING_ERROR_CAUGHT', {
         status: error?.response?.status,
@@ -1133,12 +1188,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onShowFindRoomDialog={() => setShowFindRoomDialog(true)}
           onShowNewBookingDialog={() => {
             setSelectedRoom(null);
-            setNewBooking({
-              guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '',
-              room_id: '', check_in: '', check_out: '',
-              guests_count: 2, adults: 2, children: 0, children_ages: [],
-              total_amount: 0, base_rate: 0, status: 'confirmed'
-            });
+            setNewBooking(newBookingDraft());
             setShowNewBookingDialog(true);
           }}
           onShowUnassigned={() => setShowUnassignedPanel(true)}
