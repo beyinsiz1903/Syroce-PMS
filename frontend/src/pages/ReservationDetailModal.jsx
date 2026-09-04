@@ -4,6 +4,9 @@ import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   X, Calendar, DollarSign, FileText, Users, Receipt,
@@ -27,6 +30,7 @@ import IdPhotoViewerButton from '@/components/IdPhotoViewerButton';
 import { confirmDialog } from '@/lib/dialogs';
 import { performCheckout } from '@/utils/offlineCheckout';
 import { useTranslation } from 'react-i18next';
+import { buildCalendarRateLookup, toDateStringUTC } from './calendar/calendarHelpers';
 
 // Statü için pill rengi (sıkı palet: amber/emerald/rose/slate)
 const STATUS_PILL = {
@@ -48,6 +52,18 @@ const isRetryableDetailError = (error) => {
 };
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const dateInputValue = (value) => String(value || '').slice(0, 10);
+
+const stayDates = (checkIn, checkOut) => {
+  const dates = [];
+  const cursor = new Date(`${checkIn}T00:00:00Z`);
+  const end = new Date(`${checkOut}T00:00:00Z`);
+  while (cursor < end) {
+    dates.push(toDateStringUTC(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+};
 
 export default function ReservationDetailModal({ bookingId, onClose, allBookings, onOperationComplete }) {
   const { t } = useTranslation();
@@ -58,6 +74,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const [offlineFallback, setOfflineFallback] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [pricingRepairing, setPricingRepairing] = useState(false);
+  const [stayEditorOpen, setStayEditorOpen] = useState(false);
+  const [stayForm, setStayForm] = useState({ checkIn: '', checkOut: '' });
+  const [staySaving, setStaySaving] = useState(false);
   const loadGenerationRef = useRef(0);
 
   // allBookings kimliği her render değişebilir → loadData dep'ine koymak yerine
@@ -267,6 +286,105 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const displayedFolioBalance = hasAllocatedPrepayment ? 0 : balance;
   const channelPricingIssue = summary?.channel_pricing_issue;
   const hasRoomAssignment = Boolean(booking?.room_id && room?.id);
+  const canEditStayDates = !readOnly && ['pending', 'confirmed', 'guaranteed', 'checked_in'].includes(bookingStatus);
+  const checkedInStay = bookingStatus === 'checked_in';
+
+  const openStayEditor = () => {
+    setStayForm({
+      checkIn: dateInputValue(booking?.check_in),
+      checkOut: dateInputValue(booking?.check_out),
+    });
+    setStayEditorOpen(true);
+  };
+
+  const saveStayDates = async () => {
+    const checkIn = dateInputValue(stayForm.checkIn);
+    const checkOut = dateInputValue(stayForm.checkOut);
+    const currentCheckIn = dateInputValue(booking?.check_in);
+    const currentCheckOut = dateInputValue(booking?.check_out);
+
+    if (!checkIn || !checkOut || checkOut <= checkIn) {
+      toast.error('Çıkış tarihi giriş tarihinden sonra olmalıdır');
+      return;
+    }
+    if (checkedInStay && checkIn !== currentCheckIn) {
+      toast.error('Giriş yapılmış rezervasyonda giriş tarihi değiştirilemez');
+      return;
+    }
+    if (checkIn === currentCheckIn && checkOut === currentCheckOut) {
+      setStayEditorOpen(false);
+      return;
+    }
+
+    const oldNights = Math.max(1, stayDates(currentCheckIn, currentCheckOut).length);
+    const impliedNightlyRate = Number(booking?.total_amount || 0) / oldNights;
+    const existingRates = new Map((daily_rates || []).map((rate) => [
+      dateInputValue(rate?.date), Number(rate?.rate),
+    ]));
+
+    setStaySaving(true);
+    try {
+      // Retain the agreed rate for nights already on the reservation.  Only
+      // newly added nights are read from the same published rate grid shown
+      // on the room board, so an extension never silently uses a stale total.
+      let publishedRates = {};
+      try {
+        const rateGrid = await axios.get(
+          `/channel-manager/unified-rate-manager/grid?start_date=${checkIn}&end_date=${checkOut}`,
+        );
+        publishedRates = buildCalendarRateLookup(rateGrid.data?.grid || []);
+      } catch {
+        // The booking may still be changed safely with its agreed/base rate
+        // when the display-only rate grid is temporarily unavailable.
+      }
+
+      const roomForPricing = {
+        ...room,
+        room_type: booking?.room_type || room?.room_type || room?.room_type_name || room?.type,
+        base_price: room?.base_price || booking?.base_rate || impliedNightlyRate,
+      };
+      const rates = stayDates(checkIn, checkOut).map((date) => {
+        const persistedRate = existingRates.get(date);
+        const configuredRate = Number(publishedRates[`${roomForPricing.room_type}|${date}`]);
+        const fallback = Number(roomForPricing.base_price || impliedNightlyRate || 0);
+        return {
+          date,
+          rate: Number.isFinite(persistedRate) && persistedRate > 0
+            ? persistedRate
+            : Number.isFinite(configuredRate) && configuredRate > 0
+              ? configuredRate
+              : fallback,
+        };
+      });
+      if (rates.some((rate) => !Number.isFinite(rate.rate) || rate.rate <= 0)) {
+        toast.error('Her gece için geçerli bir fiyat bulunamadı; tarih değişikliği kaydedilmedi');
+        return;
+      }
+      const totalAmount = Math.round(rates.reduce((sum, rate) => sum + rate.rate, 0) * 100) / 100;
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `stay-dates-${Date.now()}-${Math.random()}`;
+
+      await axios.put(`/pms/bookings/${booking.id}`, {
+        check_in: checkIn,
+        check_out: checkOut,
+        total_amount: totalAmount,
+      }, { headers: { 'Idempotency-Key': idempotencyKey } });
+      await axios.put(`/pms/reservations/${booking.id}/daily-rates`, { rates });
+
+      toast.success('Konaklama tarihleri ve günlük fiyatlar güncellendi');
+      setStayEditorOpen(false);
+      await finishOperation('stay_dates_updated');
+      if (typeof onOperationComplete === 'function') await loadData();
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Konaklama tarihleri güncellenemedi'));
+      // The second write can be blocked by a financial/audit safeguard after
+      // the date change has succeeded.  Always reload the durable state rather
+      // than leave the modal showing a stale stay or folio total.
+      await loadData();
+    } finally {
+      setStaySaving(false);
+    }
+  };
 
   // Birincil sekmeler — günlük kullanımda en sık ihtiyaç duyulanlar
   const primaryTabs = [
@@ -736,7 +854,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 </DropdownMenu>
               </TabsList>
               <div className="flex-1 overflow-y-auto p-6">
-                <TabsContent value="general" className="mt-0"><GeneralInfoTab booking={booking} guest={guest} room={room} company={company} onGuestUpdate={loadData} notes={notes} history={history} summary={summary} payments={payments} deposits={deposits} onSwitchTab={setActiveTab} readOnly={readOnly} /></TabsContent>
+                <TabsContent value="general" className="mt-0"><GeneralInfoTab booking={booking} guest={guest} room={room} company={company} onGuestUpdate={loadData} notes={notes} history={history} summary={summary} payments={payments} deposits={deposits} onSwitchTab={setActiveTab} onStayEdit={openStayEditor} canEditStay={canEditStayDates} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="guests" className="mt-0"><GuestsTab guests={guests} booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="online_payment" className="mt-0"><OnlinePaymentTab booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="vcc" className="mt-0"><VCCTab booking={booking} onRefresh={loadData} /></TabsContent>
@@ -756,6 +874,49 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
           </div>
         </div>
       </div>
+
+      <Dialog open={stayEditorOpen} onOpenChange={(open) => { if (!staySaving) setStayEditorOpen(open); }}>
+        <DialogContent className="sm:max-w-md" data-testid="stay-date-editor">
+          <DialogHeader>
+            <DialogTitle>Konaklama tarihlerini düzenle</DialogTitle>
+            <DialogDescription>
+              Oda uygunluğu kontrol edilir; eklenen geceler takvimdeki yayınlanmış fiyatla hesaplanır.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="stay-check-in">Giriş tarihi</Label>
+              <Input
+                id="stay-check-in"
+                type="date"
+                value={stayForm.checkIn}
+                disabled={staySaving || checkedInStay}
+                onChange={(event) => setStayForm((current) => ({ ...current, checkIn: event.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="stay-check-out">Çıkış tarihi</Label>
+              <Input
+                id="stay-check-out"
+                type="date"
+                min={stayForm.checkIn || undefined}
+                value={stayForm.checkOut}
+                disabled={staySaving}
+                onChange={(event) => setStayForm((current) => ({ ...current, checkOut: event.target.value }))}
+              />
+            </div>
+          </div>
+          {checkedInStay && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+            Giriş yapılmış rezervasyonda yalnızca çıkış tarihi güncellenebilir.
+          </p>}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setStayEditorOpen(false)} disabled={staySaving}>Vazgeç</Button>
+            <Button type="button" onClick={saveStayDates} disabled={staySaving} data-testid="save-stay-dates">
+              {staySaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Kaydet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <GuestAlertModal
         guestId={guest?.id || booking?.guest_id}

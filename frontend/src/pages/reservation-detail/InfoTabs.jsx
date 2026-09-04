@@ -75,6 +75,8 @@ export function GeneralInfoTab({
   payments,
   deposits,
   onSwitchTab,
+  onStayEdit,
+  canEditStay = false,
   readOnly = false,
 }) {
   const {
@@ -147,7 +149,19 @@ export function GeneralInfoTab({
 
         {/* Bölüm 1: Konaklama Bilgileri */}
         <section className="space-y-3">
-          <SectionHeader icon={CalendarDays} title="Konaklama Bilgileri" />
+          <div className="flex items-center justify-between gap-3">
+            <SectionHeader icon={CalendarDays} title="Konaklama Bilgileri" />
+            {canEditStay && <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onStayEdit}
+              className="h-8 shrink-0 text-xs"
+              data-testid="edit-stay-dates"
+            >
+              <Pencil className="w-3.5 h-3.5 mr-1.5" /> Tarihleri Düzenle
+            </Button>}
+          </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <StatCard icon={CalendarDays} label="Giriş Tarihi" value={fmtDate(booking?.check_in)} sub={booking?.check_in_time || booking?.checkin_time || '14:00'} tone="emerald" />
             <StatCard icon={CalendarClock} label="Çıkış Tarihi" value={fmtDate(booking?.check_out)} sub={booking?.check_out_time || booking?.checkout_time || '12:00'} tone="amber" />
