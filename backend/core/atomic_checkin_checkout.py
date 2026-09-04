@@ -373,6 +373,22 @@ async def check_out_booking_atomic(
                             f"{balance}. Use force=True to override."
                         )
 
+            # Complete the confirmed room revenue only after the existing
+            # balance guard passes.  This preserves the atomic no-side-effect
+            # guarantee when checkout is rejected for an unpaid folio.
+            from core.folio_checkout_reconciliation import reconcile_unposted_room_charge
+
+            try:
+                await reconcile_unposted_room_charge(
+                    db,
+                    tenant_id=tenant_id,
+                    booking=booking,
+                    posted_by=f"checkout:{actor_name or actor_id}",
+                    session=session,
+                )
+            except ValueError as exc:
+                raise CheckOutError(str(exc)) from exc
+
             # ── 3. Update booking → checked_out ──
             booking_update = {
                 "status": "checked_out",

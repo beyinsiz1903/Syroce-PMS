@@ -15,7 +15,7 @@ import {
   guestPaymentClassificationLabel,
 } from '@/utils/paymentClassification';
 
-export function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, guest, room, onRefresh, onSwitchTab }) {
+export function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, guest, room, onRefresh, onSwitchTab, readOnly = false }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [showPayment, setShowPayment] = useState(false);
@@ -34,6 +34,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [showSplit, setShowSplit] = useState(false);
   const [splitSourceId, setSplitSourceId] = useState('');
   const [loading, setLoading] = useState(false);
+  const [reconcilingRoomCharge, setReconcilingRoomCharge] = useState(false);
 
   const folioList = useMemo(() => (Array.isArray(folios) ? folios : []), [folios]);
 
@@ -70,6 +71,22 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
     () => (charges || []).some(c => !c.voided) || (extra_charges || []).some(c => !c.voided),
     [charges, extra_charges]
   );
+  const pendingRoomAmount = Number(summary?.unposted_room_amount) || 0;
+  const hasHistoricalRoomCredit = readOnly && pendingRoomAmount > 0.01 && Number(summary?.folio_balance) < -0.01;
+
+  const completePendingRoomCharge = async () => {
+    setReconcilingRoomCharge(true);
+    try {
+      const response = await axios.post(`/pms/reservations/${booking.id}/complete-pending-room-charge`);
+      if (response.data?.posted) toast.success('Eksik konaklama tahakkuku folyoya işlendi');
+      else toast.info('Konaklama tahakkuku zaten tamamlanmış');
+      await onRefresh?.();
+    } catch (e) {
+      toast.error('Tahakkuk tamamlanamadı: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      setReconcilingRoomCharge(false);
+    }
+  };
 
   const openSplit = async () => {
     // Folio zaten varsa mevcut akış aynen çalışır.
@@ -126,6 +143,12 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <Button size="sm" variant="outline" onClick={() => onSwitchTab('invoice')} className="h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-50" data-testid="btn-fatura-pdf">
           <FileText className="w-3 h-3 mr-1" /> Fatura Olustur
         </Button>
+        {hasHistoricalRoomCredit && (
+          <Button size="sm" variant="outline" onClick={completePendingRoomCharge} disabled={reconcilingRoomCharge} className="h-8 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" data-testid="btn-complete-pending-room-charge">
+            {reconcilingRoomCharge ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Receipt className="w-3 h-3 mr-1" />}
+            Eksik Konaklamayı Tahakkuk Ettir ({fmtTL(pendingRoomAmount)} TL)
+          </Button>
+        )}
       </div>
 
       {showSplit && (

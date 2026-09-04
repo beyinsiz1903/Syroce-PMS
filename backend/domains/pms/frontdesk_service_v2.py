@@ -255,6 +255,18 @@ class FrontdeskServiceV2:
                 "INVALID_STATUS",
             )
 
+        try:
+            from core.folio_checkout_reconciliation import reconcile_unposted_room_charge
+
+            await reconcile_unposted_room_charge(
+                self._db,
+                tenant_id=ctx.tenant_id,
+                booking=booking,
+                posted_by=f"checkout:{ctx.actor_id}",
+            )
+        except ValueError as exc:
+            return ServiceResult.fail(str(exc), "ROOM_CHARGE_RECONCILIATION_FAILED")
+
         # ── Auto-post Konaklama Vergisi (Türkiye) ──────────────────────
         # Tenant config'inde `auto_post=True` ise checkout sırasında, balance
         # kontrolünden ÖNCE konaklama vergisini folio'ya idempotent olarak
