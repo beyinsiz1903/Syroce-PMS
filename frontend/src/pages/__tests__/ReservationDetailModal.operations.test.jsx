@@ -320,6 +320,41 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(post).not.toHaveBeenCalledWith(expect.stringContaining('cancel'), expect.anything());
   });
 
+  it('reverses an auto-posted tax separately from a fully paid reservation', async () => {
+    get.mockResolvedValue({
+      data: {
+        ...detail,
+        booking: { ...detail.booking, status: 'checked_in', total_amount: 7500 },
+        summary: {
+          ...detail.summary,
+          balance: 15.03,
+          total_amount: 7500,
+          total_payments: 7500,
+          channel_pricing_issue: {
+            code: 'AUTOMATIC_ACCOMMODATION_TAX_DUPLICATE',
+            observed_total: 7515.03,
+            expected_total: 7500,
+            overcharge: 15.03,
+            repairable: true,
+          },
+        },
+      },
+    });
+    post.mockResolvedValueOnce({ data: { success: true, total_reduction: 15.03 } });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    fireEvent.click(await screen.findByTestId('repair-channel-pricing'));
+
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Mükerrer konaklama vergisini düzelt',
+    })));
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/pms/reservations/booking-test/repair-automatic-accommodation-tax',
+      { reason: 'Vergi dahil rezervasyona ikinci kez eklenen otomatik konaklama vergisinin terslenmesi' },
+    ));
+  });
+
   it('hides all lifecycle mutations for a checked-out booking', async () => {
     get.mockResolvedValueOnce({
       data: { ...detail, booking: { ...detail.booking, status: 'checked_out' } },

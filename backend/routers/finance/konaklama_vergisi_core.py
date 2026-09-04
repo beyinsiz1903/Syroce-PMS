@@ -196,6 +196,12 @@ async def post_konaklama_vergisi_to_folio(
         ),
         2,
     )
+    # Reservation prices are guest-payable gross totals.  Checkout
+    # reconciliation already writes a tax-inclusive room line, but older rows
+    # may not have a detailed tax_breakdown.  Do not append another city-tax
+    # charge merely because the optional breakdown is absent.
+    if room_charges and all(charge.get("tax_inclusive") is True for charge in room_charges):
+        embedded_tax = max(embedded_tax, tax_amount)
     if embedded_tax + 0.01 >= tax_amount:
         posting_id = str(uuid.uuid4())
         now_iso = datetime.now(UTC).isoformat()

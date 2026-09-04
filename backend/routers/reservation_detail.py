@@ -293,6 +293,41 @@ _create_reservation_service = CreateReservationService()
 _field_enc = get_field_encryption_service()
 
 
+def _is_automatic_accommodation_tax_charge(charge: dict) -> bool:
+    """Identify the system-generated konaklama vergisi folio line."""
+    # ``city_tax`` may also be chosen deliberately by an accountant.  Only
+    # the explicit marker written by ``post_konaklama_vergisi_to_folio`` is
+    # eligible for an automatic reversal.
+    return bool(charge.get("konaklama_vergisi"))
+
+
+def _redundant_automatic_accommodation_taxes(booking: dict, charges: list[dict]) -> list[dict]:
+    """Return auto-tax rows already included in the agreed guest price.
+
+    ``calculate_room_charge`` and checkout reconciliation persist
+    ``tax_inclusive=True``: each room-charge amount is already the agreed
+    guest-payable amount.  A reservation can be only partly posted before
+    checkout, so the posted room rows do not have to equal the full booking
+    total.  An older checkout path could still append a separate city-tax row
+    because that row did not carry a tax breakdown.  That row is neither a
+    new debt nor a tax that should be collected twice.
+    """
+    active_room_charges = [
+        charge for charge in charges
+        if not charge.get("voided")
+        and (charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room")
+    ]
+    if not active_room_charges or not all(charge.get("tax_inclusive") is True for charge in active_room_charges):
+        return []
+
+    return [
+        charge for charge in charges
+        if not charge.get("voided")
+        and _is_automatic_accommodation_tax_charge(charge)
+        and float(charge.get("total", charge.get("amount", 0)) or 0) > 0
+    ]
+
+
 def _build_financial_summary(
     booking: dict,
     charges: list[dict],
@@ -333,7 +368,11 @@ def _build_financial_summary(
     accommodation_tax_total = sum(
         charge.get("total", charge.get("amount", 0))
         for charge in active_charges
-        if charge.get("charge_type") == "tax" or charge.get("charge_category") == "tax"
+        if (
+            charge.get("charge_type") == "tax"
+            or charge.get("charge_category") in {"tax", "city_tax"}
+            or charge.get("konaklama_vergisi")
+        )
     )
     reservation_price_component_total = room_charge_total + accommodation_tax_total
     room_charge_posted = room_charge_total > 0
@@ -382,7 +421,7 @@ def _build_channel_pricing_issue(
     *,
     accommodation_tax_rate: float,
 ) -> dict | None:
-    """Summarize only the exact, safely repairable legacy double-tax shape."""
+    """Summarize safely repairable automatic pricing overages."""
     issues = [
         issue
         for charge in charges
@@ -395,6 +434,21 @@ def _build_channel_pricing_issue(
         )
         is not None
     ]
+    redundant_auto_taxes = _redundant_automatic_accommodation_taxes(booking, charges)
+    if redundant_auto_taxes:
+        overcharge = round(sum(float(charge.get("total", charge.get("amount", 0)) or 0) for charge in redundant_auto_taxes), 2)
+        return {
+            "code": "AUTOMATIC_ACCOMMODATION_TAX_DUPLICATE",
+            "charge_count": len(redundant_auto_taxes),
+            "observed_total": round(float(booking.get("total_amount", 0) or 0) + overcharge, 2),
+            "expected_total": round(float(booking.get("total_amount", 0) or 0), 2),
+            "overcharge": overcharge,
+            # This row was appended after the tax-inclusive room total. It is
+            # safe to reverse even after a payment; invoice protection is
+            # checked by the repair endpoint.
+            "repairable": True,
+            "blocked_reason": None,
+        }
     if not issues:
         return None
     has_payments = any(
@@ -1248,6 +1302,208 @@ async def repair_channel_pricing(
                 - sum(row["difference"] for row in repaired_rows),
                 2,
             ),
+        }
+
+    return await _run_reservation_financial_transaction(
+        tenant_id=tid,
+        booking_id=booking_id,
+        resources=resources,
+        callback=_repair,
+    )
+
+
+@router.post("/reservations/{booking_id}/repair-automatic-accommodation-tax")
+async def repair_automatic_accommodation_tax(
+    booking_id: str,
+    data: ChannelPricingRepairRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("void_charge")),
+):
+    """Reverse only the duplicate auto-posted accommodation-tax row.
+
+    This is deliberately narrower than a price edit: it applies solely when
+    every posted room row is explicitly tax-inclusive and the system also
+    appended its own ``city_tax`` row.  The original row and the tax-posting
+    trace remain in the database for audit; the row is voided rather than
+    deleted.  An issued invoice is never altered automatically.
+    """
+    _enforce_perm(current_user.role, "void_charge")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one(
+        {"id": booking_id, "tenant_id": tid},
+        {"_id": 0},
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    folios = [
+        folio
+        async for folio in db.folios.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0, "id": 1},
+        )
+    ]
+    resources = [("folio", folio["id"]) for folio in folios if folio.get("id")]
+
+    async def _repair(session):
+        locked_booking = await db.bookings.find_one(
+            {"id": booking_id, "tenant_id": tid},
+            {"_id": 0},
+            session=session,
+        )
+        if not locked_booking:
+            raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+        charges = [
+            charge
+            async for charge in db.folio_charges.find(
+                {"booking_id": booking_id, "tenant_id": tid},
+                {"_id": 0},
+                session=session,
+            )
+        ]
+        duplicate_taxes = _redundant_automatic_accommodation_taxes(locked_booking, charges)
+        if not duplicate_taxes:
+            return {
+                "success": True,
+                "already_repaired": True,
+                "booking_id": booking_id,
+                "message": "Mükerrer otomatik konaklama vergisi bulunmuyor",
+            }
+
+        folio_ids = sorted(
+            {str(charge["folio_id"]) for charge in duplicate_taxes if charge.get("folio_id")}
+        )
+        issued_invoice = await db.invoices.find_one(
+            {
+                "tenant_id": tid,
+                "$or": [
+                    {"booking_id": booking_id},
+                    {"folio_id": {"$in": folio_ids}},
+                ],
+                "status": {"$nin": ["draft", "cancelled", "voided"]},
+            },
+            {"_id": 0, "id": 1},
+            session=session,
+        )
+        if issued_invoice:
+            raise HTTPException(
+                status_code=409,
+                detail="Faturalanmış rezervasyondaki vergi otomatik düzeltilemez; iade/düzeltme belgesi gerekir",
+            )
+
+        now = datetime.now(UTC).isoformat()
+        repaired_rows = []
+        for charge in duplicate_taxes:
+            charge_id = charge.get("id")
+            if not charge_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Vergi satırının kimliği eksik; finans onayı gerekir",
+                )
+            amount = round(float(charge.get("total", charge.get("amount", 0)) or 0), 2)
+            updated = await db.folio_charges.update_one(
+                {
+                    "id": charge_id,
+                    "tenant_id": tid,
+                    "booking_id": booking_id,
+                    "voided": {"$ne": True},
+                },
+                {
+                    "$set": {
+                        "voided": True,
+                        "voided_at": now,
+                        "voided_by": current_user.id,
+                        "void_reason": "tax_inclusive_booking_total",
+                        "void_note": data.reason,
+                    }
+                },
+                session=session,
+            )
+            if updated.modified_count != 1:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Vergi satırı eşzamanlı değişti; yenileyip tekrar deneyin",
+                )
+            await db.accommodation_tax_postings.update_many(
+                {"tenant_id": tid, "folio_id": charge.get("folio_id"), "charge_id": charge_id},
+                {
+                    "$set": {
+                        "reversed_at": now,
+                        "reversed_by": current_user.id,
+                        "reversal_reason": "tax_inclusive_booking_total",
+                    }
+                },
+                session=session,
+            )
+            repaired_rows.append(
+                {"charge_id": charge_id, "folio_id": charge.get("folio_id"), "difference": amount}
+            )
+
+        for folio_id in folio_ids:
+            active_charges = [
+                row
+                async for row in db.folio_charges.find(
+                    {"folio_id": folio_id, "tenant_id": tid, "voided": {"$ne": True}},
+                    {"_id": 0, "total": 1, "amount": 1},
+                    session=session,
+                )
+            ]
+            active_payments = [
+                row
+                async for row in db.payments.find(
+                    {"folio_id": folio_id, "tenant_id": tid, "voided": {"$ne": True}},
+                    {"_id": 0, "amount": 1},
+                    session=session,
+                )
+            ]
+            balance = round(
+                sum(float(row.get("total", row.get("amount", 0)) or 0) for row in active_charges)
+                - sum(float(row.get("amount", 0) or 0) for row in active_payments),
+                2,
+            )
+            await db.folios.update_one(
+                {"id": folio_id, "tenant_id": tid},
+                {"$set": {"balance": balance, "updated_at": now}},
+                session=session,
+            )
+
+        audit_details = {
+            "reason": data.reason,
+            "repairs": repaired_rows,
+            "total_reduction": round(sum(row["difference"] for row in repaired_rows), 2),
+        }
+        await db.reservation_activity_log.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tid,
+                "booking_id": booking_id,
+                "action": "automatic_accommodation_tax_reversed",
+                "actor": current_user.name,
+                "details": audit_details,
+                "created_at": now,
+            },
+            session=session,
+        )
+        await db.pms_audit_trail.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tid,
+                "entity_type": "booking",
+                "entity_id": booking_id,
+                "action": "automatic_accommodation_tax_reversed",
+                "performed_by": current_user.id,
+                "metadata": audit_details,
+                "created_at": now,
+            },
+            session=session,
+        )
+        return {
+            "success": True,
+            "already_repaired": False,
+            "booking_id": booking_id,
+            "repaired_charges": repaired_rows,
+            "total_reduction": audit_details["total_reduction"],
         }
 
     return await _run_reservation_financial_transaction(
