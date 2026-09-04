@@ -508,3 +508,62 @@ async def test_daily_rate_update_requires_each_stay_night_exactly_once(monkeypat
 
     assert exc.value.status_code == 422
     assert "Eksik: 2026-08-19" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_daily_rate_update_blocks_pricing_change_after_payment_before_any_write(monkeypatch):
+    daily_rates = SimpleNamespace(
+        find=lambda *_args, **_kwargs: AsyncRows(
+            [{"booking_id": "booking-a", "tenant_id": "tenant-a", "date": "2026-08-18", "rate": 400.0}]
+        ),
+        update_one=AsyncMock(),
+    )
+    bookings = SimpleNamespace(
+        find_one=AsyncMock(
+            return_value={
+                "id": "booking-a",
+                "tenant_id": "tenant-a",
+                "status": "checked_in",
+                "check_in": "2026-08-18",
+                "check_out": "2026-08-19",
+                "total_amount": 400.0,
+            }
+        ),
+        update_one=AsyncMock(),
+    )
+    database = SimpleNamespace(
+        bookings=bookings,
+        daily_rates=daily_rates,
+        folios=SimpleNamespace(find_one=AsyncMock(return_value={"id": "folio-a"})),
+        payments=SimpleNamespace(find_one=AsyncMock(return_value={"id": "payment-a"})),
+        invoices=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_args: None)
+    monkeypatch.setattr(reservation_detail, "ensure_reservation_mutable", AsyncMock())
+    monkeypatch.setattr(
+        reservation_detail,
+        "ensure_business_date_initialized",
+        AsyncMock(return_value={"business_date": "2026-08-18"}),
+    )
+    monkeypatch.setattr(
+        reservation_detail,
+        "_posted_room_charge_rate_mismatches",
+        AsyncMock(return_value=[]),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await reservation_detail.update_daily_rates(
+            "booking-a",
+            reservation_detail.DailyRateUpdate(
+                rates=[reservation_detail.DailyRateEntry(date="2026-08-18", rate=450.0)]
+            ),
+            current_user=SimpleNamespace(id="user-a", tenant_id="tenant-a", role="manager", name="Test Operator"),
+            _perm=None,
+        )
+
+    assert exc.value.status_code == 409
+    assert "Ödeme" in exc.value.detail
+    daily_rates.update_one.assert_not_awaited()
+    bookings.update_one.assert_not_awaited()

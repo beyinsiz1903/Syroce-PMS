@@ -257,9 +257,11 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   // bilinmeyeni "açık" sayıp çevrimdışı kuyruğa ALMASIN). balance yalnız görüntü.
   const rawBalance = summary?.balance;
   const balance = Number(rawBalance) || 0;
-  const hasOpenBalance = balance > 0.01;
+  const pricingReconciliationRequired = Boolean(summary?.pricing_reconciliation_required);
+  const pricingReconciliationDifference = Number(summary?.pricing_reconciliation_difference) || 0;
+  const hasOpenBalance = balance > 0.01 && !pricingReconciliationRequired;
   const reservationTotalDue = Number(summary?.reservation_total_due ?? rawBalance) || 0;
-  const hasReservationAmountDue = reservationTotalDue > 0.01;
+  const hasReservationAmountDue = reservationTotalDue > 0.01 && !pricingReconciliationRequired;
   const unpostedRoomAmount = Number(summary?.unposted_room_amount) || 0;
   const hasAllocatedPrepayment = unpostedRoomAmount > 0.01 && !hasReservationAmountDue && balance < -0.01;
   const displayedFolioBalance = hasAllocatedPrepayment ? 0 : balance;
@@ -312,7 +314,11 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
             {booking?.group_booking_id && (
               <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[11px] h-5 px-2">Grup</Badge>
             )}
-            {hasReservationAmountDue && (
+            {pricingReconciliationRequired ? (
+              <Badge className="bg-amber-50 text-amber-800 border border-amber-300 text-[11px] h-5 px-2 hidden md:inline-flex">
+                <AlertTriangle className="w-3 h-3 mr-1" /> Fiyat / tahakkuk mutabakatı gerekli
+              </Badge>
+            ) : hasReservationAmountDue && (
               <Badge className="bg-rose-50 text-rose-700 border border-rose-200 text-[11px] h-5 px-2 hidden md:inline-flex">
                 <AlertTriangle className="w-3 h-3 mr-1" /> Kalan tahsilat: {fmtTL(reservationTotalDue)} TL
               </Badge>
@@ -350,18 +356,23 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
 
               {/* Fiyat & Bakiye — bakiye vurgulu */}
               <div className={`rounded-xl p-4 space-y-3 shadow-sm ${
-                hasReservationAmountDue ? 'bg-rose-50 border-2 border-rose-200' : 'bg-white border border-slate-200'
+                pricingReconciliationRequired ? 'bg-amber-50 border-2 border-amber-300' : hasReservationAmountDue ? 'bg-rose-50 border-2 border-rose-200' : 'bg-white border border-slate-200'
               }`} data-testid="financial-summary-card">
                 <div>
-                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Kalan tahsilat</p>
-                  <div className={`text-2xl font-bold leading-tight ${hasReservationAmountDue ? 'text-rose-700' : 'text-emerald-600'}`}>{fmtTL(reservationTotalDue)} TL</div>
-                  <p className="text-[11px] text-slate-500">{hasReservationAmountDue ? 'Rezervasyon toplamından kalan' : 'Tahsilat tamamlandı'}</p>
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{pricingReconciliationRequired ? 'Fiyat / tahakkuk farkı' : 'Kalan tahsilat'}</p>
+                  <div className={`text-2xl font-bold leading-tight ${pricingReconciliationRequired ? 'text-amber-800' : hasReservationAmountDue ? 'text-rose-700' : 'text-emerald-600'}`}>{fmtTL(pricingReconciliationRequired ? pricingReconciliationDifference : reservationTotalDue)} TL</div>
+                  <p className="text-[11px] text-slate-500">{pricingReconciliationRequired ? 'Tahsilat alınmamalı; fiyat ve tahakkuk düzeltilmeli' : hasReservationAmountDue ? 'Rezervasyon toplamından kalan' : 'Tahsilat tamamlandı'}</p>
                 </div>
                 <div className={`pt-3 border-t space-y-1.5 ${hasReservationAmountDue ? 'border-rose-200' : 'border-slate-200'}`}>
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.toplam')}</span>
                     <span className="font-semibold text-slate-800">{fmtTL(summary?.total_amount)} TL</span>
                   </div>
+                  {pricingReconciliationRequired && (
+                    <div className="rounded-md bg-amber-100/70 px-2 py-1.5 text-[11px] leading-4 text-amber-900" data-testid="pricing-reconciliation-alert">
+                      Aktif oda tahakkukları, onaylı rezervasyon toplamını {fmtTL(pricingReconciliationDifference)} TL aşıyor. Ödeme yerine finansal mutabakat yapın.
+                    </div>
+                  )}
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.odenen')}</span>
                     <span className="font-semibold text-emerald-600">{fmtTL(summary?.total_payments)} TL</span>
@@ -624,6 +635,11 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 <Button
                   size="sm"
                   onClick={async () => {
+                    if (pricingReconciliationRequired) {
+                      setActiveTab('daily_rates');
+                      toast.warning('Fiyat ve tahakkuk farkı düzeltilmeden çıkış yapılamaz. Bu tutarı misafirden tahsil etmeyin.');
+                      return;
+                    }
                     if (hasOpenBalance) {
                       setActiveTab('folios');
                       toast.warning(
@@ -668,7 +684,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   className="w-full h-10 bg-amber-600 hover:bg-amber-700 text-white font-medium shadow-sm"
                   data-testid="btn-checkout"
                 >
-                  {hasOpenBalance ? (
+                  {pricingReconciliationRequired ? (
+                    <><AlertTriangle className="w-4 h-4 mr-2" /> Önce fiyat / tahakkuk mutabakatını tamamlayın</>
+                  ) : hasOpenBalance ? (
                     <><CreditCard className="w-4 h-4 mr-2" /> Önce folio bakiyesini tamamlayın</>
                   ) : (
                     <><LogOut className="w-4 h-4 mr-2" /> {t('cm.pages_ReservationDetailModal.cikis_yap')}</>

@@ -56,6 +56,80 @@ def test_summary_keeps_full_stay_visible_when_only_some_room_nights_are_posted()
     assert summary["reservation_total_due"] == 7500.0
 
 
+def test_summary_marks_room_charge_overage_as_reconciliation_not_guest_debt():
+    """A stale posted room charge must not be labelled as collectable money."""
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 7500.0, "paid_amount": 7500.0},
+        [{"charge_type": "room_charge", "total": 7515.03, "voided": False}],
+        [{"amount": 7500.0, "voided": False}],
+        [],
+        [],
+    )
+
+    assert summary["reservation_total_due"] == 15.03
+    assert summary["pricing_reconciliation_required"] is True
+    assert summary["pricing_reconciliation_difference"] == 15.03
+
+
+def test_room_charge_rate_mismatch_detects_the_exact_cent_difference():
+    mismatches = reservation_detail._room_charge_rate_mismatches(
+        [
+            {
+                "id": "charge-a",
+                "charge_type": "room_charge",
+                "date": "2026-09-03T00:00:00+00:00",
+                "total": 2515.03,
+                "voided": False,
+            }
+        ],
+        {"2026-09-03": 2500.0},
+    )
+
+    assert mismatches == [
+        {
+            "date": "2026-09-03",
+            "charge_id": "charge-a",
+            "expected_total": 2500.0,
+            "posted_total": 2515.03,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_payment_is_blocked_when_posted_room_rate_and_daily_rate_disagree(monkeypatch):
+    monkeypatch.setattr(
+        reservation_detail,
+        "db",
+        SimpleNamespace(
+            bookings=SimpleNamespace(
+                find_one=AsyncMock(
+                    return_value={"id": "booking-a", "tenant_id": "tenant-a", "total_amount": 7500.0}
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_: None)
+    mismatch_probe = AsyncMock(
+        return_value=[
+            {"date": "2026-09-03", "charge_id": "charge-a", "expected_total": 2500.0, "posted_total": 2515.03}
+        ]
+    )
+    monkeypatch.setattr(reservation_detail, "_posted_room_charge_rate_mismatches", mismatch_probe)
+
+    with pytest.raises(reservation_detail.HTTPException) as exc:
+        await reservation_detail.record_payment(
+            "booking-a",
+            reservation_detail.PaymentRecord(amount=7500.0, method="cash", payment_type="final"),
+            current_user=SimpleNamespace(id="user-a", tenant_id="tenant-a", role="manager", name="Operator"),
+            _perm=None,
+        )
+
+    assert exc.value.status_code == 409
+    assert "mutabakat" in exc.value.detail
+    mismatch_probe.assert_awaited_once_with("tenant-a", "booking-a")
+
+
 def test_summary_preserves_explicit_zero_after_extra_charge_split():
     summary = reservation_detail._build_financial_summary(
         {"total_amount": 100.0, "paid_amount": 0.0},

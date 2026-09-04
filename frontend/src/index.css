@@ -494,6 +494,7 @@ code {
 .dark .data-\[state\=active\]\:bg-amber-50[data-state=active] { background-color: #451a03; }
 .dark .bg-amber-100,
 .dark .data-\[state\=active\]\:bg-amber-100[data-state=active] { background-color: #78350f; }
+.dark .bg-amber-100\/70 { background-color: rgb(120 53 15 / 0.7); }
 .dark .bg-amber-200 { background-color: #92400e; }
 .dark .hover\:bg-amber-50:hover { background-color: #78350f; }
 .dark .hover\:bg-amber-100:hover { background-color: #92400e; }
