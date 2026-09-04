@@ -71,6 +71,25 @@ def test_summary_marks_room_charge_overage_as_reconciliation_not_guest_debt():
     assert summary["pricing_reconciliation_difference"] == 15.03
 
 
+def test_summary_marks_automatic_accommodation_tax_overage_as_reconciliation():
+    """A system tax row may not turn a fully paid booking into new debt."""
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 7500.0, "paid_amount": 7500.0},
+        [
+            {"charge_type": "room_charge", "total": 7500.0, "voided": False},
+            {"charge_type": "tax", "charge_category": "tax", "total": 15.03, "voided": False},
+        ],
+        [{"amount": 7500.0, "voided": False}],
+        [],
+        [],
+    )
+
+    assert summary["reservation_total_due"] == 15.03
+    assert summary["pricing_reconciliation_required"] is True
+    assert summary["pricing_reconciliation_difference"] == 15.03
+    assert summary["accommodation_tax_total"] == 15.03
+
+
 def test_room_charge_rate_mismatch_detects_the_exact_cent_difference():
     mismatches = reservation_detail._room_charge_rate_mismatches(
         [

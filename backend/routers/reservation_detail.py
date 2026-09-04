@@ -325,6 +325,17 @@ def _build_financial_summary(
         for charge in active_charges
         if charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room"
     )
+    # Accommodation taxes are generated together with the nightly room
+    # charge.  They are not a receptionist-entered extra service, so they
+    # must participate in the same agreed-price reconciliation.  Otherwise a
+    # tax row created after a rate update is incorrectly presented as a new
+    # guest debt even when the confirmed reservation total was paid in full.
+    accommodation_tax_total = sum(
+        charge.get("total", charge.get("amount", 0))
+        for charge in active_charges
+        if charge.get("charge_type") == "tax" or charge.get("charge_category") == "tax"
+    )
+    reservation_price_component_total = room_charge_total + accommodation_tax_total
     room_charge_posted = room_charge_total > 0
     unposted_room_total = 0 if room_charge_posted else booking.get("total_amount", 0)
     balance = unposted_room_total + total_charges + total_extra - total_payments
@@ -334,15 +345,16 @@ def _build_financial_summary(
     # room charge is already larger than the booking total (for example when a
     # separately-posted tax is excluded from the original total).
     reservation_total_due = (
-        max(float(booking.get("total_amount", 0) or 0), float(room_charge_total or 0))
-        + (total_charges - room_charge_total)
+        max(float(booking.get("total_amount", 0) or 0), float(reservation_price_component_total or 0))
+        + (total_charges - reservation_price_component_total)
         + total_extra
         - total_payments
     )
-    # A posted room charge above the confirmed reservation total is a pricing
-    # reconciliation problem, not an amount the receptionist should collect.
+    # A posted accommodation amount above the confirmed reservation total is
+    # a pricing reconciliation problem, not an amount the receptionist should
+    # collect.  This includes system-generated accommodation-tax rows.
     pricing_reconciliation_difference = round(
-        max(0, float(room_charge_total or 0) - float(booking.get("total_amount", 0) or 0)),
+        max(0, float(reservation_price_component_total or 0) - float(booking.get("total_amount", 0) or 0)),
         2,
     )
 
@@ -351,6 +363,7 @@ def _build_financial_summary(
         "total_charges": round(total_charges, 2),
         "total_payments": round(total_payments, 2),
         "total_extra": round(total_extra, 2),
+        "accommodation_tax_total": round(accommodation_tax_total, 2),
         "total_deposits": round(total_deposits, 2),
         "balance": round(balance, 2),
         "folio_balance": round(folio_balance, 2),

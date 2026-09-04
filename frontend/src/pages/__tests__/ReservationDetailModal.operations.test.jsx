@@ -206,6 +206,30 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.getAllByText('3 gece')).toHaveLength(2);
   });
 
+  it('does not present a system pricing difference as remaining collection', async () => {
+    get.mockResolvedValueOnce({
+      data: {
+        ...detail,
+        booking: { ...detail.booking, status: 'checked_in', total_amount: 7500 },
+        summary: {
+          ...detail.summary,
+          total_amount: 7500,
+          total_payments: 7500,
+          balance: 15.03,
+          reservation_total_due: 15.03,
+          pricing_reconciliation_required: true,
+          pricing_reconciliation_difference: 15.03,
+        },
+      },
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('pricing-reconciliation-alert')).toHaveTextContent('15,03 TL');
+    expect(screen.getByTestId('financial-summary-card')).toHaveTextContent('Fiyat / tahakkuk farkı');
+    expect(screen.queryByText('Rezervasyon toplamından kalan')).not.toBeInTheDocument();
+  });
+
   it('repairs an unpaid double-taxed channel charge without cancelling the booking', async () => {
     get.mockResolvedValue({
       data: {
