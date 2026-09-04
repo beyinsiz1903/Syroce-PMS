@@ -1421,6 +1421,7 @@ async def test_voucher_requires_maker_checker_before_posting(_patch):
     created = await gl.create_voucher(_voucher_payload(), current_user=maker)
     voucher = created["voucher"]
     assert voucher["status"] == "draft"
+    assert voucher["setup_idempotency_key"] == f"manual:{voucher['id']}"
     assert _patch.gl_journal_entries.docs == []
 
     submitted = await gl.submit_voucher(

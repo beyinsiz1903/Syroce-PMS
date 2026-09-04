@@ -1006,6 +1006,11 @@ async def create_voucher(payload: VoucherCreateIn, current_user: User = Depends(
         "tenant_id": tenant_id,
         "voucher_no": voucher_no,
         "voucher_sequence": voucher_sequence,
+        # The setup idempotency index predates its sparse/partial definition in
+        # some installations.  A distinct marker keeps regular manual vouchers
+        # clear of the legacy null key while preserving the setup flow's own
+        # caller-provided replay key.
+        "setup_idempotency_key": f"manual:{voucher_id}",
         "fiscal_year": fiscal_year,
         **normalized,
         "status": "draft",
