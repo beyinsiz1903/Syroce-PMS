@@ -790,6 +790,43 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       }
     }
 
+    // Update the board before the durable-rate lookup and write complete. The
+    // old flow waited for three network round trips, so an extension appeared
+    // to "catch up" after the user released the handle. Keep the exact daily
+    // rate reconciliation below; this is only the immediate visual response.
+    const currentCheckIn = toDateStringUTC(booking.check_in);
+    const currentCheckOut = toDateStringUTC(booking.check_out);
+    const currentNights = Math.max(1, Math.round(
+      (new Date(`${currentCheckOut}T00:00:00Z`) - new Date(`${currentCheckIn}T00:00:00Z`)) / 86400000,
+    ));
+    const currentTotal = Number(booking.total_amount || 0);
+    const roomForPreview = rooms.find(r => r.id === booking.room_id) || {};
+    const roomTypeForPreview = booking.room_type || roomForPreview.room_type || roomForPreview.type;
+    let previewTotal = currentTotal;
+    if (result.extending) {
+      let cursor = new Date(`${currentCheckOut}T00:00:00Z`);
+      const newCheckOut = new Date(`${result.newCheckOut}T00:00:00Z`);
+      while (cursor < newCheckOut) {
+        const date = toDateStringUTC(cursor);
+        const publishedRate = Number(calendarRates[`${roomTypeForPreview}|${date}`]);
+        previewTotal += Number.isFinite(publishedRate) && publishedRate > 0
+          ? publishedRate
+          : Number(roomForPreview.base_price || booking.base_rate || (currentTotal / currentNights));
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+    } else {
+      const newNights = Math.max(1, Math.round(
+        (new Date(`${result.newCheckOut}T00:00:00Z`) - new Date(`${currentCheckIn}T00:00:00Z`)) / 86400000,
+      ));
+      previewTotal = Math.max(0, (currentTotal / currentNights) * newNights);
+    }
+    const optimisticBooking = {
+      ...booking,
+      check_out: result.newCheckOut,
+      total_amount: Math.round(previewTotal * 100) / 100,
+    };
+    setBookings(current => current.map(item => item.id === booking.id ? optimisticBooking : item));
+
     try {
       const oldCheckInDate = new Date(`${toDateStringUTC(booking.check_in)}T00:00:00Z`);
       const oldCheckOutDate = new Date(`${toDateStringUTC(booking.check_out)}T00:00:00Z`);
@@ -858,6 +895,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       toast.success(`Konaklama ${result.newCheckOut} tarihine ${action}. Yeni tutar: ${newTotalAmount.toLocaleString('tr-TR')} ${currency}.`);
       loadCalendarData();
     } catch (error) {
+      // The optimistic board update is only kept when persistence succeeds.
+      setBookings(current => current.map(item => item.id === booking.id ? booking : item));
       const conflict = parseBookingConflict(error);
       if (conflict) {
         setBookingConflict(conflict);
@@ -1139,9 +1178,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // ─── Render ────────────────────────────────────────────────
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="calendar" fullWidth>
-      <div className="flex flex-col h-[calc(100vh-72px)] overflow-hidden -mb-28 bg-slate-50" role="main" aria-label="Rezervasyon takvimi">
+      <div className="flex flex-col h-[calc(100vh-72px)] overflow-hidden -mb-28 bg-white" role="main" aria-label="Rezervasyon takvimi">
         <div
-          className="flex-none px-4 py-3 bg-white border-b border-slate-200 shadow-sm space-y-3"
+          className="flex-none px-5 py-3 bg-white border-b border-slate-200 space-y-3"
           data-testid="calendar-sticky-header"
           role="toolbar"
           aria-label="Takvim kontrol araçları"
@@ -1170,10 +1209,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         />
         </div>
 
-        <div className="flex-1 flex flex-col min-h-0 px-4 pb-4 pt-3 gap-3">
+        <div className="flex-1 flex flex-col min-h-0">
         {/* Compact Legend */}
         <div
-          className={`flex-none bg-white border border-slate-200 rounded-xl shadow-sm ${viewPreferences.compactMode ? 'px-3 py-1.5' : 'px-4 py-2'}`}
+          className={`flex-none border-b border-slate-200 bg-white ${viewPreferences.compactMode ? 'px-5 py-1.5' : 'px-5 py-2'}`}
           data-testid="calendar-legend"
           role="region"
           aria-label="Renk kodu lejantı"
