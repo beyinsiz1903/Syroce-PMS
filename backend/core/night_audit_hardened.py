@@ -857,7 +857,7 @@ async def _build_candidate_set(
             {"_id": 0, "booking_id": 1},
         ):
             already_posted_set.add(c["booking_id"])
-            
+
         async for r in db.daily_rates.find(
             {
                 "booking_id": {"$in": all_booking_ids},

@@ -130,7 +130,7 @@ def calculate_room_charge(
     accommodation_rate_d = _decimal(accommodation_tax_rate)
     combined_rate = vat_rate_d + accommodation_rate_d
     provider_total = is_channel_total_tax_inclusive(booking)
-    
+
     if explicit_daily_rate is not None:
         gross = _decimal(explicit_daily_rate).quantize(MONEY, rounding=ROUND_HALF_UP)
     else:
