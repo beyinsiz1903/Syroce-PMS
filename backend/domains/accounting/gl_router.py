@@ -888,17 +888,24 @@ async def _allocate_voucher_number(tenant_id: str, fiscal_year: int, now: str) -
     always explainable instead of disappearing from the audit trail.
     """
     counter_id = f"gl-voucher-counter:{tenant_id}:{fiscal_year}"
+    # Counter ids already include the tenant.  Older installations created this
+    # document before the tenant_id field was added; including tenant_id in the
+    # lookup would then miss that document and an upsert would collide with its
+    # immutable _id.  Match by the tenant-qualified id and repair the metadata
+    # on every allocation instead.
     counter = await db.gl_counters.find_one_and_update(
-        {"_id": counter_id, "tenant_id": tenant_id},
+        {"_id": counter_id},
         {
             "$inc": {"value": 1},
             "$setOnInsert": {
+                "created_at": now,
+            },
+            "$set": {
                 "tenant_id": tenant_id,
                 "fiscal_year": fiscal_year,
                 "counter_type": "voucher",
-                "created_at": now,
+                "updated_at": now,
             },
-            "$set": {"updated_at": now},
         },
         upsert=True,
         return_document=ReturnDocument.AFTER,

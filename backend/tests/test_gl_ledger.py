@@ -1478,6 +1478,47 @@ async def test_voucher_numbers_are_monotonic_and_cancelled_numbers_remain_audita
     assert cancelled["voucher"]["voucher_no"] == "MF-2026-00000001"
 
 
+async def test_voucher_counter_repairs_legacy_counter_without_tenant_metadata(_patch):
+    """A pre-tenant counter must continue from its existing ordinal.
+
+    Querying it with both `_id` and `tenant_id` would miss the legacy document
+    and cause Mongo's upsert to fail on the already occupied `_id`.
+    """
+    await _seed_basic_coa()
+    legacy_id = f"gl-voucher-counter:{TENANT}:2026"
+    _patch.gl_counters.docs.append({"_id": legacy_id, "value": 1})
+
+    created = await gl.create_voucher(_voucher_payload(date="2026-02-01"), current_user=_user("finance"))
+
+    assert created["voucher"]["voucher_no"] == "MF-2026-00000002"
+    repaired = _patch.gl_counters.docs[0]
+    assert repaired["tenant_id"] == TENANT
+    assert repaired["fiscal_year"] == 2026
+    assert repaired["counter_type"] == "voucher"
+
+
+async def test_foreign_currency_voucher_can_be_created(_patch):
+    await _seed_basic_coa()
+
+    created = await gl.create_voucher(
+        gl.VoucherCreateIn(
+            date="2026-09-03",
+            voucher_type="mahsup",
+            memo="USD fiş oluşturma denetimi",
+            lines=[
+                gl.JournalLineIn(account_code="100", debit=4000, currency="USD", foreign_amount=100, exchange_rate=40),
+                gl.JournalLineIn(account_code="600", credit=4000, currency="USD", foreign_amount=100, exchange_rate=40),
+            ],
+        ),
+        current_user=_user("finance"),
+    )
+
+    assert created["voucher"]["status"] == "draft"
+    assert created["voucher"]["total_debit"] == 4000.0
+    assert created["voucher"]["lines"][0]["currency"] == "USD"
+    assert created["voucher"]["lines"][0]["foreign_amount"] == 100.0
+
+
 async def test_rejected_voucher_can_be_revised_with_optimistic_version(_patch):
     await _seed_basic_coa()
     maker = _user("finance", user_id="maker")
