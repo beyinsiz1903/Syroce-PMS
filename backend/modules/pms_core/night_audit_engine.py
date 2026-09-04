@@ -336,6 +336,17 @@ class NightAuditEngine:
             async for c in existing_cursor:
                 already_posted_folio_ids.add(c["folio_id"])
 
+        # Bulk pre-fetch #4: daily rates
+        daily_rates_cursor = db.daily_rates.find(
+            {
+                "tenant_id": tenant_id,
+                "booking_id": {"$in": booking_ids},
+                "date": {"$gte": business_date, "$lt": business_date + "T99"},
+            },
+            {"_id": 0, "booking_id": 1, "rate": 1},
+        )
+        daily_rates_by_booking = {r["booking_id"]: float(r["rate"]) for r in await daily_rates_cursor.to_list(len(booking_ids))}
+
         # Loop artık in-memory — DB hit YOK.
         posted = 0
         failed = 0
@@ -386,6 +397,7 @@ class NightAuditEngine:
                     business_date,
                     vat_rate=tax_rate / 100,
                     accommodation_tax_rate=accommodation_tax_rate,
+                    explicit_daily_rate=daily_rates_by_booking.get(booking["id"]),
                 )
                 nightly_rate = pricing["amount"]
                 tax_amount = pricing["tax_amount"]
