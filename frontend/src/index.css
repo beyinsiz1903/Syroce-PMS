@@ -418,6 +418,7 @@ code {
 .dark .hover\:bg-gray-50\/60:hover,
 .dark .hover\:bg-slate-50\/50:hover,
 .dark .hover\:bg-slate-50\/60:hover,
+.dark .hover\:bg-slate-50\/70:hover,
 .dark .hover\:bg-white\/60:hover {
     background-color: hsl(var(--accent));
 }

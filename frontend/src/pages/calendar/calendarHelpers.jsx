@@ -324,6 +324,35 @@ export const buildCalendarRateLookup = (grid = []) => {
   return lookup;
 };
 
+// Resolve the same published selling rate that the room board shows for a
+// concrete room-night. A room's base_price is only a fallback when the rate
+// grid has no value for that date.
+export const getCalendarRoomNightRate = (dailyRates = {}, room = {}, date, fallback = 0) => {
+  const roomType = room?.room_type || room?.room_type_name || '';
+  const configured = Number(dailyRates[`${roomType}|${toDateStringUTC(date)}`]);
+  if (Number.isFinite(configured) && configured > 0) return configured;
+
+  const baseRate = Number(room?.base_price);
+  if (Number.isFinite(baseRate) && baseRate > 0) return baseRate;
+  return fallback;
+};
+
+// Sum published nightly rates across a stay. This lets a multi-night quick
+// booking follow the visible room-board prices when individual dates differ.
+export const getCalendarStayTotal = (dailyRates = {}, room = {}, checkIn, checkOut, fallback = 0) => {
+  const start = toDateStringUTC(checkIn);
+  const end = toDateStringUTC(checkOut);
+  if (!start || !end || start >= end) return 0;
+
+  const cursor = new Date(`${start}T00:00:00Z`);
+  let total = 0;
+  while (toDateStringUTC(cursor) < end) {
+    total += getCalendarRoomNightRate(dailyRates, room, cursor, fallback);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return total;
+};
+
 // Booking arrival/stayover/departure status
 export const getBookingStatus = (booking, date) => {
   const dayStr = toDateStringUTC(date);
