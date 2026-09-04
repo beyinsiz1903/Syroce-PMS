@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { Calendar as CalendarIcon, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import {
   toDateStringUTC, checkoutAfterCalendarNight, isBookingOnDate, isBookingStart, isWeekend, isToday, isPastDate,
@@ -13,17 +13,15 @@ import { useTranslation } from 'react-i18next';
 import OccupancyBand from "./OccupancyBand";
 import { compactGuestName, formatGuestName } from './roomTypeMatching';
 
-// Readable grid constants. The old 72×38 cells made names and channel data
-// difficult to scan on a reception desk display.
-const CELL_W = 84;
-const CELL_CLS = 'w-[84px]';
-const LABEL_CLS = 'w-36';
-// HotelRunner-style room board: calm neutral cells with enough vertical room
-// for a reservation card to be read at a glance on the front-desk screen.
-const CELL_H = 56;
-const BOOKING_H = 42;
-const LANE_H = 44;
-const LANE_BAR_H = 46;
+// HotelRunner's board uses a dense, tabular rhythm: a wide room label column
+// and narrow day columns. This keeps 14 days useful without a card-like view.
+const CELL_W = 70;
+const CELL_CLS = 'w-[70px]';
+const LABEL_CLS = 'w-52';
+const CELL_H = 50;
+const BOOKING_H = 38;
+const LANE_H = 40;
+const LANE_BAR_H = 42;
 
 export const clearCalendarTextSelection = () => {
   window.getSelection?.()?.removeAllRanges();
@@ -65,7 +63,8 @@ const CalendarGrid = ({
 }) => {
   const { t } = useTranslation();
   const [collapsedTypes, setCollapsedTypes] = useState(() => new Set());
-  const [pointerResize, setPointerResize] = useState(null);
+  const [, setPointerResize] = useState(null);
+  const pointerResizeRef = useRef(null);
 
   const pointerDate = (event) => {
     const target = document.elementFromPoint?.(event.clientX, event.clientY);
@@ -74,18 +73,38 @@ const CalendarGrid = ({
   };
 
   const completePointerResize = (event) => {
-    if (!pointerResize) return;
-    const targetDate = pointerDate(event) || pointerResize.targetDate;
-    const { targetDate: _ignoredTargetDate, ...booking } = pointerResize;
+    const activeResize = pointerResizeRef.current;
+    if (!activeResize) return;
+    const targetDate = pointerDate(event) || activeResize.targetDate;
+    const { booking } = activeResize;
+    pointerResizeRef.current = null;
     setPointerResize(null);
     if (targetDate) onResizePointerCommit?.(booking, new Date(`${targetDate}T00:00:00Z`));
   };
 
   const updatePointerResize = (event) => {
-    if (!pointerResize) return;
+    const activeResize = pointerResizeRef.current;
+    if (!activeResize) return;
     const targetDate = pointerDate(event);
-    if (!targetDate || targetDate === pointerResize.targetDate) return;
-    setPointerResize((current) => current ? { ...current, targetDate } : current);
+    if (!targetDate || targetDate === activeResize.targetDate) return;
+
+    // Do not make React re-render every room and day while the pointer moves.
+    // The board has hundreds of cells; mutating just the active card makes the
+    // resize preview follow the cursor immediately, like HotelRunner.
+    activeResize.targetDate = targetDate;
+    const previewCheckOut = checkoutAfterCalendarNight(targetDate);
+    const span = calculateBookingSpan(
+      { ...activeResize.booking, check_out: previewCheckOut },
+      currentDate,
+      daysToShow,
+    );
+    const card = document.querySelector(`[data-booking-id="${String(activeResize.booking.id)}"]`);
+    if (card && span > 0) card.style.width = `${span * CELL_W - 4}px`;
+  };
+
+  const cancelPointerResize = () => {
+    pointerResizeRef.current = null;
+    setPointerResize(null);
   };
 
   const toggleType = (type) => {
@@ -194,11 +213,11 @@ const CalendarGrid = ({
       onPointerDown={clearCalendarTextSelection}
       onPointerMove={updatePointerResize}
       onPointerUp={completePointerResize}
-      onPointerCancel={() => setPointerResize(null)}
+      onPointerCancel={cancelPointerResize}
     >
       {/* Date Header Row - STICKY */}
       <div className="overflow-auto flex-1">
-        <div className="min-w-max pb-12">
+        <div className="min-w-max">
           {showOccupancyBand && (
             <OccupancyBand
               dateRange={dateRange}
@@ -247,7 +266,7 @@ const CalendarGrid = ({
               return (
                 <div
                   key={idx}
-                  className={`${CELL_CLS} flex-shrink-0 py-2 border-r text-center ${
+                  className={`${CELL_CLS} flex-shrink-0 py-1.5 border-r text-center ${
                     today ? 'bg-blue-50 border-blue-300 shadow-[inset_0_3px_0_#2563eb]' : past || weekend ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200'
                   }`}
                   data-testid={`date-header-${dayNum}`}
@@ -260,7 +279,7 @@ const CalendarGrid = ({
                   >
                     {dayName}
                   </div>
-                  <div className={`text-[18px] font-extrabold leading-tight ${today ? 'text-blue-700' : past ? 'text-slate-400' : 'text-slate-900'}`}>
+                  <div className={`text-[17px] font-extrabold leading-tight ${today ? 'text-blue-700' : past ? 'text-slate-400' : 'text-slate-900'}`}>
                     {dayNum}
                   </div>
                 </div>
@@ -285,7 +304,7 @@ const CalendarGrid = ({
                   {/* Room Type Header */}
                   <div className="bg-slate-50 border-y border-slate-200" data-testid="room-type-row">
                     <div className="flex">
-                      <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-2 border-r border-slate-200 bg-slate-50 flex items-center`}>
+                      <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-1.5 border-r border-slate-200 bg-slate-50 flex items-center`}>
                         <button
                           type="button"
                           onClick={() => toggleType(roomType)}
@@ -331,7 +350,7 @@ const CalendarGrid = ({
                         return (
                           <div
                             key={idx}
-                          className={`${CELL_CLS} flex-shrink-0 px-0.5 py-1.5 border-r text-center text-[9px] ${
+                          className={`${CELL_CLS} flex-shrink-0 px-0.5 py-1 border-r text-center text-[9px] ${
                               past || weekend ? 'bg-slate-100 border-slate-200' : 'bg-slate-50 border-slate-200'
                             }`}
                           >
@@ -457,8 +476,8 @@ const CalendarGrid = ({
                     const roomDotStatus = roomBlockedStatus ? 'blocked' : hasBookingToday ? 'occupied' : 'free';
                     const roomDotColor = roomDotStatus === 'blocked' ? 'bg-slate-400' : roomDotStatus === 'occupied' ? 'bg-red-500' : 'bg-green-500';
                     return (
-                      <div key={room.id} className="flex border-b border-slate-200 hover:bg-blue-50/50 transition-colors" data-testid="room-row" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
-                        <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-1 border-r border-slate-200 bg-white flex items-center shadow-[3px_0_8px_rgba(15,23,42,0.05)]`} style={{ height: `${rowHeight}px` }}>
+                      <div key={room.id} className="flex border-b border-slate-200 hover:bg-slate-50/70 transition-colors" data-testid="room-row" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
+                        <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-4 py-1 border-r border-slate-200 bg-white flex items-center`} style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-2">
                             <div
                               className={`w-2.5 h-2.5 rounded-full ring-2 ring-white shadow-sm ${roomDotColor}`}
@@ -611,12 +630,7 @@ const CalendarGrid = ({
                               : fullGuestName;
                             const isDragging = draggingBooking?.id === booking.id;
                             const isResizing = resizingBooking?.id === booking.id;
-                            const previewCheckOut = pointerResize?.id === booking.id && pointerResize.targetDate
-                              ? checkoutAfterCalendarNight(pointerResize.targetDate)
-                              : '';
-                            const previewSpan = previewCheckOut > checkInStr
-                              ? calculateBookingSpan({ ...booking, check_out: previewCheckOut }, currentDate, daysToShow)
-                              : span;
+                            const previewSpan = span;
                             const resizeAllowed = !['checked_out', 'cancelled', 'no_show'].includes(String(booking.status || '').toLowerCase())
                               && checkOutStr <= rangeEndStr;
                             const paxCount = (booking.adults || 0) + (booking.children || 0);
@@ -634,10 +648,10 @@ const CalendarGrid = ({
                                 onDragEnd={onDragEnd}
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
-                                className={`absolute rounded-lg text-white text-[10px] transition-all cursor-move z-20 group outline-none border border-white/25 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
+                                className={`absolute rounded-sm text-white text-[10px] cursor-move z-20 group outline-none border border-white/25 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
                                   isDragging || isResizing
                                     ? 'opacity-90 ring-2 ring-blue-300 shadow-xl scale-[1.02] z-30'
-                                    : 'shadow-[0_2px_5px_rgba(15,23,42,0.24)] hover:shadow-lg hover:-translate-y-px hover:z-30'
+                                    : 'shadow-[0_1px_3px_rgba(15,23,42,0.22)] hover:z-30'
                                 } ${isResizing ? 'pointer-events-none' : ''} ${conflictInfo ? 'ring-2 ring-red-500 animate-pulse' : ''} ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
                                 style={{
                                   left: `${startIdx * CELL_W + 2}px`,
@@ -647,6 +661,7 @@ const CalendarGrid = ({
                                   backgroundColor: statusColor.bg,
                                   borderLeft: `4px solid ${statusColor.border}`,
                                 }}
+                                data-booking-id={booking.id}
                                 data-testid={isDragging ? 'reservation-card-dragging' : `booking-bar-${booking.id}`}
                                 title={conflictTitle}
                               >
@@ -693,7 +708,8 @@ const CalendarGrid = ({
                                       e.preventDefault();
                                       e.stopPropagation();
                                       e.currentTarget.setPointerCapture?.(e.pointerId);
-                                      setPointerResize({ ...booking, targetDate: '' });
+                                      pointerResizeRef.current = { booking, targetDate: '' };
+                                      setPointerResize({ id: booking.id });
                                       onResizePointerStart?.(booking);
                                     }}
                                     onClick={(e) => e.stopPropagation()}
