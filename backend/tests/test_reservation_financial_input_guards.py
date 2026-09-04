@@ -428,6 +428,9 @@ async def test_night_audit_closed_daily_rate_cannot_be_changed(monkeypatch):
                     "id": "booking-a",
                     "tenant_id": "tenant-a",
                     "status": "checked_in",
+                    "check_in": "2026-08-17",
+                    "check_out": "2026-08-18",
+                    "total_amount": 400.0,
                 }
             ),
             update_one=AsyncMock(),
@@ -464,3 +467,44 @@ async def test_night_audit_closed_daily_rate_cannot_be_changed(monkeypatch):
     assert "Night Audit ile kapatıldığı" in exc.value.detail
     daily_rates.update_one.assert_not_awaited()
     database.bookings.update_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_daily_rate_update_requires_each_stay_night_exactly_once(monkeypatch):
+    database = SimpleNamespace(
+        bookings=SimpleNamespace(
+            find_one=AsyncMock(
+                return_value={
+                    "id": "booking-a",
+                    "tenant_id": "tenant-a",
+                    "status": "confirmed",
+                    "check_in": "2026-08-18",
+                    "check_out": "2026-08-20",
+                    "total_amount": 400.0,
+                }
+            )
+        ),
+        daily_rates=SimpleNamespace(find=lambda *_args, **_kwargs: AsyncRows([])),
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_: None)
+    monkeypatch.setattr(reservation_detail, "ensure_reservation_mutable", AsyncMock())
+    monkeypatch.setattr(
+        reservation_detail,
+        "ensure_business_date_initialized",
+        AsyncMock(return_value={"business_date": "2026-08-18"}),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await reservation_detail.update_daily_rates(
+            "booking-a",
+            reservation_detail.DailyRateUpdate(
+                rates=[reservation_detail.DailyRateEntry(date="2026-08-18", rate=200.0)]
+            ),
+            current_user=SimpleNamespace(id="user-a", tenant_id="tenant-a", role="manager", name="Test Operator"),
+            _perm=None,
+        )
+
+    assert exc.value.status_code == 422
+    assert "Eksik: 2026-08-19" in exc.value.detail

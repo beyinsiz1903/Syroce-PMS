@@ -49,6 +49,16 @@ def test_multi_night_allocation_preserves_provider_total_to_the_cent():
     assert round(sum(totals), 2) == 100.0
 
 
+def test_explicit_daily_rate_overrides_equal_stay_total_allocation():
+    charge = calculate_room_charge(
+        _hotelrunner_booking(check_out="2026-08-24", total_amount=3000.0),
+        "2026-08-23",
+        explicit_daily_rate=1750.0,
+    )
+
+    assert charge["total"] == 1750.0
+
+
 def test_direct_booking_price_is_the_final_guest_payable_total():
     charge = calculate_room_charge(
         {

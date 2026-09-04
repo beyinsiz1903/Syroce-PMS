@@ -7,6 +7,13 @@ import { Pencil, Check, Loader2, Plus, Receipt, ArrowRightLeft, Clock, Lock } fr
 import { API, fmtDate, fmtTL, fmtTs, FormField, SelectField } from './helpers';
 import EarlyLateChargeModal from '@/components/EarlyLateChargeModal';
 import { useTranslation } from 'react-i18next';
+
+const parseDecimalInput = value => {
+  const normalized = String(value ?? '').trim();
+  if (!/^\d+(?:[.,]\d+)?$/.test(normalized)) return Number.NaN;
+  return Number(normalized.replace(',', '.'));
+};
+
 export function DailyRatesTab({
   dailyRates,
   booking,
@@ -28,13 +35,13 @@ export function DailyRatesTab({
   const anyEditable = rates.some(rate => !isClosedRate(rate));
   const hasClosedRates = rates.some(isClosedRate);
   const handleSave = async () => {
-    if (rates.some(rate => !Number.isFinite(Number(rate.rate)) || Number(rate.rate) <= 0)) {
+    if (rates.some(rate => !Number.isFinite(parseDecimalInput(rate.rate)) || parseDecimalInput(rate.rate) <= 0)) {
       toast.error('Günlük fiyat sıfırdan büyük olmalıdır');
       return;
     }
     setSaving(true);
     try {
-      const payloadRates = rates.map(r => ({ ...r, rate: parseFloat(r.rate) || 0 }));
+      const payloadRates = rates.map(r => ({ ...r, rate: parseDecimalInput(r.rate) }));
       await axios.put(`/pms/reservations/${booking.id}/daily-rates`, {
         rates: payloadRates
       });
@@ -63,7 +70,7 @@ export function DailyRatesTab({
             {rates.map((r, i) => <tr key={r.id || i} className="border-t">
                 <td className="py-2 px-3 text-gray-700">{fmtDate(r.date)}</td>
                 <td className="py-2 px-3 text-right">
-                  {editMode && !isClosedRate(r) ? <Input type="number" step="0.01" value={r.rate} onChange={e => {
+                  {editMode && !isClosedRate(r) ? <Input type="text" inputMode="decimal" value={r.rate} onChange={e => {
                 const u = [...rates];
                 u[i] = {
                   ...u[i],
@@ -74,7 +81,7 @@ export function DailyRatesTab({
                 </td>
               </tr>)}
           </tbody>
-          <tfoot className="bg-gray-50 border-t-2"><tr><td className="py-2 px-3 font-semibold">{t('cm.pages_reservationdetail_PricingTabs.toplam')}</td><td className="py-2 px-3 text-right font-bold">{fmtTL(rates.reduce((s, r) => s + (parseFloat(r.rate) || 0), 0))} TL</td></tr></tfoot>
+          <tfoot className="bg-gray-50 border-t-2"><tr><td className="py-2 px-3 font-semibold">{t('cm.pages_reservationdetail_PricingTabs.toplam')}</td><td className="py-2 px-3 text-right font-bold">{fmtTL(rates.reduce((s, r) => s + (parseDecimalInput(r.rate) || 0), 0))} TL</td></tr></tfoot>
         </table>
       </div>
     </div>;

@@ -126,7 +126,7 @@ describe('reservation detail action feedback', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Düzenle' }));
-    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '0' } });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Günlük fiyat sıfırdan büyük olmalıdır'));
@@ -147,8 +147,26 @@ describe('reservation detail action feedback', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Düzenle' }));
 
-    expect(screen.getAllByRole('spinbutton')).toHaveLength(1);
+    expect(screen.getAllByRole('textbox')).toHaveLength(1);
     expect(screen.getByText('Gün sonu kapalı')).toBeInTheDocument();
+  });
+
+  it('normalizes a Turkish decimal comma before saving daily rates', async () => {
+    render(
+      <DailyRatesTab
+        dailyRates={[{ id: 'rate-a', date: '2026-08-18', rate: 10 }]}
+        booking={{ id: 'booking-a' }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Düzenle' }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '1250,50' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+
+    await waitFor(() => expect(axiosMock.put).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/daily-rates',
+      { rates: [{ id: 'rate-a', date: '2026-08-18', rate: 1250.5 }] },
+    ));
   });
 
   it('exposes the virtual-card delete icon as a named action', async () => {

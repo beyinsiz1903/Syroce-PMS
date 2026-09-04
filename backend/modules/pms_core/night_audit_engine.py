@@ -344,8 +344,12 @@ class NightAuditEngine:
                 "date": {"$gte": business_date, "$lt": business_date + "T99"},
             },
             {"_id": 0, "booking_id": 1, "rate": 1},
-        )
-        daily_rates_by_booking = {r["booking_id"]: float(r["rate"]) for r in await daily_rates_cursor.to_list(len(booking_ids))}
+        ).sort([("updated_at", -1), ("id", -1), ("_id", -1)])
+        daily_rates_by_booking: dict = {}
+        for rate in await daily_rates_cursor.to_list(len(booking_ids)):
+            # Daily-rate writes are unique per stay date. Keep legacy duplicate
+            # handling deterministic until older documents are remediated.
+            daily_rates_by_booking.setdefault(rate["booking_id"], float(rate["rate"]))
 
         # Loop artık in-memory — DB hit YOK.
         posted = 0

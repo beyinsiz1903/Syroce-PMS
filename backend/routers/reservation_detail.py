@@ -2152,12 +2152,29 @@ async def mark_noshow(
         {"$set": {"status": "no_show", "no_show_at": datetime.now(UTC).isoformat()}},
     )
 
-    # Release the room
+    # Release the physical room only when this reservation still owns it.
+    # Historical corrections must never clear a room that has since been
+    # assigned to another in-house guest.
     if booking.get("room_id"):
         await db.rooms.update_one(
-            {"id": booking["room_id"], "tenant_id": tid},
+            {
+                "id": booking["room_id"],
+                "tenant_id": tid,
+                "current_booking_id": booking_id,
+            },
             {"$set": {"status": "available", "current_booking_id": None}},
         )
+
+    # Keep durable room-night availability aligned with this state transition.
+    from core.atomic_booking import release_booking_nights
+
+    try:
+        await release_booking_nights(tid, booking_id, reason="no_show")
+    except Exception as exc:
+        # The status write is already durable; make the transition retry-safe
+        # and surface the stale inventory lock to operations instead of asking
+        # the caller to retry a no-longer-eligible no-show action.
+        logger.exception("No-show room-night release failed booking=%s: %s", booking_id, exc)
 
     await _log_activity(tid, booking_id, "marked_noshow", current_user.name, {})
 
@@ -2364,6 +2381,8 @@ async def update_daily_rates(
         if lookup:
             tid = lookup.get("tenant_id", current_user.tenant_id)
 
+    is_cross_tenant_update = tid != current_user.tenant_id
+    new_total = 0.0
     with tenant_context(tid):
         booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
         if not booking:
@@ -2373,33 +2392,66 @@ async def update_daily_rates(
 
         business_state = await ensure_business_date_initialized(db, tid)
         current_business_date = str(business_state["business_date"])[:10]
-        existing_rates = {
-            str(row.get("date") or "")[:10]: row
+        check_in = _reservation_calendar_date(booking.get("check_in"))
+        check_out = _reservation_calendar_date(booking.get("check_out"))
+        if check_in is None or check_out is None or check_out <= check_in:
+            raise HTTPException(status_code=409, detail="Rezervasyonun geçerli bir konaklama aralığı yok")
+
+        stay_dates: list[str] = []
+        current = check_in
+        while current < check_out:
+            stay_dates.append(current.isoformat())
+            current += timedelta(days=1)
+
+        submitted_rates: dict[str, float] = {}
+        for rate_entry in data.rates:
+            rate_date = _reservation_calendar_date(rate_entry.date)
+            if rate_date is None:
+                raise HTTPException(status_code=422, detail=f"Geçersiz günlük fiyat tarihi: {rate_entry.date}")
+            date_key = rate_date.isoformat()
+            if date_key in submitted_rates:
+                raise HTTPException(status_code=422, detail=f"{date_key} için birden fazla günlük fiyat gönderildi")
+            submitted_rates[date_key] = round(float(rate_entry.rate), 2)
+
+        expected_dates = set(stay_dates)
+        if set(submitted_rates) != expected_dates:
+            missing = sorted(expected_dates - set(submitted_rates))
+            outside = sorted(set(submitted_rates) - expected_dates)
+            detail = "Günlük fiyatlar check-in dahil, check-out hariç her geceyi tam olarak bir kez içermelidir"
+            if missing:
+                detail += f". Eksik: {', '.join(missing)}"
+            if outside:
+                detail += f". Aralık dışı: {', '.join(outside)}"
+            raise HTTPException(status_code=422, detail=detail)
+
+        existing_rate_rows = [
+            row
             async for row in db.daily_rates.find(
                 {"booking_id": booking_id, "tenant_id": tid},
                 {"_id": 0, "date": 1, "rate": 1},
             )
-        }
+        ]
+        existing_rates: dict[str, dict] = {}
+        for row in existing_rate_rows:
+            rate_date = _reservation_calendar_date(row.get("date"))
+            if rate_date is None:
+                raise HTTPException(status_code=409, detail="Geçersiz tarihli mevcut günlük fiyat kaydı bulundu; düzeltme gerekir")
+            date_key = rate_date.isoformat()
+            if date_key in existing_rates:
+                raise HTTPException(status_code=409, detail=f"{date_key} için yinelenen günlük fiyat kaydı bulundu; düzeltme gerekir")
+            existing_rates[date_key] = row
 
         # Bug Fix: If daily_rates are missing in DB, they were generated on-the-fly for the frontend.
         # We must recreate them here to allow the frontend to submit the locked unchanged rates without triggering a 409.
-        if not existing_rates and booking.get("check_in") and booking.get("check_out"):
-            ci = _reservation_calendar_date(booking["check_in"])
-            co = _reservation_calendar_date(booking["check_out"])
-            if ci is not None and co is not None:
-                nights = max((co - ci).days, 1)
-                nightly_rate = round(booking.get("total_amount", 0) / nights, 2) if nights > 0 else 0
-                current = ci
-                for _ in range(nights):
-                    d_str = str(current)[:10]
-                    existing_rates[d_str] = {"date": current.isoformat(), "rate": nightly_rate}
-                    current = current + timedelta(days=1)
+        if not existing_rates:
+            nights = len(stay_dates)
+            nightly_rate = round(float(booking.get("total_amount", 0) or 0) / nights, 2)
+            existing_rates = {date_key: {"date": date_key, "rate": nightly_rate} for date_key in stay_dates}
 
-        for rate_entry in data.rates:
-            rate_date = str(rate_entry.date)[:10]
+        for rate_date, rate in submitted_rates.items():
             if rate_date < current_business_date:
                 existing = existing_rates.get(rate_date)
-                if existing is None or _money_cents(existing.get("rate")) != _money_cents(rate_entry.rate):
+                if existing is None or _money_cents(existing.get("rate")) != _money_cents(rate):
                     raise HTTPException(
                         status_code=409,
                         detail=(
@@ -2408,7 +2460,8 @@ async def update_daily_rates(
                         ),
                     )
 
-        # Sync folio room charges: void old charge → repost at new rate for open days.
+        # Sync an already-posted room charge only. Future nights must remain
+        # unposted: Night Audit reads daily_rates and posts them exactly once.
         # Night-Audit-closed days (rate_date < current_business_date) are skipped —
         # their charges are historical records and must not be modified.
         folio = await db.folios.find_one(
@@ -2423,37 +2476,48 @@ async def update_daily_rates(
 
         async with await db.client.start_session() as session:
             async with session.start_transaction():
-                for rate_entry in data.rates:
-                    await db.daily_rates.update_one(
-                        {"booking_id": booking_id, "tenant_id": tid, "date": rate_entry.date},
-                        {
-                            "$set": {
-                                "rate": rate_entry.rate,
-                                "updated_by": current_user.name,
-                                "updated_at": datetime.now(UTC).isoformat(),
-                            }
-                        },
-                        upsert=True,
-                        session=session,
-                    )
+                for rate_date, rate in submitted_rates.items():
+                    existing = existing_rates.get(rate_date, {})
+                    try:
+                        await db.daily_rates.update_one(
+                            {"booking_id": booking_id, "tenant_id": tid, "date": existing.get("date", rate_date)},
+                            {
+                                "$set": {
+                                    "date": rate_date,
+                                    "rate": rate,
+                                    # Partial unique index: new/touched rows are
+                                    # protected without making a rollout fail on
+                                    # an as-yet-unremediated legacy duplicate.
+                                    "daily_rate_key": f"{booking_id}:{rate_date}",
+                                    "updated_by": current_user.name,
+                                    "updated_at": datetime.now(UTC).isoformat(),
+                                }
+                            },
+                            upsert=True,
+                            session=session,
+                        )
+                    except DuplicateKeyError as exc:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"{rate_date} için eşzamanlı günlük fiyat güncellemesi tespit edildi; lütfen yeniden deneyin",
+                        ) from exc
 
                 # Recalculate total
-                new_total = sum(r.rate for r in data.rates)
-                if new_total > 0:
-                    await db.bookings.update_one(
-                        {"id": booking_id, "tenant_id": tid},
-                        {"$set": {"total_amount": round(new_total, 2)}},
-                        session=session,
-                    )
+                new_total = round(sum(submitted_rates.values()), 2)
+                await db.bookings.update_one(
+                    {"id": booking_id, "tenant_id": tid},
+                    {"$set": {"total_amount": new_total}},
+                    session=session,
+                )
 
-                for rate_entry in data.rates:
-                    rate_date = str(rate_entry.date)[:10]
+                financial_lock_checked = False
+                for rate_date, rate in submitted_rates.items():
                     if rate_date < current_business_date:
                         # Closed by Night Audit — do not touch folio charges for this day.
                         continue
 
                     old_rate = existing_rates.get(rate_date, {}).get("rate")
-                    if old_rate is not None and _money_cents(old_rate) == _money_cents(rate_entry.rate):
+                    if old_rate is not None and _money_cents(old_rate) == _money_cents(rate):
                         # Amount unchanged — nothing to sync.
                         continue
 
@@ -2472,50 +2536,56 @@ async def update_daily_rates(
                         )
                     ]
 
-                    # Void existing room charges for this date
-                    for old_charge in existing_room_charges:
-                        await db.folio_charges.update_one(
-                            {"id": old_charge["id"], "tenant_id": tid},
-                            {
-                                "$set": {
-                                    "voided": True,
-                                    "voided_at": datetime.now(UTC).isoformat(),
-                                    "voided_by": current_user.name,
-                                    "void_reason": f"Günlük fiyat güncellendi: {old_charge.get('total', old_charge.get('amount', 0))} TL → {rate_entry.rate} TL",
-                                }
-                            },
+                    if not existing_room_charges:
+                        continue
+                    if len(existing_room_charges) != 1:
+                        raise HTTPException(status_code=409, detail=f"{rate_date} için birden fazla aktif oda folyo satırı bulundu; manuel düzeltme gerekir")
+                    if not folio or existing_room_charges[0].get("folio_id") != folio["id"]:
+                        raise HTTPException(status_code=409, detail=f"{rate_date} oda ücreti açık misafir folyasında değil; manuel düzeltme gerekir")
+
+                    if not financial_lock_checked:
+                        active_payment = await db.payments.find_one(
+                            {"tenant_id": tid, "folio_id": folio["id"], "voided": {"$ne": True}, "amount": {"$gt": 0}},
+                            {"_id": 0, "id": 1},
                             session=session,
                         )
-                        if old_charge.get("folio_id"):
-                            affected_folio_ids.add(old_charge["folio_id"])
+                        issued_invoice = await db.invoices.find_one(
+                            {"tenant_id": tid, "folio_id": folio["id"], "status": {"$nin": ["draft", "cancelled", "voided"]}},
+                            {"_id": 0, "id": 1},
+                            session=session,
+                        )
+                        if active_payment or issued_invoice:
+                            raise HTTPException(status_code=409, detail="Ödeme veya düzenlenmiş fatura bulunan folyonun oda ücreti otomatik değiştirilemez")
+                        financial_lock_checked = True
 
-                    # Insert new room charge — use calculate_room_charge for consistent
-                    # tax breakdown, same as Night Audit. Since daily_rates stores
-                    # per-night gross (guest-payable), we use a single-night synthetic
-                    # booking so the gross equals rate_entry.rate exactly.
-                    if folio:
-                        single_night_booking = {
+                    old_charge = existing_room_charges[0]
+                    await db.folio_charges.update_one(
+                        {"id": old_charge["id"], "tenant_id": tid, "voided": {"$ne": True}},
+                        {"$set": {"voided": True, "voided_at": datetime.now(UTC).isoformat(), "voided_by": current_user.name, "void_reason": f"Günlük fiyat güncellendi: {old_charge.get('total', old_charge.get('amount', 0))} TL → {rate} TL"}},
+                        session=session,
+                    )
+                    single_night_booking = {
                             **booking,
-                            "total_amount": round(rate_entry.rate, 2),
+                            "total_amount": rate,
                             "provider_total_amount": None,
                             "total_price": None,
                             "check_in": rate_date,
                             "check_out": rate_date,  # same day → nights=1 inside _nightly_gross
-                        }
-                        pricing = calculate_room_charge(
+                    }
+                    pricing = calculate_room_charge(
                             single_night_booking,
                             rate_date,
                             vat_rate=0.10,
                             accommodation_tax_rate=accommodation_tax_rate,
-                        )
-                        new_charge = {
+                    )
+                    new_charge = {
                             "id": str(uuid.uuid4()),
                             "tenant_id": tid,
-                            "folio_id": folio["id"],
+                            "folio_id": old_charge["folio_id"],
                             "booking_id": booking_id,
                             "charge_category": "room",
-                            "description": f"Room charge - {rate_date}",
-                            "date": rate_date,
+                            "description": old_charge.get("description") or f"Room charge - {rate_date}",
+                            "date": old_charge.get("date") or rate_date,
                             "quantity": 1,
                             "unit_price": pricing["unit_price"],
                             "amount": pricing["amount"],
@@ -2526,10 +2596,14 @@ async def update_daily_rates(
                             "tax_inclusive": pricing["tax_inclusive"],
                             "posted_at": datetime.now(UTC).isoformat(),
                             "posted_by": current_user.name,
+                            "reposted_from_charge_id": old_charge["id"],
                             "voided": False,
-                        }
-                        await db.folio_charges.insert_one(new_charge, session=session)
-                        affected_folio_ids.add(folio["id"])
+                    }
+                    for field in ("business_date", "night_audit_date", "charge_type", "audit_id"):
+                        if old_charge.get(field) is not None:
+                            new_charge[field] = old_charge[field]
+                    await db.folio_charges.insert_one(new_charge, session=session)
+                    affected_folio_ids.add(old_charge["folio_id"])
 
         # Recalculate folio balance for all affected folios (must be outside transaction to see committed charges)
         for folio_id in affected_folio_ids:
@@ -2541,13 +2615,30 @@ async def update_daily_rates(
             "daily_rates_updated",
             current_user.name,
             {
-                "rates_count": len(data.rates),
+                "rates_count": len(submitted_rates),
                 "business_date": current_business_date,
                 "folio_charges_synced": len(affected_folio_ids) > 0,
-                "cross_tenant_update": current_user.tenant_id != tid,
+                "cross_tenant_update": is_cross_tenant_update,
                 "original_actor_tenant": current_user.tenant_id,
             },
         )
+
+    if is_cross_tenant_update:
+        with tenant_context(current_user.tenant_id):
+            await db.audit_logs.insert_one(
+                {
+                    "event_type": "super_admin_cross_tenant_daily_rates_updated",
+                    "actor_id": current_user.id,
+                    "actor_name": current_user.name,
+                    "actor_tenant_id": current_user.tenant_id,
+                    "target_tenant_id": tid,
+                    "resource": f"booking:{booking_id}",
+                    "rates_count": len(submitted_rates),
+                    "new_total": new_total,
+                    "tenant_id": current_user.tenant_id,
+                    "created_at": datetime.now(UTC).isoformat(),
+                }
+            )
 
     return {"success": True, "new_total": round(new_total, 2)}
 

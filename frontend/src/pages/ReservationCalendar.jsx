@@ -767,33 +767,55 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       const oldCheckInDate = new Date(`${toDateStringUTC(booking.check_in)}T00:00:00Z`);
       const oldCheckOutDate = new Date(`${toDateStringUTC(booking.check_out)}T00:00:00Z`);
       const newCheckOutDate = new Date(`${result.newCheckOut}T00:00:00Z`);
-      
+
+      // The calendar list does not include the persisted daily-rate plan.
+      // Read it before changing the stay so a shorten keeps the original
+      // nights' prices, and an extension adds only the newly sold nights.
+      // This prevents Night Audit from pricing a stay with stale rates after
+      // the booking total has changed.
+      const detailResponse = await axios.get(`/pms/reservations/${booking.id}/full-detail`);
+      const storedDailyRates = detailResponse.data?.daily_rates || [];
+      const rateByDate = new Map(
+        storedDailyRates.map(rate => [
+          String(rate.date || '').slice(0, 10),
+          Number(rate.rate),
+        ]),
+      );
+
       const oldNights = Math.max(1, Math.round((oldCheckOutDate - oldCheckInDate) / 86400000));
-      const impliedDailyRate = (booking.total_amount || 0) / oldNights;
+      const impliedDailyRate = Number(booking.total_amount || 0) / oldNights;
       
       const room = rooms.find(r => r.id === booking.room_id) || {};
       const roomType = booking.room_type || room.room_type || room.type;
       
-      let newTotalAmount = booking.total_amount || 0;
-      
+      const nextDailyRates = [];
+      let cursor = new Date(oldCheckInDate);
+      while (cursor < oldCheckOutDate) {
+        const date = toDateStringUTC(cursor);
+        const storedRate = rateByDate.get(date);
+        nextDailyRates.push({
+          date,
+          rate: Number.isFinite(storedRate) ? storedRate : impliedDailyRate,
+        });
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+
       if (result.extending) {
         let cur = new Date(oldCheckOutDate);
         while (cur < newCheckOutDate) {
-          const dStr = cur.toISOString().split('T')[0];
+          const dStr = toDateStringUTC(cur);
           const rate = calendarRates[`${roomType}|${dStr}`] || room.base_price || booking.base_rate || impliedDailyRate;
-          newTotalAmount += rate;
+          nextDailyRates.push({ date: dStr, rate: Number(rate) });
           cur.setUTCDate(cur.getUTCDate() + 1);
         }
       } else {
-        let cur = new Date(newCheckOutDate);
-        while (cur < oldCheckOutDate) {
-          const dStr = cur.toISOString().split('T')[0];
-          const rate = calendarRates[`${roomType}|${dStr}`] || room.base_price || booking.base_rate || impliedDailyRate;
-          newTotalAmount -= rate;
-          cur.setUTCDate(cur.getUTCDate() + 1);
-        }
-        if (newTotalAmount < 0) newTotalAmount = 0;
+        const newCheckoutDate = toDateStringUTC(newCheckOutDate);
+        nextDailyRates.splice(0, nextDailyRates.length, ...nextDailyRates.filter(rate => rate.date < newCheckoutDate));
       }
+
+      const newTotalAmount = Math.round(
+        nextDailyRates.reduce((sum, rate) => sum + rate.rate, 0) * 100,
+      ) / 100;
 
       const currency = booking.currency || 'TL';
 
@@ -802,6 +824,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         check_out: result.newCheckOut,
         total_amount: newTotalAmount,
       }, { headers: { 'Idempotency-Key': idempotencyKey } });
+      await axios.put(`/pms/reservations/${booking.id}/daily-rates`, {
+        rates: nextDailyRates,
+      });
       const action = result.extending ? 'uzatıldı' : 'kısaltıldı';
       toast.success(`Konaklama ${result.newCheckOut} tarihine ${action}. Yeni tutar: ${newTotalAmount.toLocaleString('tr-TR')} ${currency}.`);
       loadCalendarData();
