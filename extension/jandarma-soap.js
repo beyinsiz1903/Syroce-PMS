@@ -64,6 +64,15 @@
     return { firstName: parts.slice(0, -1).join(" "), surname: parts.at(-1) };
   }
 
+  function optionalPhone(value) {
+    // TELNO is optional in the Jandarma contract.  The remote database has a
+    // shorter field than many PMS imports (notes/extensions get copied into
+    // guest_phone), so never let an optional contact value reject an otherwise
+    // valid legal check-in.  Preserve only plausible E.164/local digits.
+    const digits = String(value || "").replace(/\D/g, "");
+    return digits.length >= 7 && digits.length <= 15 ? digits : "";
+  }
+
   function tag(name, value, prefix = "d") {
     return `<${prefix}:${name}>${escapeXml(value)}</${prefix}:${name}>`;
   }
@@ -90,7 +99,7 @@
         + tag("ILERITARIHLI", new Date(payload.check_in).getTime() > now.getTime() ? "true" : "false")
         + tag("KIMLIKNO", identity) + tag("KULLANIMSEKLI", "KONAKLAMA")
         + tag("ODANO", payload.room_number) + tag("PLKNO", payload.plate_number || "")
-        + tag("TELNO", payload.phone || "") + tag("ULKKOD", "TURKIYE");
+        + tag("TELNO", optionalPhone(payload.phone)) + tag("ULKKOD", "TURKIYE");
     } else if (turkish) {
       fields = tag("CKSTIP", "TESISTENCIKIS") + tag("CKSTRH", toIsoDateTime(payload.check_out, now))
         + tag("KIMLIKNO", identity);
@@ -110,7 +119,7 @@
         + tag("ILERITARIHLI", new Date(payload.check_in).getTime() > now.getTime() ? "true" : "false")
         + tag("KULLANIMSEKLI", "KONAKLAMA")
         + tag("ODANO", payload.room_number) + tag("PLKNO", payload.plate_number || "")
-        + tag("SOYADI", name.surname) + tag("TELNO", payload.phone || "") + tag("ULKKOD", country);
+        + tag("SOYADI", name.surname) + tag("TELNO", optionalPhone(payload.phone)) + tag("ULKKOD", country);
     } else {
       fields = tag("BELGENO", identity) + tag("CKSTIP", "TESISTENCIKIS")
         + tag("CKSTRH", toIsoDateTime(payload.check_out, now));
@@ -144,5 +153,5 @@
     return { ok: true, code: code || "100", message, method };
   }
 
-  root.SyroceJandarmaSoap = { buildRequest, parseResponse, countryEnum, escapeXml };
+  root.SyroceJandarmaSoap = { buildRequest, parseResponse, countryEnum, escapeXml, optionalPhone };
 })(typeof self !== "undefined" ? self : globalThis);

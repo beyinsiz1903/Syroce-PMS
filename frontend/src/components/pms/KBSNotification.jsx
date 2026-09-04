@@ -33,18 +33,36 @@ const getApiErrorMessage = (error, fallback) => {
 const cleanKbsError = (error, fallback = 'KBS gönderimi doğrulanamadı') => {
   const value = String(error || '').trim();
   if (!value) return fallback;
-  return value
+  const cleaned = value
     .replace(/(?:&lt;|<)br\s*\/?(?:&gt;|>)/gi, ' ')
     .replace(/^jandarma_girdihatasi\s*:\s*/i, 'Jandarma veri hatası: ')
     .replace(/^jandarma_yetkihatasi\s*:\s*/i, 'Jandarma yetki hatası: ')
     .replace(/^jandarma_kullanicihatasi\s*:\s*/i, 'Jandarma kullanıcı hatası: ')
     .replace(/\s+/g, ' ')
     .trim();
+  const normalized = cleaned.toLocaleLowerCase('tr-TR');
+  if (normalized.includes('müşteri tesiste zaten kayıtlı') || normalized.includes('musteri tesiste zaten kayitli')) {
+    return 'Jandarma KBS aynı misafir için tesiste açık kayıt olduğunu bildirdi; tekrar gönderim durduruldu.';
+  }
+  if (normalized.includes('string or binary data would be truncated')) {
+    return 'Jandarma KBS bir alanı kabul ettiği uzunluğun üzerinde buldu. Misafir bilgisini yenileyip tekrar deneyin.';
+  }
+  return cleaned;
 };
+
+const isRemoteAlreadyRegisteredKbsError = (error) => {
+  const value = String(error || '').toLocaleLowerCase('tr-TR');
+  return value.includes('müşteri tesiste zaten kayıtlı') || value.includes('musteri tesiste zaten kayitli');
+};
+
+const isPayloadRefreshKbsError = (error) => (
+  String(error || '').toLowerCase().includes('string or binary data would be truncated')
+);
 
 const isPermanentKbsError = (error) => {
   const value = String(error || '').trim().toLowerCase();
   if (!value) return false;
+  if (isRemoteAlreadyRegisteredKbsError(error) || isPayloadRefreshKbsError(error)) return true;
   return [
     'jandarma_girdihatasi',
     'jandarma_yetkihatasi',
@@ -954,7 +972,9 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
             }[job.status] || job.status;
             const guestName = job.payload?.guest_name || tk('unknown');
             const room = job.payload?.room_number || '-';
-            const isRetryable = job.status === 'dead' || job.status === 'failed';
+            const isDuplicateAtAuthority = isRemoteAlreadyRegisteredKbsError(job.last_error);
+            const isPayloadRefreshRequired = isPayloadRefreshKbsError(job.last_error);
+            const isRetryable = (job.status === 'dead' || job.status === 'failed') && !isDuplicateAtAuthority;
             return (
               <Card key={job.id}>
                 <CardContent className="p-3 flex items-start justify-between gap-3">
@@ -985,7 +1005,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
                       )}
                       {job.last_error && (
                         <div className="text-red-600 truncate" title={job.last_error}>
-                          {tk('qLastError')}: {job.last_error}
+                          {tk('qLastError')}: {cleanKbsError(job.last_error)}
                         </div>
                       )}
                       {job.next_retry_at && job.status === 'pending' && (
@@ -1002,7 +1022,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST }) => {
                         )}
                         {isRetryable && (
                           <Button size="sm" variant="outline" onClick={() => retryDeadJob(job)}>
-                            <RefreshCw className="h-3 w-3 mr-1" /> {tk('retry')}
+                            <RefreshCw className="h-3 w-3 mr-1" /> {isPayloadRefreshRequired ? 'Bilgiyi yenile ve tekrar dene' : tk('retry')}
                           </Button>
                         )}
                         {job.status === 'done' && isUnverifiedRef(job.kbs_reference) && (

@@ -64,3 +64,13 @@ test("rejects a check-in without a room number before building SOAP", () => {
     /missing_room_number/,
   );
 });
+
+test("omits an overlong optional phone number instead of letting Jandarma reject the guest", () => {
+  const req = soap.buildRequest({
+    action: "checkin", nationality: "TR", id_number: "10000000146", room_number: "12",
+    phone: "+90 (540) 452-9326 dahili 123456789",
+    check_in: "2026-08-23T10:00:00+03:00",
+  }, "checkin", credentials);
+  assert.match(req.envelope, /<d:TELNO><\/d:TELNO>/);
+  assert.equal(soap.optionalPhone("+90 540 452 93 26"), "905404529326");
+});

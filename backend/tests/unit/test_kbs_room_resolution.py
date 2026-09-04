@@ -83,6 +83,8 @@ async def test_snapshot_keeps_booking_room_number_when_room_id_is_absent(monkeyp
         "payload_incomplete: room_number",
         "missing_room_number",
         "HTTP 400: bad request",
+        "jandarma_VTHatasi: Müşteri Tesiste Zaten Kayıtlı.",
+        "jandarma_VTHatasi: String or binary data would be truncated.",
     ],
 )
 def test_permanent_kbs_errors_are_not_retried(error):

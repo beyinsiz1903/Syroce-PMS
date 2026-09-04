@@ -387,6 +387,57 @@ describe('KBSNotification pending guest identity editing', () => {
     expect(toastError).toHaveBeenCalledWith('Jandarma veri hatası: Oda Numarası Eksik.');
   });
 
+  it('does not retry when Jandarma reports the guest is already registered', async () => {
+    pingExtension.mockResolvedValue({
+      present: true,
+      state: 'absent',
+      states: { jandarma: 'configured' },
+      version: '1.3.2',
+      installId: 'install-1',
+    });
+    localStorage.setItem('kbs_ext_authority', 'jandarma');
+    const job = {
+      id: 'job-registered', booking_id: 'booking-registered', action: 'checkin',
+      payload: { guest_name: 'Existing Guest', room_number: '103' },
+    };
+    axiosPost.mockImplementation((url) => {
+      if (url === '/kbs/queue') return Promise.resolve({ data: { created: true, job } });
+      if (url === '/kbs/queue/job-registered/claim') return Promise.resolve({ data: { job } });
+      if (url === '/kbs/queue/job-registered/fail') return Promise.resolve({ data: { job: { ...job, status: 'dead' } } });
+      return Promise.resolve({ data: {} });
+    });
+    sendViaExtension.mockResolvedValue({
+      ok: false,
+      reference: '',
+      error: 'jandarma_VTHatasi: Müşteri Tesiste Zaten Kayıtlı.&lt;br&gt;',
+      test: false,
+    });
+
+    render(
+      <KBSNotification
+        bookings={[{
+          id: 'booking-registered', guest_id: 'guest-registered', status: 'checked_in',
+          guest_name: 'Existing Guest', room_number: '103', nationality: 'TC',
+          id_number: '12345678901',
+        }]}
+      />,
+    );
+
+    await waitFor(() => expect(pingExtension).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'send' }));
+
+    await waitFor(() => {
+      expect(axiosPost).toHaveBeenCalledWith(
+        '/kbs/queue/job-registered/fail',
+        expect.objectContaining({ retry: false }),
+        expect.objectContaining({ headers: expect.any(Object) }),
+      );
+    });
+    expect(toastError).toHaveBeenCalledWith(
+      'Jandarma KBS aynı misafir için tesiste açık kayıt olduğunu bildirdi; tekrar gönderim durduruldu.',
+    );
+  });
+
   it('shows a completed Jandarma guest only in Sent, never in Queue', async () => {
     axiosGet.mockImplementation((url) => {
       if (url === '/kbs/guests') {
