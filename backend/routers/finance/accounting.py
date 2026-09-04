@@ -4,7 +4,7 @@ import asyncio
 import logging
 import re as _re
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from enum import Enum
 from typing import Any
 
@@ -1162,6 +1162,14 @@ def _normalize_customer_tax_number(v: str | None) -> str | None:
     return v
 
 
+def _normalize_accounting_invoice_due_date(v: str) -> str:
+    """Return a canonical invoice due date before the route parses it."""
+    try:
+        return date.fromisoformat(v.strip()).isoformat()
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError("due_date geçerli bir tarih olmalıdır (YYYY-MM-DD)") from exc
+
+
 class AccountingInvoiceCreateRequest(BaseModel):
     invoice_type: str
     customer_name: str
@@ -1180,6 +1188,11 @@ class AccountingInvoiceCreateRequest(BaseModel):
     @classmethod
     def _validate_customer_tax_number(cls, v: str | None) -> str | None:
         return _normalize_customer_tax_number(v)
+
+    @field_validator("due_date")
+    @classmethod
+    def _validate_due_date(cls, v: str) -> str:
+        return _normalize_accounting_invoice_due_date(v)
 
 
 @router.post("/accounting/invoices")
