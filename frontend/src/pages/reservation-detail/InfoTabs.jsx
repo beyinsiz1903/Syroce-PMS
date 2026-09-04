@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Pencil, Check, Globe, Phone, Star, Building2, Users, X, Mail, CreditCard, Loader2, ScanLine, Crown, AlertTriangle, ShieldAlert, Cake, Repeat, BedDouble, CalendarDays, UserCircle2, CalendarClock, Clock, Moon, Wallet, StickyNote, Tag, CheckCircle2, Activity , UserPlus} from 'lucide-react';
-import { fmtDate, fmtDateTime, fmtTL, Avatar, EmptyState, translateValue, translateView, SectionHeader, StatCard, InfoLine } from './helpers';
+import { fmtDate, fmtDateTime, fmtTL, Avatar, EmptyState, translateValue, translateView, SectionHeader, StatCard, InfoLine, reservationNights } from './helpers';
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
 import api from '@/api/axios';
 const ALERT_LEVEL_BG = {
@@ -103,7 +103,7 @@ export function GeneralInfoTab({
       toast.error('Hata: ' + (e.response?.data?.detail || e.message));
     }
   };
-  const nights = booking?.check_in && booking?.check_out ? Math.max(1, Math.ceil((new Date(booking.check_out) - new Date(booking.check_in)) / (1000 * 60 * 60 * 24))) : 1;
+  const nights = booking?.check_in && booking?.check_out ? Math.max(1, reservationNights(booking.check_in, booking.check_out)) : 1;
   const balance = summary?.balance || 0;
   const hasOpenBalance = balance > 0;
   const lastPayment = (payments || []).filter(p => !p.voided).slice(-1)[0];

@@ -12,7 +12,7 @@ import {
   ChevronDown, DoorOpen, Globe, Clock, Layers, Eye, BedDouble,
 } from 'lucide-react';
 
-import { API, fmtTL, fmtDateTime, statusLabel, translateValue, translateView, bookingRef, Avatar } from './reservation-detail/helpers';
+import { API, fmtTL, fmtDateTime, statusLabel, translateValue, translateView, bookingRef, Avatar, reservationNights } from './reservation-detail/helpers';
 import { GeneralInfoTab, GuestsTab } from './reservation-detail/InfoTabs';
 import { FoliosTab } from './reservation-detail/FoliosTab';
 import { DailyRatesTab, ExtraChargesTab } from './reservation-detail/PricingTabs';
@@ -258,6 +258,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const rawBalance = summary?.balance;
   const balance = Number(rawBalance) || 0;
   const hasOpenBalance = balance > 0.01;
+  const reservationTotalDue = Number(summary?.reservation_total_due ?? rawBalance) || 0;
+  const hasReservationAmountDue = reservationTotalDue > 0.01;
+  const unpostedRoomAmount = Number(summary?.unposted_room_amount) || 0;
   const channelPricingIssue = summary?.channel_pricing_issue;
   const hasRoomAssignment = Boolean(booking?.room_id && room?.id);
 
@@ -307,9 +310,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
             {booking?.group_booking_id && (
               <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[11px] h-5 px-2">Grup</Badge>
             )}
-            {hasOpenBalance && (
+            {hasReservationAmountDue && (
               <Badge className="bg-rose-50 text-rose-700 border border-rose-200 text-[11px] h-5 px-2 hidden md:inline-flex">
-                <AlertTriangle className="w-3 h-3 mr-1" /> {t('cm.pages_ReservationDetailModal.bakiye')} {fmtTL(balance)} TL
+                <AlertTriangle className="w-3 h-3 mr-1" /> Kalan tahsilat: {fmtTL(reservationTotalDue)} TL
               </Badge>
             )}
             {readOnly && (
@@ -345,14 +348,14 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
 
               {/* Fiyat & Bakiye — bakiye vurgulu */}
               <div className={`rounded-xl p-4 space-y-3 shadow-sm ${
-                hasOpenBalance ? 'bg-rose-50 border-2 border-rose-200' : 'bg-white border border-slate-200'
+                hasReservationAmountDue ? 'bg-rose-50 border-2 border-rose-200' : 'bg-white border border-slate-200'
               }`} data-testid="financial-summary-card">
                 <div>
-                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('cm.pages_ReservationDetailModal.bakiye_33769')}</p>
-                  <div className={`text-2xl font-bold leading-tight ${hasOpenBalance ? 'text-rose-700' : 'text-emerald-600'}`}>{fmtTL(balance)} TL</div>
-                  <p className="text-[11px] text-slate-500">{hasOpenBalance ? 'Kalan bakiye' : 'Bakiye kapalı'}</p>
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Kalan tahsilat</p>
+                  <div className={`text-2xl font-bold leading-tight ${hasReservationAmountDue ? 'text-rose-700' : 'text-emerald-600'}`}>{fmtTL(reservationTotalDue)} TL</div>
+                  <p className="text-[11px] text-slate-500">{hasReservationAmountDue ? 'Rezervasyon toplamından kalan' : 'Tahsilat tamamlandı'}</p>
                 </div>
-                <div className={`pt-3 border-t space-y-1.5 ${hasOpenBalance ? 'border-rose-200' : 'border-slate-200'}`}>
+                <div className={`pt-3 border-t space-y-1.5 ${hasReservationAmountDue ? 'border-rose-200' : 'border-slate-200'}`}>
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.toplam')}</span>
                     <span className="font-semibold text-slate-800">{fmtTL(summary?.total_amount)} TL</span>
@@ -361,6 +364,18 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.odenen')}</span>
                     <span className="font-semibold text-emerald-600">{fmtTL(summary?.total_payments)} TL</span>
                   </div>
+                  {unpostedRoomAmount > 0.01 && (
+                    <>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">Folio bakiyesi</span>
+                        <span className="font-semibold text-amber-700">{fmtTL(balance)} TL</span>
+                      </div>
+                      <div className="flex justify-between text-xs" data-testid="unposted-room-amount">
+                        <span className="text-slate-500">Tahakkuk bekleyen konaklama</span>
+                        <span className="font-semibold text-slate-700">{fmtTL(unpostedRoomAmount)} TL</span>
+                      </div>
+                    </>
+                  )}
                   {(summary?.total_deposits || 0) > 0 && (
                     <div className="flex justify-between text-xs">
                       <span className="text-slate-500">Depozito</span>
@@ -433,7 +448,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 {(() => {
                   const ci = booking?.check_in ? new Date(booking.check_in) : null;
                   const co = booking?.check_out ? new Date(booking.check_out) : null;
-                  const nights = ci && co ? Math.max(1, Math.ceil((co - ci) / 86400000)) : 0;
+                  const nights = ci && co ? Math.max(1, reservationNights(booking?.check_in, booking?.check_out)) : 0;
                   const fmt = (d) => d ? d.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' }) : '—';
                   const dow = (d) => d ? d.toLocaleDateString('tr-TR', { weekday: 'short' }) : '';
                   return (
@@ -605,10 +620,10 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     if (hasOpenBalance) {
                       setActiveTab('folios');
                       toast.warning(
-                        `Çıkış için önce ${balance.toLocaleString('tr-TR', {
+                        `Çıkış için önce folio bakiyesini (${balance.toLocaleString('tr-TR', {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
-                        })} TL bakiyeyi kapatın.`,
+                        })} TL) kapatın.`,
                       );
                       return;
                     }
@@ -647,7 +662,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   data-testid="btn-checkout"
                 >
                   {hasOpenBalance ? (
-                    <><CreditCard className="w-4 h-4 mr-2" /> Önce ödemeyi tamamlayın</>
+                    <><CreditCard className="w-4 h-4 mr-2" /> Önce folio bakiyesini tamamlayın</>
                   ) : (
                     <><LogOut className="w-4 h-4 mr-2" /> {t('cm.pages_ReservationDetailModal.cikis_yap')}</>
                   )}

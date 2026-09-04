@@ -220,7 +220,13 @@ def _build_financial_summary(
     extra_charges: list[dict],
     deposits: list[dict],
 ) -> dict:
-    """Build the reservation summary without counting posted room revenue twice."""
+    """Build reservation and currently-posted folio financial totals.
+
+    A stay can have only some of its nightly room charges posted while a night
+    audit is in progress.  Keep the operational folio balance separate from
+    the full reservation amount so the UI never makes a partially posted stay
+    look as though part of its confirmed price disappeared.
+    """
     active_charges = [charge for charge in charges if not charge.get("voided")]
     total_charges = sum(charge.get("total", charge.get("amount", 0)) for charge in active_charges)
     total_payments = sum(payment.get("amount", 0) for payment in payments if not payment.get("voided"))
@@ -234,9 +240,25 @@ def _build_financial_summary(
         if deposit.get("status") != "refunded"
     )
 
-    room_charge_posted = any(charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room" for charge in active_charges)
+    room_charge_total = sum(
+        charge.get("total", charge.get("amount", 0))
+        for charge in active_charges
+        if charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room"
+    )
+    room_charge_posted = room_charge_total > 0
     unposted_room_total = 0 if room_charge_posted else booking.get("total_amount", 0)
     balance = unposted_room_total + total_charges + total_extra - total_payments
+    folio_balance = total_charges + total_extra - total_payments
+    # The confirmed stay total remains collectible even before every night is
+    # posted to the folio.  ``max`` protects legacy bookings where the posted
+    # room charge is already larger than the booking total (for example when a
+    # separately-posted tax is excluded from the original total).
+    reservation_total_due = (
+        max(float(booking.get("total_amount", 0) or 0), float(room_charge_total or 0))
+        + (total_charges - room_charge_total)
+        + total_extra
+        - total_payments
+    )
 
     return {
         "total_amount": booking.get("total_amount", 0),
@@ -245,6 +267,9 @@ def _build_financial_summary(
         "total_extra": round(total_extra, 2),
         "total_deposits": round(total_deposits, 2),
         "balance": round(balance, 2),
+        "folio_balance": round(folio_balance, 2),
+        "unposted_room_amount": round(max(0, float(booking.get("total_amount", 0) or 0) - float(room_charge_total or 0)), 2),
+        "reservation_total_due": round(reservation_total_due, 2),
         "paid_amount": booking.get("paid_amount", 0),
     }
 

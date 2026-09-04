@@ -39,6 +39,23 @@ def test_summary_keeps_unposted_room_total_before_night_audit():
     assert summary["balance"] == 3100.0
 
 
+def test_summary_keeps_full_stay_visible_when_only_some_room_nights_are_posted():
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 7500.0, "paid_amount": 0.0},
+        [{"charge_type": "room_charge", "total": 5833.34, "voided": False}],
+        [],
+        [],
+        [],
+    )
+
+    # Operational checkout still uses the amount already present on the
+    # folio, while the reservation view must show the entire agreed stay.
+    assert summary["balance"] == 5833.34
+    assert summary["folio_balance"] == 5833.34
+    assert summary["unposted_room_amount"] == 1666.66
+    assert summary["reservation_total_due"] == 7500.0
+
+
 def test_summary_preserves_explicit_zero_after_extra_charge_split():
     summary = reservation_detail._build_financial_summary(
         {"total_amount": 100.0, "paid_amount": 0.0},
