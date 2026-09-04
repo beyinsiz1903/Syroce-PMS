@@ -1,6 +1,7 @@
 """Auto-split from finance.py — section: accounting."""
 
 import asyncio
+import logging
 import re as _re
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -52,6 +53,7 @@ router = APIRouter()
 security = HTTPBearer()
 folio_balance_read_service = FolioBalanceReadService()
 open_folio_service = OpenFolioService()
+logger = logging.getLogger(__name__)
 
 ACCOMMODATION_VAT_RATE = 10.0
 FOOD_SERVICE_VAT_RATE = 10.0
@@ -258,10 +260,10 @@ class BulkStockTransferRequest(BaseModel):
 
 
 class SupplierCreateRequest(BaseModel):
-    name: str
+    name: str = Field(min_length=2, max_length=200)
     tax_office: str | None = None
     tax_number: str | None = None
-    email: str | None = None
+    email: EmailStr | None = None
     phone: str | None = None
     address: str | None = None
     category: str = "general"
@@ -310,6 +312,17 @@ def _norm(v):
     return v
 
 
+def _invalidate_accounting_caches(tenant_id: str, *prefixes: str) -> None:
+    """Cache invalidation must never turn an already persisted record into a 500."""
+    if not cache:
+        return
+    try:
+        for prefix in prefixes:
+            cache.invalidate_tenant_cache(tenant_id, prefix)
+    except Exception:
+        logger.warning("Accounting cache invalidation failed", exc_info=True)
+
+
 @router.post("/accounting/suppliers")
 async def create_supplier(
     payload: SupplierCreateRequest,
@@ -326,10 +339,14 @@ async def create_supplier(
         address=sanitize_plaintext(payload.address, max_length=500) if payload.address else None,
         category=payload.category or "general",
     )
-    supplier_dict = supplier.model_dump()
-    supplier_dict["created_at"] = supplier_dict["created_at"].isoformat()
+    supplier_dict = supplier.model_dump(mode="json")
     await db.suppliers.insert_one(supplier_dict)
-    return supplier
+    persisted = await db.suppliers.find_one(
+        {"id": supplier.id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+    )
+    if not persisted:
+        raise HTTPException(status_code=500, detail="Tedarikçi kaydı doğrulanamadı")
+    return persisted
 
 
 @router.get("/accounting/suppliers")
@@ -368,6 +385,7 @@ async def create_bank_account(
     account_dict = bank_account.model_dump()
     account_dict["created_at"] = account_dict["created_at"].isoformat()
     await db.bank_accounts.insert_one(account_dict)
+    _invalidate_accounting_caches(current_user.tenant_id, "accounting_dashboard", "report_balance_sheet")
     return bank_account
 
 
@@ -386,6 +404,7 @@ async def update_bank_account(
 ):
     await db.bank_accounts.update_one({"id": account_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
     account = await db.bank_accounts.find_one({"id": account_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    _invalidate_accounting_caches(current_user.tenant_id, "accounting_dashboard", "report_balance_sheet")
     return account
 
 
@@ -420,9 +439,7 @@ async def create_expense(
         created_by=current_user.name,
     )
 
-    expense_dict = expense.model_dump()
-    expense_dict["date"] = expense_dict["date"].isoformat()
-    expense_dict["created_at"] = expense_dict["created_at"].isoformat()
+    expense_dict = expense.model_dump(mode="json")
     await db.expenses.insert_one(expense_dict)
 
     if supplier_id:
@@ -446,6 +463,13 @@ async def create_expense(
     cf_dict["date"] = cf_dict["date"].isoformat()
     cf_dict["created_at"] = cf_dict["created_at"].isoformat()
     await db.cash_flow.insert_one(cf_dict)
+
+    _invalidate_accounting_caches(
+        current_user.tenant_id,
+        "accounting_dashboard",
+        "report_profit_loss",
+        "report_balance_sheet",
+    )
 
     return expense
 
@@ -471,6 +495,12 @@ async def update_expense(
 ):
     await db.expenses.update_one({"id": expense_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
     expense = await db.expenses.find_one({"id": expense_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    _invalidate_accounting_caches(
+        current_user.tenant_id,
+        "accounting_dashboard",
+        "report_profit_loss",
+        "report_balance_sheet",
+    )
     return expense
 
 
@@ -496,6 +526,7 @@ async def create_inventory_item(
     item_dict = item.model_dump()
     item_dict["created_at"] = item_dict["created_at"].isoformat()
     await db.inventory_items.insert_one(item_dict)
+    _invalidate_accounting_caches(current_user.tenant_id, "report_balance_sheet")
     return item
 
 
@@ -570,6 +601,8 @@ async def create_stock_movement(
     movement_dict = movement.model_dump()
     movement_dict["created_at"] = movement_dict["created_at"].isoformat()
     await db.stock_movements.insert_one(movement_dict)
+
+    _invalidate_accounting_caches(current_user.tenant_id, "report_balance_sheet")
 
     return movement
 
@@ -1136,7 +1169,9 @@ class AccountingInvoiceCreateRequest(BaseModel):
     customer_tax_office: str | None = None
     customer_tax_number: str | None = None
     customer_address: str | None = None
-    items: list[dict[str, Any]] = []
+    # Existing integrations may open an invoice draft before adding its lines.
+    # The UI requires a line on final creation, but the API remains backward compatible.
+    items: list[dict[str, Any]] = Field(default_factory=list)
     due_date: str
     booking_id: str | None = None
     notes: str | None = None
@@ -1252,10 +1287,7 @@ async def create_accounting_invoice(
         created_by=current_user.name,
     )
 
-    invoice_dict = invoice.model_dump()
-    invoice_dict["issue_date"] = invoice_dict["issue_date"].isoformat()
-    invoice_dict["due_date"] = invoice_dict["due_date"].isoformat()
-    invoice_dict["created_at"] = invoice_dict["created_at"].isoformat()
+    invoice_dict = invoice.model_dump(mode="json")
     await db.accounting_invoices.insert_one(invoice_dict)
 
     # Create cash flow entry
@@ -1277,12 +1309,13 @@ async def create_accounting_invoice(
     await db.cash_flow.insert_one(cf_dict)
 
     # v95.1 — list cache + dashboard cache invalidasyon
-    if cache:
-        cache.invalidate_tenant_cache(current_user.tenant_id, "accounting_invoices_list")
-        try:
-            cache.delete_pattern(f"cache:{current_user.tenant_id}:accounting_dashboard:*")
-        except Exception:
-            pass
+    _invalidate_accounting_caches(
+        current_user.tenant_id,
+        "accounting_invoices_list",
+        "accounting_dashboard",
+        "report_profit_loss",
+        "report_balance_sheet",
+    )
 
     return invoice
 
@@ -1344,16 +1377,13 @@ async def update_accounting_invoice(
         raise HTTPException(status_code=404, detail="Accounting invoice not found")
     invoice = await db.accounting_invoices.find_one(tenant_filter, {"_id": 0})
 
-    # Drop the dashboard + invoices list cache so the UI reflects the change.
-    # cached() builds keys as "cache:{tenant_id}:{key_prefix}:{hash}".
-    try:
-        from cache_manager import cache as _cache
-
-        if _cache:
-            _cache.invalidate_tenant_cache(current_user.tenant_id, "accounting_invoices_list")
-            _cache.delete_pattern(f"cache:{current_user.tenant_id}:accounting_dashboard:*")
-    except Exception:
-        pass
+    _invalidate_accounting_caches(
+        current_user.tenant_id,
+        "accounting_invoices_list",
+        "accounting_dashboard",
+        "report_profit_loss",
+        "report_balance_sheet",
+    )
 
     # Render-time scrub for legacy XML/HTML residues from old test seeds.
     if invoice:

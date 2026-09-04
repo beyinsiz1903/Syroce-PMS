@@ -629,7 +629,15 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
         </Tabs>
 
         <ExpenseDialog open={openDialog === 'expense'} onClose={() => { setOpenDialog(null); loadExpenses(true); refreshDashboard(); }} suppliers={suppliers} />
-        <SupplierDialog open={openDialog === 'supplier'} onClose={() => { setOpenDialog(null); loadSuppliers(true); }} />
+        <SupplierDialog
+          open={openDialog === 'supplier'}
+          onClose={() => setOpenDialog(null)}
+          onCreated={async (supplier) => {
+            setSuppliers((current) => current.some((item) => item.id === supplier.id) ? current : [supplier, ...current]);
+            setOpenDialog(null);
+            await loadSuppliers(true);
+          }}
+        />
         <BankAccountDialog open={openDialog === 'bank'} onClose={() => { setOpenDialog(null); loadBanks(true); refreshDashboard(); }} />
         <InventoryDialog open={openDialog === 'inventory'} onClose={() => { setOpenDialog(null); loadInventory(true); }} />
         <InvoiceFormDialog

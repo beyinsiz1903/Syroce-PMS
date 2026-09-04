@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
@@ -9,14 +9,26 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCurrency } from '@/context/CurrencyContext';
+import { useBusinessDate } from '@/hooks/useBusinessDate';
 
 export const ExpenseDialog = ({ open, onClose, suppliers }) => {
   const { t } = useTranslation();
   const { amount: fmtMoney } = useCurrency();
+  const businessDate = useBusinessDate();
   const [form, setForm] = useState({
     category: 'supplies', description: '', amount: 0, vat_rate: 18,
-    date: new Date().toISOString().split('T')[0], supplier_id: '', payment_method: 'cash', notes: ''
+    date: businessDate, supplier_id: '', payment_method: 'cash', notes: ''
   });
+
+  useEffect(() => {
+    if (open) {
+      setForm((current) => (
+        !current.description && !(Number(current.amount) > 0)
+          ? { ...current, date: businessDate }
+          : current
+      ));
+    }
+  }, [businessDate, open]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -34,7 +46,7 @@ export const ExpenseDialog = ({ open, onClose, suppliers }) => {
       await axios.post('/accounting/expenses', payload);
       toast.success(t('messages.success.saved') || 'Kaydedildi');
       onClose();
-      setForm({ category: 'supplies', description: '', amount: 0, vat_rate: 18, date: new Date().toISOString().split('T')[0], supplier_id: '', payment_method: 'cash', notes: '' });
+      setForm({ category: 'supplies', description: '', amount: 0, vat_rate: 18, date: businessDate, supplier_id: '', payment_method: 'cash', notes: '' });
     } catch (error) {
       toast.error(error.response?.data?.detail || t('messages.error.saveFailed') || 'Kaydedilemedi');
     }
@@ -126,7 +138,7 @@ export const ExpenseDialog = ({ open, onClose, suppliers }) => {
   );
 };
 
-export const SupplierDialog = ({ open, onClose }) => {
+export const SupplierDialog = ({ open, onClose, onCreated }) => {
   const { t } = useTranslation();
   const [form, setForm] = useState({
     name: '', tax_office: '', tax_number: '', email: '', phone: '', address: '', category: 'general'
@@ -135,7 +147,7 @@ export const SupplierDialog = ({ open, onClose }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('/accounting/suppliers', {
+      const response = await axios.post('/accounting/suppliers', {
         name: form.name,
         tax_office: form.tax_office || null,
         tax_number: form.tax_number || null,
@@ -144,9 +156,10 @@ export const SupplierDialog = ({ open, onClose }) => {
         address: form.address || null,
         category: form.category || 'general',
       });
+      if (!response.data?.id) throw new Error('Tedarikçi kaydı doğrulanamadı.');
       toast.success(t('messages.success.saved') || 'Kaydedildi');
-      onClose();
       setForm({ name: '', tax_office: '', tax_number: '', email: '', phone: '', address: '', category: 'general' });
+      if (onCreated) onCreated(response.data); else onClose();
     } catch (error) {
       toast.error(error.response?.data?.detail || t('messages.error.saveFailed') || 'Kaydedilemedi');
     }
