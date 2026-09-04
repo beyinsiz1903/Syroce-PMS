@@ -56,6 +56,8 @@ describe('ReservationDetailModal operation URLs', () => {
     get.mockResolvedValue({ data: detail });
     post.mockReset();
     post.mockResolvedValue({ data: { success: true } });
+    axiosMock.put.mockReset();
+    axiosMock.put.mockResolvedValue({ data: { success: true } });
     confirmDialog.mockReset();
     confirmDialog.mockResolvedValue(true);
   });
@@ -123,6 +125,58 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.getByTestId('btn-mark-noshow')).toBeInTheDocument();
     expect(screen.getByTestId('btn-cancel-reservation')).toBeInTheDocument();
     expect(screen.queryByTestId('btn-late-checkout')).not.toBeInTheDocument();
+  });
+
+  it('updates stay dates with an idempotent booking write and complete daily-rate plan', async () => {
+    get.mockImplementation((url) => {
+      if (url.includes('/unified-rate-manager/grid')) {
+        return Promise.resolve({
+          data: {
+            grid: [{
+              pms_room_type: 'Standard',
+              dates: [
+                { date: '2026-08-13', rate: 200 },
+                { date: '2026-08-14', rate: 250 },
+              ],
+            }],
+          },
+        });
+      }
+      return Promise.resolve({
+        data: {
+          ...detail,
+          booking: { ...detail.booking, total_amount: 200 },
+          daily_rates: [{ date: '2026-08-13', rate: 200 }],
+        },
+      });
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    fireEvent.click(await screen.findByTestId('edit-stay-dates'));
+    fireEvent.change(screen.getByLabelText('Çıkış tarihi'), { target: { value: '2026-08-15' } });
+    fireEvent.click(screen.getByTestId('save-stay-dates'));
+
+    await waitFor(() => expect(axiosMock.put).toHaveBeenNthCalledWith(
+      1,
+      '/pms/bookings/booking-test',
+      {
+        check_in: '2026-08-13',
+        check_out: '2026-08-15',
+        total_amount: 450,
+      },
+      { headers: { 'Idempotency-Key': expect.any(String) } },
+    ));
+    await waitFor(() => expect(axiosMock.put).toHaveBeenNthCalledWith(
+      2,
+      '/pms/reservations/booking-test/daily-rates',
+      {
+        rates: [
+          { date: '2026-08-13', rate: 200 },
+          { date: '2026-08-14', rate: 250 },
+        ],
+      },
+    ));
   });
 
   it('shows late checkout but hides arrival and cancellation actions after check-in', async () => {
