@@ -850,12 +850,23 @@ async def _build_candidate_set(
 
     all_booking_ids = [b["id"] for b in bookings_list]
     already_posted_set: set = set()
+    daily_rates_by_booking: dict = {}
     if all_booking_ids:
         async for c in db.folio_charges.find(
             {"tenant_id": tenant_id, "booking_id": {"$in": all_booking_ids}, "business_date": bd, "charge_type": "room_charge"},
             {"_id": 0, "booking_id": 1},
         ):
             already_posted_set.add(c["booking_id"])
+            
+        async for r in db.daily_rates.find(
+            {
+                "booking_id": {"$in": all_booking_ids},
+                "tenant_id": tenant_id,
+                "date": {"$gte": bd, "$lt": bd + "T99"},
+            },
+            {"_id": 0, "booking_id": 1, "rate": 1},
+        ):
+            daily_rates_by_booking[r["booking_id"]] = float(r["rate"])
 
     for booking in bookings_list:
         booking_id = booking["id"]
@@ -865,6 +876,7 @@ async def _build_candidate_set(
             bd,
             vat_rate=VAT_RATE,
             accommodation_tax_rate=accommodation_tax_rate,
+            explicit_daily_rate=daily_rates_by_booking.get(booking_id),
         )
         rate = pricing["amount"]
 

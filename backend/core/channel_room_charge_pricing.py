@@ -118,6 +118,7 @@ def calculate_room_charge(
     *,
     vat_rate: float = 0.10,
     accommodation_tax_rate: float = 0.02,
+    explicit_daily_rate: float | None = None,
 ) -> dict[str, Any]:
     """Return a normalized nightly room-charge breakdown.
 
@@ -129,11 +130,16 @@ def calculate_room_charge(
     accommodation_rate_d = _decimal(accommodation_tax_rate)
     combined_rate = vat_rate_d + accommodation_rate_d
     provider_total = is_channel_total_tax_inclusive(booking)
-    gross = (
-        _nightly_gross(booking, business_date)
-        if provider_total
-        else _manual_nightly_gross(booking, business_date)
-    )
+    
+    if explicit_daily_rate is not None:
+        gross = _decimal(explicit_daily_rate).quantize(MONEY, rounding=ROUND_HALF_UP)
+    else:
+        gross = (
+            _nightly_gross(booking, business_date)
+            if provider_total
+            else _manual_nightly_gross(booking, business_date)
+        )
+
     divisor = Decimal("1") + combined_rate
     net = (gross / divisor).quantize(MONEY, rounding=ROUND_HALF_UP) if divisor > 0 else gross
     vat = (net * vat_rate_d).quantize(MONEY, rounding=ROUND_HALF_UP)

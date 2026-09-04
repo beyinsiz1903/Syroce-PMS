@@ -304,6 +304,7 @@ class NightAuditCoreService:
         # charge'i folio_id=None ile yaziyor + balance $inc'ini atliyordu
         # (otomatik oda geliri folyoya hic yansimadan kayboluyordu).
         folio_by_booking: dict = {}
+        daily_rates_by_booking: dict = {}
         if bookings_list:
             booking_ids = [b.get("id") for b in bookings_list if b.get("id")]
             async for f in self._db.folios.find(
@@ -312,6 +313,16 @@ class NightAuditCoreService:
             ):
                 folio_by_booking[f["booking_id"]] = f["id"]
 
+            async for r in self._db.daily_rates.find(
+                {
+                    "booking_id": {"$in": booking_ids},
+                    "tenant_id": ctx.tenant_id,
+                    "date": {"$gte": bd, "$lt": bd + "T99"},
+                },
+                {"_id": 0, "booking_id": 1, "rate": 1},
+            ):
+                daily_rates_by_booking[r["booking_id"]] = float(r["rate"])
+
         for booking in bookings_list:
             rooms_processed += 1
             pricing = calculate_room_charge(
@@ -319,6 +330,7 @@ class NightAuditCoreService:
                 bd,
                 vat_rate=DEFAULT_VAT_RATE,
                 accommodation_tax_rate=accommodation_tax_rate,
+                explicit_daily_rate=daily_rates_by_booking.get(booking.get("id")),
             )
             room_rate = pricing["amount"]
             if room_rate <= 0:
