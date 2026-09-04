@@ -251,6 +251,21 @@ class FrontdeskService:
         if booking["status"] == "checked_out":
             return ServiceResult.fail("Guest already checked out", "ALREADY_CHECKED_OUT")
 
+        # Finalise room revenue before evaluating the departure balance.  A
+        # full prepayment must not leave a negative folio merely because the
+        # last nightly charge has not run yet.
+        try:
+            from core.folio_checkout_reconciliation import reconcile_unposted_room_charge
+
+            await reconcile_unposted_room_charge(
+                self._db,
+                tenant_id=ctx.tenant_id,
+                booking=booking,
+                posted_by=f"checkout:{ctx.actor_id}",
+            )
+        except ValueError as exc:
+            return ServiceResult.fail(str(exc), "ROOM_CHARGE_RECONCILIATION_FAILED")
+
         folios = await self._db.folios.find(
             {
                 "booking_id": booking_id,

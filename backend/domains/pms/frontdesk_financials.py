@@ -37,6 +37,16 @@ def calculate_departure_balance(
         (_amount(payment.get("amount")) for payment in payments if not payment.get("voided") and payment.get("status") == "paid"),
         start=Decimal("0"),
     )
-    room_charge_posted = any(charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room" for charge in active_charges)
-    unposted_room_total = Decimal("0") if room_charge_posted else _amount(booking_total)
+    room_charge_total = sum(
+        (
+            _amount(charge.get("total", charge.get("amount")))
+            for charge in active_charges
+            if charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room"
+        ),
+        start=Decimal("0"),
+    )
+    # A partly posted stay still owes the portion of its confirmed total that
+    # has not reached the folio.  Treating *any* room charge as the full stay
+    # allowed a checkout to close with a hidden final-night credit.
+    unposted_room_total = max(Decimal("0"), _amount(booking_total) - room_charge_total)
     return float(unposted_room_total + charge_total + extra_total - payment_total)

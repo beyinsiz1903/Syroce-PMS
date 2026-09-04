@@ -1313,6 +1313,51 @@ async def record_payment(
     return {"success": True, "payment": payment}
 
 
+@router.post("/reservations/{booking_id}/complete-pending-room-charge")
+async def complete_pending_room_charge(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),
+):
+    """Repair a historical folio credit caused by a missing final room charge.
+
+    Normal checkout performs this automatically.  The endpoint is deliberately
+    limited to an already checked-out reservation so it cannot be used as a
+    substitute for nightly posting on an active stay.
+    """
+    _enforce_perm(current_user.role, "checkout")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    if booking.get("status") != "checked_out":
+        raise HTTPException(status_code=409, detail="Tahakkuk tamamlama yalnızca çıkışı yapılmış rezervasyonlarda kullanılabilir")
+
+    from core.folio_checkout_reconciliation import reconcile_unposted_room_charge
+
+    try:
+        result = await reconcile_unposted_room_charge(
+            db,
+            tenant_id=tid,
+            booking=booking,
+            posted_by=f"historical_checkout_repair:{current_user.name}",
+            allow_closed_folio=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    if result["posted"]:
+        await _log_activity(
+            tid,
+            booking_id,
+            "pending_room_charge_completed",
+            current_user.name,
+            {"amount": result["amount"], "charge_id": result["charge_id"]},
+        )
+    return {"success": True, **result}
+
+
 @router.get("/cari-transfer-resolution")
 async def diagnose_cari_transfer_resolution(
     booking_id: str,
