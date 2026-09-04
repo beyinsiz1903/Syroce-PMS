@@ -119,3 +119,32 @@ async def test_checkout_does_not_post_accommodation_tax_twice(monkeypatch):
     assert result["posted"] is False
     folio_charges.insert_one.assert_not_awaited()
     postings.insert_one.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_checkout_keeps_legacy_tax_inclusive_room_charge_without_breakdown(monkeypatch):
+    """A tax-inclusive reconciliation row is gross even without old details."""
+    folio_charges = SimpleNamespace(
+        find=lambda *_args, **_kwargs: _AsyncCursor(
+            [{"amount": 5833.34, "tax_inclusive": True, "tax_breakdown": {}}]
+        ),
+        insert_one=AsyncMock(),
+    )
+    postings = SimpleNamespace(find_one=AsyncMock(return_value=None), insert_one=AsyncMock())
+    fake_db = SimpleNamespace(
+        folios=SimpleNamespace(find_one=AsyncMock(return_value={"id": "folio-1"})),
+        accommodation_tax_postings=postings,
+        city_tax_rules=SimpleNamespace(
+            find_one=AsyncMock(return_value={"active": True, "rate_percent": 0.2576, "auto_post": True})
+        ),
+        folio_charges=folio_charges,
+        bookings=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+    )
+    monkeypatch.setattr(tax_core, "db", fake_db)
+
+    result = await tax_core.post_konaklama_vergisi_to_folio("tenant", "folio-1", "checkout:user-1")
+
+    assert result["ok"] is True
+    assert result["already_included"] is True
+    assert result["posted"] is False
+    folio_charges.insert_one.assert_not_awaited()

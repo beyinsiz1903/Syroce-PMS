@@ -157,23 +157,31 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const repairChannelPricing = async () => {
     const issue = data?.summary?.channel_pricing_issue;
     if (!issue?.repairable || pricingRepairing) return;
+    const isDuplicateAutomaticTax = issue.code === 'AUTOMATIC_ACCOMMODATION_TAX_DUPLICATE';
     const confirmed = await confirmDialog({
-      title: 'Rezervasyon fiyatını düzelt',
-      message: `${fmtTL(issue.observed_total)} TL olan hatalı folyo bakiyesi, girilen veya kanaldan teyit edilen ${fmtTL(issue.expected_total)} TL nihai rezervasyon toplamıyla eşitlenecek. Rezervasyon kaydı korunacak. Devam edilsin mi?`,
-      confirmText: 'Güvenli şekilde düzelt',
+      title: isDuplicateAutomaticTax ? 'Mükerrer konaklama vergisini düzelt' : 'Rezervasyon fiyatını düzelt',
+      message: isDuplicateAutomaticTax
+        ? `Vergi dahil ${fmtTL(issue.expected_total)} TL rezervasyona ${fmtTL(issue.overcharge)} TL otomatik konaklama vergisi ikinci kez eklenmiş. Bu sistem satırı terslenecek; rezervasyon ve ödeme kaydı korunacak. Devam edilsin mi?`
+        : `${fmtTL(issue.observed_total)} TL olan hatalı folyo bakiyesi, girilen veya kanaldan teyit edilen ${fmtTL(issue.expected_total)} TL nihai rezervasyon toplamıyla eşitlenecek. Rezervasyon kaydı korunacak. Devam edilsin mi?`,
+      confirmText: isDuplicateAutomaticTax ? 'Mükerrer vergiyi düzelt' : 'Güvenli şekilde düzelt',
     });
     if (!confirmed) return;
 
     setPricingRepairing(true);
     try {
-      const response = await axios.post(`/pms/reservations/${bookingId}/repair-channel-pricing`, {
-        reason: 'Vergi dahil nihai rezervasyon tutarına mükerrer vergi eklenmesinin düzeltilmesi',
-      });
+      const response = await axios.post(
+        `/pms/reservations/${bookingId}/${isDuplicateAutomaticTax ? 'repair-automatic-accommodation-tax' : 'repair-channel-pricing'}`,
+        {
+          reason: isDuplicateAutomaticTax
+            ? 'Vergi dahil rezervasyona ikinci kez eklenen otomatik konaklama vergisinin terslenmesi'
+            : 'Vergi dahil nihai rezervasyon tutarına mükerrer vergi eklenmesinin düzeltilmesi',
+        },
+      );
       const reduction = response.data?.total_reduction;
       toast.success(
         response.data?.already_repaired
           ? 'Rezervasyon fiyatı zaten doğru'
-          : `Folyo düzeltildi${typeof reduction === 'number' ? `: ${fmtTL(reduction)} TL mükerrer tutar kaldırıldı` : ''}`,
+          : `${isDuplicateAutomaticTax ? 'Mükerrer konaklama vergisi kaldırıldı' : 'Folyo düzeltildi'}${typeof reduction === 'number' ? `: ${fmtTL(reduction)} TL` : ''}`,
       );
       await loadData();
     } catch (error) {
@@ -524,7 +532,11 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     <div className="flex items-start gap-2">
                       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
                       <div className="min-w-0">
-                        <p className="text-[11px] font-semibold text-amber-800">Nihai rezervasyon tutarına vergi tekrar eklenmiş</p>
+                        <p className="text-[11px] font-semibold text-amber-800">
+                          {channelPricingIssue.code === 'AUTOMATIC_ACCOMMODATION_TAX_DUPLICATE'
+                            ? 'Otomatik konaklama vergisi ikinci kez eklenmiş'
+                            : 'Nihai rezervasyon tutarına vergi tekrar eklenmiş'}
+                        </p>
                         <p className="mt-0.5 text-[10px] leading-4 text-amber-700">
                           Doğru toplam {fmtTL(channelPricingIssue.expected_total)} TL. Mükerrer tutar {fmtTL(channelPricingIssue.overcharge)} TL.
                         </p>
@@ -539,7 +551,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       data-testid="repair-channel-pricing"
                     >
                       {pricingRepairing ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Repeat2 className="mr-1.5 h-3 w-3" />}
-                      {channelPricingIssue.repairable ? 'Nihai fiyata düzelt' : 'Finans onayı gerekli'}
+                      {channelPricingIssue.repairable
+                        ? (channelPricingIssue.code === 'AUTOMATIC_ACCOMMODATION_TAX_DUPLICATE' ? 'Mükerrer vergiyi düzelt' : 'Nihai fiyata düzelt')
+                        : 'Finans onayı gerekli'}
                     </Button>
                   </div>
                 )}

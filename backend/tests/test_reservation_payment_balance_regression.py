@@ -77,7 +77,7 @@ def test_summary_marks_automatic_accommodation_tax_overage_as_reconciliation():
         {"total_amount": 7500.0, "paid_amount": 7500.0},
         [
             {"charge_type": "room_charge", "total": 7500.0, "voided": False},
-            {"charge_type": "tax", "charge_category": "tax", "total": 15.03, "voided": False},
+            {"charge_category": "city_tax", "konaklama_vergisi": True, "total": 15.03, "voided": False},
         ],
         [{"amount": 7500.0, "voided": False}],
         [],
@@ -88,6 +88,132 @@ def test_summary_marks_automatic_accommodation_tax_overage_as_reconciliation():
     assert summary["pricing_reconciliation_required"] is True
     assert summary["pricing_reconciliation_difference"] == 15.03
     assert summary["accommodation_tax_total"] == 15.03
+
+
+def test_summary_identifies_a_duplicate_auto_tax_on_a_tax_inclusive_room_charge():
+    booking = {"total_amount": 7500.0, "paid_amount": 7500.0}
+    charges = [
+        # Checkout can run while a legacy stay has only part of its nightly
+        # revenue posted.  Tax-inclusion belongs to each room row, so the
+        # later auto city-tax remains duplicate even though this is below the
+        # reservation-wide confirmed total.
+        {"charge_type": "room_charge", "charge_category": "room", "tax_inclusive": True, "total": 5833.34, "voided": False},
+        {"charge_category": "city_tax", "konaklama_vergisi": True, "total": 15.03, "voided": False},
+    ]
+
+    issue = reservation_detail._build_channel_pricing_issue(
+        booking,
+        charges,
+        [{"amount": 7500.0, "voided": False}],
+        accommodation_tax_rate=0.002,
+    )
+
+    assert issue == {
+        "code": "AUTOMATIC_ACCOMMODATION_TAX_DUPLICATE",
+        "charge_count": 1,
+        "observed_total": 7515.03,
+        "expected_total": 7500.0,
+        "overcharge": 15.03,
+        "repairable": True,
+        "blocked_reason": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_duplicate_auto_tax_repair_voids_only_the_tax_row_and_keeps_payment(monkeypatch):
+    booking = {"id": "booking-a", "tenant_id": "tenant-a", "total_amount": 7500.0}
+    charges = [
+        {
+            "id": "room-charge",
+            "tenant_id": "tenant-a",
+            "booking_id": "booking-a",
+            "folio_id": "folio-a",
+            "charge_type": "room_charge",
+            "charge_category": "room",
+            "tax_inclusive": True,
+            "total": 7500.0,
+            "voided": False,
+        },
+        {
+            "id": "city-tax",
+            "tenant_id": "tenant-a",
+            "booking_id": "booking-a",
+            "folio_id": "folio-a",
+            "charge_category": "city_tax",
+            "konaklama_vergisi": True,
+            "total": 15.03,
+            "voided": False,
+        },
+    ]
+
+    class AsyncCursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def __aiter__(self):
+            self._iterator = iter(self.rows)
+            return self
+
+        async def __anext__(self):
+            try:
+                return next(self._iterator)
+            except StopIteration as exc:
+                raise StopAsyncIteration from exc
+
+    class ChargeCollection:
+        def find(self, query, *_args, **_kwargs):
+            rows = [
+                row for row in charges
+                if row["tenant_id"] == query.get("tenant_id")
+                and row["booking_id"] == query.get("booking_id", row["booking_id"])
+                and (query.get("voided", {}).get("$ne") is not True or not row.get("voided"))
+            ]
+            return AsyncCursor(rows)
+
+        async def update_one(self, query, update, **_kwargs):
+            row = next((item for item in charges if item["id"] == query["id"] and not item.get("voided")), None)
+            if not row:
+                return SimpleNamespace(modified_count=0)
+            row.update(update["$set"])
+            return SimpleNamespace(modified_count=1)
+
+    folio_updates = []
+    fake_db = SimpleNamespace(
+        bookings=SimpleNamespace(find_one=AsyncMock(return_value=booking)),
+        folios=SimpleNamespace(
+            find=lambda *_args, **_kwargs: AsyncCursor([{"id": "folio-a"}]),
+            update_one=AsyncMock(side_effect=lambda *args, **kwargs: folio_updates.append((args, kwargs))),
+        ),
+        folio_charges=ChargeCollection(),
+        payments=SimpleNamespace(find=lambda *_args, **_kwargs: AsyncCursor([{"amount": 7500.0, "voided": False}])),
+        invoices=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        accommodation_tax_postings=SimpleNamespace(update_many=AsyncMock()),
+        reservation_activity_log=SimpleNamespace(insert_one=AsyncMock()),
+        pms_audit_trail=SimpleNamespace(insert_one=AsyncMock()),
+    )
+    monkeypatch.setattr(reservation_detail, "db", fake_db)
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_: None)
+
+    async def run_transaction(*, callback, **_kwargs):
+        return await callback(None)
+
+    monkeypatch.setattr(reservation_detail, "_run_reservation_financial_transaction", run_transaction)
+
+    result = await reservation_detail.repair_automatic_accommodation_tax(
+        "booking-a",
+        reservation_detail.ChannelPricingRepairRequest(),
+        current_user=SimpleNamespace(id="user-a", tenant_id="tenant-a", role="manager", name="Operator"),
+        _perm=None,
+    )
+
+    assert result["success"] is True
+    assert result["total_reduction"] == 15.03
+    assert charges[0].get("voided") is False
+    assert charges[1]["voided"] is True
+    assert charges[1]["void_reason"] == "tax_inclusive_booking_total"
+    assert folio_updates[0][0][1]["$set"]["balance"] == 0.0
+    fake_db.accommodation_tax_postings.update_many.assert_awaited_once()
 
 
 def test_room_charge_rate_mismatch_detects_the_exact_cent_difference():
