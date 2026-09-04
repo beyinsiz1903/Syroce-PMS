@@ -2442,10 +2442,6 @@ async def update_daily_rates(
         from core.channel_room_charge_pricing import calculate_room_charge
         accommodation_tax_rate = await get_accommodation_tax_rate(tid, booking.get("check_in"))
 
-        # Build a synthetic booking with updated total_amount so calculate_room_charge
-        # picks the right per-night gross for each date being changed.
-        booking_with_new_total = {**booking, "total_amount": round(new_total, 2)}
-
         for rate_entry in data.rates:
             rate_date = str(rate_entry.date)[:10]
             if rate_date < current_business_date:
