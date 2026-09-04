@@ -2544,6 +2544,8 @@ async def update_daily_rates(
                 "rates_count": len(data.rates),
                 "business_date": current_business_date,
                 "folio_charges_synced": len(affected_folio_ids) > 0,
+                "cross_tenant_update": current_user.tenant_id != tid,
+                "original_actor_tenant": current_user.tenant_id,
             },
         )
 
