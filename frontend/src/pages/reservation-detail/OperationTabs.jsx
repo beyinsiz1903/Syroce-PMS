@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, Home, Repeat2, AlertTriangle } from 'lucide-react';
-import { API, fmtTL, fmtTs } from './helpers';
+import { API, fmtTL, fmtTs, reservationNights } from './helpers';
 
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
@@ -173,7 +173,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
     payment_issue: 'Ödeme Sorunu', other: 'Diğer'
   };
 
-  const nights = booking ? Math.max(1, Math.ceil((new Date(booking.check_out) - new Date(booking.check_in)) / (1000 * 60 * 60 * 24))) : 1;
+  const nights = booking ? Math.max(1, reservationNights(booking.check_in, booking.check_out)) : 1;
   const nightlyRate = booking ? (booking.total_amount || 0) / nights : 0;
 
   useEffect(() => {

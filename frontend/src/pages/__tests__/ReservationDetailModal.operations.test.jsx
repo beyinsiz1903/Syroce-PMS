@@ -176,12 +176,34 @@ describe('ReservationDetailModal operation URLs', () => {
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
 
     const paymentButton = await screen.findByTestId('btn-checkout');
-    expect(paymentButton).toHaveTextContent('Önce ödemeyi tamamlayın');
+    expect(paymentButton).toHaveTextContent('Önce folio bakiyesini tamamlayın');
     fireEvent.click(paymentButton);
 
     expect(confirmDialog).not.toHaveBeenCalled();
     expect(post).not.toHaveBeenCalled();
     expect(screen.getByRole('tab', { name: 'Folyolar' })).toHaveAttribute('data-state', 'active');
+  });
+
+  it('distinguishes the full reservation balance from a partially posted folio', async () => {
+    get.mockResolvedValueOnce({
+      data: {
+        ...detail,
+        booking: { ...detail.booking, status: 'checked_in', check_in: '2026-09-01T14:00:00+03:00', check_out: '2026-09-04T12:00:00+03:00' },
+        summary: {
+          ...detail.summary,
+          balance: 5833.34,
+          total_amount: 7500,
+          reservation_total_due: 7500,
+          unposted_room_amount: 1666.66,
+        },
+      },
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('financial-summary-card')).toHaveTextContent('7.500 TL');
+    expect(screen.getByTestId('unposted-room-amount')).toHaveTextContent('1.666,66 TL');
+    expect(screen.getAllByText('3 gece')).toHaveLength(2);
   });
 
   it('repairs an unpaid double-taxed channel charge without cancelling the booking', async () => {

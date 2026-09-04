@@ -18,6 +18,19 @@ export const fmtDateTime = (d) => {
 export const fmtTs = (d) => (d || '').toString().slice(0, 16).replace('T', ' ');
 export const fmtTL = (v) => (v || 0).toLocaleString('tr-TR');
 
+// Rezervasyon geceleri saat farkından değil takvim günlerinden hesaplanır.
+// Böylece 14:00 giriş / 12:00 çıkış gibi normal otel saatleri bir geceyi
+// yanlışlıkla eksiltmez veya artırmaz.
+export const reservationNights = (checkIn, checkOut) => {
+  const start = String(checkIn || '').slice(0, 10);
+  const end = String(checkOut || '').slice(0, 10);
+  if (!start || !end) return 0;
+  const startMs = Date.parse(`${start}T00:00:00Z`);
+  const endMs = Date.parse(`${end}T00:00:00Z`);
+  const nights = Math.round((endMs - startMs) / 86400000);
+  return Number.isFinite(nights) ? Math.max(0, nights) : 0;
+};
+
 export function statusLabel(s) {
   return s === 'checked_in' ? 'Giriş Yapıldı'
     : s === 'in_house' ? 'Otelde'
