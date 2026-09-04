@@ -2429,6 +2429,82 @@ async def update_daily_rates(
                 {"$set": {"total_amount": round(new_total, 2)}},
             )
 
+        # Sync folio room charges: void old charge → repost at new rate for open days.
+        # Night-Audit-closed days (rate_date < current_business_date) are skipped —
+        # their charges are historical records and must not be modified.
+        folio = await db.folios.find_one(
+            {"booking_id": booking_id, "tenant_id": tid, "folio_type": "guest", "status": "open"},
+            {"_id": 0, "id": 1},
+        )
+        affected_folio_ids: set[str] = set()
+
+        for rate_entry in data.rates:
+            rate_date = str(rate_entry.date)[:10]
+            if rate_date < current_business_date:
+                # Closed by Night Audit — do not touch folio charges for this day.
+                continue
+
+            old_rate = existing_rates.get(rate_date, {}).get("rate")
+            if old_rate is not None and _money_cents(old_rate) == _money_cents(rate_entry.rate):
+                # Amount unchanged — nothing to sync.
+                continue
+
+            # Find active room charges for this booking on this date
+            existing_room_charges = [
+                c async for c in db.folio_charges.find(
+                    {
+                        "booking_id": booking_id,
+                        "tenant_id": tid,
+                        "charge_category": "room",
+                        "voided": {"$ne": True},
+                        "date": {"$gte": rate_date, "$lt": rate_date + "T99"},
+                    },
+                    {"_id": 0},
+                )
+            ]
+
+            # Void existing room charges for this date
+            for old_charge in existing_room_charges:
+                await db.folio_charges.update_one(
+                    {"id": old_charge["id"], "tenant_id": tid},
+                    {
+                        "$set": {
+                            "voided": True,
+                            "voided_at": datetime.now(UTC).isoformat(),
+                            "voided_by": current_user.name,
+                            "void_reason": f"Günlük fiyat güncellendi: {old_charge.get('total', old_charge.get('amount', 0))} TL → {rate_entry.rate} TL",
+                        }
+                    },
+                )
+                if old_charge.get("folio_id"):
+                    affected_folio_ids.add(old_charge["folio_id"])
+
+            # Insert new room charge at updated rate
+            if folio:
+                new_charge = {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tid,
+                    "folio_id": folio["id"],
+                    "booking_id": booking_id,
+                    "charge_category": "room",
+                    "description": f"Room charge - {rate_date}",
+                    "amount": round(rate_entry.rate, 2),
+                    "unit_price": round(rate_entry.rate, 2),
+                    "quantity": 1,
+                    "tax_amount": 0.0,
+                    "total": round(rate_entry.rate, 2),
+                    "date": rate_date + "T00:00:00+00:00",
+                    "posted_at": datetime.now(UTC).isoformat(),
+                    "posted_by": current_user.name,
+                    "voided": False,
+                }
+                await db.folio_charges.insert_one(new_charge)
+                affected_folio_ids.add(folio["id"])
+
+        # Recalculate folio balance for all affected folios
+        for folio_id in affected_folio_ids:
+            await _refresh_cached_folio_balance(tid, folio_id)
+
         await _log_activity(
             tid,
             booking_id,
@@ -2437,6 +2513,7 @@ async def update_daily_rates(
             {
                 "rates_count": len(data.rates),
                 "business_date": current_business_date,
+                "folio_charges_synced": len(affected_folio_ids) > 0,
             },
         )
 
