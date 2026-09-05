@@ -115,7 +115,7 @@ describe('CalendarGrid stay resize handle', () => {
 
     fireEvent.pointerDown(handle, { pointerId: 1, clientX: 10, clientY: 10 });
     fireEvent.pointerMove(screen.getByTestId('calendar-grid'), { pointerId: 1, clientX: 11, clientY: 11 });
-    expect(screen.getByTestId('booking-bar-booking-1')).toHaveStyle({ width: '276px' });
+    expect(screen.getByTestId('booking-bar-booking-1')).toHaveStyle({ width: '412px' });
     fireEvent.pointerUp(screen.getByTestId('calendar-grid'), { pointerId: 1, clientX: 11, clientY: 11 });
 
     expect(handlers.onResizePointerStart).toHaveBeenCalledWith(booking);
@@ -126,5 +126,17 @@ describe('CalendarGrid stay resize handle', () => {
     } else {
       delete document.elementFromPoint;
     }
+  });
+
+  it('keeps a one-night guest name readable on the reservation card', () => {
+    renderGrid({
+      bookings: [{
+        ...booking,
+        check_out: '2026-09-11',
+        guest_name: 'Mustafa Oktay Dalkıran',
+      }],
+    });
+
+    expect(screen.getByTestId('booking-bar-booking-1')).toHaveTextContent('Mustafa Oktay Dalkıran');
   });
 });
