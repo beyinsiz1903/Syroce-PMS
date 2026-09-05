@@ -3,7 +3,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Pencil, Check, Loader2, Plus, Receipt, ArrowRightLeft, Clock, Lock } from 'lucide-react';
+import { Pencil, Check, Loader2, Plus, Receipt, ArrowRightLeft, Clock, Lock, Gift, X } from 'lucide-react';
 import { API, fmtDate, fmtTL, fmtTs, FormField, SelectField } from './helpers';
 import EarlyLateChargeModal from '@/components/EarlyLateChargeModal';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +27,8 @@ export function DailyRatesTab({
   const [editMode, setEditMode] = useState(false);
   const [rates, setRates] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [showCompForm, setShowCompForm] = useState(false);
+  const [compReason, setCompReason] = useState('');
   useEffect(() => {
     setRates(dailyRates || []);
   }, [dailyRates]);
@@ -34,6 +36,7 @@ export function DailyRatesTab({
   const isClosedRate = rate => Boolean(normalizedBusinessDate && String(rate?.date || '').slice(0, 10) < normalizedBusinessDate);
   const anyEditable = rates.some(rate => !isClosedRate(rate));
   const hasClosedRates = rates.some(isClosedRate);
+  const isComplimentary = Boolean(booking?.is_complimentary);
   const handleSave = async () => {
     if (rates.some(rate => !Number.isFinite(parseDecimalInput(rate.rate)) || parseDecimalInput(rate.rate) <= 0)) {
       toast.error('Günlük fiyat sıfırdan büyük olmalıdır');
@@ -53,14 +56,56 @@ export function DailyRatesTab({
     }
     setSaving(false);
   };
+  const handleComplimentary = async () => {
+    const reason = compReason.trim();
+    if (reason.length < 3) {
+      toast.error('Comp gerekçesi en az 3 karakter olmalı');
+      return;
+    }
+    setSaving(true);
+    try {
+      await axios.post(`/pms/reservations/${booking.id}/mark-complimentary`, { reason });
+      toast.success('Rezervasyon comp olarak kaydedildi');
+      setShowCompForm(false);
+      setCompReason('');
+      onRefresh?.();
+    } catch (e) {
+      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+    }
+    setSaving(false);
+  };
   return <div data-testid="daily-rates-tab" className="space-y-3">
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold text-gray-700">{t('cm.pages_reservationdetail_PricingTabs.gunluk_fiyatlar')}</span>
-        <Button size="sm" variant="outline" onClick={() => editMode ? handleSave() : setEditMode(true)} disabled={saving || readOnly || !anyEditable} className="h-7 text-xs" title={readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : !anyEditable ? 'Night Audit ile kapanmış günlerin fiyatı değiştirilemez' : undefined}>
-          {saving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : editMode ? <Check className="w-3 h-3 mr-1" /> : <Pencil className="w-3 h-3 mr-1" />}
-          {editMode ? 'Kaydet' : 'Düzenle'}
-        </Button>
+        <div className="flex items-center gap-2">
+          {!isComplimentary && <Button size="sm" variant="outline" onClick={() => setShowCompForm(value => !value)} disabled={saving || readOnly || !anyEditable} className="h-7 text-xs border-amber-300 text-amber-800 hover:bg-amber-50" title={readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : !anyEditable ? 'Night Audit ile kapanmış günler comp yapılamaz' : 'Gerekçeli olarak ücretsiz konaklama tanımla'}>
+              <Gift className="w-3 h-3 mr-1" />
+              Comp Ver
+            </Button>}
+          <Button size="sm" variant="outline" onClick={() => editMode ? handleSave() : setEditMode(true)} disabled={saving || readOnly || !anyEditable || isComplimentary} className="h-7 text-xs" title={isComplimentary ? 'Comp rezervasyonun günlük fiyatları değiştirilemez' : readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : !anyEditable ? 'Night Audit ile kapanmış günlerin fiyatı değiştirilemez' : undefined}>
+            {saving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : editMode ? <Check className="w-3 h-3 mr-1" /> : <Pencil className="w-3 h-3 mr-1" />}
+            {editMode ? 'Kaydet' : 'Düzenle'}
+          </Button>
+        </div>
       </div>
+      {isComplimentary && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900" data-testid="complimentary-summary">
+          <div className="flex items-center gap-1.5 font-medium"><Gift className="h-4 w-4" /> Comp konaklama</div>
+          {booking?.complimentary_reason && <p className="mt-0.5 text-xs text-emerald-800">Gerekçe: {booking.complimentary_reason}</p>}
+        </div>}
+      {showCompForm && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2" data-testid="complimentary-form">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-amber-950">Rezervasyonu comp yap</p>
+              <p className="text-xs text-amber-800">Ödeme kaydı oluşmaz. Tahakkuk, ödeme veya fatura varsa finansal comp/indirim fişi gerekir.</p>
+            </div>
+            <Button type="button" variant="ghost" size="icon" className="h-6 w-6" aria-label="Comp formunu kapat" onClick={() => setShowCompForm(false)}><X className="h-4 w-4" /></Button>
+          </div>
+          <Input value={compReason} onChange={event => setCompReason(event.target.value)} placeholder="Comp gerekçesi (zorunlu)" maxLength={500} disabled={saving} />
+          <div className="flex justify-end gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={() => setShowCompForm(false)} disabled={saving}>Vazgeç</Button>
+            <Button type="button" size="sm" onClick={handleComplimentary} disabled={saving} className="bg-amber-600 hover:bg-amber-700">{saving && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}Comp Olarak Kaydet</Button>
+          </div>
+        </div>}
       {readOnly && <p className="text-xs text-slate-500">Geçmiş veya tamamlanmış rezervasyonlarda fiyat değiştirilemez.</p>}
       {!readOnly && hasClosedRates && <p className="text-xs text-slate-500">Night Audit ile kapanan tarihler kilitlidir; yalnızca açık iş günü ve sonrası düzenlenebilir.</p>}
       <div className="border rounded-lg overflow-hidden">

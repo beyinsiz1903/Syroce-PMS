@@ -133,6 +133,43 @@ describe('reservation detail action feedback', () => {
     expect(axiosMock.put).not.toHaveBeenCalled();
   });
 
+  it('requires a reason before marking a reservation complimentary', async () => {
+    render(
+      <DailyRatesTab
+        dailyRates={[{ id: 'rate-a', date: '2026-08-18', rate: 10 }]}
+        booking={{ id: 'booking-a' }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Comp Ver' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Comp Olarak Kaydet' }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Comp gerekçesi en az 3 karakter olmalı'));
+    expect(axiosPost).not.toHaveBeenCalled();
+  });
+
+  it('marks an unposted reservation complimentary with an audit reason', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true } });
+    const onRefresh = vi.fn();
+    render(
+      <DailyRatesTab
+        dailyRates={[{ id: 'rate-a', date: '2026-08-18', rate: 10 }]}
+        booking={{ id: 'booking-a' }}
+        onRefresh={onRefresh}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Comp Ver' }));
+    fireEvent.change(screen.getByPlaceholderText('Comp gerekçesi (zorunlu)'), { target: { value: 'Misafir memnuniyeti' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Comp Olarak Kaydet' }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/mark-complimentary',
+      { reason: 'Misafir memnuniyeti' },
+    ));
+    expect(onRefresh).toHaveBeenCalled();
+  });
+
   it('locks daily rates before the current PMS business date', () => {
     render(
       <DailyRatesTab

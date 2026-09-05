@@ -719,6 +719,12 @@ class DailyRateUpdate(BaseModel):
     rates: list[DailyRateEntry] = Field(..., min_length=1, max_length=400)
 
 
+class ComplimentaryReservationRequest(BaseModel):
+    """Full complimentary stay request for a reservation that has not posted revenue."""
+
+    reason: str = Field(..., min_length=3, max_length=500)
+
+
 class CariAccountCreate(BaseModel):
     name: str
     account_type: str = "company"  # company, agency, individual
@@ -2797,6 +2803,197 @@ async def add_extra_charge_detail(
 
     charge.pop("_id", None)
     return {"success": True, "charge": charge}
+
+
+@router.post("/reservations/{booking_id}/mark-complimentary")
+async def mark_reservation_complimentary(
+    booking_id: str,
+    data: ComplimentaryReservationRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("override_rate")),
+):
+    """Comp a stay before room revenue, payment or invoice has been posted.
+
+    A complimentary stay is an audited commercial decision, not a payment.  We
+    therefore retain the original price and reason on the booking while zeroing
+    the *open* daily rates consumed by Night Audit.  Once financial documents
+    exist, finance must issue an explicit adjustment instead of rewriting them.
+    """
+    _enforce_perm(current_user.role, "override_rate")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+
+    await ensure_reservation_mutable(db, tid, booking)
+
+    business_state = await ensure_business_date_initialized(db, tid)
+    current_business_date = str(business_state["business_date"])[:10]
+    check_in = _reservation_calendar_date(booking.get("check_in"))
+    check_out = _reservation_calendar_date(booking.get("check_out"))
+    if check_in is None or check_out is None or check_out <= check_in:
+        raise HTTPException(status_code=409, detail="Rezervasyonun geçerli bir konaklama aralığı yok")
+
+    stay_dates: list[str] = []
+    current = check_in
+    while current < check_out:
+        stay_dates.append(current.isoformat())
+        current += timedelta(days=1)
+
+    closed_dates = [rate_date for rate_date in stay_dates if rate_date < current_business_date]
+    if closed_dates:
+        raise HTTPException(
+            status_code=409,
+            detail="Night Audit ile kapanmış geceleri olan rezervasyon comp yapılamaz; finansal comp/indirim fişi gerekir",
+        )
+
+    active_room_charge = await db.folio_charges.find_one(
+        {
+            "booking_id": booking_id,
+            "tenant_id": tid,
+            "charge_category": "room",
+            "voided": {"$ne": True},
+        },
+        {"_id": 0, "id": 1},
+    )
+    if active_room_charge:
+        raise HTTPException(
+            status_code=409,
+            detail="Tahakkuk edilmiş oda ücreti bulunan rezervasyon comp yapılamaz; finansal comp/indirim fişi gerekir",
+        )
+
+    folios = [
+        folio
+        async for folio in db.folios.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0, "id": 1},
+        )
+    ]
+    folio_ids = [folio["id"] for folio in folios if folio.get("id")]
+    payment_query = {
+        "tenant_id": tid,
+        "voided": {"$ne": True},
+        "amount": {"$gt": 0},
+        "$or": [{"booking_id": booking_id}],
+    }
+    if folio_ids:
+        payment_query["$or"].append({"folio_id": {"$in": folio_ids}})
+    active_payment = await db.payments.find_one(payment_query, {"_id": 0, "id": 1})
+    if active_payment:
+        raise HTTPException(
+            status_code=409,
+            detail="Ödeme alınmış rezervasyon comp yapılamaz; iade veya finansal comp/indirim fişi gerekir",
+        )
+
+    invoice_query = {
+        "tenant_id": tid,
+        "status": {"$nin": ["draft", "cancelled", "voided"]},
+        "$or": [{"booking_id": booking_id}],
+    }
+    if folio_ids:
+        invoice_query["$or"].append({"folio_id": {"$in": folio_ids}})
+    issued_invoice = await db.invoices.find_one(invoice_query, {"_id": 0, "id": 1})
+    if issued_invoice:
+        raise HTTPException(
+            status_code=409,
+            detail="Faturalanmış rezervasyon comp yapılamaz; iade/düzeltme belgesi gerekir",
+        )
+
+    existing_rows = [
+        row
+        async for row in db.daily_rates.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0, "date": 1, "rate": 1},
+        )
+    ]
+    existing_by_date: dict[str, dict] = {}
+    for row in existing_rows:
+        row_date = _reservation_calendar_date(row.get("date"))
+        if row_date is None:
+            raise HTTPException(status_code=409, detail="Geçersiz tarihli mevcut günlük fiyat kaydı bulundu; düzeltme gerekir")
+        date_key = row_date.isoformat()
+        if date_key in existing_by_date:
+            raise HTTPException(status_code=409, detail=f"{date_key} için yinelenen günlük fiyat kaydı bulundu; düzeltme gerekir")
+        existing_by_date[date_key] = row
+
+    now = datetime.now(UTC).isoformat()
+    original_total = round(float(booking.get("total_amount", 0) or 0), 2)
+    fallback_rate = round(original_total / len(stay_dates), 2)
+    original_daily_rates = [
+        {
+            "date": rate_date,
+            "rate": round(float(existing_by_date.get(rate_date, {}).get("rate", fallback_rate) or 0), 2),
+        }
+        for rate_date in stay_dates
+    ]
+    async with await db.client.start_session() as session:
+        async with session.start_transaction():
+            for rate_date in stay_dates:
+                existing = existing_by_date.get(rate_date, {})
+                try:
+                    await db.daily_rates.update_one(
+                        {
+                            "booking_id": booking_id,
+                            "tenant_id": tid,
+                            "date": existing.get("date", rate_date),
+                        },
+                        {
+                            "$set": {
+                                "date": rate_date,
+                                "rate": 0.0,
+                                "daily_rate_key": f"{booking_id}:{rate_date}",
+                                "is_complimentary": True,
+                                "complimentary_reason": data.reason.strip(),
+                                "updated_by": current_user.name,
+                                "updated_at": now,
+                            }
+                        },
+                        upsert=True,
+                        session=session,
+                    )
+                except DuplicateKeyError as exc:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"{rate_date} için eşzamanlı günlük fiyat güncellemesi tespit edildi; lütfen yeniden deneyin",
+                    ) from exc
+
+            await db.bookings.update_one(
+                {"id": booking_id, "tenant_id": tid},
+                {
+                    "$set": {
+                        "total_amount": 0.0,
+                        "is_complimentary": True,
+                        "complimentary_reason": data.reason.strip(),
+                        "complimentary_by": current_user.name,
+                        "complimentary_at": now,
+                        "complimentary_original_total": booking.get("complimentary_original_total", original_total),
+                    }
+                },
+                session=session,
+            )
+
+    await _log_activity(
+        tid,
+        booking_id,
+        "reservation_marked_complimentary",
+        current_user.name,
+        {
+            "reason": data.reason.strip(),
+            "original_total": original_total,
+            "original_daily_rates": original_daily_rates,
+            "affected_nights": len(stay_dates),
+            "business_date": current_business_date,
+        },
+    )
+    return {
+        "success": True,
+        "booking_id": booking_id,
+        "new_total": 0.0,
+        "original_total": original_total,
+        "affected_nights": len(stay_dates),
+    }
 
 
 @router.put("/reservations/{booking_id}/daily-rates")
