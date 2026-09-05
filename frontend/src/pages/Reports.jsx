@@ -104,6 +104,17 @@ const Reports = ({ user, tenant, onLogout }) => {
       description: t('reports.forecastDetailReport')
     },
 
+    // REZERVASYON RAPORLARI
+    {
+      id: 'reservation-performance',
+      name: 'Rezervasyon Performansı',
+      category: 'operational',
+      icon: FileText,
+      endpoint: '/reports/reservation-performance/excel',
+      needsDateRange: true,
+      description: 'Rezervasyon, kanal, iptal/no-show, konaklama süresi ve ayrıntılı rezervasyon listesi'
+    },
+
     // OPERASYON RAPORLARI
     {
       id: 'housekeeping-efficiency',
