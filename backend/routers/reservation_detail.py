@@ -749,6 +749,13 @@ class GuestUpdate(BaseModel):
     phone: str | None = None
     id_number: str | None = None
     nationality: str | None = None
+    id_type: str | None = None
+    date_of_birth: str | None = None
+    gender: str | None = None
+    address: str | None = None
+    city: str | None = None
+    country: str | None = None
+    notes: str | None = Field(None, max_length=2000)
     vip_status: bool | None = None
 
 

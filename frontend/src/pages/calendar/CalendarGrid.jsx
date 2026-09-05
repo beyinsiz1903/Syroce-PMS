@@ -13,15 +13,16 @@ import { useTranslation } from 'react-i18next';
 import OccupancyBand from "./OccupancyBand";
 import { compactGuestName, formatGuestName } from './roomTypeMatching';
 
-// HotelRunner's board uses a dense, tabular rhythm: a wide room label column
-// and narrow day columns. This keeps 14 days useful without a card-like view.
-const CELL_W = 70;
-const CELL_CLS = 'w-[70px]';
+// A full guest name must remain legible even for a one-night stay.  A slightly
+// wider day column with a two-line title is a better trade-off than anonymous
+// looking cards; narrower screens keep the existing horizontal scroll.
+const CELL_W = 104;
+const CELL_CLS = 'w-[104px]';
 const LABEL_CLS = 'w-52';
-const CELL_H = 50;
-const BOOKING_H = 38;
+const CELL_H = 60;
+const BOOKING_H = 54;
 const LANE_H = 40;
-const LANE_BAR_H = 42;
+const LANE_BAR_H = 58;
 
 export const clearCalendarTextSelection = () => {
   window.getSelection?.()?.removeAllRanges();
@@ -635,7 +636,7 @@ const CalendarGrid = ({
                               && checkOutStr <= rangeEndStr;
                             const paxCount = (booking.adults || 0) + (booking.children || 0);
                             const fmtCardDate = (d) => { try { return new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }); } catch { return ''; } };
-                            const displayGuestName = compactGuestName(fullGuestName, span === 1 ? 10 : span === 2 ? 18 : 40);
+                            const displayGuestName = fullGuestName;
                             const cardAria = `${fullGuestName}, ${getSourceColor(booking).label}${paxCount ? `, ${paxCount} kişi` : ''}, ${fmtCardDate(booking.check_in)} – ${fmtCardDate(booking.check_out)}`;
                             return (
                               <div
@@ -646,6 +647,13 @@ const CalendarGrid = ({
                                 aria-label={cardAria}
                                 onDragStart={(e) => onDragStart(e, booking)}
                                 onDragEnd={onDragEnd}
+                                // Reservation cards sit above the date cells.  Without their
+                                // own drop handlers, dropping directly on an occupied card never
+                                // reaches the underlying cell, so an intended room swap appears
+                                // to do nothing.
+                                onDragOver={(e) => onDragOver(e, room.id, dateRange[startIdx])}
+                                onDragLeave={onDragLeave}
+                                onDrop={(e) => onDrop(e, room.id, dateRange[startIdx])}
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
                                 className={`absolute rounded-sm text-white text-[10px] cursor-move z-20 group outline-none border border-white/25 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
@@ -666,7 +674,7 @@ const CalendarGrid = ({
                                 title={conflictTitle}
                               >
                                 <div className="px-2 py-1 relative overflow-hidden" style={{ height: `${BOOKING_H}px` }}>
-                                  <div className="font-extrabold text-[12px] truncate pr-4 text-white leading-tight drop-shadow-sm">
+                                  <div className="font-extrabold text-[12px] pr-5 text-white leading-[13px] drop-shadow-sm whitespace-normal break-words max-h-[26px] overflow-hidden">
                                     {displayGuestName}
                                   </div>
                                   <div className="text-[9px] text-white/90 truncate flex items-center gap-1 leading-tight mt-0.5">

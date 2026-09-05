@@ -536,10 +536,18 @@ export function GuestsTab({
           email: form.email || undefined,
           phone: form.phone || undefined,
           id_number: form.id_number || undefined,
-          nationality: form.nationality || undefined
+          nationality: form.nationality || undefined,
+          id_type: form.id_type || undefined,
+          date_of_birth: form.date_of_birth || undefined,
+          gender: form.gender || undefined,
+          address: form.address || undefined,
+          city: form.city || undefined,
+          country: form.country || undefined,
+          notes: form.notes || undefined,
         });
+      } else {
+        await axios.put(`/pms/guests/${guestId}`, form);
       }
-      await axios.put(`/pms/guests/${guestId}`, form);
       toast.success('Misafir bilgileri güncellendi');
       cancelEdit();
       onRefresh?.();

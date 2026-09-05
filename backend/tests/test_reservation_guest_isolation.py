@@ -50,7 +50,7 @@ async def test_shared_guest_edit_isolated_to_the_current_reservation():
     ):
         result = await update_reservation_guest(
             "booking-current",
-            GuestUpdate(name="Düzeltilen Misafir"),
+            GuestUpdate(name="Düzeltilen Misafir", city="Kartepe", notes="Yalnızca bu konaklama"),
             user,
         )
 
@@ -60,6 +60,8 @@ async def test_shared_guest_edit_isolated_to_the_current_reservation():
     assert inserted_guest["id"] != "guest-shared"
     assert inserted_guest["name"] == "Düzeltilen Misafir"
     assert inserted_guest["email"] == "same@example.test"
+    assert inserted_guest["city"] == "Kartepe"
+    assert inserted_guest["notes"] == "Yalnızca bu konaklama"
 
     booking_update = bookings.update_one.await_args
     assert booking_update.args[0] == {"id": "booking-current", "tenant_id": "tenant-1"}
