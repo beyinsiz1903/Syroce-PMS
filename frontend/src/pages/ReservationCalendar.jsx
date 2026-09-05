@@ -1014,7 +1014,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
   };
 
-  const handleDrop = async (e, newRoomId, newDate) => {
+  const handleDrop = async (e, newRoomId, newDate, targetBookingId = null) => {
     e.preventDefault();
     setDragOverCell(null);
     if (resizingBooking) {
@@ -1086,7 +1086,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     // kullanıcı rezervasyonu kendi giriş gecesindeki dolu odaya bırakırsa bu
     // açıkça iki rezervasyonun oda takası niyetidir. Tarihleri değiştirmeden,
     // sunucuda tek transaction içinde takas ederiz.
-    const targetBookings = bookings.filter(candidate => (
+    const targetBooking = targetBookingId
+      ? bookings.find(candidate => candidate.id === targetBookingId)
+      : null;
+    const targetBookings = targetBooking ? [targetBooking] : bookings.filter(candidate => (
       candidate.id !== draggingBooking.id
       && candidate.room_id === newRoomId
       && ['confirmed', 'guaranteed', 'checked_in', 'pending'].includes(candidate.status)
