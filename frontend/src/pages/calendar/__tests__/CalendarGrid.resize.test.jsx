@@ -99,7 +99,7 @@ describe('CalendarGrid stay resize handle', () => {
     fireEvent.dragOver(card, { dataTransfer });
     fireEvent.drop(card, { dataTransfer });
 
-    expect(handlers.onDrop).toHaveBeenCalledWith(expect.anything(), room.id, expect.any(Date));
+    expect(handlers.onDrop).toHaveBeenCalledWith(expect.anything(), room.id, expect.any(Date), booking.id);
     expect(handlers.onDrop.mock.calls[0][2].toISOString()).toBe('2026-09-10T00:00:00.000Z');
   });
 

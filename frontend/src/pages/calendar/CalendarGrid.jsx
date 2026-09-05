@@ -653,7 +653,7 @@ const CalendarGrid = ({
                                 // to do nothing.
                                 onDragOver={(e) => onDragOver(e, room.id, dateRange[startIdx])}
                                 onDragLeave={onDragLeave}
-                                onDrop={(e) => onDrop(e, room.id, dateRange[startIdx])}
+                                onDrop={(e) => onDrop(e, room.id, dateRange[startIdx], booking.id)}
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
                                 className={`absolute rounded-sm text-white text-[10px] cursor-move z-20 group outline-none border border-white/25 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${

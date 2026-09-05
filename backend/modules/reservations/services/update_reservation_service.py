@@ -26,6 +26,21 @@ DEFAULT_EMPTY_FIELDS = {
     "allocation_source": "manual",
 }
 
+
+def _operator_room_conflict_message(conflict_type: str) -> str:
+    """Return a safe, actionable message without exposing internal IDs."""
+    if conflict_type == "ooo":
+        return "Hedef oda arıza nedeniyle kullanım dışı. Başka bir oda seçin."
+    if conflict_type == "oos":
+        return "Hedef oda servis dışı. Başka bir oda seçin."
+    if conflict_type == "maintenance":
+        return "Hedef oda bakımda. Başka bir oda seçin."
+    return (
+        "Hedef oda seçilen gece için başka bir rezervasyonla dolu. "
+        "İki rezervasyonu karşılıklı değiştirmek için kartı doğrudan diğer "
+        "rezervasyon kartının üzerine bırakın."
+    )
+
 ALLOWED_FIELDS = {
     "room_id",
     "guest_id",
@@ -194,7 +209,7 @@ class UpdateReservationService:
                     except BookingConflictError as exc:
                         raise HTTPException(
                             status_code=status.HTTP_409_CONFLICT,
-                            detail=str(exc),
+                            detail=_operator_room_conflict_message(exc.conflict_type),
                         ) from exc
 
             async def restore_original_allocation() -> None:

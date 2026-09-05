@@ -6,7 +6,10 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from modules.reservations.services.update_reservation_service import UpdateReservationService
+from modules.reservations.services.update_reservation_service import (
+    UpdateReservationService,
+    _operator_room_conflict_message,
+)
 
 TENANT = "tenant-date-guard"
 
@@ -92,3 +95,11 @@ async def test_checked_out_dates_are_immutable():
 
     assert exc.value.status_code == 409
     assert "Cikis yapilmis" in exc.value.detail
+
+
+def test_room_conflict_message_never_exposes_internal_room_or_booking_ids():
+    message = _operator_room_conflict_message("booking")
+
+    assert "Hedef oda" in message
+    assert "kartının üzerine bırakın" in message
+    assert "07401ba8" not in message
