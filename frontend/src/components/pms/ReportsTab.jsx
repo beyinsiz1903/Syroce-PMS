@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RefreshCw, TrendingUp, Hotel, DollarSign, BarChart3, LogIn, LogOut, Home } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, ComposedChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, AreaChart, Area } from 'recharts';
 import { useTranslation } from 'react-i18next';
+import ReservationReportsTab from './ReservationReportsTab';
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 const fmtCurrency = n => {
   if (n == null) return '₺0';
@@ -196,6 +197,7 @@ const ReportsTab = () => {
           <TabsTrigger value="overview">{t('cm.components_pms_ReportsTab.gunluk_ozet')}</TabsTrigger>
           <TabsTrigger value="forecast">Tahmin ({forecast.length + forecast30.length > 0 ? '7/30 Gun' : '-'})</TabsTrigger>
           <TabsTrigger value="market">Pazar Segmenti</TabsTrigger>
+          <TabsTrigger value="reservations">Rezervasyon Analizi</TabsTrigger>
           <TabsTrigger value="housekeeping">Kat Hizmetleri</TabsTrigger>
         </TabsList>
 
@@ -464,6 +466,10 @@ const ReportsTab = () => {
                   </CardContent>
                 </Card>}
             </> : <Card><CardContent className="py-8 text-center text-gray-400">{t('cm.components_pms_ReportsTab.pazar_segmenti_verisi_bulunamadi')}</CardContent></Card>}
+        </TabsContent>
+
+        <TabsContent value="reservations" className="space-y-4 mt-4">
+          <ReservationReportsTab />
         </TabsContent>
 
         <TabsContent value="housekeeping" className="space-y-4 mt-4">
