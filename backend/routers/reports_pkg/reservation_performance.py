@@ -12,7 +12,10 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+from openpyxl.styles import Font, PatternFill
 
+from core.csv_safe import xlsx_safe
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
@@ -306,10 +309,6 @@ async def export_reservation_performance_excel(
         data=data,
         sheet_name="Özet",
     )
-    from core.csv_safe import xlsx_safe
-    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
-    from openpyxl.styles import Font, PatternFill
-
     def add_sheet(title: str, headers: list[str], values: list[list[Any]]):
         sheet = workbook.create_sheet(title)
         sheet.append(headers)
