@@ -1,15 +1,17 @@
 import { useTheme } from "next-themes"
 import { Toaster as Sonner, toast } from "sonner"
 
-const Toaster = ({
-  ...props
-}) => {
+const Toaster = ({ style, ...props }) => {
   const { theme = "system" } = useTheme()
 
   return (
     <Sonner
       theme={theme}
       className="toaster group"
+      // Sonner defaults to z-index: 999999999. Keep transient messages above
+      // the app header (50) but below full reservation dialogs (60), so a
+      // toast can never cover a modal close button.
+      style={{ zIndex: 55, ...style }}
       toastOptions={{
         classNames: {
           toast:
