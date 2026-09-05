@@ -1,9 +1,9 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import RoomsTab from '@/components/pms/RoomsTab';
 
-vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
+vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }));
 vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }));
@@ -62,5 +62,32 @@ describe('RoomsTab PMS business date', () => {
     expect(within(card).getByText('Özgür Test')).toBeInTheDocument();
     expect(within(card).getByText('Giriş Bekleniyor')).toBeInTheDocument();
     expect(within(card).getByRole('button', { name: 'Giriş' })).toBeInTheDocument();
+  });
+
+  it('allows a dirty vacant room to be booked and marked clean independently', async () => {
+    const axios = (await import('axios')).default;
+    axios.put.mockResolvedValueOnce({ data: { success: true } });
+    const onDataRefresh = vi.fn();
+
+    render(
+      <RoomsTab
+        rooms={[{ ...room, room_number: '109', status: 'dirty' }]}
+        bookings={[]}
+        businessDate="2026-08-28"
+        onDataRefresh={onDataRefresh}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Rezervasyon Yap' })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('mark-room-clean-109'));
+
+    await waitFor(() => {
+      expect(axios.put).toHaveBeenCalledWith(
+        '/housekeeping/room/room-208/status',
+        null,
+        { params: { new_status: 'available' } },
+      );
+      expect(onDataRefresh).toHaveBeenCalledTimes(1);
+    });
   });
 });

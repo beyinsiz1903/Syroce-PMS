@@ -574,6 +574,11 @@ async def get_notifications_list(unread_only: bool = False, limit: int = 50, cre
                 "read": notif.get("read", False),
                 "created_at": notif.get("created_at"),
                 "action_url": notif.get("action_url"),
+                # Kartın ilgili kayda gidebilmesi için operasyonel hedef
+                # bilgilerini API sınırında koru.
+                "related_entity": notif.get("related_entity"),
+                "related_id": notif.get("related_id"),
+                "metadata": notif.get("metadata") or {},
             }
         )
 

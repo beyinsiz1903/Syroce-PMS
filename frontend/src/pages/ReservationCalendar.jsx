@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, Suspense } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Layout from '@/components/Layout';
@@ -191,6 +191,7 @@ const newBookingDraft = (overrides = {}) => ({
 const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Core state
   const [rooms, setRooms] = useState([]);
@@ -225,6 +226,17 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [folioPanelId, setFolioPanelId] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [detailModalBookingId, setDetailModalBookingId] = useState(null);
+
+  // Bildirim merkezi rezervasyon hedefini route state ile iletir. Modal
+  // açıldıktan sonra state'i temizliyoruz; geri/ileri gezinmede aynı kayıt
+  // tekrar açılmaz.
+  useEffect(() => {
+    const bookingId = location.state?.openBookingId;
+    if (!bookingId) return;
+    setDetailModalBookingId(bookingId);
+    setShowDetailModal(true);
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.pathname, location.state, navigate]);
   const [showUnassignedPanel, setShowUnassignedPanel] = useState(false);
   const [unassignedFilter, setUnassignedFilter] = useState('all');
   const unassignedListRef = useRef(null);
