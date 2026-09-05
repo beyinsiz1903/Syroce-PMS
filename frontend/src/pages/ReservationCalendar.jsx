@@ -413,7 +413,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const handleSyncReservations = async () => {
     setSyncing(true);
     try {
-      let totalImported = 0, totalCancelled = 0, synced = false, failedConnectors = 0;
+      let totalImported = 0, totalCancelled = 0, synced = false, failedConnectors = 0, availabilitySynced = 0;
 
       try {
         const exelyRes = await axios.post('/channel-manager/exely/sync/reservations/pull');
@@ -438,15 +438,31 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             totalImported += result.data?.imported || result.data?.new || 0;
             totalCancelled += result.data?.cancelled || 0;
             synced = true;
-          } catch (e) { failedConnectors++; console.warn(`Sync failed for connector ${conn.id}:`, e); }
+          } catch (e) { failedConnectors++; console.warn(`Reservation pull failed for connector ${conn.id}:`, e); }
+
+          // Availability is an outbound safety action.  It must still run if
+          // the provider has no new reservation payload (or its pull endpoint
+          // is temporarily unavailable), otherwise a full PMS calendar could
+          // stay sellable on the OTA.
+          try {
+            await axios.post('/channel-manager/v2/sync/inventory', {
+              connector_id: conn.id,
+              date_start: sDate.toISOString().split('T')[0],
+              date_end: eDate.toISOString().split('T')[0],
+              force: true,
+              reason: 'Calendar OTA Sync — canonical inventory reconciliation',
+            });
+            availabilitySynced++;
+            synced = true;
+          } catch (e) { failedConnectors++; console.warn(`Inventory push failed for connector ${conn.id}:`, e); }
         }
       } catch (e) { if (e.response?.status !== 404) console.warn('v2 connector sync error:', e); }
 
       if (!synced && failedConnectors === 0) { toast.info('Aktif kanal bağlantısı bulunamadı'); setSyncing(false); return; }
       if (synced && (totalImported > 0 || totalCancelled > 0)) {
-        toast.success(`Senkronizasyon tamamlandi: ${totalImported} yeni, ${totalCancelled} iptal`);
+        toast.success(`Senkronizasyon tamamlandı: ${totalImported} yeni, ${totalCancelled} iptal, ${availabilitySynced} kanal müsaitliği güncellendi`);
       } else if (synced) {
-        toast.info('Yeni rezervasyon değişikliği bulunamadı');
+        toast.info(`${availabilitySynced} kanalın müsaitliği takvim envanteriyle eşitlendi`);
       }
       if (failedConnectors > 0) {
         toast.error(`${failedConnectors} kanal senkronize edilemedi`);

@@ -13,14 +13,58 @@ Akış:
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from core.database import db
+from core.room_type_inventory_service import (
+    get_room_type_inventory,
+    reconcile_date_range,
+)
 from core.tenant_db import clear_tenant_context, set_tenant_context
 
 logger = logging.getLogger("channel_manager.availability_auto_sync")
 
-ACTIVE_STATUSES = ["pending", "confirmed", "guaranteed", "checked_in"]
+
+
+async def _load_authoritative_availability(
+    tenant_id: str,
+    room_type: str,
+    start_date: date,
+    end_date: date,
+) -> dict[str, int]:
+    """Read sellable inventory from the canonical room-night-lock projection.
+
+    Channel availability must use the same source as the PMS calendar.  Counting
+    bookings here is unsafe: holds, out-of-order rooms and a recently reassigned
+    reservation are represented by room-night locks before (and sometimes
+    independently of) the booking document.  A raw booking count can therefore
+    overwrite a correct channel value with an incorrect one.
+    """
+    last_stay_date = end_date - timedelta(days=1)
+    if last_stay_date < start_date:
+        return {}
+
+    await reconcile_date_range(
+        tenant_id,
+        start_date.isoformat(),
+        last_stay_date.isoformat(),
+    )
+
+    availability: dict[str, int] = {}
+    current_date = start_date
+    while current_date < end_date:
+        date_string = current_date.isoformat()
+        inventory = await get_room_type_inventory(tenant_id, date_string, room_type)
+        item = next((row for row in inventory if row.get("room_type") == room_type), None)
+        if item is None or not isinstance(item.get("sellable"), int):
+            raise RuntimeError(
+                "Canonical inventory is unavailable for "
+                f"room_type={room_type!r}, date={date_string!r}"
+            )
+        availability[date_string] = max(item["sellable"], 0)
+        current_date += timedelta(days=1)
+
+    return availability
 
 
 async def sync_availability_after_booking(
@@ -63,18 +107,7 @@ async def _do_sync(tenant_id: str, room_id: str, check_in: str, check_out: str):
         logger.warning("[AVAIL-AUTO-SYNC] Room type missing")
         return
 
-    # 2. Bu oda tipindeki toplam oda sayısını ve oda ID'lerini bul
-    rooms_of_type = await db.rooms.find(
-        {"tenant_id": tenant_id, "room_type": pms_room_type},
-        {"_id": 0, "id": 1},
-    ).to_list(500)
-    total_rooms = len(rooms_of_type)
-    room_ids = {r["id"] for r in rooms_of_type}
-
-    if total_rooms == 0:
-        return
-
-    # 3. Tarih aralığını belirle
+    # 2. Tarih aralığını belirle
     ci_str = check_in[:10]
     co_str = check_out[:10]
     start_date = datetime.strptime(ci_str, "%Y-%m-%d").date()
@@ -84,33 +117,15 @@ async def _do_sync(tenant_id: str, room_id: str, check_in: str, check_out: str):
     if end_date <= start_date:
         return
 
-    # 4. Bu tarih aralığında aktif booking'leri çek
-    active_bookings = await db.bookings.find(
-        {
-            "tenant_id": tenant_id,
-            "status": {"$in": ACTIVE_STATUSES},
-            "check_in": {"$lt": co_str},
-            "check_out": {"$gt": ci_str},
-        },
-        {"_id": 0, "room_id": 1, "check_in": 1, "check_out": 1},
-    ).to_list(10000)
-
-    # 5. Her gün için sold count hesapla
-    date_availability = {}
-    d = start_date
-    while d < end_date:
-        ds = d.strftime("%Y-%m-%d")
-        sold = 0
-        for b in active_bookings:
-            if b.get("room_id") not in room_ids:
-                continue
-            b_ci = (b.get("check_in") or "")[:10]
-            b_co = (b.get("check_out") or "")[:10]
-            if b_ci <= ds < b_co:
-                sold += 1
-        real_avail = max(total_rooms - sold, 0)
-        date_availability[ds] = real_avail
-        d += timedelta(days=1)
+    # 3. Calendar and every OTA push must read exactly the same, canonical
+    # room-night-lock inventory.  Do not fall back to a booking count here:
+    # a fallback can reopen a room that the calendar has correctly closed.
+    date_availability = await _load_authoritative_availability(
+        tenant_id,
+        pms_room_type,
+        start_date,
+        end_date,
+    )
 
     if not date_availability:
         return
@@ -120,7 +135,7 @@ async def _do_sync(tenant_id: str, room_id: str, check_in: str, check_out: str):
         len(date_availability),
     )
 
-    # 6. Kanallara push et (arka planda paralel)
+    # 4. Kanallara push et (arka planda paralel)
     tasks = []
     tasks.append(_push_to_exely(tenant_id, pms_room_type, date_availability))
     tasks.append(_push_to_hotelrunner(tenant_id, pms_room_type, date_availability))
