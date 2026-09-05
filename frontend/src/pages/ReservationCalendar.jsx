@@ -979,7 +979,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       loadCalendarData();
       return true;
     } catch (error) {
-      toast.error('Rezervasyon taşınamadı');
+      const detail = error.response?.data?.detail;
+      toast.error(
+        typeof detail === 'string'
+          ? detail
+          : (detail?.message || 'Rezervasyon taşınamadı')
+      );
       console.error('Move booking error:', error);
       return false;
     }
