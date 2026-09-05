@@ -91,6 +91,18 @@ describe('CalendarGrid stay resize handle', () => {
     expect(screen.getByTestId('booking-bar-booking-1')).toHaveClass('pointer-events-none');
   });
 
+  it('accepts a drop directly on an occupied reservation card', () => {
+    const handlers = renderGrid();
+    const card = screen.getByTestId('booking-bar-booking-1');
+    const dataTransfer = { effectAllowed: '', dropEffect: '' };
+
+    fireEvent.dragOver(card, { dataTransfer });
+    fireEvent.drop(card, { dataTransfer });
+
+    expect(handlers.onDrop).toHaveBeenCalledWith(expect.anything(), room.id, expect.any(Date));
+    expect(handlers.onDrop.mock.calls[0][2].toISOString()).toBe('2026-09-10T00:00:00.000Z');
+  });
+
   it('supports direct pointer resizing in addition to browser drag events', () => {
     const handlers = renderGrid();
     const handle = screen.getByTestId('booking-resize-handle-booking-1');

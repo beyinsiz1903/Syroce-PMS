@@ -6,16 +6,17 @@ import IdPhotoViewerButton from '@/components/IdPhotoViewerButton';
 import { GuestsTab } from '@/pages/reservation-detail/InfoTabs';
 import { VCCTab } from '@/pages/reservation-detail/VCCTab';
 
-const { axiosGet, axiosPost } = vi.hoisted(() => ({
+const { axiosGet, axiosPost, axiosPut } = vi.hoisted(() => ({
   axiosGet: vi.fn(),
   axiosPost: vi.fn(),
+  axiosPut: vi.fn(),
 }));
 
 vi.mock('axios', () => ({
   default: {
     get: axiosGet,
     post: axiosPost,
-    put: vi.fn(),
+    put: axiosPut,
     delete: vi.fn(),
   },
 }));
@@ -72,6 +73,7 @@ describe('reservation detail nested overlays', () => {
   beforeEach(() => {
     axiosGet.mockReset();
     axiosPost.mockReset();
+    axiosPut.mockReset();
     localStorage.clear();
     HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
     HTMLElement.prototype.setPointerCapture = vi.fn();
@@ -172,6 +174,26 @@ describe('reservation detail nested overlays', () => {
     fireEvent.keyDown(idTypeSelect, { key: 'ArrowDown' });
 
     await waitFor(() => expect(screen.getByRole('listbox')).toHaveClass('z-[70]'));
+  });
+
+  it('updates a primary guest only through its reservation-scoped endpoint', async () => {
+    axiosPut.mockResolvedValue({ data: { success: true } });
+    render(
+      <GuestsTab
+        guests={[{ id: 'guest-shared', name: 'Aynı İsim', id_type: 'tc_kimlik' }]}
+        booking={{ id: 'booking-a' }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Düzenle/i }));
+    fireEvent.change(screen.getByDisplayValue('Aynı İsim'), { target: { value: 'Sadece Bu Rezervasyon' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+
+    await waitFor(() => expect(axiosPut).toHaveBeenCalledTimes(1));
+    expect(axiosPut).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/update-guest',
+      expect.objectContaining({ name: 'Sadece Bu Rezervasyon' }),
+    );
   });
 
   it('previews a scanned identity before explicitly adding it to the reservation', async () => {

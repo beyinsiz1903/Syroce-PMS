@@ -646,6 +646,13 @@ const CalendarGrid = ({
                                 aria-label={cardAria}
                                 onDragStart={(e) => onDragStart(e, booking)}
                                 onDragEnd={onDragEnd}
+                                // Reservation cards sit above the date cells.  Without their
+                                // own drop handlers, dropping directly on an occupied card never
+                                // reaches the underlying cell, so an intended room swap appears
+                                // to do nothing.
+                                onDragOver={(e) => onDragOver(e, room.id, dateRange[startIdx])}
+                                onDragLeave={onDragLeave}
+                                onDrop={(e) => onDrop(e, room.id, dateRange[startIdx])}
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
                                 className={`absolute rounded-sm text-white text-[10px] cursor-move z-20 group outline-none border border-white/25 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
