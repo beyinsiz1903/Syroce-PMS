@@ -79,6 +79,7 @@ const RoomsTab = ({
     check_in: '', check_out: '', total_amount: '',
   });
   const [quickResLoading, setQuickResLoading] = useState(false);
+  const [markingCleanRoomId, setMarkingCleanRoomId] = useState(null);
 
   // Guest search state
   const [guestSearchQuery, setGuestSearchQuery] = useState('');
@@ -212,6 +213,25 @@ const RoomsTab = ({
       handleCheckIn?.(guestInfo.booking_id);
     }
   }, [handleCheckIn]);
+
+  // Fiziksel oda hazırlığı ile rezervasyon uygunluğu farklı kavramlardır.
+  // Operatör kirli odayı tek tıkla temiz/boş duruma alabilir; bu işlem
+  // herhangi bir rezervasyon ya da check-in kaydını değiştirmez.
+  const handleMarkRoomClean = useCallback(async (event, room) => {
+    event.stopPropagation();
+    setMarkingCleanRoomId(room.id);
+    try {
+      await axios.put(`/housekeeping/room/${room.id}/status`, null, {
+        params: { new_status: 'available' },
+      });
+      toast.success(`Oda ${room.room_number} temiz olarak işaretlendi`);
+      onDataRefresh?.();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Oda durumu güncellenemedi');
+    } finally {
+      setMarkingCleanRoomId(null);
+    }
+  }, [onDataRefresh]);
 
   // Handle checkout with balance check
   const handleCheckOutClick = useCallback(async (e, guestInfo) => {
@@ -453,6 +473,9 @@ const RoomsTab = ({
           const catLabel = cat ? categoryLabels[cat] : null;
           const guestBg = cat ? guestSectionStyles[cat] : 'bg-slate-50 border-slate-200';
           const gText = cat ? guestTextStyles[cat] : { icon: 'text-slate-600', name: 'text-slate-800', date: 'text-slate-500', link: 'text-slate-400', hoverBg: 'hover:bg-slate-100' };
+          // Kirli/temizleniyor olması gelecekteki rezervasyonu engellemez;
+          // yalnızca check-in sırasında oda hazır olmalıdır.
+          const canCreateReservation = !guestInfo && ['available', 'inspected', 'dirty', 'cleaning'].includes(room.status);
 
           const statusColors = {
             available: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -479,7 +502,16 @@ const RoomsTab = ({
                   <span className="text-lg font-bold shrink-0 leading-none" style={{ fontFamily: 'Manrope' }}>{room.room_number}</span>
                   <div className="flex flex-wrap justify-end gap-1">
                     {catLabel && <Badge className={`text-[10px] px-1.5 py-0 h-4 min-h-[16px] leading-tight shrink-0 whitespace-nowrap border ${catLabel.cls}`}>{catLabel.text}</Badge>}
-                    <Badge className={`text-[10px] px-1.5 py-0 h-4 min-h-[16px] leading-tight shrink-0 whitespace-nowrap border ${statusColors[room.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>{statusLabelsTr[room.status] || room.status}</Badge>
+                    {room.status === 'dirty' ? <button
+                      type="button"
+                      className={`text-[10px] px-1.5 py-0 h-4 min-h-[16px] leading-tight shrink-0 whitespace-nowrap border rounded-md ${statusColors.dirty} hover:bg-amber-200 disabled:opacity-60`}
+                      onClick={event => handleMarkRoomClean(event, room)}
+                      disabled={markingCleanRoomId === room.id}
+                      title="Temiz olarak işaretle"
+                      data-testid={`mark-room-clean-${room.room_number}`}
+                    >
+                      {markingCleanRoomId === room.id ? 'Güncelleniyor…' : 'Kirli · Temiz yap'}
+                    </button> : <Badge className={`text-[10px] px-1.5 py-0 h-4 min-h-[16px] leading-tight shrink-0 whitespace-nowrap border ${statusColors[room.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>{statusLabelsTr[room.status] || room.status}</Badge>}
                   </div>
                 </div>
                 <p className="text-sm text-slate-600">{room.room_type}</p>
@@ -632,7 +664,7 @@ const RoomsTab = ({
                 </div>
 
                 {/* Boş oda için hızlı rezervasyon */}
-                {!guestInfo && room.status === 'available' && (
+                {canCreateReservation && (
                   <Button
                     size="sm"
                     className="w-full mt-2 h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white"

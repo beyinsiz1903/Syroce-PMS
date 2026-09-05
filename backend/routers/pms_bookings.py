@@ -63,6 +63,7 @@ from models.schemas import (
 )
 from modules.reservations.services.create_reservation_service import CreateReservationService
 from modules.reservations.services.reservation_read_service import ReservationReadService
+from modules.reservations.services.room_swap_service import RoomSwapError, room_swap_service
 from modules.reservations.services.update_reservation_service import UpdateReservationService
 
 try:
@@ -99,6 +100,11 @@ RejectReasonCode = Literal[
 class RejectRequest(BaseModel):
     reason_code: RejectReasonCode
     reason_note: str | None = Field(default=None, max_length=500)
+
+
+class RoomSwapRequest(BaseModel):
+    target_booking_id: str = Field(..., min_length=1, max_length=128)
+    reason: str = Field(..., min_length=2, max_length=500)
 
 
 class QuickBookingCreate(BaseModel):
@@ -688,6 +694,33 @@ async def update_booking(
 ):
     """Update an existing booking while preserving the legacy response contract."""
     return await update_reservation_service.update(booking_id, booking_data, current_user, request)
+
+
+@router.post("/pms/bookings/{booking_id}/swap-room")
+async def swap_booking_rooms(
+    booking_id: str,
+    payload: RoomSwapRequest,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_module("pms")),
+):
+    """Atomically exchange the assigned rooms of two active reservations."""
+    try:
+        return await room_swap_service.swap(
+            tenant_id=current_user.tenant_id,
+            booking_id=booking_id,
+            target_booking_id=payload.target_booking_id,
+            reason=payload.reason.strip(),
+            moved_by=current_user.name,
+        )
+    except RoomSwapError as exc:
+        raise HTTPException(
+            status_code=409 if exc.code in {
+                "TARGET_ROOM_CONFLICT",
+                "TARGET_LOCK_CONFLICT",
+                "CONCURRENT_MODIFICATION",
+            } else 400,
+            detail={"message": str(exc), "code": exc.code},
+        ) from exc
 
 
 @router.get("/pms/bookings/{booking_id}")

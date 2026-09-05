@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, Suspense } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Layout from '@/components/Layout';
@@ -191,6 +191,7 @@ const newBookingDraft = (overrides = {}) => ({
 const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Core state
   const [rooms, setRooms] = useState([]);
@@ -221,10 +222,24 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [showFindRoomDialog, setShowFindRoomDialog] = useState(false);
   const [showMoveReasonDialog, setShowMoveReasonDialog] = useState(false);
+  const [swapData, setSwapData] = useState(null);
+  const [swapReason, setSwapReason] = useState('Oda takası');
+  const [swapSubmitting, setSwapSubmitting] = useState(false);
   const [showFolioPanel, setShowFolioPanel] = useState(false);
   const [folioPanelId, setFolioPanelId] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [detailModalBookingId, setDetailModalBookingId] = useState(null);
+
+  // Bildirim merkezi rezervasyon hedefini route state ile iletir. Modal
+  // açıldıktan sonra state'i temizliyoruz; geri/ileri gezinmede aynı kayıt
+  // tekrar açılmaz.
+  useEffect(() => {
+    const bookingId = location.state?.openBookingId;
+    if (!bookingId) return;
+    setDetailModalBookingId(bookingId);
+    setShowDetailModal(true);
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.pathname, location.state, navigate]);
   const [showUnassignedPanel, setShowUnassignedPanel] = useState(false);
   const [unassignedFilter, setUnassignedFilter] = useState('all');
   const unassignedListRef = useRef(null);
@@ -954,6 +969,30 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
   };
 
+  const executeRoomSwap = async () => {
+    if (!swapData || !swapReason.trim()) {
+      toast.error('Oda takası için neden belirtin');
+      return;
+    }
+    setSwapSubmitting(true);
+    try {
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-room-swap-${Date.now()}`;
+      await axios.post(`/pms/bookings/${swapData.source.id}/swap-room`, {
+        target_booking_id: swapData.target.id,
+        reason: swapReason.trim(),
+      }, { headers: { 'Idempotency-Key': idempotencyKey } });
+      toast.success(`${swapData.sourceRoom?.room_number} ve ${swapData.targetRoom?.room_number} odalarındaki rezervasyonlar takas edildi.`);
+      setSwapData(null);
+      setSwapReason('Oda takası');
+      loadCalendarData();
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Oda takası yapılamadı'));
+    } finally {
+      setSwapSubmitting(false);
+    }
+  };
+
   const handleDrop = async (e, newRoomId, newDate) => {
     e.preventDefault();
     setDragOverCell(null);
@@ -1021,7 +1060,34 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       newCheckOut: newCheckOut.toISOString().split('T')[0],
       newRoomId
     };
+
+    // Dolu bir hedef oda, sıradan "oda taşıma" ile reddedilmelidir. Ancak
+    // kullanıcı rezervasyonu kendi giriş gecesindeki dolu odaya bırakırsa bu
+    // açıkça iki rezervasyonun oda takası niyetidir. Tarihleri değiştirmeden,
+    // sunucuda tek transaction içinde takas ederiz.
+    const targetBookings = bookings.filter(candidate => (
+      candidate.id !== draggingBooking.id
+      && candidate.room_id === newRoomId
+      && ['confirmed', 'guaranteed', 'checked_in', 'pending'].includes(candidate.status)
+      && new Date(candidate.check_in) < newCheckOut
+      && new Date(candidate.check_out) > newCheckIn
+    ));
     setDraggingBooking(null);
+
+    if (targetDateStr === oldDateStr && targetBookings.length === 1) {
+      setSwapData({
+        source: draggingBooking,
+        target: targetBookings[0],
+        sourceRoom: oldRoom,
+        targetRoom: newRoom,
+      });
+      setSwapReason('Oda takası');
+      return;
+    }
+    if (targetDateStr === oldDateStr && targetBookings.length > 1) {
+      toast.error('Hedef odada birden fazla çakışan rezervasyon var; takas için rezervasyonu ayrıntıdan seçin.');
+      return;
+    }
 
     if (!roomMoveRequiresReason(oldRoom, newRoom)) {
       await executeRoomMove(nextMoveData, 'Aynı oda tipi içinde taşıma');
@@ -1401,6 +1467,55 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         setMoveReason={setMoveReason}
         onConfirmMove={handleConfirmMove}
       />
+
+      <Dialog open={Boolean(swapData)} onOpenChange={(open) => {
+        if (!open && !swapSubmitting) {
+          setSwapData(null);
+          setSwapReason('Oda takası');
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rezervasyon odalarını takas et</DialogTitle>
+          </DialogHeader>
+          {swapData && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600">
+                Bu işlem iki rezervasyonun oda atamalarını ve tüm oda-gece kilitlerini tek işlemde değiştirir. Tarihler ve fiyatlar değişmez.
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                  <div className="text-xs font-semibold text-blue-700">{swapData.sourceRoom?.room_number} → {swapData.targetRoom?.room_number}</div>
+                  <div className="mt-1 font-medium text-slate-900">{formatGuestName(swapData.source.guest_name) || 'Misafir'}</div>
+                  <div className="text-xs text-slate-600">{swapData.source.check_in} → {swapData.source.check_out}</div>
+                </div>
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                  <div className="text-xs font-semibold text-emerald-700">{swapData.targetRoom?.room_number} → {swapData.sourceRoom?.room_number}</div>
+                  <div className="mt-1 font-medium text-slate-900">{formatGuestName(swapData.target.guest_name) || 'Misafir'}</div>
+                  <div className="text-xs text-slate-600">{swapData.target.check_in} → {swapData.target.check_out}</div>
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="room-swap-reason">Takas nedeni</Label>
+                <input
+                  id="room-swap-reason"
+                  className="mt-1 w-full rounded-md border px-3 py-2"
+                  value={swapReason}
+                  onChange={(event) => setSwapReason(event.target.value)}
+                  maxLength={500}
+                  disabled={swapSubmitting}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSwapData(null)} disabled={swapSubmitting}>Vazgeç</Button>
+            <Button onClick={executeRoomSwap} disabled={swapSubmitting || !swapReason.trim()}>
+              {swapSubmitting ? 'Takas ediliyor…' : 'Oda takasını onayla'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <FindRoomDialog
         open={showFindRoomDialog}

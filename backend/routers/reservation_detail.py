@@ -3143,6 +3143,11 @@ async def update_reservation_guest(
         )
         from security.search_normalize import normalized_set_for_update
 
+        existing_guest = await db.guests.find_one(
+            {"id": booking["guest_id"], "tenant_id": tid},
+            {"_id": 0},
+        )
+
         # Search companions are computed from the PLAINTEXT update BEFORE
         # encryption — name fields are NOT encrypted. name_lower keeps renames
         # prefix-searchable.
@@ -3150,11 +3155,7 @@ async def update_reservation_guest(
         # Combined _ng_name must reflect ALL name fields, not just the changed
         # subset, or a name-only edit drops first/last-name infix trigrams.
         if any(f in updates for f in NGRAM_SOURCE_FIELDS.get("guests", [])):
-            _g = await db.guests.find_one(
-                {"id": booking["guest_id"], "tenant_id": tid},
-                {"_id": 0, "name": 1, "first_name": 1, "last_name": 1},
-            )
-            _norm.update(ngram_set_for_update_merged(_g, updates, collection="guests"))
+            _norm.update(ngram_set_for_update_merged(existing_guest, updates, collection="guests"))
         # KVKK: encrypt PII fields at rest (email / phone / id_number) and write
         # their `_hash_<field>` blind-index tokens. Without this, editing a guest
         # from the reservation screen stored PII as PLAINTEXT and left encrypted
@@ -3163,14 +3164,52 @@ async def update_reservation_guest(
         _plain_name = updates.get("name")
         updates = _encrypt_guest(updates)
         updates.update(_norm)
-        await db.guests.update_one({"id": booking["guest_id"], "tenant_id": tid}, {"$set": updates})
 
-        if _plain_name is not None:
-            _bnorm = normalized_set_for_update({"guest_name": _plain_name}, collection="bookings")
+        # Detay ekranındaki düzenleme rezervasyona aittir. Aynı CRM misafir
+        # kaydı birden fazla rezervasyona bağlıysa onu yerinde güncellemek,
+        # diğer odadaki misafirin de adını/iletişimini değiştiriyordu. Bu
+        # durumda yalnızca bu rezervasyon için bir kopya oluşturup ilişkiyi
+        # yeni kayda taşıyoruz; diğer rezervasyonların misafiri değişmez.
+        shared_guest_booking = await db.bookings.find_one(
+            {
+                "tenant_id": tid,
+                "guest_id": booking["guest_id"],
+                "id": {"$ne": booking_id},
+                "status": {"$nin": ["cancelled", "no_show"]},
+            },
+            {"_id": 0, "id": 1},
+        )
+        if shared_guest_booking and existing_guest:
+            isolated_guest_id = str(uuid.uuid4())
+            isolated_guest = {
+                **existing_guest,
+                **updates,
+                "id": isolated_guest_id,
+                "tenant_id": tid,
+                "created_at": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
+                "source": "reservation_guest_edit",
+            }
+            await db.guests.insert_one(isolated_guest)
+            booking_updates = {"guest_id": isolated_guest_id}
+            if _plain_name is not None:
+                booking_updates.update({
+                    "guest_name": _plain_name,
+                    **normalized_set_for_update({"guest_name": _plain_name}, collection="bookings"),
+                })
             await db.bookings.update_one(
                 {"id": booking_id, "tenant_id": tid},
-                {"$set": {"guest_name": _plain_name, **_bnorm}},
+                {"$set": booking_updates},
             )
+        else:
+            await db.guests.update_one({"id": booking["guest_id"], "tenant_id": tid}, {"$set": updates})
+
+            if _plain_name is not None:
+                _bnorm = normalized_set_for_update({"guest_name": _plain_name}, collection="bookings")
+                await db.bookings.update_one(
+                    {"id": booking_id, "tenant_id": tid},
+                    {"$set": {"guest_name": _plain_name, **_bnorm}},
+                )
 
     await _log_activity(tid, booking_id, "guest_updated", current_user.name, {"fields": _logged_fields})
 

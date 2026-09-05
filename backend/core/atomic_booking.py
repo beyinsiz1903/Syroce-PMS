@@ -301,6 +301,33 @@ async def _emit_overbooking_alert(
             "booking": "Mevcut Rezervasyon",
         }.get(conflict_type, "Çakışma")
 
+        conflicting_booking_name = ""
+        if conflicting_booking_id:
+            try:
+                with tenant_context(tenant_id):
+                    conflicting_booking = await db.bookings.find_one(
+                        {"id": conflicting_booking_id},
+                        {"_id": 0, "guest_name": 1, "booking_number": 1, "reservation_number": 1},
+                    )
+                if conflicting_booking:
+                    conflicting_booking_name = (
+                        conflicting_booking.get("guest_name")
+                        or conflicting_booking.get("booking_number")
+                        or conflicting_booking.get("reservation_number")
+                        or ""
+                    )
+            except Exception:
+                # Bildirim zenginleştirmesi rezervasyon korumasını etkilemez.
+                pass
+
+        conflict_reference = ""
+        if conflicting_booking_id:
+            conflict_reference = (
+                f" Çakışan rezervasyon: {conflicting_booking_name} ({conflicting_booking_id})."
+                if conflicting_booking_name
+                else f" Çakışan rezervasyon: {conflicting_booking_id}."
+            )
+
         with tenant_context(tenant_id):
             await db.notifications.insert_one(
                 {
@@ -311,17 +338,20 @@ async def _emit_overbooking_alert(
                     "title": f"Overbooking Engellendi - {title_room}",
                     "message": (
                         f"{conflict_night} gecesi için {title_room} talebi reddedildi "
-                        f"(çakışma kaynağı: {type_label}" + (f", booking {conflicting_booking_id}" if conflicting_booking_id else "") + "). "
+                        f"(çakışma kaynağı: {type_label})." + conflict_reference + " "
                         "OTA kaynaklı bookingler 'pending_assignment' kuyruğuna düşmüş olabilir — kontrol edin."
                     ),
                     "related_entity": "booking",
-                    "related_id": booking_id or "",
+                    # Çoğu çakışmada reddedilen istek henüz yazılmadığı için
+                    # operatörü mevcut/çakışan rezervasyona yönlendiririz.
+                    "related_id": conflicting_booking_id or booking_id or "",
                     "read": False,
                     "created_at": datetime.now(UTC).isoformat(),
                     "metadata": {
                         "conflict_type": conflict_type,
                         "conflict_night": conflict_night,
                         "conflicting_booking_id": conflicting_booking_id,
+                        "conflicting_booking_name": conflicting_booking_name or None,
                         "correlation_id": correlation_id,
                         "rejected_room_id": room_id,
                         "rejected_booking_id": booking_id,
