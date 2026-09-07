@@ -104,6 +104,30 @@ class TestLeaveRequestLogic:
         assert leave["total_days"] == 6
 
 
+class TestJobPostingPayload:
+    def test_optional_needed_by_accepts_empty_html_date_value(self):
+        from domains.hr.router import JobPostingPayload
+
+        payload = JobPostingPayload(
+            title="Gece Resepsiyonisti",
+            department="front_desk",
+            needed_by="",
+        )
+
+        assert payload.needed_by is None
+
+    def test_needed_by_still_rejects_non_iso_date(self):
+        from pydantic import ValidationError
+        from domains.hr.router import JobPostingPayload
+
+        with pytest.raises(ValidationError):
+            JobPostingPayload(
+                title="Gece Resepsiyonisti",
+                department="front_desk",
+                needed_by="07.09.2026",
+            )
+
+
 class TestPayrollLogic:
     def test_payroll_calculation(self):
         base_salary = 25000

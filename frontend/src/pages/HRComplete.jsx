@@ -817,9 +817,20 @@ const HRComplete = () => {
     }
     try {
       setCreatingJob(true);
-      await axios.post('/hr/job-posting', jobForm);
-      toast.success('İş ilanı yayınlandı');
-      setJobForm(current => ({ ...current, title: '', location: '', salary_range: '', description: '' }));
+      await axios.post('/hr/job-posting', {
+        ...jobForm,
+        needed_by: jobForm.needed_by || null,
+        location: jobForm.location || null,
+        salary_range: jobForm.salary_range || null,
+        justification: jobForm.justification || null,
+        description: jobForm.description || null,
+      });
+      toast.success('Personel talebi oluşturuldu ve İK onayına gönderildi');
+      setJobForm({
+        title: '', department: '', employment_type: 'full_time',
+        location: '', salary_range: '', description: '',
+        headcount_needed: 1, urgency: 'normal', justification: '', needed_by: '',
+      });
       loadJobs();
     } catch (error) {
       const msg = error.response?.data?.detail || 'Yayınlanamadı';
@@ -1498,11 +1509,13 @@ const HRComplete = () => {
                         <div className="space-y-1.5">
                           <Label className="text-xs font-semibold text-slate-600">Başlangıç</Label>
                           <Input type="date" value={leaveForm.start_date} className="rounded-lg border-slate-200 bg-slate-50"
+                            aria-label="İzin başlangıç tarihi" data-testid="leave-start-date"
                             onChange={(e) => updateLeaveField('start_date', e.target.value)} />
                         </div>
                         <div className="space-y-1.5">
                           <Label className="text-xs font-semibold text-slate-600">Bitiş</Label>
                           <Input type="date" value={leaveForm.end_date} className="rounded-lg border-slate-200 bg-slate-50"
+                            aria-label="İzin bitiş tarihi" data-testid="leave-end-date"
                             onChange={(e) => updateLeaveField('end_date', e.target.value)} />
                         </div>
                       </div>
@@ -2252,6 +2265,7 @@ const HRComplete = () => {
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-slate-600">İhtiyaç Tarihi</Label>
                     <Input type="date" value={jobForm.needed_by} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
+                      aria-label="Personel ihtiyaç tarihi" data-testid="job-needed-by"
                       onChange={(e) => updateJobField('needed_by', e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
