@@ -694,7 +694,10 @@ async def create_leave_request(
     if not is_self:
         # HR yönetici yetkisi gereken roller: admin/supervisor/finance
         manager_roles = {"admin", "supervisor", "finance"}
-        if (getattr(current_user, "role", None) or "").lower() not in manager_roles:
+        if (
+            (getattr(current_user, "role", None) or "").lower() not in manager_roles
+            and not _user_has_hr_op(current_user, "manage_hr")
+        ):
             raise HTTPException(status_code=403, detail="Başka personel adına izin talebi oluşturma yetkiniz yok")
 
     start = datetime.fromisoformat(payload.start_date).date()
