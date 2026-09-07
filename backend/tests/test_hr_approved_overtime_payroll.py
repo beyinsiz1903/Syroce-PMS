@@ -1,5 +1,7 @@
 """Approved overtime must survive attendance-free payroll previews."""
 from copy import deepcopy
+import csv
+import io
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -88,3 +90,25 @@ async def test_collector_is_tenant_month_and_approval_scoped(monkeypatch):
         "tenant_id": "tenant-qa", "status": "approved",
         "work_date": {"$gte": "2026-09-01", "$lte": "2026-09-30"},
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("month", ["2026-09", None])
+async def test_csv_json_and_preview_agree_for_overtime_only_staff(payroll_data, monkeypatch, month):
+    monkeypatch.setattr(hr, "_audit", AsyncMock())
+    payroll_data[2].return_value["name"] = "=QA"
+    user = SimpleNamespace(id="operator", tenant_id="tenant-qa")
+    _, preview, _ = await hr._build_payroll_v2(user.tenant_id, month)
+    exported = await hr.export_payroll(month=month, current_user=user)
+    response = await hr.export_payroll_csv_stream(month=month, current_user=user)
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+    rows = list(csv.DictReader(io.StringIO("".join(chunks))))
+    assert len(rows) == exported["staff_count"] == len(preview) == 1
+    assert rows[0]["staff_id"] == preview[0]["staff_id"] == "qa"
+    assert float(rows[0]["gross_pay"]) == exported["total_gross_pay"] == preview[0]["gross_pay"] == 450
+    assert float(rows[0]["net_salary"]) == exported["total_net_pay"] == preview[0]["net_salary"]
+    assert float(rows[0]["overtime_hours"]) == 1.5
+    assert rows[0]["staff_name"] == "'=QA"  # Spreadsheet injection protection retained.
+    assert "line_items" not in rows[0]  # Stable flat CSV schema.

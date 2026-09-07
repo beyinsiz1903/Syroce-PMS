@@ -1210,7 +1210,7 @@ async def export_payroll(
     # Bug DAK round-7: Maaş PII'sı için yetki gate'i (KVKK + iş hukuku).
     _perm=Depends(require_op("view_hr")),
 ):
-    period_month, payroll = await _build_payroll(month, current_user.tenant_id)
+    period_month, payroll, _summary = await _build_payroll_v2(current_user.tenant_id, month)
 
     response: dict[str, Any] = {
         "month": period_month,
@@ -1241,8 +1241,8 @@ async def export_payroll_csv_stream(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
 ):
-    """Streaming CSV download — büyük dosyalar için data: URL limiti yok."""
-    period_month, payroll = await _build_payroll(month, current_user.tenant_id)
+    """Current preview as CSV; saved/locked snapshots use the run XLSX export."""
+    period_month, payroll, _summary = await _build_payroll_v2(current_user.tenant_id, month)
 
     import csv
 
@@ -1270,7 +1270,7 @@ async def export_payroll_csv_stream(
     writer = csv.DictWriter(buf, fieldnames=fields)
     writer.writeheader()
     for row in payroll:
-        safe_dict_writerow(writer, row)
+        safe_dict_writerow(writer, {field: row.get(field) for field in fields})
     csv_text = buf.getvalue()
 
     await _audit(
@@ -1594,7 +1594,7 @@ async def _payroll_collect_overtime(tenant_id: str, period_month: str) -> dict[s
 
 async def _build_payroll_v2(
     tenant_id: str,
-    month: str,
+    month: str | None,
     extras: list[dict] | None = None,
 ) -> tuple[str, list[dict], dict[str, Any]]:
     """Dry-run v2 compute — base + approved overtime + extras → enriched rows
