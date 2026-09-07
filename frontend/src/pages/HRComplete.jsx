@@ -22,7 +22,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/ui/page-header';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { formatCurrency } from '@/lib/currency';
+import PayrollExtras from '@/components/hr/PayrollExtras';
+import PayrollMapping from '@/components/hr/PayrollMapping';
 import { useTranslation } from 'react-i18next';
 import { useEntitlements } from '@/context/EntitlementContext';
 import PaginationBar from '@/components/PaginationBar';
@@ -101,6 +102,10 @@ const HRComplete = () => {
   const [savingDraft, setSavingDraft] = useState(false);
   const [revising, setRevising] = useState(false);
   const [loadingRun, setLoadingRun] = useState(false);
+  const [extrasDirty, setExtrasDirty] = useState(false);
+  useEffect(() => {
+    setSelectedRun(null); setPayrollPreview(null); setExtrasDirty(false);
+  }, [exportMonth]);
 
   // Pagination hooks
   const staffPage = useHRPagination('/hr/staff', {}, { enabled: activeTab === 'leave' || activeTab === 'performance' || activeTab === 'attendance' || activeTab === 'payroll' });
@@ -566,18 +571,19 @@ const HRComplete = () => {
 
   // Payroll actions
   const handlePayrollExport = async () => {
+    if (extrasDirty) { toast.error('Önce ek kalem değişikliklerini kaydedin.'); return; }
     try {
       setExporting(true);
       // Streaming endpoint: tarayıcı 2MB data: URL limitini atlar
-      const res = await axios.get('/hr/payroll/export/csv', {
-        params: { month: exportMonth },
+      const res = await axios.get(selectedRun ? `/hr/payroll/runs/${selectedRun.id}/export.csv` : '/hr/payroll/export/csv', {
+        params: selectedRun ? undefined : { month: exportMonth },
         responseType: 'blob',
       });
       const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `payroll_${exportMonth}.csv`;
+      link.download = selectedRun ? `payroll_run_${selectedRun.id}.csv` : `payroll_${exportMonth}.csv`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -631,7 +637,7 @@ const HRComplete = () => {
   const handlePostPayrollToGL = async (run) => {
     try {
       await axios.post(`/payroll-gl/${run.id}/post`);
-      toast.success(`${run.period_month || run.month} Bordrosu Başarıyla Muhasebeleştirildi (770/335).`);
+      toast.success(`${run.period_month || run.month} bordrosu hesap eşlemesine göre muhasebeleştirildi.`);
       await loadPayrollRuns(exportMonth);
     } catch (error) {
       toast.error(error.response?.data?.detail || "Muhasebeleştirme başarısız.");
@@ -639,6 +645,12 @@ const HRComplete = () => {
   };
 
   const handlePayrollSaveDraft = async () => {
+    const draft = payrollRuns.find(run => run.status === 'draft');
+    if (draft) {
+      await loadRunDetail(draft.id);
+      toast.info('Mevcut taslağı açtık. Kalemleri Kaydet ve Yeniden Hesapla ile düzenleyin.');
+      return;
+    }
     const ok = await confirmDialog({
       title: 'Bordroyu Taslak Olarak Kaydet',
       message: (
@@ -659,6 +671,7 @@ const HRComplete = () => {
             : 'Taslak bordro oluşturuldu',
         );
         await loadPayrollRuns(exportMonth);
+        await loadRunDetail(res.data.run_id);
       }
     } catch (error) {
       const msg = error.response?.status === 409
@@ -678,6 +691,7 @@ const HRComplete = () => {
         axios.get(`/hr/payroll/runs/${runId}/revisions`),
       ]);
       setSelectedRun(detail.data);
+      setExtrasDirty(false);
       setRunRevisions(revs.data?.items || []);
     } catch (error) {
       toast.error('Bordro çalışması alınamadı');
@@ -731,7 +745,7 @@ const HRComplete = () => {
       setRevising(true);
       const res = await axios.post(`/hr/payroll/${runId}/revisions`, {
         reason: reason.trim(),
-        extras: [],
+        extras: selectedRun?.extras || [],
       });
       if (res.data?.success) {
         toast.success('Revizyon açıldı — yeni taslak hazır');
@@ -909,7 +923,7 @@ const HRComplete = () => {
     [staffDropdown, selectedStaffId],
   );
 
-  const fmtCurrency = (v) => formatCurrency(v ?? 0, 'TRY');
+  const fmtCurrency = (v) => Number(v ?? 0).toLocaleString('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtTime = (iso) => {
     if (!iso) return '—';
     try { return new Date(iso).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }); }
@@ -1188,7 +1202,7 @@ const HRComplete = () => {
                     Bordro İşlemleri
                   </CardTitle>
                   <p className="text-sm text-slate-500 mt-1.5 ml-9">
-                    Devam kayıtlarından otomatik hesap (TR İş K. uyumlu: %14 SGK + %1 İşsizlik + %15 Gelir + %0.759 Damga)
+                    Ücret anlaşması, dönem matrahı, onaylı mesai ve ek kalemlerden hesaplanır. Gerçek matrahı olmayan kayıtlar yaklaşık modeldir.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
@@ -1312,7 +1326,7 @@ const HRComplete = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         {selectedRun.status === 'draft' && (
-                          <Button size="sm" onClick={() => handlePayrollFinalize(selectedRun.id)} disabled={finalizing}
+                          <Button size="sm" onClick={() => handlePayrollFinalize(selectedRun.id)} disabled={finalizing || extrasDirty}
                             className="bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg shadow-sm" data-testid="btn-payroll-finalize">
                             <CheckCircle2 className="w-4 h-4 mr-1.5" />
                             {finalizing ? 'Kilitleniyor...' : 'Kilitle'}
@@ -1334,6 +1348,10 @@ const HRComplete = () => {
                         </Button>
                       </div>
                     </div>
+                    {extrasDirty && <p role="status" className="px-5 text-amber-700">Kalem değişikliklerini kaydetmeden kilitleyemezsiniz.</p>}
+                    <PayrollExtras key={`${selectedRun.id}:${selectedRun.updated_at}`} run={selectedRun} onDirty={setExtrasDirty}
+                      onSaved={async id => { await Promise.all([loadRunDetail(id), loadPayrollRuns(exportMonth)]); setPayrollPreview(null); }} />
+                    <PayrollMapping />
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>

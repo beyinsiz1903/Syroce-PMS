@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 
 from core.database import db, get_motor_database
 from core.security import get_current_user
+from domains.accounting.payroll_lines import detailed_payroll_lines
 from models.schemas import User
 from shared_kernel.atomic_workflow import run_atomic
 from shared_kernel.gl_posting import GLPostingError, ensure_gl_idem_index, post_journal_entry
@@ -75,6 +76,10 @@ class MappingIn(BaseModel):
     wage_expense_code: str = Field(..., min_length=1, max_length=40)
     withholding_payable_code: str = Field(..., min_length=1, max_length=40)
     net_payable_code: str = Field(..., min_length=1, max_length=40)
+    sgk_payable_code: str | None = Field(None, min_length=1, max_length=40)
+    employer_expense_code: str | None = Field(None, min_length=1, max_length=40)
+    advance_receivable_code: str | None = Field(None, min_length=1, max_length=40)
+    other_deductions_code: str | None = Field(None, min_length=1, max_length=40)
 
 
 @router.get("/mapping")
@@ -90,11 +95,12 @@ async def set_mapping(payload: MappingIn, current_user: User = Depends(get_curre
     _require_role(current_user, _GL_ROLES)
     tenant_id = _tenant_of(current_user)
 
-    codes = [
-        payload.wage_expense_code.strip(),
-        payload.withholding_payable_code.strip(),
-        payload.net_payable_code.strip(),
-    ]
+    values = {k: v.strip() if v is not None else None for k, v in payload.model_dump(exclude_unset=True).items()}
+    codes = [v for v in values.values() if v is not None]
+    if any(not c for c in codes):
+        raise HTTPException(400, "Hesap kodu boş olamaz")
+    if values.get("sgk_payable_code") == values["withholding_payable_code"]:
+        raise HTTPException(400, "SGK ve vergi hesapları ayrı olmalı")
     found = await db.gl_accounts.find({"tenant_id": tenant_id, "code": {"$in": codes}}, {"_id": 0, "code": 1}).to_list(100)
     found_codes = {a["code"] for a in found}
     missing = [c for c in codes if c not in found_codes]
@@ -107,9 +113,7 @@ async def set_mapping(payload: MappingIn, current_user: User = Depends(get_curre
         {
             "$set": {
                 "tenant_id": tenant_id,
-                "wage_expense_code": codes[0],
-                "withholding_payable_code": codes[1],
-                "net_payable_code": codes[2],
+                **values,
                 "updated_at": now,
                 "updated_by": _actor_id(current_user),
             }
@@ -227,6 +231,9 @@ async def _post_payroll(run_id, current_user, database):
                 "memo": "Stopaj/SGK yükümlülüğü",
             }
         )
+
+    if summary.get("accounting_version") == 2:
+        lines = detailed_payroll_lines(run, mapping)
 
     period = run.get("period_month")
     try:
