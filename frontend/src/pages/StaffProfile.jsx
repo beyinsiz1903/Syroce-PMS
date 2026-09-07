@@ -292,7 +292,12 @@ const StaffProfile = () => {
   };
 
   // ===== Salary =====
-  const openSalaryDialog = () => setSalaryDialog({
+  const openSalaryDialog = () => {
+    if (data?.staff?.salary_agreement) {
+      toast.info('Net/brüt ücret anlaşmasını Personel Yönetimi → Düzenle ekranından güncelleyin.');
+      return;
+    }
+    setSalaryDialog({
     open: true,
     form: {
       new_hourly_rate: data?.staff?.hourly_rate || '',
@@ -301,6 +306,7 @@ const StaffProfile = () => {
       reason: ''
     }
   });
+  };
   const submitSalary = async e => {
     e.preventDefault();
     setSaving(true);
@@ -655,7 +661,9 @@ const StaffProfile = () => {
           <div className="flex items-center gap-2 text-sm text-slate-700"><Building2 className="w-4 h-4 text-slate-400" /> {s.department || '—'}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Briefcase className="w-4 h-4 text-slate-400" /> {s.employment_type || '—'}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Calendar className="w-4 h-4 text-slate-400" />{t("cm.pages_StaffProfile.i_\u015Fe_giri\u015F")}{s.hire_date || '—'}</div>
-          <div className="flex items-center gap-2 text-sm text-slate-700"><DollarSign className="w-4 h-4 text-slate-400" />{t("cm.pages_StaffProfile.saatlik")}{s.hourly_rate ? `${s.hourly_rate} TRY` : 'tanımsız (140 TRY default)'}</div>
+          <div className="flex items-center gap-2 text-sm text-slate-700"><DollarSign className="w-4 h-4 text-slate-400" />{s.salary_agreement
+            ? `${s.salary_agreement.unit === 'monthly' ? 'Aylık' : 'Saatlik'} ${s.salary_agreement.basis === 'net' ? 'net' : 'brüt'}: ${formatCurrency(s.salary_agreement.amount, 'TRY')}`
+            : `${t('cm.pages_StaffProfile.saatlik')}${s.hourly_rate ? `${s.hourly_rate} TRY` : 'tanımsız (eski yaklaşık model)'}`}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Clock className="w-4 h-4 text-slate-400" />{t("cm.pages_StaffProfile.ayl\u0131k_saat")}{s.monthly_hours || '195 (default)'}</div>
           <div className="flex items-center gap-2 text-sm">
             {s.active === false ? <StatusBadge intent="danger">{t("cm.pages_StaffProfile.pasif")}</StatusBadge> : s.derived_from === 'users' ? <StatusBadge intent="neutral">{t("cm.pages_StaffProfile.kullan\u0131c\u0131dan_t\xFCretildi")}</StatusBadge> : <StatusBadge intent="info">{t("cm.pages_StaffProfile.hr_y\xF6netimli")}</StatusBadge>}
@@ -999,7 +1007,9 @@ const StaffProfile = () => {
                           </td>
                           <td className="text-xs text-slate-600 max-w-xs">{r.reason || '—'}</td>
                         </tr>)}
-                      {salaryPage.items.length === 0 && <tr><td colSpan={6} className="py-6 text-center text-slate-500">{t("cm.pages_StaffProfile.hen\xFCz_maa\u015F_de\u011Fi\u015Fikli\u011Fi_yok_\u015Fu")}{s.hourly_rate ? formatCurrency(s.hourly_rate, 'TRY') : '140 TRY (default)'}
+                      {salaryPage.items.length === 0 && <tr><td colSpan={6} className="py-6 text-center text-slate-500">{s.salary_agreement
+                        ? `Güncel anlaşma: ${s.salary_agreement.unit === 'monthly' ? 'aylık' : 'saatlik'} ${s.salary_agreement.basis === 'net' ? 'net' : 'brüt'} ${formatCurrency(s.salary_agreement.amount, 'TRY')} (${s.salary_agreement.period_month}). Eski saatlik zam kaydı yok.`
+                        : `${t('cm.pages_StaffProfile.henüz_maaş_değişikliği_yok_şu')}${s.hourly_rate ? formatCurrency(s.hourly_rate, 'TRY') : 'tanımsız (eski yaklaşık model)'}`}
                         </td></tr>}
                     </tbody>
                   </table>}
