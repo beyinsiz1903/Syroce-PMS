@@ -25,7 +25,7 @@ import {
   User, LogOut, Menu, Calendar, DollarSign, Settings as SettingsIcon,
   Layers, BarChart3, Bot, Building2, Zap, Crown, Shield, Users, ClipboardCheck,
   ChevronDown, Server, CalendarCheck, X, Undo2,
-  BrainCircuit, MessageSquare, Clock, Rocket, Download, Grid3X3
+  BrainCircuit, MessageSquare, Clock, Rocket, Download, Grid3X3, ParkingSquare
 , Utensils, Briefcase, ConciergeBell} from 'lucide-react';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import LanguageSelector from '@/components/LanguageSelector';
@@ -75,6 +75,7 @@ const ICON_BY_KEY = {
   night_audit: FileText,
   housekeeping_status: ClipboardCheck,
   wake_up_calls: Calendar,
+  transfer_parking: ParkingSquare,
   lost_found: ShoppingCart,
   group_folio: FileText,
   travel_agent_arap: DollarSign,

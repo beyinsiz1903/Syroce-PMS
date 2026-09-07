@@ -6,6 +6,19 @@ import { sectionNavItems } from '@/components/Layout';
 const visibleItemsFor = (group) => NAV_ITEMS.filter((item) => item.navGroup === group && !item.hidden);
 
 describe('professional super admin navigation', () => {
+  it('exposes Transfer & Otopark in the frontdesk guest services menu', () => {
+    const item = NAV_ITEMS.find(({ key }) => key === 'transfer_parking');
+
+    expect(item).toMatchObject({
+      label: 'Transfer & Otopark',
+      path: '/transfer-parking',
+      moduleKey: 'parking',
+      navGroup: 'frontdesk',
+      navSection: 'guest_services',
+    });
+    expect(item.hidden).not.toBe(true);
+  });
+
   it('keeps hotel-facing channel tools separate from super admin operations', () => {
     const systemItems = visibleItemsFor('system');
     const adminItems = visibleItemsFor('admin');
