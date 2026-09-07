@@ -286,6 +286,59 @@ async def test_post_zero_gross_rejected(_patch):
     assert exc.value.status_code == 400
 
 
+async def test_revision_requires_linked_parent_reversal(_patch):
+    await _seed_coa()
+    await _set_mapping()
+    _seed_run(_patch, gross=10, net=7.15)
+    parent = (await pg.post_payroll("run-1", current_user=_user("finance")))["entry"]
+    _seed_run(_patch, run_id="revision", gross=325, net=232.35)
+    _patch.payroll_runs.docs[-1]["parent_run_id"] = "run-1"
+    with pytest.raises(HTTPException) as exc:
+        await pg.post_payroll("revision", current_user=_user("finance"))
+    assert exc.value.status_code == 409
+    assert len(_patch.gl_journal_entries.docs) == 1
+    _patch.gl_journal_entries.docs.append({"id": "reverse", "tenant_id": TENANT, "reverses_entry_id": parent["id"]})
+    result = await pg.post_payroll("revision", current_user=_user("finance"))
+    retry = await pg.post_payroll("revision", current_user=_user("finance"))
+    assert result["entry"]["id"] == retry["entry"]["id"]
+    assert result["entry"]["total_debit"] == result["entry"]["total_credit"] == 325
+    assert len(_patch.gl_journal_entries.docs) == 3
+
+
+async def test_revision_checks_posted_grandparent(_patch):
+    await _seed_coa()
+    await _set_mapping()
+    _seed_run(_patch)
+    await pg.post_payroll("run-1", current_user=_user("finance"))
+    _seed_run(_patch, run_id="middle")
+    _patch.payroll_runs.docs[-1]["parent_run_id"] = "run-1"
+    _seed_run(_patch, run_id="latest")
+    _patch.payroll_runs.docs[-1]["parent_run_id"] = "middle"
+    with pytest.raises(HTTPException) as exc:
+        await pg.post_payroll("latest", current_user=_user("finance"))
+    assert exc.value.status_code == 409
+    assert len(_patch.gl_journal_entries.docs) == 1
+
+
+async def test_revision_without_posted_parent_can_post(_patch):
+    await _seed_coa()
+    await _set_mapping()
+    _seed_run(_patch)
+    _seed_run(_patch, run_id="revision")
+    _patch.payroll_runs.docs[-1]["parent_run_id"] = "run-1"
+    assert (await pg.post_payroll("revision", current_user=_user("finance")))["entry"]
+
+
+async def test_revision_rejects_cross_tenant_parent(_patch):
+    _seed_run(_patch, tenant="other")
+    _seed_run(_patch, run_id="revision")
+    _patch.payroll_runs.docs[-1]["parent_run_id"] = "run-1"
+    with pytest.raises(HTTPException) as exc:
+        await pg.post_payroll("revision", current_user=_user("finance"))
+    assert exc.value.status_code == 409
+    assert not _patch.gl_journal_entries.docs
+
+
 async def test_post_tenant_isolated(_patch):
     await _seed_coa()
     await _set_mapping()
