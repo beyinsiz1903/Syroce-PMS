@@ -925,7 +925,7 @@ const HRComplete = () => {
         {t('cm.pages_HRComplete.yenile')}
       </Button>
     </>;
-  return <div className="p-2">
+  return <div className="p-2 syroce-hr-text">
       <PageHeader icon={Users} title={t('cm.pages_HRComplete.ik_yonetim_paketi')} subtitle={t('cm.pages_HRComplete.devam_takibi_bordro_izin_performans_ve_i')} actions={headerActions} />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
