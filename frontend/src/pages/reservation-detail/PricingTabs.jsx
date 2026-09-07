@@ -156,6 +156,7 @@ export function ExtraChargesTab({
     reason: ''
   });
   const [loading, setLoading] = useState(false);
+  const [formError, setFormError] = useState('');
   const allCharges = [...(extra_charges || []), ...(charges || [])].filter(c => !c.voided);
   const cats = {
     room_service: 'Oda Servisi',
@@ -173,10 +174,13 @@ export function ExtraChargesTab({
   const handleAdd = async () => {
     const amount = Number(form.amount);
     const quantity = Number(form.quantity);
-    if (!form.description || !Number.isFinite(amount) || amount <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
-      toast.error('Açıklama ile sıfırdan büyük tutar ve adet zorunlu');
+    if (!form.description.trim() || !Number.isFinite(amount) || amount < 0 || !Number.isFinite(quantity) || quantity <= 0) {
+      const message = 'Açıklama, sıfır veya üzeri tutar ve sıfırdan büyük adet zorunlu';
+      setFormError(message);
+      toast.error(message);
       return;
     }
+    setFormError('');
     setLoading(true);
     try {
       await axios.post(`/pms/reservations/${booking.id}/add-extra-charge`, {
@@ -184,7 +188,7 @@ export function ExtraChargesTab({
         amount,
         quantity
       });
-      toast.success('Ekstra ücret eklendi');
+      toast.success(amount === 0 ? 'Komp / ikram kaydı eklendi' : 'Ekstra ücret eklendi');
       setShowAdd(false);
       setForm({
         description: '',
@@ -194,7 +198,9 @@ export function ExtraChargesTab({
       });
       onRefresh?.();
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      const message = 'Hata: ' + (e.response?.data?.detail || e.message);
+      setFormError(message);
+      toast.error(message);
     }
     setLoading(false);
   };
@@ -253,6 +259,8 @@ export function ExtraChargesTab({
           quantity: v
         }))} />
           </div>
+          <p className="text-xs text-amber-800">0 TL girilen kalemler bakiyeyi etkilemeden Komp / İkram olarak kaydedilir.</p>
+          {formError && <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{formError}</div>}
           <div className="flex gap-2">
             <Button size="sm" onClick={handleAdd} disabled={loading} className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Ekle'}</Button>
             <Button size="sm" variant="ghost" onClick={() => setShowAdd(false)} className="h-8 text-xs">{t('cm.pages_reservationdetail_PricingTabs.iptal')}</Button>
@@ -264,17 +272,17 @@ export function ExtraChargesTab({
                 <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center"><Receipt className="w-4 h-4 text-amber-600" /></div>
                 <div className="flex-1">
                   <div className="text-sm font-medium">{c.description || c.charge_name || '-'}</div>
-                  <div className="text-xs text-gray-400">{cats[c.category || c.charge_category] || ''} {c.split_from_booking_id && <span className="text-blue-500">{t('cm.pages_reservationdetail_PricingTabs.aktarildi')}</span>}</div>
+                  <div className="text-xs text-gray-400">{cats[c.category || c.charge_category] || ''} {c.is_complimentary && <span className="font-medium text-emerald-600">Komp / İkram</span>} {c.split_from_booking_id && <span className="text-blue-500">{t('cm.pages_reservationdetail_PricingTabs.aktarildi')}</span>}</div>
                 </div>
                 <div className="text-sm font-bold text-amber-700">{fmtTL(c.total ?? c.charge_amount ?? c.amount)} TL</div>
-                <Button
+                {!c.is_complimentary && <Button
                   size="sm"
                   variant="ghost"
                   onClick={() => setShowSplit(showSplit === c.id ? null : c.id)}
                   className="h-7 px-2 text-xs text-blue-600"
                   aria-label={`${c.description || c.charge_name || 'Masraf'} masrafını böl`}
                   title="Masrafı böl"
-                ><ArrowRightLeft className="w-3 h-3" /></Button>
+                ><ArrowRightLeft className="w-3 h-3" /></Button>}
               </div>
               {showSplit === c.id && <div className="mt-3 border-t pt-3 space-y-2">
                   <div className="text-xs font-semibold text-gray-700">{t('cm.pages_reservationdetail_PricingTabs.masraf_bol')}</div>

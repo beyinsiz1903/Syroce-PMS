@@ -254,10 +254,6 @@ async def test_cari_account_name_fallback_refuses_ambiguous_rows(monkeypatch):
     "model,payload",
     [
         (
-            reservation_detail.ExtraChargeAdd,
-            {"description": "Zero charge", "amount": 0, "quantity": 1},
-        ),
-        (
             pms_reservations.ExtraChargeCreate,
             {"charge_name": "Zero charge", "charge_amount": 0},
         ),
@@ -270,6 +266,16 @@ async def test_cari_account_name_fallback_refuses_ambiguous_rows(monkeypatch):
 def test_zero_financial_values_are_rejected_by_contract(model, payload):
     with pytest.raises(ValidationError):
         model(**payload)
+
+
+def test_zero_reservation_detail_extra_charge_is_a_valid_comp_item():
+    payload = reservation_detail.ExtraChargeAdd(description="Kola ikram", amount=0, quantity=1)
+    assert payload.amount == 0
+
+
+def test_negative_reservation_detail_extra_charge_is_rejected():
+    with pytest.raises(ValidationError):
+        reservation_detail.ExtraChargeAdd(description="Negative charge", amount=-1, quantity=1)
 
 
 @pytest.mark.asyncio

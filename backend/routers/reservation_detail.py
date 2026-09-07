@@ -739,7 +739,9 @@ class CariAccountCreate(BaseModel):
 class ExtraChargeAdd(BaseModel):
     description: str = Field(..., min_length=1, max_length=500)
     category: str = Field("other", max_length=50)  # room, food, beverage, minibar, spa, laundry, other
-    amount: float = Field(..., gt=0, le=1e9)
+    # Zero-value rows represent a complimentary item. They remain auditable
+    # without creating revenue or changing the folio balance.
+    amount: float = Field(..., ge=0, le=1e9)
     quantity: float = Field(1.0, gt=0, le=1e6)
 
 
@@ -2816,6 +2818,7 @@ async def add_extra_charge_detail(
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
 
     total = round(data.amount * data.quantity, 2)
+    is_complimentary = total == 0
     charge = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
@@ -2828,6 +2831,7 @@ async def add_extra_charge_detail(
         "amount": data.amount,
         "quantity": data.quantity,
         "total": total,
+        "is_complimentary": is_complimentary,
         "posted_by": current_user.name,
         "created_at": datetime.now(UTC).isoformat(),
         "voided": False,
@@ -2843,6 +2847,7 @@ async def add_extra_charge_detail(
             "description": data.description,
             "amount": total,
             "category": data.category,
+            "is_complimentary": is_complimentary,
         },
     )
 

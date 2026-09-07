@@ -98,7 +98,8 @@ describe('reservation detail action feedback', () => {
     expect(screen.getByRole('button', { name: 'Test Masrafı masrafını böl' })).toBeInTheDocument();
   });
 
-  it('blocks zero extra charges before the API call', async () => {
+  it('saves a zero-value extra charge as a complimentary item', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true } });
     render(
       <ExtraChargesTab
         extra_charges={[]}
@@ -109,11 +110,34 @@ describe('reservation detail action feedback', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Kola' } });
     const inputs = screen.getAllByRole('spinbutton');
     fireEvent.change(inputs[0], { target: { value: '0' } });
     fireEvent.click(screen.getAllByRole('button', { name: 'Ekle' }).at(-1));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/add-extra-charge',
+      expect.objectContaining({ description: 'Kola', amount: 0, quantity: 1 }),
+    ));
+    expect(toast.success).toHaveBeenCalledWith('Komp / ikram kaydı eklendi');
+  });
+
+  it('shows negative extra-charge validation inside the form', async () => {
+    render(
+      <ExtraChargesTab
+        extra_charges={[]}
+        charges={[]}
+        booking={{ id: 'booking-a' }}
+        allBookings={[]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Hatalı kalem' } });
+    fireEvent.change(screen.getAllByRole('spinbutton')[0], { target: { value: '-1' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ekle' }).at(-1));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('sıfır veya üzeri tutar');
     expect(axiosPost).not.toHaveBeenCalled();
   });
 
