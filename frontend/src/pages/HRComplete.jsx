@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useHRTab } from '@/hooks/useHRTab';
 import axios from 'axios';
 import { toast } from 'sonner';
 import {
@@ -66,16 +67,17 @@ const todayMonth = () => {
 const HRComplete = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-    const { hasFeature } = useEntitlements();
-  const [activeTab, setActiveTab] = useState('attendance');
+  const { hasFeature, loading: entitlementsLoading } = useEntitlements();
+  const [activeTab, setActiveTab] = useHRTab();
 
   useEffect(() => {
+    if (entitlementsLoading) return;
     if (activeTab === 'payroll' && !hasFeature("hr", "payroll")) setActiveTab('attendance');
     if (activeTab === 'leave' && !hasFeature("hr", "leave")) setActiveTab('attendance');
     if (activeTab === 'overtime' && !hasFeature("hr", "shift")) setActiveTab('attendance');
     if (activeTab === 'recruitment' && !hasFeature("hr", "recruitment")) setActiveTab('attendance');
     if (activeTab === 'performance' && !hasFeature("hr", "performance_management")) setActiveTab('attendance');
-  }, [activeTab, hasFeature]);
+  }, [activeTab, hasFeature, entitlementsLoading, setActiveTab]);
 
   const [refreshing, setRefreshing] = useState(false);
 

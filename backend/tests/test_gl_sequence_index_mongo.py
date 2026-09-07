@@ -13,8 +13,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 
-from shared_kernel.gl_posting import ensure_gl_idem_index
 from shared_kernel import pos_idem
+from shared_kernel.gl_posting import ensure_gl_idem_index
 
 
 @pytest.fixture
@@ -28,9 +28,10 @@ def mongo_uri(tmp_path):
     uri = f"mongodb://127.0.0.1:{port}"
     process = subprocess.Popen([
         executable, "--dbpath", str(tmp_path), "--bind_ip", "127.0.0.1",
+        "--replSet", "qaAudit",
         "--port", str(port), "--logpath", str(tmp_path / "mongod.log"),
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    client = MongoClient(uri, serverSelectionTimeoutMS=200)
+    client = MongoClient(uri, serverSelectionTimeoutMS=200, directConnection=True)
     try:
         deadline = time.monotonic() + 15
         while True:
@@ -40,7 +41,13 @@ def mongo_uri(tmp_path):
             except Exception:
                 if process.poll() is not None or time.monotonic() >= deadline:
                     pytest.fail("Disposable MongoDB failed to start")
-        yield uri
+        client.admin.command("replSetInitiate", {"_id": "qaAudit", "members": [{"_id": 0, "host": f"127.0.0.1:{port}"}]})
+        deadline = time.monotonic() + 20
+        while not client.admin.command("hello").get("isWritablePrimary"):
+            if time.monotonic() >= deadline:
+                pytest.fail("Disposable replica set did not elect a primary")
+            time.sleep(0.05)
+        yield uri + "?replicaSet=qaAudit"
     finally:
         client.close()
         process.terminate()

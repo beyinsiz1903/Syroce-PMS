@@ -45,6 +45,7 @@ STRICT_TENANT_MODE = os.environ.get("STRICT_TENANT_MODE", "true").lower() == "tr
 
 # ── Collections where tenant_id filter is MANDATORY ─────────────
 TENANT_SCOPED_COLLECTIONS: set[str] = {
+    "workflow_locks",
     "rooms",
     "bookings",
     "guests",

@@ -26,10 +26,11 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core.database import db
+from core.database import db, get_motor_database
 from core.security import get_current_user
 from models.schemas import User
-from shared_kernel.gl_posting import GLPostingError, post_journal_entry
+from shared_kernel.atomic_workflow import run_atomic
+from shared_kernel.gl_posting import GLPostingError, ensure_gl_idem_index, post_journal_entry
 
 logger = logging.getLogger("domains.accounting.payroll_gl")
 
@@ -119,8 +120,9 @@ async def set_mapping(payload: MappingIn, current_user: User = Depends(get_curre
     return {"mapping": doc}
 
 
-async def _find_posted_entry(tenant_id: str, run_id: str) -> dict | None:
-    return await db.gl_journal_entries.find_one({"tenant_id": tenant_id, "idempotency_key": _idem_key(run_id)}, {"_id": 0})
+async def _find_posted_entry(tenant_id: str, run_id: str, database=None) -> dict | None:
+    database = database if database is not None else db
+    return await database.gl_journal_entries.find_one({"tenant_id": tenant_id, "idempotency_key": _idem_key(run_id)}, {"_id": 0})
 
 
 @router.get("/{run_id}")
@@ -135,8 +137,20 @@ async def posting_status(run_id: str, current_user: User = Depends(get_current_u
 async def post_payroll(run_id: str, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _GL_ROLES)
     tenant_id = _tenant_of(current_user)
-
     run = await db.payroll_runs.find_one({"tenant_id": tenant_id, "id": run_id}, {"_id": 0})
+    if not run:
+        raise HTTPException(404, "Bordro çalışması bulunamadı")
+    await ensure_gl_idem_index(db)
+    async def post(database):
+        return await _post_payroll(run_id, current_user, database)
+    return await run_atomic(db, get_motor_database().client, tenant_id,
+                            f"payroll-gl:{run.get('period_month')}", post)
+
+
+async def _post_payroll(run_id, current_user, database):
+    tenant_id = _tenant_of(current_user)
+
+    run = await database.payroll_runs.find_one({"tenant_id": tenant_id, "id": run_id}, {"_id": 0})
     if not run:
         raise HTTPException(status_code=404, detail="Bordro çalışması bulunamadı")
     if run.get("status") != "locked":
@@ -147,18 +161,21 @@ async def post_payroll(run_id: str, current_user: User = Depends(get_current_use
 
     # A revision contains the full replacement payroll, not just its delta.
     # Every posted ancestor must be balanced by a linked reversal first.
+    existing = await _find_posted_entry(tenant_id, run_id, database)
+    if existing:
+        return {"run_id": run_id, "period_month": run.get("period_month"), "entry": existing}
     parent_id = run.get("parent_run_id")
     visited = {run_id}
     while parent_id:
         if parent_id in visited:
             raise HTTPException(status_code=409, detail="Bordro revizyon zinciri geçersiz")
         visited.add(parent_id)
-        parent = await db.payroll_runs.find_one({"tenant_id": tenant_id, "id": parent_id}, {"_id": 0})
+        parent = await database.payroll_runs.find_one({"tenant_id": tenant_id, "id": parent_id}, {"_id": 0})
         if not parent or parent.get("period_month") != run.get("period_month"):
             raise HTTPException(status_code=409, detail="Üst bordro bulunamadı veya dönemi uyuşmuyor")
-        prior_entry = await _find_posted_entry(tenant_id, parent_id)
+        prior_entry = await _find_posted_entry(tenant_id, parent_id, database)
         if prior_entry:
-            reversal = await db.gl_journal_entries.find_one(
+            reversal = await database.gl_journal_entries.find_one(
                 {"tenant_id": tenant_id, "reverses_entry_id": prior_entry["id"]}, {"_id": 0, "id": 1},
             )
             if not reversal:
@@ -168,7 +185,21 @@ async def post_payroll(run_id: str, current_user: User = Depends(get_current_use
                 )
         parent_id = parent.get("parent_run_id")
 
-    mapping = await db.payroll_gl_mapping.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    # Serialize all full payroll snapshots for the period, including siblings
+    # and a parent submitted AFTER a child. A run-only key cannot protect this.
+    runs = await database.payroll_runs.find({
+        "tenant_id": tenant_id, "period_month": run.get("period_month"),
+    }, {"_id": 0, "id": 1}).to_list(None)
+    for other in runs:
+        if other["id"] == run_id:
+            continue
+        posted = await _find_posted_entry(tenant_id, other["id"], database)
+        if posted and not await database.gl_journal_entries.find_one({
+            "tenant_id": tenant_id, "reverses_entry_id": posted["id"],
+        }):
+            raise HTTPException(409, "Bu dönemde ters kaydı oluşturulmamış bordro fişi var; çift tahakkuk engellendi")
+
+    mapping = await database.payroll_gl_mapping.find_one({"tenant_id": tenant_id}, {"_id": 0})
     if not mapping:
         raise HTTPException(
             status_code=409,
@@ -200,7 +231,7 @@ async def post_payroll(run_id: str, current_user: User = Depends(get_current_use
     period = run.get("period_month")
     try:
         entry = await post_journal_entry(
-            db,
+            database,
             tenant_id,
             date=f"{period}-01" if period else None,
             memo=f"Bordro tahakkuk ({period})",
