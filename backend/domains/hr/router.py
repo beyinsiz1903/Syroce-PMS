@@ -92,6 +92,7 @@ _PII_PHONE_FIELDS = ("phone", "mobile", "emergency_phone")
 _PII_ID_FIELDS = ("national_id", "identity_number", "tc_kimlik", "tc")
 _PII_BANK_FIELDS = ("iban", "bank_iban", "bank_account")
 _PII_SALARY_FIELDS = (
+    "sgk_employer", "unemployment_employer", "employer_contributions", "employer_cost",
     "salary_agreement",
     "tax_calculation",
     "salary",
@@ -453,7 +454,7 @@ class PayrollExtraLine(BaseModel):
 
     staff_id: str = Field(..., min_length=1, max_length=128)
     kind: Literal["bonus", "meal", "transport", "advance", "deduction"]
-    amount: float = Field(..., ge=0, le=1_000_000)
+    amount: float = Field(..., gt=0, le=1_000_000, allow_inf_nan=False)
     note: str | None = Field(None, max_length=200)
 
 
@@ -477,6 +478,10 @@ class PayrollRevisionPayload(BaseModel):
 
     reason: str = Field(..., min_length=3, max_length=500)
     extras: list[PayrollExtraLine] = Field(default_factory=list, max_length=2000)
+
+
+class PayrollExtrasUpdatePayload(PayrollSavePayload):
+    expected_updated_at: str = Field(min_length=1, max_length=60)
 
 
 class PerformanceReviewPayload(BaseModel):
@@ -1705,6 +1710,8 @@ async def _build_payroll_v2(
             period_month,
         ))
     lv_map = await _payroll_collect_leaves(tenant_id, period_month)
+    if {ex["staff_id"] for ex in (extras or [])} - {r["staff_id"] for r in base}:
+        raise HTTPException(422, "Ek kalem personeli bu dönemin bordrosunda bulunamadı; başka otel veya dönem personeline kalem eklenemez")
     rates = await _get_payroll_tax_rates(tenant_id)
     enriched = _payroll_apply_extras_and_overtime(
         base,
@@ -1767,6 +1774,9 @@ async def _build_payroll_v2(
             detail = "Ücret anlaşmasının zorunlu matrah bilgileri geçersiz" if isinstance(exc, ValidationError) else str(exc)
             raise HTTPException(status_code=422, detail=f"{staff.get('name', row['staff_id'])}: {detail}") from exc
     summary = {
+        "accounting_version": 2,
+        "total_employer_contributions": round(sum(r.get("employer_contributions", 0) for r in enriched), 2) if all(r["calculation_mode"] == "statutory_2026" for r in enriched) else None,
+        "total_employer_cost": round(sum(r.get("employer_cost", r["gross_pay"]) for r in enriched), 2) if all(r["calculation_mode"] == "statutory_2026" for r in enriched) else None,
         "staff_count": len(enriched),
         "total_gross": round(sum(r["gross_pay"] for r in enriched), 2),
         "total_net": round(sum(r["net_salary"] for r in enriched), 2),
@@ -2028,6 +2038,36 @@ async def save_payroll_draft(
     }
 
 
+@router.put("/hr/payroll/runs/{run_id}/extras", dependencies=[Depends(require_feature("hr", "payroll"))])
+async def update_payroll_extras(
+    run_id: str, payload: PayrollExtrasUpdatePayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """Recompute an existing draft, including revisions. Never write a locked run."""
+    _payroll_lifecycle_gate(current_user, allow_hr_manager=True)
+    query = {"id": run_id, "tenant_id": current_user.tenant_id}
+    run = await db.payroll_runs.find_one(query, {"_id": 0})
+    if not run:
+        raise HTTPException(404, "Bordro bulunamadı")
+    if run.get("status") != "draft":
+        raise HTTPException(409, "Yalnızca taslak kalemleri değiştirilebilir; kilitli bordro için revizyon açın")
+    if run.get("updated_at") != payload.expected_updated_at:
+        raise HTTPException(409, "Bordro başka bir oturumda değişti; yeniden yükleyin")
+    extras = [ex.model_dump() for ex in payload.extras]
+    _, rows, summary = await _build_payroll_v2(current_user.tenant_id, run["period_month"], extras)
+    result = await db.payroll_runs.update_one(
+        {**query, "status": "draft", "updated_at": run.get("updated_at")},
+        {"$set": {"extras": extras, "rows": rows, "summary": summary,
+                  "updated_at": datetime.now(UTC).isoformat(), "updated_by": current_user.id}},
+    )
+    if not result.modified_count:
+        raise HTTPException(409, "Bordro değişti veya kilitlendi; yeniden yükleyin")
+    await _audit(current_user, "payroll.update_extras", "payroll_run", run_id,
+                 f"Taslak ek kalemleri güncellendi (adet={len(extras)})", severity="warning")
+    return {"success": True, "run_id": run_id, "summary": summary}
+
+
 @router.post("/hr/payroll/{run_id}/finalize", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def finalize_payroll_run(
     run_id: str,
@@ -2196,6 +2236,33 @@ async def revise_payroll_run(
     }
 
 
+@router.get("/hr/payroll/runs/{run_id}/export.csv", dependencies=[Depends(require_feature("hr", "payroll"))])
+async def export_payroll_run_csv(
+    run_id: str, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr_payroll")),
+):
+    """CSV of the saved snapshot, including extras; never recompute current payroll."""
+    import csv
+
+    from core.csv_safe import safe_dict_writerow
+    run = await db.payroll_runs.find_one({"id": run_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if not run:
+        raise HTTPException(404, "Bordro bulunamadı")
+    rows = _payroll_run_to_response(run, current_user).get("rows") or []
+    fields = ["staff_id", "staff_name", "department", "gross_pay", "sgk_employee", "unemployment",
+              "income_tax", "stamp_tax", "extra_earnings", "extra_deductions", "net_salary",
+              "sgk_employer", "unemployment_employer", "employer_contributions", "employer_cost"]
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fields)
+    writer.writeheader()
+    for row in rows:
+        safe_dict_writerow(writer, {field: row.get(field) for field in fields})
+    await _audit(current_user, "payroll.export_csv", "payroll_run", run_id,
+                 f"Kayıtlı bordro CSV (satır={len(rows)})", severity="info")
+    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": f'attachment; filename="payroll_run_{run_id}.csv"'})
+
+
 @router.get("/hr/payroll/runs/{run_id}/export.xlsx", dependencies=[Depends(require_feature("hr", "payroll"))])
 async def export_payroll_run_xlsx(
     run_id: str,
@@ -2230,6 +2297,7 @@ async def export_payroll_run_xlsx(
         "Ek Kesinti",
         "Net",
         "Para Birimi",
+        "İşveren SGK", "İşveren İşsizlik", "İşveren Prim Toplamı", "İşveren Maliyeti",
     ]
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid")
@@ -2249,6 +2317,12 @@ async def export_payroll_run_xlsx(
         ws.cell(row=r_idx, column=9, value=float(row.get("extra_deductions") or 0))
         ws.cell(row=r_idx, column=10, value=float(row.get("net_salary") or 0))
         ws.cell(row=r_idx, column=11, value=row.get("currency") or TR_CURRENCY)
+        for col, key in enumerate(("sgk_employer", "unemployment_employer", "employer_contributions", "employer_cost"), 12):
+            value = row.get(key)
+            ws.cell(row=r_idx, column=col, value=float(value) if value is not None else None)
+        for col in range(5, 16):
+            if col != 11:
+                ws.cell(row=r_idx, column=col).number_format = '#,##0.00'
     for col_idx in range(1, len(headers) + 1):
         ws.column_dimensions[chr(64 + col_idx)].width = 16
 

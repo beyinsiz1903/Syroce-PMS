@@ -14,7 +14,7 @@ CENT = D("0.01")
 MIN_WAGE = D("33030")
 DAILY_CEILING = D("9909")
 MIN_BASE = D("28075.50")
-VERSION = "tr-2026-standard-4a-v1"
+VERSION = "tr-2026-standard-4a-v2"
 
 
 def money(value):
@@ -76,6 +76,8 @@ def from_gross(gross, agreement):
     income_tax = computed_tax - exemption
     stamp = money(max(D(0), gross - (MIN_WAGE if a.minimum_wage_exemption else 0)) * D(".00759"))
     deductions = sgk + unemployment + income_tax + stamp
+    employer_sgk = money(premium_base * D(".2175"))
+    employer_unemployment = money(premium_base * D(".02"))
     return {
         "gross_pay": gross,
         "net_salary": gross - deductions,
@@ -85,6 +87,10 @@ def from_gross(gross, agreement):
         "stamp_tax": stamp,
         "total_deductions": deductions,
         "tax_deductions": deductions,
+        "sgk_employer": employer_sgk,
+        "unemployment_employer": employer_unemployment,
+        "employer_contributions": employer_sgk + employer_unemployment,
+        "employer_cost": gross + employer_sgk + employer_unemployment,
         "tax_calculation": {
             "version": VERSION,
             "period_month": a.period_month,
@@ -96,6 +102,9 @@ def from_gross(gross, agreement):
             "income_tax_exemption": exemption,
             "premium_base": premium_base,
             "insurance_days": a.insurance_days,
+            "employer_scheme": "standard_4a_no_incentive",
+            "employer_sgk_rate": D(".2175"),
+            "employer_unemployment_rate": D(".02"),
             "source_note": a.source_note,
         },
     }

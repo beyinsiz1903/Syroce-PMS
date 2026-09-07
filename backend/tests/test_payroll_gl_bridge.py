@@ -177,6 +177,41 @@ async def _set_mapping(user=None):
     )
 
 
+async def test_v2_full_post_and_idempotency(_patch):
+    from test_payroll_completion import MAPPING, sample
+
+    from domains.hr.salary import json_values
+    await _seed_coa()
+    for code, kind in [("770.02", "expense"), ("361", "liability"), ("196", "asset"), ("369", "liability")]:
+        await gl.create_account(gl.AccountIn(code=code, name=code, type=kind), current_user=_user())
+    await pg.set_mapping(pg.MappingIn(**MAPPING), current_user=_user())
+    _patch.payroll_runs.docs.append({**json_values(sample()), "tenant_id": TENANT, "id": "v2",
+                                   "status": "locked", "period_month": "2026-10"})
+    first = await pg.post_payroll("v2", current_user=_user())
+    second = await pg.post_payroll("v2", current_user=_user())
+    assert first["entry"]["id"] == second["entry"]["id"]
+    assert len(_patch.gl_journal_entries.docs) == 1
+    lines = first["entry"]["lines"]
+    assert len(lines) == 6
+    assert next(x for x in lines if x["account_code"] == "361")["credit"] == 20537.5
+    assert next(x for x in lines if x["account_code"] == "196")["credit"] == 500
+    assert next(x for x in lines if x["account_code"] == "335")["credit"] == 38550.03
+
+
+async def test_v2_without_new_mapping_cannot_post(_patch):
+    from test_payroll_completion import sample
+
+    from domains.hr.salary import json_values
+    await _seed_coa()
+    await _set_mapping()
+    _patch.payroll_runs.docs.append({**json_values(sample()), "tenant_id": TENANT, "id": "v2",
+                                   "status": "locked", "period_month": "2026-10"})
+    with pytest.raises(HTTPException) as error:
+        await pg.post_payroll("v2", current_user=_user())
+    assert error.value.status_code == 409
+    assert not _patch.gl_journal_entries.docs
+
+
 def _seed_run(fake, *, run_id="run-1", status="locked", gross=10000.0, net=7500.0,
               period="2026-06", tenant=TENANT):
     fake.payroll_runs.docs.append({

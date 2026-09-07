@@ -78,6 +78,8 @@ export default function SalaryAgreementFields({ value, onChange }) {
         <p>Hesaplanan dönem neti: <strong>{fmt(current.data.net_salary)}</strong></p>
         <p className="text-xs mt-1">SGK: {fmt(current.data.sgk_employee)} · İşsizlik: {fmt(current.data.unemployment)} · GV: {fmt(current.data.income_tax)} · Damga: {fmt(current.data.stamp_tax)}</p>
         <p className="text-xs">Dönem sonu GV matrahı: {fmt(current.data.tax_calculation.closing_tax_base)}</p>
+        <p className="text-xs">İşveren SGK: {fmt(current.data.sgk_employer)} · İşveren işsizlik: {fmt(current.data.unemployment_employer)} · İşveren maliyeti: {fmt(current.data.employer_cost)}</p>
+        <p className="text-xs">İşveren hesabı teşviksiz standart 4/a (%21,75 + %2). Teşvik ve özel rejimler uygulanmaz.</p>
       </> : current?.error ? <p role="alert" className="text-rose-700">{current.error}</p> : 'Zorunlu bilgileri doldurun; net/brüt karşılığı otomatik hesaplanır.'}
     </div>
   </fieldset>;
