@@ -62,6 +62,18 @@ export const PLANS = {
 
 export const MODULE_GROUPS = [
   {
+    id: 'optional_workspaces',
+    title: 'İK & Ek Operasyon Modülleri',
+    icon: Users,
+    color: 'sky',
+    description: 'Otel bazında açıkça etkinleştirilir. Modül erişimi kullanıcı rolü ve yetkilerinin yerine geçmez.',
+    items: [
+      { key: 'hr', label: 'İnsan Kaynakları (İK)', hint: 'Personel, vardiya, izin, işe alım, performans ve bordro. Etkin abonelik varsa kapsamı abonelik belirler.', tier: 'addon', addon: true },
+      { key: 'pos_fnb', label: 'Gelişmiş POS & F&B', hint: 'POS Basic anahtarından ayrı gelişmiş restoran erişimi. Etkin abonelik varsa kapsamı abonelik belirler.', tier: 'addon', addon: true },
+      { key: 'parking', label: 'Otopark', hint: 'Otopark modülü erişimi; kullanıcı yetkileri ayrıca uygulanır.', tier: 'addon', addon: true },
+    ],
+  },
+  {
     id: 'mini',
     title: 'Mini — Çekirdek PMS (Pansiyon / Butik)',
     icon: Home,

@@ -92,6 +92,7 @@ describe('CreateTenantModal professional module wizard', () => {
 
     expect(screen.getByTestId('tenant-module-customization')).toBeInTheDocument();
     expect(screen.getByText('Enterprise Modüller')).toBeInTheDocument();
+    expect(screen.getByText('İK & Ek Operasyon Modülleri')).toBeInTheDocument();
     expect(screen.getByText('AI Modülleri')).toBeInTheDocument();
     expect(screen.getByText('Add-on Modüller (Ekstra Ücretli)')).toBeInTheDocument();
 

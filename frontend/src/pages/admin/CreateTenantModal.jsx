@@ -30,6 +30,7 @@ const TIER_LABELS = {
 // platform/security switches are derived from the selected plan and remain
 // manageable from the tenant detail screen after creation.
 const OPTIONAL_MODULE_GROUP_IDS = new Set([
+  'optional_workspaces',
   'enterprise',
   'ai',
   'mobile',
