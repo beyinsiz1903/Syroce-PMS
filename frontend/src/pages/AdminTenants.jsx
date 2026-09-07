@@ -402,8 +402,9 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
                               <p className="text-sm font-semibold text-slate-800">{group.title}</p>
                             </div>
                             <div className="space-y-1">
-                              {group.items.map(({ key, label, hint, tier: modTier }) => {
-                                const included = isModuleIncludedInPlan({ tier: modTier }, tier);
+                              {group.items.map((item) => {
+                                const { key, label, hint, tier: modTier } = item;
+                                const included = isModuleIncludedInPlan(item, tier);
                                 const on = t.modules && t.modules[key] !== undefined ? !!t.modules[key] : included;
                                 return (
                                   <div key={key} className={`flex items-center justify-between py-1 px-2 rounded ${!included ? 'bg-slate-50/80' : ''}`}>
@@ -414,7 +415,7 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
                                             <span className={`text-xs ${on ? 'text-slate-700' : 'text-slate-400'}`}>{label}</span>
                                             {!included && (
                                               <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200 font-medium">
-                                                {modTier === 'mini' ? 'MINI' : modTier === 'basic' ? 'BASIC' : modTier === 'professional' ? 'PRO' : 'ENT'}
+                                                {item.addon || item.alwaysPaid || modTier === 'addon' ? 'EK MODÜL' : modTier === 'mini' ? 'MINI' : modTier === 'basic' ? 'BASIC' : modTier === 'professional' ? 'PRO' : 'ENT'}
                                               </span>
                                             )}
                                           </div>
