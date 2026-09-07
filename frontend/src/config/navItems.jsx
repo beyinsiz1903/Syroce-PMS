@@ -50,6 +50,16 @@ export const NAV_GROUP_SECTIONS = {
 };
 
 export const NAV_ITEMS = [
+  {
+    key: "tenant_users",
+    label: "Otel Kullanıcıları",
+    path: "/admin/otel-kullanicilari",
+    tier: "basic",
+    group: "core",
+    navGroup: "admin",
+    navSection: "governance",
+    allowedRoles: ["admin", "super_admin"],
+  },
   // ──── STANDALONE (shown as direct buttons) ─────────
   {
     key: "dashboard",

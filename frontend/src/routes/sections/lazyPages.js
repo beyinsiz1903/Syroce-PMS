@@ -125,6 +125,7 @@ export const RoomRequestPage = lazy(() => import("@/pages/guest/RoomRequestPage"
 export const PublicReviewPage = lazy(() => import("@/pages/PublicReviewPage"));
 export const ModuleReport = lazy(() => import("@/pages/ModuleReport"));
 export const UserRoleManager = lazy(() => import("@/pages/UserRoleManager"));
+export const TenantUsers = lazy(() => import("@/pages/TenantUsers"));
 export const RnlAutoResolveRuns = lazy(() => import("@/pages/admin/RnlAutoResolveRuns"));
 export const RnlDuplicates = lazy(() => import("@/pages/admin/RnlDuplicates"));
 export const AutonomousCollectionJobs = lazy(() => import("@/pages/admin/AutonomousCollectionJobs"));

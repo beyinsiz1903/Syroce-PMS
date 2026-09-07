@@ -36,13 +36,14 @@ const ROLE_DEFAULT_MODULE_SCOPES = Object.freeze({
 });
 
 const COMMON_ROUTE_PATHS = new Set([
+  '/admin/otel-kullanicilari', // Account administration: page + API admin gates, no HR subscription.
   '/app/dashboard',
   '/dashboard-simple',
   '/app/profile',
   '/profile',
 ]);
 
-const COMMON_NAV_KEYS = new Set(['dashboard']);
+const COMMON_NAV_KEYS = new Set(['dashboard', 'tenant_users']);
 
 const EXACT_ROUTE_SCOPES = Object.freeze({
   '/app/pms': ['frontdesk'],

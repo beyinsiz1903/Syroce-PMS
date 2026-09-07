@@ -19,7 +19,7 @@ const EMPTY = {
  * olusturur. Davet (magic-link) varsayilan; gecici sifre yedek. Rol listesi
  * sunucudan (paket-duyarli, enum-gecerli) gelir.
  */
-export default function UserProvisionDialog({ departments = [], onCreated }) {
+export default function UserProvisionDialog({ departments = [], onCreated, disabled = false }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [roles, setRoles] = useState([]);
@@ -101,7 +101,7 @@ export default function UserProvisionDialog({ departments = [], onCreated }) {
 
   return (
     <>
-      <Button size="sm" onClick={openDialog} data-testid="btn-provision-user">
+      <Button size="sm" onClick={openDialog} disabled={disabled} data-testid="btn-provision-user">
         <UserPlus className="w-4 h-4 mr-1.5" />Kullanici Ekle
       </Button>
 

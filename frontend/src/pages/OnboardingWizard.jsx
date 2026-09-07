@@ -519,7 +519,7 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
           done={!!stepStatus.team_members_added}
           primary={{
             label: "Kullanıcı Yönetimi",
-            action: () => navigate("/admin/user-roles"),
+            action: () => navigate("/admin/otel-kullanicilari"),
           }}
         />
       )}
