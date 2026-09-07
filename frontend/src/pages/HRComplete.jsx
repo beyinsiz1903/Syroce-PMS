@@ -112,7 +112,7 @@ const HRComplete = () => {
   }, [performancePage.meta?.high_performers, performancePage.meta?.low_performers]);
 
   // Leave Dropdown & Form
-  const [leaveCounts, setLeaveCounts] = useState({ pending: 0, approved: 0, rejected: 0 });
+  const leaveCounts = leavePage.meta?.counts || { pending: 0, approved: 0, rejected: 0 };
   const [leaveForm, setLeaveForm] = useState({
     staff_id: '', leave_type: 'annual', start_date: '', end_date: '', reason: '',
   });
@@ -444,8 +444,8 @@ const HRComplete = () => {
     if (note === null) return;
     try {
       await axios.post(`/hr/job-posting/${jobId}/${action}`, { note: note || undefined });
+      await loadJobs();
       toast.success(isApprove ? 'Talep onaylandı' : 'Talep reddedildi');
-      loadJobs();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'İşlem başarısız');
     }
@@ -471,10 +471,9 @@ const HRComplete = () => {
     switch (activeTab) {
       case 'attendance':
         if (!attendanceSummary) loadAttendance();
-        if (!overtimeCounts) loadOvertimeRequests();
         break;
-      case 'leave':
-        if (staffPage.items.length > 0) loadLeaveBalances(staffPage.items.map((s) => s.id));
+      case 'overtime':
+        loadOvertimeRequests();
         break;
       case 'performance':
         if (perfTemplates.length === 0) loadPerfTemplates();
@@ -491,7 +490,13 @@ const HRComplete = () => {
         break;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, staffPage.items]);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'leave') {
+      loadLeaveBalances(staffPage.items.map((s) => s.id));
+    }
+  }, [activeTab, staffPage.items, leavePage.meta, loadLeaveBalances]);
 
   // Attendance actions
   const clockIn = async () => {
@@ -572,6 +577,12 @@ const HRComplete = () => {
       setPayrollRuns([]);
     }
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'payroll' && hasFeature('hr', 'payroll')) {
+      loadPayrollRuns(exportMonth);
+    }
+  }, [activeTab, exportMonth, hasFeature, loadPayrollRuns]);
 
   const handlePayrollPreview = async () => {
     try {
@@ -905,7 +916,25 @@ const HRComplete = () => {
           <Button
             variant="outline"
             className="border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
-            onClick={loadAll}
+            onClick={async () => {
+              setRefreshing(true);
+              try {
+                const requests = [loadStaffDropdown(), loadCompliance()];
+                staffPage.refresh();
+                if (activeTab === 'attendance') requests.push(loadAttendance());
+                if (activeTab === 'overtime') requests.push(loadOvertimeRequests());
+                if (activeTab === 'leave') leavePage.refresh();
+                if (activeTab === 'performance') {
+                  performancePage.refresh();
+                  requests.push(loadPerfTemplates());
+                }
+                if (activeTab === 'recruitment') requests.push(loadJobs());
+                if (activeTab === 'payroll') requests.push(loadPayrollRuns(exportMonth), loadTaxRates(), loadSeveranceCap());
+                await Promise.all(requests);
+              } finally {
+                setRefreshing(false);
+              }
+            }}
             disabled={refreshing}
             data-testid="btn-refresh-hr"
           >

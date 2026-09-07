@@ -44,7 +44,8 @@ export function useHRPagination(url, params = {}, options = {}) {
         signal: controller.signal,
       });
       const data = res.data || {};
-      setItems(data.items || []);
+      // Staff uses `staff`; other HR resources use `items`.
+      setItems(data.items ?? data.staff ?? []);
       setTotal(data.total ?? 0);
       setTotalPages(data.total_pages ?? Math.max(1, Math.ceil((data.total ?? 0) / limit)));
       setMeta(data);
