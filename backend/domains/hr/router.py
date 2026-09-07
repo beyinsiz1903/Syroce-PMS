@@ -505,6 +505,14 @@ class JobPostingPayload(BaseModel):
     justification: str | None = Field(None, max_length=2000)
     needed_by: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
 
+    @field_validator("needed_by", mode="before")
+    @classmethod
+    def _empty_needed_by_is_unspecified(cls, value: Any) -> Any:
+        """HTML date inputs submit an empty string when an optional date is blank."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
 
 class JobDecisionPayload(BaseModel):
     note: str | None = Field(None, max_length=500)
