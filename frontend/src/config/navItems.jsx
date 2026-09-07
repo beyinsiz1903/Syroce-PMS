@@ -345,6 +345,16 @@ export const NAV_ITEMS = [
     navSection: "guest_services",
   },
   {
+    key: "transfer_parking",
+    label: "Transfer & Otopark",
+    path: "/transfer-parking",
+    moduleKey: "parking",
+    tier: "basic",
+    group: "operations",
+    navGroup: "frontdesk",
+    navSection: "guest_services",
+  },
+  {
     key: "lost_found",
     label: "Kayıp Eşya",
     path: "/lost-found",

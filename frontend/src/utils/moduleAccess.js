@@ -163,6 +163,7 @@ const NAV_KEY_SCOPES = Object.freeze({
   walkin: ['frontdesk'],
   room_map: ['frontdesk'],
   wake_up_calls: ['frontdesk'],
+  transfer_parking: ['frontdesk'],
   housekeeping_status: ['housekeeping'],
   lost_found: ['housekeeping'],
   invoices: ['invoice'],
