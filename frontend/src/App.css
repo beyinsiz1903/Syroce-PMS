@@ -6,15 +6,64 @@
   box-sizing: border-box;
 }
 
+html {
+  font-size: 15px;
+}
+
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', 'Segoe UI', 'Roboto', sans-serif;
+  letter-spacing: 0.01em;
+  line-height: 1.55;
   background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
   color: #1a202c;
   min-height: 100vh;
+  text-rendering: optimizeLegibility;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Space Grotesk', sans-serif;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+}
+
+h1 {
+  font-size: 2.1rem;
+}
+
+h2 {
+  font-size: 1.75rem;
+}
+
+h3 {
+  font-size: 1.38rem;
+}
+
+.syroce-hr-text {
+  font-size: 0.95rem;
+  letter-spacing: 0;
+  line-height: 1.55;
+}
+
+.syroce-hr-text .text-xs {
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.syroce-hr-text .text-sm {
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.syroce-hr-text th,
+.syroce-hr-text td {
+  line-height: 1.45;
+}
+
+p,
+span,
+label,
+li {
+  word-break: break-word;
 }
 
 .loading-screen {
@@ -70,6 +119,7 @@ button:active {
 
 input, select, textarea {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  border-radius: 0.4rem;
 }
 
 /* Card hover effects */
