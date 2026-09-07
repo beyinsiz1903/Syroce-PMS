@@ -36,6 +36,7 @@ import os
 import re
 import time
 import uuid
+from asyncio import sleep as _retry_sleep
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -135,7 +136,7 @@ async def _delete_many_with_retry(col, flt: dict, *, col_name: str, attempts: in
                 attempt,
                 exc.__class__.__name__,
             )
-            await asyncio.sleep(delay)
+            await _retry_sleep(delay)
             delay = min(delay * 2, 2.0)
     if last_exc is not None:  # defensive — loop above always returns or raises
         raise last_exc

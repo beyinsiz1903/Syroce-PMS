@@ -365,14 +365,32 @@ async def test_initialize_chart_of_accounts_is_tenant_scoped_and_idempotent(_pat
     first = await gl.initialize_chart_of_accounts(current_user=_user("finance"))
     second = await gl.initialize_chart_of_accounts(current_user=_user("finance"))
 
-    assert first == {"created": 24, "total": 24, "payroll_mapping_created": True}
-    assert second == {"created": 0, "total": 24, "payroll_mapping_created": False}
-    assert len(_patch.gl_accounts.docs) == 24
+    assert first == {"created": 26, "total": 26, "payroll_mapping_created": True}
+    assert second == {"created": 0, "total": 26, "payroll_mapping_created": False}
+    assert len(_patch.gl_accounts.docs) == 26
     assert next(row for row in _patch.gl_accounts.docs if row["code"] == "257")["normal_balance"] == "credit"
     assert next(row for row in _patch.gl_accounts.docs if row["code"] == "591")["normal_balance"] == "debit"
     assert next(row for row in _patch.gl_accounts.docs if row["code"] == "102")["monetary"] is True
     assert _patch.payroll_gl_mapping.docs[0]["withholding_payable_code"] == "360"
     assert {row["tenant_id"] for row in _patch.gl_accounts.docs} == {TENANT}
+    mapping = _patch.payroll_gl_mapping.docs[0]
+    assert mapping["sgk_payable_code"] == "361"
+    assert mapping["advance_receivable_code"] == "196"
+    assert mapping["employer_expense_code"] == "770"
+    assert mapping["other_deductions_code"] == "336"
+
+
+async def test_chart_completion_preserves_custom_payroll_accounts_and_mapping(_patch):
+    await _mk_account("196", "Özel Personel Avansı", "asset")
+    await _mk_account("361", "Özel SGK", "liability")
+    mapping = {"tenant_id": TENANT, "wage_expense_code": "770.01"}
+    _patch.payroll_gl_mapping.docs.append(dict(mapping))
+
+    await gl.initialize_chart_of_accounts(current_user=_user("finance"))
+
+    assert next(row for row in _patch.gl_accounts.docs if row["code"] == "196")["name"] == "Özel Personel Avansı"
+    assert next(row for row in _patch.gl_accounts.docs if row["code"] == "361")["name"] == "Özel SGK"
+    assert _patch.payroll_gl_mapping.docs == [mapping]
 
 
 async def test_initialize_chart_of_accounts_denies_front_desk(_patch):
