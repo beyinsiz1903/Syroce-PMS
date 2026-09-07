@@ -14,6 +14,7 @@ idempotency unique constraint so the dedup path is exercised end-to-end.
 """
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -146,6 +147,12 @@ def _patch(monkeypatch):
         return None
 
     monkeypatch.setattr(gl_posting, "ensure_gl_idem_index", _noop)
+    monkeypatch.setattr(pg, "ensure_gl_idem_index", _noop)
+    lock = asyncio.Lock()
+    async def atomic(database, client, tenant, resource, callback):
+        async with lock:
+            return await callback(database)
+    monkeypatch.setattr(pg, "run_atomic", atomic)
     monkeypatch.setattr(gl, "log_audit_event", _noop_audit)
     return fake
 
@@ -356,3 +363,51 @@ async def test_status_reports_posted(_patch):
     st = await pg.posting_status("run-1", current_user=_user("finance"))
     assert st["posted"] is True
     assert st["entry"]["idempotency_key"] == "payroll:run-1"
+
+
+async def test_audit_same_run_concurrent_retry_posts_once(_patch, monkeypatch):
+    await _seed_coa()
+    await _set_mapping()
+    _seed_run(_patch)
+    await asyncio.gather(*(pg.post_payroll("run-1", current_user=_user()) for _ in range(2)))
+    assert len(_patch.gl_journal_entries.docs) == 1
+
+
+async def test_audit_child_then_parent_must_not_double_post(_patch):
+    await _seed_coa()
+    await _set_mapping()
+    _seed_run(_patch, run_id="parent")
+    _seed_run(_patch, run_id="child")
+    _patch.payroll_runs.docs[-1]["parent_run_id"] = "parent"
+    await pg.post_payroll("child", current_user=_user())
+    with pytest.raises(HTTPException):
+        await pg.post_payroll("parent", current_user=_user())
+
+
+async def test_audit_concurrent_sibling_revisions_must_not_double_post(_patch, monkeypatch):
+    await _seed_coa()
+    await _set_mapping()
+    _seed_run(_patch, run_id="parent")
+    for rid in ("a", "b"):
+        _seed_run(_patch, run_id=rid)
+        _patch.payroll_runs.docs[-1]["parent_run_id"] = "parent"
+    await asyncio.gather(*(pg.post_payroll(rid, current_user=_user()) for rid in ("a", "b")), return_exceptions=True)
+    assert len(_patch.gl_journal_entries.docs) == 1
+
+
+async def test_audit_lost_post_response_retry_does_not_duplicate(_patch, monkeypatch):
+    await _seed_coa()
+    await _set_mapping()
+    _seed_run(_patch)
+    original = pg.post_journal_entry
+
+    async def lose_response(*args, **kwargs):
+        await original(*args, **kwargs)
+        raise ConnectionError("QA response lost after committed journal")
+
+    monkeypatch.setattr(pg, "post_journal_entry", lose_response)
+    with pytest.raises(ConnectionError):
+        await pg.post_payroll("run-1", current_user=_user())
+    monkeypatch.setattr(pg, "post_journal_entry", original)
+    await pg.post_payroll("run-1", current_user=_user())
+    assert len(_patch.gl_journal_entries.docs) == 1

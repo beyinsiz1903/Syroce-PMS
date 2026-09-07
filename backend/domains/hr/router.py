@@ -12,6 +12,7 @@ Türk İş Kanunu uyumlu defaultlar (2026):
 
 import base64
 import io
+import logging
 import re
 import uuid
 from datetime import UTC, date, datetime, timedelta, timezone
@@ -31,7 +32,10 @@ from core.entitlements.enforcement import get_tenant_limit, require_feature
 from core.entitlements.quota import QuotaExceededException, bootstrap_hr_active_employees, release_quota, reserve_quota
 from core.security import get_current_user
 from security.upload_validator import validate_document_bytes
+from shared_kernel.atomic_workflow import run_atomic
 from shared_kernel.idempotency import begin_idempotency
+
+logger = logging.getLogger(__name__)
 
 
 # GridFS bucket — personel belgeleri için (5MB üstü destek + memory verimi).
@@ -393,13 +397,14 @@ class LeaveRequestPayload(BaseModel):
     start_date: str = Field(..., description="ISO date YYYY-MM-DD")
     end_date: str = Field(..., description="ISO date YYYY-MM-DD")
     reason: str | None = Field(None, max_length=500)
-    total_days: int | None = Field(None, ge=0, le=365)
+    total_days: int | None = Field(None, ge=1, le=365)
 
     @field_validator("start_date", "end_date")
     @classmethod
     def _valid_iso(cls, v: str) -> str:
         try:
-            datetime.fromisoformat(v).date()
+            if date.fromisoformat(v).isoformat() != v:
+                raise ValueError("Tarih YYYY-MM-DD olmalı")
         except Exception as exc:
             raise ValueError("Geçersiz tarih formatı (YYYY-MM-DD)") from exc
         return v
@@ -704,7 +709,9 @@ async def create_leave_request(
     end = datetime.fromisoformat(payload.end_date).date()
     if end < start:
         raise HTTPException(status_code=400, detail="Bitiş tarihi başlangıçtan önce olamaz")
-    total_days = payload.total_days if payload.total_days is not None else (end - start).days + 1
+    total_days = (end - start).days + 1
+    if total_days > 365 or (payload.total_days is not None and payload.total_days != total_days):
+        raise HTTPException(400, "İzin gün sayısı tarih aralığıyla uyuşmalı ve 365 günü aşmamalı")
 
     leave = {
         "id": str(uuid.uuid4()),
@@ -769,12 +776,14 @@ async def list_leave_requests(
 async def _apply_leave_to_shifts(
     tenant_id: str,
     leave: dict,
+    *, database=None,
 ) -> int:
     """Final onaylı izin → izin gününe `shift_schedules` üzerinde
     status='on_leave' satırı upsert. Lock YARATMAZ (izin kapsayan gün
     çakışma kontratının dışındadır; overlap guard sadece aktif vardiya
     için anlamlıdır). Idempotent: aynı (staff,date,leave_id) için
     yeniden çağrılırsa duplicate açmaz."""
+    database = database if database is not None else db
     start = date.fromisoformat(leave["start_date"])
     end = date.fromisoformat(leave["end_date"])
     cur = start
@@ -787,7 +796,7 @@ async def _apply_leave_to_shifts(
         # yeni satır eklerdi → planner çift kayıt görüyordu). Mevcut shift
         # varsa status='on_leave' + leave_id setle; lock konvansiyonel olarak
         # release edilmez çünkü on_leave kayıt çakışma kontratının dışında.
-        existing = await db.shift_schedules.find_one(
+        existing = await database.shift_schedules.find_one(
             {
                 "tenant_id": tenant_id,
                 "staff_id": leave["staff_id"],
@@ -796,7 +805,7 @@ async def _apply_leave_to_shifts(
             }
         )
         if existing is not None:
-            await db.shift_schedules.update_one(
+            await database.shift_schedules.update_one(
                 {"id": existing["id"], "tenant_id": tenant_id},
                 {
                     "$set": {
@@ -814,7 +823,7 @@ async def _apply_leave_to_shifts(
         else:
             # Mevcut shift yoksa yeni on_leave kayıt aç (idempotent: aynı leave_id
             # için tekrar çağrılırsa update_one match eder, insert YOK).
-            res = await db.shift_schedules.update_one(
+            res = await database.shift_schedules.update_one(
                 {
                     "tenant_id": tenant_id,
                     "staff_id": leave["staff_id"],
@@ -860,8 +869,54 @@ async def decide_leave_request(
     leave = await db.leave_requests.find_one({"tenant_id": current_user.tenant_id, "id": leave_id})
     if not leave:
         raise HTTPException(status_code=404, detail="İzin talebi bulunamadı")
+    async def decide(database):
+        return await _decide_leave_request(leave_id, payload, current_user, database)
+    return await run_atomic(db, get_motor_database().client, current_user.tenant_id,
+                            f"hr-leave:{leave['staff_id']}", decide)
+
+
+def _leave_days_in_year(leave: dict, year: int) -> int:
+    start = max(date.fromisoformat(leave["start_date"][:10]), date(year, 1, 1))
+    end = min(date.fromisoformat(leave["end_date"][:10]), date(year, 12, 31))
+    return max(0, (end - start).days + 1)
+
+
+async def _validate_leave_approval(database, leave, tenant_id):
+    overlap = await database.leave_requests.find_one({
+        "tenant_id": tenant_id, "staff_id": leave["staff_id"], "id": {"$ne": leave["id"]},
+        "status": {"$in": ["approved", "hr_approved"]},
+        "start_date": {"$lte": leave["end_date"]}, "end_date": {"$gte": leave["start_date"]},
+    })
+    if overlap:
+        raise HTTPException(409, "Bu tarihlerde onaylı izin mevcut")
+    if leave.get("leave_type") != "annual":
+        return
+    for year in range(int(leave["start_date"][:4]), int(leave["end_date"][:4]) + 1):
+        balance = await database.leave_balances.find_one({
+            "tenant_id": tenant_id, "staff_id": leave["staff_id"], "year": year}) or {}
+        used = 0
+        async for prior in database.leave_requests.find({
+            "tenant_id": tenant_id, "staff_id": leave["staff_id"], "leave_type": "annual",
+            "status": {"$in": ["approved", "hr_approved"]},
+            "start_date": {"$lte": f"{year}-12-31"}, "end_date": {"$gte": f"{year}-01-01"},
+        }):
+            used += _leave_days_in_year(prior, year)
+        available = balance.get("annual_entitlement", 14) + balance.get("carry_over", 0) - used
+        if _leave_days_in_year(leave, year) > available:
+            raise HTTPException(409, f"{year} yılı yıllık izin bakiyesi yetersiz")
+
+
+async def _decide_leave_request(leave_id, payload, current_user, database):
+    leave = await database.leave_requests.find_one({"tenant_id": current_user.tenant_id, "id": leave_id})
+    if not leave:
+        raise HTTPException(status_code=404, detail="İzin talebi bulunamadı")
 
     current_status = leave.get("status", "pending")
+    if current_status == "approved" and payload.decision == "approve":
+        written = await _apply_leave_to_shifts(current_user.tenant_id, leave, database=database)
+        return {"success": True, "status": "approved", "on_leave_shifts_created": written}
+    if (current_status, payload.decision) in {("dept_approved", "dept_approve"), ("rejected", "reject")}:
+        return {"success": True, "status": current_status, "on_leave_shifts_created": 0}
     # Task #263: 2-aşamalı state machine.
     if payload.decision == "reject":
         if current_status not in ("pending", "dept_approved"):
@@ -888,6 +943,7 @@ async def decide_leave_request(
                 status_code=400,
                 detail=(f"Final onay sadece departman onayından sonra verilebilir (mevcut: {current_status}). Önce 'dept_approve' aşaması gerekli."),
             )
+        await _validate_leave_approval(database, leave, current_user.tenant_id)
         new_status = "approved"
 
     update_set: dict[str, Any] = {
@@ -916,10 +972,12 @@ async def decide_leave_request(
     else:
         update_set["decided_by"] = getattr(current_user, "id", None)
 
-    await db.leave_requests.update_one(
-        {"tenant_id": current_user.tenant_id, "id": leave_id},
+    result = await database.leave_requests.update_one(
+        {"tenant_id": current_user.tenant_id, "id": leave_id, "status": current_status},
         {"$set": update_set},
     )
+    if result.matched_count != 1:
+        raise HTTPException(409, "İzin durumu değişti; yenileyip tekrar deneyin")
 
     on_leave_written = 0
     if new_status == "approved":
@@ -927,6 +985,7 @@ async def decide_leave_request(
         on_leave_written = await _apply_leave_to_shifts(
             current_user.tenant_id,
             {**leave, **update_set, "id": leave_id},
+            database=database,
         )
 
     # Talep sahibine bildirim — kararı duyur
@@ -945,6 +1004,7 @@ async def decide_leave_request(
             body=(f"{leave.get('start_date')} → {leave.get('end_date')} • {leave.get('total_days', 0)} gün" + (f" • Not: {payload.note}" if payload.note else "")),
             link=f"/hr?tab=leave&id={leave_id}",
             ref_id=leave_id,
+            database=database,
         )
     return {
         "success": True,
@@ -1069,7 +1129,10 @@ async def _notify_hr_managers(
         {
             "tenant_id": tenant_id,
             "is_active": True,
-            "role": {"$in": ["admin", "supervisor", "finance"]},
+            "$or": [
+                {"role": {"$in": ["super_admin", "admin", "supervisor", "finance"]}},
+                {"granted_permissions": "manage_hr"},
+            ],
         },
         {"_id": 0, "id": 1},
     )
@@ -1103,8 +1166,13 @@ async def _notify_user(
     body: str,
     link: str | None = None,
     ref_id: str | None = None,
+    database=None,
 ):
     """Tek kullanıcıya in-app bildirim gönder."""
+    if database is not None:
+        await database.notifications.insert_one(_build_notification_doc(
+            tenant_id, user_id=user_id, kind=kind, title=title, body=body, link=link, ref_id=ref_id))
+        return
     try:
         await db.notifications.insert_one(
             _build_notification_doc(
@@ -3794,13 +3862,14 @@ async def get_leave_balance(
         {
             "tenant_id": current_user.tenant_id,
             "staff_id": staff_id,
-            "status": "approved",
-            "start_date": {"$gte": f"{yr}-01-01", "$lte": f"{yr}-12-31"},
+            "status": {"$in": ["approved", "hr_approved"]},
+            "start_date": {"$lte": f"{yr}-12-31"},
+            "end_date": {"$gte": f"{yr}-01-01"},
         },
         {"_id": 0},
-    ).to_list(500)
-    used_annual = sum(leave.get("total_days", 0) for leave in approved if leave.get("leave_type") == "annual")
-    used_sick = sum(leave.get("total_days", 0) for leave in approved if leave.get("leave_type") == "sick")
+    ).to_list(None)
+    used_annual = sum(_leave_days_in_year(leave, yr) for leave in approved if leave.get("leave_type") == "annual")
+    used_sick = sum(_leave_days_in_year(leave, yr) for leave in approved if leave.get("leave_type") == "sick")
     total_annual = annual_ent + carry
     return {
         "staff_id": staff_id,
@@ -4980,9 +5049,10 @@ class OvertimeDecisionPayload(BaseModel):
     note: str | None = Field(None, max_length=500)
 
 
-async def _yearly_overtime_hours(tenant_id: str, staff_id: str, year: int) -> float:
+async def _yearly_overtime_hours(tenant_id: str, staff_id: str, year: int, *, database=None) -> float:
     """Onaylanmış (status=approved) yıllık fazla mesai toplamı."""
-    cursor = db.overtime_requests.find(
+    database = database if database is not None else db
+    cursor = database.overtime_requests.find(
         {
             "tenant_id": tenant_id,
             "staff_id": staff_id,
@@ -5061,7 +5131,17 @@ async def decide_overtime_request(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
-    req = await db.overtime_requests.find_one(
+    req = await db.overtime_requests.find_one({"tenant_id": current_user.tenant_id, "id": req_id})
+    if not req:
+        raise HTTPException(404, "Talep bulunamadı")
+    async def decide(database):
+        return await _decide_overtime_request(req_id, payload, current_user, database)
+    return await run_atomic(db, get_motor_database().client, current_user.tenant_id,
+                            f"hr-overtime:{req['staff_id']}", decide)
+
+
+async def _decide_overtime_request(req_id, payload, current_user, database):
+    req = await database.overtime_requests.find_one(
         {
             "tenant_id": current_user.tenant_id,
             "id": req_id,
@@ -5071,6 +5151,9 @@ async def decide_overtime_request(
         raise HTTPException(status_code=404, detail="Talep bulunamadı")
 
     current_status = req.get("status", "pending")
+    expected = {"approve": "approved", "dept_approve": "dept_approved", "reject": "rejected"}[payload.action]
+    if current_status == expected:
+        return {"success": True, "status": current_status}
 
     if payload.action == "reject":
         if current_status not in ("pending", "dept_approved"):
@@ -5107,6 +5190,7 @@ async def decide_overtime_request(
             current_user.tenant_id,
             req["staff_id"],
             year,
+            database=database,
         )
         proposed = float(req.get("hours") or 0)
         if already + proposed > TR_ANNUAL_OVERTIME_CAP_HOURS:
@@ -5146,10 +5230,12 @@ async def decide_overtime_request(
     else:
         update_set["decided_by"] = getattr(current_user, "id", None)
 
-    await db.overtime_requests.update_one(
-        {"tenant_id": current_user.tenant_id, "id": req_id},
+    result = await database.overtime_requests.update_one(
+        {"tenant_id": current_user.tenant_id, "id": req_id, "status": current_status},
         {"$set": update_set},
     )
+    if result.matched_count != 1:
+        raise HTTPException(409, "Mesai durumu değişti; yenileyip tekrar deneyin")
 
     requester = req.get("requested_by")
     if requester:
@@ -5160,6 +5246,8 @@ async def decide_overtime_request(
             title=notify_title,
             body=f"{req['work_date']} — {req['hours']:g}h. " + (payload.note or ""),
             ref_id=req_id,
+            link=f"/hr?tab=overtime&id={req_id}",
+            database=database,
         )
     return {"success": True, "status": new_status}
 
@@ -6744,7 +6832,14 @@ async def attendance_department_summary(
 
 
 def _xlsx_stream(workbook) -> StreamingResponse:
-    """openpyxl Workbook → StreamingResponse helper. Filename caller'a ait."""
+    """openpyxl Workbook → value-only StreamingResponse. Filename is caller-owned."""
+    # HR exports contain values, never executable spreadsheet formulas.
+    # openpyxl infers '=' strings as formulas; force user-controlled text back.
+    for sheet in workbook:
+        for row in sheet.iter_rows():
+            for cell in row:
+                if cell.data_type == "f":
+                    cell.data_type = "s"
     buf = io.BytesIO()
     workbook.save(buf)
     buf.seek(0)
