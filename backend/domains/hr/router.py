@@ -3656,6 +3656,15 @@ class StaffUpdatePayload(BaseModel):
     annual_leave_entitlement: int | None = Field(None, ge=0, le=365)
     active: bool | None = None
 
+    @field_validator("hire_date", mode="before")
+    @classmethod
+    def blank_hire_date_is_unspecified(cls, value):
+        # Legacy staff can have no hire date. Empty optional form inputs must
+        # not prevent unrelated edits or overwrite an existing date.
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
 
 @router.put("/hr/staff/{staff_id}")
 async def update_staff_member(

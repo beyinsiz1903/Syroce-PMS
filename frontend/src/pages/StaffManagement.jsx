@@ -392,6 +392,7 @@ const StaffManagement = () => {
     } else {
       payload = {
         ...f,
+        hire_date: f.hire_date || undefined,
         hourly_rate: f.salary_agreement || f.hourly_rate === '' ? undefined : Number(f.hourly_rate),
         monthly_hours: f.monthly_hours === '' ? undefined : Number(f.monthly_hours),
         annual_leave_entitlement: Number(f.annual_leave_entitlement) || 14
