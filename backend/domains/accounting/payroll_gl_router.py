@@ -145,6 +145,29 @@ async def post_payroll(run_id: str, current_user: User = Depends(get_current_use
             detail="Yalnızca kilitli (locked) bordro GL'ye gönderilebilir",
         )
 
+    # A revision contains the full replacement payroll, not just its delta.
+    # Every posted ancestor must be balanced by a linked reversal first.
+    parent_id = run.get("parent_run_id")
+    visited = {run_id}
+    while parent_id:
+        if parent_id in visited:
+            raise HTTPException(status_code=409, detail="Bordro revizyon zinciri geçersiz")
+        visited.add(parent_id)
+        parent = await db.payroll_runs.find_one({"tenant_id": tenant_id, "id": parent_id}, {"_id": 0})
+        if not parent or parent.get("period_month") != run.get("period_month"):
+            raise HTTPException(status_code=409, detail="Üst bordro bulunamadı veya dönemi uyuşmuyor")
+        prior_entry = await _find_posted_entry(tenant_id, parent_id)
+        if prior_entry:
+            reversal = await db.gl_journal_entries.find_one(
+                {"tenant_id": tenant_id, "reverses_entry_id": prior_entry["id"]}, {"_id": 0, "id": 1},
+            )
+            if not reversal:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Revizyon aktarılmadan önce üst bordronun muhasebe fişine gerekçeli ters kayıt oluşturulmalı; çift tahakkuk engellendi",
+                )
+        parent_id = parent.get("parent_run_id")
+
     mapping = await db.payroll_gl_mapping.find_one({"tenant_id": tenant_id}, {"_id": 0})
     if not mapping:
         raise HTTPException(
