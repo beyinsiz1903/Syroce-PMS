@@ -826,6 +826,7 @@ class FinancialService:
             q = {
                 "tenant_id": tid,
                 "status": "checked_in",
+                "is_complimentary": {"$ne": True},
                 "$expr": {
                     "$lte": [
                         {

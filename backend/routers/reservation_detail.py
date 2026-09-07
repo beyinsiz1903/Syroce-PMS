@@ -8,6 +8,7 @@ import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Literal
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -720,9 +721,10 @@ class DailyRateUpdate(BaseModel):
 
 
 class ComplimentaryReservationRequest(BaseModel):
-    """Full complimentary stay request for a reservation that has not posted revenue."""
+    """Audited complimentary scope for a reservation with no posted revenue."""
 
     reason: str = Field(..., min_length=3, max_length=500)
+    scope: Literal["accommodation_only", "full"] = "accommodation_only"
 
 
 class CariAccountCreate(BaseModel):
@@ -739,7 +741,9 @@ class CariAccountCreate(BaseModel):
 class ExtraChargeAdd(BaseModel):
     description: str = Field(..., min_length=1, max_length=500)
     category: str = Field("other", max_length=50)  # room, food, beverage, minibar, spa, laundry, other
-    amount: float = Field(..., gt=0, le=1e9)
+    # Zero-value rows represent a complimentary item. They remain auditable
+    # without creating revenue or changing the folio balance.
+    amount: float = Field(..., ge=0, le=1e9)
     quantity: float = Field(1.0, gt=0, le=1e6)
 
 
@@ -2535,14 +2539,22 @@ async def early_checkin(
         raise HTTPException(status_code=400, detail=str(e))
 
     # Add extra charge if any (outside transaction — non-critical)
+    full_comp = booking.get("is_complimentary") and booking.get("complimentary_scope") == "full"
+    effective_extra_charge = 0.0 if full_comp else data.extra_charge
     if data.extra_charge > 0:
         charge = {
             "id": str(uuid.uuid4()),
             "tenant_id": tid,
             "booking_id": booking_id,
             "charge_name": "Erken Giriş Ücreti",
-            "charge_amount": data.extra_charge,
+            "charge_amount": effective_extra_charge,
+            "amount": effective_extra_charge,
+            "quantity": 1,
+            "total": effective_extra_charge,
             "category": "room",
+            "is_complimentary": bool(full_comp),
+            "complimentary_scope": "full" if full_comp else None,
+            "complimentary_original_amount": data.extra_charge if full_comp else None,
             "created_at": datetime.now(UTC).isoformat(),
         }
         await db.extra_charges.insert_one({**charge})
@@ -2554,7 +2566,8 @@ async def early_checkin(
         current_user.name,
         {
             "checkin_time": data.checkin_time or result.get("checked_in_at"),
-            "extra_charge": data.extra_charge,
+            "extra_charge": effective_extra_charge,
+            "complimentary_original_amount": data.extra_charge if full_comp else None,
         },
     )
 
@@ -2565,7 +2578,7 @@ async def early_checkin(
         tid,
         booking_id,
         "checked_in",
-        {"early_checkin": True, "checkin_time": data.checkin_time or result.get("checked_in_at"), "extra_charge": data.extra_charge},
+        {"early_checkin": True, "checkin_time": data.checkin_time or result.get("checked_in_at"), "extra_charge": effective_extra_charge},
     )
 
     return {"success": True, "message": "Erken giriş yapıldı"}
@@ -2596,14 +2609,22 @@ async def late_checkout(
 
     await db.bookings.update_one({"id": booking_id, "tenant_id": tid}, {"$set": updates})
 
+    full_comp = booking.get("is_complimentary") and booking.get("complimentary_scope") == "full"
+    effective_extra_charge = 0.0 if full_comp else data.extra_charge
     if data.extra_charge > 0:
         charge = {
             "id": str(uuid.uuid4()),
             "tenant_id": tid,
             "booking_id": booking_id,
             "charge_name": "Geç Çıkış Ücreti",
-            "charge_amount": data.extra_charge,
+            "charge_amount": effective_extra_charge,
+            "amount": effective_extra_charge,
+            "quantity": 1,
+            "total": effective_extra_charge,
             "category": "room",
+            "is_complimentary": bool(full_comp),
+            "complimentary_scope": "full" if full_comp else None,
+            "complimentary_original_amount": data.extra_charge if full_comp else None,
             "created_at": datetime.now(UTC).isoformat(),
         }
         await db.extra_charges.insert_one({**charge})
@@ -2615,7 +2636,8 @@ async def late_checkout(
         current_user.name,
         {
             "checkout_time": data.checkout_time,
-            "extra_charge": data.extra_charge,
+            "extra_charge": effective_extra_charge,
+            "complimentary_original_amount": data.extra_charge if full_comp else None,
         },
     )
 
@@ -2626,7 +2648,7 @@ async def late_checkout(
         tid,
         booking_id,
         "late_checkout_approved",
-        {"checkout_time": data.checkout_time, "extra_charge": data.extra_charge},
+        {"checkout_time": data.checkout_time, "extra_charge": effective_extra_charge},
     )
 
     return {"success": True, "message": "Geç çıkış kaydedildi"}
@@ -2815,7 +2837,10 @@ async def add_extra_charge_detail(
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
 
-    total = round(data.amount * data.quantity, 2)
+    requested_total = round(data.amount * data.quantity, 2)
+    full_comp = booking.get("is_complimentary") and booking.get("complimentary_scope") == "full"
+    total = 0.0 if full_comp else requested_total
+    is_complimentary = full_comp or total == 0
     charge = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
@@ -2825,9 +2850,12 @@ async def add_extra_charge_detail(
         "category": data.category,
         "charge_category": data.category,
         "charge_amount": total,
-        "amount": data.amount,
+        "amount": 0.0 if full_comp else data.amount,
         "quantity": data.quantity,
         "total": total,
+        "is_complimentary": is_complimentary,
+        "complimentary_scope": "full" if full_comp else ("item" if is_complimentary else None),
+        "complimentary_original_amount": requested_total if full_comp else None,
         "posted_by": current_user.name,
         "created_at": datetime.now(UTC).isoformat(),
         "voided": False,
@@ -2843,6 +2871,7 @@ async def add_extra_charge_detail(
             "description": data.description,
             "amount": total,
             "category": data.category,
+            "is_complimentary": is_complimentary,
         },
     )
 
@@ -2904,19 +2933,25 @@ async def mark_reservation_complimentary(
             detail="Night Audit ile kapanmış geceleri olan rezervasyon comp yapılamaz; finansal comp/indirim fişi gerekir",
         )
 
+    active_charge_query = {
+        "booking_id": booking_id,
+        "tenant_id": tid,
+        "voided": {"$ne": True},
+    }
+    if data.scope == "accommodation_only":
+        active_charge_query["charge_category"] = "room"
     active_room_charge = await db.folio_charges.find_one(
-        {
-            "booking_id": booking_id,
-            "tenant_id": tid,
-            "charge_category": "room",
-            "voided": {"$ne": True},
-        },
+        active_charge_query,
         {"_id": 0, "id": 1},
     )
     if active_room_charge:
         raise HTTPException(
             status_code=409,
-            detail="Tahakkuk edilmiş oda ücreti bulunan rezervasyon comp yapılamaz; finansal comp/indirim fişi gerekir",
+            detail=(
+                "Tahakkuk edilmiş ücret bulunan rezervasyon Full Comp yapılamaz; finansal comp/indirim fişi gerekir"
+                if data.scope == "full"
+                else "Tahakkuk edilmiş oda ücreti bulunan rezervasyon comp yapılamaz; finansal comp/indirim fişi gerekir"
+            ),
         )
 
     folios = [
@@ -2974,7 +3009,10 @@ async def mark_reservation_complimentary(
         existing_by_date[date_key] = row
 
     now = datetime.now(UTC).isoformat()
-    original_total = round(float(booking.get("total_amount", 0) or 0), 2)
+    original_total = round(
+        float(booking.get("complimentary_original_total", booking.get("total_amount", 0)) or 0),
+        2,
+    )
     fallback_rate = round(original_total / len(stay_dates), 2)
     original_daily_rates = [
         {
@@ -2983,6 +3021,15 @@ async def mark_reservation_complimentary(
         }
         for rate_date in stay_dates
     ]
+    full_comp_extras = []
+    if data.scope == "full":
+        full_comp_extras = [
+            row
+            async for row in db.extra_charges.find(
+                {"booking_id": booking_id, "tenant_id": tid, "voided": {"$ne": True}},
+                {"_id": 0},
+            )
+        ]
     async with await db.client.start_session() as session:
         async with session.start_transaction():
             for rate_date in stay_dates:
@@ -3014,12 +3061,37 @@ async def mark_reservation_complimentary(
                         detail=f"{rate_date} için eşzamanlı günlük fiyat güncellemesi tespit edildi; lütfen yeniden deneyin",
                     ) from exc
 
+            for charge in full_comp_extras:
+                original_charge_total = round(
+                    float(charge.get("total", charge.get("charge_amount", charge.get("amount", 0))) or 0),
+                    2,
+                )
+                await db.extra_charges.update_one(
+                    {"id": charge["id"], "booking_id": booking_id, "tenant_id": tid},
+                    {
+                        "$set": {
+                            "amount": 0.0,
+                            "charge_amount": 0.0,
+                            "total": 0.0,
+                            "is_complimentary": True,
+                            "complimentary_scope": "full",
+                            "complimentary_original_amount": charge.get(
+                                "complimentary_original_amount", original_charge_total
+                            ),
+                            "updated_by": current_user.name,
+                            "updated_at": now,
+                        }
+                    },
+                    session=session,
+                )
+
             await db.bookings.update_one(
                 {"id": booking_id, "tenant_id": tid},
                 {
                     "$set": {
                         "total_amount": 0.0,
                         "is_complimentary": True,
+                        "complimentary_scope": data.scope,
                         "complimentary_reason": data.reason.strip(),
                         "complimentary_by": current_user.name,
                         "complimentary_at": now,
@@ -3040,6 +3112,8 @@ async def mark_reservation_complimentary(
             "original_daily_rates": original_daily_rates,
             "affected_nights": len(stay_dates),
             "business_date": current_business_date,
+            "scope": data.scope,
+            "affected_extra_charges": len(full_comp_extras),
         },
     )
     return {
@@ -3048,6 +3122,8 @@ async def mark_reservation_complimentary(
         "new_total": 0.0,
         "original_total": original_total,
         "affected_nights": len(stay_dates),
+        "scope": data.scope,
+        "affected_extra_charges": len(full_comp_extras),
     }
 
 

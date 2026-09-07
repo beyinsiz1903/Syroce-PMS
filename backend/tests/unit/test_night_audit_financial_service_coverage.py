@@ -421,4 +421,8 @@ async def test_integrity_check_surfaces_each_operational_issue_and_audit_mismatc
     assert checks["closed_folio_charges"]["status"] == "error"
     assert checks["audit_charge_count"]["status"] == "error"
     assert result.data["summary"]["overall_status"] == "fail"
+    assert any(
+        call.args[0].get("is_complimentary") == {"$ne": True}
+        for call in bookings.count_documents.await_args_list
+    )
     service._enrich_with_guest_room.assert_awaited_once()

@@ -379,6 +379,10 @@ class NightAuditEngine:
 
         for booking in checked_in:
             try:
+                # Comp accommodation is an audited zero-revenue stay. Skip it
+                # before folio/rate validation so no zero-value charge is posted.
+                if booking.get("is_complimentary"):
+                    continue
                 folio = folios_by_booking.get(booking["id"])
                 if not folio:
                     exceptions.append(

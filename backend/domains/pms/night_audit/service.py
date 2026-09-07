@@ -327,6 +327,10 @@ class NightAuditCoreService:
 
         for booking in bookings_list:
             rooms_processed += 1
+            # Intentional complimentary accommodation is not missing pricing
+            # and must not create a Night Audit warning or revenue charge.
+            if booking.get("is_complimentary"):
+                continue
             pricing = calculate_room_charge(
                 booking,
                 bd,

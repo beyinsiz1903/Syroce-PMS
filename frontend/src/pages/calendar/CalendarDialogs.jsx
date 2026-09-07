@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Search, CheckCircle, AlertCircle, Clock, UserCheck, UserPlus } from "lucide-react";
+import { Search, CheckCircle, AlertCircle, Clock, Gift, UserCheck, UserPlus } from "lucide-react";
 import { getSegmentColor, getStatusColor, getStatusLabel } from "./calendarHelpers";
 import { alertDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
@@ -488,17 +488,73 @@ export const NewBookingDialog = ({
             </div>
           </div>
         )}
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="new-booking-complimentary">
+          <label className="flex items-center gap-2 text-sm font-semibold text-amber-950">
+            <input
+              type="checkbox"
+              checked={Boolean(newBooking.is_complimentary)}
+              onChange={(e) => setNewBooking({
+                ...newBooking,
+                is_complimentary: e.target.checked,
+                complimentary_scope: e.target.checked ? (newBooking.complimentary_scope || 'accommodation_only') : 'accommodation_only',
+                complimentary_reason: e.target.checked ? newBooking.complimentary_reason : '',
+                prepayment_enabled: e.target.checked ? false : newBooking.prepayment_enabled,
+                prepayment_amount: e.target.checked ? '' : newBooking.prepayment_amount,
+              })}
+              data-testid="new-booking-complimentary-toggle"
+            />
+            <Gift className="h-4 w-4" />
+            Komp rezervasyon
+          </label>
+          <p className="mt-1 text-xs text-amber-800">Gerçek satış değeri raporlama için korunur; misafire ücret yansıtılmaz.</p>
+          {newBooking.is_complimentary && (
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <Label>Komp kapsamı</Label>
+                <select
+                  className="w-full border rounded-md p-2 bg-white"
+                  value={newBooking.complimentary_scope || 'accommodation_only'}
+                  onChange={(e) => setNewBooking({ ...newBooking, complimentary_scope: e.target.value })}
+                  data-testid="new-booking-complimentary-scope"
+                >
+                  <option value="accommodation_only">Sadece Konaklama</option>
+                  <option value="full">Full Comp</option>
+                </select>
+                <p className="mt-1 text-[11px] text-amber-700">
+                  {newBooking.complimentary_scope === 'full'
+                    ? 'Konaklama ve sonradan eklenen tüm ekstra hizmetler ikramdır.'
+                    : 'Yalnızca oda/konaklama ikramdır; ekstra hizmetler ücretlidir.'}
+                </p>
+              </div>
+              <div>
+                <Label>Komp gerekçesi</Label>
+                <Input
+                  value={newBooking.complimentary_reason || ''}
+                  onChange={(e) => setNewBooking({ ...newBooking, complimentary_reason: e.target.value })}
+                  placeholder="Örn: Yönetim onayı / misafir memnuniyeti"
+                  minLength={3}
+                  maxLength={500}
+                  required
+                  data-testid="new-booking-complimentary-reason"
+                />
+              </div>
+            </div>
+          )}
+        </div>
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3" data-testid="new-booking-prepayment">
           <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
             <input
               type="checkbox"
               checked={Boolean(newBooking.prepayment_enabled)}
               onChange={(e) => setNewBooking({ ...newBooking, prepayment_enabled: e.target.checked })}
+              disabled={Boolean(newBooking.is_complimentary)}
               data-testid="new-booking-prepayment-toggle"
             />
             Ön ödeme alındı
           </label>
-          <p className="mt-1 text-xs text-slate-500">Kaydedildiğinde rezervasyonun folyosuna ön ödeme olarak işlenir.</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {newBooking.is_complimentary ? 'Komp rezervasyonda ön ödeme alınmaz.' : 'Kaydedildiğinde rezervasyonun folyosuna ön ödeme olarak işlenir.'}
+          </p>
           {newBooking.prepayment_enabled && (
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>

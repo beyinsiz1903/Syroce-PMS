@@ -87,6 +87,8 @@ async def post_room_charges(
 
         for booking in bookings:
             try:
+                if booking.get("is_complimentary"):
+                    continue
                 folio = na_folios_map.get(booking["id"])
 
                 if folio:
@@ -344,6 +346,8 @@ async def automatic_posting(
 
     for booking in bookings:
         try:
+            if booking.get("is_complimentary"):
+                continue
             folio = na2_folios_map.get(booking["id"])
 
             if not folio:
