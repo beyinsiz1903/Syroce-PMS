@@ -499,8 +499,12 @@ const HRComplete = () => {
       await axios.post(`/hr/job-posting/${jobId}/${action}`, {
         note: note || undefined
       });
+      // Karar sonrasında sayaçlar ve satır eylemleri, başarı bildirimiyle aynı
+      // anda yeni durumu göstermeli. Yenilemeyi beklemeden toast göstermek,
+      // kullanıcıya talep hâlâ "Onay Bekliyor"muş gibi görünen kısa bir ara
+      // durum bırakıyordu.
+      await loadJobs();
       toast.success(isApprove ? 'Talep onaylandı' : 'Talep reddedildi');
-      loadJobs();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'İşlem başarısız');
     }
