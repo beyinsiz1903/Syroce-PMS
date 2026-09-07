@@ -29,6 +29,7 @@ export function DailyRatesTab({
   const [saving, setSaving] = useState(false);
   const [showCompForm, setShowCompForm] = useState(false);
   const [compReason, setCompReason] = useState('');
+  const [compScope, setCompScope] = useState('accommodation_only');
   useEffect(() => {
     setRates(dailyRates || []);
   }, [dailyRates]);
@@ -64,8 +65,8 @@ export function DailyRatesTab({
     }
     setSaving(true);
     try {
-      await axios.post(`/pms/reservations/${booking.id}/mark-complimentary`, { reason });
-      toast.success('Rezervasyon comp olarak kaydedildi');
+      await axios.post(`/pms/reservations/${booking.id}/mark-complimentary`, { reason, scope: compScope });
+      toast.success(compScope === 'full' ? 'Rezervasyon Full Comp olarak kaydedildi' : 'Konaklama comp olarak kaydedildi');
       setShowCompForm(false);
       setCompReason('');
       onRefresh?.();
@@ -89,8 +90,9 @@ export function DailyRatesTab({
         </div>
       </div>
       {isComplimentary && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900" data-testid="complimentary-summary">
-          <div className="flex items-center gap-1.5 font-medium"><Gift className="h-4 w-4" /> Comp konaklama</div>
+          <div className="flex items-center gap-1.5 font-medium"><Gift className="h-4 w-4" /> {booking?.complimentary_scope === 'full' ? 'Full Comp' : 'Sadece Konaklama Comp'}</div>
           {booking?.complimentary_reason && <p className="mt-0.5 text-xs text-emerald-800">Gerekçe: {booking.complimentary_reason}</p>}
+          {booking?.complimentary_original_total > 0 && <p className="mt-0.5 text-xs text-emerald-800">Raporlanan konaklama değeri: {fmtTL(booking.complimentary_original_total)} TL</p>}
         </div>}
       {showCompForm && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2" data-testid="complimentary-form">
           <div className="flex items-start justify-between gap-3">
@@ -100,7 +102,20 @@ export function DailyRatesTab({
             </div>
             <Button type="button" variant="ghost" size="icon" className="h-6 w-6" aria-label="Comp formunu kapat" onClick={() => setShowCompForm(false)}><X className="h-4 w-4" /></Button>
           </div>
-          <Input value={compReason} onChange={event => setCompReason(event.target.value)} placeholder="Comp gerekçesi (zorunlu)" maxLength={500} disabled={saving} />
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-amber-950" htmlFor="complimentary-scope">Komp kapsamı</label>
+              <select id="complimentary-scope" value={compScope} onChange={event => setCompScope(event.target.value)} disabled={saving} className="h-9 w-full rounded-md border border-amber-300 bg-white px-3 text-sm">
+                <option value="accommodation_only">Sadece Konaklama</option>
+                <option value="full">Full Comp</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-amber-950" htmlFor="complimentary-reason">Komp gerekçesi</label>
+              <Input id="complimentary-reason" value={compReason} onChange={event => setCompReason(event.target.value)} placeholder="Comp gerekçesi (zorunlu)" maxLength={500} disabled={saving} />
+            </div>
+          </div>
+          <p className="text-xs text-amber-800">{compScope === 'full' ? 'Konaklama ve mevcut/sonraki ekstra hizmetler ikram olarak sıfırlanır.' : 'Konaklama ikramdır; ekstra hizmetler ücretli kalır.'}</p>
           <div className="flex justify-end gap-2">
             <Button type="button" size="sm" variant="outline" onClick={() => setShowCompForm(false)} disabled={saving}>Vazgeç</Button>
             <Button type="button" size="sm" onClick={handleComplimentary} disabled={saving} className="bg-amber-600 hover:bg-amber-700">{saving && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}Comp Olarak Kaydet</Button>
@@ -157,6 +172,7 @@ export function ExtraChargesTab({
   });
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState('');
+  const isFullComp = booking?.is_complimentary && booking?.complimentary_scope === 'full';
   const allCharges = [...(extra_charges || []), ...(charges || [])].filter(c => !c.voided);
   const cats = {
     room_service: 'Oda Servisi',
@@ -188,7 +204,7 @@ export function ExtraChargesTab({
         amount,
         quantity
       });
-      toast.success(amount === 0 ? 'Komp / ikram kaydı eklendi' : 'Ekstra ücret eklendi');
+      toast.success(amount === 0 || isFullComp ? 'Komp / ikram kaydı eklendi' : 'Ekstra ücret eklendi');
       setShowAdd(false);
       setForm({
         description: '',
@@ -259,7 +275,7 @@ export function ExtraChargesTab({
           quantity: v
         }))} />
           </div>
-          <p className="text-xs text-amber-800">0 TL girilen kalemler bakiyeyi etkilemeden Komp / İkram olarak kaydedilir.</p>
+          <p className="text-xs text-amber-800">{isFullComp ? 'Full Comp kapsamında girdiğiniz tutar yalnızca ikram değeri olarak saklanır; bakiyeye 0 TL yansır.' : '0 TL girilen kalemler bakiyeyi etkilemeden Komp / İkram olarak kaydedilir.'}</p>
           {formError && <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{formError}</div>}
           <div className="flex gap-2">
             <Button size="sm" onClick={handleAdd} disabled={loading} className="bg-amber-600 hover:bg-amber-700 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Ekle'}</Button>
@@ -272,7 +288,7 @@ export function ExtraChargesTab({
                 <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center"><Receipt className="w-4 h-4 text-amber-600" /></div>
                 <div className="flex-1">
                   <div className="text-sm font-medium">{c.description || c.charge_name || '-'}</div>
-                  <div className="text-xs text-gray-400">{cats[c.category || c.charge_category] || ''} {c.is_complimentary && <span className="font-medium text-emerald-600">Komp / İkram</span>} {c.split_from_booking_id && <span className="text-blue-500">{t('cm.pages_reservationdetail_PricingTabs.aktarildi')}</span>}</div>
+                  <div className="text-xs text-gray-400">{cats[c.category || c.charge_category] || ''} {c.is_complimentary && <span className="font-medium text-emerald-600">Komp / İkram</span>} {c.complimentary_original_amount > 0 && <span className="text-slate-500">Liste değeri: {fmtTL(c.complimentary_original_amount)} TL</span>} {c.split_from_booking_id && <span className="text-blue-500">{t('cm.pages_reservationdetail_PricingTabs.aktarildi')}</span>}</div>
                 </div>
                 <div className="text-sm font-bold text-amber-700">{fmtTL(c.total ?? c.charge_amount ?? c.amount)} TL</div>
                 {!c.is_complimentary && <Button

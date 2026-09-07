@@ -25,6 +25,19 @@ class AsyncRows:
         return iterate()
 
 
+class AsyncContext:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return False
+
+
+class FakeSession(AsyncContext):
+    def start_transaction(self):
+        return AsyncContext()
+
+
 @pytest.mark.asyncio
 async def test_legacy_cari_object_id_is_found_and_normalized(monkeypatch):
     legacy_id = ObjectId()
@@ -276,6 +289,114 @@ def test_zero_reservation_detail_extra_charge_is_a_valid_comp_item():
 def test_negative_reservation_detail_extra_charge_is_rejected():
     with pytest.raises(ValidationError):
         reservation_detail.ExtraChargeAdd(description="Negative charge", amount=-1, quantity=1)
+
+
+@pytest.mark.asyncio
+async def test_full_comp_extra_charge_keeps_list_value_without_affecting_balance(monkeypatch):
+    extra_charges = SimpleNamespace(insert_one=AsyncMock())
+    database = SimpleNamespace(
+        bookings=SimpleNamespace(
+            find_one=AsyncMock(
+                return_value={
+                    "id": "booking-a",
+                    "tenant_id": "tenant-a",
+                    "is_complimentary": True,
+                    "complimentary_scope": "full",
+                }
+            )
+        ),
+        extra_charges=extra_charges,
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_args: None)
+    monkeypatch.setattr(reservation_detail, "_log_activity", AsyncMock())
+    from routers import webhook_retry_service
+    monkeypatch.setattr(webhook_retry_service, "schedule_emit_reservation_updated", lambda *_args, **_kwargs: None)
+
+    result = await reservation_detail.add_extra_charge_detail(
+        "booking-a",
+        reservation_detail.ExtraChargeAdd(description="Akşam yemeği", amount=750, quantity=2),
+        current_user=SimpleNamespace(
+            id="user-a", tenant_id="tenant-a", role="manager", name="Test Operator"
+        ),
+        _perm=None,
+    )
+
+    charge = result["charge"]
+    assert charge["total"] == 0
+    assert charge["amount"] == 0
+    assert charge["is_complimentary"] is True
+    assert charge["complimentary_original_amount"] == 1500
+    assert charge["complimentary_scope"] == "full"
+
+
+@pytest.mark.asyncio
+async def test_mark_full_comp_zeroes_open_extras_and_preserves_original_values(monkeypatch):
+    daily_rates = SimpleNamespace(
+        find=lambda *_args, **_kwargs: AsyncRows(
+            [{"id": "rate-a", "date": "2099-01-01", "rate": 1200}]
+        ),
+        update_one=AsyncMock(),
+    )
+    extra_charges = SimpleNamespace(
+        find=lambda *_args, **_kwargs: AsyncRows(
+            [{"id": "extra-a", "amount": 250, "quantity": 1, "total": 250}]
+        ),
+        update_one=AsyncMock(),
+    )
+    database = SimpleNamespace(
+        bookings=SimpleNamespace(
+            find_one=AsyncMock(
+                return_value={
+                    "id": "booking-a",
+                    "tenant_id": "tenant-a",
+                    "check_in": "2099-01-01",
+                    "check_out": "2099-01-02",
+                    "total_amount": 1200,
+                }
+            ),
+            update_one=AsyncMock(),
+        ),
+        folio_charges=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        folios=SimpleNamespace(find=lambda *_args, **_kwargs: AsyncRows([])),
+        payments=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        invoices=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        daily_rates=daily_rates,
+        extra_charges=extra_charges,
+        client=SimpleNamespace(start_session=AsyncMock(return_value=FakeSession())),
+    )
+    monkeypatch.setattr(reservation_detail, "db", database)
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_args: None)
+    monkeypatch.setattr(reservation_detail, "ensure_reservation_mutable", AsyncMock())
+    monkeypatch.setattr(
+        reservation_detail,
+        "ensure_business_date_initialized",
+        AsyncMock(return_value={"business_date": "2099-01-01"}),
+    )
+    activity = AsyncMock()
+    monkeypatch.setattr(reservation_detail, "_log_activity", activity)
+
+    result = await reservation_detail.mark_reservation_complimentary(
+        "booking-a",
+        reservation_detail.ComplimentaryReservationRequest(
+            reason="VIP ağırlama", scope="full"
+        ),
+        current_user=SimpleNamespace(
+            id="user-a", tenant_id="tenant-a", role="manager", name="Test Operator"
+        ),
+        _perm=None,
+    )
+
+    assert result["scope"] == "full"
+    assert result["affected_extra_charges"] == 1
+    extra_update = extra_charges.update_one.await_args.args[1]["$set"]
+    assert extra_update["total"] == 0
+    assert extra_update["complimentary_original_amount"] == 250
+    booking_update = database.bookings.update_one.await_args.args[1]["$set"]
+    assert booking_update["total_amount"] == 0
+    assert booking_update["complimentary_scope"] == "full"
 
 
 @pytest.mark.asyncio

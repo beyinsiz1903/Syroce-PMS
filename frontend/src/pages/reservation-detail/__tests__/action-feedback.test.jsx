@@ -189,9 +189,29 @@ describe('reservation detail action feedback', () => {
 
     await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
       '/pms/reservations/booking-a/mark-complimentary',
-      { reason: 'Misafir memnuniyeti' },
+      { reason: 'Misafir memnuniyeti', scope: 'accommodation_only' },
     ));
     expect(onRefresh).toHaveBeenCalled();
+  });
+
+  it('can mark a reservation as full comp', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true } });
+    render(
+      <DailyRatesTab
+        dailyRates={[{ id: 'rate-a', date: '2026-08-18', rate: 10 }]}
+        booking={{ id: 'booking-a' }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Comp Ver' }));
+    fireEvent.change(screen.getByLabelText('Komp kapsamı'), { target: { value: 'full' } });
+    fireEvent.change(screen.getByPlaceholderText('Comp gerekçesi (zorunlu)'), { target: { value: 'VIP ağırlama' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Comp Olarak Kaydet' }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/mark-complimentary',
+      { reason: 'VIP ağırlama', scope: 'full' },
+    ));
   });
 
   it('locks daily rates before the current PMS business date', () => {

@@ -87,6 +87,8 @@ def harness(monkeypatch):
         user=SimpleNamespace(
             id="user-1",
             name="Ada Lovelace",
+            role="admin",
+            permissions=[],
             tenant_id="tenant-1",
             property_id=None,
             selected_property_id=None,
@@ -195,6 +197,53 @@ async def test_create_uses_defaults_without_writing_rate_override(harness):
     assert result["company_id"] is None
     assert result["ota_channel"] is None
     harness.repository.insert_rate_override_log.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_complimentary_retains_commercial_value_and_zeroes_posted_total(harness):
+    booking = _booking(
+        total_amount=4200,
+        is_complimentary=True,
+        complimentary_scope="full",
+        complimentary_reason="Yönetim ağırlaması",
+    )
+
+    result = await harness.service.create(booking, harness.user, harness.request)
+
+    assert result["total_amount"] == 0
+    assert result["is_complimentary"] is True
+    assert result["complimentary_scope"] == "full"
+    assert result["complimentary_original_total"] == 4200
+    assert result["complimentary_reason"] == "Yönetim ağırlaması"
+    harness.repository.insert_rate_override_log.assert_not_awaited()
+    assert harness.audit_log.await_args.kwargs["metadata"]["complimentary_scope"] == "full"
+
+
+def test_complimentary_booking_requires_scope_and_reason():
+    with pytest.raises(ValueError):
+        _booking(is_complimentary=True)
+    with pytest.raises(ValueError):
+        _booking(
+            is_complimentary=True,
+            complimentary_scope="accommodation_only",
+            complimentary_reason="x",
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_complimentary_requires_rate_override_permission(harness):
+    harness.user.role = "front_desk"
+    booking = _booking(
+        is_complimentary=True,
+        complimentary_scope="accommodation_only",
+        complimentary_reason="Misafir memnuniyeti",
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        await harness.service.create(booking, harness.user, harness.request)
+
+    assert caught.value.status_code == 403
+    harness.repository.acquire_idempotency_lock.assert_not_awaited()
 
 
 @pytest.mark.asyncio

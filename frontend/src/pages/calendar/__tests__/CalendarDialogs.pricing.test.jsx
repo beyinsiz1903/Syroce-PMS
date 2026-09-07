@@ -64,4 +64,18 @@ describe('NewBookingDialog pricing and prepayment', () => {
     expect(screen.getByTestId('new-booking-prepayment-amount')).toHaveValue(2500);
     expect(screen.getByTestId('new-booking-prepayment-method')).toHaveValue('bank_transfer');
   });
+
+  it('supports professional comp scopes and disables prepayment', () => {
+    render(<DialogHarness />);
+
+    fireEvent.click(screen.getByTestId('new-booking-complimentary-toggle'));
+
+    expect(screen.getByTestId('new-booking-complimentary-scope')).toHaveValue('accommodation_only');
+    fireEvent.change(screen.getByTestId('new-booking-complimentary-scope'), { target: { value: 'full' } });
+    fireEvent.change(screen.getByTestId('new-booking-complimentary-reason'), { target: { value: 'VIP ağırlama' } });
+
+    expect(screen.getByTestId('new-booking-complimentary-scope')).toHaveValue('full');
+    expect(screen.getByText(/sonradan eklenen tüm ekstra hizmetler/i)).toBeInTheDocument();
+    expect(screen.getByTestId('new-booking-prepayment-toggle')).toBeDisabled();
+  });
 });

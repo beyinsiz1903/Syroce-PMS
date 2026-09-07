@@ -272,6 +272,8 @@ async def night_audit_post_room_charges(tenant_id: str, date: str):
             "check_out": {"$gte": date},
         }
     ):
+        if booking.get("is_complimentary"):
+            continue
         folio = await db.folios.find_one(
             {
                 "booking_id": booking.get("id"),

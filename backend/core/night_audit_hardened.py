@@ -832,6 +832,8 @@ async def _build_candidate_set(
             "check_out": 1,
             "guest_name": 1,
             "currency": 1,
+            "is_complimentary": 1,
+            "complimentary_scope": 1,
         },
     ).to_list(5000)
     bookings_list, _future, _ended, _invalid = _partition_stays_for_business_date(
@@ -889,7 +891,10 @@ async def _build_candidate_set(
         # Determine item status
         item_status = IS_PENDING
         reason = None
-        if rate <= 0:
+        if booking.get("is_complimentary"):
+            item_status = IS_SKIPPED
+            reason = "complimentary_accommodation"
+        elif rate <= 0:
             item_status = IS_SKIPPED
             reason = "zero_or_missing_rate"
         elif not folio_id:

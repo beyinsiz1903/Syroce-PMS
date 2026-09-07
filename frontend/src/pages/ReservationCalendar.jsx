@@ -186,6 +186,7 @@ const newBookingDraft = (overrides = {}) => ({
   guests_count: 2, adults: 2, children: 0, children_ages: [],
   total_amount: 0, base_rate: 0, price_input_mode: 'nightly',
   prepayment_enabled: false, prepayment_amount: '', prepayment_method: 'cash', prepayment_reference: '',
+  is_complimentary: false, complimentary_scope: 'accommodation_only', complimentary_reason: '',
   apply_occupancy_pricing: false, status: 'confirmed',
   ...overrides,
 });
@@ -677,11 +678,20 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
     const prepaymentAmount = newBooking.prepayment_enabled ? Number(newBooking.prepayment_amount) : 0;
     const totalAmount = Number(newBooking.total_amount);
+    const isComplimentary = Boolean(newBooking.is_complimentary);
     const nights = Math.max(1, Math.round(
       (new Date(`${newBooking.check_out}T00:00:00Z`) - new Date(`${newBooking.check_in}T00:00:00Z`)) / 86400000,
     ));
     if (!Number.isFinite(totalAmount) || totalAmount < 0) {
       toast.error('Geçerli bir konaklama toplamı girin');
+      return;
+    }
+    if (isComplimentary && newBooking.complimentary_reason.trim().length < 3) {
+      toast.error('Komp gerekçesi en az 3 karakter olmalı');
+      return;
+    }
+    if (isComplimentary && newBooking.prepayment_enabled) {
+      toast.error('Komp rezervasyonda ön ödeme alınamaz');
       return;
     }
     if (newBooking.prepayment_enabled && (!Number.isFinite(prepaymentAmount) || prepaymentAmount <= 0)) {
@@ -752,7 +762,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         const detail = prepaymentError.response?.data?.detail;
         toast.warning(`Rezervasyon oluşturuldu; ön ödeme kaydedilemedi. ${typeof detail === 'string' ? detail : 'Folyodan Ödeme Al ile tekrar kaydedin.'}`);
       } else {
-        toast.success(prepaymentAmount > 0 ? 'Rezervasyon ve ön ödeme başarıyla kaydedildi!' : 'Rezervasyon başarıyla oluşturuldu!');
+        toast.success(
+          isComplimentary
+            ? `${newBooking.complimentary_scope === 'full' ? 'Full Comp' : 'Sadece Konaklama'} rezervasyon oluşturuldu!`
+            : prepaymentAmount > 0
+              ? 'Rezervasyon ve ön ödeme başarıyla kaydedildi!'
+              : 'Rezervasyon başarıyla oluşturuldu!',
+        );
       }
     } catch (error) {
       console.log('CREATE_BOOKING_ERROR_CAUGHT', {
