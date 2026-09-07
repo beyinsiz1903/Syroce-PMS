@@ -398,7 +398,7 @@ const StaffManagement = () => {
         toast.success('Personel eklendi');
       } else {
         await axios.put(`/hr/staff/${staffDialog.id}`, payload);
-        toast.success('İletişim bilgileri güncellendi');
+        toast.success('Personel bilgileri güncellendi');
       }
       setStaffDialog({
         open: false,
