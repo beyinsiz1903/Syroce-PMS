@@ -147,6 +147,10 @@ export const collectIntegrationAccountCodes = (nilvera = {}, ap = {}, fixedAsset
   return [...new Set(candidates.map((value) => String(value || '').trim()).filter(Boolean))].sort();
 };
 
+export const shouldFetchAccountsForTab = (tab) => (
+  ['overview', 'setup', 'accounts', 'account-ledger', 'integrations'].includes(tab)
+);
+
 const VOUCHER_TYPE_BY_LABEL = {
   Mahsup: 'mahsup',
   Tahsilat: 'tahsil',
@@ -870,16 +874,13 @@ const GeneralLedgerModule = () => {
   };
 
   useEffect(() => {
+    if (shouldFetchAccountsForTab(activeTab)) fetchAccounts();
     if (activeTab === 'overview') {
-      fetchAccounts();
       fetchJournals();
       fetchPeriods();
     }
-    if (activeTab === 'setup') fetchAccounts();
-    if (activeTab === 'accounts') fetchAccounts();
     if (activeTab === 'journals') fetchJournals();
     if (activeTab === 'account-ledger') {
-      fetchAccounts();
       fetchJournals();
     }
     if (activeTab === 'trial-balance') fetchTrialBalance();

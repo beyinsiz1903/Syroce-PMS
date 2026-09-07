@@ -12,6 +12,7 @@ import {
   normalizeAccountCode,
   normalizeTrialBalance,
   parseAccountMapping,
+  shouldFetchAccountsForTab,
   toJournalPayload,
   toVoucherPayload,
   voucherActionNames,
@@ -247,5 +248,10 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       { expense_account_code: '770', input_vat_account_code: '191' },
       { accumulated_depreciation_account_code: '257' },
     )).toEqual(['153', '191', '257', '391', '391.20', '770']);
+  });
+
+  it('loads the account plan before validating integration mappings', () => {
+    expect(shouldFetchAccountsForTab('integrations')).toBe(true);
+    expect(shouldFetchAccountsForTab('trial-balance')).toBe(false);
   });
 });
