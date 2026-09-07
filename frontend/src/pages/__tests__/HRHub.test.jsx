@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -17,6 +17,7 @@ vi.mock('@/lib/dialogs', () => ({ promptDialog: vi.fn(async () => 'QA'), confirm
 
 beforeEach(() => {
   vi.clearAllMocks();
+  axios.post.mockReset();
   axios.get.mockImplementation(async (url) => {
     if (url === '/hr/staff') return { data: { staff: [{ id: 'qa', name: 'QA Test Personeli' }], total: 1, total_pages: 1 } };
     if (url === '/hr/leave-requests') return { data: { items: [], total: 0, counts: { pending: 17, approved: 23, rejected: 11 } } };
@@ -26,6 +27,30 @@ beforeEach(() => {
   });
 });
 afterEach(cleanup);
+
+it.each([false, true])('submits overtime and preserves input on API failure: %s', async (fails) => {
+  if (fails) axios.post.mockRejectedValue({ response: { data: { detail: 'Yetkiniz yok' } } });
+  else axios.post.mockResolvedValue({ data: { success: true } });
+  render(<MemoryRouter><HRHub /></MemoryRouter>);
+  await userEvent.click(screen.getByRole('tab', { name: /Mesai Onayı/ }));
+  await userEvent.selectOptions(screen.getByLabelText('Personel', { exact: true }), 'qa');
+  fireEvent.change(screen.getByLabelText('Mesai Tarihi'), { target: { value: '2026-09-11' } });
+  await userEvent.type(screen.getByLabelText('Mesai Süresi (saat)'), '1.5');
+  await userEvent.type(screen.getByLabelText('Mesai Gerekçesi'), 'QA mesai testi');
+  const previousLoads = axios.get.mock.calls.filter(([url]) => url === '/hr/overtime-requests').length;
+  await userEvent.click(screen.getByRole('button', { name: 'Mesai Talebi Oluştur' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/hr/overtime-request', {
+    staff_id: 'qa', work_date: '2026-09-11', hours: 1.5, reason: 'QA mesai testi',
+  }));
+  if (fails) {
+    expect(toast.error).toHaveBeenCalledWith('Yetkiniz yok');
+    expect(screen.getByLabelText('Mesai Gerekçesi')).toHaveValue('QA mesai testi');
+  } else {
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Mesai talebi oluşturuldu'));
+    expect(screen.getByLabelText('Mesai Gerekçesi')).toHaveValue('');
+    expect(axios.get.mock.calls.filter(([url]) => url === '/hr/overtime-requests').length).toBeGreaterThan(previousLoads);
+  }
+});
 
 it('renders staff balances and server leave counts in the routed HR screen', async () => {
   render(<MemoryRouter><HRHub /></MemoryRouter>);
