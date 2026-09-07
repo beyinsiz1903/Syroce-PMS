@@ -74,6 +74,12 @@ async def ensure_gl_idem_index(db) -> None:
     await ensure_compound_unique(
         db.gl_journal_entries,
         [("tenant_id", 1), ("fiscal_year", 1), ("posting_sequence", 1)],
+        # Legacy journals predate legal sequencing and have missing/null fields.
+        # They must remain untouched; only numbered journals share this invariant.
+        partial_filter={
+            "fiscal_year": {"$type": "number"},
+            "posting_sequence": {"$type": "number"},
+        },
         name="ux_gl_journal_sequence",
     )
 
