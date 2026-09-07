@@ -72,7 +72,7 @@ const HRComplete = () => {
   useEffect(() => {
     if (activeTab === 'payroll' && !hasFeature("hr", "payroll")) setActiveTab('attendance');
     if (activeTab === 'leave' && !hasFeature("hr", "leave")) setActiveTab('attendance');
-    if (activeTab === 'overtime' && !hasFeature("hr", "leave")) setActiveTab('attendance');
+    if (activeTab === 'overtime' && !hasFeature("hr", "shift")) setActiveTab('attendance');
     if (activeTab === 'recruitment' && !hasFeature("hr", "recruitment")) setActiveTab('attendance');
     if (activeTab === 'performance' && !hasFeature("hr", "performance_management")) setActiveTab('attendance');
   }, [activeTab, hasFeature]);
@@ -129,6 +129,8 @@ const HRComplete = () => {
 
   // Overtime requests (Mesai Onayı)
   const [overtimeItems, setOvertimeItems] = useState([]);
+  const [overtimeForm, setOvertimeForm] = useState({ staff_id: '', work_date: '', hours: '', reason: '' });
+  const [creatingOvertime, setCreatingOvertime] = useState(false);
   const [overtimeCounts, setOvertimeCounts] = useState({ pending: 0, approved: 0, rejected: 0 });
 
   // Kıdem tazminatı tavanı (tenant ayarı)
@@ -298,6 +300,29 @@ const HRComplete = () => {
       console.error('Mesai talepleri yüklenemedi', e);
     }
   }, []);
+
+  const submitOvertime = async (event) => {
+    event.preventDefault();
+    if (creatingOvertime) return;
+    const hours = Number(overtimeForm.hours);
+    const reason = overtimeForm.reason.trim();
+    if (!overtimeForm.staff_id || !overtimeForm.work_date || !Number.isFinite(hours) || hours <= 0 || hours > 12 || reason.length < 3) {
+      toast.error('Personel, tarih, 0–12 arası pozitif saat ve en az 3 karakter gerekçe girin');
+      return;
+    }
+    setCreatingOvertime(true);
+    try {
+      await axios.post('/hr/overtime-request', { ...overtimeForm, hours, reason });
+      setOvertimeForm((current) => ({ ...current, work_date: '', hours: '', reason: '' }));
+      await loadOvertimeRequests();
+      toast.success('Mesai talebi oluşturuldu');
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Mesai talebi oluşturulamadı');
+    } finally {
+      setCreatingOvertime(false);
+    }
+  };
 
   const decideOvertime = async (req, action) => {
     try {
@@ -958,7 +983,7 @@ const HRComplete = () => {
           {hasFeature("hr", "performance_management") && (<TabsTrigger value="performance" data-testid="tab-performance" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Briefcase className="w-4 h-4 mr-2" />Performans
           </TabsTrigger>)}
-          {hasFeature("hr", "leave") && (<TabsTrigger value="overtime" data-testid="tab-overtime" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
+          {hasFeature("hr", "shift") && (<TabsTrigger value="overtime" data-testid="tab-overtime" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Timer className="w-4 h-4 mr-1.5" />
             Mesai Onayı
             {overtimeCounts.pending > 0 && (
@@ -1967,6 +1992,41 @@ const HRComplete = () => {
         {/* === MESAİ ONAYI === */}
         <TabsContent value="overtime" className="mt-4">
           <div className="space-y-6 mt-6">
+            <Card>
+              <CardHeader><CardTitle>Yeni Mesai Talebi</CardTitle></CardHeader>
+              <CardContent>
+                <form onSubmit={submitOvertime} className="grid gap-4 md:grid-cols-2" aria-label="Yeni mesai talebi">
+                  <div className="space-y-2">
+                    <Label htmlFor="overtime-staff">Personel</Label>
+                    <select id="overtime-staff" required disabled={creatingOvertime} value={overtimeForm.staff_id}
+                      onChange={(e) => setOvertimeForm((f) => ({ ...f, staff_id: e.target.value }))}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2">
+                      <option value="">Personel seçin</option>
+                      {staffDropdown.map((staff) => <option key={staff.id} value={staff.id}>{staff.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="overtime-date">Mesai Tarihi</Label>
+                    <Input id="overtime-date" type="date" required disabled={creatingOvertime} value={overtimeForm.work_date}
+                      onChange={(e) => setOvertimeForm((f) => ({ ...f, work_date: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="overtime-hours">Mesai Süresi (saat)</Label>
+                    <Input id="overtime-hours" type="number" min="0.01" max="12" step="0.01" required disabled={creatingOvertime} value={overtimeForm.hours}
+                      onChange={(e) => setOvertimeForm((f) => ({ ...f, hours: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="overtime-reason">Mesai Gerekçesi</Label>
+                    <Textarea id="overtime-reason" minLength={3} maxLength={1000} required disabled={creatingOvertime} value={overtimeForm.reason}
+                      onChange={(e) => setOvertimeForm((f) => ({ ...f, reason: e.target.value }))} />
+                  </div>
+                  <p className="text-sm text-muted-foreground md:col-span-2">Talep önce departman, ardından İK final onayına gider. Başka personel adına talep oluşturma yetkisi sunucuda kontrol edilir.</p>
+                  <Button type="submit" disabled={creatingOvertime || !staffDropdown.length}>
+                    {creatingOvertime ? 'Gönderiliyor…' : 'Mesai Talebi Oluştur'}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
             <div className="grid gap-4 md:grid-cols-3">
               <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-5 shadow-sm">
                 <div className="flex items-center gap-3 mb-2">
@@ -2178,7 +2238,7 @@ const HRComplete = () => {
                       ))}
                       {overtimeItems.length === 0 && (
                         <tr><td colSpan={7} className="py-6 text-center text-slate-500">
-                          Mesai talebi yok — personel uygulamadan talep gönderdiğinde burada görünür
+                          Mesai talebi yok — yukarıdaki formdan yeni talep oluşturabilirsiniz
                         </td></tr>
                       )}
                     </tbody>

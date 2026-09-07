@@ -4934,6 +4934,20 @@ class OvertimeRequestPayload(BaseModel):
     hours: float = Field(..., gt=0, le=12)
     reason: str = Field(..., min_length=3, max_length=1000)
 
+    @field_validator("work_date")
+    @classmethod
+    def validate_work_date(cls, value: str) -> str:
+        date.fromisoformat(value)
+        return value
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("Mesai gerekçesi en az 3 karakter olmalı")
+        return value
+
 
 class OvertimeDecisionPayload(BaseModel):
     # Task #263: 2-aşamalı onay. pending → dept_approve → dept_approved →
@@ -4968,7 +4982,7 @@ async def create_overtime_request(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     # Self-service guard: yetkisi olmayan kullanıcı sadece kendi adına talep açabilir.
-    if getattr(current_user, "role", None) not in HR_ELEVATED_ROLES:
+    if getattr(current_user, "role", None) not in HR_ELEVATED_ROLES and not _user_has_hr_op(current_user, "manage_hr"):
         user_email = (getattr(current_user, "email", None) or "").lower()
         staff_email = (staff.get("email") or "").lower()
         if not user_email or user_email != staff_email:
