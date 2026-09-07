@@ -16,6 +16,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
 import { deptLabel, positionLabel, employmentTypeLabel, EMPLOYMENT_TYPE_OPTIONS } from '@/lib/hrLabels';
 import UserProvisionDialog from '@/components/UserProvisionDialog';
+import SalaryAgreementFields from '@/components/hr/SalaryAgreementFields';
 import { FixedSizeList } from 'react-window';
 import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
 
@@ -105,6 +106,7 @@ const SmStaffRow = React.memo(function SmStaffRow({ data, index, style }) {
 });
 
 const EMPTY_STAFF = {
+  salary_agreement: null,
   name: '',
   email: '',
   phone: '',
@@ -352,6 +354,7 @@ const StaffManagement = () => {
       id: s.id,
       derived: s.derived_from === 'users',
       form: {
+        salary_agreement: s.salary_agreement || null,
         name: s.name || '',
         email: s.email || '',
         phone: s.phone || '',
@@ -389,7 +392,7 @@ const StaffManagement = () => {
     } else {
       payload = {
         ...f,
-        hourly_rate: f.hourly_rate === '' ? undefined : Number(f.hourly_rate),
+        hourly_rate: f.salary_agreement || f.hourly_rate === '' ? undefined : Number(f.hourly_rate),
         monthly_hours: f.monthly_hours === '' ? undefined : Number(f.monthly_hours),
         annual_leave_entitlement: Number(f.annual_leave_entitlement) || 14
       };
@@ -813,6 +816,7 @@ const StaffManagement = () => {
                 <option value="intern">{t("cm.pages_StaffManagement.stajyer")}</option>
               </select>
             </div>
+            {!staffDialog.form.salary_agreement && <>
             <div>
               <Label className="text-xs">{t("cm.pages_StaffManagement.saatlik_\xFCcret_try_br\xFCt")}</Label>
               <Input type="number" step="0.01" min="0" value={staffDialog.form.hourly_rate} placeholder={t("cm.pages_StaffManagement.bo\u015F_b\u0131rak\u0131rsan\u0131z_140_asgari")} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => updateStaffField('hourly_rate', e.target.value)} />
@@ -821,10 +825,13 @@ const StaffManagement = () => {
               <Label className="text-xs">{t("cm.pages_StaffManagement.ayl\u0131k_standart_saat")}</Label>
               <Input type="number" step="1" min="0" value={staffDialog.form.monthly_hours} placeholder={t("cm.pages_StaffManagement.varsay\u0131lan_195")} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => updateStaffField('monthly_hours', e.target.value)} />
             </div>
+            </>}
             <div>
               <Label className="text-xs">{t("cm.pages_StaffManagement.y\u0131ll\u0131k_i_zin_hakk\u0131_g\xFCn")}</Label>
               <Input type="number" min="0" max="365" value={staffDialog.form.annual_leave_entitlement} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => updateStaffField('annual_leave_entitlement', e.target.value)} />
             </div>
+            {!staffDialog.derived && <SalaryAgreementFields value={staffDialog.form.salary_agreement}
+              onChange={value => updateStaffField('salary_agreement', value)} />}
             <DialogFooter className="md:col-span-2">
               <Button type="button" variant="outline" onClick={() => {
                 submitLockRef.current = false;

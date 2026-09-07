@@ -31,6 +31,8 @@ from core.database import db, get_motor_database
 from core.entitlements.enforcement import get_tenant_limit, require_feature
 from core.entitlements.quota import QuotaExceededException, bootstrap_hr_active_employees, release_quota, reserve_quota
 from core.security import get_current_user
+from domains.hr.salary import DAILY_CEILING, SalaryAgreement, from_gross, json_values, money
+from domains.hr.salary import calculate as calculate_salary
 from security.upload_validator import validate_document_bytes
 from shared_kernel.atomic_workflow import run_atomic
 from shared_kernel.idempotency import begin_idempotency
@@ -90,6 +92,8 @@ _PII_PHONE_FIELDS = ("phone", "mobile", "emergency_phone")
 _PII_ID_FIELDS = ("national_id", "identity_number", "tc_kimlik", "tc")
 _PII_BANK_FIELDS = ("iban", "bank_iban", "bank_account")
 _PII_SALARY_FIELDS = (
+    "salary_agreement",
+    "tax_calculation",
     "salary",
     "monthly_salary",
     "hourly_rate",
@@ -1278,6 +1282,7 @@ async def export_payroll(
     # Bug DAK round-7: Maaş PII'sı için yetki gate'i (KVKK + iş hukuku).
     _perm=Depends(require_op("view_hr")),
 ):
+    _payroll_lifecycle_gate(current_user, allow_hr_manager=True)
     period_month, payroll, _summary = await _build_payroll_v2(current_user.tenant_id, month)
 
     response: dict[str, Any] = {
@@ -1310,6 +1315,7 @@ async def export_payroll_csv_stream(
     _perm=Depends(require_op("view_hr")),
 ):
     """Current preview as CSV; saved/locked snapshots use the run XLSX export."""
+    _payroll_lifecycle_gate(current_user, allow_hr_manager=True)
     period_month, payroll, _summary = await _build_payroll_v2(current_user.tenant_id, month)
 
     import csv
@@ -1669,6 +1675,16 @@ async def _build_payroll_v2(
     with line_items. Pure function over DB reads; no writes."""
     period_month, base = await _build_payroll(month, tenant_id)
     base = list(base)
+    agreements = {}
+    async for staff in db.staff_members.find({"tenant_id": tenant_id, "salary_agreement": {"$ne": None}}):
+        if not staff.get("salary_agreement"):
+            continue
+        agreements[staff["id"]] = staff
+        # Monthly contractual pay does not require an attendance clock-in.
+        if staff.get("active", True) and staff["id"] not in {r["staff_id"] for r in base}:
+            base.extend(_compute_payroll_for_month(
+                [{"staff_id": staff["id"], "total_hours": 0}], {staff["id"]: staff}, period_month,
+            ))
     ot_map = await _payroll_collect_overtime(tenant_id, period_month)
     # Approved overtime is payable even without an attendance row that month.
     # Build zero-attendance bases using the same tariff calculation, without
@@ -1697,6 +1713,59 @@ async def _build_payroll_v2(
         lv_map,
         rates,
     )
+    for row in enriched:
+        staff = agreements.get(row["staff_id"])
+        row["calculation_mode"] = "legacy_approximate"
+        if not staff:
+            continue
+        try:
+            a = SalaryAgreement.model_validate(staff["salary_agreement"])
+            if a.period_month != period_month:
+                raise ValueError(f"{period_month} dönemi için gerçek açılış matrahını ve ücret anlaşmasını doğrulayın")
+            if staff.get("employment_type") == "intern":
+                raise ValueError("Stajyer için standart 4/a hesabı kullanılamaz")
+            lv = lv_map.get(row["staff_id"], {})
+            if int(lv.get("unpaid_days", 0)) > 30 - a.insurance_days:
+                raise ValueError("SGK/ücret günü onaylı ücretsiz izinlerle uyuşmuyor")
+            approved_hours = money(ot_map.get(row["staff_id"], {}).get("hours", 0))
+            if a.unit == "hourly" and money(row.get("attendance_hours", 0)) != a.paid_hours + approved_hours:
+                raise ValueError("Saatlik anlaşmada normal saat + onaylı mesai, dönem devam toplamına eşit olmalı; mesaiyi iki kez eklemeyin")
+            own_extras = [ex for ex in (extras or []) if ex["staff_id"] == row["staff_id"]]
+            if any(ex["kind"] in ("meal", "transport") for ex in own_extras):
+                raise ValueError("Yemek/yol istisna türü doğrulanmadan gerçek matrahlı bordroya eklenemez")
+            result = calculate_salary(a)
+            base_gross = result["gross_pay"]
+            hourly = base_gross / (a.paid_hours if a.unit == "hourly" else a.insurance_days * money(7.5))
+            ot_hours = approved_hours
+            # Attendance-derived >195h is not independently payable again: approved OT is authoritative.
+            ot_pay = money(ot_hours * hourly * money(1.5))
+            bonus = sum((money(ex["amount"]) for ex in own_extras if ex["kind"] == "bonus"), money(0))
+            deductions = sum((money(ex["amount"]) for ex in own_extras if ex["kind"] in ("advance", "deduction")), money(0))
+            if bonus and base_gross + ot_pay + bonus > DAILY_CEILING * a.insurance_days:
+                raise ValueError("Tavanı aşan prim için sonraki aylara SGK devri ayrıca hesaplanmalı")
+            result = from_gross(base_gross + ot_pay + bonus, a)
+            if deductions > result["net_salary"]:
+                raise ValueError("Net kesintiler ödenecek ücreti aşıyor")
+            result["net_salary"] -= deductions
+            result["total_deductions"] += deductions
+            result.update({
+                "calculation_mode": "statutory_2026", "salary_agreement": a.model_dump(),
+                "hourly_rate": money(hourly), "overtime_rate": money(hourly * money(1.5)),
+                "overtime_hours": ot_hours, "attendance_overtime_hours": 0,
+                "extra_earnings": ot_pay + bonus, "extra_deductions": deductions,
+                "sgk_days": a.insurance_days, "eksik_gun": 30 - a.insurance_days,
+                "line_items": [
+                    {"kind": "base", "label": "Anlaşma ücreti (dönem)", "amount": base_gross, "direction": "earning"},
+                    {"kind": "overtime_approved", "label": "Onaylı mesai", "amount": ot_pay, "direction": "earning"},
+                    *[{**ex, "direction": "earning" if ex["kind"] == "bonus" else "deduction"} for ex in own_extras],
+                ],
+            })
+            row.update(json_values(result))
+        except ValueError as exc:
+            # Validation errors may embed input PII; return no raw pydantic representation.
+            from pydantic import ValidationError
+            detail = "Ücret anlaşmasının zorunlu matrah bilgileri geçersiz" if isinstance(exc, ValidationError) else str(exc)
+            raise HTTPException(status_code=422, detail=f"{staff.get('name', row['staff_id'])}: {detail}") from exc
     summary = {
         "staff_count": len(enriched),
         "total_gross": round(sum(r["gross_pay"] for r in enriched), 2),
@@ -1708,6 +1777,19 @@ async def _build_payroll_v2(
         "currency": TR_CURRENCY,
     }
     return period_month, enriched, summary
+
+
+@router.post("/hr/salary/preview", dependencies=[Depends(require_feature("hr", "payroll"))])
+async def preview_salary_agreement(
+    payload: SalaryAgreement,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    """Read-only net/gross conversion. Does not create a payroll or post a journal."""
+    try:
+        return json_values(calculate_salary(payload))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _payroll_run_to_response(
@@ -2351,6 +2433,8 @@ async def get_payroll(
     Task #264: tüm muhasebe etkili veriler `payroll_runs` üzerinden;
     bu endpoint asla DB'ye yazmaz (`is_dry_run=true`).
     """
+    if not _user_assigned_department(current_user):
+        _payroll_lifecycle_gate(current_user, allow_hr_manager=True)
     # Dry-run compute (extras yok — pure baseline)
     period_month, rows, summary = await _build_payroll_v2(
         current_user.tenant_id,
@@ -2383,6 +2467,8 @@ async def get_payroll(
         rows = [r for r in rows if (r.get("department") or "").strip().lower() == a_lc]
         # Monetary alanları strip — yalnız days/hours metrikleri kalsın.
         _AMOUNT_FIELDS = (
+            "salary_agreement",
+            "tax_calculation",
             "gross_pay",
             "net_salary",
             "sgk_employee",
@@ -3263,6 +3349,16 @@ async def add_staff_member(
     if not staff_data.get("name"):
         raise HTTPException(status_code=400, detail="Personel adı zorunludur")
 
+    agreement = None
+    if staff_data.get("salary_agreement") is not None:
+        if staff_data.get("employment_type") == "intern":
+            raise HTTPException(status_code=422, detail="Stajyer için standart 4/a ücret anlaşması kullanılamaz")
+        try:
+            agreement = SalaryAgreement.model_validate(staff_data["salary_agreement"])
+            calculate_salary(agreement)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Ücret anlaşması, SGK günü ve gerçek matrah bilgilerini kontrol edin") from exc
+
     # Idempotency: HTTP Idempotency-Key başlığından (opsiyonel)
     guard, replay = await begin_idempotency(
         db,
@@ -3293,6 +3389,7 @@ async def add_staff_member(
         "employment_type": staff_data.get("employment_type", "full_time"),
         "hourly_rate": staff_data.get("hourly_rate"),
         "monthly_hours": staff_data.get("monthly_hours"),
+        "salary_agreement": json_values(agreement.model_dump()) if agreement else None,
         "annual_leave_entitlement": staff_data.get("annual_leave_entitlement", 14),
         "performance_score": 0.0,
         "active": True,
@@ -3546,6 +3643,7 @@ async def get_staff_performance_summary(
 
 
 class StaffUpdatePayload(BaseModel):
+    salary_agreement: SalaryAgreement | None = None
     name: str | None = Field(None, max_length=200)
     email: str | None = Field(None, max_length=200)
     phone: str | None = Field(None, max_length=40)
@@ -3575,7 +3673,14 @@ async def update_staff_member(
     """
     existing = await db.staff_members.find_one({"tenant_id": current_user.tenant_id, "id": staff_id})
     if existing:
-        update = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
+        if payload.salary_agreement:
+            if (payload.employment_type or existing.get("employment_type")) == "intern":
+                raise HTTPException(status_code=422, detail="Stajyer için standart 4/a ücret anlaşması kullanılamaz")
+            try:
+                calculate_salary(payload.salary_agreement)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+        update = {k: v for k, v in json_values(payload.model_dump(exclude_unset=True)).items() if v is not None}
         if not update:
             return {"success": True, "updated_fields": 0}
         update["updated_at"] = datetime.now(UTC).isoformat()
@@ -3613,7 +3718,7 @@ async def update_staff_member(
             "staff_member",
             staff_id,
             f"Personel güncellendi (alan sayısı={len(update) - 1})",
-            before={k: existing.get(k) for k in update.keys() if k != "updated_at"},
+            before={k: existing.get(k) for k in update.keys() if k != "updated_at" and k not in _PII_SALARY_FIELDS},
             after={k: v for k, v in update.items() if k not in _PII_SALARY_FIELDS},
             severity=sev,
         )
@@ -5639,6 +5744,8 @@ async def create_salary_change(
     staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    if staff.get("salary_agreement"):
+        raise HTTPException(status_code=409, detail="Bu personelin net/brüt ücret anlaşmasını Personel Düzenle ekranından güncelleyin")
     old_rate = float(staff.get("hourly_rate") or TR_DEFAULT_HOURLY_RATE)
     delta_pct = round(((payload.new_hourly_rate - old_rate) / old_rate) * 100, 2) if old_rate else 0
     record = {

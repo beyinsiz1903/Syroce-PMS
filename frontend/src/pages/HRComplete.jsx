@@ -1401,6 +1401,10 @@ const HRComplete = () => {
 
                 {payrollPreview ? (
                   <div className="space-y-6">
+                    {payrollPreview.payroll?.some(row => row.calculation_mode !== 'statutory_2026') &&
+                      <div role="status" className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        Bu önizlemede gerçek matrah tanımlanmamış personel var. Bu kişilerin tutarları eski yaklaşık modelle hesaplanır; gerçek bordro için Personel Düzenle ekranında ücret anlaşması ve dönem matrahı girilmelidir.
+                      </div>}
                     <div className="grid gap-4 md:grid-cols-3">
                       <div className="rounded-2xl border border-sky-100 bg-gradient-to-br from-sky-50 to-white p-5 shadow-sm">
                         <div className="flex items-center gap-3 mb-2">

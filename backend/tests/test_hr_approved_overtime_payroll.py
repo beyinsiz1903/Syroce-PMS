@@ -1,7 +1,7 @@
 """Approved overtime must survive attendance-free payroll previews."""
-from copy import deepcopy
 import csv
 import io
+from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -21,8 +21,11 @@ def payroll_data(monkeypatch):
     monkeypatch.setattr(hr, "_verify_staff_in_tenant", staff)
     monkeypatch.setattr(hr, "_payroll_collect_leaves", AsyncMock(return_value={}))
     monkeypatch.setattr(hr, "_get_payroll_tax_rates", AsyncMock(return_value=hr.TR_PAYROLL_TAX_RATES_DEFAULT))
-    # Any accidental persistence access must fail, not modify locked snapshots.
-    monkeypatch.setattr(hr, "db", SimpleNamespace())
+    # Salary-agreement discovery is read-only; any persistence write must fail.
+    async def no_agreements():
+        for row in []:
+            yield row
+    monkeypatch.setattr(hr, "db", SimpleNamespace(staff_members=SimpleNamespace(find=lambda *args: no_agreements())))
     return base, overtime, staff
 
 
@@ -97,7 +100,7 @@ async def test_collector_is_tenant_month_and_approval_scoped(monkeypatch):
 async def test_csv_json_and_preview_agree_for_overtime_only_staff(payroll_data, monkeypatch, month):
     monkeypatch.setattr(hr, "_audit", AsyncMock())
     payroll_data[2].return_value["name"] = "=QA"
-    user = SimpleNamespace(id="operator", tenant_id="tenant-qa")
+    user = SimpleNamespace(id="operator", tenant_id="tenant-qa", role="super_admin")
     _, preview, _ = await hr._build_payroll_v2(user.tenant_id, month)
     exported = await hr.export_payroll(month=month, current_user=user)
     response = await hr.export_payroll_csv_stream(month=month, current_user=user)
