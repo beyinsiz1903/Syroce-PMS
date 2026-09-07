@@ -1485,6 +1485,11 @@ def _payroll_apply_extras_and_overtime(
         eksik_gun = unpaid_leave_days
         new_row.update(
             {
+                "attendance_hours": row.get("total_hours", 0),
+                "attendance_overtime_hours": row.get("overtime_hours", 0),
+                "approved_overtime_hours": round((ot or {}).get("hours", 0), 2),
+                "total_hours": round(row.get("total_hours", 0) + (ot or {}).get("hours", 0), 2),
+                "overtime_hours": round(row.get("overtime_hours", 0) + (ot or {}).get("hours", 0), 2),
                 "gross_pay": new_gross,
                 "sgk_employee": sgk,
                 "unemployment": unemp,
@@ -1595,7 +1600,26 @@ async def _build_payroll_v2(
     """Dry-run v2 compute — base + approved overtime + extras → enriched rows
     with line_items. Pure function over DB reads; no writes."""
     period_month, base = await _build_payroll(month, tenant_id)
+    base = list(base)
     ot_map = await _payroll_collect_overtime(tenant_id, period_month)
+    # Approved overtime is payable even without an attendance row that month.
+    # Build zero-attendance bases using the same tariff calculation, without
+    # inventing attendance records or modifying any saved/locked payroll run.
+    base_staff_ids = {row["staff_id"] for row in base}
+    for staff_id in sorted(set(ot_map) - base_staff_ids):
+        if ot_map[staff_id].get("hours", 0) <= 0:
+            continue
+        staff = await _verify_staff_in_tenant(staff_id, tenant_id)
+        if not staff:
+            raise HTTPException(
+                status_code=409,
+                detail="Onaylı mesainin personel kaydı bulunamadı; bordro hazırlanmadan önce personel kaydını kontrol edin",
+            )
+        base.extend(_compute_payroll_for_month(
+            [{"staff_id": staff_id, "total_hours": 0}],
+            {staff_id: staff},
+            period_month,
+        ))
     lv_map = await _payroll_collect_leaves(tenant_id, period_month)
     rates = await _get_payroll_tax_rates(tenant_id)
     enriched = _payroll_apply_extras_and_overtime(
