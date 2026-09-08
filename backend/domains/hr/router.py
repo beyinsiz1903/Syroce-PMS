@@ -6537,11 +6537,11 @@ async def list_staff_documents(
     limit: int = Query(25, ge=1, le=200),
     current_user: User = Depends(get_current_user),
 ):
-    """Personel belge listesi — RBAC: dept scope + self bypass."""
+    """Personel belge listesi — yalnız HR yönetimi veya belgenin sahibi."""
     staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
-    _authorize_staff_access(staff, current_user)
+    _authorize_staff_access(staff, current_user, require_manage=True)
     q = {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
     total = await db.staff_documents.count_documents(q)
     skip = (page - 1) * limit
@@ -6566,7 +6566,7 @@ async def download_staff_document(
     doc_id: str,
     current_user: User = Depends(get_current_user),
 ):
-    """Belge indir — tenant + dept scope + self bypass.
+    """Belge indir — tenant + HR yönetimi veya self-service bypass.
 
     Route-level `require_op` YOK; authz `_authorize_staff_access` ile doc'un
     bağlı olduğu staff üzerinden yapılır. Bu, kendi sözleşmesini/diplomasını
@@ -6584,7 +6584,11 @@ async def download_staff_document(
     doc_staff_id = doc.get("staff_id")
     if doc_staff_id:
         doc_staff = await _verify_staff_in_tenant(doc_staff_id, current_user.tenant_id)
-        _authorize_staff_access(doc_staff, current_user)
+        _authorize_staff_access(doc_staff, current_user, require_manage=True)
+    elif not _user_has_hr_op(current_user, "manage_hr"):
+        # Legacy/unlinked documents have no owner against which self-service
+        # access can be proven, so only HR managers may download them.
+        raise HTTPException(status_code=403, detail="Yetkiniz yok (manage_hr gerekir).")
 
     # GridFS'ten oku; eski (data_b64) kayıtlar için geriye dönük destek.
     if doc.get("gridfs_id"):
