@@ -290,6 +290,36 @@ async def _posted_room_charge_rate_mismatches(
     return _room_charge_rate_mismatches(charges, expected_rates_by_date)
 
 
+async def _posted_accommodation_charge_total(tenant_id: str, booking_id: str) -> float:
+    """Return the guest-price components already posted to the folio.
+
+    Daily-rate rows can retain an older allocation after an in-stay price edit.
+    That allocation difference must remain auditable, but it must not block a
+    legitimate payment when the posted accommodation total still equals the
+    confirmed reservation total.
+    """
+    charges = [
+        row
+        async for row in db.folio_charges.find(
+            {
+                "tenant_id": tenant_id,
+                "booking_id": booking_id,
+                "voided": {"$ne": True},
+                "$or": [
+                    {"charge_category": {"$in": ["room", "tax", "city_tax"]}},
+                    {"charge_type": {"$in": ["room_charge", "tax"]}},
+                    {"konaklama_vergisi": True},
+                ],
+            },
+            {"_id": 0, "amount": 1, "total": 1},
+        )
+    ]
+    return round(
+        sum(float(charge.get("total", charge.get("amount", 0)) or 0) for charge in charges),
+        2,
+    )
+
+
 _create_reservation_service = CreateReservationService()
 _field_enc = get_field_encryption_service()
 
@@ -1597,10 +1627,13 @@ async def record_payment(
 
     pricing_mismatches = await _posted_room_charge_rate_mismatches(tid, booking_id)
     if pricing_mismatches:
-        raise HTTPException(
-            status_code=409,
-            detail="Oda tahakkuku ile günlük fiyat uyuşmuyor; finansal mutabakat tamamlanmadan ödeme alınamaz",
-        )
+        posted_accommodation_total = await _posted_accommodation_charge_total(tid, booking_id)
+        confirmed_total = float(booking.get("total_amount", 0) or 0)
+        if _money_cents(posted_accommodation_total) != _money_cents(confirmed_total):
+            raise HTTPException(
+                status_code=409,
+                detail="Oda tahakkuku ile günlük fiyat uyuşmuyor; finansal mutabakat tamamlanmadan ödeme alınamaz",
+            )
 
     # Task #184 — Idempotency: aynı (tenant_id, booking_id, reference) ile gelen
     # retry/double-click/network-replay isteği misafiri çift kreditlememeli.

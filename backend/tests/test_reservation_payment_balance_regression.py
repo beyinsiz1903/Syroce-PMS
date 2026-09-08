@@ -261,6 +261,8 @@ async def test_payment_is_blocked_when_posted_room_rate_and_daily_rate_disagree(
         ]
     )
     monkeypatch.setattr(reservation_detail, "_posted_room_charge_rate_mismatches", mismatch_probe)
+    accommodation_total_probe = AsyncMock(return_value=7515.03)
+    monkeypatch.setattr(reservation_detail, "_posted_accommodation_charge_total", accommodation_total_probe)
 
     with pytest.raises(reservation_detail.HTTPException) as exc:
         await reservation_detail.record_payment(
@@ -273,6 +275,62 @@ async def test_payment_is_blocked_when_posted_room_rate_and_daily_rate_disagree(
     assert exc.value.status_code == 409
     assert "mutabakat" in exc.value.detail
     mismatch_probe.assert_awaited_once_with("tenant-a", "booking-a")
+    accommodation_total_probe.assert_awaited_once_with("tenant-a", "booking-a")
+
+
+@pytest.mark.asyncio
+async def test_payment_allows_legacy_daily_allocation_when_confirmed_total_reconciles(monkeypatch):
+    booking = {"id": "booking-a", "tenant_id": "tenant-a", "total_amount": 11500.0, "paid_amount": 11500.0}
+    payments = SimpleNamespace(find_one=AsyncMock(return_value=None), insert_one=AsyncMock())
+    bookings = SimpleNamespace(find_one=AsyncMock(return_value=booking), update_one=AsyncMock())
+    folios = SimpleNamespace(find_one=AsyncMock(return_value={"id": "folio-a", "status": "open"}))
+    monkeypatch.setattr(
+        reservation_detail,
+        "db",
+        SimpleNamespace(bookings=bookings, payments=payments, folios=folios),
+    )
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_: None)
+    monkeypatch.setattr(
+        reservation_detail,
+        "_posted_room_charge_rate_mismatches",
+        AsyncMock(
+            return_value=[
+                {"date": "2026-09-05", "posted_total": 4000.0, "expected_total": 4300.0},
+                {"date": "2026-09-06", "posted_total": 4000.0, "expected_total": 5000.0},
+                {"date": "2026-09-07", "posted_total": 3500.0, "expected_total": 5000.0},
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        reservation_detail,
+        "_posted_accommodation_charge_total",
+        AsyncMock(return_value=11500.0),
+    )
+    monkeypatch.setattr(
+        reservation_detail,
+        "claim_short_window_dedup",
+        AsyncMock(return_value={"status": "acquired", "lock_id": "lock-a"}),
+    )
+    monkeypatch.setattr(reservation_detail, "_refresh_cached_folio_balance", AsyncMock(return_value=0.0))
+    monkeypatch.setattr(reservation_detail, "_log_activity", AsyncMock())
+    monkeypatch.setattr(
+        "routers.webhook_retry_service.schedule_emit_reservation_updated",
+        lambda *_args, **_kwargs: None,
+    )
+
+    result = await reservation_detail.record_payment(
+        "booking-a",
+        reservation_detail.PaymentRecord(amount=750.0, method="card", payment_type="final"),
+        current_user=SimpleNamespace(id="user-a", tenant_id="tenant-a", role="manager", name="Operator"),
+        _perm=None,
+    )
+
+    assert result["success"] is True
+    assert result["payment"]["amount"] == 750.0
+    assert result["payment"]["method"] == "card"
+    payments.insert_one.assert_awaited_once()
+    bookings.update_one.assert_awaited_once()
 
 
 def test_summary_preserves_explicit_zero_after_extra_charge_split():
