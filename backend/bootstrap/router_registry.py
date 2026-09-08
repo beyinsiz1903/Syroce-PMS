@@ -83,7 +83,7 @@ def _router_dependencies(module_path: str, declared: list | None) -> list:
             Depends(
                 require_module_scope(
                     scope,
-                    allow_own_hr_profile=module_path == "domains.hr.router",
+                    allow_hr_profile_read=module_path == "domains.hr.router",
                 )
             )
         )
