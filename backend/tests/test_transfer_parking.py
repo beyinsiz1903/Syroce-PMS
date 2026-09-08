@@ -32,6 +32,9 @@ def _match(doc: dict, flt: dict) -> bool:
         if isinstance(v, dict) and "$in" in v:
             if doc.get(k) not in v["$in"]:
                 return False
+        elif isinstance(v, dict) and "$ne" in v:
+            if doc.get(k) == v["$ne"]:
+                return False
         elif doc.get(k) != v:
             return False
     return True
@@ -110,6 +113,8 @@ class _FakeDB:
         )
         self.bookings = _Coll()
         self.rooms = _Coll()
+        self.parking_valet_tickets = _Coll()
+        self.parking_lpr_events = _Coll()
 
     def __getitem__(self, name):
         return getattr(self, name)
@@ -335,7 +340,9 @@ async def test_cancel_releases_slot_locks(_patch):
         transport_booking_id=res["booking"]["id"], current_user=_user("front_desk")
     )
     assert out["status"] == "cancelled"
+    assert out["folio_charge_voided"] is True
     assert len(_patch.transport_slot_locks.docs) == 0
+    assert _patch.folio_charges.docs[0]["voided"] is True
 
     # Slot now re-bookable.
     res2 = await _create_booking(
@@ -397,3 +404,54 @@ async def test_catalog_invalid_kind_rejected(_patch):
             current_user=_user("admin"),
         )
     assert exc.value.status_code == 422
+
+
+async def test_valet_lifecycle_and_duplicate_plate_guard(_patch):
+    first = await tr.create_valet_ticket(
+        tr.ValetTicketIn(plate="34 abc 123", guest_name="Test", room_number="101"),
+        current_user=_user("concierge"),
+    )
+    assert first["ticket"]["plate"] == "34ABC123"
+    assert first["ticket"]["status"] == "waiting"
+
+    with pytest.raises(HTTPException) as exc:
+        await tr.create_valet_ticket(
+            tr.ValetTicketIn(plate="34ABC123"), current_user=_user("front_desk")
+        )
+    assert exc.value.status_code == 409
+
+    updated = await tr.update_valet_ticket(
+        first["ticket"]["id"], tr.ValetStatusIn(status="parked", parking_spot="A-1"),
+        current_user=_user("concierge"),
+    )
+    assert updated["ticket"]["status"] == "parked"
+    assert updated["ticket"]["parking_spot"] == "A-1"
+
+
+async def test_lpr_event_normalises_plate(_patch):
+    result = await tr.create_lpr_event(
+        tr.LPREventIn(plate="34 xyz 99", direction="in", confidence=0.97, camera="Kapı 1"),
+        current_user=_user("front_desk"),
+    )
+    assert result["event"]["plate"] == "34XYZ99"
+    assert result["event"]["direction"] == "in"
+
+
+async def test_parking_analytics_summarises_operations(_patch):
+    _seed_resource(_patch, "P1", "A1", "parking_spot", 50)
+    _patch.transport_bookings.docs.extend([
+        {"tenant_id": TENANT, "status": "reserved", "total": 150, "folio_charged": True},
+        {"tenant_id": TENANT, "status": "cancelled", "total": 50, "folio_charged": False},
+    ])
+    _patch.parking_valet_tickets.docs.append({"tenant_id": TENANT, "status": "parked"})
+    _patch.parking_lpr_events.docs.extend([
+        {"tenant_id": TENANT, "direction": "in"}, {"tenant_id": TENANT, "direction": "out"},
+    ])
+
+    result = await tr.parking_analytics(current_user=_user("admin"))
+    assert result["resources"]["parking_spots"] == 1
+    assert result["bookings"] == {
+        "total": 2, "active": 1, "cancelled": 1, "folio_charged": 1, "revenue": 150.0,
+    }
+    assert result["valet"]["active"] == 1
+    assert result["lpr"] == {"events": 2, "entries": 1, "exits": 1}

@@ -48,7 +48,7 @@ const POSWaiterTerminal = () => {
     try {
       const res = await axios.get('/pos/outlets');
       const list = Array.isArray(res.data) ? res.data : res.data.outlets || [];
-      setOutlets(list.filter(o => o.status !== 'inactive'));
+      setOutlets(list.filter(o => !['inactive', 'deleted'].includes(o.status)));
     } catch (err) {
       console.error('Outlets yuklenemedi:', err); toast.error('Outlets yuklenemedi');
     }
@@ -73,7 +73,14 @@ const POSWaiterTerminal = () => {
         }
       });
       const list = Array.isArray(res.data) ? res.data : res.data.menu_items || [];
-      setMenuItems(list);
+      setMenuItems(list
+        .filter(item => item.available !== false && !['inactive', 'deleted'].includes(item.status))
+        .map(item => ({
+          ...item,
+          item_name: item.item_name || item.name || '',
+          unit_price: Number(item.unit_price ?? item.price ?? 0),
+          tax_rate: Number(item.tax_rate ?? 0.18),
+        })));
     } catch (err) {
       console.error('Menu yuklenemedi:', err); toast.error('Menu yuklenemedi');
       setMenuItems([]);
@@ -114,6 +121,7 @@ const POSWaiterTerminal = () => {
         item_name: item.item_name,
         unit_price: item.unit_price,
         category: item.category,
+        tax_rate: item.tax_rate,
         quantity: 1
       }];
     });
@@ -129,9 +137,13 @@ const POSWaiterTerminal = () => {
     }).filter(Boolean));
   };
   const subtotal = cart.reduce((s, c) => s + c.unit_price * c.quantity, 0);
-  const tax = subtotal * 0.18;
+  const tax = cart.reduce((s, c) => s + c.unit_price * c.quantity * c.tax_rate, 0);
   const total = subtotal + tax;
-  const categories = ['all', 'food', 'beverage', 'alcohol', 'dessert', 'appetizer'];
+  const categories = ['all', ...Array.from(new Set(menuItems.map(item => item.category).filter(Boolean)))];
+  const categoryLabels = {
+    all: 'Tümü', food: 'Ana Yemek', beverage: 'İçecek', alcohol: 'Alkollü',
+    dessert: 'Tatlı', appetizer: 'Başlangıç',
+  };
   const visibleItems = category === 'all' ? menuItems : menuItems.filter(m => m.category === category);
 
   // ── Signature canvas ──────────────────────────────────────────────────
@@ -273,7 +285,7 @@ const POSWaiterTerminal = () => {
     if (!guestSearch.trim()) return true;
     const q = guestSearch.toLowerCase();
     const name = (b.guest?.full_name || b.guest_name || '').toLowerCase();
-    const room = String(b.room?.room_number || '').toLowerCase();
+    const room = String(b.room?.room_number || b.room_number || '').toLowerCase();
     return name.includes(q) || room.includes(q);
   });
   return <div className="p-4 md:p-6 space-y-4">
@@ -331,7 +343,7 @@ const POSWaiterTerminal = () => {
                 <ArrowLeft className="w-4 h-4 mr-1" />{t("cm.pages_POSWaiterTerminal.masalar")}</Button>
               <div className="flex gap-1 flex-wrap">
                 {categories.map(c => <Button key={c} size="sm" variant={category === c ? 'default' : 'outline'} onClick={() => setCategory(c)}>
-                    {c === 'all' ? 'Tumu' : c}
+                    {categoryLabels[c] || c}
                   </Button>)}
               </div>
             </div>
@@ -380,7 +392,7 @@ const POSWaiterTerminal = () => {
                       <span>{t("cm.pages_POSWaiterTerminal.ara_toplam")}</span><span>{formatAmount(subtotal)}{t("cm.pages_POSWaiterTerminal.tl")}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>{t("cm.pages_POSWaiterTerminal.kdv_18")}</span><span>{formatAmount(tax)}{t("cm.pages_POSWaiterTerminal.tl")}</span>
+                      <span>KDV</span><span>{formatAmount(tax)}{t("cm.pages_POSWaiterTerminal.tl")}</span>
                     </div>
                     <div className="flex justify-between font-bold text-base border-t pt-1">
                       <span>{t("cm.pages_POSWaiterTerminal.toplam")}</span>
@@ -413,7 +425,7 @@ const POSWaiterTerminal = () => {
                               <span className="font-medium">
                                 {b.guest?.full_name || b.guest_name || 'Misafir'}
                               </span>
-                              {b.room?.room_number && <span className="text-gray-500">{t("cm.pages_POSWaiterTerminal._oda")}{b.room.room_number}</span>}
+                              {(b.room?.room_number || b.room_number) && <span className="text-gray-500">{t("cm.pages_POSWaiterTerminal._oda")}{b.room?.room_number || b.room_number}</span>}
                             </button>)}
                           {inhouse.length > 0 && filteredInhouse.length === 0 && <div className="text-xs text-gray-500 p-2">{t("cm.pages_POSWaiterTerminal.eslesme_yok")}</div>}
                         </div>
@@ -422,7 +434,7 @@ const POSWaiterTerminal = () => {
                           <span className="font-medium">
                             {roomBooking.guest?.full_name || roomBooking.guest_name || 'Misafir'}
                           </span>
-                          {roomBooking.room?.room_number && <span className="text-gray-600">{t("cm.pages_POSWaiterTerminal._oda")}{roomBooking.room.room_number}</span>}
+                          {(roomBooking.room?.room_number || roomBooking.room_number) && <span className="text-gray-600">{t("cm.pages_POSWaiterTerminal._oda")}{roomBooking.room?.room_number || roomBooking.room_number}</span>}
                         </span>
                         <Button size="sm" variant="ghost" onClick={() => setRoomBooking(null)}>{t("cm.pages_POSWaiterTerminal.degistir")}</Button>
                       </div>}

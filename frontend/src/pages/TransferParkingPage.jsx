@@ -19,6 +19,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { confirmDialog } from '@/lib/dialogs';
 import {
   Car, ParkingSquare, Plus, RefreshCw, Trash2, Receipt, AlertTriangle,
+  KeyRound, ScanLine, BarChart3, CheckCircle2,
 } from 'lucide-react';
 
 const KIND_OPTIONS = [
@@ -32,6 +33,8 @@ const EMPTY_BOOKING = {
   resource_id: '', room_number: '', guest_name: '', booking_id: '',
   start_date: '', num_days: 1, pickup_at: '', note: '',
 };
+const EMPTY_VALET = { plate: '', guest_name: '', room_number: '', vehicle_info: '', parking_spot: '', note: '' };
+const EMPTY_LPR = { plate: '', direction: 'in', camera: '', confidence: '' };
 
 const STATUS_VARIANTS = {
   reserved: 'default',
@@ -45,6 +48,9 @@ const TransferParkingPage = () => {
   const [resources, setResources] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [lateCharges, setLateCharges] = useState([]);
+  const [valetTickets, setValetTickets] = useState([]);
+  const [lprEvents, setLprEvents] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const [showResourceDialog, setShowResourceDialog] = useState(false);
@@ -53,6 +59,10 @@ const TransferParkingPage = () => {
   const [showBookingDialog, setShowBookingDialog] = useState(false);
   const [bookingForm, setBookingForm] = useState(EMPTY_BOOKING);
   const [submitting, setSubmitting] = useState(false);
+  const [showValetDialog, setShowValetDialog] = useState(false);
+  const [valetForm, setValetForm] = useState(EMPTY_VALET);
+  const [showLprDialog, setShowLprDialog] = useState(false);
+  const [lprForm, setLprForm] = useState(EMPTY_LPR);
   const pendingKeyRef = useRef(null);
 
   const activeResources = resources.filter((r) => r.active);
@@ -66,8 +76,10 @@ const TransferParkingPage = () => {
   const vehicleCount = activeResources.filter((r) => r.kind === 'transfer_vehicle').length;
   const spotCount = activeResources.filter((r) => r.kind === 'parking_spot').length;
 
-  const canAddVehicle = vehicleLimit === 0 || vehicleCount < vehicleLimit;
-  const canAddSpot = spotLimit === 0 || spotCount < spotLimit;
+  // Backend treats a zero limit as no entitlement.  Fail closed in the UI too,
+  // instead of opening a form that the server can only reject.
+  const canAddVehicle = vehicleLimit > 0 && vehicleCount < vehicleLimit;
+  const canAddSpot = spotLimit > 0 && spotCount < spotLimit;
   const canAddResource = canAddVehicle || canAddSpot;
 
   const loadResources = useCallback(async () => {
@@ -101,6 +113,27 @@ const TransferParkingPage = () => {
     }
   }, []);
 
+  const loadValet = useCallback(async () => {
+    try {
+      const res = await axios.get('/transfer-parking/valet');
+      setValetTickets(res.data.tickets || []);
+    } catch { setValetTickets([]); }
+  }, []);
+
+  const loadLpr = useCallback(async () => {
+    try {
+      const res = await axios.get('/transfer-parking/lpr-events');
+      setLprEvents(res.data.events || []);
+    } catch { setLprEvents([]); }
+  }, []);
+
+  const loadAnalytics = useCallback(async () => {
+    try {
+      const res = await axios.get('/transfer-parking/analytics');
+      setAnalytics(res.data);
+    } catch { setAnalytics(null); }
+  }, []);
+
   const refreshAll = useCallback(async () => {
     setLoading(true);
     await Promise.all([loadResources(), loadBookings(), loadLateCharges()]);
@@ -110,6 +143,44 @@ const TransferParkingPage = () => {
   useEffect(() => {
     refreshAll();
   }, [refreshAll]);
+
+  useEffect(() => {
+    if (tab === 'valet') loadValet();
+    if (tab === 'lpr') loadLpr();
+    if (tab === 'analytics') loadAnalytics();
+  }, [tab, loadValet, loadLpr, loadAnalytics]);
+
+  const submitValet = async () => {
+    if (!valetForm.plate.trim()) return toast.error('Plaka gerekli');
+    setSubmitting(true);
+    try {
+      await axios.post('/transfer-parking/valet', valetForm);
+      toast.success('Vale kaydı açıldı');
+      setShowValetDialog(false); setValetForm(EMPTY_VALET); await loadValet();
+    } catch (err) { toast.error(err?.response?.data?.detail || 'Vale kaydı açılamadı'); }
+    finally { setSubmitting(false); }
+  };
+
+  const setValetStatus = async (ticket, status) => {
+    try {
+      await axios.patch(`/transfer-parking/valet/${ticket.id}`, { status });
+      toast.success('Vale durumu güncellendi'); await loadValet();
+    } catch (err) { toast.error(err?.response?.data?.detail || 'Vale durumu güncellenemedi'); }
+  };
+
+  const submitLpr = async () => {
+    if (!lprForm.plate.trim()) return toast.error('Plaka gerekli');
+    setSubmitting(true);
+    try {
+      await axios.post('/transfer-parking/lpr-events', {
+        ...lprForm,
+        confidence: lprForm.confidence === '' ? undefined : Number(lprForm.confidence),
+      });
+      toast.success('Plaka geçişi kaydedildi');
+      setShowLprDialog(false); setLprForm(EMPTY_LPR); await loadLpr();
+    } catch (err) { toast.error(err?.response?.data?.detail || 'Plaka geçişi kaydedilemedi'); }
+    finally { setSubmitting(false); }
+  };
 
   // ── Kaynak (katalog) ──
   const saveResource = async () => {
@@ -426,6 +497,86 @@ const TransferParkingPage = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="valet" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">Araç teslim alma, park etme ve geri getirme kuyruğu</p>
+            <Button className="bg-black text-white" onClick={() => setShowValetDialog(true)}>
+              <KeyRound className="h-4 w-4 mr-2" />Vale Kaydı Aç
+            </Button>
+          </div>
+          <Card><CardContent className="p-0 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-muted/40"><tr className="text-left">
+                <th className="p-3">Plaka</th><th className="p-3">Misafir / Oda</th>
+                <th className="p-3">Araç / Yer</th><th className="p-3">Durum</th><th className="p-3">İşlem</th>
+              </tr></thead>
+              <tbody>
+                {valetTickets.length === 0 && <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">Açık vale kaydı yok</td></tr>}
+                {valetTickets.map(ticket => <tr key={ticket.id} className="border-b last:border-0">
+                  <td className="p-3 font-semibold">{ticket.plate}</td>
+                  <td className="p-3">{ticket.guest_name || '-'}{ticket.room_number ? ` · Oda ${ticket.room_number}` : ''}</td>
+                  <td className="p-3">{ticket.vehicle_info || '-'}{ticket.parking_spot ? ` · ${ticket.parking_spot}` : ''}</td>
+                  <td className="p-3"><Badge variant="outline">{ticket.status}</Badge></td>
+                  <td className="p-3 flex flex-wrap gap-1">
+                    {ticket.status === 'waiting' && <Button size="sm" variant="outline" onClick={() => setValetStatus(ticket, 'parked')}>Park Edildi</Button>}
+                    {ticket.status === 'parked' && <Button size="sm" variant="outline" onClick={() => setValetStatus(ticket, 'requested')}>Araç İstendi</Button>}
+                    {ticket.status === 'requested' && <Button size="sm" onClick={() => setValetStatus(ticket, 'delivered')}><CheckCircle2 className="h-4 w-4 mr-1" />Teslim Edildi</Button>}
+                  </td>
+                </tr>)}
+              </tbody>
+            </table>
+          </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="lpr" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">Kamera veya manuel giriş/çıkış plaka olayları</p>
+            <Button className="bg-black text-white" onClick={() => setShowLprDialog(true)}>
+              <ScanLine className="h-4 w-4 mr-2" />Geçiş Kaydet
+            </Button>
+          </div>
+          <Card><CardContent className="p-0 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-muted/40"><tr className="text-left">
+                <th className="p-3">Zaman</th><th className="p-3">Plaka</th><th className="p-3">Yön</th>
+                <th className="p-3">Kamera</th><th className="p-3">Güven</th>
+              </tr></thead>
+              <tbody>
+                {lprEvents.length === 0 && <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">Plaka geçişi yok</td></tr>}
+                {lprEvents.map(event => <tr key={event.id} className="border-b last:border-0">
+                  <td className="p-3">{new Date(event.occurred_at).toLocaleString('tr-TR')}</td>
+                  <td className="p-3 font-semibold">{event.plate}</td>
+                  <td className="p-3"><Badge variant={event.direction === 'in' ? 'default' : 'outline'}>{event.direction === 'in' ? 'Giriş' : 'Çıkış'}</Badge></td>
+                  <td className="p-3">{event.camera || 'Manuel'}</td>
+                  <td className="p-3">{event.confidence == null ? '-' : `%${Math.round(event.confidence * 100)}`}</td>
+                </tr>)}
+              </tbody>
+            </table>
+          </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="analytics" className="space-y-4">
+          {!analytics ? <Card><CardContent className="p-8 text-center text-muted-foreground">Analiz verisi yüklenemedi</CardContent></Card> : <>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {[
+                ['Aktif Rezervasyon', analytics.bookings?.active || 0],
+                ['Folyo Tahakkuku', analytics.bookings?.folio_charged || 0],
+                ['Vale Kuyruğu', analytics.valet?.active || 0],
+                ['Rezervasyon Geliri', `${Number(analytics.bookings?.revenue || 0).toLocaleString('tr-TR')} ₺`],
+              ].map(([label, value]) => <Card key={label}><CardContent className="p-5">
+                <div className="flex items-center gap-2 text-muted-foreground text-sm"><BarChart3 className="h-4 w-4" />{label}</div>
+                <div className="text-2xl font-bold mt-2">{value}</div>
+              </CardContent></Card>)}
+            </div>
+            <Card><CardContent className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div>Park yeri <strong>{analytics.resources?.parking_spots || 0}</strong></div>
+              <div>Transfer aracı <strong>{analytics.resources?.transfer_vehicles || 0}</strong></div>
+              <div>Plaka girişi <strong>{analytics.lpr?.entries || 0}</strong></div>
+              <div>Plaka çıkışı <strong>{analytics.lpr?.exits || 0}</strong></div>
+            </CardContent></Card>
+          </>}
+        </TabsContent>
       </Tabs>
 
       {/* ── Kaynak Dialog ── */}
@@ -589,6 +740,34 @@ const TransferParkingPage = () => {
               {submitting ? 'Kaydediliyor...' : 'Rezervasyon Oluştur'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showValetDialog} onOpenChange={setShowValetDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Yeni Vale Kaydı</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label>Plaka *</Label><Input value={valetForm.plate} onChange={(e) => setValetForm(f => ({ ...f, plate: e.target.value }))} placeholder="34ABC123" /></div>
+            <div><Label>Oda No</Label><Input value={valetForm.room_number} onChange={(e) => setValetForm(f => ({ ...f, room_number: e.target.value }))} /></div>
+            <div><Label>Misafir</Label><Input value={valetForm.guest_name} onChange={(e) => setValetForm(f => ({ ...f, guest_name: e.target.value }))} /></div>
+            <div><Label>Araç Bilgisi</Label><Input value={valetForm.vehicle_info} onChange={(e) => setValetForm(f => ({ ...f, vehicle_info: e.target.value }))} placeholder="Marka / renk" /></div>
+            <div><Label>Park Yeri</Label><Input value={valetForm.parking_spot} onChange={(e) => setValetForm(f => ({ ...f, parking_spot: e.target.value }))} /></div>
+            <div><Label>Not</Label><Input value={valetForm.note} onChange={(e) => setValetForm(f => ({ ...f, note: e.target.value }))} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setShowValetDialog(false)}>İptal</Button><Button onClick={submitValet} disabled={submitting}>Kaydı Aç</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showLprDialog} onOpenChange={setShowLprDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Plaka Geçişi Kaydet</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label>Plaka *</Label><Input value={lprForm.plate} onChange={(e) => setLprForm(f => ({ ...f, plate: e.target.value }))} placeholder="34ABC123" /></div>
+            <div><Label>Yön</Label><Select value={lprForm.direction} onValueChange={(v) => setLprForm(f => ({ ...f, direction: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="in">Giriş</SelectItem><SelectItem value="out">Çıkış</SelectItem></SelectContent></Select></div>
+            <div><Label>Kamera</Label><Input value={lprForm.camera} onChange={(e) => setLprForm(f => ({ ...f, camera: e.target.value }))} placeholder="Ana kapı" /></div>
+            <div><Label>Güven (0-1)</Label><Input type="number" min="0" max="1" step="0.01" value={lprForm.confidence} onChange={(e) => setLprForm(f => ({ ...f, confidence: e.target.value }))} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setShowLprDialog(false)}>İptal</Button><Button onClick={submitLpr} disabled={submitting}>Kaydet</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

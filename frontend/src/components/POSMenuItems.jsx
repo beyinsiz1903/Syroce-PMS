@@ -21,20 +21,23 @@ import { UtensilsCrossed, RefreshCw, Search, Plus, Pencil, Trash2, Loader2, Tren
 import { useTranslation } from 'react-i18next';
 
 /* ── constants ── */
-const DEFAULT_CATEGORIES = ['Ana Yemek', 'Başlangıç', 'Tatlı', 'İçecek', 'Alkollü', 'Atıştırmalık'];
+const DEFAULT_CATEGORIES = ['food', 'appetizer', 'dessert', 'beverage', 'alcohol'];
+const CATEGORY_LABELS = {
+  food: 'Ana Yemek', appetizer: 'Başlangıç', dessert: 'Tatlı',
+  beverage: 'İçecek', alcohol: 'Alkollü',
+};
 
 const CATEGORY_COLORS = {
-  'Ana Yemek':    'bg-amber-50 border-amber-200 text-amber-700',
-  'Başlangıç':   'bg-green-50  border-green-200  text-green-700',
-  'Tatlı':        'bg-pink-50   border-pink-200   text-pink-700',
-  'İçecek':      'bg-blue-50   border-blue-200   text-blue-700',
-  'Alkollü':     'bg-indigo-50 border-indigo-200 text-indigo-700',
-  'Atıştırmalık':'bg-amber-50  border-amber-200  text-amber-700',
+  food:       'bg-amber-50 border-amber-200 text-amber-700',
+  appetizer: 'bg-green-50 border-green-200 text-green-700',
+  dessert:    'bg-pink-50 border-pink-200 text-pink-700',
+  beverage:   'bg-blue-50 border-blue-200 text-blue-700',
+  alcohol:    'bg-indigo-50 border-indigo-200 text-indigo-700',
 };
 
 const blankForm = {
   name:        '',
-  category:    'Ana Yemek',
+  category:    'food',
   price:       '',
   cost:        '',
   tax_rate:    '0.10',
@@ -71,13 +74,19 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
 
   useEffect(() => { load(); }, [load]);
 
-  const openNew = () => { setEditing(null); setForm(blankForm); setDialogOpen(true); };
+  const openNew = () => {
+    if (!outletId) {
+      toast.error('Önce bir satış noktası seçin');
+      return;
+    }
+    setEditing(null); setForm(blankForm); setDialogOpen(true);
+  };
 
   const openEdit = (item) => {
     setEditing(item);
     setForm({
       name:        item.name        || '',
-      category:    item.category    || 'Ana Yemek',
+      category:    item.category    || 'food',
       price:       String(item.price  ?? ''),
       cost:        String(item.cost   ?? ''),
       tax_rate:    String(item.tax_rate ?? '0.10'),
@@ -171,7 +180,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
           <Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}>
             <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {DEFAULT_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              {DEFAULT_CATEGORIES.map(c => <SelectItem key={c} value={c}>{CATEGORY_LABELS[c]}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -258,7 +267,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
           {allowEdit && (
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
-                <Button size="sm" onClick={openNew} data-testid="button-new-menu-item"
+                <Button size="sm" onClick={openNew} data-testid="button-new-menu-item" disabled={!outletId}
                   className="bg-amber-500 hover:bg-amber-600 text-white border-0">
                   <Plus className="w-4 h-4 mr-1.5" />
                   Yeni Ürün
@@ -312,7 +321,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                       : `${colorCls} opacity-60 hover:opacity-100`
                   }`}
               >
-                {cat === 'all' ? 'Tümü' : cat}
+                {cat === 'all' ? 'Tümü' : (CATEGORY_LABELS[cat] || cat)}
                 <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold
                   ${isActive ? 'bg-white/20' : 'bg-black/10'}`}>
                   {catCounts[cat] || 0}
@@ -418,7 +427,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                   {/* Tags */}
                   <div className="flex items-center gap-1.5 mb-3 flex-wrap">
                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${catCls}`}>
-                      {item.category}
+                    {CATEGORY_LABELS[item.category] || item.category}
                     </span>
                     <span className="text-xs text-gray-400 flex items-center gap-0.5">
                       <Tag className="w-3 h-3" /> KDV %{taxPct}
