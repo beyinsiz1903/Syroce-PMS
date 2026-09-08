@@ -117,8 +117,31 @@ async def test_monthly_salary_without_attendance_and_tenant_scope(monkeypatch):
     assert rows[0]["net_salary"] == float(calculate(a)["net_salary"])
     assert rows[0]["calculation_mode"] == "statutory_2026"
     hr._build_payroll.return_value = ("2026-02", [])
-    with pytest.raises(HTTPException, match="2026-02"):
-        await hr._build_payroll_v2("qa", "2026-02")
+    _, rows, summary = await hr._build_payroll_v2("qa", "2026-02")
+    assert rows == []
+    assert summary["staff_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_other_month_agreement_keeps_attendance_as_approximate(monkeypatch):
+    a = agreement(amount=50000, period_month="2026-10")
+    legacy = [{
+        "staff_id": "staff", "staff_name": "QA", "gross_pay": 100,
+        "net_salary": 71.49, "attendance_hours": 1, "total_hours": 1,
+        "overtime_hours": 0, "line_items": [],
+    }]
+
+    async def staff_rows():
+        yield {"id": "staff", "tenant_id": "qa", "name": "QA", "salary_agreement": a.model_dump(), "active": True}
+
+    monkeypatch.setattr(hr, "db", SimpleNamespace(staff_members=SimpleNamespace(find=lambda *args: staff_rows())))
+    monkeypatch.setattr(hr, "_build_payroll", AsyncMock(return_value=("2026-09", legacy)))
+    monkeypatch.setattr(hr, "_payroll_collect_overtime", AsyncMock(return_value={}))
+    monkeypatch.setattr(hr, "_payroll_collect_leaves", AsyncMock(return_value={}))
+    monkeypatch.setattr(hr, "_get_payroll_tax_rates", AsyncMock(return_value=hr.TR_PAYROLL_TAX_RATES_DEFAULT))
+
+    _, rows, _ = await hr._build_payroll_v2("qa", "2026-09")
+    assert rows[0]["calculation_mode"] == "legacy_approximate"
 
 
 def test_new_fields_masked_for_unrelated_user(monkeypatch):
@@ -127,6 +150,17 @@ def test_new_fields_masked_for_unrelated_user(monkeypatch):
     masked = hr._mask_hr_pii({"id": "staff", "salary_agreement": agreement().model_dump(), "tax_calculation": from_gross(33030, agreement())["tax_calculation"]}, user)
     assert masked["salary_agreement"] is None
     assert masked["tax_calculation"] is None
+
+
+@pytest.mark.parametrize("prefix", ["SYR1:", "aes256gcm:"])
+def test_encrypted_pii_envelopes_never_leak_when_masked(monkeypatch, prefix):
+    monkeypatch.setattr(hr, "_user_has_hr_op", lambda *args: False)
+    user = SimpleNamespace(id="other", email="other@example.test", role="front_desk")
+    masked = hr._mask_hr_pii(
+        {"id": "staff", "phone": prefix + "cipher", "national_id": prefix + "cipher", "iban": prefix + "cipher"},
+        user,
+    )
+    assert masked == {"id": "staff", "phone": "", "national_id": "", "iban": ""}
 
 
 @pytest.fixture

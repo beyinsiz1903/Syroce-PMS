@@ -22,7 +22,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from pymongo.errors import DuplicateKeyError
 
 from common.json_safe import json_safe
@@ -33,6 +33,7 @@ from core.entitlements.quota import QuotaExceededException, bootstrap_hr_active_
 from core.security import get_current_user
 from domains.hr.salary import DAILY_CEILING, SalaryAgreement, from_gross, json_values, money
 from domains.hr.salary import calculate as calculate_salary
+from security.encrypted_lookup import decrypt_user_doc
 from security.upload_validator import validate_document_bytes
 from shared_kernel.atomic_workflow import run_atomic
 from shared_kernel.idempotency import begin_idempotency
@@ -104,10 +105,14 @@ _PII_SALARY_FIELDS = (
 )
 
 
+def _is_encrypted_pii(v: object) -> bool:
+    return isinstance(v, str) and v.startswith(("SYR1:", "aes256gcm:"))
+
+
 def _mask_phone(v: str | None) -> str | None:
     if not v or not isinstance(v, str):
         return v
-    if v.startswith("aes256gcm:"):
+    if _is_encrypted_pii(v):
         return ""
     if len(v) <= 4:
         return "***"
@@ -117,7 +122,7 @@ def _mask_phone(v: str | None) -> str | None:
 def _mask_id(v: str | None) -> str | None:
     if not v or not isinstance(v, str):
         return v
-    if v.startswith("aes256gcm:"):
+    if _is_encrypted_pii(v):
         return ""
     if len(v) <= 4:
         return "***"
@@ -127,7 +132,7 @@ def _mask_id(v: str | None) -> str | None:
 def _mask_iban(v: str | None) -> str | None:
     if not v or not isinstance(v, str):
         return v
-    if v.startswith("aes256gcm:"):
+    if _is_encrypted_pii(v):
         return ""
     compact = v.replace(" ", "")
     if len(compact) <= 4:
@@ -1682,7 +1687,30 @@ async def _build_payroll_v2(
     base = list(base)
     agreements = {}
     async for staff in db.staff_members.find({"tenant_id": tenant_id, "salary_agreement": {"$ne": None}}):
-        if not staff.get("salary_agreement"):
+        raw_agreement = staff.get("salary_agreement")
+        if not raw_agreement:
+            continue
+        # A malformed agreement for a different, explicitly identified month
+        # must not block this period's preview. Validate the full statutory
+        # payload only when it belongs to the requested period.
+        if (
+            isinstance(raw_agreement, dict)
+            and raw_agreement.get("period_month")
+            and raw_agreement["period_month"] != period_month
+        ):
+            continue
+        try:
+            agreement = SalaryAgreement.model_validate(raw_agreement)
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{staff.get('name') or staff['id']} ücret anlaşması geçersiz: {exc.errors()[0]['msg']}",
+            ) from exc
+        # The opening cumulative tax bases belong to one specific payroll
+        # month. A future/past agreement must not break previews for every
+        # other month. Any attendance row in those months remains a legacy
+        # estimate and is still blocked from finalization.
+        if agreement.period_month != period_month:
             continue
         agreements[staff["id"]] = staff
         # Monthly contractual pay does not require an attendance clock-in.
@@ -1727,8 +1755,6 @@ async def _build_payroll_v2(
             continue
         try:
             a = SalaryAgreement.model_validate(staff["salary_agreement"])
-            if a.period_month != period_month:
-                raise ValueError(f"{period_month} dönemi için gerçek açılış matrahını ve ücret anlaşmasını doğrulayın")
             if staff.get("employment_type") == "intern":
                 raise ValueError("Stajyer için standart 4/a hesabı kullanılamaz")
             lv = lv_map.get(row["staff_id"], {})
@@ -1770,7 +1796,6 @@ async def _build_payroll_v2(
             row.update(json_values(result))
         except ValueError as exc:
             # Validation errors may embed input PII; return no raw pydantic representation.
-            from pydantic import ValidationError
             detail = "Ücret anlaşmasının zorunlu matrah bilgileri geçersiz" if isinstance(exc, ValidationError) else str(exc)
             raise HTTPException(status_code=422, detail=f"{staff.get('name', row['staff_id'])}: {detail}") from exc
     summary = {
@@ -3478,7 +3503,7 @@ async def delete_position(
 
 
 def _scrub_encrypted(value):
-    if isinstance(value, str) and value.startswith("aes256gcm:"):
+    if _is_encrypted_pii(value):
         return ""
     return value or ""
 
@@ -3617,8 +3642,10 @@ async def get_staff_list(
         "front_desk": "front_desk",
         "supervisor": "management",
         "finance": "finance",
+        "procurement": "procurement",
         "sales": "sales",
         "admin": "management",
+        "staff": "staff",
     }
 
     # Department-Manager scope override (kullanıcı manage_hr'a sahip değilse).
@@ -3690,19 +3717,20 @@ async def get_staff_list(
         q_limit = limit if source == "users" else (skip + limit)
         cursor = db.users.find(user_query, user_projection).skip(q_skip).limit(q_limit)
         async for u in cursor:
-            email_raw = u.get("email") or ""
+            decoded = decrypt_user_doc(u)
+            email_raw = decoded.get("email") or ""
             em = email_raw.lower()
             # `all` modu için dedup; `users` modunda dedup yok (kasıtlı).
             if source == "all" and em and em in seen_emails:
                 continue
-            role = u.get("role")
+            role = decoded.get("role") or u.get("role")
             email_clean = _scrub_encrypted(email_raw)
-            phone_clean = _scrub_encrypted(u.get("phone"))
+            phone_clean = _scrub_encrypted(decoded.get("phone"))
             derived.append(
                 {
-                    "id": u.get("id"),
+                    "id": decoded.get("id") or u.get("id"),
                     "tenant_id": tid,
-                    "name": u.get("name") or email_clean or "Personel",
+                    "name": decoded.get("name") or email_clean or "Personel",
                     "email": email_clean,
                     "phone": phone_clean,
                     "department": role_to_dept.get(role, role or "other"),
@@ -5014,10 +5042,117 @@ async def list_applicants(
         .to_list(500)
     )
     counts: dict[str, int] = {}
+    can_view_cv = _user_has_hr_op(current_user, "manage_hr")
     for it in items:
         s = it.get("status", "new")
         counts[s] = counts.get(s, 0) + 1
+        if not can_view_cv:
+            it["cv_url"] = None
+            it["cv_document_id"] = None
+            it["cv_filename"] = None
     return {"items": items, "total": len(items), "counts": counts}
+
+
+@router.post("/hr/applicants/{applicant_id}/cv", dependencies=[Depends(require_feature("hr", "recruitment"))])
+async def upload_applicant_cv(
+    applicant_id: str,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    """Store an applicant CV inside the tenant-scoped HR document store."""
+    applicant = await db.job_applicants.find_one(
+        {"tenant_id": current_user.tenant_id, "id": applicant_id}
+    )
+    if not applicant:
+        raise HTTPException(status_code=404, detail="Aday bulunamadı")
+    if file.content_type not in ALLOWED_DOC_MIME:
+        raise HTTPException(status_code=400, detail=f"Geçersiz dosya türü: {file.content_type}")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Boş dosya")
+    if len(content) > DOC_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Dosya çok büyük (>5MB)")
+    verified_content_type = validate_document_bytes(
+        content,
+        declared_mime=file.content_type,
+        max_bytes=DOC_MAX_BYTES,
+        field_label="Aday CV'si",
+    )
+    safe_filename = _sanitize_doc_filename(file.filename)
+    grid_in = _get_hr_docs_bucket().open_upload_stream(
+        safe_filename,
+        metadata={
+            "tenant_id": current_user.tenant_id,
+            "applicant_id": applicant_id,
+            "document_type": "applicant_cv",
+            "content_type": verified_content_type,
+        },
+    )
+    await grid_in.write(content)
+    await grid_in.close()
+    item = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "applicant_id": applicant_id,
+        "job_id": applicant.get("job_id"),
+        "filename": safe_filename,
+        "content_type": verified_content_type,
+        "size_bytes": len(content),
+        "gridfs_id": str(grid_in._id),
+        "uploaded_by": getattr(current_user, "id", None),
+        "uploaded_at": datetime.now(UTC).isoformat(),
+    }
+    await db.applicant_documents.insert_one(item)
+    await db.job_applicants.update_one(
+        {"tenant_id": current_user.tenant_id, "id": applicant_id},
+        {"$set": {
+            "cv_document_id": item["id"],
+            "cv_filename": safe_filename,
+            "cv_content_type": verified_content_type,
+        }},
+    )
+    return {"success": True, "document": {k: v for k, v in item.items() if k != "_id"}}
+
+
+@router.get("/hr/applicant-cvs/{doc_id}/download", dependencies=[Depends(require_feature("hr", "recruitment"))])
+async def download_applicant_cv(
+    doc_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    """Download an applicant CV; finance and unrelated roles fail closed."""
+    doc = await db.applicant_documents.find_one(
+        {"tenant_id": current_user.tenant_id, "id": doc_id}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Aday CV'si bulunamadı")
+    try:
+        gridfs_oid = ObjectId(doc["gridfs_id"])
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Aday CV'si depolamada bulunamadı") from exc
+    gf_meta = await _get_hr_docs_bucket().find({
+        "_id": gridfs_oid,
+        "metadata.tenant_id": current_user.tenant_id,
+        "metadata.applicant_id": doc.get("applicant_id"),
+        "metadata.document_type": "applicant_cv",
+    }).to_list(1)
+    if not gf_meta:
+        raise HTTPException(status_code=404, detail="Aday CV'si depolamada bulunamadı")
+    try:
+        stream = await _get_hr_docs_bucket().open_download_stream(gridfs_oid)
+        raw = await stream.read()
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Aday CV'si depolamada bulunamadı") from exc
+    filename = _sanitize_doc_filename(doc.get("filename")) or doc_id
+    return StreamingResponse(
+        iter([raw]),
+        media_type=doc.get("content_type", "application/octet-stream"),
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(raw)),
+        },
+    )
 
 
 async def _trigger_staff_onboarding(applicant: dict, tenant_id: str, actor_id: str, current_user: User):

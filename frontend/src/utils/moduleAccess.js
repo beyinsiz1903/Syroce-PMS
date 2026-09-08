@@ -30,7 +30,10 @@ const ROLE_DEFAULT_MODULE_SCOPES = Object.freeze({
   front_desk: ['frontdesk'],
   housekeeping: ['housekeeping', 'tasks'],
   sales: ['sales', 'reports'],
-  finance: ['cashier', 'finance', 'invoice', 'reports'],
+  // Finance consumes finalized payroll and its accounting export. Backend
+  // already grants VIEW_HR (read-only); keep the route gate aligned so the
+  // payroll screen is reachable while manage_hr mutations remain forbidden.
+  finance: ['cashier', 'finance', 'hr', 'invoice', 'reports'],
   procurement: ['procurement', 'stock'],
   staff: [],
 });

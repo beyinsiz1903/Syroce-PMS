@@ -49,7 +49,9 @@ ROLE_DEFAULT_MODULE_SCOPES: dict[str, frozenset[str]] = {
     "front_desk": frozenset({"frontdesk"}),
     "housekeeping": frozenset({"housekeeping", "tasks"}),
     "sales": frozenset({"sales", "reports"}),
-    "finance": frozenset({"cashier", "finance", "invoice", "reports"}),
+    # Finance consumes finalized payroll and its accounting export. HR write
+    # operations remain protected independently by manage_hr.
+    "finance": frozenset({"cashier", "finance", "hr", "invoice", "reports"}),
     "procurement": frozenset({"procurement", "stock"}),
     "staff": frozenset(),
 }

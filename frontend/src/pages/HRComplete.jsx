@@ -158,7 +158,7 @@ const HRComplete = () => {
   });
   const [creatingJob, setCreatingJob] = useState(false);
   const [applicantsDialog, setApplicantsDialog] = useState({ open: false, job: null, list: [], counts: {} });
-  const [applicantForm, setApplicantForm] = useState({ name: '', email: '', phone: '', notes: '', cv_url: '' });
+  const [applicantForm, setApplicantForm] = useState({ name: '', email: '', phone: '', notes: '', cv_url: '', cv_file: null });
   const [savingApplicant, setSavingApplicant] = useState(false);
 
   // Aynı formdaki alanlar hızlıca doldurulduğunda React güncellemeleri
@@ -421,7 +421,7 @@ const HRComplete = () => {
         list: res.data?.items || [],
         counts: res.data?.counts || {},
       });
-      setApplicantForm({ name: '', email: '', phone: '', notes: '', cv_url: '' });
+      setApplicantForm({ name: '', email: '', phone: '', notes: '', cv_url: '', cv_file: null });
     } catch (err) {
       toast.error('Adaylar yüklenemedi');
     }
@@ -440,15 +440,45 @@ const HRComplete = () => {
     if (!applicantForm.name.trim()) { toast.error('Aday adı zorunlu'); return; }
     try {
       setSavingApplicant(true);
-      await axios.post(`/hr/job-postings/${applicantsDialog.job.id}/applicants`, applicantForm);
-      toast.success('Aday eklendi');
-      setApplicantForm({ name: '', email: '', phone: '', notes: '', cv_url: '' });
+      const { cv_file, ...payload } = applicantForm;
+      const created = await axios.post(`/hr/job-postings/${applicantsDialog.job.id}/applicants`, payload);
+      let cvUploaded = true;
+      if (cv_file && created.data?.applicant?.id) {
+        const formData = new FormData();
+        formData.append('file', cv_file);
+        try {
+          await axios.post(`/hr/applicants/${created.data.applicant.id}/cv`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+        } catch {
+          cvUploaded = false;
+        }
+      }
+      if (cvUploaded) toast.success('Aday eklendi');
+      else toast.warning('Aday eklendi; CV dosyası yüklenemedi. Aday kaydı tekrar oluşturulmadı.');
+      setApplicantForm({ name: '', email: '', phone: '', notes: '', cv_url: '', cv_file: null });
       refreshApplicants();
       loadJobs();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Aday eklenemedi');
     } finally {
       setSavingApplicant(false);
+    }
+  };
+
+  const downloadApplicantCv = async (applicant) => {
+    try {
+      const response = await axios.get(`/hr/applicant-cvs/${applicant.cv_document_id}/download`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: applicant.cv_content_type }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = applicant.cv_filename || 'aday-cv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.error(error.response?.status === 403 ? 'CV dosyasını görüntüleme yetkiniz yok' : 'CV dosyası indirilemedi');
     }
   };
 
@@ -629,7 +659,7 @@ const HRComplete = () => {
     } catch (error) {
       const msg = error.response?.status === 403
         ? 'Bordro görüntüleme yetkiniz yok'
-        : 'Önizleme alınamadı';
+        : error.response?.data?.detail || 'Önizleme alınamadı';
       toast.error(msg);
     }
   };
@@ -2553,6 +2583,11 @@ const HRComplete = () => {
                     <Input placeholder="CV URL (opsiyonel)" value={applicantForm.cv_url} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
                       onChange={(e) => setApplicantForm(prev => ({ ...prev, cv_url: e.target.value }))} />
                     <div className="md:col-span-2">
+                      <Label className="text-xs">CV Dosyası (PDF/Word/JPEG/PNG, en fazla 5 MB)</Label>
+                      <Input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
+                        onChange={(e) => setApplicantForm(prev => ({ ...prev, cv_file: e.target.files?.[0] || null }))} />
+                    </div>
+                    <div className="md:col-span-2">
                       <Textarea rows={2} placeholder="Notlar (deneyim, görüşme izlenimi, vb.)" className="rounded-lg border-slate-200 bg-slate-50 text-sm resize-none focus:bg-white"
                         value={applicantForm.notes}
                         onChange={(e) => setApplicantForm(prev => ({ ...prev, notes: e.target.value }))} />
@@ -2587,6 +2622,11 @@ const HRComplete = () => {
                               className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-600 hover:text-sky-700 hover:bg-sky-50 px-2 py-1 rounded-md transition-colors mt-2">
                               <ExternalLink className="w-3.5 h-3.5" /> CV Görüntüle
                             </a>
+                          )}
+                          {a.cv_document_id && (
+                            <Button type="button" size="sm" variant="link" className="h-auto p-0 text-xs" onClick={() => downloadApplicantCv(a)}>
+                              <Download className="w-3.5 h-3.5 mr-1" /> CV Dosyasını İndir
+                            </Button>
                           )}
                         </div>
                         <div className="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-3 w-full md:w-auto shrink-0 border-t md:border-t-0 pt-3 md:pt-0">
