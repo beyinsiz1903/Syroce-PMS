@@ -192,6 +192,9 @@ def test_non_atlas_recent_durable_backup_is_ready(monkeypatch, tmp_path):
     atlas_backup_check._LIVE_CACHE.clear()
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("MONGO_URL", "mongodb://mongo:27017/app")
+    # pytest's tmp_path lives below /tmp on Linux CI; mark the fixture as a
+    # stand-in for an operator-verified durable mount.
+    monkeypatch.setenv("BACKUP_DURABLE", "true")
 
     payload, score = atlas_backup_check.resolve_backup_check(
         {
