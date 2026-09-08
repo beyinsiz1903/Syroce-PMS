@@ -1840,7 +1840,17 @@ def _payroll_run_to_response(
     self_id = str(getattr(current_user, "id", "") or "")
     self_email = str(getattr(current_user, "email", "") or "")
     for r in rows:
-        m = _mask_hr_pii(r, current_user, self_id=self_id, self_email=self_email)
+        # Finance is an explicit payroll consumer: payroll monetary amounts are
+        # required for reconciliation and accounting posting.  This exception
+        # applies only to the immutable payroll snapshot; the general staff
+        # directory and salary-history endpoints remain masked.
+        m = _mask_hr_pii(
+            r,
+            current_user,
+            self_id=self_id,
+            self_email=self_email,
+            allow_finance_unmask=True,
+        )
         masked.append(m or r)
     out["rows"] = masked
     return out
@@ -2686,7 +2696,17 @@ async def get_payroll(
     # PII mask satırlar üzerinde
     self_id = str(getattr(current_user, "id", "") or "")
     self_email = str(getattr(current_user, "email", "") or "")
-    masked_rows = [_mask_hr_pii(r, current_user, self_id=self_id, self_email=self_email) or r for r in rows]
+    masked_rows = [
+        _mask_hr_pii(
+            r,
+            current_user,
+            self_id=self_id,
+            self_email=self_email,
+            allow_finance_unmask=True,
+        )
+        or r
+        for r in rows
+    ]
 
     runs_cursor = db.payroll_runs.find(
         {"tenant_id": current_user.tenant_id, "period_month": month},
