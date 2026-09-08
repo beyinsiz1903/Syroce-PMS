@@ -424,6 +424,12 @@ async def get_current_user(
         if not user_doc:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
+        # A disabled account must not keep using an access token minted before
+        # offboarding.  Refresh-token rotation already enforced this invariant,
+        # but ordinary authenticated requests did not.
+        if user_doc.get("is_active") is False:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Hesap devre dışı")
+
         # v46 (Bug CC): mass-revoke on password change. If the user has
         # `tokens_invalid_before` set (epoch seconds), any token whose `iat`
         # is older must be rejected — covers all parallel sessions without

@@ -399,6 +399,35 @@ async def test_delete_active_releases_once(current_user, mock_db, mock_quota, mo
 
 
 @pytest.mark.asyncio
+async def test_delete_hr_staff_disables_linked_login(current_user, mock_db, mock_quota, mock_audit):
+    """Merkezi kullanıcı akışıyla bağlı personelin giriş hesabı da kapanır."""
+    _mock_res, mock_rel, _mock_limit = mock_quota
+    mock_db.staff_members.find_one = AsyncMock(
+        return_value={"id": "staff-123", "user_id": "user-123", "active": True}
+    )
+    mock_db.staff_members.update_one = AsyncMock(
+        return_value=UpdateResult({"n": 1, "nModified": 1}, True)
+    )
+    mock_db.users.update_one = AsyncMock(
+        return_value=UpdateResult({"n": 1, "nModified": 1}, True)
+    )
+
+    result = await delete_staff_member("staff-123", current_user=current_user)
+
+    assert result["success"] is True
+    mock_db.users.update_one.assert_awaited_once()
+    user_filter, user_update = mock_db.users.update_one.await_args.args
+    assert user_filter == {
+        "tenant_id": current_user.tenant_id,
+        "id": "user-123",
+        "is_active": {"$ne": False},
+    }
+    assert user_update["$set"]["is_active"] is False
+    assert isinstance(user_update["$set"]["tokens_invalid_before"], float)
+    mock_rel.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_delete_inactive_does_not_release(current_user, mock_db, mock_quota, mock_audit):
     """Pasif personel silindiğinde release yapılmaz."""
     mock_res, mock_rel, mock_limit = mock_quota
@@ -496,6 +525,39 @@ async def test_terminate_inactive_does_not_release(current_user, mock_db, mock_q
 
         assert res["success"] is True
         mock_rel.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_terminate_staff_disables_linked_login(current_user, mock_db, mock_quota, mock_audit):
+    """Ayrılış kaydı bağlı kullanıcıyı kapatır ve mevcut jetonları geçersiz kılar."""
+    _mock_res, mock_rel, _mock_limit = mock_quota
+    with patch("domains.hr.router._verify_staff_in_tenant", new_callable=AsyncMock) as mock_verify:
+        mock_verify.return_value = {
+            "id": "staff-123",
+            "user_id": "user-123",
+            "active": True,
+            "name": "Test User",
+        }
+        mock_db.staff_members.update_one = AsyncMock(
+            return_value=UpdateResult({"n": 1, "nModified": 1}, True)
+        )
+        mock_db.staff_terminations.insert_one = AsyncMock()
+        mock_db.users.update_one = AsyncMock(
+            return_value=UpdateResult({"n": 1, "nModified": 1}, True)
+        )
+        mock_db.staff_equipment.find.return_value.sort.return_value.to_list = AsyncMock(return_value=[])
+        mock_db.tenant_settings.find_one = AsyncMock(return_value={})
+
+        payload = TerminationPayload(reason="resign", last_day="2026-09-08")
+        result = await terminate_staff("staff-123", payload, force_release=True, current_user=current_user)
+
+    assert result["success"] is True
+    mock_db.users.update_one.assert_awaited_once()
+    user_filter, user_update = mock_db.users.update_one.await_args.args
+    assert user_filter["id"] == "user-123"
+    assert user_update["$set"]["is_active"] is False
+    assert isinstance(user_update["$set"]["tokens_invalid_before"], float)
+    mock_rel.assert_called_once()
 
 
 @pytest.mark.asyncio

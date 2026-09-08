@@ -503,10 +503,16 @@ async def login(data: UserLogin, request: Request, response: Response):
             if cached_uid:
                 u = await db.users.find_one(
                      {"id": cached_uid},
-                     {"_id": 0, "two_factor_enabled": 1, "tokens_invalid_before": 1},
+                     {"_id": 0, "two_factor_enabled": 1, "tokens_invalid_before": 1, "is_active": 1},
                 )
                 _watermark = float((u or {}).get("tokens_invalid_before") or 0)
-                if u and u.get("two_factor_enabled"):
+                if not u or u.get("is_active") is False:
+                    # Never mint a fresh token from a cached successful login
+                    # after the account was disabled or removed.
+                    _login_cache.set(cache_key, None, ttl=1)
+                    # fall through to the full path, which returns the
+                    # canonical inactive/invalid-credential response.
+                elif u.get("two_factor_enabled"):
                     _login_cache.set(cache_key, None, ttl=1)  # evict
                     # fall through to full login path → challenge flow
                 elif _watermark and cached_at < _watermark:
@@ -619,6 +625,20 @@ async def login(data: UserLogin, request: Request, response: Response):
             }
         )
         await _record_failure_and_raise(401, "Otel ID, kullanıcı adı veya şifre hatalı")
+
+    if user_doc.get("is_active") is False:
+        await _safe_audit(
+            {
+                "id": str(__import__("uuid").uuid4()),
+                "tenant_id": user_doc.get("tenant_id"),
+                "user_email": identity_label,
+                "action": "login_failed",
+                "resource_type": "auth",
+                "details": "Account disabled",
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
+        await _record_failure_and_raise(401, "Hesap devre dışı")
 
     user_data = {k: v for k, v in user_doc.items() if k not in ["password", "hashed_password", "password_hash"]}
     user = User(**user_data)
