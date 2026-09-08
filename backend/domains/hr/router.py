@@ -2895,13 +2895,15 @@ async def list_performance_reviews(
 async def create_job_posting(
     payload: JobPostingPayload,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
 ):
-    """Personel ihtiyaç talebi oluştur (her departman müdürü açabilir).
+    """Personel ihtiyaç talebi oluştur (HR yönetimi / yetkili müdür).
 
     - internal_request → status=pending_approval, HR yöneticisine bildirim gider.
     - public_posting → yalnızca HR yetkisi ile, doğrudan status=active.
     """
-    # public_posting için ek yetki gerekir; internal_request herkese açık
+    # Route-level manage_hr gate hem iç talebi hem doğrudan ilanı salt-okunur
+    # finance/çalışan oturumlarından korur.
     if payload.request_type == "public_posting":
         role = (getattr(current_user, "role", None) or "").lower()
         if role not in {"admin", "supervisor", "finance"}:
