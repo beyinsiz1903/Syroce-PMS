@@ -113,7 +113,10 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
         description: form.description.trim() || null,
         available:   form.available,
         image_url:   form.image_url.trim() || null,
-        outlet_id:   outletId || null,
+        // The dashboard's "Tümü" filter deliberately passes no outletId.
+        // Existing items still retain their own outlet and must remain
+        // editable from that aggregate view.
+        outlet_id:   outletId || editing?.outlet_id || null,
       };
       if (editing) {
         await axios.put(`/pos/menu-item/${editing.id}`, payload);
