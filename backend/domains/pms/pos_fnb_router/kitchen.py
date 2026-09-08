@@ -24,6 +24,8 @@ from core.security import (
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 
+from .kitchen_numbering import next_kitchen_order_number as _shared_next_kitchen_order_number
+
 try:
     from websocket_server import broadcast_kitchen_orders
 except Exception:  # pragma: no cover
@@ -42,14 +44,8 @@ async def _get_active_kitchen_orders(tenant_id: str, statuses: list[str] | None 
 
 
 async def _next_kitchen_order_number(tenant_id: str) -> int:
-    last_order = await db.kitchen_orders.find({"tenant_id": tenant_id}).sort("order_number", -1).limit(1).to_list(1)
-    if not last_order:
-        return 1
-    raw = last_order[0].get("order_number", 0)
-    try:
-        return int(raw) + 1
-    except (TypeError, ValueError):
-        return 1
+    """Compatibility seam for tests and callers of the split legacy router."""
+    return await _shared_next_kitchen_order_number(tenant_id)
 
 
 async def _broadcast_kitchen_queue(tenant_id: str) -> None:
