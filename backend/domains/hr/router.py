@@ -1821,6 +1821,34 @@ def _payroll_run_to_response(
     return out
 
 
+_STATUTORY_PAYROLL_FIELDS = (
+    "sgk_employer",
+    "unemployment_employer",
+    "employer_contributions",
+    "employer_cost",
+    "tax_calculation",
+)
+
+
+def _payroll_statutory_issues(rows: list[dict]) -> list[str]:
+    """Return actionable reasons a payroll cannot be finalized/accounted."""
+    if not rows:
+        return ["Bordroda personel satırı bulunmuyor"]
+    issues: list[str] = []
+    for row in rows:
+        if row.get("calculation_mode") != "statutory_2026":
+            issues.append(
+                f"{row.get('staff_name') or row.get('staff_id')}: gerçek 2026 ücret anlaşması/matrahı eksik"
+            )
+            continue
+        missing = [key for key in _STATUTORY_PAYROLL_FIELDS if row.get(key) is None]
+        if missing:
+            issues.append(
+                f"{row.get('staff_name') or row.get('staff_id')}: zorunlu bordro alanları eksik ({', '.join(missing)})"
+            )
+    return issues
+
+
 # ---------- Payroll v2 RBAC gate (Task #264, post-review P1) ----------
 # Contract (Task #264 — entitlement-based, KVKK least-privilege):
 #   • FINALIZE (locked, immutable): manage_hr permission (HR Admin) OR
@@ -2100,6 +2128,20 @@ async def finalize_payroll_run(
             detail=f"Sadece draft durumdaki bordro kilitlenebilir (mevcut={run.get('status')}).",
         )
 
+    statutory_issues = _payroll_statutory_issues(run.get("rows") or [])
+    if statutory_issues:
+        preview = "; ".join(statutory_issues[:3])
+        if len(statutory_issues) > 3:
+            preview += f"; ayrıca {len(statutory_issues) - 3} personel"
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Yaklaşık hesaplı bordro kesinleştirilemez veya muhasebeye aktarılamaz. "
+                "Personel ücret anlaşmasında dönem, gerçek açılış vergi/istisna matrahı, "
+                f"SGK günü ve net/brüt seçimini tamamlayın. {preview}"
+            ),
+        )
+
     now_iso = datetime.now(UTC).isoformat()
     result = await db.payroll_runs.update_one(
         {
@@ -2271,7 +2313,8 @@ async def export_payroll_run_xlsx(
 ):
     """Bir run'ı Excel olarak indir (line_items detay)."""
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
 
     run = await db.payroll_runs.find_one(
         {"id": run_id, "tenant_id": current_user.tenant_id},
@@ -2298,6 +2341,7 @@ async def export_payroll_run_xlsx(
         "Net",
         "Para Birimi",
         "İşveren SGK", "İşveren İşsizlik", "İşveren Prim Toplamı", "İşveren Maliyeti",
+        "Hesap Modu", "Kontrol Notu",
     ]
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid")
@@ -2320,11 +2364,41 @@ async def export_payroll_run_xlsx(
         for col, key in enumerate(("sgk_employer", "unemployment_employer", "employer_contributions", "employer_cost"), 12):
             value = row.get(key)
             ws.cell(row=r_idx, column=col, value=float(value) if value is not None else None)
+        is_statutory = row.get("calculation_mode") == "statutory_2026"
+        ws.cell(row=r_idx, column=16, value="Gerçek 2026 / standart 4/a" if is_statutory else "Yaklaşık hesap")
+        ws.cell(
+            row=r_idx,
+            column=17,
+            value=(
+                "Vergi matrahı, asgari ücret istisnası ve işveren primleri doğrulandı"
+                if is_statutory
+                else "Ücret anlaşması ve gerçek açılış matrahı eksik; kesinleştirme/muhasebe aktarımı yapılamaz"
+            ),
+        )
         for col in range(5, 16):
             if col != 11:
                 ws.cell(row=r_idx, column=col).number_format = '#,##0.00'
+    total_row = len(rows) + 2
+    ws.cell(total_row, 1, "TOPLAM").font = Font(bold=True)
+    for col in (3, 4, 5, 6, 7, 8, 9, 10):
+        ws.cell(total_row, col, value=round(sum(float(ws.cell(r, col).value or 0) for r in range(2, total_row)), 2))
+        ws.cell(total_row, col).number_format = '#,##0.00'
+        ws.cell(total_row, col).font = Font(bold=True)
+    for col in (12, 13, 14, 15):
+        values = [ws.cell(r, col).value for r in range(2, total_row)]
+        if values and all(value is not None for value in values):
+            ws.cell(total_row, col, value=round(sum(float(value) for value in values), 2))
+            ws.cell(total_row, col).number_format = '#,##0.00'
+            ws.cell(total_row, col).font = Font(bold=True)
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = f"A1:Q{max(1, len(rows) + 1)}"
+    ws.sheet_view.showGridLines = False
+    ws.page_setup.orientation = "landscape"
+    for cell in ws[1]:
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     for col_idx in range(1, len(headers) + 1):
-        ws.column_dimensions[chr(64 + col_idx)].width = 16
+        max_len = max(len(str(ws.cell(row, col_idx).value or "")) for row in range(1, total_row + 1))
+        ws.column_dimensions[get_column_letter(col_idx)].width = min(max(max_len + 2, 12), 42)
 
     # Detail sheet: line_items per staff
     ws2 = wb.create_sheet("Kalemler")
@@ -2346,8 +2420,14 @@ async def export_payroll_run_xlsx(
             ws2.cell(row=row_cursor, column=7, value=li.get("direction"))
             ws2.cell(row=row_cursor, column=8, value=li.get("note"))
             row_cursor += 1
+    ws2.freeze_panes = "A2"
+    ws2.auto_filter.ref = f"A1:H{max(1, row_cursor - 1)}"
+    ws2.sheet_view.showGridLines = False
+    for cell in ws2[1]:
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     for col_idx in range(1, len(ws2_headers) + 1):
-        ws2.column_dimensions[chr(64 + col_idx)].width = 18
+        max_len = max(len(str(ws2.cell(row, col_idx).value or "")) for row in range(1, row_cursor))
+        ws2.column_dimensions[get_column_letter(col_idx)].width = min(max(max_len + 2, 12), 42)
 
     resp = _xlsx_stream(wb)
     resp.headers["Content-Disposition"] = f'attachment; filename="payroll_run_{run_id}.xlsx"'

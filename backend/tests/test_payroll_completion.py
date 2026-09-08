@@ -47,6 +47,35 @@ def test_employer_premiums_ceiling_and_partial_days():
     assert partial["employer_cost"] == 24750
 
 
+def test_statutory_row_is_ready_to_finalize():
+    assert hr._payroll_statutory_issues(sample()["rows"]) == []
+
+
+@pytest.mark.asyncio
+async def test_legacy_approximate_run_cannot_be_finalized(salary_db):  # noqa: F811
+    user = SimpleNamespace(id="operator", tenant_id="qa", role="super_admin")
+    await salary_db.payroll_runs.insert_one({
+        "id": "legacy-draft",
+        "tenant_id": "qa",
+        "status": "draft",
+        "period_month": "2026-09",
+        "rows": [{
+            "staff_id": "staff",
+            "staff_name": "Eksik Matrah",
+            "calculation_mode": "legacy_approximate",
+            "gross_pay": 315,
+            "net_salary": 225.2,
+        }],
+    })
+
+    with pytest.raises(HTTPException, match="Yaklaşık hesaplı bordro") as exc:
+        await hr.finalize_payroll_run("legacy-draft", user)
+
+    assert exc.value.status_code == 422
+    saved = await salary_db.payroll_runs.find_one({"id": "legacy-draft"})
+    assert saved["status"] == "draft"
+
+
 @pytest.mark.parametrize("key", ["sgk_payable_code", "employer_expense_code", "advance_receivable_code"])
 def test_missing_mapping_fail_closed(key):
     mapping = dict(MAPPING); mapping.pop(key)

@@ -22,6 +22,8 @@ import { useHRPagination } from '@/hooks/useHRPagination';
 
 export default function HRPayrollTab({ exportMonth, setExportMonth, handlePayrollPreview, handlePayrollSaveDraft, savingDraft, handlePayrollExport, exporting, taxRates, payrollRuns, selectedRun, fmtCurrency, loadRunDetail, handlePayrollFinalize, finalizing, handleRevisionOpen, revising, handleRunXlsx, runRevisions, payrollPreview, Users, DollarSign }) {
     const { t } = useTranslation();
+    const selectedRunStatutoryIssues = useMemo(() => (selectedRun?.rows || []).filter(row => row.calculation_mode !== 'statutory_2026'), [selectedRun]);
+    const selectedRunCanFinalize = Boolean(selectedRun?.rows?.length) && selectedRunStatutoryIssues.length === 0;
     return (
         <TabsContent value="payroll" className="mt-4">
           <div className="space-y-4">
@@ -65,19 +67,9 @@ export default function HRPayrollTab({ exportMonth, setExportMonth, handlePayrol
                       </ol>
                       <p className="text-xs text-amber-700">
                         <AlertCircle className="w-3 h-3 inline mr-1" />
-                        {(() => {
-                  const r = taxRates?.rates || {
-                    sgk_employee: 14,
-                    unemployment: 1,
-                    income_tax: 15,
-                    stamp_tax: 0.759
-                  };
-                  const fmt = n => Number(n).toLocaleString('tr-TR', {
-                    maximumFractionDigits: 3
-                  });
-                  return `Kesintiler: %${fmt(r.sgk_employee)} SGK + %${fmt(r.unemployment)} işsizlik + %${fmt(r.income_tax)} gelir vergisi (matrah − SGK) + %${fmt(r.stamp_tax)} damga.`;
-                })()}
-                        {' '}Asgari ücret muafiyeti / AGİ / özel kesintiler için muhasebenizle doğrulayın.
+                        Ücret anlaşması tamamlanan personelde 2026 kademeli gelir vergisi, kümülatif matrah,
+                        asgari ücret gelir/damga vergisi istisnası, SGK tavanı ve işveren primleri uygulanır.
+                        Anlaşması eksik personel yalnızca “yaklaşık hesap” olarak önizlenir; kesinleştirme ve muhasebe aktarımı engellenir.
                       </p>
                     </div>
                   </div>
@@ -140,7 +132,7 @@ export default function HRPayrollTab({ exportMonth, setExportMonth, handlePayrol
                           </span>}
                       </div>
                       <div className="flex items-center gap-2">
-                        {selectedRun.status === 'draft' && <Button size="sm" onClick={() => handlePayrollFinalize(selectedRun.id)} disabled={finalizing} className="bg-slate-900 text-white hover:bg-slate-800" data-testid="btn-payroll-finalize">
+                        {selectedRun.status === 'draft' && <Button size="sm" onClick={() => handlePayrollFinalize(selectedRun.id)} disabled={finalizing || !selectedRunCanFinalize} title={!selectedRunCanFinalize ? 'Gerçek ücret anlaşması ve matrah bilgileri tamamlanmadan kilitlenemez' : undefined} className="bg-slate-900 text-white hover:bg-slate-800" data-testid="btn-payroll-finalize">
                             <CheckCircle2 className="w-4 h-4 mr-1.5" />
                             {finalizing ? 'Kilitleniyor...' : 'Kilitle'}
                           </Button>}
@@ -153,6 +145,17 @@ export default function HRPayrollTab({ exportMonth, setExportMonth, handlePayrol
                         </Button>
                       </div>
                     </div>
+                    {selectedRun.status === 'draft' && !selectedRunCanFinalize && <div className="m-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900" data-testid="payroll-statutory-warning">
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                          <div>
+                            <p className="font-semibold">Bu bordro gerçek matrahla kesinleştirmeye hazır değil.</p>
+                            <p className="mt-1">
+                              {selectedRun.rows?.length ? `${selectedRunStatutoryIssues.map(row => row.staff_name || row.staff_id).join(', ')} için dönem ücret anlaşması, açılış vergi/istisna matrahı ve SGK günü bilgilerini tamamlayın.` : 'Bordroda personel satırı bulunmuyor.'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>}
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>

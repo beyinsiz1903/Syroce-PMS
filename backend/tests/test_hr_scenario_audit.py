@@ -190,5 +190,10 @@ async def test_xlsx_snapshot_numeric_parity_and_formula_safety(isolated):
     workbook = load_workbook(io.BytesIO(content), data_only=False)
     sheet = workbook.worksheets[0]
     assert (sheet["D2"].value, sheet["E2"].value, sheet["J2"].value) == (1.5, 315, 225.2)
+    assert sheet["P2"].value == "Yaklaşık hesap"
+    assert "kesinleştirme" in sheet["Q2"].value
+    assert sheet["A3"].value == "TOPLAM" and sheet["J3"].value == 225.2
+    assert sheet.freeze_panes == "A2" and sheet.auto_filter.ref == "A1:Q2"
+    assert sheet.column_dimensions["Q"].width > 16
     assert sheet["A2"].data_type != "f", "Staff name became executable XLSX formula"
     assert workbook["Kalemler"]["H2"].data_type != "f"
