@@ -400,10 +400,16 @@ async def _post_booking_to_folio(tenant_id: str, actor: str, booking_doc: dict) 
         pms_booking = await _find_active_booking_by_room_number(tenant_id, booking_doc.get("room_number", ""))
         booking_id = pms_booking.get("id") if pms_booking else None
 
-    if not booking_id:
-        return {"charged": False, "reason": "no_active_booking_or_folio"}
-
-    open_folio = await db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": tenant_id})
+    open_folio = None
+    if booking_id:
+        open_folio = await db.folios.find_one(
+            {
+                "booking_id": booking_id,
+                "folio_type": "guest",
+                "status": "open",
+                "tenant_id": tenant_id,
+            }
+        )
 
     # Sessiz degrade YOK: index kurulamazsa yükselt (çağıran rezervasyonu hiç
     # başlatmamış olur — pre-claim gate ile fail-closed).
@@ -453,10 +459,12 @@ async def _post_booking_to_folio(tenant_id: str, actor: str, booking_doc: dict) 
         return {"charged": charged, "amount": total, "folio_id": folio_id, "balance": balance}
 
     # Açık folio yok → late-charge.
-    any_folio = await db.folios.find_one(
-        {"booking_id": booking_id, "folio_type": "guest", "tenant_id": tenant_id},
-        sort=[("created_at", -1)],
-    )
+    any_folio = None
+    if booking_id:
+        any_folio = await db.folios.find_one(
+            {"booking_id": booking_id, "folio_type": "guest", "tenant_id": tenant_id},
+            sort=[("created_at", -1)],
+        )
     await db[_LATE_CHARGE_COLLECTION].update_one(
         {"tenant_id": tenant_id, "source_transport_booking_id": src_id},
         {
