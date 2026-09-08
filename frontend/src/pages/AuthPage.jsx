@@ -9,6 +9,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import LanguageSelector from '@/components/LanguageSelector';
+import {
+  isTransientLoginGatewayError,
+  postLoginWithGatewayRetry,
+} from '@/lib/authLoginResilience';
 
 // Marka diline (LandingPage) uygun ortak alan/etiket sinifleri.
 const fieldClass =
@@ -81,7 +85,7 @@ const AuthPage = ({ onLogin }) => {
         email: String(hotelLoginData.email || '').trim().toLowerCase(),
         password: hotelLoginData.password,
       };
-      const response = await axios.post('/auth/login', payload);
+      const response = await postLoginWithGatewayRetry(axios, payload);
       if (response.data?.requires_2fa) {
         setTwoFAChallenge({
           challenge_token: response.data.challenge_token,
@@ -98,7 +102,9 @@ const AuthPage = ({ onLogin }) => {
         return;
       }
     } catch (error) {
-      const errorMessage = error.response?.data?.detail || error.message || t('auth.loginFailed');
+      const errorMessage = isTransientLoginGatewayError(error)
+        ? 'Sunucu geçici olarak yanıt veremiyor. Lütfen birkaç saniye sonra tekrar deneyin.'
+        : error.response?.data?.detail || error.message || t('auth.loginFailed');
       toast.error(errorMessage);
     } finally {
       setLoading(false);
