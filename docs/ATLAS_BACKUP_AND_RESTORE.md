@@ -2,28 +2,31 @@
 
 ## Kısa cevap
 
-**Yedek alma derdiniz YOK.** MongoDB Atlas M10+ planı continuous cloud
-backup + point-in-time restore (PITR) hizmetini otomatik sağlıyor. Veri
-S3'e şifreli yazılır, retention konfigüre edilebilir, restore tek tıkla.
+MongoDB Atlas M10+ planı Cloud Backup ve point-in-time restore (PITR)
+özelliklerini **destekler**, fakat plan seviyesi bu özelliklerin açık olduğuna
+dair kanıt değildir. Atlas konsolunda Cloud Backup ve Continuous Cloud Backup
+ayrı ayrı etkinleştirilmeli; son snapshot yaşı Atlas Admin API ile
+doğrulanmalıdır.
 
 > Atlas plan'ı kullanıcı tarafından **M10 veya üstü** olarak onaylandı
-> (12 Mayıs 2026). Bu doküman bu varsayıma göre yazılmıştır.
+> (12 Mayıs 2026). Backup/PITR anahtarlarının açık olduğu ayrıca
+> doğrulanmadan production readiness sonucu PASS sayılmaz.
 
 ## Ne korunuyor?
 
 | Veri                                | Atlas Backup'ta var mı? | Notlar                              |
 | ----------------------------------- | ----------------------- | ----------------------------------- |
-| Tüm MongoDB veritabanı (production) | ✅ continuous            | Default retention M10: 7 gün PITR + 24 saatlik snapshot 7 gün + günlük 7 gün + haftalık 4 hafta |
-| `bookings`, `tenants`, `users` vb.  | ✅                       | Kritik 23 koleksiyon (bkz. backup_manager.py:23-27) |
-| Audit log koleksiyonu               | ✅                       | KVKK uyumluluğu için kritik         |
-| File uploads (FotograFlar, vs.)     | ❌                       | MongoDB değil — ayrı volume         |
+| Tüm MongoDB veritabanı (production) | Yapılandırmaya bağlı      | Cloud Backup/PITR ve gerçek retention konsolda doğrulanır |
+| `bookings`, `tenants`, `users` vb.  | Yapılandırmaya bağlı      | Cluster snapshot'ı bütün veritabanını kapsar |
+| Audit log koleksiyonu               | Yapılandırmaya bağlı      | Cluster snapshot kapsamındadır      |
+| File uploads (fotoğraflar vb.)      | ❌                       | MongoDB değil — ayrı volume         |
 | Redis cache                         | ❌                       | Geçici; restore'a gerek yok         |
 | Sentry events                       | ❌                       | Sentry kendi tutar (90 gün ücretsiz plan) |
 
 > **Eksik kapsam:** File uploads. Ayrı bir backup gerekli — pilot için
 > DigitalOcean volume snapshot yeterli, sonra S3/R2 sync. Bkz. ileri adımlar.
 
-## Atlas otomatik snapshot zamanlaması (M10 default)
+## Örnek snapshot politikası (Atlas konsolunda doğrulanmalı)
 
 | Sıklık       | Saklama   | Amaç                                |
 | ------------ | --------- | ----------------------------------- |
@@ -34,7 +37,8 @@ S3'e şifreli yazılır, retention konfigüre edilebilir, restore tek tıkla.
 | Aylık        | 12 ay     | Yıllık compliance                   |
 
 Bu çizelge Atlas console'dan **Backup → Policy** sekmesinden değiştirilebilir.
-Pilot için default önerilir.
+Bu değerler hedef politikadır; gerçek zamanlama ve saklama süreleri Atlas
+konsolundaki **Backup Policy** ekranından doğrulanır.
 
 ## Restore senaryoları (Atlas console)
 
@@ -79,11 +83,13 @@ Pilot için default önerilir.
 Atlas Admin API key'leri ile son snapshot'ın tazeliğini script'le kontrol:
 
 ```bash
-# DigitalOcean Secrets'a ekle (opsiyonel, doğrulama için):
+# DigitalOcean Secrets'a ekle (üretimde zorunlu doğrulama için):
 #   ATLAS_API_PUBLIC_KEY
 #   ATLAS_API_PRIVATE_KEY
 #   ATLAS_PROJECT_ID
 #   ATLAS_CLUSTER_NAME
+#   ATLAS_CLOUD_BACKUP_ENABLED=true
+#   ATLAS_PITR_ENABLED=true
 
 python backend/scripts/verify_atlas_backup.py --max-age-hours 26
 ```
@@ -92,16 +98,17 @@ python backend/scripts/verify_atlas_backup.py --max-age-hours 26
 - `FRESH — newest snapshot 4.2h old (threshold 26h)` → tamam
 - `STALE — newest snapshot 30.1h old` → Atlas'ı kontrol et, plan
   aktif mi?
-- `api_keys_unset (no-op, exit 0)` → API key tanımlı değil, doğrulama
-  pas geçildi
+- Production'da API key yoksa exit **2** → doğrulama yapılmadı ve readiness
+  fail-closed kalır
 
-API key'siz çalışıyorsa readiness validator zaten URI'den Atlas
-yapılandırmasını algılıyor (`backend/infra/atlas_backup_check.py`)
-ve `ATLAS_TIER` env-var'ından plan'ı okuyor. **DigitalOcean Secrets'a şunları
-eklemek yeterli:**
+Readiness validator URI'den Atlas kullanımını algılar; yalnızca tier
+bilgisiyle yeşile dönmez. DigitalOcean'a aşağıdaki non-secret durum
+değişkenleri ve yukarıdaki Atlas API kimlik bilgileri birlikte girilmelidir:
 
 ```
-ATLAS_TIER=M10                      # veya M20, M30 vs.
+ATLAS_TIER=M10
+ATLAS_CLOUD_BACKUP_ENABLED=true     # Atlas konsolundaki gerçek durum
+ATLAS_PITR_ENABLED=true             # Atlas konsolundaki gerçek durum
 ```
 
 ## Readiness check'inde nasıl görünür?
@@ -114,9 +121,13 @@ ATLAS_TIER=M10                      # veya M20, M30 vs.
   "atlas": {
     "atlas_managed": true,
     "tier": "M10",
+    "cloud_backup_enabled": true,
+    "pitr_enabled": true,
     "has_continuous_backup": true,
     "has_snapshot_only": false,
-    "verified_at": null
+    "verified_at": "2026-09-09T01:30:00+00:00",
+    "verification_fresh": true,
+    "verification_source": "atlas_admin_api"
   },
   "local_backup_enabled": false,
   "rpo_target": "continuous (PITR)",
@@ -124,9 +135,9 @@ ATLAS_TIER=M10                      # veya M20, M30 vs.
 }
 ```
 
-`status="atlas_managed"` ise score **1.0** (tam puan). Pilot
-deploy'unda `BACKUP_ENABLED=true` set etmek **gerek değil** — Atlas
-zaten yedek alıyor.
+`status="atlas_managed"` ve `verification_fresh=true` ise score **1.0**.
+`atlas_backup_not_declared` veya `atlas_backup_unverified` production'da
+**0.0** olur; bayrak ya da tier bilgisinin sahte güven üretmesi engellenir.
 
 ## Yerel mongodump fallback (opsiyonel ikinci katman)
 
@@ -146,19 +157,15 @@ BACKUP_RETENTION_DAYS=7
 #   }
 ```
 
-**Pilot için tavsiye edilmez** — Atlas zaten yedekliyor, ek karmaşa.
-Pilot sonrası "defense in depth" ekleme paketi olarak değerlendirin.
+Atlas doğrulaması başarıyla geçiyorsa bu ikinci katmandır; aksi hâlde yerel
+container diski production yedeği yerine geçmez.
 
 ## Maliyet
 
-M10 backup dahil. Eğer retention'ı uzatmak isterseniz:
-
-| Ek depolama  | Aylık ek maliyet (yaklaşık) |
-| ------------ | --------------------------- |
-| +10 GB       | ~$0.25                       |
-| +100 GB      | ~$2.50                       |
-
-Pilot 6 ay için ek depolama gerekmez — default policy yeterli.
+Backup maliyeti bulut sağlayıcısı, bölge, snapshot boyutu, saklama politikası
+ve restore/trafik kullanımına göre değişir. Güncel tutar Atlas konsolundaki
+cost explorer ve resmi fiyatlandırma ekranından doğrulanmalıdır; bu rehberde
+sabit bir fiyat varsayılmaz.
 
 ## İlgili dosyalar
 

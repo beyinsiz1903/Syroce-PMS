@@ -9,22 +9,13 @@
 #   ├── stale_room_locks/         <- RESTORED (2026-03-23) — copies kept for reference
 #   └── stale_dates/              <- RESTORED (2026-03-23) — copies kept for reference
 #
-# ── Current Quarantine Status (2026-03) ──
+# ── Current Quarantine Status (2026-09) ──
 #
-# CI Hard Gate: 391+ tests, 0 failures
-# Restored from quarantine: 70+ tests (2026-03-23)
-#
-# REMAINING IN QUARANTINE (via quarantine_manifest.py):
-# ┌─────────────────────────┬───────┬──────────────────────────────────────────┐
-# | Category                | Count | Action Required                          |
-# ├─────────────────────────┼───────┼──────────────────────────────────────────┤
-# | stale_fixtures          | 10    | Rate manager needs room_type seed data   |
-# | changed_api             | 10    | Rewrite assertions for current API       |
-# | changed_implementation  | 13    | Fix after feature completion             |
-# | external_dependency     | 3     | Mock or CI-skip                          |
-# | meta-test               | 1     | Update assertion (file restored)         |
-# └─────────────────────────┴───────┴──────────────────────────────────────────┘
-# Total remaining: ~37 tests (controlled tech debt)
+# Active manifest entries: **0**.
+# Latest audited full-suite JUnit: 6,672 tests, 3 explicitly allowed skips.
+# The former "37 remaining" rows referenced test node IDs that no longer
+# existed and were never active because the manifest export name had changed.
+# They were stale inventory, not skipped CI coverage.
 #
 # Note: stale_room_locks/ and stale_dates/ subdirectories contain original copies
 # of files that have been fixed and restored to tests/. They are kept for reference

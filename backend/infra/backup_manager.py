@@ -154,14 +154,26 @@ class BackupManager:
             logger.info(f"Backup completed: {backup_id} ({total_size} bytes, {duration:.1f}s)")
 
         except FileNotFoundError:
-            # mongodump not installed — simulate backup metadata for dev
-            metadata.status = "simulated"
+            # Simulation is useful for local UI development only. Reporting a
+            # missing binary as a successful backup in production creates a
+            # dangerous false recovery point.
+            env = (os.environ.get("ENVIRONMENT") or os.environ.get("APP_ENV") or "development").strip().lower()
+            is_prod = env in {"production", "prod", "live"}
+            metadata.status = "failed" if is_prod else "simulated"
             metadata.completed_at = datetime.now(UTC).isoformat()
             metadata.size_bytes = 0
-            metadata.error = "mongodump not available — simulated backup"
-            self._metrics["successful_backups"] += 1
-            self._last_successful = metadata.to_dict()
-            logger.warning("mongodump not found — backup simulated for dev mode")
+            metadata.error = (
+                "mongodump not available — backup failed"
+                if is_prod
+                else "mongodump not available — simulated backup"
+            )
+            if is_prod:
+                self._metrics["failed_backups"] += 1
+                logger.error("mongodump not found — production backup failed")
+            else:
+                self._metrics["successful_backups"] += 1
+                self._last_successful = metadata.to_dict()
+                logger.warning("mongodump not found — backup simulated for dev mode")
 
         except Exception as e:
             metadata.status = "failed"
