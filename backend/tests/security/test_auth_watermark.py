@@ -9,6 +9,35 @@ from core.security import JWT_ALGORITHM, JWT_SECRET, create_token, get_current_u
 
 
 @pytest.mark.asyncio
+async def test_inactive_user_access_token_is_rejected():
+    user_id = "inactive-user"
+    tenant_id = "tenantABC"
+    token = create_token(user_id, tenant_id)
+    credentials = AsyncMock()
+    credentials.credentials = token
+    mock_db = AsyncMock()
+    mock_db.users.find_one = AsyncMock(
+        return_value={
+            "id": user_id,
+            "tenant_id": tenant_id,
+            "role": "staff",
+            "email": "inactive@syroce.com",
+            "name": "Inactive User",
+            "is_active": False,
+        }
+    )
+
+    with patch("core.security.is_jti_revoked", new=AsyncMock(return_value=False)), \
+         patch("core.tenant_db.get_system_db", return_value=mock_db), \
+         patch("core.security._user_doc_cache_get", return_value=None):
+        with pytest.raises(HTTPException) as exc:
+            await get_current_user(credentials=credentials)
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Hesap devre dışı"
+
+
+@pytest.mark.asyncio
 async def test_auth_watermark_lifecycle():
     user_id = "user123"
     tenant_id = "tenantABC"

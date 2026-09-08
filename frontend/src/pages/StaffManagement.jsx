@@ -19,6 +19,7 @@ import UserProvisionDialog from '@/components/UserProvisionDialog';
 import SalaryAgreementFields from '@/components/hr/SalaryAgreementFields';
 import { FixedSizeList } from 'react-window';
 import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
+import { hasGrantedPermission, hasRole } from '@/utils/authRoles';
 
 // ── Virtualized staff table ───────────────────────────────────────────────
 const SM_ROW_H = 52;
@@ -28,7 +29,7 @@ const SM_MIN_W = 890;
 const SmStaffRow = React.memo(function SmStaffRow({ data, index, style }) {
   const {
     filtered, equipmentByStaff, warningsByStaff, trainingsByStaff,
-    navigate, openEdit, offboardStaff, t,
+    navigate, openEdit, offboardStaff, canManageHR, t,
   } = data;
   const s = filtered[index];
   if (!s) return null;
@@ -92,14 +93,16 @@ const SmStaffRow = React.memo(function SmStaffRow({ data, index, style }) {
         <Button size="sm" variant="ghost" onClick={() => navigate(`/staff/${s.id}`)} title={t('cm.pages_StaffManagement.profil')} className="h-7 w-7 p-0">
           <ExternalLink className="w-3.5 h-3.5" />
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => openEdit(s)} title="D\u00fczenle" className="h-7 w-7 p-0">
-          <Pencil className="w-3.5 h-3.5" />
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => offboardStaff(s)}
-          title={t('cm.pages_StaffManagement.i_\u015Ften_ayr\u0131l\u0131\u015F_silmez_pasifle\u015F')}
-          className="h-7 w-7 p-0 text-rose-600 hover:text-rose-700 hover:bg-rose-50">
-          <UserMinus className="w-3.5 h-3.5" />
-        </Button>
+        {canManageHR && <>
+          <Button size="sm" variant="ghost" onClick={() => openEdit(s)} title="D\u00fczenle" className="h-7 w-7 p-0">
+            <Pencil className="w-3.5 h-3.5" />
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => offboardStaff(s)}
+            title={t('cm.pages_StaffManagement.i_\u015Ften_ayr\u0131l\u0131\u015F_silmez_pasifle\u015F')}
+            className="h-7 w-7 p-0 text-rose-600 hover:text-rose-700 hover:bg-rose-50">
+            <UserMinus className="w-3.5 h-3.5" />
+          </Button>
+        </>}
       </div>
     </div>
   );
@@ -118,10 +121,14 @@ const EMPTY_STAFF = {
   monthly_hours: '',
   annual_leave_entitlement: 14
 };
-const StaffManagement = () => {
+const StaffManagement = ({ user }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { getLimit } = useEntitlements();
+  const canManageHR = !user
+    || hasRole(user, 'admin', 'supervisor')
+    || hasGrantedPermission(user, 'manage_hr');
+  const canProvisionUsers = !user || hasRole(user, 'admin');
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [staff, setStaff] = useState([]);
@@ -542,16 +549,17 @@ const StaffManagement = () => {
         <ExternalLink className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.i_k_paneli")}</Button>
       <Button variant="outline" size="sm" onClick={() => navigate('/hr/shifts')} className="rounded-lg shadow-sm border-slate-200 hover:bg-slate-50 text-slate-600">
         <Calendar className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.vardiya_plan\u0131")}</Button>
-      <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)} className="rounded-lg shadow-sm border-slate-200 hover:bg-slate-50 text-slate-600">
+      {canManageHR && <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)} className="rounded-lg shadow-sm border-slate-200 hover:bg-slate-50 text-slate-600">
         <Building2 className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.departman_pozisyon")}</Button>
+      }
       <Button variant="outline" size="sm" onClick={loadAll} disabled={refreshing} className="rounded-lg shadow-sm border-slate-200 hover:bg-slate-50 text-slate-600">
         <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />{t("cm.pages_StaffManagement.yenile")}</Button>
-      <div className="border-l border-slate-200 h-6 mx-1"></div>
-      <UserProvisionDialog departments={departments} onCreated={loadAll} disabled={isLimitReached} />
-      <Button size="sm" onClick={openCreate} disabled={isLimitReached} data-testid="btn-add-staff" className="rounded-lg shadow-sm bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white border-0">
+      {(canProvisionUsers || canManageHR) && <div className="border-l border-slate-200 h-6 mx-1"></div>}
+      {canProvisionUsers && <UserProvisionDialog departments={departments} onCreated={loadAll} disabled={isLimitReached} />}
+      {canManageHR && <Button size="sm" onClick={openCreate} disabled={isLimitReached} data-testid="btn-add-staff" className="rounded-lg shadow-sm bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white border-0">
         <UserPlus className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.yeni_personel_girissiz")}
-      </Button>
-      {isLimitReached && (
+      </Button>}
+      {canManageHR && isLimitReached && (
         <span className="text-xs text-rose-600 flex items-center ml-2 bg-rose-50 px-2 py-1 rounded border border-rose-200">
           <AlertTriangle className="w-3 h-3 mr-1" />
           Personel limiti ({employeeLimit}) dolu
@@ -561,8 +569,8 @@ const StaffManagement = () => {
   // itemData for react-window SmStaffRow (navigate/handlers are stable across renders)
   const staffRowData = useMemo(() => ({
     filtered, equipmentByStaff, warningsByStaff, trainingsByStaff,
-    navigate, openEdit, offboardStaff, t,
-  }), [filtered, equipmentByStaff, warningsByStaff, trainingsByStaff, navigate, openEdit, offboardStaff, t]);
+    navigate, openEdit, offboardStaff, canManageHR, t,
+  }), [filtered, equipmentByStaff, warningsByStaff, trainingsByStaff, navigate, openEdit, offboardStaff, canManageHR, t]);
 
   if (loadError) {
     return <div className="p-2">
@@ -727,9 +735,9 @@ const StaffManagement = () => {
                 </div>
                 <h3 className="text-sm font-semibold text-slate-900 mb-1">{staff.length === 0 ? 'Henüz personel eklenmemiş' : 'Arama sonucu bulunamadı'}</h3>
                 <p className="text-xs text-slate-500 mb-6">{staff.length === 0 ? 'Personel yönetimini kullanmaya başlamak için ilk personeli ekleyin.' : 'Farklı arama kriterleri deneyin.'}</p>
-                {staff.length === 0 && <Button onClick={openCreate} disabled={isLimitReached} data-testid="btn-add-staff" className="rounded-lg shadow-sm bg-slate-900 text-white hover:bg-slate-800">
+                {canManageHR && staff.length === 0 && <Button onClick={openCreate} disabled={isLimitReached} data-testid="btn-add-staff" className="rounded-lg shadow-sm bg-slate-900 text-white hover:bg-slate-800">
                     <UserPlus className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.i_lk_personeli_ekle")}</Button>}
-                {isLimitReached && staff.length === 0 && (
+                {canManageHR && isLimitReached && staff.length === 0 && (
                     <div className="text-xs text-rose-600 mt-2 flex items-center justify-center bg-rose-50 px-2 py-1.5 rounded border border-rose-200 max-w-xs mx-auto">
                       <AlertTriangle className="w-3 h-3 mr-1" />
                       Mevcut paketinizin personel limiti doludur.

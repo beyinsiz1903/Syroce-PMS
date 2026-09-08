@@ -3960,7 +3960,8 @@ async def delete_staff_member(
     """İşten ayrılış (soft deactivate). Personel ASLA hard-delete edilmez —
     bordro / devam / izin geçmişi korunur, listeden çıkar.
 
-    HR-managed: `staff_members.active=False`.
+    HR-managed: `staff_members.active=False`; `user_id` ile bağlı bir giriş
+    hesabı varsa aynı işlemde pasifleştirilir ve mevcut jetonları geçersizleşir.
     Users-derived: `users.is_active=False`.
     """
     now_iso = datetime.now(UTC).isoformat()
@@ -3975,6 +3976,22 @@ async def delete_staff_member(
         },
     )
     if res.matched_count > 0:
+        linked_user_id = existing_staff.get("user_id") if existing_staff else None
+        if linked_user_id:
+            await db.users.update_one(
+                {
+                    "tenant_id": current_user.tenant_id,
+                    "id": linked_user_id,
+                    "is_active": {"$ne": False},
+                },
+                {
+                    "$set": {
+                        "is_active": False,
+                        "deactivated_at": now_iso,
+                        "tokens_invalid_before": datetime.now(UTC).timestamp(),
+                    }
+                },
+            )
         if existing_staff and existing_staff.get("active", False):
             resource_id = existing_staff.get("client_request_id") or staff_id
             await release_quota(current_user.tenant_id, "hr", "active_employees", resource_id)
@@ -6281,6 +6298,23 @@ async def terminate_staff(
             }
         },
     )
+
+    linked_user_id = staff.get("user_id")
+    if linked_user_id:
+        await db.users.update_one(
+            {
+                "tenant_id": current_user.tenant_id,
+                "id": linked_user_id,
+                "is_active": {"$ne": False},
+            },
+            {
+                "$set": {
+                    "is_active": False,
+                    "deactivated_at": record["processed_at"],
+                    "tokens_invalid_before": datetime.now(UTC).timestamp(),
+                }
+            },
+        )
 
     resource_id = staff.get("client_request_id") or staff_id
     if staff.get("active", True):
