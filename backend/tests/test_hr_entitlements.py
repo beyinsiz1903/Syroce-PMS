@@ -86,6 +86,16 @@ def _make_request(tenant_id: str = "tenant_123") -> MagicMock:
     return req
 
 
+def test_staff_update_normalizes_sensitive_identifiers():
+    payload = StaffUpdatePayload(
+        national_id="123 456 789 01",
+        iban="tr00 0000 0000 0000 0000 0000 00",
+    )
+
+    assert payload.national_id == "12345678901"
+    assert payload.iban == "TR000000000000000000000000"
+
+
 @pytest.fixture
 def mock_audit():
     with patch("domains.hr.router._audit", new_callable=AsyncMock) as mock:
